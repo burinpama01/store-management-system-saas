@@ -99,7 +99,7 @@ export function AccountingManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="page-shell">
       <h1 className="text-xl font-semibold text-gray-900">บัญชี / รายรับ-จ่าย</h1>
 
       {/* Summary strip */}

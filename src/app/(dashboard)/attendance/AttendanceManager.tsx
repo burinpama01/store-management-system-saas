@@ -128,7 +128,7 @@ export function AttendanceManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="page-shell">
       <div className="page-header">
         <div>
           <h1 className="page-title">การเข้างาน</h1>

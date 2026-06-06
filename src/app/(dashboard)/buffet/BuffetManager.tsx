@@ -49,7 +49,7 @@ export function BuffetManager({ openSessions, closedToday, tables, canManage }: 
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-shell">
       <h1 className="text-xl font-semibold text-gray-900">บุฟเฟต์</h1>
 
       {actionError && (

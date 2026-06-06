@@ -35,7 +35,7 @@ export default async function StockPage() {
 
   if (!features.stockManagement) {
     return (
-      <section className="mx-auto max-w-3xl space-y-4">
+      <section className="page-shell max-w-3xl">
         <div className="rounded-md border border-amber-200 bg-amber-50 p-5">
           <p className="text-sm font-bold text-amber-900">
             สต็อกถูกจำกัดในแพ็กเกจ {PLAN_LABELS[billingState.plan]}
