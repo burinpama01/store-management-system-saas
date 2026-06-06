@@ -1,6 +1,6 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { computeNewExpiry, type BillingDuration } from "./pricing";
-import { getEffectivePrice } from "./pricing-repository";
+import { getUpgradeQuote } from "./pricing-repository";
 import { getPlatformSettings } from "./platform-settings";
 import { receiverMatches } from "./promptpay-provider";
 import {
@@ -62,11 +62,11 @@ export async function submitPromptPayPayment(
   input: SubmitPaymentInput,
 ): Promise<SubmitPaymentResult> {
   const supabase = await createSupabaseServiceClient();
-  const eff = await getEffectivePrice(input.plan, input.duration);
-  if (!eff) {
+  const quote = await getUpgradeQuote(input.organizationId, input.plan, input.duration);
+  if (!quote) {
     return { status: "rejected", reason: "แพ็กเกจนี้ชำระผ่าน PromptPay ไม่ได้", newExpiry: null };
   }
-  const expected = eff.amount;
+  const expected = quote.finalAmount;
 
   const settings = await getPlatformSettings();
 

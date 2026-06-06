@@ -8,7 +8,7 @@ import {
 import { parseSlip2goResponse } from "@/modules/billing/slip2go";
 import { evaluatePaymentVerification } from "@/modules/billing/subscription-service";
 import { receiverMatches, last4Digits, resolveSubscriptionQr, looksLikePromptPayPayload, injectAmountIntoStaticPayload } from "@/modules/billing/promptpay-provider";
-import { applyPromotion, pickActivePromotion, type Promotion } from "@/modules/billing/pricing-repository";
+import { applyPromotion, pickActivePromotion, computeUpgradeCredit, type Promotion } from "@/modules/billing/pricing-repository";
 import type { Slip2goVerification } from "@/modules/billing/slip2go";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
 
@@ -142,13 +142,31 @@ describe("evaluatePaymentVerification", () => {
 
 describe("pricing promotions", () => {
   function promo(over: Partial<Promotion>): Promotion {
-    return { id: "p", description: "d", percentOff: 10, active: true, startsAt: null, endsAt: null, ...over };
+    return { id: "p", description: "d", percentOff: 10, active: true, plan: null, startsAt: null, endsAt: null, ...over };
   }
 
   it("applyPromotion discounts and rounds to baht", () => {
     expect(applyPromotion(690, 0)).toBe(690);
     expect(applyPromotion(690, 20)).toBe(552);
     expect(applyPromotion(1290, 15)).toBe(1097); // 1096.5 -> 1097
+  });
+
+  it("computeUpgradeCredit prorates actual paid amount by remaining days", () => {
+    const start = "2026-06-01T00:00:00Z";
+    const end = "2026-07-01T00:00:00Z"; // 30-day window
+    // halfway through: ~15 days remaining of 30 -> ~half the paid amount
+    const mid = new Date("2026-06-16T00:00:00Z");
+    expect(computeUpgradeCredit({ periodStart: start, periodEnd: end, lastPaidAmount: 690, now: mid })).toBe(345);
+    // promo price credit: paid 552 (20% off), halfway -> 276
+    expect(computeUpgradeCredit({ periodStart: start, periodEnd: end, lastPaidAmount: 552, now: mid })).toBe(276);
+  });
+
+  it("computeUpgradeCredit is zero when expired, unpaid, or no window", () => {
+    const start = "2026-06-01T00:00:00Z";
+    const end = "2026-07-01T00:00:00Z";
+    expect(computeUpgradeCredit({ periodStart: start, periodEnd: end, lastPaidAmount: 690, now: new Date("2026-08-01T00:00:00Z") })).toBe(0);
+    expect(computeUpgradeCredit({ periodStart: start, periodEnd: end, lastPaidAmount: 0, now: new Date("2026-06-16T00:00:00Z") })).toBe(0);
+    expect(computeUpgradeCredit({ periodStart: null, periodEnd: null, lastPaidAmount: 690 })).toBe(0);
   });
 
   it("pickActivePromotion picks strongest valid promo within window", () => {

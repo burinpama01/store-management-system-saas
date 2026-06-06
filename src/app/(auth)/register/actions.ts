@@ -125,10 +125,17 @@ export async function registerOwner(
     return { error: "ตั้งค่าสิทธิ์เจ้าของไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
   }
 
-  // Default free subscription is best-effort; billing falls back to free when absent.
-  await svc
-    .from("subscriptions")
-    .insert({ organization_id: org.id, plan: "free", status: "active" });
+  // 14-day free trial: full (premium) access; expiry gate enforces it afterwards.
+  const trialStart = new Date();
+  const trialEnd = new Date(trialStart.getTime() + 14 * 86_400_000);
+  await svc.from("subscriptions").insert({
+    organization_id: org.id,
+    plan: "premium",
+    status: "trialing",
+    current_period_start: trialStart.toISOString(),
+    current_period_end: trialEnd.toISOString(),
+    trial_end: trialEnd.toISOString(),
+  });
 
   if (data.session) {
     redirect("/onboarding");

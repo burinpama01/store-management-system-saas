@@ -111,6 +111,7 @@ export interface Database {
           description: string;
           percent_off: number;
           active: boolean;
+          plan: "starter" | "standard" | "premium" | null;
           starts_at: string | null;
           ends_at: string | null;
           created_at: string;
@@ -120,6 +121,7 @@ export interface Database {
           description: string;
           percent_off: number;
           active?: boolean;
+          plan?: "starter" | "standard" | "premium" | null;
           starts_at?: string | null;
           ends_at?: string | null;
           created_at?: string;
@@ -129,9 +131,40 @@ export interface Database {
           description?: string;
           percent_off?: number;
           active?: boolean;
+          plan?: "starter" | "standard" | "premium" | null;
           starts_at?: string | null;
           ends_at?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      plan_settings: {
+        Row: {
+          tier: "starter" | "standard" | "premium" | "enterprise";
+          display_name: string;
+          visible_on_landing: boolean;
+          highlight: boolean;
+          feature_lines: Json;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          tier: "starter" | "standard" | "premium" | "enterprise";
+          display_name: string;
+          visible_on_landing?: boolean;
+          highlight?: boolean;
+          feature_lines?: Json;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          tier?: "starter" | "standard" | "premium" | "enterprise";
+          display_name?: string;
+          visible_on_landing?: boolean;
+          highlight?: boolean;
+          feature_lines?: Json;
+          sort_order?: number;
+          updated_at?: string;
         };
         Relationships: [];
       };

@@ -5,7 +5,7 @@ import { AuthorizationError, getResolvedCurrentPermissions } from "@/modules/aut
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { resolveSubscriptionQr, type SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
-import { getEffectivePrice } from "@/modules/billing/pricing-repository";
+import { getUpgradeQuote } from "@/modules/billing/pricing-repository";
 import { submitPromptPayPayment, type SubmitPaymentResult } from "@/modules/billing/subscription-service";
 
 function parsePlan(value: unknown): PaidTier | null {
@@ -18,6 +18,9 @@ function parseDuration(value: unknown): BillingDuration | null {
 export interface PaymentQrResult {
   ok: boolean;
   amount: number | null;
+  basePrice: number | null;
+  credit: number;
+  promotionLabel: string | null;
   qr: SubscriptionQr | null;
   error: string | null;
 }
@@ -27,22 +30,31 @@ export async function getPaymentQrAction(
   duration: string,
 ): Promise<PaymentQrResult> {
   try {
-    const { resolved } = await getResolvedCurrentPermissions();
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
+    const base = { ok: false as const, amount: null, basePrice: null, credit: 0, promotionLabel: null, qr: null };
     if (!resolved.can("billing.manage")) {
-      return { ok: false, amount: null, qr: null, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
+      return { ...base, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
     }
     const p = parsePlan(plan);
     const d = parseDuration(duration);
-    if (!p || !d) return { ok: false, amount: null, qr: null, error: "แพ็กเกจหรือระยะเวลาไม่ถูกต้อง" };
+    if (!p || !d) return { ...base, error: "แพ็กเกจหรือระยะเวลาไม่ถูกต้อง" };
 
-    const eff = await getEffectivePrice(p, d);
-    if (!eff) return { ok: false, amount: null, qr: null, error: "ไม่พบราคาแพ็กเกจ" };
+    const quote = await getUpgradeQuote(ctx.organizationId, p, d);
+    if (!quote) return { ...base, error: "ไม่พบราคาแพ็กเกจ" };
 
     const settings = await getPlatformSettings();
-    return { ok: true, amount: eff.amount, qr: resolveSubscriptionQr(settings, eff.amount), error: null };
+    return {
+      ok: true,
+      amount: quote.finalAmount,
+      basePrice: quote.price,
+      credit: quote.credit,
+      promotionLabel: quote.promotion ? `${quote.promotion.description} (-${quote.promotion.percentOff}%)` : null,
+      qr: resolveSubscriptionQr(settings, quote.finalAmount),
+      error: null,
+    };
   } catch (e) {
     if (e instanceof AuthorizationError) {
-      return { ok: false, amount: null, qr: null, error: "ไม่มีสิทธิ์" };
+      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, qr: null, error: "ไม่มีสิทธิ์" };
     }
     throw e;
   }
