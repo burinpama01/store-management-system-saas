@@ -3,9 +3,13 @@ import { AuthorizationError, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { getStripeCustomerId } from "@/modules/billing/billing-service";
 import { createPortalSession } from "@/modules/billing/stripe-service";
+import { isPromptPayActive } from "@/modules/billing/platform-settings";
 
 export async function POST() {
   try {
+    if (await isPromptPayActive()) {
+      return NextResponse.json({ error: "Stripe billing is disabled" }, { status: 404 });
+    }
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

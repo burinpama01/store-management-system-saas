@@ -2,134 +2,99 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { BillingPlan, BillingState, BillingStatus, PlanFeatures } from "@/modules/billing/types";
+import type { BillingPlan } from "@/modules/billing/types";
 import { PLAN_LABELS } from "@/modules/billing/types";
-
-type CheckoutPlan = Exclude<BillingPlan, "free">;
-
-const STATUS_LABELS: Record<BillingStatus, string> = {
-  active: "ใช้งานอยู่",
-  trialing: "ช่วงทดลองใช้",
-  past_due: "ค้างชำระ",
-  incomplete: "รอชำระเงินครั้งแรก",
-  incomplete_expired: "การสมัครหมดอายุ",
-  unpaid: "ยังไม่ชำระเงิน",
-  canceled: "ยกเลิกแล้ว",
-  paused: "พักการใช้งาน",
-};
-
-const STATUS_BADGE: Record<BillingStatus, string> = {
-  active: "badge-success",
-  trialing: "badge-brand",
-  past_due: "badge-warning",
-  incomplete: "badge-warning",
-  incomplete_expired: "badge-warning",
-  unpaid: "badge-warning",
-  canceled: "badge-warning",
-  paused: "badge-warning",
-};
-
-const PLAN_INFO: Record<
-  CheckoutPlan,
-  { price: string; target: string; highlights: string[] }
-> = {
-  starter: {
-    price: "490–690 บาท/เดือน",
-    target: "ร้านอาหารทั่วไป / คาเฟ่ขนาดเล็ก",
-    highlights: ["POS พื้นฐาน", "รายรับ-รายจ่าย", "พิมพ์ใบเสร็จผ่าน Browser", "ประวัติลูกค้า"],
-  },
-  standard: {
-    price: "990–1,290 บาท/เดือน",
-    target: "ร้านบุฟเฟต์ / หมูกระทะ (ไม่มี QR)",
-    highlights: ["ทุกอย่างใน Starter", "จัดการบุฟเฟต์", "จัดการสต็อก", "พิมพ์ Bluetooth/USB/IP"],
-  },
-  premium: {
-    price: "1,590–2,290 บาท/เดือน",
-    target: "ร้านบุฟเฟต์ที่ต้องการลดพนักงาน",
-    highlights: ["ทุกอย่างใน Standard", "QR Food Ordering", "LINE Notify", "ลงเวลา GPS + คอมมิชชั่น"],
-  },
-  enterprise: {
-    price: "Custom Quote",
-    target: "ร้านหลายสาขา",
-    highlights: ["จัดการสาขาแบบศูนย์กลาง", "รายงานรวมหลายสาขา", "API Integration", "Support พิเศษ"],
-  },
-};
-
-const PLAN_ORDER: CheckoutPlan[] = ["starter", "standard", "premium", "enterprise"];
+import {
+  DURATION_LABELS,
+  DURATION_PRICES,
+  PAID_TIERS,
+  type BillingDuration,
+  type PaidTier,
+} from "@/modules/billing/pricing";
+import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
+import { getPaymentQrAction, submitPaymentAction } from "./actions";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function formatLimit(value: number): string {
-  return Number.isFinite(value) ? String(value) : "ไม่จำกัด";
+const TIER_DESC: Record<PaidTier, string> = {
+  starter: "POS, รายรับ-จ่าย, ใบเสร็จ browser",
+  standard: "+ บุฟเฟต์, สต็อก, printer ขั้นสูง",
+  premium: "+ QR ordering, LINE, GPS, commission",
+};
+
+async function fileToBase64(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
 
 export function BillingManager({
-  billingState,
-  features,
-  canManage,
-  hasCustomer,
-  priceIds,
   orgName,
+  plan,
+  currentPeriodEnd,
+  isActive,
+  canManage,
+  paymentConfigured,
+  recipientName,
+  slipVerificationReady,
 }: {
-  billingState: BillingState;
-  features: PlanFeatures;
-  canManage: boolean;
-  hasCustomer: boolean;
-  priceIds: Record<CheckoutPlan, string | null>;
   orgName: string;
+  plan: BillingPlan;
+  currentPeriodEnd: string;
+  isActive: boolean;
+  canManage: boolean;
+  paymentConfigured: boolean;
+  recipientName: string | null;
+  slipVerificationReady: boolean;
 }) {
   const searchParams = useSearchParams();
-  const checkoutResult = searchParams.get("checkout");
-  const [error, setError] = useState<string | null>(null);
-  const [pendingPlan, setPendingPlan] = useState<CheckoutPlan | "portal" | null>(null);
+  const expired = searchParams.get("expired") === "1";
 
-  async function startCheckout(plan: CheckoutPlan) {
-    const priceId = priceIds[plan];
-    if (!priceId) {
-      setError(`ยังไม่ได้ตั้งค่า price ของแพ็กเกจ ${PLAN_LABELS[plan]} (STRIPE_PRICE_*)`);
+  const [selectedPlan, setSelectedPlan] = useState<PaidTier>("starter");
+  const [duration, setDuration] = useState<BillingDuration>("30d");
+  const [qr, setQr] = useState<SubscriptionQr | null>(null);
+  const [amount, setAmount] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ status: string; reason: string | null; newExpiry: string | null } | null>(null);
+
+  const price = DURATION_PRICES[selectedPlan][duration];
+
+  async function generateQr() {
+    setError(null);
+    setResult(null);
+    setBusy(true);
+    const res = await getPaymentQrAction(selectedPlan, duration);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? "สร้าง QR ไม่สำเร็จ");
       return;
     }
-    setError(null);
-    setPendingPlan(plan);
-    try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) {
-        setError(data.error ?? "เริ่มการสมัครไม่สำเร็จ");
-        setPendingPlan(null);
-        return;
-      }
-      window.location.assign(data.url);
-    } catch {
-      setError("เชื่อมต่อระบบชำระเงินไม่สำเร็จ");
-      setPendingPlan(null);
-    }
+    setAmount(res.amount);
+    setQr(res.qr);
   }
 
-  async function openPortal() {
+  async function handleSlip(file: File) {
     setError(null);
-    setPendingPlan("portal");
+    setResult(null);
+    setBusy(true);
     try {
-      const res = await fetch("/api/stripe/portal", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) {
-        setError(data.error ?? "เปิด Customer Portal ไม่สำเร็จ");
-        setPendingPlan(null);
-        return;
-      }
-      window.location.assign(data.url);
+      const base64 = await fileToBase64(file);
+      const res = await submitPaymentAction({ plan: selectedPlan, duration, slipImageBase64: base64 });
+      if (res.error) setError(res.error);
+      else setResult({ status: res.status, reason: res.reason, newExpiry: res.newExpiry });
     } catch {
-      setError("เชื่อมต่อระบบชำระเงินไม่สำเร็จ");
-      setPendingPlan(null);
+      setError("อ่านไฟล์สลิปไม่สำเร็จ");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -138,134 +103,147 @@ export function BillingManager({
       <div className="page-header">
         <div>
           <h1 className="page-title">การเรียกเก็บเงิน & แพ็กเกจ</h1>
-          <p className="page-kicker">{orgName} · จัดการ subscription ผ่าน Stripe</p>
+          <p className="page-kicker">{orgName} · ชำระผ่าน PromptPay ยืนยันอัตโนมัติด้วย slip2go</p>
         </div>
-        <span className="badge badge-brand">Billing</span>
+        <span className={`badge ${isActive ? "badge-success" : "badge-warning"}`}>
+          {isActive ? "ใช้งานอยู่" : "ยังไม่เปิดใช้งาน"}
+        </span>
       </div>
 
-      {checkoutResult === "success" && (
-        <p className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          เริ่มการสมัครสำเร็จ ระบบจะอัปเดตสถานะแพ็กเกจหลัง Stripe ยืนยันการชำระเงิน
-        </p>
-      )}
-      {checkoutResult === "cancel" && (
+      {expired && !isActive && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          ยกเลิกการสมัครแล้ว ยังไม่มีการเรียกเก็บเงิน
+          แพ็กเกจหมดอายุหรือยังไม่ได้ชำระเงิน กรุณาชำระเพื่อใช้งานระบบต่อ
         </p>
       )}
       {error && <p className="alert-danger">{error}</p>}
-
       {!canManage && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          คุณดูข้อมูลแพ็กเกจได้ แต่ไม่มีสิทธิ์จัดการการเรียกเก็บเงิน (ต้องมีสิทธิ์ billing.manage)
+          คุณดูข้อมูลได้ แต่ไม่มีสิทธิ์ชำระเงิน (ต้องมีสิทธิ์ billing.manage)
         </p>
       )}
 
       <section className="panel max-w-3xl p-5">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="panel-title">แพ็กเกจปัจจุบัน</h2>
-            <p className="label-muted">สถานะและขีดจำกัดของแพ็กเกจที่ใช้งานอยู่</p>
-          </div>
-          <span className={`badge ${STATUS_BADGE[billingState.status]}`}>
-            {STATUS_LABELS[billingState.status]}
-          </span>
-        </div>
-
+        <h2 className="panel-title mb-3">แพ็กเกจปัจจุบัน</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoItem label="แพ็กเกจ" value={PLAN_LABELS[billingState.plan]} />
-          <InfoItem label="สถานะ" value={STATUS_LABELS[billingState.status]} />
-          <InfoItem label="จำนวนสาขาสูงสุด" value={formatLimit(features.maxStores)} />
-          <InfoItem label="จำนวนสมาชิกสูงสุด" value={formatLimit(features.maxMembers)} />
-          <InfoItem label="รอบบิลถัดไป" value={formatDate(billingState.currentPeriodEnd)} />
-          <InfoItem
-            label="สิ้นสุดทดลองใช้"
-            value={billingState.trialEnd ? formatDate(billingState.trialEnd) : "—"}
-          />
+          <InfoItem label="แพ็กเกจ" value={PLAN_LABELS[plan]} />
+          <InfoItem label="สถานะ" value={isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
+          <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />
         </div>
-
-        {billingState.cancelAtPeriodEnd && (
-          <p className="mt-4 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            แพ็กเกจจะถูกยกเลิกเมื่อสิ้นสุดรอบบิลปัจจุบัน ({formatDate(billingState.currentPeriodEnd)})
-          </p>
-        )}
-        {billingState.status === "past_due" && (
-          <p className="mt-4 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            มียอดค้างชำระ กรุณาอัปเดตวิธีชำระเงินผ่าน Customer Portal เพื่อใช้งานต่อเนื่อง
-          </p>
-        )}
-
-        {canManage && hasCustomer && (
-          <button
-            type="button"
-            onClick={openPortal}
-            disabled={pendingPlan !== null}
-            className="btn-secondary mt-4 disabled:opacity-40"
-          >
-            {pendingPlan === "portal" ? "กำลังเปิด..." : "จัดการการชำระเงิน (Customer Portal)"}
-          </button>
-        )}
       </section>
 
-      <section className="panel p-5">
-        <div className="mb-4">
-          <h2 className="panel-title">เลือกแพ็กเกจ</h2>
-          <p className="label-muted">อัปเกรด/ดาวน์เกรดผ่าน Stripe Checkout</p>
-        </div>
+      {result?.status === "verified" && (
+        <p className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          ยืนยันการชำระเงินสำเร็จ! ใช้งานได้ถึง {formatDate(result.newExpiry)}
+        </p>
+      )}
+      {result && result.status !== "verified" && (
+        <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {result.status === "duplicate" ? "สลิปนี้ถูกใช้ไปแล้ว" : `ตรวจสลิปไม่ผ่าน: ${result.reason ?? ""}`}
+        </p>
+      )}
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {PLAN_ORDER.map((plan) => {
-            const info = PLAN_INFO[plan];
-            const isCurrent = billingState.plan === plan;
-            const isEnterprise = plan === "enterprise";
-            return (
-              <div
-                key={plan}
-                className={`flex flex-col rounded-[var(--radius-lg)] border p-4 ${
-                  isCurrent
+      {canManage && !paymentConfigured && (
+        <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่าช่องทางรับชำระเงิน (PromptPay) กรุณาติดต่อผู้ดูแล
+        </p>
+      )}
+
+      {canManage && paymentConfigured && (
+        <section className="panel p-5">
+          <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            {PAID_TIERS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setSelectedPlan(t); setQr(null); }}
+                className={`rounded-[var(--radius-lg)] border p-4 text-left ${
+                  selectedPlan === t
                     ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)]"
                     : "border-[var(--border)] bg-[var(--surface-muted)]"
                 }`}
               >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[plan]}</p>
-                  {isCurrent && <span className="badge badge-brand">ปัจจุบัน</span>}
+                <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[t]}</p>
+                <p className="mt-1 text-xs text-[var(--muted)]">{TIER_DESC[t]}</p>
+                <p className="mt-2 text-xs text-[var(--ink-2)]">
+                  {DURATION_PRICES[t]["30d"].toLocaleString()} / เดือน
+                </p>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {(["30d", "1y"] as BillingDuration[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => { setDuration(d); setQr(null); }}
+                className={`min-h-11 rounded-md px-4 text-sm font-bold ${
+                  duration === d ? "btn-primary" : "btn-secondary"
+                }`}
+              >
+                {DURATION_LABELS[d]}
+              </button>
+            ))}
+            <span className="ml-auto text-lg font-extrabold text-[var(--tenant-primary-strong)]">
+              {price.toLocaleString()} บาท
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={generateQr}
+            disabled={busy}
+            className="btn-primary mt-4 disabled:opacity-40"
+          >
+            {busy ? "กำลังสร้าง..." : "สร้าง QR ชำระเงิน"}
+          </button>
+
+          {qr && (
+            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+              <p className="mb-2 text-sm font-bold text-[var(--ink)]">
+                โอน {amount?.toLocaleString()} บาท ไปยัง {recipientName ?? "บัญชีผู้รับ"}
+              </p>
+              {qr.type === "payload" && (
+                <div>
+                  <p className="label-muted mb-1">EMVCo Payload (สร้าง/สแกน QR จากสตริงนี้)</p>
+                  <textarea
+                    readOnly
+                    value={qr.payload}
+                    onFocus={(e) => e.currentTarget.select()}
+                    rows={3}
+                    className="form-input break-all font-mono text-xs"
+                  />
                 </div>
-                <p className="text-lg font-extrabold text-[var(--tenant-primary-strong)]">{info.price}</p>
-                <p className="mt-1 text-xs text-[var(--muted)]">{info.target}</p>
-                <ul className="mt-3 flex-1 space-y-1">
-                  {info.highlights.map((h) => (
-                    <li key={h} className="text-xs text-[var(--ink-2)]">• {h}</li>
-                  ))}
-                </ul>
-                <div className="mt-4">
-                  {isEnterprise ? (
-                    <a
-                      href="mailto:sales@storeos.app?subject=Enterprise%20Quote"
-                      className="btn-secondary w-full text-center text-xs"
-                    >
-                      ติดต่อฝ่ายขาย
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => startCheckout(plan)}
-                      disabled={!canManage || isCurrent || pendingPlan !== null}
-                      className="btn-primary w-full text-xs disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {pendingPlan === plan
-                        ? "กำลังเปิด..."
-                        : isCurrent
-                          ? "แพ็กเกจปัจจุบัน"
-                          : "เลือกแพ็กเกจนี้"}
-                    </button>
-                  )}
-                </div>
+              )}
+              {qr.type === "image" && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={qr.imagePath} alt="PromptPay QR" className="max-w-[240px] rounded-md border border-[var(--border)]" />
+              )}
+              {qr.type === "unconfigured" && (
+                <p className="text-sm text-amber-700">ยังไม่ได้ตั้งค่าช่องทางชำระเงิน</p>
+              )}
+
+              <div className="mt-4">
+                <p className="label-muted mb-1">อัปโหลดสลิปเพื่อยืนยันอัตโนมัติ</p>
+                {!slipVerificationReady && (
+                  <p className="mb-2 text-xs text-amber-700">
+                    ระบบตรวจสลิป (slip2go) ยังไม่พร้อม — การยืนยันอาจไม่สำเร็จ
+                  </p>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={busy}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSlip(f); }}
+                  className="text-sm"
+                />
               </div>
-            );
-          })}
-        </div>
-      </section>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -15,11 +15,15 @@ import {
   upsertStripeCustomer,
 } from "@/modules/billing/billing-service";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { isPromptPayActive } from "@/modules/billing/platform-settings";
 import type Stripe from "stripe";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  if (await isPromptPayActive()) {
+    return NextResponse.json({ error: "Stripe billing is disabled" }, { status: 404 });
+  }
   const sig = req.headers.get("stripe-signature") ?? "";
   const rawBody = Buffer.from(await req.arrayBuffer());
 

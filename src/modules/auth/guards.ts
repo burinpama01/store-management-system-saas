@@ -11,6 +11,8 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock, type FeatureKey } from "@/modules/billing/types";
 import { isOrganizationSuspended } from "@/modules/system/repository";
+import { isPaidTier, isSubscriptionCurrent } from "@/modules/billing/pricing";
+import { headers } from "next/headers";
 
 const ROLE_RANK: Record<Role, number> = {
   super_admin: 6,
@@ -75,6 +77,20 @@ export async function getOptionalResolvedCurrentPermissions(): Promise<{
   // Platform-suspended tenants block all members except super_admin.
   if (ctx.role !== "super_admin" && (await isOrganizationSuspended(ctx.organizationId))) {
     redirect("/suspended");
+  }
+
+  // Subscription-expiry gate (PromptPay pay-to-use model): a current paid plan is
+  // required to use the app. Billing/onboarding pages are exempt to allow renewal;
+  // super_admin is exempt as a platform operator.
+  if (ctx.role !== "super_admin") {
+    const path = (await headers()).get("x-pathname") ?? "";
+    const exempt = path.startsWith("/settings/billing") || path.startsWith("/onboarding");
+    if (!exempt) {
+      const state = await getOrganizationBillingState(ctx.organizationId);
+      const active =
+        !!state && isPaidTier(state.plan) && isSubscriptionCurrent(state.currentPeriodEnd);
+      if (!active) redirect("/settings/billing?expired=1");
+    }
   }
 
   return {

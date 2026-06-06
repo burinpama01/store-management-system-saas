@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
-import { getOrganizationBillingState, getStripeCustomerId } from "@/modules/billing/billing-service";
-import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
+import { getPlatformSettings } from "@/modules/billing/platform-settings";
+import { isPaidTier, isSubscriptionCurrent } from "@/modules/billing/pricing";
+import { isSlip2goConfigured } from "@/modules/billing/slip2go";
 import { BillingManager } from "./BillingManager";
 
 export const dynamic = "force-dynamic";
@@ -12,26 +15,21 @@ export default async function BillingSettingsPage() {
 
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
-  const features = getPlanFeatures(billingState);
-  const hasCustomer = Boolean(await getStripeCustomerId(ctx.organizationId));
+  const settings = await getPlatformSettings();
 
-  // Price IDs are server-only env values; the client only forwards them to the
-  // checkout API which re-validates them against the same allowlist.
-  const priceIds = {
-    starter: process.env.STRIPE_PRICE_STARTER ?? null,
-    standard: process.env.STRIPE_PRICE_STANDARD ?? null,
-    premium: process.env.STRIPE_PRICE_PREMIUM ?? null,
-    enterprise: process.env.STRIPE_PRICE_ENTERPRISE ?? null,
-  };
+  const active =
+    isPaidTier(billingState.plan) && isSubscriptionCurrent(billingState.currentPeriodEnd);
 
   return (
     <BillingManager
-      billingState={billingState}
-      features={features}
-      canManage={resolved.can("billing.manage")}
-      hasCustomer={hasCustomer}
-      priceIds={priceIds}
       orgName={ctx.orgName}
+      plan={billingState.plan}
+      currentPeriodEnd={billingState.currentPeriodEnd}
+      isActive={active}
+      canManage={resolved.can("billing.manage")}
+      paymentConfigured={Boolean(settings.promptpayId || settings.promptpayQrImagePath)}
+      recipientName={settings.promptpayName}
+      slipVerificationReady={isSlip2goConfigured()}
     />
   );
 }

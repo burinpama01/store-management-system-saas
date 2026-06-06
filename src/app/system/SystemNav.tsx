@@ -7,6 +7,7 @@ const TABS = [
   { href: "/system", label: "ภาพรวมแพลตฟอร์ม", exact: true },
   { href: "/system/tenants", label: "Tenants", exact: false },
   { href: "/system/audit", label: "Audit", exact: false },
+  { href: "/system/settings", label: "ตั้งค่า", exact: false },
 ];
 
 export function SystemNav() {

@@ -10,6 +10,7 @@ import {
   createCheckoutSession,
 } from "@/modules/billing/stripe-service";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { isPromptPayActive } from "@/modules/billing/platform-settings";
 
 const ALLOWED_PRICE_IDS = new Set([
   process.env.STRIPE_PRICE_STARTER,
@@ -20,6 +21,9 @@ const ALLOWED_PRICE_IDS = new Set([
 
 export async function POST(req: Request) {
   try {
+    if (await isPromptPayActive()) {
+      return NextResponse.json({ error: "Stripe billing is disabled" }, { status: 404 });
+    }
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

@@ -3,6 +3,87 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      platform_settings: {
+        Row: {
+          id: string;
+          billing_provider: "promptpay" | "stripe";
+          promptpay_id: string | null;
+          promptpay_name: string | null;
+          promptpay_qr_image_path: string | null;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          billing_provider?: "promptpay" | "stripe";
+          promptpay_id?: string | null;
+          promptpay_name?: string | null;
+          promptpay_qr_image_path?: string | null;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          billing_provider?: "promptpay" | "stripe";
+          promptpay_id?: string | null;
+          promptpay_name?: string | null;
+          promptpay_qr_image_path?: string | null;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      payment_submissions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          plan: "starter" | "standard" | "premium";
+          duration: "30d" | "1y";
+          amount_expected: number;
+          verified_amount: number | null;
+          slip_ref: string | null;
+          slip_image_path: string | null;
+          slip2go_raw: Json | null;
+          status: "pending" | "verified" | "rejected" | "duplicate";
+          reason: string | null;
+          submitted_by: string | null;
+          created_at: string;
+          verified_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          plan: "starter" | "standard" | "premium";
+          duration: "30d" | "1y";
+          amount_expected: number;
+          verified_amount?: number | null;
+          slip_ref?: string | null;
+          slip_image_path?: string | null;
+          slip2go_raw?: Json | null;
+          status?: "pending" | "verified" | "rejected" | "duplicate";
+          reason?: string | null;
+          submitted_by?: string | null;
+          created_at?: string;
+          verified_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          plan?: "starter" | "standard" | "premium";
+          duration?: "30d" | "1y";
+          amount_expected?: number;
+          verified_amount?: number | null;
+          slip_ref?: string | null;
+          slip_image_path?: string | null;
+          slip2go_raw?: Json | null;
+          status?: "pending" | "verified" | "rejected" | "duplicate";
+          reason?: string | null;
+          submitted_by?: string | null;
+          created_at?: string;
+          verified_at?: string | null;
+        };
+        Relationships: [];
+      };
       organizations: {
         Row: {
           id: string;
