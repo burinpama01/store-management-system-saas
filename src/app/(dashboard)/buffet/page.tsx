@@ -11,9 +11,9 @@ export default async function BuffetPage() {
   const { stores } = await getUserStores();
 
   const storeRow = stores.find((s) => s.id === ctx.storeId);
-  if (!storeRow?.buffet_enabled) redirect("/");
+  if (!storeRow?.buffet_enabled) redirect("/dashboard");
 
-  if (!resolved.can("orders.manage_qr")) redirect("/");
+  if (!resolved.can("orders.manage_qr")) redirect("/dashboard");
 
   const today = new Date().toISOString().split("T")[0];
 

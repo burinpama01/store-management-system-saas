@@ -16,7 +16,7 @@ export default async function AccountingPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("cashflow.view")) redirect("/");
+  if (!resolved.can("cashflow.view")) redirect("/dashboard");
 
   const params = await searchParams;
   const today = new Date().toISOString().split("T")[0];

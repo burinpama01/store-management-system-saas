@@ -15,7 +15,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (!storeContext) redirect("/login");
   const can = (permission: PermissionKey) => resolved.can(permission);
   const navItems = [
-    ...(can("dashboard.view") ? [{ href: "/", label: "ภาพรวม" }] : []),
+    ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.view") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
     ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),

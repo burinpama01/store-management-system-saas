@@ -29,7 +29,7 @@ export default async function AttendancePage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const { user, ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("attendance.clock")) redirect("/");
+  if (!resolved.can("attendance.clock")) redirect("/dashboard");
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ??
     DEFAULT_BILLING_STATE;

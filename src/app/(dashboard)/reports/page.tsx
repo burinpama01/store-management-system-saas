@@ -11,7 +11,7 @@ export default async function ReportsPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("reports.view")) redirect("/");
+  if (!resolved.can("reports.view")) redirect("/dashboard");
 
   const params = await searchParams;
   const today = new Date().toISOString().split("T")[0];

@@ -36,5 +36,5 @@ export async function setCurrentStore(storeId: string) {
     secure: process.env.NODE_ENV === "production",
     maxAge: 60 * 60 * 24 * 30,
   });
-  redirect("/");
+  redirect("/dashboard");
 }

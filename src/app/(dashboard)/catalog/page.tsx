@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("catalog.view")) redirect("/");
+  if (!resolved.can("catalog.view")) redirect("/dashboard");
 
   const [categoriesResult, productsResult, billingState] = await Promise.all([
     listCategories(ctx.storeId),

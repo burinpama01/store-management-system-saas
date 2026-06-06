@@ -17,7 +17,7 @@ export default async function SystemLayout({ children }: { children: ReactNode }
           <span className="page-title">StoreOS System</span>
         </div>
         <div className="flex-1" />
-        <Link href="/" className="btn-secondary text-xs">
+        <Link href="/dashboard" className="btn-secondary text-xs">
           กลับสู่ร้านค้า
         </Link>
         <span className="hidden text-xs text-[var(--muted)] sm:inline">{user.email}</span>

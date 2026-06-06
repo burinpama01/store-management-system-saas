@@ -35,5 +35,5 @@ export async function signIn(
     };
   }
 
-  redirect("/");
+  redirect("/dashboard");
 }

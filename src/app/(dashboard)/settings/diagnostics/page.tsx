@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DiagnosticsPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("settings.view")) redirect("/");
+  if (!resolved.can("settings.view")) redirect("/dashboard");
 
   const canRunDiagnostics =
     resolved.can("settings.manage_store") ||

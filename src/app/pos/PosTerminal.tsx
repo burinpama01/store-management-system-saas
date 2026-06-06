@@ -782,7 +782,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             <span className="text-xs text-[var(--muted)]">ขายหน้าร้าน · POS</span>
           </div>
           <span className="badge badge-success ml-auto">เชื่อมต่อปกติ</span>
-          <Link href="/" className="btn-secondary min-h-11 px-3 text-xs">
+          <Link href="/dashboard" className="btn-secondary min-h-11 px-3 text-xs">
             ← กลับ
           </Link>
         </header>

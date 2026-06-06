@@ -26,7 +26,7 @@ export default async function StockPage() {
 
   const { organizations, stores, memberships } = await getUserStores();
   const ctx = await resolveCurrentStore(stores, organizations, memberships);
-  if (!ctx) redirect("/");
+  if (!ctx) redirect("/dashboard");
 
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ??

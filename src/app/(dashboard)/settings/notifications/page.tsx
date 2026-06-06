@@ -34,7 +34,7 @@ const CHANNEL_LABELS: Record<NotificationChannel, string> = {
 
 export default async function NotificationSettingsPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("settings.view")) redirect("/");
+  if (!resolved.can("settings.view")) redirect("/dashboard");
 
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ??

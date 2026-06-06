@@ -58,7 +58,7 @@ export default async function OnboardingPage() {
           ))}
         </div>
 
-        <Link href="/" className="btn-primary mt-6 inline-block">
+        <Link href="/dashboard" className="btn-primary mt-6 inline-block">
           ไปที่แดชบอร์ด
         </Link>
       </div>

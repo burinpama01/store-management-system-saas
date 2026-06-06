@@ -12,10 +12,10 @@ export const dynamic = "force-dynamic";
 
 export default async function StoreSettingsPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("settings.view")) redirect("/");
+  if (!resolved.can("settings.view")) redirect("/dashboard");
 
   const storeRes = await getStore(ctx.storeId);
-  if (!storeRes.data) redirect("/");
+  if (!storeRes.data) redirect("/dashboard");
 
   const canEdit = resolved.can("settings.manage_store");
   const billingState =

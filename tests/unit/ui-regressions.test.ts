@@ -80,7 +80,7 @@ describe("UX/UI regression guards", () => {
   });
 
   it("dashboard root redirects non-dashboard users to a first allowed route", () => {
-    const source = read("src/app/(dashboard)/page.tsx");
+    const source = read("src/app/(dashboard)/dashboard/page.tsx");
 
     expect(source).toContain("firstAllowedRoute");
     expect(source).toContain('{ permission: "pos.use", href: "/pos" }');
@@ -141,7 +141,7 @@ describe("UX/UI regression guards", () => {
   });
 
   it("dashboard and reports tables can scroll horizontally on narrow screens", () => {
-    const dashboard = read("src/app/(dashboard)/page.tsx");
+    const dashboard = read("src/app/(dashboard)/dashboard/page.tsx");
     const reports = read("src/app/(dashboard)/reports/ReportsManager.tsx");
 
     expect(dashboard).toContain("overflow-x-auto");
@@ -369,7 +369,7 @@ describe("UX/UI regression guards", () => {
   it("dashboard route access guards use the same permission source as navigation", () => {
     const layout = read("src/app/(dashboard)/layout.tsx");
     const pages = {
-      dashboard: read("src/app/(dashboard)/page.tsx"),
+      dashboard: read("src/app/(dashboard)/dashboard/page.tsx"),
       catalog: read("src/app/(dashboard)/catalog/page.tsx"),
       stock: read("src/app/(dashboard)/stock/page.tsx"),
       pos: read("src/app/pos/page.tsx"),
@@ -423,7 +423,7 @@ describe("UX/UI regression guards", () => {
 
   it("dashboard page layouts keep responsive shells, scrollable data, and stable dialog surfaces", () => {
     const sources = {
-      dashboard: read("src/app/(dashboard)/page.tsx"),
+      dashboard: read("src/app/(dashboard)/dashboard/page.tsx"),
       catalog: read("src/app/(dashboard)/catalog/CatalogManager.tsx"),
       stock: read("src/app/(dashboard)/stock/page.tsx"),
       accounting: read("src/app/(dashboard)/accounting/AccountingManager.tsx"),
@@ -543,7 +543,7 @@ describe("UX/UI regression guards", () => {
   });
 
   it("dashboard KPI queries require dashboard.view before loading sensitive metrics", () => {
-    const source = read("src/app/(dashboard)/page.tsx");
+    const source = read("src/app/(dashboard)/dashboard/page.tsx");
     const guardIndex = source.indexOf('resolved.can("dashboard.view")');
     const dashboardQueryIndex = source.indexOf("getDashboardData(ctx.storeId)");
     const cashQueryIndex = source.indexOf("getLatestCashBalance(ctx.storeId)");
@@ -555,7 +555,7 @@ describe("UX/UI regression guards", () => {
   });
 
   it("dashboard and reports pages use resolved permissions with overrides", () => {
-    const dashboard = read("src/app/(dashboard)/page.tsx");
+    const dashboard = read("src/app/(dashboard)/dashboard/page.tsx");
     const reports = read("src/app/(dashboard)/reports/page.tsx");
 
     expect(dashboard).toContain("getResolvedCurrentPermissions");
