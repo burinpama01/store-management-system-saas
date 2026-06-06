@@ -7,7 +7,7 @@ import {
 } from "@/modules/billing/pricing";
 import { parseSlip2goResponse } from "@/modules/billing/slip2go";
 import { evaluatePaymentVerification } from "@/modules/billing/subscription-service";
-import { receiverMatches, last4Digits, resolveSubscriptionQr, looksLikePromptPayPayload } from "@/modules/billing/promptpay-provider";
+import { receiverMatches, last4Digits, resolveSubscriptionQr, looksLikePromptPayPayload, injectAmountIntoStaticPayload } from "@/modules/billing/promptpay-provider";
 import type { Slip2goVerification } from "@/modules/billing/slip2go";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
 
@@ -139,11 +139,35 @@ describe("promptpay-provider", () => {
     expect(dynamic.type).toBe("payload");
     expect(dynamic.type === "payload" && dynamic.amountEmbedded).toBe(true);
 
-    const staticQr = resolveSubscriptionQr({ ...base, promptpayStaticPayload: "000201...payload" }, 690);
+    const staticPayload = "00020101021129390016A000000677010111031500499907032586453037645802TH6304D564";
+    const staticQr = resolveSubscriptionQr({ ...base, promptpayStaticPayload: staticPayload }, 690);
     expect(staticQr.type).toBe("payload");
-    expect(staticQr.type === "payload" && staticQr.amountEmbedded).toBe(false);
+    // A valid static payload gets the amount injected -> amountEmbedded true.
+    expect(staticQr.type === "payload" && staticQr.amountEmbedded).toBe(true);
 
     expect(resolveSubscriptionQr(base, 690).type).toBe("unconfigured");
+  });
+
+  it("injectAmountIntoStaticPayload embeds amount + valid CRC, leaves unparseable as null", () => {
+    const staticPayload = "00020101021129390016A000000677010111031500499907032586453037645802TH6304D564";
+    const out = injectAmountIntoStaticPayload(staticPayload, 690);
+    expect(out).not.toBeNull();
+    const payload = out as string;
+    // POI switched to dynamic (010212) and amount tag 54 present (690.00).
+    expect(payload).toContain("010212");
+    expect(payload).toContain("5406690.00");
+    expect(looksLikePromptPayPayload(payload)).toBe(true);
+    // CRC (last 4) must match recomputed checksum over body incl. "6304".
+    const crc16 = (data: string) => {
+      let c = 0xffff;
+      for (let i = 0; i < data.length; i++) {
+        c ^= data.charCodeAt(i) << 8;
+        for (let j = 0; j < 8; j++) { c = c & 0x8000 ? (c << 1) ^ 0x1021 : c << 1; c &= 0xffff; }
+      }
+      return c.toString(16).toUpperCase().padStart(4, "0");
+    };
+    expect(payload.slice(-4)).toBe(crc16(payload.slice(0, -4)));
+    expect(injectAmountIntoStaticPayload("not a payload", 690)).toBeNull();
   });
 
   it("looksLikePromptPayPayload validates EMVCo PromptPay strings", () => {
