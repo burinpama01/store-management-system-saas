@@ -27,7 +27,7 @@ export default async function BillingSettingsPage() {
       currentPeriodEnd={billingState.currentPeriodEnd}
       isActive={active}
       canManage={resolved.can("billing.manage")}
-      paymentConfigured={Boolean(settings.promptpayId || settings.promptpayQrImagePath)}
+      paymentConfigured={Boolean(settings.promptpayId || settings.promptpayStaticPayload)}
       recipientName={settings.promptpayName}
       slipVerificationReady={isSlip2goConfigured()}
     />

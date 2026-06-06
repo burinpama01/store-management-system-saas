@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
 import { updatePlatformSettingsAction, type PlatformSettingsState } from "./actions";
 
-const INITIAL: PlatformSettingsState = { error: null, ok: false };
+const INITIAL: PlatformSettingsState = { error: null, ok: false, decodedPayload: null };
 
 export function SystemSettingsForm({
   settings,
@@ -65,18 +65,31 @@ export function SystemSettingsForm({
         </div>
 
         <div>
-          <label className="field-label">URL รูป QR Code (สำหรับบัญชีที่ไม่มี PromptPay)</label>
-          <input
-            type="url"
-            name="promptpayQrImagePath"
-            defaultValue={settings.promptpayQrImagePath ?? ""}
-            placeholder="https://.../qr.png"
-            className="form-input"
-          />
+          <label className="field-label">อัปโหลดรูป QR Code (สำหรับบัญชีที่ไม่มี PromptPay ID)</label>
+          <input type="file" name="qrImage" accept="image/*" className="text-sm" />
           <p className="mt-1 text-xs text-[var(--muted)]">
-            ใช้เมื่อไม่ได้กรอก PromptPay ID — แสดงรูป QR นี้แทน
+            ระบบจะถอดรหัส (decode) รูปเพื่อดึง EMVCo Payload ออกมาเก็บไว้ใช้รับชำระ
           </p>
+          {settings.promptpayStaticPayload && (
+            <div className="mt-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-2">
+              <p className="label-muted">Payload ที่เก็บไว้ปัจจุบัน</p>
+              <p className="break-all font-mono text-xs text-[var(--ink-2)]">
+                {settings.promptpayStaticPayload}
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs text-[var(--ink-2)]">
+                <input type="checkbox" name="clearStaticPayload" value="1" />
+                ล้าง payload นี้ (เปลี่ยนไปใช้ PromptPay ID)
+              </label>
+            </div>
+          )}
         </div>
+
+        {state.decodedPayload && (
+          <div className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 p-2">
+            <p className="text-xs font-bold text-emerald-700">ดึง EMVCo Payload จากรูปสำเร็จ</p>
+            <p className="break-all font-mono text-xs text-emerald-800">{state.decodedPayload}</p>
+          </div>
+        )}
 
         <button type="submit" disabled={pending} className="btn-primary disabled:opacity-40">
           {pending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}

@@ -7,7 +7,7 @@ import {
 } from "@/modules/billing/pricing";
 import { parseSlip2goResponse } from "@/modules/billing/slip2go";
 import { evaluatePaymentVerification } from "@/modules/billing/subscription-service";
-import { receiverMatches, last4Digits, resolveSubscriptionQr } from "@/modules/billing/promptpay-provider";
+import { receiverMatches, last4Digits, resolveSubscriptionQr, looksLikePromptPayPayload } from "@/modules/billing/promptpay-provider";
 import type { Slip2goVerification } from "@/modules/billing/slip2go";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
 
@@ -128,15 +128,29 @@ describe("promptpay-provider", () => {
     expect(receiverMatches("0812341234", "xxx9999")).toBe(false);
   });
 
-  it("resolveSubscriptionQr prefers payload, then image, then unconfigured", () => {
+  it("resolveSubscriptionQr prefers dynamic id, then static payload, then unconfigured", () => {
     const base: PlatformPromptPaySettings = {
       billingProvider: "promptpay",
       promptpayId: null,
       promptpayName: "X",
-      promptpayQrImagePath: null,
+      promptpayStaticPayload: null,
     };
-    expect(resolveSubscriptionQr({ ...base, promptpayId: "0812345678" }, 690).type).toBe("payload");
-    expect(resolveSubscriptionQr({ ...base, promptpayQrImagePath: "https://x/q.png" }, 690).type).toBe("image");
+    const dynamic = resolveSubscriptionQr({ ...base, promptpayId: "0812345678" }, 690);
+    expect(dynamic.type).toBe("payload");
+    expect(dynamic.type === "payload" && dynamic.amountEmbedded).toBe(true);
+
+    const staticQr = resolveSubscriptionQr({ ...base, promptpayStaticPayload: "000201...payload" }, 690);
+    expect(staticQr.type).toBe("payload");
+    expect(staticQr.type === "payload" && staticQr.amountEmbedded).toBe(false);
+
     expect(resolveSubscriptionQr(base, 690).type).toBe("unconfigured");
+  });
+
+  it("looksLikePromptPayPayload validates EMVCo PromptPay strings", () => {
+    // A real PromptPay payload contains the app id and TH/THB markers.
+    const good = "00020101021129370016A00000067701011101130066812345678530376463041234";
+    expect(looksLikePromptPayPayload(good)).toBe(true);
+    expect(looksLikePromptPayPayload("hello world")).toBe(false);
+    expect(looksLikePromptPayPayload("0002")).toBe(false);
   });
 });

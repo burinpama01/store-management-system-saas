@@ -8,9 +8,10 @@ create table if not exists platform_settings (
   id                       text primary key default 'singleton',
   billing_provider         text not null default 'promptpay'
                              check (billing_provider in ('promptpay', 'stripe')),
-  promptpay_id             text,                 -- phone or national/tax id
+  promptpay_id             text,                 -- phone or national/tax id (dynamic QR w/ amount)
   promptpay_name           text,
-  promptpay_qr_image_path  text,                 -- storage path for static QR (accounts w/o PromptPay)
+  promptpay_static_payload text,                 -- EMVCo payload decoded from an uploaded QR image
+                                                 -- (accounts w/o a PromptPay id)
   updated_by               uuid references auth.users(id) on delete set null,
   updated_at               timestamptz not null default now(),
   constraint platform_settings_singleton check (id = 'singleton')

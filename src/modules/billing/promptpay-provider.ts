@@ -2,14 +2,24 @@ import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import type { PlatformPromptPaySettings } from "./platform-settings";
 
 export type SubscriptionQr =
-  | { type: "payload"; payload: string; recipientName: string | null }
-  | { type: "image"; imagePath: string; recipientName: string | null }
+  | { type: "payload"; payload: string; amountEmbedded: boolean; recipientName: string | null }
   | { type: "unconfigured" };
+
+/** Heuristic check that a decoded string is an EMVCo / PromptPay payload. */
+export function looksLikePromptPayPayload(payload: string): boolean {
+  const s = payload.trim();
+  if (s.length < 20) return false;
+  // EMVCo payloads start with the payload-format-indicator TLV "0002" + version.
+  if (!s.startsWith("0002")) return false;
+  // PromptPay application id or a Thai-domestic QR (currency 764 / country TH).
+  return s.includes("A000000677010111") || s.includes("5303764") || s.includes("5802TH");
+}
 
 /**
  * Resolves how to present the PromptPay QR for a subscription payment:
  * - a dynamic EMVCo payload (amount-embedded) when a PromptPay id is configured;
- * - a static uploaded QR image for accounts without PromptPay;
+ * - the EMVCo payload decoded from the super admin's uploaded QR image
+ *   (static, customer enters the amount) when only that is configured;
  * - unconfigured when the super admin has set neither.
  */
 export function resolveSubscriptionQr(
@@ -20,13 +30,15 @@ export function resolveSubscriptionQr(
     return {
       type: "payload",
       payload: buildPromptPayPayload({ recipientId: settings.promptpayId, amount }),
+      amountEmbedded: true,
       recipientName: settings.promptpayName,
     };
   }
-  if (settings.promptpayQrImagePath) {
+  if (settings.promptpayStaticPayload) {
     return {
-      type: "image",
-      imagePath: settings.promptpayQrImagePath,
+      type: "payload",
+      payload: settings.promptpayStaticPayload,
+      amountEmbedded: false,
       recipientName: settings.promptpayName,
     };
   }

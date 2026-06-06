@@ -215,11 +215,12 @@ export function BillingManager({
                     rows={3}
                     className="form-input break-all font-mono text-xs"
                   />
+                  {!qr.amountEmbedded && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      QR นี้ไม่ได้ระบุยอด กรุณาโอนยอด {amount?.toLocaleString()} บาท ด้วยตนเอง
+                    </p>
+                  )}
                 </div>
-              )}
-              {qr.type === "image" && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={qr.imagePath} alt="PromptPay QR" className="max-w-[240px] rounded-md border border-[var(--border)]" />
               )}
               {qr.type === "unconfigured" && (
                 <p className="text-sm text-amber-700">ยังไม่ได้ตั้งค่าช่องทางชำระเงิน</p>

@@ -9,7 +9,7 @@ export interface Database {
           billing_provider: "promptpay" | "stripe";
           promptpay_id: string | null;
           promptpay_name: string | null;
-          promptpay_qr_image_path: string | null;
+          promptpay_static_payload: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -18,7 +18,7 @@ export interface Database {
           billing_provider?: "promptpay" | "stripe";
           promptpay_id?: string | null;
           promptpay_name?: string | null;
-          promptpay_qr_image_path?: string | null;
+          promptpay_static_payload?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -27,7 +27,7 @@ export interface Database {
           billing_provider?: "promptpay" | "stripe";
           promptpay_id?: string | null;
           promptpay_name?: string | null;
-          promptpay_qr_image_path?: string | null;
+          promptpay_static_payload?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
