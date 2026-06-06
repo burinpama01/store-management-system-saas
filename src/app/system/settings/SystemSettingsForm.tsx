@@ -1,10 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
+import { ProgressBar } from "@/shared/components/ui";
+import { uploadWithProgress } from "@/shared/services/upload";
 import { updatePlatformSettingsAction, type PlatformSettingsState } from "./actions";
 
-const INITIAL: PlatformSettingsState = { error: null, ok: false, decodedPayload: null };
+const INITIAL: PlatformSettingsState = { error: null, ok: false };
 
 export function SystemSettingsForm({
   settings,
@@ -13,7 +16,37 @@ export function SystemSettingsForm({
   settings: PlatformPromptPaySettings;
   slipReady: boolean;
 }) {
+  const router = useRouter();
   const [state, formAction, pending] = useActionState(updatePlatformSettingsAction, INITIAL);
+
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [decoded, setDecoded] = useState<string | null>(null);
+
+  async function handleQrUpload(file: File) {
+    setUploadError(null);
+    setDecoded(null);
+    setUploadPercent(0);
+    setUploadPhase("uploading");
+    const fd = new FormData();
+    fd.set("qrImage", file);
+    const res = await uploadWithProgress<{ ok?: boolean; payload?: string; error?: string }>(
+      "/api/system/promptpay-qr",
+      fd,
+      (p) => {
+        setUploadPercent(p);
+        if (p >= 100) setUploadPhase("processing");
+      },
+    );
+    setUploadPhase("idle");
+    if (!res.ok || !res.data?.ok) {
+      setUploadError(res.data?.error ?? "อัปโหลด/ถอดรหัส QR ไม่สำเร็จ");
+      return;
+    }
+    setDecoded(res.data.payload ?? null);
+    router.refresh();
+  }
 
   return (
     <section className="panel max-w-2xl p-5">
@@ -64,30 +97,14 @@ export function SystemSettingsForm({
           />
         </div>
 
-        <div>
-          <label className="field-label">อัปโหลดรูป QR Code (สำหรับบัญชีที่ไม่มี PromptPay ID)</label>
-          <input type="file" name="qrImage" accept="image/*" className="text-sm" />
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            ระบบจะถอดรหัส (decode) รูปเพื่อดึง EMVCo Payload ออกมาเก็บไว้ใช้รับชำระ
-          </p>
-          {settings.promptpayStaticPayload && (
-            <div className="mt-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-2">
-              <p className="label-muted">Payload ที่เก็บไว้ปัจจุบัน</p>
-              <p className="break-all font-mono text-xs text-[var(--ink-2)]">
-                {settings.promptpayStaticPayload}
-              </p>
-              <label className="mt-2 flex items-center gap-2 text-xs text-[var(--ink-2)]">
-                <input type="checkbox" name="clearStaticPayload" value="1" />
-                ล้าง payload นี้ (เปลี่ยนไปใช้ PromptPay ID)
-              </label>
-            </div>
-          )}
-        </div>
-
-        {state.decodedPayload && (
-          <div className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 p-2">
-            <p className="text-xs font-bold text-emerald-700">ดึง EMVCo Payload จากรูปสำเร็จ</p>
-            <p className="break-all font-mono text-xs text-emerald-800">{state.decodedPayload}</p>
+        {settings.promptpayStaticPayload && (
+          <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-2">
+            <p className="label-muted">Payload (จาก QR ที่อัปโหลด) ที่ใช้รับเงินปัจจุบัน</p>
+            <p className="break-all font-mono text-xs text-[var(--ink-2)]">{settings.promptpayStaticPayload}</p>
+            <label className="mt-2 flex items-center gap-2 text-xs text-[var(--ink-2)]">
+              <input type="checkbox" name="clearStaticPayload" value="1" />
+              ล้าง payload นี้ (เปลี่ยนไปใช้ PromptPay ID)
+            </label>
           </div>
         )}
 
@@ -95,6 +112,39 @@ export function SystemSettingsForm({
           {pending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
         </button>
       </form>
+
+      <div className="mt-6 border-t border-[var(--border)] pt-5">
+        <label className="field-label">อัปโหลดรูป QR Code (สำหรับบัญชีที่ไม่มี PromptPay ID)</label>
+        <p className="mb-2 text-xs text-[var(--muted)]">
+          ระบบจะถอดรหัส (decode) รูปเพื่อดึง EMVCo Payload และฝังยอดเงินตามแพ็กเกจให้อัตโนมัติ
+        </p>
+        <input
+          type="file"
+          accept="image/*"
+          disabled={uploadPhase !== "idle"}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleQrUpload(f);
+          }}
+          className="text-sm"
+        />
+
+        {uploadPhase === "uploading" && (
+          <div className="mt-3 max-w-sm">
+            <ProgressBar percent={uploadPercent} label="กำลังอัปโหลดรูป" />
+          </div>
+        )}
+        {uploadPhase === "processing" && (
+          <p className="mt-3 text-sm text-[var(--muted)]">กำลังถอดรหัส QR...</p>
+        )}
+        {uploadError && <p className="alert-danger mt-3">{uploadError}</p>}
+        {decoded && (
+          <div className="mt-3 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 p-2">
+            <p className="text-xs font-bold text-emerald-700">ดึง EMVCo Payload จากรูปสำเร็จ</p>
+            <p className="break-all font-mono text-xs text-emerald-800">{decoded}</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

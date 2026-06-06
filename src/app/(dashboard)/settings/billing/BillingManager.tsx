@@ -12,7 +12,9 @@ import {
   type PaidTier,
 } from "@/modules/billing/pricing";
 import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
-import { getPaymentQrAction, submitPaymentAction } from "./actions";
+import { ProgressBar } from "@/shared/components/ui";
+import { uploadWithProgress } from "@/shared/services/upload";
+import { getPaymentQrAction } from "./actions";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -27,14 +29,6 @@ const TIER_DESC: Record<PaidTier, string> = {
   standard: "+ บุฟเฟต์, สต็อก, printer ขั้นสูง",
   premium: "+ QR ordering, LINE, GPS, commission",
 };
-
-async function fileToBase64(file: File): Promise<string> {
-  const buf = await file.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
 
 export function BillingManager({
   orgName,
@@ -65,6 +59,8 @@ export function BillingManager({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ status: string; reason: string | null; newExpiry: string | null } | null>(null);
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
+  const [uploadPercent, setUploadPercent] = useState(0);
 
   const price = DURATION_PRICES[selectedPlan][duration];
 
@@ -85,17 +81,36 @@ export function BillingManager({
   async function handleSlip(file: File) {
     setError(null);
     setResult(null);
-    setBusy(true);
-    try {
-      const base64 = await fileToBase64(file);
-      const res = await submitPaymentAction({ plan: selectedPlan, duration, slipImageBase64: base64 });
-      if (res.error) setError(res.error);
-      else setResult({ status: res.status, reason: res.reason, newExpiry: res.newExpiry });
-    } catch {
-      setError("อ่านไฟล์สลิปไม่สำเร็จ");
-    } finally {
-      setBusy(false);
+    setUploadPercent(0);
+    setUploadPhase("uploading");
+    const fd = new FormData();
+    fd.set("plan", selectedPlan);
+    fd.set("duration", duration);
+    fd.set("slip", file);
+    const res = await uploadWithProgress<{
+      ok?: boolean;
+      status?: string;
+      reason?: string | null;
+      newExpiry?: string | null;
+      error?: string;
+    }>("/api/billing/verify-slip", fd, (p) => {
+      setUploadPercent(p);
+      if (p >= 100) setUploadPhase("processing");
+    });
+    setUploadPhase("idle");
+    if (!res.ok || !res.data) {
+      setError(res.data?.error ?? "ตรวจสลิปไม่สำเร็จ");
+      return;
     }
+    if (res.data.error) {
+      setError(res.data.error);
+      return;
+    }
+    setResult({
+      status: res.data.status ?? "rejected",
+      reason: res.data.reason ?? null,
+      newExpiry: res.data.newExpiry ?? null,
+    });
   }
 
   return (
@@ -236,10 +251,18 @@ export function BillingManager({
                 <input
                   type="file"
                   accept="image/*"
-                  disabled={busy}
+                  disabled={uploadPhase !== "idle"}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSlip(f); }}
                   className="text-sm"
                 />
+                {uploadPhase === "uploading" && (
+                  <div className="mt-3">
+                    <ProgressBar percent={uploadPercent} label="กำลังอัปโหลดสลิป" />
+                  </div>
+                )}
+                {uploadPhase === "processing" && (
+                  <p className="mt-3 text-sm text-[var(--muted)]">กำลังตรวจสอบสลิปกับ slip2go...</p>
+                )}
               </div>
             </div>
           )}

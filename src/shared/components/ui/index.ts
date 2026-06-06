@@ -4,3 +4,5 @@ export { Table } from "./Table";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { ModalDialog } from "./ModalDialog";
 export { Badge } from "./Badge";
+export { ProgressBar } from "./ProgressBar";
+export { Skeleton, SkeletonText, PageSkeleton } from "./Skeleton";

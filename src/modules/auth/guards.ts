@@ -84,7 +84,10 @@ export async function getOptionalResolvedCurrentPermissions(): Promise<{
   // super_admin is exempt as a platform operator.
   if (ctx.role !== "super_admin") {
     const path = (await headers()).get("x-pathname") ?? "";
-    const exempt = path.startsWith("/settings/billing") || path.startsWith("/onboarding");
+    const exempt =
+      path.startsWith("/settings/billing") ||
+      path.startsWith("/onboarding") ||
+      path.startsWith("/api/");
     if (!exempt) {
       const state = await getOrganizationBillingState(ctx.organizationId);
       const active =
