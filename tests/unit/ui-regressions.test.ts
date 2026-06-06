@@ -401,7 +401,7 @@ describe("UX/UI regression guards", () => {
     expect(pages.dashboard).toContain('resolved.can("dashboard.view")');
     expect(pages.catalog).toContain('resolved.can("catalog.view")');
     expect(pages.stock).toContain('requirePermission("stock.manage")');
-    expect(pages.pos).toContain('requirePermission("pos.use")');
+    expect(pages.pos).toContain('resolved.can("pos.use")');
     expect(pages.accounting).toContain('resolved.can("cashflow.view")');
     expect(pages.reports).toContain('resolved.can("reports.view")');
     expect(pages.attendance).toContain('resolved.can("attendance.clock")');
@@ -414,7 +414,7 @@ describe("UX/UI regression guards", () => {
     expect(pages.notifications).toContain('resolved.can("settings.view")');
 
     for (const [name, source] of Object.entries(pages)) {
-      if (name === "stock" || name === "pos") continue;
+      if (name === "stock") continue;
       expect(source, name).toContain("getResolvedCurrentPermissions");
       expect(source, name).not.toContain("resolvePermissions(ctx.role, [],");
     }
@@ -478,18 +478,23 @@ describe("UX/UI regression guards", () => {
     expect(source).toContain("รูปเมนู");
   });
 
-  it("settings diagnostics includes safe test buttons", () => {
+  it("settings test buttons live in their respective tabs (no combined diagnostics tab)", () => {
     const nav = read("src/app/(dashboard)/settings/SettingsNav.tsx");
-    const page = read("src/app/(dashboard)/settings/diagnostics/page.tsx");
-    const panel = read("src/app/(dashboard)/settings/diagnostics/DiagnosticsPanel.tsx");
+    const notifPage = read("src/app/(dashboard)/settings/notifications/page.tsx");
+    const notifTest = read("src/app/(dashboard)/settings/notifications/NotificationTest.tsx");
+    const receiptPage = read("src/app/(dashboard)/settings/receipt/page.tsx");
+    const receiptTests = read("src/app/(dashboard)/settings/receipt/ReceiptTests.tsx");
 
-    expect(nav).toContain("/settings/diagnostics");
-    expect(page).toContain("settings.view");
-    expect(panel).toContain("เทส notifications");
-    expect(panel).toContain("เทสปริ้นใบเสร็จ");
-    expect(panel).toContain("เทส QR PromptPay");
-    expect(panel).toContain("เทสเครื่องปริ้น");
-    expect(panel).toContain("ไม่สร้าง order/payment จริง");
+    // The combined diagnostics tab is removed; tests live in their own tabs.
+    expect(nav).not.toContain("/settings/diagnostics");
+
+    expect(notifPage).toContain("NotificationTest");
+    expect(notifTest).toContain("runNotificationDiagnosticAction");
+
+    expect(receiptPage).toContain("ReceiptTests");
+    expect(receiptTests).toContain("ทดสอบพิมพ์ใบเสร็จ");
+    expect(receiptTests).toContain("ทดสอบ QR PromptPay");
+    expect(receiptTests).toContain("ทดสอบเครื่องพิมพ์");
   });
 
   it("settings notifications exposes event/channel matrix without secrets", () => {

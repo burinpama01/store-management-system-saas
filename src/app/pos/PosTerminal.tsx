@@ -7,6 +7,7 @@ import type { Cart, CartItem } from "@/modules/pos/types";
 import { emptyCart, addToCart, updateQuantity, removeFromCart } from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
 import { submitOrderAction, collectPaymentAction } from "./actions";
+import { signOut } from "../(dashboard)/actions";
 import type { ReceiptSettings } from "@/modules/stores/types";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
 
@@ -26,6 +27,7 @@ interface Props {
   categories: Category[];
   products: Product[];
   receiptSettings: ReceiptSettings | null;
+  exitHref?: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -680,7 +682,7 @@ function ReceiptPanel({
 
 // ─── Main POS Terminal ────────────────────────────────────────────
 
-export function PosTerminal({ storeId, storeName, categories, products, receiptSettings }: Props) {
+export function PosTerminal({ storeId, storeName, categories, products, receiptSettings, exitHref }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [phase, setPhase] = useState<Phase>("ordering");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
@@ -782,9 +784,17 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             <span className="text-xs text-[var(--muted)]">ขายหน้าร้าน · POS</span>
           </div>
           <span className="badge badge-success ml-auto">เชื่อมต่อปกติ</span>
-          <Link href="/dashboard" className="btn-secondary min-h-11 px-3 text-xs">
-            ← กลับ
-          </Link>
+          {exitHref ? (
+            <Link href={exitHref} className="btn-secondary min-h-11 px-3 text-xs">
+              ← กลับ
+            </Link>
+          ) : (
+            <form action={signOut}>
+              <button type="submit" className="btn-secondary min-h-11 px-3 text-xs">
+                ออกจากระบบ
+              </button>
+            </form>
+          )}
         </header>
 
         {/* Category tabs */}

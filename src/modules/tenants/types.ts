@@ -110,7 +110,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "orders.manage_qr",
   ],
   cashier: [
-    "dashboard.view",
     "pos.use",
     "pos.discount",
     "catalog.view",

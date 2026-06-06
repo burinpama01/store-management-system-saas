@@ -129,64 +129,79 @@ export function AttendanceManager({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-900">การเข้างาน</h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">การเข้างาน</h1>
+          <p className="page-kicker">ลงเวลาเข้า-ออกงาน และดูสรุปชั่วโมงทำงาน</p>
+        </div>
+      </div>
 
-      {/* Clock widget */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 max-w-sm">
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">สถานะวันนี้</p>
+      {/* Alert: ยังไม่ได้เข้างานวันนี้ */}
+      {!todayRecord && (
+        <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border border-amber-300 bg-amber-50 p-4">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-amber-100 text-2xl">⏰</span>
+          <div className="min-w-0 flex-1">
+            <p className="font-extrabold text-amber-900">คุณยังไม่ได้ลงชื่อเข้างานวันนี้</p>
+            <p className="text-sm text-amber-800">กดปุ่มด้านขวาเพื่อเริ่มบันทึกเวลาทำงานของวันนี้</p>
+          </div>
+          <button onClick={handleClockIn} disabled={clocking} className="btn-primary shrink-0 disabled:opacity-40">
+            {clocking ? "กำลังบันทึก..." : "ลงชื่อเข้างาน"}
+          </button>
+        </div>
+      )}
 
-        {!todayRecord && (
-          <p className="text-sm text-gray-500 mb-3">ยังไม่ได้ลงชื่อเข้างาน</p>
-        )}
+      {/* Clock card */}
+      <section className="panel max-w-md p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="label-muted">สถานะวันนี้</p>
+          <span className={`badge ${isClockedIn ? "badge-success" : isClockedOut ? "badge" : "badge-warning"}`}>
+            {isClockedIn ? "กำลังทำงาน" : isClockedOut ? "ออกงานแล้ว" : "ยังไม่เข้างาน"}
+          </span>
+        </div>
+
         {isClockedIn && todayRecord && (
-          <p className="text-sm text-green-700 font-medium mb-3">
-            เข้างานแล้ว · {fmtTime(todayRecord.clockInAt)} น.
+          <p className="mb-3 text-2xl font-extrabold text-[var(--ink)]">
+            เข้างาน {fmtTime(todayRecord.clockInAt)} น.
             {todayRecord.clockInLocationLabel && (
-              <span className="text-xs text-gray-400 font-normal ml-1">
-                ({todayRecord.clockInLocationLabel})
+              <span className="ml-2 align-middle text-xs font-normal text-[var(--muted)]">
+                📍 {todayRecord.clockInLocationLabel}
               </span>
             )}
           </p>
         )}
         {isClockedOut && todayRecord && (
-          <p className="text-sm text-gray-500 mb-3">
-            ออกงานแล้ว · {fmtTime(todayRecord.clockInAt)}–{fmtTime(todayRecord.clockOutAt!)} น.
-            &nbsp;({fmtDuration(todayRecord.clockInAt, todayRecord.clockOutAt)})
+          <p className="mb-3 text-lg font-bold text-[var(--ink-2)]">
+            {fmtTime(todayRecord.clockInAt)}–{fmtTime(todayRecord.clockOutAt!)} น.
+            <span className="ml-2 text-sm font-normal text-[var(--muted)]">
+              (รวม {fmtDuration(todayRecord.clockInAt, todayRecord.clockOutAt)})
+            </span>
           </p>
         )}
 
-        {clockError && (
-          <p className="text-xs text-red-600 mb-2 bg-red-50 border border-red-200 rounded px-2 py-1">
-            {clockError}
+        {clockError && <p className="alert-danger mb-3">{clockError}</p>}
+
+        {!isClockedIn && !isClockedOut && (
+          <button onClick={handleClockIn} disabled={clocking} className="btn-primary w-full disabled:opacity-40">
+            {clocking ? "กำลังบันทึก..." : "ลงชื่อเข้างาน"}
+          </button>
+        )}
+        {isClockedIn && (
+          <button onClick={handleClockOut} disabled={clocking} className="btn-primary w-full disabled:opacity-40">
+            {clocking ? "กำลังบันทึก..." : "ลงชื่อออกงาน"}
+          </button>
+        )}
+        {isClockedOut && (
+          <p className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-center text-sm text-[var(--muted)]">
+            ลงเวลาครบแล้วสำหรับวันนี้ ขอบคุณค่ะ
           </p>
         )}
 
-        <div className="flex gap-2">
-          {!isClockedIn && !isClockedOut && (
-            <button
-              onClick={handleClockIn}
-              disabled={clocking}
-              className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded disabled:opacity-40 transition-colors"
-            >
-              {clocking ? "กำลังบันทึก..." : "ลงชื่อเข้างาน"}
-            </button>
-          )}
-          {isClockedIn && (
-            <button
-              onClick={handleClockOut}
-              disabled={clocking}
-              className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded disabled:opacity-40 transition-colors"
-            >
-              {clocking ? "กำลังบันทึก..." : "ลงชื่อออกงาน"}
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-gray-400 mt-2">
+        <p className="mt-3 text-xs text-[var(--muted)]">
           {canUseGps
-            ? "ระบบจะขอสิทธิ์ตำแหน่ง GPS โดยอัตโนมัติ"
+            ? "ระบบจะขอสิทธิ์ตำแหน่ง GPS โดยอัตโนมัติเพื่อยืนยันพื้นที่เข้างาน"
             : "GPS ถูกจำกัดตามแพ็กเกจ ระบบจะบันทึกเวลาโดยไม่เก็บตำแหน่ง"}
         </p>
-      </div>
+      </section>
 
       {/* Manage sections — visible to attendance.manage only */}
       {canManage && (
@@ -422,6 +437,20 @@ function AttendanceSettingsDialog({
     { error: null, success: false },
   );
 
+  const [lat, setLat] = useState(attendanceSettings?.geofenceCenterLat?.toString() ?? "");
+  const [lng, setLng] = useState(attendanceSettings?.geofenceCenterLng?.toString() ?? "");
+  const [locating, setLocating] = useState(false);
+
+  async function useCurrentLocation() {
+    setLocating(true);
+    const g = await getGps();
+    setLocating(false);
+    if (g.lat !== undefined && g.lng !== undefined) {
+      setLat(g.lat.toFixed(6));
+      setLng(g.lng.toFixed(6));
+    }
+  }
+
   return (
     <ModalDialog
       open
@@ -445,6 +474,19 @@ function AttendanceSettingsDialog({
             เปิดใช้ geofence
           </label>
         </div>
+        <div>
+          <button
+            type="button"
+            onClick={useCurrentLocation}
+            disabled={locating}
+            className="btn-secondary text-xs disabled:opacity-40"
+          >
+            {locating ? "กำลังระบุตำแหน่ง..." : "📍 ใช้ตำแหน่งปัจจุบันเป็นหมุดเข้างาน"}
+          </button>
+          <p className="mt-1 text-xs text-gray-500">
+            ยืนอยู่ที่ร้านแล้วกดปุ่มนี้ ระบบจะเติมพิกัด latitude/longitude ให้อัตโนมัติ
+          </p>
+        </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="text-xs text-gray-500">
             Latitude
@@ -454,7 +496,8 @@ function AttendanceSettingsDialog({
               step="0.000001"
               min="-90"
               max="90"
-              defaultValue={attendanceSettings?.geofenceCenterLat ?? ""}
+              value={lat}
+              onChange={(e) => setLat(e.target.value)}
               className="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm"
             />
           </label>
@@ -466,7 +509,8 @@ function AttendanceSettingsDialog({
               step="0.000001"
               min="-180"
               max="180"
-              defaultValue={attendanceSettings?.geofenceCenterLng ?? ""}
+              value={lng}
+              onChange={(e) => setLng(e.target.value)}
               className="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm"
             />
           </label>

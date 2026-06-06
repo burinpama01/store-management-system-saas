@@ -14,6 +14,7 @@ import {
 } from "@/modules/notifications/types";
 import { listNotificationSettings } from "@/modules/notifications/repository";
 import { toggleNotificationSettingAction } from "./actions";
+import { NotificationTest } from "./NotificationTest";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +151,8 @@ export default async function NotificationSettingsPage() {
           </tbody>
         </table>
       </div>
+
+      <NotificationTest canRun={canManage && features.lineNotify} />
     </section>
   );
 }

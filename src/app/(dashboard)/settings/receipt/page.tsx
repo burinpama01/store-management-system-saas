@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getReceiptSettings } from "@/modules/settings/repository";
 import { ReceiptSettingsForm } from "./ReceiptSettingsForm";
+import { ReceiptTests } from "./ReceiptTests";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,13 @@ export default async function ReceiptSettingsPage() {
   const canEdit = resolved.can("settings.manage_store");
 
   return (
-    <ReceiptSettingsForm
-      settings={settingsRes.data}
-      storeName={ctx.storeName}
-      canEdit={canEdit}
-    />
+    <div className="page-shell">
+      <ReceiptSettingsForm
+        settings={settingsRes.data}
+        storeName={ctx.storeName}
+        canEdit={canEdit}
+      />
+      <ReceiptTests promptpayConfigured={Boolean(settingsRes.data?.promptpayId)} />
+    </div>
   );
 }

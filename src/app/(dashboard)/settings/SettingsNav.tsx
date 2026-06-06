@@ -9,7 +9,6 @@ const TABS = [
   { href: "/settings/receipt", label: "ใบเสร็จ" },
   { href: "/settings/billing", label: "แพ็กเกจ" },
   { href: "/settings/notifications", label: "Notifications" },
-  { href: "/settings/diagnostics", label: "ทดสอบระบบ" },
 ];
 
 export function SettingsNav() {
