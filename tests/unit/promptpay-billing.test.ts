@@ -75,6 +75,31 @@ describe("parseSlip2goResponse", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBe("invalid slip");
   });
+
+  it("treats slip2go fraud envelope (code 200500) as not-ok", () => {
+    const r = parseSlip2goResponse({
+      code: "200500",
+      message: "Slip is fraud.",
+      data: { referenceId: "abc-123" },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("Slip is fraud.");
+  });
+
+  it("accepts slip2go success envelope (code 200000)", () => {
+    const r = parseSlip2goResponse({
+      code: "200000",
+      message: "success",
+      data: {
+        amount: { amount: 690 },
+        receiver: { account: { value: "x1234" } },
+        transRef: "TX1",
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.amount).toBe(690);
+    expect(r.transRef).toBe("TX1");
+  });
 });
 
 function verification(over: Partial<Slip2goVerification>): Slip2goVerification {

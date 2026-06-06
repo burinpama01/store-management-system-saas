@@ -79,13 +79,18 @@ export function parseSlip2goResponse(json: unknown): Slip2goVerification {
     root.transRef,
   );
 
-  // Success heuristic: explicit success flag, or a usable transRef + amount.
+  // slip2go envelope: { code, message, data }. "200000" = verified;
+  // "200500" = fraud/unreadable. Fall back to a usable transRef + amount.
+  const code = pickString(root.code, data.code);
+  const message = pickString(root.message, data.message) ?? "";
+  const isFraud = code === "200500" || /fraud/i.test(message);
   const explicitOk =
     root.success === true ||
     data.success === true ||
-    pickString(root.code, data.code) === "200" ||
+    code === "200000" ||
+    code === "200" ||
     pickString(root.status, data.status)?.toLowerCase() === "success";
-  const ok = Boolean(explicitOk || (transRef && amount !== null));
+  const ok = !isFraud && Boolean(explicitOk || (transRef && amount !== null));
 
   return {
     ok,
@@ -94,7 +99,7 @@ export function parseSlip2goResponse(json: unknown): Slip2goVerification {
     receiverAccount: receiverAcct,
     transRef,
     raw: json,
-    error: ok ? null : pickString(root.message, data.message) ?? "ตรวจสลิปไม่สำเร็จ",
+    error: ok ? null : (message || "ตรวจสลิปไม่สำเร็จ"),
   };
 }
 
@@ -153,6 +158,63 @@ async function callSlip2go(path: string, body: Record<string, unknown>): Promise
   }
 }
 
+/** Slip image verification expects multipart/form-data with a `file` field. */
+async function callSlip2goImage(
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<Slip2goVerification> {
+  const cfg = getConfig();
+  if (!cfg) {
+    return {
+      ok: false,
+      amount: null,
+      receiverName: null,
+      receiverAccount: null,
+      transRef: null,
+      raw: null,
+      error: "ยังไม่ได้ตั้งค่า SLIP2GO_API_KEY",
+    };
+  }
+  try {
+    const form = new FormData();
+    const ext = contentType.includes("png") ? "png" : "jpg";
+    form.set("file", new Blob([bytes as BlobPart], { type: contentType || "image/jpeg" }), `slip.${ext}`);
+    const res = await fetch(`${cfg.baseUrl}${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
+      body: form,
+    });
+    const json = await res.json().catch(() => ({}));
+    // slip2go returns 2xx with a structured body even for fraud; only treat
+    // transport/validation failures (4xx/5xx) as hard errors.
+    if (!res.ok) {
+      const msg =
+        (json as { message?: string }).message ?? `slip2go HTTP ${res.status}`;
+      return {
+        ok: false,
+        amount: null,
+        receiverName: null,
+        receiverAccount: null,
+        transRef: null,
+        raw: json,
+        error: msg,
+      };
+    }
+    return parseSlip2goResponse(json);
+  } catch (e) {
+    return {
+      ok: false,
+      amount: null,
+      receiverName: null,
+      receiverAccount: null,
+      transRef: null,
+      raw: null,
+      error: e instanceof Error ? e.message : "slip2go request failed",
+    };
+  }
+}
+
 export function isSlip2goConfigured(): boolean {
   return Boolean(process.env.SLIP2GO_API_KEY);
 }
@@ -161,6 +223,10 @@ export function verifySlipByPayload(payload: string): Promise<Slip2goVerificatio
   return callSlip2go("/api/verify-slip/qr-code/info", { payload });
 }
 
-export function verifySlipByImageBase64(imageBase64: string): Promise<Slip2goVerification> {
-  return callSlip2go("/api/verify-slip/qr-image/info", { image: imageBase64 });
+export function verifySlipByImageBase64(
+  imageBase64: string,
+  contentType = "image/jpeg",
+): Promise<Slip2goVerification> {
+  const bytes = Uint8Array.from(Buffer.from(imageBase64, "base64"));
+  return callSlip2goImage("/api/verify-slip/qr-image/info", bytes, contentType);
 }

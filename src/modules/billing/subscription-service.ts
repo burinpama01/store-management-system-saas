@@ -42,6 +42,7 @@ export interface SubmitPaymentInput {
   submittedByUserId: string;
   slipPayload?: string;
   slipImageBase64?: string;
+  slipImageContentType?: string;
 }
 
 export interface SubmitPaymentResult {
@@ -67,10 +68,10 @@ export async function submitPromptPayPayment(
 
   const settings = await getPlatformSettings();
 
-  const verification = input.slipPayload
-    ? await verifySlipByPayload(input.slipPayload)
-    : input.slipImageBase64
-      ? await verifySlipByImageBase64(input.slipImageBase64)
+  const verification = input.slipImageBase64
+    ? await verifySlipByImageBase64(input.slipImageBase64, input.slipImageContentType)
+    : input.slipPayload
+      ? await verifySlipByPayload(input.slipPayload)
       : ({ ok: false, amount: null, receiverName: null, receiverAccount: null, transRef: null, raw: null, error: "ไม่พบข้อมูลสลิป" } as Slip2goVerification);
 
   const evaluation = evaluatePaymentVerification(verification, expected, settings.promptpayId);

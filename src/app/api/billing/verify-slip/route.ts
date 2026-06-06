@@ -38,6 +38,7 @@ export async function POST(req: Request) {
       duration: duration as BillingDuration,
       submittedByUserId: perms.user.id,
       slipImageBase64: base64,
+      slipImageContentType: slip.type || "image/jpeg",
     });
 
     return NextResponse.json({ ...result, ok: result.status === "verified" });
