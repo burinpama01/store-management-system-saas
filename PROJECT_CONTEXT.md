@@ -175,6 +175,22 @@ Recommended stack:
 - Billing/subscription permission เป็น owner-level โดย default; admin แตะได้เฉพาะเมื่อ owner เปิดสิทธิ์ชัดเจน
 - Subscription status ต้อง gate tenant features เช่น จำนวน store, user seats, QR ordering, reports, advanced permissions ตาม plan
 
+### Subscription Model
+
+| Tier | กลุ่มเป้าหมาย | ราคาแนะนำรายเดือน | ฟีเจอร์หลัก |
+|---|---|---:|---|
+| Starter | ร้านอาหารทั่วไป / คาเฟ่ขนาดเล็ก | 490-690 บาท | POS พื้นฐาน, รายรับ-รายจ่าย, พิมพ์ใบเสร็จผ่าน Browser, บันทึกประวัติลูกค้า |
+| Standard (Buffet) | ร้านบุฟเฟต์ / หมูกุ่มที่ไม่มีสั่งผ่าน QR | 990-1,290 บาท | ทุกอย่างใน Starter, ระบบจัดการบุฟเฟต์, ระบบสต็อกสินค้า, พิมพ์ผ่าน Bluetooth/USB/IP |
+| Premium (Full SaaS) | ร้านบุฟเฟต์ที่ต้องการลดพนักงาน | 1,590-2,290 บาท | ทุกอย่างใน Standard, QR Food Ordering, LINE Notify, ระบบเวลาพนักงาน GPS, คอมมิชชั่น |
+| Enterprise | ร้านที่มีหลายสาขา | Custom Quote | จัดการสาขาแบบศูนย์กลาง, centralized report, API integration, support พิเศษ |
+ 
+Feature gating เบื้องต้น:
+
+- `starter`: จำกัด core POS/accounting/receipt/customer history
+- `standard`: เปิด buffet, stock, advanced printer adapters
+- `premium`: เปิด QR ordering, staff attendance GPS, commission, notification workflow
+- `enterprise`: เปิด multi-branch centralized management, API integration, advanced support
+
 ## Supabase / Vercel Architecture Requirements
 
 - ก่อน implement Supabase จริง ต้องตรวจ Supabase changelog/docs ปัจจุบัน โดยเฉพาะ Auth, RLS, Realtime, Storage, migrations และ SSR integration

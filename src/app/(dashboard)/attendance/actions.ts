@@ -1,0 +1,212 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import {
+  DEFAULT_BILLING_STATE,
+  getPlanFeatures,
+} from "@/modules/billing/types";
+import { requirePermission } from "@/modules/auth/guards";
+import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
+import {
+  getTodayRecord,
+  clockIn,
+  clockOut,
+  getAttendanceSettings,
+  upsertAttendanceSettings,
+} from "@/modules/attendance/repository";
+import { getStoreLocalDate } from "@/modules/attendance/date";
+import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
+import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
+
+async function getStoreContext() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("ไม่มีสิทธิ์เข้าถึง");
+  const { organizations, stores, memberships } = await getUserStores();
+  const ctx = await resolveCurrentStore(stores, organizations, memberships);
+  if (!ctx) throw new Error("ไม่พบข้อมูลร้านค้า");
+  return { user, ctx };
+}
+
+async function getAttendanceGpsPolicy(
+  storeId: string,
+  organizationId: string,
+): Promise<AttendanceGpsPolicy> {
+  const billingState =
+    (await getOrganizationBillingState(organizationId)) ??
+    DEFAULT_BILLING_STATE;
+  const features = getPlanFeatures(billingState);
+  if (!features.attendanceGps) return { gpsEnabled: false };
+
+  const settingsResult = await getAttendanceSettings(storeId, organizationId);
+  if (settingsResult.error) throw new Error(settingsResult.error.userMessage);
+
+  const settings = settingsResult.data;
+  if (
+    !settings?.geofenceEnabled ||
+    settings.geofenceCenterLat === undefined ||
+    settings.geofenceCenterLng === undefined ||
+    settings.geofenceRadiusMeters === undefined
+  ) {
+    return { gpsEnabled: true };
+  }
+
+  return {
+    gpsEnabled: true,
+    center: {
+      lat: settings.geofenceCenterLat,
+      lng: settings.geofenceCenterLng,
+    },
+    radiusMeters: settings.geofenceRadiusMeters,
+  };
+}
+
+export async function clockInAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.clock");
+    const { user, ctx } = await getStoreContext();
+
+    const now = new Date();
+    const today = getStoreLocalDate(ctx.storeTimezone, now);
+
+    const existing = await getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today);
+    if (existing) return { error: "คุณได้ลงชื่อเข้างานแล้ว" };
+
+    const gpsPolicy = await getAttendanceGpsPolicy(ctx.storeId, ctx.organizationId);
+    const locationAllowed = gpsPolicy.gpsEnabled;
+    const latRaw = formData.get("lat") as string | null;
+    const lngRaw = formData.get("lng") as string | null;
+    const locationLabel = locationAllowed
+      ? (formData.get("locationLabel") as string | null)?.trim() || undefined
+      : undefined;
+    const note = (formData.get("note") as string | null)?.trim() || undefined;
+
+    const location = parseClockLocation({ lat: latRaw, lng: lngRaw, locationLabel }, locationAllowed);
+    const gpsPolicyError = validateAttendanceGpsPolicy(location, gpsPolicy);
+    if (gpsPolicyError) return { error: gpsPolicyError };
+
+    const result = await clockIn({
+      userId: user.id,
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      employeeName: (user.email ?? user.id).slice(0, 100),
+      date: today,
+      clockInAt: now.toISOString(),
+      lat: location.lat,
+      lng: location.lng,
+      locationLabel: location.locationLabel,
+      note,
+    });
+
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function clockOutAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.clock");
+    const { user, ctx } = await getStoreContext();
+
+    const now = new Date();
+    const today = getStoreLocalDate(ctx.storeTimezone, now);
+    const active = await getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today);
+    if (!active) return { error: "ไม่พบรายการที่รอลงชื่อออก" };
+
+    const gpsPolicy = await getAttendanceGpsPolicy(ctx.storeId, ctx.organizationId);
+    const locationAllowed = gpsPolicy.gpsEnabled;
+    const latRaw = formData.get("lat") as string | null;
+    const lngRaw = formData.get("lng") as string | null;
+    const locationLabel = locationAllowed
+      ? (formData.get("locationLabel") as string | null)?.trim() || undefined
+      : undefined;
+    const note = (formData.get("note") as string | null)?.trim() || undefined;
+
+    const location = parseClockLocation({ lat: latRaw, lng: lngRaw, locationLabel }, locationAllowed);
+    const gpsPolicyError = validateAttendanceGpsPolicy(location, gpsPolicy);
+    if (gpsPolicyError) return { error: gpsPolicyError };
+
+    const result = await clockOut(active.id, ctx.storeId, user.id, {
+      clockOutAt: now.toISOString(),
+      lat: location.lat,
+      lng: location.lng,
+      locationLabel: location.locationLabel,
+      note,
+    });
+
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+function readOptionalNumber(formData: FormData, key: string) {
+  const raw = (formData.get(key) as string | null)?.trim();
+  if (!raw) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : Number.NaN;
+}
+
+export async function saveAttendanceSettingsAction(
+  _prev: { error: string | null; success?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; success?: boolean }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { ctx } = await getStoreContext();
+
+    const geofenceEnabled = formData.get("geofenceEnabled") === "on";
+    const geofenceCenterLat = readOptionalNumber(formData, "geofenceCenterLat");
+    const geofenceCenterLng = readOptionalNumber(formData, "geofenceCenterLng");
+    const geofenceRadiusMeters = readOptionalNumber(formData, "geofenceRadiusMeters");
+
+    if (
+      geofenceEnabled &&
+      (
+        geofenceCenterLat === undefined ||
+        geofenceCenterLng === undefined ||
+        geofenceRadiusMeters === undefined ||
+        Number.isNaN(geofenceCenterLat) ||
+        Number.isNaN(geofenceCenterLng) ||
+        Number.isNaN(geofenceRadiusMeters) ||
+        geofenceCenterLat < -90 ||
+        geofenceCenterLat > 90 ||
+        geofenceCenterLng < -180 ||
+        geofenceCenterLng > 180 ||
+        geofenceRadiusMeters < 10 ||
+        geofenceRadiusMeters > 5000
+      )
+    ) {
+      return { error: "กรุณาตั้งค่า center/radius ของพื้นที่เข้างานให้ถูกต้อง" };
+    }
+
+    const savedCenterLat = geofenceEnabled ? geofenceCenterLat : undefined;
+    const savedCenterLng = geofenceEnabled ? geofenceCenterLng : undefined;
+    const savedRadiusMeters =
+      geofenceEnabled && geofenceRadiusMeters !== undefined
+        ? Math.round(geofenceRadiusMeters)
+        : undefined;
+
+    const result = await upsertAttendanceSettings({
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      geofenceEnabled,
+      geofenceCenterLat: savedCenterLat,
+      geofenceCenterLng: savedCenterLng,
+      geofenceRadiusMeters: savedRadiusMeters,
+    });
+
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null, success: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}

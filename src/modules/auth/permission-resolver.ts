@@ -47,6 +47,7 @@ export interface PermissionMutationInput {
 export type PermissionMutationError =
   | "self_edit"
   | "cross_tenant"
+  | "super_admin_only"
   | "owner_only"
   | "actor_lacks_permissions_manage"
   | "escalation_denied";
@@ -74,13 +75,24 @@ export function validatePermissionMutation(
     return { ok: false, error: "cross_tenant" };
   }
 
-  // Only owner can modify owner-role members or grant owner-only permission keys.
+  const isSuperAdmin = actorPermissions.role === "super_admin";
+
+  // Only super_admin can modify super_admin members or platform-only permission keys.
+  const platformOnlyKeys: PermissionKey[] = ["organizations.manage", "system.manage"];
+  if (targetRole === "super_admin" && !isSuperAdmin) {
+    return { ok: false, error: "super_admin_only" };
+  }
+  if (platformOnlyKeys.includes(permissionKey) && !isSuperAdmin) {
+    return { ok: false, error: "super_admin_only" };
+  }
+
+  // Only owner or super_admin can modify owner-role members or grant owner-only permission keys.
   // Checked before permissions.manage so the error reflects the true constraint.
   const ownerOnlyKeys: PermissionKey[] = ["permissions.manage"];
-  if (targetRole === "owner" && actorPermissions.role !== "owner") {
+  if (targetRole === "owner" && actorPermissions.role !== "owner" && !isSuperAdmin) {
     return { ok: false, error: "owner_only" };
   }
-  if (ownerOnlyKeys.includes(permissionKey) && actorPermissions.role !== "owner") {
+  if (ownerOnlyKeys.includes(permissionKey) && actorPermissions.role !== "owner" && !isSuperAdmin) {
     return { ok: false, error: "owner_only" };
   }
 

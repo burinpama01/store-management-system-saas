@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Residual Risk Mitigation Plan v1</title>
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #dbe4ef;
+      --surface: #f8fafc;
+      --ok: #047857;
+      --warn: #b45309;
+      --risk: #be123c;
+      --info: #0369a1;
+      --navy: #172554;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+      color: var(--ink);
+      background: #ffffff;
+      line-height: 1.55;
+    }
+
+    header {
+      padding: 32px 40px 20px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 8px;
+      color: var(--navy);
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+      color: var(--navy);
+    }
+
+    section {
+      padding: 24px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .lead {
+      max-width: 940px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .risk-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--surface);
+      min-height: 170px;
+    }
+
+    .risk-card h3 {
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .risk-card p {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status.ok { background: #dcfce7; color: var(--ok); }
+    .status.warn { background: #fef3c7; color: var(--warn); }
+    .status.risk { background: #ffe4e6; color: var(--risk); }
+    .status.info { background: #e0f2fe; color: var(--info); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eff6ff;
+      color: var(--navy);
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #e2e8f0;
+      color: #0f172a;
+      font-size: 12px;
+    }
+
+    .command {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: Consolas, monospace;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    ul {
+      padding-left: 20px;
+      margin: 0;
+    }
+
+    li + li { margin-top: 8px; }
+
+    @media (max-width: 900px) {
+      header { padding: 24px 20px 18px; }
+      main { width: min(100vw - 28px, 760px); }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      h1 { font-size: 24px; }
+      .grid { grid-template-columns: 1fr; }
+      th, td { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Residual Risk Mitigation Plan v1</h1>
+    <p class="lead">
+      แผนนี้แยกความเสี่ยงหลังปิด issue code-side ออกเป็นส่วนที่ลดได้ใน local แล้ว และส่วนที่ยังต้องใช้ approval, credential, browser QA หรือ hardware จริงก่อนจะ claim ว่าเสร็จสมบูรณ์.
+    </p>
+    <div class="meta">
+      <span class="pill">Project: Store management system saas</span>
+      <span class="pill">Date: 2026-06-01</span>
+      <span class="pill">Mode: Local mitigation first</span>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Current Readiness Snapshot</h2>
+      <div class="grid">
+        <article class="risk-card">
+          <span class="status ok">Local verified</span>
+          <h3>Regression Suite</h3>
+          <p>เทสหลัก, typecheck และ lint ผ่านจากรอบก่อนหน้า ใช้เป็น baseline ก่อนทำ live QA.</p>
+          <code>npm test</code>
+        </article>
+        <article class="risk-card">
+          <span class="status ok">Ready to stage</span>
+          <h3>Supabase Test User</h3>
+          <p><code>.env.local</code> มี Supabase URL, service role และ test credentials พร้อมสำหรับขั้น preflight.</p>
+          <code>scripts/create-test-user.mjs --dry-run</code>
+        </article>
+        <article class="risk-card">
+          <span class="status risk">Blocked</span>
+          <h3>Provider Tokens</h3>
+          <p>LINE/Telegram token ยังไม่ถูกตั้งค่า จึงยังทดสอบ external notification delivery ไม่ได้.</p>
+          <code>LINE_CHANNEL_ACCESS_TOKEN</code>
+        </article>
+        <article class="risk-card">
+          <span class="status warn">Manual gate</span>
+          <h3>Hardware / Browser QA</h3>
+          <p>printer รุ่นจริงและ browser screenshot flows ยังต้องรันใน environment ที่ผู้ใช้อนุมัติ.</p>
+          <code>npm run risk:check</code>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Risk Disposition</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Risk</th>
+            <th>Status</th>
+            <th>Mitigation ที่ทำแล้ว</th>
+            <th>Next Gate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Live Supabase migrations / RLS</td>
+            <td><span class="status warn">Approval required</span></td>
+            <td>เพิ่ม readiness report และมี script test-user ที่ dry-run/fail-closed อยู่แล้ว</td>
+            <td>ผู้ใช้อนุมัติ remote target, backup/rollback, และคำสั่งที่จะรัน</td>
+          </tr>
+          <tr>
+            <td>Provider notification delivery</td>
+            <td><span class="status risk">Token missing</span></td>
+            <td>readiness report บอก missing/present โดยไม่พิมพ์ค่า secret</td>
+            <td>ตั้งค่า provider token ใน env ที่ถูกต้องแล้วอนุมัติ test send</td>
+          </tr>
+          <tr>
+            <td>Browser visual QA</td>
+            <td><span class="status warn">Manual gate</span></td>
+            <td>กำหนด gate และ baseline command สำหรับเช็คความพร้อมก่อนเปิด dev/browser</td>
+            <td>เปิด dev server, login test user, เก็บ screenshot desktop/mobile</td>
+          </tr>
+          <tr>
+            <td>Printer hardware support</td>
+            <td><span class="status warn">Hardware required</span></td>
+            <td>unit coverage และ adapter fail-closed ลด risk ที่ unsupported จะ silently pass</td>
+            <td>ทดสอบกับ printer รุ่นจริงหรือ lab device ก่อน claim ทุกรุ่น</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Commands</h2>
+      <div class="command">npm run risk:check
+npm run risk:check -- --strict
+node scripts/create-test-user.mjs --dry-run</div>
+    </section>
+
+    <section>
+      <h2>Decision</h2>
+      <ul>
+        <li>ห้ามรัน remote migration, remote test-user write, provider send หรือ printer hardware claim จนกว่าจะมี approval และ target ชัดเจน.</li>
+        <li>ใช้ <code>npm run risk:check</code> เป็น preflight ก่อน browser QA, deploy preview หรือ production readiness ทุกครั้ง.</li>
+        <li>ถ้า <code>--strict</code> ยังขึ้น <code>STRICT_STATUS=blocked</code> ให้ถือว่ายังมี gated risk เหลืออยู่ ไม่ให้ปิดงานเป็น production-ready.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

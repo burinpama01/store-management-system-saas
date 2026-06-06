@@ -29,9 +29,16 @@ export async function updateSession(request: NextRequest) {
   // Refresh session token — must not write any logic between createServerClient and getUser()
   const { data: { user } } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/login") ||
+  const isAuthRoute =
+    request.nextUrl.pathname.startsWith("/login") ||
+    request.nextUrl.pathname.startsWith("/reset-password") ||
+    request.nextUrl.pathname.startsWith("/update-password") ||
     request.nextUrl.pathname.startsWith("/auth");
-  const isPublicRoute = request.nextUrl.pathname.startsWith("/qr");
+  const isPublicRoute =
+    request.nextUrl.pathname === "/qr" ||
+    request.nextUrl.pathname.startsWith("/qr/") ||
+    request.nextUrl.pathname === "/pricing" ||
+    request.nextUrl.pathname === "/register";
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();

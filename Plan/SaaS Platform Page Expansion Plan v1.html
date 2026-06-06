@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SaaS Platform Page Expansion Plan v1</title>
+  <style>
+    :root {
+      --ink: #17211d;
+      --muted: #60706a;
+      --paper: #f6f7f2;
+      --panel: #ffffff;
+      --line: #d9ded4;
+      --green: #14765f;
+      --amber: #b7791f;
+      --rose: #b42318;
+      --blue: #2563eb;
+      --shadow: 0 18px 45px rgba(23, 33, 29, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+      line-height: 1.65;
+    }
+    header {
+      padding: 48px 6vw 28px;
+      background: linear-gradient(135deg, #ffffff 0%, #eef5ef 100%);
+      border-bottom: 1px solid var(--line);
+    }
+    main { padding: 28px 6vw 56px; }
+    h1, h2, h3 { margin: 0; line-height: 1.2; }
+    h1 { max-width: 980px; font-size: clamp(32px, 5vw, 58px); letter-spacing: 0; }
+    h2 { margin-bottom: 14px; font-size: 26px; }
+    h3 { margin-bottom: 8px; font-size: 18px; }
+    p { margin: 0; }
+    .lead { max-width: 920px; margin-top: 14px; color: var(--muted); font-size: 18px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.78);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    section {
+      margin-top: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+    .grid { display: grid; gap: 16px; }
+    .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf8;
+      padding: 16px;
+    }
+    .tag {
+      display: inline-block;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      padding: 4px 8px;
+      background: #e8f4ef;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .tag.owner { background: #eef2ff; color: var(--blue); }
+    .tag.platform { background: #fff7e6; color: var(--amber); }
+    .tag.risk { background: #fff1f0; color: var(--rose); }
+    ul, ol { margin: 10px 0 0; padding-left: 20px; }
+    li { margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 12px 10px; text-align: left; vertical-align: top; }
+    th { background: #f0f3ed; color: #31413a; }
+    code {
+      border-radius: 6px;
+      background: #eef1ec;
+      padding: 2px 6px;
+      font-family: Consolas, monospace;
+      font-size: 0.92em;
+    }
+    .phase {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      margin-top: 16px;
+    }
+    .phase:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+    .phase strong { color: var(--green); }
+    .note {
+      margin-top: 14px;
+      border-left: 4px solid var(--green);
+      background: #eff8f3;
+      padding: 12px 14px;
+      color: #24443a;
+    }
+    @media (max-width: 860px) {
+      header, main { padding-left: 18px; padding-right: 18px; }
+      .cols-2, .cols-3 { grid-template-columns: 1fr; }
+      .phase { grid-template-columns: 1fr; }
+      section { padding: 18px; }
+      table { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SaaS Platform Page Expansion Plan v1</h1>
+    <p class="lead">แผนเพิ่มหน้าที่ขาดของ Store Management SaaS หลังนิยาม role ใหม่: <strong>super_admin</strong> เป็นผู้ดูแล platform/tenant/billing, <strong>owner</strong> เป็นผู้ลงทะเบียนเช่าซื้อระบบ, และ <strong>admin/manager/cashier/staff</strong> เป็นทีมในร้านที่ owner สร้างเท่านั้น</p>
+    <div class="meta">
+      <span class="pill">Date: 2026-06-05</span>
+      <span class="pill">Status: Proposed</span>
+      <span class="pill">Source: repo routes + Obsidian current + Graphify report</span>
+      <span class="pill">Do not overwrite: Super Admin Platform Roadmap v1</span>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. Role Model ที่ต้องล็อกก่อนสร้างหน้า</h2>
+      <div class="grid cols-3">
+        <div class="card">
+          <span class="tag platform">super_admin</span>
+          <h3>Platform Operator</h3>
+          <ul>
+            <li>จัดการ tenant/organization/store ทั้งระบบ</li>
+            <li>จัดการ SaaS billing, plan, subscription status, invoice/support case</li>
+            <li>ตั้งค่า tenant ระดับ platform เช่น feature override, suspension, quota, owner reset</li>
+            <li>ดู audit/security events ข้าม tenant แบบ read/operate ตามสิทธิ</li>
+            <li>ไม่ใช่คนขายหน้าร้าน และไม่ควรถูกพาเข้า POS/dashboard ร้านเป็น default</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag owner">owner</span>
+          <h3>Tenant Buyer</h3>
+          <ul>
+            <li>เป็นคนลงทะเบียน ซื้อ/เช่าระบบ และสร้าง organization/store แรก</li>
+            <li>จัดการ billing portal ของ tenant ตัวเอง</li>
+            <li>สร้าง admin/manager/cashier/staff ให้ร้านตัวเองเท่านั้น</li>
+            <li>จัดการ store settings, receipt, notifications, users, permissions ภายใน tenant</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">tenant staff</span>
+          <h3>admin / manager / cashier / staff</h3>
+          <ul>
+            <li>ถูกสร้างหรือเชิญโดย owner/admin ที่มีสิทธิ</li>
+            <li>ไม่มี public signup เอง</li>
+            <li>ไม่เห็น platform console</li>
+            <li>ทุก action ต้องถูกจำกัดด้วย organization/store boundary และ permission overrides</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">Decision สำคัญ: public registration ต้องสร้าง <code>owner</code> เท่านั้น; <code>super_admin</code> ต้องมาจาก controlled bootstrap/platform process เท่านั้น</p>
+    </section>
+
+    <section>
+      <h2>2. หน้าที่ควรเพิ่ม</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Page / Route</th>
+            <th>Audience</th>
+            <th>Purpose</th>
+            <th>Access Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/</code> public landing หรือ <code>/home</code></td>
+            <td>ลูกค้าที่สนใจเช่าระบบ</td>
+            <td>ขาย SaaS, อธิบายฟีเจอร์, ราคา, FAQ, CTA ทดลองใช้/สมัคร</td>
+            <td>public; ถ้า logged-in redirect ตาม role</td>
+          </tr>
+          <tr>
+            <td><code>/pricing</code></td>
+            <td>prospect / owner</td>
+            <td>แสดง plan, feature gates, limits, billing terms</td>
+            <td>public + logged-in owner เห็น current plan</td>
+          </tr>
+          <tr>
+            <td><code>/register</code></td>
+            <td>owner ใหม่</td>
+            <td>สร้าง account, organization, store แรก และ owner membership</td>
+            <td>public; role output = owner เท่านั้น</td>
+          </tr>
+          <tr>
+            <td><code>/onboarding</code></td>
+            <td>owner หลัง signup</td>
+            <td>ตั้งค่าร้านแรก, เลือก plan, receipt, timezone, QR/POS base settings</td>
+            <td>owner only; block tenant staff</td>
+          </tr>
+          <tr>
+            <td><code>/billing</code> หรือ <code>/settings/billing</code></td>
+            <td>owner</td>
+            <td>จัดการ subscription ของ tenant ตัวเองผ่าน Stripe portal/checkout</td>
+            <td><code>billing.manage</code> แต่จำกัด tenant ตัวเอง</td>
+          </tr>
+          <tr>
+            <td><code>/system</code></td>
+            <td>super_admin</td>
+            <td>platform dashboard รวม tenant health, MRR, trial, failed payment, risk alerts</td>
+            <td><code>system.manage</code> หรือ platform guard ใหม่</td>
+          </tr>
+          <tr>
+            <td><code>/system/tenants</code></td>
+            <td>super_admin</td>
+            <td>ค้นหา/ดู/จัดการ tenants, owner, store count, status, package</td>
+            <td><code>organizations.manage</code></td>
+          </tr>
+          <tr>
+            <td><code>/system/tenants/[id]</code></td>
+            <td>super_admin</td>
+            <td>tenant detail, stores, users, subscription, feature overrides, audit log</td>
+            <td><code>organizations.manage</code> + audit required</td>
+          </tr>
+          <tr>
+            <td><code>/system/billing</code></td>
+            <td>super_admin</td>
+            <td>ดู billing state, failed invoices, plan overrides, webhook state</td>
+            <td><code>billing.manage</code> + platform scope</td>
+          </tr>
+          <tr>
+            <td><code>/system/settings</code></td>
+            <td>super_admin</td>
+            <td>ตั้งค่า platform defaults, plans, feature gates, maintenance messages</td>
+            <td><code>system.manage</code></td>
+          </tr>
+          <tr>
+            <td><code>/system/audit</code></td>
+            <td>super_admin</td>
+            <td>ดู security/audit events ข้าม tenant; export เฉพาะที่จำเป็น</td>
+            <td><code>system.manage</code>; read-only default</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Information Architecture ที่แนะนำ</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <span class="tag">public site</span>
+          <h3>Public / Marketing</h3>
+          <ul>
+            <li><code>/</code>: landing page ของระบบ</li>
+            <li><code>/pricing</code>: plan comparison</li>
+            <li><code>/register</code>: owner signup</li>
+            <li><code>/login</code>, <code>/reset-password</code>: auth เดิม</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag owner">tenant app</span>
+          <h3>Owner + Store Team</h3>
+          <ul>
+            <li><code>/onboarding</code>: owner setup หลังสมัคร</li>
+            <li><code>/</code>, <code>/catalog</code>, <code>/pos</code>, <code>/reports</code>: tenant operations เดิม</li>
+            <li><code>/settings/billing</code>: owner billing</li>
+            <li><code>/settings/team</code>: owner/admin สร้าง staff</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag platform">platform console</span>
+          <h3>Super Admin</h3>
+          <ul>
+            <li><code>/system</code>: platform overview</li>
+            <li><code>/system/tenants</code>: tenant management</li>
+            <li><code>/system/billing</code>: SaaS billing ops</li>
+            <li><code>/system/settings</code>: plan/feature defaults</li>
+            <li><code>/system/audit</code>: platform audit</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag risk">routing rule</span>
+          <h3>Post-login Redirect</h3>
+          <ul>
+            <li><code>super_admin</code> → <code>/system</code></li>
+            <li><code>owner</code> → <code>/</code> tenant dashboard หรือ <code>/onboarding</code> ถ้ายัง setup ไม่ครบ</li>
+            <li><code>admin/manager/cashier/staff</code> → first allowed tenant route</li>
+            <li>ถ้า user มีหลาย store ให้ใช้ store switcher เดิม แต่ไม่ใช้กับ platform-only task</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Phase Roadmap</h2>
+      <div class="phase">
+        <strong>Phase 1<br>Public + Owner Entry</strong>
+        <div>
+          <h3>สร้างทางเข้า SaaS ที่ถูกต้อง</h3>
+          <ul>
+            <li>ทำ landing page ของระบบพร้อม CTA สมัครใช้งาน</li>
+            <li>ทำ pricing page อิง package gates ที่มีจริงใน code</li>
+            <li>ทำ owner registration flow: Auth user + organization + store + owner membership</li>
+            <li>ทำ onboarding checklist สำหรับ owner หลังสมัคร</li>
+          </ul>
+          <p class="note">Success: คนเช่าระบบสมัครเองได้และกลายเป็น owner เท่านั้น; staff ไม่มี self-signup</p>
+        </div>
+      </div>
+      <div class="phase">
+        <strong>Phase 2<br>Super Admin Shell</strong>
+        <div>
+          <h3>แยก platform console ออกจาก tenant app</h3>
+          <ul>
+            <li>เพิ่ม <code>/system</code> layout/nav เฉพาะ super_admin</li>
+            <li>เพิ่ม tenant list/search/status surface</li>
+            <li>เพิ่ม tenant detail แบบ read-first: owner, stores, subscription, feature locks, recent audit</li>
+            <li>ปรับ post-login redirect ของ super_admin ไป platform console</li>
+          </ul>
+          <p class="note">Success: super_admin ไม่ถูก default เข้า POS/store dashboard และไม่ต้องมี current store เพื่อจัดการ platform</p>
+        </div>
+      </div>
+      <div class="phase">
+        <strong>Phase 3<br>Billing Operations</strong>
+        <div>
+          <h3>ปิด flow SaaS billing ทั้งสองฝั่ง</h3>
+          <ul>
+            <li>Owner billing page: checkout/customer portal/current plan/history</li>
+            <li>Super admin billing page: subscription state, webhook status, failed payment, manual plan override พร้อม reason</li>
+            <li>เพิ่ม audit log สำหรับ plan override, suspend, reactivate</li>
+            <li>เพิ่ม tests สำหรับ tenant boundary และ Stripe webhook idempotency ที่เกี่ยวข้อง</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <strong>Phase 4<br>Tenant Controls</strong>
+        <div>
+          <h3>ทำเครื่องมือจัดการ tenant แบบปลอดภัย</h3>
+          <ul>
+            <li>Tenant settings จาก super_admin: feature override, quota, suspension, owner reset</li>
+            <li>Read-only impersonation preview หรือ support mode ต้องมี explicit reason + audit; ไม่ใช้ silent impersonation</li>
+            <li>Export audit/security report ตาม tenant</li>
+            <li>เพิ่ม support diagnostics ที่ไม่แสดง secret/token</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <strong>Phase 5<br>Hardening</strong>
+        <div>
+          <h3>ทำให้พร้อมขายจริง</h3>
+          <ul>
+            <li>Authenticated browser QA สำหรับ owner signup, super_admin console, billing, tenant staff invite</li>
+            <li>RLS integration tests สำหรับ super_admin/platform scope และ tenant scope</li>
+            <li>Rate limit / abuse guard สำหรับ register/reset/invite</li>
+            <li>Production readiness checklist ก่อน deploy</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. Data / Permission Changes ที่ต้องวางก่อนลงมือ</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Database / Auth</h3>
+          <ul>
+            <li>ยืนยัน schema สำหรับ organization/store creation ตอน owner signup</li>
+            <li>เพิ่ม onboarding status ต่อ organization/store ถ้ายังไม่มี</li>
+            <li>เพิ่ม platform audit table หรือขยาย audit log เดิมให้รองรับ platform action</li>
+            <li>แยก platform actions ออกจาก tenant store actions ให้ชัด</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Permission / Guard</h3>
+          <ul>
+            <li>เพิ่ม helper เช่น <code>requirePlatformPermission()</code> หรือ <code>getPlatformContext()</code></li>
+            <li>ทบทวนว่า <code>super_admin</code> ควรมี tenant operation permissions โดย default หรือควรเป็น support/elevated mode</li>
+            <li>Owner-only invite: owner/admin ที่ได้รับสิทธิเท่านั้นสร้าง tenant staff ได้</li>
+            <li>ทุก mutation ต้องมี audit และ tenant boundary</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. Acceptance Criteria</h2>
+      <ul>
+        <li>Public visitor เห็น landing/pricing/register โดยไม่ต้อง login</li>
+        <li>Owner signup สร้าง owner + tenant + store แรกได้แบบ atomic/fail closed</li>
+        <li>super_admin เข้า <code>/system</code> ได้และไม่ถูกบังคับเลือก store สำหรับ platform tasks</li>
+        <li>owner จัดการ billing ของ tenant ตัวเองได้ แต่ไม่เห็น platform billing ของ tenant อื่น</li>
+        <li>admin/manager/cashier/staff ไม่สามารถสมัครเอง, ไม่เห็น <code>/system</code>, และไม่สร้าง role ที่สูงกว่า policy</li>
+        <li>ทุก page/action มี unit/source guard และอย่างน้อยหนึ่ง authenticated browser smoke ใน phase ที่เกี่ยวข้อง</li>
+        <li>Obsidian log/current/decision ต้อง sync หลังแต่ละ phase</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

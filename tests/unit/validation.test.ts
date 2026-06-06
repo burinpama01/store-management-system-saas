@@ -6,7 +6,6 @@ import {
   isPositiveNumber,
   isNonNegativeNumber,
   isValidPrice,
-  isNonEmptyString,
   validateProduct,
   validateTransaction,
   validateModifierGroup,

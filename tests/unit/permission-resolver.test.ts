@@ -7,13 +7,28 @@ const STORE = "store-1";
 const ACTOR_ID = "user-actor";
 const TARGET_ID = "user-target";
 
-function makeActor(role: "owner" | "admin" | "manager" | "cashier" | "staff", overrides: { key: string; granted: boolean }[] = []): ResolvedPermissions {
+function makeActor(role: "super_admin" | "owner" | "admin" | "manager" | "cashier" | "staff", overrides: { key: string; granted: boolean }[] = []): ResolvedPermissions {
   return resolvePermissions(role, overrides.map(o => ({ permissionKey: o.key as never, granted: o.granted })), ORG, STORE);
 }
 
 describe("resolvePermissions", () => {
   it("owner has permissions.manage", () => {
     const p = makeActor("owner");
+    expect(p.can("permissions.manage")).toBe(true);
+  });
+
+  it("owner can manage billing but not platform administration", () => {
+    const p = makeActor("owner");
+    expect(p.can("billing.manage")).toBe(true);
+    expect(p.can("organizations.manage")).toBe(false);
+    expect(p.can("system.manage")).toBe(false);
+  });
+
+  it("super_admin has platform management permissions", () => {
+    const p = makeActor("super_admin");
+    expect(p.can("system.manage")).toBe(true);
+    expect(p.can("organizations.manage")).toBe(true);
+    expect(p.can("billing.manage")).toBe(true);
     expect(p.can("permissions.manage")).toBe(true);
   });
 
@@ -60,6 +75,26 @@ describe("validatePermissionMutation", () => {
     const actor = makeActor("owner");
     const result = validatePermissionMutation({ ...base, actorPermissions: actor, permissionKey: "permissions.manage", targetRole: "admin" });
     expect(result.ok).toBe(true);
+  });
+
+  it("super_admin can modify owner permissions", () => {
+    const actor = makeActor("super_admin");
+    const result = validatePermissionMutation({ ...base, actorPermissions: actor, targetRole: "owner", permissionKey: "permissions.manage" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("owner cannot modify a super_admin member", () => {
+    const actor = makeActor("owner");
+    const result = validatePermissionMutation({ ...base, actorPermissions: actor, targetRole: "super_admin" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("super_admin_only");
+  });
+
+  it("owner cannot grant platform-only permissions", () => {
+    const actor = makeActor("owner");
+    const result = validatePermissionMutation({ ...base, actorPermissions: actor, permissionKey: "system.manage" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("super_admin_only");
   });
 
   it("admin cannot grant permissions.manage (owner-only key)", () => {
