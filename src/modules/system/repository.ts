@@ -197,6 +197,66 @@ export async function getTenantDetail(organizationId: string): Promise<TenantDet
   };
 }
 
+export interface TenantOperations {
+  productCount: number;
+  orderCount: number;
+  paidCount: number;
+  salesTotal: number;
+  recentOrders: Array<{
+    orderNumber: string;
+    status: string;
+    total: number;
+    paid: boolean;
+    createdAt: string;
+  }>;
+}
+
+/**
+ * Read-only operational snapshot of a tenant for the platform console.
+ * Service-client only; reach only after requireSystemAccess(). Super admin can
+ * view but not act on tenant data.
+ */
+export async function getTenantOperations(organizationId: string): Promise<TenantOperations> {
+  const supabase = await createSupabaseServiceClient();
+
+  const [{ count: productCount }, ordersRes] = await Promise.all([
+    supabase
+      .from("products")
+      .select("id", { head: true, count: "exact" })
+      .eq("organization_id", organizationId),
+    supabase
+      .from("orders")
+      .select("order_number, status, total, paid_at, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
+
+  const orders = ordersRes.data ?? [];
+  let salesTotal = 0;
+  let paidCount = 0;
+  for (const o of orders) {
+    if (o.paid_at) {
+      paidCount += 1;
+      salesTotal += Number(o.total ?? 0);
+    }
+  }
+
+  return {
+    productCount: productCount ?? 0,
+    orderCount: orders.length,
+    paidCount,
+    salesTotal,
+    recentOrders: orders.slice(0, 8).map((o) => ({
+      orderNumber: o.order_number,
+      status: o.status,
+      total: Number(o.total ?? 0),
+      paid: Boolean(o.paid_at),
+      createdAt: o.created_at,
+    })),
+  };
+}
+
 /**
  * Recent audit log entries across all tenants (platform security view).
  * Service-client only; reach only after requireSystemAccess().
@@ -304,6 +364,75 @@ export async function isOrganizationSuspended(organizationId: string): Promise<b
     .maybeSingle();
   if (error) return false;
   return Boolean(data?.suspended_at);
+}
+
+export interface PlatformPayment {
+  organizationId: string;
+  orgName: string;
+  plan: string;
+  duration: string;
+  amount: number;
+  verifiedAt: string | null;
+}
+
+export interface PaymentTotals {
+  total: number;
+  thisMonth: number;
+  count: number;
+}
+
+/** Pure: sums verified payment amounts overall and for the current month. */
+export function summarizePayments(
+  rows: Array<{ amount: number; verifiedAt: string | null }>,
+  now: Date = new Date(),
+): PaymentTotals {
+  const ym = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  let total = 0;
+  let thisMonth = 0;
+  for (const r of rows) {
+    total += r.amount;
+    if (r.verifiedAt && r.verifiedAt.slice(0, 7) === ym) thisMonth += r.amount;
+  }
+  return { total, thisMonth, count: rows.length };
+}
+
+export interface PlatformDashboard {
+  summary: PlatformSummary;
+  totals: PaymentTotals;
+  recentPayments: PlatformPayment[];
+  recentTenants: TenantOverview[];
+}
+
+/**
+ * Aggregated platform dashboard for super_admin. Service-client only; reach only
+ * after requireSystemAccess().
+ */
+export async function getPlatformDashboard(): Promise<PlatformDashboard> {
+  const supabase = await createSupabaseServiceClient();
+  const tenants = await listTenantOverview();
+  const nameById = new Map(tenants.map((t) => [t.organizationId, t.name]));
+
+  const { data: paid } = await supabase
+    .from("payment_submissions")
+    .select("organization_id, plan, duration, verified_amount, verified_at")
+    .eq("status", "verified")
+    .order("verified_at", { ascending: false });
+
+  const rows = (paid ?? []).map((p) => ({
+    organizationId: p.organization_id,
+    orgName: nameById.get(p.organization_id) ?? "—",
+    plan: p.plan,
+    duration: p.duration,
+    amount: Number(p.verified_amount ?? 0),
+    verifiedAt: p.verified_at,
+  }));
+
+  return {
+    summary: summarizeTenants(tenants),
+    totals: summarizePayments(rows.map((r) => ({ amount: r.amount, verifiedAt: r.verifiedAt }))),
+    recentPayments: rows.slice(0, 8),
+    recentTenants: tenants.slice(0, 6),
+  };
 }
 
 export function summarizeTenants(tenants: TenantOverview[]): PlatformSummary {

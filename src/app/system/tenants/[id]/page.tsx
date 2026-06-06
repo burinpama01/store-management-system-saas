@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSystemAccess } from "@/modules/auth/guards";
-import { getTenantDetail } from "@/modules/system/repository";
+import { getTenantDetail, getTenantOperations } from "@/modules/system/repository";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import type { BillingStatus } from "@/modules/billing/types";
 import { SuspendControl } from "./SuspendControl";
@@ -36,6 +36,7 @@ export default async function TenantDetailPage({
   const { id } = await params;
   const tenant = await getTenantDetail(id);
   if (!tenant) notFound();
+  const ops = await getTenantOperations(id);
 
   return (
     <div className="space-y-5">
@@ -71,6 +72,49 @@ export default async function TenantDetailPage({
             value={tenant.subscription ? formatDate(tenant.subscription.currentPeriodEnd) : "—"}
           />
         </div>
+      </section>
+
+      <section className="panel p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="panel-title">ภาพรวมการใช้งาน (อ่านอย่างเดียว)</h2>
+          <span className="badge">read-only</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <InfoItem label="ยอดขายรวม (ชำระแล้ว)" value={`฿${ops.salesTotal.toLocaleString("th-TH")}`} />
+          <InfoItem label="ออร์เดอร์ทั้งหมด" value={String(ops.orderCount)} />
+          <InfoItem label="ชำระเงินแล้ว" value={String(ops.paidCount)} />
+          <InfoItem label="จำนวนสินค้า" value={String(ops.productCount)} />
+        </div>
+        {ops.recentOrders.length > 0 && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--muted)]">
+                  <th className="px-3 py-2 font-bold">ออร์เดอร์</th>
+                  <th className="px-3 py-2 font-bold">สถานะ</th>
+                  <th className="px-3 py-2 text-right font-bold">ยอด</th>
+                  <th className="px-3 py-2 font-bold">เวลา</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ops.recentOrders.map((o) => (
+                  <tr key={o.orderNumber} className="border-b border-[var(--border)] last:border-0">
+                    <td className="px-3 py-2 font-bold text-[var(--ink)]">{o.orderNumber}</td>
+                    <td className="px-3 py-2">
+                      <span className={`badge ${o.paid ? "badge-success" : "badge-warning"}`}>
+                        {o.paid ? "ชำระแล้ว" : o.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">฿{o.total.toLocaleString("th-TH")}</td>
+                    <td className="px-3 py-2 text-[var(--muted)]">
+                      {new Date(o.createdAt).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="panel p-5">
