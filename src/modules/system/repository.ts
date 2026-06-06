@@ -10,6 +10,7 @@ export interface TenantOverview {
   status: BillingStatus;
   storeCount: number;
   memberCount: number;
+  suspended: boolean;
   createdAt: string;
 }
 
@@ -30,7 +31,7 @@ export async function listTenantOverview(): Promise<TenantOverview[]> {
   const supabase = await createSupabaseServiceClient();
 
   const [orgsRes, subsRes, storesRes, membersRes] = await Promise.all([
-    supabase.from("organizations").select("id, name, slug, owner_id, created_at").order("created_at", { ascending: false }),
+    supabase.from("organizations").select("id, name, slug, owner_id, suspended_at, created_at").order("created_at", { ascending: false }),
     supabase.from("subscriptions").select("organization_id, plan, status"),
     supabase.from("stores").select("organization_id, is_active"),
     supabase.from("memberships").select("organization_id, joined_at"),
@@ -64,6 +65,7 @@ export async function listTenantOverview(): Promise<TenantOverview[]> {
       status: sub?.status ?? "active",
       storeCount: storeCountByOrg.get(org.id) ?? 0,
       memberCount: memberCountByOrg.get(org.id) ?? 0,
+      suspended: Boolean(org.suspended_at),
       createdAt: org.created_at,
     };
   });
@@ -98,6 +100,7 @@ export interface TenantDetail {
   slug: string;
   ownerId: string;
   ownerEmail: string | null;
+  suspended: boolean;
   createdAt: string;
   subscription: TenantSubscription | null;
   stores: TenantStore[];
@@ -124,7 +127,7 @@ export async function getTenantDetail(organizationId: string): Promise<TenantDet
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, owner_id, created_at")
+    .select("id, name, slug, owner_id, suspended_at, created_at")
     .eq("id", organizationId)
     .maybeSingle();
   if (!org) return null;
@@ -173,6 +176,7 @@ export async function getTenantDetail(organizationId: string): Promise<TenantDet
     slug: org.slug,
     ownerId: org.owner_id,
     ownerEmail,
+    suspended: Boolean(org.suspended_at),
     createdAt: org.created_at,
     subscription: subRes.data
       ? {
@@ -214,6 +218,92 @@ export async function listRecentAuditLogs(limit = 100): Promise<AuditLogEntry[]>
     reason: row.reason,
     createdAt: row.created_at,
   }));
+}
+
+export interface TenantSuspensionPlan {
+  suspendedAt: string | null;
+  subscriptionStatus: BillingStatus | null;
+  auditAction: "tenant.suspend" | "tenant.unsuspend";
+}
+
+/**
+ * Pure: derives the desired DB state for a suspend/unsuspend operation.
+ * Suspending blocks login (suspended_at) AND cancels the subscription;
+ * unsuspending clears the block but does not auto-restore a prior plan.
+ */
+export function planTenantSuspension(
+  suspend: boolean,
+  now: string,
+): TenantSuspensionPlan {
+  return suspend
+    ? { suspendedAt: now, subscriptionStatus: "canceled", auditAction: "tenant.suspend" }
+    : { suspendedAt: null, subscriptionStatus: null, auditAction: "tenant.unsuspend" };
+}
+
+export interface SetTenantSuspensionResult {
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * Platform action: suspend or resume a tenant. Service-client only; the caller
+ * MUST be a verified super_admin (enforce with requireSystemAccess before calling).
+ * Writes an append-only audit log entry for the action.
+ */
+export async function setTenantSuspension(input: {
+  organizationId: string;
+  suspend: boolean;
+  actorUserId: string;
+  reason: string;
+}): Promise<SetTenantSuspensionResult> {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+  const plan = planTenantSuspension(input.suspend, now);
+
+  const { error: orgErr } = await supabase
+    .from("organizations")
+    .update({ suspended_at: plan.suspendedAt, updated_at: now })
+    .eq("id", input.organizationId);
+  if (orgErr) return { ok: false, error: orgErr.message };
+
+  if (plan.subscriptionStatus) {
+    // Best-effort: a tenant may have no subscription row yet.
+    await supabase
+      .from("subscriptions")
+      .update({ status: plan.subscriptionStatus, updated_at: now })
+      .eq("organization_id", input.organizationId);
+  }
+
+  const { error: auditErr } = await supabase.from("audit_logs").insert({
+    organization_id: input.organizationId,
+    store_id: null,
+    actor_user_id: input.actorUserId,
+    target_user_id: null,
+    action: plan.auditAction,
+    reason: input.reason || null,
+  });
+  if (auditErr) return { ok: false, error: auditErr.message };
+
+  return { ok: true, error: null };
+}
+
+/**
+ * Whether an organization is currently suspended. Used to gate app access for
+ * non-super_admin members. Uses the user-scoped server client (members can read
+ * their own org), failing closed on error.
+ */
+export async function isOrganizationSuspended(organizationId: string): Promise<boolean> {
+  const { createSupabaseServerClient } = await import(
+    "@/server/integrations/supabase/server"
+  );
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("suspended_at")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (error) return false;
+  return Boolean(data?.suspended_at);
 }
 
 export function summarizeTenants(tenants: TenantOverview[]): PlatformSummary {

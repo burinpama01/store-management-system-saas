@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { summarizeTenants, type TenantOverview } from "@/modules/system/repository";
+import {
+  summarizeTenants,
+  planTenantSuspension,
+  type TenantOverview,
+} from "@/modules/system/repository";
 
 function tenant(overrides: Partial<TenantOverview>): TenantOverview {
   return {
@@ -11,6 +15,7 @@ function tenant(overrides: Partial<TenantOverview>): TenantOverview {
     status: "active",
     storeCount: 1,
     memberCount: 1,
+    suspended: false,
     createdAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
@@ -48,5 +53,25 @@ describe("summarizeTenants", () => {
     expect(summary.byPlan.free).toBe(1);
     expect(summary.trialingCount).toBe(1);
     expect(summary.pastDueCount).toBe(2); // past_due + unpaid
+  });
+});
+
+describe("planTenantSuspension", () => {
+  const now = "2026-06-06T00:00:00Z";
+
+  it("suspending sets timestamp, cancels subscription, logs suspend", () => {
+    expect(planTenantSuspension(true, now)).toEqual({
+      suspendedAt: now,
+      subscriptionStatus: "canceled",
+      auditAction: "tenant.suspend",
+    });
+  });
+
+  it("unsuspending clears timestamp, leaves subscription, logs unsuspend", () => {
+    expect(planTenantSuspension(false, now)).toEqual({
+      suspendedAt: null,
+      subscriptionStatus: null,
+      auditAction: "tenant.unsuspend",
+    });
   });
 });

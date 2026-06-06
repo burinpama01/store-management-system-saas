@@ -71,3 +71,16 @@ If custom configuration is needed in future, prefer `vercel.ts` (TypeScript conf
 - `.vercel/project.json` is gitignored — each developer runs `vercel link` locally
 - Stripe webhook endpoint in Stripe Dashboard must be set to `https://your-app.vercel.app/api/stripe/webhook`
 - Supabase Auth: set `Site URL` and `Redirect URLs` in Supabase dashboard to the production URL
+
+## Public endpoint protection
+
+The public routes `/register` and `/pricing` (allowlisted in
+`src/server/integrations/supabase/middleware.ts`) are unauthenticated. To prevent
+abuse of owner signup (mass tenant/org creation), enable **Vercel BotID /
+Firewall** on the project rather than an in-app rate limiter:
+
+- Vercel Dashboard → Project → Firewall → enable BotID challenge on `/register`
+  (and the `POST` server action it triggers).
+- No application code or shared state is required; protection runs at the edge.
+- Revisit if registration moves off Vercel — then add an Upstash/Redis-backed
+  rate limiter in the `registerOwner` action instead.

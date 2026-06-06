@@ -10,6 +10,7 @@ import { resolvePermissions } from "@/modules/auth/permission-resolver";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock, type FeatureKey } from "@/modules/billing/types";
+import { isOrganizationSuspended } from "@/modules/system/repository";
 
 const ROLE_RANK: Record<Role, number> = {
   super_admin: 6,
@@ -70,6 +71,11 @@ export async function getOptionalResolvedCurrentPermissions(): Promise<{
     permissionKey: o.permission_key as PermissionKey,
     granted: o.granted,
   }));
+
+  // Platform-suspended tenants block all members except super_admin.
+  if (ctx.role !== "super_admin" && (await isOrganizationSuspended(ctx.organizationId))) {
+    redirect("/suspended");
+  }
 
   return {
     user,

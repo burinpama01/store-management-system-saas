@@ -4,6 +4,7 @@ import { requireSystemAccess } from "@/modules/auth/guards";
 import { getTenantDetail } from "@/modules/system/repository";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import type { BillingStatus } from "@/modules/billing/types";
+import { SuspendControl } from "./SuspendControl";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,12 @@ export default async function TenantDetailPage({
           <h1 className="page-title mt-1">{tenant.name}</h1>
           <p className="page-kicker">{tenant.slug} · สร้างเมื่อ {formatDate(tenant.createdAt)}</p>
         </div>
+        <span className={`badge ${tenant.suspended ? "badge-warning" : "badge-success"}`}>
+          {tenant.suspended ? "ถูกระงับ" : "ใช้งานอยู่"}
+        </span>
       </div>
+
+      <SuspendControl organizationId={tenant.organizationId} suspended={tenant.suspended} />
 
       <section className="panel max-w-3xl p-5">
         <h2 className="panel-title mb-3">การสมัครใช้งาน</h2>

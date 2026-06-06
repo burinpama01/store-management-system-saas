@@ -10,6 +10,7 @@ export interface Database {
           slug: string;
           owner_id: string;
           logo_url: string | null;
+          suspended_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -19,6 +20,7 @@ export interface Database {
           slug: string;
           owner_id: string;
           logo_url?: string | null;
+          suspended_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -28,6 +30,7 @@ export interface Database {
           slug?: string;
           owner_id?: string;
           logo_url?: string | null;
+          suspended_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

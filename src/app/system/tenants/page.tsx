@@ -64,6 +64,7 @@ export default async function SystemTenantsPage() {
                     <Link href={`/system/tenants/${t.organizationId}`} className="text-[var(--color-brand)] hover:underline">
                       {t.name}
                     </Link>
+                    {t.suspended && <span className="badge badge-warning ml-2">ถูกระงับ</span>}
                   </td>
                   <td className="px-4 py-3 text-[var(--muted)]">{t.slug}</td>
                   <td className="px-4 py-3">{PLAN_LABELS[t.plan]}</td>
