@@ -13,59 +13,40 @@ export default function UpdatePasswordPage() {
   const [canUpdatePassword, setCanUpdatePassword] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-    const accessToken = hash.get("access_token");
-    const refreshToken = hash.get("refresh_token");
     const supabase = getSupabaseBrowserClient();
+    let settled = false;
 
-    if (accessToken && refreshToken) {
-      supabase.auth
-        .setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        })
-        .then(({ error: sessionError }) => {
-          if (cancelled) return;
-          window.history.replaceState(null, "", window.location.pathname);
-          if (sessionError) router.replace("/login");
-          else {
-            window.sessionStorage.setItem("password_setup_intent", "recovery");
-            setCanUpdatePassword(true);
-            router.refresh();
-          }
-        })
-        .catch(() => {
-          if (cancelled) return;
-          window.history.replaceState(null, "", window.location.pathname);
-          router.replace("/login");
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
+    const enable = () => {
+      settled = true;
+      setCanUpdatePassword(true);
+    };
 
-    const intent = window.sessionStorage.getItem("password_setup_intent");
-    if (intent !== "invite" && intent !== "recovery") {
-      router.replace("/");
-      return () => {
-        cancelled = true;
-      };
-    }
+    // @supabase/ssr (PKCE, detectSessionInUrl) auto-processes both the hash
+    // (#access_token) and the query (?code) recovery/invite links, then emits an
+    // auth event. Listen for it instead of parsing the URL manually.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        event === "PASSWORD_RECOVERY" ||
+        (Boolean(session) &&
+          (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED"))
+      ) {
+        enable();
+      }
+    });
 
-    supabase.auth
-      .getUser()
-      .then(({ data: { user } }) => {
-        if (cancelled) return;
-        if (!user) router.replace("/login");
-        else setCanUpdatePassword(true);
-      })
-      .catch(() => {
-        if (!cancelled) router.replace("/login");
-      });
+    // Fallback for an already-established session (e.g. invite flow).
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) enable();
+    });
+
+    // If no recovery/session is established shortly, the link was invalid/expired.
+    const timer = setTimeout(() => {
+      if (!settled) router.replace("/login");
+    }, 4000);
 
     return () => {
-      cancelled = true;
+      sub.subscription.unsubscribe();
+      clearTimeout(timer);
     };
   }, [router]);
 
@@ -104,7 +85,7 @@ export default function UpdatePasswordPage() {
       }
 
       window.sessionStorage.removeItem("password_setup_intent");
-      router.replace("/");
+      router.replace("/dashboard");
       router.refresh();
     } catch {
       setError("ตั้งรหัสผ่านไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");

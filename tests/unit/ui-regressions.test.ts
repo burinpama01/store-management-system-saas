@@ -237,21 +237,20 @@ describe("UX/UI regression guards", () => {
     const authLayout = read("src/app/(auth)/layout.tsx");
     const middleware = read("src/server/integrations/supabase/middleware.ts");
 
-    expect(source).toContain("access_token");
-    expect(source).toContain("refresh_token");
-    expect(source).toContain("setSession");
+    // Recovery/invite tokens (hash #access_token or ?code) are auto-processed by
+    // @supabase/ssr (detectSessionInUrl) and surfaced via onAuthStateChange.
+    expect(source).toContain("onAuthStateChange");
+    expect(source).toContain("PASSWORD_RECOVERY");
     expect(source).toContain("canUpdatePassword");
-    expect(source).toContain("password_setup_intent");
-    expect(source).toContain('sessionStorage.setItem("password_setup_intent", "recovery")');
-    expect(source).toContain('sessionStorage.removeItem("password_setup_intent")');
-    expect(source).toContain('router.replace("/")');
     expect(source).toContain("updateUser");
     expect(source).toContain(".getUser");
     expect(source).toContain("password");
     expect(source).toContain("confirmPassword");
     expect(source).toContain("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร");
+    // Fails closed to login when no recovery/session is established.
     expect(source).toContain('router.replace("/login")');
-    expect(source).toContain("router.replace(\"/\")");
+    // On success the user lands in the app, not the public landing page.
+    expect(source).toContain('router.replace("/dashboard")');
     expect(authLayout).not.toContain("update-password");
     expect(middleware).toContain('startsWith("/update-password")');
   });
