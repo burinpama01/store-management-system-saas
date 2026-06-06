@@ -27,7 +27,7 @@ export const DURATION_PRICES: Record<PaidTier, Record<BillingDuration, number>> 
   premium: { "30d": 2290, "1y": 22900 },
 };
 
-export function isPaidTier(plan: BillingPlan): plan is PaidTier {
+export function isPaidTier(plan: string): plan is PaidTier {
   return plan === "starter" || plan === "standard" || plan === "premium";
 }
 

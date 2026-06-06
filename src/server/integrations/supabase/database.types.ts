@@ -84,6 +84,57 @@ export interface Database {
         };
         Relationships: [];
       };
+      billing_prices: {
+        Row: {
+          tier: "starter" | "standard" | "premium";
+          duration: "30d" | "1y";
+          amount: number;
+          updated_at: string;
+        };
+        Insert: {
+          tier: "starter" | "standard" | "premium";
+          duration: "30d" | "1y";
+          amount: number;
+          updated_at?: string;
+        };
+        Update: {
+          tier?: "starter" | "standard" | "premium";
+          duration?: "30d" | "1y";
+          amount?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      billing_promotions: {
+        Row: {
+          id: string;
+          description: string;
+          percent_off: number;
+          active: boolean;
+          starts_at: string | null;
+          ends_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          description: string;
+          percent_off: number;
+          active?: boolean;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          description?: string;
+          percent_off?: number;
+          active?: boolean;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       organizations: {
         Row: {
           id: string;

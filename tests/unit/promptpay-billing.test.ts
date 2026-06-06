@@ -8,6 +8,7 @@ import {
 import { parseSlip2goResponse } from "@/modules/billing/slip2go";
 import { evaluatePaymentVerification } from "@/modules/billing/subscription-service";
 import { receiverMatches, last4Digits, resolveSubscriptionQr, looksLikePromptPayPayload, injectAmountIntoStaticPayload } from "@/modules/billing/promptpay-provider";
+import { applyPromotion, pickActivePromotion, type Promotion } from "@/modules/billing/pricing-repository";
 import type { Slip2goVerification } from "@/modules/billing/slip2go";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
 
@@ -136,6 +137,31 @@ describe("evaluatePaymentVerification", () => {
   it("accepts when receiver last-4 matches", () => {
     const r = evaluatePaymentVerification(verification({ receiverAccount: "xxx1234" }), 690, "0899991234");
     expect(r.ok).toBe(true);
+  });
+});
+
+describe("pricing promotions", () => {
+  function promo(over: Partial<Promotion>): Promotion {
+    return { id: "p", description: "d", percentOff: 10, active: true, startsAt: null, endsAt: null, ...over };
+  }
+
+  it("applyPromotion discounts and rounds to baht", () => {
+    expect(applyPromotion(690, 0)).toBe(690);
+    expect(applyPromotion(690, 20)).toBe(552);
+    expect(applyPromotion(1290, 15)).toBe(1097); // 1096.5 -> 1097
+  });
+
+  it("pickActivePromotion picks strongest valid promo within window", () => {
+    const now = new Date("2026-06-15T00:00:00Z");
+    const rows = [
+      promo({ id: "a", percentOff: 10 }),
+      promo({ id: "b", percentOff: 25 }),
+      promo({ id: "c", percentOff: 50, active: false }), // inactive
+      promo({ id: "d", percentOff: 40, endsAt: "2026-06-01T00:00:00Z" }), // expired
+      promo({ id: "e", percentOff: 30, startsAt: "2026-07-01T00:00:00Z" }), // not started
+    ];
+    expect(pickActivePromotion(rows, now)?.id).toBe("b");
+    expect(pickActivePromotion([], now)).toBeNull();
   });
 });
 

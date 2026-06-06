@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { AuthorizationError, getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { resolveSubscriptionQr, type SubscriptionQr } from "@/modules/billing/promptpay-provider";
-import { getSubscriptionPrice, isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
+import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
+import { getEffectivePrice } from "@/modules/billing/pricing-repository";
 import { submitPromptPayPayment, type SubmitPaymentResult } from "@/modules/billing/subscription-service";
 
 function parsePlan(value: unknown): PaidTier | null {
@@ -34,11 +35,11 @@ export async function getPaymentQrAction(
     const d = parseDuration(duration);
     if (!p || !d) return { ok: false, amount: null, qr: null, error: "แพ็กเกจหรือระยะเวลาไม่ถูกต้อง" };
 
-    const amount = getSubscriptionPrice(p, d);
-    if (amount == null) return { ok: false, amount: null, qr: null, error: "ไม่พบราคาแพ็กเกจ" };
+    const eff = await getEffectivePrice(p, d);
+    if (!eff) return { ok: false, amount: null, qr: null, error: "ไม่พบราคาแพ็กเกจ" };
 
     const settings = await getPlatformSettings();
-    return { ok: true, amount, qr: resolveSubscriptionQr(settings, amount), error: null };
+    return { ok: true, amount: eff.amount, qr: resolveSubscriptionQr(settings, eff.amount), error: null };
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return { ok: false, amount: null, qr: null, error: "ไม่มีสิทธิ์" };
