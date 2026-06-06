@@ -69,6 +69,153 @@ export async function listTenantOverview(): Promise<TenantOverview[]> {
   });
 }
 
+export interface TenantStore {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+}
+
+export interface TenantMember {
+  userId: string;
+  email: string | null;
+  role: string;
+  storeId: string | null;
+  joinedAt: string | null;
+}
+
+export interface TenantSubscription {
+  plan: BillingPlan;
+  status: BillingStatus;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  trialEnd: string | null;
+}
+
+export interface TenantDetail {
+  organizationId: string;
+  name: string;
+  slug: string;
+  ownerId: string;
+  ownerEmail: string | null;
+  createdAt: string;
+  subscription: TenantSubscription | null;
+  stores: TenantStore[];
+  members: TenantMember[];
+}
+
+export interface AuditLogEntry {
+  id: string;
+  organizationId: string;
+  storeId: string | null;
+  actorUserId: string;
+  targetUserId: string | null;
+  action: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+/**
+ * Full read-only detail for one tenant. Service-client only; reach only after
+ * requireSystemAccess(). Returns null when the organization does not exist.
+ */
+export async function getTenantDetail(organizationId: string): Promise<TenantDetail | null> {
+  const supabase = await createSupabaseServiceClient();
+
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("id, name, slug, owner_id, created_at")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!org) return null;
+
+  const [subRes, storesRes, membersRes] = await Promise.all([
+    supabase
+      .from("subscriptions")
+      .select("plan, status, current_period_end, cancel_at_period_end, trial_end")
+      .eq("organization_id", organizationId)
+      .maybeSingle(),
+    supabase
+      .from("stores")
+      .select("id, name, slug, is_active")
+      .eq("organization_id", organizationId)
+      .order("name"),
+    supabase
+      .from("memberships")
+      .select("user_id, role, store_id, joined_at")
+      .eq("organization_id", organizationId),
+  ]);
+
+  const members: TenantMember[] = await Promise.all(
+    (membersRes.data ?? []).map(async (m) => {
+      let email: string | null = null;
+      try {
+        const { data } = await supabase.auth.admin.getUserById(m.user_id);
+        email = data.user?.email ?? null;
+      } catch {
+        email = null;
+      }
+      return {
+        userId: m.user_id,
+        email,
+        role: m.role,
+        storeId: m.store_id,
+        joinedAt: m.joined_at ?? null,
+      };
+    }),
+  );
+
+  const ownerEmail = members.find((m) => m.userId === org.owner_id)?.email ?? null;
+
+  return {
+    organizationId: org.id,
+    name: org.name,
+    slug: org.slug,
+    ownerId: org.owner_id,
+    ownerEmail,
+    createdAt: org.created_at,
+    subscription: subRes.data
+      ? {
+          plan: subRes.data.plan as BillingPlan,
+          status: subRes.data.status as BillingStatus,
+          currentPeriodEnd: subRes.data.current_period_end,
+          cancelAtPeriodEnd: subRes.data.cancel_at_period_end,
+          trialEnd: subRes.data.trial_end,
+        }
+      : null,
+    stores: (storesRes.data ?? []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      slug: s.slug,
+      isActive: s.is_active,
+    })),
+    members,
+  };
+}
+
+/**
+ * Recent audit log entries across all tenants (platform security view).
+ * Service-client only; reach only after requireSystemAccess().
+ */
+export async function listRecentAuditLogs(limit = 100): Promise<AuditLogEntry[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("audit_logs")
+    .select("id, organization_id, store_id, actor_user_id, target_user_id, action, reason, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    organizationId: row.organization_id,
+    storeId: row.store_id,
+    actorUserId: row.actor_user_id,
+    targetUserId: row.target_user_id,
+    action: row.action,
+    reason: row.reason,
+    createdAt: row.created_at,
+  }));
+}
+
 export function summarizeTenants(tenants: TenantOverview[]): PlatformSummary {
   const byPlan: Record<BillingPlan, number> = {
     free: 0,

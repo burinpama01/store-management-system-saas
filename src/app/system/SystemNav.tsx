@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/system", label: "ภาพรวมแพลตฟอร์ม", exact: true },
   { href: "/system/tenants", label: "Tenants", exact: false },
+  { href: "/system/audit", label: "Audit", exact: false },
 ];
 
 export function SystemNav() {

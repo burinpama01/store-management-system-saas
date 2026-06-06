@@ -63,6 +63,17 @@ export async function registerOwner(
   // so RLS would block these inserts under the user-scoped client.
   const svc = await createSupabaseServiceClient();
 
+  // On any bootstrap failure, remove the just-created auth user too. Otherwise the
+  // email is "taken" (signUp returns empty identities) yet has no tenant, leaving
+  // the user unable to re-register or use the app.
+  const rollback = async () => {
+    try {
+      await svc.auth.admin.deleteUser(user.id);
+    } catch (e) {
+      logRegisterError("rollback delete auth user", e as { message?: string });
+    }
+  };
+
   const { data: org, error: orgErr } = await svc
     .from("organizations")
     .insert({
@@ -74,6 +85,7 @@ export async function registerOwner(
     .single();
   if (orgErr || !org) {
     logRegisterError("create organization", orgErr);
+    await rollback();
     return { error: "สร้างกิจการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
   }
 
@@ -92,6 +104,7 @@ export async function registerOwner(
   if (storeErr || !store) {
     logRegisterError("create store", storeErr);
     await svc.from("organizations").delete().eq("id", org.id);
+    await rollback();
     return { error: "สร้างร้านไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
   }
 
@@ -108,6 +121,7 @@ export async function registerOwner(
     logRegisterError("create membership", memErr);
     await svc.from("stores").delete().eq("id", store.id);
     await svc.from("organizations").delete().eq("id", org.id);
+    await rollback();
     return { error: "ตั้งค่าสิทธิ์เจ้าของไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
   }
 

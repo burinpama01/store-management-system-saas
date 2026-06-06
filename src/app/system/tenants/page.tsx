@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireSystemAccess } from "@/modules/auth/guards";
 import { listTenantOverview } from "@/modules/system/repository";
 import { PLAN_LABELS } from "@/modules/billing/types";
@@ -59,7 +60,11 @@ export default async function SystemTenantsPage() {
             <tbody>
               {tenants.map((t) => (
                 <tr key={t.organizationId} className="border-b border-[var(--border)] last:border-0">
-                  <td className="px-4 py-3 font-bold text-[var(--ink)]">{t.name}</td>
+                  <td className="px-4 py-3 font-bold text-[var(--ink)]">
+                    <Link href={`/system/tenants/${t.organizationId}`} className="text-[var(--color-brand)] hover:underline">
+                      {t.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3 text-[var(--muted)]">{t.slug}</td>
                   <td className="px-4 py-3">{PLAN_LABELS[t.plan]}</td>
                   <td className="px-4 py-3">
