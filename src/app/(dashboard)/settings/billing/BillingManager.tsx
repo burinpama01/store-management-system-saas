@@ -12,7 +12,7 @@ import {
   type PaidTier,
 } from "@/modules/billing/pricing";
 import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
-import { ProgressBar } from "@/shared/components/ui";
+import { ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
 import { getPaymentQrAction } from "./actions";
 
@@ -221,20 +221,26 @@ export function BillingManager({
                 โอน {amount?.toLocaleString()} บาท ไปยัง {recipientName ?? "บัญชีผู้รับ"}
               </p>
               {qr.type === "payload" && (
-                <div>
-                  <p className="label-muted mb-1">EMVCo Payload (สร้าง/สแกน QR จากสตริงนี้)</p>
-                  <textarea
-                    readOnly
-                    value={qr.payload}
-                    onFocus={(e) => e.currentTarget.select()}
-                    rows={3}
-                    className="form-input break-all font-mono text-xs"
-                  />
+                <div className="flex flex-col items-center">
+                  <p className="label-muted mb-2 self-start">สแกน QR นี้ด้วยแอปธนาคารเพื่อชำระเงิน</p>
+                  <QrCode value={qr.payload} />
                   {!qr.amountEmbedded && (
-                    <p className="mt-1 text-xs text-amber-700">
+                    <p className="mt-2 text-xs text-amber-700">
                       QR นี้ไม่ได้ระบุยอด กรุณาโอนยอด {amount?.toLocaleString()} บาท ด้วยตนเอง
                     </p>
                   )}
+                  <details className="mt-3 w-full">
+                    <summary className="cursor-pointer text-xs font-bold text-[var(--muted)]">
+                      ดู EMVCo Payload (ข้อความ)
+                    </summary>
+                    <textarea
+                      readOnly
+                      value={qr.payload}
+                      onFocus={(e) => e.currentTarget.select()}
+                      rows={3}
+                      className="form-input mt-2 break-all font-mono text-xs"
+                    />
+                  </details>
                 </div>
               )}
               {qr.type === "unconfigured" && (

@@ -5,4 +5,5 @@ export { ConfirmDialog } from "./ConfirmDialog";
 export { ModalDialog } from "./ModalDialog";
 export { Badge } from "./Badge";
 export { ProgressBar } from "./ProgressBar";
+export { QrCode } from "./QrCode";
 export { Skeleton, SkeletonText, PageSkeleton } from "./Skeleton";
