@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { BillingPlan } from "@/modules/billing/types";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import {
@@ -49,6 +49,7 @@ export function BillingManager({
   recipientName: string | null;
   slipVerificationReady: boolean;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
 
@@ -106,11 +107,17 @@ export function BillingManager({
       setError(res.data.error);
       return;
     }
+    const status = res.data.status ?? "rejected";
     setResult({
-      status: res.data.status ?? "rejected",
+      status,
       reason: res.data.reason ?? null,
       newExpiry: res.data.newExpiry ?? null,
     });
+    // Refresh server data so the current-plan panel reflects the new subscription.
+    if (status === "verified") {
+      setQr(null);
+      router.refresh();
+    }
   }
 
   return (
