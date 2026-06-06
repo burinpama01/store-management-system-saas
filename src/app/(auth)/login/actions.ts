@@ -1,6 +1,7 @@
 "use server";
 
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { landingPathForCurrentUser } from "@/modules/auth/guards";
 import { redirect } from "next/navigation";
 
 function logSignInError(error: { code?: string; message: string }) {
@@ -35,5 +36,5 @@ export async function signIn(
     };
   }
 
-  redirect("/dashboard");
+  redirect(await landingPathForCurrentUser());
 }

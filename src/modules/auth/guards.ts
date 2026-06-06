@@ -157,6 +157,14 @@ export async function isSystemAdmin(): Promise<boolean> {
 }
 
 /**
+ * Where to send a freshly-authenticated user: super_admin operates the platform
+ * console (no store dashboard); everyone else goes to the store dashboard.
+ */
+export async function landingPathForCurrentUser(): Promise<string> {
+  return (await isSystemAdmin()) ? "/system" : "/dashboard";
+}
+
+/**
  * Guards platform console routes (/system). Redirects to /login if unauthenticated,
  * throws AuthorizationError if the user is not a super_admin.
  */

@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { landingPathForCurrentUser } from "@/modules/auth/guards";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -9,6 +10,6 @@ export default async function AuthLayout({ children }: { children: ReactNode }) 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (user) redirect("/dashboard");
+  if (user) redirect(await landingPathForCurrentUser());
   return <>{children}</>;
 }

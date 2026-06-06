@@ -107,6 +107,91 @@ export interface TenantDetail {
   members: TenantMember[];
 }
 
+export interface TenantPaymentRow {
+  plan: string;
+  duration: string;
+  amountExpected: number;
+  verifiedAmount: number | null;
+  status: string;
+  slipRef: string | null;
+  createdAt: string;
+  verifiedAt: string | null;
+}
+
+/** Billing/slip history for a tenant (platform view). Service-client only. */
+export async function listTenantPayments(organizationId: string): Promise<TenantPaymentRow[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("payment_submissions")
+    .select("plan, duration, amount_expected, verified_amount, status, slip_ref, created_at, verified_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  return (data ?? []).map((p) => ({
+    plan: p.plan,
+    duration: p.duration,
+    amountExpected: Number(p.amount_expected ?? 0),
+    verifiedAmount: p.verified_amount == null ? null : Number(p.verified_amount),
+    status: p.status,
+    slipRef: p.slip_ref,
+    createdAt: p.created_at,
+    verifiedAt: p.verified_at,
+  }));
+}
+
+/**
+ * Platform override: set a tenant's plan directly (no payment). Service-client
+ * only; caller MUST be a verified super_admin. Writes an audit log entry.
+ */
+export async function setTenantPlan(input: {
+  organizationId: string;
+  plan: BillingPlan;
+  actorUserId: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+
+  const { data: existing } = await supabase
+    .from("subscriptions")
+    .select("current_period_end")
+    .eq("organization_id", input.organizationId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("subscriptions")
+      .update({ plan: input.plan, updated_at: now })
+      .eq("organization_id", input.organizationId);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const end = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const { error } = await supabase.from("subscriptions").upsert(
+      {
+        organization_id: input.organizationId,
+        plan: input.plan,
+        status: "active",
+        current_period_start: now,
+        current_period_end: end,
+        cancel_at_period_end: false,
+        updated_at: now,
+      },
+      { onConflict: "organization_id" },
+    );
+    if (error) return { ok: false, error: error.message };
+  }
+
+  await supabase.from("audit_logs").insert({
+    organization_id: input.organizationId,
+    store_id: null,
+    actor_user_id: input.actorUserId,
+    target_user_id: null,
+    action: "tenant.plan_change",
+    reason: `plan → ${input.plan} (platform override)`,
+  });
+
+  return { ok: true, error: null };
+}
+
 export interface AuditLogEntry {
   id: string;
   organizationId: string;

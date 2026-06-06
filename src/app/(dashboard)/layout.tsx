@@ -11,8 +11,10 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, ctx: storeContext, resolved } = await getResolvedCurrentPermissions();
-  const { stores } = await getUserStores();
   if (!storeContext) redirect("/login");
+  // super_admin is a platform operator with no store dashboard.
+  if (storeContext.role === "super_admin") redirect("/system");
+  const { stores } = await getUserStores();
   const can = (permission: PermissionKey) => resolved.can(permission);
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),

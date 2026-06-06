@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSystemAccess } from "@/modules/auth/guards";
-import { getTenantDetail, getTenantOperations } from "@/modules/system/repository";
+import { getTenantDetail, getTenantOperations, listTenantPayments } from "@/modules/system/repository";
 import { PLAN_LABELS } from "@/modules/billing/types";
-import type { BillingStatus } from "@/modules/billing/types";
+import type { BillingPlan, BillingStatus } from "@/modules/billing/types";
 import { SuspendControl } from "./SuspendControl";
+import { TenantPlanControl } from "./TenantPlanControl";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export default async function TenantDetailPage({
   const tenant = await getTenantDetail(id);
   if (!tenant) notFound();
   const ops = await getTenantOperations(id);
+  const payments = await listTenantPayments(id);
 
   return (
     <div className="space-y-5">
@@ -72,6 +74,48 @@ export default async function TenantDetailPage({
             value={tenant.subscription ? formatDate(tenant.subscription.currentPeriodEnd) : "—"}
           />
         </div>
+        <div className="mt-4">
+          <TenantPlanControl
+            organizationId={tenant.organizationId}
+            currentPlan={(tenant.subscription?.plan ?? "free") as BillingPlan}
+          />
+        </div>
+      </section>
+
+      <section className="panel overflow-x-auto p-0">
+        <h2 className="panel-title px-4 pt-4">บิลลิ่ง / สลิป ({payments.length})</h2>
+        {payments.length === 0 ? (
+          <p className="p-4 text-sm text-[var(--muted)]">ยังไม่มีรายการชำระเงิน</p>
+        ) : (
+          <table className="mt-3 w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--muted)]">
+                <th className="px-4 py-2 font-bold">แพ็กเกจ</th>
+                <th className="px-4 py-2 text-right font-bold">ยอด</th>
+                <th className="px-4 py-2 font-bold">สถานะ</th>
+                <th className="px-4 py-2 font-bold">เลขอ้างอิงสลิป</th>
+                <th className="px-4 py-2 font-bold">วันที่</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p, i) => (
+                <tr key={i} className="border-b border-[var(--border)] last:border-0">
+                  <td className="px-4 py-2">{p.plan} · {p.duration}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    ฿{(p.verifiedAmount ?? p.amountExpected).toLocaleString("th-TH")}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className={`badge ${p.status === "verified" ? "badge-success" : "badge-warning"}`}>
+                      {p.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs text-[var(--muted)]">{p.slipRef ?? "—"}</td>
+                  <td className="px-4 py-2 text-[var(--muted)]">{formatDate(p.verifiedAt ?? p.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="panel p-5">
