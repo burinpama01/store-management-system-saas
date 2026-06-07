@@ -1,10 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { browserAdapter } from "@/modules/printing/adapters/browser";
+import type { ReceiptData } from "@/modules/printing/types";
+import type { Printer } from "@/modules/stores/types";
 
 type Key = "receipt" | "promptpay" | "printer";
 
-export function ReceiptTests({ promptpayConfigured }: { promptpayConfigured: boolean }) {
+export function ReceiptTests({
+  promptpayConfigured,
+  storeName,
+  paperWidth,
+}: {
+  promptpayConfigured: boolean;
+  storeName: string;
+  paperWidth: "58mm" | "80mm";
+}) {
   const [results, setResults] = useState<Record<Key, { ok: boolean; message: string } | null>>({
     receipt: null,
     promptpay: null,
@@ -15,9 +26,30 @@ export function ReceiptTests({ promptpayConfigured }: { promptpayConfigured: boo
     setResults((p) => ({ ...p, [key]: { ok, message } }));
   }
 
-  function runReceipt() {
-    const ok = typeof window !== "undefined" && typeof window.print === "function";
-    set("receipt", ok, ok ? "เบราว์เซอร์รองรับการพิมพ์ใบเสร็จ (window.print)" : "เบราว์เซอร์นี้ไม่รองรับการพิมพ์");
+  async function runReceipt() {
+    const sample: ReceiptData = {
+      storeName,
+      paperWidth,
+      printedAt: new Date().toISOString(),
+      orderNumber: "TEST-0001",
+      showTaxId: false,
+      showQrPayment: false,
+      items: [
+        { name: "กาแฟดำ", quantity: 1, unitPrice: 45, totalPrice: 45, modifierNames: [] },
+        { name: "ลาเต้", variantName: "ร้อน", quantity: 2, unitPrice: 55, totalPrice: 110, modifierNames: ["หวานน้อย"] },
+      ],
+      subtotal: 155,
+      discount: 0,
+      total: 155,
+      payments: [{ method: "cash", amount: 155, receivedAmount: 160, changeAmount: 5 }],
+      footerText: "ขอบคุณที่ใช้บริการ · ใบเสร็จทดสอบ",
+    };
+    try {
+      await browserAdapter.print(sample, {} as unknown as Printer);
+      set("receipt", true, "เปิดหน้าต่างพิมพ์ใบเสร็จตัวอย่างแล้ว (ถ้าไม่ขึ้น โปรดอนุญาต pop-up)");
+    } catch (e) {
+      set("receipt", false, e instanceof Error ? e.message : "สั่งพิมพ์ไม่สำเร็จ");
+    }
   }
 
   function runPromptpay() {

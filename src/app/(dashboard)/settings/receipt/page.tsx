@@ -22,7 +22,11 @@ export default async function ReceiptSettingsPage() {
         canEdit={canEdit}
       />
       <PrinterConnect />
-      <ReceiptTests promptpayConfigured={Boolean(settingsRes.data?.promptpayId)} />
+      <ReceiptTests
+        promptpayConfigured={Boolean(settingsRes.data?.promptpayId)}
+        storeName={settingsRes.data?.storeName ?? ctx.storeName}
+        paperWidth={settingsRes.data?.paperWidth === "58mm" ? "58mm" : "80mm"}
+      />
     </div>
   );
 }
