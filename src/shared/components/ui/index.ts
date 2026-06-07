@@ -6,4 +6,5 @@ export { ModalDialog } from "./ModalDialog";
 export { Badge } from "./Badge";
 export { ProgressBar } from "./ProgressBar";
 export { QrCode } from "./QrCode";
+export { MapPicker } from "./MapPicker";
 export { Skeleton, SkeletonText, PageSkeleton } from "./Skeleton";

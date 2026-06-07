@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, MapPicker } from "@/shared/components/ui";
 import { clockInAction, clockOutAction, saveAttendanceSettingsAction } from "./actions";
 
 interface Props {
@@ -439,6 +439,7 @@ function AttendanceSettingsDialog({
 
   const [lat, setLat] = useState(attendanceSettings?.geofenceCenterLat?.toString() ?? "");
   const [lng, setLng] = useState(attendanceSettings?.geofenceCenterLng?.toString() ?? "");
+  const [radius, setRadius] = useState(attendanceSettings?.geofenceRadiusMeters?.toString() ?? "100");
   const [locating, setLocating] = useState(false);
 
   async function useCurrentLocation() {
@@ -474,18 +475,27 @@ function AttendanceSettingsDialog({
             เปิดใช้ geofence
           </label>
         </div>
-        <div>
+        <div className="space-y-2">
           <button
             type="button"
             onClick={useCurrentLocation}
             disabled={locating}
             className="btn-secondary text-xs disabled:opacity-40"
           >
-            {locating ? "กำลังระบุตำแหน่ง..." : "📍 ใช้ตำแหน่งปัจจุบันเป็นหมุดเข้างาน"}
+            {locating ? "กำลังระบุตำแหน่ง..." : "📍 ใช้ตำแหน่งปัจจุบัน"}
           </button>
-          <p className="mt-1 text-xs text-gray-500">
-            ยืนอยู่ที่ร้านแล้วกดปุ่มนี้ ระบบจะเติมพิกัด latitude/longitude ให้อัตโนมัติ
+          <p className="text-xs text-gray-500">
+            คลิกบนแผนที่เพื่อปักหมุดตำแหน่งร้าน หรือกดปุ่มด้านบนเพื่อใช้ตำแหน่งปัจจุบัน · วงสีเขียว = รัศมีเข้างาน
           </p>
+          <MapPicker
+            lat={lat ? parseFloat(lat) : null}
+            lng={lng ? parseFloat(lng) : null}
+            radius={radius ? parseInt(radius, 10) : null}
+            onPick={(la, ln) => {
+              setLat(la.toFixed(6));
+              setLng(ln.toFixed(6));
+            }}
+          />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="text-xs text-gray-500">
@@ -521,7 +531,8 @@ function AttendanceSettingsDialog({
               type="number"
               min="10"
               max="5000"
-              defaultValue={attendanceSettings?.geofenceRadiusMeters ?? ""}
+              value={radius}
+              onChange={(e) => setRadius(e.target.value)}
               className="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm"
             />
           </label>
