@@ -6,7 +6,6 @@ import type { BillingPlan } from "@/modules/billing/types";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import {
   DURATION_LABELS,
-  DURATION_PRICES,
   PAID_TIERS,
   type BillingDuration,
   type PaidTier,
@@ -30,11 +29,19 @@ const TIER_DESC: Record<PaidTier, string> = {
   premium: "+ QR ordering, LINE, GPS, commission",
 };
 
+function daysLeft(iso: string): number {
+  const d = new Date(iso).getTime();
+  if (Number.isNaN(d)) return 0;
+  return Math.max(0, Math.ceil((d - Date.now()) / 86_400_000));
+}
+
 export function BillingManager({
   orgName,
   plan,
+  status,
   currentPeriodEnd,
   isActive,
+  prices,
   canManage,
   paymentConfigured,
   recipientName,
@@ -42,13 +49,16 @@ export function BillingManager({
 }: {
   orgName: string;
   plan: BillingPlan;
+  status: string;
   currentPeriodEnd: string;
   isActive: boolean;
+  prices: Record<PaidTier, Record<BillingDuration, number>>;
   canManage: boolean;
   paymentConfigured: boolean;
   recipientName: string | null;
   slipVerificationReady: boolean;
 }) {
+  const isTrial = status === "trialing" && isActive;
   const router = useRouter();
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
@@ -63,7 +73,7 @@ export function BillingManager({
   const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
   const [uploadPercent, setUploadPercent] = useState(0);
 
-  const price = DURATION_PRICES[selectedPlan][duration];
+  const price = prices[selectedPlan][duration];
 
   async function generateQr() {
     setError(null);
@@ -127,11 +137,16 @@ export function BillingManager({
           <h1 className="page-title">การเรียกเก็บเงิน & แพ็กเกจ</h1>
           <p className="page-kicker">{orgName} · ชำระผ่าน PromptPay ยืนยันอัตโนมัติด้วย slip2go</p>
         </div>
-        <span className={`badge ${isActive ? "badge-success" : "badge-warning"}`}>
-          {isActive ? "ใช้งานอยู่" : "ยังไม่เปิดใช้งาน"}
+        <span className={`badge ${isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
+          {isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "ยังไม่เปิดใช้งาน"}
         </span>
       </div>
 
+      {isTrial && (
+        <p className="rounded-[var(--radius-md)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] px-3 py-2 text-sm text-[var(--tenant-primary-strong)]">
+          คุณกำลังทดลองใช้ฟรี (สิทธิ์ระดับ Premium) เหลืออีก {daysLeft(currentPeriodEnd)} วัน · เลือกแพ็กเกจด้านล่างเพื่อใช้งานต่อหลังหมดทดลอง
+        </p>
+      )}
       {expired && !isActive && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           แพ็กเกจหมดอายุหรือยังไม่ได้ชำระเงิน กรุณาชำระเพื่อใช้งานระบบต่อ
@@ -147,8 +162,8 @@ export function BillingManager({
       <section className="panel max-w-3xl p-5">
         <h2 className="panel-title mb-3">แพ็กเกจปัจจุบัน</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoItem label="แพ็กเกจ" value={PLAN_LABELS[plan]} />
-          <InfoItem label="สถานะ" value={isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
+          <InfoItem label="แพ็กเกจ" value={isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
+          <InfoItem label="สถานะ" value={isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
           <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />
         </div>
       </section>
@@ -189,7 +204,7 @@ export function BillingManager({
                 <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[t]}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">{TIER_DESC[t]}</p>
                 <p className="mt-2 text-xs text-[var(--ink-2)]">
-                  {DURATION_PRICES[t]["30d"].toLocaleString()} / เดือน
+                  {prices[t]["30d"].toLocaleString()} / เดือน
                 </p>
               </button>
             ))}
