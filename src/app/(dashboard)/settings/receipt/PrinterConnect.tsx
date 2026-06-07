@@ -2,41 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { connectBluetoothPrinter, getBluetoothPrinterName } from "@/modules/printing/bluetooth-client";
-
-type DeviceLike = { productName?: string; manufacturerName?: string; name?: string };
-type NavWithDevices = {
-  usb?: { requestDevice: (o: { filters: unknown[] }) => Promise<unknown> };
-};
+import { connectUsbPrinter, getUsbPrinterName } from "@/modules/printing/usb-client";
 
 /**
- * Connect a receipt printer before testing. USB/Bluetooth use the browser
- * pairing dialog; the connected device name is shown so the test prints to a
- * real target. Actual ESC/POS output requires a physical printer.
+ * Connect a receipt printer before testing. Print fallback order is
+ * Bluetooth → USB → PDF (browser). The connected device is kept for the session.
  */
 export function PrinterConnect() {
   const [device, setDevice] = useState<{ kind: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Show a previously-connected Bluetooth printer name (per browser).
+  // Show a previously-connected printer name (per browser).
   useEffect(() => {
-    const name = getBluetoothPrinterName();
-    if (name) void Promise.resolve().then(() => setDevice({ kind: "Bluetooth (จำไว้)", name }));
+    const bt = getBluetoothPrinterName();
+    const usb = getUsbPrinterName();
+    const remembered = bt ? { kind: "Bluetooth (จำไว้)", name: bt } : usb ? { kind: "USB (จำไว้)", name: usb } : null;
+    if (remembered) void Promise.resolve().then(() => setDevice(remembered));
   }, []);
 
   async function connectUsb() {
     setError(null);
-    const nav = navigator as unknown as NavWithDevices;
-    if (!nav.usb) {
-      setError("เบราว์เซอร์นี้ไม่รองรับ WebUSB (ลองใช้ Chrome/Edge บนเดสก์ท็อป)");
-      return;
-    }
     setBusy(true);
     try {
-      const d = (await nav.usb.requestDevice({ filters: [] })) as DeviceLike;
-      setDevice({ kind: "USB", name: d.productName || d.manufacturerName || "USB Printer" });
-    } catch {
-      setError("ไม่ได้เลือกอุปกรณ์ USB หรือยกเลิกการเชื่อมต่อ");
+      const name = await connectUsbPrinter();
+      setDevice({ kind: "USB", name });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "เชื่อมต่อ USB ไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
