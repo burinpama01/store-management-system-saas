@@ -25,7 +25,9 @@ export function MapPicker({
   const markerRef = useRef<LeafletNS.CircleMarker | null>(null);
   const circleRef = useRef<LeafletNS.Circle | null>(null);
   const onPickRef = useRef(onPick);
-  onPickRef.current = onPick;
+  useEffect(() => {
+    onPickRef.current = onPick;
+  });
 
   useEffect(() => {
     let cancelled = false;

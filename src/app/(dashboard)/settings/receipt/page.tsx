@@ -3,6 +3,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getReceiptSettings } from "@/modules/settings/repository";
 import { ReceiptSettingsForm } from "./ReceiptSettingsForm";
 import { ReceiptTests } from "./ReceiptTests";
+import { PrinterConnect } from "./PrinterConnect";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function ReceiptSettingsPage() {
         storeName={ctx.storeName}
         canEdit={canEdit}
       />
+      <PrinterConnect />
       <ReceiptTests promptpayConfigured={Boolean(settingsRes.data?.promptpayId)} />
     </div>
   );

@@ -84,6 +84,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      buffet_packages: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          price_per_guest: number;
+          duration_minutes: number | null;
+          active: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          price_per_guest: number;
+          duration_minutes?: number | null;
+          active?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          price_per_guest?: number;
+          duration_minutes?: number | null;
+          active?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       billing_prices: {
         Row: {
           tier: "starter" | "standard" | "premium";

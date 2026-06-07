@@ -7,6 +7,7 @@ const TABS = [
   { href: "/settings/store", label: "ร้านค้า" },
   { href: "/settings/team", label: "ทีมงาน" },
   { href: "/settings/receipt", label: "ใบเสร็จ" },
+  { href: "/settings/buffet", label: "บุฟเฟต์" },
   { href: "/settings/billing", label: "แพ็กเกจ" },
   { href: "/settings/notifications", label: "Notifications" },
 ];

@@ -1,7 +1,60 @@
-import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
-import type { BuffetSession } from "./types";
+import type { BuffetSession, BuffetPackage } from "./types";
 import type { Database } from "@/server/integrations/supabase/database.types";
+
+type PackageRow = Database["public"]["Tables"]["buffet_packages"]["Row"];
+
+function mapPackage(row: PackageRow): BuffetPackage {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    storeId: row.store_id,
+    name: row.name,
+    pricePerGuest: Number(row.price_per_guest),
+    durationMinutes: row.duration_minutes,
+    active: row.active,
+    sortOrder: row.sort_order,
+  };
+}
+
+export async function listBuffetPackages(storeId: string, includeInactive = false): Promise<BuffetPackage[]> {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from("buffet_packages").select("*").eq("store_id", storeId).order("sort_order");
+  if (!includeInactive) query = query.eq("active", true);
+  const { data } = await query;
+  return (data ?? []).map(mapPackage);
+}
+
+export async function createBuffetPackage(input: {
+  organizationId: string;
+  storeId: string;
+  name: string;
+  pricePerGuest: number;
+  durationMinutes: number | null;
+}) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.from("buffet_packages").insert({
+    organization_id: input.organizationId,
+    store_id: input.storeId,
+    name: input.name,
+    price_per_guest: input.pricePerGuest,
+    duration_minutes: input.durationMinutes,
+  });
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function setBuffetPackageActive(id: string, storeId: string, active: boolean) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("buffet_packages")
+    .update({ active })
+    .eq("id", id)
+    .eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
 
 type SessionRow = Database["public"]["Tables"]["buffet_sessions"]["Row"];
 type TableRow = Database["public"]["Tables"]["tables"]["Row"];

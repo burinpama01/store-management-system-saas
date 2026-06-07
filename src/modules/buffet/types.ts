@@ -1,3 +1,14 @@
+export interface BuffetPackage {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  name: string;
+  pricePerGuest: number;
+  durationMinutes: number | null;
+  active: boolean;
+  sortOrder: number;
+}
+
 export interface BuffetSession {
   id: string;
   organizationId: string;
