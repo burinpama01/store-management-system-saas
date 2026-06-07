@@ -425,7 +425,7 @@ describe("UX/UI regression guards", () => {
     const sources = {
       dashboard: read("src/app/(dashboard)/dashboard/page.tsx"),
       catalog: read("src/app/(dashboard)/catalog/CatalogManager.tsx"),
-      stock: read("src/app/(dashboard)/stock/page.tsx"),
+      stock: read("src/app/(dashboard)/stock/StockManager.tsx"),
       accounting: read("src/app/(dashboard)/accounting/AccountingManager.tsx"),
       reports: read("src/app/(dashboard)/reports/ReportsManager.tsx"),
       attendance: read("src/app/(dashboard)/attendance/AttendanceManager.tsx"),
@@ -529,12 +529,14 @@ describe("UX/UI regression guards", () => {
     const layout = read("src/app/(dashboard)/layout.tsx");
     const page = read("src/app/(dashboard)/stock/page.tsx");
 
+    const manager = read("src/app/(dashboard)/stock/StockManager.tsx");
     expect(layout).toContain('href: "/stock"');
     expect(page).toContain('requirePermission("stock.manage")');
     expect(page).toContain("getPlanFeatures");
     expect(page).toContain("features.stockManagement");
-    expect(page).toContain("แจ้งเตือนสต็อกต่ำ");
-    expect(page).toContain("listLowStockAlerts");
+    expect(page).toContain("StockManager");
+    expect(manager).toContain("สต็อกสินค้า");
+    expect(manager).toContain("setStockAction");
   });
 
   it("dashboard sidebar separates navigation by role permissions", () => {
