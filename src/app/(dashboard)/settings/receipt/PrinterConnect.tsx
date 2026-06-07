@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { connectBluetoothPrinter, getBluetoothPrinterName } from "@/modules/printing/bluetooth-client";
 
 type DeviceLike = { productName?: string; manufacturerName?: string; name?: string };
 type NavWithDevices = {
   usb?: { requestDevice: (o: { filters: unknown[] }) => Promise<unknown> };
-  bluetooth?: { requestDevice: (o: { acceptAllDevices: boolean }) => Promise<unknown> };
 };
 
 /**
@@ -17,6 +17,12 @@ export function PrinterConnect() {
   const [device, setDevice] = useState<{ kind: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Show a previously-connected Bluetooth printer name (per browser).
+  useEffect(() => {
+    const name = getBluetoothPrinterName();
+    if (name) void Promise.resolve().then(() => setDevice({ kind: "Bluetooth (จำไว้)", name }));
+  }, []);
 
   async function connectUsb() {
     setError(null);
@@ -38,24 +44,15 @@ export function PrinterConnect() {
 
   async function connectBluetooth() {
     setError(null);
-    const nav = navigator as unknown as NavWithDevices;
-    if (!nav.bluetooth) {
-      setError("เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth");
-      return;
-    }
     setBusy(true);
     try {
-      const d = (await nav.bluetooth.requestDevice({ acceptAllDevices: true })) as DeviceLike;
-      setDevice({ kind: "Bluetooth", name: d.name || "Bluetooth Printer" });
-    } catch {
-      setError("ไม่ได้เลือกอุปกรณ์ Bluetooth หรือยกเลิกการเชื่อมต่อ");
+      const name = await connectBluetoothPrinter();
+      setDevice({ kind: "Bluetooth", name });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "เชื่อมต่อ Bluetooth ไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
-  }
-
-  function testBrowserPrint() {
-    if (typeof window !== "undefined") window.print();
   }
 
   return (
@@ -70,10 +67,10 @@ export function PrinterConnect() {
         <button type="button" onClick={connectBluetooth} disabled={busy} className="btn-secondary text-sm disabled:opacity-40">
           เชื่อมต่อ Bluetooth
         </button>
-        <button type="button" onClick={testBrowserPrint} className="btn-primary text-sm">
-          ทดสอบพิมพ์ (Browser)
-        </button>
       </div>
+      <p className="mt-2 text-xs text-[var(--muted)]">
+        เชื่อมต่อแล้วใช้ปุ่ม &quot;ทดสอบพิมพ์ใบเสร็จ&quot; ด้านล่างเพื่อส่งใบเสร็จไปยังเครื่องพิมพ์
+      </p>
 
       {device && (
         <p className="mt-3 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">

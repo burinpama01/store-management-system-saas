@@ -2,8 +2,15 @@
 
 import { useState } from "react";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
+import { buildEscPosReceipt } from "@/modules/printing/escpos";
+import { isBluetoothPrinterConnected, printViaBluetooth } from "@/modules/printing/bluetooth-client";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
+
+const SAMPLE_ITEMS = [
+  { name: "กาแฟดำ", quantity: 1, unitPrice: 45, totalPrice: 45, modifierNames: [] as string[] },
+  { name: "ลาเต้", variantName: "ร้อน", quantity: 2, unitPrice: 55, totalPrice: 110, modifierNames: ["หวานน้อย"] },
+];
 
 type Key = "receipt" | "promptpay" | "printer";
 
@@ -27,21 +34,45 @@ export function ReceiptTests({
   }
 
   async function runReceipt() {
+    const printedAt = new Date().toISOString();
+    const payments = [{ method: "cash", amount: 155, receivedAmount: 160, changeAmount: 5 }];
+
+    // If a Bluetooth printer is connected, send ESC/POS bytes to it.
+    if (isBluetoothPrinterConnected()) {
+      try {
+        const bytes = buildEscPosReceipt({
+          storeName,
+          orderNumber: "TEST-0001",
+          items: SAMPLE_ITEMS,
+          subtotal: 155,
+          discount: 0,
+          total: 155,
+          payments,
+          footerText: "ใบเสร็จทดสอบ (Bluetooth)",
+          paperWidth,
+          printedAt,
+        });
+        await printViaBluetooth(bytes);
+        set("receipt", true, "ส่งใบเสร็จไปยังเครื่องพิมพ์ Bluetooth แล้ว");
+      } catch (e) {
+        set("receipt", false, e instanceof Error ? e.message : "ส่งไป Bluetooth ไม่สำเร็จ");
+      }
+      return;
+    }
+
+    // Otherwise fall back to the browser print dialog.
     const sample: ReceiptData = {
       storeName,
       paperWidth,
-      printedAt: new Date().toISOString(),
+      printedAt,
       orderNumber: "TEST-0001",
       showTaxId: false,
       showQrPayment: false,
-      items: [
-        { name: "กาแฟดำ", quantity: 1, unitPrice: 45, totalPrice: 45, modifierNames: [] },
-        { name: "ลาเต้", variantName: "ร้อน", quantity: 2, unitPrice: 55, totalPrice: 110, modifierNames: ["หวานน้อย"] },
-      ],
+      items: SAMPLE_ITEMS,
       subtotal: 155,
       discount: 0,
       total: 155,
-      payments: [{ method: "cash", amount: 155, receivedAmount: 160, changeAmount: 5 }],
+      payments,
       footerText: "ขอบคุณที่ใช้บริการ · ใบเสร็จทดสอบ",
     };
     try {
