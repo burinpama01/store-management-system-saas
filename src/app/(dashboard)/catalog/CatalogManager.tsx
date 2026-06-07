@@ -4,7 +4,7 @@ import { useActionState, useTransition, useState } from "react";
 import type { Category, Product, ModifierGroup } from "@/modules/catalog/types";
 import type { BillingPlan } from "@/modules/billing/types";
 import type { Role } from "@/modules/tenants/types";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, ImageUpload } from "@/shared/components/ui";
 import {
   createCategoryAction,
   updateCategoryAction,
@@ -32,6 +32,8 @@ interface Props {
   products: Product[];
   role: Role;
   storeName: string;
+  storeId: string;
+  organizationId: string;
   planName: BillingPlan;
   canManageCatalog: boolean;
   canUseQrOrdering: boolean;
@@ -283,6 +285,8 @@ function ProductForm({
   categories,
   defaultCategoryId,
   canUseQrOrdering,
+  storeId,
+  organizationId,
   onSubmit,
   onCancel,
   isPending,
@@ -292,6 +296,8 @@ function ProductForm({
   categories: Category[];
   defaultCategoryId?: string;
   canUseQrOrdering: boolean;
+  storeId: string;
+  organizationId: string;
   onSubmit: (fd: FormData) => void;
   onCancel: () => void;
   isPending: boolean;
@@ -337,11 +343,12 @@ function ProductForm({
         step="1"
         required
       />
-      <InputField
-        label="URL รูปเมนู"
+      <ImageUpload
+        label="รูปเมนู (อัปโหลด — ระบบย่อขนาดอัตโนมัติ — หรือวาง URL)"
         name="imageUrl"
         defaultValue={product?.imageUrl}
-        placeholder="https://example.com/menu-image.webp"
+        organizationId={organizationId}
+        storeId={storeId}
       />
       <div className="space-y-1">
         <label className="block text-xs font-medium text-gray-700">คำอธิบาย</label>
@@ -591,6 +598,8 @@ function CatalogDialog({
   selectedProduct,
   categories,
   canUseQrOrdering,
+  storeId,
+  organizationId,
   onClose,
 }: {
   mode: PanelMode;
@@ -598,6 +607,8 @@ function CatalogDialog({
   selectedProduct: Product | null;
   categories: Category[];
   canUseQrOrdering: boolean;
+  storeId: string;
+  organizationId: string;
   onClose: () => void;
 }) {
   const [addProductState, addProductAction, addProductPending] = useActionState(
@@ -647,6 +658,8 @@ function CatalogDialog({
           categories={categories}
           defaultCategoryId={selectedCategory?.id}
           canUseQrOrdering={canUseQrOrdering}
+          storeId={storeId}
+          organizationId={organizationId}
           onSubmit={addProductAction}
           onCancel={onClose}
           isPending={addProductPending}
@@ -659,6 +672,8 @@ function CatalogDialog({
             product={selectedProduct}
             categories={categories}
             canUseQrOrdering={canUseQrOrdering}
+            storeId={storeId}
+            organizationId={organizationId}
             onSubmit={editProductAction}
             onCancel={onClose}
             isPending={editProductPending}
@@ -681,6 +696,8 @@ export function CatalogManager({
   products,
   role,
   storeName,
+  storeId,
+  organizationId,
   planName,
   canManageCatalog,
   canUseQrOrdering,
@@ -956,6 +973,8 @@ export function CatalogManager({
         selectedProduct={selectedProduct}
         categories={categories}
         canUseQrOrdering={canUseQrOrdering}
+        storeId={storeId}
+        organizationId={organizationId}
         onClose={closePanel}
       />
     </div>

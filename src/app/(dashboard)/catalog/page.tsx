@@ -29,6 +29,8 @@ export default async function CatalogPage() {
         products={products}
         role={ctx.role}
         storeName={ctx.storeName}
+        storeId={ctx.storeId}
+        organizationId={ctx.organizationId}
         planName={state.plan}
         canManageCatalog={resolved.can("catalog.manage")}
         canUseQrOrdering={features.qrOrdering}

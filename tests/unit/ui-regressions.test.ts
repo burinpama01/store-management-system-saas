@@ -300,7 +300,8 @@ describe("UX/UI regression guards", () => {
     expect(page).toContain("canManageCatalog");
     expect(source).toContain("Catalog Workbench");
     expect(source).toContain("RoleCapabilityBar");
-    expect(source).toContain("URL รูปเมนู");
+    expect(source).toContain("ImageUpload");
+    expect(source).toContain('name="imageUrl"');
     expect(source).toContain("ProductImage");
     expect(source).toContain("QR Ordering ถูกล็อกตามแพ็กเกจ");
     expect(source).toContain("โหมดอ่านอย่างเดียวสำหรับ role นี้");

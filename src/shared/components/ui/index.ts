@@ -7,4 +7,5 @@ export { Badge } from "./Badge";
 export { ProgressBar } from "./ProgressBar";
 export { QrCode } from "./QrCode";
 export { MapPicker } from "./MapPicker";
+export { ImageUpload } from "./ImageUpload";
 export { Skeleton, SkeletonText, PageSkeleton } from "./Skeleton";
