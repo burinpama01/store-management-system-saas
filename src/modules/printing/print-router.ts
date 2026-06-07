@@ -1,5 +1,5 @@
-import { isBluetoothPrinterConnected, printViaBluetooth } from "./bluetooth-client";
-import { isUsbPrinterConnected, printViaUsb } from "./usb-client";
+import { ensureBluetoothConnected, printViaBluetooth } from "./bluetooth-client";
+import { ensureUsbConnected, printViaUsb } from "./usb-client";
 import { browserAdapter } from "./adapters/browser";
 import { buildEscPosReceipt, type EscPosReceiptInput } from "./escpos";
 import type { ReceiptData } from "./types";
@@ -22,11 +22,11 @@ export async function printReceiptAuto(
   escpos: EscPosReceiptInput,
   browser: ReceiptData,
 ): Promise<PrintChannel> {
-  if (isBluetoothPrinterConnected()) {
+  if (await ensureBluetoothConnected()) {
     await printViaBluetooth(buildEscPosReceipt(escpos));
     return "bluetooth";
   }
-  if (isUsbPrinterConnected()) {
+  if (await ensureUsbConnected()) {
     await printViaUsb(buildEscPosReceipt(escpos));
     return "usb";
   }

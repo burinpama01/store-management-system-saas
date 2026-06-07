@@ -26,12 +26,31 @@ interface USBDeviceX {
   transferOut(endpoint: number, data: BufferSource): Promise<unknown>;
 }
 interface USBNavigator {
-  usb?: { requestDevice(options: { filters: unknown[] }): Promise<USBDeviceX> };
+  usb?: {
+    requestDevice(options: { filters: unknown[] }): Promise<USBDeviceX>;
+    getDevices?(): Promise<USBDeviceX[]>;
+  };
 }
 
 const NAME_KEY = "usb_printer_name";
 
 let conn: { device: USBDeviceX; endpoint: number } | null = null;
+let lastDevice: USBDeviceX | null = null;
+
+async function openDevice(device: USBDeviceX): Promise<{ device: USBDeviceX; endpoint: number } | null> {
+  await device.open();
+  if (!device.configuration) await device.selectConfiguration(1);
+  const config = device.configuration;
+  if (!config) return null;
+  for (const itf of config.interfaces) {
+    const out = itf.alternate.endpoints.find((e) => e.direction === "out");
+    if (out) {
+      await device.claimInterface(itf.interfaceNumber);
+      return { device, endpoint: out.endpointNumber };
+    }
+  }
+  return null;
+}
 
 export function isUsbPrinterConnected(): boolean {
   return conn !== null;
@@ -49,25 +68,40 @@ export async function connectUsbPrinter(): Promise<string> {
   if (!nav.usb) throw new Error("เบราว์เซอร์นี้ไม่รองรับ WebUSB (ใช้ Chrome/Edge เดสก์ท็อป)");
 
   const device = await nav.usb.requestDevice({ filters: [] });
-  await device.open();
-  if (!device.configuration) await device.selectConfiguration(1);
-  const config = device.configuration;
-  if (!config) throw new Error("ไม่พบ configuration ของอุปกรณ์");
+  const opened = await openDevice(device);
+  if (!opened) throw new Error("ไม่พบ endpoint สำหรับส่งข้อมูลไปเครื่องพิมพ์");
 
-  let endpoint: number | null = null;
-  for (const itf of config.interfaces) {
-    const out = itf.alternate.endpoints.find((e) => e.direction === "out");
-    if (out) {
-      await device.claimInterface(itf.interfaceNumber);
-      endpoint = out.endpointNumber;
-      break;
-    }
-  }
-  if (endpoint == null) throw new Error("ไม่พบ endpoint สำหรับส่งข้อมูลไปเครื่องพิมพ์");
-
-  conn = { device, endpoint };
+  conn = opened;
+  lastDevice = device;
   if (typeof localStorage !== "undefined") localStorage.setItem(NAME_KEY, device.productName ?? "");
   return device.productName ?? device.manufacturerName ?? "USB Printer";
+}
+
+/**
+ * Reconnects a previously-granted USB printer (after a reload) without a fresh
+ * chooser. Must be called from a user gesture. Returns true if connected.
+ */
+export async function ensureUsbConnected(): Promise<boolean> {
+  if (conn) return true;
+  const nav = navigator as unknown as USBNavigator;
+  if (!nav.usb?.getDevices) return false;
+  const rememberedName = getUsbPrinterName();
+  if (!rememberedName && !lastDevice) return false;
+  try {
+    let device = lastDevice;
+    if (!device) {
+      const devices = await nav.usb.getDevices();
+      device = devices.find((d) => (d.productName ?? "") === rememberedName) ?? null;
+    }
+    if (!device) return false;
+    const opened = await openDevice(device);
+    if (!opened) return false;
+    conn = opened;
+    lastDevice = device;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Sends raw ESC/POS bytes to the connected USB printer. */

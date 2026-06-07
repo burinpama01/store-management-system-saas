@@ -18,7 +18,10 @@ interface BTDevice {
   gatt?: BTServer;
 }
 interface BTNavigator {
-  bluetooth?: { requestDevice(options: unknown): Promise<BTDevice> };
+  bluetooth?: {
+    requestDevice(options: unknown): Promise<BTDevice>;
+    getDevices?(): Promise<BTDevice[]>;
+  };
 }
 
 // Common BLE service UUIDs used by ESC/POS thermal printers.
@@ -33,6 +36,7 @@ const PRINTER_SERVICES = [
 const NAME_KEY = "bt_printer_name";
 
 let connected: { device: BTDevice; characteristic: BTChar } | null = null;
+let lastDevice: BTDevice | null = null;
 
 export function getBluetoothPrinterName(): string | null {
   if (connected) return connected.device.name ?? "Bluetooth Printer";
@@ -70,8 +74,39 @@ export async function connectBluetoothPrinter(): Promise<string> {
   if (!characteristic) throw new Error("ไม่พบช่องเขียนข้อมูลของเครื่องพิมพ์ (characteristic)");
 
   connected = { device, characteristic };
+  lastDevice = device;
   if (typeof localStorage !== "undefined") localStorage.setItem(NAME_KEY, device.name ?? "");
   return device.name ?? "Bluetooth Printer";
+}
+
+/**
+ * Ensures a live GATT connection, reconnecting a previously-granted device
+ * (after a reload) without a fresh pairing dialog. Must be called from a user
+ * gesture. Returns true if connected.
+ */
+export async function ensureBluetoothConnected(): Promise<boolean> {
+  if (connected) return true;
+  const nav = navigator as unknown as BTNavigator;
+  if (!nav.bluetooth) return false;
+  const rememberedName = getBluetoothPrinterName();
+  if (!rememberedName && !lastDevice) return false;
+
+  try {
+    let device = lastDevice;
+    if (!device && nav.bluetooth.getDevices) {
+      const devices = await nav.bluetooth.getDevices();
+      device = devices.find((d) => (d.name ?? "") === rememberedName) ?? null;
+    }
+    if (!device?.gatt) return false;
+    const server = await device.gatt.connect();
+    const characteristic = await findWritable(server);
+    if (!characteristic) return false;
+    connected = { device, characteristic };
+    lastDevice = device;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Writes raw ESC/POS bytes to the connected printer in BLE-sized chunks. */
