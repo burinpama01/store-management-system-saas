@@ -234,6 +234,19 @@ function BuffetSessionDialog({
           />
         </div>
 
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">ระยะเวลา QR สั่งอาหาร (นาที)</label>
+          <input
+            type="number"
+            name="durationMinutes"
+            min="15"
+            max="600"
+            placeholder="เช่น 90 (ว่าง = ใช้ค่าเริ่มต้นร้าน)"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">ลูกค้าสแกน QR (ในใบเปิดโต๊ะ) สั่งอาหารได้ภายในเวลานี้</p>
+        </div>
+
         {formState.error && (
           <p className="text-xs text-red-600">{formState.error}</p>
         )}

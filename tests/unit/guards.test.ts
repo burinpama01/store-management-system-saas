@@ -65,6 +65,7 @@ function store(id: string, organizationId = ORG): StoreRow {
     phone: null,
     buffet_enabled: false,
     qr_ordering_enabled: true,
+    dine_in_duration_minutes: 120,
     timezone: "Asia/Bangkok",
     created_at: "2026-06-01T00:00:00Z",
     updated_at: "2026-06-01T00:00:00Z",

@@ -9,6 +9,7 @@ import {
   closeBuffetSession,
   listStoreTables,
 } from "@/modules/buffet/repository";
+import { openTableSession, getStore } from "@/modules/stores/repository";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -69,6 +70,17 @@ export async function createSessionAction(
       guestCount,
     });
     if (result.error) return { error: result.error.userMessage };
+
+    // Open a timed table session (QR validity) from the package duration, fallback to store default.
+    if (tableId) {
+      const durationRaw = parseInt((formData.get("durationMinutes") as string | null) ?? "", 10);
+      let minutes = Number.isInteger(durationRaw) && durationRaw >= 15 && durationRaw <= 600 ? durationRaw : 0;
+      if (!minutes) {
+        const storeRes = await getStore(ctx.storeId);
+        minutes = storeRes.data?.dineInDurationMinutes ?? 120;
+      }
+      await openTableSession(ctx.storeId, tableId, minutes);
+    }
 
     revalidate();
     return { error: null };

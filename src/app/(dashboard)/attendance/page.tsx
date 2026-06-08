@@ -12,6 +12,9 @@ import {
   getAttendanceSettings,
 } from "@/modules/attendance/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
+import { countSelfBackdated, nextMonthStart } from "@/modules/attendance/repository";
+import { getStoreHrSettings } from "@/modules/hr/repository";
+import { listStoreMemberships } from "@/modules/settings/repository";
 import { AttendanceManager } from "./AttendanceManager";
 
 export const dynamic = "force-dynamic";
@@ -36,9 +39,12 @@ export default async function AttendancePage({
   const features = getPlanFeatures(billingState);
 
   const today = getStoreLocalDate(ctx.storeTimezone);
-  const [todayRecord, attendanceSettingsResult] = await Promise.all([
+  const monthStart = today.slice(0, 7) + "-01";
+  const [todayRecord, attendanceSettingsResult, hrSettings, backdatedUsed] = await Promise.all([
     getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today),
     getAttendanceSettings(ctx.storeId, ctx.organizationId),
+    getStoreHrSettings(ctx.storeId, ctx.organizationId),
+    countSelfBackdated(user.id, ctx.storeId, monthStart, nextMonthStart(today)),
   ]);
   const attendanceSettings = attendanceSettingsResult.data;
 
@@ -48,6 +54,7 @@ export default async function AttendancePage({
   let dateTo = today;
   let records = null;
   let payrollSummaries = null;
+  let members: { userId: string; name: string }[] = [];
 
   if (canManage) {
     const params = await searchParams;
@@ -62,7 +69,10 @@ export default async function AttendancePage({
         .split("T")[0];
     }
 
-    const recRes = await listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo);
+    const [recRes, membersRes] = await Promise.all([
+      listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo),
+      listStoreMemberships(ctx.organizationId, ctx.storeId),
+    ]);
     records = recRes.data ?? [];
     payrollSummaries = computePayrollSummaries(
       records,
@@ -71,6 +81,9 @@ export default async function AttendancePage({
       dateFrom,
       dateTo,
     );
+    members = (membersRes.data ?? [])
+      .filter((m) => m.role !== "super_admin")
+      .map((m) => ({ userId: m.userId, name: m.email }));
   }
 
   return (
@@ -84,6 +97,10 @@ export default async function AttendancePage({
       canUseGps={features.attendanceGps}
       userEmail={user.email ?? user.id}
       attendanceSettings={attendanceSettings}
+      members={members}
+      today={today}
+      backdatedRights={hrSettings.backdatedRightsPerMonth}
+      backdatedUsed={backdatedUsed}
     />
   );
 }

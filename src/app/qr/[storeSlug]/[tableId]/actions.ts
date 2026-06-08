@@ -8,6 +8,8 @@ import {
 } from "@/modules/billing/types";
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import type { Json } from "@/server/integrations/supabase/database.types";
+import type { SelectedModifier } from "@/modules/pos/types";
+import type { QrOrderView, ServiceRequestType } from "@/modules/qr-ordering/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUUID(s: string): boolean {
@@ -81,13 +83,18 @@ export async function submitQrOrderAction(
   // Verify table — fetch number from DB, not from client
   const { data: table, error: tableErr } = await supabase
     .from("tables")
-    .select("id, store_id, number, qr_enabled, is_active")
+    .select("id, store_id, number, qr_enabled, is_active, session_expires_at")
     .eq("id", tableId)
     .single();
   if (tableErr || !table) return { orderId: null, orderNumber: null, error: "Table not found" };
   if (table.store_id !== storeId) return { orderId: null, orderNumber: null, error: "Invalid table" };
   if (!table.is_active || !table.qr_enabled) {
     return { orderId: null, orderNumber: null, error: "Table is not available for QR ordering" };
+  }
+  // Timed session gate: reject orders when the table session is closed or expired.
+  const sessionExpiry = table.session_expires_at ? Date.parse(table.session_expires_at) : null;
+  if (sessionExpiry === null || sessionExpiry <= Date.now()) {
+    return { orderId: null, orderNumber: null, error: "หมดเวลาสั่งอาหารของโต๊ะนี้แล้ว กรุณาแจ้งพนักงาน" };
   }
 
   // Batch-fetch products
@@ -316,4 +323,107 @@ export async function submitQrOrderAction(
   }
 
   return { orderId, orderNumber, error: null };
+}
+
+// --- Customer order tracking + service requests ---
+
+/** Fetch the customer's own orders by id (ids are held client-side after submitting). */
+export async function getTableOrdersAction(
+  storeId: string,
+  tableId: string,
+  orderIds: string[],
+): Promise<{ orders: QrOrderView[]; error: string | null }> {
+  if (!isUUID(storeId) || !isUUID(tableId)) return { orders: [], error: "Invalid request" };
+  const ids = [...new Set(orderIds)].filter(isUUID).slice(0, 50);
+  if (ids.length === 0) return { orders: [], error: null };
+
+  const supabase = await createSupabaseServiceClient();
+  const { data: orderRows, error } = await supabase
+    .from("orders")
+    .select("id, order_number, status, prep_status, table_id, table_number, total, note, created_at, paid_at")
+    .eq("store_id", storeId)
+    .eq("table_id", tableId)
+    .in("id", ids)
+    .order("created_at", { ascending: false });
+
+  if (error) return { orders: [], error: "ไม่สามารถโหลดออร์เดอร์ได้" };
+  const rows = orderRows ?? [];
+  if (rows.length === 0) return { orders: [], error: null };
+
+  const { data: itemRows } = await supabase
+    .from("order_items")
+    .select("id, order_id, product_name, variant_name, modifiers, quantity, unit_price, total_price, note")
+    .in("order_id", rows.map((r) => r.id));
+
+  const itemsByOrder = new Map<string, QrOrderView["items"]>();
+  for (const it of itemRows ?? []) {
+    const next = itemsByOrder.get(it.order_id) ?? [];
+    next.push({
+      id: it.id,
+      productName: it.product_name,
+      variantName: it.variant_name ?? undefined,
+      modifiers: (it.modifiers as unknown as SelectedModifier[]) ?? [],
+      quantity: it.quantity,
+      unitPrice: it.unit_price,
+      totalPrice: it.total_price,
+      note: it.note ?? undefined,
+    });
+    itemsByOrder.set(it.order_id, next);
+  }
+
+  const orders: QrOrderView[] = rows.map((row) => ({
+    id: row.id,
+    orderNumber: row.order_number,
+    status: row.status,
+    prepStatus: row.prep_status,
+    tableId: row.table_id ?? undefined,
+    tableNumber: row.table_number ?? undefined,
+    total: row.total,
+    note: row.note ?? undefined,
+    createdAt: row.created_at,
+    paidAt: row.paid_at ?? undefined,
+    items: itemsByOrder.get(row.id) ?? [],
+  }));
+
+  return { orders, error: null };
+}
+
+export async function requestServiceAction(
+  storeId: string,
+  tableId: string,
+  type: ServiceRequestType,
+  reason?: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  if (!isUUID(storeId) || !isUUID(tableId)) return { ok: false, error: "Invalid request" };
+  if (type !== "call_staff" && type !== "request_bill") {
+    return { ok: false, error: "Invalid request" };
+  }
+  const note = reason?.trim().slice(0, 100) || null;
+
+  const supabase = await createSupabaseServiceClient();
+
+  // Verify store is active + QR enabled + plan allows QR ordering.
+  const { data: store, error: storeErr } = await supabase
+    .from("stores")
+    .select("id, organization_id, qr_ordering_enabled, is_active")
+    .eq("id", storeId)
+    .single();
+  if (storeErr || !store) return { ok: false, error: "Store not found" };
+  if (!store.is_active || !store.qr_ordering_enabled) {
+    return { ok: false, error: "QR ordering is disabled for this store" };
+  }
+  const billingState =
+    (await getOrganizationBillingState(store.organization_id)) ?? DEFAULT_BILLING_STATE;
+  if (!getPlanFeatures(billingState).qrOrdering) {
+    return { ok: false, error: "QR ordering is not available in the current package" };
+  }
+
+  const { error } = await supabase.rpc("create_service_request", {
+    p_store_id: storeId,
+    p_table_id: tableId,
+    p_type: type,
+    p_note: note,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, error: null };
 }

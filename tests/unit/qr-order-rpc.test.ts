@@ -15,7 +15,8 @@ describe("QR order transaction RPC", () => {
     expect(action).toContain("generateOrderNumber({ timeZone: store.timezone })");
     expect(action).not.toContain("QR_CASHIER_ID");
     expect(action).not.toContain(".from(\"orders\")\n    .insert");
-    expect(action).not.toContain(".from(\"order_items\")");
+    // Order/item creation must go through the RPC; read-only tracking SELECTs are allowed.
+    expect(action).not.toContain(".from(\"order_items\")\n    .insert");
     expect(action).not.toContain("Best-effort cleanup");
     expect(migration).toContain("create table if not exists system_accounts");
     expect(migration).toContain("alter table system_accounts enable row level security");

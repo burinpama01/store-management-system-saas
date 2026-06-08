@@ -252,6 +252,25 @@ function StoreSettingsDialog({
           </label>
         </div>
 
+        <div className="max-w-xs">
+          <label className="field-label" htmlFor="dineInDurationMinutes">
+            ระยะเวลา QR เปิดโต๊ะทั่วไป (นาที)
+          </label>
+          <input
+            id="dineInDurationMinutes"
+            type="number"
+            name="dineInDurationMinutes"
+            min={15}
+            max={600}
+            defaultValue={store.dineInDurationMinutes}
+            disabled={!canEdit}
+            className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm"
+          />
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            ลูกค้าสแกน QR ในใบเปิดโต๊ะ à la carte แล้วสั่งอาหารได้ภายในเวลานี้ (บุฟเฟต์ใช้เวลาจากแพ็กเกจ)
+          </p>
+        </div>
+
         {state.error && (
           <p className="alert-danger">
             {state.error}

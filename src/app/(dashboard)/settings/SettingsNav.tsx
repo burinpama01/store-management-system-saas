@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/settings/store", label: "ร้านค้า" },
   { href: "/settings/team", label: "ทีมงาน" },
+  { href: "/settings/tables", label: "โต๊ะ & QR" },
   { href: "/settings/receipt", label: "ใบเสร็จ" },
   { href: "/settings/buffet", label: "บุฟเฟต์" },
   { href: "/settings/billing", label: "แพ็กเกจ" },

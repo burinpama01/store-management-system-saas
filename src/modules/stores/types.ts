@@ -12,6 +12,7 @@ export interface Store {
   isActive: boolean;
   buffetEnabled: boolean;
   qrOrderingEnabled: boolean;
+  dineInDurationMinutes: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,6 +27,8 @@ export interface Table {
   isActive: boolean;
   qrEnabled: boolean;
   currentSessionId?: string;
+  sessionStartedAt?: string;
+  sessionExpiresAt?: string;
   status: TableStatus;
   createdAt: string;
   updatedAt: string;

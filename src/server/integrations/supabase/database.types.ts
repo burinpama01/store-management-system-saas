@@ -387,6 +387,7 @@ export interface Database {
           is_active: boolean;
           buffet_enabled: boolean;
           qr_ordering_enabled: boolean;
+          dine_in_duration_minutes: number;
           created_at: string;
           updated_at: string;
         };
@@ -404,6 +405,7 @@ export interface Database {
           is_active?: boolean;
           buffet_enabled?: boolean;
           qr_ordering_enabled?: boolean;
+          dine_in_duration_minutes?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -421,6 +423,7 @@ export interface Database {
           is_active?: boolean;
           buffet_enabled?: boolean;
           qr_ordering_enabled?: boolean;
+          dine_in_duration_minutes?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -733,6 +736,8 @@ export interface Database {
           qr_enabled: boolean;
           status: "available" | "occupied" | "reserved" | "cleaning";
           current_session_id: string | null;
+          session_started_at: string | null;
+          session_expires_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -747,6 +752,8 @@ export interface Database {
           qr_enabled?: boolean;
           status?: "available" | "occupied" | "reserved" | "cleaning";
           current_session_id?: string | null;
+          session_started_at?: string | null;
+          session_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -761,6 +768,8 @@ export interface Database {
           qr_enabled?: boolean;
           status?: "available" | "occupied" | "reserved" | "cleaning";
           current_session_id?: string | null;
+          session_started_at?: string | null;
+          session_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -784,6 +793,7 @@ export interface Database {
           total: number;
           note: string | null;
           qr_order_source: boolean;
+          prep_status: "new" | "preparing" | "served" | "done";
           created_at: string;
           updated_at: string;
           paid_at: string | null;
@@ -808,6 +818,7 @@ export interface Database {
           total?: number;
           note?: string | null;
           qr_order_source?: boolean;
+          prep_status?: "new" | "preparing" | "served" | "done";
           created_at?: string;
           updated_at?: string;
           paid_at?: string | null;
@@ -832,6 +843,7 @@ export interface Database {
           total?: number;
           note?: string | null;
           qr_order_source?: boolean;
+          prep_status?: "new" | "preparing" | "served" | "done";
           created_at?: string;
           updated_at?: string;
           paid_at?: string | null;
@@ -1029,6 +1041,207 @@ export interface Database {
           balance_after: number;
           transaction_id?: string | null;
           order_id?: string | null;
+          note?: string | null;
+          created_by_user_id: string;
+          created_at?: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      cash_sessions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          status: "open" | "closed";
+          opening_float: number;
+          opened_by_user_id: string;
+          opened_at: string;
+          open_note: string | null;
+          closing_count: number | null;
+          cash_sales: number | null;
+          expected_cash: number | null;
+          variance: number | null;
+          closed_by_user_id: string | null;
+          closed_at: string | null;
+          close_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          status?: "open" | "closed";
+          opening_float?: number;
+          opened_by_user_id: string;
+          opened_at?: string;
+          open_note?: string | null;
+          closing_count?: number | null;
+          cash_sales?: number | null;
+          expected_cash?: number | null;
+          variance?: number | null;
+          closed_by_user_id?: string | null;
+          closed_at?: string | null;
+          close_note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      service_requests: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          table_id: string;
+          table_number: string;
+          type: "call_staff" | "request_bill";
+          status: "pending" | "resolved";
+          note: string | null;
+          created_at: string;
+          resolved_at: string | null;
+          resolved_by_user_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          table_id: string;
+          table_number: string;
+          type: "call_staff" | "request_bill";
+          status?: "pending" | "resolved";
+          note?: string | null;
+          created_at?: string;
+          resolved_at?: string | null;
+          resolved_by_user_id?: string | null;
+        };
+        Update: {
+          status?: "pending" | "resolved";
+          note?: string | null;
+          resolved_at?: string | null;
+          resolved_by_user_id?: string | null;
+        };
+        Relationships: [];
+      };
+      employee_profiles: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          display_name: string | null;
+          pay_type: "monthly" | "daily" | "hourly";
+          monthly_salary: number;
+          daily_rate: number;
+          hourly_rate: number;
+          expected_start_time: string | null;
+          late_grace_minutes: number;
+          late_penalty_amount: number;
+          absent_penalty_amount: number;
+          working_days: number[];
+          ot_eligible: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          display_name?: string | null;
+          pay_type?: "monthly" | "daily" | "hourly";
+          monthly_salary?: number;
+          daily_rate?: number;
+          hourly_rate?: number;
+          expected_start_time?: string | null;
+          late_grace_minutes?: number;
+          late_penalty_amount?: number;
+          absent_penalty_amount?: number;
+          working_days?: number[];
+          ot_eligible?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          display_name?: string | null;
+          pay_type?: "monthly" | "daily" | "hourly";
+          monthly_salary?: number;
+          daily_rate?: number;
+          hourly_rate?: number;
+          expected_start_time?: string | null;
+          late_grace_minutes?: number;
+          late_penalty_amount?: number;
+          absent_penalty_amount?: number;
+          working_days?: number[];
+          ot_eligible?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_hr_settings: {
+        Row: {
+          store_id: string;
+          organization_id: string;
+          regular_hours_per_day: number;
+          ot_multiplier: number;
+          ot_daily_cap_hours: number;
+          late_penalty_per_minute: number;
+          late_penalty_max_per_day: number;
+          absent_penalty_per_day: number;
+          backdated_rights_per_month: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          store_id: string;
+          organization_id: string;
+          regular_hours_per_day?: number;
+          ot_multiplier?: number;
+          ot_daily_cap_hours?: number;
+          late_penalty_per_minute?: number;
+          late_penalty_max_per_day?: number;
+          absent_penalty_per_day?: number;
+          backdated_rights_per_month?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          regular_hours_per_day?: number;
+          ot_multiplier?: number;
+          ot_daily_cap_hours?: number;
+          late_penalty_per_minute?: number;
+          late_penalty_max_per_day?: number;
+          absent_penalty_per_day?: number;
+          backdated_rights_per_month?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      payroll_adjustments: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          employee_name: string;
+          date: string;
+          type: "penalty" | "bonus" | "leave" | "absent" | "late";
+          amount: number;
+          note: string | null;
+          created_by_user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          employee_name: string;
+          date: string;
+          type: "penalty" | "bonus" | "leave" | "absent" | "late";
+          amount: number;
           note?: string | null;
           created_by_user_id: string;
           created_at?: string;
@@ -1359,6 +1572,23 @@ export interface Database {
         };
         Returns: string;
       };
+      open_cash_session: {
+        Args: {
+          p_store_id: string;
+          p_opening_float: number;
+          p_note?: string | null;
+        };
+        Returns: string;
+      };
+      close_cash_session: {
+        Args: {
+          p_session_id: string;
+          p_store_id: string;
+          p_closing_count: number;
+          p_note?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["cash_sessions"]["Row"];
+      };
       create_pos_order_with_items: {
         Args: {
           p_organization_id: string;
@@ -1386,6 +1616,23 @@ export interface Database {
           p_items?: Json;
         };
         Returns: string;
+      };
+      create_service_request: {
+        Args: {
+          p_store_id: string;
+          p_table_id: string;
+          p_type: string;
+          p_note?: string | null;
+        };
+        Returns: string;
+      };
+      open_table_session: {
+        Args: { p_store_id: string; p_table_id: string; p_minutes: number };
+        Returns: string;
+      };
+      close_table_session: {
+        Args: { p_store_id: string; p_table_id: string };
+        Returns: undefined;
       };
       get_report_sales_summary: {
         Args: {

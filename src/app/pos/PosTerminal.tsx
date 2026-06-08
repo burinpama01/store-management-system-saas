@@ -10,6 +10,12 @@ import { submitOrderAction, collectPaymentAction } from "./actions";
 import { signOut } from "../(dashboard)/actions";
 import type { ReceiptSettings } from "@/modules/stores/types";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
+import { CashSessionPanel } from "./CashSessionPanel";
+import type { CashSession } from "@/modules/cashflow/types";
+import { QrCode } from "@/shared/components/ui/QrCode";
+import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
+import { TableBillModal } from "./TableBillModal";
+import { TableOpenModal } from "./TableOpenModal";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -28,6 +34,9 @@ interface Props {
   products: Product[];
   receiptSettings: ReceiptSettings | null;
   exitHref?: string | null;
+  cashSession: CashSession | null;
+  cashSalesPreview: number;
+  currency: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -404,6 +413,7 @@ function PaymentPanel({
   isPending,
   error,
   hasPendingOrder,
+  promptpayId,
 }: {
   cart: Cart;
   onConfirm: (method: "cash" | "qr_promptpay", received?: number) => void;
@@ -411,6 +421,7 @@ function PaymentPanel({
   isPending: boolean;
   error: string | null;
   hasPendingOrder: boolean;
+  promptpayId?: string;
 }) {
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState<string>("");
@@ -418,6 +429,15 @@ function PaymentPanel({
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
   const cashReady = method !== "cash" || receivedNum >= cart.total;
+
+  let promptPayPayload: string | null = null;
+  if (method === "qr_promptpay" && promptpayId && cart.total > 0) {
+    try {
+      promptPayPayload = buildPromptPayPayload({ recipientId: promptpayId, amount: cart.total });
+    } catch {
+      promptPayPayload = null;
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -506,10 +526,17 @@ function PaymentPanel({
 
         {method === "qr_promptpay" && (
           <div className="flex flex-col items-center gap-2 py-4">
-            <div className="w-32 h-32 bg-gray-100 border border-gray-200 rounded-lg flex items-center justify-center text-xs text-gray-400">
-              QR PromptPay
-            </div>
-            <p className="text-xs text-gray-400">สแกน QR เพื่อชำระ {priceStr(cart.total)}</p>
+            {promptPayPayload ? (
+              <>
+                <QrCode value={promptPayPayload} size={200} />
+                <p className="text-sm font-semibold text-gray-700">ให้ลูกค้าสแกนเพื่อชำระ {priceStr(cart.total)}</p>
+                <p className="text-xs text-gray-400">PromptPay: {promptpayId}</p>
+              </>
+            ) : (
+              <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-center text-xs text-amber-700">
+                ยังไม่ได้ตั้งค่าเลข PromptPay ของร้าน — ไปที่ ตั้งค่า › ใบเสร็จ เพื่อเพิ่มเลขพร้อมเพย์
+              </div>
+            )}
           </div>
         )}
 
@@ -528,7 +555,7 @@ function PaymentPanel({
       <div className="p-4 border-t border-gray-100">
         <button
           type="button"
-          disabled={!cashReady || isPending}
+          disabled={!cashReady || isPending || (method === "qr_promptpay" && !promptPayPayload)}
           onClick={() =>
             onConfirm(
               method,
@@ -682,7 +709,7 @@ function ReceiptPanel({
 
 // ─── Main POS Terminal ────────────────────────────────────────────
 
-export function PosTerminal({ storeId, storeName, categories, products, receiptSettings, exitHref }: Props) {
+export function PosTerminal({ storeId, storeName, categories, products, receiptSettings, exitHref, cashSession, cashSalesPreview, currency }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [phase, setPhase] = useState<Phase>("ordering");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
@@ -690,6 +717,8 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   );
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
+  const [showTableBill, setShowTableBill] = useState(false);
+  const [showTableOpen, setShowTableOpen] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
   const [receipt, setReceipt] = useState<{
     orderNumber: string;
@@ -784,6 +813,25 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             <span className="text-xs text-[var(--muted)]">ขายหน้าร้าน · POS</span>
           </div>
           <span className="badge badge-success ml-auto">เชื่อมต่อปกติ</span>
+          <button
+            type="button"
+            onClick={() => setShowTableOpen(true)}
+            className="btn-secondary min-h-11 px-3 text-xs"
+          >
+            🍽️ เปิดโต๊ะ
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTableBill(true)}
+            className="btn-secondary min-h-11 px-3 text-xs"
+          >
+            🧾 เช็คบิลโต๊ะ
+          </button>
+          <CashSessionPanel
+            session={cashSession}
+            cashSalesPreview={cashSalesPreview}
+            currency={currency}
+          />
           {exitHref ? (
             <Link href={exitHref} className="btn-secondary min-h-11 px-3 text-xs">
               ← กลับ
@@ -889,6 +937,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             isPending={isPending}
             error={payError}
             hasPendingOrder={pendingOrder !== null}
+            promptpayId={receiptSettings?.promptpayId}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -907,6 +956,19 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
           picker={picker}
           onAdd={handleAddFromPicker}
           onClose={() => setPicker(null)}
+        />
+      )}
+
+      {/* Open à la carte table session */}
+      {showTableOpen && <TableOpenModal onClose={() => setShowTableOpen(false)} />}
+
+      {/* Settle QR table bills */}
+      {showTableBill && (
+        <TableBillModal
+          currency={currency}
+          promptpayId={receiptSettings?.promptpayId}
+          onClose={() => setShowTableBill(false)}
+          onSettled={() => {}}
         />
       )}
     </div>

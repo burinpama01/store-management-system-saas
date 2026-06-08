@@ -1,10 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
 import { ModalDialog, MapPicker } from "@/shared/components/ui";
-import { clockInAction, clockOutAction, saveAttendanceSettingsAction } from "./actions";
+import {
+  clockInAction,
+  clockOutAction,
+  saveAttendanceSettingsAction,
+  addManualAttendanceAction,
+  adjustAttendanceAction,
+  deleteAttendanceAction,
+  selfBackdatedClockAction,
+} from "./actions";
+import { AttendanceCalendar } from "./AttendanceCalendar";
 
 interface Props {
   todayRecord: AttendanceRecord | null;
@@ -16,6 +25,17 @@ interface Props {
   canUseGps: boolean;
   userEmail: string;
   attendanceSettings: AttendanceSettings | null;
+  members: { userId: string; name: string }[];
+  today: string;
+  backdatedRights: number;
+  backdatedUsed: number;
+}
+
+/** Convert an ISO timestamp to a value for <input type="datetime-local"> in local time. */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function fmtTime(iso: string) {
@@ -71,14 +91,35 @@ export function AttendanceManager({
   dateTo,
   canUseGps,
   attendanceSettings,
+  members,
+  today,
+  backdatedRights,
+  backdatedUsed,
 }: Props) {
   const router = useRouter();
+  const [selfBackdateOpen, setSelfBackdateOpen] = useState(false);
   const [clocking, setClocking] = useState(false);
   const [clockError, setClockError] = useState<string | null>(null);
   const [attendanceSettingsDialogOpen, setAttendanceSettingsDialogOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState(dateFrom);
   const [filterTo, setFilterTo] = useState(dateTo);
   const [rates, setRates] = useState<Record<string, string>>({});
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<AttendanceRecord | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isEditing, startEditTransition] = useTransition();
+
+  function runEdit(action: () => Promise<{ error: string | null }>, onOk: () => void) {
+    setEditError(null);
+    startEditTransition(async () => {
+      const res = await action();
+      if (res.error) setEditError(res.error);
+      else {
+        onOk();
+        router.refresh();
+      }
+    });
+  }
 
   const isClockedIn = !!todayRecord && !todayRecord.clockOutAt;
   const isClockedOut = !!todayRecord && !!todayRecord.clockOutAt;
@@ -201,6 +242,16 @@ export function AttendanceManager({
             ? "ระบบจะขอสิทธิ์ตำแหน่ง GPS โดยอัตโนมัติเพื่อยืนยันพื้นที่เข้างาน"
             : "GPS ถูกจำกัดตามแพ็กเกจ ระบบจะบันทึกเวลาโดยไม่เก็บตำแหน่ง"}
         </p>
+
+        <div className="mt-3 border-t border-[var(--border)] pt-3">
+          <button
+            onClick={() => { setClockError(null); setSelfBackdateOpen(true); }}
+            disabled={backdatedUsed >= backdatedRights}
+            className="btn-secondary w-full text-sm disabled:opacity-40"
+          >
+            ลงเวลาย้อนหลัง (เหลือ {Math.max(0, backdatedRights - backdatedUsed)}/{backdatedRights} ครั้งเดือนนี้)
+          </button>
+        </div>
       </section>
 
       {/* Manage sections — visible to attendance.manage only */}
@@ -342,11 +393,22 @@ export function AttendanceManager({
             </div>
           )}
 
+          {/* Attendance calendar (#5) */}
+          <AttendanceCalendar records={records ?? []} month={dateFrom.slice(0, 7)} employees={members} />
+
           {/* Attendance records */}
           <div>
-            <h2 className="text-sm font-medium text-gray-700 mb-2">
-              รายการเข้า-ออกงาน ({records?.length ?? 0} รายการ)
-            </h2>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-medium text-gray-700">
+                รายการเข้า-ออกงาน ({records?.length ?? 0} รายการ)
+              </h2>
+              <button
+                onClick={() => { setEditError(null); setAddOpen(true); }}
+                className="btn-secondary min-h-9 px-3 text-xs"
+              >
+                + เพิ่มย้อนหลัง
+              </button>
+            </div>
             {!records || records.length === 0 ? (
               <div className="bg-white rounded-lg border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
                 ไม่พบรายการในช่วงวันที่นี้
@@ -363,6 +425,7 @@ export function AttendanceManager({
                       <th className="px-3 py-2 text-right">ระยะเวลา</th>
                       <th className="px-3 py-2 text-left">GPS เข้า</th>
                       <th className="px-3 py-2 text-left">สถานะ</th>
+                      <th className="px-3 py-2 text-right">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -396,8 +459,27 @@ export function AttendanceManager({
                               ? "กำลังทำงาน"
                               : r.status === "completed"
                                 ? "เสร็จแล้ว"
-                                : r.status}
+                                : r.status === "backdated"
+                                  ? "เพิ่มย้อนหลัง"
+                                  : r.status === "adjusted"
+                                    ? "แก้ไขแล้ว"
+                                    : r.status}
                           </span>
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <button
+                            onClick={() => { setEditError(null); setEditTarget(r); }}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            แก้ไข
+                          </button>
+                          <button
+                            onClick={() => runEdit(() => deleteAttendanceAction(r.id), () => {})}
+                            disabled={isEditing}
+                            className="ml-2 text-xs text-red-500 hover:underline disabled:opacity-40"
+                          >
+                            ลบ
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -406,7 +488,125 @@ export function AttendanceManager({
               </div>
             )}
           </div>
+
+          {/* Add backdated record */}
+          {addOpen && (
+            <ModalDialog open title="เพิ่มบันทึกเวลาย้อนหลัง" onClose={() => setAddOpen(false)} size="md">
+              <form
+                action={(fd) => runEdit(() => addManualAttendanceAction(fd), () => setAddOpen(false))}
+                className="space-y-3"
+              >
+                <label className="block text-xs font-medium text-gray-600">
+                  พนักงาน
+                  <select
+                    name="userId"
+                    required
+                    className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                    onChange={(e) => {
+                      const opt = e.target.selectedOptions[0];
+                      const hidden = e.currentTarget.form?.elements.namedItem("employeeName") as HTMLInputElement | null;
+                      if (hidden) hidden.value = opt?.dataset.name ?? "";
+                    }}
+                  >
+                    <option value="">— เลือก —</option>
+                    {members.map((m) => (
+                      <option key={m.userId} value={m.userId} data-name={m.name}>{m.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <input type="hidden" name="employeeName" />
+                <label className="block text-xs font-medium text-gray-600">
+                  วันที่
+                  <input name="date" type="date" defaultValue={today} required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs font-medium text-gray-600">
+                    เวลาเข้า
+                    <input name="clockInAt" type="datetime-local" required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                  </label>
+                  <label className="block text-xs font-medium text-gray-600">
+                    เวลาออก (ไม่บังคับ)
+                    <input name="clockOutAt" type="datetime-local" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                  </label>
+                </div>
+                <label className="block text-xs font-medium text-gray-600">
+                  หมายเหตุ
+                  <input name="note" maxLength={200} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                </label>
+                {editError && <p className="text-xs text-red-600">{editError}</p>}
+                <button type="submit" disabled={isEditing} className="btn-primary min-h-11 w-full text-sm">
+                  {isEditing ? "กำลังบันทึก..." : "เพิ่มบันทึก"}
+                </button>
+              </form>
+            </ModalDialog>
+          )}
+
+          {/* Edit existing record */}
+          {editTarget && (
+            <ModalDialog open title={`แก้ไขเวลา · ${editTarget.employeeName}`} onClose={() => setEditTarget(null)} size="md">
+              <form
+                action={(fd) => runEdit(() => adjustAttendanceAction(fd), () => setEditTarget(null))}
+                className="space-y-3"
+              >
+                <input type="hidden" name="id" value={editTarget.id} />
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs font-medium text-gray-600">
+                    เวลาเข้า
+                    <input name="clockInAt" type="datetime-local" required defaultValue={toLocalInput(editTarget.clockInAt)} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                  </label>
+                  <label className="block text-xs font-medium text-gray-600">
+                    เวลาออก (ไม่บังคับ)
+                    <input name="clockOutAt" type="datetime-local" defaultValue={editTarget.clockOutAt ? toLocalInput(editTarget.clockOutAt) : ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                  </label>
+                </div>
+                <label className="block text-xs font-medium text-gray-600">
+                  หมายเหตุ
+                  <input name="note" maxLength={200} defaultValue={editTarget.note ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                </label>
+                {editError && <p className="text-xs text-red-600">{editError}</p>}
+                <button type="submit" disabled={isEditing} className="btn-primary min-h-11 w-full text-sm">
+                  {isEditing ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
+                </button>
+              </form>
+            </ModalDialog>
+          )}
         </>
+      )}
+
+      {/* Self-service backdated clock (all employees, limited per month) */}
+      {selfBackdateOpen && (
+        <ModalDialog open title="ลงเวลาย้อนหลัง" onClose={() => setSelfBackdateOpen(false)} size="md">
+          <form
+            action={(fd) => runEdit(() => selfBackdatedClockAction(fd), () => setSelfBackdateOpen(false))}
+            className="space-y-3"
+          >
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              ใช้สำหรับวันที่ลืมลงเวลา · เหลือสิทธิ {Math.max(0, backdatedRights - backdatedUsed)}/{backdatedRights} ครั้งในเดือนนี้
+            </p>
+            <label className="block text-xs font-medium text-gray-600">
+              วันที่ (ย้อนหลัง)
+              <input name="date" type="date" max={today} required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-xs font-medium text-gray-600">
+                เวลาเข้า
+                <input name="clockInAt" type="datetime-local" required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              </label>
+              <label className="block text-xs font-medium text-gray-600">
+                เวลาออก (ไม่บังคับ)
+                <input name="clockOutAt" type="datetime-local" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              </label>
+            </div>
+            <label className="block text-xs font-medium text-gray-600">
+              เหตุผล
+              <input name="note" maxLength={200} placeholder="เช่น ลืมลงเวลา" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+            </label>
+            {editError && <p className="text-xs text-red-600">{editError}</p>}
+            <button type="submit" disabled={isEditing} className="btn-primary min-h-11 w-full text-sm">
+              {isEditing ? "กำลังบันทึก..." : "ลงเวลาย้อนหลัง"}
+            </button>
+          </form>
+        </ModalDialog>
       )}
     </div>
   );

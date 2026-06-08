@@ -49,6 +49,9 @@ export async function updateStoreAction(
     const currencyCode = (formData.get("currencyCode") as string | null)?.trim() ?? "THB";
     const buffetEnabled = formData.get("buffetEnabled") === "1";
     const qrOrderingEnabled = formData.get("qrOrderingEnabled") === "1";
+    const dineInRaw = parseInt((formData.get("dineInDurationMinutes") as string | null) ?? "", 10);
+    const dineInDurationMinutes =
+      Number.isInteger(dineInRaw) && dineInRaw >= 15 && dineInRaw <= 600 ? dineInRaw : 120;
 
     if (!name) return { error: "กรุณาระบุชื่อร้านค้า" };
     if (name.length > 100) return { error: "ชื่อร้านค้ายาวเกิน 100 ตัวอักษร" };
@@ -78,6 +81,7 @@ export async function updateStoreAction(
       currencyCode,
       buffetEnabled,
       qrOrderingEnabled,
+      dineInDurationMinutes,
     });
 
     if (result.error) return { error: result.error.userMessage };

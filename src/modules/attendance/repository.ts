@@ -198,6 +198,112 @@ export async function listAttendanceRecords(
   return { data: (data ?? []).map(mapRecord), error: null };
 }
 
+export interface ManualAttendanceInput {
+  organizationId: string;
+  storeId: string;
+  userId: string;
+  employeeName: string;
+  date: string;
+  clockInAt: string;
+  clockOutAt: string | null;
+  note?: string;
+  adjustedByUserId: string;
+}
+
+/** Manager adds a backdated attendance record. */
+export async function addManualAttendance(input: ManualAttendanceInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .insert({
+      organization_id: input.organizationId,
+      store_id: input.storeId,
+      user_id: input.userId,
+      employee_name: input.employeeName,
+      date: input.date,
+      clock_in_at: input.clockInAt,
+      clock_out_at: input.clockOutAt,
+      note: input.note ?? null,
+      status: "backdated",
+      adjusted_by_user_id: input.adjustedByUserId,
+    })
+    .select()
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapRecord(data), error: null };
+}
+
+export interface AdjustAttendanceInput {
+  clockInAt: string;
+  clockOutAt: string | null;
+  note?: string;
+  adjustedByUserId: string;
+}
+
+/** Manager edits an existing attendance record (correct clock times). */
+export async function adjustAttendanceRecord(
+  id: string,
+  storeId: string,
+  input: AdjustAttendanceInput,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .update({
+      clock_in_at: input.clockInAt,
+      clock_out_at: input.clockOutAt,
+      note: input.note ?? null,
+      status: "adjusted",
+      adjusted_by_user_id: input.adjustedByUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("store_id", storeId)
+    .select()
+    .single();
+  if (error || !data) return { data: null, error: mapError(error ?? new Error("ไม่พบรายการ")) };
+  return { data: mapRecord(data), error: null };
+}
+
+/** First day of the month after the one containing `date` (YYYY-MM-DD). Exclusive upper bound. */
+export function nextMonthStart(date: string): string {
+  const [y, m] = date.slice(0, 7).split("-").map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}-01`;
+}
+
+/** Count self-service backdated records the user created within a month (rights usage). */
+export async function countSelfBackdated(
+  userId: string,
+  storeId: string,
+  monthStart: string,
+  monthEndExclusive: string,
+): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const { count } = await supabase
+    .from("attendance_records")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .eq("user_id", userId)
+    .eq("adjusted_by_user_id", userId)
+    .eq("status", "backdated")
+    .gte("date", monthStart)
+    .lt("date", monthEndExclusive);
+  return count ?? 0;
+}
+
+export async function deleteAttendanceRecord(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("attendance_records")
+    .delete()
+    .eq("id", id)
+    .eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
 // Computes payroll summaries grouped by userId from a list of records.
 // Hours are computed from clock_in_at → clock_out_at; records without clock_out are excluded from hour totals.
 export function computePayrollSummaries(

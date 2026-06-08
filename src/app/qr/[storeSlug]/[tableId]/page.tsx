@@ -9,6 +9,7 @@ import {
   getTableById,
   listPublicMenu,
 } from "@/modules/stores/public-repository";
+import { nowMs } from "@/shared/utils/time";
 import QrOrderingApp from "./QrOrderingApp";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,27 @@ export default async function QrOrderPage({ params }: QrOrderPageProps) {
       <main className="min-h-screen bg-white flex flex-col items-center justify-center p-8 max-w-sm mx-auto text-center">
         <p className="text-lg font-semibold text-gray-700">โต๊ะนี้ยังไม่พร้อมรับออร์เดอร์</p>
         <p className="text-sm text-gray-400 mt-2">กรุณาแจ้งพนักงานเพื่อช่วยตรวจสอบ</p>
+      </main>
+    );
+  }
+
+  // Timed session gate: ordering is only allowed while the table session is active.
+  const now = nowMs();
+  const expiresAt = table.sessionExpiresAt ? Date.parse(table.sessionExpiresAt) : null;
+  const sessionActive = expiresAt !== null && expiresAt > now;
+  if (!sessionActive) {
+    const expired = expiresAt !== null && expiresAt <= now;
+    return (
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center p-8 max-w-sm mx-auto text-center">
+        <div className="mb-4 text-4xl">{expired ? "⏰" : "🍽️"}</div>
+        <p className="text-lg font-semibold text-gray-700">
+          {expired ? "หมดเวลาสั่งอาหารแล้ว" : "ยังไม่ได้เปิดโต๊ะ"}
+        </p>
+        <p className="mt-2 text-sm text-gray-400">
+          {expired
+            ? "เวลาใช้งาน QR ของโต๊ะนี้หมดแล้ว กรุณาแจ้งพนักงานหากต้องการสั่งเพิ่ม"
+            : "กรุณาให้พนักงานเปิดโต๊ะและสแกน QR บนใบเสร็จเพื่อเริ่มสั่งอาหาร"}
+        </p>
       </main>
     );
   }

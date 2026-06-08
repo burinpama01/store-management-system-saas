@@ -21,9 +21,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("catalog.view") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
     ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
+    ...(can("orders.manage_qr") ? [{ href: "/qr-orders", label: "QR Order" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
+    ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(
       storeContext && can("orders.manage_qr") && (stores.find((s) => s.id === storeContext.storeId) as { buffet_enabled?: boolean } | undefined)?.buffet_enabled
         ? [{ href: "/buffet", label: "บุฟเฟต์" }]

@@ -23,6 +23,7 @@ function mapStore(row: StoreRow): Store {
     isActive: row.is_active,
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
+    dineInDurationMinutes: row.dine_in_duration_minutes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -39,10 +40,46 @@ function mapTable(row: TableRow): Table {
     isActive: row.is_active,
     qrEnabled: row.qr_enabled,
     currentSessionId: row.current_session_id ?? undefined,
+    sessionStartedAt: row.session_started_at ?? undefined,
+    sessionExpiresAt: row.session_expires_at ?? undefined,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+export async function openTableSession(storeId: string, tableId: string, minutes: number) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("open_table_session", {
+    p_store_id: storeId,
+    p_table_id: tableId,
+    p_minutes: minutes,
+  });
+  if (error) return { data: null, error: mapError(error) };
+  return { data: data as string, error: null };
+}
+
+export async function closeTableSession(storeId: string, tableId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("close_table_session", {
+    p_store_id: storeId,
+    p_table_id: tableId,
+  });
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/** Single table by id (incl. session window), scoped to store. */
+export async function getTable(tableId: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("tables")
+    .select("*")
+    .eq("id", tableId)
+    .eq("store_id", storeId)
+    .maybeSingle();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: data ? mapTable(data) : null, error: null };
 }
 
 function mapPrinter(row: PrinterRow): Printer {
@@ -100,6 +137,7 @@ export interface UpdateStoreInput {
   locale?: string;
   buffetEnabled?: boolean;
   qrOrderingEnabled?: boolean;
+  dineInDurationMinutes?: number;
 }
 
 export async function updateStore(storeId: string, organizationId: string, input: UpdateStoreInput) {
@@ -116,6 +154,7 @@ export async function updateStore(storeId: string, organizationId: string, input
       locale: input.locale,
       buffet_enabled: input.buffetEnabled,
       qr_ordering_enabled: input.qrOrderingEnabled,
+      dine_in_duration_minutes: input.dineInDurationMinutes,
       updated_at: new Date().toISOString(),
     })
     .eq("id", storeId)
@@ -137,6 +176,72 @@ export async function listStoreTables(storeId: string) {
     },
     { defaultData: [] },
   );
+}
+
+/** All tables (incl. inactive) for the management page. */
+export async function listManagedTables(storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("tables")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("number");
+  if (error) return { data: null, error: mapError(error) };
+  return { data: (data ?? []).map(mapTable), error: null };
+}
+
+export interface TableInput {
+  number: string;
+  label?: string;
+  seats?: number;
+  isActive: boolean;
+  qrEnabled: boolean;
+}
+
+export async function createTable(storeId: string, organizationId: string, input: TableInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("tables")
+    .insert({
+      store_id: storeId,
+      organization_id: organizationId,
+      number: input.number,
+      label: input.label ?? null,
+      seats: input.seats ?? null,
+      is_active: input.isActive,
+      qr_enabled: input.qrEnabled,
+    })
+    .select()
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapTable(data), error: null };
+}
+
+export async function updateTable(id: string, storeId: string, input: TableInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("tables")
+    .update({
+      number: input.number,
+      label: input.label ?? null,
+      seats: input.seats ?? null,
+      is_active: input.isActive,
+      qr_enabled: input.qrEnabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("store_id", storeId)
+    .select()
+    .single();
+  if (error || !data) return { data: null, error: mapError(error ?? new Error("ไม่พบโต๊ะ")) };
+  return { data: mapTable(data), error: null };
+}
+
+export async function deleteTable(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("tables").delete().eq("id", id).eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
 }
 
 export async function getTableByNumber(storeId: string, number: string) {

@@ -14,7 +14,13 @@ import {
   clockOut,
   getAttendanceSettings,
   upsertAttendanceSettings,
+  addManualAttendance,
+  adjustAttendanceRecord,
+  deleteAttendanceRecord,
+  countSelfBackdated,
+  nextMonthStart,
 } from "@/modules/attendance/repository";
+import { getStoreHrSettings } from "@/modules/hr/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
@@ -206,6 +212,152 @@ export async function saveAttendanceSettingsAction(
     if (result.error) return { error: result.error.userMessage };
     revalidatePath("/attendance", "page");
     return { error: null, success: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+// --- Backdated / manual attendance editing (manager) ---
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Parse "YYYY-MM-DDTHH:MM" local input into an ISO timestamp; returns null if invalid. */
+function parseLocalDateTime(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const t = Date.parse(s);
+  if (isNaN(t)) return null;
+  return new Date(t).toISOString();
+}
+
+export async function addManualAttendanceAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { user, ctx } = await getStoreContext();
+
+    const userId = String(formData.get("userId") ?? "");
+    if (!UUID_RE.test(userId)) return { error: "พนักงานไม่ถูกต้อง" };
+    const employeeName = String(formData.get("employeeName") ?? "").trim().slice(0, 100) || userId;
+    const date = String(formData.get("date") ?? "").trim();
+    if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
+
+    const clockInAt = parseLocalDateTime(formData.get("clockInAt"));
+    if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
+    const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
+    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw) : null;
+    if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
+    if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
+      return { error: "เวลาออกต้องหลังเวลาเข้า" };
+    }
+    const note = (String(formData.get("note") ?? "")).trim().slice(0, 200) || undefined;
+
+    const result = await addManualAttendance({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      userId,
+      employeeName,
+      date,
+      clockInAt,
+      clockOutAt,
+      note,
+      adjustedByUserId: user.id,
+    });
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function adjustAttendanceAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { user, ctx } = await getStoreContext();
+
+    const id = String(formData.get("id") ?? "");
+    if (!UUID_RE.test(id)) return { error: "รายการไม่ถูกต้อง" };
+    const clockInAt = parseLocalDateTime(formData.get("clockInAt"));
+    if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
+    const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
+    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw) : null;
+    if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
+    if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
+      return { error: "เวลาออกต้องหลังเวลาเข้า" };
+    }
+    const note = (String(formData.get("note") ?? "")).trim().slice(0, 200) || undefined;
+
+    const result = await adjustAttendanceRecord(id, ctx.storeId, {
+      clockInAt,
+      clockOutAt,
+      note,
+      adjustedByUserId: user.id,
+    });
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** Employee self-service backdated clock for a missed day, limited to N/month. */
+export async function selfBackdatedClockAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.clock");
+    const { user, ctx } = await getStoreContext();
+
+    const date = String(formData.get("date") ?? "").trim();
+    if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
+
+    const today = getStoreLocalDate(ctx.storeTimezone);
+    if (date >= today) return { error: "ลงย้อนหลังได้เฉพาะวันที่ผ่านมาแล้ว" };
+
+    const clockInAt = parseLocalDateTime(formData.get("clockInAt"));
+    if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
+    const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
+    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw) : null;
+    if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
+    if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
+      return { error: "เวลาออกต้องหลังเวลาเข้า" };
+    }
+
+    const settings = await getStoreHrSettings(ctx.storeId, ctx.organizationId);
+    const monthStart = date.slice(0, 7) + "-01";
+    const used = await countSelfBackdated(user.id, ctx.storeId, monthStart, nextMonthStart(date));
+    if (used >= settings.backdatedRightsPerMonth) {
+      return { error: `ใช้สิทธิลงเวลาย้อนหลังครบ ${settings.backdatedRightsPerMonth} ครั้งในเดือนนี้แล้ว` };
+    }
+
+    const result = await addManualAttendance({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      userId: user.id,
+      employeeName: (user.email ?? user.id).slice(0, 100),
+      date,
+      clockInAt,
+      clockOutAt,
+      note: (String(formData.get("note") ?? "")).trim().slice(0, 200) || undefined,
+      adjustedByUserId: user.id,
+    });
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function deleteAttendanceAction(id: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(id)) return { error: "รายการไม่ถูกต้อง" };
+    const result = await deleteAttendanceRecord(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }

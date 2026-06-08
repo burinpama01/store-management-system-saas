@@ -27,6 +27,7 @@ function mapStore(row: StoreRow): Store {
     isActive: row.is_active,
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
+    dineInDurationMinutes: row.dine_in_duration_minutes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -43,6 +44,8 @@ function mapTable(row: TableRow): Table {
     isActive: row.is_active,
     qrEnabled: row.qr_enabled,
     currentSessionId: row.current_session_id ?? undefined,
+    sessionStartedAt: row.session_started_at ?? undefined,
+    sessionExpiresAt: row.session_expires_at ?? undefined,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { listCategories, listProducts } from "@/modules/catalog/repository";
-import { getReceiptSettings } from "@/modules/stores/repository";
+import { getReceiptSettings, getStore } from "@/modules/stores/repository";
+import { getOpenCashSession, getCashSalesSince } from "@/modules/cashflow/repository";
 import { PosTerminal } from "./PosTerminal";
 
 export const dynamic = "force-dynamic";
@@ -26,11 +27,19 @@ export default async function PosPage() {
     redirect(firstHomeRoute(resolved.can) ?? "/dashboard");
   }
 
-  const [categoriesResult, productsResult, receiptSettingsResult] = await Promise.all([
-    listCategories(ctx.storeId),
-    listProducts(ctx.storeId, { includeInactive: false }),
-    getReceiptSettings(ctx.storeId),
-  ]);
+  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult] =
+    await Promise.all([
+      listCategories(ctx.storeId),
+      listProducts(ctx.storeId, { includeInactive: false }),
+      getReceiptSettings(ctx.storeId),
+      getStore(ctx.storeId),
+      getOpenCashSession(ctx.storeId),
+    ]);
+
+  const cashSession = cashSessionResult.data ?? null;
+  const cashSalesPreview = cashSession
+    ? await getCashSalesSince(ctx.storeId, cashSession.openedAt)
+    : 0;
 
   return (
     <PosTerminal
@@ -40,6 +49,9 @@ export default async function PosPage() {
       products={productsResult.data ?? []}
       receiptSettings={receiptSettingsResult.data ?? null}
       exitHref={firstHomeRoute(resolved.can)}
+      cashSession={cashSession}
+      cashSalesPreview={cashSalesPreview}
+      currency={storeResult.data?.currencyCode ?? "THB"}
     />
   );
 }
