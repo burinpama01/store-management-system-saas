@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UI UX Redesign Tenant Theme Plan v1</title>
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #d7e1ef;
+      --surface: #f8fafc;
+      --blue: #2563eb;
+      --cyan: #0891b2;
+      --green: #059669;
+      --amber: #d97706;
+      --rose: #e11d48;
+      --violet: #7c3aed;
+      --navy: #172554;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #ffffff;
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+      line-height: 1.55;
+    }
+
+    header {
+      min-height: 70vh;
+      padding: 32px 40px;
+      color: #ffffff;
+      background:
+        linear-gradient(115deg, rgba(15, 23, 42, .92), rgba(37, 99, 235, .72)),
+        url("https://images.unsplash.com/photo-1556741533-411cf82e4e2d?auto=format&fit=crop&w=1800&q=80");
+      background-size: cover;
+      background-position: center;
+      display: grid;
+      align-items: end;
+    }
+
+    .hero {
+      width: min(1100px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding-bottom: 36px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      padding: 4px 10px;
+      border: 1px solid rgba(255, 255, 255, .35);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .12);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    h1 {
+      max-width: 860px;
+      margin: 18px 0 12px;
+      font-size: clamp(34px, 5vw, 64px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: rgba(255, 255, 255, .86);
+      font-size: 18px;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 28px 0 64px;
+    }
+
+    section {
+      padding: 28px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      color: var(--navy);
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      color: #0f172a;
+    }
+
+    p { margin-top: 0; }
+
+    .muted { color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card {
+      min-height: 160px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 16px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tag.blue { background: #dbeafe; color: #1d4ed8; }
+    .tag.green { background: #dcfce7; color: #047857; }
+    .tag.amber { background: #fef3c7; color: #b45309; }
+    .tag.rose { background: #ffe4e6; color: #be123c; }
+    .tag.violet { background: #ede9fe; color: #6d28d9; }
+    .tag.cyan { background: #cffafe; color: #0e7490; }
+
+    .mockup {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr) 270px;
+      gap: 12px;
+      min-height: 360px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: #eef4fb;
+    }
+
+    .sidebar,
+    .workspace,
+    .panel {
+      border-radius: var(--radius);
+      background: #ffffff;
+      border: 1px solid #dbe4ef;
+      padding: 14px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      font-weight: 800;
+    }
+
+    .brand-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: var(--tenant-primary, #2563eb);
+    }
+
+    .nav-item {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      border-radius: 7px;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .nav-item.active {
+      background: color-mix(in srgb, var(--tenant-primary, #2563eb) 12%, #ffffff);
+      color: var(--tenant-primary, #2563eb);
+      font-weight: 800;
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .stat {
+      min-height: 74px;
+      border-radius: 8px;
+      padding: 12px;
+      color: #ffffff;
+      background: var(--tenant-primary, #2563eb);
+    }
+
+    .stat:nth-child(2) { background: var(--tenant-accent, #0891b2); }
+    .stat:nth-child(3) { background: var(--tenant-success, #059669); }
+    .stat:nth-child(4) { background: var(--tenant-warn, #d97706); }
+
+    .table-line {
+      height: 34px;
+      border-bottom: 1px solid #e5edf6;
+      display: grid;
+      grid-template-columns: 1.6fr .8fr .8fr;
+      align-items: center;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .swatches {
+      display: grid;
+      gap: 10px;
+    }
+
+    .swatch {
+      min-height: 42px;
+      border: 1px solid #dbe4ef;
+      border-radius: 8px;
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      align-items: center;
+      overflow: hidden;
+      background: #ffffff;
+      font-size: 13px;
+    }
+
+    .swatch span:first-child { height: 100%; }
+    .swatch strong { display: block; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eff6ff;
+      color: var(--navy);
+      font-size: 13px;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #e2e8f0;
+      color: #0f172a;
+      font-size: 12px;
+    }
+
+    ul { padding-left: 20px; margin: 0; }
+    li + li { margin-top: 8px; }
+
+    @media (max-width: 980px) {
+      header { padding: 24px; }
+      main, .hero { width: min(100vw - 32px, 860px); }
+      .grid, .grid.two { grid-template-columns: 1fr; }
+      .mockup { grid-template-columns: 1fr; }
+      .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      header { min-height: 62vh; }
+      .lead { font-size: 15px; }
+      .stat-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <span class="eyebrow">StoreOS UI/UX Redesign Plan v1</span>
+      <h1>Modern Colorful SaaS UI พร้อม Tenant Theme Customization</h1>
+      <p class="lead">
+        แผนปรับ UX/UI ใหม่ให้สด ทันสมัย อ่านง่าย ใช้งานเร็ว และให้แต่ละ tenant ตั้งค่าสีแบรนด์ของร้านได้ โดยยังคุม accessibility, role-based UI และ feature gating ตามแพ็กเกจ.
+      </p>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Design Direction</h2>
+      <div class="grid">
+        <article class="card">
+          <span class="tag blue">Visual</span>
+          <h3>Colorful Professional</h3>
+          <p class="muted">ใช้สี tenant เป็น brand signal แต่คุมพื้นหลังให้สว่าง อ่านง่าย และไม่ทำให้ dashboard กลายเป็น one-note palette.</p>
+        </article>
+        <article class="card">
+          <span class="tag green">UX</span>
+          <h3>Operational First</h3>
+          <p class="muted">POS, เมนูสินค้า, รายงาน และ settings ต้อง scan เร็ว กดซ้ำได้ง่าย ไม่ใช้ landing-style layout ในหน้าทำงาน.</p>
+        </article>
+        <article class="card">
+          <span class="tag violet">Personalization</span>
+          <h3>Tenant Theme Control</h3>
+          <p class="muted">แต่ละ tenant เลือก preset หรือกำหนด primary/accent/success/warning ได้ พร้อม preview และ contrast validation.</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Theme Mockup</h2>
+      <div class="mockup" style="--tenant-primary:#2563eb;--tenant-accent:#06b6d4;--tenant-success:#059669;--tenant-warn:#f59e0b;">
+        <aside class="sidebar">
+          <div class="brand-row"><span class="brand-dot"></span>Demo Restaurant</div>
+          <div class="nav-item active">ภาพรวม</div>
+          <div class="nav-item">POS</div>
+          <div class="nav-item">เมนูสินค้า</div>
+          <div class="nav-item">รายงาน</div>
+          <div class="nav-item">ตั้งค่า</div>
+        </aside>
+        <section class="workspace">
+          <h3>Dashboard Preview</h3>
+          <p class="muted">ตัวอย่าง token สี tenant ถูกนำไปใช้กับ nav, KPI, action states และ charts</p>
+          <div class="stat-row">
+            <div class="stat"><strong>฿18,420</strong><br />ยอดขายวันนี้</div>
+            <div class="stat"><strong>24</strong><br />ออเดอร์เปิด</div>
+            <div class="stat"><strong>96%</strong><br />สำเร็จ</div>
+            <div class="stat"><strong>7</strong><br />แจ้งเตือน</div>
+          </div>
+          <div class="table-line"><strong>เมนูขายดี</strong><strong>ราคา</strong><strong>สถานะ</strong></div>
+          <div class="table-line"><span>ข้าวกะเพรา</span><span>฿65</span><span>เปิดขาย</span></div>
+          <div class="table-line"><span>ชาไทย</span><span>฿45</span><span>เปิดขาย</span></div>
+          <div class="table-line"><span>บราวนี่</span><span>฿55</span><span>ใกล้หมด</span></div>
+        </section>
+        <aside class="panel">
+          <h3>Theme Builder</h3>
+          <div class="swatches">
+            <div class="swatch"><span style="background:#2563eb"></span><span><strong>Primary</strong>#2563EB</span></div>
+            <div class="swatch"><span style="background:#06b6d4"></span><span><strong>Accent</strong>#06B6D4</span></div>
+            <div class="swatch"><span style="background:#059669"></span><span><strong>Success</strong>#059669</span></div>
+            <div class="swatch"><span style="background:#f59e0b"></span><span><strong>Warning</strong>#F59E0B</span></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section>
+      <h2>Tenant Theme Model</h2>
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>ข้อมูล</th><th>กฎ</th><th>Fallback</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Theme Preset</td>
+            <td><code>preset_id</code>, <code>name</code>, <code>industry</code></td>
+            <td>มี preset สำหรับ restaurant, cafe, retail, service, dark-neutral</td>
+            <td>StoreOS Blue</td>
+          </tr>
+          <tr>
+            <td>Tenant Override</td>
+            <td><code>primary</code>, <code>accent</code>, <code>success</code>, <code>warning</code>, <code>surface</code></td>
+            <td>validate HEX, contrast ratio, forbidden low-contrast pair</td>
+            <td>preset token</td>
+          </tr>
+          <tr>
+            <td>Runtime CSS</td>
+            <td><code>--tenant-primary</code>, <code>--tenant-accent</code>, <code>--tenant-ring</code></td>
+            <td>inject ที่ dashboard layout หลัง resolve tenant/store</td>
+            <td>server default tokens</td>
+          </tr>
+          <tr>
+            <td>Package Gate</td>
+            <td>Free/Starter ใช้ preset, Standard+ ปรับสีเอง, Premium+ custom logo</td>
+            <td>UI disable พร้อม reason เมื่อ package ไม่รองรับ</td>
+            <td>free preset</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>UX Scope</h2>
+      <div class="grid two">
+        <article class="card">
+          <span class="tag cyan">Core screens</span>
+          <ul>
+            <li>Dashboard: KPI dense, charts, quick actions, alert strip</li>
+            <li>Catalog: product image grid/table toggle, category rail, side drawer edit</li>
+            <li>POS: product image tiles, color-coded categories, receipt action zone</li>
+            <li>Settings: theme builder, diagnostics, package limits</li>
+          </ul>
+        </article>
+        <article class="card">
+          <span class="tag amber">States</span>
+          <ul>
+            <li>loading skeleton ที่ไม่ทำ layout shift</li>
+            <li>empty state ที่มี action เดียวชัดเจน</li>
+            <li>permission/package locked state แสดงเหตุผลและ upgrade path</li>
+            <li>error state แยก user error กับ system error</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Implementation Plan</h2>
+      <table>
+        <thead>
+          <tr><th>Phase</th><th>งาน</th><th>ไฟล์หลัก</th><th>Verification</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. Token Foundation</td>
+            <td>เพิ่ม theme token, preset, contrast validator, CSS variable mapper</td>
+            <td><code>src/modules/theme/*</code>, <code>src/app/globals.css</code></td>
+            <td>unit test validator + token snapshot</td>
+          </tr>
+          <tr>
+            <td>2. Tenant Theme Storage</td>
+            <td>เพิ่ม schema/migration สำหรับ tenant/store theme profile</td>
+            <td><code>supabase/migrations/*theme*.sql</code>, database types</td>
+            <td>RLS/storage tests, no cross-tenant write</td>
+          </tr>
+          <tr>
+            <td>3. Theme Builder UI</td>
+            <td>settings page สำหรับ preset, color swatches, live preview, reset</td>
+            <td><code>settings/theme/*</code>, shared controls</td>
+            <td>role/package gate tests + browser screenshot</td>
+          </tr>
+          <tr>
+            <td>4. Core Screen Redesign</td>
+            <td>dashboard, catalog, POS, reports ใช้ token ใหม่และ responsive rules</td>
+            <td><code>dashboard</code>, <code>catalog</code>, <code>pos</code>, <code>reports</code></td>
+            <td>desktop/mobile visual QA, no overlap, no contrast fail</td>
+          </tr>
+          <tr>
+            <td>5. Polish & Rollout</td>
+            <td>migration fallback, theme import/export, audit log, QA checklist</td>
+            <td><code>docs</code>, <code>Plan</code>, <code>tests/unit/ui-regressions.test.ts</code></td>
+            <td>full tests, typecheck, lint, code_reviewer</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Acceptance Criteria</h2>
+      <ul>
+        <li>แต่ละ tenant/store ตั้ง theme ได้โดยไม่กระทบ tenant อื่น</li>
+        <li>ทุกสีผ่าน contrast อย่างน้อย WCAG AA สำหรับ text/action หลัก</li>
+        <li>Free ใช้ preset ได้, package สูงขึ้นปลดล็อก custom color/logo ตามระดับ</li>
+        <li>POS และ catalog แสดงรูปสินค้าอย่างสวยงาม ไม่เกิด layout shift บน mobile</li>
+        <li>role ที่ไม่มีสิทธิ์เห็น preview ได้ แต่ save/theme management ต้องถูก disable และ server action ต้อง fail closed</li>
+        <li>มี visual QA screenshot desktop/mobile ก่อนสรุปว่างาน UI เสร็จ</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

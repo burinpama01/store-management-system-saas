@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Operations Feature Completion Plan v1</title>
+<style>
+:root{--ink:#142019;--muted:#5d6b63;--line:#d8e0d8;--bg:#f5f7f3;--green:#14765f;--amber:#b7791f;--rose:#b42318}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+header{background:#102a22;color:#fff;padding:26px 32px;border-bottom:4px solid var(--green)}
+header h1{margin:0 0 6px;font-size:26px}header p{margin:0;color:#cbe0d6;max-width:900px}
+main{max-width:1080px;margin:0 auto;padding:22px}
+section{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:19px}h3{margin:14px 0 4px;font-size:15px}
+table{width:100%;border-collapse:collapse;margin:6px 0}th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;font-size:13.5px;vertical-align:top}
+th{background:#eef3ee}ul{margin:5px 0;padding-left:18px}li{margin:2px 0}
+.pill{display:inline-block;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700}
+.has{background:#e6f4ee;color:var(--green)}.part{background:#fdf0d9;color:var(--amber)}.no{background:#fde7e4;color:var(--rose)}
+.phase{border-left:4px solid var(--green);padding-left:12px;margin:10px 0}
+</style></head><body>
+<header><h1>Operations Feature Completion Plan v1</h1>
+<p>ปิดงาน 9 ข้อที่เหลือ (#3–#11) จากรีวิว role=owner — หลายข้อมีโครง module อยู่แล้ว แต่ UI/flow ไม่ครบ จัดเป็นเฟสตามความเกี่ยวเนื่อง/ขนาดงาน</p></header>
+<main>
+
+<section>
+<h2>สถานะของเดิม (มีฐานแล้ว)</h2>
+<ul>
+<li>QR ordering: <span class="pill part">มีบางส่วน</span> customer page + staff table board มีแล้ว (ขาด แจ้งเตือน/บิล/ประวัติ/เรียกพนักงาน)</li>
+<li>buffet/stock/accounting/attendance: <span class="pill part">module มีแล้ว</span> ขาด settings/flow บางหน้า</li>
+<li>storage buckets product-images: <span class="pill has">มีแล้ว</span> (พร้อมต่อ #5)</li>
+</ul>
+</section>
+
+<section>
+<h2>Phase A — Settings & quick wins</h2>
+<div class="phase">
+<h3>#3 เชื่อมต่อเครื่องพิมพ์ก่อนทดสอบ</h3>
+<ul><li>เพิ่มปุ่ม "เชื่อมต่อเครื่องพิมพ์" (WebUSB/WebBluetooth/IP) ในแท็บใบเสร็จ → จับคู่อุปกรณ์ แล้วปุ่มทดสอบจึงพิมพ์จริง</li>
+<li>เก็บ config printer (มี printers table) + capability fail-closed</li></ul>
+</div>
+<div class="phase">
+<h3>#4 แผนที่เลือกตำแหน่ง GPS เข้างาน</h3>
+<ul><li>ฝัง map (Leaflet/OSM หรือ Google Maps — GOOGLE_MAPS_API_KEY มีใน env) ในตั้งค่า GPS → คลิกปักหมุด + ลากปรับ + วงรัศมี</li></ul>
+</div>
+<div class="phase">
+<h3>#9 ตั้งค่าบุฟเฟต์ + เลือกแสดงบน QR order</h3>
+<ul><li>หน้าตั้งค่าแพ็กเกจบุฟเฟต์ (ราคา/เวลา/เงื่อนไข) + toggle สินค้าที่แสดงบน QR (available_for_qr มีแล้ว)</li></ul>
+</div>
+</section>
+
+<section>
+<h2>Phase B — Data & storage</h2>
+<div class="phase">
+<h3>#5 อัปโหลดรูป + ย่อขนาด/ลดคุณภาพอัตโนมัติ</h3>
+<ul><li>อัปโหลดรูปสินค้า/เมนู → resize+compress (sharp ฝั่ง server หรือ canvas ฝั่ง client) ก่อนเก็บ Supabase Storage (bucket มีแล้ว) → โหลดเร็วขึ้น</li>
+<li>ใช้ progress (มี uploadWithProgress แล้ว)</li></ul>
+</div>
+<div class="phase">
+<h3>#8 สต็อกเชื่อมกับสินค้า</h3>
+<ul><li>ผูก stock กับ product/variant (ตัด stock เมื่อขาย POS/QR, แจ้งเตือนของใกล้หมด — มี stock-alerts test แล้ว)</li></ul>
+</div>
+</section>
+
+<section>
+<h2>Phase C — Cash & QR operations</h2>
+<div class="phase">
+<h3>#7 กระแสเงินสด เปิด/ปิดร้าน</h3>
+<ul><li>บันทึกเงินสดตอนเปิดร้าน (opening float) / ปิดร้าน (closing count) → cash session + กระทบยอดกับ POS payments</li></ul>
+</div>
+<div class="phase">
+<h3>#6 QR Order ครบวงจร <span class="pill no">ใหญ่สุด</span></h3>
+<ul><li>ฝั่งลูกค้า: สั่ง/เรียกพนักงาน/ดูรายการ-สถานะ-ยอด-บิล-ประวัติ</li>
+<li>ฝั่งร้าน: แจ้งเตือนออร์เดอร์ใหม่ (realtime) / รายละเอียด/สถานะ/ประวัติ/ยอดชำระ/บิล</li></ul>
+</div>
+</section>
+
+<section>
+<h2>Phase D — HR / Payroll</h2>
+<div class="phase">
+<h3>#10 จัดการพนักงาน + แก้เวลาเข้าออก</h3>
+<ul><li>เพิ่ม/ลบ/แก้พนักงาน (ต่อยอดจาก team settings) + แก้ไข/เพิ่มบันทึกเวลาเข้า-ออกย้อนหลัง</li></ul>
+</div>
+<div class="phase">
+<h3>#11 บัญชีพนักงาน + เงินเดือน/รายวัน + บทลงโทษ</h3>
+<ul><li>ตั้งเงินเดือน/ค่าแรงรายวันต่อคน → คำนวณจากเวลาเข้าออก (มี payroll summary แล้ว) + หักขาด/ลา/มาสาย</li></ul>
+</div>
+</section>
+
+<section>
+<h2>ข้อเสนอลำดับ</h2>
+<p>แนะนำเริ่ม <strong>Phase A</strong> (เห็นผลเร็ว, ความเสี่ยงต่ำ) → B → C → D. แต่ #6 (QR ครบวงจร) เป็นงานใหญ่สุด อาจแยกทำเป็นรอบเฉพาะ</p>
+</section>
+
+</main></body></html>

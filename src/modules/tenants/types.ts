@@ -1,7 +1,7 @@
-export type SubscriptionPlan = "free" | "starter" | "professional" | "enterprise";
+export type SubscriptionPlan = "free" | "starter" | "standard" | "premium" | "enterprise";
 export type SubscriptionStatus = "active" | "trialing" | "past_due" | "canceled" | "paused";
 
-export type Role = "owner" | "admin" | "manager" | "cashier" | "staff";
+export type Role = "super_admin" | "owner" | "admin" | "manager" | "cashier" | "staff";
 
 export type PermissionKey =
   | "dashboard.view"
@@ -22,9 +22,36 @@ export type PermissionKey =
   | "settings.manage_store"
   | "users.manage"
   | "permissions.manage"
-  | "notifications.manage";
+  | "notifications.manage"
+  | "organizations.manage"
+  | "billing.manage"
+  | "system.manage";
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
+  super_admin: [
+    "dashboard.view",
+    "pos.use",
+    "pos.discount",
+    "pos.refund",
+    "pos.delete_bill",
+    "orders.manage_qr",
+    "catalog.view",
+    "catalog.manage",
+    "stock.manage",
+    "cashflow.view",
+    "cashflow.manage",
+    "reports.view",
+    "attendance.clock",
+    "attendance.manage",
+    "settings.view",
+    "settings.manage_store",
+    "users.manage",
+    "permissions.manage",
+    "notifications.manage",
+    "organizations.manage",
+    "billing.manage",
+    "system.manage",
+  ],
   owner: [
     "dashboard.view",
     "pos.use",
@@ -45,6 +72,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "users.manage",
     "permissions.manage",
     "notifications.manage",
+    "billing.manage",
   ],
   admin: [
     "dashboard.view",
@@ -82,7 +110,6 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "orders.manage_qr",
   ],
   cashier: [
-    "dashboard.view",
     "pos.use",
     "pos.discount",
     "catalog.view",

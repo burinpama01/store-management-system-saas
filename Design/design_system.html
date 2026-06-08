@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StoreOS Design System v1</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-muted: #f8fafc;
+        --border: #d9e2ec;
+        --text: #152235;
+        --muted: #526174;
+        --quiet: #7a8899;
+        --brand: #145c63;
+        --brand-soft: #e7f4f3;
+        --accent: #3b6fdd;
+        --success: #16794c;
+        --warning: #a86612;
+        --danger: #bf3030;
+        --radius: 8px;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        letter-spacing: 0;
+      }
+
+      .wrap {
+        width: min(calc(100% - 40px), 1180px);
+        margin: 0 auto;
+        padding: 32px 0 56px;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+      }
+
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 28px; line-height: 1.2; }
+      h2 { font-size: 18px; margin-bottom: 12px; }
+      h3 { font-size: 14px; margin-bottom: 8px; }
+      .muted { color: var(--muted); }
+      .kicker { color: var(--quiet); font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px;
+      }
+
+      .span-4 { grid-column: span 4; }
+      .span-6 { grid-column: span 6; }
+      .span-8 { grid-column: span 8; }
+      .span-12 { grid-column: span 12; }
+
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+
+      .swatch {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: white;
+      }
+
+      .color { height: 52px; }
+      .swatch p { padding: 8px; font-size: 12px; color: var(--muted); }
+
+      .metric-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+
+      .metric {
+        background: linear-gradient(180deg, #fff, #f9fbfd);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px;
+      }
+
+      .metric b {
+        display: block;
+        margin-top: 4px;
+        font-size: 22px;
+        line-height: 1.2;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        min-height: 430px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: white;
+      }
+
+      .side {
+        border-right: 1px solid var(--border);
+        background: white;
+        padding: 14px;
+      }
+
+      .nav {
+        display: grid;
+        gap: 4px;
+        margin-top: 16px;
+      }
+
+      .nav a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        color: var(--muted);
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .nav a.active {
+        color: var(--brand);
+        background: var(--brand-soft);
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .main {
+        background: var(--bg);
+        padding: 18px;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: var(--brand);
+        color: white;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        padding: 10px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
+
+      th {
+        background: var(--surface-muted);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      @media (max-width: 800px) {
+        .grid, .metric-row, .shell { display: block; }
+        .panel, .metric, .shell { margin-bottom: 14px; }
+        .wrap { width: calc(100% - 64px); padding: 24px 0 40px; overflow-x: hidden; }
+        h1 { overflow-wrap: anywhere; }
+        header { align-items: flex-start; }
+        header > div { min-width: 0; max-width: 100%; }
+        header .button { width: 100%; max-width: 100%; }
+        .side { border-right: 0; border-bottom: 1px solid var(--border); }
+        .main { padding: 16px; }
+        .toolbar { display: block; }
+        .toolbar .button { width: 100%; margin-top: 12px; }
+        .metric-row { display: grid; grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div>
+          <p class="kicker">DESIGN SYSTEM v1</p>
+          <h1>StoreOS Operational SaaS UI</h1>
+          <p class="muted">แนวทาง UI ใหม่สำหรับระบบจัดการร้านค้า: หนาแน่นพอดี อ่านเร็ว ใช้งานซ้ำทุกวัน และไม่ใช้สไตล์ marketing page</p>
+        </div>
+        <div class="button">Active baseline</div>
+      </header>
+
+      <section class="grid">
+        <div class="panel span-8">
+          <h2>Dashboard Shell Mockup</h2>
+          <div class="shell">
+            <aside class="side">
+              <p class="kicker">StoreOS</p>
+              <h3>ระบบร้านค้า</h3>
+              <nav class="nav">
+                <a class="active"><span class="dot"></span>ภาพรวม</a>
+                <a><span class="dot"></span>เมนูสินค้า</a>
+                <a><span class="dot"></span>POS</a>
+                <a><span class="dot"></span>รายงาน</a>
+                <a><span class="dot"></span>ตั้งค่า</a>
+              </nav>
+            </aside>
+            <main class="main">
+              <div class="toolbar">
+                <div>
+                  <p class="kicker">TODAY</p>
+                  <h2>ภาพรวมวันนี้</h2>
+                </div>
+                <div class="button">ร้านหลัก</div>
+              </div>
+              <div class="metric-row">
+                <div class="metric"><span class="muted">ยอดขาย</span><b>฿42,850</b></div>
+                <div class="metric"><span class="muted">เงินสด</span><b>฿8,240</b></div>
+                <div class="metric"><span class="muted">รอทำ</span><b>12</b></div>
+                <div class="metric"><span class="muted">เฉลี่ย</span><b>฿315</b></div>
+              </div>
+              <div class="panel" style="margin-top: 14px;">
+                <h3>สินค้าขายดีวันนี้</h3>
+                <table>
+                  <thead><tr><th>สินค้า</th><th>จำนวน</th><th>ยอดขาย</th></tr></thead>
+                  <tbody>
+                    <tr><td>หมูชุดกลาง</td><td>28</td><td>฿8,400</td></tr>
+                    <tr><td>น้ำจิ้ม</td><td>19</td><td>฿1,330</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </main>
+          </div>
+        </div>
+
+        <div class="panel span-4">
+          <h2>Principles</h2>
+          <p class="muted">1. ใช้ compact panels และ tables เป็นหลัก</p>
+          <p class="muted">2. ใช้สีแบรนด์เฉพาะ state สำคัญ ไม่ทาทั้งหน้า</p>
+          <p class="muted">3. ปุ่มสูงขั้นต่ำ 36px, radius ไม่เกิน 8px</p>
+          <p class="muted">4. ตัวเลขใช้ tabular numeric เพื่อ scan ง่าย</p>
+        </div>
+
+        <div class="panel span-6">
+          <h2>Color Tokens</h2>
+          <div class="swatches">
+            <div class="swatch"><div class="color" style="background:#145c63"></div><p>Brand #145c63</p></div>
+            <div class="swatch"><div class="color" style="background:#3b6fdd"></div><p>Accent #3b6fdd</p></div>
+            <div class="swatch"><div class="color" style="background:#16794c"></div><p>Success #16794c</p></div>
+            <div class="swatch"><div class="color" style="background:#bf3030"></div><p>Danger #bf3030</p></div>
+          </div>
+        </div>
+
+        <div class="panel span-6">
+          <h2>Typography & Rhythm</h2>
+          <p class="muted">Font: system sans-serif เพื่อรองรับภาษาไทยดีและเร็ว</p>
+          <p class="muted">Page title 24px / panel title 14px / body 14px / label 12px</p>
+          <p class="muted">Spacing: 4px base scale, panel gap 16-20px, table cell 8-10px</p>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

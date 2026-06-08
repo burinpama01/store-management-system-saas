@@ -1,0 +1,72 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { requirePermission } from "@/modules/auth/guards";
+import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
+import { upsertReceiptSettings } from "@/modules/settings/repository";
+
+async function getStoreContext() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("ไม่มีสิทธิ์เข้าถึง");
+  const { organizations, stores, memberships } = await getUserStores();
+  const ctx = await resolveCurrentStore(stores, organizations, memberships);
+  if (!ctx) throw new Error("ไม่พบข้อมูลร้านค้า");
+  return { user, ctx };
+}
+
+export async function upsertReceiptSettingsAction(
+  _prev: { error: string | null },
+  formData: FormData,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("settings.manage_store");
+    const { ctx } = await getStoreContext();
+
+    const storeName = (formData.get("storeName") as string | null)?.trim() ?? "";
+    const address = (formData.get("address") as string | null)?.trim() || undefined;
+    const phone = (formData.get("phone") as string | null)?.trim() || undefined;
+    const taxId = (formData.get("taxId") as string | null)?.trim() || undefined;
+    const showTaxId = formData.get("showTaxId") === "1";
+    const showQrPayment = formData.get("showQrPayment") === "1";
+    const promptpayId = (formData.get("promptpayId") as string | null)?.trim() || undefined;
+    const headerText = (formData.get("headerText") as string | null)?.trim() || undefined;
+    const footerText = (formData.get("footerText") as string | null)?.trim() || undefined;
+    const paperWidth = formData.get("paperWidth") as "58mm" | "80mm" | null;
+    const printCopiesRaw = formData.get("printCopies") as string | null;
+
+    if (!storeName) return { error: "กรุณาระบุชื่อร้านในใบเสร็จ" };
+    if (storeName.length > 100) return { error: "ชื่อร้านในใบเสร็จยาวเกิน 100 ตัวอักษร" };
+    if (taxId && (taxId.length > 13 || !/^\d+$/.test(taxId)))
+      return { error: "เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข ไม่เกิน 13 หลัก" };
+    if (promptpayId && (promptpayId.length > 13 || !/^\d+$/.test(promptpayId)))
+      return { error: "PromptPay ID ต้องเป็นตัวเลข ไม่เกิน 13 หลัก" };
+    if (headerText && headerText.length > 200) return { error: "ข้อความส่วนหัวยาวเกิน 200 ตัวอักษร" };
+    if (footerText && footerText.length > 200) return { error: "ข้อความส่วนท้ายยาวเกิน 200 ตัวอักษร" };
+    if (!paperWidth || !["58mm", "80mm"].includes(paperWidth))
+      return { error: "ความกว้างกระดาษไม่ถูกต้อง" };
+    const printCopies = parseInt(printCopiesRaw ?? "", 10);
+    if (!Number.isInteger(printCopies) || printCopies < 1 || printCopies > 5)
+      return { error: "จำนวนสำเนาต้องอยู่ระหว่าง 1–5" };
+
+    const result = await upsertReceiptSettings(ctx.storeId, ctx.organizationId, {
+      storeName,
+      address,
+      phone,
+      taxId,
+      showTaxId,
+      showQrPayment,
+      promptpayId,
+      headerText,
+      footerText,
+      paperWidth,
+      printCopies,
+    });
+
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidatePath("/settings/receipt");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}

@@ -31,6 +31,9 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.stderr.log
+*.stdout.log
+.codex-dev*.log
 
 # Vercel
 .vercel
@@ -42,6 +45,9 @@ next-env.d.ts
 # Claude/AI tooling outputs
 .claude/
 graphify-out/
+
+# Visual QA scratch — browser profiles (cookies/login data), screenshots, dev logs
+Design/visual-qa/
 
 # IDE
 .idea/

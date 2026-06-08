@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Admin Platform Roadmap v1</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #d8dee8;
+      --panel: #ffffff;
+      --band: #f6f8fb;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --risk: #be123c;
+      --ok: #15803d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background: #eef2f7;
+      line-height: 1.55;
+    }
+    header {
+      background: #111827;
+      color: white;
+      padding: 32px max(24px, calc((100vw - 1180px) / 2));
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 44px);
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 0;
+      max-width: 840px;
+      color: #cbd5e1;
+      font-size: 16px;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+    }
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--band);
+      min-height: 94px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+    .metric span { color: var(--muted); font-size: 13px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .lane {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .lane h3 {
+      padding: 12px 14px;
+      background: var(--band);
+      border-bottom: 1px solid var(--line);
+    }
+    .lane ul {
+      margin: 0;
+      padding: 12px 16px 16px 30px;
+    }
+    .lane li { margin: 8px 0; }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .phase {
+      border-left: 4px solid var(--accent);
+      background: var(--band);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 160px;
+    }
+    .phase small {
+      display: inline-block;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 8px;
+    }
+    .done { background: #dcfce7; color: var(--ok); }
+    .next { background: #ccfbf1; color: var(--accent); }
+    .risk { background: #ffe4e6; color: var(--risk); }
+    .warn { background: #fef3c7; color: var(--warn); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+    }
+    th {
+      background: var(--band);
+      font-size: 13px;
+    }
+    .checklist {
+      columns: 2;
+      padding-left: 22px;
+    }
+    .checklist li { break-inside: avoid; margin-bottom: 8px; }
+    footer {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 0 24px 28px;
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    @media (max-width: 900px) {
+      .meta, .grid, .timeline { grid-template-columns: 1fr; }
+      .checklist { columns: 1; }
+      main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Super Admin Platform Roadmap v1</h1>
+    <p>แผนใหม่สำหรับยกระดับระบบ Store Management SaaS จากสถานะ core features พร้อมใช้งาน ไปสู่ platform admin, E2E readiness, และ deployment readiness</p>
+  </header>
+  <main>
+    <section>
+      <h2>สถานะล่าสุด</h2>
+      <div class="meta">
+        <div class="metric"><strong>Core</strong><span>POS, QR, Buffet, Accounting, Attendance, Reports, Settings, Printing พร้อมระดับ package</span></div>
+        <div class="metric"><strong>Auth</strong><span>login, reset password, update password, super_admin bootstrap ผ่าน review</span></div>
+        <div class="metric"><strong>139</strong><span>unit tests ล่าสุดผ่าน 9 files / 139 tests</span></div>
+        <div class="metric"><strong>Gap</strong><span>ยังไม่มีหน้า super_admin และยังไม่มี real email-link E2E</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>เป้าหมาย v1</h2>
+      <div class="grid">
+        <div class="lane">
+          <h3>Platform Control</h3>
+          <ul>
+            <li>เพิ่มหน้า `/system` สำหรับ `super_admin` เท่านั้น</li>
+            <li>จัดการ organizations, owners, subscriptions, user access</li>
+            <li>ดู audit/security events ที่เกี่ยวกับการเปลี่ยนสิทธิ์</li>
+          </ul>
+        </div>
+        <div class="lane">
+          <h3>Trust & Security</h3>
+          <ul>
+            <li>เพิ่ม real Supabase auth E2E สำหรับ invite/reset/recovery</li>
+            <li>ตรวจ RLS isolation ด้วย test user จริง</li>
+            <li>ยืนยัน Stripe webhook idempotency และ rollback path</li>
+          </ul>
+        </div>
+        <div class="lane">
+          <h3>Release Readiness</h3>
+          <ul>
+            <li>Vercel preview deploy พร้อม env checklist</li>
+            <li>browser QA สำหรับ desktop/mobile flows หลัก</li>
+            <li>บันทึก runbook deploy/rollback ที่รันจริงแล้ว</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Roadmap</h2>
+      <div class="timeline">
+        <div class="phase">
+          <small>Phase 0</small>
+          <h3>Baseline Lock</h3>
+          <p>เก็บสถานะปัจจุบัน, verify tests, sync Obsidian, และระบุ open/accepted risks ที่ยังต้องตัดสินใจ</p>
+          <span class="status next">Next</span>
+        </div>
+        <div class="phase">
+          <small>Phase 1</small>
+          <h3>Super Admin UI</h3>
+          <p>สร้าง `/system` dashboard, nav visibility, organization list, user/membership view, billing status surface</p>
+          <span class="status next">Priority</span>
+        </div>
+        <div class="phase">
+          <small>Phase 2</small>
+          <h3>Auth E2E</h3>
+          <p>ทดสอบ reset password, recovery hash, invite acceptance, super_admin login, และ direct route guards</p>
+          <span class="status warn">Needs live email</span>
+        </div>
+        <div class="phase">
+          <small>Phase 3</small>
+          <h3>RLS & Billing Hardening</h3>
+          <p>เพิ่ม integration tests สำหรับ tenant/store isolation, Stripe webhook retry, subscription access state</p>
+          <span class="status risk">Security</span>
+        </div>
+        <div class="phase">
+          <small>Phase 4</small>
+          <h3>Preview Release</h3>
+          <p>deploy preview, verify env, smoke test browser, record rollback path, แล้วค่อยเตรียม production approval</p>
+          <span class="status warn">Approval</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Backlog รายงานเป็นงานย่อย</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>งาน</th>
+            <th>Scope</th>
+            <th>Verification</th>
+            <th>Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>สร้าง `/system` shell</td>
+            <td>route, nav item, permission guard `system.manage`, empty/loading/error states</td>
+            <td>unit guard + HTTP smoke + code_reviewer</td>
+            <td>ห้ามเปิดให้ owner/admin เห็น</td>
+          </tr>
+          <tr>
+            <td>Organization management</td>
+            <td>list orgs, owner, plan, billing status, active stores, member count</td>
+            <td>repository tests + permission tests</td>
+            <td>cross-tenant data leak</td>
+          </tr>
+          <tr>
+            <td>User access management</td>
+            <td>view members, reset invite, role display, protect `super_admin` mutation</td>
+            <td>guards + mutation tests</td>
+            <td>self-escalation / owner modifying super_admin</td>
+          </tr>
+          <tr>
+            <td>Auth E2E</td>
+            <td>login, reset password, recovery link, update password, session cookie refresh</td>
+            <td>browser E2E with real Supabase test user</td>
+            <td>token leak / expired link false negative</td>
+          </tr>
+          <tr>
+            <td>Deploy preview</td>
+            <td>Vercel link, env verification, Supabase redirect URLs, Stripe webhook endpoint</td>
+            <td>preview smoke + rollback doc</td>
+            <td>production action ต้องขอ approval</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Definition of Done</h2>
+      <ul class="checklist">
+        <li>`/system` เห็นเฉพาะ `super_admin` หรือ permission `system.manage`</li>
+        <li>ไม่มี tenant/org data leak ระหว่าง organization</li>
+        <li>reset/invite password flow ผ่าน real browser E2E</li>
+        <li>unit/typecheck/lint/full tests ผ่านหลังแก้</li>
+        <li>code_reviewer ผ่านทุก code/config/security change</li>
+        <li>Obsidian `log.md`, `current.md`, `issue-index.md` sync แล้ว</li>
+        <li>ไม่มี secret/token/password ใน log, test, หรือ commit</li>
+        <li>ก่อน build/commit ต้อง bump version ตาม AGENTS.md</li>
+      </ul>
+    </section>
+  </main>
+  <footer>
+    Created: 2026-05-31. Source of truth: Obsidian current/project/issue-index + current repo status. This plan is additive and does not replace IMPLEMENTATION_PLAN.md.
+  </footer>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PromptPay Billing Migration Plan v1</title>
+<style>
+  :root{--ink:#142019;--muted:#5d6b63;--line:#d8e0d8;--panel:#fff;--bg:#f5f7f3;--green:#14765f;--amber:#b7791f;--rose:#b42318;--radius:8px}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+  header{background:#102a22;color:#fff;padding:28px 32px;border-bottom:4px solid var(--green)}
+  header h1{margin:0 0 6px;font-size:28px}
+  header p{margin:0;color:#cbe0d6;max-width:900px}
+  main{max-width:1100px;margin:0 auto;padding:24px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+  h2{margin:0 0 12px;font-size:20px}
+  h3{margin:16px 0 6px;font-size:16px}
+  code{background:#eef3ee;padding:1px 5px;border-radius:4px;font-size:13px}
+  table{width:100%;border-collapse:collapse;margin:8px 0}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;font-size:14px;vertical-align:top}
+  th{background:#eef3ee}
+  ul{margin:6px 0;padding-left:20px}
+  li{margin:3px 0}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:3px 9px;font-size:12px;font-weight:700;margin:2px 4px 2px 0;background:#f0f5f0}
+  .warn{color:var(--amber);font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <h1>PromptPay Billing Migration Plan v1</h1>
+  <p>เปลี่ยนระบบเก็บเงิน SaaS subscription จาก Stripe → PromptPay (EMVCo payload หรือ QR image ที่ super admin ตั้งค่า) + ตรวจสลิปอัตโนมัติด้วย slip2go + รอบใช้งานแบบ 30 วัน / 1 ปี เมื่อหมดอายุใช้ระบบไม่ได้ เน้นตลาดไทย</p>
+</header>
+<main>
+
+<section>
+  <h2>Decisions (จากผู้ใช้)</h2>
+  <span class="pill">Pricing: default ของผม ปรับได้ภายหลัง</span>
+  <span class="pill">slip2go: SLIP2GO_API_KEY อยู่ใน .env.local แล้ว</span>
+  <span class="pill">Stripe: ปิดไว้ ไม่ลบ code</span>
+  <span class="pill">ตลาดไทยก่อน</span>
+</section>
+
+<section>
+  <h2>1. โมเดลราคา (default — super admin ปรับได้ภายหลัง)</h2>
+  <table>
+    <tr><th>Tier</th><th>30 วัน</th><th>1 ปี (×10 = ฟรี 2 เดือน)</th><th>ฟีเจอร์</th></tr>
+    <tr><td>Starter</td><td>690</td><td>6,900</td><td>POS, รายรับ-จ่าย, browser receipt</td></tr>
+    <tr><td>Standard</td><td>1,290</td><td>12,900</td><td>+ บุฟเฟต์, สต็อก, printer ขั้นสูง</td></tr>
+    <tr><td>Premium</td><td>2,290</td><td>22,900</td><td>+ QR ordering, LINE, GPS, commission</td></tr>
+    <tr><td>Enterprise</td><td colspan="2">ติดต่อฝ่ายขาย</td><td>หลายสาขา, API</td></tr>
+  </table>
+  <p>เก็บเป็น constant ใน <code>src/modules/billing/pricing.ts</code> (super admin price editor = follow-up)</p>
+</section>
+
+<section>
+  <h2>2. Data model (migration ใหม่)</h2>
+  <h3>platform_settings (singleton)</h3>
+  <ul>
+    <li><code>promptpay_id</code> (เบอร์/เลขบัตร, nullable), <code>promptpay_name</code>, <code>promptpay_qr_image_path</code> (storage path สำหรับบัญชีที่ไม่มี PromptPay)</li>
+    <li><code>billing_provider</code> default <code>'promptpay'</code> (รองรับสลับกลับ stripe ภายหลัง), <code>updated_by</code>, <code>updated_at</code></li>
+  </ul>
+  <h3>payment_submissions</h3>
+  <ul>
+    <li>organization_id, plan, duration (<code>30d</code>/<code>1y</code>), amount_expected</li>
+    <li>slip_ref (unique — กันใช้สลิปซ้ำ), verified_amount, slip2go_raw (jsonb), slip_image_path</li>
+    <li>status (<code>pending|verified|rejected|duplicate</code>), reason, submitted_by, created_at, verified_at</li>
+  </ul>
+  <h3>subscriptions (ใช้ของเดิม)</h3>
+  <ul>
+    <li>ใช้ <code>plan</code>, <code>status</code>, <code>current_period_end</code>; verified payment → set plan, status=active, current_period_end = now + duration</li>
+    <li>เพิ่ม status <code>expired</code> ใน check constraint; เข้าถึงได้เมื่อ active และ current_period_end &gt; now</li>
+  </ul>
+  <p>RLS: payment_submissions อ่าน/เขียนเฉพาะ member ของ org (มี billing.manage); platform_settings เขียนเฉพาะ super_admin, อ่านได้ผ่าน service path</p>
+</section>
+
+<section>
+  <h2>3. Modules</h2>
+  <ul>
+    <li><code>billing/pricing.ts</code> — DURATION_PRICES + getPrice(tier,duration) (pure, tested)</li>
+    <li><code>billing/promptpay-provider.ts</code> — สร้าง EMVCo payload (reuse <code>printing/promptpay-qr.ts</code>) ใส่ amount; หรือคืน static QR image url จาก platform_settings</li>
+    <li><code>billing/slip2go.ts</code> — adapter เรียก <code>{SLIP2GO_BASE_URL}/api/verify-slip/qr-code/info</code> (Bearer SLIP2GO_API_KEY), fail-closed ถ้าไม่มี key; <code>parseSlip2goResponse()</code> pure + defensive (tested)</li>
+    <li><code>billing/subscription-service.ts</code> — submitPayment(): verify ผ่าน slip2go → ตรวจ amount ≥ expected + receiver ตรง promptpay + ref ไม่ซ้ำ → extend subscription + audit log</li>
+    <li><code>billing/platform-settings.ts</code> — get/set platform PromptPay config (service client)</li>
+  </ul>
+</section>
+
+<section>
+  <h2>4. Flow</h2>
+  <ol>
+    <li>Owner → <code>/settings/billing</code> เลือก tier + duration (30วัน/1ปี)</li>
+    <li>ระบบแสดง PromptPay QR (EMVCo amount-embedded จาก promptpay_id หรือ static image) + ยอดที่ต้องโอน</li>
+    <li>ลูกค้าโอน → อัปโหลดสลิป (image) หรือวาง QR payload จากสลิป</li>
+    <li>server action → slip2go verify → ตรวจ amount/receiver/ref-dedup</li>
+    <li>ผ่าน → subscription.current_period_end = now + duration, status=active, plan=tier; เขียน audit</li>
+    <li>ไม่ผ่าน → status rejected/duplicate + เหตุผล</li>
+  </ol>
+</section>
+
+<section>
+  <h2>5. Enforcement (หมดอายุ = ใช้ไม่ได้)</h2>
+  <ul>
+    <li><code>getOptionalResolvedCurrentPermissions</code>: ถ้า subscription หมดอายุ (current_period_end &lt; now) และไม่ใช่ super_admin → redirect <code>/settings/billing</code> (ต่ออายุ) ยกเว้นหน้า billing เอง</li>
+    <li>รวม guard เดียวกับ tenant suspension ที่มีอยู่</li>
+  </ul>
+</section>
+
+<section>
+  <h2>6. ปิด Stripe (ไม่ลบ code)</h2>
+  <ul>
+    <li><code>billing_provider='promptpay'</code> → route <code>/api/stripe/*</code> return 404 (early guard), เก็บไฟล์ + dependency ไว้</li>
+    <li>billing UI เปลี่ยนจากปุ่ม Stripe → PromptPay flow</li>
+    <li>Stripe tests เดิมคงไว้ (unit ของ util ยังผ่าน)</li>
+  </ul>
+</section>
+
+<section>
+  <h2>7. Super admin config</h2>
+  <ul>
+    <li>หน้า <code>/system/settings</code>: ตั้ง promptpay_id + ชื่อ หรืออัปโหลด QR image (สำหรับบัญชีที่ไม่มี PromptPay), เลือก billing_provider</li>
+    <li>เขียนผ่าน server action ที่ <code>requireSystemAccess()</code> + audit log</li>
+  </ul>
+</section>
+
+<section>
+  <h2>8. Verification</h2>
+  <ul>
+    <li>unit: pricing, parseSlip2goResponse, amount/receiver/dedup logic, promptpay payload amount</li>
+    <li>build + typecheck + lint</li>
+    <li>live (มี key): ทดสอบ slip2go ด้วยสลิปจริง + ปรับ field mapping; apply migration ผ่าน db push (มี approval)</li>
+    <li>bump version, commit, Obsidian log</li>
+  </ul>
+  <p class="warn">หมายเหตุ: base URL/field ของ slip2go อาจต้องปรับหลังเห็น response จริง — ออกแบบ adapter ให้ config ได้</p>
+</section>
+
+</main>
+</body>
+</html>

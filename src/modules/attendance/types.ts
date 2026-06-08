@@ -61,3 +61,15 @@ export interface AttendanceFilter {
   dateFrom: string;
   dateTo: string;
 }
+
+export interface AttendanceSettings {
+  id: string;
+  storeId: string;
+  organizationId: string;
+  geofenceEnabled: boolean;
+  geofenceCenterLat?: number;
+  geofenceCenterLng?: number;
+  geofenceRadiusMeters?: number;
+  createdAt: string;
+  updatedAt: string;
+}

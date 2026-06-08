@@ -2,7 +2,7 @@
 -- Supabase Storage Buckets and Policies
 -- ============================================================
 
--- product-images: public read, org-scoped write
+-- product-images: public read, store-scoped write
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', false)
 on conflict (id) do nothing;
@@ -36,9 +36,12 @@ create policy "product-images: manager+ can upload"
   on storage.objects for insert
   with check (
     bucket_id = 'product-images'
-    and (storage.foldername(name))[1] in (
-      select o.id::text from organizations o
-      where auth_user_role_in_org(o.id, 'manager')
+    and array_length(storage.foldername(name), 1) = 3
+    and exists (
+      select 1 from stores s
+      where s.organization_id::text = (storage.foldername(name))[1]
+        and s.id::text = (storage.foldername(name))[2]
+        and auth_user_role_in_store(s.organization_id, s.id, 'manager')
     )
   );
 
@@ -46,9 +49,22 @@ create policy "product-images: manager+ can update"
   on storage.objects for update
   using (
     bucket_id = 'product-images'
-    and (storage.foldername(name))[1] in (
-      select o.id::text from organizations o
-      where auth_user_role_in_org(o.id, 'manager')
+    and array_length(storage.foldername(name), 1) = 3
+    and exists (
+      select 1 from stores s
+      where s.organization_id::text = (storage.foldername(name))[1]
+        and s.id::text = (storage.foldername(name))[2]
+        and auth_user_role_in_store(s.organization_id, s.id, 'manager')
+    )
+  )
+  with check (
+    bucket_id = 'product-images'
+    and array_length(storage.foldername(name), 1) = 3
+    and exists (
+      select 1 from stores s
+      where s.organization_id::text = (storage.foldername(name))[1]
+        and s.id::text = (storage.foldername(name))[2]
+        and auth_user_role_in_store(s.organization_id, s.id, 'manager')
     )
   );
 
@@ -56,9 +72,12 @@ create policy "product-images: manager+ can delete"
   on storage.objects for delete
   using (
     bucket_id = 'product-images'
-    and (storage.foldername(name))[1] in (
-      select o.id::text from organizations o
-      where auth_user_role_in_org(o.id, 'manager')
+    and array_length(storage.foldername(name), 1) = 3
+    and exists (
+      select 1 from stores s
+      where s.organization_id::text = (storage.foldername(name))[1]
+        and s.id::text = (storage.foldername(name))[2]
+        and auth_user_role_in_store(s.organization_id, s.id, 'manager')
     )
   );
 
@@ -109,7 +128,7 @@ create policy "receipt-assets: admin+ can delete"
 
 -- ============================================================
 -- staff-evidence policies
--- Object paths: organizationId/storeId/userId/filename
+-- staff-evidence path: <organizationId>/<storeId>/<userId>/<fileName>
 -- ============================================================
 
 create policy "staff-evidence: manager+ can read"
@@ -127,6 +146,7 @@ create policy "staff-evidence: staff can upload own"
   with check (
     bucket_id = 'staff-evidence'
     -- path[3] = userId so staff can only upload into their own folder
+    and array_length(storage.foldername(name), 1) = 3
     and (storage.foldername(name))[3] = auth.uid()::text
     and (storage.foldername(name))[1] in (
       select o.id::text from organizations o

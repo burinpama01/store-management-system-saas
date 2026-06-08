@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feature Gap Implementation Plan v1</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #657386;
+      --line: #d8dee8;
+      --accent: #126d72;
+      --accent-2: #8a5a12;
+      --danger: #a63a3a;
+      --ok: #26734d;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.58;
+    }
+    header {
+      background: #102327;
+      color: #fff;
+      padding: 28px 32px;
+      border-bottom: 4px solid var(--accent);
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 0;
+      color: #cbd8dc;
+      max-width: 980px;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 21px;
+    }
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 17px;
+    }
+    .meta-grid,
+    .phase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      background: #fbfcfd;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      color: var(--muted);
+      background: #fff;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    .priority-high { border-left: 5px solid var(--danger); }
+    .priority-med { border-left: 5px solid var(--accent-2); }
+    .priority-low { border-left: 5px solid var(--ok); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #edf2f4;
+      color: #26333c;
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #eef2f6;
+      border: 1px solid #dce3ea;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-size: 13px;
+    }
+    pre {
+      background: #101820;
+      color: #eaf2f4;
+      border-radius: var(--radius);
+      padding: 12px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    ul.checklist {
+      list-style: none;
+      padding-left: 0;
+      margin: 10px 0 0;
+    }
+    ul.checklist li {
+      margin: 8px 0;
+      padding-left: 28px;
+      position: relative;
+    }
+    ul.checklist li::before {
+      content: "";
+      width: 15px;
+      height: 15px;
+      border: 2px solid var(--accent);
+      border-radius: 4px;
+      position: absolute;
+      left: 0;
+      top: 4px;
+      background: #fff;
+    }
+    .note {
+      border-left: 4px solid var(--accent);
+      background: #eef8f8;
+      padding: 12px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: #1f4d51;
+    }
+    .warn {
+      border-left: 4px solid var(--danger);
+      background: #fff2f2;
+      padding: 12px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: #6f2424;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Feature Gap Implementation Plan v1</h1>
+    <p>แผนปิดช่องว่างฟีเจอร์ระหว่างต้นแบบ <code>C:\Users\burin\Accounting moojoom</code> กับ SaaS target <code>D:\Store management system saas</code></p>
+  </header>
+
+  <main>
+    <section>
+      <h2>Context</h2>
+      <div class="meta-grid">
+        <div class="card">
+          <strong>Goal</strong>
+          ทำให้ SaaS มี workflow สำคัญเทียบต้นแบบ โดยยังรักษา Supabase RLS, permission guard, billing gate, และ UI/UX ใหม่
+        </div>
+        <div class="card">
+          <strong>Architecture</strong>
+          ทำทีละ package แบบ vertical slice: schema/repository/actions/UI/tests/review/verify/document
+        </div>
+        <div class="card">
+          <strong>Tech Stack</strong>
+          Next.js App Router, React, TypeScript, Supabase, Vitest, Stripe/Vercel ที่มีอยู่แล้ว
+        </div>
+        <div class="card">
+          <strong>Source of Truth</strong>
+          <code>docs/source-audit/module-map.md</code>, <code>docs/source-audit/migration-order.md</code>, legacy <code>js/</code>, current <code>src/</code>
+        </div>
+      </div>
+      <p class="note">สำหรับ agent ที่จะ implement: ใช้ workflow <code>Scope → Route → Implement → Review → Fix → Verify → Document</code>. หลัง package ที่แตะ code/config ต้อง spawn <code>code_reviewer</code>; ถ้าได้ผล review ครบแล้วให้ cleanup/kill sub-agent ทันที.</p>
+      <p class="warn">ก่อน build หรือ commit ต้อง bump <code>package.json</code> version ตามกฎโปรเจกต์. ห้าม deploy production หรือแตะ remote production data โดยไม่ขอ approval.</p>
+    </section>
+
+    <section>
+      <h2>Priority Roadmap</h2>
+      <div class="phase-grid">
+        <div class="card priority-high">
+          <strong>Q1 Stock & Stock Alert</strong>
+          <span class="pill">highest</span><span class="pill">POS/QR</span><span class="pill">catalog</span>
+          <p>เติม stock request workflow, stock guard, และ stock decrement หลังขาย</p>
+        </div>
+        <div class="card priority-high">
+          <strong>Q2 Notifications</strong>
+          <span class="pill">high</span><span class="pill">LINE/Telegram</span><span class="pill">settings</span>
+          <p>ทำ notify route/settings matrix/test dispatch แบบไม่ก๊อป secret จากต้นแบบ</p>
+        </div>
+        <div class="card priority-med">
+          <strong>Q3 Public Table Monitor</strong>
+          <span class="pill">medium</span><span class="pill">QR</span><span class="pill">realtime</span>
+          <p>เพิ่มหน้าสถานะโต๊ะสาธารณะสำหรับลูกค้าหรือหน้าร้าน</p>
+        </div>
+        <div class="card priority-med">
+          <strong>Q4 Attendance Upgrade</strong>
+          <span class="pill">medium</span><span class="pill">GPS</span><span class="pill">QR clock</span><span class="pill">payroll</span>
+          <p>เติม QR scanner/geofence policy/backdate/payroll finalize</p>
+        </div>
+        <div class="card priority-med">
+          <strong>Q5 Printing Adapters</strong>
+          <span class="pill">medium</span><span class="pill">Bluetooth</span><span class="pill">ESC/POS</span>
+          <p>wire printer types ที่ schema รองรับแล้วให้ใช้งานจริง</p>
+        </div>
+        <div class="card priority-low">
+          <strong>Q6 Commission & Bonus</strong>
+          <span class="pill">large</span><span class="pill">reports</span><span class="pill">payroll</span>
+          <p>ทำเป็น epic แยกหลัง stock/notify/attendance เสถียร</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>File Ownership Map</h2>
+      <table>
+        <thead>
+          <tr><th>Package</th><th>Create</th><th>Modify</th><th>Tests</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Q1 Stock</td>
+            <td><code>src/modules/stock/types.ts</code>, <code>src/modules/stock/repository.ts</code>, <code>src/app/(dashboard)/stock/page.tsx</code>, <code>src/app/(dashboard)/stock/StockAlertManager.tsx</code>, new Supabase migration</td>
+            <td><code>src/app/(dashboard)/layout.tsx</code>, <code>src/app/pos/actions.ts</code>, <code>src/app/qr/[storeSlug]/[tableId]/actions.ts</code>, <code>src/modules/catalog/repository.ts</code></td>
+            <td><code>tests/unit/stock.test.ts</code>, <code>tests/unit/cart.test.ts</code>, <code>tests/unit/ui-regressions.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>Q2 Notifications</td>
+            <td><code>src/modules/notifications/types.ts</code>, <code>src/modules/notifications/repository.ts</code>, <code>src/modules/notifications/dispatcher.ts</code>, <code>src/app/api/notify/route.ts</code>, settings tab files</td>
+            <td><code>src/app/(dashboard)/settings/layout.tsx</code>, <code>src/app/(dashboard)/settings/SettingsNav.tsx</code>, <code>.env.example</code>, new Supabase migration</td>
+            <td><code>tests/unit/notifications.test.ts</code>, <code>tests/unit/ui-regressions.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>Q3 Table Monitor</td>
+            <td><code>src/app/qr/[storeSlug]/tables/page.tsx</code>, <code>src/app/qr/[storeSlug]/tables/TableStatusBoard.tsx</code></td>
+            <td><code>src/modules/stores/public-repository.ts</code>, <code>src/shared/realtime/realtime-client.ts</code></td>
+            <td><code>tests/unit/table-status.test.ts</code>, <code>tests/unit/ui-regressions.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>Q4 Attendance</td>
+            <td><code>src/modules/attendance/policy.ts</code>, <code>src/modules/attendance/geo.ts</code>, <code>src/modules/attendance/qr.ts</code>, new attendance migration</td>
+            <td><code>src/modules/attendance/repository.ts</code>, <code>src/app/(dashboard)/attendance/*</code></td>
+            <td><code>tests/unit/attendance.test.ts</code>, <code>tests/unit/attendance-policy.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>Q5 Printing</td>
+            <td><code>src/modules/printing/adapters/bluetooth.ts</code>, <code>src/modules/printing/adapters/escpos-server.ts</code></td>
+            <td><code>src/modules/printing/print-service.ts</code>, <code>src/app/api/print/ip/route.ts</code> หรือ new route สำหรับ server ESC/POS ถ้าจำเป็น</td>
+            <td><code>tests/unit/printing.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>Q6 Commission/Bonus</td>
+            <td><code>src/modules/incentives/*</code>, <code>src/app/(dashboard)/reports/incentives/*</code>, new migration</td>
+            <td><code>src/modules/reports/repository.ts</code>, <code>src/modules/attendance/repository.ts</code></td>
+            <td><code>tests/unit/incentives.test.ts</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Task Q1: Stock & Stock Alert</h2>
+      <p><strong>Success criteria:</strong> staff แจ้งของหมดได้, manager/admin เห็นและปิดรายการได้, POS/QR ห้ามขายเกิน stock, stock ลดเมื่อ order paid/accepted ตาม flow ที่กำหนด.</p>
+      <ul class="checklist">
+        <li>เขียน failing tests ใน <code>tests/unit/stock.test.ts</code>: create alert requires store/user, resolve alert requires role, stock decrement rejects negative quantity.</li>
+        <li>เพิ่ม migration สำหรับ <code>stock_alerts</code> และ audit fields: <code>organization_id</code>, <code>store_id</code>, <code>requested_by_user_id</code>, <code>items jsonb</code>, <code>status</code>, <code>resolved_by_user_id</code>, <code>resolved_at</code>.</li>
+        <li>เพิ่ม <code>src/modules/stock/repository.ts</code> พร้อม store boundary ทุก query และ RLS-friendly filters.</li>
+        <li>เพิ่มหน้า <code>/stock</code> ใน dashboard พร้อม form แจ้งของหมดและ list สถานะ.</li>
+        <li>แก้ POS/QR action ให้ verify <code>track_stock</code> และ <code>stock_quantity</code> จาก DB ไม่เชื่อข้อมูล client.</li>
+        <li>เพิ่ม stock decrement หลัง payment close ใน POS และหลัง QR order accepted ถ้าเลือก policy แบบ accept-time decrement.</li>
+        <li>เพิ่ม navigation link เฉพาะ role ที่มี <code>stock.manage</code> หรือ staff ที่ส่ง alert ได้.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/stock.test.ts tests/unit/cart.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Task Q2: Notifications</h2>
+      <p><strong>Success criteria:</strong> มี settings matrix แบบต้นแบบ, route dispatch ปลอดภัย, event สำคัญจาก POS/QR/Buffet/Stock ส่ง notify ได้เมื่อเปิดใช้งาน.</p>
+      <ul class="checklist">
+        <li>เขียน tests ใน <code>tests/unit/notifications.test.ts</code>: disabled channel ไม่ส่ง, unknown type reject, payload ไม่มี secret, destination validate.</li>
+        <li>เพิ่ม migration <code>notification_settings</code> และ <code>notification_events</code> สำหรับ audit/log dispatch.</li>
+        <li>เพิ่ม <code>src/modules/notifications/dispatcher.ts</code> โดยรับ token จาก server-only env เท่านั้น.</li>
+        <li>เพิ่ม <code>src/app/api/notify/route.ts</code> แบบ internal route: validate method, type allowlist, store/organization context, rate limit แบบง่ายผ่าน DB/log หรือ deny duplicate key.</li>
+        <li>เพิ่ม Settings tab <code>/settings/notifications</code> พร้อม channel toggles และ event matrix: payment, new_table, new_qr_order, kitchen_order, buffet_expiring, stock_alert.</li>
+        <li>แก้ POS/QR/Buffet/Stock actions ให้ call dispatcher ผ่าน server side หลัง transaction สำเร็จเท่านั้น.</li>
+        <li>อัปเดต <code>.env.example</code> เฉพาะชื่อ env placeholder ไม่ใส่ secret จริง.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Task Q3: Public Table Monitor</h2>
+      <p><strong>Success criteria:</strong> เปิด <code>/qr/[storeSlug]/tables</code> แล้วเห็นสถานะโต๊ะที่ active/QR enabled โดยไม่ expose tenant data เกินจำเป็น.</p>
+      <ul class="checklist">
+        <li>เพิ่ม public repository function <code>listPublicTables(storeId)</code> คืนเฉพาะ number, label, seats, status, updatedAt.</li>
+        <li>สร้าง <code>src/app/qr/[storeSlug]/tables/page.tsx</code> validate slug และ store active.</li>
+        <li>สร้าง <code>TableStatusBoard.tsx</code> เป็น client component สำหรับ refresh state และ responsive grid.</li>
+        <li>ถ้าใช้ realtime ให้ reuse <code>src/shared/realtime/realtime-client.ts</code> และ cleanup subscription ทุก unmount.</li>
+        <li>เพิ่ม UI regression test ว่า route ใช้ touch-safe layout และไม่มี table private fields ใน component props.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/table-status.test.ts tests/unit/ui-regressions.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Task Q4: Attendance QR/Geofence/Payroll</h2>
+      <p><strong>Success criteria:</strong> clock policy ใกล้ต้นแบบ: GPS bounds, optional QR in-store proof, backdate flow สำหรับ manager, payroll finalize เป็น expense transaction.</p>
+      <ul class="checklist">
+        <li>เพิ่ม <code>attendance_policy</code> columns/table: radiusMeters, requireQrForClockIn, qrPayloadHash, allowOffsiteRequest.</li>
+        <li>เพิ่ม <code>src/modules/attendance/geo.ts</code> สำหรับ distance + accuracy validation พร้อม unit tests.</li>
+        <li>เพิ่ม <code>src/modules/attendance/qr.ts</code> สำหรับ hash/verify QR payload; client scanner ทำเฉพาะอ่านค่า ไม่ตัดสิน permission.</li>
+        <li>แก้ <code>clockInAction</code> ให้ validate policy server-side และบันทึก verification method.</li>
+        <li>เพิ่ม manager backdate action ที่ require <code>attendance.manage</code>, บันทึก reason และ audit log.</li>
+        <li>เพิ่ม payroll finalize action: compute summary, create payroll record, create accounting expense, prevent overlapping finalized periods.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/attendance.test.ts tests/unit/attendance-policy.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Task Q5: Printing Adapter Completion</h2>
+      <p><strong>Success criteria:</strong> printer type ที่ UI/schema รองรับต้องมี behavior ชัดเจน: ใช้ได้จริงหรือ fail closed ด้วยข้อความเข้าใจได้.</p>
+      <ul class="checklist">
+        <li>เพิ่ม unit test ใน <code>tests/unit/printing.test.ts</code> ว่า bluetooth/escpos ไม่ silently unsupported.</li>
+        <li>สร้าง <code>src/modules/printing/adapters/bluetooth.ts</code> พร้อม <code>navigator.bluetooth</code> capability guard.</li>
+        <li>เพิ่ม ESC/POS server adapter หรือเปลี่ยน UI ไม่ให้เลือก <code>escpos</code> จนกว่าจะมี route รองรับ.</li>
+        <li>แก้ <code>src/modules/printing/print-service.ts</code> ให้ map adapter ครบตาม type ที่เปิดให้ใช้.</li>
+        <li>ตรวจ SSRF/port validation ถ้ามี route ใหม่ที่ยิง printer network.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/printing.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Task Q6: Commission & Bonus Epic</h2>
+      <p><strong>Success criteria:</strong> ทำหลัง Q1-Q5 เพื่อใช้ order/payment/attendance/payroll ที่นิ่งแล้ว. แยกเป็น epic ใหม่ ไม่ควรทำรวมใน sprint เดียวกับ stock/notify.</p>
+      <ul class="checklist">
+        <li>สร้าง schema <code>commission_settings</code>, <code>commission_rules</code>, <code>commission_ledger</code>, <code>bonus_settings</code>, <code>bonus_ledger</code>, <code>bonus_payouts</code>.</li>
+        <li>เพิ่ม <code>src/modules/incentives/commission.ts</code> คำนวณจาก paid order total หลัง discount.</li>
+        <li>เพิ่ม <code>src/modules/incentives/bonus.ts</code> คำนวณจาก commission ledger monthly aggregate.</li>
+        <li>เพิ่ม report tab สำหรับ admin และ employee view ที่เปิด/ปิดได้รายคน.</li>
+        <li>เชื่อม payroll เฉพาะ finalized payout ไม่รวม draft/preview.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/incentives.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Review & Verification Gate</h2>
+      <table>
+        <thead>
+          <tr><th>Gate</th><th>Required Action</th><th>Done Criteria</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>TDD</td>
+            <td>เริ่มแต่ละ package ด้วย failing unit test หรือ regression test</td>
+            <td>เห็น fail ก่อน implement และ pass หลัง fix</td>
+          </tr>
+          <tr>
+            <td>Security</td>
+            <td>ทุก server action ต้องใช้ <code>requirePermission()</code>, store/org boundary, input validation</td>
+            <td>ไม่มี client-trusted price/store/user/role</td>
+          </tr>
+          <tr>
+            <td>Code Review</td>
+            <td>spawn <code>code_reviewer</code> หลังแต่ละ package</td>
+            <td>ไม่มี Critical/Major open; cleanup sub-agent หลังได้ผลครบ</td>
+          </tr>
+          <tr>
+            <td>Full Verification</td>
+            <td>รัน targeted tests, <code>npm run typecheck</code>, <code>npm run lint</code>, และ <code>npm test</code> ก่อนสรุป</td>
+            <td>pass หรือระบุ blocker ชัดเจน</td>
+          </tr>
+          <tr>
+            <td>Docs</td>
+            <td>อัปเดต Obsidian <code>log.md</code>, <code>current.md</code>, และ issue files ถ้ามี bug</td>
+            <td>มี learning review และ next step ล่าสุด</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Recommended Execution Order</h2>
+      <ol>
+        <li>Q1 Stock & Stock Alert</li>
+        <li>Q2 Notifications</li>
+        <li>Q3 Public Table Monitor</li>
+        <li>Q5 Printing Adapter Completion</li>
+        <li>Q4 Attendance QR/Geofence/Payroll</li>
+        <li>Q6 Commission & Bonus Epic</li>
+      </ol>
+      <p class="note">เหตุผล: Q1/Q2 กระทบ daily store operations สูงสุด. Q3 ใช้ table data ที่มีอยู่แล้ว. Q5 ปิด mismatch ระหว่าง schema กับ runtime. Q4/Q6 ใหญ่กว่าและแตะ payroll/incentives จึงควรทำหลังฐาน workflow เสถียร.</p>
+    </section>
+  </main>
+</body>
+</html>

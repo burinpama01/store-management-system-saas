@@ -9,6 +9,17 @@
 
 ---
 
+**กฎเพิ่มเติมที่บังคับใช้ (Mandatory Rules)**
+- ป้องกัน Mojibake: ทุกครั้งที่ใช้คำสั่ง PowerShell ต้องกำหนด -Encoding UTF8 เสมอ และไฟล์ HTML ต้องกำหนด <meta charset="UTF-8"> อย่างเคร่งครัด
+- รูปแบบแผนงาน (Plan): ไฟล์แผนงานทั้งหมด (รวมถึง Implementation Plan) ต้องเขียนเป็นไฟล์ .html เท่านั้น เพื่อให้แสดงผลแบบ Visual และมี CSS สวยงาม ไม่ต้องอ่าน Text ยาวๆ
+- Brainstorming: การระดมไอเดียต้องทำในไฟล์ .html พร้อม Mockup เล็กๆ เพื่อให้สามารถ Scroll ดูเป็นข้อๆ ได้อย่างชัดเจน
+- Design System: ต้องสร้าง design_system.html เป็น Artifact เพื่อให้ Agents ตัวอื่น (หรือผู้ใช้) สามารถเปิดดูและนำไปใช้งานต่อได้ทันที
+- Editable Custom UI: สร้าง UI ในรูปแบบ HTML Artifact ที่แก้ไขโค้ดได้ง่ายและเหมาะกับการปรับแต่ง Interface
+- การจัดเก็บไฟล์และแบ่งประเภท (File Organization): การสร้างไฟล์ต้องสร้างไว้ในโปรเจคเท่านั้น และต้องจัดกลุ่มตามโฟลเดอร์ให้เป็นระเบียบ เช่น /Plan/Implementation Plan.html, /Design/Design System v1.html
+- ห้ามเขียนทับไฟล์เดิมที่ดำเนินการเสร็จแล้ว: ห้ามแก้ไขหรือเขียนทับไฟล์แผนงาน (Plan), การออกแบบ (Design), การระดมความคิด (Brainstorming) หรือเอกสารอ้างอิงใดๆ ที่ดำเนินการเสร็จสิ้นไปแล้ว หากเป็นแผน/งานที่เสร็จแล้ว ให้ระบุสถานะในไฟล์ให้ชัดเจนว่าเสร็จสิ้น (Completed) หากมีแผนหรือแนวคิดใหม่ ให้เขียนไฟล์ใหม่แยกเป็นเวอร์ชันต่างหาก (เช่น v2, v3) เพื่อรักษาประวัติการทำงานเดิมไว้
+
+---
+
 ## 🗂 Obsidian Vault Path
 
 Obsidian path ปัจจุบันที่ต้องใช้เสมอ:
@@ -209,6 +220,14 @@ Scope → Route → Implement → Review → Fix → Verify → Document
 ### 4. Review
 - หลัง implementation / bugfix / refactor / config change / migration / deploy prep ที่กระทบ runtime, security, data, build หรือ behavior ต้องส่งให้ `code_reviewer`
 - `code_reviewer` ต้องตรวจ diff, risk, regression, missing tests และ security issue ตาม scope
+- ถ้า exact `code_reviewer` role/tool ใช้งานไม่ได้หรือไม่ถูก expose ใน session ปัจจุบัน ให้ spawn sub-agent ที่ระบบมีอยู่ได้ทันทีเพื่อทำหน้าที่ `code_reviewer` โดยต้อง:
+  - ระบุใน prompt ว่า `Agent role: code_reviewer`
+  - แนบ Mandatory Context Package ให้ครบ
+  - สั่ง output ตามสัญญา `code_reviewer` ในเอกสารนี้
+  - สั่งชัดเจนว่าเป็น review-only ห้ามแก้โค้ดเอง
+  - บันทึกใน Obsidian log ว่าใช้ fallback spawned reviewer เพราะ exact role/tool ไม่พร้อม
+  - ถ้า fallback spawned reviewer ทำงานไม่ได้อีก ให้บันทึก issue และแจ้งผู้ใช้เป็น blocker
+- หลังได้รับผล review ครบและ main session บันทึก/นำผลไปใช้แล้ว ให้ปิด/kill/cleanup `code_reviewer` หรือ fallback spawned reviewer ทันทีถ้า tool รองรับ เพื่อไม่ให้ค้างจนเกิด sub-agent thread limit
 - ถ้า review พบ issue ต้องแก้, verify, แล้วส่ง review รอบใหม่เฉพาะประเด็นที่แก้
 
 ### 5. Fix
@@ -441,6 +460,7 @@ Next update:
 - ถ้ามี shared contract เช่น API schema ให้ `tech_lead` หรือ main session กำหนด contract ก่อน
 - agent ทุกตัวต้องรู้ว่าไม่ได้อยู่คนเดียวใน codebase และห้าม revert งานของคนอื่น
 - main session ต้องเป็นคนรวมผล, resolve conflict, verify และบันทึก Obsidian
+- เมื่อ sub-agent ใดทำงานเสร็จและ main session ได้รับข้อมูลครบแล้ว ต้องปิด/kill/cleanup sub-agent นั้นทันทีถ้า tool รองรับ เพื่อคืน thread slot และป้องกัน `agent thread limit reached`
 
 ---
 

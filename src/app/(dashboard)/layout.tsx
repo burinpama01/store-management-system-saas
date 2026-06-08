@@ -1,26 +1,101 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
+import type { PermissionKey } from "@/modules/tenants/types";
+import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { getUserStores } from "@/modules/auth/session";
+import { StoreSwitcher } from "@/shared/components/store-switcher";
+import { SideNav } from "@/shared/components/SideNav";
+import { signOut } from "./actions";
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const { user, ctx: storeContext, resolved } = await getResolvedCurrentPermissions();
+  if (!storeContext) redirect("/login");
+  // super_admin is a platform operator with no store dashboard.
+  if (storeContext.role === "super_admin") redirect("/system");
+  const { stores } = await getUserStores();
+  const can = (permission: PermissionKey) => resolved.can(permission);
+  const navItems = [
+    ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
+    ...(can("catalog.view") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
+    ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
+    ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
+    ...(can("orders.manage_qr") ? [{ href: "/qr-orders", label: "QR Order" }] : []),
+    ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
+    ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
+    ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
+    ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
+    ...(
+      storeContext && can("orders.manage_qr") && (stores.find((s) => s.id === storeContext.storeId) as { buffet_enabled?: boolean } | undefined)?.buffet_enabled
+        ? [{ href: "/buffet", label: "บุฟเฟต์" }]
+        : []
+    ),
+    ...(can("settings.view") ? [{ href: "/settings", label: "ตั้งค่า" }] : []),
+    ...(can("system.manage") ? [{ href: "/system", label: "ระบบ (Platform)" }] : []),
+  ];
+
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Sidebar — implemented in Package O */}
-      <aside className="w-56 shrink-0 border-r border-gray-200 bg-white flex flex-col">
-        <div className="p-4 border-b border-gray-100">
-          <span className="text-sm font-semibold text-gray-700">Store Manager</span>
+    <div className="storeos-app">
+      <aside className="storeos-sidebar hidden md:flex">
+        <div className="brand">
+          <div className="brand-mark">S</div>
+          <div className="min-w-0">
+            <div className="brand-name">StoreOS</div>
+            <div className="brand-sub truncate">{storeContext?.orgName ?? "ระบบจัดการร้าน"}</div>
+          </div>
         </div>
-        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {/* Nav links added in Package O */}
-        </nav>
+        <div className="store-switch-shell">
+          {storeContext ? (
+            <StoreSwitcher stores={stores} currentStoreId={storeContext.storeId} />
+          ) : (
+            <span className="store-switch text-sm text-[var(--muted)]">ไม่มีร้านค้า</span>
+          )}
+        </div>
+        <SideNav items={navItems} />
+        <div className="border-t border-[var(--border)] p-3">
+          <div className="mb-3 flex min-w-0 items-center gap-2 rounded-[var(--radius-md)] p-2 hover:bg-[var(--surface-muted)]">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--tenant-primary-soft)] text-sm font-extrabold text-[var(--tenant-primary-strong)]">
+              {user.email?.slice(0, 1).toUpperCase() ?? "U"}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-[var(--ink)]">{user.email}</p>
+              <p className="text-xs capitalize text-[var(--muted)]">{storeContext?.role ?? "user"}</p>
+            </div>
+          </div>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="btn-secondary w-full text-xs"
+            >
+              ออกจากระบบ
+            </button>
+          </form>
+        </div>
       </aside>
 
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-12 border-b border-gray-200 bg-white px-4 flex items-center shrink-0">
-          {/* Topbar / store switcher — Package E */}
+      <div className="storeos-main">
+        <header className="topbar gap-3">
+          <div className="min-w-0">
+            <div className="page-title">ระบบจัดการร้าน</div>
+            <div className="page-kicker truncate">
+              {storeContext
+                ? `${storeContext.storeName} · ${storeContext.role}`
+                : "ไม่มีร้านค้า — โปรดติดต่อผู้ดูแลระบบ"}
+            </div>
+          </div>
+          <div className="flex-1" />
+          {storeContext && (
+            <span className="badge badge-brand">
+              {storeContext.orgName}
+            </span>
+          )}
+          <span className="badge badge-success">เชื่อมต่อปกติ</span>
         </header>
-        <main className="flex-1 overflow-y-auto p-4">
-          {children}
-        </main>
+        <main className="scroll-area">{children}</main>
+        <nav className="shrink-0 overflow-x-auto border-t border-[var(--border)] bg-[var(--surface)] md:hidden">
+          <SideNav items={navItems} orientation="horizontal" />
+        </nav>
       </div>
     </div>
   );

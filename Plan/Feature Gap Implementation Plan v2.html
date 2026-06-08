@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feature Gap Implementation Plan v2</title>
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --surface-soft: #f0f5f5;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #d7e0e8;
+      --brand: #0f766e;
+      --brand-dark: #115e59;
+      --warn: #9a5b13;
+      --danger: #b42318;
+      --ok: #16754a;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Tahoma, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.56;
+    }
+    header {
+      padding: 30px 34px;
+      background: #102326;
+      color: white;
+      border-bottom: 4px solid var(--brand);
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 0;
+      max-width: 1040px;
+      color: #d3e1e1;
+    }
+    main {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 21px;
+    }
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 17px;
+    }
+    p { margin: 8px 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfdfe;
+      padding: 14px;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+    .high { border-left: 5px solid var(--danger); }
+    .medium { border-left: 5px solid var(--warn); }
+    .low { border-left: 5px solid var(--ok); }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      color: var(--muted);
+      background: white;
+      margin: 2px 4px 4px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #eaf1f2;
+      color: #24353a;
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      background: #edf2f7;
+      border: 1px solid #dce3ea;
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+    pre {
+      background: #101820;
+      color: #eef7f7;
+      border-radius: var(--radius);
+      padding: 12px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    ul.checklist {
+      list-style: none;
+      padding-left: 0;
+      margin: 10px 0 0;
+    }
+    ul.checklist li {
+      position: relative;
+      padding-left: 28px;
+      margin: 8px 0;
+    }
+    ul.checklist li::before {
+      content: "";
+      width: 15px;
+      height: 15px;
+      border: 2px solid var(--brand);
+      border-radius: 4px;
+      background: white;
+      position: absolute;
+      left: 0;
+      top: 4px;
+    }
+    .note {
+      border-left: 4px solid var(--brand);
+      background: var(--surface-soft);
+      color: #174f4b;
+      padding: 12px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+    .warn {
+      border-left: 4px solid var(--danger);
+      background: #fff3f1;
+      color: #74251e;
+      padding: 12px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Feature Gap Implementation Plan v2</h1>
+    <p>เวอร์ชันนี้เพิ่ม requirement ใหม่: UI เมนูสินค้าใหม่, role-based UI, รูปสินค้าใน POS, รายรับเชื่อม POS, printer support, test buttons, free/basic features, และ package feature limits</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>สถานะแผน</h2>
+      <div class="grid">
+        <div class="card">
+          <strong>Project</strong>
+          <code>D:\Store management system saas</code>
+        </div>
+        <div class="card">
+          <strong>Reference</strong>
+          <code>C:\Users\burin\Accounting moojoom</code>
+        </div>
+        <div class="card">
+          <strong>Version</strong>
+          v2, สร้างใหม่ ไม่ทับ v1
+        </div>
+        <div class="card">
+          <strong>Execution Rule</strong>
+          ทำทีละ package, verify, spawn <code>code_reviewer</code>, แล้ว cleanup sub-agent
+        </div>
+      </div>
+      <p class="warn">ก่อน build หรือ commit ต้อง bump <code>package.json</code> version ตามกฎโปรเจกต์. รอบนี้เป็นแผนเท่านั้น ยังไม่แก้ runtime code.</p>
+    </section>
+
+    <section>
+      <h2>เป้าหมาย v2</h2>
+      <table>
+        <thead>
+          <tr><th>Requirement</th><th>ผลลัพธ์ที่ต้องได้</th><th>Priority</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ปรับ UI หน้าเมนูสินค้าใหม่</td>
+            <td>Catalog Workbench: category rail, product visual grid/table, side drawer form, role-aware controls</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td>แยก UI แต่ละ role</td>
+            <td>Owner/Admin/Manager/Cashier/Staff เห็นเมนู ปุ่ม action และ locked state ต่างกันชัดเจน</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td>เพิ่มรูปเมนูใน POS</td>
+            <td>POS product tile แสดงรูป/placeholder, lazy image, no layout shift</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td>รายรับเชื่อมกับ POS</td>
+            <td>Paid POS order สร้าง/อ้าง accounting transaction และ cash ledger แบบตรวจสอบย้อนกลับได้</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td>รองรับเครื่องปริ้นทุกรุ่น</td>
+            <td>รองรับ browser, USB, Bluetooth, IP/LAN, ESC/POS พร้อม fallback และ test print</td>
+            <td>Medium</td>
+          </tr>
+          <tr>
+            <td>ปุ่มเทส notifications/print</td>
+            <td>Settings/Diagnostics มี test notification, test receipt, test QR PromptPay, test printer connection</td>
+            <td>Medium</td>
+          </tr>
+          <tr>
+            <td>ฟรีฟีเจอร์เบื้องต้น</td>
+            <td>Free tier ใช้ POS/catalog/basic receipt/basic reports ได้จริง มี limit ชัดเจน</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td>จำกัดฟีเจอร์แต่ละแพคเกจ</td>
+            <td>Feature gate อยู่ทั้ง UI, server action, API route, และ tests</td>
+            <td>High</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Architecture Update</h2>
+      <div class="grid">
+        <div class="card high">
+          <strong>Role UI Matrix</strong>
+          ใช้ permission resolver เป็น source of truth. UI แสดง enabled/disabled/hidden state ตาม role และ permission override.
+        </div>
+        <div class="card high">
+          <strong>Plan Feature Matrix</strong>
+          ใช้ <code>src/modules/billing/types.ts</code> เป็น source. เพิ่ม helper กลางสำหรับ UI + server enforcement.
+        </div>
+        <div class="card medium">
+          <strong>Diagnostics Center</strong>
+          รวมปุ่มทดสอบ notification, printer, receipt, PromptPay QR ไว้ใน settings เพื่อช่วย setup ร้านจริง.
+        </div>
+        <div class="card medium">
+          <strong>Printer Adapter Layer</strong>
+          ทำ adapter แยกตาม transport: browser, USB, Bluetooth, IP, ESC/POS. Unsupported ต้อง fail closed.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Package V2-A: Catalog UI Redesign</h2>
+      <p><strong>Goal:</strong> หน้าเมนูสินค้าใช้งานเร็วขึ้น ดูเป็นระบบ POS จริง และรองรับรูปสินค้า/role visibility.</p>
+      <p><strong>Files:</strong> <code>src/app/(dashboard)/catalog/CatalogManager.tsx</code>, <code>src/app/(dashboard)/catalog/page.tsx</code>, <code>src/app/globals.css</code>, <code>tests/unit/ui-regressions.test.ts</code></p>
+      <ul class="checklist">
+        <li>เพิ่ม responsive layout: desktop 3 zones, tablet 2 zones, mobile stacked tabs.</li>
+        <li>เปลี่ยน category sidebar ให้แสดง count, status, edit permission และ empty state.</li>
+        <li>เพิ่ม product cards พร้อม image preview, price, variant/modifier count, POS/QR badges, stock badge, package lock badge.</li>
+        <li>คง table/list mode สำหรับร้านที่มีสินค้าเยอะ พร้อม horizontal scroll ที่ mobile.</li>
+        <li>เพิ่ม role view indicator: แสดงว่า current user role อะไรและทำ action ใดได้/ไม่ได้.</li>
+        <li>ห้ามใช้ emoji เป็น icon หลัก; ใช้ text badge หรือ icon component ที่มีอยู่ใน repo ถ้ามี.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/ui-regressions.test.ts
+npm run typecheck
+npm run lint</code></pre>
+    </section>
+
+    <section>
+      <h2>Package V2-B: Role-Based UI Separation</h2>
+      <p><strong>Goal:</strong> แต่ละ role เห็น navigation/action ชัดเจน และไม่มีปุ่มที่กดแล้วโดน server reject แบบงง.</p>
+      <p><strong>Files:</strong> <code>src/modules/auth/permission-resolver.ts</code>, <code>src/shared/components/SideNav.tsx</code>, <code>src/app/(dashboard)/layout.tsx</code>, <code>src/app/(dashboard)/**</code>, <code>tests/unit/permission-resolver.test.ts</code>, <code>tests/unit/ui-regressions.test.ts</code></p>
+      <table>
+        <thead>
+          <tr><th>Role</th><th>UI Default</th><th>Locked/Hidden Examples</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Owner</td><td>เห็นทุก dashboard/settings/billing</td><td>ไม่มี ยกเว้น super_admin-only platform tools</td></tr>
+          <tr><td>Admin</td><td>จัดการร้าน, เมนู, POS, report, staff</td><td>billing owner action, owner removal</td></tr>
+          <tr><td>Manager</td><td>POS, catalog, stock, reports, attendance manage</td><td>billing, package upgrade, owner/admin permission escalation</td></tr>
+          <tr><td>Cashier</td><td>POS, receipt, own attendance</td><td>delete bill ถ้าไม่มี permission, settings, reports advanced</td></tr>
+          <tr><td>Staff</td><td>basic POS หรือ attendance ตามร้านกำหนด</td><td>price edit, product edit, reports, billing</td></tr>
+        </tbody>
+      </table>
+      <ul class="checklist">
+        <li>สร้าง role UI matrix helper สำหรับ nav/action labels.</li>
+        <li>ทุก disabled action ต้องมี tooltip/help text สั้นว่า locked เพราะ role หรือ package.</li>
+        <li>ทุก server action ยังต้องใช้ <code>requirePermission()</code>; UI ไม่ใช่ security boundary.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Package V2-C: POS Product Images</h2>
+      <p><strong>Goal:</strong> รูปเมนูใน Catalog ไปแสดงใน POS และ QR ordering โดยไม่ทำให้ layout กระโดด.</p>
+      <p><strong>Files:</strong> <code>src/modules/catalog/types.ts</code>, <code>src/modules/catalog/repository.ts</code>, <code>src/app/pos/PosTerminal.tsx</code>, <code>src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx</code>, <code>tests/unit/ui-regressions.test.ts</code></p>
+      <ul class="checklist">
+        <li>ตรวจว่า <code>imageUrl</code> ถูก map จาก DB ครบทุก public/private repository.</li>
+        <li>เพิ่ม image slot ใน POS tile: fixed aspect ratio, lazy loading, meaningful alt text.</li>
+        <li>เพิ่ม placeholder แบบไม่ใช้ decorative blob; ใช้ product initials/category color.</li>
+        <li>ตรวจ mobile 375px: tile ไม่ overflow, button tap target อย่างน้อย 44px.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Package V2-D: POS Income Linkage</h2>
+      <p><strong>Goal:</strong> POS payment เชื่อม accounting/cashflow แบบ reliable และ traceable.</p>
+      <p><strong>Files:</strong> <code>src/modules/pos/order-repository.ts</code>, <code>src/modules/accounting/repository.ts</code>, <code>src/app/pos/actions.ts</code>, <code>src/app/(dashboard)/accounting/AccountingManager.tsx</code>, <code>tests/unit/accounting-pos-link.test.ts</code></p>
+      <ul class="checklist">
+        <li>กำหนด contract: paid order ต้องมี <code>order_id</code> ใน transaction และ cash ledger entry.</li>
+        <li>ถ้า transaction POS-linked ห้ามลบตรงจากบัญชี; ต้อง void/refund จาก POS เท่านั้น.</li>
+        <li>เพิ่ม report filter ให้เห็นรายรับจาก POS แยกจาก manual income.</li>
+        <li>เพิ่ม tests กัน duplicate income เมื่อ retry payment action.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/accounting-pos-link.test.ts tests/unit/cart.test.ts
+npm run typecheck</code></pre>
+    </section>
+
+    <section>
+      <h2>Package V2-E: Universal Receipt Printer Support</h2>
+      <p><strong>Goal:</strong> รองรับเครื่องปริ้นใบเสร็จหลายรุ่นด้วย adapter + diagnostics ไม่ใช่ hard-code รุ่นเดียว.</p>
+      <p><strong>Files:</strong> <code>src/modules/printing/print-service.ts</code>, <code>src/modules/printing/adapters/*</code>, <code>src/app/api/print/*</code>, <code>src/app/(dashboard)/settings/receipt/*</code>, <code>tests/unit/printing.test.ts</code></p>
+      <table>
+        <thead>
+          <tr><th>Printer Type</th><th>Support Target</th><th>Fallback</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Browser print</td><td>ทุก browser ที่ใช้ <code>window.print()</code></td><td>PDF/preview HTML</td></tr>
+          <tr><td>USB/WebUSB</td><td>Chrome/Edge + compatible thermal printer</td><td>Browser print</td></tr>
+          <tr><td>Bluetooth/Web Bluetooth</td><td>Chrome/Edge Android/Desktop ที่รองรับ</td><td>Browser print</td></tr>
+          <tr><td>IP/LAN</td><td>Network printer ผ่าน server route</td><td>Browser print</td></tr>
+          <tr><td>ESC/POS</td><td>58mm/80mm thermal command builder</td><td>Plain receipt text/HTML</td></tr>
+        </tbody>
+      </table>
+      <ul class="checklist">
+        <li>เพิ่ม test print receipt button ใน receipt settings.</li>
+        <li>เพิ่ม test connection สำหรับ USB/Bluetooth/IP.</li>
+        <li>IP route ต้องป้องกัน SSRF/private misuse ตาม policy เดิม.</li>
+        <li>Unsupported transport ต้องแสดง error ชัดเจน ไม่ silently fail.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Package V2-F: Test Buttons & Diagnostics Center</h2>
+      <p><strong>Goal:</strong> setup ร้านจริงง่ายขึ้น มีปุ่มทดสอบที่ปลอดภัยและไม่สร้างข้อมูลขายจริง.</p>
+      <p><strong>Files:</strong> <code>src/app/(dashboard)/settings/diagnostics/page.tsx</code>, <code>src/app/(dashboard)/settings/diagnostics/actions.ts</code>, <code>src/modules/notifications/*</code>, <code>src/modules/printing/*</code>, <code>tests/unit/diagnostics.test.ts</code></p>
+      <ul class="checklist">
+        <li>เพิ่ม Settings nav: Diagnostics หรือ Test Tools เฉพาะ owner/admin/manager ที่มี permission.</li>
+        <li>ปุ่ม test notification ส่งข้อความ prefix <code>[TEST]</code> และบันทึก event log.</li>
+        <li>ปุ่ม test receipt ใช้ mock receipt data ไม่แตะ orders/payments จริง.</li>
+        <li>ปุ่ม test PromptPay QR render payload จาก receipt settings เท่านั้น.</li>
+        <li>ทุกปุ่มมี loading, success, error, last tested timestamp.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Package V2-G: Free Tier & Package Limits</h2>
+      <p><strong>Goal:</strong> ใช้งานฟรีได้จริง แต่ feature limit แต่ละ package ชัดทั้ง UI และ server.</p>
+      <p><strong>Files:</strong> <code>src/modules/billing/types.ts</code>, <code>src/modules/billing/billing-service.ts</code>, <code>src/modules/auth/guards.ts</code>, <code>src/shared/components/*</code>, <code>tests/unit/billing.test.ts</code>, <code>tests/unit/ui-regressions.test.ts</code></p>
+      <table>
+        <thead>
+          <tr><th>Plan</th><th>Included</th><th>Locked</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Free</td><td>1 store, limited members, catalog, basic POS, browser receipt, basic daily report</td><td>QR ordering, LINE notify, advanced printing, buffet, stock, payroll, advanced reports</td></tr>
+          <tr><td>Starter</td><td>Free + receipts/cashflow/basic settings</td><td>advanced printing, stock, buffet, QR ordering, LINE notify</td></tr>
+          <tr><td>Standard</td><td>Starter + stock, buffet, advanced reports, more stores/members</td><td>LINE notify, QR ordering if plan policy keeps it premium</td></tr>
+          <tr><td>Premium</td><td>Standard + QR ordering, LINE notify, GPS clock, advanced permissions</td><td>enterprise API/multi-branch reporting</td></tr>
+          <tr><td>Enterprise</td><td>All features, custom limits</td><td>none by default</td></tr>
+        </tbody>
+      </table>
+      <ul class="checklist">
+        <li>เพิ่ม <code>requireFeature(featureKey)</code> สำหรับ server action/API route.</li>
+        <li>เพิ่ม UI locked badge พร้อม upgrade path สำหรับ owner เท่านั้น.</li>
+        <li>เพิ่ม tests ว่า Free tier ใช้งาน POS/catalog/basic receipt ได้ แต่ปิด premium features.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Execution Order v2</h2>
+      <ol>
+        <li>V2-G Free Tier & Package Limits เพราะเป็น policy base ของทุกหน้า</li>
+        <li>V2-B Role-Based UI Separation เพื่อแยก owner/admin/manager/cashier/staff ชัด</li>
+        <li>V2-A Catalog UI Redesign เพื่อแก้ pain หลักในภาพที่ผู้ใช้ส่ง</li>
+        <li>V2-C POS Product Images เพื่อให้ภาพเมนูจาก catalog ใช้ใน POS/QR</li>
+        <li>V2-D POS Income Linkage เพื่อปิด accounting reliability</li>
+        <li>V2-F Test Buttons & Diagnostics Center เพื่อช่วย setup/QA</li>
+        <li>V2-E Universal Receipt Printer Support เพราะแตะ hardware/browser capability และต้อง QA แยก</li>
+      </ol>
+      <p class="note">เหตุผลที่ย้าย package limits ขึ้นก่อน: ถ้า UI ใหม่เสร็จก่อนแต่ไม่มี feature gate กลาง จะต้องแก้ซ้ำหลายหน้า.</p>
+    </section>
+
+    <section>
+      <h2>Verification & Review Gate</h2>
+      <table>
+        <thead>
+          <tr><th>Gate</th><th>Command/Action</th><th>Pass Criteria</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Targeted tests</td><td><code>npm test -- tests/unit/&lt;package&gt;.test.ts</code></td><td>ผ่านทุก test ที่เกี่ยวกับ package</td></tr>
+          <tr><td>Typecheck</td><td><code>npm run typecheck</code></td><td>0 TypeScript errors</td></tr>
+          <tr><td>Lint</td><td><code>npm run lint</code></td><td>0 lint errors</td></tr>
+          <tr><td>Full tests</td><td><code>npm test</code></td><td>ผ่านทั้งหมด หรือบันทึก blocker ชัดเจน</td></tr>
+          <tr><td>Visual QA</td><td>เปิด local dev + browser screenshot desktop/mobile</td><td>ไม่มี overlap, overflow, broken image, disabled action งง</td></tr>
+          <tr><td>Code review</td><td>spawn <code>code_reviewer</code></td><td>ไม่มี Critical/Major open; cleanup sub-agent หลัง review</td></tr>
+          <tr><td>Docs</td><td>อัปเดต Obsidian <code>log.md</code>, <code>current.md</code>, issue files ถ้ามี</td><td>มี Learning Review และ next step ล่าสุด</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

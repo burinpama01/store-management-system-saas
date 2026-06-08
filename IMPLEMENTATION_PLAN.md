@@ -365,6 +365,11 @@ Owner: `backend_dev` + `devops`
 
 Scope:
 - Implement SaaS subscription billing with Stripe while keeping in-store POS payments separate.
+- Implement pricing tiers from the approved subscription model:
+  - `starter`: 490-690 THB/month, target ร้านอาหารทั่วไป/คาเฟ่ขนาดเล็ก, includes POS พื้นฐาน, รายรับ-รายจ่าย, Browser receipt printing, customer history
+  - `standard`: 990-1,290 THB/month, target ร้านบุฟเฟต์/หมูกุ่มที่ไม่มีสั่งผ่าน QR, includes Starter + buffet management, stock, Bluetooth/USB/IP printing
+  - `premium`: 1,590-2,290 THB/month, target ร้านบุฟเฟต์ที่ต้องการลดพนักงาน, includes Standard + QR Food Ordering, LINE Notify, staff time GPS, commission
+  - `enterprise`: Custom Quote, target ร้านหลายสาขา, includes centralized branch management/reporting, API integration, special support
 
 Files:
 - `src/modules/billing/types.ts`
@@ -396,8 +401,15 @@ Steps:
 - [ ] Add subscription gating:
   - max stores
   - max users/seats
-  - QR ordering availability
-  - advanced reports availability
+  - buffet management availability: standard and above
+  - stock management availability: standard and above
+  - advanced printer adapters: standard and above
+  - QR ordering availability: premium and above
+  - LINE notification availability: premium and above
+  - attendance GPS and commission availability: premium and above
+  - centralized multi-branch reporting: enterprise
+  - API integration: enterprise
+  - advanced reports availability based on tier
   - advanced permissions availability if plan requires it
 - [ ] Define Stripe subscription status mapping:
   - `trialing`: allow plan features within trial limits
