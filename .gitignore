@@ -54,3 +54,4 @@ Design/visual-qa/
 .vscode/
 *.swp
 *.swo
+.env*
