@@ -87,18 +87,20 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
         <button
           type="button"
           onClick={() => setModal("close")}
-          className="btn-secondary min-h-11 px-3 text-xs"
+          className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
           title={`เปิดรอบเมื่อ ${new Date(session.openedAt).toLocaleString("th-TH")}`}
+          aria-label="ปิดรอบเงินสด"
         >
-          🟢 ปิดรอบเงินสด
+          🟢 <span className="hidden sm:inline">ปิดรอบเงินสด</span>
         </button>
       ) : (
         <button
           type="button"
           onClick={() => setModal("open")}
-          className="btn-secondary min-h-11 px-3 text-xs"
+          className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+          aria-label="เปิดรอบเงินสด"
         >
-          💰 เปิดรอบเงินสด
+          💰 <span className="hidden sm:inline">เปิดรอบเงินสด</span>
         </button>
       )}
 

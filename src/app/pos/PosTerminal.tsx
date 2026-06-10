@@ -822,43 +822,52 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Store header */}
-        <header className="topbar h-16">
-          <span className="store-dot">S</span>
-          <div className="min-w-0">
+        <header className="topbar h-16 overflow-x-auto">
+          <span className="store-dot shrink-0">S</span>
+          <div className="min-w-0 shrink">
             <span className="block truncate text-sm font-extrabold text-[var(--ink)]">{storeName}</span>
             <span className="text-xs text-[var(--muted)]">ขายหน้าร้าน · POS</span>
           </div>
-          <span className="badge badge-success ml-auto">เชื่อมต่อปกติ</span>
-          <button
-            type="button"
-            onClick={() => setShowTableOpen(true)}
-            className="btn-secondary min-h-11 px-3 text-xs"
-          >
-            🍽️ เปิดโต๊ะ
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowTableBill(true)}
-            className="btn-secondary min-h-11 px-3 text-xs"
-          >
-            🧾 เช็คบิลโต๊ะ
-          </button>
-          <CashSessionPanel
-            session={cashSession}
-            cashSalesPreview={cashSalesPreview}
-            currency={currency}
-          />
-          {exitHref ? (
-            <Link href={exitHref} className="btn-secondary min-h-11 px-3 text-xs">
-              ← กลับ
-            </Link>
-          ) : (
-            <form action={signOut}>
-              <button type="submit" className="btn-secondary min-h-11 px-3 text-xs">
-                ออกจากระบบ
-              </button>
-            </form>
-          )}
+          {/* Action group: stays together, pushed right, never shrinks (scrolls on small screens).
+              On mobile the buttons collapse to icon-only to fit narrow widths. */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden sm:block">
+              <span className="badge badge-success">เชื่อมต่อปกติ</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowTableOpen(true)}
+              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+              aria-label="เปิดโต๊ะ"
+            >
+              🍽️ <span className="hidden sm:inline">เปิดโต๊ะ</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTableBill(true)}
+              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+              aria-label="เช็คบิลโต๊ะ"
+            >
+              🧾 <span className="hidden sm:inline">เช็คบิลโต๊ะ</span>
+            </button>
+            <CashSessionPanel
+              session={cashSession}
+              cashSalesPreview={cashSalesPreview}
+              currency={currency}
+            />
+            {exitHref ? (
+              <Link href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
+                ←<span className="hidden sm:inline"> กลับ</span>
+              </Link>
+            ) : (
+              <form action={signOut} className="shrink-0">
+                <button type="submit" className="btn-secondary min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
+                  <span className="sm:hidden">⎋</span>
+                  <span className="hidden sm:inline">ออกจากระบบ</span>
+                </button>
+              </form>
+            )}
+          </div>
         </header>
 
         {/* Category tabs */}
