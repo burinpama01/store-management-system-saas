@@ -14,10 +14,12 @@ export function AttendanceCalendar({
   records,
   month,
   employees,
+  title = "ปฏิทินการเข้างาน",
 }: {
   records: AttendanceRecord[];
   month: string;
   employees: { userId: string; name: string }[];
+  title?: string;
 }) {
   const [filterUser, setFilterUser] = useState<string>("");
 
@@ -45,17 +47,19 @@ export function AttendanceCalendar({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-gray-700">ปฏิทินการเข้างาน ({month})</h2>
-        <select
-          value={filterUser}
-          onChange={(e) => setFilterUser(e.target.value)}
-          className="rounded border border-gray-300 px-2 py-1 text-xs"
-        >
-          <option value="">ทุกคน</option>
-          {employees.map((e) => (
-            <option key={e.userId} value={e.userId}>{e.name}</option>
-          ))}
-        </select>
+        <h2 className="text-sm font-medium text-gray-700">{title} ({month})</h2>
+        {employees.length > 0 && (
+          <select
+            value={filterUser}
+            onChange={(e) => setFilterUser(e.target.value)}
+            className="rounded border border-gray-300 px-2 py-1 text-xs"
+          >
+            <option value="">ทุกคน</option>
+            {employees.map((e) => (
+              <option key={e.userId} value={e.userId}>{e.name}</option>
+            ))}
+          </select>
+        )}
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white p-2">
         <div className="grid grid-cols-7 gap-1 min-w-[640px]">

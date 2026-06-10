@@ -40,13 +40,17 @@ export default async function AttendancePage({
 
   const today = getStoreLocalDate(ctx.storeTimezone);
   const monthStart = today.slice(0, 7) + "-01";
-  const [todayRecord, attendanceSettingsResult, hrSettings, backdatedUsed] = await Promise.all([
+  const [todayRecord, attendanceSettingsResult, hrSettings, backdatedUsed, myRecRes] = await Promise.all([
     getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today),
     getAttendanceSettings(ctx.storeId, ctx.organizationId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
     countSelfBackdated(user.id, ctx.storeId, monthStart, nextMonthStart(today)),
+    // The viewer's own clock-in/out for this month — powers the personal calendar shown to everyone.
+    listAttendanceRecords(ctx.organizationId, ctx.storeId, monthStart, today, user.id),
   ]);
   const attendanceSettings = attendanceSettingsResult.data;
+  const myMonthRecords = myRecRes.data ?? [];
+  const currentMonth = today.slice(0, 7);
 
   const canManage = resolved.can("attendance.manage");
 
@@ -101,6 +105,8 @@ export default async function AttendancePage({
       today={today}
       backdatedRights={hrSettings.backdatedRightsPerMonth}
       backdatedUsed={backdatedUsed}
+      myMonthRecords={myMonthRecords}
+      currentMonth={currentMonth}
     />
   );
 }

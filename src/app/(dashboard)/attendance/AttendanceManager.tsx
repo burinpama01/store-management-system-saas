@@ -29,6 +29,9 @@ interface Props {
   today: string;
   backdatedRights: number;
   backdatedUsed: number;
+  /** The viewer's own clock-in/out records for the current month (personal calendar). */
+  myMonthRecords: AttendanceRecord[];
+  currentMonth: string;
 }
 
 /** Convert an ISO timestamp to a value for <input type="datetime-local"> in local time. */
@@ -95,6 +98,8 @@ export function AttendanceManager({
   today,
   backdatedRights,
   backdatedUsed,
+  myMonthRecords,
+  currentMonth,
 }: Props) {
   const router = useRouter();
   const [selfBackdateOpen, setSelfBackdateOpen] = useState(false);
@@ -253,6 +258,17 @@ export function AttendanceManager({
           </button>
         </div>
       </section>
+
+      {/* Personal attendance calendar — everyone sees their own clock-in/out.
+          Managers get the full team calendar in the manage section below instead. */}
+      {!canManage && (
+        <AttendanceCalendar
+          records={myMonthRecords}
+          month={currentMonth}
+          employees={[]}
+          title="ปฏิทินการเข้า-ออกงานของฉัน"
+        />
+      )}
 
       {/* Manage sections — visible to attendance.manage only */}
       {canManage && (
