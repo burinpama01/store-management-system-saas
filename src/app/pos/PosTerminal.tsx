@@ -9,7 +9,7 @@ import type { AddToCartInput } from "@/modules/pos/cart";
 import { submitOrderAction, collectPaymentAction } from "./actions";
 import { signOut } from "../(dashboard)/actions";
 import type { ReceiptSettings } from "@/modules/stores/types";
-import { browserAdapter } from "@/modules/printing/adapters/browser";
+import { printReceiptAuto } from "@/modules/printing/print-router";
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
@@ -633,17 +633,33 @@ function ReceiptPanel({
         paperWidth: settings.paperWidth,
         printedAt: new Date().toISOString(),
       };
-      await browserAdapter.print(receiptData, {
-        id: "",
-        storeId: "",
-        organizationId: "",
-        name: "browser",
-        type: "browser",
-        isDefault: true,
-        paperWidth: settings.paperWidth,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      // Route to a connected thermal printer (Bluetooth → USB) using image-raster
+      // ESC/POS, falling back to the browser/PDF dialog when none is connected.
+      await printReceiptAuto(
+        {
+          storeName: receiptData.storeName,
+          address: receiptData.address,
+          phone: receiptData.phone,
+          headerText: receiptData.headerText,
+          orderNumber: receiptData.orderNumber,
+          items: receiptData.items.map((it) => ({
+            name: it.name,
+            variantName: it.variantName,
+            modifierNames: it.modifierNames,
+            quantity: it.quantity,
+            totalPrice: it.totalPrice,
+          })),
+          subtotal: receiptData.subtotal,
+          discount: receiptData.discount,
+          discountNote: receiptData.discountNote,
+          total: receiptData.total,
+          payments: receiptData.payments,
+          footerText: receiptData.footerText,
+          paperWidth: receiptData.paperWidth,
+          printedAt: receiptData.printedAt,
+        },
+        receiptData,
+      );
     } catch (err) {
       setPrintError(err instanceof Error ? err.message : "พิมพ์ไม่สำเร็จ");
     } finally {

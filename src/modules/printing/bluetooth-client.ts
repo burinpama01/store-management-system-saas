@@ -7,6 +7,7 @@ interface BTChar {
   writeValueWithoutResponse?(data: BufferSource): Promise<void>;
 }
 interface BTService {
+  uuid?: string;
   getCharacteristics(): Promise<BTChar[]>;
 }
 interface BTServer {
@@ -48,11 +49,23 @@ export function isBluetoothPrinterConnected(): boolean {
   return connected !== null;
 }
 
+/** Known printer services tried first, so we don't grab an unrelated writable characteristic. */
+function servicePriority(uuid: string | undefined): number {
+  if (!uuid) return PRINTER_SERVICES.length;
+  const idx = PRINTER_SERVICES.indexOf(uuid.toLowerCase());
+  return idx === -1 ? PRINTER_SERVICES.length : idx;
+}
+
 async function findWritable(server: BTServer): Promise<BTChar | null> {
   const services = await server.getPrimaryServices();
-  for (const service of services) {
+  // Prefer well-known ESC/POS printer services before any others.
+  const ordered = [...services].sort((a, b) => servicePriority(a.uuid) - servicePriority(b.uuid));
+  for (const service of ordered) {
     const chars = await service.getCharacteristics();
-    const w = chars.find((c) => c.properties.write || c.properties.writeWithoutResponse);
+    // Prefer write-without-response (typical for streaming raster to printers).
+    const w =
+      chars.find((c) => c.properties.writeWithoutResponse) ??
+      chars.find((c) => c.properties.write);
     if (w) return w;
   }
   return null;
@@ -109,14 +122,22 @@ export async function ensureBluetoothConnected(): Promise<boolean> {
   }
 }
 
-/** Writes raw ESC/POS bytes to the connected printer in BLE-sized chunks. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Writes raw ESC/POS bytes to the connected printer in small BLE chunks with a
+ * brief pause between writes. Cheap thermal printers (e.g. PT-280) have tiny RX
+ * buffers and silently drop data when flooded — chunking + pacing fixes blank
+ * output, especially for larger raster image jobs.
+ */
 export async function printViaBluetooth(bytes: Uint8Array): Promise<void> {
   if (!connected) throw new Error("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ Bluetooth");
   const { characteristic } = connected;
-  const CHUNK = 180;
+  const CHUNK = 120;
   for (let i = 0; i < bytes.length; i += CHUNK) {
     const slice = bytes.slice(i, i + CHUNK);
     if (characteristic.writeValueWithoutResponse) await characteristic.writeValueWithoutResponse(slice);
     else await characteristic.writeValue(slice);
+    await sleep(12);
   }
 }
