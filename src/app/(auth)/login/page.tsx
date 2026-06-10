@@ -49,45 +49,62 @@ export default function LoginPage() {
   }, [router]);
 
   return (
-    <main className="grid min-h-screen overflow-hidden bg-[var(--canvas)] lg:grid-cols-[minmax(0,1fr)_440px]">
-      <section className="hidden min-h-screen flex-col justify-between p-10 lg:flex">
-        <div className="brand p-0">
-          <div className="brand-mark">S</div>
+    <main className="grid min-h-screen bg-[var(--canvas)] lg:grid-cols-2">
+      {/* Brand panel */}
+      <section
+        className="relative hidden min-h-screen flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+        style={{
+          background:
+            "radial-gradient(120% 120% at 0% 0%, var(--tenant-primary) 0%, var(--tenant-primary-strong) 55%, #5a2f1c 100%)",
+        }}
+      >
+        {/* decorative glow */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full opacity-20 blur-3xl"
+          style={{ background: "#fff" }}
+        />
+        <div className="relative flex items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/15 text-lg font-extrabold backdrop-blur">
+            S
+          </div>
           <div>
-            <div className="brand-name">StoreOS</div>
-            <div className="brand-sub">ระบบจัดการร้าน</div>
+            <div className="text-base font-extrabold">StoreOS</div>
+            <div className="text-xs text-white/70">ระบบจัดการร้าน</div>
           </div>
         </div>
-        <div className="max-w-3xl">
-          <h1 className="text-5xl font-extrabold leading-tight text-[var(--ink)]">
-            ร้านเดียวก็สวยได้ หลายสาขาก็คุมง่าย
+
+        <div className="relative max-w-xl">
+          <h1 className="text-4xl font-extrabold leading-tight xl:text-5xl">
+            ร้านเดียวก็สวยได้
+            <br />
+            หลายสาขาก็คุมง่าย
           </h1>
-          <p className="mt-5 max-w-xl text-lg leading-8 text-[var(--ink-2)]">
-            POS, QR ordering, รายงาน, ทีมงาน และธีมแบรนด์ของแต่ละ tenant อยู่ในประสบการณ์เดียวแบบ StoreOS redesign
+          <p className="mt-5 max-w-lg text-base leading-7 text-white/80">
+            POS, QR ordering, รายงาน, ทีมงาน และธีมแบรนด์ของแต่ละ tenant อยู่ในประสบการณ์เดียว
           </p>
-          <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
+          <div className="mt-8 grid max-w-lg grid-cols-3 gap-3">
             {[
               ["POS", "ขายหน้าร้านเร็ว"],
               ["QR", "รับออร์เดอร์โต๊ะ"],
               ["Theme", "แต่งสีร้านเอง"],
             ].map(([title, text]) => (
-              <div key={title} className="panel p-4">
-                <p className="text-sm font-extrabold text-[var(--tenant-primary-strong)]">{title}</p>
-                <p className="mt-1 text-xs text-[var(--muted)]">{text}</p>
+              <div key={title} className="rounded-xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <p className="text-sm font-extrabold">{title}</p>
+                <p className="mt-1 text-xs text-white/70">{text}</p>
               </div>
             ))}
           </div>
         </div>
-        <p className="text-xs text-[var(--muted)]">Caramel Cafe preset · Tenant-ready UI tokens</p>
+
+        <p className="relative text-xs text-white/60">Caramel Cafe preset · Tenant-ready UI tokens</p>
       </section>
 
-      <section className="flex min-h-screen w-screen items-center justify-center overflow-x-hidden px-4 py-8 lg:w-auto">
-        <div
-          className="auth-card panel space-y-6 p-6 shadow-sm sm:p-8"
-          style={{ width: "clamp(18rem, 31vw, 28rem)", maxWidth: "calc(100vw - 2rem)" }}
-        >
+      {/* Form panel */}
+      <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8">
+        <div className="auth-card panel w-full max-w-md space-y-6 p-6 shadow-sm sm:p-8">
           <div>
-            <div className="mb-4 flex items-center gap-3 lg:hidden">
+            <div className="mb-5 flex items-center gap-3 lg:hidden">
               <div className="brand-mark">S</div>
               <div>
                 <div className="brand-name">StoreOS</div>
@@ -97,7 +114,7 @@ export default function LoginPage() {
             <span className="badge badge-brand mb-3">Caramel Cafe</span>
             <h1 className="page-title">เข้าสู่ระบบ</h1>
             <p className="page-kicker">ระบบจัดการร้านค้า POS รายงาน และทีมงานในที่เดียว</p>
-        </div>
+          </div>
         <form action={formAction} className="space-y-4">
           {inviteError && (
             <p className="alert-danger" role="alert">
