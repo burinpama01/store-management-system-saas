@@ -1219,6 +1219,30 @@ export interface Database {
         };
         Relationships: [];
       };
+      store_holidays: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          date: string;
+          name: string | null;
+          created_by_user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          date: string;
+          name?: string | null;
+          created_by_user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          name?: string | null;
+        };
+        Relationships: [];
+      };
       payroll_adjustments: {
         Row: {
           id: string;

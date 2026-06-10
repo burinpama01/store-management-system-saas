@@ -293,6 +293,59 @@ export async function countSelfBackdated(
   return count ?? 0;
 }
 
+// --- Store holidays (owner/admin) ---
+
+export interface StoreHoliday {
+  id: string;
+  date: string;
+  name?: string;
+}
+
+export async function listStoreHolidays(storeId: string, from: string, to: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("store_holidays")
+    .select("id, date, name")
+    .eq("store_id", storeId)
+    .gte("date", from)
+    .lte("date", to)
+    .order("date");
+  if (error) return { data: null, error: mapError(error) };
+  return {
+    data: (data ?? []).map((h) => ({ id: h.id, date: h.date, name: h.name ?? undefined })) as StoreHoliday[],
+    error: null,
+  };
+}
+
+export async function addStoreHoliday(
+  storeId: string,
+  organizationId: string,
+  date: string,
+  name: string | undefined,
+  createdByUserId: string,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("store_holidays").upsert(
+    {
+      store_id: storeId,
+      organization_id: organizationId,
+      date,
+      name: name ?? null,
+      created_by_user_id: createdByUserId,
+    },
+    { onConflict: "store_id,date" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function deleteStoreHoliday(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("store_holidays").delete().eq("id", id).eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
 export async function deleteAttendanceRecord(id: string, storeId: string) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase

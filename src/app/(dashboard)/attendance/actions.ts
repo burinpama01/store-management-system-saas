@@ -19,6 +19,8 @@ import {
   deleteAttendanceRecord,
   countSelfBackdated,
   nextMonthStart,
+  addStoreHoliday,
+  deleteStoreHoliday,
 } from "@/modules/attendance/repository";
 import { getStoreHrSettings } from "@/modules/hr/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -341,6 +343,38 @@ export async function selfBackdatedClockAction(formData: FormData): Promise<{ er
       note: (String(formData.get("note") ?? "")).trim().slice(0, 200) || undefined,
       adjustedByUserId: user.id,
     });
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+// --- Store holidays (owner/admin only) ---
+
+export async function addHolidayAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("settings.manage_store");
+    const { user, ctx } = await getStoreContext();
+    const date = String(formData.get("date") ?? "").trim();
+    if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
+    const name = (String(formData.get("name") ?? "")).trim().slice(0, 100) || undefined;
+    const result = await addStoreHoliday(ctx.storeId, ctx.organizationId, date, name, user.id);
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function deleteHolidayAction(id: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("settings.manage_store");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(id)) return { error: "รายการไม่ถูกต้อง" };
+    const result = await deleteStoreHoliday(id, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
     revalidatePath("/attendance", "page");
     return { error: null };

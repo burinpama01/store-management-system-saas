@@ -12,8 +12,12 @@ import {
   adjustAttendanceAction,
   deleteAttendanceAction,
   selfBackdatedClockAction,
+  addHolidayAction,
+  deleteHolidayAction,
 } from "./actions";
 import { AttendanceCalendar } from "./AttendanceCalendar";
+import type { DayStatus } from "@/modules/attendance/calendar";
+import type { StoreHoliday } from "@/modules/attendance/repository";
 
 interface Props {
   todayRecord: AttendanceRecord | null;
@@ -32,6 +36,10 @@ interface Props {
   /** The viewer's own clock-in/out records for the current month (personal calendar). */
   myMonthRecords: AttendanceRecord[];
   currentMonth: string;
+  dayStatus: Record<string, DayStatus>;
+  holidays: StoreHoliday[];
+  holidayDates: string[];
+  canManageHolidays: boolean;
 }
 
 /** Convert an ISO timestamp to a value for <input type="datetime-local"> in local time. */
@@ -100,6 +108,10 @@ export function AttendanceManager({
   backdatedUsed,
   myMonthRecords,
   currentMonth,
+  dayStatus,
+  holidays,
+  holidayDates,
+  canManageHolidays,
 }: Props) {
   const router = useRouter();
   const [selfBackdateOpen, setSelfBackdateOpen] = useState(false);
@@ -259,7 +271,7 @@ export function AttendanceManager({
         </div>
       </section>
 
-      {/* Personal attendance calendar — everyone sees their own clock-in/out.
+      {/* Personal attendance calendar — everyone sees their own clock-in/out with statuses.
           Managers get the full team calendar in the manage section below instead. */}
       {!canManage && (
         <AttendanceCalendar
@@ -267,7 +279,49 @@ export function AttendanceManager({
           month={currentMonth}
           employees={[]}
           title="ปฏิทินการเข้า-ออกงานของฉัน"
+          dayStatus={dayStatus}
         />
+      )}
+
+      {/* Store holidays — owner/admin only */}
+      {canManageHolidays && (
+        <section className="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl">
+          <h2 className="text-sm font-semibold text-gray-900">วันหยุดร้าน</h2>
+          <p className="text-xs text-gray-500">เฉพาะเจ้าของ/แอดมิน — วันหยุดจะแสดงบนปฏิทินและไม่นับเป็นขาดงาน</p>
+          {editError && <p className="mt-2 text-xs text-red-600">{editError}</p>}
+          <form
+            action={(fd) => runEdit(() => addHolidayAction(fd), () => {})}
+            className="mt-3 flex flex-wrap items-end gap-2"
+          >
+            <label className="text-xs font-medium text-gray-600">
+              วันที่
+              <input name="date" type="date" required className="mt-1 block min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+            </label>
+            <label className="text-xs font-medium text-gray-600">
+              ชื่อวันหยุด (ไม่บังคับ)
+              <input name="name" maxLength={100} placeholder="เช่น วันสงกรานต์" className="mt-1 block min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+            </label>
+            <button type="submit" disabled={isEditing} className="btn-primary min-h-11 px-4 text-sm">เพิ่มวันหยุด</button>
+          </form>
+          {holidays.length > 0 && (
+            <ul className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
+              {holidays.map((h) => (
+                <li key={h.id} className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-gray-700">
+                    <span className="font-medium">{h.date}</span>{h.name ? ` · ${h.name}` : ""}
+                  </span>
+                  <button
+                    onClick={() => runEdit(() => deleteHolidayAction(h.id), () => {})}
+                    disabled={isEditing}
+                    className="text-xs text-red-500 hover:underline"
+                  >
+                    ลบ
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       {/* Manage sections — visible to attendance.manage only */}
@@ -410,7 +464,7 @@ export function AttendanceManager({
           )}
 
           {/* Attendance calendar (#5) */}
-          <AttendanceCalendar records={records ?? []} month={dateFrom.slice(0, 7)} employees={members} />
+          <AttendanceCalendar records={records ?? []} month={dateFrom.slice(0, 7)} employees={members} holidayDates={holidayDates} />
 
           {/* Attendance records */}
           <div>

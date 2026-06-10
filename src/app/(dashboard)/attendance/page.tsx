@@ -12,8 +12,9 @@ import {
   getAttendanceSettings,
 } from "@/modules/attendance/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
-import { countSelfBackdated, nextMonthStart } from "@/modules/attendance/repository";
-import { getStoreHrSettings } from "@/modules/hr/repository";
+import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
+import { computeDayStatuses } from "@/modules/attendance/calendar";
+import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { AttendanceManager } from "./AttendanceManager";
 
@@ -51,6 +52,37 @@ export default async function AttendancePage({
   const attendanceSettings = attendanceSettingsResult.data;
   const myMonthRecords = myRecRes.data ?? [];
   const currentMonth = today.slice(0, 7);
+
+  // Month bounds (full month) for holidays/leave so future days in the month show too.
+  const [my, mm] = currentMonth.split("-").map(Number);
+  const monthEnd = `${currentMonth}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, "0")}`;
+
+  // Per-day status for the viewer's personal calendar (holiday/leave/absent/late/in-no-out).
+  const [holidaysRes, profilesRes, myLeaveDates] = await Promise.all([
+    listStoreHolidays(ctx.storeId, monthStart, monthEnd),
+    listEmployeeProfiles(ctx.storeId),
+    listLeaveDatesForUser(ctx.storeId, user.id, monthStart, monthEnd),
+  ]);
+  const holidays = holidaysRes.data ?? [];
+  const ownProfile = (profilesRes.data ?? []).find((p) => p.userId === user.id) ?? null;
+  const dayStatusMap = computeDayStatuses({
+    month: currentMonth,
+    today,
+    timezone: ctx.storeTimezone,
+    records: myMonthRecords,
+    profile: ownProfile
+      ? {
+          expectedStartTime: ownProfile.expectedStartTime,
+          lateGraceMinutes: ownProfile.lateGraceMinutes,
+          workingDays: ownProfile.workingDays,
+        }
+      : null,
+    holidays: new Set(holidays.map((h) => h.date)),
+    leaveDates: new Set(myLeaveDates),
+  });
+  const dayStatus = Object.fromEntries(dayStatusMap);
+  const holidayDates = holidays.map((h) => h.date);
+  const canManageHolidays = resolved.can("settings.manage_store");
 
   const canManage = resolved.can("attendance.manage");
 
@@ -107,6 +139,10 @@ export default async function AttendancePage({
       backdatedUsed={backdatedUsed}
       myMonthRecords={myMonthRecords}
       currentMonth={currentMonth}
+      dayStatus={dayStatus}
+      holidays={holidays}
+      holidayDates={holidayDates}
+      canManageHolidays={canManageHolidays}
     />
   );
 }

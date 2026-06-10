@@ -203,6 +203,25 @@ export interface AddAdjustmentInput {
   createdByUserId: string;
 }
 
+/** Dates a user has a 'leave' adjustment within a range (for the attendance calendar). */
+export async function listLeaveDatesForUser(
+  storeId: string,
+  userId: string,
+  from: string,
+  to: string,
+): Promise<string[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("payroll_adjustments")
+    .select("date")
+    .eq("store_id", storeId)
+    .eq("user_id", userId)
+    .eq("type", "leave")
+    .gte("date", from)
+    .lte("date", to);
+  return (data ?? []).map((r) => r.date);
+}
+
 export async function addPayrollAdjustment(input: AddAdjustmentInput) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("payroll_adjustments").insert({
