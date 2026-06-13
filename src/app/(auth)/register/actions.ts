@@ -9,6 +9,7 @@ import {
   buildUniqueSlug,
   validateRegistrationInput,
 } from "@/modules/auth/registration";
+import { PREMIUM_FREE_TRIAL_DAYS } from "@/modules/billing/premium-trial";
 
 export interface RegisterState {
   error: string | null;
@@ -125,17 +126,20 @@ export async function registerOwner(
     return { error: "ตั้งค่าสิทธิ์เจ้าของไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
   }
 
-  // 14-day free trial: full (premium) access; expiry gate enforces it afterwards.
-  const trialStart = new Date();
-  const trialEnd = new Date(trialStart.getTime() + 14 * 86_400_000);
-  await svc.from("subscriptions").insert({
-    organization_id: org.id,
-    plan: "premium",
-    status: "trialing",
-    current_period_start: trialStart.toISOString(),
-    current_period_end: trialEnd.toISOString(),
-    trial_end: trialEnd.toISOString(),
+  // Premium ฟรี 30 วัน: consume the one-time promo during signup so the same ID
+  // cannot claim another 0-baht Premium period from the billing page later.
+  const { data: trialRows, error: trialErr } = await svc.rpc("claim_premium_free_trial", {
+    p_organization_id: org.id,
+    p_user_id: user.id,
   });
+  const trial = trialRows?.[0] ?? null;
+  if (trialErr || !trial?.ok) {
+    logRegisterError("claim Premium free trial", trialErr);
+    await svc.from("stores").delete().eq("id", store.id);
+    await svc.from("organizations").delete().eq("id", org.id);
+    await rollback();
+    return { error: "เปิดใช้งาน Premium ฟรี 30 วันไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
+  }
 
   if (data.session) {
     redirect("/onboarding");
@@ -143,6 +147,6 @@ export async function registerOwner(
 
   return {
     error: null,
-    notice: "สร้างบัญชีสำเร็จ กรุณายืนยันอีเมลของคุณ แล้วเข้าสู่ระบบ",
+    notice: `สร้างบัญชีสำเร็จ รับ Premium ฟรี ${PREMIUM_FREE_TRIAL_DAYS} วันแล้ว กรุณายืนยันอีเมลของคุณ แล้วเข้าสู่ระบบ`,
   };
 }

@@ -2,6 +2,12 @@
 
 import { useActionState, useState } from "react";
 import type { Store } from "@/modules/stores/types";
+import {
+  CUSTOM_THEME_PRESET_ID,
+  THEME_PRESETS,
+  getThemePreset,
+  type ThemeTokens,
+} from "@/modules/theme/presets";
 import { ModalDialog } from "@/shared/components/ui";
 import { updateStoreAction } from "./actions";
 
@@ -25,6 +31,16 @@ const CURRENCIES = [
   { value: "IDR", label: "IDR — รูเปียห์" },
 ];
 
+const CUSTOM_THEME_FIELDS: Array<{
+  key: keyof Omit<ThemeTokens, "presetId">;
+  label: string;
+}> = [
+  { key: "primaryColor", label: "Primary" },
+  { key: "primaryStrongColor", label: "Primary strong" },
+  { key: "primarySoftColor", label: "Primary soft" },
+  { key: "accentColor", label: "Accent" },
+];
+
 interface Props {
   store: Store;
   canEdit: boolean;
@@ -39,6 +55,14 @@ export function StoreSettingsForm({
   canUseBuffet,
 }: Props) {
   const [storeDialogOpen, setStoreDialogOpen] = useState(false);
+  const currentTheme = getThemePreset(store.themePresetId);
+  const currentThemeName = store.themePresetId === CUSTOM_THEME_PRESET_ID ? "Custom" : currentTheme.name;
+  const currentColors = [
+    store.themePrimaryColor,
+    store.themePrimaryStrongColor,
+    store.themePrimarySoftColor,
+    store.themeAccentColor,
+  ];
 
   const field = "form-input disabled:bg-[var(--surface-muted)] disabled:text-[var(--muted)]";
 
@@ -105,26 +129,24 @@ export function StoreSettingsForm({
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="panel-title">Theme presets</h2>
-            <p className="label-muted">ตัวอย่าง tenant theme จาก prototype สำหรับต่อยอดเป็น theme builder</p>
+            <p className="label-muted">ธีมของร้านนี้จะถูกใช้เฉพาะ tenant/store ปัจจุบัน</p>
           </div>
-          <span className="badge badge-warning">Preview only</span>
+          <span className="badge badge-brand">{currentThemeName}</span>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            ["Caramel Cafe", "#c2603a", "#3c8fb0", "#fbede4"],
-            ["Matcha Garden", "#5b8c51", "#c2851f", "#ecf3e8"],
-            ["Berry Bloom", "#b65c8a", "#7a6bc4", "#fbeaf2"],
-          ].map(([name, primary, accent, soft]) => (
-            <div key={name} className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-              <div className="mb-3 flex gap-2">
-                {[primary, accent, soft].map((color) => (
-                  <span key={color} className="h-8 flex-1 rounded-[var(--radius-sm)]" style={{ background: color }} />
-                ))}
-              </div>
-              <p className="text-sm font-extrabold text-[var(--ink)]">{name}</p>
-              <p className="text-xs text-[var(--muted)]">Primary {primary}</p>
-            </div>
-          ))}
+        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+          <div className="mb-3 flex gap-2">
+            {currentColors.map((color) => (
+              <span key={color} className="h-9 flex-1 rounded-[var(--radius-sm)]" style={{ background: color }} />
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-extrabold text-[var(--ink)]">{currentThemeName}</p>
+            {canEdit && (
+              <button type="button" onClick={() => setStoreDialogOpen(true)} className="btn-secondary text-xs">
+                แก้ไขธีม
+              </button>
+            )}
+          </div>
         </div>
       </section>
     </div>
@@ -142,6 +164,13 @@ function StoreSettingsDialog({
   field: string;
   onClose: () => void;
 }) {
+  const [themePresetId, setThemePresetId] = useState(store.themePresetId);
+  const [customTheme, setCustomTheme] = useState<Omit<ThemeTokens, "presetId">>({
+    primaryColor: store.themePrimaryColor,
+    primaryStrongColor: store.themePrimaryStrongColor,
+    primarySoftColor: store.themePrimarySoftColor,
+    accentColor: store.themeAccentColor,
+  });
   const [state, formAction, pending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) => {
       const result = await updateStoreAction(prev, fd);
@@ -150,6 +179,16 @@ function StoreSettingsDialog({
     },
     { error: null },
   );
+  const selectedPreset = getThemePreset(themePresetId);
+  const isCustomTheme = themePresetId === CUSTOM_THEME_PRESET_ID;
+  const themeColors = isCustomTheme
+    ? customTheme
+    : {
+        primaryColor: selectedPreset.colors.primary,
+        primaryStrongColor: selectedPreset.colors.primaryStrong,
+        primarySoftColor: selectedPreset.colors.primarySoft,
+        accentColor: selectedPreset.colors.accent,
+      };
 
   return (
     <ModalDialog
@@ -216,6 +255,80 @@ function StoreSettingsDialog({
         </div>
 
         <input type="hidden" name="locale" value={store.locale} />
+        <input type="hidden" name="themePresetId" value={themePresetId} />
+        <input type="hidden" name="themePrimaryColor" value={themeColors.primaryColor} />
+        <input type="hidden" name="themePrimaryStrongColor" value={themeColors.primaryStrongColor} />
+        <input type="hidden" name="themePrimarySoftColor" value={themeColors.primarySoftColor} />
+        <input type="hidden" name="themeAccentColor" value={themeColors.accentColor} />
+
+        <div className="space-y-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+          <div>
+            <label className="field-label">Theme presets</label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {THEME_PRESETS.map((preset) => {
+                const active = themePresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    aria-pressed={active}
+                    disabled={!canEdit}
+                    onClick={() => setThemePresetId(preset.id)}
+                    className={`rounded-[var(--radius-md)] border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      active
+                        ? "border-[var(--tenant-primary)] bg-white"
+                        : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--tenant-primary)]"
+                    }`}
+                  >
+                    <span className="mb-2 flex gap-1.5">
+                      {[preset.colors.primary, preset.colors.primaryStrong, preset.colors.primarySoft, preset.colors.accent].map((color) => (
+                        <span key={color} className="h-6 flex-1 rounded-[var(--radius-sm)]" style={{ background: color }} />
+                      ))}
+                    </span>
+                    <span className="block text-sm font-extrabold text-[var(--ink)]">{preset.name}</span>
+                    <span className="block text-xs text-[var(--muted)]">{preset.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {CUSTOM_THEME_FIELDS.map((item) => (
+              <div key={item.key}>
+                <label className="field-label">{item.label}</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={themeColors[item.key]}
+                    disabled={!canEdit || !isCustomTheme}
+                    onChange={(event) =>
+                      setCustomTheme((prev) => ({
+                        ...prev,
+                        [item.key]: event.target.value,
+                      }))
+                    }
+                    className="h-11 w-14 shrink-0 rounded-[var(--radius-md)] border border-[var(--border)] bg-white p-1 disabled:opacity-40"
+                  />
+                  <input
+                    type="text"
+                    value={themeColors[item.key]}
+                    disabled={!canEdit || !isCustomTheme}
+                    maxLength={7}
+                    pattern="^#[0-9A-Fa-f]{6}$"
+                    onChange={(event) =>
+                      setCustomTheme((prev) => ({
+                        ...prev,
+                        [item.key]: event.target.value,
+                      }))
+                    }
+                    className={field}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div className="space-y-2">
           <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">

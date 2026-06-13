@@ -1,6 +1,6 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { computeNewExpiry, type BillingDuration } from "./pricing";
-import { getUpgradeQuote } from "./pricing-repository";
+import { getPremiumFreeTrialEligibility, getUpgradeQuote } from "./pricing-repository";
 import { getPlatformSettings } from "./platform-settings";
 import { receiverMatches } from "./promptpay-provider";
 import {
@@ -48,6 +48,17 @@ export interface SubmitPaymentInput {
 
 export interface SubmitPaymentResult {
   status: "verified" | "rejected" | "duplicate";
+  reason: string | null;
+  newExpiry: string | null;
+}
+
+export interface ClaimPremiumFreeTrialInput {
+  organizationId: string;
+  submittedByUserId: string;
+}
+
+export interface ClaimPremiumFreeTrialResult {
+  status: "claimed" | "unavailable";
   reason: string | null;
   newExpiry: string | null;
 }
@@ -139,6 +150,43 @@ export async function submitPromptPayPayment(
   });
 
   return { status: "verified", reason: null, newExpiry };
+}
+
+export async function claimPremiumFreeTrial(
+  input: ClaimPremiumFreeTrialInput,
+): Promise<ClaimPremiumFreeTrialResult> {
+  const supabase = await createSupabaseServiceClient();
+  const offer = await getPremiumFreeTrialEligibility(input.organizationId, input.submittedByUserId, "premium", "30d");
+  if (!offer.available) {
+    const reason =
+      offer.unavailableReason === "already_redeemed"
+        ? "สิทธิ์ Premium ฟรี 30 วันนี้ถูกใช้ไปแล้ว"
+        : offer.unavailableReason === "active_subscription"
+          ? "บัญชีนี้มีแพ็กเกจที่ยังใช้งานอยู่แล้ว"
+          : "โปรนี้ใช้ได้เฉพาะ Premium ระยะเวลา 30 วัน";
+    return { status: "unavailable", reason, newExpiry: null };
+  }
+
+  const { data, error } = await supabase.rpc("claim_premium_free_trial", {
+    p_organization_id: input.organizationId,
+    p_user_id: input.submittedByUserId,
+  });
+  if (error) {
+    return { status: "unavailable", reason: "เปิดใช้งาน Premium ฟรีไม่สำเร็จ", newExpiry: null };
+  }
+
+  const row = data?.[0] ?? null;
+  if (!row?.ok) {
+    const reason =
+      row?.code === "already_redeemed"
+        ? "สิทธิ์ Premium ฟรี 30 วันนี้ถูกใช้ไปแล้ว"
+        : row?.code === "active_subscription"
+          ? "บัญชีนี้มีแพ็กเกจที่ยังใช้งานอยู่แล้ว"
+          : "เปิดใช้งาน Premium ฟรีไม่สำเร็จ";
+    return { status: "unavailable", reason, newExpiry: null };
+  }
+
+  return { status: "claimed", reason: null, newExpiry: row.new_expiry };
 }
 
 async function recordSubmission(

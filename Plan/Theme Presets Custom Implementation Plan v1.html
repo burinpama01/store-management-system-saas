@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Theme Presets Custom Implementation Plan v1</title>
+  <style>
+    :root {
+      --ink: #24201c;
+      --muted: #766b61;
+      --brand: #c2603a;
+      --soft: #fbede4;
+      --accent: #3c8fb0;
+      --line: #eadfD2;
+      --paper: #fffaf4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #f7f1e9;
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      padding: 40px;
+      color: #fff;
+      background: linear-gradient(135deg, #2b2521, #7f4229 58%, #3c8fb0);
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 28px; }
+    h1 { margin: 0 0 10px; font-size: clamp(30px, 4vw, 52px); letter-spacing: 0; }
+    h2 { margin: 0 0 12px; font-size: 22px; letter-spacing: 0; }
+    p { margin-top: 0; }
+    .lead { max-width: 760px; color: rgba(255,255,255,.86); font-size: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      padding: 18px;
+    }
+    .tag {
+      display: inline-flex;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: var(--soft);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    ol, ul { padding-left: 22px; }
+    li { margin: 6px 0; }
+    code {
+      border-radius: 4px;
+      background: #fff;
+      padding: 2px 5px;
+      color: #7f4229;
+    }
+    .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+    .swatch { height: 44px; border-radius: 7px; border: 1px solid rgba(0,0,0,.08); }
+    @media (max-width: 760px) {
+      header { padding: 28px 22px; }
+      main { padding: 18px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="tag">StoreOS Theme</span>
+    <h1>Theme Presets + Custom</h1>
+    <p class="lead">
+      เปลี่ยน Theme presets จาก preview ให้เป็นฟีเจอร์จริงสำหรับแต่ละ store/tenant พร้อม custom color ที่บันทึกได้และไม่กระทบร้านอื่น
+    </p>
+  </header>
+  <main>
+    <section class="grid">
+      <article class="card">
+        <span class="tag">Goal</span>
+        <h2>สิ่งที่จะได้</h2>
+        <ul>
+          <li>เลือกรูปแบบสีจาก preset ในหน้า <code>/settings/store</code></li>
+          <li>เพิ่ม preset <code>custom</code> ให้แก้ primary/accent/soft ได้เอง</li>
+          <li>บันทึก theme ลง store ปัจจุบันเท่านั้น</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="tag">Data</span>
+        <h2>Tenant Isolation</h2>
+        <ul>
+          <li>เพิ่มคอลัมน์ theme ใน <code>stores</code></li>
+          <li>update ผ่าน <code>storeId</code> + <code>organizationId</code> เดิม</li>
+          <li>ไม่สร้าง shared global state ที่ทำให้ข้าม tenant</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="tag">Runtime</span>
+        <h2>CSS Tokens</h2>
+        <ul>
+          <li>layout inject <code>--tenant-primary</code></li>
+          <li>fallback เป็น Caramel Cafe default</li>
+          <li>dashboard/POS/settings ใช้ token เดิมต่อทันที</li>
+        </ul>
+      </article>
+    </section>
+    <section class="card" style="margin-top:16px">
+      <h2>Implementation Steps</h2>
+      <ol>
+        <li>เขียน RED tests สำหรับ preset registry, custom validation, UI wiring, runtime theme injection</li>
+        <li>เพิ่ม <code>src/modules/theme/presets.ts</code> เป็น source of truth ของ preset และ validator</li>
+        <li>เพิ่ม migration local สำหรับ theme columns ใน <code>stores</code></li>
+        <li>อัปเดต <code>Store</code>, repository, database types และ store update action</li>
+        <li>เปลี่ยนหน้า settings จาก preview card เป็น selector + custom color controls</li>
+        <li>inject CSS variables ใน dashboard layout ตาม store theme</li>
+        <li>รัน tests/typecheck/lint/build หลัง bump version ตามกฎโปรเจกต์</li>
+        <li>ส่ง code review gate และบันทึก Obsidian log</li>
+      </ol>
+    </section>
+    <section class="card" style="margin-top:16px">
+      <h2>Preset Set</h2>
+      <div class="swatches">
+        <div class="swatch" style="background:#c2603a"></div>
+        <div class="swatch" style="background:#5b8c51"></div>
+        <div class="swatch" style="background:#b65c8a"></div>
+        <div class="swatch" style="background:#2563eb"></div>
+      </div>
+      <p style="margin-top:12px;color:var(--muted)">Custom จะใช้สีที่ผู้ใช้ระบุเอง แต่ยัง validate เป็น HEX เท่านั้น</p>
+    </section>
+  </main>
+</body>
+</html>

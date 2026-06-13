@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { mapError } from "@/shared/utils/error";
 import type { Store, Table } from "@/modules/stores/types";
 import type { Category, Product, ProductVariant, ModifierGroup, ModifierOption } from "@/modules/catalog/types";
@@ -28,6 +29,11 @@ function mapStore(row: StoreRow): Store {
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
     dineInDurationMinutes: row.dine_in_duration_minutes,
+    themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
+    themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,
+    themePrimaryStrongColor: row.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,
+    themePrimarySoftColor: row.theme_primary_soft_color ?? DEFAULT_THEME.primarySoftColor,
+    themeAccentColor: row.theme_accent_color ?? DEFAULT_THEME.accentColor,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -33,13 +33,14 @@ export default async function PricingPage() {
           เลือกแพ็กเกจที่เหมาะกับร้านของคุณ
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-lg text-[var(--ink-2)]">
-          เริ่มต้นฟรี 14 วัน · POS, QR ordering, รายงาน, ทีมงาน และระบบจัดการหลายสาขา ครบในที่เดียว
+          ลูกค้าใหม่รับ Premium ฟรี 30 วันได้ 1 ครั้ง · POS, QR ordering, รายงาน, ทีมงาน และระบบจัดการหลายสาขา ครบในที่เดียว
         </p>
       </section>
 
       <section className="mx-auto grid max-w-6xl gap-4 px-6 py-10 md:grid-cols-2 xl:grid-cols-4">
         {plans.map((plan) => {
           const isEnterprise = plan.price30d == null;
+          const isPremium = plan.tier === "premium";
           return (
             <div
               key={plan.tier}
@@ -54,9 +55,18 @@ export default async function PricingPage() {
                 {plan.highlight && <span className="badge badge-brand">แนะนำ</span>}
               </div>
               <p className="text-2xl font-extrabold text-[var(--tenant-primary-strong)]">
-                {isEnterprise ? "Custom" : plan.price30d?.toLocaleString()}
-                {!isEnterprise && <span className="text-sm font-bold"> บาท/เดือน</span>}
+                {isEnterprise ? "Custom" : isPremium ? "0" : plan.price30d?.toLocaleString()}
+                {!isEnterprise && (
+                  <span className="text-sm font-bold">
+                    {isPremium ? " บาท / 30 วันแรก" : " บาท/เดือน"}
+                  </span>
+                )}
               </p>
+              {isPremium && plan.price30d != null && (
+                <p className="mt-1 text-xs font-bold text-[var(--tenant-primary-strong)]">
+                  หลังใช้โปรแล้ว {plan.price30d.toLocaleString()} บาท/เดือน
+                </p>
+              )}
               {!isEnterprise && plan.price1y != null && (
                 <p className="mt-1 text-xs text-[var(--muted)]">หรือ {plan.price1y.toLocaleString()} บาท/ปี</p>
               )}
@@ -77,7 +87,7 @@ export default async function PricingPage() {
       </section>
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-center text-xs text-[var(--muted)]">
-        ราคายังไม่รวมภาษีมูลค่าเพิ่ม · ทดลองใช้ฟรี 14 วัน · เปลี่ยน/ยกเลิกแพ็กเกจได้ทุกเมื่อ
+        ราคายังไม่รวมภาษีมูลค่าเพิ่ม · โปร Premium ฟรี 30 วันใช้ได้ 1 ครั้งต่อบัญชี · เปลี่ยน/ยกเลิกแพ็กเกจได้ทุกเมื่อ
       </footer>
     </main>
   );

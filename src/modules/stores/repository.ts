@@ -1,5 +1,6 @@
 import { withDataClient } from "@/shared/services/data-client";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { mapError } from "@/shared/utils/error";
 import type { Store, Table, ReceiptSettings, Printer } from "@/modules/stores/types";
 import type { Database } from "@/server/integrations/supabase/database.types";
@@ -24,6 +25,11 @@ function mapStore(row: StoreRow): Store {
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
     dineInDurationMinutes: row.dine_in_duration_minutes,
+    themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
+    themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,
+    themePrimaryStrongColor: row.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,
+    themePrimarySoftColor: row.theme_primary_soft_color ?? DEFAULT_THEME.primarySoftColor,
+    themeAccentColor: row.theme_accent_color ?? DEFAULT_THEME.accentColor,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -138,6 +144,11 @@ export interface UpdateStoreInput {
   buffetEnabled?: boolean;
   qrOrderingEnabled?: boolean;
   dineInDurationMinutes?: number;
+  themePresetId?: string;
+  themePrimaryColor?: string;
+  themePrimaryStrongColor?: string;
+  themePrimarySoftColor?: string;
+  themeAccentColor?: string;
 }
 
 export async function updateStore(storeId: string, organizationId: string, input: UpdateStoreInput) {
@@ -155,6 +166,11 @@ export async function updateStore(storeId: string, organizationId: string, input
       buffet_enabled: input.buffetEnabled,
       qr_ordering_enabled: input.qrOrderingEnabled,
       dine_in_duration_minutes: input.dineInDurationMinutes,
+      theme_preset_id: input.themePresetId,
+      theme_primary_color: input.themePrimaryColor,
+      theme_primary_strong_color: input.themePrimaryStrongColor,
+      theme_primary_soft_color: input.themePrimarySoftColor,
+      theme_accent_color: input.themeAccentColor,
       updated_at: new Date().toISOString(),
     })
     .eq("id", storeId)

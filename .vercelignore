@@ -1,0 +1,7 @@
+.next
+.vercel/output
+.env
+.env.*
+.next-dev-*.log
+*.stdout.log
+*.stderr.log

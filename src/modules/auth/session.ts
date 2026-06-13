@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { cookies } from "next/headers";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
@@ -12,6 +13,11 @@ export interface StoreContext {
   storeId: string;
   storeName: string;
   storeTimezone: string;
+  themePresetId: string;
+  themePrimaryColor: string;
+  themePrimaryStrongColor: string;
+  themePrimarySoftColor: string;
+  themeAccentColor: string;
   orgName: string;
   role: MembershipRow["role"];
 }
@@ -131,6 +137,11 @@ export async function resolveCurrentStore(
     storeId: store.id,
     storeName: store.name,
     storeTimezone: store.timezone,
+    themePresetId: store.theme_preset_id ?? DEFAULT_THEME.presetId,
+    themePrimaryColor: store.theme_primary_color ?? DEFAULT_THEME.primaryColor,
+    themePrimaryStrongColor: store.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,
+    themePrimarySoftColor: store.theme_primary_soft_color ?? DEFAULT_THEME.primarySoftColor,
+    themeAccentColor: store.theme_accent_color ?? DEFAULT_THEME.accentColor,
     orgName: org.name,
     role: membership.role,
   };

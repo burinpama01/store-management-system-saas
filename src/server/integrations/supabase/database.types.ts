@@ -84,6 +84,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      billing_premium_trial_redemptions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          promotion_code: string;
+          plan: "premium";
+          duration: "30d";
+          amount_expected: number;
+          amount_charged: 0;
+          redeemed_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          promotion_code?: string;
+          plan: "premium";
+          duration: "30d";
+          amount_expected: number;
+          amount_charged?: 0;
+          redeemed_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          user_id?: string;
+          promotion_code?: string;
+          plan?: "premium";
+          duration?: "30d";
+          amount_expected?: number;
+          amount_charged?: 0;
+          redeemed_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       buffet_packages: {
         Row: {
           id: string;
@@ -388,6 +427,11 @@ export interface Database {
           buffet_enabled: boolean;
           qr_ordering_enabled: boolean;
           dine_in_duration_minutes: number;
+          theme_preset_id: string;
+          theme_primary_color: string;
+          theme_primary_strong_color: string;
+          theme_primary_soft_color: string;
+          theme_accent_color: string;
           created_at: string;
           updated_at: string;
         };
@@ -406,6 +450,11 @@ export interface Database {
           buffet_enabled?: boolean;
           qr_ordering_enabled?: boolean;
           dine_in_duration_minutes?: number;
+          theme_preset_id?: string;
+          theme_primary_color?: string;
+          theme_primary_strong_color?: string;
+          theme_primary_soft_color?: string;
+          theme_accent_color?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -424,6 +473,11 @@ export interface Database {
           buffet_enabled?: boolean;
           qr_ordering_enabled?: boolean;
           dine_in_duration_minutes?: number;
+          theme_preset_id?: string;
+          theme_primary_color?: string;
+          theme_primary_strong_color?: string;
+          theme_primary_soft_color?: string;
+          theme_accent_color?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -1702,6 +1756,17 @@ export interface Database {
       close_table_session: {
         Args: { p_store_id: string; p_table_id: string };
         Returns: undefined;
+      };
+      claim_premium_free_trial: {
+        Args: {
+          p_organization_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          ok: boolean;
+          code: string;
+          new_expiry: string | null;
+        }[];
       };
       get_report_sales_summary: {
         Args: {

@@ -9,6 +9,7 @@ import {
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { updateStore } from "@/modules/stores/repository";
+import { resolveThemeSelection } from "@/modules/theme/presets";
 
 const ALLOWED_TIMEZONES = new Set([
   "Asia/Bangkok",
@@ -52,6 +53,14 @@ export async function updateStoreAction(
     const dineInRaw = parseInt((formData.get("dineInDurationMinutes") as string | null) ?? "", 10);
     const dineInDurationMinutes =
       Number.isInteger(dineInRaw) && dineInRaw >= 15 && dineInRaw <= 600 ? dineInRaw : 120;
+    const themePresetId = (formData.get("themePresetId") as string | null)?.trim() ?? "";
+    const theme = resolveThemeSelection({
+      presetId: themePresetId,
+      primaryColor: (formData.get("themePrimaryColor") as string | null)?.trim(),
+      primaryStrongColor: (formData.get("themePrimaryStrongColor") as string | null)?.trim(),
+      primarySoftColor: (formData.get("themePrimarySoftColor") as string | null)?.trim(),
+      accentColor: (formData.get("themeAccentColor") as string | null)?.trim(),
+    });
 
     if (!name) return { error: "กรุณาระบุชื่อร้านค้า" };
     if (name.length > 100) return { error: "ชื่อร้านค้ายาวเกิน 100 ตัวอักษร" };
@@ -60,6 +69,7 @@ export async function updateStoreAction(
     if (!ALLOWED_TIMEZONES.has(timezone)) return { error: "Timezone ไม่ถูกต้อง" };
     if (!ALLOWED_CURRENCIES.has(currencyCode)) return { error: "สกุลเงินไม่ถูกต้อง" };
     if (!ALLOWED_LOCALES.has(locale)) return { error: "Locale ไม่ถูกต้อง" };
+    if (!theme.ok) return { error: theme.error };
 
     const billingState =
       (await getOrganizationBillingState(ctx.organizationId)) ??
@@ -82,6 +92,11 @@ export async function updateStoreAction(
       buffetEnabled,
       qrOrderingEnabled,
       dineInDurationMinutes,
+      themePresetId: theme.theme.presetId,
+      themePrimaryColor: theme.theme.primaryColor,
+      themePrimaryStrongColor: theme.theme.primaryStrongColor,
+      themePrimarySoftColor: theme.theme.primarySoftColor,
+      themeAccentColor: theme.theme.accentColor,
     });
 
     if (result.error) return { error: result.error.userMessage };

@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/modules/auth/guards";
 import { getUserStores } from "@/modules/auth/session";
+import { buildThemeStyle } from "@/modules/theme/presets";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { signOut } from "./actions";
@@ -39,9 +40,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("settings.view") ? [{ href: "/settings", label: "ตั้งค่า" }] : []),
     ...(can("system.manage") ? [{ href: "/system", label: "ระบบ (Platform)" }] : []),
   ];
+  const themeStyle = buildThemeStyle({
+    presetId: storeContext.themePresetId,
+    primaryColor: storeContext.themePrimaryColor,
+    primaryStrongColor: storeContext.themePrimaryStrongColor,
+    primarySoftColor: storeContext.themePrimarySoftColor,
+    accentColor: storeContext.themeAccentColor,
+  }) as CSSProperties;
 
   return (
-    <div className="storeos-app">
+    <div className="storeos-app" style={themeStyle}>
       <aside className="storeos-sidebar hidden md:flex">
         <div className="brand">
           <div className="brand-mark">S</div>

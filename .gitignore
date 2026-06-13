@@ -34,6 +34,7 @@ yarn-error.log*
 *.stderr.log
 *.stdout.log
 .codex-dev*.log
+.next-dev-*.log
 
 # Vercel
 .vercel

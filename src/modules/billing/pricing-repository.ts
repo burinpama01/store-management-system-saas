@@ -3,9 +3,16 @@ import { mapError } from "@/shared/utils/error";
 import {
   DURATION_PRICES,
   isPaidTier,
+  isSubscriptionCurrent,
   type BillingDuration,
   type PaidTier,
 } from "./pricing";
+import {
+  buildPremiumFreeTrialOffer,
+  isPremiumFreeTrialSelection,
+  PREMIUM_FREE_TRIAL_PROMO_CODE,
+  type PremiumFreeTrialOffer,
+} from "./premium-trial";
 
 export interface Promotion {
   id: string;
@@ -217,6 +224,42 @@ export async function getUpgradeQuote(
     finalAmount: Math.max(0, eff.amount - credit),
     promotion: eff.promotion,
   };
+}
+
+export async function getPremiumFreeTrialEligibility(
+  organizationId: string,
+  userId: string,
+  plan: string,
+  duration: BillingDuration,
+): Promise<PremiumFreeTrialOffer> {
+  const eff = await getEffectivePrice(plan, duration);
+  const basePrice = eff?.amount ?? 0;
+  if (!isPremiumFreeTrialSelection(plan, duration)) {
+    return buildPremiumFreeTrialOffer({ plan, duration, basePrice, alreadyRedeemed: false });
+  }
+
+  const supabase = await createSupabaseServiceClient();
+  const [{ data, error }, { data: sub, error: subError }] = await Promise.all([
+    supabase
+      .from("billing_premium_trial_redemptions")
+      .select("id")
+      .eq("promotion_code", PREMIUM_FREE_TRIAL_PROMO_CODE)
+      .or(`user_id.eq.${userId},organization_id.eq.${organizationId}`)
+      .limit(1),
+    supabase
+      .from("subscriptions")
+      .select("current_period_end")
+      .eq("organization_id", organizationId)
+      .maybeSingle(),
+  ]);
+
+  return buildPremiumFreeTrialOffer({
+    plan,
+    duration,
+    basePrice,
+    alreadyRedeemed: Boolean(error) || Boolean(data?.length),
+    activeSubscription: Boolean(subError) || isSubscriptionCurrent(sub?.current_period_end ?? null),
+  });
 }
 
 // ── Plan display config (#1) ──────────────────────────────────────────

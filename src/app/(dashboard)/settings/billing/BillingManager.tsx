@@ -13,7 +13,7 @@ import {
 import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { ModalDialog, ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
-import { getPaymentQrAction } from "./actions";
+import { claimPremiumTrialAction, getPaymentQrAction } from "./actions";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -36,6 +36,7 @@ interface PaymentQuoteView {
   basePrice: number | null;
   credit: number;
   promotionLabel: string | null;
+  freeTrialAvailable: boolean;
 }
 
 function daysLeft(iso: string): number {
@@ -55,6 +56,7 @@ export function BillingManager({
   paymentConfigured,
   recipientName,
   slipVerificationReady,
+  premiumTrialAvailable,
 }: {
   orgName: string;
   plan: BillingPlan;
@@ -66,14 +68,16 @@ export function BillingManager({
   paymentConfigured: boolean;
   recipientName: string | null;
   slipVerificationReady: boolean;
+  premiumTrialAvailable: boolean;
 }) {
   const isTrial = status === "trialing" && isActive;
   const router = useRouter();
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
 
-  const [selectedPlan, setSelectedPlan] = useState<PaidTier>("starter");
+  const [selectedPlan, setSelectedPlan] = useState<PaidTier>(premiumTrialAvailable ? "premium" : "starter");
   const [duration, setDuration] = useState<BillingDuration>("30d");
+  const [trialAvailable, setTrialAvailable] = useState(premiumTrialAvailable);
   const [qr, setQr] = useState<SubscriptionQr | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [paymentQuote, setPaymentQuote] = useState<PaymentQuoteView | null>(null);
@@ -85,7 +89,8 @@ export function BillingManager({
   const [uploadPercent, setUploadPercent] = useState(0);
 
   const price = prices[selectedPlan][duration];
-  const displayAmount = paymentQuote?.amount ?? price;
+  const selectedPremiumTrial = selectedPlan === "premium" && duration === "30d" && trialAvailable;
+  const displayAmount = selectedPremiumTrial && !paymentQuote ? 0 : paymentQuote?.amount ?? price;
 
   function resetGeneratedPayment() {
     setQr(null);
@@ -118,6 +123,7 @@ export function BillingManager({
         basePrice: res.basePrice,
         credit: res.credit,
         promotionLabel: res.promotionLabel,
+        freeTrialAvailable: res.freeTrialAvailable,
       });
       setQr(res.qr);
     } catch {
@@ -182,6 +188,32 @@ export function BillingManager({
     }
   }
 
+  async function handlePremiumTrial() {
+    setError(null);
+    setResult(null);
+    setBusy(true);
+    try {
+      const res = await claimPremiumTrialAction();
+      if (!res.ok) {
+        showError(res.error ?? res.reason ?? "ใช้สิทธิ์ Premium ฟรีไม่สำเร็จ");
+        return;
+      }
+      setResult({ status: "claimed", reason: null, newExpiry: res.newExpiry });
+      setTrialAvailable(false);
+      resetGeneratedPayment();
+      setFeedbackDialog({
+        title: "เปิดใช้งาน Premium ฟรีสำเร็จ",
+        message: `ใช้งาน Premium ฟรี 30 วัน ได้ถึง ${formatDate(res.newExpiry)}`,
+        tone: "success",
+      });
+      router.refresh();
+    } catch {
+      showError("ใช้สิทธิ์ Premium ฟรีไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -220,24 +252,24 @@ export function BillingManager({
         </div>
       </section>
 
-      {result?.status === "verified" && (
+      {(result?.status === "verified" || result?.status === "claimed") && (
         <p className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          ยืนยันการชำระเงินสำเร็จ! ใช้งานได้ถึง {formatDate(result.newExpiry)}
+          {result.status === "claimed" ? "เปิดใช้งาน Premium ฟรีสำเร็จ" : "ยืนยันการชำระเงินสำเร็จ"}! ใช้งานได้ถึง {formatDate(result.newExpiry)}
         </p>
       )}
-      {result && result.status !== "verified" && (
+      {result && result.status !== "verified" && result.status !== "claimed" && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {result.status === "duplicate" ? "สลิปนี้ถูกใช้ไปแล้ว" : `ตรวจสลิปไม่ผ่าน: ${result.reason ?? ""}`}
         </p>
       )}
 
-      {canManage && !paymentConfigured && (
+      {canManage && !paymentConfigured && !trialAvailable && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่าช่องทางรับชำระเงิน (PromptPay) กรุณาติดต่อผู้ดูแล
         </p>
       )}
 
-      {canManage && paymentConfigured && (
+      {canManage && (paymentConfigured || trialAvailable) && (
         <section className="panel p-5">
           <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
 
@@ -256,9 +288,14 @@ export function BillingManager({
               >
                 <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[t]}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">{TIER_DESC[t]}</p>
-                <p className="mt-2 text-xs text-[var(--ink-2)]">
-                  {prices[t]["30d"].toLocaleString()} / เดือน
+              <p className="mt-2 text-xs text-[var(--ink-2)]">
+                {prices[t]["30d"].toLocaleString()} / เดือน
+              </p>
+              {t === "premium" && trialAvailable && (
+                <p className="mt-2 text-xs font-bold text-[var(--tenant-primary-strong)]">
+                  ลูกค้าใหม่ใช้ฟรี 30 วัน ราคา 0 บาท
                 </p>
+              )}
               </button>
             ))}
           </div>
@@ -315,14 +352,54 @@ export function BillingManager({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={generateQr}
-            disabled={busy}
-            className="btn-primary mt-4 disabled:opacity-40"
-          >
-            {busy ? "กำลังสร้าง..." : "สร้าง QR ชำระเงิน"}
-          </button>
+          {selectedPremiumTrial && (
+            <div className="mt-3 rounded-md border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-3 text-sm">
+              <p className="font-bold text-[var(--tenant-primary-strong)]">ใช้ Premium ฟรี 30 วัน</p>
+              <p className="mt-1 text-[var(--ink-2)]">
+                โปรลูกค้าใหม่ ราคา 0 บาท ใช้ได้ 1 ครั้งต่อบัญชีและ tenant นี้ ไม่ต้องอัปโหลดสลิป
+              </p>
+              <dl className="mt-2 grid gap-2 text-xs text-[var(--muted)] sm:grid-cols-2">
+                <div className="flex justify-between gap-3">
+                  <dt>ราคาแพ็กเกจ</dt>
+                  <dd className="font-bold text-[var(--ink)]">{price.toLocaleString()} บาท</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt>โปรลูกค้าใหม่</dt>
+                  <dd className="font-bold text-[var(--tenant-primary-strong)]">-{price.toLocaleString()} บาท</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt>ยอดที่ต้องชำระ</dt>
+                  <dd className="font-bold text-[var(--tenant-primary-strong)]">0 บาท</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+
+          {!paymentConfigured && !selectedPremiumTrial && (
+            <p className="mt-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่าช่องทางรับชำระเงิน (PromptPay) กรุณาติดต่อผู้ดูแล
+            </p>
+          )}
+
+          {selectedPremiumTrial ? (
+            <button
+              type="button"
+              onClick={handlePremiumTrial}
+              disabled={busy}
+              className="btn-primary mt-4 disabled:opacity-40"
+            >
+              {busy ? "กำลังเปิดใช้งาน..." : "ใช้ Premium ฟรี 30 วัน"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={generateQr}
+              disabled={busy || !paymentConfigured}
+              className="btn-primary mt-4 disabled:opacity-40"
+            >
+              {busy ? "กำลังสร้าง..." : "สร้าง QR ชำระเงิน"}
+            </button>
+          )}
 
           {qr && (
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">

@@ -13,6 +13,11 @@ export interface Store {
   buffetEnabled: boolean;
   qrOrderingEnabled: boolean;
   dineInDurationMinutes: number;
+  themePresetId: string;
+  themePrimaryColor: string;
+  themePrimaryStrongColor: string;
+  themePrimarySoftColor: string;
+  themeAccentColor: string;
   createdAt: string;
   updatedAt: string;
 }

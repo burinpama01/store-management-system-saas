@@ -5,8 +5,13 @@ import { AuthorizationError, getResolvedCurrentPermissions } from "@/modules/aut
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { resolveSubscriptionQr, type SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
-import { getUpgradeQuote } from "@/modules/billing/pricing-repository";
-import { submitPromptPayPayment, type SubmitPaymentResult } from "@/modules/billing/subscription-service";
+import { getPremiumFreeTrialEligibility, getUpgradeQuote } from "@/modules/billing/pricing-repository";
+import {
+  claimPremiumFreeTrial,
+  submitPromptPayPayment,
+  type ClaimPremiumFreeTrialResult,
+  type SubmitPaymentResult,
+} from "@/modules/billing/subscription-service";
 
 function parsePlan(value: unknown): PaidTier | null {
   return typeof value === "string" && isPaidTier(value as never) ? (value as PaidTier) : null;
@@ -22,6 +27,7 @@ export interface PaymentQrResult {
   credit: number;
   promotionLabel: string | null;
   qr: SubscriptionQr | null;
+  freeTrialAvailable: boolean;
   error: string | null;
 }
 
@@ -30,8 +36,16 @@ export async function getPaymentQrAction(
   duration: string,
 ): Promise<PaymentQrResult> {
   try {
-    const { ctx, resolved } = await getResolvedCurrentPermissions();
-    const base = { ok: false as const, amount: null, basePrice: null, credit: 0, promotionLabel: null, qr: null };
+    const { ctx, user, resolved } = await getResolvedCurrentPermissions();
+    const base = {
+      ok: false as const,
+      amount: null,
+      basePrice: null,
+      credit: 0,
+      promotionLabel: null,
+      qr: null,
+      freeTrialAvailable: false,
+    };
     if (!resolved.can("billing.manage")) {
       return { ...base, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
     }
@@ -41,6 +55,19 @@ export async function getPaymentQrAction(
 
     const quote = await getUpgradeQuote(ctx.organizationId, p, d);
     if (!quote) return { ...base, error: "ไม่พบราคาแพ็กเกจ" };
+    const freeTrial = await getPremiumFreeTrialEligibility(ctx.organizationId, user.id, p, d);
+    if (freeTrial.available) {
+      return {
+        ok: true,
+        amount: freeTrial.finalAmount,
+        basePrice: freeTrial.basePrice,
+        credit: freeTrial.credit,
+        promotionLabel: freeTrial.promotionLabel,
+        qr: null,
+        freeTrialAvailable: true,
+        error: null,
+      };
+    }
 
     const settings = await getPlatformSettings();
     return {
@@ -50,11 +77,12 @@ export async function getPaymentQrAction(
       credit: quote.credit,
       promotionLabel: quote.promotion ? `${quote.promotion.description} (-${quote.promotion.percentOff}%)` : null,
       qr: resolveSubscriptionQr(settings, quote.finalAmount),
+      freeTrialAvailable: false,
       error: null,
     };
   } catch (e) {
     if (e instanceof AuthorizationError) {
-      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, qr: null, error: "ไม่มีสิทธิ์" };
+      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, qr: null, freeTrialAvailable: false, error: "ไม่มีสิทธิ์" };
     }
     throw e;
   }
@@ -99,6 +127,33 @@ export async function submitPaymentAction(input: {
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return { ok: false, status: "rejected", reason: null, newExpiry: null, error: "ไม่มีสิทธิ์" };
+    }
+    throw e;
+  }
+}
+
+export interface ClaimPremiumTrialActionResult extends ClaimPremiumFreeTrialResult {
+  ok: boolean;
+  error: string | null;
+}
+
+export async function claimPremiumTrialAction(): Promise<ClaimPremiumTrialActionResult> {
+  try {
+    const { ctx, user, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("billing.manage")) {
+      return { ok: false, status: "unavailable", reason: null, newExpiry: null, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
+    }
+
+    const result = await claimPremiumFreeTrial({
+      organizationId: ctx.organizationId,
+      submittedByUserId: user.id,
+    });
+
+    revalidatePath("/settings/billing");
+    return { ...result, ok: result.status === "claimed", error: null };
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { ok: false, status: "unavailable", reason: null, newExpiry: null, error: "ไม่มีสิทธิ์" };
     }
     throw e;
   }
