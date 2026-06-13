@@ -1480,12 +1480,39 @@ export interface Database {
         };
         Relationships: [];
       };
+      notification_targets: {
+        Row: {
+          id: string;
+          organization_id: string;
+          channel: "telegram";
+          telegram_chat_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          channel?: "telegram";
+          telegram_chat_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          channel?: "telegram";
+          telegram_chat_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       notification_settings: {
         Row: {
           id: string;
           organization_id: string;
           store_id: string;
-          notification_type: "payment" | "new_table" | "new_qr_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "test";
+          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "test";
           channel: "line" | "telegram";
           enabled: boolean;
           destination: "owner" | "group" | "all";
@@ -1496,7 +1523,7 @@ export interface Database {
           id?: string;
           organization_id: string;
           store_id: string;
-          notification_type: "payment" | "new_table" | "new_qr_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "test";
+          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "test";
           channel: "line" | "telegram";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
@@ -1507,7 +1534,7 @@ export interface Database {
           id?: string;
           organization_id?: string;
           store_id?: string;
-          notification_type?: "payment" | "new_table" | "new_qr_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "test";
+          notification_type?: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "test";
           channel?: "line" | "telegram";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
@@ -1612,6 +1639,24 @@ export interface Database {
           p_note?: string | null;
         };
         Returns: Database["public"]["Tables"]["cash_sessions"]["Row"];
+      };
+      create_buffet_session_with_table: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_table_id?: string | null;
+          p_package_name: string;
+          p_price_per_guest: number;
+          p_guest_count: number;
+        };
+        Returns: Database["public"]["Tables"]["buffet_sessions"]["Row"];
+      };
+      close_buffet_session_with_table: {
+        Args: {
+          p_session_id: string;
+          p_store_id: string;
+        };
+        Returns: Database["public"]["Tables"]["buffet_sessions"]["Row"];
       };
       create_pos_order_with_items: {
         Args: {

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+﻿import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -490,7 +490,7 @@ describe("UX/UI regression guards", () => {
     expect(nav).not.toContain("/settings/diagnostics");
 
     expect(notifPage).toContain("NotificationTest");
-    expect(notifTest).toContain("runNotificationDiagnosticAction");
+    expect(notifTest).toContain("runTelegramNotificationTestAction");
 
     expect(receiptPage).toContain("ReceiptTests");
     expect(receiptTests).toContain("ทดสอบพิมพ์ใบเสร็จ");
@@ -499,16 +499,47 @@ describe("UX/UI regression guards", () => {
   });
 
   it("settings notifications exposes event/channel matrix without secrets", () => {
-    const nav = read("src/app/(dashboard)/settings/SettingsNav.tsx");
+    const layout = read("src/app/(dashboard)/settings/layout.tsx");
     const page = read("src/app/(dashboard)/settings/notifications/page.tsx");
+    const notificationTest = read("src/app/(dashboard)/settings/notifications/NotificationTest.tsx");
+    const visibleCopy = `${page}\n${notificationTest}`;
 
-    expect(nav).toContain("/settings/notifications");
+    expect(layout).toContain("/settings/notifications");
     expect(page).toContain("notifications.manage");
     expect(page).toContain("getPlanFeatures");
     expect(page).toContain("features.lineNotify");
     expect(page).toContain("NOTIFICATION_TYPES");
     expect(page).toContain("NOTIFICATION_CHANNELS");
-    expect(page).toContain("ไม่แสดง token หรือ secret");
+    expect(page).toContain("แสดงเฉพาะช่องทางที่พร้อมใช้งาน");
+    expect(visibleCopy).not.toContain(".env.local");
+    expect(visibleCopy).not.toContain("Token ของ bot");
+    expect(visibleCopy).not.toContain("bot token");
+    expect(visibleCopy).not.toContain("token หรือ secret");
+    expect(visibleCopy).not.toContain("สถานะพร้อมใช้งานของ provider");
+  });
+
+  it("billing QR panel uses the generated quote amount as the visible amount to pay", () => {
+    const source = read("src/app/(dashboard)/settings/billing/BillingManager.tsx");
+
+    expect(source).toContain("paymentQuote");
+    expect(source).toContain("plan: PaidTier");
+    expect(source).toContain("duration: BillingDuration");
+    expect(source).toContain("const requestPlan = selectedPlan");
+    expect(source).toContain("const requestDuration = duration");
+    expect(source).toContain("try {");
+    expect(source).toContain("finally {");
+    expect(source).toContain("setBusy(false)");
+    expect(source).toContain("fd.set(\"plan\", paymentQuote?.plan ?? selectedPlan)");
+    expect(source).toContain("fd.set(\"duration\", paymentQuote?.duration ?? duration)");
+    expect(source).toContain("try {\n      const res = await uploadWithProgress");
+    expect(source).toContain("catch {\n      showError(\"ตรวจสลิปไม่สำเร็จ\");");
+    expect(source).toContain("finally {\n      setUploadPhase(\"idle\");");
+    expect(source).toContain("displayAmount");
+    expect(source).toContain("ยอดที่ต้องโอน");
+    expect(source).toContain("เครดิตจากแพ็กเกจเดิม");
+    expect(source).toContain("promotionLabel");
+    expect(source).toContain("setPaymentQuote(null)");
+    expect(source).toContain("amount: res.amount");
   });
 
   it("public QR ordering is gated by package on page and submit action", () => {
@@ -549,13 +580,57 @@ describe("UX/UI regression guards", () => {
     expect(layout).toContain('can("settings.view")');
   });
 
+  it("settings tabs only expose functions the user can access", () => {
+    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const nav = read("src/app/(dashboard)/settings/SettingsNav.tsx");
+    const team = read("src/app/(dashboard)/settings/team/page.tsx");
+    const tables = read("src/app/(dashboard)/settings/tables/page.tsx");
+    const receipt = read("src/app/(dashboard)/settings/receipt/page.tsx");
+    const buffet = read("src/app/(dashboard)/settings/buffet/page.tsx");
+    const notifications = read("src/app/(dashboard)/settings/notifications/page.tsx");
+
+    expect(layout).toContain("buildSettingsTabs");
+    expect(layout).toContain('resolved.can("settings.manage_store")');
+    expect(layout).toContain('resolved.can("billing.manage")');
+    expect(layout).toContain('resolved.can("notifications.manage")');
+    expect(layout).toContain('resolved.can("users.manage")');
+    expect(layout).toContain("<SettingsNav tabs={settingsTabs}");
+    expect(nav).toContain("tabs: SettingsTab[]");
+    expect(nav).not.toContain("const TABS = [");
+    expect(team).toContain('!resolved.can("users.manage") && !resolved.can("permissions.manage")');
+    expect(tables).toContain('!resolved.can("settings.manage_store")');
+    expect(receipt).toContain('!resolved.can("settings.manage_store")');
+    expect(buffet).toContain('!resolved.can("settings.manage_store")');
+    expect(notifications).toContain('!resolved.can("notifications.manage")');
+  });
+
+  it("lower-than-admin users land on attendance before other functions when clock-in is due", () => {
+    const guards = read("src/modules/auth/guards.ts");
+    const layout = read("src/app/(dashboard)/layout.tsx");
+    const dashboard = read("src/app/(dashboard)/dashboard/page.tsx");
+
+    expect(guards).toContain("shouldStartAtAttendance");
+    expect(guards).toContain("ROLE_RANK[ctx.role] >= ROLE_RANK.admin");
+    expect(guards).toContain(".from(\"attendance_records\")");
+    expect(guards).toContain(".from(\"store_holidays\")");
+    expect(guards).toContain(".from(\"employee_profiles\")");
+    expect(guards).toContain("getStoreLocalDate");
+    expect(guards).toContain('return "/attendance"');
+    expect(layout).toContain("shouldStartAtAttendance");
+    expect(layout).toContain('path !== "/attendance"');
+    expect(dashboard.indexOf("shouldStartAtAttendance")).toBeGreaterThanOrEqual(0);
+    expect(dashboard.indexOf('redirect("/attendance")')).toBeLessThan(
+      dashboard.indexOf("getDashboardData(ctx.storeId)"),
+    );
+  });
+
   it("dashboard KPI queries require dashboard.view before loading sensitive metrics", () => {
     const source = read("src/app/(dashboard)/dashboard/page.tsx");
-    const guardIndex = source.indexOf('resolved.can("dashboard.view")');
+    const guardIndex = source.indexOf("dashboard.view");
     const dashboardQueryIndex = source.indexOf("getDashboardData(ctx.storeId)");
     const cashQueryIndex = source.indexOf("getLatestCashBalance(ctx.storeId)");
 
-    expect(source).toContain('import { getResolvedCurrentPermissions } from "@/modules/auth/guards"');
+    expect(source).toContain("getResolvedCurrentPermissions");
     expect(guardIndex).toBeGreaterThanOrEqual(0);
     expect(dashboardQueryIndex).toBeGreaterThan(guardIndex);
     expect(cashQueryIndex).toBeGreaterThan(guardIndex);

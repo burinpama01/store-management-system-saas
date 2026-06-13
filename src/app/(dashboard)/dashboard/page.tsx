@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import type { CSSProperties } from "react";
-import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { getDashboardData } from "@/modules/reports/repository";
 import { getLatestCashBalance } from "@/modules/accounting/repository";
@@ -12,7 +12,8 @@ function fmt(n: number) {
 }
 
 export default async function DashboardPage() {
-  const { ctx, resolved } = await getResolvedCurrentPermissions();
+  const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+  if (await shouldStartAtAttendance({ user, ctx, resolved })) redirect("/attendance");
   if (!resolved.can("dashboard.view")) {
     const fallback = firstAllowedRoute((permission) => resolved.can(permission));
     if (fallback) redirect(fallback);

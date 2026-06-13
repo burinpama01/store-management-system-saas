@@ -6,8 +6,9 @@ import { requirePermission } from "@/modules/auth/guards";
 import { listProducts } from "@/modules/catalog/repository";
 import { createOrderWithItems, addPaymentAndClose, voidOrder } from "@/modules/pos/order-repository";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
-import { openTableSession, closeTableSession, getStore, listManagedTables } from "@/modules/stores/repository";
+import { openTableSession, closeTableSession, getStore, getTable, listManagedTables } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
+import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import type { Cart } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
@@ -39,6 +40,14 @@ export async function submitOrderAction(
       storeId: ctx.storeId,
       canDiscount,
     });
+    const tableRes = opts?.tableId ? await getTable(opts.tableId, ctx.storeId) : null;
+    if (tableRes?.error) {
+      return { orderId: null, orderNumber: null, error: tableRes.error.userMessage };
+    }
+    if (opts?.tableId && !tableRes?.data) {
+      return { orderId: null, orderNumber: null, error: "ไม่พบโต๊ะนี้ในร้านค้า" };
+    }
+    const buffetSessionId = tableRes?.data?.currentSessionId;
 
     const result = await createOrderWithItems({
       storeId: ctx.storeId,
@@ -52,6 +61,36 @@ export async function submitOrderAction(
     });
 
     if (result.error) return { orderId: null, orderNumber: null, error: result.error.userMessage };
+    if (buffetSessionId) {
+      notifyOwnerSafely({
+        type: "new_buffet_order",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        title: "มีออเดอร์บุฟเฟต์ใหม่",
+        message: `ออเดอร์ ${result.data.orderNumber} ยอด ${result.data.total.toFixed(2)}`,
+        metadata: {
+          orderId: result.data.id,
+          orderNumber: result.data.orderNumber,
+          buffetSessionId,
+          total: result.data.total,
+          source: "pos",
+        },
+      });
+    } else {
+      notifyOwnerSafely({
+        type: "new_pos_order",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        title: "มีออเดอร์ POS ใหม่",
+        message: `ออเดอร์ ${result.data.orderNumber} ยอด ${result.data.total.toFixed(2)}`,
+        metadata: {
+          orderId: result.data.id,
+          orderNumber: result.data.orderNumber,
+          total: result.data.total,
+          source: "pos",
+        },
+      });
+    }
     return { orderId: result.data.id, orderNumber: result.data.orderNumber, error: null };
   } catch (e) {
     return { orderId: null, orderNumber: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -69,6 +108,19 @@ export async function collectPaymentAction(
     const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, payment);
 
     if (result.error) return { error: result.error.userMessage };
+    notifyOwnerSafely({
+      type: "payment",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      title: "ชำระเงินแล้ว",
+      message: `รับชำระเงิน ${result.data.amount.toFixed(2)} ผ่าน ${result.data.method}`,
+      metadata: {
+        orderId,
+        paymentId: result.data.id,
+        amount: result.data.amount,
+        method: result.data.method,
+      },
+    });
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -192,6 +244,17 @@ export async function voidOrderAction(
 
     const result = await voidOrder(orderId, ctx.storeId, user.id, reason);
     if (result.error) return { error: result.error.userMessage };
+    notifyOwnerSafely({
+      type: "order_cancelled",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      title: "มีการยกเลิกออเดอร์",
+      message: `ออเดอร์ ${orderId} ถูกยกเลิก: ${reason || "ไม่ระบุเหตุผล"}`,
+      metadata: {
+        orderId,
+        reason: reason || null,
+      },
+    });
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

@@ -124,19 +124,14 @@ export interface CreateSessionInput {
 
 export async function createBuffetSession(input: CreateSessionInput) {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("buffet_sessions")
-    .insert({
-      organization_id: input.organizationId,
-      store_id: input.storeId,
-      table_id: input.tableId ?? null,
-      package_name: input.packageName,
-      price_per_guest: input.pricePerGuest,
-      guest_count: input.guestCount,
-      status: "open",
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("create_buffet_session_with_table", {
+    p_organization_id: input.organizationId,
+    p_store_id: input.storeId,
+    p_table_id: input.tableId ?? null,
+    p_package_name: input.packageName,
+    p_price_per_guest: input.pricePerGuest,
+    p_guest_count: input.guestCount,
+  });
   if (error) return { data: null, error: mapError(error) };
   return { data: mapSession(data), error: null };
 }
@@ -159,16 +154,10 @@ export async function updateGuestCount(id: string, storeId: string, guestCount: 
 
 export async function closeBuffetSession(id: string, storeId: string) {
   const supabase = await createSupabaseServerClient();
-  const now = new Date().toISOString();
-  // Atomic close: only succeeds if status is still "open".
-  const { data, error } = await supabase
-    .from("buffet_sessions")
-    .update({ status: "closed", ended_at: now })
-    .eq("id", id)
-    .eq("store_id", storeId)
-    .eq("status", "open")
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("close_buffet_session_with_table", {
+    p_session_id: id,
+    p_store_id: storeId,
+  });
   if (error || !data)
     return { data: null, error: mapError(error ?? new Error("ไม่พบเซสชันที่เปิดอยู่")) };
   return { data: mapSession(data), error: null };

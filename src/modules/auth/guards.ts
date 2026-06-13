@@ -13,6 +13,7 @@ import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock, type FeatureK
 import { isOrganizationSuspended } from "@/modules/system/repository";
 import { isPaidTier, isSubscriptionCurrent } from "@/modules/billing/pricing";
 import { headers } from "next/headers";
+import { getStoreLocalDate } from "@/modules/attendance/date";
 
 const ROLE_RANK: Record<Role, number> = {
   super_admin: 6,
@@ -22,6 +23,8 @@ const ROLE_RANK: Record<Role, number> = {
   cashier: 2,
   staff: 1,
 };
+
+const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 export class AuthorizationError extends Error {
   constructor(message: string) {
@@ -156,12 +159,70 @@ export async function isSystemAdmin(): Promise<boolean> {
   return (data?.length ?? 0) > 0;
 }
 
+function weekdayOfStoreDate(date: string): number {
+  return new Date(`${date}T12:00:00Z`).getUTCDay();
+}
+
+export async function shouldStartAtAttendance({
+  user,
+  ctx,
+  resolved,
+}: {
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveCurrentStore>>>;
+  resolved: ResolvedPermissions;
+}): Promise<boolean> {
+  if (ROLE_RANK[ctx.role] >= ROLE_RANK.admin) return false;
+  if (!resolved.can("attendance.clock")) return false;
+
+  const today = getStoreLocalDate(ctx.storeTimezone);
+  const supabase = await createSupabaseServerClient();
+  const [holidayResult, recordResult, profileResult] = await Promise.all([
+    supabase
+      .from("store_holidays")
+      .select("id")
+      .eq("store_id", ctx.storeId)
+      .eq("date", today)
+      .limit(1),
+    supabase
+      .from("attendance_records")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("organization_id", ctx.organizationId)
+      .eq("store_id", ctx.storeId)
+      .eq("date", today)
+      .limit(1),
+    supabase
+      .from("employee_profiles")
+      .select("working_days")
+      .eq("user_id", user.id)
+      .eq("organization_id", ctx.organizationId)
+      .eq("store_id", ctx.storeId)
+      .maybeSingle(),
+  ]);
+
+  if (holidayResult.error || recordResult.error || profileResult.error) return false;
+  if ((holidayResult.data?.length ?? 0) > 0) return false;
+  if ((recordResult.data?.length ?? 0) > 0) return false;
+
+  const workingDays =
+    Array.isArray(profileResult.data?.working_days) && profileResult.data.working_days.length > 0
+      ? profileResult.data.working_days
+      : DEFAULT_WORKING_DAYS;
+
+  return workingDays.includes(weekdayOfStoreDate(today));
+}
+
 /**
  * Where to send a freshly-authenticated user: super_admin operates the platform
  * console (no store dashboard); everyone else goes to the store dashboard.
  */
 export async function landingPathForCurrentUser(): Promise<string> {
-  return (await isSystemAdmin()) ? "/system" : "/dashboard";
+  if (await isSystemAdmin()) return "/system";
+  const permissions = await getOptionalResolvedCurrentPermissions();
+  if (!permissions) return "/login";
+  if (await shouldStartAtAttendance(permissions)) return "/attendance";
+  return "/dashboard";
 }
 
 /**

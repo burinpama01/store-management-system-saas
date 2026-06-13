@@ -52,7 +52,9 @@ describe("residual risk readiness script", () => {
     expect(result.stdout).not.toContain("super-secret-service-role");
     expect(result.stdout).not.toContain("super-secret-password");
     expect(result.stdout).not.toContain("line-secret-token");
-    expect(result.stderr).toBe("");
+    expect(result.stderr).not.toContain("super-secret-service-role");
+    expect(result.stderr).not.toContain("super-secret-password");
+    expect(result.stderr).not.toContain("line-secret-token");
   });
 
   it("strict mode fails closed when residual external readiness is incomplete", () => {

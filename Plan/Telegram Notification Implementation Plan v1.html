@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telegram Notification Implementation Plan v1</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --ink: #182033;
+      --muted: #5c667a;
+      --line: #dce2ea;
+      --brand: #0f766e;
+      --brand-soft: #d9f5ef;
+      --warn: #9a5b00;
+      --warn-soft: #fff3cf;
+      --card: #ffffff;
+    }
+    body {
+      margin: 0;
+      font-family: Arial, "Tahoma", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+    }
+    h1, h2, h3 {
+      margin: 0 0 10px;
+      line-height: 1.2;
+    }
+    h1 {
+      font-size: 34px;
+    }
+    h2 {
+      margin-top: 30px;
+      font-size: 22px;
+    }
+    h3 {
+      font-size: 17px;
+    }
+    p {
+      margin: 0 0 12px;
+    }
+    code {
+      background: #eef2f7;
+      border: 1px solid #dbe3ec;
+      border-radius: 6px;
+      padding: 1px 5px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.94em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-weight: 700;
+      padding: 4px 10px;
+      font-size: 13px;
+    }
+    .warn {
+      background: var(--warn-soft);
+      border-color: #f3d58a;
+      color: var(--warn);
+    }
+    ul, ol {
+      padding-left: 22px;
+      margin: 8px 0 0;
+    }
+    li {
+      margin: 6px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef5f4;
+      color: #123832;
+    }
+    tr:last-child td {
+      border-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="pill">Approved Design · v1 · 2026-06-13</span>
+      <h1>Telegram Notification Implementation Plan</h1>
+      <p>เพิ่ม Telegram notify สำหรับ owner โดยให้ tenant ระบุ chat ID เอง ส่วน bot token อยู่ใน <code>.env.local</code> และห้ามส่งแจ้งเตือนข้าม tenant</p>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Goal</h2>
+        <p>ระบบต้องส่ง Telegram ไปยัง group ของ tenant/owner ตาม <code>organization_id</code> และ <code>store_id</code> ที่ผูกกับ event เท่านั้น</p>
+      </div>
+      <div class="card">
+        <h2>Architecture</h2>
+        <p>ใช้ target ระดับ tenant สำหรับ <code>telegram_chat_id</code> และใช้ <code>notification_settings</code> เดิมเป็น event toggle ระดับ store/channel</p>
+      </div>
+      <div class="card warn">
+        <h2>Safety</h2>
+        <p>ไม่อ่านหรือ expose token จาก <code>.env.local</code>, ไม่ push migration ไป remote DB โดยไม่มี approval, ไม่ให้ client ส่ง chat ID เข้ามาเอง</p>
+      </div>
+    </section>
+
+    <h2>Files</h2>
+    <table>
+      <thead>
+        <tr><th>Path</th><th>Action</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>tests/unit/notifications.test.ts</code></td><td>Modify</td><td>เพิ่ม RED tests สำหรับ Telegram target, chat ID guidance, tenant isolation markers</td></tr>
+        <tr><td><code>src/modules/notifications/types.ts</code></td><td>Modify</td><td>เพิ่ม type สำหรับ Telegram tenant target และ event names ที่ต้องแจ้ง owner</td></tr>
+        <tr><td><code>src/modules/notifications/repository.ts</code></td><td>Modify</td><td>อ่าน/บันทึก chat ID ของ tenant และอ่าน enabled setting ตาม tenant/store/type/channel</td></tr>
+        <tr><td><code>src/modules/notifications/dispatcher.ts</code></td><td>Modify</td><td>resolve target ฝั่ง server แล้วส่ง Telegram Bot API</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/actions.ts</code></td><td>Modify</td><td>server action สำหรับ save chat ID และ test notify</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/page.tsx</code></td><td>Modify</td><td>เพิ่ม instruction: โหลด Telegram, สร้าง group, เพิ่ม <code>@raw_data_bot</code>, copy chat ID, เพิ่ม <code>@store_os_bot</code></td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/NotificationTest.tsx</code></td><td>Modify</td><td>ทดสอบผ่าน server action หรือ API โดยไม่รับ chat ID จาก client</td></tr>
+        <tr><td><code>src/app/pos/actions.ts</code></td><td>Modify</td><td>hook new POS order, payment complete, cancel/void events เท่าที่ action เดิมรองรับ</td></tr>
+        <tr><td><code>src/app/qr/[storeSlug]/[tableId]/actions.ts</code></td><td>Modify</td><td>hook new QR order และ service request ที่ควรแจ้ง owner</td></tr>
+        <tr><td><code>supabase/migrations/*_telegram_notification_targets.sql</code></td><td>Create</td><td>เพิ่มตาราง target พร้อม RLS กันข้าม tenant</td></tr>
+        <tr><td><code>src/server/integrations/supabase/database.types.ts</code></td><td>Modify</td><td>เพิ่ม generated-compatible types แบบ manual ตาม pattern repo</td></tr>
+      </tbody>
+    </table>
+
+    <h2>TDD Tasks</h2>
+    <ol>
+      <li>เพิ่ม test ให้ fail: dispatcher ต้องอ้างถึง <code>TELEGRAM_BOT_TOKEN</code>, <code>sendMessage</code>, และไม่รับ chat ID จาก payload</li>
+      <li>เพิ่ม test ให้ fail: migration ต้องมี table <code>notification_targets</code>, unique <code>organization_id + channel</code>, RLS owner-only, และ policy กัน cross-tenant</li>
+      <li>เพิ่ม test ให้ fail: settings page ต้องมีคำแนะนำ <code>@raw_data_bot</code> และ <code>@store_os_bot</code></li>
+      <li>implement minimal schema/repository/types/actions/page/dispatcher ให้ tests ผ่าน</li>
+      <li>hook event owner notify ใน POS/QR paths โดยใช้ helper ที่ ignore failure เพื่อไม่ทำให้ order/payment ล้ม</li>
+      <li>รัน <code>npm test -- tests/unit/notifications.test.ts</code>, <code>npm run typecheck</code>, และ targeted tests ที่กระทบ POS/QR</li>
+      <li>ส่ง post-change review ด้วย <code>code_reviewer</code> หรือ fallback spawned reviewer ตามกฎ repo</li>
+      <li>บันทึก Obsidian <code>log.md</code>, <code>current.md</code>, <code>log-index.md</code>, และ <code>issue.md</code> ถ้าพบ blocker</li>
+    </ol>
+
+    <h2>Notification Events</h2>
+    <ul>
+      <li><code>new_pos_order</code>: เมื่อสร้าง POS order</li>
+      <li><code>new_qr_order</code>: เมื่อลูกค้าสั่งผ่าน QR</li>
+      <li><code>new_buffet_order</code>: เมื่อ QR/POS order มาจาก buffet session หรือ table session ที่เป็น buffet</li>
+      <li><code>payment</code>: เมื่อชำระเงินสำเร็จ</li>
+      <li><code>order_cancelled</code>: เมื่อ void/cancel/refund เท่าที่ action ปัจจุบันมี</li>
+      <li><code>service_request</code>: เรียกพนักงานหรือ request ที่ควรรู้ทันที</li>
+      <li><code>test</code>: กดทดสอบจาก settings</li>
+    </ul>
+
+    <h2>Verification Gate</h2>
+    <p>ห้ามสรุปว่าเสร็จจนกว่า targeted tests/typecheck ผ่าน, review gate ผ่านหรือมี blocker ที่แจ้งชัด, และบันทึก Obsidian แล้ว</p>
+  </main>
+</body>
+</html>

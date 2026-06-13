@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import type { PermissionKey } from "@/modules/tenants/types";
-import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/modules/auth/guards";
 import { getUserStores } from "@/modules/auth/session";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
@@ -14,6 +15,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (!storeContext) redirect("/login");
   // super_admin is a platform operator with no store dashboard.
   if (storeContext.role === "super_admin") redirect("/system");
+  const path = (await headers()).get("x-pathname") ?? "";
+  if (path !== "/attendance" && (await shouldStartAtAttendance({ user, ctx: storeContext, resolved }))) {
+    redirect("/attendance");
+  }
   const { stores } = await getUserStores();
   const can = (permission: PermissionKey) => resolved.can(permission);
   const navItems = [

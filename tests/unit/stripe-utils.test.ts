@@ -97,8 +97,9 @@ describe("Stripe webhook idempotency", () => {
     expect(route).toContain('assertBillingWrite(await upsertStripeCustomer');
     expect(route).toContain('assertBillingWrite(await setSubscriptionStatus');
     expect(route).toContain("markWebhookEventProcessed(");
-    expect(route).toContain("event.id,\n        processingAttemptId");
+    expect(route).toContain("markWebhookEventProcessed(event.id, processingAttemptId)");
     expect(route).toContain("markWebhookEventFailed(");
+    expect(route).toMatch(/markWebhookEventFailed\([\s\S]*event\.id,[\s\S]*processingAttemptId/);
     expect(service).toContain('.eq("processing_attempt_id", processingAttemptId)');
     expect(service).toContain('.eq("status", "processing")');
   });

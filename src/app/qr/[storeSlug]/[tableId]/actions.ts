@@ -7,6 +7,7 @@ import {
   getPlanFeatures,
 } from "@/modules/billing/types";
 import { generateOrderNumber } from "@/modules/pos/order-number";
+import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import type { SelectedModifier } from "@/modules/pos/types";
 import type { QrOrderView, ServiceRequestType } from "@/modules/qr-ordering/types";
@@ -83,7 +84,7 @@ export async function submitQrOrderAction(
   // Verify table — fetch number from DB, not from client
   const { data: table, error: tableErr } = await supabase
     .from("tables")
-    .select("id, store_id, number, qr_enabled, is_active, session_expires_at")
+    .select("id, store_id, number, qr_enabled, is_active, session_expires_at, current_session_id")
     .eq("id", tableId)
     .single();
   if (tableErr || !table) return { orderId: null, orderNumber: null, error: "Table not found" };
@@ -322,6 +323,40 @@ export async function submitQrOrderAction(
     return { orderId: null, orderNumber: null, error: orderErr?.message ?? "Failed to create order" };
   }
 
+  if (table.current_session_id) {
+    notifyOwnerSafely({
+      type: "new_buffet_order",
+      organizationId: store.organization_id,
+      storeId,
+      title: "มีออเดอร์บุฟเฟต์ใหม่",
+      message: `โต๊ะ ${table.number} ส่งออเดอร์ ${orderNumber} ยอด ${subtotal.toFixed(2)}`,
+      metadata: {
+        orderId,
+        orderNumber,
+        tableId,
+        tableNumber: table.number,
+        total: subtotal,
+        source: "qr",
+      },
+    });
+  } else {
+    notifyOwnerSafely({
+      type: "new_qr_order",
+      organizationId: store.organization_id,
+      storeId,
+      title: "มีออเดอร์ QR ใหม่",
+      message: `โต๊ะ ${table.number} ส่งออเดอร์ ${orderNumber} ยอด ${subtotal.toFixed(2)}`,
+      metadata: {
+        orderId,
+        orderNumber,
+        tableId,
+        tableNumber: table.number,
+        total: subtotal,
+        source: "qr",
+      },
+    });
+  }
+
   return { orderId, orderNumber, error: null };
 }
 
@@ -412,6 +447,17 @@ export async function requestServiceAction(
   if (!store.is_active || !store.qr_ordering_enabled) {
     return { ok: false, error: "QR ordering is disabled for this store" };
   }
+  const { data: table, error: tableErr } = await supabase
+    .from("tables")
+    .select("id, store_id, number, qr_enabled, is_active")
+    .eq("id", tableId)
+    .single();
+  if (tableErr || !table || table.store_id !== storeId) {
+    return { ok: false, error: "Table not found" };
+  }
+  if (!table.is_active || !table.qr_enabled) {
+    return { ok: false, error: "Table is not available for QR ordering" };
+  }
   const billingState =
     (await getOrganizationBillingState(store.organization_id)) ?? DEFAULT_BILLING_STATE;
   if (!getPlanFeatures(billingState).qrOrdering) {
@@ -425,5 +471,19 @@ export async function requestServiceAction(
     p_note: note,
   });
   if (error) return { ok: false, error: error.message };
+  notifyOwnerSafely({
+    type: "service_request",
+    organizationId: store.organization_id,
+    storeId,
+    title: type === "request_bill" ? "ลูกค้าขอเช็คบิล" : "ลูกค้าเรียกพนักงาน",
+    message: `โต๊ะ ${table.number} ${type === "request_bill" ? "ขอเช็คบิล" : "เรียกพนักงาน"}${note ? `: ${note}` : ""}`,
+    metadata: {
+      tableId,
+      tableNumber: table.number,
+      requestType: type,
+      note,
+      source: "qr",
+    },
+  });
   return { ok: true, error: null };
 }

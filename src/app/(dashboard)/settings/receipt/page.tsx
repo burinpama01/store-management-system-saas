@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function ReceiptSettingsPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
   if (!resolved.can("settings.view")) redirect("/dashboard");
+  if (!resolved.can("settings.manage_store")) redirect("/settings/store");
 
   const settingsRes = await getReceiptSettings(ctx.storeId, ctx.organizationId);
   const canEdit = resolved.can("settings.manage_store");

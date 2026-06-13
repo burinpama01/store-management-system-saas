@@ -11,7 +11,7 @@ import {
   type PaidTier,
 } from "@/modules/billing/pricing";
 import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
-import { ProgressBar, QrCode } from "@/shared/components/ui";
+import { ModalDialog, ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
 import { getPaymentQrAction } from "./actions";
 
@@ -28,6 +28,15 @@ const TIER_DESC: Record<PaidTier, string> = {
   standard: "+ บุฟเฟต์, สต็อก, printer ขั้นสูง",
   premium: "+ QR ordering, LINE, GPS, commission",
 };
+
+interface PaymentQuoteView {
+  plan: PaidTier;
+  duration: BillingDuration;
+  amount: number | null;
+  basePrice: number | null;
+  credit: number;
+  promotionLabel: string | null;
+}
 
 function daysLeft(iso: string): number {
   const d = new Date(iso).getTime();
@@ -67,26 +76,55 @@ export function BillingManager({
   const [duration, setDuration] = useState<BillingDuration>("30d");
   const [qr, setQr] = useState<SubscriptionQr | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
+  const [paymentQuote, setPaymentQuote] = useState<PaymentQuoteView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackDialog, setFeedbackDialog] = useState<{ title: string; message: string; tone: "success" | "error" } | null>(null);
   const [result, setResult] = useState<{ status: string; reason: string | null; newExpiry: string | null } | null>(null);
   const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
   const [uploadPercent, setUploadPercent] = useState(0);
 
   const price = prices[selectedPlan][duration];
+  const displayAmount = paymentQuote?.amount ?? price;
+
+  function resetGeneratedPayment() {
+    setQr(null);
+    setAmount(null);
+    setPaymentQuote(null);
+  }
+
+  function showError(message: string) {
+    setError(message);
+    setFeedbackDialog({ title: "ดำเนินการไม่สำเร็จ", message, tone: "error" });
+  }
 
   async function generateQr() {
+    const requestPlan = selectedPlan;
+    const requestDuration = duration;
     setError(null);
     setResult(null);
     setBusy(true);
-    const res = await getPaymentQrAction(selectedPlan, duration);
-    setBusy(false);
-    if (!res.ok) {
-      setError(res.error ?? "สร้าง QR ไม่สำเร็จ");
-      return;
+    try {
+      const res = await getPaymentQrAction(requestPlan, requestDuration);
+      if (!res.ok) {
+        showError(res.error ?? "สร้าง QR ไม่สำเร็จ");
+        return;
+      }
+      setAmount(res.amount);
+      setPaymentQuote({
+        plan: requestPlan,
+        duration: requestDuration,
+        amount: res.amount,
+        basePrice: res.basePrice,
+        credit: res.credit,
+        promotionLabel: res.promotionLabel,
+      });
+      setQr(res.qr);
+    } catch {
+      showError("สร้าง QR ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
     }
-    setAmount(res.amount);
-    setQr(res.qr);
   }
 
   async function handleSlip(file: File) {
@@ -95,38 +133,52 @@ export function BillingManager({
     setUploadPercent(0);
     setUploadPhase("uploading");
     const fd = new FormData();
-    fd.set("plan", selectedPlan);
-    fd.set("duration", duration);
+    fd.set("plan", paymentQuote?.plan ?? selectedPlan);
+    fd.set("duration", paymentQuote?.duration ?? duration);
     fd.set("slip", file);
-    const res = await uploadWithProgress<{
-      ok?: boolean;
-      status?: string;
-      reason?: string | null;
-      newExpiry?: string | null;
-      error?: string;
-    }>("/api/billing/verify-slip", fd, (p) => {
-      setUploadPercent(p);
-      if (p >= 100) setUploadPhase("processing");
-    });
-    setUploadPhase("idle");
-    if (!res.ok || !res.data) {
-      setError(res.data?.error ?? "ตรวจสลิปไม่สำเร็จ");
-      return;
-    }
-    if (res.data.error) {
-      setError(res.data.error);
-      return;
-    }
-    const status = res.data.status ?? "rejected";
-    setResult({
-      status,
-      reason: res.data.reason ?? null,
-      newExpiry: res.data.newExpiry ?? null,
-    });
-    // Refresh server data so the current-plan panel reflects the new subscription.
-    if (status === "verified") {
-      setQr(null);
-      router.refresh();
+    try {
+      const res = await uploadWithProgress<{
+        ok?: boolean;
+        status?: string;
+        reason?: string | null;
+        newExpiry?: string | null;
+        error?: string;
+      }>("/api/billing/verify-slip", fd, (p) => {
+        setUploadPercent(p);
+        if (p >= 100) setUploadPhase("processing");
+      });
+      if (!res.ok || !res.data) {
+        showError(res.data?.error ?? "ตรวจสลิปไม่สำเร็จ");
+        return;
+      }
+      if (res.data.error) {
+        showError(res.data.error);
+        return;
+      }
+      const status = res.data.status ?? "rejected";
+      setResult({
+        status,
+        reason: res.data.reason ?? null,
+        newExpiry: res.data.newExpiry ?? null,
+      });
+      setFeedbackDialog({
+        title: status === "verified" ? "ยืนยันการชำระเงินสำเร็จ" : "ตรวจสลิปไม่ผ่าน",
+        message: status === "verified"
+          ? `ยืนยันการชำระเงินสำเร็จ ใช้งานได้ถึง ${formatDate(res.data.newExpiry ?? null)}`
+          : status === "duplicate"
+            ? "สลิปนี้ถูกใช้ไปแล้ว"
+            : `ตรวจสลิปไม่ผ่าน: ${res.data.reason ?? ""}`,
+        tone: status === "verified" ? "success" : "error",
+      });
+      // Refresh server data so the current-plan panel reflects the new subscription.
+      if (status === "verified") {
+        resetGeneratedPayment();
+        router.refresh();
+      }
+    } catch {
+      showError("ตรวจสลิปไม่สำเร็จ");
+    } finally {
+      setUploadPhase("idle");
     }
   }
 
@@ -194,12 +246,13 @@ export function BillingManager({
               <button
                 key={t}
                 type="button"
-                onClick={() => { setSelectedPlan(t); setQr(null); }}
+                disabled={busy}
+                onClick={() => { setSelectedPlan(t); resetGeneratedPayment(); }}
                 className={`rounded-[var(--radius-lg)] border p-4 text-left ${
                   selectedPlan === t
                     ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)]"
                     : "border-[var(--border)] bg-[var(--surface-muted)]"
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[t]}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">{TIER_DESC[t]}</p>
@@ -215,18 +268,52 @@ export function BillingManager({
               <button
                 key={d}
                 type="button"
-                onClick={() => { setDuration(d); setQr(null); }}
+                disabled={busy}
+                onClick={() => { setDuration(d); resetGeneratedPayment(); }}
                 className={`min-h-11 rounded-md px-4 text-sm font-bold ${
                   duration === d ? "btn-primary" : "btn-secondary"
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 {DURATION_LABELS[d]}
               </button>
             ))}
-            <span className="ml-auto text-lg font-extrabold text-[var(--tenant-primary-strong)]">
-              {price.toLocaleString()} บาท
-            </span>
+            <div className="ml-auto text-right">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">
+                {paymentQuote ? "ยอดที่ต้องโอน" : "ราคาแพ็กเกจ"}
+              </p>
+              <p className="text-lg font-extrabold text-[var(--tenant-primary-strong)]">
+                {displayAmount.toLocaleString()} บาท
+              </p>
+            </div>
           </div>
+
+          {paymentQuote && (
+            <div className="mt-3 rounded-md border border-[var(--border)] bg-white p-3 text-sm">
+              <p className="font-bold text-[var(--ink)]">ยอดที่ต้องโอนตรงกับ QR ด้านล่าง</p>
+              <dl className="mt-2 grid gap-2 text-xs text-[var(--muted)] sm:grid-cols-2">
+                <div className="flex justify-between gap-3">
+                  <dt>ราคาแพ็กเกจ</dt>
+                  <dd className="font-bold text-[var(--ink)]">{(paymentQuote.basePrice ?? price).toLocaleString()} บาท</dd>
+                </div>
+                {paymentQuote.promotionLabel && (
+                  <div className="flex justify-between gap-3">
+                    <dt>โปรโมชัน</dt>
+                    <dd className="font-bold text-[var(--tenant-primary-strong)]">{paymentQuote.promotionLabel}</dd>
+                  </div>
+                )}
+                {paymentQuote.credit > 0 && (
+                  <div className="flex justify-between gap-3">
+                    <dt>เครดิตจากแพ็กเกจเดิม</dt>
+                    <dd className="font-bold text-emerald-700">-{paymentQuote.credit.toLocaleString()} บาท</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-3">
+                  <dt>ยอดที่ต้องโอน</dt>
+                  <dd className="font-bold text-[var(--tenant-primary-strong)]">{displayAmount.toLocaleString()} บาท</dd>
+                </div>
+              </dl>
+            </div>
+          )}
 
           <button
             type="button"
@@ -295,6 +382,31 @@ export function BillingManager({
             </div>
           )}
         </section>
+      )}
+
+      {feedbackDialog && (
+        <ModalDialog
+          open
+          title={feedbackDialog.title}
+          onClose={() => setFeedbackDialog(null)}
+          size="sm"
+        >
+          <div
+            role="alert"
+            className={`rounded-md border px-3 py-2 text-sm ${
+              feedbackDialog.tone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            {feedbackDialog.message}
+          </div>
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setFeedbackDialog(null)} className="btn-secondary text-xs">
+              ปิด
+            </button>
+          </div>
+        </ModalDialog>
       )}
     </div>
   );

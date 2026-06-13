@@ -3,22 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const TABS = [
-  { href: "/settings/store", label: "ร้านค้า" },
-  { href: "/settings/team", label: "ทีมงาน" },
-  { href: "/settings/tables", label: "โต๊ะ & QR" },
-  { href: "/settings/receipt", label: "ใบเสร็จ" },
-  { href: "/settings/buffet", label: "บุฟเฟต์" },
-  { href: "/settings/billing", label: "แพ็กเกจ" },
-  { href: "/settings/notifications", label: "Notifications" },
-];
+export interface SettingsTab {
+  href: string;
+  label: string;
+}
 
-export function SettingsNav() {
+export function SettingsNav({ tabs }: { tabs: SettingsTab[] }) {
   const pathname = usePathname();
   return (
     <div className="mb-5">
       <nav className="panel-muted flex gap-1 overflow-x-auto p-1">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <Link
             key={tab.href}
             href={tab.href}

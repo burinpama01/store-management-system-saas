@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { computeDayStatuses, type DayStatus } from "@/modules/attendance/calendar";
 import type { AttendanceRecord } from "@/modules/attendance/types";
 
@@ -84,15 +86,13 @@ describe("computeDayStatuses (attendance calendar)", () => {
 
 describe("store_holidays migration + admin gate", () => {
   it("owner/admin-only RLS + actions enforce settings.manage_store", () => {
-    const fs = require("node:fs");
-    const path = require("node:path");
     const root = process.cwd();
-    const mig = fs.readFileSync(path.join(root, "supabase/migrations/20260607000007_store_holidays.sql"), "utf8");
+    const mig = readFileSync(join(root, "supabase/migrations/20260607000007_store_holidays.sql"), "utf8");
     expect(mig).toContain("create table if not exists store_holidays");
     expect(mig).toContain("store_holidays: admin+ can write");
     expect(mig).toContain("auth_user_role_in_store(organization_id, store_id, 'admin')");
 
-    const actions = fs.readFileSync(path.join(root, "src/app/(dashboard)/attendance/actions.ts"), "utf8");
+    const actions = readFileSync(join(root, "src/app/(dashboard)/attendance/actions.ts"), "utf8");
     expect(actions).toContain("addHolidayAction");
     expect(actions).toContain('requirePermission("settings.manage_store")');
   });

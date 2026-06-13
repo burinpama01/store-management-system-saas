@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function BuffetSettingsPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
   if (!resolved.can("settings.view")) redirect("/dashboard");
+  if (!resolved.can("settings.manage_store")) redirect("/settings/store");
 
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;

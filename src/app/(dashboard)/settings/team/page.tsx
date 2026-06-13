@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function TeamSettingsPage() {
   const { user, ctx, resolved } = await getResolvedCurrentPermissions();
   if (!resolved.can("settings.view")) redirect("/dashboard");
+  if (!resolved.can("users.manage") && !resolved.can("permissions.manage")) redirect("/settings/store");
 
   const membersRes = await listStoreMemberships(ctx.organizationId, ctx.storeId);
 
