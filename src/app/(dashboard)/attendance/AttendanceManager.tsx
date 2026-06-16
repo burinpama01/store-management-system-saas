@@ -14,10 +14,13 @@ import {
   selfBackdatedClockAction,
   addHolidayAction,
   deleteHolidayAction,
+  addEmployeeLeaveAction,
+  deleteEmployeeLeaveAction,
 } from "./actions";
 import { AttendanceCalendar } from "./AttendanceCalendar";
 import type { DayStatus } from "@/modules/attendance/calendar";
 import type { StoreHoliday } from "@/modules/attendance/repository";
+import type { PayrollAdjustment } from "@/modules/hr/types";
 
 interface Props {
   todayRecord: AttendanceRecord | null;
@@ -40,6 +43,7 @@ interface Props {
   holidays: StoreHoliday[];
   holidayDates: string[];
   canManageHolidays: boolean;
+  leaveAdjustments: PayrollAdjustment[];
 }
 
 /** Convert an ISO timestamp to a value for <input type="datetime-local"> in local time. */
@@ -112,6 +116,7 @@ export function AttendanceManager({
   holidays,
   holidayDates,
   canManageHolidays,
+  leaveAdjustments,
 }: Props) {
   const router = useRouter();
   const [selfBackdateOpen, setSelfBackdateOpen] = useState(false);
@@ -124,17 +129,25 @@ export function AttendanceManager({
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AttendanceRecord | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [isEditing, startEditTransition] = useTransition();
 
-  function runEdit(action: () => Promise<{ error: string | null }>, onOk: () => void) {
+  function runEdit(
+    action: () => Promise<{ error: string | null }>,
+    onOk: () => void,
+    successMessage: string,
+  ) {
     setEditError(null);
+    setActionNotice(null);
     startEditTransition(async () => {
       const res = await action();
-      if (res.error) setEditError(res.error);
-      else {
-        onOk();
-        router.refresh();
+      if (res.error) {
+        setEditError(res.error);
+        return;
       }
+      onOk();
+      setActionNotice(successMessage);
+      router.refresh();
     });
   }
 
@@ -144,6 +157,7 @@ export function AttendanceManager({
   async function handleClockIn() {
     setClocking(true);
     setClockError(null);
+    setActionNotice(null);
     const gps = canUseGps ? await getGps() : {};
     const fd = new FormData();
     if (gps.lat !== undefined) fd.append("lat", String(gps.lat));
@@ -155,12 +169,14 @@ export function AttendanceManager({
       setClockError(result.error);
       return;
     }
+    setActionNotice("ลงชื่อเข้างานแล้ว");
     router.refresh();
   }
 
   async function handleClockOut() {
     setClocking(true);
     setClockError(null);
+    setActionNotice(null);
     const gps = canUseGps ? await getGps() : {};
     const fd = new FormData();
     if (gps.lat !== undefined) fd.append("lat", String(gps.lat));
@@ -172,10 +188,13 @@ export function AttendanceManager({
       setClockError(result.error);
       return;
     }
+    setActionNotice("ลงชื่อออกงานแล้ว");
     router.refresh();
   }
 
   function handleFilter() {
+    setEditError(null);
+    setActionNotice(`กรองช่วงวันที่ ${filterFrom} – ${filterTo} แล้ว`);
     router.push(`/attendance?dateFrom=${filterFrom}&dateTo=${filterTo}`);
   }
 
@@ -193,6 +212,17 @@ export function AttendanceManager({
           <p className="page-kicker">ลงเวลาเข้า-ออกงาน และดูสรุปชั่วโมงทำงาน</p>
         </div>
       </div>
+
+      {actionNotice && (
+        <p className="alert-success" aria-live="polite">
+          {actionNotice}
+        </p>
+      )}
+      {editError && (
+        <p className="alert-danger" role="alert">
+          {editError}
+        </p>
+      )}
 
       {/* Alert: ยังไม่ได้เข้างานวันนี้ */}
       {!todayRecord && (
@@ -236,7 +266,7 @@ export function AttendanceManager({
           </p>
         )}
 
-        {clockError && <p className="alert-danger mb-3">{clockError}</p>}
+        {clockError && <p className="alert-danger mb-3" role="alert">{clockError}</p>}
 
         {!isClockedIn && !isClockedOut && (
           <button onClick={handleClockIn} disabled={clocking} className="btn-primary w-full disabled:opacity-40">
@@ -262,7 +292,12 @@ export function AttendanceManager({
 
         <div className="mt-3 border-t border-[var(--border)] pt-3">
           <button
-            onClick={() => { setClockError(null); setSelfBackdateOpen(true); }}
+            onClick={() => {
+              setClockError(null);
+              setEditError(null);
+              setActionNotice("เปิดฟอร์มลงเวลาย้อนหลังแล้ว");
+              setSelfBackdateOpen(true);
+            }}
             disabled={backdatedUsed >= backdatedRights}
             className="btn-secondary w-full text-sm disabled:opacity-40"
           >
@@ -290,7 +325,7 @@ export function AttendanceManager({
           <p className="text-xs text-gray-500">เฉพาะเจ้าของ/แอดมิน — วันหยุดจะแสดงบนปฏิทินและไม่นับเป็นขาดงาน</p>
           {editError && <p className="mt-2 text-xs text-red-600">{editError}</p>}
           <form
-            action={(fd) => runEdit(() => addHolidayAction(fd), () => {})}
+            action={(fd) => runEdit(() => addHolidayAction(fd), () => {}, "เพิ่มวันหยุดร้านแล้ว")}
             className="mt-3 flex flex-wrap items-end gap-2"
           >
             <label className="text-xs font-medium text-gray-600">
@@ -311,7 +346,7 @@ export function AttendanceManager({
                     <span className="font-medium">{h.date}</span>{h.name ? ` · ${h.name}` : ""}
                   </span>
                   <button
-                    onClick={() => runEdit(() => deleteHolidayAction(h.id), () => {})}
+                    onClick={() => runEdit(() => deleteHolidayAction(h.id), () => {}, "ลบวันหยุดร้านแล้ว")}
                     disabled={isEditing}
                     className="text-xs text-red-500 hover:underline"
                   >
@@ -327,6 +362,82 @@ export function AttendanceManager({
       {/* Manage sections — visible to attendance.manage only */}
       {canManage && (
         <>
+          <section className="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl">
+            <h2 className="text-sm font-semibold text-gray-900">วันหยุดพนักงาน</h2>
+            <p className="text-xs text-gray-500">
+              ระบุวันลา/วันหยุดเฉพาะพนักงาน รายการนี้จะแสดงบนปฏิทินและไม่นับเป็นขาดงาน
+            </p>
+            <form
+              action={(fd) => runEdit(() => addEmployeeLeaveAction(fd), () => {}, "เพิ่มวันหยุดพนักงานแล้ว")}
+              className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1.4fr_auto]"
+            >
+              <label className="text-xs font-medium text-gray-600">
+                วันที่
+                <input
+                  name="date"
+                  type="date"
+                  defaultValue={today}
+                  required
+                  className="mt-1 block w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                />
+              </label>
+              <label className="text-xs font-medium text-gray-600">
+                พนักงาน
+                <select
+                  name="userId"
+                  required
+                  className="mt-1 block w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                  onChange={(e) => {
+                    const opt = e.target.selectedOptions[0];
+                    const hidden = e.currentTarget.form?.elements.namedItem("employeeName") as HTMLInputElement | null;
+                    if (hidden) hidden.value = opt?.dataset.name ?? "";
+                  }}
+                >
+                  <option value="">— เลือก —</option>
+                  {members.map((m) => (
+                    <option key={m.userId} value={m.userId} data-name={m.name}>{m.name}</option>
+                  ))}
+                </select>
+              </label>
+              <input type="hidden" name="employeeName" />
+              <label className="text-xs font-medium text-gray-600">
+                หมายเหตุ (ไม่บังคับ)
+                <input
+                  name="note"
+                  maxLength={200}
+                  placeholder="เช่น ลาพักร้อน"
+                  className="mt-1 block w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                />
+              </label>
+              <button type="submit" disabled={isEditing} className="btn-primary min-h-11 self-end px-4 text-sm">
+                {isEditing ? "กำลังบันทึก..." : "เพิ่มวันหยุดพนักงาน"}
+              </button>
+            </form>
+            {leaveAdjustments.length > 0 ? (
+              <ul className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
+                {leaveAdjustments.map((leave) => (
+                  <li key={leave.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                    <span className="text-gray-700">
+                      <span className="font-medium">{leave.date}</span> · {leave.employeeName}
+                      {leave.note ? <span className="text-gray-500"> · {leave.note}</span> : null}
+                    </span>
+                    <button
+                      onClick={() => runEdit(() => deleteEmployeeLeaveAction(leave.id), () => {}, "ลบวันหยุดพนักงานแล้ว")}
+                      disabled={isEditing}
+                      className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                    >
+                      ลบ
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                ยังไม่มีวันหยุดพนักงานในช่วงวันที่นี้
+              </p>
+            )}
+          </section>
+
           {canUseGps && (
             <>
               <section className="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl">
@@ -337,7 +448,11 @@ export function AttendanceManager({
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAttendanceSettingsDialogOpen(true)}
+                    onClick={() => {
+                      setEditError(null);
+                      setActionNotice("เปิดหน้าต่างแก้ไข GPS เข้างานแล้ว");
+                      setAttendanceSettingsDialogOpen(true);
+                    }}
                     className="px-3 py-1.5 text-sm bg-gray-900 text-white rounded hover:bg-gray-700 transition-colors"
                   >
                     แก้ไข GPS เข้างาน
@@ -368,6 +483,7 @@ export function AttendanceManager({
               {attendanceSettingsDialogOpen && (
                 <AttendanceSettingsDialog
                   attendanceSettings={attendanceSettings}
+                  onSaved={() => setActionNotice("บันทึกการตั้งค่า GPS เข้างานแล้ว")}
                   onClose={() => setAttendanceSettingsDialogOpen(false)}
                 />
               )}
@@ -464,7 +580,13 @@ export function AttendanceManager({
           )}
 
           {/* Attendance calendar (#5) */}
-          <AttendanceCalendar records={records ?? []} month={dateFrom.slice(0, 7)} employees={members} holidayDates={holidayDates} />
+          <AttendanceCalendar
+            records={records ?? []}
+            month={dateFrom.slice(0, 7)}
+            employees={members}
+            holidayDates={holidayDates}
+            employeeLeaveDates={leaveAdjustments}
+          />
 
           {/* Attendance records */}
           <div>
@@ -473,7 +595,11 @@ export function AttendanceManager({
                 รายการเข้า-ออกงาน ({records?.length ?? 0} รายการ)
               </h2>
               <button
-                onClick={() => { setEditError(null); setAddOpen(true); }}
+                onClick={() => {
+                  setEditError(null);
+                  setActionNotice("เปิดฟอร์มเพิ่มบันทึกย้อนหลังแล้ว");
+                  setAddOpen(true);
+                }}
                 className="btn-secondary min-h-9 px-3 text-xs"
               >
                 + เพิ่มย้อนหลัง
@@ -538,13 +664,17 @@ export function AttendanceManager({
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           <button
-                            onClick={() => { setEditError(null); setEditTarget(r); }}
+                            onClick={() => {
+                              setEditError(null);
+                              setActionNotice("เปิดฟอร์มแก้ไขรายการเข้า-ออกงานแล้ว");
+                              setEditTarget(r);
+                            }}
                             className="text-xs text-blue-600 hover:underline"
                           >
                             แก้ไข
                           </button>
                           <button
-                            onClick={() => runEdit(() => deleteAttendanceAction(r.id), () => {})}
+                            onClick={() => runEdit(() => deleteAttendanceAction(r.id), () => {}, "ลบรายการเข้า-ออกงานแล้ว")}
                             disabled={isEditing}
                             className="ml-2 text-xs text-red-500 hover:underline disabled:opacity-40"
                           >
@@ -563,7 +693,7 @@ export function AttendanceManager({
           {addOpen && (
             <ModalDialog open title="เพิ่มบันทึกเวลาย้อนหลัง" onClose={() => setAddOpen(false)} size="md">
               <form
-                action={(fd) => runEdit(() => addManualAttendanceAction(fd), () => setAddOpen(false))}
+                action={(fd) => runEdit(() => addManualAttendanceAction(fd), () => setAddOpen(false), "เพิ่มบันทึกเวลาย้อนหลังแล้ว")}
                 className="space-y-3"
               >
                 <label className="block text-xs font-medium text-gray-600">
@@ -615,7 +745,7 @@ export function AttendanceManager({
           {editTarget && (
             <ModalDialog open title={`แก้ไขเวลา · ${editTarget.employeeName}`} onClose={() => setEditTarget(null)} size="md">
               <form
-                action={(fd) => runEdit(() => adjustAttendanceAction(fd), () => setEditTarget(null))}
+                action={(fd) => runEdit(() => adjustAttendanceAction(fd), () => setEditTarget(null), "บันทึกการแก้ไขเวลาแล้ว")}
                 className="space-y-3"
               >
                 <input type="hidden" name="id" value={editTarget.id} />
@@ -647,7 +777,7 @@ export function AttendanceManager({
       {selfBackdateOpen && (
         <ModalDialog open title="ลงเวลาย้อนหลัง" onClose={() => setSelfBackdateOpen(false)} size="md">
           <form
-            action={(fd) => runEdit(() => selfBackdatedClockAction(fd), () => setSelfBackdateOpen(false))}
+            action={(fd) => runEdit(() => selfBackdatedClockAction(fd), () => setSelfBackdateOpen(false), "ลงเวลาย้อนหลังแล้ว")}
             className="space-y-3"
           >
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -693,15 +823,20 @@ function AttendanceInfo({ label, value }: { label: string; value: string }) {
 
 function AttendanceSettingsDialog({
   attendanceSettings,
+  onSaved,
   onClose,
 }: {
   attendanceSettings: AttendanceSettings | null;
+  onSaved: () => void;
   onClose: () => void;
 }) {
   const [settingsState, settingsAction, settingsPending] = useActionState(
     async (prev: { error: string | null; success?: boolean }, fd: FormData) => {
       const result = await saveAttendanceSettingsAction(prev, fd);
-      if (!result.error) onClose();
+      if (!result.error) {
+        onSaved();
+        onClose();
+      }
       return result;
     },
     { error: null, success: false },
@@ -711,15 +846,20 @@ function AttendanceSettingsDialog({
   const [lng, setLng] = useState(attendanceSettings?.geofenceCenterLng?.toString() ?? "");
   const [radius, setRadius] = useState(attendanceSettings?.geofenceRadiusMeters?.toString() ?? "100");
   const [locating, setLocating] = useState(false);
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
 
   async function useCurrentLocation() {
     setLocating(true);
+    setSettingsNotice(null);
     const g = await getGps();
     setLocating(false);
     if (g.lat !== undefined && g.lng !== undefined) {
       setLat(g.lat.toFixed(6));
       setLng(g.lng.toFixed(6));
+      setSettingsNotice("ใช้ตำแหน่งปัจจุบันแล้ว");
+      return;
     }
+    setSettingsNotice("ไม่สามารถอ่านตำแหน่งปัจจุบันได้");
   }
 
   return (
@@ -757,6 +897,11 @@ function AttendanceSettingsDialog({
           <p className="text-xs text-gray-500">
             คลิกบนแผนที่เพื่อปักหมุดตำแหน่งร้าน หรือกดปุ่มด้านบนเพื่อใช้ตำแหน่งปัจจุบัน · วงสีเขียว = รัศมีเข้างาน
           </p>
+          {settingsNotice && (
+            <p className="text-xs text-emerald-700" aria-live="polite">
+              {settingsNotice}
+            </p>
+          )}
           <MapPicker
             lat={lat ? parseFloat(lat) : null}
             lng={lng ? parseFloat(lng) : null}

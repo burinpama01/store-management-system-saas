@@ -22,7 +22,12 @@ import {
   addStoreHoliday,
   deleteStoreHoliday,
 } from "@/modules/attendance/repository";
-import { getStoreHrSettings } from "@/modules/hr/repository";
+import {
+  addPayrollAdjustment,
+  deletePayrollAdjustment,
+  getStoreHrSettings,
+} from "@/modules/hr/repository";
+import { listStoreMemberships } from "@/modules/settings/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
@@ -233,6 +238,26 @@ function parseLocalDateTime(raw: unknown): string | null {
   return new Date(t).toISOString();
 }
 
+function revalidateAttendancePayrollPaths() {
+  revalidatePath("/attendance", "page");
+  revalidatePath("/staff", "page");
+  revalidatePath("/payslip", "page");
+}
+
+async function resolveManagedAttendanceMember(
+  organizationId: string,
+  storeId: string,
+  userId: string,
+): Promise<{ employeeName: string | null; error: string | null }> {
+  const members = await listStoreMemberships(organizationId, storeId);
+  if (members.error) return { employeeName: null, error: members.error.userMessage };
+
+  const member = (members.data ?? []).find((m) => m.userId === userId && m.role !== "super_admin");
+  if (!member) return { employeeName: null, error: "ไม่พบพนักงานในร้านนี้" };
+
+  return { employeeName: member.email.slice(0, 100), error: null };
+}
+
 export async function addManualAttendanceAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.manage");
@@ -240,7 +265,8 @@ export async function addManualAttendanceAction(formData: FormData): Promise<{ e
 
     const userId = String(formData.get("userId") ?? "");
     if (!UUID_RE.test(userId)) return { error: "พนักงานไม่ถูกต้อง" };
-    const employeeName = String(formData.get("employeeName") ?? "").trim().slice(0, 100) || userId;
+    const member = await resolveManagedAttendanceMember(ctx.organizationId, ctx.storeId, userId);
+    if (member.error || !member.employeeName) return { error: member.error ?? "พนักงานไม่ถูกต้อง" };
     const date = String(formData.get("date") ?? "").trim();
     if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
 
@@ -258,7 +284,7 @@ export async function addManualAttendanceAction(formData: FormData): Promise<{ e
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       userId,
-      employeeName,
+      employeeName: member.employeeName,
       date,
       clockInAt,
       clockOutAt,
@@ -345,6 +371,57 @@ export async function selfBackdatedClockAction(formData: FormData): Promise<{ er
     });
     if (result.error) return { error: result.error.userMessage };
     revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+// --- Employee holidays / leave days (manager) ---
+
+export async function addEmployeeLeaveAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { user, ctx } = await getStoreContext();
+
+    const userId = String(formData.get("userId") ?? "");
+    if (!UUID_RE.test(userId)) return { error: "พนักงานไม่ถูกต้อง" };
+    const member = await resolveManagedAttendanceMember(ctx.organizationId, ctx.storeId, userId);
+    if (member.error || !member.employeeName) return { error: member.error ?? "พนักงานไม่ถูกต้อง" };
+    const date = String(formData.get("date") ?? "").trim();
+    if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
+    const note = (String(formData.get("note") ?? "")).trim().slice(0, 200) || "วันหยุดพนักงาน";
+
+    const result = await addPayrollAdjustment({
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      userId,
+      employeeName: member.employeeName,
+      date,
+      type: "leave",
+      amount: 0,
+      note,
+      createdByUserId: user.id,
+    });
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidateAttendancePayrollPaths();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function deleteEmployeeLeaveAction(id: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(id)) return { error: "รายการไม่ถูกต้อง" };
+
+    const result = await deletePayrollAdjustment(id, ctx.storeId, "leave");
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidateAttendancePayrollPaths();
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

@@ -30,6 +30,8 @@ interface Props {
   dayStatus?: Record<string, DayStatus>;
   /** Team mode: dates to shade as store holidays. */
   holidayDates?: string[];
+  /** Team mode: per-employee leave/holiday dates from payroll adjustments. */
+  employeeLeaveDates?: { date: string; userId: string; employeeName: string; note?: string }[];
 }
 
 export function AttendanceCalendar({
@@ -39,6 +41,7 @@ export function AttendanceCalendar({
   title = "ปฏิทินการเข้างาน",
   dayStatus,
   holidayDates,
+  employeeLeaveDates,
 }: Props) {
   const [filterUser, setFilterUser] = useState<string>("");
   const personal = !!dayStatus;
@@ -59,6 +62,18 @@ export function AttendanceCalendar({
     }
     return map;
   }, [records, month, filterUser]);
+
+  const leaveByDate = useMemo(() => {
+    const map = new Map<string, NonNullable<Props["employeeLeaveDates"]>>();
+    for (const leave of employeeLeaveDates ?? []) {
+      if (!leave.date.startsWith(month)) continue;
+      if (filterUser && leave.userId !== filterUser) continue;
+      const next = map.get(leave.date) ?? [];
+      next.push(leave);
+      map.set(leave.date, next);
+    }
+    return map;
+  }, [employeeLeaveDates, month, filterUser]);
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startWeekday; i++) cells.push(null);
@@ -93,11 +108,19 @@ export function AttendanceCalendar({
             const status = dayStatus?.[date];
             const meta = status && status !== "off" ? STATUS_META[status] : null;
             const isHoliday = !personal && holidaySet.has(date);
+            const leaves = !personal ? leaveByDate.get(date) ?? [] : [];
+            const hasEmployeeLeave = leaves.length > 0;
             return (
               <div
                 key={date}
                 className={`min-h-[64px] rounded border p-1 align-top ${
-                  meta ? meta.cell : isHoliday ? "bg-gray-100 border-gray-200" : "border-gray-100"
+                  meta
+                    ? meta.cell
+                    : isHoliday
+                      ? "bg-gray-100 border-gray-200"
+                      : hasEmployeeLeave
+                        ? "bg-blue-50 border-blue-200"
+                        : "border-gray-100"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -109,6 +132,9 @@ export function AttendanceCalendar({
                     </span>
                   )}
                   {!personal && isHoliday && <span className="text-[10px] text-gray-500">หยุด</span>}
+                  {!personal && !isHoliday && hasEmployeeLeave && (
+                    <span className="text-[10px] text-blue-600">ลา</span>
+                  )}
                 </div>
                 <div className="space-y-0.5">
                   {recs.slice(0, personal ? 1 : 3).map((r) => (
@@ -122,7 +148,17 @@ export function AttendanceCalendar({
                         : `• ${r.employeeName.split("@")[0].slice(0, 8)}`}
                     </p>
                   ))}
+                  {!personal && leaves.slice(0, 2).map((leave) => (
+                    <p
+                      key={`${leave.userId}-${leave.date}`}
+                      className="truncate text-[10px] leading-tight text-blue-700"
+                      title={`${leave.employeeName} วันหยุดพนักงาน${leave.note ? ` · ${leave.note}` : ""}`}
+                    >
+                      ลา {leave.employeeName.split("@")[0].slice(0, 8)}
+                    </p>
+                  ))}
                   {!personal && recs.length > 3 && <p className="text-[10px] text-gray-400">+{recs.length - 3}</p>}
+                  {!personal && leaves.length > 2 && <p className="text-[10px] text-blue-500">+{leaves.length - 2} ลา</p>}
                 </div>
               </div>
             );
@@ -147,6 +183,9 @@ export function AttendanceCalendar({
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block h-2 w-2 rounded-sm bg-gray-300" /> วันหยุดร้าน
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-sm bg-blue-300" /> วันหยุดพนักงาน
           </span>
         </div>
       )}

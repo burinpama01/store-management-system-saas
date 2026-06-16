@@ -239,14 +239,17 @@ export async function addPayrollAdjustment(input: AddAdjustmentInput) {
   return { ok: true, error: null };
 }
 
-export async function deletePayrollAdjustment(id: string, storeId: string) {
+export async function deletePayrollAdjustment(id: string, storeId: string, type?: AdjustmentType) {
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  let query = supabase
     .from("payroll_adjustments")
-    .delete()
+    .delete({ count: "exact" })
     .eq("id", id)
     .eq("store_id", storeId);
+  if (type) query = query.eq("type", type);
+  const { error, count } = await query;
   if (error) return { ok: false, error: mapError(error) };
+  if (count === 0) return { ok: false, error: mapError(new Error("ไม่พบรายการที่ต้องลบ")) };
   return { ok: true, error: null };
 }
 

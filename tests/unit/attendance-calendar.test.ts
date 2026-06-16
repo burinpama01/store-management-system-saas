@@ -97,3 +97,34 @@ describe("store_holidays migration + admin gate", () => {
     expect(actions).toContain('requirePermission("settings.manage_store")');
   });
 });
+
+describe("attendance manager employee leave and feedback UX", () => {
+  it("wires employee leave controls through attendance page/actions and shows visible button feedback", () => {
+    const root = process.cwd();
+    const manager = readFileSync(join(root, "src/app/(dashboard)/attendance/AttendanceManager.tsx"), "utf8");
+    const actions = readFileSync(join(root, "src/app/(dashboard)/attendance/actions.ts"), "utf8");
+    const page = readFileSync(join(root, "src/app/(dashboard)/attendance/page.tsx"), "utf8");
+    const calendar = readFileSync(join(root, "src/app/(dashboard)/attendance/AttendanceCalendar.tsx"), "utf8");
+
+    expect(page).toContain("listPayrollAdjustments");
+    expect(page).toContain("leaveAdjustments={leaveAdjustments}");
+
+    expect(actions).toContain("addEmployeeLeaveAction");
+    expect(actions).toContain("deleteEmployeeLeaveAction");
+    expect(actions).toContain('type: "leave"');
+    expect(actions).toContain("amount: 0");
+
+    expect(manager).toContain("actionNotice");
+    expect(manager).toContain('aria-live="polite"');
+    expect(manager).toContain("วันหยุดพนักงาน");
+    expect(manager).toContain("addEmployeeLeaveAction");
+    expect(manager).toContain("deleteEmployeeLeaveAction");
+    expect(manager).toContain("employeeLeaveDates={leaveAdjustments}");
+    expect(manager).toContain("เพิ่มวันหยุดพนักงานแล้ว");
+    expect(manager).toContain("ลบวันหยุดพนักงานแล้ว");
+    expect(manager).toContain("บันทึกการตั้งค่า GPS เข้างานแล้ว");
+
+    expect(calendar).toContain("employeeLeaveDates");
+    expect(calendar).toContain("วันหยุดพนักงาน");
+  });
+});

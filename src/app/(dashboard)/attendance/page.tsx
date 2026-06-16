@@ -14,9 +14,11 @@ import {
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
 import { computeDayStatuses } from "@/modules/attendance/calendar";
-import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser } from "@/modules/hr/repository";
+import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser, listPayrollAdjustments } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { AttendanceManager } from "./AttendanceManager";
+import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
+import type { PayrollAdjustment } from "@/modules/hr/types";
 
 export const dynamic = "force-dynamic";
 
@@ -88,9 +90,10 @@ export default async function AttendancePage({
 
   let dateFrom = today.slice(0, 7) + "-01";
   let dateTo = today;
-  let records = null;
-  let payrollSummaries = null;
+  let records: AttendanceRecord[] | null = null;
+  let payrollSummaries: PayrollSummary[] | null = null;
   let members: { userId: string; name: string }[] = [];
+  let leaveAdjustments: PayrollAdjustment[] = [];
 
   if (canManage) {
     const params = await searchParams;
@@ -105,11 +108,13 @@ export default async function AttendancePage({
         .split("T")[0];
     }
 
-    const [recRes, membersRes] = await Promise.all([
+    const [recRes, membersRes, adjustmentsRes] = await Promise.all([
       listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo),
       listStoreMemberships(ctx.organizationId, ctx.storeId),
+      listPayrollAdjustments(ctx.storeId, dateFrom, dateTo),
     ]);
     records = recRes.data ?? [];
+    leaveAdjustments = (adjustmentsRes.data ?? []).filter((a) => a.type === "leave");
     payrollSummaries = computePayrollSummaries(
       records,
       ctx.storeId,
@@ -143,6 +148,7 @@ export default async function AttendancePage({
       holidays={holidays}
       holidayDates={holidayDates}
       canManageHolidays={canManageHolidays}
+      leaveAdjustments={leaveAdjustments}
     />
   );
 }
