@@ -23,6 +23,12 @@ function validateQuantity(quantity: number): number {
   return quantity;
 }
 
+function normalizeNote(note: string | undefined): string | undefined {
+  const normalized = note?.trim().replace(/\s+/g, " ");
+  if (!normalized) return undefined;
+  return normalized.length <= 200 ? normalized : undefined;
+}
+
 function resolveVariant(
   product: Product,
   variantId: string | undefined,
@@ -143,13 +149,14 @@ export function buildTrustedCartFromCatalog(
         modifiers.reduce((sum, item) => sum + item.option.priceAdjustment, 0),
       "ราคาสินค้า",
     );
+    const note = normalizeNote(clientItem.note);
     const key = buildCartItemKey({
       productId: product.id,
       variantId: variant?.id ?? null,
       modifierOptionIds: modifiers.map((item) => item.option.id),
+      note,
     });
     const existing = itemMap.get(key);
-    const note = clientItem.note && clientItem.note.length <= 200 ? clientItem.note : undefined;
     if (existing) {
       const nextQty = validateQuantity(existing.quantity + quantity);
       itemMap.set(key, {

@@ -59,6 +59,46 @@ describe("buildTrustedCartFromCatalog", () => {
     expect(trusted.total).toBe(200);
   });
 
+  it("keeps same product rows separate when item notes differ", () => {
+    const trusted = buildTrustedCartFromCatalog(
+      cart({
+        items: [
+          { ...cart().items[0], key: "note-1", quantity: 1, note: "ไม่หวาน" },
+          { ...cart().items[0], key: "note-2", quantity: 1, note: "แยกน้ำแข็ง" },
+        ],
+        subtotal: 2,
+        total: 2,
+      }),
+      [product()],
+      { storeId: "store-1", canDiscount: false },
+    );
+
+    expect(trusted.items).toHaveLength(2);
+    expect(trusted.items.map((item) => item.note)).toEqual(["ไม่หวาน", "แยกน้ำแข็ง"]);
+    expect(trusted.items.map((item) => item.quantity)).toEqual([1, 1]);
+    expect(trusted.subtotal).toBe(200);
+  });
+
+  it("merges same product rows only when normalized item notes match", () => {
+    const trusted = buildTrustedCartFromCatalog(
+      cart({
+        items: [
+          { ...cart().items[0], key: "note-1", quantity: 1, note: "ไม่หวาน" },
+          { ...cart().items[0], key: "note-2", quantity: 1, note: "  ไม่หวาน  " },
+        ],
+        subtotal: 2,
+        total: 2,
+      }),
+      [product()],
+      { storeId: "store-1", canDiscount: false },
+    );
+
+    expect(trusted.items).toHaveLength(1);
+    expect(trusted.items[0].note).toBe("ไม่หวาน");
+    expect(trusted.items[0].quantity).toBe(2);
+    expect(trusted.subtotal).toBe(200);
+  });
+
   it("rejects missing required variant and required modifier selections", () => {
     expect(() =>
       buildTrustedCartFromCatalog(

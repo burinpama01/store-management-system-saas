@@ -37,6 +37,7 @@ function recalcTotals(cart: Cart): Cart {
 }
 
 export function addToCart(cart: Cart, input: AddToCartInput): Cart {
+  const note = input.note?.trim().replace(/\s+/g, " ") || undefined;
   const selectedModifiers: SelectedModifier[] = input.modifiers.map((m) => ({
     modifierGroupId: m.groupId,
     modifierGroupName: m.groupName,
@@ -47,6 +48,7 @@ export function addToCart(cart: Cart, input: AddToCartInput): Cart {
     productId: input.product.id,
     variantId: input.variant?.id ?? null,
     modifierOptionIds: selectedModifiers.map((m) => m.option.id),
+    note,
   } satisfies CartItemKey);
 
   const unitPrice =
@@ -77,7 +79,7 @@ export function addToCart(cart: Cart, input: AddToCartInput): Cart {
       quantity: qty,
       unitPrice,
       totalPrice: unitPrice * qty,
-      note: input.note,
+      note,
     };
     items = [...cart.items, newItem];
   }

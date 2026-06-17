@@ -64,6 +64,7 @@ interface LineItem {
   modifierNames: string[];
   quantity: number;
   totalPrice: number;
+  note?: string;
 }
 
 function formatPrice(amount: number): string {
@@ -81,6 +82,9 @@ function itemLine(item: LineItem, paperWidth: "58mm" | "80mm"): number[] {
   const result: number[] = encodeText(line);
   if (item.modifierNames.length > 0) {
     result.push(...encodeText(`  + ${item.modifierNames.join(", ")}\n`));
+  }
+  if (item.note) {
+    result.push(...encodeText(`  * ${item.note}\n`));
   }
   return result;
 }

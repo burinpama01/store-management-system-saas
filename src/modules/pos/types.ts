@@ -103,9 +103,11 @@ export interface CartItemKey {
   productId: string;
   variantId: string | null;
   modifierOptionIds: string[];
+  note?: string;
 }
 
 export function buildCartItemKey(input: CartItemKey): string {
   const modifierPart = [...input.modifierOptionIds].sort().join(",");
-  return [input.productId, input.variantId ?? "", modifierPart].join("|");
+  const notePart = input.note?.trim().replace(/\s+/g, " ") ?? "";
+  return [input.productId, input.variantId ?? "", modifierPart, notePart].join("|");
 }

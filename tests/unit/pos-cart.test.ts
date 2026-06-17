@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyDiscount, removeFromCart, updateQuantity } from "@/modules/pos/cart";
+import { addToCart, applyDiscount, emptyCart, removeFromCart, updateQuantity } from "@/modules/pos/cart";
 import type { Cart } from "@/modules/pos/types";
+import type { Product } from "@/modules/catalog/types";
 
 function cart(overrides: Partial<Cart> = {}): Cart {
   return {
@@ -22,6 +23,27 @@ function cart(overrides: Partial<Cart> = {}): Cart {
     discount: 0,
     total: 100,
     ...overrides,
+  };
+}
+
+function product(): Product {
+  return {
+    id: "p1",
+    storeId: "store-1",
+    organizationId: "org-1",
+    categoryId: "cat-1",
+    name: "ลาเต้",
+    description: undefined,
+    basePrice: 100,
+    imageUrl: undefined,
+    isActive: true,
+    availableForPos: true,
+    availableForQr: true,
+    sortOrder: 0,
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    variants: [],
+    modifierGroups: [],
   };
 }
 
@@ -84,5 +106,20 @@ describe("applyDiscount", () => {
     expect(empty.discount).toBe(0);
     expect(empty.total).toBe(0);
     expect(empty.discountNote).toBeUndefined();
+  });
+});
+
+describe("addToCart", () => {
+  it("keeps the same product as separate line items when notes differ", () => {
+    const base = emptyCart("store-1");
+    const item = product();
+
+    const first = addToCart(base, { product: item, variant: null, modifiers: [], note: "ไม่หวาน" });
+    const second = addToCart(first, { product: item, variant: null, modifiers: [], note: "แยกน้ำแข็ง" });
+
+    expect(second.items).toHaveLength(2);
+    expect(second.items.map((line) => line.note)).toEqual(["ไม่หวาน", "แยกน้ำแข็ง"]);
+    expect(second.items.map((line) => line.quantity)).toEqual([1, 1]);
+    expect(second.subtotal).toBe(200);
   });
 });

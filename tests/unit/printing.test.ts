@@ -94,7 +94,7 @@ describe("buildEscPosReceipt", () => {
     storeName: "Test Cafe",
     orderNumber: "260518-123456",
     items: [
-      { name: "Americano", variantName: "L", modifierNames: ["Less ice"], quantity: 2, totalPrice: 120 },
+      { name: "Americano", variantName: "L", modifierNames: ["Less ice"], quantity: 2, totalPrice: 120, note: "No sugar" },
       { name: "Green Tea Latte", variantName: undefined, modifierNames: [], quantity: 1, totalPrice: 65 },
     ],
     subtotal: 185,
@@ -151,6 +151,13 @@ describe("buildEscPosReceipt", () => {
     const result = buildEscPosReceipt(baseInput);
     const text = new TextDecoder().decode(result);
     expect(text).toContain("Less ice");
+  });
+
+  it("encodes item notes in the ESC/POS text fallback", () => {
+    const result = buildEscPosReceipt(baseInput);
+    const text = new TextDecoder().decode(result);
+
+    expect(text).toContain("* No sugar");
   });
 
   it("encodes total", () => {

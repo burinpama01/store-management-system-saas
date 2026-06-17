@@ -39,6 +39,17 @@ interface Props {
   currency: string;
 }
 
+interface SavedOrderTicket {
+  id: string;
+  ticketNumber: string;
+  label: string;
+  cart: Cart;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
+
 // ─── Helpers ──────────────────────────────────────────────────────
 
 function priceStr(n: number) {
@@ -73,6 +84,50 @@ function changeStr(received: number, total: number) {
   const change = received - total;
   if (change < 0) return null;
   return `เงินทอน ${priceStr(change)}`;
+}
+
+function ticketStorageKey(storeId: string) {
+  return `${POS_TICKET_STORAGE_PREFIX}.${storeId}`;
+}
+
+function createTicketId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createTicketNumber(date = new Date()) {
+  return `T${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}-${String(date.getTime()).slice(-4)}`;
+}
+
+function readSavedTickets(storeId: string): SavedOrderTicket[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ticketStorageKey(storeId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as SavedOrderTicket[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((ticket) => ticket?.cart?.storeId === storeId && Array.isArray(ticket.cart.items));
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedTickets(storeId: string, tickets: SavedOrderTicket[]) {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(ticketStorageKey(storeId), JSON.stringify(tickets));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function modifierDetail(modifier: CartItem["modifiers"][number]) {
+  const price = modifier.option.priceAdjustment;
+  const suffix = price !== 0 ? ` (${price > 0 ? "+" : ""}${price})` : "";
+  return `${modifier.modifierGroupName}: ${modifier.option.name}${suffix}`;
 }
 
 // ─── Modifier Picker ──────────────────────────────────────────────
@@ -166,6 +221,7 @@ function ProductPickerModal({
   const [selectedModifiers, setSelectedModifiers] = useState<Record<string, ModifierOption[]>>(
     picker.selectedModifiers,
   );
+  const [note, setNote] = useState("");
 
   const unitPrice =
     product.basePrice +
@@ -187,6 +243,7 @@ function ProductPickerModal({
         const group = product.modifierGroups.find((g) => g.id === groupId)!;
         return options.map((option) => ({ groupId, groupName: group.name, option }));
       }),
+      note: note.trim() || undefined,
     });
     onClose();
   }
@@ -255,6 +312,17 @@ function ProductPickerModal({
               onToggle={(opt) => toggleModifier(group, opt)}
             />
           ))}
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-gray-600">หมายเหตุรายการ</span>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={200}
+              rows={2}
+              placeholder="เช่น ไม่หวาน แยกน้ำแข็ง รีบเสิร์ฟ"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[var(--tenant-primary)] focus:outline-none"
+            />
+          </label>
         </div>
         <div className="p-4 border-t border-gray-100">
           <button
@@ -279,24 +347,123 @@ function CartPanel({
   onRemove,
   onCheckout,
   onClear,
+  savedTickets,
+  activeTicketId,
+  ticketMessage,
+  isPrintingTicket,
+  onSaveTicket,
+  onPrintTicket,
+  onLoadTicket,
+  onDeleteTicket,
+  onClose,
 }: {
   cart: Cart;
   onUpdateQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
   onClear: () => void;
+  savedTickets: SavedOrderTicket[];
+  activeTicketId: string | null;
+  ticketMessage: string | null;
+  isPrintingTicket: boolean;
+  onSaveTicket: () => void;
+  onPrintTicket: () => void;
+  onLoadTicket: (ticket: SavedOrderTicket) => void;
+  onDeleteTicket: (ticketId: string) => void;
+  onClose?: () => void;
 }) {
+  const activeTicket = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-        <span className="text-sm font-semibold text-gray-800">ออร์เดอร์</span>
-        {cart.items.length > 0 && (
+        <div>
+          <span className="text-sm font-semibold text-gray-800">ออร์เดอร์</span>
+          {activeTicket && (
+            <p className="text-[11px] text-amber-600">
+              กำลังแก้ {activeTicket.ticketNumber}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {cart.items.length > 0 && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="min-h-11 px-3 text-xs text-red-400 hover:text-red-600"
+            >
+              ล้าง
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-11 px-3 text-xs text-gray-500 hover:text-gray-800 lg:hidden"
+            >
+              ปิด
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="border-b border-gray-100 px-4 py-3 space-y-3">
+        <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={onClear}
-            className="min-h-11 px-3 text-xs text-red-400 hover:text-red-600"
+            type="button"
+            disabled={cart.items.length === 0}
+            onClick={onSaveTicket}
+            className="min-h-11 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            ล้าง
+            {activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
           </button>
+          <button
+            type="button"
+            disabled={cart.items.length === 0 || isPrintingTicket}
+            onClick={onPrintTicket}
+            className="min-h-11 rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isPrintingTicket ? "กำลังพิมพ์..." : "พิมพ์ใบสั่ง"}
+          </button>
+        </div>
+        <p className="text-[11px] text-gray-500">ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ</p>
+        {ticketMessage && (
+          <p aria-live="polite" className="text-xs text-amber-700">
+            {ticketMessage}
+          </p>
+        )}
+        {savedTickets.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
+            <ul className="max-h-28 space-y-1 overflow-y-auto pr-1">
+              {savedTickets.map((ticket) => (
+                <li key={ticket.id} className="flex items-stretch gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onLoadTicket(ticket)}
+                    className={`min-h-11 flex-1 rounded-lg border px-3 py-2 text-left text-xs ${
+                      ticket.id === activeTicketId
+                        ? "border-amber-300 bg-amber-50 text-amber-800"
+                        : "border-gray-200 text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <span className="block font-semibold">{ticket.ticketNumber}</span>
+                    <span className="block text-[11px] text-gray-500">
+                      {ticket.cart.items.length} รายการ · {priceStr(ticket.cart.total)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteTicket(ticket.id)}
+                    className="min-h-11 rounded-lg px-2 text-[11px] text-red-400 hover:text-red-600"
+                    aria-label={`ลบตั๋ว ${ticket.ticketNumber}`}
+                  >
+                    ลบ
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
@@ -357,16 +524,25 @@ function CartItemRow({
   onRemove: (key: string) => void;
 }) {
   return (
-    <li className="py-2 space-y-0.5">
+    <li className="py-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-900 truncate">
+          <p className="text-sm font-semibold text-gray-900">
             {item.productName}
             {item.variant && <span className="text-gray-500 ml-1">({item.variant.name})</span>}
           </p>
           {item.modifiers.length > 0 && (
-            <p className="text-xs text-gray-400 truncate">
-              {item.modifiers.map((m) => m.option.name).join(", ")}
+            <div className="mt-1 space-y-0.5">
+              {item.modifiers.map((modifier) => (
+                <p key={`${item.key}-${modifier.modifierGroupId}-${modifier.option.id}`} className="text-xs text-gray-500">
+                  + {modifierDetail(modifier)}
+                </p>
+              ))}
+            </div>
+          )}
+          {item.note && (
+            <p className="mt-1 text-xs text-amber-700">
+              หมายเหตุ: {item.note}
             </p>
           )}
         </div>
@@ -374,7 +550,10 @@ function CartItemRow({
           {priceStr(item.totalPrice)}
         </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-gray-400">
+          {priceStr(item.unitPrice)} × {item.quantity}
+        </span>
         <div className="flex items-center border border-gray-200 rounded">
           <button
             type="button"
@@ -612,10 +791,11 @@ function ReceiptPanel({
         items: order.items.map((item) => ({
           name: item.productName,
           variantName: item.variant?.name,
-          modifierNames: item.modifiers?.map((m) => m.option.name) ?? [],
+          modifierNames: item.modifiers?.map(modifierDetail) ?? [],
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,
+          note: item.note,
         })),
         subtotal: order.subtotal,
         discount: order.discount,
@@ -679,13 +859,27 @@ function ReceiptPanel({
         </div>
         <ul className="divide-y divide-gray-50 text-sm">
           {order.items.map((item) => (
-            <li key={item.key} className="flex justify-between py-1.5 gap-2">
-              <span className="text-gray-700 truncate">
-                {item.productName}
-                {item.variant && <span className="text-gray-400"> ({item.variant.name})</span>}
-                <span className="ml-1 text-gray-400">×{item.quantity}</span>
-              </span>
-              <span className="tabular-nums shrink-0">{priceStr(item.totalPrice)}</span>
+            <li key={item.key} className="py-2">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-700">
+                  {item.productName}
+                  {item.variant && <span className="text-gray-400"> ({item.variant.name})</span>}
+                  <span className="ml-1 text-gray-400">×{item.quantity}</span>
+                </span>
+                <span className="tabular-nums shrink-0">{priceStr(item.totalPrice)}</span>
+              </div>
+              {item.modifiers.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {item.modifiers.map((modifier) => (
+                    <p key={`${item.key}-receipt-${modifier.modifierGroupId}-${modifier.option.id}`} className="text-xs text-gray-500">
+                      + {modifierDetail(modifier)}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {item.note && (
+                <p className="mt-1 text-xs text-amber-700">หมายเหตุ: {item.note}</p>
+              )}
             </li>
           ))}
         </ul>
@@ -735,6 +929,11 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const [payError, setPayError] = useState<string | null>(null);
   const [showTableBill, setShowTableBill] = useState(false);
   const [showTableOpen, setShowTableOpen] = useState(false);
+  const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>(() => readSavedTickets(storeId));
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+  const [ticketMessage, setTicketMessage] = useState<string | null>(null);
+  const [isPrintingTicket, setIsPrintingTicket] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
   const [receipt, setReceipt] = useState<{
     orderNumber: string;
@@ -752,6 +951,16 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
     : products.filter((p) => p.isActive && p.availableForPos);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
+  const activeTicket = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
+
+  function persistSavedTickets(next: SavedOrderTicket[]) {
+    if (!writeSavedTickets(storeId, next)) {
+      setTicketMessage("บันทึกตั๋วในเครื่องนี้ไม่สำเร็จ กรุณาตรวจ storage ของเบราว์เซอร์");
+      return false;
+    }
+    setSavedTickets(next);
+    return true;
+  }
 
   function handleProductClick(product: Product) {
     if (cartLocked) return;
@@ -765,6 +974,115 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
 
   function handleAddFromPicker(input: AddToCartInput) {
     setCart((c) => addToCart(c, input));
+  }
+
+  function handleSaveTicket() {
+    if (cart.items.length === 0) {
+      setTicketMessage("ยังไม่มีรายการให้บันทึกตั๋ว");
+      return;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const existing = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
+    const ticket: SavedOrderTicket = {
+      id: existing?.id ?? createTicketId(),
+      ticketNumber: existing?.ticketNumber ?? createTicketNumber(now),
+      label: existing?.label ?? `ตั๋ว ${createTicketNumber(now)}`,
+      cart,
+      createdAt: existing?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    };
+    const next = existing
+      ? savedTickets.map((item) => (item.id === ticket.id ? ticket : item))
+      : [ticket, ...savedTickets].slice(0, 30);
+
+    if (persistSavedTickets(next)) {
+      setActiveTicketId(ticket.id);
+      setTicketMessage(`${existing ? "บันทึกกลับไปใหม่" : "บันทึกตั๋ว"} ${ticket.ticketNumber} แล้ว`);
+    }
+  }
+
+  function handleLoadTicket(ticket: SavedOrderTicket) {
+    if (pendingOrder) {
+      setTicketMessage("สร้างออร์เดอร์แล้ว กรุณาชำระเงินให้จบก่อนเรียกตั๋วอื่น");
+      return;
+    }
+    setCart(ticket.cart);
+    setActiveTicketId(ticket.id);
+    setPhase("ordering");
+    setReceipt(null);
+    setPayError(null);
+    setOrderPanelOpen(true);
+    setTicketMessage(`เรียกตั๋ว ${ticket.ticketNumber} กลับมาแล้ว`);
+  }
+
+  function handleDeleteTicket(ticketId: string) {
+    const ticket = savedTickets.find((item) => item.id === ticketId);
+    const next = savedTickets.filter((item) => item.id !== ticketId);
+    if (persistSavedTickets(next)) {
+      if (activeTicketId === ticketId) setActiveTicketId(null);
+      setTicketMessage(ticket ? `ลบตั๋ว ${ticket.ticketNumber} แล้ว` : "ลบตั๋วแล้ว");
+    }
+  }
+
+  async function handlePrintTicket() {
+    if (cart.items.length === 0) {
+      setTicketMessage("ยังไม่มีรายการให้พิมพ์ใบสั่งออเดอร์");
+      return;
+    }
+
+    const settings = receiptSettings ?? {
+      id: "",
+      storeId: "",
+      organizationId: "",
+      storeName,
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm" as const,
+      printCopies: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const ticketNumber = activeTicket?.ticketNumber ?? createTicketNumber();
+    const ticketData = {
+      storeName: settings.storeName || storeName,
+      address: settings.address,
+      phone: settings.phone,
+      taxId: settings.taxId,
+      showTaxId: false,
+      orderNumber: `ใบสั่ง ${ticketNumber}`,
+      items: cart.items.map((item) => ({
+        name: item.productName,
+        variantName: item.variant?.name,
+        modifierNames: item.modifiers.map(modifierDetail),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        note: item.note,
+      })),
+      subtotal: cart.subtotal,
+      discount: cart.discount,
+      discountNote: cart.discountNote,
+      total: cart.total,
+      payments: [],
+      footerText: "ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ",
+      showQrPayment: false,
+      promptpayId: undefined,
+      headerText: "*** ใบสั่งออเดอร์ ***",
+      paperWidth: settings.paperWidth,
+      printedAt: new Date().toISOString(),
+    };
+
+    setIsPrintingTicket(true);
+    setTicketMessage(null);
+    try {
+      await printReceiptAuto(ticketData, ticketData);
+      setTicketMessage(`พิมพ์ใบสั่งออเดอร์ ${ticketNumber} แล้ว`);
+    } catch (err) {
+      setTicketMessage(err instanceof Error ? err.message : "พิมพ์ใบสั่งออเดอร์ไม่สำเร็จ");
+    } finally {
+      setIsPrintingTicket(false);
+    }
   }
 
   function handleConfirmPayment(method: "cash" | "qr_promptpay", received?: number) {
@@ -804,6 +1122,10 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         method,
         change: received !== undefined ? Math.max(0, received - cart.total) : undefined,
       });
+      if (activeTicketId) {
+        persistSavedTickets(savedTickets.filter((ticket) => ticket.id !== activeTicketId));
+        setActiveTicketId(null);
+      }
       setPendingOrder(null);
       setPhase("receipt");
     });
@@ -815,6 +1137,76 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setReceipt(null);
     setPayError(null);
     setPendingOrder(null);
+    setActiveTicketId(null);
+    setTicketMessage(null);
+    setOrderPanelOpen(false);
+  }
+
+  function renderOrderPanelContent(onClose?: () => void) {
+    return (
+      <>
+        {phase !== "ordering" && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 z-10 min-h-11 rounded-lg bg-white/90 px-3 text-xs font-semibold text-gray-600 shadow-sm lg:hidden"
+          >
+            ปิด
+          </button>
+        )}
+        {phase === "ordering" && (
+          <CartPanel
+            cart={cart}
+            onUpdateQty={(key, qty) => setCart((c) => updateQuantity(c, key, qty))}
+            onRemove={(key) => setCart((c) => removeFromCart(c, key))}
+            onCheckout={() => {
+              setPhase("payment");
+              setOrderPanelOpen(true);
+            }}
+            onClear={() => {
+              setCart(emptyCart(storeId));
+              setActiveTicketId(null);
+              setTicketMessage("ล้างออร์เดอร์แล้ว");
+            }}
+            savedTickets={savedTickets}
+            activeTicketId={activeTicketId}
+            ticketMessage={ticketMessage}
+            isPrintingTicket={isPrintingTicket}
+            onSaveTicket={handleSaveTicket}
+            onPrintTicket={handlePrintTicket}
+            onLoadTicket={handleLoadTicket}
+            onDeleteTicket={handleDeleteTicket}
+            onClose={onClose}
+          />
+        )}
+        {phase === "payment" && (
+          <PaymentPanel
+            cart={cart}
+            onConfirm={handleConfirmPayment}
+            onBack={() => {
+              if (pendingOrder) {
+                setPayError("สร้างออร์เดอร์แล้ว กรุณาชำระเงินให้จบก่อนแก้ไขตะกร้า");
+                return;
+              }
+              setPhase("ordering");
+              setPayError(null);
+            }}
+            isPending={isPending}
+            error={payError}
+            hasPendingOrder={pendingOrder !== null}
+            promptpayId={receiptSettings?.promptpayId}
+          />
+        )}
+        {phase === "receipt" && receipt && (
+          <ReceiptPanel
+            order={receipt}
+            receiptSettings={receiptSettings}
+            storeName={storeName}
+            onNewOrder={handleNewOrder}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -936,15 +1328,65 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         </div>
       </div>
 
-      {/* Right panel */}
-      <div className="h-[42vh] shrink-0 border-t border-gray-200 bg-white flex flex-col lg:h-auto lg:w-72 lg:border-l lg:border-t-0">
+      <button
+        type="button"
+        onClick={() => setOrderPanelOpen(true)}
+        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
+          orderPanelOpen ? "hidden" : "flex"
+        }`}
+      >
+        <span>เปิดออร์เดอร์</span>
+        <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
+          {cart.items.length} · {priceStr(cart.total)}
+        </span>
+      </button>
+
+      {/* Mobile / tablet order drawer */}
+      <div
+        role="dialog"
+        aria-label="ออร์เดอร์"
+        aria-modal={orderPanelOpen ? "true" : undefined}
+        aria-hidden={!orderPanelOpen ? true : undefined}
+        inert={!orderPanelOpen ? true : undefined}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOrderPanelOpen(false);
+        }}
+        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 lg:hidden ${
+          orderPanelOpen ? "translate-y-0" : "pointer-events-none translate-y-full"
+        }`}
+      >
+        {phase !== "ordering" && (
+          <button
+            type="button"
+            onClick={() => setOrderPanelOpen(false)}
+            className="absolute right-3 top-3 z-10 min-h-11 rounded-lg bg-white/90 px-3 text-xs font-semibold text-gray-600 shadow-sm lg:hidden"
+          >
+            ปิด
+          </button>
+        )}
         {phase === "ordering" && (
           <CartPanel
             cart={cart}
             onUpdateQty={(key, qty) => setCart((c) => updateQuantity(c, key, qty))}
             onRemove={(key) => setCart((c) => removeFromCart(c, key))}
-            onCheckout={() => setPhase("payment")}
-            onClear={() => setCart(emptyCart(storeId))}
+            onCheckout={() => {
+              setPhase("payment");
+              setOrderPanelOpen(true);
+            }}
+            onClear={() => {
+              setCart(emptyCart(storeId));
+              setActiveTicketId(null);
+              setTicketMessage("ล้างออร์เดอร์แล้ว");
+            }}
+            savedTickets={savedTickets}
+            activeTicketId={activeTicketId}
+            ticketMessage={ticketMessage}
+            isPrintingTicket={isPrintingTicket}
+            onSaveTicket={handleSaveTicket}
+            onPrintTicket={handlePrintTicket}
+            onLoadTicket={handleLoadTicket}
+            onDeleteTicket={handleDeleteTicket}
+            onClose={() => setOrderPanelOpen(false)}
           />
         )}
         {phase === "payment" && (
@@ -974,6 +1416,10 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
           />
         )}
       </div>
+
+      <aside className="hidden border-l border-gray-200 bg-white lg:flex lg:h-auto lg:w-80 lg:shrink-0 lg:flex-col">
+        {renderOrderPanelContent()}
+      </aside>
 
       {/* Picker modal */}
       {picker && (
