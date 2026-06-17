@@ -77,9 +77,15 @@ function read(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
-function fd(values: Record<string, string>) {
+function fd(values: Record<string, string | string[]>) {
   const formData = new FormData();
-  for (const [key, value] of Object.entries(values)) formData.set(key, value);
+  for (const [key, value] of Object.entries(values)) {
+    if (Array.isArray(value)) {
+      for (const item of value) formData.append(key, item);
+    } else {
+      formData.set(key, value);
+    }
+  }
   return formData;
 }
 
@@ -186,6 +192,7 @@ describe("catalog variant templates", () => {
     expect(actions).toContain("addModifierOptionTemplateAction");
     expect(actions).toContain("applyModifierGroupTemplateAction");
     expect(actions).toContain("modifierGroupTemplateId");
+    expect(actions).toContain('getAll("modifierGroupTemplateId")');
     expect(actions).toContain("getModifierGroupTemplate(modifierGroupTemplateId)");
   });
 
@@ -211,7 +218,10 @@ describe("catalog variant templates", () => {
     expect(source).toContain('name="variantTemplateId"');
     expect(source).toContain('name="modifierGroupTemplateId"');
     expect(source).toContain("เลือกจากคลังตัวเลือก");
-    expect(source).toContain("เลือกกลุ่มตัวเลือกจากคลัง");
+    expect(source).toContain("เลือกกลุ่มตัวเลือกจากคลังได้หลายกลุ่ม");
+    expect(source).toContain('type="checkbox"');
+    expect(source).toContain("selectedTemplateIds");
+    expect(source).not.toContain('<select\n          name="modifierGroupTemplateId"');
     expect(source).toContain("variantTemplateMessage");
     expect(source).toContain("await deleteVariantTemplateAction(template.id)");
     expect(source).toContain("setVariantTemplateMessage");
@@ -353,6 +363,117 @@ describe("catalog variant templates", () => {
       isDefault: false,
       sortOrder: 0,
     });
+  });
+
+  it("copies multiple modifier group templates from one form submission", async () => {
+    mocks.getModifierGroupTemplate
+      .mockResolvedValueOnce({
+        data: {
+          id: "group-template-sweet",
+          storeId: "store-1",
+          name: "ระดับความหวาน",
+          selectionType: "single",
+          isRequired: false,
+          minSelections: 0,
+          maxSelections: 1,
+          options: [
+            { id: "sweet-0", name: "0%", priceAdjustment: 0, isDefault: false, sortOrder: 0 },
+          ],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: "group-template-temp",
+          storeId: "store-1",
+          name: "ประเภท",
+          selectionType: "single",
+          isRequired: true,
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            { id: "temp-hot", name: "ร้อน", priceAdjustment: 0, isDefault: false, sortOrder: 0 },
+          ],
+        },
+        error: null,
+      });
+    mocks.createModifierGroup
+      .mockResolvedValueOnce({ data: { id: "group-sweet", name: "ระดับความหวาน" }, error: null })
+      .mockResolvedValueOnce({ data: { id: "group-temp", name: "ประเภท" }, error: null });
+    const { applyModifierGroupTemplateAction } = await import("@/app/(dashboard)/catalog/actions");
+
+    const result = await applyModifierGroupTemplateAction(
+      "product-1",
+      { error: null, message: null },
+      fd({ modifierGroupTemplateId: ["group-template-sweet", "group-template-temp"] }),
+    );
+
+    expect(result).toEqual({ error: null, message: "เพิ่มกลุ่มตัวเลือก 2 กลุ่มในเมนูแล้ว" });
+    expect(mocks.createModifierGroup).toHaveBeenCalledTimes(2);
+    expect(mocks.createModifierOption).toHaveBeenCalledTimes(2);
+    expect(mocks.createModifierOption).toHaveBeenNthCalledWith(1, {
+      modifierGroupId: "group-sweet",
+      name: "0%",
+      priceAdjustment: 0,
+      isDefault: false,
+      sortOrder: 0,
+    });
+    expect(mocks.createModifierOption).toHaveBeenNthCalledWith(2, {
+      modifierGroupId: "group-temp",
+      name: "ร้อน",
+      priceAdjustment: 0,
+      isDefault: false,
+      sortOrder: 0,
+    });
+  });
+
+  it("rolls back earlier copied groups when a later selected group fails", async () => {
+    mocks.getModifierGroupTemplate
+      .mockResolvedValueOnce({
+        data: {
+          id: "group-template-sweet",
+          storeId: "store-1",
+          name: "ระดับความหวาน",
+          selectionType: "single",
+          isRequired: false,
+          minSelections: 0,
+          maxSelections: 1,
+          options: [
+            { id: "sweet-0", name: "0%", priceAdjustment: 0, isDefault: false, sortOrder: 0 },
+          ],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: "group-template-temp",
+          storeId: "store-1",
+          name: "ประเภท",
+          selectionType: "single",
+          isRequired: true,
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            { id: "temp-hot", name: "ร้อน", priceAdjustment: 0, isDefault: false, sortOrder: 0 },
+          ],
+        },
+        error: null,
+      });
+    mocks.createModifierGroup
+      .mockResolvedValueOnce({ data: { id: "group-sweet", name: "ระดับความหวาน" }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { userMessage: "สร้างกลุ่มไม่สำเร็จ" } });
+    mocks.deleteModifierGroup.mockResolvedValue({ error: null });
+    const { applyModifierGroupTemplateAction } = await import("@/app/(dashboard)/catalog/actions");
+
+    const result = await applyModifierGroupTemplateAction(
+      "product-1",
+      { error: null, message: null },
+      fd({ modifierGroupTemplateId: ["group-template-sweet", "group-template-temp"] }),
+    );
+
+    expect(result.error).toBe("สร้างกลุ่มไม่สำเร็จ");
+    expect(mocks.deleteModifierGroup).toHaveBeenCalledWith("group-sweet", "store-1");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("rejects required modifier group templates without options before creating a product group", async () => {

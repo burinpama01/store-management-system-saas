@@ -27,6 +27,7 @@ import {
   getProduct,
   getModifierGroupStoreId,
 } from "@/modules/catalog/repository";
+import type { ModifierGroupTemplate } from "@/modules/catalog/types";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -447,65 +448,116 @@ export async function applyModifierGroupTemplateAction(
   try {
     await requirePermission("catalog.manage");
     const ctx = await getStoreContext();
-    const modifierGroupTemplateId = (formData.get("modifierGroupTemplateId") as string | null)?.trim() ?? "";
+    const modifierGroupTemplateIds = Array.from(
+      new Set(
+        formData
+          .getAll("modifierGroupTemplateId")
+          .map((value) => (typeof value === "string" ? value.trim() : ""))
+          .filter(Boolean),
+      ),
+    );
 
-    if (!modifierGroupTemplateId) return { error: "กรุณาเลือกกลุ่มตัวเลือกจากคลัง", message: null };
+    if (modifierGroupTemplateIds.length === 0)
+      return { error: "กรุณาเลือกกลุ่มตัวเลือกจากคลัง", message: null };
 
     const productRes = await getProduct(productId);
     if (!productRes.data || productRes.data.storeId !== ctx.storeId)
       return { error: "ไม่มีสิทธิ์", message: null };
 
-    const template = await getModifierGroupTemplate(modifierGroupTemplateId);
-    if (!template.data || template.data.storeId !== ctx.storeId)
-      return { error: "ไม่มีสิทธิ์", message: null };
-    if (template.data.options.length === 0)
-      return { error: "เพิ่มตัวเลือกในกลุ่มนี้ก่อนนำไปใช้ในเมนู", message: null };
-
-    const exists = productRes.data.modifierGroups.some(
-      (group) => group.name.trim().toLowerCase() === template.data.name.trim().toLowerCase(),
+    const existingGroupNames = new Set(
+      productRes.data.modifierGroups.map((group) => group.name.trim().toLowerCase()),
     );
-    if (exists) return { error: "กลุ่มตัวเลือกนี้อยู่ในเมนูแล้ว", message: null };
+    const templates: ModifierGroupTemplate[] = [];
 
-    const groupResult = await createModifierGroup({
-      productId,
-      name: template.data.name,
-      selectionType: template.data.selectionType,
-      isRequired: template.data.isRequired,
-      minSelections: template.data.minSelections,
-      maxSelections: template.data.maxSelections,
-    });
-    if (groupResult.error) {
-      return {
-        error: isDuplicateModifierGroupError(groupResult.error)
-          ? "กลุ่มตัวเลือกนี้อยู่ในเมนูแล้ว"
-          : groupResult.error.userMessage,
-        message: null,
-      };
+    for (const modifierGroupTemplateId of modifierGroupTemplateIds) {
+      const template = await getModifierGroupTemplate(modifierGroupTemplateId);
+      if (!template.data || template.data.storeId !== ctx.storeId)
+        return { error: "ไม่มีสิทธิ์", message: null };
+      if (template.data.options.length === 0)
+        return { error: "เพิ่มตัวเลือกในกลุ่มนี้ก่อนนำไปใช้ในเมนู", message: null };
+
+      const normalizedName = template.data.name.trim().toLowerCase();
+      if (existingGroupNames.has(normalizedName))
+        return { error: "กลุ่มตัวเลือกนี้อยู่ในเมนูแล้ว", message: null };
+
+      existingGroupNames.add(normalizedName);
+      templates.push(template.data);
     }
-    if (!groupResult.data) return { error: "สร้างกลุ่มตัวเลือกไม่สำเร็จ", message: null };
 
-    for (const option of template.data.options) {
-      const optionResult = await createModifierOption({
-        modifierGroupId: groupResult.data.id,
-        name: option.name,
-        priceAdjustment: option.priceAdjustment,
-        isDefault: option.isDefault,
-        sortOrder: option.sortOrder,
+    const createdGroupIds: string[] = [];
+    async function rollbackCreatedGroups() {
+      for (const groupId of createdGroupIds.toReversed()) {
+        const rollbackResult = await deleteModifierGroup(groupId, ctx.storeId);
+        if (rollbackResult.error) return rollbackResult.error.userMessage;
+      }
+      return null;
+    }
+
+    for (const template of templates) {
+      const groupResult = await createModifierGroup({
+        productId,
+        name: template.name,
+        selectionType: template.selectionType,
+        isRequired: template.isRequired,
+        minSelections: template.minSelections,
+        maxSelections: template.maxSelections,
       });
-      if (optionResult.error) {
-        const rollbackResult = await deleteModifierGroup(groupResult.data.id, ctx.storeId);
-        if (rollbackResult.error) {
+      if (groupResult.error) {
+        const rollbackError = await rollbackCreatedGroups();
+        if (rollbackError) {
           return {
-            error: `คัดลอกกลุ่มตัวเลือกไม่ครบ และลบกลุ่มที่สร้างไว้ไม่สำเร็จ: ${rollbackResult.error.userMessage}`,
+            error: `คัดลอกกลุ่มตัวเลือกไม่ครบ และลบกลุ่มที่สร้างไว้ไม่สำเร็จ: ${rollbackError}`,
             message: null,
           };
         }
-        return { error: optionResult.error.userMessage, message: null };
+        return {
+          error: isDuplicateModifierGroupError(groupResult.error)
+            ? "กลุ่มตัวเลือกนี้อยู่ในเมนูแล้ว"
+            : groupResult.error.userMessage,
+          message: null,
+        };
+      }
+      if (!groupResult.data) {
+        const rollbackError = await rollbackCreatedGroups();
+        if (rollbackError) {
+          return {
+            error: `คัดลอกกลุ่มตัวเลือกไม่ครบ และลบกลุ่มที่สร้างไว้ไม่สำเร็จ: ${rollbackError}`,
+            message: null,
+          };
+        }
+        return { error: "สร้างกลุ่มตัวเลือกไม่สำเร็จ", message: null };
+      }
+      createdGroupIds.push(groupResult.data.id);
+
+      for (const option of template.options) {
+        const optionResult = await createModifierOption({
+          modifierGroupId: groupResult.data.id,
+          name: option.name,
+          priceAdjustment: option.priceAdjustment,
+          isDefault: option.isDefault,
+          sortOrder: option.sortOrder,
+        });
+        if (optionResult.error) {
+          const rollbackError = await rollbackCreatedGroups();
+          if (rollbackError) {
+            return {
+              error: `คัดลอกกลุ่มตัวเลือกไม่ครบ และลบกลุ่มที่สร้างไว้ไม่สำเร็จ: ${rollbackError}`,
+              message: null,
+            };
+          }
+          return { error: optionResult.error.userMessage, message: null };
+        }
       }
     }
 
     revalidate();
-    return { error: null, message: `เพิ่มกลุ่มตัวเลือก ${template.data.name} ในเมนูแล้ว` };
+    return {
+      error: null,
+      message:
+        templates.length === 1
+          ? `เพิ่มกลุ่มตัวเลือก ${templates[0].name} ในเมนูแล้ว`
+          : `เพิ่มกลุ่มตัวเลือก ${templates.length} กลุ่มในเมนูแล้ว`,
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", message: null };
   }

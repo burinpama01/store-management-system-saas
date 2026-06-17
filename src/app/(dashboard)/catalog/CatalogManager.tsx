@@ -914,11 +914,64 @@ function ModifierGroupsSection({
   product: Product;
   modifierGroupTemplates: ModifierGroupTemplate[];
 }) {
+  const [selection, setSelection] = useState<{ productId: string; ids: string[] }>({
+    productId: product.id,
+    ids: [],
+  });
+  const selectedTemplateIds = selection.productId === product.id ? selection.ids : [];
   const [applyState, applyAction, applyPending] = useActionState(
-    async (prev: { error: string | null; message?: string | null }, fd: FormData) =>
-      applyModifierGroupTemplateAction(product.id, prev, fd),
+    async (prev: { error: string | null; message?: string | null }, fd: FormData) => {
+      const result = await applyModifierGroupTemplateAction(product.id, prev, fd);
+      if (!result.error) setSelection({ productId: product.id, ids: [] });
+      return result;
+    },
     { error: null, message: null },
   );
+  const existingGroupNames = new Set(
+    product.modifierGroups.map((group) => group.name.trim().toLowerCase()),
+  );
+  const selectableTemplateIds = modifierGroupTemplates
+    .filter((template) => template.options.length > 0)
+    .filter((template) => !existingGroupNames.has(template.name.trim().toLowerCase()))
+    .map((template) => template.id);
+  const selectedCount = selectedTemplateIds.filter((id) => selectableTemplateIds.includes(id)).length;
+
+  function toggleTemplateSelection(templateId: string) {
+    setSelection((current) => {
+      const currentIds = current.productId === product.id ? current.ids : [];
+      return {
+        productId: product.id,
+        ids: currentIds.includes(templateId)
+          ? currentIds.filter((id) => id !== templateId)
+          : [...currentIds, templateId],
+      };
+    });
+  }
+
+  function clearTemplateSelection() {
+    setSelection({ productId: product.id, ids: [] });
+  }
+
+  function selectAllTemplateOptions() {
+    setSelection({ productId: product.id, ids: selectableTemplateIds });
+  }
+
+  function toggleAllTemplateOptions() {
+    if (selectedCount === selectableTemplateIds.length) {
+      clearTemplateSelection();
+    } else {
+      selectAllTemplateOptions();
+    }
+  }
+
+  function handleTemplateSubmit() {
+    if (selectedCount === 0) return;
+    setSelection((current) =>
+      current.productId === product.id
+        ? current
+        : { productId: product.id, ids: [] },
+    );
+  }
 
   return (
     <div className="space-y-2">
@@ -932,31 +985,71 @@ function ModifierGroupsSection({
           ยังไม่มีกลุ่มตัวเลือกในเมนูนี้
         </p>
       )}
-      <form action={applyAction} className="flex gap-1.5">
-        <select
-          name="modifierGroupTemplateId"
-          defaultValue=""
-          disabled={modifierGroupTemplates.length === 0 || applyPending}
-          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 disabled:bg-gray-50"
-        >
-          <option value="">เลือกกลุ่มตัวเลือกจากคลัง</option>
-          {modifierGroupTemplates.map((template) => (
-            <option key={template.id} value={template.id} disabled={template.options.length === 0}>
-              {template.name} ({template.options.length} ตัวเลือก{template.options.length === 0 ? " - เพิ่มตัวเลือกก่อน" : ""})
-            </option>
-          ))}
-        </select>
+      <form action={applyAction} onSubmit={handleTemplateSubmit} className="space-y-2">
+        <div className="rounded border border-gray-200 bg-white p-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-gray-600">เลือกกลุ่มตัวเลือกจากคลังได้หลายกลุ่ม</p>
+            {selectableTemplateIds.length > 1 && (
+              <button
+                type="button"
+                onClick={toggleAllTemplateOptions}
+                disabled={applyPending}
+                className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {selectedCount === selectableTemplateIds.length ? "ล้าง" : "เลือกทั้งหมด"}
+              </button>
+            )}
+          </div>
+          {modifierGroupTemplates.length > 0 ? (
+            <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+              {modifierGroupTemplates.map((template) => {
+                const isAlreadyAdded = existingGroupNames.has(template.name.trim().toLowerCase());
+                const isEmpty = template.options.length === 0;
+                const isDisabled = applyPending || isAlreadyAdded || isEmpty;
+                const checked = !isDisabled && selectedTemplateIds.includes(template.id);
+                return (
+                  <label
+                    key={template.id}
+                    className={`flex min-h-10 items-center gap-2 rounded border px-2 py-1.5 text-xs ${
+                      isDisabled
+                        ? "border-gray-100 bg-gray-50 text-gray-400"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="modifierGroupTemplateId"
+                      value={template.id}
+                      checked={checked}
+                      disabled={isDisabled}
+                      onChange={() => toggleTemplateSelection(template.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-gray-800 focus:ring-gray-500"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-gray-800">{template.name}</span>
+                      <span className="text-gray-500">
+                        {template.options.length} ตัวเลือก
+                        {isAlreadyAdded ? " · อยู่ในเมนูแล้ว" : ""}
+                        {isEmpty ? " · เพิ่มตัวเลือกก่อน" : ""}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">เพิ่มกลุ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
+          )}
+        </div>
         <button
           type="submit"
-          disabled={applyPending || modifierGroupTemplates.length === 0}
-          className="px-2 py-1 text-sm text-white bg-gray-700 rounded hover:bg-gray-900 disabled:opacity-50"
+          disabled={applyPending || selectedCount === 0}
+          title="เพิ่มกลุ่มที่เลือก"
+          className="min-h-10 w-full rounded bg-gray-700 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-50"
         >
-          +
+          {applyPending ? "กำลังเพิ่ม..." : `+ เพิ่มที่เลือก${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
         </button>
       </form>
-      {modifierGroupTemplates.length === 0 && (
-        <p className="text-xs text-gray-500">เพิ่มกลุ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
-      )}
       <ErrorBanner message={applyState.error} />
       <NoticeBanner message={applyState.message} />
     </div>
