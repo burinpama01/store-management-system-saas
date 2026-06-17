@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POS Ticket UX Implementation Plan v1</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f7f5f1; color: #202124; }
+    main { max-width: 980px; margin: 0 auto; padding: 40px 24px; }
+    h1 { margin: 0 0 8px; font-size: 32px; }
+    .meta { color: #6b7280; margin-bottom: 24px; }
+    section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; margin: 14px 0; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    ul { margin: 0; padding-left: 20px; line-height: 1.7; }
+    .done { color: #047857; font-weight: 700; }
+    .risk { color: #b45309; font-weight: 700; }
+    code { background: #f3f4f6; padding: 2px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>POS Ticket UX Implementation Plan v1</h1>
+    <p class="meta">วันที่ 2026-06-17 · Scope: StoreOS POS ticket UX parity จาก Accounting moojoom</p>
+
+    <section>
+      <h2>Goal</h2>
+      <ul>
+        <li>ทำให้ saved ticket เป็น workflow สำหรับ cashier จริง: โต๊ะ, ลูกค้า, note, sync state, search/filter, bill history, reprint, void, QR verification และ print feedback</li>
+        <li>ไม่แก้ production DB โดยตรงในรอบนี้; ใช้ migration ใหม่แบบ additive สำหรับ metadata</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Implementation Order</h2>
+      <ul>
+        <li class="done">RED tests: เพิ่ม guard ใน <code>pos-ticket-ui.test.ts</code> และ <code>pos-saved-tickets.test.ts</code></li>
+        <li class="done">Data contract: เพิ่ม metadata fields ใน <code>SavedOrderTicket</code>, repository, database types และ migration <code>20260617000004</code></li>
+        <li class="done">UX: ticket draft fields, search/filter, rich ticket card, bill history, reprint, void, QR verified, print status</li>
+        <li class="done">Table lifecycle: เลือกโต๊ะจาก modal เข้า ticket draft และ confirm ก่อนลบตั๋วพร้อมเคลียร์โต๊ะ</li>
+        <li>Verification: targeted tests, POS subset, typecheck, lint, browser QA ถ้าเปิด dev server</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Risks</h2>
+      <ul>
+        <li class="risk">Migration <code>20260617000004</code> ยังไม่ได้ apply production</li>
+        <li class="risk">Bill history UI ใช้ today orders; live data/RLS smoke ยังต้องรันก่อน deploy</li>
+        <li class="risk">Visual QA mobile/tablet/desktop ต้องตรวจหลัง dev server</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

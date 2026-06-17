@@ -6,6 +6,7 @@ import { listTablesForOpenAction, openTableAction, closeTableAction, type OpenTa
 
 interface Props {
   onClose: () => void;
+  onSelectTable?: (table: OpenTableStatus) => void;
 }
 
 function remaining(expiresAt: string | null): string {
@@ -15,7 +16,7 @@ function remaining(expiresAt: string | null): string {
   return `เหลือ ${mins} นาที`;
 }
 
-export function TableOpenModal({ onClose }: Props) {
+export function TableOpenModal({ onClose, onSelectTable }: Props) {
   const [tables, setTables] = useState<OpenTableStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +101,18 @@ export function TableOpenModal({ onClose }: Props) {
                         >
                           ใบ/QR
                         </a>
+                        {onSelectTable && (
+                          <button
+                            onClick={() => {
+                              onSelectTable(t);
+                              onClose();
+                            }}
+                            disabled={isPending}
+                            className="min-h-9 px-2 text-xs text-teal-600"
+                          >
+                            ใช้กับตั๋ว
+                          </button>
+                        )}
                         <button onClick={() => close(t)} disabled={isPending} className="min-h-9 px-2 text-xs text-red-500">ปิด</button>
                       </div>
                     </>

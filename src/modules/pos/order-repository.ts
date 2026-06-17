@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import { generateOrderNumber } from "@/modules/pos/order-number";
+import { getStoreLocalDate } from "@/modules/attendance/date";
 import type { Cart } from "./types";
 import type { Order, OrderItem, Payment } from "./types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
@@ -120,6 +121,7 @@ export interface AddPaymentInput {
   receivedAmount?: number;
   changeAmount?: number;
   reference?: string;
+  qrPaymentVerified?: boolean;
 }
 
 export async function addPaymentAndClose(orderId: string, storeId: string, processedByUserId: string, input: AddPaymentInput) {
@@ -182,19 +184,58 @@ export async function getOrder(orderId: string) {
   return { data: mapOrder(orderRes.data, items, payments), error: null };
 }
 
-export async function listTodayOrders(storeId: string) {
+export async function listTodayOrders(storeId: string, storeTimezone = "Asia/Bangkok") {
   const supabase = await createSupabaseServerClient();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const storeToday = getStoreLocalDate(storeTimezone, now);
+  const windowStart = new Date(now);
+  windowStart.setUTCDate(windowStart.getUTCDate() - 1);
+  windowStart.setUTCHours(0, 0, 0, 0);
+  const windowEnd = new Date(now);
+  windowEnd.setUTCDate(windowEnd.getUTCDate() + 1);
+  windowEnd.setUTCHours(23, 59, 59, 999);
 
-  const { data, error } = await supabase
+  const { data: orders, error } = await supabase
     .from("orders")
     .select("*")
     .eq("store_id", storeId)
-    .gte("created_at", today.toISOString())
+    .gte("created_at", windowStart.toISOString())
+    .lte("created_at", windowEnd.toISOString())
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(300);
 
   if (error) return { data: null, error: mapError(error) };
-  return { data: (data ?? []).map((r) => mapOrder(r, [], [])), error: null };
+  const todayOrders = (orders ?? [])
+    .filter((order) => getStoreLocalDate(storeTimezone, new Date(order.created_at)) === storeToday)
+    .slice(0, 100);
+  const orderIds = todayOrders.map((order) => order.id);
+  if (orderIds.length === 0) return { data: [], error: null };
+
+  const [itemsRes, paymentsRes] = await Promise.all([
+    supabase.from("order_items").select("*").in("order_id", orderIds),
+    supabase.from("payments").select("*").in("order_id", orderIds),
+  ]);
+  if (itemsRes.error) return { data: null, error: mapError(itemsRes.error) };
+  if (paymentsRes.error) return { data: null, error: mapError(paymentsRes.error) };
+
+  const itemsByOrder = new Map<string, OrderItem[]>();
+  for (const item of itemsRes.data ?? []) {
+    const mapped = mapOrderItem(item);
+    const group = itemsByOrder.get(mapped.orderId) ?? [];
+    group.push(mapped);
+    itemsByOrder.set(mapped.orderId, group);
+  }
+
+  const paymentsByOrder = new Map<string, Payment[]>();
+  for (const payment of paymentsRes.data ?? []) {
+    const mapped = mapPayment(payment);
+    const group = paymentsByOrder.get(mapped.orderId) ?? [];
+    group.push(mapped);
+    paymentsByOrder.set(mapped.orderId, group);
+  }
+
+  return {
+    data: todayOrders.map((order) => mapOrder(order, itemsByOrder.get(order.id) ?? [], paymentsByOrder.get(order.id) ?? [])),
+    error: null,
+  };
 }

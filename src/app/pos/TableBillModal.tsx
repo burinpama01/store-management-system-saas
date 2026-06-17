@@ -25,6 +25,7 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
   const [settle, setSettle] = useState<QrOrderView | null>(null);
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState("");
+  const [qrPaymentVerified, setQrPaymentVerified] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const load = useCallback(() => {
@@ -53,6 +54,7 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
       payload = null;
     }
   }
+  const qrReady = method !== "qr_promptpay" || (!!payload && qrPaymentVerified);
 
   function confirmPayment() {
     if (!settle) return;
@@ -65,6 +67,7 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
         amount: settle.total,
         receivedAmount: method === "cash" ? receivedNum : undefined,
         changeAmount: method === "cash" ? Math.max(0, receivedNum - settle.total) : undefined,
+        qrPaymentVerified: method === "qr_promptpay" ? qrPaymentVerified : undefined,
       });
       if (res.error) {
         setError(res.error);
@@ -73,6 +76,7 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
       setSettle(null);
       setReceived("");
       setMethod("cash");
+      setQrPaymentVerified(false);
       onSettled();
 
       // Refresh and, if this table has no remaining unpaid bills, offer to free the table.
@@ -127,7 +131,10 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
                 {(["cash", "qr_promptpay"] as const).map((m) => (
                   <button
                     key={m}
-                    onClick={() => setMethod(m)}
+                    onClick={() => {
+                      setMethod(m);
+                      setQrPaymentVerified(false);
+                    }}
                     className={`flex-1 min-h-11 rounded-lg border text-sm font-semibold ${
                       method === m ? "border-orange-400 bg-orange-50 text-orange-700" : "border-gray-200 text-gray-600"
                     }`}
@@ -158,6 +165,14 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
                   <QrCode value={payload} size={190} />
                   <p className="text-sm font-semibold text-gray-700">ให้ลูกค้าสแกนชำระ {fmt(settle.total, currency)}</p>
                   <p className="text-xs text-gray-400">PromptPay: {promptpayId}</p>
+                  <label className="mt-2 flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 text-xs font-semibold text-green-700">
+                    <input
+                      type="checkbox"
+                      checked={qrPaymentVerified}
+                      onChange={(event) => setQrPaymentVerified(event.target.checked)}
+                    />
+                    ยืนยันว่าได้รับเงิน QR แล้ว
+                  </label>
                 </div>
               ) : (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-center text-xs text-amber-700">
@@ -166,12 +181,12 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
               )}
 
               <div className="flex gap-2 pt-1">
-                <button onClick={() => { setSettle(null); setError(null); }} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
+                <button onClick={() => { setSettle(null); setError(null); setQrPaymentVerified(false); }} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
                   ย้อนกลับ
                 </button>
                 <button
                   onClick={confirmPayment}
-                  disabled={isPending || !cashReady || (method === "qr_promptpay" && !payload)}
+                  disabled={isPending || !cashReady || !qrReady || (method === "qr_promptpay" && !payload)}
                   className="btn-primary min-h-11 flex-1 text-sm disabled:opacity-40"
                 >
                   {isPending ? "กำลังชำระ..." : "ยืนยันชำระ"}
@@ -187,7 +202,7 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
               {orders.map((o) => (
                 <li key={o.id}>
                   <button
-                    onClick={() => { setSettle(o); setError(null); }}
+                    onClick={() => { setSettle(o); setError(null); setQrPaymentVerified(false); }}
                     className="flex w-full items-center justify-between rounded-xl border border-gray-200 p-3 text-left active:bg-gray-50"
                   >
                     <span>

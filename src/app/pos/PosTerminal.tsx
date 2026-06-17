@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
-import type { Cart, CartItem } from "@/modules/pos/types";
+import type { Cart, CartItem, Order, SavedOrderTicket } from "@/modules/pos/types";
 import { emptyCart, addToCart, updateQuantity, removeFromCart } from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
-import { submitOrderAction, collectPaymentAction } from "./actions";
+import { submitOrderAction, collectPaymentAction, listSavedTicketsAction, saveSavedTicketAction, deleteSavedTicketAction, listTodayOrdersAction, voidOrderAction } from "./actions";
 import { signOut } from "../(dashboard)/actions";
 import type { ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptAuto } from "@/modules/printing/print-router";
@@ -20,6 +20,15 @@ import { TableOpenModal } from "./TableOpenModal";
 // ─── Types ────────────────────────────────────────────────────────
 
 type Phase = "ordering" | "payment" | "receipt";
+type TicketDraft = Pick<SavedOrderTicket, "tableId" | "tableNumber" | "customerName" | "note" | "buffetSessionId">;
+
+const EMPTY_TICKET_DRAFT: TicketDraft = {
+  tableId: undefined,
+  tableNumber: "",
+  customerName: "",
+  note: "",
+  buffetSessionId: undefined,
+};
 
 interface PickerState {
   product: Product;
@@ -37,15 +46,6 @@ interface Props {
   cashSession: CashSession | null;
   cashSalesPreview: number;
   currency: string;
-}
-
-interface SavedOrderTicket {
-  id: string;
-  ticketNumber: string;
-  label: string;
-  cart: Cart;
-  createdAt: string;
-  updatedAt: string;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -122,6 +122,44 @@ function writeSavedTickets(storeId: string, tickets: SavedOrderTicket[]) {
   } catch {
     return false;
   }
+}
+
+function mergeSavedTickets(...groups: SavedOrderTicket[][]) {
+  const tickets = new Map<string, SavedOrderTicket>();
+  for (const group of groups) {
+    for (const ticket of group) {
+      if (!ticket?.id || !ticket?.cart || tickets.has(ticket.id)) continue;
+      tickets.set(ticket.id, ticket);
+    }
+  }
+  return [...tickets.values()]
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 30);
+}
+
+function ticketMetaLabel(ticket: SavedOrderTicket) {
+  const parts = [
+    ticket.tableNumber ? `โต๊ะ ${ticket.tableNumber}` : null,
+    ticket.customerName || null,
+    ticket.note || null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "ยังไม่มีข้อมูลโต๊ะ/ลูกค้า";
+}
+
+function ticketTimeLabel(iso?: string) {
+  if (!iso) return "-";
+  return new Intl.DateTimeFormat("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
+
+function historyPaymentLabel(order: Order) {
+  const paid = order.payments.find((payment) => payment.status === "completed") ?? order.payments[0];
+  if (!paid) return order.status === "paid" ? "ชำระแล้ว" : "ยังไม่ชำระ";
+  if (paid.method === "cash") return "เงินสด";
+  if (paid.method === "qr_promptpay") return "QR พร้อมเพย์";
+  return paid.method;
 }
 
 function modifierDetail(modifier: CartItem["modifiers"][number]) {
@@ -349,12 +387,21 @@ function CartPanel({
   onClear,
   savedTickets,
   activeTicketId,
+  ticketDraft,
   ticketMessage,
+  printStatusMessage,
+  isTicketSyncPending,
   isPrintingTicket,
+  billHistory,
+  isBillHistoryPending,
   onSaveTicket,
   onPrintTicket,
   onLoadTicket,
   onDeleteTicket,
+  onTicketDraftChange,
+  onRefreshBillHistory,
+  onPrintHistoryOrder,
+  onVoidHistoryOrder,
   onClose,
 }: {
   cart: Cart;
@@ -364,15 +411,36 @@ function CartPanel({
   onClear: () => void;
   savedTickets: SavedOrderTicket[];
   activeTicketId: string | null;
+  ticketDraft: TicketDraft;
   ticketMessage: string | null;
+  printStatusMessage: string | null;
+  isTicketSyncPending: boolean;
   isPrintingTicket: boolean;
+  billHistory: Order[];
+  isBillHistoryPending: boolean;
   onSaveTicket: () => void;
   onPrintTicket: () => void;
   onLoadTicket: (ticket: SavedOrderTicket) => void;
   onDeleteTicket: (ticketId: string) => void;
+  onTicketDraftChange: (patch: Partial<TicketDraft>) => void;
+  onRefreshBillHistory: () => void;
+  onPrintHistoryOrder: (order: Order) => void;
+  onVoidHistoryOrder: (order: Order) => void;
   onClose?: () => void;
 }) {
   const activeTicket = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
+  const [ticketSearch, setTicketSearch] = useState("");
+  const normalizedSearch = ticketSearch.trim().toLowerCase();
+  const filteredSavedTickets = normalizedSearch
+    ? savedTickets.filter((ticket) => [
+      ticket.ticketNumber,
+      ticket.label,
+      ticket.tableNumber,
+      ticket.customerName,
+      ticket.note,
+      ticket.syncState,
+    ].some((value) => (value ?? "").toLowerCase().includes(normalizedSearch)))
+    : savedTickets;
 
   return (
     <div className="flex flex-col h-full">
@@ -409,13 +477,42 @@ function CartPanel({
 
       <div className="border-b border-gray-100 px-4 py-3 space-y-3">
         <div className="grid grid-cols-2 gap-2">
+          <label className="text-[11px] font-semibold text-gray-500">
+            โต๊ะ
+            <input
+              value={ticketDraft.tableNumber ?? ""}
+              onChange={(event) => onTicketDraftChange({ tableNumber: event.target.value })}
+              placeholder="เช่น 12"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+            />
+          </label>
+          <label className="text-[11px] font-semibold text-gray-500">
+            ลูกค้า
+            <input
+              value={ticketDraft.customerName ?? ""}
+              onChange={(event) => onTicketDraftChange({ customerName: event.target.value })}
+              placeholder="ชื่อลูกค้า"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+            />
+          </label>
+          <label className="col-span-2 text-[11px] font-semibold text-gray-500">
+            note
+            <input
+              value={ticketDraft.note ?? ""}
+              onChange={(event) => onTicketDraftChange({ note: event.target.value })}
+              placeholder="หมายเหตุของตั๋ว"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+            />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={cart.items.length === 0}
+            disabled={cart.items.length === 0 || isTicketSyncPending}
             onClick={onSaveTicket}
             className="min-h-11 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
+            {isTicketSyncPending ? "กำลังบันทึก..." : activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
           </button>
           <button
             type="button"
@@ -432,11 +529,24 @@ function CartPanel({
             {ticketMessage}
           </p>
         )}
+        {printStatusMessage && (
+          <p aria-live="polite" className="text-xs text-teal-700">
+            {printStatusMessage}
+          </p>
+        )}
         {savedTickets.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
+              <input
+                value={ticketSearch}
+                onChange={(event) => setTicketSearch(event.target.value)}
+                placeholder="ค้นหาตั๋ว/โต๊ะ/ลูกค้า"
+                className="min-h-9 w-36 rounded-lg border border-gray-200 px-2 text-[11px]"
+              />
+            </div>
             <ul className="max-h-28 space-y-1 overflow-y-auto pr-1">
-              {savedTickets.map((ticket) => (
+              {filteredSavedTickets.map((ticket) => (
                 <li key={ticket.id} className="flex items-stretch gap-1">
                   <button
                     type="button"
@@ -447,16 +557,28 @@ function CartPanel({
                         : "border-gray-200 text-gray-700 hover:border-gray-300"
                     }`}
                   >
-                    <span className="block font-semibold">{ticket.ticketNumber}</span>
+                    <span className="flex items-center justify-between gap-2 font-semibold">
+                      <span>{ticket.ticketNumber}</span>
+                      <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                        {ticket.syncState === "sync_failed" ? "sync fail" : ticket.syncState === "local" ? "local" : "synced"}
+                      </span>
+                    </span>
                     <span className="block text-[11px] text-gray-500">
                       {ticket.cart.items.length} รายการ · {priceStr(ticket.cart.total)}
+                    </span>
+                    <span className="block truncate text-[11px] text-gray-500">
+                      {ticketMetaLabel(ticket)}
+                    </span>
+                    <span className="block text-[10px] text-gray-400">
+                      แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · sync {ticketTimeLabel(ticket.lastSyncedAt)}
                     </span>
                   </button>
                   <button
                     type="button"
+                    disabled={isTicketSyncPending}
                     onClick={() => onDeleteTicket(ticket.id)}
-                    className="min-h-11 rounded-lg px-2 text-[11px] text-red-400 hover:text-red-600"
-                    aria-label={`ลบตั๋ว ${ticket.ticketNumber}`}
+                    className="min-h-11 rounded-lg px-2 text-[11px] text-red-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={ticket.tableId ? `ลบตั๋วและเคลียร์โต๊ะ ${ticket.ticketNumber}` : `ลบตั๋ว ${ticket.ticketNumber}`}
                   >
                     ลบ
                   </button>
@@ -465,6 +587,13 @@ function CartPanel({
             </ul>
           </div>
         )}
+        <BillHistoryPanel
+          orders={billHistory}
+          isPending={isBillHistoryPending}
+          onRefresh={onRefreshBillHistory}
+          onPrint={onPrintHistoryOrder}
+          onVoid={onVoidHistoryOrder}
+        />
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -510,6 +639,76 @@ function CartPanel({
           ชำระเงิน
         </button>
       </div>
+    </div>
+  );
+}
+
+function BillHistoryPanel({
+  orders,
+  isPending,
+  onRefresh,
+  onPrint,
+  onVoid,
+}: {
+  orders: Order[];
+  isPending: boolean;
+  onRefresh: () => void;
+  onPrint: (order: Order) => void;
+  onVoid: (order: Order) => void;
+}) {
+  return (
+    <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold text-gray-600">บิลวันนี้</p>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isPending}
+          className="min-h-8 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-600 disabled:opacity-50"
+        >
+          {isPending ? "กำลังโหลด..." : "รีเฟรช"}
+        </button>
+      </div>
+      {orders.length === 0 ? (
+        <p className="py-2 text-center text-[11px] text-gray-400">ยังไม่มีบิลวันนี้</p>
+      ) : (
+        <ul className="max-h-28 space-y-1 overflow-y-auto pr-1">
+          {orders.slice(0, 8).map((order) => (
+            <li key={order.id} className="rounded-lg border border-gray-200 bg-white p-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-gray-800">{order.orderNumber}</p>
+                  <p className="text-[11px] text-gray-500">
+                    {order.tableNumber ? `โต๊ะ ${order.tableNumber} · ` : ""}{historyPaymentLabel(order)} · {priceStr(order.total)}
+                  </p>
+                </div>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                  order.status === "paid" ? "bg-green-50 text-green-700" : order.status === "voided" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
+                }`}>
+                  {order.status}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => onPrint(order)}
+                  className="min-h-9 rounded border border-gray-200 px-2 text-[11px] text-gray-700"
+                >
+                  พิมพ์ซ้ำ
+                </button>
+                <button
+                  type="button"
+                  disabled={order.status === "paid" || order.status === "voided"}
+                  onClick={() => onVoid(order)}
+                  className="min-h-9 rounded border border-red-100 px-2 text-[11px] text-red-500 disabled:opacity-40"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -595,7 +794,7 @@ function PaymentPanel({
   promptpayId,
 }: {
   cart: Cart;
-  onConfirm: (method: "cash" | "qr_promptpay", received?: number) => void;
+  onConfirm: (method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) => void;
   onBack: () => void;
   isPending: boolean;
   error: string | null;
@@ -604,10 +803,12 @@ function PaymentPanel({
 }) {
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState<string>("");
+  const [qrPaymentVerified, setQrPaymentVerified] = useState(false);
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
   const cashReady = method !== "cash" || receivedNum >= cart.total;
+  const qrReady = method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
 
   let promptPayPayload: string | null = null;
   if (method === "qr_promptpay" && promptpayId && cart.total > 0) {
@@ -647,7 +848,10 @@ function PaymentPanel({
               <button
                 key={m}
                 type="button"
-                onClick={() => setMethod(m)}
+                onClick={() => {
+                  setMethod(m);
+                  setQrPaymentVerified(false);
+                }}
                 className={`min-h-11 py-2.5 text-xs font-medium rounded-lg border transition-colors ${
                   method === m
                     ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
@@ -710,6 +914,14 @@ function PaymentPanel({
                 <QrCode value={promptPayPayload} size={200} />
                 <p className="text-sm font-semibold text-gray-700">ให้ลูกค้าสแกนเพื่อชำระ {priceStr(cart.total)}</p>
                 <p className="text-xs text-gray-400">PromptPay: {promptpayId}</p>
+                <label className="mt-2 flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 text-xs font-semibold text-green-700">
+                  <input
+                    type="checkbox"
+                    checked={qrPaymentVerified}
+                    onChange={(event) => setQrPaymentVerified(event.target.checked)}
+                  />
+                  ยืนยันว่าได้รับเงิน QR แล้ว
+                </label>
               </>
             ) : (
               <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-center text-xs text-amber-700">
@@ -734,11 +946,12 @@ function PaymentPanel({
       <div className="p-4 border-t border-gray-100">
         <button
           type="button"
-          disabled={!cashReady || isPending || (method === "qr_promptpay" && !promptPayPayload)}
+          disabled={!cashReady || !qrReady || isPending || (method === "qr_promptpay" && !promptPayPayload)}
           onClick={() =>
             onConfirm(
               method,
               method === "cash" ? receivedNum : undefined,
+              { qrPaymentVerified: method === "qr_promptpay" ? qrPaymentVerified : undefined },
             )
           }
           className="btn-primary w-full disabled:opacity-40"
@@ -932,7 +1145,11 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
   const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>(() => readSavedTickets(storeId));
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
+  const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
+  const [printStatusMessage, setPrintStatusMessage] = useState<string | null>(null);
+  const [billHistory, setBillHistory] = useState<Order[]>([]);
+  const [isBillHistoryPending, setIsBillHistoryPending] = useState(false);
   const [isPrintingTicket, setIsPrintingTicket] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
   const [receipt, setReceipt] = useState<{
@@ -946,6 +1163,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     change?: number;
   } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isTicketSyncPending, startTicketTransition] = useTransition();
 
   const filteredProducts = selectedCategoryId
     ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
@@ -953,14 +1171,35 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
 
-  function persistSavedTickets(next: SavedOrderTicket[]) {
+  const persistSavedTickets = useCallback((next: SavedOrderTicket[]) => {
     if (!writeSavedTickets(storeId, next)) {
       setTicketMessage("บันทึกตั๋วในเครื่องนี้ไม่สำเร็จ กรุณาตรวจ storage ของเบราว์เซอร์");
       return false;
     }
     setSavedTickets(next);
     return true;
-  }
+  }, [storeId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    startTicketTransition(async () => {
+      const result = await listSavedTicketsAction();
+      if (cancelled) return;
+      if (result.error) {
+        setTicketMessage(`ใช้ตั๋วในเครื่องนี้อยู่: ${result.error}`);
+        return;
+      }
+      persistSavedTickets(mergeSavedTickets(result.tickets, readSavedTickets(storeId)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [persistSavedTickets, storeId]);
+
+  useEffect(() => {
+    handleRefreshBillHistory();
+    // Load once per store/terminal mount; manual refresh handles later updates.
+  }, [storeId]);
 
   function handleProductClick(product: Product) {
     if (cartLocked) return;
@@ -985,22 +1224,46 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     const now = new Date();
     const nowIso = now.toISOString();
     const existing = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
+    const tableNumber = ticketDraft.tableNumber?.trim() || existing?.tableNumber;
+    const customerName = ticketDraft.customerName?.trim() || existing?.customerName;
+    const note = ticketDraft.note?.trim() || existing?.note;
+    const label = [tableNumber ? `โต๊ะ ${tableNumber}` : null, customerName].filter(Boolean).join(" · ");
     const ticket: SavedOrderTicket = {
       id: existing?.id ?? createTicketId(),
       ticketNumber: existing?.ticketNumber ?? createTicketNumber(now),
-      label: existing?.label ?? `ตั๋ว ${createTicketNumber(now)}`,
+      label: label || existing?.label || `ตั๋ว ${createTicketNumber(now)}`,
       cart,
+      tableId: ticketDraft.tableId ?? existing?.tableId,
+      tableNumber,
+      customerName,
+      note,
+      buffetSessionId: ticketDraft.buffetSessionId ?? existing?.buffetSessionId,
+      syncState: "local",
+      lastSyncedAt: existing?.lastSyncedAt,
       createdAt: existing?.createdAt ?? nowIso,
       updatedAt: nowIso,
     };
-    const next = existing
-      ? savedTickets.map((item) => (item.id === ticket.id ? ticket : item))
-      : [ticket, ...savedTickets].slice(0, 30);
 
-    if (persistSavedTickets(next)) {
-      setActiveTicketId(ticket.id);
-      setTicketMessage(`${existing ? "บันทึกกลับไปใหม่" : "บันทึกตั๋ว"} ${ticket.ticketNumber} แล้ว`);
-    }
+    startTicketTransition(async () => {
+      const result = await saveSavedTicketAction(ticket);
+      const savedTicket: SavedOrderTicket = {
+        ...(result.ticket ?? ticket),
+        syncState: result.error ? "sync_failed" : "synced",
+        lastSyncedAt: result.error ? ticket.lastSyncedAt : new Date().toISOString(),
+      };
+      const next = existing
+        ? savedTickets.map((item) => (item.id === savedTicket.id ? savedTicket : item))
+        : [savedTicket, ...savedTickets].slice(0, 30);
+
+      if (persistSavedTickets(next)) {
+        setActiveTicketId(savedTicket.id);
+        setTicketMessage(
+          result.error
+            ? `บันทึกในเครื่องแล้ว แต่ยัง sync server ไม่สำเร็จ: ${result.error}`
+            : `${existing ? "บันทึกกลับไปใหม่" : "บันทึกตั๋ว"} ${savedTicket.ticketNumber} แล้ว`,
+        );
+      }
+    });
   }
 
   function handleLoadTicket(ticket: SavedOrderTicket) {
@@ -1010,6 +1273,13 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     }
     setCart(ticket.cart);
     setActiveTicketId(ticket.id);
+    setTicketDraft({
+      tableId: ticket.tableId,
+      tableNumber: ticket.tableNumber ?? "",
+      customerName: ticket.customerName ?? "",
+      note: ticket.note ?? "",
+      buffetSessionId: ticket.buffetSessionId,
+    });
     setPhase("ordering");
     setReceipt(null);
     setPayError(null);
@@ -1019,11 +1289,35 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
 
   function handleDeleteTicket(ticketId: string) {
     const ticket = savedTickets.find((item) => item.id === ticketId);
-    const next = savedTickets.filter((item) => item.id !== ticketId);
-    if (persistSavedTickets(next)) {
-      if (activeTicketId === ticketId) setActiveTicketId(null);
-      setTicketMessage(ticket ? `ลบตั๋ว ${ticket.ticketNumber} แล้ว` : "ลบตั๋วแล้ว");
+    if (ticket?.syncState === "sync_failed" || ticket?.syncState === "local") {
+      const next = savedTickets.filter((item) => item.id !== ticketId);
+      if (persistSavedTickets(next)) {
+        if (activeTicketId === ticketId) {
+          setActiveTicketId(null);
+          setTicketDraft(EMPTY_TICKET_DRAFT);
+        }
+        setTicketMessage(`ลบตั๋ว ${ticket.ticketNumber} เฉพาะเครื่องนี้แล้ว`);
+      }
+      return;
     }
+    const closeRelatedTableSession = !!ticket?.tableId && window.confirm(
+      `ลบตั๋วและเคลียร์โต๊ะ ${ticket.tableNumber ?? ""}?`,
+    );
+    startTicketTransition(async () => {
+      const result = await deleteSavedTicketAction(ticketId, { closeRelatedTableSession });
+      if (result.error) {
+        setTicketMessage(`ลบตั๋วไม่สำเร็จ: ${result.error}`);
+        return;
+      }
+      const next = savedTickets.filter((item) => item.id !== ticketId);
+      if (persistSavedTickets(next)) {
+        if (activeTicketId === ticketId) {
+          setActiveTicketId(null);
+          setTicketDraft(EMPTY_TICKET_DRAFT);
+        }
+        setTicketMessage(ticket ? `ลบตั๋ว ${ticket.ticketNumber} แล้ว` : "ลบตั๋วแล้ว");
+      }
+    });
   }
 
   async function handlePrintTicket() {
@@ -1075,22 +1369,34 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
 
     setIsPrintingTicket(true);
     setTicketMessage(null);
+    setPrintStatusMessage("กำลังส่งงานพิมพ์ใบสั่ง...");
     try {
       await printReceiptAuto(ticketData, ticketData);
+      setPrintStatusMessage(`พิมพ์ใบสั่งออเดอร์ ${ticketNumber} แล้ว`);
       setTicketMessage(`พิมพ์ใบสั่งออเดอร์ ${ticketNumber} แล้ว`);
     } catch (err) {
+      setPrintStatusMessage("พิมพ์ใบสั่งออเดอร์ไม่สำเร็จ กดพิมพ์ซ้ำหรือใช้ browser print fallback");
       setTicketMessage(err instanceof Error ? err.message : "พิมพ์ใบสั่งออเดอร์ไม่สำเร็จ");
     } finally {
       setIsPrintingTicket(false);
     }
   }
 
-  function handleConfirmPayment(method: "cash" | "qr_promptpay", received?: number) {
+  function handleConfirmPayment(method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) {
     setPayError(null);
     startTransition(async () => {
       let order = pendingOrder;
       if (!order) {
-        const orderResult = await submitOrderAction(cart);
+        const checkoutTicketContext = {
+          tableId: ticketDraft.tableId ?? activeTicket?.tableId,
+          tableNumber: ticketDraft.tableNumber?.trim() || activeTicket?.tableNumber,
+          note: ticketDraft.note?.trim() || activeTicket?.note,
+        };
+        const orderResult = await submitOrderAction(cart, {
+          tableId: checkoutTicketContext.tableId,
+          tableNumber: checkoutTicketContext.tableNumber,
+          note: checkoutTicketContext.note,
+        });
         if (orderResult.error) {
           setPayError(orderResult.error);
           return;
@@ -1107,6 +1413,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         amount: cart.total,
         receivedAmount: received,
         changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined,
+        qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined,
       });
       if (payResult.error) {
         setPayError(payResult.error);
@@ -1123,8 +1430,13 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         change: received !== undefined ? Math.max(0, received - cart.total) : undefined,
       });
       if (activeTicketId) {
-        persistSavedTickets(savedTickets.filter((ticket) => ticket.id !== activeTicketId));
-        setActiveTicketId(null);
+        const deleteResult = await deleteSavedTicketAction(activeTicketId);
+        if (deleteResult.error) {
+          setTicketMessage(`ปิดการขายแล้ว แต่ลบตั๋วบน server ไม่สำเร็จ: ${deleteResult.error}`);
+        } else {
+          persistSavedTickets(savedTickets.filter((ticket) => ticket.id !== activeTicketId));
+          setActiveTicketId(null);
+        }
       }
       setPendingOrder(null);
       setPhase("receipt");
@@ -1138,8 +1450,94 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setPayError(null);
     setPendingOrder(null);
     setActiveTicketId(null);
+    setTicketDraft(EMPTY_TICKET_DRAFT);
     setTicketMessage(null);
+    setPrintStatusMessage(null);
     setOrderPanelOpen(false);
+  }
+
+  function handleTicketDraftChange(patch: Partial<TicketDraft>) {
+    setTicketDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function handleRefreshBillHistory() {
+    startTransition(async () => {
+      setIsBillHistoryPending(true);
+      const result = await listTodayOrdersAction();
+      if (result.error) {
+        setTicketMessage(`โหลดบิลวันนี้ไม่สำเร็จ: ${result.error}`);
+      } else {
+        setBillHistory(result.orders);
+      }
+      setIsBillHistoryPending(false);
+    });
+  }
+
+  async function handlePrintHistoryOrder(order: Order) {
+    const settings = receiptSettings ?? {
+      id: "",
+      storeId: "",
+      organizationId: "",
+      storeName,
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm" as const,
+      printCopies: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const receiptData = {
+      storeName: settings.storeName || storeName,
+      address: settings.address,
+      phone: settings.phone,
+      taxId: settings.taxId,
+      showTaxId: settings.showTaxId,
+      headerText: settings.headerText,
+      orderNumber: order.orderNumber,
+      items: order.items.map((item) => ({
+        name: item.productName,
+        variantName: item.variantName,
+        modifierNames: item.modifiers.map(modifierDetail),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        note: item.note,
+      })),
+      subtotal: order.subtotal,
+      discount: order.discount,
+      discountNote: order.discountNote,
+      total: order.total,
+      payments: order.payments.map((payment) => ({
+        method: payment.method,
+        amount: payment.amount,
+        changeAmount: payment.changeAmount,
+      })),
+      footerText: settings.footerText,
+      showQrPayment: settings.showQrPayment,
+      promptpayId: settings.promptpayId,
+      paperWidth: settings.paperWidth,
+      printedAt: new Date().toISOString(),
+    };
+    setPrintStatusMessage(`กำลังพิมพ์ซ้ำ ${order.orderNumber}...`);
+    try {
+      await printReceiptAuto(receiptData, receiptData);
+      setPrintStatusMessage(`พิมพ์ซ้ำ ${order.orderNumber} แล้ว`);
+    } catch (err) {
+      setPrintStatusMessage(err instanceof Error ? err.message : "พิมพ์ซ้ำไม่สำเร็จ");
+    }
+  }
+
+  function handleVoidHistoryOrder(order: Order) {
+    const ok = window.confirm(`ยกเลิกบิล ${order.orderNumber}?`);
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await voidOrderAction(order.id, "ยกเลิกจาก POS bill history");
+      if (result.error) {
+        setTicketMessage(`ยกเลิกบิลไม่สำเร็จ: ${result.error}`);
+        return;
+      }
+      setTicketMessage(`ยกเลิกบิล ${order.orderNumber} แล้ว`);
+      handleRefreshBillHistory();
+    });
   }
 
   function renderOrderPanelContent(onClose?: () => void) {
@@ -1170,12 +1568,21 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             }}
             savedTickets={savedTickets}
             activeTicketId={activeTicketId}
+            ticketDraft={ticketDraft}
             ticketMessage={ticketMessage}
+            printStatusMessage={printStatusMessage}
+            isTicketSyncPending={isTicketSyncPending}
             isPrintingTicket={isPrintingTicket}
+            billHistory={billHistory}
+            isBillHistoryPending={isBillHistoryPending}
             onSaveTicket={handleSaveTicket}
             onPrintTicket={handlePrintTicket}
             onLoadTicket={handleLoadTicket}
             onDeleteTicket={handleDeleteTicket}
+            onTicketDraftChange={handleTicketDraftChange}
+            onRefreshBillHistory={handleRefreshBillHistory}
+            onPrintHistoryOrder={handlePrintHistoryOrder}
+            onVoidHistoryOrder={handleVoidHistoryOrder}
             onClose={onClose}
           />
         )}
@@ -1376,16 +1783,26 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             onClear={() => {
               setCart(emptyCart(storeId));
               setActiveTicketId(null);
+              setTicketDraft(EMPTY_TICKET_DRAFT);
               setTicketMessage("ล้างออร์เดอร์แล้ว");
             }}
             savedTickets={savedTickets}
             activeTicketId={activeTicketId}
+            ticketDraft={ticketDraft}
             ticketMessage={ticketMessage}
+            printStatusMessage={printStatusMessage}
+            isTicketSyncPending={isTicketSyncPending}
             isPrintingTicket={isPrintingTicket}
+            billHistory={billHistory}
+            isBillHistoryPending={isBillHistoryPending}
             onSaveTicket={handleSaveTicket}
             onPrintTicket={handlePrintTicket}
             onLoadTicket={handleLoadTicket}
             onDeleteTicket={handleDeleteTicket}
+            onTicketDraftChange={handleTicketDraftChange}
+            onRefreshBillHistory={handleRefreshBillHistory}
+            onPrintHistoryOrder={handlePrintHistoryOrder}
+            onVoidHistoryOrder={handleVoidHistoryOrder}
             onClose={() => setOrderPanelOpen(false)}
           />
         )}
@@ -1431,7 +1848,21 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       )}
 
       {/* Open à la carte table session */}
-      {showTableOpen && <TableOpenModal onClose={() => setShowTableOpen(false)} />}
+      {showTableOpen && (
+        <TableOpenModal
+          onClose={() => setShowTableOpen(false)}
+          onSelectTable={(table) => {
+            setTicketDraft((current) => ({
+              ...current,
+              tableId: table.id,
+              tableNumber: table.label ?? table.number,
+              buffetSessionId: table.currentSessionId ?? undefined,
+            }));
+            setTicketMessage(`ผูกตั๋วกับโต๊ะ ${table.label ?? table.number} แล้ว`);
+            setOrderPanelOpen(true);
+          }}
+        />
+      )}
 
       {/* Settle QR table bills */}
       {showTableBill && (

@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { requirePermission } from "@/modules/auth/guards";
 import { listProducts } from "@/modules/catalog/repository";
-import { createOrderWithItems, addPaymentAndClose, voidOrder } from "@/modules/pos/order-repository";
+import { createOrderWithItems, addPaymentAndClose, listTodayOrders, voidOrder } from "@/modules/pos/order-repository";
+import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
-import type { Cart } from "@/modules/pos/types";
+import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 
@@ -20,6 +21,106 @@ async function getStoreContext() {
   const ctx = await resolveCurrentStore(stores, organizations, memberships);
   if (!ctx) throw new Error("ไม่พบข้อมูลร้านค้า");
   return { user, ctx };
+}
+
+export async function listSavedTicketsAction(): Promise<{ tickets: SavedOrderTicket[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    const result = await listSavedTickets(ctx.storeId);
+    if (result.error) return { tickets: [], error: result.error.userMessage };
+    return { tickets: result.data ?? [], error: null };
+  } catch (e) {
+    return { tickets: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function saveSavedTicketAction(ticket: SavedOrderTicket): Promise<{ ticket: SavedOrderTicket | null; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { user, ctx } = await getStoreContext();
+
+    if (ticket.cart.storeId !== ctx.storeId) {
+      return { ticket: null, error: "ตั๋วนี้ไม่ใช่ของร้านค้าปัจจุบัน" };
+    }
+    if (ticket.cart.items.length === 0) {
+      return { ticket: null, error: "ไม่มีรายการในตั๋ว" };
+    }
+
+    const canDiscount = ticket.cart.discount <= 0 || await requirePermission("pos.discount").then(() => true).catch(() => false);
+    const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
+    if (productsRes.error || !productsRes.data) {
+      return { ticket: null, error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };
+    }
+
+    const trustedCart = buildTrustedCartFromCatalog(ticket.cart, productsRes.data, {
+      storeId: ctx.storeId,
+      canDiscount,
+    });
+    let tableContext: Pick<SavedOrderTicket, "tableId" | "tableNumber" | "buffetSessionId"> = {
+      tableId: ticket.tableId,
+      tableNumber: ticket.tableNumber?.trim() || undefined,
+      buffetSessionId: ticket.buffetSessionId,
+    };
+    if (ticket.tableId) {
+      const tableRes = await getTable(ticket.tableId, ctx.storeId);
+      if (tableRes.error) return { ticket: null, error: tableRes.error.userMessage };
+      if (!tableRes.data) return { ticket: null, error: "ไม่พบโต๊ะนี้ในร้านค้า" };
+      tableContext = {
+        tableId: tableRes.data.id,
+        tableNumber: tableRes.data.label ?? tableRes.data.number,
+        buffetSessionId: tableRes.data.currentSessionId,
+      };
+    }
+    const trustedTicket: SavedOrderTicket = {
+      ...ticket,
+      ...tableContext,
+      cart: trustedCart,
+      label: ticket.label.trim() || ticket.ticketNumber,
+      customerName: ticket.customerName?.trim() || undefined,
+      note: ticket.note?.trim() || undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const result = await saveSavedTicket({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      userId: user.id,
+      ticket: trustedTicket,
+    });
+    if (result.error) return { ticket: null, error: result.error.userMessage };
+    revalidatePath("/pos", "page");
+    return { ticket: result.data, error: null };
+  } catch (e) {
+    return { ticket: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function deleteSavedTicketAction(ticketId: string, opts?: { closeRelatedTableSession?: boolean }): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    const result = opts?.closeRelatedTableSession
+      ? await deleteSavedTicketAndCloseTable(ticketId, ctx.storeId)
+      : await deleteSavedTicket(ticketId, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/pos", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function listTodayOrdersAction(): Promise<{ orders: Order[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    const result = await listTodayOrders(ctx.storeId, ctx.storeTimezone);
+    if (result.error) return { orders: [], error: result.error.userMessage };
+    return { orders: result.data ?? [], error: null };
+  } catch (e) {
+    return { orders: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
 }
 
 export async function submitOrderAction(
@@ -105,6 +206,10 @@ export async function collectPaymentAction(
     await requirePermission("pos.use");
     const { user, ctx } = await getStoreContext();
 
+    if (payment.method === "qr_promptpay" && payment.qrPaymentVerified !== true) {
+      return { error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
+    }
+
     const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, payment);
 
     if (result.error) return { error: result.error.userMessage };
@@ -134,6 +239,7 @@ export interface OpenTableStatus {
   number: string;
   label: string | null;
   occupied: boolean;
+  currentSessionId: string | null;
   expiresAt: string | null;
   /** Unpaid open QR orders still attached to this table. */
   unpaidCount: number;
@@ -171,6 +277,7 @@ export async function listTablesForOpenAction(): Promise<{ tables: OpenTableStat
           number: t.number,
           label: t.label ?? null,
           occupied: !!t.sessionExpiresAt && Date.parse(t.sessionExpiresAt) > now,
+          currentSessionId: t.currentSessionId ?? null,
           expiresAt: t.sessionExpiresAt ?? null,
           unpaidCount: u.count,
           unpaidTotal: u.total,

@@ -931,6 +931,60 @@ export interface Database {
         };
         Relationships: [];
       };
+      pos_saved_tickets: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          ticket_number: string;
+          label: string;
+          cart_snapshot: Json;
+          table_id: string | null;
+          table_number: string | null;
+          customer_name: string | null;
+          note: string | null;
+          buffet_session_id: string | null;
+          created_by_user_id: string;
+          updated_by_user_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          ticket_number: string;
+          label: string;
+          cart_snapshot: Json;
+          table_id?: string | null;
+          table_number?: string | null;
+          customer_name?: string | null;
+          note?: string | null;
+          buffet_session_id?: string | null;
+          created_by_user_id: string;
+          updated_by_user_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          ticket_number?: string;
+          label?: string;
+          cart_snapshot?: Json;
+          table_id?: string | null;
+          table_number?: string | null;
+          customer_name?: string | null;
+          note?: string | null;
+          buffet_session_id?: string | null;
+          created_by_user_id?: string;
+          updated_by_user_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       orders: {
         Row: {
           id: string;
@@ -1857,6 +1911,10 @@ export interface Database {
       };
       close_table_session: {
         Args: { p_store_id: string; p_table_id: string };
+        Returns: undefined;
+      };
+      delete_pos_saved_ticket_and_close_table: {
+        Args: { p_ticket_id: string; p_store_id: string };
         Returns: undefined;
       };
       claim_premium_free_trial: {

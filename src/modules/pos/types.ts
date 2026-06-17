@@ -46,6 +46,22 @@ export interface Cart {
   total: number;
 }
 
+export interface SavedOrderTicket {
+  id: string;
+  ticketNumber: string;
+  label: string;
+  cart: Cart;
+  tableId?: string;
+  tableNumber?: string;
+  customerName?: string;
+  note?: string;
+  buffetSessionId?: string;
+  syncState?: "synced" | "local" | "sync_failed";
+  lastSyncedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Order {
   id: string;
   storeId: string;
