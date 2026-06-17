@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StoreOS Landing Pricing Login Reference Layout Redesign Plan v2</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        color: #211b17;
+        background: linear-gradient(135deg, #f6eee7, #fbfaf7 45%, #eaf5f5);
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 32px;
+      }
+      section {
+        margin: 18px 0;
+        border: 1px solid rgba(210, 195, 180, 0.8);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: 0 18px 50px rgba(44, 36, 30, 0.08);
+        padding: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 34px;
+      }
+      h2 {
+        margin: 0 0 10px;
+        font-size: 22px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 22px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .card {
+        border: 1px solid #ded0c3;
+        border-radius: 8px;
+        padding: 14px;
+      }
+      .accent {
+        color: #c75e36;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Reference Layout Redesign v2</h1>
+        <p>ปรับหน้า landing, pricing และ login ตามภาพ reference ที่ผู้ใช้แนบ: product hero, floating feature cards, pricing cards และ login split visual/form</p>
+      </section>
+      <section>
+        <h2>Design Direction</h2>
+        <ul>
+          <li>Header แบบโปร่ง บาง มี nav กลาง และ CTA สีส้มด้านขวา</li>
+          <li>Hero ซ้ายเป็น headline ใหญ่ ขวาเป็นภาพ POS 3D พร้อมการ์ดลอย</li>
+          <li>ใช้ generated bitmap asset แทน WebGL 360 องศา และขยับด้วย CSS animation</li>
+          <li>Pricing เป็น 4 cards พร้อม Premium free trial 0 บาท / 30 วันแรก</li>
+          <li>Login เป็น split layout: visual dark scene ซ้าย, form card ขวา; mobile แสดง form ก่อน</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Implementation Inventory</h2>
+        <div class="grid">
+          <div class="card"><strong>Assets</strong><br />public/marketing/storeos-pos-hero-light.png<br />public/marketing/storeos-pos-hero-dark.png</div>
+          <div class="card"><strong>Components</strong><br />MarketingShell<br />MarketingProductShowcase</div>
+          <div class="card"><strong>Pages</strong><br />/ landing<br />/pricing<br />/login</div>
+        </div>
+      </section>
+      <section>
+        <h2>Verification Plan</h2>
+        <ul>
+          <li>unit regression: marketing assets, responsive classes, Premium trial copy</li>
+          <li>typecheck/lint/build</li>
+          <li>browser visual QA: desktop landing/pricing/login และ mobile login/landing</li>
+          <li>code review gate หลัง implementation</li>
+        </ul>
+      </section>
+      <section>
+        <p class="accent">Status: completed and verified locally, v0.6.0; tests/typecheck/lint/build/diff-check and code review passed</p>
+      </section>
+    </main>
+  </body>
+</html>

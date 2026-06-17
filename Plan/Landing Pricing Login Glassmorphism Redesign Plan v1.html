@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StoreOS Landing Pricing Login Glassmorphism Redesign Plan v1</title>
+    <style>
+      :root {
+        --ink: #2b2521;
+        --muted: #6b5d52;
+        --brand: #c2603a;
+        --brand-strong: #a8492a;
+        --teal: #3c8fb0;
+        --paper: #faf6f0;
+        --glass: rgba(255, 255, 255, 0.72);
+        --line: rgba(139, 116, 95, 0.24);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 6%, rgba(194, 96, 58, 0.16), transparent 28rem),
+          radial-gradient(circle at 86% 14%, rgba(60, 143, 176, 0.16), transparent 24rem),
+          var(--paper);
+        color: var(--ink);
+        font-family: "IBM Plex Sans Thai", "Segoe UI", sans-serif;
+        line-height: 1.6;
+      }
+      main {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 40px 0 56px;
+      }
+      header {
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--glass);
+        box-shadow: 0 24px 80px rgba(43, 37, 33, 0.12);
+        backdrop-filter: blur(22px);
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 4rem);
+        line-height: 1.05;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 1.35rem;
+      }
+      p { margin: 8px 0 0; color: var(--muted); }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+      .card {
+        min-height: 160px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.62);
+        backdrop-filter: blur(18px);
+      }
+      .tag {
+        display: inline-flex;
+        margin-bottom: 14px;
+        color: var(--brand-strong);
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .bar {
+        height: 10px;
+        margin-top: 18px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--brand), var(--teal));
+      }
+      ul {
+        margin: 10px 0 0;
+        padding-left: 20px;
+        color: var(--muted);
+      }
+      section { margin-top: 28px; }
+      code {
+        border-radius: 8px;
+        background: rgba(43, 37, 33, 0.08);
+        padding: 2px 6px;
+      }
+      @media (max-width: 820px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="tag">Approved direction · v1</span>
+        <h1>Landing, Pricing และ Login แบบ Glassmorphism + 3D สำหรับ StoreOS</h1>
+        <p>
+          Source concept:
+          <code>C:\Users\burin\.codex\generated_images\019ebd5d-32b4-7f71-ad02-42a28504d516\ig_004156c29f136ab0016a2da76bd2c8819198b5816e0ec0d471.png</code>
+        </p>
+        <div class="bar"></div>
+      </header>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Landing</h2>
+          <p>Hero full-bleed มี 3D scene ของ POS, QR, receipt, stock และ report อยู่เป็น product signal แรก</p>
+          <ul>
+            <li>StoreOS เป็น headline หลัก ไม่ซ่อนใน nav</li>
+            <li>CTA เดิม: สมัครใช้งาน, ดูแพ็กเกจและราคา</li>
+            <li>Section ต่อเนื่องเป็น workflow rail แทน card grid ซ้ำ</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h2>Pricing</h2>
+          <p>Pricing matrix ใช้ glass card และรักษา business copy ของ Premium free trial</p>
+          <ul>
+            <li>Premium: 0 บาท / 30 วันแรก</li>
+            <li>หลังใช้โปรแล้วแสดงราคาเดิม</li>
+            <li>Note โปรใช้ได้ 1 ครั้งต่อบัญชีต้องอยู่ครบ</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h2>Login</h2>
+          <p>Split screen เดิม แต่ฝั่ง brand เป็น immersive 3D/glass scene และ form ใช้ glass panel</p>
+          <ul>
+            <li>ไม่เปลี่ยน field, server action, invite hash flow</li>
+            <li>คง อีเมล, รหัสผ่าน, เข้าสู่ระบบ, ลืมรหัสผ่าน</li>
+            <li>ไม่แสดงคำ technical/internal ให้ user</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>Implementation Plan</h2>
+        <ul>
+          <li>เพิ่ม shared marketing components: <code>MarketingShell</code>, <code>StoreOsScene3D</code></li>
+          <li>เพิ่ม CSS utilities สำหรับ <code>marketing-page</code>, <code>marketing-glass</code>, animation และ responsive states</li>
+          <li>ใช้ Three.js ผ่าน client canvas component พร้อม cleanup และ <code>prefers-reduced-motion</code></li>
+          <li>ปรับ <code>/</code>, <code>/pricing</code>, <code>/login</code> ให้ใช้ visual system เดียวกัน</li>
+          <li>เพิ่ม/รัน regression tests, typecheck, lint, build และ visual smoke เท่าที่ tooling พร้อม</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

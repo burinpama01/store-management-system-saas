@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs";
+﻿import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +17,7 @@ describe("UX/UI regression guards", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
     expect(source).toContain("lg:flex-row");
-    expect(source).toContain("lg:w-72");
+    expect(source).toContain("lg:w-80");
   });
 
   it("QR ordering keeps primary touch controls at least 44px high", () => {
@@ -674,5 +674,176 @@ describe("UX/UI regression guards", () => {
     expect(actions).toContain("getPlanFeatures");
     expect(actions).toContain("features.qrOrdering");
     expect(actions).toContain("features.buffetManagement");
+  });
+
+  it("public marketing pages share the glass and 3D visual system", () => {
+    const shell = read("src/shared/components/marketing/MarketingShell.tsx");
+    const showcase = read("src/shared/components/marketing/MarketingProductShowcase.tsx");
+    const landingWorkflow = read("src/shared/components/marketing/LandingWorkflow.tsx");
+    const landing = read("src/app/page.tsx");
+    const pricing = read("src/app/pricing/page.tsx");
+    const pricingPlans = read("src/app/pricing/PricingPlans.tsx");
+    const login = read("src/app/(auth)/login/page.tsx");
+    const css = read("src/app/globals.css");
+    const nextConfig = read("next.config.ts");
+
+    expect(shell).toContain("MarketingHeader");
+    expect(shell).toContain("marketing-glass");
+    expect(showcase).toContain('aria-hidden="true"');
+    expect(showcase).not.toContain("<picture");
+    expect(showcase).not.toContain("storeos-hero-bg");
+    expect(showcase).not.toContain("storeos-login-bg");
+    expect(showcase).toContain("marketing-glass-card");
+    expect(showcase).toContain("marketing-card-icon");
+    // Hero/login render the photorealistic bitmap product render (not the procedural WebGL scene).
+    expect(showcase).toContain("marketing-product-bg");
+    expect(showcase).toContain("marketing-product-image");
+    expect(showcase).toContain("storeos-pos-hero-light.png");
+    expect(showcase).toContain("storeos-pos-hero-dark.png");
+    expect(showcase).not.toContain("MarketingThreeScene");
+    expect(showcase).not.toContain("marketing-visual-stage");
+    expect(showcase).toContain('className: "is-qr"');
+    expect(showcase).toContain("LOGIN_GLASS_CARDS");
+    expect(showcase).not.toContain("GLASS_CARDS.slice(0, 3)");
+    expect(landingWorkflow).toContain('"use client"');
+    expect(landingWorkflow).toContain("useState(0)");
+    expect(landingWorkflow).toContain("--workflow-progress");
+    expect(landingWorkflow).toContain("aria-live=\"polite\"");
+    expect(landingWorkflow).toContain("data-step={activeIndex + 1}");
+    expect(landingWorkflow).toContain("aria-pressed");
+    expect(landingWorkflow).toContain("setActiveIndex");
+    expect(landingWorkflow).toContain("reference-feature-picture");
+    expect(landingWorkflow).toContain("activeStep.image.desktop");
+    expect(landingWorkflow).toContain("activeStep.image.mobile");
+    expect(landingWorkflow).not.toContain("MarketingProductShowcase");
+    expect(nextConfig).toContain('allowedDevOrigins: ["127.0.0.1"]');
+    for (const assetPath of [
+      "public/marketing/workflow/pos-desktop.png",
+      "public/marketing/workflow/pos-mobile.png",
+      "public/marketing/workflow/qr-ordering-desktop.png",
+      "public/marketing/workflow/qr-ordering-mobile.png",
+      "public/marketing/workflow/stock-desktop.png",
+      "public/marketing/workflow/stock-mobile.png",
+      "public/marketing/workflow/attendance-desktop.png",
+      "public/marketing/workflow/attendance-mobile.png",
+      "public/marketing/workflow/reports-desktop.png",
+      "public/marketing/workflow/reports-mobile.png",
+      "public/marketing/workflow/branches-desktop.png",
+      "public/marketing/workflow/branches-mobile.png",
+    ]) {
+      expect(existsSync(join(root, assetPath)), `${assetPath} must exist for workflow responsive artwork`).toBe(true);
+      expect(landing).toContain(assetPath.replace("public", ""));
+    }
+    expect(css).toContain("@keyframes glassCardFloat");
+    expect(css).toContain("@keyframes workflowPanelIn");
+    expect(css).toContain("@keyframes workflowItemIn");
+    expect(css).toContain(".reference-feature-picture");
+    expect(css).toContain(".reference-feature-image");
+    const workflowFeatureStyles = css.slice(css.indexOf(".reference-feature-picture"));
+    const workflowMobileFeatureVisualBlock =
+      workflowFeatureStyles
+        .slice(workflowFeatureStyles.indexOf("@media (max-width: 767px)"))
+        .match(/\.reference-feature-visual \{[^}]*\}/)?.[0] ?? "";
+    expect(workflowMobileFeatureVisualBlock).toContain("order: -1;");
+    expect(css).toContain("--card-transform");
+    expect(css).toContain("--card-scale");
+    expect(css).toContain("mask-image: radial-gradient");
+    expect(css).toContain("-webkit-mask-image");
+    expect(css).toContain("--workflow-progress");
+    expect(css).toContain("transform: scale(0.94)");
+    expect(css).toContain(".marketing-card-icon.is-time");
+    expect(css).toContain(".reference-hero-visual .marketing-glass-card.is-time");
+    expect(css).toContain(".reference-auth-showcase .marketing-glass-card.is-time");
+    const heroTimeCardBlock = css.match(/\.reference-hero-visual \.marketing-glass-card\.is-time \{[^}]*\}/)?.[0] ?? "";
+    const heroTimeCardResponsiveBlock =
+      css.slice(css.indexOf("@media (max-width: 1180px)")).match(/\.reference-hero-visual \.marketing-glass-card\.is-time \{[^}]*\}/)?.[0] ?? "";
+    expect(heroTimeCardBlock).toContain("left: auto;");
+    expect(heroTimeCardResponsiveBlock).toContain("left: auto;");
+    expect(showcase).toContain('title: "ลงเวลา"');
+    expect(css).toContain(".reference-step-line button");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(landing).toContain("LandingWorkflow");
+    // Login renders a responsive split-screen background (desktop/tablet/mobile assets), not the procedural showcase.
+    expect(login).toContain("reference-auth-bg");
+    expect(login).toContain("<picture>");
+    expect(login).toContain("storeos-login-bg-desktop.png");
+    expect(login).toContain("storeos-login-bg-tablet.png");
+    expect(login).toContain("storeos-login-bg-mobile.png");
+    expect(login).not.toContain("MarketingProductShowcase");
+    expect(landing).toContain("marketing-page");
+    expect(pricing).toContain("marketing-page");
+    expect(pricing).toContain("PricingPlans");
+    expect(pricing).toContain('id="enterprise-contact"');
+    expect(pricing).toContain("support@storeos.app");
+    expect(pricingPlans).toContain("useState<BillingPeriod>");
+    expect(pricingPlans).toContain("price1y");
+    expect(pricingPlans).toContain("#enterprise-contact");
+    expect(pricingPlans).not.toContain("/register?plan=enterprise");
+    expect(login).toContain("reference-auth-page");
+  });
+
+  it("marketing redesign covers tablet layout and mobile-first login", () => {
+    const css = read("src/app/globals.css");
+
+    expect(css).toContain("@media (max-width: 1100px)");
+    expect(css).toContain(".reference-pricing-grid");
+    expect(css).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(css).toContain(".reference-billing-toggle button");
+    expect(css).toContain(".reference-auth-page");
+    expect(css).toContain(".reference-auth-visual");
+    expect(css).toContain(".reference-auth-bg");
+    expect(css).toContain(".reference-hero-visual .marketing-glass-card.is-pos");
+    expect(css).toContain(".reference-auth-showcase .marketing-glass-card.is-report");
+    expect(css).toContain("top: 1.05rem");
+    expect(css).toContain("bottom: auto");
+    expect(css).toContain("display: none");
+    expect(css).toContain(".reference-auth-form-wrap");
+    expect(css).toContain("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)");
+    expect(css).toContain("width: min(100%, 22rem)");
+    expect(css).toContain("order: 1");
+    expect(css).toContain("order: 2");
+  });
+
+  it("auth route-group pages are not shadowed by empty top-level app folders", () => {
+    for (const segment of ["login", "register", "reset-password"]) {
+      expect(existsSync(join(root, `src/app/(auth)/${segment}/page.tsx`))).toBe(true);
+
+      const topLevelRoute = join(root, `src/app/${segment}`);
+      if (!existsSync(topLevelRoute)) continue;
+
+      const entries = readdirSync(topLevelRoute).filter((name) => !name.startsWith("."));
+      expect(
+        entries,
+        `src/app/${segment} must not be empty because it can shadow src/app/(auth)/${segment}`
+      ).not.toHaveLength(0);
+    }
+  });
+
+  it("pricing keeps the one-time Premium free trial copy after visual redesign", () => {
+    const pricing = read("src/app/pricing/page.tsx");
+    const pricingPlans = read("src/app/pricing/PricingPlans.tsx");
+    const shell = read("src/shared/components/marketing/MarketingShell.tsx");
+    const pricingSurface = `${pricing}\n${pricingPlans}`;
+
+    expect(pricingSurface).toContain("0 บาท");
+    expect(pricingSurface).toContain("/ 30 วันแรก");
+    expect(pricingSurface).toContain("หลังจากนั้น");
+    expect(pricingSurface).toContain("โปร Premium ฟรี 30 วันใช้ได้ 1 ครั้งต่อบัญชี");
+    expect(pricing).toContain("ลูกค้าใหม่รับ Premium ฟรี 30 วันได้ 1 ครั้งต่อบัญชี");
+    expect(pricingSurface).toContain("ใช้ได้ 1 ครั้งต่อบัญชี");
+    expect(pricing).not.toContain("reference-promo-strip");
+    expect(pricing).not.toContain("7,415 บาท");
+    expect(shell).toContain("PRICING_NAV_ITEMS");
+    expect(shell).toContain('active === "pricing"');
+    expect(pricingSurface).not.toContain("ทดลองใช้ฟรี 30 วัน ไม่ต้องใช้บัตรเครดิต");
+  });
+
+  it("staff HR policy save gives visible feedback and explains monthly absent penalty", () => {
+    const staff = read("src/app/(dashboard)/staff/StaffManager.tsx");
+
+    expect(staff).toContain("บันทึกนโยบายเรียบร้อยแล้ว");
+    expect(staff).toContain('aria-live="polite"');
+    expect(staff).toContain("กำลังบันทึก...");
+    expect(staff).toContain("รายเดือนใช้เงินเดือน ÷ จำนวนวัน");
   });
 });

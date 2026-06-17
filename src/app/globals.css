@@ -148,6 +148,636 @@ a:focus-visible {
 }
 
 @layer utilities {
+  .marketing-page {
+    position: relative;
+    min-height: 100vh;
+    overflow-x: clip;
+    background:
+      linear-gradient(135deg, rgb(250 246 240 / 0.98), rgb(244 237 227 / 0.94) 48%, rgb(227 241 246 / 0.72)),
+      var(--canvas);
+    padding: 1rem 1.25rem 0;
+  }
+
+  .marketing-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(115deg, rgb(194 96 58 / 0.12), transparent 38%),
+      linear-gradient(245deg, rgb(60 143 176 / 0.13), transparent 42%);
+  }
+
+  .marketing-glass {
+    border: 1px solid rgb(221 208 191 / 0.72);
+    background: rgb(255 255 255 / 0.68);
+    box-shadow: 0 20px 70px rgb(43 37 33 / 0.11), inset 0 1px 0 rgb(255 255 255 / 0.72);
+    backdrop-filter: blur(22px);
+  }
+
+  .marketing-header {
+    position: sticky;
+    top: 1rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: min(72rem, 100%);
+    min-height: 4.5rem;
+    margin: 0 auto;
+    border-radius: 18px;
+    padding: 0.875rem 1rem;
+  }
+
+  .marketing-brand {
+    border-radius: var(--radius-md);
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .marketing-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .marketing-nav-link {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.75rem;
+    color: var(--ink-2);
+    font-size: var(--font-size-sm);
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .marketing-nav-link:hover,
+  .marketing-nav-link.is-active {
+    color: var(--tenant-primary-strong);
+    background: rgb(251 237 228 / 0.84);
+  }
+
+  .marketing-hero {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(17rem, 24rem);
+    align-items: center;
+    width: min(72rem, 100%);
+    min-height: 34rem;
+    margin: 0 auto;
+    padding: 4.5rem 0 3rem;
+  }
+
+  .marketing-hero-copy {
+    position: relative;
+    z-index: 2;
+    max-width: 39rem;
+  }
+
+  .marketing-hero-copy h1 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 4.45rem;
+    font-weight: 900;
+    line-height: 1.02;
+    overflow-wrap: anywhere;
+  }
+
+  .marketing-hero-copy p {
+    max-width: 40rem;
+    margin-top: 1.4rem;
+    color: var(--ink-2);
+    font-size: 1.14rem;
+    line-height: 1.82;
+  }
+
+  .marketing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-top: 2rem;
+  }
+
+  .marketing-cta {
+    min-width: 10.5rem;
+    min-height: 3rem;
+    padding: 0.7rem 1.05rem;
+    font-size: var(--font-size-sm);
+    font-weight: 900;
+    text-decoration: none;
+  }
+
+  .marketing-hero-scene {
+    position: absolute;
+    inset: 1rem -3.5rem 0 auto;
+    z-index: 1;
+    width: min(36rem, 42vw);
+    height: 31rem;
+    opacity: 0.94;
+  }
+
+  .storeos-scene3d {
+    pointer-events: none;
+  }
+
+  .storeos-scene3d canvas {
+    position: relative;
+    z-index: 2;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .storeos-scene3d-fallback {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    perspective: 900px;
+    transition: opacity 180ms ease;
+  }
+
+  .storeos-scene3d[data-renderer="webgl"] .storeos-scene3d-fallback {
+    opacity: 0;
+  }
+
+  .scene-piece {
+    position: absolute;
+    display: block;
+    border: 1px solid rgb(255 255 255 / 0.72);
+    box-shadow: 0 26px 70px rgb(43 37 33 / 0.14);
+    transform-style: preserve-3d;
+    animation: sceneFloat 6.5s ease-in-out infinite;
+  }
+
+  .scene-piece-pos {
+    width: 38%;
+    height: 28%;
+    left: 27%;
+    top: 26%;
+    border-radius: var(--radius-lg);
+    background:
+      linear-gradient(135deg, rgb(255 255 255 / 0.74), rgb(251 237 228 / 0.5)),
+      linear-gradient(90deg, var(--tenant-primary), var(--tenant-accent));
+    transform: rotateX(12deg) rotateY(-22deg) rotateZ(2deg);
+  }
+
+  .scene-piece-receipt {
+    width: 16%;
+    height: 36%;
+    left: 64%;
+    top: 25%;
+    border-radius: var(--radius-md);
+    background: repeating-linear-gradient(
+      to bottom,
+      rgb(255 255 255 / 0.82) 0 12px,
+      rgb(221 208 191 / 0.42) 12px 14px
+    );
+    transform: rotateX(8deg) rotateY(24deg) rotateZ(-8deg);
+    animation-delay: -1.4s;
+  }
+
+  .scene-piece-qr {
+    width: 16%;
+    height: 16%;
+    left: 55%;
+    top: 62%;
+    border-radius: var(--radius-md);
+    background:
+      linear-gradient(90deg, rgb(43 37 33 / 0.92) 18%, transparent 18% 36%, rgb(43 37 33 / 0.92) 36% 54%, transparent 54% 72%, rgb(43 37 33 / 0.92) 72%),
+      linear-gradient(rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.92));
+    transform: rotateX(18deg) rotateY(18deg) rotateZ(8deg);
+    animation-delay: -2s;
+  }
+
+  .scene-piece-cube {
+    width: 18%;
+    height: 18%;
+    left: 18%;
+    top: 63%;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--tenant-primary), var(--tenant-primary-strong));
+    transform: rotateX(28deg) rotateY(-32deg) rotateZ(10deg);
+    animation-delay: -0.8s;
+  }
+
+  .scene-piece-ring {
+    width: 58%;
+    height: 58%;
+    left: 21%;
+    top: 22%;
+    border-radius: 999px;
+    border: 2px solid rgb(60 143 176 / 0.55);
+    background: transparent;
+    box-shadow: none;
+    transform: rotateX(68deg) rotateZ(-18deg);
+    animation-delay: -3s;
+  }
+
+  @keyframes sceneFloat {
+    0%,
+    100% {
+      translate: 0 0;
+    }
+    50% {
+      translate: 0 -0.75rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scene-piece {
+      animation: none;
+    }
+  }
+
+  .marketing-hero-proof {
+    position: relative;
+    z-index: 3;
+    align-self: end;
+    border-radius: var(--radius-xl);
+    padding: 1.1rem;
+  }
+
+  .marketing-proof-title {
+    margin: 0;
+    color: var(--ink);
+    font-size: var(--font-size-xs);
+    font-weight: 900;
+  }
+
+  .marketing-proof-list {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.8rem;
+  }
+
+  .marketing-proof-list span,
+  .marketing-auth-points span {
+    display: inline-flex;
+    min-height: 2.25rem;
+    align-items: center;
+    border: 1px solid rgb(221 208 191 / 0.78);
+    border-radius: var(--radius-md);
+    background: rgb(255 255 255 / 0.62);
+    color: var(--ink-2);
+    padding: 0.45rem 0.65rem;
+    font-size: var(--font-size-xs);
+    font-weight: 800;
+  }
+
+  .marketing-section {
+    position: relative;
+    z-index: 2;
+    width: min(72rem, 100%);
+    margin: 0 auto;
+    padding: 3.5rem 0;
+  }
+
+  .marketing-section-heading {
+    max-width: 42rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .marketing-section-heading h2,
+  .marketing-owner-section h2,
+  .marketing-final-cta h2 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 2.25rem;
+    font-weight: 900;
+    line-height: 1.15;
+  }
+
+  .marketing-section-heading p,
+  .marketing-owner-section p,
+  .marketing-final-cta p {
+    margin-top: 0.75rem;
+    color: var(--ink-2);
+    font-size: var(--font-size-base);
+    line-height: 1.75;
+  }
+
+  .marketing-flow-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.85rem;
+  }
+
+  .marketing-flow-item {
+    display: flex;
+    min-height: 14.5rem;
+    flex-direction: column;
+    justify-content: space-between;
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+  }
+
+  .marketing-flow-item span {
+    color: var(--tenant-primary-strong);
+    font-size: var(--font-size-xs);
+    font-weight: 900;
+  }
+
+  .marketing-flow-item h3 {
+    margin: auto 0 0.55rem;
+    color: var(--ink);
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.25;
+  }
+
+  .marketing-flow-item p {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.55;
+  }
+
+  .marketing-owner-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 28rem);
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .marketing-command-panel {
+    display: grid;
+    gap: 0.75rem;
+    border-radius: var(--radius-xl);
+    padding: 1rem;
+  }
+
+  .marketing-command-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 3.25rem;
+    border-bottom: 1px solid rgb(221 208 191 / 0.58);
+    color: var(--ink-2);
+  }
+
+  .marketing-command-row:last-child {
+    border-bottom: 0;
+  }
+
+  .marketing-command-row span {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    font-weight: 900;
+  }
+
+  .marketing-command-row strong {
+    color: var(--ink);
+    font-size: var(--font-size-sm);
+  }
+
+  .marketing-final-cta {
+    display: grid;
+    justify-items: start;
+    border-top: 1px solid rgb(221 208 191 / 0.7);
+    padding-bottom: 2rem;
+  }
+
+  .marketing-pricing-hero {
+    min-height: 29rem;
+  }
+
+  .marketing-pricing-hero .marketing-hero-copy {
+    max-width: 38rem;
+  }
+
+  .marketing-pricing-hero .marketing-hero-scene {
+    width: min(42rem, 52vw);
+  }
+
+  .marketing-price-note {
+    position: relative;
+    z-index: 3;
+    display: grid;
+    gap: 0.35rem;
+    align-self: end;
+    border-radius: var(--radius-xl);
+    padding: 1.2rem;
+  }
+
+  .marketing-price-note strong {
+    color: var(--ink);
+    font-size: var(--font-size-sm);
+  }
+
+  .marketing-price-note span {
+    color: var(--tenant-primary-strong);
+    font-size: 1.55rem;
+    font-weight: 900;
+  }
+
+  .marketing-price-note small,
+  .marketing-plan-renewal,
+  .marketing-pricing-disclaimer {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+
+  .marketing-pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .marketing-plan-card {
+    display: flex;
+    min-height: 28rem;
+    flex-direction: column;
+    border-radius: var(--radius-xl);
+    padding: 1.1rem;
+  }
+
+  .marketing-plan-card.is-highlight {
+    border-color: rgb(194 96 58 / 0.58);
+    background: rgb(251 237 228 / 0.78);
+    box-shadow: 0 24px 80px rgb(194 96 58 / 0.18);
+  }
+
+  .marketing-plan-head {
+    display: flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .marketing-plan-head p {
+    margin: 0;
+    color: var(--ink);
+    font-size: 1.05rem;
+    font-weight: 900;
+  }
+
+  .marketing-plan-head span {
+    border-radius: 999px;
+    background: var(--tenant-primary);
+    color: #fff;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 900;
+  }
+
+  .marketing-plan-price {
+    margin-top: 1rem;
+    color: var(--tenant-primary-strong);
+    font-size: 2.4rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .marketing-plan-price span {
+    margin-left: 0.2rem;
+    color: var(--ink-2);
+    font-size: var(--font-size-sm);
+    font-weight: 800;
+  }
+
+  .marketing-plan-card ul {
+    flex: 1;
+    margin: 1.15rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .marketing-plan-card li {
+    border-top: 1px solid rgb(221 208 191 / 0.58);
+    color: var(--ink-2);
+    padding: 0.62rem 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+  }
+
+  .marketing-plan-action {
+    width: 100%;
+    margin-top: 1rem;
+    text-decoration: none;
+  }
+
+  .marketing-pricing-disclaimer {
+    position: relative;
+    z-index: 2;
+    width: min(72rem, 100%);
+    margin: -1rem auto 0;
+    text-align: center;
+  }
+
+  .marketing-footer {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    width: min(72rem, 100%);
+    margin: 2rem auto 0;
+    justify-content: center;
+    gap: 0.5rem;
+    border-top: 1px solid rgb(221 208 191 / 0.72);
+    padding: 1.5rem 0 2rem;
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .marketing-footer a {
+    color: var(--tenant-primary-strong);
+    font-weight: 900;
+    text-decoration: none;
+  }
+
+  .marketing-auth-page {
+    display: grid;
+    min-height: 100vh;
+    grid-template-columns: minmax(0, 1.08fr) minmax(26rem, 0.92fr);
+    background:
+      linear-gradient(135deg, rgb(250 246 240 / 0.96), rgb(244 237 227 / 0.92) 48%, rgb(227 241 246 / 0.76)),
+      var(--canvas);
+  }
+
+  .marketing-auth-brand {
+    position: relative;
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    padding: 2rem;
+  }
+
+  .marketing-auth-brand::before {
+    content: "";
+    position: absolute;
+    inset: 1rem;
+    border: 1px solid rgb(221 208 191 / 0.64);
+    border-radius: var(--radius-xl);
+    background: rgb(255 255 255 / 0.34);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.62);
+    backdrop-filter: blur(18px);
+  }
+
+  .marketing-auth-brand-top,
+  .marketing-auth-copy {
+    position: relative;
+    z-index: 2;
+  }
+
+  .marketing-auth-scene {
+    position: absolute;
+    inset: 8% 6% auto auto;
+    z-index: 1;
+    width: min(38rem, 72%);
+    height: 30rem;
+    opacity: 0.96;
+  }
+
+  .marketing-auth-copy {
+    max-width: 38rem;
+    margin: auto 0 1rem;
+    padding: 2rem;
+  }
+
+  .marketing-auth-copy h1 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 3.65rem;
+    font-weight: 900;
+    line-height: 1.05;
+  }
+
+  .marketing-auth-copy p {
+    max-width: 31rem;
+    margin-top: 1rem;
+    color: var(--ink-2);
+    font-size: var(--font-size-base);
+    line-height: 1.8;
+  }
+
+  .marketing-auth-points {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-top: 1.35rem;
+  }
+
+  .marketing-auth-form-wrap {
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .marketing-auth-card {
+    width: min(100%, 28rem);
+    border-radius: var(--radius-xl);
+    padding: 2rem;
+  }
+
   .app-shell {
     min-height: 100vh;
     background: var(--color-bg);
@@ -615,6 +1245,135 @@ a:focus-visible {
   }
 
   @media (max-width: 767px) {
+    .marketing-page {
+      padding: 0.75rem;
+    }
+
+    .marketing-header {
+      position: relative;
+      top: 0;
+      flex-direction: column;
+      align-items: stretch;
+      border-radius: var(--radius-lg);
+    }
+
+    .marketing-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+      max-width: none;
+      justify-content: stretch;
+    }
+
+    .marketing-nav .btn-secondary,
+    .marketing-nav .btn-primary {
+      min-width: 0;
+      padding-inline: 0.45rem;
+      white-space: nowrap;
+    }
+
+    .marketing-nav-link {
+      display: none;
+    }
+
+    .marketing-hero,
+    .marketing-owner-section,
+    .marketing-pricing-hero {
+      display: block;
+      min-height: auto;
+      padding: 2.5rem 0 1.5rem;
+    }
+
+    .marketing-hero-copy h1 {
+      width: min(100%, calc(100vw - 1.5rem));
+      font-size: 2rem;
+      line-height: 1.08;
+      line-break: anywhere;
+    }
+
+    .marketing-hero-copy p {
+      width: min(100%, calc(100vw - 1.5rem));
+      font-size: 0.94rem;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+    }
+
+    .marketing-hero-scene {
+      position: relative;
+      inset: auto;
+      width: 100%;
+      height: 18rem;
+      margin-top: 1.25rem;
+    }
+
+    .marketing-hero-proof,
+    .marketing-price-note,
+    .marketing-command-panel {
+      margin-top: 1rem;
+    }
+
+    .marketing-flow-grid,
+    .marketing-pricing-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .marketing-flow-item {
+      min-height: 10rem;
+    }
+
+    .marketing-section {
+      padding: 2.25rem 0;
+    }
+
+    .marketing-section-heading h2,
+    .marketing-owner-section h2,
+    .marketing-final-cta h2 {
+      font-size: 1.75rem;
+    }
+
+    .marketing-auth-page {
+      display: grid;
+      grid-template-areas:
+        "form"
+        "brand";
+      grid-template-columns: 1fr;
+    }
+
+    .marketing-auth-brand {
+      grid-area: brand;
+      min-height: 14rem;
+      padding: 1rem;
+    }
+
+    .marketing-auth-copy {
+      padding: 1rem;
+    }
+
+    .marketing-auth-copy h1 {
+      font-size: 1.65rem;
+    }
+
+    .marketing-auth-scene {
+      inset: 2rem 0 auto auto;
+      width: 76%;
+      height: 12rem;
+      opacity: 0.58;
+    }
+
+    .marketing-auth-form-wrap {
+      grid-area: form;
+      min-height: auto;
+      padding: 1rem 0.75rem 0.25rem;
+    }
+
+    .marketing-auth-card {
+      padding: 1.25rem;
+    }
+
+    .marketing-auth-points {
+      display: none;
+    }
+
     .storeos-app {
       display: flex;
     }
@@ -632,5 +1391,2053 @@ a:focus-visible {
     .page-shell {
       padding: 1rem;
     }
+  }
+
+  @media (min-width: 768px) and (max-width: 1100px) {
+    .marketing-header,
+    .marketing-hero,
+    .marketing-section,
+    .marketing-footer,
+    .marketing-pricing-disclaimer {
+      width: min(62rem, 100%);
+    }
+
+    .marketing-hero,
+    .marketing-pricing-hero {
+      grid-template-columns: minmax(0, 1fr);
+      min-height: auto;
+      padding: 3.5rem 0 2rem;
+    }
+
+    .marketing-hero-copy {
+      max-width: 36rem;
+    }
+
+    .marketing-hero-copy h1 {
+      font-size: 3.25rem;
+    }
+
+    .marketing-hero-copy p {
+      max-width: 33rem;
+    }
+
+    .marketing-hero-scene,
+    .marketing-pricing-hero .marketing-hero-scene {
+      position: relative;
+      inset: auto;
+      width: min(38rem, 100%);
+      height: 24rem;
+      margin: 1.5rem auto 0;
+    }
+
+    .marketing-hero-proof,
+    .marketing-price-note {
+      width: min(26rem, 100%);
+      margin-top: 1rem;
+    }
+
+    .marketing-flow-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .marketing-pricing-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .marketing-owner-section {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .marketing-auth-page {
+      grid-template-columns: minmax(0, 0.92fr) minmax(24rem, 1fr);
+    }
+
+    .marketing-auth-copy h1 {
+      font-size: 2.7rem;
+    }
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+  .marketing-hero,
+  .marketing-pricing-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
+    padding: 3.5rem 0 2rem;
+  }
+
+  .marketing-hero-copy {
+    max-width: 42rem;
+  }
+
+  .marketing-hero-copy h1 {
+    font-size: 2.85rem;
+    line-height: 1.08;
+  }
+
+  .marketing-hero-copy h1 br {
+    display: none;
+  }
+
+  .marketing-hero-scene,
+  .marketing-pricing-hero .marketing-hero-scene {
+    position: relative;
+    inset: auto;
+    width: min(38rem, 100%);
+    height: 22rem;
+    margin: 1.25rem auto 0;
+  }
+
+  .marketing-flow-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .marketing-pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .marketing-owner-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .marketing-auth-form-wrap {
+    order: -1;
+    width: 100%;
+    padding: 1rem;
+  }
+
+  .marketing-auth-brand {
+    order: 2;
+    display: none;
+    min-height: 14rem;
+  }
+
+  .marketing-auth-card {
+    width: 100%;
+    max-width: 23rem;
+  }
+
+  .marketing-auth-card .form-input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Reference-style marketing refresh */
+.marketing-page {
+  color: #1f1b18;
+  background:
+    radial-gradient(circle at 77% 13%, rgb(103 164 178 / 0.2), transparent 34rem),
+    radial-gradient(circle at 18% 2%, rgb(219 103 57 / 0.13), transparent 28rem),
+    linear-gradient(135deg, #f7f1ea 0%, #fbfaf7 42%, #eef5f5 100%);
+}
+
+.marketing-header {
+  position: relative;
+  top: auto;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 4.1rem;
+  margin: 0 1rem 1.45rem;
+  border: 1px solid rgb(220 209 196 / 0.82);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 18px 55px rgb(54 45 38 / 0.1);
+  backdrop-filter: blur(24px);
+}
+
+.marketing-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.marketing-brand .brand-mark,
+.reference-auth-mobile-brand .brand-mark {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 7px;
+  font-size: 0.98rem;
+  box-shadow: 0 10px 24px rgb(198 97 58 / 0.22);
+}
+
+.marketing-brand .brand-name {
+  color: #171412;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.marketing-nav {
+  justify-content: center;
+  gap: 1.2rem;
+}
+
+.marketing-nav-link {
+  position: relative;
+  min-height: 2.25rem;
+  padding: 0.35rem 0;
+  color: #2f2a26;
+  font-size: 0.86rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.marketing-nav-link::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0.1rem;
+  left: 0;
+  height: 2px;
+  border-radius: 99px;
+  background: transparent;
+}
+
+.marketing-nav-link:hover,
+.marketing-nav-link.is-active {
+  color: #c65d35;
+  background: transparent;
+}
+
+.marketing-nav-link.is-active::after {
+  background: #d7653c;
+}
+
+.marketing-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.marketing-login-link {
+  color: #1f1b18;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.marketing-header-cta,
+.reference-primary-cta,
+.reference-secondary-cta,
+.reference-plan-action,
+.reference-login-submit {
+  min-height: 2.9rem;
+  border-radius: 8px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.marketing-header-cta {
+  min-width: 7.4rem;
+  padding: 0.72rem 1rem;
+}
+
+.reference-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(21rem, 0.86fr) minmax(28rem, 1.14fr);
+  align-items: center;
+  gap: 1.8rem;
+  isolation: isolate;
+  width: min(92rem, 100%);
+  min-height: min(42rem, calc(100vh - 7rem));
+  margin: 0 auto;
+  padding: 3rem 1rem 2.25rem;
+  overflow: hidden;
+  border-radius: 0 0 28px 28px;
+}
+
+.reference-hero-copy {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  align-content: center;
+  max-width: 44rem;
+}
+
+.reference-hero h1 {
+  margin: 0;
+  color: #191614;
+  font-size: clamp(3.1rem, 7vw, 6.2rem);
+  font-weight: 950;
+  line-height: 0.96;
+}
+
+.reference-hero h1 span {
+  display: block;
+  font-size: clamp(2rem, 4.8vw, 4.2rem);
+}
+
+.reference-hero-lead {
+  margin: 0.65rem 0 0;
+  color: #1f1b18;
+  font-size: clamp(1.18rem, 1.8vw, 1.55rem);
+  font-weight: 900;
+}
+
+.reference-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1.3rem;
+}
+
+.reference-chip-row span {
+  min-height: 2.1rem;
+  border: 1px solid rgb(220 209 196 / 0.85);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.58);
+  padding: 0.5rem 0.72rem;
+  color: #3c352f;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.reference-hero-sub {
+  max-width: 35rem;
+  margin: 1.35rem 0 0;
+  color: #4e4640;
+  font-size: 1.02rem;
+  line-height: 1.85;
+}
+
+.reference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.95rem;
+  margin-top: 2rem;
+}
+
+.reference-primary-cta,
+.reference-secondary-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-width: 12.5rem;
+  padding: 0.78rem 1.15rem;
+}
+
+.reference-secondary-cta {
+  border: 1px solid rgb(5 95 104 / 0.38);
+  color: #075f68;
+  background: rgb(255 255 255 / 0.58);
+}
+
+.reference-note {
+  margin-top: 0.7rem;
+  color: #8a8178;
+  font-size: 0.75rem;
+}
+
+.marketing-product-showcase {
+  position: relative;
+  isolation: isolate;
+  min-height: 30rem;
+  border-radius: 0;
+  overflow: visible;
+  perspective: 1200px;
+}
+
+.reference-hero-visual {
+  position: absolute;
+  inset: 1.6rem -0.25rem 2.25rem clamp(18rem, 32vw, 31rem);
+  z-index: 1;
+  min-height: auto;
+  overflow: hidden;
+  border-radius: 28px;
+  pointer-events: none;
+}
+
+.reference-hero-visual .marketing-product-bg {
+  inset: -1.15rem;
+  border-radius: 36px;
+  -webkit-mask-image: radial-gradient(ellipse at 58% 54%, #000 54%, rgb(0 0 0 / 0.72) 73%, transparent 100%);
+  mask-image: radial-gradient(ellipse at 58% 54%, #000 54%, rgb(0 0 0 / 0.72) 73%, transparent 100%);
+}
+
+.marketing-product-bg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+.marketing-product-bg::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgb(246 240 232 / 0.76), rgb(246 240 232 / 0.34) 14%, rgb(246 240 232 / 0.08) 34%, rgb(246 240 232 / 0) 72%, rgb(246 240 232 / 0.3) 100%),
+    linear-gradient(180deg, rgb(246 240 232 / 0.46), transparent 18%, transparent 78%, rgb(246 240 232 / 0.64)),
+    radial-gradient(circle at 58% 28%, rgb(255 255 255 / 0.08), transparent 34%);
+  backdrop-filter: blur(0.35px);
+}
+
+.marketing-product-showcase.is-dark .marketing-product-bg::after {
+  background:
+    linear-gradient(90deg, rgb(3 35 39 / 0.34), rgb(3 35 39 / 0.1) 34%, rgb(3 35 39 / 0.3) 100%),
+    linear-gradient(180deg, rgb(3 35 39 / 0.74), transparent 14%, transparent 82%, rgb(3 35 39 / 0.7)),
+    radial-gradient(circle at 58% 26%, rgb(0 194 213 / 0.15), transparent 36%);
+}
+
+.marketing-product-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center right;
+  opacity: 0.94;
+  filter: saturate(0.96) contrast(1.02);
+}
+
+.reference-hero-visual .marketing-product-image {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+  object-position: 57% 53%;
+  opacity: 1;
+  filter: saturate(1.04) contrast(1.06);
+  transform: scale(0.985);
+  transform-origin: center right;
+}
+
+.reference-hero-visual .marketing-product-bg::after {
+  background:
+    radial-gradient(ellipse at 57% 54%, transparent 44%, rgb(246 240 232 / 0.2) 72%, rgb(246 240 232 / 0.72) 100%),
+    linear-gradient(90deg, rgb(246 240 232 / 0.42), rgb(246 240 232 / 0.1) 15%, transparent 34%, transparent 86%, rgb(246 240 232 / 0.24) 100%);
+  backdrop-filter: blur(0.2px);
+}
+
+.marketing-product-showcase.is-dark .marketing-product-image {
+  opacity: 0.92;
+  filter: saturate(1.05) contrast(1.08);
+}
+
+.marketing-product-glow {
+  position: absolute;
+  inset: auto 10% 5% 10%;
+  z-index: 1;
+  height: 11rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(0 129 146 / 0.22), transparent 68%);
+  filter: blur(18px);
+}
+
+.marketing-glass-card {
+  --card-transform: rotateX(8deg) rotateY(-14deg) translateZ(18px);
+  --card-scale: 1;
+
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 0.78rem;
+  min-width: 10rem;
+  border: 1px solid rgb(255 255 255 / 0.68);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.72), rgb(255 255 255 / 0.22)),
+    linear-gradient(330deg, rgb(9 111 119 / 0.08), transparent 62%);
+  box-shadow:
+    0 28px 70px rgb(22 36 35 / 0.2),
+    inset 0 1px 0 rgb(255 255 255 / 0.75),
+    inset -18px -24px 40px rgb(0 95 108 / 0.07);
+  padding: 0.9rem 1rem;
+  backdrop-filter: blur(18px) saturate(1.18);
+  transform-style: preserve-3d;
+  transform: var(--card-transform) scale(var(--card-scale));
+  animation: glassCardFloat 5.8s ease-in-out infinite;
+}
+
+.marketing-glass-card::before,
+.marketing-glass-card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.marketing-glass-card::before {
+  inset: 0.05rem;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgb(255 255 255 / 0.44), transparent 42%);
+}
+
+.marketing-glass-card::after {
+  right: -0.35rem;
+  bottom: -0.35rem;
+  width: 42%;
+  height: 48%;
+  border-radius: 0 10px 12px 0;
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.28), rgb(12 87 94 / 0.08));
+  transform: translateZ(-16px) skewY(-8deg);
+  filter: blur(0.2px);
+}
+
+.marketing-card-icon {
+  position: relative;
+  z-index: 2;
+  grid-row: span 2;
+  display: block;
+  width: 2.3rem;
+  height: 2.3rem;
+  border: 1px solid rgb(255 255 255 / 0.72);
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.82), rgb(255 255 255 / 0.22)),
+    linear-gradient(320deg, rgb(4 116 128 / 0.32), transparent 68%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.82),
+    0 14px 28px rgb(10 78 86 / 0.15);
+}
+
+.marketing-card-icon::before,
+.marketing-card-icon::after {
+  content: "";
+  position: absolute;
+  border-radius: 3px;
+}
+
+.marketing-card-icon.is-pos::before {
+  inset: 0.72rem;
+  border: 2px solid #0d6770;
+}
+
+.marketing-card-icon.is-pos::after {
+  right: 0.52rem;
+  bottom: 0.5rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  background: #d7653c;
+}
+
+.marketing-card-icon.is-stock::before {
+  inset: 0.58rem 0.7rem 0.88rem;
+  border: 2px solid #0d6770;
+  transform: rotate(45deg);
+}
+
+.marketing-card-icon.is-stock::after {
+  right: 0.58rem;
+  bottom: 0.58rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  border: 2px solid #d7653c;
+}
+
+.marketing-card-icon.is-qr::before {
+  inset: 0.55rem;
+  background:
+    linear-gradient(90deg, #0d6770 0 32%, transparent 32% 45%, #0d6770 45% 100%),
+    linear-gradient(#0d6770 0 32%, transparent 32% 45%, #0d6770 45% 100%);
+  background-size: 100% 0.55rem, 0.55rem 100%;
+  background-repeat: no-repeat;
+}
+
+.marketing-card-icon.is-qr::after {
+  right: 0.55rem;
+  bottom: 0.55rem;
+  width: 0.48rem;
+  height: 0.48rem;
+  background: #d7653c;
+}
+
+.marketing-card-icon.is-time::before {
+  inset: 0.56rem;
+  border: 2px solid #0d6770;
+  border-radius: 999px;
+}
+
+.marketing-card-icon.is-time::after {
+  top: 0.78rem;
+  left: 1.08rem;
+  width: 0.44rem;
+  height: 0.52rem;
+  border-left: 2px solid #d7653c;
+  border-bottom: 2px solid #d7653c;
+  border-radius: 0 0 0 3px;
+  transform: rotate(-8deg);
+  transform-origin: left bottom;
+}
+
+.marketing-card-icon.is-report::before {
+  left: 0.58rem;
+  right: 0.58rem;
+  bottom: 0.58rem;
+  height: 1.15rem;
+  background: linear-gradient(90deg, #0d6770 0 18%, transparent 18% 32%, #d7653c 32% 50%, transparent 50% 64%, #0d6770 64% 82%, transparent 82%);
+}
+
+.marketing-card-icon.is-report::after {
+  right: 0.55rem;
+  top: 0.58rem;
+  width: 0.52rem;
+  height: 0.52rem;
+  border: 2px solid #0d6770;
+  border-radius: 50%;
+}
+
+.marketing-glass-card strong,
+.marketing-glass-card small {
+  position: relative;
+  z-index: 2;
+}
+
+.marketing-glass-card strong {
+  color: #0d5a62;
+  font-size: 0.94rem;
+}
+
+.marketing-glass-card small {
+  margin-top: 0.18rem;
+  color: #4f5f60;
+  font-size: 0.76rem;
+}
+
+.marketing-glass-card.is-pos {
+  top: 12%;
+  left: 9%;
+  --card-transform: rotateX(9deg) rotateY(-16deg) translateZ(18px);
+}
+
+.marketing-glass-card.is-stock {
+  top: 18%;
+  right: 7%;
+  --card-transform: rotateX(8deg) rotateY(15deg) translateZ(24px);
+  animation-delay: -1.3s;
+}
+
+.marketing-glass-card.is-qr {
+  bottom: 21%;
+  left: 5%;
+  --card-transform: rotateX(-8deg) rotateY(-12deg) translateZ(16px);
+  animation-delay: -2.2s;
+}
+
+.marketing-glass-card.is-time {
+  bottom: 21%;
+  left: 5%;
+  --card-transform: rotateX(-8deg) rotateY(-12deg) translateZ(16px);
+  animation-delay: -2.2s;
+}
+
+.marketing-glass-card.is-report {
+  right: 10%;
+  bottom: 13%;
+  --card-transform: rotateX(-9deg) rotateY(14deg) translateZ(20px);
+  animation-delay: -3.1s;
+}
+
+.reference-scroll-hint {
+  position: absolute;
+  right: 0;
+  bottom: 1.1rem;
+  left: 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  color: #8c837b;
+  font-size: 0.76rem;
+}
+
+.reference-scroll-hint i {
+  color: #5f5751;
+  font-style: normal;
+  font-size: 1.25rem;
+}
+
+.reference-flow,
+.reference-pricing-hero,
+.reference-pricing-grid,
+.reference-final,
+.marketing-footer {
+  width: min(92rem, 100%);
+  margin-inline: auto;
+}
+
+.reference-flow {
+  padding: 3rem 1rem 2rem;
+}
+
+.reference-section-heading {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.reference-section-heading h1,
+.reference-section-heading h2 {
+  max-width: 56rem;
+  margin: 0;
+  color: #1d1916;
+  font-size: clamp(2rem, 3.5vw, 3.25rem);
+  font-weight: 950;
+  line-height: 1.12;
+}
+
+.reference-section-heading p {
+  margin: 0.65rem 0 0;
+  color: #5c524b;
+  font-size: 1rem;
+}
+
+.reference-step-line {
+  --workflow-progress: 0%;
+
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 2.2rem 0 1.5rem;
+}
+
+.reference-step-line::before {
+  content: "";
+  position: absolute;
+  right: 2rem;
+  top: 1.05rem;
+  bottom: auto;
+  left: 2rem;
+  height: 2px;
+  background: linear-gradient(90deg, #d7653c 0 var(--workflow-progress), #c8d5d3 var(--workflow-progress) 100%);
+  transition: background 240ms ease;
+}
+
+.reference-step-line button {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  color: #476367;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-align: center;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.reference-step-line button:hover,
+.reference-step-line button:focus-visible,
+.reference-step-line button.is-active {
+  color: #075f68;
+}
+
+.reference-step-line button:hover,
+.reference-step-line button.is-active {
+  transform: translateY(-2px);
+}
+
+.reference-step-line button:focus-visible,
+.reference-mini-card:focus-visible {
+  outline: 3px solid rgb(7 95 104 / 0.24);
+  outline-offset: 4px;
+}
+
+.reference-step-line span,
+.reference-number {
+  position: relative;
+  z-index: 2;
+  display: inline-grid;
+  width: 2.1rem;
+  height: 2.1rem;
+  place-items: center;
+  border: 1px solid rgb(8 91 99 / 0.2);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.82);
+  color: #075f68;
+  font-weight: 950;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.reference-step-line .is-active span,
+.reference-number {
+  border-color: #075f68;
+  color: #fff;
+  background: #075f68;
+  box-shadow: 0 12px 30px rgb(7 95 104 / 0.24);
+  transform: scale(1.06);
+}
+
+.reference-feature-panel {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.75fr) minmax(30rem, 1.25fr);
+  gap: 1.5rem;
+  align-items: center;
+  min-height: 21rem;
+  border-radius: 12px;
+  padding: 1.3rem;
+}
+
+.reference-feature-copy {
+  padding: 1rem;
+  animation: workflowPanelIn 260ms ease both;
+}
+
+.reference-feature-copy h3 {
+  margin: 0.75rem 0 0.25rem;
+  color: #1d1916;
+  font-size: 2rem;
+  font-weight: 950;
+}
+
+.reference-feature-copy p {
+  margin: 0;
+  color: #5b514b;
+  font-weight: 800;
+}
+
+.reference-feature-copy ul,
+.reference-plan-card ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1.05rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reference-feature-copy li,
+.reference-plan-card li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  color: #3f514f;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  animation: workflowItemIn 280ms ease both;
+}
+
+.reference-feature-copy li:nth-child(2) {
+  animation-delay: 35ms;
+}
+
+.reference-feature-copy li:nth-child(3) {
+  animation-delay: 70ms;
+}
+
+.reference-feature-copy li:nth-child(4) {
+  animation-delay: 105ms;
+}
+
+.reference-feature-copy li::before,
+.reference-plan-card li::before {
+  content: "✓";
+  color: #0b6a73;
+  font-weight: 950;
+}
+
+.reference-feature-visual {
+  position: relative;
+  min-height: 24rem;
+  overflow: hidden;
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+
+.reference-feature-picture {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+}
+
+.reference-feature-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(1.02) contrast(1.02);
+  transform: scale(1.01);
+}
+
+.reference-feature-visual .marketing-glass-card {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .reference-feature-visual {
+    min-height: 24rem;
+    order: -1;
+  }
+
+  .reference-feature-image {
+    object-position: center top;
+  }
+}
+
+.reference-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.reference-mini-card {
+  min-height: 8.1rem;
+  border: 1px solid rgb(221 208 191 / 0.72);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.68);
+  padding: 1rem;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.reference-mini-card:hover,
+.reference-mini-card.is-active {
+  border-color: rgb(215 101 60 / 0.55);
+  box-shadow: 0 18px 52px rgb(194 96 58 / 0.12);
+  transform: translateY(-2px);
+}
+
+.reference-mini-card span {
+  display: inline-grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  place-items: center;
+  border-radius: 999px;
+  background: #075f68;
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.reference-mini-card strong {
+  display: block;
+  margin-top: 0.6rem;
+  color: #1e1a17;
+  font-size: 0.98rem;
+}
+
+.reference-mini-card p {
+  margin: 0.35rem 0 0;
+  color: #5b514b;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.reference-trust-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1rem;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #075f68;
+  box-shadow: 0 18px 45px rgb(7 95 104 / 0.2);
+}
+
+.reference-trust-bar div {
+  display: grid;
+  gap: 0.25rem;
+  min-height: 4.5rem;
+  padding: 1rem;
+  color: white;
+  background: rgb(0 0 0 / 0.08);
+}
+
+.reference-trust-bar strong {
+  font-size: 0.95rem;
+}
+
+.reference-trust-bar span {
+  color: rgb(255 255 255 / 0.78);
+  font-size: 0.8rem;
+}
+
+.reference-final {
+  display: grid;
+  justify-items: center;
+  gap: 0.85rem;
+  padding: 3rem 1rem 4rem;
+  text-align: center;
+}
+
+.reference-final h2 {
+  margin: 0;
+  color: #1d1916;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+}
+
+.reference-final p {
+  margin: 0;
+  color: #665c55;
+}
+
+.reference-pricing-hero {
+  padding: 1.4rem 1rem 1.25rem;
+}
+
+.reference-billing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 1.4rem auto 0;
+  border: 1px solid rgb(221 208 191 / 0.8);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.58);
+  padding: 0.25rem;
+}
+
+.reference-billing-toggle button {
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.62rem 1.25rem;
+  color: #6c625b;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.reference-billing-toggle .is-active {
+  color: white;
+  background: #d7653c;
+}
+
+.reference-billing-toggle button:focus-visible {
+  outline: 3px solid rgb(7 95 104 / 0.24);
+  outline-offset: 2px;
+}
+
+.reference-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1.5rem 1rem 0;
+}
+
+.reference-plan-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  min-height: 31rem;
+  border-radius: 8px;
+  padding: 1.35rem;
+}
+
+.reference-plan-card.is-highlight {
+  border-color: rgb(215 101 60 / 0.86);
+  background: linear-gradient(180deg, rgb(255 247 242 / 0.9), rgb(255 255 255 / 0.72));
+}
+
+.reference-plan-ribbon {
+  position: absolute;
+  top: -0.65rem;
+  right: 1rem;
+  border-radius: 999px;
+  background: #d7653c;
+  padding: 0.34rem 0.7rem;
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.reference-plan-icon {
+  display: inline-grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border: 1px solid rgb(10 96 104 / 0.2);
+  border-radius: 8px;
+  color: #075f68;
+  background: rgb(235 248 249 / 0.75);
+  font-size: 1.15rem;
+}
+
+.reference-plan-card h2 {
+  margin: 1rem 0 0;
+  color: #1d1916;
+  font-size: 1.18rem;
+  font-weight: 950;
+}
+
+.reference-plan-card p {
+  min-height: 3.6rem;
+  margin: 0.55rem 0 0;
+  color: #5b514b;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.reference-plan-price {
+  display: grid;
+  align-items: end;
+  min-height: 5.8rem;
+  margin-top: 0.8rem;
+}
+
+.reference-plan-price strong {
+  color: #c45b34;
+  font-size: clamp(1.55rem, 2vw, 1.85rem);
+  line-height: 1;
+}
+
+.reference-plan-price .reference-trial-price {
+  font-size: clamp(2rem, 2.45vw, 2.3rem);
+  line-height: 0.98;
+}
+
+.reference-trial-period {
+  margin-top: 0.2rem;
+  color: #c45b34;
+  font-size: clamp(1.02rem, 1.15vw, 1.18rem);
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.reference-plan-price span {
+  color: #2c2521;
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.reference-plan-price small {
+  margin-top: 0.45rem;
+  color: #5d544e;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.reference-plan-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.8rem;
+}
+
+.reference-promo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.8rem;
+  width: min(88rem, calc(100% - 2rem));
+  margin: 1rem auto 3rem;
+  border-color: rgb(242 173 70 / 0.7);
+  border-radius: 8px;
+  background: rgb(255 248 232 / 0.78);
+  padding: 1.1rem;
+  color: #cf5c31;
+  font-weight: 900;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.reference-promo-strip span {
+  display: inline-flex;
+}
+
+.reference-promo-strip strong {
+  border-left: 1px solid rgb(207 92 49 / 0.25);
+  padding-left: 0.8rem;
+  white-space: nowrap;
+}
+
+.reference-enterprise-contact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: min(88rem, calc(100% - 2rem));
+  margin: 1rem auto 3rem;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.reference-enterprise-contact h2 {
+  margin: 0;
+  color: #1d1916;
+  font-size: 1.45rem;
+  font-weight: 950;
+}
+
+.reference-enterprise-contact p {
+  margin: 0.45rem 0 0;
+  color: #5d544e;
+  line-height: 1.7;
+}
+
+@media (min-width: 1101px) {
+  .reference-hero-visual .marketing-glass-card.is-pos {
+    top: 18%;
+    left: 48%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-qr {
+    bottom: 17%;
+    left: 49%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-stock {
+    top: 19%;
+    right: 2%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-report {
+    right: 4%;
+    bottom: 12%;
+  }
+}
+
+.reference-auth-page {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 88% 18%, rgb(0 129 146 / 0.08), transparent 22rem),
+    linear-gradient(150deg, #f7f2ed 0%, #efe8e0 58%, #eaf1f0 100%);
+  overflow: hidden;
+}
+
+/* Desktop: dark visual fills the left half, form sits on the light right half. */
+.reference-auth-visual {
+  position: relative;
+  grid-column: 1;
+  display: grid;
+  align-content: start;
+  min-height: 100%;
+  overflow: hidden;
+  padding: 2.6rem;
+  color: white;
+  background:
+    radial-gradient(circle at 28% 18%, rgb(0 205 222 / 0.18), transparent 60%),
+    linear-gradient(150deg, #061d22 0%, #09242a 58%, #0b2c33 100%);
+}
+
+/* Full-bleed responsive background render that fills the dark left panel. */
+.reference-auth-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.reference-auth-bg picture,
+.reference-auth-bg img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.reference-auth-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgb(4 24 29 / 0.6) 0%, rgb(4 24 29 / 0.16) 40%, transparent 66%),
+    linear-gradient(0deg, rgb(4 24 29 / 0.4), transparent 34%);
+  pointer-events: none;
+}
+
+.reference-auth-visual .marketing-brand {
+  position: relative;
+  z-index: 4;
+  color: white;
+}
+
+.reference-auth-visual .brand-name {
+  color: white;
+}
+
+.reference-auth-copy {
+  position: relative;
+  z-index: 4;
+  max-width: 32rem;
+  margin-top: 2.8rem;
+}
+
+.reference-auth-copy h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.75rem);
+  font-weight: 950;
+  line-height: 1.08;
+}
+
+.reference-auth-copy h1 span {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: clamp(1.25rem, 2.2vw, 2rem);
+}
+
+.reference-auth-copy p {
+  max-width: 28rem;
+  margin: 1rem 0 0;
+  color: rgb(255 255 255 / 0.82);
+  line-height: 1.75;
+}
+
+.reference-auth-showcase {
+  position: absolute;
+  inset: 0.75rem;
+  z-index: 2;
+  min-height: auto;
+  overflow: hidden;
+  border-radius: 30px;
+  pointer-events: none;
+}
+
+.reference-auth-showcase .marketing-product-bg {
+  inset: -1.2rem;
+  border-radius: 38px;
+  -webkit-mask-image: radial-gradient(ellipse at 62% 56%, #000 56%, rgb(0 0 0 / 0.74) 76%, transparent 100%);
+  mask-image: radial-gradient(ellipse at 62% 56%, #000 56%, rgb(0 0 0 / 0.74) 76%, transparent 100%);
+}
+
+.reference-auth-showcase .marketing-product-bg::after {
+  background:
+    radial-gradient(ellipse at 62% 56%, transparent 46%, rgb(3 35 39 / 0.18) 72%, rgb(3 35 39 / 0.62) 100%),
+    linear-gradient(90deg, rgb(3 35 39 / 0.54), transparent 28%, transparent 82%, rgb(3 35 39 / 0.36) 100%);
+}
+
+.reference-auth-showcase .marketing-product-image {
+  object-fit: cover;
+  object-position: center right;
+  transform: scale(0.94);
+  transform-origin: center right;
+}
+
+.reference-auth-showcase .marketing-glass-card.is-pos {
+  top: auto;
+  bottom: 29%;
+  left: 6%;
+}
+
+.reference-auth-showcase .marketing-glass-card.is-time {
+  bottom: 14%;
+  left: 20%;
+}
+
+.reference-auth-showcase .marketing-glass-card.is-stock {
+  display: none;
+}
+
+.reference-auth-showcase .marketing-glass-card.is-report {
+  top: auto;
+  right: auto;
+  bottom: 21%;
+  left: 41%;
+}
+
+.marketing-product-showcase.is-dark .marketing-glass-card {
+  border-color: rgb(255 255 255 / 0.18);
+  color: white;
+  background: linear-gradient(135deg, rgb(8 102 111 / 0.62), rgb(215 101 60 / 0.32));
+}
+
+.marketing-product-showcase.is-dark .marketing-glass-card strong,
+.marketing-product-showcase.is-dark .marketing-glass-card small {
+  color: white;
+}
+
+/* Floating glass cards overlaid on the login background (desktop left panel). */
+.reference-auth-cards {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.reference-auth-cards .marketing-glass-card {
+  --card-scale: 0.8;
+
+  min-width: 8.5rem;
+  border-color: rgb(255 255 255 / 0.2);
+  color: white;
+  background: linear-gradient(135deg, rgb(8 102 111 / 0.66), rgb(215 101 60 / 0.34));
+}
+
+.reference-auth-cards .marketing-glass-card strong,
+.reference-auth-cards .marketing-glass-card small {
+  color: white;
+}
+
+/* Cards sit in the lower-left scene area: clear of the headline (top) and the
+   POS terminal (centre-right of the background render). */
+.reference-auth-cards .marketing-glass-card.is-pos {
+  top: auto;
+  bottom: 32%;
+  left: 6%;
+}
+
+.reference-auth-cards .marketing-glass-card.is-report {
+  top: auto;
+  right: auto;
+  bottom: 21%;
+  left: 38%;
+  animation-delay: -2.4s;
+}
+
+.reference-auth-cards .marketing-glass-card.is-time {
+  bottom: 13%;
+  left: 16%;
+  animation-delay: -1.2s;
+}
+
+@media (max-width: 1100px) {
+  .reference-auth-cards {
+    display: none;
+  }
+}
+
+.reference-auth-form-wrap {
+  position: relative;
+  z-index: 5;
+  grid-column: 2;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.reference-auth-card {
+  display: grid;
+  width: min(100%, 28rem);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.76), rgb(255 255 255 / 0.5)),
+    linear-gradient(320deg, rgb(8 95 104 / 0.08), transparent 64%);
+  box-shadow:
+    0 34px 90px rgb(29 22 16 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.75);
+  padding: 2.35rem;
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.reference-auth-mobile-brand {
+  display: none;
+  margin-bottom: 1.4rem;
+}
+
+.reference-auth-title {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  text-align: center;
+}
+
+.reference-auth-title h1 {
+  margin: 0;
+  color: #1d1916;
+  font-size: 1.9rem;
+  font-weight: 950;
+}
+
+.reference-auth-title p {
+  margin: 0;
+  color: #5d544e;
+  font-size: 0.95rem;
+}
+
+.reference-login-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.8rem;
+}
+
+.reference-login-form label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.reference-login-form label span {
+  color: #2d2824;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.reference-login-form .form-input {
+  min-height: 3rem;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.72);
+}
+
+.reference-forgot-link {
+  justify-self: start;
+  color: #c65d35;
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.reference-login-submit {
+  width: 100%;
+  margin-top: 0.15rem;
+}
+
+.reference-auth-register {
+  margin: 1.5rem 0 0;
+  color: #675d56;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.reference-auth-register a {
+  color: #d7653c;
+  font-weight: 950;
+  text-decoration: none;
+}
+
+@keyframes glassCardFloat {
+  0%,
+  100% {
+    transform: var(--card-transform) translate3d(0, 0, 0) scale(var(--card-scale));
+  }
+
+  50% {
+    transform: var(--card-transform) translate3d(0.32rem, -0.75rem, 0) scale(var(--card-scale));
+  }
+}
+
+@keyframes workflowPanelIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.7rem, 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes workflowItemIn {
+  from {
+    opacity: 0;
+    transform: translate3d(-0.45rem, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (max-width: 1100px) {
+  .marketing-header {
+    grid-template-columns: auto auto;
+  }
+
+  .marketing-nav {
+    display: none;
+  }
+
+  .reference-hero {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding-top: 2.25rem;
+  }
+
+  .reference-hero-visual {
+    position: relative;
+    inset: auto;
+    z-index: 1;
+    order: -1;
+    width: 100%;
+    min-height: 26rem;
+  }
+
+  .reference-hero-visual .marketing-product-bg {
+    inset: -0.8rem;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 54%, #000 58%, rgb(0 0 0 / 0.76) 78%, transparent 100%);
+    mask-image: radial-gradient(ellipse at 50% 54%, #000 58%, rgb(0 0 0 / 0.76) 78%, transparent 100%);
+  }
+
+  .reference-hero-visual .marketing-product-bg::after {
+    background:
+      linear-gradient(180deg, rgb(246 240 232 / 0.08), rgb(246 240 232 / 0.24) 100%),
+      radial-gradient(circle at 50% 26%, rgb(255 255 255 / 0.08), transparent 34%);
+  }
+
+  .reference-hero-visual .marketing-product-image {
+    object-position: 52% 56%;
+    filter: saturate(1.08) contrast(1.12);
+    transform: scale(1.025);
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-pos {
+    top: 11%;
+    left: 10%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-stock {
+    top: 11%;
+    right: 10%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-qr {
+    bottom: 15%;
+    left: 19%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-report {
+    right: 14%;
+    bottom: 14%;
+  }
+
+  .reference-hero-copy {
+    margin-top: -1.5rem;
+  }
+
+  .reference-feature-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .reference-mini-grid,
+  .reference-pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reference-auth-page {
+    grid-template-columns: 1fr;
+    background:
+      radial-gradient(circle at 50% 0%, rgb(0 205 222 / 0.18), transparent 22rem),
+      linear-gradient(180deg, #061d22 0%, #09242a 48%, #f5f0ea 100%);
+  }
+
+  /* Tablet/mobile: the visual becomes a full-bleed backdrop behind the form. */
+  .reference-auth-visual {
+    position: absolute;
+    inset: 0;
+    grid-column: 1 / -1;
+    min-height: 100%;
+    padding: 1.5rem;
+  }
+
+  .reference-auth-visual > .marketing-brand,
+  .reference-auth-copy {
+    display: none;
+  }
+
+  .reference-auth-form-wrap {
+    grid-column: 1;
+    min-height: 100vh;
+    margin-top: 0;
+    padding-block: 2rem;
+  }
+
+  .reference-auth-mobile-brand {
+    display: block;
+  }
+
+  .reference-auth-showcase .marketing-glass-card {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .marketing-page {
+    padding: 0.75rem;
+  }
+
+  .marketing-header {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+    justify-items: stretch;
+    margin: 0 0 1rem;
+    padding: 1rem;
+  }
+
+  .marketing-header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .marketing-login-link,
+  .marketing-header-cta {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0 !important;
+    min-height: 2.75rem;
+    padding-inline: 0.5rem;
+    white-space: nowrap;
+  }
+
+  .marketing-login-link {
+    border: 1px solid rgb(220 209 196 / 0.95);
+    border-radius: 8px;
+    background: rgb(255 255 255 / 0.56);
+  }
+
+  .reference-hero {
+    min-height: auto;
+    padding: 1.5rem 0 2.5rem;
+  }
+
+  .reference-hero h1 {
+    font-size: 3.25rem;
+  }
+
+  .reference-hero h1 span {
+    font-size: 2.05rem;
+  }
+
+  .reference-hero-sub {
+    font-size: 0.94rem;
+  }
+
+  .reference-primary-cta,
+  .reference-secondary-cta {
+    width: 100%;
+  }
+
+  .reference-hero-visual {
+    position: relative;
+    inset: auto;
+    order: 2;
+    width: min(100%, 28rem);
+    min-height: 15.75rem;
+    margin: 1.25rem auto 0;
+  }
+
+  .reference-hero-visual .marketing-product-bg {
+    inset: -0.65rem;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 55%, #000 60%, rgb(0 0 0 / 0.68) 78%, transparent 100%);
+    mask-image: radial-gradient(ellipse at 50% 55%, #000 60%, rgb(0 0 0 / 0.68) 78%, transparent 100%);
+  }
+
+  .reference-hero-visual .marketing-product-bg::after {
+    background:
+      linear-gradient(180deg, rgb(246 240 232 / 0.02), rgb(246 240 232 / 0.16) 100%),
+      radial-gradient(circle at 50% 24%, rgb(255 255 255 / 0.06), transparent 36%);
+  }
+
+  .reference-hero-visual .marketing-product-image {
+    object-position: 50% 54%;
+    transform: scale(0.96);
+  }
+
+  .reference-hero-copy {
+    order: 1;
+    margin-top: 0;
+  }
+
+  .marketing-glass-card {
+    --card-scale: 0.78;
+    min-width: 8.4rem;
+    padding: 0.68rem 0.72rem;
+    column-gap: 0.55rem;
+  }
+
+  .marketing-card-icon {
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 8px;
+  }
+
+  .marketing-glass-card strong {
+    font-size: 0.78rem;
+  }
+
+  .marketing-glass-card small {
+    font-size: 0.66rem;
+  }
+
+  .marketing-glass-card.is-pos {
+    top: 8%;
+    left: 6%;
+  }
+
+  .marketing-glass-card.is-stock {
+    top: 10%;
+    right: 5%;
+  }
+
+  .marketing-glass-card.is-qr {
+    bottom: 12%;
+    left: 7%;
+  }
+
+  .marketing-glass-card.is-report {
+    right: 6%;
+    bottom: 8%;
+  }
+
+  .reference-auth-showcase .marketing-glass-card {
+    --card-scale: 0.72;
+  }
+
+  .reference-auth-showcase .marketing-glass-card.is-pos {
+    top: auto;
+    bottom: 8%;
+    left: 8%;
+  }
+
+  .reference-auth-showcase .marketing-glass-card.is-time {
+    bottom: 3%;
+    left: 34%;
+  }
+
+  .reference-auth-showcase .marketing-glass-card.is-report {
+    top: 13%;
+    right: 8%;
+    bottom: auto;
+    left: auto;
+  }
+
+  .reference-scroll-hint {
+    display: none;
+  }
+
+  .reference-step-line {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .reference-step-line::before {
+    display: none;
+  }
+
+  .reference-mini-grid,
+  .reference-pricing-grid,
+  .reference-trust-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .reference-feature-panel,
+  .reference-plan-card {
+    padding: 1rem;
+  }
+
+  .reference-pricing-hero,
+  .reference-flow,
+  .reference-pricing-grid {
+    padding-inline: 0;
+  }
+
+  .reference-enterprise-contact {
+    flex-direction: column;
+    align-items: stretch;
+    margin-inline: 0;
+    width: 100%;
+  }
+
+  .reference-billing-toggle {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: min(100%, 22rem);
+    margin: 1.2rem auto 0;
+    border-radius: 1.5rem;
+  }
+
+  .reference-billing-toggle button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0.55rem 0.7rem;
+    text-align: center;
+  }
+
+  .reference-plan-card {
+    min-height: auto;
+  }
+
+  .reference-promo-strip {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    margin: 1rem 0 2rem;
+    padding: 1rem;
+  }
+
+  .reference-promo-strip strong {
+    border-left: 0;
+    padding-left: 0;
+    white-space: normal;
+  }
+
+  .reference-auth-page {
+    display: block;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 50% 0%, rgb(0 205 222 / 0.16), transparent 18rem),
+      linear-gradient(180deg, #061d22 0%, #09242a 42%, #f5f0ea 100%);
+  }
+
+  .reference-auth-form-wrap {
+    position: relative;
+    z-index: 5;
+    min-height: 100vh;
+    margin-top: 0;
+    padding: 1rem;
+  }
+
+  .reference-auth-card {
+    width: 100%;
+    padding: 1.25rem;
+  }
+
+  .reference-auth-mobile-brand {
+    display: block;
+  }
+}
+
+.reference-hero-visual .marketing-glass-card {
+  --card-scale: 0.86;
+
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 2.05rem minmax(0, 1fr);
+  width: 10.4rem;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.72rem 0.82rem;
+  column-gap: 0.62rem;
+  border-color: rgb(255 255 255 / 0.76);
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 0.78), rgb(255 255 255 / 0.28)),
+    linear-gradient(330deg, rgb(0 124 136 / 0.22), transparent 64%);
+  box-shadow:
+    0 22px 54px rgb(12 56 62 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.82),
+    inset -16px -20px 34px rgb(0 95 108 / 0.09);
+  backdrop-filter: blur(20px) saturate(1.24);
+}
+
+.reference-hero-visual .marketing-card-icon {
+  width: 2.05rem;
+  height: 2.05rem;
+}
+
+.reference-hero-visual .marketing-glass-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+.reference-hero-visual .marketing-glass-card small {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.25;
+  font-size: 0.68rem;
+}
+
+.reference-hero-visual .marketing-glass-card.is-pos {
+  top: 13%;
+  left: 22%;
+}
+
+.reference-hero-visual .marketing-glass-card.is-stock {
+  top: 13%;
+  right: 0.5rem;
+}
+
+.reference-hero-visual .marketing-glass-card.is-time {
+  left: auto;
+  right: 12%;
+  bottom: 18%;
+}
+
+.reference-hero-visual .marketing-glass-card.is-report {
+  left: 39%;
+  bottom: 8%;
+  width: 11.25rem;
+  border-color: rgb(255 216 184 / 0.78);
+  color: #fff;
+  background:
+    linear-gradient(145deg, rgb(255 154 89 / 0.78), rgb(211 91 50 / 0.58)),
+    radial-gradient(circle at 18% 12%, rgb(255 255 255 / 0.44), transparent 38%);
+  box-shadow:
+    0 22px 54px rgb(203 91 48 / 0.2),
+    inset 0 1px 0 rgb(255 255 255 / 0.62);
+}
+
+.reference-hero-visual .marketing-glass-card.is-report strong,
+.reference-hero-visual .marketing-glass-card.is-report small {
+  color: #fff;
+}
+
+@media (max-width: 1180px) {
+  .reference-hero-visual .marketing-glass-card {
+    --card-scale: 0.78;
+    width: 9.4rem;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-pos {
+    top: 10%;
+    left: 9%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-stock {
+    top: 10%;
+    right: 6%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-time {
+    left: auto;
+    right: 9%;
+    bottom: 14%;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-report {
+    left: 24%;
+    bottom: 10%;
+  }
+}
+
+@media (max-width: 760px) {
+  .reference-hero-visual .marketing-glass-card {
+    display: none;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-pos,
+  .reference-hero-visual .marketing-glass-card.is-stock {
+    display: none;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-time {
+    display: none;
+    right: 0.7rem;
+    bottom: 4.5rem;
+  }
+
+  .reference-hero-visual .marketing-glass-card.is-report {
+    display: none;
+    left: 1rem;
+    bottom: 4.2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-glass-card,
+  .reference-feature-copy,
+  .reference-feature-copy li {
+    animation: none;
+  }
+
+  .reference-step-line::before,
+  .reference-step-line button,
+  .reference-step-line span,
+  .reference-mini-card,
+  .reference-feature-visual {
+    transition: none;
   }
 }
