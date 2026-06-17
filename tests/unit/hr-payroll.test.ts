@@ -67,6 +67,7 @@ function lines(args: {
   profiles?: EmployeeProfile[];
   adjustments?: PayrollAdjustment[];
   settings?: StoreHrSettings;
+  holidayDates?: string[];
   periodStart?: string;
   periodEnd?: string;
   today?: string;
@@ -77,6 +78,7 @@ function lines(args: {
     profiles: args.profiles ?? [],
     adjustments: args.adjustments ?? [],
     settings: args.settings ?? settings(),
+    holidayDates: args.holidayDates,
     periodStart: args.periodStart ?? "2026-06-01",
     periodEnd: args.periodEnd ?? "2026-06-30",
     today: args.today ?? "2026-06-30",
@@ -178,6 +180,47 @@ describe("computePayrollLines", () => {
     expect(result[0].absentPenalty).toBe(1500);
     expect(result[0].netPay).toBe(-1500);
   });
+
+  it("uses monthly salary divided by period days for absent penalty and skips leave/holiday days", () => {
+    const workedDates = [
+      "2026-07-01",
+      "2026-07-02",
+      "2026-07-03",
+      "2026-07-06",
+      "2026-07-07",
+      "2026-07-08",
+      "2026-07-09",
+      "2026-07-10",
+    ];
+    const records: AttendanceRecord[] = workedDates.map((date, idx) => ({
+      id: `r${idx}`,
+      storeId: "s1",
+      organizationId: "o1",
+      userId: "u1",
+      employeeName: "Alice",
+      date,
+      clockInAt: `${date}T02:00:00Z`,
+      clockOutAt: `${date}T10:00:00Z`,
+      status: "completed",
+      createdAt: "",
+      updatedAt: "",
+    }));
+
+    const result = lines({
+      records,
+      profiles: [profile({ payType: "monthly", monthlySalary: 31000, workingDays: [1, 2, 3, 4, 5] })],
+      adjustments: [adj({ type: "leave", amount: 0, date: "2026-07-13" })],
+      settings: settings({ absentPenaltyPerDay: 999 }),
+      holidayDates: ["2026-07-14"],
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-31",
+      today: "2026-07-15",
+    });
+
+    expect(result[0].absentDays).toBe(1);
+    expect(result[0].absentPenalty).toBe(1000);
+    expect(result[0].netPay).toBe(30000);
+  });
 });
 
 describe("HR payroll migration + repository wiring", () => {
@@ -238,5 +281,15 @@ describe("HR payroll migration + repository wiring", () => {
     const staff = read("src/app/(dashboard)/staff/StaffManager.tsx");
     expect(staff).toContain("/payslip?mode=summary");
     expect(staff).toContain("/payslip?userId=");
+  });
+
+  it("staff and payslip payroll calculations pass store holidays", () => {
+    const staffPage = read("src/app/(dashboard)/staff/page.tsx");
+    const payslipPage = read("src/app/payslip/page.tsx");
+
+    for (const source of [staffPage, payslipPage]) {
+      expect(source).toContain("listStoreHolidays(ctx.storeId, dateFrom, dateTo)");
+      expect(source).toContain("holidayDates: (holidaysRes.data ?? []).map((h) => h.date)");
+    }
   });
 });

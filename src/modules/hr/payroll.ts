@@ -96,12 +96,31 @@ function weekdayOf(date: string): number {
   return new Date(`${date}T12:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
 }
 
+function periodDayCount(from: string, to: string): number {
+  return eachDate(from, to).length;
+}
+
+function autoAbsentPenaltyPerDay(
+  profile: EmployeeProfile,
+  settings: StoreHrSettings,
+  periodStart: string,
+  periodEnd: string,
+): number {
+  if (settings.absentPenaltyPerDay <= 0) return 0;
+  if (profile.payType === "monthly" && profile.monthlySalary > 0) {
+    const days = periodDayCount(periodStart, periodEnd);
+    return days > 0 ? profile.monthlySalary / days : 0;
+  }
+  return settings.absentPenaltyPerDay;
+}
+
 export interface PayrollComputeInput {
   summaries: PayrollSummary[];
   records: AttendanceRecord[];
   profiles: EmployeeProfile[];
   adjustments: PayrollAdjustment[];
   settings: StoreHrSettings;
+  holidayDates?: Iterable<string>;
   periodStart: string;
   periodEnd: string;
   /** Store-local "today"; absent days are only counted up to this date. */
@@ -114,10 +133,11 @@ export interface PayrollComputeInput {
  * Auto-computes overtime pay, late penalties and absent penalties from the attendance records.
  */
 export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
-  const { summaries, records, profiles, adjustments, settings, periodStart, periodEnd, today, timezone } = input;
+  const { summaries, records, profiles, adjustments, settings, holidayDates = [], periodStart, periodEnd, today, timezone } = input;
 
   const profileByUser = new Map(profiles.map((p) => [p.userId, p]));
   const summaryByUser = new Map(summaries.map((s) => [s.userId, s]));
+  const holidayDateSet = new Set(holidayDates);
 
   const recordsByUser = new Map<string, AttendanceRecord[]>();
   for (const r of records) {
@@ -198,15 +218,22 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
 
     // --- Auto absent: scheduled working days (per profile) with no record, up to today ---
     let absentDays = 0;
-    if (profile && settings.absentPenaltyPerDay > 0 && profile.workingDays.length > 0 && periodStart <= absentScanEnd) {
+    const absentPenaltyPerDay = profile ? autoAbsentPenaltyPerDay(profile, settings, periodStart, periodEnd) : 0;
+    if (profile && absentPenaltyPerDay > 0 && profile.workingDays.length > 0 && periodStart <= absentScanEnd) {
       const datesWithRecord = new Set(userRecords.map((r) => r.date));
+      const leaveDates = new Set(userAdj.filter((a) => a.type === "leave").map((a) => a.date));
       for (const date of eachDate(periodStart, absentScanEnd)) {
-        if (profile.workingDays.includes(weekdayOf(date)) && !datesWithRecord.has(date)) {
+        if (
+          profile.workingDays.includes(weekdayOf(date)) &&
+          !datesWithRecord.has(date) &&
+          !leaveDates.has(date) &&
+          !holidayDateSet.has(date)
+        ) {
           absentDays += 1;
         }
       }
     }
-    const absentPenalty = round2(absentDays * settings.absentPenaltyPerDay);
+    const absentPenalty = round2(absentDays * absentPenaltyPerDay);
 
     // --- Manual adjustments ---
     let bonusTotal = 0;

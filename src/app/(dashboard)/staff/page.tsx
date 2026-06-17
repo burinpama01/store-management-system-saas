@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
-import { listAttendanceRecords, computePayrollSummaries } from "@/modules/attendance/repository";
+import { listAttendanceRecords, computePayrollSummaries, listStoreHolidays } from "@/modules/attendance/repository";
 import { computePayrollLines } from "@/modules/hr/payroll";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -27,11 +27,12 @@ export default async function StaffPage({
   let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : today;
   if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
 
-  const [membersRes, profilesRes, recordsRes, adjustmentsRes, storeRes, hrSettings] = await Promise.all([
+  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
     listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo),
     listPayrollAdjustments(ctx.storeId, dateFrom, dateTo),
+    listStoreHolidays(ctx.storeId, dateFrom, dateTo),
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
   ]);
@@ -46,6 +47,7 @@ export default async function StaffPage({
     profiles,
     adjustments,
     settings: hrSettings,
+    holidayDates: (holidaysRes.data ?? []).map((h) => h.date),
     periodStart: dateFrom,
     periodEnd: dateTo,
     today,

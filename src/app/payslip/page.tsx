@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
-import { listAttendanceRecords, computePayrollSummaries } from "@/modules/attendance/repository";
+import { listAttendanceRecords, computePayrollSummaries, listStoreHolidays } from "@/modules/attendance/repository";
 import { computePayrollLines, type PayrollLine } from "@/modules/hr/payroll";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -81,10 +81,11 @@ export default async function PayslipPage({
   const mode = params.mode === "summary" ? "summary" : "payslip";
   const userId = params.userId && UUID_RE.test(params.userId) ? params.userId : null;
 
-  const [profilesRes, recordsRes, adjustmentsRes, storeRes, hrSettings] = await Promise.all([
+  const [profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
     listEmployeeProfiles(ctx.storeId),
     listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo),
     listPayrollAdjustments(ctx.storeId, dateFrom, dateTo),
+    listStoreHolidays(ctx.storeId, dateFrom, dateTo),
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
   ]);
@@ -97,6 +98,7 @@ export default async function PayslipPage({
     profiles: profilesRes.data ?? [],
     adjustments: adjustmentsRes.data ?? [],
     settings: hrSettings,
+    holidayDates: (holidaysRes.data ?? []).map((h) => h.date),
     periodStart: dateFrom,
     periodEnd: dateTo,
     today,

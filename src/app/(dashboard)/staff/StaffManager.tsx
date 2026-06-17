@@ -56,6 +56,7 @@ export function StaffManager({
   const router = useRouter();
   const [tab, setTab] = useState<"employees" | "payroll" | "policy">("employees");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -66,6 +67,7 @@ export function StaffManager({
 
   function run(action: () => Promise<{ error: string | null }>, onOk?: () => void) {
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const res = await action();
       if (res.error) setError(res.error);
@@ -112,6 +114,7 @@ export function StaffManager({
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+      {notice && <p className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-700" aria-live="polite">{notice}</p>}
 
       {tab === "employees" ? (
         <section className="space-y-3">
@@ -448,7 +451,7 @@ export function StaffManager({
             <h2 className="text-sm font-bold text-gray-900">นโยบายค่าจ้าง / บทลงโทษ (ทั้งร้าน)</h2>
             <p className="text-xs text-gray-500">ใช้คำนวณ OT มาสาย และขาดงานในแท็บเงินเดือนโดยอัตโนมัติ</p>
             <form
-              action={(fd) => run(() => saveHrSettingsAction(fd))}
+              action={(fd) => run(() => saveHrSettingsAction(fd), () => setNotice("บันทึกนโยบายเรียบร้อยแล้ว"))}
               className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
             >
               <label className="text-xs font-medium text-gray-600">
@@ -472,7 +475,7 @@ export function StaffManager({
                 <input name="latePenaltyMaxPerDay" type="number" min={0} step="0.01" defaultValue={hrSettings.latePenaltyMaxPerDay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
-                ค่าปรับขาดงาน/วัน
+                ค่าปรับขาดงาน/วัน (รายเดือนใช้เงินเดือน ÷ จำนวนวัน)
                 <input name="absentPenaltyPerDay" type="number" min={0} step="0.01" defaultValue={hrSettings.absentPenaltyPerDay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
@@ -480,7 +483,7 @@ export function StaffManager({
                 <input name="backdatedRightsPerMonth" type="number" min={0} max={31} step="1" defaultValue={hrSettings.backdatedRightsPerMonth} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <div className="flex items-end lg:col-span-3">
-                <button type="submit" disabled={isPending} className="btn-primary min-h-11 px-6 text-sm">บันทึกนโยบาย</button>
+                <button type="submit" disabled={isPending} className="btn-primary min-h-11 px-6 text-sm">{isPending ? "กำลังบันทึก..." : "บันทึกนโยบาย"}</button>
               </div>
             </form>
           </div>
