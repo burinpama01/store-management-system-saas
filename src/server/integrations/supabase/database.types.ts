@@ -679,6 +679,108 @@ export interface Database {
         };
         Relationships: [];
       };
+      catalog_modifier_group_templates: {
+        Row: {
+          id: string;
+          store_id: string;
+          name: string;
+          selection_type: "single" | "multiple";
+          is_required: boolean;
+          min_selections: number;
+          max_selections: number;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          store_id: string;
+          name: string;
+          selection_type?: "single" | "multiple";
+          is_required?: boolean;
+          min_selections?: number;
+          max_selections?: number;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          store_id?: string;
+          name?: string;
+          selection_type?: "single" | "multiple";
+          is_required?: boolean;
+          min_selections?: number;
+          max_selections?: number;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      catalog_modifier_option_templates: {
+        Row: {
+          id: string;
+          group_template_id: string;
+          name: string;
+          price_adjustment: number;
+          is_default: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_template_id: string;
+          name: string;
+          price_adjustment?: number;
+          is_default?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          group_template_id?: string;
+          name?: string;
+          price_adjustment?: number;
+          is_default?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      catalog_variant_templates: {
+        Row: {
+          id: string;
+          store_id: string;
+          name: string;
+          price_adjustment: number;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          store_id: string;
+          name: string;
+          price_adjustment?: number;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          store_id?: string;
+          name?: string;
+          price_adjustment?: number;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       product_variants: {
         Row: {
           id: string;

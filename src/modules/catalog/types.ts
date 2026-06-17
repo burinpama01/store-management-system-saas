@@ -41,7 +41,42 @@ export interface ProductVariant {
   sortOrder: number;
 }
 
+export interface VariantTemplate {
+  id: string;
+  storeId: string;
+  name: string;
+  priceAdjustment: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type ModifierSelectionType = "single" | "multiple";
+
+export interface ModifierOptionTemplate {
+  id: string;
+  modifierGroupTemplateId: string;
+  name: string;
+  priceAdjustment: number;
+  isDefault: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModifierGroupTemplate {
+  id: string;
+  storeId: string;
+  name: string;
+  selectionType: ModifierSelectionType;
+  isRequired: boolean;
+  minSelections: number;
+  maxSelections: number;
+  sortOrder: number;
+  options: ModifierOptionTemplate[];
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface ModifierGroup {
   id: string;

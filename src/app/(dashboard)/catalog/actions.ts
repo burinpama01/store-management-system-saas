@@ -10,6 +10,14 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  createVariantTemplate,
+  deleteVariantTemplate,
+  getVariantTemplate,
+  createModifierGroupTemplate,
+  deleteModifierGroupTemplate,
+  getModifierGroupTemplate,
+  createModifierOptionTemplate,
+  deleteModifierOptionTemplate,
   createVariant,
   deleteVariant,
   createModifierGroup,
@@ -31,6 +39,46 @@ async function getStoreContext() {
 
 function revalidate() {
   revalidatePath("/catalog", "page");
+}
+
+function isDuplicateVariantError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "23505" ||
+    (error.message ?? "").includes("product_variants_product_name_price_unique_idx")
+  );
+}
+
+function isDuplicateVariantTemplateError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "23505" ||
+    (error.message ?? "").includes("catalog_variant_templates_store_name_price_idx")
+  );
+}
+
+function isDuplicateModifierGroupError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "23505" ||
+    (error.message ?? "").includes("modifier_groups_product_name_unique_idx")
+  );
+}
+
+function isDuplicateModifierGroupTemplateError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "23505" ||
+    (error.message ?? "").includes("catalog_modifier_group_templates_store_name_idx")
+  );
+}
+
+function isDuplicateModifierOptionTemplateError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "23505" ||
+    (error.message ?? "").includes("catalog_modifier_option_templates_group_name_price_idx")
+  );
 }
 
 function readOptionalUrl(formData: FormData, key: string) {
@@ -198,6 +246,270 @@ export async function deleteProductAction(id: string): Promise<{ error: string |
 }
 
 // ─── Variants ───────────────────────────────────────────────
+
+export async function createVariantTemplateAction(
+  _prev: { error: string | null },
+  formData: FormData,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const name = (formData.get("variantName") as string | null)?.trim() ?? "";
+    const priceAdjRaw = formData.get("priceAdjustment") as string | null;
+    const priceAdj = priceAdjRaw ? parseFloat(priceAdjRaw) : 0;
+
+    if (!name) return { error: "กรุณาระบุชื่อตัวเลือก" };
+    if (isNaN(priceAdj)) return { error: "ราคาปรับไม่ถูกต้อง" };
+
+    const result = await createVariantTemplate({
+      storeId: ctx.storeId,
+      name,
+      priceAdjustment: priceAdj,
+    });
+    if (result.error) {
+      return {
+        error: isDuplicateVariantTemplateError(result.error)
+          ? "ตัวเลือกนี้มีอยู่ในคลังแล้ว"
+          : result.error.userMessage,
+      };
+    }
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function deleteVariantTemplateAction(id: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const result = await deleteVariantTemplate(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function applyVariantTemplateAction(
+  productId: string,
+  _prev: { error: string | null },
+  formData: FormData,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const variantTemplateId = (formData.get("variantTemplateId") as string | null)?.trim() ?? "";
+
+    if (!variantTemplateId) return { error: "กรุณาเลือกตัวเลือกจากคลัง" };
+
+    const productRes = await getProduct(productId);
+    if (!productRes.data || productRes.data.storeId !== ctx.storeId)
+      return { error: "ไม่มีสิทธิ์" };
+
+    const template = await getVariantTemplate(variantTemplateId);
+    if (!template.data || template.data.storeId !== ctx.storeId)
+      return { error: "ไม่มีสิทธิ์" };
+
+    const exists = productRes.data.variants.some(
+      (variant) =>
+        variant.name.trim().toLowerCase() === template.data.name.trim().toLowerCase() &&
+        variant.priceAdjustment === template.data.priceAdjustment,
+    );
+    if (exists) return { error: "ตัวเลือกนี้อยู่ในเมนูแล้ว" };
+
+    const result = await createVariant({
+      productId,
+      name: template.data.name,
+      priceAdjustment: template.data.priceAdjustment,
+    });
+    if (result.error) {
+      return { error: isDuplicateVariantError(result.error) ? "ตัวเลือกนี้อยู่ในเมนูแล้ว" : result.error.userMessage };
+    }
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function createModifierGroupTemplateAction(
+  _prev: { error: string | null; message?: string | null },
+  formData: FormData,
+): Promise<{ error: string | null; message?: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const name = (formData.get("groupName") as string | null)?.trim() ?? "";
+    const selectionType = formData.get("selectionType") as "single" | "multiple";
+    const isRequired = formData.get("isRequired") === "on";
+
+    if (!name) return { error: "กรุณาระบุชื่อกลุ่มตัวเลือก", message: null };
+    if (selectionType !== "single" && selectionType !== "multiple")
+      return { error: "รูปแบบการเลือกไม่ถูกต้อง", message: null };
+
+    const result = await createModifierGroupTemplate({
+      storeId: ctx.storeId,
+      name,
+      selectionType,
+      isRequired,
+      minSelections: isRequired ? 1 : 0,
+      maxSelections: selectionType === "single" ? 1 : 10,
+    });
+    if (result.error) {
+      return {
+        error: isDuplicateModifierGroupTemplateError(result.error)
+          ? "กลุ่มตัวเลือกนี้มีอยู่ในคลังแล้ว"
+          : result.error.userMessage,
+        message: null,
+      };
+    }
+    revalidate();
+    return { error: null, message: `เพิ่มกลุ่มตัวเลือก ${name} แล้ว` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", message: null };
+  }
+}
+
+export async function deleteModifierGroupTemplateAction(id: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const result = await deleteModifierGroupTemplate(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function addModifierOptionTemplateAction(
+  groupTemplateId: string,
+  _prev: { error: string | null; message?: string | null },
+  formData: FormData,
+): Promise<{ error: string | null; message?: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const name = (formData.get("optionName") as string | null)?.trim() ?? "";
+    const priceAdjRaw = formData.get("priceAdjustment") as string | null;
+    const priceAdj = priceAdjRaw ? parseFloat(priceAdjRaw) : 0;
+
+    if (!name) return { error: "กรุณาระบุชื่อตัวเลือก", message: null };
+    if (isNaN(priceAdj)) return { error: "ราคาปรับไม่ถูกต้อง", message: null };
+
+    const groupTemplate = await getModifierGroupTemplate(groupTemplateId);
+    if (!groupTemplate.data || groupTemplate.data.storeId !== ctx.storeId)
+      return { error: "ไม่มีสิทธิ์", message: null };
+
+    const result = await createModifierOptionTemplate({
+      groupTemplateId,
+      name,
+      priceAdjustment: priceAdj,
+      sortOrder: groupTemplate.data.options.length,
+    });
+    if (result.error) {
+      return {
+        error: isDuplicateModifierOptionTemplateError(result.error)
+          ? "ตัวเลือกนี้มีอยู่ในกลุ่มแล้ว"
+          : result.error.userMessage,
+        message: null,
+      };
+    }
+    revalidate();
+    return { error: null, message: `เพิ่มตัวเลือก ${name} แล้ว` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", message: null };
+  }
+}
+
+export async function deleteModifierOptionTemplateAction(id: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const result = await deleteModifierOptionTemplate(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function applyModifierGroupTemplateAction(
+  productId: string,
+  _prev: { error: string | null; message?: string | null },
+  formData: FormData,
+): Promise<{ error: string | null; message?: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const modifierGroupTemplateId = (formData.get("modifierGroupTemplateId") as string | null)?.trim() ?? "";
+
+    if (!modifierGroupTemplateId) return { error: "กรุณาเลือกกลุ่มตัวเลือกจากคลัง", message: null };
+
+    const productRes = await getProduct(productId);
+    if (!productRes.data || productRes.data.storeId !== ctx.storeId)
+      return { error: "ไม่มีสิทธิ์", message: null };
+
+    const template = await getModifierGroupTemplate(modifierGroupTemplateId);
+    if (!template.data || template.data.storeId !== ctx.storeId)
+      return { error: "ไม่มีสิทธิ์", message: null };
+    if (template.data.options.length === 0)
+      return { error: "เพิ่มตัวเลือกในกลุ่มนี้ก่อนนำไปใช้ในเมนู", message: null };
+
+    const exists = productRes.data.modifierGroups.some(
+      (group) => group.name.trim().toLowerCase() === template.data.name.trim().toLowerCase(),
+    );
+    if (exists) return { error: "กลุ่มตัวเลือกนี้อยู่ในเมนูแล้ว", message: null };
+
+    const groupResult = await createModifierGroup({
+      productId,
+      name: template.data.name,
+      selectionType: template.data.selectionType,
+      isRequired: template.data.isRequired,
+      minSelections: template.data.minSelections,
+      maxSelections: template.data.maxSelections,
+    });
+    if (groupResult.error) {
+      return {
+        error: isDuplicateModifierGroupError(groupResult.error)
+          ? "กลุ่มตัวเลือกนี้อยู่ในเมนูแล้ว"
+          : groupResult.error.userMessage,
+        message: null,
+      };
+    }
+    if (!groupResult.data) return { error: "สร้างกลุ่มตัวเลือกไม่สำเร็จ", message: null };
+
+    for (const option of template.data.options) {
+      const optionResult = await createModifierOption({
+        modifierGroupId: groupResult.data.id,
+        name: option.name,
+        priceAdjustment: option.priceAdjustment,
+        isDefault: option.isDefault,
+        sortOrder: option.sortOrder,
+      });
+      if (optionResult.error) {
+        const rollbackResult = await deleteModifierGroup(groupResult.data.id, ctx.storeId);
+        if (rollbackResult.error) {
+          return {
+            error: `คัดลอกกลุ่มตัวเลือกไม่ครบ และลบกลุ่มที่สร้างไว้ไม่สำเร็จ: ${rollbackResult.error.userMessage}`,
+            message: null,
+          };
+        }
+        return { error: optionResult.error.userMessage, message: null };
+      }
+    }
+
+    revalidate();
+    return { error: null, message: `เพิ่มกลุ่มตัวเลือก ${template.data.name} ในเมนูแล้ว` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", message: null };
+  }
+}
 
 export async function addVariantAction(
   productId: string,

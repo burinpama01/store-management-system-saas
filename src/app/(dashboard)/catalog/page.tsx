@@ -2,7 +2,12 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
-import { listCategories, listProducts } from "@/modules/catalog/repository";
+import {
+  listCategories,
+  listModifierGroupTemplates,
+  listProducts,
+  listVariantTemplates,
+} from "@/modules/catalog/repository";
 import { CatalogManager } from "./CatalogManager";
 
 export const dynamic = "force-dynamic";
@@ -11,14 +16,24 @@ export default async function CatalogPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
   if (!resolved.can("catalog.view")) redirect("/dashboard");
 
-  const [categoriesResult, productsResult, billingState] = await Promise.all([
+  const [
+    categoriesResult,
+    productsResult,
+    variantTemplatesResult,
+    modifierGroupTemplatesResult,
+    billingState,
+  ] = await Promise.all([
     listCategories(ctx.storeId),
     listProducts(ctx.storeId, { includeInactive: true }),
+    listVariantTemplates(ctx.storeId),
+    listModifierGroupTemplates(ctx.storeId),
     getOrganizationBillingState(ctx.organizationId),
   ]);
 
   const categories = categoriesResult.data ?? [];
   const products = productsResult.data ?? [];
+  const variantTemplates = variantTemplatesResult.data ?? [];
+  const modifierGroupTemplates = modifierGroupTemplatesResult.data ?? [];
   const state = billingState ?? DEFAULT_BILLING_STATE;
   const features = getPlanFeatures(state);
 
@@ -27,6 +42,8 @@ export default async function CatalogPage() {
       <CatalogManager
         categories={categories}
         products={products}
+        variantTemplates={variantTemplates}
+        modifierGroupTemplates={modifierGroupTemplates}
         role={ctx.role}
         storeName={ctx.storeName}
         storeId={ctx.storeId}

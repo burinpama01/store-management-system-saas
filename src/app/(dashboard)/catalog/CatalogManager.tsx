@@ -1,7 +1,13 @@
 "use client";
 
 import { useActionState, useTransition, useState } from "react";
-import type { Category, Product, ModifierGroup } from "@/modules/catalog/types";
+import type {
+  Category,
+  Product,
+  VariantTemplate,
+  ModifierGroupTemplate,
+  ModifierGroup,
+} from "@/modules/catalog/types";
 import type { BillingPlan } from "@/modules/billing/types";
 import type { Role } from "@/modules/tenants/types";
 import { ModalDialog, ImageUpload } from "@/shared/components/ui";
@@ -12,9 +18,15 @@ import {
   createProductAction,
   updateProductAction,
   deleteProductAction,
-  addVariantAction,
+  createVariantTemplateAction,
+  deleteVariantTemplateAction,
+  applyVariantTemplateAction,
+  createModifierGroupTemplateAction,
+  deleteModifierGroupTemplateAction,
+  addModifierOptionTemplateAction,
+  deleteModifierOptionTemplateAction,
+  applyModifierGroupTemplateAction,
   deleteVariantAction,
-  addModifierGroupAction,
   deleteModifierGroupAction,
   addModifierOptionAction,
   deleteModifierOptionAction,
@@ -30,6 +42,8 @@ type PanelMode =
 interface Props {
   categories: Category[];
   products: Product[];
+  variantTemplates: VariantTemplate[];
+  modifierGroupTemplates: ModifierGroupTemplate[];
   role: Role;
   storeName: string;
   storeId: string;
@@ -143,6 +157,15 @@ function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
     <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+      {message}
+    </p>
+  );
+}
+
+function NoticeBanner({ message }: { message?: string | null }) {
+  if (!message) return null;
+  return (
+    <p className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700" aria-live="polite">
       {message}
     </p>
   );
@@ -417,10 +440,334 @@ function ProductForm({
 
 // ─── Variants sub-section ─────────────────────────────────────────
 
-function VariantsSection({ product }: { product: Product }) {
-  const [addState, addAction, addPending] = useActionState(
+function VariantTemplatesPanel({
+  variantTemplates,
+  canManageCatalog,
+}: {
+  variantTemplates: VariantTemplate[];
+  canManageCatalog: boolean;
+}) {
+  const [addState, addAction, addPending] = useActionState(createVariantTemplateAction, {
+    error: null,
+  });
+  const [variantTemplateMessage, setVariantTemplateMessage] = useState<string | null>(null);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+
+  async function handleDeleteVariantTemplate(template: VariantTemplate) {
+    setVariantTemplateMessage(null);
+    setDeletingTemplateId(template.id);
+    const result = await deleteVariantTemplateAction(template.id);
+    setDeletingTemplateId(null);
+    if (result.error) {
+      setVariantTemplateMessage(result.error);
+      return;
+    }
+    setVariantTemplateMessage(`ลบตัวเลือก ${template.name} แล้ว`);
+  }
+
+  return (
+    <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">คลังตัวเลือกสินค้า</h3>
+          <p className="text-xs text-slate-500">
+            เพิ่มตัวเลือกกลางก่อน แล้วเลือกใช้ในแต่ละเมนู ลดการพิมพ์ซ้ำเมื่อมีหลายสินค้า
+          </p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+          {variantTemplates.length} variants
+        </span>
+      </div>
+
+      {variantTemplates.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {variantTemplates.map((template) => (
+            <div
+              key={template.id}
+              className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-700"
+            >
+              <span className="font-semibold">{template.name}</span>
+              <span className="text-slate-500">{priceDeltaStr(template.priceAdjustment)}</span>
+              {canManageCatalog && (
+                <button
+                  type="button"
+                  onClick={() => { void handleDeleteVariantTemplate(template); }}
+                  disabled={deletingTemplateId === template.id}
+                  className="text-red-500 hover:text-red-700"
+                  aria-label={`ลบตัวเลือก ${template.name}`}
+                >
+                  {deletingTemplateId === template.id ? "..." : "ลบ"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canManageCatalog ? (
+        <form action={addAction} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px_auto]">
+          <input
+            name="variantName"
+            placeholder="ชื่อตัวเลือกกลาง เช่น S, M, L, เย็น, ร้อน"
+            className="min-h-10 rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <input
+            name="priceAdjustment"
+            type="number"
+            defaultValue={0}
+            step="1"
+            className="min-h-10 rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            placeholder="+ราคา"
+          />
+          <button
+            type="submit"
+            disabled={addPending}
+            className="min-h-10 rounded-md bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            เพิ่มตัวเลือก
+          </button>
+          <div className="sm:col-span-3">
+            <ErrorBanner message={addState.error} />
+          </div>
+        </form>
+      ) : (
+        <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          ต้องมีสิทธิ์ catalog.manage เพื่อจัดการคลังตัวเลือก
+        </p>
+      )}
+      {variantTemplateMessage && (
+        <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600" aria-live="polite">
+          {variantTemplateMessage}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ModifierGroupTemplateCard({
+  template,
+  canManageCatalog,
+}: {
+  template: ModifierGroupTemplate;
+  canManageCatalog: boolean;
+}) {
+  const [addOptionState, addOptionAction, addOptionPending] = useActionState(
+    async (prev: { error: string | null; message?: string | null }, fd: FormData) =>
+      addModifierOptionTemplateAction(template.id, prev, fd),
+    { error: null, message: null },
+  );
+  const [optionMessage, setOptionMessage] = useState<string | null>(null);
+  const [optionError, setOptionError] = useState<string | null>(null);
+  const [deletingOptionId, setDeletingOptionId] = useState<string | null>(null);
+
+  async function handleDeleteOption(option: ModifierGroupTemplate["options"][number]) {
+    setOptionMessage(null);
+    setOptionError(null);
+    setDeletingOptionId(option.id);
+    const result = await deleteModifierOptionTemplateAction(option.id);
+    setDeletingOptionId(null);
+    if (result.error) {
+      setOptionError(result.error);
+      return;
+    }
+    setOptionMessage(`ลบตัวเลือก ${option.name} แล้ว`);
+  }
+
+  return (
+    <article className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 className="text-sm font-bold text-slate-900">{template.name}</h4>
+          <p className="text-xs text-slate-500">
+            {template.selectionType === "single" ? "เลือกได้อันเดียว" : "เลือกได้หลายอัน"}
+            {template.isRequired ? " · บังคับเลือก" : ""}
+          </p>
+        </div>
+        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
+          {template.options.length} ตัวเลือก
+        </span>
+      </div>
+
+      {template.options.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {template.options.map((option) => (
+            <span
+              key={option.id}
+              className="inline-flex min-h-9 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-700"
+            >
+              <span className="font-semibold">{option.name}</span>
+              <span className="text-slate-500">{priceDeltaStr(option.priceAdjustment)}</span>
+              {canManageCatalog && (
+                <button
+                  type="button"
+                  onClick={() => { void handleDeleteOption(option); }}
+                  disabled={deletingOptionId === option.id}
+                  className="font-semibold text-red-500 hover:text-red-700 disabled:opacity-50"
+                  aria-label={`ลบตัวเลือก ${option.name}`}
+                >
+                  {deletingOptionId === option.id ? "..." : "ลบ"}
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-md border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+          ยังไม่มีตัวเลือกในกลุ่มนี้
+        </p>
+      )}
+
+      {canManageCatalog && (
+        <form action={addOptionAction} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_auto]">
+          <input
+            name="optionName"
+            placeholder="เช่น 0%, 25%, ธรรมดา, พิเศษ"
+            className="min-h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <input
+            name="priceAdjustment"
+            type="number"
+            defaultValue={0}
+            step="1"
+            placeholder="+ราคา"
+            className="min-h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <button
+            type="submit"
+            disabled={addOptionPending}
+            className="min-h-10 rounded-md bg-slate-700 px-4 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-50"
+          >
+            เพิ่ม
+          </button>
+          <div className="space-y-2 sm:col-span-3">
+            <ErrorBanner message={addOptionState.error || optionError} />
+            <NoticeBanner message={optionMessage || addOptionState.message} />
+          </div>
+        </form>
+      )}
+    </article>
+  );
+}
+
+function ModifierGroupTemplatesPanel({
+  modifierGroupTemplates,
+  canManageCatalog,
+}: {
+  modifierGroupTemplates: ModifierGroupTemplate[];
+  canManageCatalog: boolean;
+}) {
+  const [addState, addAction, addPending] = useActionState(createModifierGroupTemplateAction, {
+    error: null,
+    message: null,
+  });
+  const [templateMessage, setTemplateMessage] = useState<string | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+
+  async function handleDeleteGroupTemplate(template: ModifierGroupTemplate) {
+    setTemplateMessage(null);
+    setTemplateError(null);
+    setDeletingTemplateId(template.id);
+    const result = await deleteModifierGroupTemplateAction(template.id);
+    setDeletingTemplateId(null);
+    if (result.error) {
+      setTemplateError(result.error);
+      return;
+    }
+    setTemplateMessage(`ลบกลุ่มตัวเลือก ${template.name} แล้ว`);
+  }
+
+  return (
+    <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">คลังกลุ่มตัวเลือก</h3>
+          <p className="text-xs text-slate-500">
+            สร้างกลุ่มก่อน เช่น ระดับความหวาน หรือ ขนาด แล้วเพิ่มตัวเลือกไว้ข้างในเพื่อเลือกใช้ในเมนู
+          </p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+          {modifierGroupTemplates.length} groups
+        </span>
+      </div>
+
+      {modifierGroupTemplates.length > 0 ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {modifierGroupTemplates.map((template) => (
+            <div key={template.id} className="space-y-2">
+              <ModifierGroupTemplateCard
+                template={template}
+                canManageCatalog={canManageCatalog}
+              />
+              {canManageCatalog && (
+                <button
+                  type="button"
+                  onClick={() => { void handleDeleteGroupTemplate(template); }}
+                  disabled={deletingTemplateId === template.id}
+                  className="min-h-10 rounded-md border border-red-200 px-3 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {deletingTemplateId === template.id ? "กำลังลบ..." : `ลบกลุ่ม ${template.name}`}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+          ยังไม่มีกลุ่มตัวเลือกกลาง
+        </p>
+      )}
+
+      {canManageCatalog ? (
+        <form action={addAction} className="mt-3 space-y-2">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
+            <input
+              name="groupName"
+              placeholder="ชื่อกลุ่ม เช่น ระดับความหวาน, ขนาด"
+              className="min-h-10 rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            />
+            <select
+              name="selectionType"
+              defaultValue="single"
+              className="min-h-10 rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value="single">อันเดียว</option>
+              <option value="multiple">หลายอัน</option>
+            </select>
+            <button
+              type="submit"
+              disabled={addPending}
+              className="min-h-10 rounded-md bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              เพิ่มกลุ่ม
+            </button>
+          </div>
+          <label className="flex min-h-10 items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" name="isRequired" className="rounded border-slate-300" />
+            บังคับเลือกกลุ่มนี้เมื่อสั่งสินค้า
+          </label>
+          <ErrorBanner message={addState.error || templateError} />
+          <NoticeBanner message={templateMessage || addState.message} />
+        </form>
+      ) : (
+        <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          ต้องมีสิทธิ์ catalog.manage เพื่อจัดการคลังกลุ่มตัวเลือก
+        </p>
+      )}
+    </section>
+  );
+}
+
+function VariantsSection({
+  product,
+  variantTemplates,
+}: {
+  product: Product;
+  variantTemplates: VariantTemplate[];
+}) {
+  const [applyState, applyAction, applyPending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) => {
-      return addVariantAction(product.id, prev, fd);
+      return applyVariantTemplateAction(product.id, prev, fd);
     },
     { error: null },
   );
@@ -448,29 +795,45 @@ function VariantsSection({ product }: { product: Product }) {
           ))}
         </div>
       )}
-      <form action={addAction} className="flex gap-1.5">
+      <form action={applyAction} className="flex gap-1.5">
+        <select
+          name="variantTemplateId"
+          defaultValue=""
+          disabled={variantTemplates.length === 0 || applyPending}
+          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 disabled:bg-gray-50"
+        >
+          <option value="">เลือกจากคลังตัวเลือก</option>
+          {variantTemplates.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.name} ({priceDeltaStr(template.priceAdjustment)})
+            </option>
+          ))}
+        </select>
         <input
           name="variantName"
           placeholder="ชื่อตัวเลือก (เช่น S, L)"
-          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="hidden"
         />
         <input
           name="priceAdjustment"
           type="number"
           defaultValue={0}
           step="1"
-          className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="hidden"
           placeholder="±ราคา"
         />
         <button
           type="submit"
-          disabled={addPending}
+          disabled={applyPending || variantTemplates.length === 0}
           className="px-2 py-1 text-sm text-white bg-gray-700 rounded hover:bg-gray-900 disabled:opacity-50"
         >
           +
         </button>
       </form>
-      <ErrorBanner message={addState.error} />
+      {variantTemplates.length === 0 && (
+        <p className="text-xs text-gray-500">เพิ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
+      )}
+      <ErrorBanner message={applyState.error} />
     </div>
   );
 }
@@ -544,48 +907,58 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
   );
 }
 
-function ModifierGroupsSection({ product }: { product: Product }) {
-  const [addState, addAction, addPending] = useActionState(
-    async (prev: { error: string | null }, fd: FormData) =>
-      addModifierGroupAction(product.id, prev, fd),
-    { error: null },
+function ModifierGroupsSection({
+  product,
+  modifierGroupTemplates,
+}: {
+  product: Product;
+  modifierGroupTemplates: ModifierGroupTemplate[];
+}) {
+  const [applyState, applyAction, applyPending] = useActionState(
+    async (prev: { error: string | null; message?: string | null }, fd: FormData) =>
+      applyModifierGroupTemplateAction(product.id, prev, fd),
+    { error: null, message: null },
   );
 
   return (
     <div className="space-y-2">
       <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">กลุ่มตัวเลือก</p>
-      {product.modifierGroups.map((g) => (
-        <ModifierGroupSection key={g.id} group={g} />
-      ))}
-      <form action={addAction} className="space-y-1.5">
-        <div className="flex gap-1.5">
-          <input
-            name="groupName"
-            placeholder="ชื่อกลุ่ม (เช่น ความหวาน)"
-            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-          />
-          <select
-            name="selectionType"
-            defaultValue="single"
-            className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
-          >
-            <option value="single">อันเดียว</option>
-            <option value="multiple">หลายอัน</option>
-          </select>
-          <button
-            type="submit"
-            disabled={addPending}
-            className="px-2 py-1 text-sm text-white bg-gray-700 rounded hover:bg-gray-900 disabled:opacity-50"
-          >
-            +
-          </button>
-        </div>
-        <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-          <input type="checkbox" name="isRequired" className="rounded border-gray-300" />
-          บังคับเลือก
-        </label>
+      {product.modifierGroups.length > 0 ? (
+        product.modifierGroups.map((g) => (
+          <ModifierGroupSection key={g.id} group={g} />
+        ))
+      ) : (
+        <p className="rounded border border-dashed border-gray-200 px-2.5 py-2 text-xs text-gray-500">
+          ยังไม่มีกลุ่มตัวเลือกในเมนูนี้
+        </p>
+      )}
+      <form action={applyAction} className="flex gap-1.5">
+        <select
+          name="modifierGroupTemplateId"
+          defaultValue=""
+          disabled={modifierGroupTemplates.length === 0 || applyPending}
+          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 disabled:bg-gray-50"
+        >
+          <option value="">เลือกกลุ่มตัวเลือกจากคลัง</option>
+          {modifierGroupTemplates.map((template) => (
+            <option key={template.id} value={template.id} disabled={template.options.length === 0}>
+              {template.name} ({template.options.length} ตัวเลือก{template.options.length === 0 ? " - เพิ่มตัวเลือกก่อน" : ""})
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={applyPending || modifierGroupTemplates.length === 0}
+          className="px-2 py-1 text-sm text-white bg-gray-700 rounded hover:bg-gray-900 disabled:opacity-50"
+        >
+          +
+        </button>
       </form>
-      <ErrorBanner message={addState.error} />
+      {modifierGroupTemplates.length === 0 && (
+        <p className="text-xs text-gray-500">เพิ่มกลุ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
+      )}
+      <ErrorBanner message={applyState.error} />
+      <NoticeBanner message={applyState.message} />
     </div>
   );
 }
@@ -597,6 +970,8 @@ function CatalogDialog({
   selectedCategory,
   selectedProduct,
   categories,
+  variantTemplates,
+  modifierGroupTemplates,
   canUseQrOrdering,
   storeId,
   organizationId,
@@ -606,6 +981,8 @@ function CatalogDialog({
   selectedCategory: Category | null;
   selectedProduct: Product | null;
   categories: Category[];
+  variantTemplates: VariantTemplate[];
+  modifierGroupTemplates: ModifierGroupTemplate[];
   canUseQrOrdering: boolean;
   storeId: string;
   organizationId: string;
@@ -680,9 +1057,12 @@ function CatalogDialog({
             error={editProductState.error}
           />
           <hr className="border-gray-100" />
-          <VariantsSection product={selectedProduct} />
+          <VariantsSection product={selectedProduct} variantTemplates={variantTemplates} />
           <hr className="border-gray-100" />
-          <ModifierGroupsSection product={selectedProduct} />
+          <ModifierGroupsSection
+            product={selectedProduct}
+            modifierGroupTemplates={modifierGroupTemplates}
+          />
         </>
       )}
     </ModalDialog>
@@ -694,6 +1074,8 @@ function CatalogDialog({
 export function CatalogManager({
   categories,
   products,
+  variantTemplates,
+  modifierGroupTemplates,
   role,
   storeName,
   storeId,
@@ -870,6 +1252,14 @@ export function CatalogManager({
         </aside>
 
         <section className="min-w-0 bg-slate-50 p-4">
+          <VariantTemplatesPanel
+            variantTemplates={variantTemplates}
+            canManageCatalog={canManageCatalog}
+          />
+          <ModifierGroupTemplatesPanel
+            modifierGroupTemplates={modifierGroupTemplates}
+            canManageCatalog={canManageCatalog}
+          />
           <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-950">
@@ -972,6 +1362,8 @@ export function CatalogManager({
         selectedCategory={selectedCategoryForPanel}
         selectedProduct={selectedProduct}
         categories={categories}
+        variantTemplates={variantTemplates}
+        modifierGroupTemplates={modifierGroupTemplates}
         canUseQrOrdering={canUseQrOrdering}
         storeId={storeId}
         organizationId={organizationId}

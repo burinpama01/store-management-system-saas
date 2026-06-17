@@ -5,6 +5,9 @@ import type {
   Category,
   Product,
   ProductVariant,
+  VariantTemplate,
+  ModifierGroupTemplate,
+  ModifierOptionTemplate,
   ModifierGroup,
   ModifierOption,
 } from "@/modules/catalog/types";
@@ -12,6 +15,9 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 
 type CategoryRow = Database["public"]["Tables"]["categories"]["Row"];
 type ProductRow = Database["public"]["Tables"]["products"]["Row"];
+type VariantTemplateRow = Database["public"]["Tables"]["catalog_variant_templates"]["Row"];
+type ModifierGroupTemplateRow = Database["public"]["Tables"]["catalog_modifier_group_templates"]["Row"];
+type ModifierOptionTemplateRow = Database["public"]["Tables"]["catalog_modifier_option_templates"]["Row"];
 type VariantRow = Database["public"]["Tables"]["product_variants"]["Row"];
 type ModGroupRow = Database["public"]["Tables"]["modifier_groups"]["Row"];
 type ModOptionRow = Database["public"]["Tables"]["modifier_options"]["Row"];
@@ -41,6 +47,53 @@ function mapVariant(row: VariantRow): ProductVariant {
     trackStock: row.track_stock,
     isActive: row.is_active,
     sortOrder: row.sort_order,
+  };
+}
+
+function mapVariantTemplate(row: VariantTemplateRow): VariantTemplate {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    name: row.name,
+    priceAdjustment: row.price_adjustment,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapModifierOptionTemplate(row: ModifierOptionTemplateRow): ModifierOptionTemplate {
+  return {
+    id: row.id,
+    modifierGroupTemplateId: row.group_template_id,
+    name: row.name,
+    priceAdjustment: row.price_adjustment,
+    isDefault: row.is_default,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapModifierGroupTemplate(
+  row: ModifierGroupTemplateRow,
+  options: ModifierOptionTemplateRow[],
+): ModifierGroupTemplate {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    name: row.name,
+    selectionType: row.selection_type,
+    isRequired: row.is_required,
+    minSelections: row.min_selections,
+    maxSelections: row.max_selections,
+    sortOrder: row.sort_order,
+    options: options
+      .filter((option) => option.group_template_id === row.id)
+      .map(mapModifierOptionTemplate)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -333,6 +386,203 @@ export async function updateProduct(
 export async function deleteProduct(id: string, storeId: string) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("products").delete().eq("id", id).eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+// --- Variant templates ---
+
+export interface CreateVariantTemplateInput {
+  storeId: string;
+  name: string;
+  priceAdjustment: number;
+  sortOrder?: number;
+}
+
+export async function listVariantTemplates(storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("catalog_variant_templates")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) return { data: null, error: mapError(error) };
+  return { data: (data ?? []).map(mapVariantTemplate), error: null };
+}
+
+export async function createVariantTemplate(input: CreateVariantTemplateInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("catalog_variant_templates")
+    .insert({
+      store_id: input.storeId,
+      name: input.name,
+      price_adjustment: input.priceAdjustment,
+      sort_order: input.sortOrder ?? 0,
+    })
+    .select()
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapVariantTemplate(data), error: null };
+}
+
+export async function getVariantTemplate(id: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("catalog_variant_templates")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapVariantTemplate(data), error: null };
+}
+
+export async function deleteVariantTemplate(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("catalog_variant_templates")
+    .delete()
+    .eq("id", id)
+    .eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+// --- Modifier group templates ---
+
+export interface CreateModifierGroupTemplateInput {
+  storeId: string;
+  name: string;
+  selectionType: "single" | "multiple";
+  isRequired?: boolean;
+  minSelections?: number;
+  maxSelections?: number;
+  sortOrder?: number;
+}
+
+export async function listModifierGroupTemplates(storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data: groups, error } = await supabase
+    .from("catalog_modifier_group_templates")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) return { data: null, error: mapError(error) };
+
+  const groupIds = (groups ?? []).map((group) => group.id);
+  const { data: options, error: optionsError } = groupIds.length
+    ? await supabase
+        .from("catalog_modifier_option_templates")
+        .select("*")
+        .in("group_template_id", groupIds)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true })
+    : { data: [], error: null };
+  if (optionsError) return { data: null, error: mapError(optionsError) };
+
+  return {
+    data: (groups ?? []).map((group) => mapModifierGroupTemplate(group, options ?? [])),
+    error: null,
+  };
+}
+
+export async function createModifierGroupTemplate(input: CreateModifierGroupTemplateInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("catalog_modifier_group_templates")
+    .insert({
+      store_id: input.storeId,
+      name: input.name,
+      selection_type: input.selectionType,
+      is_required: input.isRequired ?? false,
+      min_selections: input.minSelections ?? 0,
+      max_selections: input.maxSelections ?? 1,
+      sort_order: input.sortOrder ?? 0,
+    })
+    .select()
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapModifierGroupTemplate(data, []), error: null };
+}
+
+export async function getModifierGroupTemplate(id: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data: group, error } = await supabase
+    .from("catalog_modifier_group_templates")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+
+  const { data: options, error: optionsError } = await supabase
+    .from("catalog_modifier_option_templates")
+    .select("*")
+    .eq("group_template_id", id)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (optionsError) return { data: null, error: mapError(optionsError) };
+
+  return { data: mapModifierGroupTemplate(group, options ?? []), error: null };
+}
+
+export async function deleteModifierGroupTemplate(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("catalog_modifier_group_templates")
+    .delete()
+    .eq("id", id)
+    .eq("store_id", storeId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export interface CreateModifierOptionTemplateInput {
+  groupTemplateId: string;
+  name: string;
+  priceAdjustment?: number;
+  isDefault?: boolean;
+  sortOrder?: number;
+}
+
+export async function createModifierOptionTemplate(input: CreateModifierOptionTemplateInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("catalog_modifier_option_templates")
+    .insert({
+      group_template_id: input.groupTemplateId,
+      name: input.name,
+      price_adjustment: input.priceAdjustment ?? 0,
+      is_default: input.isDefault ?? false,
+      sort_order: input.sortOrder ?? 0,
+    })
+    .select()
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapModifierOptionTemplate(data), error: null };
+}
+
+export async function deleteModifierOptionTemplate(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data: option, error: optionError } = await supabase
+    .from("catalog_modifier_option_templates")
+    .select("group_template_id")
+    .eq("id", id)
+    .single();
+  if (optionError) return { ok: false, error: mapError(optionError) };
+  if (!option) return { ok: false, error: mapError(new Error("Modifier option template not found")) };
+
+  const { data: group, error: groupError } = await supabase
+    .from("catalog_modifier_group_templates")
+    .select("store_id")
+    .eq("id", option.group_template_id)
+    .single();
+  if (groupError) return { ok: false, error: mapError(groupError) };
+  if (!group || group.store_id !== storeId)
+    return { ok: false, error: mapError(new Error("ไม่มีสิทธิ์")) };
+
+  const { error } = await supabase.from("catalog_modifier_option_templates").delete().eq("id", id);
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
 }
