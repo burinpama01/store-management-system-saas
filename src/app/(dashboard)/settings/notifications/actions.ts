@@ -10,6 +10,8 @@ import {
   type NotificationType,
 } from "@/modules/notifications/types";
 import {
+  unlinkLineAccount,
+  unlinkLineNotificationTarget,
   upsertNotificationSetting,
   upsertTelegramNotificationTarget,
 } from "@/modules/notifications/repository";
@@ -66,6 +68,14 @@ async function requireTelegramOwnerContext() {
   const ctx = await getStoreContext();
   if (ctx.role !== "owner") {
     throw new Error("ต้องเป็น owner จึงจะตั้งค่า Telegram chat ID ได้");
+  }
+  return ctx;
+}
+
+async function requireLineOwnerContext() {
+  const ctx = await getStoreContext();
+  if (ctx.role !== "owner") {
+    throw new Error("ต้องเป็น owner จึงจะจัดการ LINE group ได้");
   }
   return ctx;
 }
@@ -161,4 +171,20 @@ export async function runTelegramNotificationTestAction(): Promise<{
       message: error instanceof Error ? error.message : "ไม่สามารถเทส Telegram notification ได้",
     };
   }
+}
+
+export async function unlinkLineAccountAction(): Promise<void> {
+  await requirePermission("notifications.manage");
+  const ctx = await getStoreContext();
+  const result = await unlinkLineAccount(ctx.organizationId, ctx.userId);
+  if (result.error) throw new Error(result.error.userMessage);
+  revalidatePath("/settings/notifications");
+}
+
+export async function unlinkLineNotificationTargetAction(): Promise<void> {
+  await requirePermission("notifications.manage");
+  const ctx = await requireLineOwnerContext();
+  const result = await unlinkLineNotificationTarget(ctx.organizationId);
+  if (result.error) throw new Error(result.error.userMessage);
+  revalidatePath("/settings/notifications");
 }

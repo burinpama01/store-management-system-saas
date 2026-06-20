@@ -4,9 +4,11 @@ import { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES } from "./types";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import {
+  getLineNotificationTarget,
   getNotificationSetting,
   getTelegramNotificationTarget,
 } from "./repository";
+import { buildLinePushMessageRequest } from "./line";
 
 export interface NotificationResult {
   ok: boolean;
@@ -221,7 +223,62 @@ export async function resolveTelegramNotificationTarget(input: NotificationPaylo
   return { chatId: target.data.telegramChatId, message: null };
 }
 
-async function isTelegramNotificationFeatureEnabled(organizationId: string) {
+export async function resolveLineNotificationTarget(input: NotificationPayload) {
+  if (!input.organizationId || !input.storeId) {
+    return { targetId: null, targetType: null, message: "ยังไม่พบข้อมูลร้านสำหรับส่ง LINE" };
+  }
+
+  const setting = await getNotificationSetting(
+    input.storeId,
+    input.organizationId,
+    input.type,
+    "line",
+    { useServiceRole: true },
+  );
+  if (setting.error) {
+    return { targetId: null, targetType: null, message: setting.error.userMessage };
+  }
+  if (setting.data && !setting.data.enabled) {
+    return { targetId: null, targetType: null, message: "การแจ้งเตือนนี้ถูกปิดอยู่" };
+  }
+
+  const target = await getLineNotificationTarget(input.organizationId, { useServiceRole: true });
+  if (target.error) {
+    return { targetId: null, targetType: null, message: target.error.userMessage };
+  }
+  if (!target.data?.targetId) {
+    return { targetId: null, targetType: null, message: "ยังไม่ได้ผูก LINE สำหรับร้านนี้" };
+  }
+  return { targetId: target.data.targetId, targetType: target.data.targetType, message: null };
+}
+
+export async function sendLinePushMessage(
+  token: string,
+  targetId: string,
+  input: NotificationPayload,
+): Promise<NotificationResult> {
+  const request = buildLinePushMessageRequest(token, targetId, input);
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(request.url, request.init);
+  } catch {
+    return {
+      ok: false,
+      skipped: false,
+      message: "ส่ง LINE ไม่สำเร็จ: LINE ยังส่งข้อความไม่ได้ในตอนนี้",
+    };
+  }
+  if (!response.ok) {
+    return {
+      ok: false,
+      skipped: false,
+      message: `ส่ง LINE ไม่สำเร็จ (${response.status}): LINE ยังส่งข้อความไม่ได้ในตอนนี้`,
+    };
+  }
+  return { ok: true, skipped: false, message: "ส่ง LINE สำเร็จ" };
+}
+
+async function isNotificationFeatureEnabled(organizationId: string) {
   const billingState =
     (await getOrganizationBillingState(organizationId)) ?? DEFAULT_BILLING_STATE;
   return getPlanFeatures(billingState).lineNotify;
@@ -250,7 +307,7 @@ export async function dispatchNotification(input: NotificationPayload): Promise<
     if (!input.organizationId) {
       return { ok: false, skipped: false, message: "ยังไม่พบข้อมูลร้านสำหรับส่ง Telegram" };
     }
-    if (!(await isTelegramNotificationFeatureEnabled(input.organizationId))) {
+    if (!(await isNotificationFeatureEnabled(input.organizationId))) {
       return {
         ok: true,
         skipped: true,
@@ -264,11 +321,21 @@ export async function dispatchNotification(input: NotificationPayload): Promise<
     return sendTelegramMessage(token, target.chatId, input);
   }
 
-  return {
-    ok: true,
-    skipped: true,
-    message: "ตรวจสอบข้อมูลแจ้งเตือนแล้ว แต่ยังไม่ได้เปิดการส่งข้อความจริงสำหรับช่องทางนี้",
-  };
+  if (!input.organizationId) {
+    return { ok: false, skipped: false, message: "ยังไม่พบข้อมูลร้านสำหรับส่ง LINE" };
+  }
+  if (!(await isNotificationFeatureEnabled(input.organizationId))) {
+    return {
+      ok: true,
+      skipped: true,
+      message: "แพ็กเกจปัจจุบันยังไม่เปิดใช้การแจ้งเตือน",
+    };
+  }
+  const target = await resolveLineNotificationTarget(input);
+  if (!target.targetId) {
+    return { ok: true, skipped: true, message: target.message ?? "ยังไม่ได้ส่ง LINE" };
+  }
+  return sendLinePushMessage(token, target.targetId, input);
 }
 
 function logOwnerNotificationResult(result: NotificationResult) {
@@ -289,7 +356,7 @@ async function runOwnerNotificationDelivery(input: NotificationPayload) {
 export function notifyOwnerSafely(input: NotificationPayload): void {
   const payload = {
     ...input,
-    channel: "telegram" as const,
+    channel: input.channel ?? "line" as const,
     destination: "owner" as const,
   };
 

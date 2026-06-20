@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { LineAddDialog } from "./LineAddDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +27,36 @@ const STEPS = [
   },
 ];
 
-export default async function OnboardingPage() {
+function resolveLineAddFriendUrl() {
+  if (process.env.LINE_ADD_FRIEND_URL) return process.env.LINE_ADD_FRIEND_URL;
+  if (process.env.LINE_OFFICIAL_ACCOUNT_ID) {
+    return `https://line.me/R/ti/p/${process.env.LINE_OFFICIAL_ACCOUNT_ID}`;
+  }
+  return null;
+}
+
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string>>;
+}) {
   const { ctx } = await getResolvedCurrentPermissions();
+  const params = await searchParams;
+  const addFriendUrl = resolveLineAddFriendUrl();
+  const providerReady = Boolean(
+    process.env.LINE_CHANNEL_ACCESS_TOKEN &&
+    process.env.LINE_CHANNEL_SECRET &&
+    process.env.LINE_ACCOUNT_LINK_BASE_URL &&
+    addFriendUrl,
+  );
 
   return (
     <main className="min-h-screen bg-[var(--canvas)]">
+      <LineAddDialog
+        open={params.linePrompt === "1"}
+        addFriendUrl={addFriendUrl}
+        providerReady={providerReady}
+      />
       <div className="mx-auto max-w-3xl px-6 py-10">
         <span className="badge badge-brand mb-3">ยินดีต้อนรับ</span>
         <h1 className="text-3xl font-extrabold text-[var(--ink)]">

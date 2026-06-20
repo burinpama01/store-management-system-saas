@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   dispatchNotification,
@@ -13,6 +13,13 @@ const read = (path: string) => normalizeText(readFileSync(join(root, path), "utf
 const readIfExists = (path: string) => {
   const fullPath = join(root, path);
   return existsSync(fullPath) ? normalizeText(readFileSync(fullPath, "utf8")) : "";
+};
+const readMigrationContaining = (needle: string) => {
+  const migrationsDir = join(root, "supabase/migrations");
+  const fileName = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .find((name) => readFileSync(join(migrationsDir, name), "utf8").includes(needle));
+  return fileName ? normalizeText(readFileSync(join(migrationsDir, fileName), "utf8")) : "";
 };
 
 describe("notification dispatcher", () => {
@@ -60,8 +67,13 @@ describe("notification dispatcher", () => {
     expect(action).toContain("\"use server\"");
     expect(action).toContain("requirePermission(\"notifications.manage\")");
     expect(action).toContain("requireFeature(\"lineNotify\")");
+    expect(action).toContain("getCurrentUser");
+    expect(action).toContain("getUserStores");
+    expect(action).toContain("resolveCurrentStore");
     expect(action).toContain("dispatchNotification");
     expect(action).toContain("type: \"test\"");
+    expect(action).toContain("organizationId: ctx.organizationId");
+    expect(action).toContain("storeId: ctx.storeId");
     expect(panel).toContain("runNotificationDiagnosticAction");
     expect(panel).toContain("await runNotificationDiagnosticAction()");
     expect(panel).toContain("canRunNotificationDiagnostic");
@@ -229,6 +241,7 @@ describe("notification dispatcher", () => {
     expect(dispatcher).toContain("after(");
     expect(dispatcher).toContain("async function runOwnerNotificationDelivery");
     expect(dispatcher).toContain("const result = await dispatchNotification");
+    expect(dispatcher).toContain('channel: input.channel ?? "line"');
     expect(dispatcher).not.toContain("void dispatchNotification");
     expect(posActions).not.toMatch(/await\s+notifyOwnerSafely/);
     expect(qrActions).not.toMatch(/await\s+notifyOwnerSafely/);
@@ -338,5 +351,189 @@ describe("notification dispatcher", () => {
     expect(actions).not.toContain("return result.message");
     expect(actions).toContain("ส่ง Telegram test แล้ว");
     expect(actions).toContain("ยังไม่พร้อมสำหรับทดสอบ Telegram");
+  });
+
+  it("adds LINE account binding schema, provider helpers, and webhook routes", () => {
+    const migration = readIfExists("supabase/migrations/20260620000001_line_account_binding.sql");
+    const types = read("src/server/integrations/supabase/database.types.ts");
+    const repository = read("src/modules/notifications/repository.ts");
+    const line = readIfExists("src/modules/notifications/line.ts");
+    const dispatcher = read("src/modules/notifications/dispatcher.ts");
+    const webhook = readIfExists("src/app/api/line/webhook/route.ts");
+    const accountLink = readIfExists("src/app/api/line/account-link/start/route.ts");
+    const middleware = read("src/server/integrations/supabase/middleware.ts");
+    const envExample = read(".env.example");
+
+    expect(envExample).toContain("LINE_CHANNEL_ACCESS_TOKEN=");
+    expect(envExample).toContain("LINE_CHANNEL_SECRET=");
+    expect(envExample).toContain("LINE_OFFICIAL_ACCOUNT_ID=");
+    expect(envExample).toContain("LINE_ADD_FRIEND_URL=");
+    expect(envExample).toContain("LINE_ACCOUNT_LINK_BASE_URL=");
+    expect(envExample).not.toContain("LINE Notify");
+
+    expect(migration).toContain("create table if not exists line_account_links");
+    expect(migration).toContain("create table if not exists line_account_link_sessions");
+    expect(migration).toContain("line_user_id text not null");
+    expect(migration).toContain("nonce_hash text not null");
+    expect(migration).toContain("expires_at timestamptz not null");
+    expect(migration).toContain("consumed_at timestamptz");
+    expect(migration).toContain("unique (organization_id, user_id)");
+    expect(migration).toContain("line_account_links_active_line_user_id_uidx");
+    expect(migration).toContain("where status = 'active'");
+    expect(migration).toContain("auth_user_role_in_org(organization_id, 'owner')");
+    expect(types).toContain("line_account_links:");
+    expect(types).toContain("line_account_link_sessions:");
+
+    expect(repository).toContain("getLineAccountLink");
+    expect(repository).toContain("createLineAccountLinkSession");
+    expect(repository).toContain("consumeLineAccountLinkSession");
+    expect(repository).toContain("upsertLineAccountLink");
+    expect(repository).toContain("unlinkLineAccount");
+    expect(repository).toContain(".from(\"memberships\")");
+    expect(repository).toContain(".eq(\"role\", \"owner\")");
+    expect(repository).not.toContain(".limit(1)\n    .maybeSingle()");
+
+    expect(line).toContain("verifyLineSignature");
+    expect(line).toContain("createHmac(\"sha256\"");
+    expect(line).toContain("timingSafeEqual");
+    expect(line).toContain("buildLinePushMessageRequest");
+    expect(line).toContain("buildLineReplyMessageRequest");
+    expect(line).toContain("buildLineIssueLinkTokenRequest");
+    expect(line).toContain("https://api.line.me/v2/bot/message/push");
+    expect(line).toContain("https://api.line.me/v2/bot/message/reply");
+    expect(line).toContain("https://api.line.me/v2/bot/user/");
+
+    expect(dispatcher).toContain("resolveLineNotificationTarget");
+    expect(dispatcher).toContain("sendLinePushMessage");
+    expect(dispatcher).toContain("LINE_CHANNEL_ACCESS_TOKEN");
+
+    expect(webhook).toContain("request.text()");
+    expect(webhook).toContain("x-line-signature");
+    expect(webhook).toContain("verifyLineSignature");
+    expect(webhook).toContain("accountLink");
+    expect(webhook).toContain("parseLineWebhookBody");
+    expect(webhook).toContain("return null");
+    expect(webhook).toContain("buildLineIssueLinkTokenRequest");
+    expect(webhook).toContain("return NextResponse.json({ ok: true })");
+    expect(webhook).not.toContain("console.log");
+    expect(middleware).toContain('request.nextUrl.pathname === "/api/line/webhook"');
+
+    expect(accountLink).toContain("getCurrentUser");
+    expect(accountLink).toContain("getResolvedCurrentPermissions");
+    expect(accountLink).toContain('ctx.role !== "owner"');
+    expect(accountLink).toContain('settingsRedirect(request, "owner")');
+    expect(accountLink).toContain("createLineAccountLinkSession");
+    expect(accountLink).toContain("https://access.line.me/dialog/bot/accountLink");
+    expect(accountLink).toContain("LINE_ACCOUNT_LINK_BASE_URL");
+  });
+
+  it("adds LINE binding UI after signup and in notification settings", () => {
+    const page = read("src/app/(dashboard)/settings/notifications/page.tsx");
+    const panel = readIfExists("src/app/(dashboard)/settings/notifications/LineAccountLinkPanel.tsx");
+    const actions = read("src/app/(dashboard)/settings/notifications/actions.ts");
+    const register = read("src/app/(auth)/register/actions.ts");
+    const onboarding = read("src/app/onboarding/page.tsx");
+    const dialog = readIfExists("src/app/onboarding/LineAddDialog.tsx");
+
+    expect(page).toContain("LineAccountLinkPanel");
+    expect(page).toContain("getLineAccountLink");
+    expect(panel).toContain("ยังไม่ได้ผูก LINE");
+    expect(panel).toContain("ผูก LINE แล้ว");
+    expect(panel).toContain("LINE_ADD_FRIEND_URL");
+    expect(panel).toContain("LINE_OFFICIAL_ACCOUNT_ID");
+    expect(panel).toContain("/settings/notifications?lineLink=1");
+    expect(panel).not.toContain("LINE_CHANNEL_ACCESS_TOKEN");
+    expect(panel).not.toContain("LINE_CHANNEL_SECRET");
+    expect(actions).toContain("unlinkLineAccountAction");
+    expect(actions).toContain("unlinkLineAccount");
+
+    expect(register).toContain('redirect("/onboarding?linePrompt=1")');
+    expect(onboarding).toContain("LineAddDialog");
+    expect(onboarding).toContain("linePrompt");
+    expect(dialog).toContain("Add LINE");
+    expect(dialog).toContain("ไปตั้งค่าแจ้งเตือน");
+    expect(dialog).toContain("/settings/notifications?lineLink=1");
+    expect(dialog).not.toContain("LINE_CHANNEL_ACCESS_TOKEN");
+    expect(dialog).not.toContain("LINE_CHANNEL_SECRET");
+  });
+
+  it("adds LINE group and multi-person chat notification targets", () => {
+    const migration = readMigrationContaining("line_notification_targets");
+    const hardeningMigration = readIfExists("supabase/migrations/20260620150128_line_notification_rls_hardening.sql");
+    const types = read("src/server/integrations/supabase/database.types.ts");
+    const repository = read("src/modules/notifications/repository.ts");
+    const dispatcher = read("src/modules/notifications/dispatcher.ts");
+    const webhook = readIfExists("src/app/api/line/webhook/route.ts");
+    const page = read("src/app/(dashboard)/settings/notifications/page.tsx");
+    const panel = readIfExists("src/app/(dashboard)/settings/notifications/LineAccountLinkPanel.tsx");
+    const actions = read("src/app/(dashboard)/settings/notifications/actions.ts");
+
+    expect(migration).toContain("create table if not exists line_notification_targets");
+    expect(migration).toContain("target_type text not null");
+    expect(migration).toContain("target_id text not null");
+    expect(migration).toContain("target_type in ('group', 'room')");
+    expect(migration).toContain("unique (organization_id, target_type)");
+    expect(migration).toContain("line_notification_targets_active_target_id_uidx");
+    expect(migration).toContain("line_notification_targets_active_organization_id_uidx");
+    expect(migration).toContain("on line_notification_targets(organization_id)");
+    expect(migration).toContain("where status = 'active'");
+    expect(migration).toContain("create or replace function upsert_line_notification_target");
+    expect(migration).toContain("for update");
+    expect(migration).toContain("from memberships");
+    expect(migration).toContain("user_id = p_linked_by");
+    expect(migration).toContain("role = 'owner'");
+    expect(migration).toContain("raise exception 'LINE_TARGET_ALREADY_LINKED'");
+    expect(migration).toContain("update line_notification_targets");
+    expect(migration).toContain("revoke all on function upsert_line_notification_target(uuid, uuid, text, text) from public, anon, authenticated");
+    expect(migration).toContain("grant execute on function upsert_line_notification_target(uuid, uuid, text, text) to service_role");
+    expect(migration).toContain("auth_user_role_in_org(organization_id, 'owner')");
+    expect(migration).not.toContain("line_notification_targets: owner can update");
+    expect(hardeningMigration).toContain('drop policy if exists "line_account_links: owner can update" on line_account_links');
+    expect(hardeningMigration).toContain('drop policy if exists "line_notification_targets: owner can update" on line_notification_targets');
+    expect(hardeningMigration).toContain("revoke update on table line_account_links from anon, authenticated");
+    expect(hardeningMigration).toContain("revoke update on table line_notification_targets from anon, authenticated");
+    expect(types).toContain("line_notification_targets:");
+
+    expect(repository).toContain("getLineGroupNotificationTarget");
+    expect(repository).toContain("getLineOwnerAccountLinkByLineUserId");
+    expect(repository).toContain(".eq(\"role\", \"owner\")");
+    expect(repository).toContain(".not(\"joined_at\", \"is\", null)");
+    expect(repository).toContain("upsertLineNotificationTarget");
+    expect(repository).toContain('supabase.rpc("upsert_line_notification_target"');
+    const upsertFunction = repository.slice(
+      repository.indexOf("export async function upsertLineNotificationTarget"),
+      repository.indexOf("export async function unlinkLineAccount"),
+    );
+    expect(upsertFunction).not.toContain('.from("line_notification_targets")');
+    expect(upsertFunction).not.toContain(".update(");
+    expect(repository).toContain(".update({");
+    expect(repository).toContain("status: \"unlinked\"");
+    expect(repository).toContain("unlinkLineNotificationTarget");
+    expect(repository).toContain(".from(\"line_notification_targets\")");
+    expect(repository).toContain(".order(\"linked_at\", { ascending: false })");
+
+    expect(dispatcher).toContain("targetId");
+    expect(dispatcher).toContain("targetType");
+    expect(dispatcher).toContain("getLineNotificationTarget");
+    expect(dispatcher).toContain("sendLinePushMessage(token, target.targetId");
+
+    expect(webhook).toContain("groupId?: string");
+    expect(webhook).toContain("roomId?: string");
+    expect(webhook).toContain("shouldBindGroup");
+    expect(webhook).toContain("ผูกกลุ่ม");
+    expect(webhook).toContain("getLineOwnerAccountLinkByLineUserId");
+    expect(webhook).toContain("ต้องเป็น owner");
+    expect(webhook).toContain("upsertLineNotificationTarget");
+    expect(webhook).toContain("LINE group");
+    expect(webhook).toContain("multi-person");
+
+    expect(page).toContain("getLineGroupNotificationTarget");
+    expect(page).toContain("lineNotificationTarget=");
+    expect(panel).toContain("LINE group / multi-person chat");
+    expect(panel).toContain("ผูกกลุ่ม");
+    expect(panel).toContain("ยกเลิกการผูก LINE กลุ่ม");
+    expect(actions).toContain("unlinkLineNotificationTargetAction");
+    expect(actions).toContain("unlinkLineNotificationTarget");
+    expect(actions).toContain("ต้องเป็น owner จึงจะจัดการ LINE group ได้");
   });
 });

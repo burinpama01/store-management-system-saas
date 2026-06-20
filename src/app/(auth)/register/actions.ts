@@ -142,7 +142,7 @@ export async function registerOwner(
   }
 
   if (data.session) {
-    redirect("/onboarding");
+    redirect("/onboarding?linePrompt=1");
   }
 
   return {

@@ -13,12 +13,15 @@ import {
   type NotificationType,
 } from "@/modules/notifications/types";
 import {
+  getLineAccountLink,
+  getLineGroupNotificationTarget,
   getTelegramNotificationTarget,
   listNotificationSettings,
 } from "@/modules/notifications/repository";
 import { NotificationTest } from "./NotificationTest";
 import { TelegramChatIdForm } from "./TelegramChatIdForm";
 import { NotificationSettingToggle } from "./NotificationSettingToggle";
+import { LineAccountLinkPanel } from "./LineAccountLinkPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +45,16 @@ const CHANNEL_LABELS: Record<NotificationChannel, string> = {
   telegram: "Telegram",
 };
 
+function resolveLineAddFriendUrl() {
+  if (process.env.LINE_ADD_FRIEND_URL) return process.env.LINE_ADD_FRIEND_URL;
+  if (process.env.LINE_OFFICIAL_ACCOUNT_ID) {
+    return `https://line.me/R/ti/p/${process.env.LINE_OFFICIAL_ACCOUNT_ID}`;
+  }
+  return null;
+}
+
 export default async function NotificationSettingsPage() {
-  const { ctx, resolved } = await getResolvedCurrentPermissions();
+  const { ctx, resolved, user } = await getResolvedCurrentPermissions();
   if (!resolved.can("settings.view")) redirect("/dashboard");
   if (!resolved.can("notifications.manage")) redirect("/settings/store");
 
@@ -53,10 +64,18 @@ export default async function NotificationSettingsPage() {
   const features = getPlanFeatures(billingState);
   const canManage = resolved.can("notifications.manage");
   const canManageTelegramTarget = canManage && ctx.role === "owner";
+  const canManageLineGroup = canManage && ctx.role === "owner";
   const providerReady = {
-    line: Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN),
+    line: Boolean(
+      process.env.LINE_CHANNEL_ACCESS_TOKEN &&
+      process.env.LINE_CHANNEL_SECRET &&
+      process.env.LINE_ACCOUNT_LINK_BASE_URL &&
+      resolveLineAddFriendUrl(),
+    ),
     telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN),
   } satisfies Record<NotificationChannel, boolean>;
+  const lineAccountLinkResult = await getLineAccountLink(ctx.organizationId, user.id);
+  const lineNotificationTargetResult = await getLineGroupNotificationTarget(ctx.organizationId);
   const settingsResult = await listNotificationSettings(ctx.storeId, ctx.organizationId);
   const telegramTargetResult = canManageTelegramTarget
     ? await getTelegramNotificationTarget(ctx.organizationId)
@@ -102,6 +121,16 @@ export default async function NotificationSettingsPage() {
           role นี้ดูสถานะได้ แต่ยังไม่มีสิทธิ์แก้การแจ้งเตือน
         </div>
       )}
+
+      <LineAccountLinkPanel
+        lineAccountLink={lineAccountLinkResult.data}
+        lineNotificationTarget={lineNotificationTargetResult.data}
+        providerReady={providerReady.line}
+        addFriendUrl={resolveLineAddFriendUrl()}
+        officialAccountId={process.env.LINE_OFFICIAL_ACCOUNT_ID ?? null}
+        canManage={canManage}
+        canManageLineGroup={canManageLineGroup}
+      />
 
       <div className="rounded-md border border-[var(--color-border)] bg-white p-4">
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">

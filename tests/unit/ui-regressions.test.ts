@@ -96,10 +96,11 @@ describe("UX/UI regression guards", () => {
     expect(source).not.toContain("text-${col.align");
   });
 
-  it("POS internal navigation uses next/link", () => {
+  it("POS exit navigation uses a document link to avoid RSC fallback loops", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
-    expect(source).toContain('import Link from "next/link"');
+    expect(source).toContain("<a href={exitHref}");
+    expect(source).not.toContain("<Link href={exitHref}");
     expect(source).not.toContain('<a href="/"');
   });
 

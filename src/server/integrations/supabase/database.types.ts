@@ -1702,6 +1702,111 @@ export interface Database {
         };
         Relationships: [];
       };
+      line_account_links: {
+        Row: {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          line_user_id: string;
+          status: "active" | "unlinked";
+          linked_at: string;
+          unlinked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          line_user_id: string;
+          status?: "active" | "unlinked";
+          linked_at?: string;
+          unlinked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          user_id?: string;
+          line_user_id?: string;
+          status?: "active" | "unlinked";
+          linked_at?: string;
+          unlinked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      line_account_link_sessions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          nonce_hash: string;
+          expires_at: string;
+          consumed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          nonce_hash: string;
+          expires_at: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          user_id?: string;
+          nonce_hash?: string;
+          expires_at?: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      line_notification_targets: {
+        Row: {
+          id: string;
+          organization_id: string;
+          target_type: "group" | "room";
+          target_id: string;
+          status: "active" | "unlinked";
+          linked_by: string;
+          linked_at: string;
+          unlinked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          target_type: "group" | "room";
+          target_id: string;
+          status?: "active" | "unlinked";
+          linked_by: string;
+          linked_at?: string;
+          unlinked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          target_type?: "group" | "room";
+          target_id?: string;
+          status?: "active" | "unlinked";
+          linked_by?: string;
+          linked_at?: string;
+          unlinked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       notification_targets: {
         Row: {
           id: string;
@@ -1879,6 +1984,15 @@ export interface Database {
           p_store_id: string;
         };
         Returns: Database["public"]["Tables"]["buffet_sessions"]["Row"];
+      };
+      upsert_line_notification_target: {
+        Args: {
+          p_organization_id: string;
+          p_linked_by: string;
+          p_target_type: "group" | "room";
+          p_target_id: string;
+        };
+        Returns: string;
       };
       create_pos_order_with_items: {
         Args: {
