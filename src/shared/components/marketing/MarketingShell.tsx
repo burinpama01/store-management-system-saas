@@ -74,6 +74,10 @@ export function MarketingFooter() {
     <footer className="marketing-footer">
       <MarketingBrand />
       <span>ระบบจัดการร้าน POS, QR ordering, สต็อก, ลงเวลา และรายงานในระบบเดียว</span>
+      <nav className="marketing-footer-links" aria-label="เอกสารทางกฎหมาย">
+        <Link href="/privacy-policy">นโยบายความเป็นส่วนตัว</Link>
+        <Link href="/terms-of-service">ข้อกำหนดการใช้บริการ</Link>
+      </nav>
     </footer>
   );
 }

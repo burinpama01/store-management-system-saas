@@ -6,6 +6,45 @@ const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("UX/UI regression guards", () => {
+  it("publishes public privacy policy and terms pages for LINE OA setup", () => {
+    const privacyPath = "src/app/(legal)/privacy-policy/page.tsx";
+    const termsPath = "src/app/(legal)/terms-of-service/page.tsx";
+    const middleware = read("src/server/integrations/supabase/middleware.ts");
+    const shell = read("src/shared/components/marketing/MarketingShell.tsx");
+    const globals = read("src/app/globals.css");
+
+    expect(existsSync(join(root, privacyPath))).toBe(true);
+    expect(existsSync(join(root, termsPath))).toBe(true);
+
+    const privacy = read(privacyPath);
+    const terms = read(termsPath);
+
+    expect(privacy).toContain("นโยบายความเป็นส่วนตัว");
+    expect(privacy).toContain("LINE Official Account");
+    expect(privacy).toContain("line_user_id");
+    expect(privacy).toContain("support@storeos.app");
+    expect(privacy).toContain("ติดต่อ support@storeos.app เพื่อขอยกเลิก");
+    expect(privacy).not.toContain("ยกเลิกการผูก LINE ได้จากหน้าตั้งค่าการแจ้งเตือน");
+    expect(privacy).not.toContain("redirect(\"/login\")");
+
+    expect(terms).toContain("ข้อกำหนดการใช้บริการ");
+    expect(terms).toContain("LINE Official Account");
+    expect(terms).toContain("การแจ้งเตือน");
+    expect(terms).toContain("support@storeos.app");
+    expect(terms).toContain("ติดต่อ support@storeos.app เพื่อขอยกเลิก");
+    expect(terms).not.toContain("ยกเลิกการเชื่อมต่อ LINE จากหน้าตั้งค่าการแจ้งเตือน");
+    expect(terms).not.toContain("redirect(\"/login\")");
+
+    expect(middleware).toContain('request.nextUrl.pathname === "/privacy-policy"');
+    expect(middleware).toContain('request.nextUrl.pathname === "/terms-of-service"');
+
+    expect(shell).toContain('href="/privacy-policy"');
+    expect(shell).toContain('href="/terms-of-service"');
+    expect(shell).toContain("นโยบายความเป็นส่วนตัว");
+    expect(shell).toContain("ข้อกำหนดการใช้บริการ");
+    expect(globals).toContain(".marketing-footer-links");
+  });
+
   it("dashboard shell defines a mobile navigation path", () => {
     const source = read("src/app/(dashboard)/layout.tsx");
 

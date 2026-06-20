@@ -690,6 +690,14 @@ a:focus-visible {
     text-decoration: none;
   }
 
+  .marketing-footer-links {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem 0.75rem;
+  }
+
   .marketing-auth-page {
     display: grid;
     min-height: 100vh;

@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LINE Account Binding Notification Plan v1</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --ink: #172033;
+      --muted: #5f6b7d;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --brand: #08745f;
+      --brand-soft: #dff6ef;
+      --blue: #2457a6;
+      --blue-soft: #e8f0ff;
+      --warn: #8a5b00;
+      --warn-soft: #fff4cf;
+      --danger: #9b1c1c;
+      --danger-soft: #fee2e2;
+      --code: #101828;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 36px 0 56px;
+    }
+
+    header.hero {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 28px;
+      border-radius: 8px;
+      box-shadow: 0 18px 42px rgba(16, 24, 40, 0.08);
+    }
+
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 44px); letter-spacing: 0; }
+    h2 { margin-top: 28px; font-size: 24px; }
+    h3 { margin-top: 18px; font-size: 18px; }
+    p { margin: 10px 0 0; }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+    }
+
+    .card.info { background: var(--blue-soft); border-color: #bed0f4; }
+    .card.warn { background: var(--warn-soft); border-color: #f3d27c; }
+    .card.danger { background: var(--danger-soft); border-color: #f3a7a7; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .step {
+      min-height: 112px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      position: relative;
+    }
+
+    .step strong {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: #fff;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: #eef4f3;
+      color: #123b34;
+      font-size: 13px;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    code {
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.92em;
+      color: var(--code);
+      background: #eef1f5;
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      border-radius: 8px;
+      background: #111827;
+      color: #f9fafb;
+      padding: 14px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    .task {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 18px;
+      margin-top: 14px;
+    }
+
+    .checklist {
+      margin: 12px 0 0;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      margin: 8px 0;
+      padding-left: 28px;
+      position: relative;
+    }
+
+    .checklist li::before {
+      content: "- [ ]";
+      position: absolute;
+      left: 0;
+      color: var(--brand);
+      font-weight: 800;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .note {
+      border-left: 4px solid var(--brand);
+      background: #fff;
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .grid, .flow { grid-template-columns: 1fr; }
+      main { width: min(100% - 20px, 1180px); padding-top: 20px; }
+      header.hero { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="pill-row">
+        <span class="pill">Status: Proposed Plan</span>
+        <span class="pill">Version: v1</span>
+        <span class="pill">Date: 2026-06-20</span>
+        <span class="pill">Project: Store management system saas</span>
+      </div>
+      <h1>LINE Account Binding Notification Implementation Plan</h1>
+      <p>
+        แผนนี้สร้าง flow ให้ผู้สมัครใช้บริการเห็น dialog หลังสมัครสำเร็จเพื่อ Add LINE แล้วไปหน้า
+        <code>/settings/notifications?lineLink=1</code> สำหรับผูก LINE ก่อนรับแจ้งเตือนส่วนตัว
+        โดยใช้ LINE Messaging API, webhook signature verification, และ server-only token เท่านั้น
+      </p>
+      <p>
+        <strong>For agentic workers:</strong> REQUIRED SUB-SKILL:
+        ใช้ <code>superpowers:subagent-driven-development</code> หรือ
+        <code>superpowers:executing-plans</code> ตอน implement แผนนี้ทีละ task.
+        ทุก task ต้องทำแบบ TDD: เขียน RED test, verify fail, implement, verify pass.
+      </p>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Goal</h2>
+        <p>
+          ผู้สมัครสมัครเสร็จแล้วเห็น dialog Add LINE และสามารถผูก LINE account ผ่านหน้า settings
+          เพื่อรับ notification แบบ one-to-one ได้โดยไม่เปิดเผย token ฝั่ง client.
+        </p>
+      </div>
+      <div class="card info">
+        <h2>Architecture</h2>
+        <p>
+          ใช้ LINE Official Account + Messaging API. Webhook รับ <code>message</code>,
+          <code>follow</code>, และ <code>accountLink</code>; backend สร้าง secure nonce
+          แล้วผูก <code>line_user_id</code> กับ user/organization หลัง LINE ส่งผล account link กลับมา.
+        </p>
+      </div>
+      <div class="card warn">
+        <h2>Safety</h2>
+        <p>
+          ห้ามใช้ LINE Notify เดิม, ห้าม hard-code secret, ห้ามส่ง token ไป browser,
+          ห้าม deploy production หรือ apply migration remote โดยไม่มี approval.
+        </p>
+      </div>
+    </section>
+
+    <h2>User Flow</h2>
+    <section class="flow">
+      <div class="step">
+        <strong>1</strong>
+        <h3>สมัครสำเร็จ</h3>
+        <p><code>registerOwner</code> สร้าง tenant/store/user แล้ว redirect พร้อม flag สำหรับเปิด dialog.</p>
+      </div>
+      <div class="step">
+        <strong>2</strong>
+        <h3>Dialog Add LINE</h3>
+        <p>หน้า onboarding/register success แสดง dialog มีปุ่ม Add LINE และปุ่มไปตั้งค่าแจ้งเตือน.</p>
+      </div>
+      <div class="step">
+        <strong>3</strong>
+        <h3>Settings Link</h3>
+        <p><code>/settings/notifications?lineLink=1</code> แสดง LINE binding panel พร้อมสถานะผูกแล้ว/ยังไม่ผูก.</p>
+      </div>
+      <div class="step">
+        <strong>4</strong>
+        <h3>LINE Webhook</h3>
+        <p>ผู้ใช้ add OA แล้วส่งข้อความ <code>ผูกบัญชี</code>; webhook issue link token และ reply secure link.</p>
+      </div>
+      <div class="step">
+        <strong>5</strong>
+        <h3>รับแจ้งเตือน</h3>
+        <p>เมื่อ accountLink สำเร็จ ระบบเก็บ <code>line_user_id</code> และใช้ push message เฉพาะ server-side.</p>
+      </div>
+    </section>
+
+    <h2>Source of Truth</h2>
+    <table>
+      <thead>
+        <tr><th>Context</th><th>Finding</th><th>Plan Impact</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>src/modules/notifications/types.ts</code></td>
+          <td>มี channel <code>line</code> และ type <code>service_request</code> แล้ว</td>
+          <td>ไม่เพิ่ม type ใหม่ถ้าไม่จำเป็น; เพิ่ม binding state และ LINE sender แทน</td>
+        </tr>
+        <tr>
+          <td><code>notification_targets</code></td>
+          <td>DB type ปัจจุบันผูก target กับ <code>telegram_chat_id</code> และ channel <code>telegram</code></td>
+          <td>สร้าง schema สำหรับ LINE account binding แยก ไม่ยัด <code>line_user_id</code> ลง field Telegram</td>
+        </tr>
+        <tr>
+          <td><code>src/app/(auth)/register/*</code></td>
+          <td>signup path จริงอยู่ที่ route group <code>(auth)/register</code></td>
+          <td>dialog หลังสมัครต้องต่อจาก register/onboarding path นี้ ไม่อ้าง route ที่ไม่มีไฟล์</td>
+        </tr>
+        <tr>
+          <td><code>src/app/(dashboard)/settings/notifications/*</code></td>
+          <td>มี settings page, actions, Telegram form และ notification matrix แล้ว</td>
+          <td>เพิ่ม <code>LineAccountLinkPanel</code> ข้าง provider setup เดิม</td>
+        </tr>
+        <tr>
+          <td>SocratiCode</td>
+          <td>tool มีอยู่ แต่ graph ยังไม่ถูก build และ session นี้ไม่มี build tool expose</td>
+          <td>impact check ใช้ fallback <code>rg</code>/context-mode และระบุข้อจำกัดนี้ใน review handoff</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Files</h2>
+    <table>
+      <thead>
+        <tr><th>Path</th><th>Action</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>tests/unit/notifications.test.ts</code></td><td>Modify</td><td>RED tests สำหรับ LINE schema, webhook signature, account linking, provider request, UI strings</td></tr>
+        <tr><td><code>tests/unit/ui-regressions.test.ts</code></td><td>Modify</td><td>กัน regression ของ register dialog และ settings panel</td></tr>
+        <tr><td><code>tests/unit/premium-free-trial.test.ts</code></td><td>Modify</td><td>กัน signup flow เดิมที่ grant Premium promo และ redirect ไม่พัง</td></tr>
+        <tr><td><code>supabase/migrations/20260620000001_line_account_binding.sql</code></td><td>Create</td><td>เพิ่ม tables สำหรับ LINE account links และ link sessions พร้อม RLS/index/unique</td></tr>
+        <tr><td><code>src/server/integrations/supabase/database.types.ts</code></td><td>Modify</td><td>อัปเดต generated-compatible types สำหรับ tables ใหม่</td></tr>
+        <tr><td><code>src/modules/notifications/line.ts</code></td><td>Create</td><td>LINE signature verify, build push/reply/link-token requests, sanitize provider errors</td></tr>
+        <tr><td><code>src/modules/notifications/repository.ts</code></td><td>Modify</td><td>อ่าน/เขียน LINE link status, nonce session, unlink, resolve recipient</td></tr>
+        <tr><td><code>src/modules/notifications/dispatcher.ts</code></td><td>Modify</td><td>เพิ่ม LINE push path และ skip ชัดเจนเมื่อผู้ใช้ยังไม่ผูก LINE</td></tr>
+        <tr><td><code>src/app/api/line/webhook/route.ts</code></td><td>Create</td><td>รับ webhook จาก LINE, verify signature, handle text command และ accountLink event</td></tr>
+        <tr><td><code>src/app/api/line/account-link/start/route.ts</code></td><td>Create</td><td>สร้าง nonce ผูกกับ logged-in user แล้ว redirect ไป LINE account link dialog</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/LineAccountLinkPanel.tsx</code></td><td>Create</td><td>UI ผูก LINE, แสดงสถานะ, Add LINE, instruction และ refresh/check state</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/page.tsx</code></td><td>Modify</td><td>โหลด LINE link status และ render panel เมื่อ query <code>lineLink=1</code> หรือ provider เป็น LINE</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/actions.ts</code></td><td>Modify</td><td>เพิ่ม unlink action และ optional test LINE notification action</td></tr>
+        <tr><td><code>src/app/(auth)/register/actions.ts</code></td><td>Modify</td><td>หลังสมัครสำเร็จ redirect ไป onboarding พร้อม <code>linePrompt=1</code></td></tr>
+        <tr><td><code>src/app/onboarding/page.tsx</code></td><td>Modify</td><td>รับ query <code>linePrompt=1</code> และแสดง dialog Add LINE</td></tr>
+        <tr><td><code>src/app/onboarding/LineAddDialog.tsx</code></td><td>Create</td><td>client dialog หลังสมัคร มีปุ่ม Add LINE และไป settings notifications</td></tr>
+        <tr><td><code>.env.example</code></td><td>Modify</td><td>เพิ่ม placeholder env ของ LINE โดยไม่มี secret จริง</td></tr>
+        <tr><td><code>package.json</code>, <code>package-lock.json</code></td><td>Modify when build/commit</td><td>ก่อน build หรือ commit ต้อง bump version จาก <code>0.12.1</code> เป็น <code>0.13.0</code> เพราะเป็น minor feature</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Data Model</h2>
+    <div class="task">
+      <h3>Proposed migration shape</h3>
+      <p>ใช้ table แยกเพื่อป้องกันปนกับ Telegram target และรองรับ unlink/audit ได้ชัด.</p>
+      <pre><code>create table if not exists line_account_links (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  app_user_id uuid not null references auth.users(id) on delete cascade,
+  line_user_id text not null,
+  status text not null default 'linked' check (status in ('linked', 'unlinked')),
+  linked_at timestamptz not null default now(),
+  unlinked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, app_user_id),
+  unique (line_user_id)
+);
+
+create table if not exists line_account_link_sessions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  app_user_id uuid not null references auth.users(id) on delete cascade,
+  nonce_hash text not null unique,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);</code></pre>
+      <p class="note">
+        RLS: owner/member ใน organization อ่านสถานะของตัวเองได้, write ผ่าน server action/service role เท่านั้น,
+        accountLink webhook ใช้ service role เพื่อ consume nonce หลัง verify signature แล้ว.
+      </p>
+    </div>
+
+    <h2>TDD Implementation Tasks</h2>
+
+    <section class="task">
+      <h3>Task 1: RED tests for LINE binding contract</h3>
+      <p><strong>Files:</strong> modify <code>tests/unit/notifications.test.ts</code>, <code>tests/unit/ui-regressions.test.ts</code>, <code>tests/unit/premium-free-trial.test.ts</code></p>
+      <ul class="checklist">
+        <li>เพิ่ม test ว่า migration มี <code>line_account_links</code>, <code>line_account_link_sessions</code>, unique constraints, RLS, และ nonce expiry.</li>
+        <li>เพิ่ม test ว่า <code>src/modules/notifications/line.ts</code> มี <code>verifyLineSignature</code>, <code>buildLinePushMessageRequest</code>, <code>buildLineIssueLinkTokenRequest</code>, และไม่ expose secret.</li>
+        <li>เพิ่ม test ว่า webhook route reject signature ผิด และ handle <code>accountLink</code> event แบบ consume nonce.</li>
+        <li>เพิ่ม test ว่า settings page แสดง <code>LineAccountLinkPanel</code>, Add LINE URL, สถานะผูกแล้ว/ยังไม่ผูก, และไม่มี token ใน JSX.</li>
+        <li>เพิ่ม test ว่า register/onboarding มี <code>linePrompt=1</code> dialog หลังสมัครสำเร็จ.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts tests/unit/ui-regressions.test.ts tests/unit/premium-free-trial.test.ts</code></pre>
+      <p>Expected RED: tests fail เพราะยังไม่มี LINE binding schema, line module, webhook route, panel และ dialog.</p>
+    </section>
+
+    <section class="task">
+      <h3>Task 2: Schema and repository</h3>
+      <p><strong>Files:</strong> create migration, modify <code>database.types.ts</code>, modify <code>repository.ts</code></p>
+      <ul class="checklist">
+        <li>สร้าง migration ตาม Data Model พร้อม indexes: <code>organization_id</code>, <code>app_user_id</code>, <code>expires_at</code>.</li>
+        <li>เพิ่ม repository functions: <code>getLineAccountLinkStatus</code>, <code>createLineAccountLinkSession</code>, <code>consumeLineAccountLinkSession</code>, <code>upsertLineAccountLink</code>, <code>unlinkLineAccount</code>.</li>
+        <li>nonce ต้อง random อย่างน้อย 32 bytes, เก็บเฉพาะ hash, expiry 10 นาที, และ consume ได้ครั้งเดียว.</li>
+        <li>ใช้ <code>createSupabaseServiceClient</code> เฉพาะ path webhook/account-link ที่จำเป็น; UI read ใช้ server client ตาม permission เดิม.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts</code></pre>
+      <p>Expected GREEN for schema/repository assertions; webhook/UI assertions ยัง fail จน task ถัดไป.</p>
+    </section>
+
+    <section class="task">
+      <h3>Task 3: LINE provider helper</h3>
+      <p><strong>Files:</strong> create <code>src/modules/notifications/line.ts</code>, modify <code>dispatcher.ts</code></p>
+      <ul class="checklist">
+        <li>เพิ่ม <code>verifyLineSignature(rawBody, signature, channelSecret)</code> ด้วย HMAC-SHA256 และ constant-time compare.</li>
+        <li>เพิ่ม <code>buildLinePushMessageRequest(token, userId, input)</code> ใช้ endpoint <code>https://api.line.me/v2/bot/message/push</code>.</li>
+        <li>เพิ่ม <code>buildLineReplyMessageRequest(token, replyToken, text)</code> สำหรับตอบคำสั่งผูกบัญชี.</li>
+        <li>เพิ่ม <code>buildLineIssueLinkTokenRequest(token, lineUserId)</code> ใช้ endpoint <code>https://api.line.me/v2/bot/user/{userId}/linkToken</code>.</li>
+        <li>dispatcher: ถ้า channel เป็น <code>line</code> ให้ resolve <code>line_user_id</code>; ถ้าไม่มีให้ return skipped message ชัดเจน.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts</code></pre>
+      <p>Expected GREEN for LINE helper/dispatcher tests; route/UI assertions ยัง fail จน task ถัดไป.</p>
+    </section>
+
+    <section class="task">
+      <h3>Task 4: LINE webhook and account-link route</h3>
+      <p><strong>Files:</strong> create <code>src/app/api/line/webhook/route.ts</code>, create <code>src/app/api/line/account-link/start/route.ts</code></p>
+      <ul class="checklist">
+        <li>Webhook อ่าน raw body, verify <code>x-line-signature</code>, reject 400 เมื่อ invalid.</li>
+        <li>เมื่อ message text เป็น <code>ผูกบัญชี</code>, <code>link</code>, หรือ <code>LINK</code>: issue link token แล้ว reply URL ไปยัง <code>/api/line/account-link/start?linkToken=...</code>.</li>
+        <li><code>account-link/start</code> ต้อง require logged-in user และ current organization; สร้าง nonce session แล้ว redirect ไป <code>https://access.line.me/dialog/bot/accountLink</code>.</li>
+        <li>Webhook <code>accountLink</code> event ที่ result <code>ok</code> ต้อง hash nonce, consume session, upsert <code>line_account_links</code>, และไม่ log nonce/token.</li>
+        <li>Webhook event ที่ไม่รองรับต้อง return 200 เพื่อไม่ให้ LINE retry วนโดยไม่จำเป็น.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts</code></pre>
+      <p>Expected GREEN for webhook/account-link route tests.</p>
+    </section>
+
+    <section class="task">
+      <h3>Task 5: Settings page LINE binding panel</h3>
+      <p><strong>Files:</strong> create <code>LineAccountLinkPanel.tsx</code>, modify settings <code>page.tsx</code> and <code>actions.ts</code></p>
+      <ul class="checklist">
+        <li>โหลดสถานะจาก repository และ render panel เฉพาะผู้มี <code>notifications.manage</code>.</li>
+        <li>แสดงสถานะ: <code>ยังไม่ได้ผูก LINE</code>, <code>ผูก LINE แล้ว</code>, และ provider readiness จาก env.</li>
+        <li>ปุ่ม Add LINE ใช้ <code>LINE_ADD_FRIEND_URL</code> หรือ URL ที่ประกอบจาก <code>LINE_OFFICIAL_ACCOUNT_ID</code>.</li>
+        <li>แสดงคำสั่งให้ผู้ใช้ส่ง <code>ผูกบัญชี</code> ใน LINE OA แล้วเปิด secure link ที่ bot ตอบกลับ.</li>
+        <li>เพิ่ม unlink action พร้อม confirm copy; unlink เปลี่ยน status เป็น <code>unlinked</code> ไม่ลบ row ทันที.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts tests/unit/ui-regressions.test.ts</code></pre>
+      <p>Expected GREEN for settings/UI assertions.</p>
+    </section>
+
+    <section class="task">
+      <h3>Task 6: Post-signup Add LINE dialog</h3>
+      <p><strong>Files:</strong> modify <code>register/actions.ts</code>, modify <code>onboarding/page.tsx</code>, create <code>LineAddDialog.tsx</code></p>
+      <ul class="checklist">
+        <li>หลัง register success redirect ไป <code>/onboarding?linePrompt=1</code> หรือ path เดิมที่ระบบใช้อยู่พร้อม query flag นี้.</li>
+        <li><code>LineAddDialog</code> เปิดเฉพาะเมื่อ query <code>linePrompt=1</code> และปิดได้โดยไม่ block onboarding.</li>
+        <li>Dialog มีปุ่ม <code>Add LINE</code> และปุ่ม <code>ไปตั้งค่าแจ้งเตือน</code> ไป <code>/settings/notifications?lineLink=1</code>.</li>
+        <li>ถ้า env LINE ยังไม่พร้อม ให้ dialog แสดง copy แจ้งว่าผูก LINE ได้ภายหลังที่ settings โดยไม่ทำให้สมัครล้มเหลว.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/premium-free-trial.test.ts tests/unit/ui-regressions.test.ts</code></pre>
+      <p>Expected GREEN for signup/onboarding regression tests.</p>
+    </section>
+
+    <section class="task">
+      <h3>Task 7: Env, package version, review, and verification</h3>
+      <p><strong>Files:</strong> modify <code>.env.example</code>, <code>package.json</code>, <code>package-lock.json</code></p>
+      <ul class="checklist">
+        <li>เพิ่ม placeholders: <code>LINE_CHANNEL_ACCESS_TOKEN</code>, <code>LINE_CHANNEL_SECRET</code>, <code>LINE_OFFICIAL_ACCOUNT_ID</code>, <code>LINE_ADD_FRIEND_URL</code>, <code>LINE_ACCOUNT_LINK_BASE_URL</code>.</li>
+        <li>ก่อน build/commit ให้ bump version จาก <code>0.12.1</code> เป็น <code>0.13.0</code>.</li>
+        <li>รัน targeted tests แล้วรัน full verification ตามคำสั่งด้านล่าง.</li>
+        <li>หลัง implementation ต้องส่ง <code>code_reviewer</code> พร้อม Mandatory Context Package; focus security, webhook signature, nonce replay, RLS, secret exposure, signup regression.</li>
+        <li>หลัง review pass จึง commit; commit message ต้องระบุเวอร์ชันใหม่.</li>
+      </ul>
+      <pre><code>npm test -- tests/unit/notifications.test.ts tests/unit/ui-regressions.test.ts tests/unit/premium-free-trial.test.ts
+npm test
+npm run typecheck
+npm run lint
+npm run build
+git diff --check</code></pre>
+    </section>
+
+    <h2>Manual QA</h2>
+    <table>
+      <thead>
+        <tr><th>Scenario</th><th>Expected Result</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>สมัคร tenant ใหม่สำเร็จ</td><td>เห็น dialog Add LINE, ปิด dialog ได้, ไป onboarding ต่อได้</td></tr>
+        <tr><td>กดไปตั้งค่าแจ้งเตือน</td><td>เปิด <code>/settings/notifications?lineLink=1</code> และเห็น LINE binding panel</td></tr>
+        <tr><td>LINE env ยังไม่พร้อม</td><td>UI แสดงสถานะ provider ยังไม่พร้อม และไม่มี token ใน HTML/client bundle</td></tr>
+        <tr><td>ส่งข้อความ <code>ผูกบัญชี</code> ใน LINE OA</td><td>bot ตอบ secure account link URL ถ้า webhook signature valid</td></tr>
+        <tr><td>เปิด account link แล้วสำเร็จ</td><td>status เป็นผูก LINE แล้ว และ test notification ส่งผ่าน LINE push</td></tr>
+        <tr><td>ใช้ nonce ซ้ำหรือหมดอายุ</td><td>ปฏิเสธแบบปลอดภัยและไม่เปลี่ยน account link เดิม</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Security Checklist</h2>
+    <ul class="checklist">
+      <li>ทุก webhook request ต้อง verify <code>x-line-signature</code> จาก raw body ก่อน parse trust.</li>
+      <li>Nonce ต้อง random, hash, expire, และ single-use.</li>
+      <li>ห้าม log <code>LINE_CHANNEL_ACCESS_TOKEN</code>, <code>LINE_CHANNEL_SECRET</code>, nonce raw, link token, หรือ provider response ที่มีข้อมูล sensitive.</li>
+      <li>RLS ต้องกัน cross-tenant read/write; service role ใช้เฉพาะ webhook/server action ที่จำเป็น.</li>
+      <li>ผู้ใช้หนึ่งคนใน organization มี LINE link ได้หนึ่งรายการ; LINE user ID เดียวไม่ควรถูก bind ซ้ำข้าม account โดยไม่ unlink ก่อน.</li>
+      <li>Notification failure ต้องไม่ทำให้ signup/order/service request transaction fail.</li>
+    </ul>
+
+    <h2>External Setup Needed</h2>
+    <table>
+      <thead>
+        <tr><th>LINE Console</th><th>Value</th><th>Owner</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Messaging API Channel</td><td>Channel access token และ channel secret</td><td>ผู้ดูแลโปรเจกต์</td></tr>
+        <tr><td>Webhook URL</td><td><code>https://APP_URL/api/line/webhook</code></td><td>ผู้ดูแล deploy/env</td></tr>
+        <tr><td>Official Account</td><td>Basic ID หรือ Add friend URL</td><td>ผู้ดูแล LINE OA</td></tr>
+        <tr><td>Account link base URL</td><td><code>https://APP_URL/api/line/account-link/start</code></td><td>ผู้ดูแล deploy/env</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Open Risks</h2>
+    <section class="grid">
+      <div class="card danger">
+        <h3>Production env</h3>
+        <p>ยังมี Vercel auth blocker จากงานก่อน; ห้าม production deploy จน auth/env พร้อมและผู้ใช้อนุมัติ.</p>
+      </div>
+      <div class="card warn">
+        <h3>LINE live test</h3>
+        <p>Automated tests mock provider ได้ แต่ต้องมี LINE OA จริงสำหรับ end-to-end smoke.</p>
+      </div>
+      <div class="card info">
+        <h3>Account link UX</h3>
+        <p>ผู้ใช้อาจต้อง login ใน LINE in-app browser ตอนเปิด secure link; copy ต้องบอกให้ชัด.</p>
+      </div>
+    </section>
+
+    <h2>References</h2>
+    <ul>
+      <li>LINE Messaging API docs: <code>https://developers.line.biz/en/docs/messaging-api/</code></li>
+      <li>LINE account linking: <code>https://developers.line.biz/en/docs/messaging-api/linking-accounts/</code></li>
+      <li>LINE webhook receiving messages: <code>https://developers.line.biz/en/docs/messaging-api/receiving-messages/</code></li>
+      <li>LINE sending messages: <code>https://developers.line.biz/en/docs/messaging-api/sending-messages/</code></li>
+    </ul>
+  </main>
+</body>
+</html>
