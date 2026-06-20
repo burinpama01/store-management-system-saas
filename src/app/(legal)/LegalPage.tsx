@@ -52,7 +52,7 @@ export function LegalPage({
           <div>
             <h2 className="text-lg font-black text-[var(--ink)]">เอกสารที่เกี่ยวข้อง</h2>
             <p className="mt-1 text-sm text-[var(--ink-2)]">
-              ใช้ URL ของหน้านี้กรอกใน LINE Official Account Manager ได้โดยตรง
+              เอกสารนี้เป็นข้อมูลของแอป StoreOS สำหรับผู้สมัครและผู้ใช้งาน
             </p>
           </div>
           <Link href={relatedHref} className="btn-secondary text-center">

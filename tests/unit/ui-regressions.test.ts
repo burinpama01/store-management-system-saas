@@ -6,7 +6,8 @@ const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("UX/UI regression guards", () => {
-  it("publishes public privacy policy and terms pages for LINE OA setup", () => {
+  it("publishes public app privacy policy and terms pages", () => {
+    const legalPagePath = "src/app/(legal)/LegalPage.tsx";
     const privacyPath = "src/app/(legal)/privacy-policy/page.tsx";
     const termsPath = "src/app/(legal)/terms-of-service/page.tsx";
     const middleware = read("src/server/integrations/supabase/middleware.ts");
@@ -16,8 +17,14 @@ describe("UX/UI regression guards", () => {
     expect(existsSync(join(root, privacyPath))).toBe(true);
     expect(existsSync(join(root, termsPath))).toBe(true);
 
+    const legalPage = read(legalPagePath);
     const privacy = read(privacyPath);
     const terms = read(termsPath);
+    const legalSurface = [legalPage, privacy, terms, shell].join("\n");
+
+    expect(legalPage).toContain("เอกสารนี้เป็นข้อมูลของแอป StoreOS");
+    expect(legalSurface).not.toContain("LINE Official Account Manager");
+    expect(legalSurface).not.toContain("กรอกใน LINE");
 
     expect(privacy).toContain("นโยบายความเป็นส่วนตัว");
     expect(privacy).toContain("LINE Official Account");
