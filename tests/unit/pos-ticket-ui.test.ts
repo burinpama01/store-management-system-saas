@@ -215,6 +215,30 @@ describe("POS ticket UX guards", () => {
     expect(cartPanelSource).toContain("disabled={!canApplyDiscount}");
   });
 
+  it("prints cash received and change as separate receipt amounts", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const receiptPanelStart = source.indexOf("function ReceiptPanel(");
+    const receiptPanelEnd = source.indexOf("// ─── Main POS Terminal");
+    const receiptPanelSource = source.slice(receiptPanelStart, receiptPanelEnd);
+    const confirmStart = source.indexOf("function handleConfirmPayment");
+    const newOrderStart = source.indexOf("function handleNewOrder");
+    const confirmSource = source.slice(confirmStart, newOrderStart);
+    const reprintStart = source.indexOf("async function handlePrintHistoryOrder");
+    const voidStart = source.indexOf("function handleVoidHistoryOrder");
+    const reprintSource = source.slice(reprintStart, voidStart);
+
+    expect(source).toContain("receivedAmount?: number");
+    expect(source).toContain("changeAmount?: number");
+    expect(confirmSource).toContain("receivedAmount: received");
+    expect(confirmSource).toContain("changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined");
+    expect(receiptPanelSource).toContain("receivedAmount: order.receivedAmount");
+    expect(receiptPanelSource).toContain("changeAmount: order.changeAmount");
+    expect(receiptPanelSource).toContain("รับเงิน {priceStr(order.receivedAmount)}");
+    expect(receiptPanelSource).toContain("เงินทอน {priceStr(order.changeAmount)}");
+    expect(reprintSource).toContain("receivedAmount: payment.receivedAmount");
+    expect(reprintSource).toContain("changeAmount: payment.changeAmount");
+  });
+
   it("keeps discount input draft in sync when the active cart is replaced", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
     const cartPanelStart = source.indexOf("function CartPanel(");
@@ -366,6 +390,23 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("qrPaymentVerified: method === \"qr_promptpay\" ? qrPaymentVerified : undefined");
     expect(source).toContain("ticket.syncState === \"sync_failed\"");
     expect(source).toContain("ลบตั๋วและเคลียร์โต๊ะ");
+  });
+
+  it("keeps payment confirmation separate from saving tickets", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const paymentStart = source.indexOf("function PaymentPanel(");
+    const paymentEnd = source.indexOf("// ─── Receipt Panel", paymentStart);
+    const paymentSource = source.slice(paymentStart, paymentEnd);
+    const confirmStart = source.indexOf("function handleConfirmPayment");
+    const confirmEnd = source.indexOf("function handleNewOrder", confirmStart);
+    const confirmSource = source.slice(confirmStart, confirmEnd);
+
+    expect(paymentSource).toContain("ยืนยันการชำระ");
+    expect(paymentSource).toContain("กำลังชำระเงิน...");
+    expect(paymentSource).not.toContain("กำลังบันทึก...");
+    expect(confirmSource).toContain("collectPaymentAction(order.orderId");
+    expect(confirmSource).not.toContain("saveSavedTicketAction");
+    expect(confirmSource).toContain("deleteSavedTicketAction(activeTicketId)");
   });
 
   it("requires QR verification before settling table bills", () => {

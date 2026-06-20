@@ -86,6 +86,37 @@ describe("notification dispatcher", () => {
     expect(page).not.toContain("resolvePermissions(ctx.role, []");
   });
 
+  it("wires LINE notification test button to the account link panel", () => {
+    const actions = read("src/app/(dashboard)/settings/notifications/actions.ts");
+    const panel = read("src/app/(dashboard)/settings/notifications/LineAccountLinkPanel.tsx");
+    const page = read("src/app/(dashboard)/settings/notifications/page.tsx");
+
+    expect(actions).toContain("export async function runLineNotificationTestAction");
+    expect(actions).toContain("requirePermission(\"notifications.manage\")");
+    expect(actions).toContain("requireFeature(\"lineNotify\")");
+    expect(actions).toContain("channel: \"line\"");
+    expect(actions).toContain("title: \"StoreOS LINE test\"");
+    expect(actions).toContain("message: \"[TEST] LINE notification พร้อมใช้งาน\"");
+    expect(actions).toContain("organizationId: ctx.organizationId");
+    expect(actions).toContain("storeId: ctx.storeId");
+
+    expect(panel).toContain("runLineNotificationTestAction");
+    expect(panel).toContain("canTestLine");
+    expect(panel).toContain("const canRenderLineTest = canManage");
+    expect(panel).toContain("{canRenderLineTest && (");
+    expect(panel).toContain("setPending(true)");
+    expect(panel).toContain("finally");
+    expect(panel).toContain("ทดสอบ LINE");
+    expect(panel).toContain("LINE test");
+    expect(panel).toContain("NotificationFeedbackDialog");
+    expect(page).toContain("canTestLine=");
+    expect(page).toContain("getLineNotificationTarget");
+    expect(page).toContain("getLineNotificationTarget(ctx.organizationId, { useServiceRole: true })");
+    expect(page).toContain("lineDeliveryTargetReady");
+    expect(page).toContain("canTestLine={canManage && features.lineNotify && providerReady.line && lineDeliveryTargetReady}");
+    expect(page).not.toContain("canTestLine={canManage && features.lineNotify && providerReady.line && (linked || groupLinked)}");
+  });
+
   it("adds persisted notification settings repository and schema", () => {
     const repository = read("src/modules/notifications/repository.ts");
     const page = read("src/app/(dashboard)/settings/notifications/page.tsx");
@@ -231,6 +262,210 @@ describe("notification dispatcher", () => {
     expect(result.message).not.toContain("request failed");
   });
 
+  it("fans out owner notification delivery to all channels unless the caller pins one", async () => {
+    const oldLineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+    const oldTelegramToken = process.env.TELEGRAM_BOT_TOKEN;
+    const afterTasks: Promise<unknown>[] = [];
+    const getNotificationSetting = vi.fn().mockResolvedValue({ data: { enabled: true }, error: null });
+    const getTelegramNotificationTarget = vi.fn().mockResolvedValue({
+      data: { telegramChatId: "-1001234567890" },
+      error: null,
+    });
+    const getLineNotificationTarget = vi.fn().mockResolvedValue({
+      data: { targetId: "line-group-id", targetType: "group" },
+      error: null,
+    });
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response("{}", { status: 200 })),
+    );
+
+    process.env.LINE_CHANNEL_ACCESS_TOKEN = "line-token";
+    process.env.TELEGRAM_BOT_TOKEN = "telegram-token";
+    vi.resetModules();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.doMock("next/server", () => ({
+      after: (callback: () => unknown) => {
+        afterTasks.push(Promise.resolve(callback()));
+      },
+    }));
+    vi.doMock("@/modules/billing/billing-service", () => ({
+      getOrganizationBillingState: vi.fn().mockResolvedValue({ plan: "premium", status: "active" }),
+    }));
+    vi.doMock("@/modules/billing/types", () => ({
+      DEFAULT_BILLING_STATE: { plan: "premium", status: "active" },
+      getPlanFeatures: vi.fn(() => ({ lineNotify: true })),
+    }));
+    vi.doMock("@/modules/notifications/repository", () => ({
+      getLineNotificationTarget,
+      getNotificationSetting,
+      getTelegramNotificationTarget,
+    }));
+
+    try {
+      const { notifyOwnerSafely } = await import("@/modules/notifications/dispatcher");
+      notifyOwnerSafely({
+        type: "payment",
+        organizationId: "org-1",
+        storeId: "store-1",
+        message: "paid",
+      });
+      await Promise.all(afterTasks);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+        "https://api.line.me/v2/bot/message/push",
+        "https://api.telegram.org/bottelegram-token/sendMessage",
+      ]);
+      expect(getNotificationSetting).toHaveBeenCalledWith(
+        "store-1",
+        "org-1",
+        "payment",
+        "line",
+        { useServiceRole: true },
+      );
+      expect(getNotificationSetting).toHaveBeenCalledWith(
+        "store-1",
+        "org-1",
+        "payment",
+        "telegram",
+        { useServiceRole: true },
+      );
+
+      afterTasks.length = 0;
+      fetchMock.mockClear();
+      getNotificationSetting.mockClear();
+      notifyOwnerSafely({
+        type: "payment",
+        channel: "telegram",
+        organizationId: "org-1",
+        storeId: "store-1",
+        message: "paid",
+      });
+      await Promise.all(afterTasks);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0][0])).toBe("https://api.telegram.org/bottelegram-token/sendMessage");
+      expect(getNotificationSetting).toHaveBeenCalledWith(
+        "store-1",
+        "org-1",
+        "payment",
+        "telegram",
+        { useServiceRole: true },
+      );
+      expect(getNotificationSetting).not.toHaveBeenCalledWith(
+        "store-1",
+        "org-1",
+        "payment",
+        "line",
+        { useServiceRole: true },
+      );
+    } finally {
+      if (oldLineToken === undefined) {
+        delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
+      } else {
+        process.env.LINE_CHANNEL_ACCESS_TOKEN = oldLineToken;
+      }
+      if (oldTelegramToken === undefined) {
+        delete process.env.TELEGRAM_BOT_TOKEN;
+      } else {
+        process.env.TELEGRAM_BOT_TOKEN = oldTelegramToken;
+      }
+      vi.doUnmock("next/server");
+      vi.doUnmock("@/modules/billing/billing-service");
+      vi.doUnmock("@/modules/billing/types");
+      vi.doUnmock("@/modules/notifications/repository");
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+
+  it("starts Telegram owner delivery even when LINE delivery is still pending", async () => {
+    const oldLineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+    const oldTelegramToken = process.env.TELEGRAM_BOT_TOKEN;
+    const afterTasks: Promise<unknown>[] = [];
+    let resolveLineFetch: (response: Response) => void = () => {};
+    const pendingLineFetch = new Promise<Response>((resolve) => {
+      resolveLineFetch = resolve;
+    });
+    const getNotificationSetting = vi.fn().mockResolvedValue({ data: { enabled: true }, error: null });
+    const getTelegramNotificationTarget = vi.fn().mockResolvedValue({
+      data: { telegramChatId: "-1001234567890" },
+      error: null,
+    });
+    const getLineNotificationTarget = vi.fn().mockResolvedValue({
+      data: { targetId: "line-group-id", targetType: "group" },
+      error: null,
+    });
+    const fetchMock = vi.fn().mockImplementation((url: string | URL | Request) => {
+      if (String(url).includes("api.line.me")) {
+        return pendingLineFetch;
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+
+    process.env.LINE_CHANNEL_ACCESS_TOKEN = "line-token";
+    process.env.TELEGRAM_BOT_TOKEN = "telegram-token";
+    vi.resetModules();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.doMock("next/server", () => ({
+      after: (callback: () => unknown) => {
+        afterTasks.push(Promise.resolve(callback()));
+      },
+    }));
+    vi.doMock("@/modules/billing/billing-service", () => ({
+      getOrganizationBillingState: vi.fn().mockResolvedValue({ plan: "premium", status: "active" }),
+    }));
+    vi.doMock("@/modules/billing/types", () => ({
+      DEFAULT_BILLING_STATE: { plan: "premium", status: "active" },
+      getPlanFeatures: vi.fn(() => ({ lineNotify: true })),
+    }));
+    vi.doMock("@/modules/notifications/repository", () => ({
+      getLineNotificationTarget,
+      getNotificationSetting,
+      getTelegramNotificationTarget,
+    }));
+
+    try {
+      const { notifyOwnerSafely } = await import("@/modules/notifications/dispatcher");
+      notifyOwnerSafely({
+        type: "payment",
+        organizationId: "org-1",
+        storeId: "store-1",
+        message: "paid",
+      });
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await Promise.resolve();
+      }
+
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(
+        expect.arrayContaining([
+          "https://api.line.me/v2/bot/message/push",
+          "https://api.telegram.org/bottelegram-token/sendMessage",
+        ]),
+      );
+    } finally {
+      resolveLineFetch(new Response("{}", { status: 200 }));
+      await Promise.allSettled(afterTasks);
+      if (oldLineToken === undefined) {
+        delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
+      } else {
+        process.env.LINE_CHANNEL_ACCESS_TOKEN = oldLineToken;
+      }
+      if (oldTelegramToken === undefined) {
+        delete process.env.TELEGRAM_BOT_TOKEN;
+      } else {
+        process.env.TELEGRAM_BOT_TOKEN = oldTelegramToken;
+      }
+      vi.doUnmock("next/server");
+      vi.doUnmock("@/modules/billing/billing-service");
+      vi.doUnmock("@/modules/billing/types");
+      vi.doUnmock("@/modules/notifications/repository");
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+
   it("keeps owner notification delivery off order request paths", () => {
     const dispatcher = read("src/modules/notifications/dispatcher.ts");
     const posActions = read("src/app/pos/actions.ts");
@@ -241,7 +476,11 @@ describe("notification dispatcher", () => {
     expect(dispatcher).toContain("after(");
     expect(dispatcher).toContain("async function runOwnerNotificationDelivery");
     expect(dispatcher).toContain("const result = await dispatchNotification");
-    expect(dispatcher).toContain('channel: input.channel ?? "line"');
+    expect(dispatcher).toContain("const channels = input.channel ? [input.channel] : NOTIFICATION_CHANNELS");
+    expect(dispatcher).toContain("Promise.allSettled");
+    expect(dispatcher).toContain("runOwnerNotificationDelivery({");
+    expect(dispatcher).toContain("channel,");
+    expect(dispatcher).not.toContain('channel: input.channel ?? "line"');
     expect(dispatcher).not.toContain("void dispatchNotification");
     expect(posActions).not.toMatch(/await\s+notifyOwnerSafely/);
     expect(qrActions).not.toMatch(/await\s+notifyOwnerSafely/);
@@ -286,6 +525,7 @@ describe("notification dispatcher", () => {
     const types = read("src/modules/notifications/types.ts");
     const posActions = read("src/app/pos/actions.ts");
     const qrActions = read("src/app/qr/[storeSlug]/[tableId]/actions.ts");
+    const attendanceActions = read("src/app/(dashboard)/attendance/actions.ts");
     const buffetRepository = read("src/modules/buffet/repository.ts");
     const dispatcher = read("src/modules/notifications/dispatcher.ts");
     const settingsPage = read("src/app/(dashboard)/settings/notifications/page.tsx");
@@ -296,6 +536,8 @@ describe("notification dispatcher", () => {
     expect(types).toContain("| \"new_buffet_order\"");
     expect(types).toContain("| \"order_cancelled\"");
     expect(types).toContain("| \"service_request\"");
+    expect(types).toContain("| \"attendance_clock_in\"");
+    expect(types).toContain("| \"attendance_clock_out\"");
     expect(posActions).toContain("notifyOwnerSafely");
     expect(posActions).toContain("getTable(opts.tableId");
     expect(posActions).toContain("currentSessionId");
@@ -309,6 +551,11 @@ describe("notification dispatcher", () => {
     expect(qrActions).toContain("type: \"service_request\"");
     expect(qrActions).not.toContain("message: `โต๊ะ ${tableId}");
     expect(qrActions).toContain("tableNumber: table.number");
+    expect(attendanceActions).toContain("notifyOwnerSafely");
+    expect(attendanceActions).toContain("type: \"attendance_clock_in\"");
+    expect(attendanceActions).toContain("type: \"attendance_clock_out\"");
+    expect(settingsPage).toContain("พนักงานเข้างาน");
+    expect(settingsPage).toContain("พนักงานออกงาน");
     expect(buffetRepository).toContain('supabase.rpc("create_buffet_session_with_table"');
     expect(buffetRepository).toContain('supabase.rpc("close_buffet_session_with_table"');
     expect(buffetRepository).not.toMatch(/updateGuestCount[\\s\\S]*current_session_id: null/);
@@ -441,7 +688,7 @@ describe("notification dispatcher", () => {
     expect(panel).toContain("ผูก LINE แล้ว");
     expect(panel).toContain("LINE_ADD_FRIEND_URL");
     expect(panel).toContain("LINE_OFFICIAL_ACCOUNT_ID");
-    expect(panel).toContain("/settings/notifications?lineLink=1");
+    expect(panel).not.toContain("/settings/notifications?lineLink=1");
     expect(panel).not.toContain("LINE_CHANNEL_ACCESS_TOKEN");
     expect(panel).not.toContain("LINE_CHANNEL_SECRET");
     expect(actions).toContain("unlinkLineAccountAction");

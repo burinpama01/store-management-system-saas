@@ -30,6 +30,7 @@ import {
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
+import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
 
 async function getStoreContext() {
@@ -74,6 +75,19 @@ async function getAttendanceGpsPolicy(
   };
 }
 
+function formatClockNotificationTime(value: string, timeZone: string) {
+  try {
+    return new Intl.DateTimeFormat("th-TH", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 export async function clockInAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.clock");
@@ -112,6 +126,23 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
     });
 
     if (result.error) return { error: result.error.userMessage };
+    if (result.data) {
+      notifyOwnerSafely({
+        type: "attendance_clock_in",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        title: "พนักงานเข้างาน",
+        message: `${result.data.employeeName} เข้างาน เวลา ${formatClockNotificationTime(result.data.clockInAt, ctx.storeTimezone)}`,
+        metadata: {
+          attendanceRecordId: result.data.id,
+          userId: result.data.userId,
+          action: "clock_in",
+          date: result.data.date,
+          clockInAt: result.data.clockInAt,
+          locationLabel: result.data.clockInLocationLabel ?? null,
+        },
+      });
+    }
 
     revalidatePath("/attendance", "page");
     return { error: null };
@@ -152,6 +183,24 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     });
 
     if (result.error) return { error: result.error.userMessage };
+    if (result.data) {
+      notifyOwnerSafely({
+        type: "attendance_clock_out",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        title: "พนักงานออกงาน",
+        message: `${result.data.employeeName} ออกงาน เวลา ${formatClockNotificationTime(result.data.clockOutAt ?? now.toISOString(), ctx.storeTimezone)}`,
+        metadata: {
+          attendanceRecordId: result.data.id,
+          userId: result.data.userId,
+          action: "clock_out",
+          date: result.data.date,
+          clockInAt: result.data.clockInAt,
+          clockOutAt: result.data.clockOutAt ?? null,
+          locationLabel: result.data.clockOutLocationLabel ?? null,
+        },
+      });
+    }
 
     revalidatePath("/attendance", "page");
     return { error: null };

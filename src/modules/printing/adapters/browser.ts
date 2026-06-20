@@ -114,8 +114,9 @@ function buildReceiptHtml(data: ReceiptData): string {
       cash: "เงินสด", qr_promptpay: "QR PromptPay",
       credit_card: "บัตร", bank_transfer: "โอนเงิน", other: "อื่น ๆ",
     };
-    lines.push(padLine(methodMap[p.method] ?? p.method, priceStr(p.amount), cols));
-    if (p.receivedAmount !== undefined) lines.push(padLine("  รับเงิน", priceStr(p.receivedAmount), cols));
+    const displayAmount = p.method === "cash" && p.receivedAmount !== undefined ? p.receivedAmount : p.amount;
+    lines.push(padLine(methodMap[p.method] ?? p.method, priceStr(displayAmount), cols));
+    if (p.method !== "cash" && p.receivedAmount !== undefined) lines.push(padLine("  รับเงิน", priceStr(p.receivedAmount), cols));
     if (p.changeAmount !== undefined && p.changeAmount > 0) lines.push(padLine("  เงินทอน", priceStr(p.changeAmount), cols));
   }
 

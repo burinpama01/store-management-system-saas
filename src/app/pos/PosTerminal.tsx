@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
@@ -33,6 +32,17 @@ type TicketDraft = Pick<SavedOrderTicket, "tableId" | "tableNumber" | "customerN
 type DiscountDraft = { mode: DiscountType; amount: string; percentage: string; note: string };
 type HistoryRangeMode = "today" | "7d" | "30d" | "custom";
 type BillHistoryRange = { mode: HistoryRangeMode; fromDate: string; toDate: string };
+type ReceiptOrder = {
+  orderNumber: string;
+  items: CartItem[];
+  subtotal: number;
+  discount: number;
+  discountNote?: string;
+  total: number;
+  method: string;
+  receivedAmount?: number;
+  changeAmount?: number;
+};
 
 const EMPTY_TICKET_DRAFT: TicketDraft = {
   tableId: undefined,
@@ -1675,7 +1685,7 @@ function PaymentPanel({
           }
           className="btn-primary w-full disabled:opacity-40"
         >
-          {isPending ? "กำลังบันทึก..." : "ยืนยันการชำระ"}
+          {isPending ? "กำลังชำระเงิน..." : "ยืนยันการชำระ"}
         </button>
       </div>
     </div>
@@ -1692,7 +1702,7 @@ function ReceiptPanel({
   printerLoadError,
   onNewOrder,
 }: {
-  order: { orderNumber: string; items: CartItem[]; subtotal: number; discount: number; discountNote?: string; total: number; method: string; change?: number };
+  order: ReceiptOrder;
   receiptSettings: ReceiptSettings | null;
   storeName: string;
   printers: Printer[];
@@ -1746,7 +1756,8 @@ function ReceiptPanel({
         payments: [{
           method: order.method,
           amount: order.total,
-          changeAmount: order.change && order.change > 0 ? order.change : undefined,
+          receivedAmount: order.receivedAmount,
+          changeAmount: order.changeAmount,
         }],
         footerText: settings.footerText,
         headerText: settings.headerText,
@@ -1838,9 +1849,14 @@ function ReceiptPanel({
           <span>รวม</span>
           <span className="tabular-nums">{priceStr(order.total)}</span>
         </div>
-        {order.change !== undefined && order.change >= 0 && (
+        {order.method === "cash" && order.receivedAmount !== undefined && (
+          <p className="text-sm text-gray-600 font-medium text-center">
+            รับเงิน {priceStr(order.receivedAmount)}
+          </p>
+        )}
+        {order.changeAmount !== undefined && order.changeAmount >= 0 && (
           <p className="text-sm text-green-600 font-medium text-center">
-            เงินทอน {priceStr(order.change)}
+            เงินทอน {priceStr(order.changeAmount)}
           </p>
         )}
         {printError && (
@@ -1899,16 +1915,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const [isBillHistoryPending, setIsBillHistoryPending] = useState(false);
   const [isPrintingTicket, setIsPrintingTicket] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
-  const [receipt, setReceipt] = useState<{
-    orderNumber: string;
-    items: CartItem[];
-    subtotal: number;
-    discount: number;
-    discountNote?: string;
-    total: number;
-    method: string;
-    change?: number;
-  } | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isTicketSyncPending, startTicketTransition] = useTransition();
   const historyRequestIdRef = useRef(0);
@@ -2261,7 +2268,8 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         discountNote: cart.discountNote,
         total: cart.total,
         method,
-        change: received !== undefined ? Math.max(0, received - cart.total) : undefined,
+        receivedAmount: received,
+        changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined,
       });
       if (activeTicketId) {
         const deleteResult = await deleteSavedTicketAction(activeTicketId);
@@ -2346,6 +2354,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       payments: order.payments.map((payment) => ({
         method: payment.method,
         amount: payment.amount,
+        receivedAmount: payment.receivedAmount,
         changeAmount: payment.changeAmount,
       })),
       footerText: settings.footerText,
@@ -2502,9 +2511,9 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
               currency={currency}
             />
             {exitHref ? (
-              <Link href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
+              <a href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
                 ←<span className="hidden sm:inline"> กลับ</span>
-              </Link>
+              </a>
             ) : (
               <form action={signOut} className="shrink-0">
                 <button type="submit" className="btn-secondary min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">

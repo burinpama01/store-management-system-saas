@@ -1,5 +1,14 @@
+"use client";
+
+import { useState } from "react";
 import type { LineAccountLink, LineNotificationTarget } from "@/modules/notifications/repository";
-import { unlinkLineAccountAction, unlinkLineNotificationTargetAction } from "./actions";
+import {
+  runLineNotificationTestAction,
+  unlinkLineAccountAction,
+  unlinkLineNotificationTargetAction,
+} from "./actions";
+import type { ActionFeedbackState } from "./feedback";
+import { NotificationFeedbackDialog } from "./NotificationFeedbackDialog";
 
 interface LineAccountLinkPanelProps {
   lineAccountLink: LineAccountLink | null;
@@ -9,6 +18,7 @@ interface LineAccountLinkPanelProps {
   officialAccountId: string | null;
   canManage: boolean;
   canManageLineGroup: boolean;
+  canTestLine: boolean;
 }
 
 export function LineAccountLinkPanel({
@@ -19,10 +29,38 @@ export function LineAccountLinkPanel({
   officialAccountId,
   canManage,
   canManageLineGroup,
+  canTestLine,
 }: LineAccountLinkPanelProps) {
+  const [dialogFeedback, setDialogFeedback] = useState<ActionFeedbackState | null>(null);
+  const [pending, setPending] = useState(false);
   const linked = lineAccountLink?.status === "active";
   const groupLinked = lineNotificationTarget?.status === "active";
+  const canRenderLineTest = canManage;
   const groupLabel = lineNotificationTarget?.targetType === "room" ? "multi-person chat" : "group";
+
+  function runLineTest() {
+    if (pending) return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await runLineNotificationTestAction();
+        const message = `${result.message} · ${new Date().toLocaleTimeString("th-TH")}`;
+        setDialogFeedback({
+          status: result.ok && !result.skipped ? "success" : "error",
+          message,
+          submittedAt: Date.now(),
+        });
+      } catch (error) {
+        setDialogFeedback({
+          status: "error",
+          message: error instanceof Error ? error.message : "ส่ง LINE test ไม่สำเร็จ",
+          submittedAt: Date.now(),
+        });
+      } finally {
+        setPending(false);
+      }
+    })();
+  }
 
   return (
     <div className="rounded-md border border-[var(--color-border)] bg-white p-4">
@@ -48,9 +86,6 @@ export function LineAccountLinkPanel({
               LINE provider ยังไม่พร้อม ตั้งค่า LINE_ADD_FRIEND_URL หรือ LINE_OFFICIAL_ACCOUNT_ID และ server env ให้ครบก่อนใช้งานจริง
             </p>
           )}
-          <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-            สถานะนี้เชื่อมกับ <a className="font-bold text-[var(--tenant-primary-strong)]" href="/settings/notifications?lineLink=1">/settings/notifications?lineLink=1</a>
-          </p>
         </div>
 
         <div className="flex flex-col justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
@@ -81,6 +116,17 @@ export function LineAccountLinkPanel({
                 </button>
               </form>
             )}
+            {canRenderLineTest && (
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={runLineTest}
+                disabled={!canTestLine || pending}
+                title="ส่ง LINE test"
+              >
+                {pending ? "กำลังทดสอบ..." : "ทดสอบ LINE"}
+              </button>
+            )}
             {groupLinked && canManageLineGroup && (
               <form action={unlinkLineNotificationTargetAction}>
                 <button className="btn-secondary" type="submit">
@@ -91,6 +137,10 @@ export function LineAccountLinkPanel({
           </div>
         </div>
       </div>
+      <NotificationFeedbackDialog
+        feedback={dialogFeedback}
+        onClose={() => setDialogFeedback(null)}
+      />
     </div>
   );
 }

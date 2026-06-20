@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   listStoreMemberships: vi.fn(),
   addPayrollAdjustment: vi.fn(),
   addManualAttendance: vi.fn(),
+  getTodayRecord: vi.fn(),
+  clockIn: vi.fn(),
+  clockOut: vi.fn(),
+  notifyOwnerSafely: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
@@ -40,9 +44,9 @@ vi.mock("@/modules/hr/repository", () => ({
 }));
 
 vi.mock("@/modules/attendance/repository", () => ({
-  getTodayRecord: vi.fn(),
-  clockIn: vi.fn(),
-  clockOut: vi.fn(),
+  getTodayRecord: mocks.getTodayRecord,
+  clockIn: mocks.clockIn,
+  clockOut: mocks.clockOut,
   getAttendanceSettings: vi.fn(async () => ({ data: null, error: null })),
   upsertAttendanceSettings: vi.fn(),
   addManualAttendance: mocks.addManualAttendance,
@@ -56,6 +60,10 @@ vi.mock("@/modules/attendance/repository", () => ({
 
 vi.mock("@/modules/billing/billing-service", () => ({
   getOrganizationBillingState: vi.fn(async () => null),
+}));
+
+vi.mock("@/modules/notifications/dispatcher", () => ({
+  notifyOwnerSafely: mocks.notifyOwnerSafely,
 }));
 
 function fd(values: Record<string, string>) {
@@ -87,6 +95,110 @@ describe("attendance manager actions", () => {
     });
     mocks.addPayrollAdjustment.mockResolvedValue({ ok: true, error: null });
     mocks.addManualAttendance.mockResolvedValue({ ok: true, error: null });
+    mocks.getTodayRecord.mockResolvedValue(null);
+    mocks.clockIn.mockResolvedValue({ data: null, error: null });
+    mocks.clockOut.mockResolvedValue({ data: null, error: null });
+  });
+
+  it("notifies owners after a successful employee clock-in", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z"));
+    mocks.clockIn.mockResolvedValue({
+      data: {
+        id: "att-1",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-20",
+        clockInAt: "2026-06-20T02:15:00.000Z",
+        clockOutAt: null,
+        status: "active",
+        createdAt: "2026-06-20T02:15:00.000Z",
+        updatedAt: "2026-06-20T02:15:00.000Z",
+      },
+      error: null,
+    });
+    const { clockInAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockInAction(fd({ lat: "13.75", lng: "100.5", locationLabel: "หน้าร้าน" }));
+
+      expect(result.error).toBeNull();
+      expect(mocks.notifyOwnerSafely).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "attendance_clock_in",
+          organizationId: "org-1",
+          storeId: "store-1",
+          title: "พนักงานเข้างาน",
+          message: expect.stringContaining("manager@example.com"),
+          metadata: expect.objectContaining({
+            attendanceRecordId: "att-1",
+            userId: MANAGER_ID,
+            action: "clock_in",
+          }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("notifies owners after a successful employee clock-out", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T11:05:00.000Z"));
+    mocks.getTodayRecord.mockResolvedValue({
+      id: "att-1",
+      userId: MANAGER_ID,
+      organizationId: "org-1",
+      storeId: "store-1",
+      employeeName: "manager@example.com",
+      date: "2026-06-20",
+      clockInAt: "2026-06-20T02:15:00.000Z",
+      clockOutAt: null,
+      status: "active",
+      createdAt: "2026-06-20T02:15:00.000Z",
+      updatedAt: "2026-06-20T02:15:00.000Z",
+    });
+    mocks.clockOut.mockResolvedValue({
+      data: {
+        id: "att-1",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-20",
+        clockInAt: "2026-06-20T02:15:00.000Z",
+        clockOutAt: "2026-06-20T11:05:00.000Z",
+        status: "completed",
+        createdAt: "2026-06-20T02:15:00.000Z",
+        updatedAt: "2026-06-20T11:05:00.000Z",
+      },
+      error: null,
+    });
+    const { clockOutAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockOutAction(fd({ lat: "13.75", lng: "100.5", locationLabel: "หน้าร้าน" }));
+
+      expect(result.error).toBeNull();
+      expect(mocks.notifyOwnerSafely).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "attendance_clock_out",
+          organizationId: "org-1",
+          storeId: "store-1",
+          title: "พนักงานออกงาน",
+          message: expect.stringContaining("manager@example.com"),
+          metadata: expect.objectContaining({
+            attendanceRecordId: "att-1",
+            userId: MANAGER_ID,
+            action: "clock_out",
+          }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects employee leave for a user outside the current store before inserting payroll adjustment", async () => {

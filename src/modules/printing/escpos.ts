@@ -180,8 +180,9 @@ export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
       cash: "Cash", qr_promptpay: "QR PromptPay",
       credit_card: "Card", bank_transfer: "Transfer", other: "Other",
     };
-    push(summaryLine(methodLabel[payment.method] ?? payment.method, formatPrice(payment.amount), paperWidth));
-    if (payment.receivedAmount !== undefined) {
+    const displayAmount = payment.method === "cash" && payment.receivedAmount !== undefined ? payment.receivedAmount : payment.amount;
+    push(summaryLine(methodLabel[payment.method] ?? payment.method, formatPrice(displayAmount), paperWidth));
+    if (payment.method !== "cash" && payment.receivedAmount !== undefined) {
       push(summaryLine("  Received", formatPrice(payment.receivedAmount), paperWidth));
     }
     if (payment.changeAmount !== undefined && payment.changeAmount > 0) {

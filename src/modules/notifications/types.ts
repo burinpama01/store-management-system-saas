@@ -10,6 +10,8 @@ export type NotificationType =
   | "buffet_expiring"
   | "stock_alert"
   | "order_cancelled"
+  | "attendance_clock_in"
+  | "attendance_clock_out"
   | "approval"
   | "service_request"
   | "test";
@@ -35,6 +37,8 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "buffet_expiring",
   "stock_alert",
   "order_cancelled",
+  "attendance_clock_in",
+  "attendance_clock_out",
   "approval",
   "service_request",
   "test",

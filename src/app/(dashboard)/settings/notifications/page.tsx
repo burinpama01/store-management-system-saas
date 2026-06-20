@@ -15,6 +15,7 @@ import {
 import {
   getLineAccountLink,
   getLineGroupNotificationTarget,
+  getLineNotificationTarget,
   getTelegramNotificationTarget,
   listNotificationSettings,
 } from "@/modules/notifications/repository";
@@ -35,6 +36,8 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   buffet_expiring: "บุฟเฟต์ใกล้หมดเวลา",
   stock_alert: "แจ้งเตือนสต็อก",
   order_cancelled: "ยกเลิก/void/refund",
+  attendance_clock_in: "พนักงานเข้างาน",
+  attendance_clock_out: "พนักงานออกงาน",
   approval: "การอนุมัติ",
   service_request: "เรียกพนักงาน/ขอความช่วยเหลือ",
   test: "ข้อความทดสอบ",
@@ -76,6 +79,9 @@ export default async function NotificationSettingsPage() {
   } satisfies Record<NotificationChannel, boolean>;
   const lineAccountLinkResult = await getLineAccountLink(ctx.organizationId, user.id);
   const lineNotificationTargetResult = await getLineGroupNotificationTarget(ctx.organizationId);
+  const lineDeliveryTargetResult = canManage
+    ? await getLineNotificationTarget(ctx.organizationId, { useServiceRole: true })
+    : { data: null, error: null };
   const settingsResult = await listNotificationSettings(ctx.storeId, ctx.organizationId);
   const telegramTargetResult = canManageTelegramTarget
     ? await getTelegramNotificationTarget(ctx.organizationId)
@@ -89,6 +95,7 @@ export default async function NotificationSettingsPage() {
       setting,
     ]),
   );
+  const lineDeliveryTargetReady = lineDeliveryTargetResult.data?.status === "active";
 
   return (
     <section className="space-y-5">
@@ -130,6 +137,7 @@ export default async function NotificationSettingsPage() {
         officialAccountId={process.env.LINE_OFFICIAL_ACCOUNT_ID ?? null}
         canManage={canManage}
         canManageLineGroup={canManageLineGroup}
+        canTestLine={canManage && features.lineNotify && providerReady.line && lineDeliveryTargetReady}
       />
 
       <div className="rounded-md border border-[var(--color-border)] bg-white p-4">

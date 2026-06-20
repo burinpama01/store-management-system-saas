@@ -75,8 +75,11 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   lines.push({ text: padLine("** รวมสุทธิ **", priceStr(data.total), cols), bold: true });
 
   for (const p of data.payments) {
-    lines.push({ text: padLine(METHOD_LABELS[p.method] ?? p.method, priceStr(p.amount), cols) });
-    if (p.receivedAmount !== undefined) lines.push({ text: padLine("  รับเงิน", priceStr(p.receivedAmount), cols) });
+    const displayAmount = p.method === "cash" && p.receivedAmount !== undefined ? p.receivedAmount : p.amount;
+    lines.push({ text: padLine(METHOD_LABELS[p.method] ?? p.method, priceStr(displayAmount), cols) });
+    if (p.method !== "cash" && p.receivedAmount !== undefined) {
+      lines.push({ text: padLine("  รับเงิน", priceStr(p.receivedAmount), cols) });
+    }
     if (p.changeAmount !== undefined && p.changeAmount > 0) {
       lines.push({ text: padLine("  เงินทอน", priceStr(p.changeAmount), cols) });
     }

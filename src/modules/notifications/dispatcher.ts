@@ -353,16 +353,22 @@ async function runOwnerNotificationDelivery(input: NotificationPayload) {
   }
 }
 
-export function notifyOwnerSafely(input: NotificationPayload): void {
-  const payload = {
-    ...input,
-    channel: input.channel ?? "line" as const,
-    destination: "owner" as const,
-  };
+async function runOwnerNotificationDeliveries(input: NotificationPayload) {
+  const channels = input.channel ? [input.channel] : NOTIFICATION_CHANNELS;
 
+  await Promise.allSettled(
+    channels.map((channel) => runOwnerNotificationDelivery({
+      ...input,
+      channel,
+      destination: "owner" as const,
+    })),
+  );
+}
+
+export function notifyOwnerSafely(input: NotificationPayload): void {
   try {
-    after(() => runOwnerNotificationDelivery(payload));
+    after(() => runOwnerNotificationDeliveries(input));
   } catch {
-    void runOwnerNotificationDelivery(payload);
+    void runOwnerNotificationDeliveries(input);
   }
 }

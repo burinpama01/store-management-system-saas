@@ -221,6 +221,22 @@ describe("buildEscPosReceipt", () => {
     expect(text).toContain("15.00");
   });
 
+  it("uses received cash as the ESC/POS cash line and keeps change separate", () => {
+    const result = buildEscPosReceipt({
+      ...baseInput,
+      total: 45,
+      subtotal: 45,
+      payments: [{ method: "cash", amount: 45, receivedAmount: 100, changeAmount: 55 }],
+    });
+    const text = new TextDecoder().decode(result);
+    const cashLine = text.split(/\r?\n/).find((line) => line.includes("Cash")) ?? "";
+
+    expect(cashLine).toContain("100.00");
+    expect(text).not.toContain("Received");
+    expect(text).toContain("Change");
+    expect(text).toContain("55.00");
+  });
+
   it("encodes discount when non-zero", () => {
     const result = buildEscPosReceipt({ ...baseInput, discount: 20, discountNote: "Member" });
     const text = new TextDecoder().decode(result);
@@ -244,6 +260,40 @@ describe("buildEscPosReceipt", () => {
 });
 
 describe("buildReceiptLines", () => {
+  it("shows cash received and change for overpaid cash receipts", () => {
+    const { lines } = buildReceiptLines({
+      storeName: "Test Cafe",
+      orderNumber: "260620-232241",
+      showTaxId: false,
+      items: [
+        {
+          name: "Latte",
+          modifierNames: [],
+          quantity: 1,
+          unitPrice: 45,
+          totalPrice: 45,
+        },
+      ],
+      subtotal: 45,
+      discount: 0,
+      total: 45,
+      payments: [{ method: "cash", amount: 45, receivedAmount: 100, changeAmount: 55 }],
+      showQrPayment: false,
+      paperWidth: "58mm",
+      printedAt: "2026-06-20T16:24:00.000Z",
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+    const cashLine = lines.find((line) => line.text.includes("เงินสด"))?.text ?? "";
+
+    expect(cashLine).toContain("เงินสด");
+    expect(cashLine).toContain("100.00");
+    expect(text).toContain("45.00");
+    expect(text).not.toContain("รับเงิน");
+    expect(text).toContain("เงินทอน");
+    expect(text).toContain("55.00");
+  });
+
   it("shows item-level discount details on receipt lines", () => {
     const { lines } = buildReceiptLines({
       storeName: "Test Cafe",
@@ -345,6 +395,47 @@ describe("printer adapters", () => {
     expect(click).toHaveBeenCalled();
     expect(remove).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:receipt");
+  });
+
+  it("writes received cash and change correctly in the browser receipt HTML", async () => {
+    const documentWrite = vi.fn();
+    const print = vi.fn();
+    const focus = vi.fn();
+    const close = vi.fn();
+    const addEventListener = vi.fn();
+    const browserReceipt = {
+      ...receiptFixture,
+      subtotal: 45,
+      total: 45,
+      payments: [{ method: "cash", amount: 45, receivedAmount: 100, changeAmount: 55 }],
+    } satisfies ReceiptData;
+
+    vi.stubGlobal("window", {
+      open: vi.fn(() => ({
+        document: {
+          open: vi.fn(),
+          write: documentWrite,
+          close,
+        },
+        focus,
+        print,
+        addEventListener,
+        close,
+      })),
+    });
+
+    await browserAdapter.print(browserReceipt, printerFixture({ type: "browser" }));
+
+    const html = String(documentWrite.mock.calls[0]?.[0] ?? "");
+    const receiptText = html.replace(/<[^>]+>/g, "\n");
+
+    expect(receiptText).toContain("เงินสด");
+    expect(receiptText).toContain("100.00");
+    expect(receiptText).not.toContain("รับเงิน");
+    expect(receiptText).toContain("เงินทอน");
+    expect(receiptText).toContain("55.00");
+    expect(print).toHaveBeenCalled();
+    expect(addEventListener).toHaveBeenCalledWith("afterprint", expect.any(Function));
   });
 
   it("wires escpos adapter so schema printer type fails closed with clear setup guidance", () => {

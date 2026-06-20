@@ -1839,7 +1839,7 @@ export interface Database {
           id: string;
           organization_id: string;
           store_id: string;
-          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "test";
+          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
           channel: "line" | "telegram";
           enabled: boolean;
           destination: "owner" | "group" | "all";
@@ -1850,7 +1850,7 @@ export interface Database {
           id?: string;
           organization_id: string;
           store_id: string;
-          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "test";
+          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
           channel: "line" | "telegram";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
@@ -1861,7 +1861,7 @@ export interface Database {
           id?: string;
           organization_id?: string;
           store_id?: string;
-          notification_type?: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "test";
+          notification_type?: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
           channel?: "line" | "telegram";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
