@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requirePermission } from "@/modules/auth/guards";
+import { getResolvedCurrentPermissions, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
   createTransaction,
@@ -34,7 +34,9 @@ export async function createTransactionAction(
   formData: FormData,
 ): Promise<{ error: string | null }> {
   try {
-    await requirePermission("cashflow.manage");
+    await requirePermission("cashflow.record");
+    const { resolved } = await getResolvedCurrentPermissions();
+    const canManageCashflow = resolved.can("cashflow.manage");
     const { user, ctx } = await getStoreContext();
 
     const type = formData.get("type") as TransactionType | null;
@@ -45,6 +47,8 @@ export async function createTransactionAction(
 
     if (!type || !["income", "expense", "cash_adjustment"].includes(type))
       return { error: "ประเภทรายการไม่ถูกต้อง" };
+    if (type === "cash_adjustment" && !canManageCashflow)
+      return { error: "ต้องมีสิทธิ์จัดการบัญชีเพื่อปรับเงินสด" };
     if (!UUID_RE.test(categoryId)) return { error: "กรุณาเลือกหมวดหมู่" };
     if (!DATE_RE.test(date) || isNaN(Date.parse(date)))
       return { error: "รูปแบบวันที่ไม่ถูกต้อง (YYYY-MM-DD)" };

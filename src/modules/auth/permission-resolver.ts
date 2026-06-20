@@ -6,6 +6,15 @@ import type {
 } from "@/modules/tenants/types";
 import { ROLE_DEFAULT_PERMISSIONS } from "@/modules/tenants/types";
 
+const ROLE_LOCKED_PERMISSIONS: Partial<Record<Role, readonly PermissionKey[]>> = {
+  cashier: ["catalog.view", "catalog.manage"],
+  staff: ["catalog.view", "catalog.manage"],
+};
+
+export function isRoleLockedPermission(role: Role, permissionKey: PermissionKey): boolean {
+  return ROLE_LOCKED_PERMISSIONS[role]?.includes(permissionKey) ?? false;
+}
+
 export function resolvePermissions(
   role: Role,
   overrides: Pick<MembershipPermissionOverride, "permissionKey" | "granted">[],
@@ -20,6 +29,10 @@ export function resolvePermissions(
     } else {
       base.delete(override.permissionKey);
     }
+  }
+
+  for (const permissionKey of ROLE_LOCKED_PERMISSIONS[role] ?? []) {
+    base.delete(permissionKey);
   }
 
   return {
@@ -49,6 +62,7 @@ export type PermissionMutationError =
   | "cross_tenant"
   | "super_admin_only"
   | "owner_only"
+  | "role_permission_locked"
   | "actor_lacks_permissions_manage"
   | "escalation_denied";
 
@@ -94,6 +108,9 @@ export function validatePermissionMutation(
   }
   if (ownerOnlyKeys.includes(permissionKey) && actorPermissions.role !== "owner" && !isSuperAdmin) {
     return { ok: false, error: "owner_only" };
+  }
+  if (granted && isRoleLockedPermission(targetRole, permissionKey)) {
+    return { ok: false, error: "role_permission_locked" };
   }
 
   // Actor must hold permissions.manage to mutate any permission

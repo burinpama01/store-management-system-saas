@@ -140,7 +140,7 @@ export default async function DashboardPage() {
 function firstAllowedRoute(can: (permission: PermissionKey) => boolean) {
   const routes: { permission: PermissionKey; href: string }[] = [
     { permission: "pos.use", href: "/pos" },
-    { permission: "catalog.view", href: "/catalog" },
+    { permission: "catalog.manage", href: "/catalog" },
     { permission: "stock.manage", href: "/stock" },
     { permission: "cashflow.view", href: "/accounting" },
     { permission: "reports.view", href: "/reports" },

@@ -1,8 +1,8 @@
 import { ensureBluetoothConnected, printViaBluetooth } from "./bluetooth-client";
 import { ensureUsbConnected, printViaUsb } from "./usb-client";
 import { browserAdapter } from "./adapters/browser";
-import { buildEscPosReceipt, type EscPosReceiptInput } from "./escpos";
-import { renderReceiptRaster } from "./receipt-raster-client";
+import type { EscPosReceiptInput } from "./escpos";
+import { buildReceiptPrinterBytes } from "./receipt-printer-bytes";
 import type { ReceiptData } from "./types";
 import type { Printer } from "@/modules/stores/types";
 
@@ -14,19 +14,8 @@ export const CHANNEL_LABELS: Record<PrintChannel, string> = {
   pdf: "PDF / Browser",
 };
 
-/**
- * Bytes to send to a thermal printer. Prefer an image/raster job — Thai text
- * renders reliably regardless of the printer's code-page support (fixes blank
- * output on printers like the PT-280). Falls back to text ESC/POS.
- */
-function receiptBytes(escpos: EscPosReceiptInput, browser: ReceiptData): Uint8Array {
-  try {
-    const raster = renderReceiptRaster(browser);
-    if (raster && raster.length > 8) return raster;
-  } catch {
-    /* fall through to text ESC/POS */
-  }
-  return buildEscPosReceipt(escpos);
+export interface PrintReceiptAutoOptions {
+  skipBluetooth?: boolean;
 }
 
 /**
@@ -37,13 +26,14 @@ function receiptBytes(escpos: EscPosReceiptInput, browser: ReceiptData): Uint8Ar
 export async function printReceiptAuto(
   escpos: EscPosReceiptInput,
   browser: ReceiptData,
+  options: PrintReceiptAutoOptions = {},
 ): Promise<PrintChannel> {
-  if (await ensureBluetoothConnected()) {
-    await printViaBluetooth(receiptBytes(escpos, browser));
+  if (!options.skipBluetooth && await ensureBluetoothConnected()) {
+    await printViaBluetooth(buildReceiptPrinterBytes(escpos, browser));
     return "bluetooth";
   }
   if (await ensureUsbConnected()) {
-    await printViaUsb(receiptBytes(escpos, browser));
+    await printViaUsb(buildReceiptPrinterBytes(escpos, browser));
     return "usb";
   }
   await browserAdapter.print(browser, {} as unknown as Printer);

@@ -60,6 +60,10 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     lines.push({ text: `${name} ${priceField}` });
     if (item.modifierNames.length > 0) lines.push({ text: `  + ${item.modifierNames.join(", ")}` });
     if (item.note) lines.push({ text: `  * ${item.note}` });
+    if ((item.discount ?? 0) > 0) {
+      const label = item.discountNote ? `ส่วนลดรายการ (${item.discountNote})` : "ส่วนลดรายการ";
+      lines.push({ text: `  ${label}: -${priceStr(item.discount ?? 0)}` });
+    }
   }
 
   lines.push({ text: div });

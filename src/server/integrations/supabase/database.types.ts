@@ -1075,6 +1075,10 @@ export interface Database {
           quantity: number;
           unit_price: number;
           total_price: number;
+          discount_amount: number;
+          discount_type: "amount" | "percentage" | null;
+          discount_value: number | null;
+          discount_note: string | null;
           note: string | null;
         };
         Insert: {
@@ -1088,6 +1092,10 @@ export interface Database {
           quantity: number;
           unit_price: number;
           total_price: number;
+          discount_amount?: number;
+          discount_type?: "amount" | "percentage" | null;
+          discount_value?: number | null;
+          discount_note?: string | null;
           note?: string | null;
         };
         Update: {
@@ -1101,6 +1109,10 @@ export interface Database {
           quantity?: number;
           unit_price?: number;
           total_price?: number;
+          discount_amount?: number;
+          discount_type?: "amount" | "percentage" | null;
+          discount_value?: number | null;
+          discount_note?: string | null;
           note?: string | null;
         };
         Relationships: [];

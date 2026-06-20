@@ -26,6 +26,7 @@ function fmt(n: number) {
 interface Props {
   storeId: string;
   canManage: boolean;
+  canRecord: boolean;
   initialTransactions: Transaction[];
   totalCount: number;
   categories: AccountingCategory[];
@@ -39,6 +40,7 @@ interface Props {
 
 export function AccountingManager({
   canManage,
+  canRecord,
   initialTransactions,
   totalCount,
   categories,
@@ -115,7 +117,7 @@ export function AccountingManager({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {canManage && (
+        {canRecord && (
           <>
             <div className="xl:col-span-1 bg-white rounded-lg border border-gray-200 p-4">
               <h2 className="font-medium text-gray-800 mb-2">เพิ่มรายการ</h2>
@@ -141,7 +143,7 @@ export function AccountingManager({
         )}
 
         {/* Transaction table (right columns) */}
-        <div className={`${canManage ? "xl:col-span-2" : "xl:col-span-3"} space-y-3`}>
+        <div className={`${canRecord ? "xl:col-span-2" : "xl:col-span-3"} space-y-3`}>
           {/* Filter bar */}
           <div className="bg-white rounded-lg border border-gray-200 p-3 flex flex-wrap gap-2 items-end">
             <div>
@@ -172,7 +174,7 @@ export function AccountingManager({
                 <option value="all">ทั้งหมด</option>
                 <option value="income">รายรับ</option>
                 <option value="expense">รายจ่าย</option>
-                <option value="cash_adjustment">ปรับเงินสด</option>
+                {canManage && <option value="cash_adjustment">ปรับเงินสด</option>}
               </select>
             </div>
             <button

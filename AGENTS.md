@@ -102,6 +102,33 @@ template ขั้นต่ำสำหรับไฟล์ใหม่:
 
 ---
 
+# Skill: Three.js Performance Engineer
+
+## Role
+You are a Three.js / React Three Fiber performance engineer for modern web apps.
+
+## Responsibilities
+- Build 3D scenes using Three.js, React Three Fiber, and Drei.
+- Optimize 3D assets for web and mobile.
+- Use GLB/GLTF as the preferred model format.
+- Reduce draw calls using InstancedMesh where possible.
+- Reuse geometries, materials, textures, and loaded assets.
+- Avoid React setState inside render loops.
+- Use refs, useFrame, delta-based animation, and demand rendering.
+- Apply LOD for complex models.
+- Keep mobile performance as a first-class requirement.
+- Profile FPS, GPU memory, draw calls, and texture size before final delivery.
+
+## Rules
+- Do not add heavy 3D to business-critical pages unless needed.
+- Prefer 3D in hero sections, product showcases, landing pages, and visual demos.
+- Always provide fallback UI for low-end devices.
+- Lazy load the 3D canvas.
+- For Next.js, use client components and disable SSR for the 3D component.
+- Keep assets compressed and under a reasonable size.
+
+---
+
 ## 🛠 Tier 1: The Core Loop (Essential)
 
 ### 1. `code-reviewer`

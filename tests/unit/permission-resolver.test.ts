@@ -52,6 +52,23 @@ describe("resolvePermissions", () => {
     expect(p.can("reports.view")).toBe(true);
   });
 
+  it("cashier and staff cannot receive product catalog permissions from overrides", () => {
+    for (const role of ["cashier", "staff"] as const) {
+      const p = resolvePermissions(
+        role,
+        [
+          { permissionKey: "catalog.view", granted: true },
+          { permissionKey: "catalog.manage", granted: true },
+        ],
+        ORG,
+        STORE,
+      );
+
+      expect(p.can("catalog.view")).toBe(false);
+      expect(p.can("catalog.manage")).toBe(false);
+    }
+  });
+
   it("deny override removes permission from role that has it", () => {
     const p = resolvePermissions("manager", [{ permissionKey: "pos.discount", granted: false }], ORG, STORE);
     expect(p.can("pos.discount")).toBe(false);
@@ -115,6 +132,19 @@ describe("validatePermissionMutation", () => {
     const actor = resolvePermissions("admin", [{ permissionKey: "permissions.manage", granted: true }], ORG, STORE);
     const result = validatePermissionMutation({ ...base, actorPermissions: actor });
     expect(result.ok).toBe(true);
+  });
+
+  it("cannot grant product catalog permissions to cashier or staff", () => {
+    const actor = makeActor("owner");
+
+    for (const targetRole of ["cashier", "staff"] as const) {
+      for (const permissionKey of ["catalog.view", "catalog.manage"] as const) {
+        const result = validatePermissionMutation({ ...base, actorPermissions: actor, targetRole, permissionKey });
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toBe("role_permission_locked");
+      }
+    }
   });
 
   it("cross-tenant mutation is rejected", () => {

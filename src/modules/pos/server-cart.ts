@@ -1,5 +1,5 @@
 import type { Product, ProductVariant, ModifierOption } from "@/modules/catalog/types";
-import type { Cart, CartItem, SelectedModifier } from "./types";
+import type { Cart, CartItem, DiscountType, SelectedModifier } from "./types";
 import { buildCartItemKey } from "./types";
 
 export class CartValidationError extends Error {
@@ -27,6 +27,120 @@ function normalizeNote(note: string | undefined): string | undefined {
   const normalized = note?.trim().replace(/\s+/g, " ");
   if (!normalized) return undefined;
   return normalized.length <= 200 ? normalized : undefined;
+}
+
+function normalizeDiscountType(type: DiscountType | undefined): DiscountType {
+  if (type === undefined || type === "amount") return "amount";
+  if (type === "percentage") return "percentage";
+  throw new CartValidationError("ประเภทส่วนลดไม่ถูกต้อง");
+}
+
+function rawDiscountValue(
+  source: Pick<CartItem, "discount" | "discountType" | "discountValue">,
+): number {
+  return source.discountType && typeof source.discountValue === "number"
+    ? source.discountValue
+    : (source.discount ?? 0);
+}
+
+function buildTrustedDiscount(
+  clientCart: Cart,
+  subtotal: number,
+): { discount: number; discountType?: DiscountType; discountValue?: number } {
+  const discountType = normalizeDiscountType(clientCart.discountType);
+  const rawValue = rawDiscountValue(clientCart);
+  const discountValue = assertMoney(rawValue, discountType === "percentage" ? "เปอร์เซ็นต์ส่วนลด" : "ส่วนลด");
+
+  if (discountType === "percentage") {
+    if (discountValue > 100) {
+      throw new CartValidationError("เปอร์เซ็นต์ส่วนลดต้องอยู่ระหว่าง 0-100");
+    }
+    const discount = assertMoney(Math.min(subtotal, subtotal * (discountValue / 100)), "ส่วนลด");
+    return discount > 0 ? { discount, discountType, discountValue } : { discount: 0 };
+  }
+
+  if (discountValue > subtotal) {
+    throw new CartValidationError("ส่วนลดมากกว่ายอดรวม");
+  }
+  return discountValue > 0
+    ? { discount: discountValue, discountType, discountValue }
+    : { discount: 0 };
+}
+
+function buildTrustedItemDiscount(
+  clientItem: CartItem,
+  lineSubtotal: number,
+): { discount: number; discountType?: DiscountType; discountValue?: number; discountNote?: string } {
+  const discountType = normalizeDiscountType(clientItem.discountType);
+  const rawValue = rawDiscountValue(clientItem);
+  const discountValue = assertMoney(
+    rawValue,
+    discountType === "percentage" ? "เปอร์เซ็นต์ส่วนลดรายการ" : "ส่วนลดรายการ",
+  );
+
+  if (discountType === "percentage") {
+    if (discountValue > 100) {
+      throw new CartValidationError("เปอร์เซ็นต์ส่วนลดรายการต้องอยู่ระหว่าง 0-100");
+    }
+    const discount = assertMoney(Math.min(lineSubtotal, lineSubtotal * (discountValue / 100)), "ส่วนลดรายการ");
+    return discount > 0
+      ? {
+          discount,
+          discountType,
+          discountValue,
+          discountNote: normalizeNote(clientItem.discountNote),
+        }
+      : { discount: 0 };
+  }
+
+  if (discountValue > lineSubtotal) {
+    throw new CartValidationError("ส่วนลดรายการมากกว่ายอดรวมสินค้า");
+  }
+  return discountValue > 0
+    ? {
+        discount: discountValue,
+        discountType,
+        discountValue,
+        discountNote: normalizeNote(clientItem.discountNote),
+      }
+    : { discount: 0 };
+}
+
+function applyTrustedItemDiscount(item: CartItem): CartItem {
+  const lineSubtotal = assertMoney(item.unitPrice * item.quantity, "ยอดรวมสินค้า");
+  const trustedDiscount = buildTrustedItemDiscount(item, lineSubtotal);
+  const cleanItem: CartItem = {
+    key: item.key,
+    productId: item.productId,
+    productName: item.productName,
+    categoryId: item.categoryId,
+    variant: item.variant,
+    modifiers: item.modifiers,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    totalPrice: assertMoney(lineSubtotal - trustedDiscount.discount, "ยอดรวมสินค้า"),
+    note: item.note,
+  };
+
+  if (trustedDiscount.discount <= 0) {
+    return cleanItem;
+  }
+
+  return {
+    ...cleanItem,
+    discount: trustedDiscount.discount,
+    discountType: trustedDiscount.discountType,
+    discountValue: trustedDiscount.discountValue,
+    discountNote: trustedDiscount.discountNote,
+  };
+}
+
+function sameItemDiscount(a: CartItem, b: CartItem): boolean {
+  return (
+    (a.discountType ?? "amount") === (b.discountType ?? "amount") &&
+    (a.discountValue ?? 0) === (b.discountValue ?? 0) &&
+    (a.discountNote ?? "") === (b.discountNote ?? "")
+  );
 }
 
 function resolveVariant(
@@ -158,14 +272,31 @@ export function buildTrustedCartFromCatalog(
     });
     const existing = itemMap.get(key);
     if (existing) {
+      const lineSubtotal = assertMoney(unitPrice * quantity, "ยอดรวมสินค้า");
+      const trustedItem = applyTrustedItemDiscount({
+        ...existing,
+        quantity,
+        totalPrice: lineSubtotal,
+        discount: clientItem.discount,
+        discountType: clientItem.discountType,
+        discountValue: clientItem.discountValue,
+        discountNote: clientItem.discountNote,
+      });
+      if (trustedItem.discount && !input.canDiscount) {
+        throw new CartValidationError("ไม่มีสิทธิ์ให้ส่วนลด");
+      }
+      if (!sameItemDiscount(existing, trustedItem)) {
+        throw new CartValidationError("ส่วนลดรายการซ้ำไม่ตรงกัน");
+      }
       const nextQty = validateQuantity(existing.quantity + quantity);
-      itemMap.set(key, {
+      itemMap.set(key, applyTrustedItemDiscount({
         ...existing,
         quantity: nextQty,
         totalPrice: assertMoney(existing.unitPrice * nextQty, "ยอดรวมสินค้า"),
-      });
+      }));
     } else {
-      itemMap.set(key, {
+      const lineSubtotal = assertMoney(unitPrice * quantity, "ยอดรวมสินค้า");
+      const trustedItem = applyTrustedItemDiscount({
         key,
         productId: product.id,
         productName: product.name,
@@ -180,31 +311,36 @@ export function buildTrustedCartFromCatalog(
         modifiers,
         quantity,
         unitPrice,
-        totalPrice: assertMoney(unitPrice * quantity, "ยอดรวมสินค้า"),
+        totalPrice: lineSubtotal,
+        discount: clientItem.discount,
+        discountType: clientItem.discountType,
+        discountValue: clientItem.discountValue,
+        discountNote: clientItem.discountNote,
         note,
       });
+      if (trustedItem.discount && !input.canDiscount) {
+        throw new CartValidationError("ไม่มีสิทธิ์ให้ส่วนลด");
+      }
+      itemMap.set(key, trustedItem);
     }
   }
 
   const items = Array.from(itemMap.values());
   const subtotal = assertMoney(items.reduce((sum, item) => sum + item.totalPrice, 0), "ยอดรวม");
-  const discount = assertMoney(clientCart.discount, "ส่วนลด");
+  const trustedDiscount = buildTrustedDiscount(clientCart, subtotal);
+  const { discount } = trustedDiscount;
   if (discount > 0 && !input.canDiscount) {
     throw new CartValidationError("ไม่มีสิทธิ์ให้ส่วนลด");
   }
-  if (discount > subtotal) {
-    throw new CartValidationError("ส่วนลดมากกว่ายอดรวม");
-  }
-  const discountNote =
-    clientCart.discountNote && clientCart.discountNote.length <= 200
-      ? clientCart.discountNote
-      : undefined;
+  const discountNote = discount > 0 ? normalizeNote(clientCart.discountNote) : undefined;
 
   return {
     storeId: input.storeId,
     items,
     subtotal,
     discount,
+    discountType: trustedDiscount.discountType,
+    discountValue: trustedDiscount.discountValue,
     discountNote,
     total: assertMoney(subtotal - discount, "ยอดสุทธิ"),
   };

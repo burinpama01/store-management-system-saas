@@ -1542,8 +1542,9 @@ a:focus-visible {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
+  width: 100%;
   min-height: 4.1rem;
-  margin: 0 1rem 1.45rem;
+  margin: 0 0 1.45rem;
   border: 1px solid rgb(220 209 196 / 0.82);
   border-radius: 12px;
   background: rgb(255 255 255 / 0.72);

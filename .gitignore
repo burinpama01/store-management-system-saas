@@ -49,6 +49,7 @@ graphify-out/
 
 # Visual QA scratch — browser profiles (cookies/login data), screenshots, dev logs
 Design/visual-qa/
+artifacts/qa/
 
 # IDE
 .idea/
@@ -56,3 +57,4 @@ Design/visual-qa/
 *.swp
 *.swo
 .env*
+.gstack/

@@ -32,6 +32,22 @@ const receiptData = {
   printedAt: new Date().toISOString(),
 };
 
+function scopedPrinter() {
+  return {
+    id: "printer-1",
+    storeId: "store-1",
+    organizationId: "org-1",
+    name: "Kitchen",
+    type: "ip",
+    isDefault: true,
+    ipAddress: "192.168.1.50",
+    port: 9100,
+    paperWidth: "58mm",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unmock("@/modules/auth/guards");
@@ -39,6 +55,7 @@ afterEach(() => {
   vi.unmock("@/modules/auth/permission-resolver");
   vi.unmock("@/modules/stores/repository");
   vi.unmock("@/server/integrations/supabase/server");
+  vi.unmock("net");
 });
 
 describe("POST /api/print/ip", () => {
@@ -86,6 +103,87 @@ describe("POST /api/print/ip", () => {
 
     expect(response.status).toBe(404);
     expect(getPrinter).toHaveBeenCalledWith("missing-printer", "store-1", "org-1");
+  });
+
+  it("sends prebuilt printJobBase64 bytes after scoped printer validation", async () => {
+    vi.resetModules();
+    const socketWrites: number[][] = [];
+    class MockSocket {
+      connect(_port: number, _host: string, cb: () => void) {
+        cb();
+      }
+      write(data: Uint8Array, cb: (err?: Error) => void) {
+        socketWrites.push(Array.from(data));
+        cb();
+      }
+      end() {}
+      destroy() {}
+      on() {
+        return this;
+      }
+    }
+    const getPrinter = vi.fn().mockResolvedValue({ data: scopedPrinter(), error: null });
+
+    mockRouteAuth(true);
+    vi.doMock("net", () => ({
+      default: { Socket: MockSocket, isIPv4: () => true, isIPv6: () => false },
+      Socket: MockSocket,
+      isIPv4: () => true,
+      isIPv6: () => false,
+    }));
+    vi.doMock("@/modules/stores/repository", () => ({ getPrinter }));
+
+    const printJob = Uint8Array.from([0x1b, 0x40, 0x1d, 0x56, 0x41]);
+    const { POST } = await import("@/app/api/print/ip/route");
+    const response = await POST(new Request("http://local/api/print/ip", {
+      method: "POST",
+      body: JSON.stringify({
+        receiptData,
+        printerId: "printer-1",
+        printJobBase64: Buffer.from(printJob).toString("base64"),
+      }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(getPrinter).toHaveBeenCalledWith("printer-1", "store-1", "org-1");
+    expect(socketWrites).toEqual([Array.from(printJob)]);
+  });
+
+  it("rejects invalid printJobBase64 before socket writes", async () => {
+    vi.resetModules();
+    const getPrinter = vi.fn().mockResolvedValue({ data: scopedPrinter(), error: null });
+
+    mockRouteAuth(true);
+    vi.doMock("@/modules/stores/repository", () => ({ getPrinter }));
+
+    const { POST } = await import("@/app/api/print/ip/route");
+    const response = await POST(new Request("http://local/api/print/ip", {
+      method: "POST",
+      body: JSON.stringify({ receiptData, printerId: "printer-1", printJobBase64: "not-valid-base64***" }),
+    }) as never);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid print job");
+  });
+
+  it("rejects oversized printJobBase64 before socket writes", async () => {
+    vi.resetModules();
+    const getPrinter = vi.fn().mockResolvedValue({ data: scopedPrinter(), error: null });
+    const oversized = Buffer.alloc((256 * 1024) + 1).toString("base64");
+
+    mockRouteAuth(true);
+    vi.doMock("@/modules/stores/repository", () => ({ getPrinter }));
+
+    const { POST } = await import("@/app/api/print/ip/route");
+    const response = await POST(new Request("http://local/api/print/ip", {
+      method: "POST",
+      body: JSON.stringify({ receiptData, printerId: "printer-1", printJobBase64: oversized }),
+    }) as never);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Receipt too large");
   });
 });
 

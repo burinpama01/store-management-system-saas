@@ -14,11 +14,13 @@ export type PermissionKey =
   | "catalog.manage"
   | "stock.manage"
   | "cashflow.view"
+  | "cashflow.record"
   | "cashflow.manage"
   | "reports.view"
   | "attendance.clock"
   | "attendance.manage"
   | "settings.view"
+  | "settings.manage_printer"
   | "settings.manage_store"
   | "users.manage"
   | "permissions.manage"
@@ -39,11 +41,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "catalog.manage",
     "stock.manage",
     "cashflow.view",
+    "cashflow.record",
     "cashflow.manage",
     "reports.view",
     "attendance.clock",
     "attendance.manage",
     "settings.view",
+    "settings.manage_printer",
     "settings.manage_store",
     "users.manage",
     "permissions.manage",
@@ -63,11 +67,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "catalog.manage",
     "stock.manage",
     "cashflow.view",
+    "cashflow.record",
     "cashflow.manage",
     "reports.view",
     "attendance.clock",
     "attendance.manage",
     "settings.view",
+    "settings.manage_printer",
     "settings.manage_store",
     "users.manage",
     "permissions.manage",
@@ -85,11 +91,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "catalog.manage",
     "stock.manage",
     "cashflow.view",
+    "cashflow.record",
     "cashflow.manage",
     "reports.view",
     "attendance.clock",
     "attendance.manage",
     "settings.view",
+    "settings.manage_printer",
     "settings.manage_store",
     "users.manage",
     "notifications.manage",
@@ -103,20 +111,32 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<Role, PermissionKey[]> = {
     "catalog.manage",
     "stock.manage",
     "cashflow.view",
+    "cashflow.record",
     "reports.view",
     "attendance.clock",
     "attendance.manage",
     "settings.view",
+    "settings.manage_printer",
     "orders.manage_qr",
   ],
   cashier: [
     "pos.use",
     "pos.discount",
-    "catalog.view",
+    "cashflow.view",
+    "cashflow.record",
     "attendance.clock",
+    "settings.view",
+    "settings.manage_printer",
     "orders.manage_qr",
   ],
-  staff: ["pos.use", "catalog.view", "attendance.clock"],
+  staff: [
+    "pos.use",
+    "cashflow.view",
+    "cashflow.record",
+    "attendance.clock",
+    "settings.view",
+    "settings.manage_printer",
+  ],
 };
 
 export interface Organization {

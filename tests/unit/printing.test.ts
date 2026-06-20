@@ -1,11 +1,60 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { buildEscPosReceipt, CMD } from "@/modules/printing/escpos";
+import { buildReceiptLines } from "@/modules/printing/receipt-lines";
+import { browserAdapter } from "@/modules/printing/adapters/browser";
+import { bluetoothAdapter } from "@/modules/printing/adapters/bluetooth";
+import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
+import { buildReceiptData, type ReceiptData } from "@/modules/printing/types";
+import { ensureBluetoothConnected, getBluetoothPrinterIdentity, getBluetoothPrinterName, printViaBluetooth } from "@/modules/printing/bluetooth-client";
+import type { Order } from "@/modules/pos/types";
+import type { Printer, ReceiptSettings } from "@/modules/stores/types";
+
+vi.mock("@/modules/printing/bluetooth-client", () => ({
+  ensureBluetoothConnected: vi.fn(),
+  getBluetoothPrinterIdentity: vi.fn(),
+  getBluetoothPrinterName: vi.fn(),
+  printViaBluetooth: vi.fn(),
+}));
 
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
+
+const receiptFixture: ReceiptData = {
+  storeName: "Each Other",
+  showTaxId: false,
+  orderNumber: "260620-0001",
+  items: [{ name: "Latte", modifierNames: [], quantity: 1, unitPrice: 65, totalPrice: 65 }],
+  subtotal: 65,
+  discount: 0,
+  total: 65,
+  payments: [{ method: "cash", amount: 65 }],
+  showQrPayment: false,
+  paperWidth: "58mm",
+  printedAt: "2026-06-20T00:00:00.000Z",
+};
+
+function printerFixture(overrides: Partial<Printer> = {}): Printer {
+  return {
+    id: "printer-1",
+    storeId: "store-1",
+    organizationId: "org-1",
+    name: "Counter Bluetooth",
+    type: "bluetooth",
+    isDefault: true,
+    paperWidth: "58mm",
+    createdAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 // ─── PromptPay QR ───────────────────────────────────────────────────
 
@@ -194,6 +243,42 @@ describe("buildEscPosReceipt", () => {
   });
 });
 
+describe("buildReceiptLines", () => {
+  it("shows item-level discount details on receipt lines", () => {
+    const { lines } = buildReceiptLines({
+      storeName: "Test Cafe",
+      orderNumber: "260618-123456",
+      showTaxId: false,
+      items: [
+        {
+          name: "Latte",
+          modifierNames: ["Less sweet"],
+          quantity: 1,
+          unitPrice: 35,
+          totalPrice: 31.5,
+          discount: 3.5,
+          discountType: "percentage",
+          discountValue: 10,
+          discountNote: "สมาชิก",
+        },
+      ],
+      subtotal: 31.5,
+      discount: 0,
+      total: 31.5,
+      payments: [{ method: "cash", amount: 31.5 }],
+      showQrPayment: false,
+      paperWidth: "58mm",
+      printedAt: "2026-06-18T00:00:00.000Z",
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).toContain("ส่วนลดรายการ");
+    expect(text).toContain("-3.50");
+    expect(text).toContain("สมาชิก");
+  });
+});
+
 describe("printer adapters", () => {
   it("wires bluetooth adapter instead of leaving the printer type unsupported", () => {
     const service = read("src/modules/printing/print-service.ts");
@@ -202,7 +287,64 @@ describe("printer adapters", () => {
     expect(service).toContain("bluetoothAdapter");
     expect(service).toContain("bluetooth: bluetoothAdapter");
     expect(adapter).toContain("Web Bluetooth ไม่รองรับ");
-    expect(adapter).toContain("service/characteristic");
+    expect(adapter).toContain("ensureBluetoothConnected");
+    expect(adapter).toContain("printViaBluetooth");
+    expect(adapter).toContain("buildReceiptPrinterBytes(data, data)");
+    expect(adapter).not.toContain("service/characteristic");
+  });
+
+  it("keeps mobile/browser fallback paths when the print popup is blocked", () => {
+    const adapter = read("src/modules/printing/adapters/browser.ts");
+
+    expect(adapter).toContain("fallbackReceiptDownload");
+    expect(adapter).toContain("navigator.share");
+    expect(adapter).toContain("URL.createObjectURL");
+    expect(adapter).toContain("เบราว์เซอร์บล็อกหน้าต่างพิมพ์");
+  });
+
+  it("downloads the receipt when popup print is blocked and native share rejects", async () => {
+    const click = vi.fn();
+    const remove = vi.fn();
+    const appendChild = vi.fn();
+    const link = { href: "", download: "", rel: "", click, remove };
+    const createElement = vi.fn(() => link);
+    const createObjectURL = vi.fn(() => "blob:receipt");
+    const revokeObjectURL = vi.fn();
+    const share = vi.fn().mockRejectedValue(new Error("share denied"));
+
+    vi.stubGlobal("window", {
+      open: vi.fn(() => null),
+      setTimeout: vi.fn((callback: () => void) => {
+        callback();
+        return 1;
+      }),
+    });
+    vi.stubGlobal("document", {
+      createElement,
+      body: { appendChild },
+    });
+    vi.stubGlobal("navigator", {
+      canShare: vi.fn(() => true),
+      share,
+    });
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    vi.stubGlobal("File", class extends Blob {
+      readonly name: string;
+
+      constructor(parts: BlobPart[], name: string, options?: FilePropertyBag) {
+        super(parts, options);
+        this.name = name;
+      }
+    });
+
+    await browserAdapter.print(receiptFixture, printerFixture({ type: "browser" }));
+
+    expect(share).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(appendChild).toHaveBeenCalledWith(link);
+    expect(click).toHaveBeenCalled();
+    expect(remove).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:receipt");
   });
 
   it("wires escpos adapter so schema printer type fails closed with clear setup guidance", () => {
@@ -254,5 +396,107 @@ describe("printer adapters", () => {
     expect(finallyIndex).toBeGreaterThan(claimIndex);
     expect(releaseIndex).toBeGreaterThan(finallyIndex);
     expect(closeIndex).toBeGreaterThan(releaseIndex);
+  });
+
+  it("configured raw printer adapters share the raster-first receipt byte builder", () => {
+    const usbAdapter = read("src/modules/printing/adapters/usb.ts");
+    const ipAdapter = read("src/modules/printing/adapters/ip.ts");
+    const escposAdapter = read("src/modules/printing/adapters/escpos.ts");
+    const router = read("src/modules/printing/print-router.ts");
+    const route = read("src/app/api/print/ip/route.ts");
+
+    expect(router).toContain("buildReceiptPrinterBytes");
+    expect(usbAdapter).toContain("buildReceiptPrinterBytes(data, data)");
+    expect(usbAdapter).not.toContain("buildEscPosReceipt({");
+    expect(ipAdapter).toContain("printJobBase64");
+    expect(ipAdapter).toContain("buildReceiptPrinterBytes(data, data)");
+    expect(escposAdapter).toContain("printJobBase64");
+    expect(route).toContain("printJobBase64");
+  });
+
+  it("thermal byte builder repeats a receipt job for configured print copies", () => {
+    const builder = read("src/modules/printing/receipt-printer-bytes.ts");
+
+    expect(builder).toContain("normalizePrintCopies(browser.printCopies)");
+    expect(builder).toContain("repeatReceiptJob");
+  });
+
+  it("thermal byte builder repeats the actual receipt bytes for configured print copies", () => {
+    const single = buildReceiptPrinterBytes(receiptFixture, { ...receiptFixture, printCopies: 1 });
+    const repeated = buildReceiptPrinterBytes(receiptFixture, { ...receiptFixture, printCopies: 3 });
+
+    expect(repeated.length).toBe(single.length * 3);
+    expect(Array.from(repeated.slice(0, single.length))).toEqual(Array.from(single));
+    expect(Array.from(repeated.slice(single.length, single.length * 2))).toEqual(Array.from(single));
+    expect(Array.from(repeated.slice(single.length * 2))).toEqual(Array.from(single));
+  });
+
+  it("does not print to a connected Bluetooth device that does not match the configured printer", async () => {
+    vi.stubGlobal("navigator", { bluetooth: {} });
+    vi.mocked(ensureBluetoothConnected).mockResolvedValue(true);
+    vi.mocked(getBluetoothPrinterIdentity).mockReturnValue("bt-other");
+    vi.mocked(getBluetoothPrinterName).mockReturnValue("Other printer");
+
+    await expect(
+      bluetoothAdapter.print(receiptFixture, printerFixture({ bluetoothDeviceId: "bt-expected" })),
+    ).rejects.toThrow("ไม่ตรงกับเครื่องพิมพ์ Bluetooth");
+
+    expect(printViaBluetooth).not.toHaveBeenCalled();
+  });
+});
+
+describe("receipt data", () => {
+  it("carries the configured print copy count into runtime receipt data", () => {
+    const order: Order = {
+      id: "order-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      orderNumber: "260620-0001",
+      status: "paid",
+      cashierId: "cashier-1",
+      tableNumber: "12",
+      items: [
+        {
+          id: "item-1",
+          orderId: "order-1",
+          productId: "product-1",
+          productName: "Latte",
+          modifiers: [],
+          quantity: 1,
+          unitPrice: 65,
+          totalPrice: 65,
+        },
+      ],
+      subtotal: 65,
+      discount: 0,
+      total: 65,
+      payments: [
+        {
+          id: "payment-1",
+          orderId: "order-1",
+          method: "cash",
+          amount: 65,
+          status: "completed",
+          processedAt: "2026-06-20T00:00:00.000Z",
+          processedByUserId: "cashier-1",
+        },
+      ],
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      paidAt: "2026-06-20T00:00:00.000Z",
+    };
+    const settings: ReceiptSettings = {
+      id: "settings-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      storeName: "Each Other",
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printCopies: 3,
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    };
+
+    expect(buildReceiptData(order, settings).printCopies).toBe(3);
   });
 });

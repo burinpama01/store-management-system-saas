@@ -7,17 +7,22 @@ import { SettingsNav, type SettingsTab } from "./SettingsNav";
 export const dynamic = "force-dynamic";
 
 export function buildSettingsTabs(resolved: ResolvedPermissions): SettingsTab[] {
-  const tabs: SettingsTab[] = [{ href: "/settings/store", label: "ร้านค้า" }];
+  const tabs: SettingsTab[] = [];
 
+  if (resolved.can("settings.manage_store")) {
+    tabs.push({ href: "/settings/store", label: "ร้านค้า" });
+  }
   if (resolved.can("users.manage") || resolved.can("permissions.manage")) {
     tabs.push({ href: "/settings/team", label: "ทีมงาน" });
   }
   if (resolved.can("settings.manage_store")) {
     tabs.push(
       { href: "/settings/tables", label: "โต๊ะ & QR" },
-      { href: "/settings/receipt", label: "ใบเสร็จ" },
       { href: "/settings/buffet", label: "บุฟเฟต์" },
     );
+  }
+  if (resolved.can("settings.manage_store") || resolved.can("settings.manage_printer")) {
+    tabs.push({ href: "/settings/receipt", label: "เครื่องพิมพ์" });
   }
   if (resolved.can("billing.manage")) {
     tabs.push({ href: "/settings/billing", label: "แพ็กเกจ" });
@@ -33,6 +38,7 @@ export default async function SettingsLayout({ children }: { children: ReactNode
   const { resolved } = await getResolvedCurrentPermissions();
   if (!resolved.can("settings.view")) redirect("/dashboard");
   const settingsTabs = buildSettingsTabs(resolved);
+  if (settingsTabs.length === 0) redirect("/dashboard");
 
   return (
     <div className="page-shell">

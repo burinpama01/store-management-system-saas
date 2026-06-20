@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { addToCart, applyDiscount, emptyCart, removeFromCart, updateQuantity } from "@/modules/pos/cart";
+import {
+  addToCart,
+  applyDiscount,
+  applyItemDiscount,
+  applyOrderDiscount,
+  emptyCart,
+  removeFromCart,
+  removeItemDiscount,
+  updateQuantity,
+} from "@/modules/pos/cart";
 import type { Cart } from "@/modules/pos/types";
 import type { Product } from "@/modules/catalog/types";
 
@@ -106,6 +115,108 @@ describe("applyDiscount", () => {
     expect(empty.discount).toBe(0);
     expect(empty.total).toBe(0);
     expect(empty.discountNote).toBeUndefined();
+  });
+
+  it("calculates percentage discounts from the current subtotal", () => {
+    const discounted = applyOrderDiscount(
+      cart({
+        items: [{ ...cart().items[0], quantity: 2, totalPrice: 200 }],
+        subtotal: 200,
+        total: 200,
+      }),
+      { type: "percentage", value: 10, note: "สมาชิก" },
+    );
+
+    expect(discounted.discountType).toBe("percentage");
+    expect(discounted.discountValue).toBe(10);
+    expect(discounted.discount).toBe(20);
+    expect(discounted.discountNote).toBe("สมาชิก");
+    expect(discounted.total).toBe(180);
+  });
+
+  it("recomputes percentage discounts when the subtotal changes", () => {
+    const discounted = applyOrderDiscount(
+      cart({
+        items: [{ ...cart().items[0], quantity: 2, totalPrice: 200 }],
+        subtotal: 200,
+        total: 200,
+      }),
+      { type: "percentage", value: 10 },
+    );
+
+    const reduced = updateQuantity(discounted, "p1", 1);
+
+    expect(reduced.subtotal).toBe(100);
+    expect(reduced.discountType).toBe("percentage");
+    expect(reduced.discountValue).toBe(10);
+    expect(reduced.discount).toBe(10);
+    expect(reduced.total).toBe(90);
+  });
+});
+
+describe("applyItemDiscount", () => {
+  it("applies item percentage discounts before order discounts", () => {
+    const itemDiscounted = applyItemDiscount(
+      cart({
+        items: [{ ...cart().items[0], quantity: 2, totalPrice: 200 }],
+        subtotal: 200,
+        total: 200,
+      }),
+      "p1",
+      { type: "percentage", value: 10, note: "สมาชิก" },
+    );
+
+    const orderDiscounted = applyOrderDiscount(itemDiscounted, {
+      type: "percentage",
+      value: 10,
+    });
+
+    expect(orderDiscounted.items[0].discountType).toBe("percentage");
+    expect(orderDiscounted.items[0].discountValue).toBe(10);
+    expect(orderDiscounted.items[0].discount).toBe(20);
+    expect(orderDiscounted.items[0].discountNote).toBe("สมาชิก");
+    expect(orderDiscounted.items[0].totalPrice).toBe(180);
+    expect(orderDiscounted.subtotal).toBe(180);
+    expect(orderDiscounted.discount).toBe(18);
+    expect(orderDiscounted.total).toBe(162);
+  });
+
+  it("recomputes item percentage discounts when quantity changes", () => {
+    const discounted = applyItemDiscount(
+      cart({
+        items: [{ ...cart().items[0], quantity: 2, totalPrice: 200 }],
+        subtotal: 200,
+        total: 200,
+      }),
+      "p1",
+      { type: "percentage", value: 10 },
+    );
+
+    const reduced = updateQuantity(discounted, "p1", 1);
+
+    expect(reduced.items[0].discount).toBe(10);
+    expect(reduced.items[0].totalPrice).toBe(90);
+    expect(reduced.subtotal).toBe(90);
+    expect(reduced.total).toBe(90);
+  });
+
+  it("clears item discount metadata without affecting the order discount draft", () => {
+    const discounted = applyOrderDiscount(
+      applyItemDiscount(cart(), "p1", { type: "amount", value: 25, note: "แก้วแตก" }),
+      { type: "amount", value: 10, note: "ทั้งบิล" },
+    );
+
+    const cleared = removeItemDiscount(discounted, "p1");
+
+    expect(cleared.items[0].discount).toBeUndefined();
+    expect(cleared.items[0].discountType).toBeUndefined();
+    expect(cleared.items[0].discountValue).toBeUndefined();
+    expect(cleared.items[0].discountNote).toBeUndefined();
+    expect(cleared.items[0].totalPrice).toBe(100);
+    expect(cleared.subtotal).toBe(100);
+    expect(cleared.discount).toBe(10);
+    expect(cleared.discountNote).toBe("ทั้งบิล");
+    expect(cleared.total).toBe(90);
   });
 });
 

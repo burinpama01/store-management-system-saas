@@ -128,6 +128,22 @@ describe("requirePermission — resolved permissions logic", () => {
     expect(p.can("pos.refund")).toBe(false);
   });
 
+  it("cashier and staff use front-counter defaults without product management", () => {
+    for (const role of ["cashier", "staff"] as const) {
+      const p = resolvePermissions(role, [], ORG, STORE);
+
+      expect(p.can("pos.use")).toBe(true);
+      expect(p.can("catalog.view")).toBe(false);
+      expect(p.can("catalog.manage")).toBe(false);
+      expect(p.can("cashflow.view")).toBe(true);
+      expect(p.can("cashflow.record" as PermissionKey)).toBe(true);
+      expect(p.can("cashflow.manage")).toBe(false);
+      expect(p.can("settings.view")).toBe(true);
+      expect(p.can("settings.manage_printer" as PermissionKey)).toBe(true);
+      expect(p.can("settings.manage_store")).toBe(false);
+    }
+  });
+
   it("cashier with pos.refund override can refund", () => {
     const p = resolvePermissions(
       "cashier",

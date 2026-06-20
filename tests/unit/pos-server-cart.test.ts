@@ -166,6 +166,137 @@ describe("buildTrustedCartFromCatalog", () => {
     ).toThrow("ไม่มีสิทธิ์ให้ส่วนลด");
   });
 
+  it("recomputes percentage discounts from trusted server subtotal", () => {
+    const trusted = buildTrustedCartFromCatalog(
+      cart({
+        discount: 999,
+        discountType: "percentage",
+        discountValue: 10,
+        total: 0,
+      }),
+      [product()],
+      { storeId: "store-1", canDiscount: true },
+    );
+
+    expect(trusted.subtotal).toBe(200);
+    expect(trusted.discountType).toBe("percentage");
+    expect(trusted.discountValue).toBe(10);
+    expect(trusted.discount).toBe(20);
+    expect(trusted.total).toBe(180);
+  });
+
+  it("rejects order percentage discounts outside 0-100", () => {
+    expect(() =>
+      buildTrustedCartFromCatalog(
+        cart({
+          discountType: "percentage",
+          discountValue: 125,
+        }),
+        [product()],
+        { storeId: "store-1", canDiscount: true },
+      ),
+    ).toThrow("เปอร์เซ็นต์ส่วนลดต้องอยู่ระหว่าง 0-100");
+  });
+
+  it("rejects percentage discount metadata when the actor does not have discount permission", () => {
+    expect(() =>
+      buildTrustedCartFromCatalog(
+        cart({
+          discount: 0,
+          discountType: "percentage",
+          discountValue: 10,
+        }),
+        [product()],
+        { storeId: "store-1", canDiscount: false },
+      ),
+    ).toThrow("ไม่มีสิทธิ์ให้ส่วนลด");
+  });
+
+  it("recomputes item percentage discounts from trusted server prices before order discounts", () => {
+    const trusted = buildTrustedCartFromCatalog(
+      cart({
+        items: [
+          {
+            ...cart().items[0],
+            discount: 999,
+            discountType: "percentage",
+            discountValue: 10,
+            discountNote: "สมาชิก",
+            totalPrice: 0,
+          },
+        ] as Cart["items"],
+        discountType: "percentage",
+        discountValue: 10,
+      }),
+      [product()],
+      { storeId: "store-1", canDiscount: true },
+    );
+
+    expect(trusted.items[0].discountType).toBe("percentage");
+    expect(trusted.items[0].discountValue).toBe(10);
+    expect(trusted.items[0].discount).toBe(20);
+    expect(trusted.items[0].discountNote).toBe("สมาชิก");
+    expect(trusted.items[0].totalPrice).toBe(180);
+    expect(trusted.subtotal).toBe(180);
+    expect(trusted.discount).toBe(18);
+    expect(trusted.total).toBe(162);
+  });
+
+  it("rejects item discount metadata when the actor does not have discount permission", () => {
+    expect(() =>
+      buildTrustedCartFromCatalog(
+        cart({
+          items: [
+            {
+              ...cart().items[0],
+              discount: 0,
+              discountType: "percentage",
+              discountValue: 10,
+            },
+          ] as Cart["items"],
+        }),
+        [product()],
+        { storeId: "store-1", canDiscount: false },
+      ),
+    ).toThrow("ไม่มีสิทธิ์ให้ส่วนลด");
+  });
+
+  it("rejects item percentage discounts outside 0-100", () => {
+    expect(() =>
+      buildTrustedCartFromCatalog(
+        cart({
+          items: [
+            {
+              ...cart().items[0],
+              discountType: "percentage",
+              discountValue: 125,
+            },
+          ] as Cart["items"],
+        }),
+        [product()],
+        { storeId: "store-1", canDiscount: true },
+      ),
+    ).toThrow("เปอร์เซ็นต์ส่วนลดรายการต้องอยู่ระหว่าง 0-100");
+  });
+
+  it("rejects item amount discounts greater than the trusted line subtotal", () => {
+    expect(() =>
+      buildTrustedCartFromCatalog(
+        cart({
+          items: [
+            {
+              ...cart().items[0],
+              discountType: "amount",
+              discountValue: 250,
+            },
+          ] as Cart["items"],
+        }),
+        [product()],
+        { storeId: "store-1", canDiscount: true },
+      ),
+    ).toThrow("ส่วนลดรายการมากกว่ายอดรวมสินค้า");
+  });
+
   it("rejects tracked variant demand that exceeds stock after merging duplicate cart lines", () => {
     const trackedProduct = product({
       variants: [

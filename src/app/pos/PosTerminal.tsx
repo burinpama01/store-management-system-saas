@@ -1,15 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
-import type { Cart, CartItem, Order, SavedOrderTicket } from "@/modules/pos/types";
-import { emptyCart, addToCart, updateQuantity, removeFromCart } from "@/modules/pos/cart";
+import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
+import {
+  emptyCart,
+  addToCart,
+  updateQuantity,
+  removeFromCart,
+  applyDiscount,
+  applyOrderDiscount,
+  applyItemDiscount,
+  removeItemDiscount,
+} from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
-import { submitOrderAction, collectPaymentAction, listSavedTicketsAction, saveSavedTicketAction, deleteSavedTicketAction, listTodayOrdersAction, voidOrderAction } from "./actions";
+import { submitOrderAction, collectPaymentAction, listSavedTicketsAction, saveSavedTicketAction, deleteSavedTicketAction, listOrdersHistoryAction, listTodayOrdersAction, voidOrderAction } from "./actions";
 import { signOut } from "../(dashboard)/actions";
-import type { ReceiptSettings } from "@/modules/stores/types";
-import { printReceiptAuto } from "@/modules/printing/print-router";
+import type { Printer, ReceiptSettings } from "@/modules/stores/types";
+import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
@@ -21,6 +30,9 @@ import { TableOpenModal } from "./TableOpenModal";
 
 type Phase = "ordering" | "payment" | "receipt";
 type TicketDraft = Pick<SavedOrderTicket, "tableId" | "tableNumber" | "customerName" | "note" | "buffetSessionId">;
+type DiscountDraft = { mode: DiscountType; amount: string; percentage: string; note: string };
+type HistoryRangeMode = "today" | "7d" | "30d" | "custom";
+type BillHistoryRange = { mode: HistoryRangeMode; fromDate: string; toDate: string };
 
 const EMPTY_TICKET_DRAFT: TicketDraft = {
   tableId: undefined,
@@ -29,6 +41,8 @@ const EMPTY_TICKET_DRAFT: TicketDraft = {
   note: "",
   buffetSessionId: undefined,
 };
+
+const EMPTY_DISCOUNT_DRAFT: DiscountDraft = { mode: "amount", amount: "", percentage: "", note: "" };
 
 interface PickerState {
   product: Product;
@@ -46,11 +60,23 @@ interface Props {
   cashSession: CashSession | null;
   cashSalesPreview: number;
   currency: string;
+  canDiscount: boolean;
+  storeTimezone: string;
+  printers: Printer[];
+  printerLoadError: string | null;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
 
 // ─── Helpers ──────────────────────────────────────────────────────
+
+function printSuccessMessage(base: string, result: ReceiptPrintResult, printerLoadError?: string | null): string {
+  if (printerLoadError) {
+    return `${base} (โหลดการตั้งค่าเครื่องพิมพ์ไม่สำเร็จ: ${printerLoadError} จึงใช้ช่องทางสำรอง)`;
+  }
+  if (!result.fallbackFromPrinter) return base;
+  return `${base} (เครื่อง ${result.fallbackFromPrinter.name} ใช้ไม่ได้ จึงใช้ช่องทางสำรอง)`;
+}
 
 function priceStr(n: number) {
   return `฿${n.toLocaleString("th-TH")}`;
@@ -84,6 +110,74 @@ function changeStr(received: number, total: number) {
   const change = received - total;
   if (change < 0) return null;
   return `เงินทอน ${priceStr(change)}`;
+}
+
+function dateInputValue(date = new Date(), timeZone = "Asia/Bangkok") {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    if (timeZone !== "Asia/Bangkok") return dateInputValue(date, "Asia/Bangkok");
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function addDateInputDays(dateString: string, days: number) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function createHistoryRange(mode: Exclude<HistoryRangeMode, "custom">, timeZone = "Asia/Bangkok", anchor = new Date()): BillHistoryRange {
+  const toDate = dateInputValue(anchor, timeZone);
+  const daysBack = mode === "30d" ? 29 : mode === "7d" ? 6 : 0;
+  const fromDate = daysBack > 0 ? addDateInputDays(toDate, -daysBack) : toDate;
+  return { mode, fromDate, toDate };
+}
+
+function normalizeHistoryRange(range: BillHistoryRange, timeZone = "Asia/Bangkok"): BillHistoryRange {
+  const fromDate = range.fromDate || dateInputValue(new Date(), timeZone);
+  const toDate = range.toDate || fromDate;
+  if (fromDate <= toDate) return { ...range, fromDate, toDate };
+  return { ...range, fromDate: toDate, toDate: fromDate };
+}
+
+function historyRangeLabel(range: BillHistoryRange) {
+  if (range.mode === "today") return "วันนี้";
+  if (range.mode === "7d") return "7 วันล่าสุด";
+  if (range.mode === "30d") return "30 วันล่าสุด";
+  return `${range.fromDate} ถึง ${range.toDate}`;
+}
+
+function discountDraftFromCart(cart: Cart): DiscountDraft {
+  const mode = cart.discountType === "percentage" ? "percentage" : "amount";
+  const discountValue = cart.discountValue ?? cart.discount;
+  return {
+    mode,
+    amount: mode === "amount" && cart.discount > 0 ? String(discountValue) : "",
+    percentage: mode === "percentage" && cart.discount > 0 ? String(discountValue) : "",
+    note: cart.discountNote ?? "",
+  };
+}
+
+function discountDraftFromItem(item: CartItem): DiscountDraft {
+  const mode = item.discountType === "percentage" ? "percentage" : "amount";
+  const discountValue = item.discountValue ?? item.discount ?? 0;
+  return {
+    mode,
+    amount: mode === "amount" && (item.discount ?? 0) > 0 ? String(discountValue) : "",
+    percentage: mode === "percentage" && (item.discount ?? 0) > 0 ? String(discountValue) : "",
+    note: item.discountNote ?? "",
+  };
 }
 
 function ticketStorageKey(storeId: string) {
@@ -144,6 +238,36 @@ function ticketMetaLabel(ticket: SavedOrderTicket) {
     ticket.note || null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "ยังไม่มีข้อมูลโต๊ะ/ลูกค้า";
+}
+
+function ticketItemSummary(ticket: SavedOrderTicket) {
+  const items = ticket.cart.items.slice(0, 3).map((item) => {
+    const details = [
+      item.variant?.name,
+      ...item.modifiers.map(modifierDetail),
+      item.note ? `หมายเหตุ: ${item.note}` : null,
+    ].filter(Boolean);
+    const suffix = details.length > 0 ? ` (${details.join(" · ")})` : "";
+    return `${item.quantity}x ${item.productName}${suffix}`;
+  });
+  const hiddenCount = ticket.cart.items.length - items.length;
+  if (hiddenCount > 0) items.push(`+${hiddenCount} รายการอื่น`);
+  return items.join(" · ") || "ยังไม่มีรายการสินค้า";
+}
+
+function orderItemSummary(order: Order) {
+  const items = order.items.slice(0, 3).map((item) => {
+    const details = [
+      item.variantName,
+      ...item.modifiers.map(modifierDetail),
+      item.note ? `หมายเหตุ: ${item.note}` : null,
+    ].filter(Boolean);
+    const suffix = details.length > 0 ? ` (${details.join(" · ")})` : "";
+    return `${item.quantity}x ${item.productName}${suffix}`;
+  });
+  const hiddenCount = order.items.length - items.length;
+  if (hiddenCount > 0) items.push(`+${hiddenCount} รายการอื่น`);
+  return items.join(" · ") || "ไม่มีรายละเอียดรายการ";
 }
 
 function ticketTimeLabel(iso?: string) {
@@ -385,23 +509,27 @@ function CartPanel({
   onRemove,
   onCheckout,
   onClear,
-  savedTickets,
-  activeTicketId,
-  ticketDraft,
+  onApplyDiscount,
+  onApplyItemDiscount,
+  onClearItemDiscount,
+  itemDiscountResetKey,
+  canDiscount,
+  discountMode,
+  discountAmount,
+  discountPercentage,
+  discountNote,
+  onDiscountDraftChange,
+  discountFormOpen,
+  onDiscountFormOpenChange,
+  activeTicket,
+  isTicketSyncPending,
+  savedTicketCount,
+  billHistoryCount,
   ticketMessage,
   printStatusMessage,
-  isTicketSyncPending,
-  isPrintingTicket,
-  billHistory,
-  isBillHistoryPending,
   onSaveTicket,
-  onPrintTicket,
-  onLoadTicket,
-  onDeleteTicket,
-  onTicketDraftChange,
-  onRefreshBillHistory,
-  onPrintHistoryOrder,
-  onVoidHistoryOrder,
+  onOpenTickets,
+  onOpenBillHistory,
   onClose,
 }: {
   cart: Cart;
@@ -409,51 +537,68 @@ function CartPanel({
   onRemove: (key: string) => void;
   onCheckout: () => void;
   onClear: () => void;
-  savedTickets: SavedOrderTicket[];
-  activeTicketId: string | null;
-  ticketDraft: TicketDraft;
+  onApplyDiscount: (type: DiscountType, value: number, note?: string) => void;
+  onApplyItemDiscount: (key: string, type: DiscountType, value: number, note?: string) => void;
+  onClearItemDiscount: (key: string) => void;
+  itemDiscountResetKey: number;
+  canDiscount: boolean;
+  discountMode: DiscountType;
+  discountAmount: string;
+  discountPercentage: string;
+  discountNote: string;
+  onDiscountDraftChange: (patch: Partial<DiscountDraft>) => void;
+  discountFormOpen: boolean;
+  onDiscountFormOpenChange: (open: boolean) => void;
+  activeTicket: SavedOrderTicket | null;
+  isTicketSyncPending: boolean;
+  savedTicketCount: number;
+  billHistoryCount: number;
   ticketMessage: string | null;
   printStatusMessage: string | null;
-  isTicketSyncPending: boolean;
-  isPrintingTicket: boolean;
-  billHistory: Order[];
-  isBillHistoryPending: boolean;
   onSaveTicket: () => void;
-  onPrintTicket: () => void;
-  onLoadTicket: (ticket: SavedOrderTicket) => void;
-  onDeleteTicket: (ticketId: string) => void;
-  onTicketDraftChange: (patch: Partial<TicketDraft>) => void;
-  onRefreshBillHistory: () => void;
-  onPrintHistoryOrder: (order: Order) => void;
-  onVoidHistoryOrder: (order: Order) => void;
+  onOpenTickets: () => void;
+  onOpenBillHistory: () => void;
   onClose?: () => void;
 }) {
-  const activeTicket = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
-  const [ticketSearch, setTicketSearch] = useState("");
-  const normalizedSearch = ticketSearch.trim().toLowerCase();
-  const filteredSavedTickets = normalizedSearch
-    ? savedTickets.filter((ticket) => [
-      ticket.ticketNumber,
-      ticket.label,
-      ticket.tableNumber,
-      ticket.customerName,
-      ticket.note,
-      ticket.syncState,
-    ].some((value) => (value ?? "").toLowerCase().includes(normalizedSearch)))
-    : savedTickets;
+  const discountInputValue = discountMode === "percentage" ? discountPercentage : discountAmount;
+  const parsedDiscountValue = Number(discountInputValue);
+  const percentagePreview =
+    discountMode === "percentage" && Number.isFinite(parsedDiscountValue)
+      ? Math.min(cart.subtotal, Math.max(0, cart.subtotal * (parsedDiscountValue / 100)))
+      : 0;
+  const discountFormVisible = discountFormOpen && cart.items.length > 0;
+  const canApplyDiscount =
+    canDiscount &&
+    cart.items.length > 0 &&
+    discountInputValue.trim() !== "" &&
+    Number.isFinite(parsedDiscountValue) &&
+    parsedDiscountValue > 0 &&
+    (discountMode === "amount" || parsedDiscountValue <= 100);
+
+  function handleApplyDiscount() {
+    if (!canApplyDiscount) return;
+    onApplyDiscount(discountMode, parsedDiscountValue, discountNote.trim() || undefined);
+    onDiscountFormOpenChange(false);
+  }
+
+  function handleClearDiscount() {
+    onApplyDiscount("amount", 0);
+    onDiscountFormOpenChange(false);
+  }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-        <div>
+      <div className="space-y-3 border-b border-gray-100 px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <span className="text-sm font-semibold text-gray-800">ออร์เดอร์</span>
           {activeTicket && (
-            <p className="text-[11px] text-amber-600">
+            <p className="truncate text-[11px] text-amber-600">
               กำลังแก้ {activeTicket.ticketNumber}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {cart.items.length > 0 && (
             <button
               type="button"
@@ -473,129 +618,52 @@ function CartPanel({
             </button>
           )}
         </div>
-      </div>
-
-      <div className="border-b border-gray-100 px-4 py-3 space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-[11px] font-semibold text-gray-500">
-            โต๊ะ
-            <input
-              value={ticketDraft.tableNumber ?? ""}
-              onChange={(event) => onTicketDraftChange({ tableNumber: event.target.value })}
-              placeholder="เช่น 12"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
-            />
-          </label>
-          <label className="text-[11px] font-semibold text-gray-500">
-            ลูกค้า
-            <input
-              value={ticketDraft.customerName ?? ""}
-              onChange={(event) => onTicketDraftChange({ customerName: event.target.value })}
-              placeholder="ชื่อลูกค้า"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
-            />
-          </label>
-          <label className="col-span-2 text-[11px] font-semibold text-gray-500">
-            note
-            <input
-              value={ticketDraft.note ?? ""}
-              onChange={(event) => onTicketDraftChange({ note: event.target.value })}
-              placeholder="หมายเหตุของตั๋ว"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
-            />
-          </label>
         </div>
         <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onOpenTickets}
+            className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800"
+          >
+            เปิดตั๋ว
+            <span className="ml-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-amber-700">
+              {savedTicketCount}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenBillHistory}
+            className="min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-700"
+          >
+            ประวัติบิล
+            <span className="ml-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-500">
+              {billHistoryCount}
+            </span>
+          </button>
           <button
             type="button"
             disabled={cart.items.length === 0 || isTicketSyncPending}
             onClick={onSaveTicket}
-            className="min-h-11 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+            className="col-span-2 min-h-11 rounded-lg border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {isTicketSyncPending ? "กำลังบันทึก..." : activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
-          </button>
-          <button
-            type="button"
-            disabled={cart.items.length === 0 || isPrintingTicket}
-            onClick={onPrintTicket}
-            className="min-h-11 rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {isPrintingTicket ? "กำลังพิมพ์..." : "พิมพ์ใบสั่ง"}
+            {isTicketSyncPending ? "กำลังบันทึก..." : activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
           </button>
         </div>
-        <p className="text-[11px] text-gray-500">ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ</p>
-        {ticketMessage && (
-          <p aria-live="polite" className="text-xs text-amber-700">
-            {ticketMessage}
-          </p>
-        )}
-        {printStatusMessage && (
-          <p aria-live="polite" className="text-xs text-teal-700">
-            {printStatusMessage}
-          </p>
-        )}
-        {savedTickets.length > 0 && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
-              <input
-                value={ticketSearch}
-                onChange={(event) => setTicketSearch(event.target.value)}
-                placeholder="ค้นหาตั๋ว/โต๊ะ/ลูกค้า"
-                className="min-h-9 w-36 rounded-lg border border-gray-200 px-2 text-[11px]"
-              />
-            </div>
-            <ul className="max-h-28 space-y-1 overflow-y-auto pr-1">
-              {filteredSavedTickets.map((ticket) => (
-                <li key={ticket.id} className="flex items-stretch gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onLoadTicket(ticket)}
-                    className={`min-h-11 flex-1 rounded-lg border px-3 py-2 text-left text-xs ${
-                      ticket.id === activeTicketId
-                        ? "border-amber-300 bg-amber-50 text-amber-800"
-                        : "border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                  >
-                    <span className="flex items-center justify-between gap-2 font-semibold">
-                      <span>{ticket.ticketNumber}</span>
-                      <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-                        {ticket.syncState === "sync_failed" ? "sync fail" : ticket.syncState === "local" ? "local" : "synced"}
-                      </span>
-                    </span>
-                    <span className="block text-[11px] text-gray-500">
-                      {ticket.cart.items.length} รายการ · {priceStr(ticket.cart.total)}
-                    </span>
-                    <span className="block truncate text-[11px] text-gray-500">
-                      {ticketMetaLabel(ticket)}
-                    </span>
-                    <span className="block text-[10px] text-gray-400">
-                      แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · sync {ticketTimeLabel(ticket.lastSyncedAt)}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isTicketSyncPending}
-                    onClick={() => onDeleteTicket(ticket.id)}
-                    className="min-h-11 rounded-lg px-2 text-[11px] text-red-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label={ticket.tableId ? `ลบตั๋วและเคลียร์โต๊ะ ${ticket.ticketNumber}` : `ลบตั๋ว ${ticket.ticketNumber}`}
-                  >
-                    ลบ
-                  </button>
-                </li>
-              ))}
-            </ul>
+        {(ticketMessage || printStatusMessage) && (
+          <div className="space-y-1">
+            {ticketMessage && (
+              <p aria-live="polite" className="text-xs text-amber-700">
+                {ticketMessage}
+              </p>
+            )}
+            {printStatusMessage && (
+              <p aria-live="polite" className="text-xs text-teal-700">
+                {printStatusMessage}
+              </p>
+            )}
           </div>
         )}
-        <BillHistoryPanel
-          orders={billHistory}
-          isPending={isBillHistoryPending}
-          onRefresh={onRefreshBillHistory}
-          onPrint={onPrintHistoryOrder}
-          onVoid={onVoidHistoryOrder}
-        />
       </div>
-
       <div className="flex-1 overflow-y-auto">
         {cart.items.length === 0 ? (
           <div className="flex items-center justify-center h-24 text-xs text-gray-400">
@@ -605,24 +673,152 @@ function CartPanel({
           <ul className="divide-y divide-gray-50 px-3 py-1">
             {cart.items.map((item) => (
               <CartItemRow
-                key={item.key}
+                key={`${item.key}-${itemDiscountResetKey}`}
                 item={item}
                 onUpdateQty={onUpdateQty}
                 onRemove={onRemove}
+                onApplyItemDiscount={onApplyItemDiscount}
+                onClearItemDiscount={onClearItemDiscount}
+                canDiscount={canDiscount}
               />
             ))}
           </ul>
         )}
       </div>
 
-      <div className="border-t border-gray-100 px-4 py-3 space-y-1">
+      <div className="border-t border-gray-100 px-4 py-3 space-y-2">
+        {canDiscount && (
+          <div className="space-y-2 rounded-lg border border-teal-100 bg-teal-50/50 p-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 text-xs text-teal-900">
+                <div className="flex items-center gap-2 font-semibold">
+                  <span>ส่วนลดท้ายบิล</span>
+                  {cart.discount > 0 && <span className="tabular-nums">-{priceStr(cart.discount)}</span>}
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-teal-700">
+                  {cart.discount > 0
+                    ? cart.discountNote
+                      ? `เหตุผล: ${cart.discountNote}`
+                      : "มีส่วนลดท้ายบิลในออร์เดอร์นี้"
+                    : "ลดจากยอดรวมทั้งออร์เดอร์"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {cart.discount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearDiscount}
+                    className="min-h-9 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
+                  >
+                    ล้างส่วนลดท้ายบิล
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-expanded={discountFormVisible}
+                  disabled={cart.items.length === 0}
+                  onClick={() => onDiscountFormOpenChange(!discountFormVisible)}
+                  className="min-h-9 rounded-lg border border-teal-200 bg-white px-2 text-[11px] font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {discountFormVisible ? "ปิด" : cart.discount > 0 ? "แก้ส่วนลดท้ายบิล" : "เรียกส่วนลดท้ายบิล"}
+                </button>
+              </div>
+            </div>
+            {discountFormVisible && (
+              <div className="space-y-2">
+                <div
+                  role="group"
+                  aria-label="ประเภทส่วนลด"
+                  className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={discountMode === "amount"}
+                    onClick={() => onDiscountDraftChange({ mode: "amount" })}
+                    className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+                      discountMode === "amount"
+                        ? "bg-teal-700 text-white"
+                        : "text-teal-800 hover:bg-teal-50"
+                    }`}
+                  >
+                    บาท
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={discountMode === "percentage"}
+                    onClick={() => onDiscountDraftChange({ mode: "percentage" })}
+                    className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+                      discountMode === "percentage"
+                        ? "bg-teal-700 text-white"
+                        : "text-teal-800 hover:bg-teal-50"
+                    }`}
+                  >
+                    %
+                  </button>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  {discountMode === "amount" ? (
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max={cart.subtotal}
+                      step="0.01"
+                      value={discountAmount}
+                      onChange={(event) => onDiscountDraftChange({ amount: event.target.value })}
+                      placeholder="0"
+                      aria-label="จำนวนส่วนลด"
+                      disabled={cart.items.length === 0}
+                      className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={discountPercentage}
+                      onChange={(event) => onDiscountDraftChange({ percentage: event.target.value })}
+                      placeholder="0"
+                      aria-label="เปอร์เซ็นต์ส่วนลด"
+                      disabled={cart.items.length === 0}
+                      className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    disabled={!canApplyDiscount}
+                    onClick={handleApplyDiscount}
+                    className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ใช้ส่วนลด
+                  </button>
+                </div>
+                {discountMode === "percentage" && percentagePreview > 0 && parsedDiscountValue <= 100 && (
+                  <p className="text-[11px] text-teal-700">
+                    ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(percentagePreview)}</span>
+                  </p>
+                )}
+                <input
+                  value={discountNote}
+                  onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
+                  placeholder="เหตุผล/โปรโมชัน"
+                  aria-label="เหตุผลส่วนลด"
+                  disabled={cart.items.length === 0}
+                  className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+                />
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex justify-between text-xs text-gray-500">
           <span>ยอดรวม</span>
           <span className="tabular-nums">{priceStr(cart.subtotal)}</span>
         </div>
         {cart.discount > 0 && (
           <div className="flex justify-between text-xs text-green-600">
-            <span>ส่วนลด</span>
+            <span>ส่วนลดท้ายบิล</span>
             <span className="tabular-nums">-{priceStr(cart.discount)}</span>
           </div>
         )}
@@ -643,43 +839,379 @@ function CartPanel({
   );
 }
 
+function PosUtilitySheet({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = requestAnimationFrame(() => closeButtonRef.current?.focus());
+
+    return () => {
+      cancelAnimationFrame(frame);
+      previousFocusRef.current?.focus();
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = Array.from(
+      sheetRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black/35"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onKeyDown={handleKeyDown}
+    >
+      <div
+        ref={sheetRef}
+        data-pos-utility-sheet="true"
+        className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <p className="text-sm font-semibold text-gray-900">{title}</p>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={onClose}
+            className="min-h-11 rounded-lg px-3 text-xs font-semibold text-gray-500 hover:text-gray-800"
+          >
+            ปิด
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TicketPanel({
+  cart,
+  savedTickets,
+  activeTicketId,
+  activeTicket,
+  ticketDraft,
+  ticketMessage,
+  printStatusMessage,
+  isTicketSyncPending,
+  isPrintingTicket,
+  onSaveTicket,
+  onPrintTicket,
+  onLoadTicket,
+  onDeleteTicket,
+  onTicketDraftChange,
+}: {
+  cart: Cart;
+  savedTickets: SavedOrderTicket[];
+  activeTicketId: string | null;
+  activeTicket: SavedOrderTicket | null;
+  ticketDraft: TicketDraft;
+  ticketMessage: string | null;
+  printStatusMessage: string | null;
+  isTicketSyncPending: boolean;
+  isPrintingTicket: boolean;
+  onSaveTicket: () => void;
+  onPrintTicket: () => void;
+  onLoadTicket: (ticket: SavedOrderTicket) => void;
+  onDeleteTicket: (ticketId: string) => void;
+  onTicketDraftChange: (patch: Partial<TicketDraft>) => void;
+}) {
+  const [ticketSearch, setTicketSearch] = useState("");
+  const normalizedSearch = ticketSearch.trim().toLowerCase();
+  const filteredSavedTickets = normalizedSearch
+    ? savedTickets.filter((ticket) => [
+      ticket.ticketNumber,
+      ticket.label,
+      ticket.tableNumber,
+      ticket.customerName,
+      ticket.note,
+      ticket.syncState,
+    ].some((value) => (value ?? "").toLowerCase().includes(normalizedSearch)))
+    : savedTickets;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-[11px] font-semibold text-gray-500">
+          โต๊ะ
+          <input
+            value={ticketDraft.tableNumber ?? ""}
+            onChange={(event) => onTicketDraftChange({ tableNumber: event.target.value })}
+            placeholder="เช่น 12"
+            className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+          />
+        </label>
+        <label className="text-[11px] font-semibold text-gray-500">
+          ลูกค้า
+          <input
+            value={ticketDraft.customerName ?? ""}
+            onChange={(event) => onTicketDraftChange({ customerName: event.target.value })}
+            placeholder="ชื่อลูกค้า"
+            className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+          />
+        </label>
+        <label className="col-span-2 text-[11px] font-semibold text-gray-500">
+          note
+          <input
+            value={ticketDraft.note ?? ""}
+            onChange={(event) => onTicketDraftChange({ note: event.target.value })}
+            placeholder="หมายเหตุของตั๋ว"
+            className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+          />
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={cart.items.length === 0 || isTicketSyncPending}
+          onClick={onSaveTicket}
+          className="min-h-11 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {isTicketSyncPending ? "กำลังบันทึก..." : activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
+        </button>
+        <button
+          type="button"
+          disabled={cart.items.length === 0 || isPrintingTicket}
+          onClick={onPrintTicket}
+          className="min-h-11 rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {isPrintingTicket ? "กำลังพิมพ์..." : "พิมพ์ใบสั่ง"}
+        </button>
+      </div>
+      <p className="text-[11px] text-gray-500">ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ</p>
+      {ticketMessage && (
+        <p aria-live="polite" className="text-xs text-amber-700">
+          {ticketMessage}
+        </p>
+      )}
+      {printStatusMessage && (
+        <p aria-live="polite" className="text-xs text-teal-700">
+          {printStatusMessage}
+        </p>
+      )}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
+          <input
+            value={ticketSearch}
+            onChange={(event) => setTicketSearch(event.target.value)}
+            placeholder="ค้นหาตั๋ว/โต๊ะ/ลูกค้า"
+            className="min-h-9 w-36 rounded-lg border border-gray-200 px-2 text-[11px]"
+          />
+        </div>
+        {filteredSavedTickets.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-gray-200 py-4 text-center text-xs text-gray-400">
+            ยังไม่มีตั๋วที่บันทึก
+          </p>
+        ) : (
+          <ul className="max-h-[45dvh] space-y-1 overflow-y-auto pr-1">
+            {filteredSavedTickets.map((ticket) => (
+              <li key={ticket.id} className="flex items-stretch gap-1">
+                <button
+                  type="button"
+                  onClick={() => onLoadTicket(ticket)}
+                  className={`min-h-11 flex-1 rounded-lg border px-3 py-2 text-left text-xs ${
+                    ticket.id === activeTicketId
+                      ? "border-amber-300 bg-amber-50 text-amber-800"
+                      : "border-gray-200 text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2 font-semibold">
+                    <span>{ticket.ticketNumber}</span>
+                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                      {ticket.syncState === "sync_failed" ? "sync fail" : ticket.syncState === "local" ? "local" : "synced"}
+                    </span>
+                  </span>
+                  <span className="block text-[11px] text-gray-500">
+                    {ticket.cart.items.length} รายการ · {priceStr(ticket.cart.total)}
+                  </span>
+                  <span className="block text-[11px] leading-snug text-gray-600">
+                    {ticketItemSummary(ticket)}
+                  </span>
+                  <span className="block truncate text-[11px] text-gray-500">
+                    {ticketMetaLabel(ticket)}
+                  </span>
+                  <span className="block text-[10px] text-gray-400">
+                    แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · sync {ticketTimeLabel(ticket.lastSyncedAt)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isTicketSyncPending}
+                  onClick={() => onDeleteTicket(ticket.id)}
+                  className="min-h-11 rounded-lg px-2 text-[11px] text-red-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label={ticket.tableId ? `ลบตั๋วและเคลียร์โต๊ะ ${ticket.ticketNumber}` : `ลบตั๋ว ${ticket.ticketNumber}`}
+                >
+                  ลบ
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BillHistoryPanel({
   orders,
   isPending,
+  historyRange,
+  storeTimezone,
+  onHistoryRangeChange,
   onRefresh,
   onPrint,
   onVoid,
+  historyMode = "compact",
 }: {
   orders: Order[];
   isPending: boolean;
-  onRefresh: () => void;
+  historyRange: BillHistoryRange;
+  storeTimezone: string;
+  onHistoryRangeChange: (range: BillHistoryRange) => void;
+  onRefresh: (range?: BillHistoryRange) => void;
   onPrint: (order: Order) => void;
   onVoid: (order: Order) => void;
+  historyMode?: "compact" | "sheet";
 }) {
+  const compactBillHistoryLimit = 8;
+  const visibleOrders = historyMode === "sheet" ? orders : orders.slice(0, compactBillHistoryLimit);
+
   return (
     <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold text-gray-600">บิลวันนี้</p>
+        <div>
+          <p className="text-[11px] font-semibold text-gray-600">บิลย้อนหลัง</p>
+          <p className="text-[10px] text-gray-400">{historyRangeLabel(historyRange)}</p>
+        </div>
         <button
           type="button"
-          onClick={onRefresh}
+          onClick={() => onRefresh()}
           disabled={isPending}
           className="min-h-8 rounded border border-gray-200 bg-white px-2 text-[11px] text-gray-600 disabled:opacity-50"
         >
           {isPending ? "กำลังโหลด..." : "รีเฟรช"}
         </button>
       </div>
+      {historyMode === "sheet" && (
+        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-2">
+          <div className="grid grid-cols-3 gap-1" role="group" aria-label="ช่วงประวัติบิล">
+            <button
+              type="button"
+              value="today"
+              onClick={() => onHistoryRangeChange(createHistoryRange("today", storeTimezone))}
+              className={`min-h-9 rounded-lg px-2 text-[11px] font-semibold ${
+                historyRange.mode === "today" ? "bg-teal-700 text-white" : "bg-gray-50 text-gray-600"
+              }`}
+            >
+              วันนี้
+            </button>
+            <button
+              type="button"
+              value="7d"
+              onClick={() => onHistoryRangeChange(createHistoryRange("7d", storeTimezone))}
+              className={`min-h-9 rounded-lg px-2 text-[11px] font-semibold ${
+                historyRange.mode === "7d" ? "bg-teal-700 text-white" : "bg-gray-50 text-gray-600"
+              }`}
+            >
+              7 วัน
+            </button>
+            <button
+              type="button"
+              value="30d"
+              onClick={() => onHistoryRangeChange(createHistoryRange("30d", storeTimezone))}
+              className={`min-h-9 rounded-lg px-2 text-[11px] font-semibold ${
+                historyRange.mode === "30d" ? "bg-teal-700 text-white" : "bg-gray-50 text-gray-600"
+              }`}
+            >
+              30 วัน
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-[10px] font-semibold text-gray-500">
+              จากวันที่
+              <input
+                type="date"
+                value={historyRange.fromDate}
+                onChange={(event) => onHistoryRangeChange(normalizeHistoryRange({ ...historyRange, mode: "custom", fromDate: event.target.value }, storeTimezone))}
+                className="mt-1 min-h-10 w-full rounded-lg border border-gray-200 px-2 text-xs text-gray-700"
+              />
+            </label>
+            <label className="text-[10px] font-semibold text-gray-500">
+              ถึงวันที่
+              <input
+                type="date"
+                value={historyRange.toDate}
+                onChange={(event) => onHistoryRangeChange(normalizeHistoryRange({ ...historyRange, mode: "custom", toDate: event.target.value }, storeTimezone))}
+                className="mt-1 min-h-10 w-full rounded-lg border border-gray-200 px-2 text-xs text-gray-700"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => onRefresh(historyRange)}
+            disabled={isPending}
+            className="min-h-10 w-full rounded-lg border border-teal-100 bg-teal-50 px-3 text-xs font-semibold text-teal-800 disabled:opacity-50"
+          >
+            ดูบิลช่วงนี้
+          </button>
+        </div>
+      )}
       {orders.length === 0 ? (
-        <p className="py-2 text-center text-[11px] text-gray-400">ยังไม่มีบิลวันนี้</p>
+        <p className="py-2 text-center text-[11px] text-gray-400">ยังไม่มีบิลในช่วงนี้</p>
       ) : (
-        <ul className="max-h-28 space-y-1 overflow-y-auto pr-1">
-          {orders.slice(0, 8).map((order) => (
+        <ul className={`${historyMode === "sheet" ? "max-h-[60dvh]" : "max-h-28"} space-y-1 overflow-y-auto pr-1`}>
+          {visibleOrders.map((order) => (
             <li key={order.id} className="rounded-lg border border-gray-200 bg-white p-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold text-gray-800">{order.orderNumber}</p>
                   <p className="text-[11px] text-gray-500">
                     {order.tableNumber ? `โต๊ะ ${order.tableNumber} · ` : ""}{historyPaymentLabel(order)} · {priceStr(order.total)}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-600">
+                    {orderItemSummary(order)}
                   </p>
                 </div>
                 <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
@@ -717,11 +1249,78 @@ function CartItemRow({
   item,
   onUpdateQty,
   onRemove,
+  onApplyItemDiscount,
+  onClearItemDiscount,
+  canDiscount,
 }: {
   item: CartItem;
   onUpdateQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
+  onApplyItemDiscount: (key: string, type: DiscountType, value: number, note?: string) => void;
+  onClearItemDiscount: (key: string) => void;
+  canDiscount: boolean;
 }) {
+  const itemDiscountFingerprint = [
+    item.key,
+    item.discount ?? 0,
+    item.discountType ?? "",
+    item.discountValue ?? 0,
+    item.discountNote ?? "",
+  ].join("|");
+  const [itemDiscountFormOpen, setItemDiscountFormOpen] = useState(false);
+  const [itemDiscountDraftState, setItemDiscountDraftState] = useState<{
+    fingerprint: string;
+    draft: DiscountDraft;
+  }>(() => ({
+    fingerprint: itemDiscountFingerprint,
+    draft: discountDraftFromItem(item),
+  }));
+  const itemDiscountDraft =
+    itemDiscountDraftState.fingerprint === itemDiscountFingerprint
+      ? itemDiscountDraftState.draft
+      : discountDraftFromItem(item);
+  const itemDiscountInputValue =
+    itemDiscountDraft.mode === "percentage"
+      ? itemDiscountDraft.percentage
+      : itemDiscountDraft.amount;
+  const parsedItemDiscountValue = Number(itemDiscountInputValue);
+  const itemLineSubtotal = item.unitPrice * item.quantity;
+  const itemDiscountPreview =
+    itemDiscountDraft.mode === "percentage" && Number.isFinite(parsedItemDiscountValue)
+      ? Math.min(itemLineSubtotal, Math.max(0, itemLineSubtotal * (parsedItemDiscountValue / 100)))
+      : 0;
+  const canApplyItemDiscount =
+    canDiscount &&
+    itemDiscountInputValue.trim() !== "" &&
+    Number.isFinite(parsedItemDiscountValue) &&
+    parsedItemDiscountValue > 0 &&
+    (itemDiscountDraft.mode === "percentage"
+      ? parsedItemDiscountValue <= 100
+      : parsedItemDiscountValue <= itemLineSubtotal);
+
+  function updateItemDiscountDraft(patch: Partial<DiscountDraft>) {
+    setItemDiscountDraftState({
+      fingerprint: itemDiscountFingerprint,
+      draft: { ...itemDiscountDraft, ...patch },
+    });
+  }
+
+  function handleApplyItemDiscount() {
+    if (!canApplyItemDiscount) return;
+    onApplyItemDiscount(
+      item.key,
+      itemDiscountDraft.mode,
+      parsedItemDiscountValue,
+      itemDiscountDraft.note.trim() || undefined,
+    );
+    setItemDiscountFormOpen(false);
+  }
+
+  function handleClearItemDiscount() {
+    onClearItemDiscount(item.key);
+    setItemDiscountFormOpen(false);
+  }
+
   return (
     <li className="py-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
@@ -744,40 +1343,160 @@ function CartItemRow({
               หมายเหตุ: {item.note}
             </p>
           )}
+          {(item.discount ?? 0) > 0 && (
+            <p className="mt-1 text-xs text-teal-700">
+              ส่วนลดรายการนี้ -{priceStr(item.discount ?? 0)}
+              {item.discountNote ? ` · ${item.discountNote}` : ""}
+            </p>
+          )}
         </div>
         <span className="text-sm tabular-nums text-gray-700 shrink-0">
           {priceStr(item.totalPrice)}
         </span>
       </div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] text-gray-400">
           {priceStr(item.unitPrice)} × {item.quantity}
         </span>
-        <div className="flex items-center border border-gray-200 rounded">
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center border border-gray-200 rounded">
+            <button
+              type="button"
+              onClick={() => onUpdateQty(item.key, item.quantity - 1)}
+              className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-sm"
+            >
+              −
+            </button>
+            <span className="w-7 text-center text-xs tabular-nums">{item.quantity}</span>
+            <button
+              type="button"
+              onClick={() => onUpdateQty(item.key, item.quantity + 1)}
+              className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-sm"
+            >
+              +
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => onUpdateQty(item.key, item.quantity - 1)}
-            className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-sm"
+            onClick={() => onRemove(item.key)}
+            className="min-h-11 px-3 text-xs text-red-400 hover:text-red-600"
           >
-            −
-          </button>
-          <span className="w-7 text-center text-xs tabular-nums">{item.quantity}</span>
-          <button
-            type="button"
-            onClick={() => onUpdateQty(item.key, item.quantity + 1)}
-            className="min-w-11 min-h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-sm"
-          >
-            +
+            ลบ
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => onRemove(item.key)}
-          className="min-h-11 px-3 text-xs text-red-400 hover:text-red-600"
-        >
-          ลบ
-        </button>
+        {canDiscount && (
+          <div className="basis-full">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-expanded={itemDiscountFormOpen}
+                onClick={() => setItemDiscountFormOpen((open) => !open)}
+                className="min-h-9 rounded-lg border border-teal-100 bg-teal-50 px-2 text-[11px] font-semibold text-teal-800"
+              >
+                {itemDiscountFormOpen
+                  ? "ปิด"
+                  : (item.discount ?? 0) > 0
+                    ? "แก้ส่วนลดรายการนี้"
+                    : "เรียกส่วนลดรายการนี้"}
+              </button>
+              {(item.discount ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearItemDiscount}
+                  className="min-h-9 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
+                >
+                  ล้างส่วนลดรายการนี้
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+      {canDiscount && itemDiscountFormOpen && (
+        <div className="space-y-2 rounded-lg border border-teal-100 bg-teal-50/60 p-2">
+          <div
+            role="group"
+            aria-label="ประเภทส่วนลดรายการ"
+            className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
+          >
+            <button
+              type="button"
+              aria-pressed={itemDiscountDraft.mode === "amount"}
+              onClick={() => updateItemDiscountDraft({ mode: "amount" })}
+              className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+                itemDiscountDraft.mode === "amount"
+                  ? "bg-teal-700 text-white"
+                  : "text-teal-800 hover:bg-teal-50"
+              }`}
+            >
+              บาท
+            </button>
+            <button
+              type="button"
+              aria-pressed={itemDiscountDraft.mode === "percentage"}
+              onClick={() => updateItemDiscountDraft({ mode: "percentage" })}
+              className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+                itemDiscountDraft.mode === "percentage"
+                  ? "bg-teal-700 text-white"
+                  : "text-teal-800 hover:bg-teal-50"
+              }`}
+            >
+              %
+            </button>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            {itemDiscountDraft.mode === "amount" ? (
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max={item.unitPrice * item.quantity}
+                step="0.01"
+                value={itemDiscountDraft.amount}
+                onChange={(event) => updateItemDiscountDraft({ amount: event.target.value })}
+                placeholder="0"
+                aria-label="จำนวนส่วนลดรายการ"
+                className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300"
+              />
+            ) : (
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max="100"
+                step="0.01"
+                value={itemDiscountDraft.percentage}
+                onChange={(event) => updateItemDiscountDraft({ percentage: event.target.value })}
+                placeholder="0"
+                aria-label="เปอร์เซ็นต์ส่วนลดรายการ"
+                className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300"
+              />
+            )}
+            <button
+              type="button"
+              disabled={!canApplyItemDiscount}
+              onClick={handleApplyItemDiscount}
+              className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ใช้ส่วนลด
+            </button>
+          </div>
+          {itemDiscountDraft.mode === "percentage" &&
+            itemDiscountPreview > 0 &&
+            parsedItemDiscountValue <= 100 && (
+              <p className="text-[11px] text-teal-700">
+                ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(itemDiscountPreview)}</span>
+              </p>
+            )}
+          <input
+            value={itemDiscountDraft.note}
+            onChange={(event) => updateItemDiscountDraft({ note: event.target.value })}
+            placeholder="เหตุผล/โปรโมชัน"
+            aria-label="เหตุผลส่วนลดรายการ"
+            className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300"
+          />
+        </div>
+      )}
     </li>
   );
 }
@@ -969,18 +1688,24 @@ function ReceiptPanel({
   order,
   receiptSettings,
   storeName,
+  printers,
+  printerLoadError,
   onNewOrder,
 }: {
   order: { orderNumber: string; items: CartItem[]; subtotal: number; discount: number; discountNote?: string; total: number; method: string; change?: number };
   receiptSettings: ReceiptSettings | null;
   storeName: string;
+  printers: Printer[];
+  printerLoadError: string | null;
   onNewOrder: () => void;
 }) {
   const [isPrinting, setIsPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [printNotice, setPrintNotice] = useState<string | null>(null);
 
   async function handlePrint() {
     setPrintError(null);
+    setPrintNotice(null);
     setIsPrinting(true);
     try {
       const settings: ReceiptSettings = receiptSettings ?? {
@@ -1008,6 +1733,10 @@ function ReceiptPanel({
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,
+          discount: item.discount,
+          discountType: item.discountType,
+          discountValue: item.discountValue,
+          discountNote: item.discountNote,
           note: item.note,
         })),
         subtotal: order.subtotal,
@@ -1024,12 +1753,12 @@ function ReceiptPanel({
         showQrPayment: settings.showQrPayment,
         promptpayId: settings.promptpayId,
         paperWidth: settings.paperWidth,
+        printCopies: settings.printCopies,
         printedAt: new Date().toISOString(),
       };
-      // Route to a connected thermal printer (Bluetooth → USB) using image-raster
-      // ESC/POS, falling back to the browser/PDF dialog when none is connected.
-      await printReceiptAuto(
-        {
+      const result = await printReceiptWithFallback({
+        printers,
+        escpos: {
           storeName: receiptData.storeName,
           address: receiptData.address,
           phone: receiptData.phone,
@@ -1041,6 +1770,8 @@ function ReceiptPanel({
             modifierNames: it.modifierNames,
             quantity: it.quantity,
             totalPrice: it.totalPrice,
+            discount: it.discount,
+            discountNote: it.discountNote,
           })),
           subtotal: receiptData.subtotal,
           discount: receiptData.discount,
@@ -1051,8 +1782,9 @@ function ReceiptPanel({
           paperWidth: receiptData.paperWidth,
           printedAt: receiptData.printedAt,
         },
-        receiptData,
-      );
+        browser: receiptData,
+      });
+      setPrintNotice(printSuccessMessage("พิมพ์ใบเสร็จแล้ว", result, printerLoadError));
     } catch (err) {
       setPrintError(err instanceof Error ? err.message : "พิมพ์ไม่สำเร็จ");
     } finally {
@@ -1093,6 +1825,12 @@ function ReceiptPanel({
               {item.note && (
                 <p className="mt-1 text-xs text-amber-700">หมายเหตุ: {item.note}</p>
               )}
+              {(item.discount ?? 0) > 0 && (
+                <p className="mt-1 text-xs text-teal-700">
+                  ส่วนลดรายการ -{priceStr(item.discount ?? 0)}
+                  {item.discountNote ? ` · ${item.discountNote}` : ""}
+                </p>
+              )}
             </li>
           ))}
         </ul>
@@ -1107,6 +1845,9 @@ function ReceiptPanel({
         )}
         {printError && (
           <p className="text-xs text-red-500 text-center">{printError}</p>
+        )}
+        {printNotice && (
+          <p className="text-xs text-amber-700 text-center">{printNotice}</p>
         )}
       </div>
       <div className="p-4 border-t border-gray-100 space-y-2">
@@ -1132,8 +1873,11 @@ function ReceiptPanel({
 
 // ─── Main POS Terminal ────────────────────────────────────────────
 
-export function PosTerminal({ storeId, storeName, categories, products, receiptSettings, exitHref, cashSession, cashSalesPreview, currency }: Props) {
+export function PosTerminal({ storeId, storeName, categories, products, receiptSettings, exitHref, cashSession, cashSalesPreview, currency, canDiscount, storeTimezone, printers, printerLoadError }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
+  const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
+  const [discountFormOpen, setDiscountFormOpen] = useState(false);
+  const [itemDiscountResetKey, setItemDiscountResetKey] = useState(0);
   const [phase, setPhase] = useState<Phase>("ordering");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
     categories[0]?.id ?? null,
@@ -1143,12 +1887,15 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const [showTableBill, setShowTableBill] = useState(false);
   const [showTableOpen, setShowTableOpen] = useState(false);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
-  const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>(() => readSavedTickets(storeId));
+  const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
+  const [billHistoryPanelOpen, setBillHistoryPanelOpen] = useState(false);
+  const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
   const [printStatusMessage, setPrintStatusMessage] = useState<string | null>(null);
   const [billHistory, setBillHistory] = useState<Order[]>([]);
+  const [historyRange, setHistoryRange] = useState<BillHistoryRange>(() => createHistoryRange("today", storeTimezone));
   const [isBillHistoryPending, setIsBillHistoryPending] = useState(false);
   const [isPrintingTicket, setIsPrintingTicket] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
@@ -1164,12 +1911,54 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   } | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isTicketSyncPending, startTicketTransition] = useTransition();
+  const historyRequestIdRef = useRef(0);
 
   const filteredProducts = selectedCategoryId
     ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
     : products.filter((p) => p.isActive && p.availableForPos);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
-  const activeTicket = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
+  const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
+  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen;
+
+  function commitCart(nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {}) {
+    setCart(nextCart);
+    setDiscountDraft(discountDraftFromCart(nextCart));
+    if (options.resetItemDiscountForms || nextCart.items.length === 0) {
+      setItemDiscountResetKey((current) => current + 1);
+    }
+    if (nextCart.items.length === 0) {
+      setDiscountFormOpen(false);
+    }
+  }
+
+  function updateDiscountDraft(patch: Partial<DiscountDraft>) {
+    setDiscountDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function clearCurrentOrder(message = "ล้างออร์เดอร์แล้ว") {
+    commitCart(emptyCart(storeId), { resetItemDiscountForms: true });
+    setDiscountFormOpen(false);
+    setActiveTicketId(null);
+    setTicketDraft(EMPTY_TICKET_DRAFT);
+    setTicketMessage(message);
+  }
+
+  function handleApplyDiscount(type: DiscountType, value: number, note?: string) {
+    const nextCart =
+      type === "amount"
+        ? applyDiscount(cart, value, note)
+        : applyOrderDiscount(cart, { type, value, note });
+    commitCart(nextCart);
+    setDiscountFormOpen(false);
+  }
+
+  function handleApplyItemDiscount(key: string, type: DiscountType, value: number, note?: string) {
+    commitCart(applyItemDiscount(cart, key, { type, value, note }));
+  }
+
+  function handleClearItemDiscount(key: string) {
+    commitCart(removeItemDiscount(cart, key));
+  }
 
   const persistSavedTickets = useCallback((next: SavedOrderTicket[]) => {
     if (!writeSavedTickets(storeId, next)) {
@@ -1180,12 +1969,45 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     return true;
   }, [storeId]);
 
+  const refreshBillHistory = useCallback((range: BillHistoryRange) => {
+    const normalizedRange = normalizeHistoryRange(range, storeTimezone);
+    const requestId = historyRequestIdRef.current + 1;
+    historyRequestIdRef.current = requestId;
+    startTransition(async () => {
+      setIsBillHistoryPending(true);
+      try {
+        const result = normalizedRange.mode === "today"
+          ? await listTodayOrdersAction()
+          : await listOrdersHistoryAction({
+              fromDate: normalizedRange.fromDate,
+              toDate: normalizedRange.toDate,
+              limit: normalizedRange.mode === "30d" ? 500 : 300,
+            });
+        if (historyRequestIdRef.current !== requestId) return;
+        if (result.error) {
+          setTicketMessage(`โหลดบิลย้อนหลังไม่สำเร็จ: ${result.error}`);
+        } else {
+          setHistoryRange(normalizedRange);
+          setBillHistory(result.orders);
+        }
+      } catch (error) {
+        if (historyRequestIdRef.current !== requestId) return;
+        setTicketMessage(error instanceof Error ? `โหลดบิลย้อนหลังไม่สำเร็จ: ${error.message}` : "โหลดบิลย้อนหลังไม่สำเร็จ");
+      } finally {
+        if (historyRequestIdRef.current === requestId) {
+          setIsBillHistoryPending(false);
+        }
+      }
+    });
+  }, [storeTimezone]);
+
   useEffect(() => {
     let cancelled = false;
     startTicketTransition(async () => {
       const result = await listSavedTicketsAction();
       if (cancelled) return;
       if (result.error) {
+        setSavedTickets(readSavedTickets(storeId));
         setTicketMessage(`ใช้ตั๋วในเครื่องนี้อยู่: ${result.error}`);
         return;
       }
@@ -1197,22 +2019,22 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   }, [persistSavedTickets, storeId]);
 
   useEffect(() => {
-    handleRefreshBillHistory();
+    refreshBillHistory(createHistoryRange("today", storeTimezone));
     // Load once per store/terminal mount; manual refresh handles later updates.
-  }, [storeId]);
+  }, [refreshBillHistory, storeId, storeTimezone]);
 
   function handleProductClick(product: Product) {
     if (cartLocked) return;
     if (!product.isActive || !product.availableForPos) return;
     if (product.variants.length === 0 && product.modifierGroups.length === 0) {
-      setCart((c) => addToCart(c, { product, variant: null, modifiers: [] }));
+      commitCart(addToCart(cart, { product, variant: null, modifiers: [] }));
       return;
     }
     setPicker({ product, selectedVariant: null, selectedModifiers: {} });
   }
 
   function handleAddFromPicker(input: AddToCartInput) {
-    setCart((c) => addToCart(c, input));
+    commitCart(addToCart(cart, input));
   }
 
   function handleSaveTicket() {
@@ -1269,9 +2091,10 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   function handleLoadTicket(ticket: SavedOrderTicket) {
     if (pendingOrder) {
       setTicketMessage("สร้างออร์เดอร์แล้ว กรุณาชำระเงินให้จบก่อนเรียกตั๋วอื่น");
-      return;
+      return false;
     }
-    setCart(ticket.cart);
+    commitCart(ticket.cart, { resetItemDiscountForms: true });
+    setDiscountFormOpen(false);
     setActiveTicketId(ticket.id);
     setTicketDraft({
       tableId: ticket.tableId,
@@ -1285,6 +2108,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setPayError(null);
     setOrderPanelOpen(true);
     setTicketMessage(`เรียกตั๋ว ${ticket.ticketNumber} กลับมาแล้ว`);
+    return true;
   }
 
   function handleDeleteTicket(ticketId: string) {
@@ -1352,6 +2176,10 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
+        discount: item.discount,
+        discountType: item.discountType,
+        discountValue: item.discountValue,
+        discountNote: item.discountNote,
         note: item.note,
       })),
       subtotal: cart.subtotal,
@@ -1364,6 +2192,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       promptpayId: undefined,
       headerText: "*** ใบสั่งออเดอร์ ***",
       paperWidth: settings.paperWidth,
+      printCopies: settings.printCopies,
       printedAt: new Date().toISOString(),
     };
 
@@ -1371,9 +2200,14 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setTicketMessage(null);
     setPrintStatusMessage("กำลังส่งงานพิมพ์ใบสั่ง...");
     try {
-      await printReceiptAuto(ticketData, ticketData);
-      setPrintStatusMessage(`พิมพ์ใบสั่งออเดอร์ ${ticketNumber} แล้ว`);
-      setTicketMessage(`พิมพ์ใบสั่งออเดอร์ ${ticketNumber} แล้ว`);
+      const result = await printReceiptWithFallback({
+        printers,
+        escpos: ticketData,
+        browser: ticketData,
+      });
+      const message = printSuccessMessage(`พิมพ์ใบสั่งออเดอร์ ${ticketNumber} แล้ว`, result, printerLoadError);
+      setPrintStatusMessage(message);
+      setTicketMessage(message);
     } catch (err) {
       setPrintStatusMessage("พิมพ์ใบสั่งออเดอร์ไม่สำเร็จ กดพิมพ์ซ้ำหรือใช้ browser print fallback");
       setTicketMessage(err instanceof Error ? err.message : "พิมพ์ใบสั่งออเดอร์ไม่สำเร็จ");
@@ -1444,7 +2278,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   }
 
   function handleNewOrder() {
-    setCart(emptyCart(storeId));
+    commitCart(emptyCart(storeId), { resetItemDiscountForms: true });
     setPhase("ordering");
     setReceipt(null);
     setPayError(null);
@@ -1460,17 +2294,16 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setTicketDraft((current) => ({ ...current, ...patch }));
   }
 
-  function handleRefreshBillHistory() {
-    startTransition(async () => {
-      setIsBillHistoryPending(true);
-      const result = await listTodayOrdersAction();
-      if (result.error) {
-        setTicketMessage(`โหลดบิลวันนี้ไม่สำเร็จ: ${result.error}`);
-      } else {
-        setBillHistory(result.orders);
-      }
-      setIsBillHistoryPending(false);
-    });
+  function handleRefreshBillHistory(range = historyRange) {
+    refreshBillHistory(range);
+  }
+
+  function handleHistoryRangeChange(range: BillHistoryRange) {
+    const normalizedRange = normalizeHistoryRange(range, storeTimezone);
+    setHistoryRange(normalizedRange);
+    if (normalizedRange.mode !== "custom") {
+      refreshBillHistory(normalizedRange);
+    }
   }
 
   async function handlePrintHistoryOrder(order: Order) {
@@ -1500,6 +2333,10 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
+        discount: item.discount,
+        discountType: item.discountType,
+        discountValue: item.discountValue,
+        discountNote: item.discountNote,
         note: item.note,
       })),
       subtotal: order.subtotal,
@@ -1515,12 +2352,17 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       showQrPayment: settings.showQrPayment,
       promptpayId: settings.promptpayId,
       paperWidth: settings.paperWidth,
+      printCopies: settings.printCopies,
       printedAt: new Date().toISOString(),
     };
     setPrintStatusMessage(`กำลังพิมพ์ซ้ำ ${order.orderNumber}...`);
     try {
-      await printReceiptAuto(receiptData, receiptData);
-      setPrintStatusMessage(`พิมพ์ซ้ำ ${order.orderNumber} แล้ว`);
+      const result = await printReceiptWithFallback({
+        printers,
+        escpos: receiptData,
+        browser: receiptData,
+      });
+      setPrintStatusMessage(printSuccessMessage(`พิมพ์ซ้ำ ${order.orderNumber} แล้ว`, result, printerLoadError));
     } catch (err) {
       setPrintStatusMessage(err instanceof Error ? err.message : "พิมพ์ซ้ำไม่สำเร็จ");
     }
@@ -1555,34 +2397,37 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         {phase === "ordering" && (
           <CartPanel
             cart={cart}
-            onUpdateQty={(key, qty) => setCart((c) => updateQuantity(c, key, qty))}
-            onRemove={(key) => setCart((c) => removeFromCart(c, key))}
+            onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
+            onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
               setPhase("payment");
               setOrderPanelOpen(true);
             }}
-            onClear={() => {
-              setCart(emptyCart(storeId));
-              setActiveTicketId(null);
-              setTicketMessage("ล้างออร์เดอร์แล้ว");
-            }}
-            savedTickets={savedTickets}
-            activeTicketId={activeTicketId}
-            ticketDraft={ticketDraft}
+            onClear={() => clearCurrentOrder()}
+            onApplyDiscount={handleApplyDiscount}
+            onApplyItemDiscount={handleApplyItemDiscount}
+            onClearItemDiscount={handleClearItemDiscount}
+            itemDiscountResetKey={itemDiscountResetKey}
+            canDiscount={canDiscount}
+            discountMode={discountDraft.mode}
+            discountAmount={discountDraft.amount}
+            discountPercentage={discountDraft.percentage}
+            discountNote={discountDraft.note}
+            onDiscountDraftChange={updateDiscountDraft}
+            discountFormOpen={discountFormOpen}
+            onDiscountFormOpenChange={setDiscountFormOpen}
+            activeTicket={activeTicket}
+            isTicketSyncPending={isTicketSyncPending}
+            savedTicketCount={savedTickets.length}
+            billHistoryCount={billHistory.length}
             ticketMessage={ticketMessage}
             printStatusMessage={printStatusMessage}
-            isTicketSyncPending={isTicketSyncPending}
-            isPrintingTicket={isPrintingTicket}
-            billHistory={billHistory}
-            isBillHistoryPending={isBillHistoryPending}
             onSaveTicket={handleSaveTicket}
-            onPrintTicket={handlePrintTicket}
-            onLoadTicket={handleLoadTicket}
-            onDeleteTicket={handleDeleteTicket}
-            onTicketDraftChange={handleTicketDraftChange}
-            onRefreshBillHistory={handleRefreshBillHistory}
-            onPrintHistoryOrder={handlePrintHistoryOrder}
-            onVoidHistoryOrder={handleVoidHistoryOrder}
+            onOpenTickets={() => setTicketPanelOpen(true)}
+            onOpenBillHistory={() => {
+              setBillHistoryPanelOpen(true);
+              handleRefreshBillHistory();
+            }}
             onClose={onClose}
           />
         )}
@@ -1609,6 +2454,8 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             order={receipt}
             receiptSettings={receiptSettings}
             storeName={storeName}
+            printers={printers}
+            printerLoadError={printerLoadError}
             onNewOrder={handleNewOrder}
           />
         )}
@@ -1668,6 +2515,12 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             )}
           </div>
         </header>
+
+        {printerLoadError && (
+          <div role="status" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
+            โหลดการตั้งค่าเครื่องพิมพ์ไม่สำเร็จ: {printerLoadError} · ระบบจะใช้ช่องทางสำรองเมื่อพิมพ์
+          </div>
+        )}
 
         {/* Category tabs */}
         <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2">
@@ -1752,9 +2605,9 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       <div
         role="dialog"
         aria-label="ออร์เดอร์"
-        aria-modal={orderPanelOpen ? "true" : undefined}
-        aria-hidden={!orderPanelOpen ? true : undefined}
-        inert={!orderPanelOpen ? true : undefined}
+        aria-modal={orderPanelOpen && !utilitySheetOpen ? "true" : undefined}
+        aria-hidden={!orderPanelOpen || utilitySheetOpen ? true : undefined}
+        inert={!orderPanelOpen || utilitySheetOpen ? true : undefined}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOrderPanelOpen(false);
         }}
@@ -1774,35 +2627,37 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         {phase === "ordering" && (
           <CartPanel
             cart={cart}
-            onUpdateQty={(key, qty) => setCart((c) => updateQuantity(c, key, qty))}
-            onRemove={(key) => setCart((c) => removeFromCart(c, key))}
+            onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
+            onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
               setPhase("payment");
               setOrderPanelOpen(true);
             }}
-            onClear={() => {
-              setCart(emptyCart(storeId));
-              setActiveTicketId(null);
-              setTicketDraft(EMPTY_TICKET_DRAFT);
-              setTicketMessage("ล้างออร์เดอร์แล้ว");
-            }}
-            savedTickets={savedTickets}
-            activeTicketId={activeTicketId}
-            ticketDraft={ticketDraft}
+            onClear={() => clearCurrentOrder()}
+            onApplyDiscount={handleApplyDiscount}
+            onApplyItemDiscount={handleApplyItemDiscount}
+            onClearItemDiscount={handleClearItemDiscount}
+            itemDiscountResetKey={itemDiscountResetKey}
+            canDiscount={canDiscount}
+            discountMode={discountDraft.mode}
+            discountAmount={discountDraft.amount}
+            discountPercentage={discountDraft.percentage}
+            discountNote={discountDraft.note}
+            onDiscountDraftChange={updateDiscountDraft}
+            discountFormOpen={discountFormOpen}
+            onDiscountFormOpenChange={setDiscountFormOpen}
+            activeTicket={activeTicket}
+            isTicketSyncPending={isTicketSyncPending}
+            savedTicketCount={savedTickets.length}
+            billHistoryCount={billHistory.length}
             ticketMessage={ticketMessage}
             printStatusMessage={printStatusMessage}
-            isTicketSyncPending={isTicketSyncPending}
-            isPrintingTicket={isPrintingTicket}
-            billHistory={billHistory}
-            isBillHistoryPending={isBillHistoryPending}
             onSaveTicket={handleSaveTicket}
-            onPrintTicket={handlePrintTicket}
-            onLoadTicket={handleLoadTicket}
-            onDeleteTicket={handleDeleteTicket}
-            onTicketDraftChange={handleTicketDraftChange}
-            onRefreshBillHistory={handleRefreshBillHistory}
-            onPrintHistoryOrder={handlePrintHistoryOrder}
-            onVoidHistoryOrder={handleVoidHistoryOrder}
+            onOpenTickets={() => setTicketPanelOpen(true)}
+            onOpenBillHistory={() => {
+              setBillHistoryPanelOpen(true);
+              handleRefreshBillHistory();
+            }}
             onClose={() => setOrderPanelOpen(false)}
           />
         )}
@@ -1829,6 +2684,8 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
             order={receipt}
             receiptSettings={receiptSettings}
             storeName={storeName}
+            printers={printers}
+            printerLoadError={printerLoadError}
             onNewOrder={handleNewOrder}
           />
         )}
@@ -1837,6 +2694,52 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       <aside className="hidden border-l border-gray-200 bg-white lg:flex lg:h-auto lg:w-80 lg:shrink-0 lg:flex-col">
         {renderOrderPanelContent()}
       </aside>
+
+      <PosUtilitySheet
+        open={ticketPanelOpen}
+        title="ระบบตั๋ว"
+        onClose={() => setTicketPanelOpen(false)}
+      >
+        <TicketPanel
+          cart={cart}
+          savedTickets={savedTickets}
+          activeTicketId={activeTicketId}
+          activeTicket={activeTicket}
+          ticketDraft={ticketDraft}
+          ticketMessage={ticketMessage}
+          printStatusMessage={printStatusMessage}
+          isTicketSyncPending={isTicketSyncPending}
+          isPrintingTicket={isPrintingTicket}
+          onSaveTicket={handleSaveTicket}
+          onPrintTicket={handlePrintTicket}
+          onLoadTicket={(ticket) => {
+            const loaded = handleLoadTicket(ticket);
+            if (!loaded) return;
+            setTicketPanelOpen(false);
+            setOrderPanelOpen(true);
+          }}
+          onDeleteTicket={handleDeleteTicket}
+          onTicketDraftChange={handleTicketDraftChange}
+        />
+      </PosUtilitySheet>
+
+      <PosUtilitySheet
+        open={billHistoryPanelOpen}
+        title="ประวัติบิล"
+        onClose={() => setBillHistoryPanelOpen(false)}
+      >
+        <BillHistoryPanel
+          orders={billHistory}
+          isPending={isBillHistoryPending}
+          historyRange={historyRange}
+          storeTimezone={storeTimezone}
+          onHistoryRangeChange={handleHistoryRangeChange}
+          onRefresh={handleRefreshBillHistory}
+          onPrint={handlePrintHistoryOrder}
+          onVoid={handleVoidHistoryOrder}
+          historyMode="sheet"
+        />
+      </PosUtilitySheet>
 
       {/* Picker modal */}
       {picker && (

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("catalog.view")) redirect("/dashboard");
+  if (!resolved.can("catalog.manage")) redirect("/dashboard");
 
   const [
     categoriesResult,

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { isRoleLockedPermission } from "@/modules/auth/permission-resolver";
 import type { MemberWithEmail } from "@/modules/settings/repository";
 import type { PermissionKey, Role } from "@/modules/tenants/types";
 import { ROLE_DEFAULT_PERMISSIONS } from "@/modules/tenants/types";
@@ -23,11 +24,13 @@ const ALL_PERMISSIONS: Array<{ key: PermissionKey; label: string }> = [
   { key: "catalog.view", label: "ดูเมนู" },
   { key: "catalog.manage", label: "แก้ไขเมนู" },
   { key: "cashflow.view", label: "ดูบัญชี" },
+  { key: "cashflow.record", label: "บันทึกรายรับ-จ่าย" },
   { key: "cashflow.manage", label: "แก้ไขบัญชี" },
   { key: "reports.view", label: "ดูรายงาน" },
   { key: "attendance.clock", label: "ลงชื่อเข้า-ออกงาน" },
   { key: "attendance.manage", label: "จัดการการเข้างาน" },
   { key: "settings.view", label: "ดูตั้งค่า" },
+  { key: "settings.manage_printer", label: "ตั้งค่าเครื่องพิมพ์" },
   { key: "settings.manage_store", label: "แก้ไขตั้งค่าร้าน" },
   { key: "users.manage", label: "จัดการทีมงาน" },
   { key: "permissions.manage", label: "จัดการสิทธิ์" },
@@ -164,6 +167,9 @@ export function TeamSettings({
               const isExpanded = expandedId === member.membershipId;
               const effective = getEffectivePermissions(member);
               const busy = loadingId?.startsWith(member.membershipId);
+              const memberVisiblePermissions = visiblePermissions.filter(
+                (permission) => !isRoleLockedPermission(member.role, permission.key),
+              );
 
               return (
                 <div key={member.membershipId} className={busy ? "opacity-60" : ""}>
@@ -223,7 +229,7 @@ export function TeamSettings({
                     <div className="px-4 pb-3 bg-gray-50 border-t border-gray-100">
                       <p className="text-xs text-gray-500 mb-2 pt-2">สิทธิ์ที่มีผล</p>
                       <div className="grid grid-cols-2 gap-1">
-                         {visiblePermissions.map((p) => {
+                        {memberVisiblePermissions.map((p) => {
                           const isGranted = effective.has(p.key);
                           const override = member.overrides.find((o) => o.permissionKey === p.key);
                           const hasOverride = !!override;

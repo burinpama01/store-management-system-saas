@@ -24,9 +24,9 @@ function formatDate(iso: string | null): string {
 }
 
 const TIER_DESC: Record<PaidTier, string> = {
-  starter: "POS, รายรับ-จ่าย, ใบเสร็จ browser",
-  standard: "+ บุฟเฟต์, สต็อก, printer ขั้นสูง",
-  premium: "+ QR ordering, LINE, GPS, commission",
+  starter: "1 สาขา / 3 สมาชิก · Basic POS, catalog, receipt",
+  standard: "3 สาขา / 10 สมาชิก · + buffet, stock, advanced printing, advanced reports",
+  premium: "5 สาขา / 50 สมาชิก · + QR Ordering, LINE Notify, GPS attendance, advanced permissions",
 };
 
 interface PaymentQuoteView {

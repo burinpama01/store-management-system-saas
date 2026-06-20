@@ -9,6 +9,8 @@ import type { Database, Json } from "@/server/integrations/supabase/database.typ
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 type OrderItemRow = Database["public"]["Tables"]["order_items"]["Row"];
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
+const HISTORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DEFAULT_POS_HISTORY_TIME_ZONE = "Asia/Bangkok";
 
 function mapPayment(row: PaymentRow): Payment {
   return {
@@ -37,6 +39,10 @@ function mapOrderItem(row: OrderItemRow): OrderItem {
     quantity: row.quantity,
     unitPrice: row.unit_price,
     totalPrice: row.total_price,
+    discount: row.discount_amount,
+    discountType: row.discount_type ?? undefined,
+    discountValue: row.discount_value ?? undefined,
+    discountNote: row.discount_note ?? undefined,
     note: row.note ?? undefined,
   };
 }
@@ -92,6 +98,10 @@ export async function createOrderWithItems(input: CreateOrderInput) {
     quantity: item.quantity,
     unit_price: item.unitPrice,
     total_price: item.totalPrice,
+    discount_amount: item.discount ?? 0,
+    discount_type: item.discountType ?? null,
+    discount_value: item.discountValue ?? null,
+    discount_note: item.discountNote ?? null,
     note: item.note ?? null,
   })) as unknown as Json;
 
@@ -122,6 +132,12 @@ export interface AddPaymentInput {
   changeAmount?: number;
   reference?: string;
   qrPaymentVerified?: boolean;
+}
+
+export interface ListOrdersHistoryOptions {
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
 }
 
 export async function addPaymentAndClose(orderId: string, storeId: string, processedByUserId: string, input: AddPaymentInput) {
@@ -184,31 +200,102 @@ export async function getOrder(orderId: string) {
   return { data: mapOrder(orderRes.data, items, payments), error: null };
 }
 
-export async function listTodayOrders(storeId: string, storeTimezone = "Asia/Bangkok") {
+function normalizedHistoryDate(value: string | undefined, fallback: string) {
+  return value && HISTORY_DATE_PATTERN.test(value) ? value : fallback;
+}
+
+function safeHistoryTimeZone(timeZone: string | undefined) {
+  const candidate = timeZone || DEFAULT_POS_HISTORY_TIME_ZONE;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(new Date(0));
+    return candidate;
+  } catch {
+    return DEFAULT_POS_HISTORY_TIME_ZONE;
+  }
+}
+
+function parseHistoryDate(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return { year, month, day };
+}
+
+function addHistoryDateDays(dateString: string, days: number) {
+  const { year, month, day } = parseHistoryDate(dateString);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function getTimeZoneOffsetMs(timeZone: string, date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value);
+  const localAsUtc = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"));
+  return localAsUtc - date.getTime();
+}
+
+function localDateStartUtc(dateString: string, timeZone: string) {
+  const { year, month, day } = parseHistoryDate(dateString);
+  const localWallClockUtc = Date.UTC(year, month - 1, day);
+  let utc = new Date(localWallClockUtc);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const offset = getTimeZoneOffsetMs(timeZone, utc);
+    const next = new Date(localWallClockUtc - offset);
+    if (Math.abs(next.getTime() - utc.getTime()) < 1000) return next;
+    utc = next;
+  }
+  return utc;
+}
+
+export function getStoreLocalDateRangeUtc(fromDateInput: string, toDateInput: string, storeTimezone = DEFAULT_POS_HISTORY_TIME_ZONE) {
+  const timeZone = safeHistoryTimeZone(storeTimezone);
+  const today = getStoreLocalDate(timeZone, new Date());
+  const requestedFrom = normalizedHistoryDate(fromDateInput, today);
+  const requestedTo = normalizedHistoryDate(toDateInput, requestedFrom);
+  const fromDate = requestedFrom <= requestedTo ? requestedFrom : requestedTo;
+  const toDate = requestedFrom <= requestedTo ? requestedTo : requestedFrom;
+  const endDate = addHistoryDateDays(toDate, 1);
+  return {
+    startUtc: localDateStartUtc(fromDate, timeZone).toISOString(),
+    endUtc: localDateStartUtc(endDate, timeZone).toISOString(),
+  };
+}
+
+export async function listOrdersHistory(
+  storeId: string,
+  storeTimezone = "Asia/Bangkok",
+  options: ListOrdersHistoryOptions = {},
+) {
   const supabase = await createSupabaseServerClient();
   const now = new Date();
-  const storeToday = getStoreLocalDate(storeTimezone, now);
-  const windowStart = new Date(now);
-  windowStart.setUTCDate(windowStart.getUTCDate() - 1);
-  windowStart.setUTCHours(0, 0, 0, 0);
-  const windowEnd = new Date(now);
-  windowEnd.setUTCDate(windowEnd.getUTCDate() + 1);
-  windowEnd.setUTCHours(23, 59, 59, 999);
+  const today = getStoreLocalDate(storeTimezone, now);
+  const requestedFrom = normalizedHistoryDate(options.fromDate, today);
+  const requestedTo = normalizedHistoryDate(options.toDate, requestedFrom);
+  const fromDate = requestedFrom <= requestedTo ? requestedFrom : requestedTo;
+  const toDate = requestedFrom <= requestedTo ? requestedTo : requestedFrom;
+  const limit = Math.min(Math.max(Math.floor(options.limit ?? 300), 1), 500);
+  const { startUtc, endUtc } = getStoreLocalDateRangeUtc(fromDate, toDate, storeTimezone);
 
   const { data: orders, error } = await supabase
     .from("orders")
     .select("*")
     .eq("store_id", storeId)
-    .gte("created_at", windowStart.toISOString())
-    .lte("created_at", windowEnd.toISOString())
+    .gte("created_at", startUtc)
+    .lt("created_at", endUtc)
     .order("created_at", { ascending: false })
-    .limit(300);
+    .limit(limit);
 
   if (error) return { data: null, error: mapError(error) };
-  const todayOrders = (orders ?? [])
-    .filter((order) => getStoreLocalDate(storeTimezone, new Date(order.created_at)) === storeToday)
-    .slice(0, 100);
-  const orderIds = todayOrders.map((order) => order.id);
+  const historyOrders = orders ?? [];
+  const orderIds = historyOrders.map((order) => order.id);
   if (orderIds.length === 0) return { data: [], error: null };
 
   const [itemsRes, paymentsRes] = await Promise.all([
@@ -235,7 +322,12 @@ export async function listTodayOrders(storeId: string, storeTimezone = "Asia/Ban
   }
 
   return {
-    data: todayOrders.map((order) => mapOrder(order, itemsByOrder.get(order.id) ?? [], paymentsByOrder.get(order.id) ?? [])),
+    data: historyOrders.map((order) => mapOrder(order, itemsByOrder.get(order.id) ?? [], paymentsByOrder.get(order.id) ?? [])),
     error: null,
   };
+}
+
+export async function listTodayOrders(storeId: string, storeTimezone = "Asia/Bangkok") {
+  const today = getStoreLocalDate(storeTimezone, new Date());
+  return listOrdersHistory(storeId, storeTimezone, { fromDate: today, toDate: today, limit: 100 });
 }

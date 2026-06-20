@@ -34,14 +34,22 @@ export interface CartItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  discount?: number;
+  discountType?: DiscountType;
+  discountValue?: number;
+  discountNote?: string;
   note?: string;
 }
+
+export type DiscountType = "amount" | "percentage";
 
 export interface Cart {
   storeId: string;
   items: CartItem[];
   subtotal: number;
   discount: number;
+  discountType?: DiscountType;
+  discountValue?: number;
   discountNote?: string;
   total: number;
 }
@@ -99,6 +107,10 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  discount?: number;
+  discountType?: DiscountType;
+  discountValue?: number;
+  discountNote?: string;
   note?: string;
 }
 

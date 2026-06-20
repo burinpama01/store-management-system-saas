@@ -1,4 +1,4 @@
-import type { Cart, CartItem, CartItemKey, SelectedModifier } from "./types";
+import type { Cart, CartItem, CartItemKey, DiscountType, SelectedModifier } from "./types";
 import { buildCartItemKey } from "./types";
 import type { Product, ProductVariant, ModifierOption } from "@/modules/catalog/types";
 
@@ -7,6 +7,18 @@ export interface AddToCartInput {
   variant: ProductVariant | null;
   modifiers: { groupId: string; groupName: string; option: ModifierOption }[];
   quantity?: number;
+  note?: string;
+}
+
+export interface ApplyOrderDiscountInput {
+  type: DiscountType;
+  value: number;
+  note?: string;
+}
+
+export interface ApplyItemDiscountInput {
+  type: DiscountType;
+  value: number;
   note?: string;
 }
 
@@ -22,16 +34,97 @@ function computeModifierPrice(modifiers: SelectedModifier[]): number {
   return modifiers.reduce((sum, m) => sum + m.option.priceAdjustment, 0);
 }
 
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function normalizeDiscountType(type: DiscountType | undefined): DiscountType {
+  return type === "percentage" ? "percentage" : "amount";
+}
+
+function normalizeDiscountNote(note: string | undefined): string | undefined {
+  return note?.trim().replace(/\s+/g, " ") || undefined;
+}
+
+function normalizeDiscountValue(type: DiscountType, value: number, subtotal: number): number {
+  const rawValue = Number.isFinite(value) ? value : 0;
+  const cappedValue =
+    type === "percentage"
+      ? Math.min(Math.max(0, rawValue), 100)
+      : Math.min(Math.max(0, rawValue), subtotal);
+  return roundMoney(cappedValue);
+}
+
+function computeDiscountAmount(type: DiscountType, value: number, subtotal: number): number {
+  if (type === "percentage") {
+    return roundMoney(Math.min(subtotal, subtotal * (value / 100)));
+  }
+  return roundMoney(Math.min(value, subtotal));
+}
+
+function recalcItemTotal(item: CartItem): CartItem {
+  const lineSubtotal = roundMoney(item.unitPrice * item.quantity);
+  const discountType = normalizeDiscountType(item.discountType);
+  const rawDiscountValue =
+    item.discountType && typeof item.discountValue === "number"
+      ? item.discountValue
+      : (item.discount ?? 0);
+  const discountValue = normalizeDiscountValue(discountType, rawDiscountValue, lineSubtotal);
+  const discount = computeDiscountAmount(discountType, discountValue, lineSubtotal);
+
+  if (discount <= 0) {
+    const cleanItem = { ...item };
+    delete cleanItem.discount;
+    delete cleanItem.discountType;
+    delete cleanItem.discountValue;
+    delete cleanItem.discountNote;
+    return {
+      ...cleanItem,
+      totalPrice: lineSubtotal,
+    };
+  }
+
+  return {
+    ...item,
+    totalPrice: roundMoney(lineSubtotal - discount),
+    discount,
+    discountType,
+    discountValue,
+    discountNote: normalizeDiscountNote(item.discountNote),
+  };
+}
+
 function recalcTotals(cart: Cart): Cart {
-  const subtotal = cart.items.reduce((s, i) => s + i.totalPrice, 0);
-  const rawDiscount = Number.isFinite(cart.discount) ? cart.discount : 0;
-  const discount = Math.min(Math.max(0, rawDiscount), subtotal);
-  const total = subtotal - discount;
+  const items = cart.items.map(recalcItemTotal);
+  const subtotal = roundMoney(items.reduce((s, i) => s + i.totalPrice, 0));
+  const discountType = normalizeDiscountType(cart.discountType);
+  const rawDiscountValue =
+    cart.discountType && typeof cart.discountValue === "number" ? cart.discountValue : cart.discount;
+  const discountValue = normalizeDiscountValue(discountType, rawDiscountValue, subtotal);
+  const discount = computeDiscountAmount(discountType, discountValue, subtotal);
+  const total = roundMoney(subtotal - discount);
+
+  if (discount <= 0) {
+    return {
+      ...cart,
+      items,
+      subtotal,
+      discount: 0,
+      discountType: undefined,
+      discountValue: undefined,
+      discountNote: undefined,
+      total,
+    };
+  }
+
   return {
     ...cart,
+    items,
     subtotal,
     discount,
-    discountNote: discount > 0 ? cart.discountNote : undefined,
+    discountType,
+    discountValue,
+    discountNote: normalizeDiscountNote(cart.discountNote),
     total,
   };
 }
@@ -60,7 +153,7 @@ export function addToCart(cart: Cart, input: AddToCartInput): Cart {
   if (existing) {
     const newQty = existing.quantity + qty;
     items = cart.items.map((i) =>
-      i.key === key ? { ...i, quantity: newQty, totalPrice: i.unitPrice * newQty } : i,
+      i.key === key ? { ...i, quantity: newQty } : i,
     );
   } else {
     const newItem: CartItem = {
@@ -89,9 +182,7 @@ export function addToCart(cart: Cart, input: AddToCartInput): Cart {
 
 export function updateQuantity(cart: Cart, key: string, quantity: number): Cart {
   if (quantity <= 0) return removeFromCart(cart, key);
-  const items = cart.items.map((i) =>
-    i.key === key ? { ...i, quantity, totalPrice: i.unitPrice * quantity } : i,
-  );
+  const items = cart.items.map((i) => (i.key === key ? { ...i, quantity } : i));
   return recalcTotals({ ...cart, items });
 }
 
@@ -100,7 +191,53 @@ export function removeFromCart(cart: Cart, key: string): Cart {
 }
 
 export function applyDiscount(cart: Cart, amount: number, note?: string): Cart {
-  return recalcTotals({ ...cart, discount: amount, discountNote: note });
+  return applyOrderDiscount(cart, { type: "amount", value: amount, note });
+}
+
+export function applyOrderDiscount(cart: Cart, input: ApplyOrderDiscountInput): Cart {
+  return recalcTotals({
+    ...cart,
+    discount: input.value,
+    discountType: input.type,
+    discountValue: input.value,
+    discountNote: input.note,
+  });
+}
+
+export function applyItemDiscount(
+  cart: Cart,
+  key: string,
+  input: ApplyItemDiscountInput,
+): Cart {
+  return recalcTotals({
+    ...cart,
+    items: cart.items.map((item) =>
+      item.key === key
+        ? {
+            ...item,
+            discount: input.value,
+            discountType: input.type,
+            discountValue: input.value,
+            discountNote: input.note,
+          }
+        : item,
+    ),
+  });
+}
+
+export function removeItemDiscount(cart: Cart, key: string): Cart {
+  return recalcTotals({
+    ...cart,
+    items: cart.items.map((item) => {
+      if (item.key !== key) return item;
+      const cleanItem = { ...item };
+      delete cleanItem.discount;
+      delete cleanItem.discountType;
+      delete cleanItem.discountValue;
+      delete cleanItem.discountNote;
+      return cleanItem;
+    }),
+  });
 }
 
 export function clearCart(cart: Cart): Cart {

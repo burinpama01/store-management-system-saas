@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { listCategories, listProducts } from "@/modules/catalog/repository";
-import { getReceiptSettings, getStore } from "@/modules/stores/repository";
+import { getReceiptSettings, getStore, listPrinters } from "@/modules/stores/repository";
 import { getOpenCashSession, getCashSalesSince } from "@/modules/cashflow/repository";
 import { buildThemeStyle } from "@/modules/theme/presets";
 import { PosTerminal } from "./PosTerminal";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 function firstHomeRoute(can: (p: PermissionKey) => boolean): string | null {
   const routes: Array<[PermissionKey, string]> = [
     ["dashboard.view", "/dashboard"],
-    ["catalog.view", "/catalog"],
+    ["catalog.manage", "/catalog"],
     ["cashflow.view", "/accounting"],
     ["reports.view", "/reports"],
     ["attendance.clock", "/attendance"],
@@ -28,13 +28,14 @@ export default async function PosPage() {
     redirect(firstHomeRoute(resolved.can) ?? "/dashboard");
   }
 
-  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult] =
+  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult, printersResult] =
     await Promise.all([
       listCategories(ctx.storeId),
       listProducts(ctx.storeId, { includeInactive: false }),
       getReceiptSettings(ctx.storeId),
       getStore(ctx.storeId),
       getOpenCashSession(ctx.storeId),
+      listPrinters(ctx.storeId, ctx.organizationId),
     ]);
 
   const cashSession = cashSessionResult.data ?? null;
@@ -61,6 +62,10 @@ export default async function PosPage() {
         cashSession={cashSession}
         cashSalesPreview={cashSalesPreview}
         currency={storeResult.data?.currencyCode ?? "THB"}
+        canDiscount={resolved.can("pos.discount")}
+        storeTimezone={ctx.storeTimezone}
+        printers={printersResult.data ?? []}
+        printerLoadError={printersResult.error?.userMessage ?? null}
       />
     </div>
   );

@@ -84,6 +84,8 @@ describe("UX/UI regression guards", () => {
 
     expect(source).toContain("firstAllowedRoute");
     expect(source).toContain('{ permission: "pos.use", href: "/pos" }');
+    expect(source).toContain('{ permission: "catalog.manage", href: "/catalog" }');
+    expect(source).not.toContain('{ permission: "catalog.view", href: "/catalog" }');
     expect(source).not.toContain('if (!resolved.can("dashboard.view")) redirect("/")');
   });
 
@@ -374,6 +376,8 @@ describe("UX/UI regression guards", () => {
       stock: read("src/app/(dashboard)/stock/page.tsx"),
       pos: read("src/app/pos/page.tsx"),
       accounting: read("src/app/(dashboard)/accounting/page.tsx"),
+      accountingActions: read("src/app/(dashboard)/accounting/actions.ts"),
+      accountingManager: read("src/app/(dashboard)/accounting/AccountingManager.tsx"),
       reports: read("src/app/(dashboard)/reports/page.tsx"),
       attendance: read("src/app/(dashboard)/attendance/page.tsx"),
       buffet: read("src/app/(dashboard)/buffet/page.tsx"),
@@ -386,7 +390,7 @@ describe("UX/UI regression guards", () => {
 
     const navPermissions = [
       'can("dashboard.view")',
-      'can("catalog.view")',
+      'can("catalog.manage")',
       'can("stock.manage")',
       'can("pos.use")',
       'can("cashflow.view")',
@@ -400,22 +404,28 @@ describe("UX/UI regression guards", () => {
     }
 
     expect(pages.dashboard).toContain('resolved.can("dashboard.view")');
-    expect(pages.catalog).toContain('resolved.can("catalog.view")');
+    expect(pages.catalog).toContain('resolved.can("catalog.manage")');
     expect(pages.stock).toContain('requirePermission("stock.manage")');
     expect(pages.pos).toContain('resolved.can("pos.use")');
     expect(pages.accounting).toContain('resolved.can("cashflow.view")');
+    expect(pages.accounting).toContain('resolved.can("cashflow.record")');
+    expect(pages.accountingActions).toContain('requirePermission("cashflow.record")');
+    expect(pages.accountingActions).toContain('requirePermission("cashflow.manage")');
+    expect(pages.accountingActions).toContain('type === "cash_adjustment" && !canManageCashflow');
+    expect(pages.accountingManager).toContain('{canManage && <option value="cash_adjustment">ปรับเงินสด</option>}');
     expect(pages.reports).toContain('resolved.can("reports.view")');
     expect(pages.attendance).toContain('resolved.can("attendance.clock")');
     expect(pages.buffet).toContain('resolved.can("orders.manage_qr")');
     expect(pages.buffet).toContain("buffet_enabled");
     expect(pages.storeSettings).toContain('resolved.can("settings.view")');
     expect(pages.receiptSettings).toContain('resolved.can("settings.view")');
+    expect(pages.receiptSettings).toContain('resolved.can("settings.manage_printer")');
     expect(pages.teamSettings).toContain('resolved.can("settings.view")');
     expect(pages.diagnostics).toContain('resolved.can("settings.view")');
     expect(pages.notifications).toContain('resolved.can("settings.view")');
 
     for (const [name, source] of Object.entries(pages)) {
-      if (name === "stock") continue;
+      if (name === "stock" || name === "accountingManager") continue;
       expect(source, name).toContain("getResolvedCurrentPermissions");
       expect(source, name).not.toContain("resolvePermissions(ctx.role, [],");
     }
@@ -574,7 +584,7 @@ describe("UX/UI regression guards", () => {
     const layout = read("src/app/(dashboard)/layout.tsx");
 
     expect(layout).toContain("getResolvedCurrentPermissions");
-    expect(layout).toContain('can("catalog.view")');
+    expect(layout).toContain('can("catalog.manage")');
     expect(layout).toContain('can("stock.manage")');
     expect(layout).toContain('can("pos.use")');
     expect(layout).toContain('can("settings.view")');
@@ -588,9 +598,11 @@ describe("UX/UI regression guards", () => {
     const receipt = read("src/app/(dashboard)/settings/receipt/page.tsx");
     const buffet = read("src/app/(dashboard)/settings/buffet/page.tsx");
     const notifications = read("src/app/(dashboard)/settings/notifications/page.tsx");
+    const teamSettings = read("src/app/(dashboard)/settings/team/TeamSettings.tsx");
 
     expect(layout).toContain("buildSettingsTabs");
     expect(layout).toContain('resolved.can("settings.manage_store")');
+    expect(layout).toContain('resolved.can("settings.manage_printer")');
     expect(layout).toContain('resolved.can("billing.manage")');
     expect(layout).toContain('resolved.can("notifications.manage")');
     expect(layout).toContain('resolved.can("users.manage")');
@@ -599,9 +611,11 @@ describe("UX/UI regression guards", () => {
     expect(nav).not.toContain("const TABS = [");
     expect(team).toContain('!resolved.can("users.manage") && !resolved.can("permissions.manage")');
     expect(tables).toContain('!resolved.can("settings.manage_store")');
-    expect(receipt).toContain('!resolved.can("settings.manage_store")');
+    expect(receipt).toContain('!resolved.can("settings.manage_store") && !resolved.can("settings.manage_printer")');
     expect(buffet).toContain('!resolved.can("settings.manage_store")');
     expect(notifications).toContain('!resolved.can("notifications.manage")');
+    expect(teamSettings).toContain('"cashflow.record"');
+    expect(teamSettings).toContain('"settings.manage_printer"');
   });
 
   it("lower-than-admin users land on attendance before other functions when clock-in is due", () => {
@@ -689,6 +703,12 @@ describe("UX/UI regression guards", () => {
 
     expect(shell).toContain("MarketingHeader");
     expect(shell).toContain("marketing-glass");
+    const marketingHeaderBlock =
+      Array.from(css.matchAll(/\.marketing-header \{[^}]*\}/g))
+        .map((match) => match[0])
+        .find((block) => block.includes("z-index: 30;")) ?? "";
+    expect(marketingHeaderBlock).toContain("width: 100%;");
+    expect(marketingHeaderBlock).toContain("margin: 0 0 1.45rem;");
     expect(showcase).toContain('aria-hidden="true"');
     expect(showcase).not.toContain("<picture");
     expect(showcase).not.toContain("storeos-hero-bg");

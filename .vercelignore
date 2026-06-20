@@ -5,3 +5,6 @@
 .next-dev-*.log
 *.stdout.log
 *.stderr.log
+.codex*.log
+.playwright-cli/
+.preview-dev.log

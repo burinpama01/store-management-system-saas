@@ -28,8 +28,11 @@ export default async function AccountingPage({
   const isValidDate = (s: string) => DATE_RE.test(s) && !isNaN(Date.parse(s));
   const dateFrom = isValidDate(params.dateFrom ?? "") ? params.dateFrom : monthStart;
   const dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo : today;
-  const VALID_TYPES = ["all", "income", "expense", "cash_adjustment"];
-  const typeFilter = VALID_TYPES.includes(params.type ?? "") ? params.type : "all";
+  const canManageCashflow = resolved.can("cashflow.manage");
+  const validTypes = canManageCashflow
+    ? ["all", "income", "expense", "cash_adjustment"]
+    : ["all", "income", "expense"];
+  const typeFilter = validTypes.includes(params.type ?? "") ? params.type : "all";
   const page = Math.max(1, parseInt(params.page ?? "1") || 1);
 
   const [txRes, catsRes, summary, cashBalance, cashSessionsRes, storeRes] = await Promise.all([
@@ -53,7 +56,8 @@ export default async function AccountingPage({
     <>
       <AccountingManager
         storeId={ctx.storeId}
-        canManage={resolved.can("cashflow.manage")}
+        canManage={canManageCashflow}
+        canRecord={resolved.can("cashflow.record")}
         initialTransactions={txRes.data ?? []}
         totalCount={txRes.count}
         categories={catsRes.data ?? []}

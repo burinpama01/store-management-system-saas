@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { requirePermission } from "@/modules/auth/guards";
 import { listProducts } from "@/modules/catalog/repository";
-import { createOrderWithItems, addPaymentAndClose, listTodayOrders, voidOrder } from "@/modules/pos/order-repository";
+import { createOrderWithItems, addPaymentAndClose, listOrdersHistory, listTodayOrders, voidOrder } from "@/modules/pos/order-repository";
 import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
+import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
@@ -47,7 +48,7 @@ export async function saveSavedTicketAction(ticket: SavedOrderTicket): Promise<{
       return { ticket: null, error: "ไม่มีรายการในตั๋ว" };
     }
 
-    const canDiscount = ticket.cart.discount <= 0 || await requirePermission("pos.discount").then(() => true).catch(() => false);
+    const canDiscount = !cartRequestsDiscount(ticket.cart) || await requirePermission("pos.discount").then(() => true).catch(() => false);
     const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
     if (productsRes.error || !productsRes.data) {
       return { ticket: null, error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };
@@ -123,6 +124,22 @@ export async function listTodayOrdersAction(): Promise<{ orders: Order[]; error:
   }
 }
 
+export async function listOrdersHistoryAction(input?: {
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+}): Promise<{ orders: Order[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    const result = await listOrdersHistory(ctx.storeId, ctx.storeTimezone, input);
+    if (result.error) return { orders: [], error: result.error.userMessage };
+    return { orders: result.data ?? [], error: null };
+  } catch (e) {
+    return { orders: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
 export async function submitOrderAction(
   cart: Cart,
   opts?: { tableId?: string; tableNumber?: string; note?: string },
@@ -132,7 +149,7 @@ export async function submitOrderAction(
     const { user, ctx } = await getStoreContext();
 
     if (cart.items.length === 0) return { orderId: null, orderNumber: null, error: "ไม่มีรายการในออร์เดอร์" };
-    const canDiscount = cart.discount <= 0 || await requirePermission("pos.discount").then(() => true).catch(() => false);
+    const canDiscount = !cartRequestsDiscount(cart) || await requirePermission("pos.discount").then(() => true).catch(() => false);
     const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
     if (productsRes.error || !productsRes.data) {
       return { orderId: null, orderNumber: null, error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };

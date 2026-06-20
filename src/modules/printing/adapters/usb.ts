@@ -1,6 +1,6 @@
 import type { PrintAdapter, ReceiptData } from "../types";
 import type { Printer } from "@/modules/stores/types";
-import { buildEscPosReceipt } from "../escpos";
+import { buildReceiptPrinterBytes } from "../receipt-printer-bytes";
 
 declare global {
   interface Navigator {
@@ -86,11 +86,7 @@ export const usbAdapter: PrintAdapter = {
 
     try {
       await device.claimInterface(ep.interfaceNum);
-      const bytes = buildEscPosReceipt({
-        ...data,
-        items: data.items,
-        payments: data.payments,
-      });
+      const bytes = buildReceiptPrinterBytes(data, data);
       await device.transferOut(ep.endpointNum, bytes.buffer as ArrayBuffer);
     } finally {
       await device.releaseInterface(ep.interfaceNum).catch(() => undefined);

@@ -1,5 +1,6 @@
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import type { Order } from "@/modules/pos/types";
+import type { DiscountType } from "@/modules/pos/types";
 
 export type { Printer, ReceiptSettings };
 
@@ -10,6 +11,10 @@ export interface ReceiptLineItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  discount?: number;
+  discountType?: DiscountType;
+  discountValue?: number;
+  discountNote?: string;
   note?: string;
 }
 
@@ -39,7 +44,13 @@ export interface ReceiptData {
   promptpayId?: string;
   headerText?: string;
   paperWidth: "58mm" | "80mm";
+  printCopies?: number;
   printedAt: string;
+}
+
+export function normalizePrintCopies(printCopies?: number): number {
+  if (!Number.isFinite(printCopies)) return 1;
+  return Math.min(5, Math.max(1, Math.floor(printCopies ?? 1)));
 }
 
 export interface PrintAdapter {
@@ -67,6 +78,10 @@ export function buildReceiptData(
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
+      discount: item.discount,
+      discountType: item.discountType,
+      discountValue: item.discountValue,
+      discountNote: item.discountNote,
       note: item.note,
     })),
     subtotal: order.subtotal,
@@ -84,6 +99,7 @@ export function buildReceiptData(
     promptpayId: settings.promptpayId,
     headerText: settings.headerText,
     paperWidth: settings.paperWidth,
+    printCopies: normalizePrintCopies(settings.printCopies),
     printedAt: new Date().toISOString(),
   };
 }

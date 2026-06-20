@@ -320,6 +320,19 @@ export async function getPrinter(printerId: string, storeId: string, organizatio
   return { data: data ? mapPrinter(data) : null, error: null };
 }
 
+export async function listPrinters(storeId: string, organizationId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("printers")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true });
+  if (error) return { data: [], error: mapError(error) };
+  return { data: (data ?? []).map(mapPrinter), error: null };
+}
+
 export async function updateTableStatus(
   tableId: string,
   status: Table["status"],

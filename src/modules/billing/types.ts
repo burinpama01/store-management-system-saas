@@ -69,7 +69,7 @@ export const PLAN_LABELS: Record<BillingPlan, string> = {
 const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   free: {
     maxStores: 1,
-    maxMembers: 3,
+    maxMembers: 1,
     buffetManagement: false,
     stockManagement: false,
     advancedPrinting: false,
@@ -83,7 +83,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   },
   starter: {
     maxStores: 1,
-    maxMembers: 10,
+    maxMembers: 3,
     buffetManagement: false,
     stockManagement: false,
     advancedPrinting: false,
@@ -97,7 +97,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   },
   standard: {
     maxStores: 3,
-    maxMembers: 30,
+    maxMembers: 10,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
@@ -110,8 +110,8 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
     apiIntegration: false,
   },
   premium: {
-    maxStores: 10,
-    maxMembers: 100,
+    maxStores: 5,
+    maxMembers: 50,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Package Feature Matrix Audit v1</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8deea;
+      --ok: #137a4b;
+      --warn: #b25e09;
+      --bad: #b42318;
+      --brand: #2457d6;
+      --soft-ok: #e7f6ee;
+      --soft-warn: #fff3df;
+      --soft-bad: #fff0ed;
+      --soft-brand: #edf3ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Tahoma, sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+    header {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 30px; letter-spacing: 0; }
+    h2 { font-size: 20px; margin-bottom: 12px; }
+    h3 { font-size: 16px; margin-bottom: 8px; }
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0 24px;
+    }
+    .card, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card strong { display: block; font-size: 24px; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 920px;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #eef2f8;
+      color: #23304a;
+      position: sticky;
+      top: 0;
+    }
+    tr:last-child td { border-bottom: 0; }
+    code {
+      background: #eef2f8;
+      border-radius: 5px;
+      padding: 2px 5px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-ok { background: var(--soft-ok); color: var(--ok); }
+    .badge-warn { background: var(--soft-warn); color: var(--warn); }
+    .badge-bad { background: var(--soft-bad); color: var(--bad); }
+    .badge-info { background: var(--soft-brand); color: var(--brand); }
+    .stack { display: grid; gap: 16px; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+    li { margin: 4px 0; }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+      main { padding: 24px 12px 40px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Package Feature Matrix Audit v1</h1>
+      <p class="meta">วันที่ตรวจ: 2026-06-16 · โปรเจกต์: Store Management SaaS · Source of truth: <code>src/modules/billing/types.ts</code></p>
+      <p>เอกสารนี้เทียบแพ็กเกจและสิทธิ์ตาม matrix กับ code จริงปัจจุบัน โดยแยกสถานะว่า enforce แล้ว, partial, หรือยังเป็นแค่ matrix.</p>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <span class="meta">Feature keys ทั้งหมด</span>
+        <strong>12</strong>
+        <p>รวม numeric limits และ boolean feature gates</p>
+      </div>
+      <div class="card">
+        <span class="meta">ใช้/enforce ใน code แล้ว</span>
+        <strong class="ok">5</strong>
+        <p><code>buffetManagement</code>, <code>stockManagement</code>, <code>qrOrdering</code>, <code>lineNotify</code>, <code>attendanceGps</code></p>
+      </div>
+      <div class="card">
+        <span class="meta">ยังไม่ถูกใช้จริง</span>
+        <strong class="bad">7</strong>
+        <p><code>maxStores</code>, <code>maxMembers</code>, <code>advancedPrinting</code>, <code>advancedReports</code>, <code>advancedPermissions</code>, <code>multiBranchReporting</code>, <code>apiIntegration</code></p>
+      </div>
+    </div>
+
+    <section class="stack">
+      <h2>1. Matrix จาก code ปัจจุบัน</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Free</th>
+              <th>Starter</th>
+              <th>Standard</th>
+              <th>Premium</th>
+              <th>Enterprise</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>maxStores</code></td><td>1</td><td>1</td><td>3</td><td>5</td><td>Infinity</td></tr>
+            <tr><td><code>maxMembers</code></td><td>1</td><td>3</td><td>10</td><td>50</td><td>Infinity</td></tr>
+            <tr><td><code>buffetManagement</code></td><td>false</td><td>false</td><td>true</td><td>true</td><td>true</td></tr>
+            <tr><td><code>stockManagement</code></td><td>false</td><td>false</td><td>true</td><td>true</td><td>true</td></tr>
+            <tr><td><code>advancedPrinting</code></td><td>false</td><td>false</td><td>true</td><td>true</td><td>true</td></tr>
+            <tr><td><code>qrOrdering</code></td><td>false</td><td>false</td><td>false</td><td>true</td><td>true</td></tr>
+            <tr><td><code>lineNotify</code></td><td>false</td><td>false</td><td>false</td><td>true</td><td>true</td></tr>
+            <tr><td><code>attendanceGps</code></td><td>false</td><td>false</td><td>false</td><td>true</td><td>true</td></tr>
+            <tr><td><code>advancedReports</code></td><td>false</td><td>false</td><td>true</td><td>true</td><td>true</td></tr>
+            <tr><td><code>advancedPermissions</code></td><td>false</td><td>false</td><td>false</td><td>true</td><td>true</td></tr>
+            <tr><td><code>multiBranchReporting</code></td><td>false</td><td>false</td><td>false</td><td>false</td><td>true</td></tr>
+            <tr><td><code>apiIntegration</code></td><td>false</td><td>false</td><td>false</td><td>false</td><td>true</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="stack">
+      <h2>2. Matrix เทียบกับ code จริง</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>สถานะปัจจุบัน</th>
+              <th>หลักฐานใน code</th>
+              <th>Gap / สิ่งที่ยังขาด</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>maxStores</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>มีใน <code>billing/types.ts</code> และ test limit เท่านั้น</td>
+              <td>ยังไม่เจอ enforcement ตอนสร้าง store หรือเปิดใช้ multi-store</td>
+            </tr>
+            <tr>
+              <td><code>maxMembers</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>มีใน <code>billing/types.ts</code> และ test limit เท่านั้น</td>
+              <td>ยังไม่เจอ enforcement ตอนเชิญ/สร้างสมาชิกทีม</td>
+            </tr>
+            <tr>
+              <td><code>buffetManagement</code></td>
+              <td><span class="badge badge-warn">partial</span></td>
+              <td><code>settings/buffet/page.tsx</code>, <code>settings/store/actions.ts</code>, <code>settings/store/page.tsx</code></td>
+              <td>มี gate หน้า settings และ store toggle แล้ว แต่ยังไม่มี test เฉพาะ buffet package gate</td>
+            </tr>
+            <tr>
+              <td><code>stockManagement</code></td>
+              <td><span class="badge badge-warn">partial</span></td>
+              <td><code>stock/page.tsx</code>, <code>catalog/page.tsx</code></td>
+              <td>หน้า stock ถูก gate แล้ว แต่ต้องเช็ก server actions stock/catelog ว่ากันการเขียนครบหรือไม่</td>
+            </tr>
+            <tr>
+              <td><code>advancedPrinting</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>module printing และ API print มีอยู่ แต่ไม่เจอ usage ของ key นี้</td>
+              <td>ต้อง gate Bluetooth/USB/IP/advanced adapter, print test, settings UI และ API route</td>
+            </tr>
+            <tr>
+              <td><code>qrOrdering</code></td>
+              <td><span class="badge badge-ok">enforced</span></td>
+              <td><code>qr/[storeSlug]/[tableId]/page.tsx</code>, <code>actions.ts</code>, <code>settings/store/actions.ts</code>, <code>catalog/page.tsx</code></td>
+              <td>coverage ดีสุดในกลุ่ม package gate; เหลือเช็ก edge case runtime/QA</td>
+            </tr>
+            <tr>
+              <td><code>lineNotify</code></td>
+              <td><span class="badge badge-ok">enforced</span></td>
+              <td><code>settings/notifications/actions.ts</code>, <code>settings/diagnostics/actions.ts</code>, <code>api/notify/route.ts</code>, dispatcher</td>
+              <td>gate server มีแล้ว; ต้องคง provider/env readiness แยกจาก package gate</td>
+            </tr>
+            <tr>
+              <td><code>attendanceGps</code></td>
+              <td><span class="badge badge-warn">partial</span></td>
+              <td><code>attendance/page.tsx</code>, <code>attendance/actions.ts</code></td>
+              <td>GPS ถูกปิดเมื่อแพ็กเกจไม่ถึง แต่ attendance basic ยังใช้งานได้; ควรมี test package gate เฉพาะ GPS</td>
+            </tr>
+            <tr>
+              <td><code>advancedReports</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>reports module/page มีอยู่ แต่ไม่เจอ usage ของ key นี้</td>
+              <td>ต้องแยก basic report กับ advanced report แล้ว gate UI/query/export</td>
+            </tr>
+            <tr>
+              <td><code>advancedPermissions</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>permission resolver/team settings มีอยู่ แต่ไม่เจอ usage ของ key นี้</td>
+              <td>ต้องนิยามว่า advanced permissions คือ permission override, custom roles, หรือ owner-only feature แล้ว enforce</td>
+            </tr>
+            <tr>
+              <td><code>multiBranchReporting</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>reports/store surfaces มีอยู่ แต่ไม่เจอ usage ของ key นี้</td>
+              <td>ต้อง gate cross-store aggregation, branch selector, export/report รวมหลายสาขา</td>
+            </tr>
+            <tr>
+              <td><code>apiIntegration</code></td>
+              <td><span class="badge badge-bad">matrix-only</span></td>
+              <td>มี <code>src/app/api</code> หลาย route แต่ไม่เจอ usage ของ key นี้</td>
+              <td>ต้องแยก public/integration API จาก internal API และ gate token/API access สำหรับ Enterprise</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="stack">
+      <h2>3. Pricing copy / plan settings</h2>
+      <ul>
+        <li><code>plan_settings.feature_lines</code> มี seed สำหรับ Starter, Standard, Premium, Enterprise และแก้ผ่าน <code>/system/pricing</code> ได้</li>
+        <li>Premium copy ถูกปรับให้ตรงกับ matrix ปัจจุบัน: QR Ordering, LINE Notify, GPS attendance, และ advanced permissions</li>
+        <li>ข้อความบนหน้า pricing เป็น copy/marketing ไม่ใช่ security boundary; enforcement ต้องอยู่ใน server action/API/repository</li>
+      </ul>
+    </section>
+
+    <section class="stack">
+      <h2>4. Priority ที่ควรแก้ก่อน</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>งาน</th>
+              <th>เหตุผล</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>P0</td>
+              <td>enforce <code>maxStores</code> และ <code>maxMembers</code></td>
+              <td>เป็น hard limit ของแพ็กเกจ ถ้าไม่ enforce จะขาย package limit ไม่ได้จริง</td>
+            </tr>
+            <tr>
+              <td>P0</td>
+              <td>enforce <code>advancedPrinting</code></td>
+              <td>Standard ขึ้นไปถึงควรใช้ advanced printer; ตอนนี้ adapter/API มีแต่ key ไม่ถูกใช้</td>
+            </tr>
+            <tr>
+              <td>P1</td>
+              <td>แยก basic/advanced reports แล้ว enforce <code>advancedReports</code></td>
+              <td>Standard มีสิทธินี้ แต่ reports ปัจจุบันยังไม่แยกชั้น feature</td>
+            </tr>
+            <tr>
+              <td>P1</td>
+              <td>นิยามและ enforce <code>advancedPermissions</code></td>
+              <td>Premium ขึ้นไปมีสิทธิ์นี้ แต่ permission system ปัจจุบันยังไม่ผูกกับ package</td>
+            </tr>
+            <tr>
+              <td>P2</td>
+              <td>ออกแบบ Enterprise gates: <code>multiBranchReporting</code>, <code>apiIntegration</code></td>
+              <td>เป็นฟีเจอร์ Enterprise-only และยังไม่มี usage จริง</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

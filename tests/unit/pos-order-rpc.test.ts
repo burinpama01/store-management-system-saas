@@ -40,4 +40,33 @@ describe("POS order creation RPC", () => {
     expect(migration).toContain("insert into order_items");
     expect(migration).toContain("revoke execute on function create_pos_order_with_items");
   });
+
+  it("persists item-level discount metadata and validates discounted line totals", () => {
+    const repo = read("src/modules/pos/order-repository.ts");
+    const migration = read("supabase/migrations/20260618000001_pos_item_discounts.sql");
+
+    expect(repo).toContain("discount_amount: item.discount ?? 0");
+    expect(repo).toContain("discount_type: item.discountType ?? null");
+    expect(repo).toContain("discount_value: item.discountValue ?? null");
+    expect(repo).toContain("discount_note: item.discountNote ?? null");
+    expect(repo).toContain("discount: row.discount_amount");
+    expect(repo).toContain("discountType: row.discount_type ?? undefined");
+    expect(repo).toContain("discountValue: row.discount_value ?? undefined");
+    expect(repo).toContain("discountNote: row.discount_note ?? undefined");
+
+    expect(migration).toContain("alter table order_items");
+    expect(migration).toContain("discount_amount numeric(12,2) not null default 0");
+    expect(migration).toContain("discount_type text");
+    expect(migration).toContain("discount_value numeric(12,2)");
+    expect(migration).toContain("discount_note text");
+    expect(migration).toContain("discount_amount numeric");
+    expect(migration).toContain("discount_type text");
+    expect(migration).toContain("discount_value numeric");
+    expect(migration).toContain("discount_note text");
+    expect(migration).toContain("round(item.total_price, 2) = round(item.unit_price * item.quantity - coalesce(item.discount_amount, 0), 2)");
+    expect(migration).toContain("discount_amount,");
+    expect(migration).toContain("discount_type,");
+    expect(migration).toContain("discount_value,");
+    expect(migration).toContain("discount_note");
+  });
 });

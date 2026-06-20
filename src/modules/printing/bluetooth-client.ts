@@ -15,6 +15,7 @@ interface BTServer {
   getPrimaryServices(): Promise<BTService[]>;
 }
 interface BTDevice {
+  id?: string;
   name?: string;
   gatt?: BTServer;
 }
@@ -35,13 +36,28 @@ const PRINTER_SERVICES = [
 ];
 
 const NAME_KEY = "bt_printer_name";
+const ID_KEY = "bt_printer_id";
 
 let connected: { device: BTDevice; characteristic: BTChar } | null = null;
 let lastDevice: BTDevice | null = null;
 
+function rememberDevice(device: BTDevice): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(NAME_KEY, device.name ?? "");
+  if (device.id) localStorage.setItem(ID_KEY, device.id);
+}
+
 export function getBluetoothPrinterName(): string | null {
   if (connected) return connected.device.name ?? "Bluetooth Printer";
   if (typeof localStorage !== "undefined") return localStorage.getItem(NAME_KEY);
+  return null;
+}
+
+export function getBluetoothPrinterIdentity(): string | null {
+  if (connected) return connected.device.id ?? connected.device.name ?? null;
+  if (typeof localStorage !== "undefined") {
+    return localStorage.getItem(ID_KEY) || localStorage.getItem(NAME_KEY);
+  }
   return null;
 }
 
@@ -88,7 +104,7 @@ export async function connectBluetoothPrinter(): Promise<string> {
 
   connected = { device, characteristic };
   lastDevice = device;
-  if (typeof localStorage !== "undefined") localStorage.setItem(NAME_KEY, device.name ?? "");
+  rememberDevice(device);
   return device.name ?? "Bluetooth Printer";
 }
 
@@ -102,13 +118,18 @@ export async function ensureBluetoothConnected(): Promise<boolean> {
   const nav = navigator as unknown as BTNavigator;
   if (!nav.bluetooth) return false;
   const rememberedName = getBluetoothPrinterName();
-  if (!rememberedName && !lastDevice) return false;
+  const rememberedIdentity = getBluetoothPrinterIdentity();
+  if (!rememberedName && !rememberedIdentity && !lastDevice) return false;
 
   try {
     let device = lastDevice;
     if (!device && nav.bluetooth.getDevices) {
       const devices = await nav.bluetooth.getDevices();
-      device = devices.find((d) => (d.name ?? "") === rememberedName) ?? null;
+      device = devices.find((d) => {
+        const id = d.id ?? "";
+        const name = d.name ?? "";
+        return id === rememberedIdentity || name === rememberedName || name === rememberedIdentity;
+      }) ?? null;
     }
     if (!device?.gatt) return false;
     const server = await device.gatt.connect();
@@ -116,6 +137,7 @@ export async function ensureBluetoothConnected(): Promise<boolean> {
     if (!characteristic) return false;
     connected = { device, characteristic };
     lastDevice = device;
+    rememberDevice(device);
     return true;
   } catch {
     return false;

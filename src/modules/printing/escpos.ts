@@ -64,6 +64,8 @@ interface LineItem {
   modifierNames: string[];
   quantity: number;
   totalPrice: number;
+  discount?: number;
+  discountNote?: string;
   note?: string;
 }
 
@@ -85,6 +87,10 @@ function itemLine(item: LineItem, paperWidth: "58mm" | "80mm"): number[] {
   }
   if (item.note) {
     result.push(...encodeText(`  * ${item.note}\n`));
+  }
+  if ((item.discount ?? 0) > 0) {
+    const label = item.discountNote ? `Discount item (${item.discountNote})` : "Discount item";
+    result.push(...encodeText(`  ${label}: -${formatPrice(item.discount ?? 0)}\n`));
   }
   return result;
 }

@@ -7,7 +7,8 @@ import { getPrinter } from "@/modules/stores/repository";
 import type { ReceiptData } from "@/modules/printing/types";
 
 const DEFAULT_TIMEOUT_MS = 5000;
-const MAX_RECEIPT_BYTES = 64 * 1024; // 64 KB sanity limit
+const MAX_RECEIPT_BYTES = 256 * 1024; // Raster receipts can exceed text ESC/POS size.
+const MAX_PRINT_JOB_BASE64_CHARS = Math.ceil((MAX_RECEIPT_BYTES * 4) / 3) + 4;
 
 function sendToSocket(host: string, port: number, data: Uint8Array): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -33,6 +34,23 @@ function sendToSocket(host: string, port: number, data: Uint8Array): Promise<voi
   });
 }
 
+function decodePrintJobBase64(printJobBase64: unknown): { bytes?: Uint8Array; error?: string } {
+  if (printJobBase64 === undefined || printJobBase64 === null || printJobBase64 === "") {
+    return {};
+  }
+  if (typeof printJobBase64 !== "string") {
+    return { error: "Invalid print job" };
+  }
+  if (printJobBase64.length > MAX_PRINT_JOB_BASE64_CHARS || !/^[A-Za-z0-9+/]+={0,2}$/.test(printJobBase64)) {
+    return { error: "Invalid print job" };
+  }
+  const bytes = new Uint8Array(Buffer.from(printJobBase64, "base64"));
+  if (bytes.length === 0 || bytes.length > MAX_RECEIPT_BYTES) {
+    return { error: "Receipt too large" };
+  }
+  return { bytes };
+}
+
 export async function POST(req: NextRequest) {
   let authz: Awaited<ReturnType<typeof getOptionalResolvedCurrentPermissions>>;
   try {
@@ -48,14 +66,14 @@ export async function POST(req: NextRequest) {
   const { ctx, resolved } = authz;
   if (!resolved.can("pos.use")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  let body: { receiptData: ReceiptData; printerId: string };
+  let body: { receiptData: ReceiptData; printerId: string; printJobBase64?: string };
   try {
     body = await req.json() as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { receiptData, printerId } = body;
+  const { receiptData, printerId, printJobBase64 } = body;
   if (!printerId) {
     return NextResponse.json({ error: "Missing printer ID" }, { status: 400 });
   }
@@ -89,7 +107,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid or disallowed IP address" }, { status: 400 });
   }
 
-  const bytes = buildEscPosReceipt({
+  const decodedPrintJob = decodePrintJobBase64(printJobBase64);
+  if (decodedPrintJob.error) {
+    return NextResponse.json({ error: decodedPrintJob.error }, { status: 400 });
+  }
+
+  const bytes = decodedPrintJob.bytes ?? buildEscPosReceipt({
     ...receiptData,
     items: receiptData.items,
     payments: receiptData.payments,

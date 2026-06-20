@@ -7,7 +7,7 @@ import {
   getPlanFeatures,
   canUseFeature,
 } from "@/modules/billing/types";
-import type { BillingState } from "@/modules/billing/types";
+import type { BillingState, PlanFeatures } from "@/modules/billing/types";
 
 function state(plan: BillingState["plan"], status: BillingState["status"]): BillingState {
   return {
@@ -18,6 +18,79 @@ function state(plan: BillingState["plan"], status: BillingState["status"]): Bill
     trialEnd: null,
   };
 }
+
+const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
+  free: {
+    maxStores: 1,
+    maxMembers: 1,
+    buffetManagement: false,
+    stockManagement: false,
+    advancedPrinting: false,
+    qrOrdering: false,
+    lineNotify: false,
+    attendanceGps: false,
+    advancedReports: false,
+    advancedPermissions: false,
+    multiBranchReporting: false,
+    apiIntegration: false,
+  },
+  starter: {
+    maxStores: 1,
+    maxMembers: 3,
+    buffetManagement: false,
+    stockManagement: false,
+    advancedPrinting: false,
+    qrOrdering: false,
+    lineNotify: false,
+    attendanceGps: false,
+    advancedReports: false,
+    advancedPermissions: false,
+    multiBranchReporting: false,
+    apiIntegration: false,
+  },
+  standard: {
+    maxStores: 3,
+    maxMembers: 10,
+    buffetManagement: true,
+    stockManagement: true,
+    advancedPrinting: true,
+    qrOrdering: false,
+    lineNotify: false,
+    attendanceGps: false,
+    advancedReports: true,
+    advancedPermissions: false,
+    multiBranchReporting: false,
+    apiIntegration: false,
+  },
+  premium: {
+    maxStores: 5,
+    maxMembers: 50,
+    buffetManagement: true,
+    stockManagement: true,
+    advancedPrinting: true,
+    qrOrdering: true,
+    lineNotify: true,
+    attendanceGps: true,
+    advancedReports: true,
+    advancedPermissions: true,
+    multiBranchReporting: false,
+    apiIntegration: false,
+  },
+  enterprise: {
+    maxStores: Infinity,
+    maxMembers: Infinity,
+    buffetManagement: true,
+    stockManagement: true,
+    advancedPrinting: true,
+    qrOrdering: true,
+    lineNotify: true,
+    attendanceGps: true,
+    advancedReports: true,
+    advancedPermissions: true,
+    multiBranchReporting: true,
+    apiIntegration: true,
+  },
+};
 
 describe("isAccessAllowed", () => {
   it("allows active", () => {
@@ -56,7 +129,13 @@ describe("getPlanFeatures — free degraded when blocked", () => {
     const features = getPlanFeatures(state("premium", "active"));
     expect(features.qrOrdering).toBe(true);
     expect(features.attendanceGps).toBe(true);
-    expect(features.maxStores).toBe(10);
+    expect(features.maxStores).toBe(5);
+  });
+});
+
+describe("getPlanFeatures — package matrix contract", () => {
+  it.each(Object.entries(EXPECTED_PLAN_FEATURES))("%s matches the package feature matrix", (plan, expected) => {
+    expect(getPlanFeatures(state(plan as BillingState["plan"], "active"))).toEqual(expected);
   });
 });
 
@@ -110,9 +189,17 @@ describe("feature labels and limits", () => {
     expect(canUseFeature(DEFAULT_BILLING_STATE, "maxStores")).toBe(true);
   });
 
-  it("returns numeric package limits", () => {
+  it("returns numeric package limits by plan", () => {
     expect(getFeatureLimit(state("free", "active"), "maxStores")).toBe(1);
-    expect(getFeatureLimit(state("premium", "active"), "maxMembers")).toBe(100);
+    expect(getFeatureLimit(state("free", "active"), "maxMembers")).toBe(1);
+    expect(getFeatureLimit(state("starter", "active"), "maxStores")).toBe(1);
+    expect(getFeatureLimit(state("starter", "active"), "maxMembers")).toBe(3);
+    expect(getFeatureLimit(state("standard", "active"), "maxStores")).toBe(3);
+    expect(getFeatureLimit(state("standard", "active"), "maxMembers")).toBe(10);
+    expect(getFeatureLimit(state("premium", "active"), "maxStores")).toBe(5);
+    expect(getFeatureLimit(state("premium", "active"), "maxMembers")).toBe(50);
+    expect(getFeatureLimit(state("enterprise", "active"), "maxStores")).toBe(Infinity);
+    expect(getFeatureLimit(state("enterprise", "active"), "maxMembers")).toBe(Infinity);
   });
 
   it("explains locked features for current package", () => {

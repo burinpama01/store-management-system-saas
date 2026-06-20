@@ -111,6 +111,7 @@ export async function upsertPermissionOverrideAction(
         cross_tenant: "ข้ามองค์กรไม่ได้",
         super_admin_only: "เฉพาะ super admin เท่านั้น",
         owner_only: "เฉพาะ owner เท่านั้น",
+        role_permission_locked: "role นี้ไม่สามารถรับสิทธิ์นี้ได้",
         actor_lacks_permissions_manage: "ไม่มีสิทธิ์จัดการ permissions",
         escalation_denied: "ไม่สามารถมอบสิทธิ์ที่ตัวเองไม่มีได้",
       };
