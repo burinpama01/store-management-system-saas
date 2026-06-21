@@ -6,6 +6,7 @@ import type {
   DailySales,
   ReportData,
   DashboardData,
+  BranchSalesSummary,
 } from "./types";
 
 type SalesAggregateRow = {
@@ -32,9 +33,21 @@ type ReportOrderRow = DashboardOrderRow & {
   paid_at: string | null;
 };
 
+type BranchStoreRow = {
+  id: string;
+  name: string;
+};
+
+type BranchOrderRow = {
+  store_id: string;
+  total: number | string | null;
+  qr_order_source: boolean | null;
+};
+
 // PostgREST serialises .in() as a URL query param; keep batches small to stay
 // well within the typical 8 KB URL limit.
 const BATCH_SIZE = 200;
+const QUERY_PAGE_SIZE = 1000;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -190,6 +203,58 @@ async function fetchOrderItemsInBatches(
   return batches.flatMap((r) => r.data ?? []);
 }
 
+async function fetchBranchStoresInPages(organizationId: string): Promise<BranchStoreRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const stores: BranchStoreRow[] = [];
+  for (let offset = 0; ; offset += QUERY_PAGE_SIZE) {
+    const result = await supabase
+      .from("stores")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("is_active", true)
+      .order("name")
+      .range(offset, offset + QUERY_PAGE_SIZE - 1);
+    if (result.error) {
+      throw new Error("Unable to load branch stores");
+    }
+    const rows = (result.data ?? []) as BranchStoreRow[];
+    stores.push(...rows);
+    if (rows.length < QUERY_PAGE_SIZE) break;
+  }
+  return stores;
+}
+
+async function fetchBranchOrdersInBatches(
+  storeIds: string[],
+  organizationId: string,
+  dateFrom: string,
+  nextDayExclusive: string,
+): Promise<BranchOrderRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const orders: BranchOrderRow[] = [];
+  for (let index = 0; index < storeIds.length; index += BATCH_SIZE) {
+    const batchStoreIds = storeIds.slice(index, index + BATCH_SIZE);
+    for (let offset = 0; ; offset += QUERY_PAGE_SIZE) {
+      const result = await supabase
+        .from("orders")
+        .select("store_id, total, qr_order_source")
+        .eq("organization_id", organizationId)
+        .in("store_id", batchStoreIds)
+        .eq("status", "paid")
+        .gte("paid_at", dateFrom)
+        .lt("paid_at", nextDayExclusive)
+        .range(offset, offset + QUERY_PAGE_SIZE - 1);
+      if (result.error) {
+        throw new Error("Unable to load branch sales summary");
+      }
+      const rows = (result.data ?? []) as BranchOrderRow[];
+      orders.push(...rows);
+      if (rows.length < QUERY_PAGE_SIZE) break;
+    }
+  }
+  return orders;
+}
+
 export async function getReportData(
   storeId: string,
   dateFrom: string,
@@ -258,6 +323,60 @@ export async function getReportData(
   const topProducts = aggregateTopProducts(allItems, 20);
 
   return { salesSummary, paymentMethods, topProducts, dailySales };
+}
+
+export async function getBranchReportData(
+  organizationId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BranchSalesSummary[]> {
+  const nextDayExclusive = addUtcDays(dateTo, 1);
+
+  const stores = await fetchBranchStoresInPages(organizationId);
+  const storeIds = stores.map((store) => store.id);
+  if (storeIds.length === 0) return [];
+
+  const branchOrders = await fetchBranchOrdersInBatches(
+    storeIds,
+    organizationId,
+    dateFrom,
+    nextDayExclusive,
+  );
+
+  const summaries = new Map<string, BranchSalesSummary>();
+  for (const store of stores) {
+    summaries.set(store.id, {
+      storeId: store.id,
+      storeName: store.name,
+      orderCount: 0,
+      revenue: 0,
+      avgOrderValue: 0,
+      qrOrderCount: 0,
+      posOrderCount: 0,
+      revenueSharePercent: 0,
+    });
+  }
+
+  for (const order of branchOrders) {
+    const summary = summaries.get(order.store_id);
+    if (!summary) continue;
+    summary.orderCount += 1;
+    summary.revenue = round2(summary.revenue + toNumber(order.total));
+    if (order.qr_order_source === true) {
+      summary.qrOrderCount += 1;
+    } else {
+      summary.posOrderCount += 1;
+    }
+  }
+
+  const totalRevenue = round2(Array.from(summaries.values()).reduce((sum, summary) => sum + summary.revenue, 0));
+  return Array.from(summaries.values())
+    .map((summary) => ({
+      ...summary,
+      avgOrderValue: summary.orderCount > 0 ? round2(summary.revenue / summary.orderCount) : 0,
+      revenueSharePercent: totalRevenue > 0 ? round2((summary.revenue / totalRevenue) * 100) : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue || a.storeName.localeCompare(b.storeName, "th"));
 }
 
 export async function getDashboardData(storeId: string): Promise<DashboardData> {

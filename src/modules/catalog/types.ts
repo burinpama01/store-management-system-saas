@@ -17,6 +17,7 @@ export interface Product {
   categoryId: string;
   name: string;
   description?: string;
+  barcode?: string;
   imageUrl?: string;
   basePrice: number;
   isActive: boolean;
@@ -33,6 +34,7 @@ export interface ProductVariant {
   id: string;
   productId: string;
   name: string;
+  barcode?: string;
   priceAdjustment: number;
   sku?: string;
   stockQuantity?: number;

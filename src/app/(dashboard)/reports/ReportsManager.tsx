@@ -3,7 +3,13 @@
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useTransition, useState } from "react";
-import type { ReportData, PaymentMethodSummary, TopProduct, DailySales } from "@/modules/reports/types";
+import type {
+  BranchSalesSummary,
+  DailySales,
+  PaymentMethodSummary,
+  ReportData,
+  TopProduct,
+} from "@/modules/reports/types";
 
 const METHOD_LABEL: Record<string, string> = {
   cash: "เงินสด",
@@ -19,11 +25,21 @@ function fmt(n: number) {
 
 interface Props {
   reportData: ReportData;
+  branchSummaries: BranchSalesSummary[];
+  branchReportingEnabled: boolean;
+  branchReportingUnavailableMessage: string | null;
   dateFrom: string;
   dateTo: string;
 }
 
-export function ReportsManager({ reportData, dateFrom, dateTo }: Props) {
+export function ReportsManager({
+  reportData,
+  branchSummaries,
+  branchReportingEnabled,
+  branchReportingUnavailableMessage,
+  dateFrom,
+  dateTo,
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [localFrom, setLocalFrom] = useState(dateFrom);
@@ -130,6 +146,19 @@ export function ReportsManager({ reportData, dateFrom, dateTo }: Props) {
         </Section>
       </div>
 
+      {branchReportingEnabled ? (
+        <Section title="รายงานแยกสาขา">
+          <BranchReportTable items={branchSummaries} />
+        </Section>
+      ) : (
+        <div className="panel p-4">
+          <p className="text-sm font-bold text-[var(--color-text-primary)]">รายงานแยกสาขา</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            {branchReportingUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับรายงานหลายสาขา"}
+          </p>
+        </div>
+      )}
+
       {/* Top products */}
       <Section title="สินค้าขายดี (Top 20)">
         {topProducts.length === 0 ? (
@@ -191,6 +220,53 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function EmptyRow() {
   return <p className="px-4 py-8 text-sm text-[var(--color-text-muted)] text-center">ไม่มีข้อมูลในช่วงเวลานี้</p>;
+}
+
+function BranchReportTable({ items }: { items: BranchSalesSummary[] }) {
+  if (items.length === 0) return <EmptyRow />;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-[760px] w-full text-sm">
+        <thead className="bg-[var(--color-surface-muted)] text-xs font-bold text-[var(--color-text-secondary)]">
+          <tr>
+            <th className="px-3 py-2 text-left">สาขา</th>
+            <th className="px-3 py-2 text-right">ยอดขาย</th>
+            <th className="px-3 py-2 text-right">ออเดอร์</th>
+            <th className="px-3 py-2 text-right">เฉลี่ย/บิล</th>
+            <th className="px-3 py-2 text-right">POS</th>
+            <th className="px-3 py-2 text-right">QR</th>
+            <th className="px-3 py-2 text-right">สัดส่วน</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--color-border)]">
+          {items.map((item) => (
+            <tr key={item.storeId} className="hover:bg-[var(--color-surface-muted)]">
+              <td className="px-3 py-2 font-medium text-[var(--color-text-primary)]">{item.storeName}</td>
+              <td className="px-3 py-2 text-right font-bold tabular-nums text-[var(--color-success)]">
+                ฿{fmt(item.revenue)}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
+                {item.orderCount}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
+                ฿{fmt(item.avgOrderValue)}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
+                {item.posOrderCount}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
+                {item.qrOrderCount}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
+                {item.revenueSharePercent.toLocaleString("th-TH", { maximumFractionDigits: 2 })}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function PaymentMethodRow({ item }: { item: PaymentMethodSummary }) {

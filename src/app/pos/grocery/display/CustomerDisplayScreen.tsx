@@ -1,0 +1,156 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  CUSTOMER_DISPLAY_CHANNEL,
+  validateCustomerDisplayMessage,
+  type CustomerDisplaySnapshot,
+} from "@/modules/grocery-pos/customer-display";
+
+function money(value: number) {
+  return new Intl.NumberFormat("th-TH", {
+    style: "currency",
+    currency: "THB",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+export function CustomerDisplayScreen() {
+  const [snapshot, setSnapshot] = useState<CustomerDisplaySnapshot | null>(null);
+
+  useEffect(() => {
+    const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      if (validateCustomerDisplayMessage(event.data)) {
+        setSnapshot(event.data);
+      }
+    };
+    return () => channel.close();
+  }, []);
+
+  const items = snapshot?.items ?? [];
+  const statusText = useMemo(() => {
+    switch (snapshot?.status) {
+      case "checkout":
+        return "ตรวจสอบยอดชำระ";
+      case "paid":
+        return "ชำระเงินแล้ว";
+      case "scanning":
+        return "กำลังสแกนสินค้า";
+      default:
+        return "พร้อมรับรายการ";
+    }
+  }, [snapshot?.status]);
+
+  return (
+    <main className="customer-display">
+      <section className="customer-display-total" aria-live="polite">
+        <p>{statusText}</p>
+        <h1>{money(snapshot?.total ?? 0)}</h1>
+        {snapshot?.customerName ? <span>{snapshot.customerName}</span> : null}
+      </section>
+
+      <section className="customer-display-list">
+        {items.length === 0 ? <p className="customer-display-empty">ยังไม่มีสินค้า</p> : null}
+        {items.map((item, index) => (
+          <div className="customer-display-item" key={`${item.name}-${index}`}>
+            <div>
+              <strong>{item.name}</strong>
+              {item.variantName ? <span>{item.variantName}</span> : null}
+            </div>
+            <b>x{item.quantity}</b>
+            <span>{money(item.totalPrice)}</span>
+          </div>
+        ))}
+      </section>
+
+      <footer className="customer-display-summary">
+        <span>ยอดสินค้า {money(snapshot?.subtotal ?? 0)}</span>
+        <span>ส่วนลด {money(snapshot?.discount ?? 0)}</span>
+      </footer>
+
+      <style jsx>{`
+        .customer-display {
+          min-height: 100vh;
+          background: #101828;
+          color: #f8fafc;
+          display: grid;
+          grid-template-rows: auto 1fr auto;
+          padding: 32px;
+          gap: 24px;
+        }
+        .customer-display-total {
+          border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+          padding-bottom: 24px;
+        }
+        .customer-display-total p,
+        .customer-display-total h1 {
+          margin: 0;
+        }
+        .customer-display-total p {
+          color: #93c5fd;
+          font-weight: 800;
+          font-size: 22px;
+        }
+        .customer-display-total h1 {
+          font-size: 72px;
+          line-height: 1;
+          margin-top: 10px;
+        }
+        .customer-display-total span {
+          display: inline-block;
+          margin-top: 12px;
+          color: #d1fae5;
+          font-size: 22px;
+        }
+        .customer-display-list {
+          display: grid;
+          align-content: start;
+          gap: 14px;
+          overflow: auto;
+        }
+        .customer-display-item {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto auto;
+          gap: 18px;
+          align-items: center;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+          padding-bottom: 14px;
+          font-size: 24px;
+        }
+        .customer-display-item strong {
+          display: block;
+          overflow-wrap: anywhere;
+        }
+        .customer-display-item span,
+        .customer-display-empty,
+        .customer-display-summary {
+          color: #cbd5e1;
+        }
+        .customer-display-item div span {
+          display: block;
+          font-size: 18px;
+          margin-top: 2px;
+        }
+        .customer-display-summary {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          font-size: 20px;
+        }
+        @media (max-width: 720px) {
+          .customer-display {
+            padding: 20px;
+          }
+          .customer-display-total h1 {
+            font-size: 48px;
+          }
+          .customer-display-item {
+            font-size: 20px;
+            grid-template-columns: minmax(0, 1fr) auto;
+          }
+        }
+      `}</style>
+    </main>
+  );
+}

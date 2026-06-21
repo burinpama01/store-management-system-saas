@@ -41,6 +41,7 @@ function mapVariant(row: VariantRow): ProductVariant {
     id: row.id,
     productId: row.product_id,
     name: row.name,
+    barcode: row.barcode ?? undefined,
     priceAdjustment: row.price_adjustment,
     sku: row.sku ?? undefined,
     stockQuantity: row.stock_quantity ?? undefined,
@@ -142,6 +143,7 @@ function mapProduct(
     categoryId: row.category_id,
     name: row.name,
     description: row.description ?? undefined,
+    barcode: row.barcode ?? undefined,
     imageUrl: row.image_url ?? undefined,
     basePrice: row.base_price,
     isActive: row.is_active,
@@ -268,6 +270,50 @@ export async function listProducts(storeId: string, opts?: { includeInactive?: b
   );
 }
 
+export interface BarcodeProductMatch {
+  product: Product;
+  variant: ProductVariant | null;
+  barcode: string;
+  source: "product_barcode" | "variant_barcode" | "variant_sku";
+}
+
+export function normalizeCatalogBarcode(input: string): string | null {
+  const value = input.trim();
+  if (!value) return null;
+  return value;
+}
+
+export async function findProductByBarcode(storeId: string, input: string) {
+  const barcode = normalizeCatalogBarcode(input);
+  if (!barcode) return { data: null, error: null };
+
+  const productsRes = await listProducts(storeId, { includeInactive: false });
+  if (productsRes.error || !productsRes.data) return { data: null, error: productsRes.error };
+
+  const normalized = barcode.toLowerCase();
+  const matches: BarcodeProductMatch[] = [];
+
+  for (const product of productsRes.data) {
+    if (product.barcode?.toLowerCase() === normalized) {
+      matches.push({ product, variant: null, barcode, source: "product_barcode" });
+    }
+
+    for (const variant of product.variants) {
+      if (variant.barcode?.toLowerCase() === normalized) {
+        matches.push({ product, variant, barcode, source: "variant_barcode" });
+      } else if (variant.sku?.toLowerCase() === normalized) {
+        matches.push({ product, variant, barcode, source: "variant_sku" });
+      }
+    }
+  }
+
+  if (matches.length > 1) {
+    return { data: null, error: mapError(new Error("พบบาร์โค้ดซ้ำในร้านนี้")) };
+  }
+
+  return { data: matches[0] ?? null, error: null };
+}
+
 export async function getProduct(productId: string) {
   return withDataClient<Product>(async (supabase) => {
     const productRes = await supabase
@@ -312,6 +358,7 @@ export interface CreateProductInput {
   categoryId: string;
   name: string;
   description?: string;
+  barcode?: string;
   imageUrl?: string;
   basePrice?: number;
   availableForPos?: boolean;
@@ -329,6 +376,7 @@ export async function createProduct(input: CreateProductInput) {
       category_id: input.categoryId,
       name: input.name,
       description: input.description,
+      barcode: input.barcode ?? null,
       image_url: input.imageUrl,
       base_price: input.basePrice ?? 0,
       available_for_pos: input.availableForPos ?? true,
@@ -352,6 +400,7 @@ export async function updateProduct(
       Product,
       | "name"
       | "description"
+      | "barcode"
       | "imageUrl"
       | "basePrice"
       | "isActive"
@@ -368,6 +417,7 @@ export async function updateProduct(
     .update({
       name: input.name,
       description: input.description,
+      barcode: input.barcode,
       image_url: input.imageUrl,
       base_price: input.basePrice,
       is_active: input.isActive,
@@ -593,6 +643,7 @@ export interface CreateVariantInput {
   productId: string;
   name: string;
   priceAdjustment: number;
+  barcode?: string;
   sku?: string;
   trackStock?: boolean;
   sortOrder?: number;
@@ -606,6 +657,7 @@ export async function createVariant(input: CreateVariantInput) {
       product_id: input.productId,
       name: input.name,
       price_adjustment: input.priceAdjustment,
+      barcode: input.barcode ?? null,
       sku: input.sku ?? null,
       track_stock: input.trackStock ?? false,
       sort_order: input.sortOrder ?? 0,
@@ -619,7 +671,7 @@ export async function createVariant(input: CreateVariantInput) {
 export async function updateVariant(
   id: string,
   storeId: string,
-  input: Partial<Pick<ProductVariant, "name" | "priceAdjustment" | "sku" | "trackStock" | "isActive" | "sortOrder">>,
+  input: Partial<Pick<ProductVariant, "name" | "priceAdjustment" | "barcode" | "sku" | "trackStock" | "isActive" | "sortOrder">>,
 ) {
   const supabase = await createSupabaseServerClient();
   const { data: variant } = await supabase
@@ -640,6 +692,7 @@ export async function updateVariant(
     .update({
       name: input.name,
       price_adjustment: input.priceAdjustment,
+      barcode: input.barcode,
       sku: input.sku,
       track_stock: input.trackStock,
       is_active: input.isActive,

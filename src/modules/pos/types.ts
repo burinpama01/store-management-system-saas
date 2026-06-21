@@ -80,6 +80,11 @@ export interface Order {
   tableNumber?: string;
   buffetSessionId?: string;
   cashierId: string;
+  customerId?: string;
+  couponId?: string;
+  couponDiscountAmount?: number;
+  loyaltyPointsEarned?: number;
+  loyaltyPointsRedeemed?: number;
   items: OrderItem[];
   subtotal: number;
   discount: number;
