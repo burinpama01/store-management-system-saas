@@ -36,7 +36,7 @@ import { QrCode } from "@/shared/components/ui/QrCode";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
-import { publishCustomerDisplaySnapshot } from "@/modules/grocery-pos/customer-display";
+import { publishCustomerDisplaySnapshot, type CustomerDisplayPayment } from "@/modules/grocery-pos/customer-display";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -1741,22 +1741,29 @@ function PaymentPanel({
   cart,
   onConfirm,
   onBack,
+  onShowPromptPayOnCustomerDisplay,
   isPending,
   error,
   hasPendingOrder,
   promptpayId,
+  customerDisplayEnabled,
+  customerDisplayUnavailableMessage,
 }: {
   cart: Cart;
   onConfirm: (method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) => void;
   onBack: () => void;
+  onShowPromptPayOnCustomerDisplay: (payment: CustomerDisplayPayment) => void;
   isPending: boolean;
   error: string | null;
   hasPendingOrder: boolean;
   promptpayId?: string;
+  customerDisplayEnabled: boolean;
+  customerDisplayUnavailableMessage: string | null;
 }) {
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState<string>("");
   const [qrPaymentVerified, setQrPaymentVerified] = useState(false);
+  const [customerDisplayNotice, setCustomerDisplayNotice] = useState<string | null>(null);
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
@@ -1801,10 +1808,11 @@ function PaymentPanel({
               <button
                 key={m}
                 type="button"
-                onClick={() => {
-                  setMethod(m);
-                  setQrPaymentVerified(false);
-                }}
+                 onClick={() => {
+                   setMethod(m);
+                   setQrPaymentVerified(false);
+                   setCustomerDisplayNotice(null);
+                 }}
                 className={`min-h-11 py-2.5 text-xs font-medium rounded-lg border transition-colors ${
                   method === m
                     ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
@@ -1866,7 +1874,35 @@ function PaymentPanel({
               <>
                 <QrCode value={promptPayPayload} size={200} />
                 <p className="text-sm font-semibold text-gray-700">ให้ลูกค้าสแกนเพื่อชำระ {priceStr(cart.total)}</p>
-                <p className="text-xs text-gray-400">PromptPay: {promptpayId}</p>
+                <p className="text-xs text-gray-400">PromptPay จาก ตั้งค่า › ใบเสร็จ: {promptpayId}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onShowPromptPayOnCustomerDisplay({
+                      method: "qr_promptpay",
+                      amount: cart.total,
+                      promptPayPayload,
+                    });
+                    setCustomerDisplayNotice("ส่ง QR ล็อกยอดไปจอลูกค้าแล้ว");
+                  }}
+                  disabled={!customerDisplayEnabled}
+                  title={
+                    customerDisplayEnabled
+                      ? undefined
+                      : customerDisplayUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับจอลูกค้า"
+                  }
+                  className="min-h-11 w-full rounded-lg border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] px-3 text-sm font-semibold text-[var(--tenant-primary-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  แสดง QR บนจอลูกค้า
+                </button>
+                {customerDisplayNotice ? (
+                  <p className="text-xs font-semibold text-green-700" role="status">
+                    {customerDisplayNotice}
+                  </p>
+                ) : null}
+                {!customerDisplayEnabled && customerDisplayUnavailableMessage ? (
+                  <p className="text-xs text-amber-700">{customerDisplayUnavailableMessage}</p>
+                ) : null}
                 <label className="mt-2 flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 text-xs font-semibold text-green-700">
                   <input
                     type="checkbox"
@@ -2298,6 +2334,19 @@ export function PosTerminal({
       customerName: selectedCustomer?.name,
     });
   }, [customerDisplayEnabled, displayCart, phase, selectedCustomer?.name]);
+
+  function handleShowPromptPayOnCustomerDisplay(payment: CustomerDisplayPayment, cart: Cart = displayCart) {
+    if (!customerDisplayEnabled) return;
+    publishCustomerDisplaySnapshot(cart, {
+      status: "checkout",
+      customerName: selectedCustomer?.name,
+      payment: {
+        method: payment.method,
+        amount: payment.amount,
+        promptPayPayload: payment.promptPayPayload,
+      },
+    });
+  }
 
   function handleProductClick(product: Product) {
     if (cartLocked) return;
@@ -2845,6 +2894,7 @@ export function PosTerminal({
           <PaymentPanel
             cart={displayCart}
             onConfirm={handleConfirmPayment}
+            onShowPromptPayOnCustomerDisplay={handleShowPromptPayOnCustomerDisplay}
             onBack={() => {
               if (pendingOrder) {
                 setPayError("สร้างออร์เดอร์แล้ว กรุณาชำระเงินให้จบก่อนแก้ไขตะกร้า");
@@ -2857,6 +2907,8 @@ export function PosTerminal({
             error={payError}
             hasPendingOrder={pendingOrder !== null}
             promptpayId={receiptSettings?.promptpayId}
+            customerDisplayEnabled={customerDisplayEnabled}
+            customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -3078,6 +3130,7 @@ export function PosTerminal({
           <PaymentPanel
             cart={displayCart}
             onConfirm={handleConfirmPayment}
+            onShowPromptPayOnCustomerDisplay={handleShowPromptPayOnCustomerDisplay}
             onBack={() => {
               if (pendingOrder) {
                 setPayError("สร้างออร์เดอร์แล้ว กรุณาชำระเงินให้จบก่อนแก้ไขตะกร้า");
@@ -3090,6 +3143,8 @@ export function PosTerminal({
             error={payError}
             hasPendingOrder={pendingOrder !== null}
             promptpayId={receiptSettings?.promptpayId}
+            customerDisplayEnabled={customerDisplayEnabled}
+            customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
           />
         )}
         {phase === "receipt" && receipt && (

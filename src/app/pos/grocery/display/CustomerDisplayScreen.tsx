@@ -6,6 +6,7 @@ import {
   validateCustomerDisplayMessage,
   type CustomerDisplaySnapshot,
 } from "@/modules/grocery-pos/customer-display";
+import { QrCode } from "@/shared/components/ui/QrCode";
 
 function money(value: number) {
   return new Intl.NumberFormat("th-TH", {
@@ -29,6 +30,7 @@ export function CustomerDisplayScreen() {
   }, []);
 
   const items = snapshot?.items ?? [];
+  const payment = snapshot?.status === "checkout" ? snapshot.payment : undefined;
   const statusText = useMemo(() => {
     switch (snapshot?.status) {
       case "checkout":
@@ -68,6 +70,19 @@ export function CustomerDisplayScreen() {
         <span>ยอดสินค้า {money(snapshot?.subtotal ?? 0)}</span>
         <span>ส่วนลด {money(snapshot?.discount ?? 0)}</span>
       </footer>
+
+      {payment ? (
+        <section className="customer-display-qr-layer" aria-label="QR พร้อมเพย์ล็อกยอด" role="dialog">
+          <div className="customer-display-qr-dialog">
+            <p className="customer-display-qr-kicker">QR พร้อมเพย์ล็อกยอด</p>
+            <QrCode value={payment.promptPayPayload} size={280} />
+            <div>
+              <span>ยอดที่ต้องจ่าย</span>
+              <strong>{money(payment.amount)}</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <style jsx>{`
         .customer-display {
@@ -146,6 +161,45 @@ export function CustomerDisplayScreen() {
           gap: 16px;
           font-size: 20px;
         }
+        .customer-display-qr-layer {
+          position: fixed;
+          inset: 0;
+          z-index: 20;
+          display: grid;
+          place-items: center;
+          background: color-mix(in srgb, var(--color-bg) 74%, transparent);
+          padding: 28px;
+        }
+        .customer-display-qr-dialog {
+          display: grid;
+          justify-items: center;
+          gap: 18px;
+          width: min(420px, 100%);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          background: var(--color-surface);
+          box-shadow: var(--shadow-lg);
+          padding: 28px;
+          text-align: center;
+        }
+        .customer-display-qr-kicker {
+          margin: 0;
+          color: var(--color-brand);
+          font-size: 22px;
+          font-weight: 800;
+        }
+        .customer-display-qr-dialog span {
+          display: block;
+          color: var(--color-text-secondary);
+          font-size: 18px;
+        }
+        .customer-display-qr-dialog strong {
+          display: block;
+          margin-top: 4px;
+          color: var(--color-text-primary);
+          font-size: 48px;
+          line-height: 1;
+        }
         @media (max-width: 720px) {
           .customer-display {
             padding: 20px;
@@ -156,6 +210,12 @@ export function CustomerDisplayScreen() {
           .customer-display-item {
             font-size: 20px;
             grid-template-columns: minmax(0, 1fr) auto;
+          }
+          .customer-display-qr-dialog {
+            padding: 22px;
+          }
+          .customer-display-qr-dialog strong {
+            font-size: 38px;
           }
         }
       `}</style>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
+import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import { upsertReceiptSettings } from "@/modules/settings/repository";
 
 async function getStoreContext() {
@@ -40,8 +41,11 @@ export async function upsertReceiptSettingsAction(
       return { error: "เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข ไม่เกิน 13 หลัก" };
     if (promptpayId && (promptpayId.length > 13 || !/^\d+$/.test(promptpayId)))
       return { error: "PromptPay ID ต้องเป็นตัวเลข ไม่เกิน 13 หลัก" };
-    if (headerText && headerText.length > 200) return { error: "ข้อความส่วนหัวยาวเกิน 200 ตัวอักษร" };
-    if (footerText && footerText.length > 200) return { error: "ข้อความส่วนท้ายยาวเกิน 200 ตัวอักษร" };
+    if (showQrPayment && !promptpayId) return { error: "กรุณาระบุหมายเลข PromptPay" };
+    if (headerText && headerText.length > RECEIPT_MESSAGE_MAX_LENGTH)
+      return { error: `ข้อความส่วนหัวยาวเกิน ${RECEIPT_MESSAGE_MAX_LENGTH} ตัวอักษร` };
+    if (footerText && footerText.length > RECEIPT_MESSAGE_MAX_LENGTH)
+      return { error: `ข้อความส่วนท้ายยาวเกิน ${RECEIPT_MESSAGE_MAX_LENGTH} ตัวอักษร` };
     if (!paperWidth || !["58mm", "80mm"].includes(paperWidth))
       return { error: "ความกว้างกระดาษไม่ถูกต้อง" };
     const printCopies = parseInt(printCopiesRaw ?? "", 10);

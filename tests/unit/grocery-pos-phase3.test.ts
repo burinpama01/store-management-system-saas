@@ -60,6 +60,27 @@ describe("grocery POS customer display", () => {
     expect(validateCustomerDisplayMessage(snapshot)).toBe(true);
   });
 
+  it("carries locked PromptPay QR details in checkout snapshots", () => {
+    const snapshot = buildCustomerDisplaySnapshot(cart(), {
+      status: "checkout",
+      payment: {
+        method: "qr_promptpay",
+        amount: 20,
+        promptPayPayload: "00020101021229370016A000000677010111011300668123456785802TH5303764540520.0063046D36",
+      },
+    } as Parameters<typeof buildCustomerDisplaySnapshot>[1] & {
+      payment: { method: "qr_promptpay"; amount: number; promptPayPayload: string };
+    });
+
+    expect(snapshot.payment).toEqual({
+      method: "qr_promptpay",
+      amount: 20,
+      promptPayPayload: "00020101021229370016A000000677010111011300668123456785802TH5303764540520.0063046D36",
+    });
+    expect(validateCustomerDisplayMessage(snapshot)).toBe(true);
+    expect(validateCustomerDisplayMessage({ ...snapshot, payment: { method: "qr_promptpay", amount: 0, promptPayPayload: "" } })).toBe(false);
+  });
+
   it("keeps the paid customer display on the final paid cart while the cashier clears the live cart", () => {
     const paidCart = cart({ total: 70, subtotal: 70 });
     const liveEmptyCart = cart({ items: [], subtotal: 0, discount: 0, total: 0 });
@@ -90,6 +111,8 @@ describe("grocery POS customer display", () => {
     expect(page).toContain('requireFeature("customerDisplay")');
     expect(screen).toContain("new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL)");
     expect(screen).toContain("validateCustomerDisplayMessage");
+    expect(screen).toContain("QrCode");
+    expect(screen).toContain("QR พร้อมเพย์ล็อกยอด");
     expect(terminal).toContain("publishCustomerDisplaySnapshot");
   });
 });

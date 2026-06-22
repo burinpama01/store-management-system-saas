@@ -21,6 +21,9 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(terminal).toContain("evaluatePosCouponAction");
     expect(terminal).toContain("publishCustomerDisplaySnapshot");
     expect(terminal).toContain('href="/pos/display"');
+    expect(terminal).toContain("onShowPromptPayOnCustomerDisplay");
+    expect(terminal).toContain("แสดง QR บนจอลูกค้า");
+    expect(terminal).toContain("PromptPay จาก ตั้งค่า › ใบเสร็จ");
     expect(terminal).toContain("ค้นชื่อลูกค้าหรือเบอร์โทร");
     expect(terminal).toContain("ใช้คูปอง");
     expect(terminal).toContain("selectedCustomer?.id");
@@ -37,6 +40,17 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(displayPage).toContain("requirePermission(\"pos.use\")");
     expect(displayPage).toContain("requireFeature(\"customerDisplay\")");
     expect(displayPage).toContain("CustomerDisplayScreen");
+  });
+
+  it("publishes locked PromptPay QR payment details to the customer display on cashier request", () => {
+    const terminal = read("src/app/pos/PosTerminal.tsx");
+
+    expect(terminal).toContain("buildPromptPayPayload({ recipientId: promptpayId, amount: cart.total })");
+    expect(terminal).toContain("publishCustomerDisplaySnapshot(cart, {");
+    expect(terminal).toContain("payment: {");
+    expect(terminal).toContain('method: "qr_promptpay"');
+    expect(terminal).toContain("amount: cart.total");
+    expect(terminal).toContain("promptPayPayload");
   });
 
   it("validates normal POS coupons and passes customer/coupon data to trusted order creation", () => {

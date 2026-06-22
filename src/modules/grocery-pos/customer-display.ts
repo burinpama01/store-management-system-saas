@@ -4,6 +4,12 @@ export const CUSTOMER_DISPLAY_CHANNEL = "storeos:grocery-pos:customer-display";
 
 export type CustomerDisplayStatus = "idle" | "scanning" | "checkout" | "paid";
 
+export interface CustomerDisplayPayment {
+  method: "qr_promptpay";
+  amount: number;
+  promptPayPayload: string;
+}
+
 export interface CustomerDisplaySnapshot {
   channel: typeof CUSTOMER_DISPLAY_CHANNEL;
   status: CustomerDisplayStatus;
@@ -18,12 +24,13 @@ export interface CustomerDisplaySnapshot {
   subtotal: number;
   discount: number;
   total: number;
+  payment?: CustomerDisplayPayment;
   updatedAt: string;
 }
 
 export function buildCustomerDisplaySnapshot(
   cart: Cart,
-  input: { status?: CustomerDisplayStatus; customerName?: string } = {},
+  input: { status?: CustomerDisplayStatus; customerName?: string; payment?: CustomerDisplayPayment | null } = {},
 ): CustomerDisplaySnapshot {
   return {
     channel: CUSTOMER_DISPLAY_CHANNEL,
@@ -39,8 +46,22 @@ export function buildCustomerDisplaySnapshot(
     subtotal: cart.subtotal,
     discount: cart.discount,
     total: cart.total,
+    payment: isValidCustomerDisplayPayment(input.payment) ? input.payment : undefined,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function isValidCustomerDisplayPayment(value: unknown): value is CustomerDisplayPayment {
+  if (!value || typeof value !== "object") return false;
+  const payment = value as Partial<CustomerDisplayPayment>;
+  return (
+    payment.method === "qr_promptpay" &&
+    typeof payment.amount === "number" &&
+    Number.isFinite(payment.amount) &&
+    payment.amount > 0 &&
+    typeof payment.promptPayPayload === "string" &&
+    payment.promptPayPayload.trim().length > 0
+  );
 }
 
 export function validateCustomerDisplayMessage(value: unknown): value is CustomerDisplaySnapshot {
@@ -52,7 +73,8 @@ export function validateCustomerDisplayMessage(value: unknown): value is Custome
     Array.isArray(snapshot.items) &&
     typeof snapshot.subtotal === "number" &&
     typeof snapshot.discount === "number" &&
-    typeof snapshot.total === "number"
+    typeof snapshot.total === "number" &&
+    (snapshot.payment === undefined || isValidCustomerDisplayPayment(snapshot.payment))
   );
 }
 
@@ -67,7 +89,7 @@ export function resolveCustomerDisplayPublishCart(input: {
 
 export function publishCustomerDisplaySnapshot(
   cart: Cart,
-  input: { status?: CustomerDisplayStatus; customerName?: string } = {},
+  input: { status?: CustomerDisplayStatus; customerName?: string; payment?: CustomerDisplayPayment | null } = {},
 ): CustomerDisplaySnapshot | null {
   const snapshot = buildCustomerDisplaySnapshot(cart, input);
   if (typeof BroadcastChannel === "undefined") return snapshot;
