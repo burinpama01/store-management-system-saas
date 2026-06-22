@@ -5,6 +5,8 @@ import { listCategories, listProducts } from "@/modules/catalog/repository";
 import { getReceiptSettings, getStore, listPrinters } from "@/modules/stores/repository";
 import { getOpenCashSession, getCashSalesSince } from "@/modules/cashflow/repository";
 import { buildThemeStyle } from "@/modules/theme/presets";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
 import { PosTerminal } from "./PosTerminal";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +30,7 @@ export default async function PosPage() {
     redirect(firstHomeRoute(resolved.can) ?? "/dashboard");
   }
 
-  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult, printersResult] =
+  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult, printersResult, billingState] =
     await Promise.all([
       listCategories(ctx.storeId),
       listProducts(ctx.storeId, { includeInactive: false }),
@@ -36,6 +38,7 @@ export default async function PosPage() {
       getStore(ctx.storeId),
       getOpenCashSession(ctx.storeId),
       listPrinters(ctx.storeId, ctx.organizationId),
+      getOrganizationBillingState(ctx.organizationId),
     ]);
 
   const cashSession = cashSessionResult.data ?? null;
@@ -49,6 +52,19 @@ export default async function PosPage() {
     primarySoftColor: ctx.themePrimarySoftColor,
     accentColor: ctx.themeAccentColor,
   });
+  const resolvedBillingState = billingState ?? DEFAULT_BILLING_STATE;
+  const couponEnabled = canUseFeature(resolvedBillingState, "couponManagement");
+  const loyaltyEnabled = canUseFeature(resolvedBillingState, "loyaltyPoints");
+  const customerDisplayEnabled = canUseFeature(resolvedBillingState, "customerDisplay");
+  const couponUnavailableMessage = couponEnabled
+    ? null
+    : explainFeatureLock(resolvedBillingState, "couponManagement") ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง";
+  const loyaltyUnavailableMessage = loyaltyEnabled
+    ? null
+    : explainFeatureLock(resolvedBillingState, "loyaltyPoints") ?? "แพ็กเกจนี้ยังไม่รองรับสะสมแต้ม";
+  const customerDisplayUnavailableMessage = customerDisplayEnabled
+    ? null
+    : explainFeatureLock(resolvedBillingState, "customerDisplay") ?? "แพ็กเกจนี้ยังไม่รองรับจอลูกค้า";
 
   return (
     <div style={themeStyle}>
@@ -66,6 +82,12 @@ export default async function PosPage() {
         storeTimezone={ctx.storeTimezone}
         printers={printersResult.data ?? []}
         printerLoadError={printersResult.error?.userMessage ?? null}
+        couponEnabled={couponEnabled}
+        couponUnavailableMessage={couponUnavailableMessage}
+        loyaltyEnabled={loyaltyEnabled}
+        loyaltyUnavailableMessage={loyaltyUnavailableMessage}
+        customerDisplayEnabled={customerDisplayEnabled}
+        customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
       />
     </div>
   );

@@ -667,6 +667,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           category_id: string;
+          menu_link_id: string | null;
           name: string;
           description: string | null;
           barcode: string | null;
@@ -684,6 +685,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           category_id: string;
+          menu_link_id?: string | null;
           name: string;
           description?: string | null;
           barcode?: string | null;
@@ -701,6 +703,7 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           category_id?: string;
+          menu_link_id?: string | null;
           name?: string;
           description?: string | null;
           barcode?: string | null;
@@ -2395,6 +2398,27 @@ export interface Database {
           p_total?: number;
           p_note?: string | null;
           p_items?: Json;
+        };
+        Returns: string;
+      };
+      create_pos_order_with_customer_rewards: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_order_number: string;
+          p_table_id?: string | null;
+          p_table_number?: string | null;
+          p_cashier_id?: string | null;
+          p_customer_id?: string | null;
+          p_coupon_id?: string | null;
+          p_coupon_discount_amount?: number;
+          p_subtotal?: number;
+          p_discount?: number;
+          p_discount_note?: string | null;
+          p_total?: number;
+          p_note?: string | null;
+          p_items?: Json;
+          p_idempotency_key?: string | null;
         };
         Returns: string;
       };

@@ -30,7 +30,9 @@ import {
   deleteModifierGroupAction,
   addModifierOptionAction,
   deleteModifierOptionAction,
+  copyProductsAcrossBranchesAction,
 } from "./actions";
+import type { Store } from "@/modules/stores/types";
 
 type PanelMode =
   | "closed"
@@ -39,9 +41,16 @@ type PanelMode =
   | "add-product"
   | "edit-product";
 
+type ToolDialogMode =
+  | "closed"
+  | "branch-copy"
+  | "variant-templates"
+  | "modifier-group-templates";
+
 interface Props {
   categories: Category[];
   products: Product[];
+  branchStores: Store[];
   variantTemplates: VariantTemplate[];
   modifierGroupTemplates: ModifierGroupTemplate[];
   role: Role;
@@ -50,6 +59,7 @@ interface Props {
   organizationId: string;
   planName: BillingPlan;
   canManageCatalog: boolean;
+  canUseMultiBranch: boolean;
   canUseQrOrdering: boolean;
   canUseStock: boolean;
 }
@@ -1162,11 +1172,266 @@ function CatalogDialog({
   );
 }
 
+function BranchCopyPanel({
+  products,
+  branchStores,
+  storeId,
+  canManageCatalog,
+  canUseMultiBranch,
+}: {
+  products: Product[];
+  branchStores: Store[];
+  storeId: string;
+  canManageCatalog: boolean;
+  canUseMultiBranch: boolean;
+}) {
+  const targetStores = branchStores.filter((store) => store.id !== storeId && store.isActive);
+  const [state, formAction, isPending] = useActionState(copyProductsAcrossBranchesAction, {
+    error: null,
+    message: null,
+  });
+  const disabled =
+    !canManageCatalog || !canUseMultiBranch || products.length === 0 || targetStores.length === 0 || isPending;
+
+  return (
+    <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">คัดลอกสินค้าไปสาขา</h3>
+          <p className="text-xs text-slate-500">
+            {canUseMultiBranch
+              ? "ใช้เมนูชุดเดียวกันข้ามสาขาได้ แต่ปลายทางยังแก้ราคาและตัวเลือกเองได้"
+              : "ฟีเจอร์นี้ต้องใช้แพ็กเกจที่รองรับหลายสาขา"}
+          </p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+          {targetStores.length} สาขาปลายทาง
+        </span>
+      </div>
+
+      <form action={formAction} className="mt-3 grid gap-3 xl:grid-cols-[1fr_1fr]">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-slate-600">สินค้า</p>
+          <div className="max-h-52 space-y-1 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2">
+            {products.length > 0 ? (
+              products.map((product) => (
+                <label
+                  key={product.id}
+                  className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-xs text-slate-700"
+                >
+                  <input
+                    type="checkbox"
+                    name="productIds"
+                    value={product.id}
+                    disabled={disabled}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{product.name}</span>
+                  <span className="tabular-nums text-slate-500">{priceStr(product.basePrice)}</span>
+                </label>
+              ))
+            ) : (
+              <p className="px-2 py-3 text-xs text-slate-500">ยังไม่มีสินค้าให้คัดลอก</p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-600">สาขาปลายทาง</p>
+            <div className="grid gap-1 sm:grid-cols-2">
+              {targetStores.length > 0 ? (
+                targetStores.map((store) => (
+                  <label
+                    key={store.id}
+                    className="flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5 text-xs text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      name="targetStoreIds"
+                      value={store.id}
+                      disabled={disabled}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    <span className="min-w-0 truncate">{store.name}</span>
+                  </label>
+                ))
+              ) : (
+                <p className="rounded border border-dashed border-slate-200 px-2 py-3 text-xs text-slate-500">
+                  ยังไม่มีสาขาอื่นในองค์กรนี้
+                </p>
+              )}
+            </div>
+          </div>
+
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-semibold text-slate-600">นโยบายราคา</legend>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="priceMode" value="copy" defaultChecked disabled={disabled} />
+              คัดลอกราคาเหมือนต้นทาง
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="priceMode" value="preserve" disabled={disabled} />
+              คงราคาสาขาปลายทาง
+            </label>
+          </fieldset>
+
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-semibold text-slate-600">สินค้าที่มีอยู่แล้ว</legend>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="duplicateMode" value="skip" defaultChecked disabled={disabled} />
+              ข้ามสินค้าที่เชื่อมโยงแล้ว
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="duplicateMode" value="update" disabled={disabled} />
+              อัปเดตข้อมูล แต่คงราคาตาม policy
+            </label>
+          </fieldset>
+
+          <ErrorBanner message={state.error} />
+          <NoticeBanner message={state.message} />
+          <button
+            type="submit"
+            disabled={disabled}
+            className="min-h-10 rounded-md bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {isPending ? "กำลังคัดลอก..." : "คัดลอกสินค้าไปสาขา"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function CatalogToolsDialogs({
+  products,
+  branchStores,
+  storeId,
+  variantTemplates,
+  modifierGroupTemplates,
+  canManageCatalog,
+  canUseMultiBranch,
+}: {
+  products: Product[];
+  branchStores: Store[];
+  storeId: string;
+  variantTemplates: VariantTemplate[];
+  modifierGroupTemplates: ModifierGroupTemplate[];
+  canManageCatalog: boolean;
+  canUseMultiBranch: boolean;
+}) {
+  const [dialogMode, setDialogMode] = useState<ToolDialogMode>("closed");
+  const targetStores = branchStores.filter((store) => store.id !== storeId && store.isActive);
+  const dialogTitle =
+    dialogMode === "branch-copy"
+      ? "คัดลอกสินค้าไปสาขา"
+      : dialogMode === "variant-templates"
+        ? "คลังตัวเลือกสินค้า"
+        : dialogMode === "modifier-group-templates"
+          ? "คลังกลุ่มตัวเลือก"
+          : "เครื่องมือเมนูสินค้า";
+
+  return (
+    <>
+      <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">เครื่องมือเมนูสินค้า</h3>
+            <p className="text-xs text-slate-500">
+              เปิดเฉพาะงานที่ต้องใช้ เพื่อให้หน้าเมนูสินค้าอ่านง่ายขึ้น
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            <a
+              href="/pos/display"
+              className="min-h-10 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 hover:bg-orange-100"
+            >
+              เปิดจอคู่ POS
+            </a>
+            <a
+              href="/pos/grocery"
+              className="min-h-10 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-800 hover:bg-sky-100"
+            >
+              เปิด Grocery POS
+            </a>
+            <a
+              href="/pos/grocery/display"
+              className="min-h-10 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 hover:bg-orange-100"
+            >
+              เปิดจอคู่ Grocery
+            </a>
+            <button
+              type="button"
+              onClick={() => setDialogMode("branch-copy")}
+              className="min-h-10 rounded-md border border-teal-200 bg-teal-50 px-3 text-sm font-bold text-teal-800 hover:bg-teal-100"
+            >
+              เปิดคัดลอกสินค้าไปสาขา
+              <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-xs text-teal-700">
+                {targetStores.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDialogMode("variant-templates")}
+              className="min-h-10 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
+            >
+              เปิดคลังตัวเลือกสินค้า
+              <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                {variantTemplates.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDialogMode("modifier-group-templates")}
+              className="min-h-10 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
+            >
+              เปิดคลังกลุ่มตัวเลือก
+              <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                {modifierGroupTemplates.length}
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <ModalDialog
+        open={dialogMode !== "closed"}
+        title={dialogTitle}
+        size={dialogMode === "branch-copy" || dialogMode === "modifier-group-templates" ? "xl" : "lg"}
+        onClose={() => setDialogMode("closed")}
+      >
+        {dialogMode === "branch-copy" && (
+          <BranchCopyPanel
+            products={products}
+            branchStores={branchStores}
+            storeId={storeId}
+            canManageCatalog={canManageCatalog}
+            canUseMultiBranch={canUseMultiBranch}
+          />
+        )}
+        {dialogMode === "variant-templates" && (
+          <VariantTemplatesPanel
+            variantTemplates={variantTemplates}
+            canManageCatalog={canManageCatalog}
+          />
+        )}
+        {dialogMode === "modifier-group-templates" && (
+          <ModifierGroupTemplatesPanel
+            modifierGroupTemplates={modifierGroupTemplates}
+            canManageCatalog={canManageCatalog}
+          />
+        )}
+      </ModalDialog>
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────
 
 export function CatalogManager({
   categories,
   products,
+  branchStores,
   variantTemplates,
   modifierGroupTemplates,
   role,
@@ -1175,6 +1440,7 @@ export function CatalogManager({
   organizationId,
   planName,
   canManageCatalog,
+  canUseMultiBranch,
   canUseQrOrdering,
   canUseStock,
 }: Props) {
@@ -1345,13 +1611,14 @@ export function CatalogManager({
         </aside>
 
         <section className="min-w-0 bg-slate-50 p-4">
-          <VariantTemplatesPanel
+          <CatalogToolsDialogs
+            products={products}
+            branchStores={branchStores}
+            storeId={storeId}
             variantTemplates={variantTemplates}
-            canManageCatalog={canManageCatalog}
-          />
-          <ModifierGroupTemplatesPanel
             modifierGroupTemplates={modifierGroupTemplates}
             canManageCatalog={canManageCatalog}
+            canUseMultiBranch={canUseMultiBranch}
           />
           <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>

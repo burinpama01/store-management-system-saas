@@ -28,6 +28,11 @@ function formatDate(iso: string | null): string {
     : d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function formatSubscriptionEnd(plan: BillingPlan | null, iso: string | null): string {
+  if (plan === "enterprise") return "ไม่มีกำหนดหมดอายุ";
+  return formatDate(iso);
+}
+
 export default async function TenantDetailPage({
   params,
 }: {
@@ -71,7 +76,9 @@ export default async function TenantDetailPage({
           />
           <InfoItem
             label="รอบบิลถัดไป"
-            value={tenant.subscription ? formatDate(tenant.subscription.currentPeriodEnd) : "—"}
+            value={tenant.subscription
+              ? formatSubscriptionEnd(tenant.subscription.plan, tenant.subscription.currentPeriodEnd)
+              : "—"}
           />
         </div>
         <div className="mt-4">

@@ -15,6 +15,7 @@ export interface Product {
   storeId: string;
   organizationId: string;
   categoryId: string;
+  menuLinkId?: string;
   name: string;
   description?: string;
   barcode?: string;

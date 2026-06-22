@@ -3,7 +3,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
-import { isPaidTier, isSubscriptionCurrent } from "@/modules/billing/pricing";
+import { hasBillingAccess } from "@/modules/billing/pricing";
 import { getPremiumFreeTrialEligibility, listBillingPrices } from "@/modules/billing/pricing-repository";
 import { isSlip2goConfigured } from "@/modules/billing/slip2go";
 import { BillingManager } from "./BillingManager";
@@ -20,8 +20,7 @@ export default async function BillingSettingsPage() {
   const prices = await listBillingPrices();
   const premiumTrial = await getPremiumFreeTrialEligibility(ctx.organizationId, user.id, "premium", "30d");
 
-  const active =
-    isPaidTier(billingState.plan) && isSubscriptionCurrent(billingState.currentPeriodEnd);
+  const active = hasBillingAccess(billingState);
 
   return (
     <BillingManager

@@ -230,7 +230,7 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("receivedAmount?: number");
     expect(source).toContain("changeAmount?: number");
     expect(confirmSource).toContain("receivedAmount: received");
-    expect(confirmSource).toContain("changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined");
+    expect(confirmSource).toContain("changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined");
     expect(receiptPanelSource).toContain("receivedAmount: order.receivedAmount");
     expect(receiptPanelSource).toContain("changeAmount: order.changeAmount");
     expect(receiptPanelSource).toContain("รับเงิน {priceStr(order.receivedAmount)}");

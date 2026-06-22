@@ -11,6 +11,7 @@ export function buildSettingsTabs(resolved: ResolvedPermissions): SettingsTab[] 
 
   if (resolved.can("settings.manage_store")) {
     tabs.push({ href: "/settings/store", label: "ร้านค้า" });
+    tabs.push({ href: "/settings/branches", label: "สาขา" });
   }
   if (resolved.can("users.manage") || resolved.can("permissions.manage")) {
     tabs.push({ href: "/settings/team", label: "ทีมงาน" });

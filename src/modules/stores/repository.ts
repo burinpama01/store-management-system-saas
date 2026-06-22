@@ -133,6 +133,10 @@ export async function listActiveStores(organizationId: string) {
   );
 }
 
+export async function listBranchStores(organizationId: string) {
+  return listActiveStores(organizationId);
+}
+
 export interface UpdateStoreInput {
   name?: string;
   address?: string | null;

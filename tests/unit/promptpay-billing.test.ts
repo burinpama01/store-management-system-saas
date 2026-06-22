@@ -4,6 +4,7 @@ import {
   computeNewExpiry,
   isSubscriptionCurrent,
   isPaidTier,
+  hasBillingAccess,
 } from "@/modules/billing/pricing";
 import { parseSlip2goResponse } from "@/modules/billing/slip2go";
 import { evaluatePaymentVerification } from "@/modules/billing/subscription-service";
@@ -11,6 +12,7 @@ import { receiverMatches, last4Digits, resolveSubscriptionQr, looksLikePromptPay
 import { applyPromotion, pickActivePromotion, computeUpgradeCredit, type Promotion } from "@/modules/billing/pricing-repository";
 import type { Slip2goVerification } from "@/modules/billing/slip2go";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
+import type { BillingState } from "@/modules/billing/types";
 
 describe("pricing", () => {
   it("returns prices for paid tiers and null otherwise", () => {
@@ -44,6 +46,41 @@ describe("pricing", () => {
     expect(isSubscriptionCurrent("2026-07-01T00:00:00Z", now)).toBe(true);
     expect(isSubscriptionCurrent("2026-01-01T00:00:00Z", now)).toBe(false);
     expect(isSubscriptionCurrent(null, now)).toBe(false);
+  });
+
+  it("hasBillingAccess lets active Enterprise tenants use the app without a paid-tier expiry", () => {
+    const now = new Date("2026-06-06T00:00:00Z");
+    const enterprise: BillingState = {
+      plan: "enterprise",
+      status: "active",
+      currentPeriodEnd: "2026-01-01T00:00:00Z",
+      cancelAtPeriodEnd: false,
+      trialEnd: null,
+    };
+
+    expect(hasBillingAccess(enterprise, now)).toBe(true);
+    expect(hasBillingAccess({ ...enterprise, currentPeriodEnd: "" }, now)).toBe(true);
+  });
+
+  it("hasBillingAccess still blocks inactive Enterprise and expired paid plans", () => {
+    const now = new Date("2026-06-06T00:00:00Z");
+    const enterprise: BillingState = {
+      plan: "enterprise",
+      status: "canceled",
+      currentPeriodEnd: "2099-12-31T23:59:59Z",
+      cancelAtPeriodEnd: false,
+      trialEnd: null,
+    };
+    const premium: BillingState = {
+      plan: "premium",
+      status: "active",
+      currentPeriodEnd: "2026-01-01T00:00:00Z",
+      cancelAtPeriodEnd: false,
+      trialEnd: null,
+    };
+
+    expect(hasBillingAccess(enterprise, now)).toBe(false);
+    expect(hasBillingAccess(premium, now)).toBe(false);
   });
 });
 

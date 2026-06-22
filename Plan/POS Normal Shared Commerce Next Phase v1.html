@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>POS Normal Shared Commerce Next Phase v1</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #18202a;
+      --muted: #627084;
+      --line: #d9e0e8;
+      --accent: #0f766e;
+      --accent-soft: #d8f3ef;
+      --warn: #9a5b00;
+      --warn-soft: #fff1cf;
+      --ok: #17633a;
+      --ok-soft: #dcf7e8;
+      --danger: #9f2f2f;
+      --danger-soft: #ffe0e0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 18px 56px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 20px;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    code {
+      background: #eef2f6;
+      border: 1px solid #dde5ee;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.94em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .span-4 {
+      grid-column: span 4;
+    }
+
+    .span-6 {
+      grid-column: span 6;
+    }
+
+    .span-12 {
+      grid-column: span 12;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-right: 6px;
+      white-space: nowrap;
+    }
+
+    .done {
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    .next {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .risk {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .wait {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf2f7;
+    }
+
+    .phase {
+      border-left: 4px solid var(--accent);
+    }
+
+    .phase strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .compact {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 840px) {
+      main {
+        padding: 22px 12px 42px;
+      }
+
+      .span-4,
+      .span-6,
+      .span-12 {
+        grid-column: span 12;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="badge done">Migration Applied</span>
+      <span class="badge next">Next Phase</span>
+      <h1>POS ปกติ: คูปอง สะสมแต้ม และจอคู่ - เฟสถัดไป</h1>
+      <p>
+        Source of truth สำหรับ agent รอบต่อไปหลังเพิ่ม shared commerce features ให้ <code>/pos</code>
+        และ apply migration <code>20260621040000_normal_pos_customer_coupon_loyalty.sql</code> แล้ว
+      </p>
+    </header>
+
+    <section class="grid">
+      <article class="card span-4">
+        <h2>สถานะล่าสุด</h2>
+        <ul>
+          <li><code>/pos</code> รองรับค้นหาลูกค้า ใช้คูปอง สะสมแต้ม และส่งข้อมูลไปจอลูกค้าแล้ว</li>
+          <li><code>/pos/display</code> ถูกเพิ่มสำหรับจอลูกค้าของ POS ปกติ</li>
+          <li>Remote migration history ยืนยัน <code>20260621040000 | 20260621040000</code></li>
+          <li>Version ปัจจุบันใน repo: <code>0.20.0</code></li>
+        </ul>
+      </article>
+
+      <article class="card span-4">
+        <h2>สิ่งที่ยังไม่ใช่ Done</h2>
+        <ul>
+          <li>ยังไม่มี authenticated browser QA สำหรับ checkout จริงบน <code>/pos</code></li>
+          <li>ยังไม่มี hardware QA กับจอแยก เครื่องยิงบาร์โค้ด และ WiFi printer จริง</li>
+          <li>ยังไม่ได้ deploy production หลัง migration รอบนี้</li>
+          <li>ยังไม่ได้ทำ live DB replay test สำหรับ duplicate coupon/order retry</li>
+        </ul>
+      </article>
+
+      <article class="card span-4">
+        <h2>Invariant ห้ามหลุด</h2>
+        <ul>
+          <li>customer/coupon checkout ต้องมี stable <code>idempotencyKey</code></li>
+          <li>server action ห้าม fallback สร้าง key ใหม่เองใน enhanced order path</li>
+          <li>ยอดเงินใน payment/receipt ต้องใช้ยอดหลังคูปอง</li>
+          <li>feature lock ต้องอิง package gates: <code>couponManagement</code>, <code>loyaltyPoints</code>, <code>customerDisplay</code></li>
+        </ul>
+      </article>
+
+      <article class="card span-12">
+        <h2>Agent Execution Brief</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ลำดับ</th>
+              <th>งาน</th>
+              <th>ไฟล์/route ที่ต้องดู</th>
+              <th>Acceptance criteria</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>Authenticated POS UAT</td>
+              <td><code>/pos</code>, <code>/pos/display</code>, <code>src/app/pos/PosTerminal.tsx</code></td>
+              <td>ขายสินค้าพร้อมลูกค้า+คูปองได้, receipt ถูก, loyalty ledger เกิด, จอลูกค้าแสดงยอดตรง</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Live DB replay/idempotency test</td>
+              <td><code>pos_order_idempotency_keys</code>, <code>create_pos_order_with_customer_rewards</code>, <code>coupon_redemptions</code></td>
+              <td>retry ด้วย key เดิมคืน order เดิม ไม่สร้าง redemption/order ซ้ำ</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>POS navigation polish</td>
+              <td>sidebar/nav, <code>/pos</code>, <code>/pos/display</code>, billing lock copy</td>
+              <td>ผู้ใช้เปิดจอคู่และรู้สถานะ coupon/loyalty package จาก UI ได้ชัด</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>Enterprise branch hardening</td>
+              <td>branch switcher, reports, billing, store access, RLS</td>
+              <td>Enterprise ไม่เห็น package expiry, เพิ่มสาขา/สลับสาขาได้, data isolation ชัดเจน</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>Hardware QA</td>
+              <td>barcode scanner, WiFi printer, dual display, offline queue</td>
+              <td>สแกนบาร์โค้ดเข้า item, พิมพ์ใบเสร็จผ่าน WiFi, จอแยกไม่ค้าง, offline sync ไม่ duplicate</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>Release prep</td>
+              <td>tests, build, migration list, deployment checklist</td>
+              <td>full test/build ผ่าน, migration remote up to date, rollback note พร้อม, code_reviewer ผ่านก่อน deploy</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card span-6 phase">
+        <h2>Phase 6A - Authenticated UAT</h2>
+        <strong>เป้าหมาย</strong>
+        <p>พิสูจน์ว่า POS ปกติใช้ customer/coupon/display ได้จริงหลัง migration apply.</p>
+        <ul>
+          <li>เตรียมลูกค้าทดสอบและคูปอง active ในสาขาเดียวกัน</li>
+          <li>เปิด <code>/pos</code> แล้วค้นลูกค้า ใช้คูปอง ชำระเงินสด</li>
+          <li>เปิด <code>/pos/display</code> อีกแท็บหรืออีกจอ แล้วดู snapshot ตรงกับ cart</li>
+          <li>ตรวจ order, coupon redemption, loyalty ledger และ receipt change amount</li>
+        </ul>
+      </article>
+
+      <article class="card span-6 phase">
+        <h2>Phase 6B - Enterprise Branch UX</h2>
+        <strong>เป้าหมาย</strong>
+        <p>ปิดคำถาม enterprise: ไม่มีวันหมดอายุ package, เพิ่มสาขา, เข้าสาขาอื่น, ข้อมูลแยกกัน.</p>
+        <ul>
+          <li>ตรวจ owner/admin enterprise settings ว่าไม่แสดง package expiry แบบ package ทั่วไป</li>
+          <li>เพิ่ม branch creation flow หรือทำ entry point ให้ชัดใน settings</li>
+          <li>เพิ่ม branch switcher และ route guard evidence</li>
+          <li>เพิ่ม automated tests สำหรับ store isolation และ report branch scope</li>
+        </ul>
+      </article>
+
+      <article class="card span-6 phase">
+        <h2>Phase 6C - Hardware + Offline UAT</h2>
+        <strong>เป้าหมาย</strong>
+        <p>ตรวจงานหน้าร้านจริง ไม่ใช่แค่ unit/build.</p>
+        <ul>
+          <li>ทดสอบเครื่องยิงบาร์โค้ดแบบ keyboard wedge ใน <code>/pos/grocery</code></li>
+          <li>ทดสอบ WiFi printer health route และ print receipt จริง</li>
+          <li>ทดสอบ dual screen บน POS จอคู่หรือจอแยก</li>
+          <li>ทดสอบ offline checkout แล้ว sync หลังเน็ตกลับมา</li>
+        </ul>
+      </article>
+
+      <article class="card span-6 phase">
+        <h2>Phase 6D - Release</h2>
+        <strong>เป้าหมาย</strong>
+        <p>เตรียมปล่อยแบบมี rollback และหลักฐาน verification.</p>
+        <ul>
+          <li>รัน <code>npm run typecheck</code>, <code>npm run lint</code>, <code>npm test</code>, <code>npm run build</code></li>
+          <li>ยืนยัน <code>supabase migration list</code> remote up to date</li>
+          <li>ส่ง <code>code_reviewer</code> ตรวจ release scope</li>
+          <li>deploy เมื่อได้รับ approval และทำ production smoke เฉพาะ route สำคัญ</li>
+        </ul>
+      </article>
+
+      <article class="card span-12">
+        <h2>Commands ที่ยืนยันแล้ว</h2>
+        <ul>
+          <li><code>supabase db push --dry-run --db-url "$env:SUPABASE_DATABASE_URL"</code></li>
+          <li><code>supabase db push --db-url "$env:SUPABASE_DATABASE_URL"</code></li>
+          <li><code>supabase migration list --db-url "$env:SUPABASE_DATABASE_URL"</code></li>
+        </ul>
+        <p class="compact">
+          ห้าม log ค่า <code>SUPABASE_DATABASE_URL</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code>,
+          token, password หรือ customer private data ลง output/Obsidian.
+        </p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -460,9 +460,14 @@ export function GroceryPosTerminal({
             สแกนสินค้าเร็วสำหรับร้านของชำ แยกจาก POS โต๊ะ/บุฟเฟต์เดิม แต่ใช้ cart/order/printing contract เดียวกัน
           </p>
         </div>
-        <a className="grocery-pos-link" href="/pos">
-          กลับ POS เดิม
-        </a>
+        <div className="grocery-pos-actions">
+          <a className="grocery-pos-link" href="/pos/grocery/display">
+            เปิดจอคู่ร้านของชำ
+          </a>
+          <a className="grocery-pos-link secondary" href="/pos">
+            กลับ POS เดิม
+          </a>
+        </div>
       </header>
 
       <section className="grocery-pos-sync" aria-label="offline sync status">
@@ -666,17 +671,18 @@ export function GroceryPosTerminal({
       <style jsx>{`
         .grocery-pos-shell {
           min-height: 100vh;
-          background: #f6f8fb;
-          color: #172033;
+          background: var(--color-bg);
+          color: var(--color-text-primary);
           padding: 22px;
         }
         .grocery-pos-header,
         .grocery-pos-scan,
         .grocery-pos-sync,
         .grocery-pos-panel {
-          background: #fff;
-          border: 1px solid #d9e0ea;
-          border-radius: 8px;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-xs);
         }
         .grocery-pos-header {
           display: flex;
@@ -686,7 +692,7 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-eyebrow {
           margin: 0 0 4px;
-          color: #08745f;
+          color: var(--color-brand);
           font-weight: 800;
           text-transform: uppercase;
           font-size: 12px;
@@ -701,20 +707,32 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-link,
         button {
-          border: 1px solid #cfd8e3;
-          border-radius: 8px;
-          background: #fff;
-          color: #172033;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-surface);
+          color: var(--color-text-primary);
           font-weight: 700;
           padding: 10px 12px;
           text-decoration: none;
           cursor: pointer;
         }
+        .grocery-pos-actions {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
         .grocery-pos-link,
         .grocery-pos-scan-row button {
-          background: #08745f;
-          color: #fff;
-          border-color: #08745f;
+          background: var(--color-brand);
+          color: var(--color-text-inverse);
+          border-color: var(--color-brand);
+        }
+        .grocery-pos-link.secondary {
+          background: var(--color-surface);
+          color: var(--color-text-primary);
+          border-color: var(--color-border);
         }
         .grocery-pos-scan {
           margin-top: 14px;
@@ -726,7 +744,7 @@ export function GroceryPosTerminal({
           gap: 12px;
           margin-top: 14px;
           padding: 12px 16px;
-          color: #435066;
+          color: var(--color-text-secondary);
         }
         .grocery-pos-sync div {
           display: flex;
@@ -735,10 +753,10 @@ export function GroceryPosTerminal({
           flex-wrap: wrap;
         }
         .grocery-pos-sync strong {
-          color: #08745f;
+          color: var(--color-brand);
         }
         .grocery-pos-sync p {
-          color: #9f3412;
+          color: var(--color-warning);
         }
         .grocery-pos-scan label {
           display: block;
@@ -752,14 +770,14 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-scan input {
           min-height: 46px;
-          border: 1px solid #cfd8e3;
-          border-radius: 8px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
           font-size: 18px;
           padding: 8px 12px;
         }
         .grocery-pos-message {
           margin-top: 8px;
-          color: #5f6b7d;
+          color: var(--color-text-secondary);
         }
         .grocery-pos-grid {
           display: grid;
@@ -796,18 +814,18 @@ export function GroceryPosTerminal({
           gap: 8px;
         }
         .grocery-pos-empty {
-          color: #5f6b7d;
+          color: var(--color-text-secondary);
         }
         .grocery-pos-cart-item {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto auto auto;
           align-items: center;
           gap: 8px;
-          border-bottom: 1px solid #eef2f7;
+          border-bottom: 1px solid var(--color-border);
           padding: 8px 0;
         }
         .grocery-pos-cart-item span {
-          color: #5f6b7d;
+          color: var(--color-text-secondary);
           font-size: 13px;
         }
         .grocery-pos-qty {
@@ -822,14 +840,14 @@ export function GroceryPosTerminal({
         .grocery-pos-total {
           display: flex;
           justify-content: space-between;
-          border-top: 2px solid #172033;
+          border-top: 2px solid var(--color-text-primary);
           margin-top: 14px;
           padding-top: 12px;
           font-size: 20px;
         }
         .grocery-pos-printer {
           margin-top: 10px;
-          color: #5f6b7d;
+          color: var(--color-text-secondary);
           font-size: 13px;
         }
         .grocery-pos-checkout {
@@ -845,15 +863,15 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-inline input {
           min-height: 42px;
-          border: 1px solid #cfd8e3;
-          border-radius: 8px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
           padding: 8px 10px;
         }
         .grocery-pos-primary {
           width: 100%;
-          background: #172033;
-          color: #fff;
-          border-color: #172033;
+          background: var(--color-brand);
+          color: var(--color-text-inverse);
+          border-color: var(--color-brand);
           margin-bottom: 10px;
         }
         .grocery-pos-primary + button {
@@ -872,7 +890,7 @@ export function GroceryPosTerminal({
           text-align: left;
         }
         .grocery-pos-customer-results span {
-          color: #5f6b7d;
+          color: var(--color-text-secondary);
           font-size: 13px;
         }
         @media (max-width: 860px) {

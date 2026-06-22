@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Menu Copy Across Branches Implementation Plan v1</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, "Noto Sans Thai", sans-serif;
+        color: #2f261f;
+        background: #f8f3ed;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 32px 20px 56px;
+      }
+      h1,
+      h2 {
+        margin: 0;
+        line-height: 1.2;
+      }
+      h1 {
+        font-size: 32px;
+      }
+      h2 {
+        margin-top: 28px;
+        font-size: 22px;
+      }
+      p,
+      li {
+        line-height: 1.7;
+      }
+      .hero,
+      section {
+        border: 1px solid #ead8c7;
+        background: #fffaf6;
+        border-radius: 8px;
+        padding: 22px;
+        margin-top: 18px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+      .card {
+        border: 1px solid #ead8c7;
+        border-radius: 8px;
+        padding: 16px;
+        background: #fff;
+      }
+      code {
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: #f2e7dc;
+      }
+      .status {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        color: #166534;
+        background: #dcfce7;
+        font-weight: 700;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="hero">
+        <h1>แผน Implement ระบบคัดลอกสินค้าข้ามสาขา v1</h1>
+        <p>
+          เป้าหมายคือให้แต่ละสาขามีสินค้า/เมนูเป็น record ของตัวเอง แต่เชื่อมโยงกันด้วยรหัสกลาง
+          เพื่อรู้ว่าเป็นเมนูเดียวกันข้ามสาขา โดยยังแก้ราคา สถานะ POS/QR variant และ modifier แยกกันได้
+        </p>
+        <span class="status">Approved by user: 2026-06-22</span>
+      </div>
+
+      <section>
+        <h2>Architecture</h2>
+        <div class="grid">
+          <div class="card">
+            <strong>Data model</strong>
+            <p>
+              เพิ่ม <code>menu_link_id</code> บนตาราง <code>products</code> และ backfill ให้สินค้าปัจจุบัน
+              มีค่าเท่ากับ <code>id</code> ของตัวเอง
+            </p>
+          </div>
+          <div class="card">
+            <strong>Copy service</strong>
+            <p>
+              เพิ่ม repository function สำหรับ clone category, product, variants, modifier groups และ modifier options
+              จากสาขาต้นทางไปสาขาปลายทาง
+            </p>
+          </div>
+          <div class="card">
+            <strong>Catalog UI</strong>
+            <p>
+              เพิ่ม panel ในหน้า <code>/catalog</code> เพื่อเลือกสินค้า ปลายทาง และ policy ราคา/ซ้ำ
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Copy Rules</h2>
+        <ul>
+          <li>สินค้าปลายทางได้ <code>menu_link_id</code> เดียวกับสินค้าต้นทาง</li>
+          <li>ถ้าปลายทางมี <code>menu_link_id</code> เดียวกันแล้ว default คือ skip</li>
+          <li>ถ้าเลือก update existing ให้ sync ชื่อ รูป สถานะ ตัวเลือก แต่คงราคาปลายทางเมื่อเลือก price policy แบบ preserve</li>
+          <li>category ปลายทางจับคู่ด้วยชื่อ ถ้าไม่มีก็สร้างใหม่ในสาขาปลายทาง</li>
+          <li>variants/modifiers เป็น record ใหม่ของสินค้าปลายทาง เพื่อให้แต่ละสาขาแก้เองได้</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Tasks</h2>
+        <ol>
+          <li>เขียน failing tests สำหรับ schema marker, copy contract และ UI copy</li>
+          <li>สร้าง migration ด้วย Supabase CLI แล้วเพิ่ม <code>menu_link_id</code> และ index</li>
+          <li>เพิ่ม types/repository copy service พร้อม validation ข้าม organization/store</li>
+          <li>เพิ่ม server action ที่เช็ก <code>catalog.manage</code> และ package multi-branch</li>
+          <li>เพิ่ม UI panel ใน <code>CatalogManager</code></li>
+          <li>รัน unit tests, typecheck, lint, build, browser QA, code review และ Obsidian log</li>
+        </ol>
+      </section>
+    </main>
+  </body>
+</html>

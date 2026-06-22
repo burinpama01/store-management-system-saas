@@ -130,6 +130,62 @@ export async function createOrderWithItems(input: CreateOrderInput) {
   return getOrder(orderId);
 }
 
+export interface CreatePosOrderWithCustomerRewardsInput extends CreateOrderInput {
+  customerId?: string | null;
+  couponId?: string | null;
+  couponDiscountAmount?: number;
+  idempotencyKey?: string | null;
+}
+
+export async function createPosOrderWithCustomerRewards(input: CreatePosOrderWithCustomerRewardsInput) {
+  const supabase = await createSupabaseServerClient();
+  const idempotencyKey = input.idempotencyKey?.trim();
+  if (!idempotencyKey) {
+    return { data: null, error: mapError(new Error("ต้องมี idempotency key สำหรับ POS customer/coupon checkout")) };
+  }
+  const orderNumber = generateOrderNumber({ timeZone: input.storeTimezone });
+  const items = input.cart.items.map((item) => ({
+    product_id: item.productId,
+    product_name: item.productName,
+    variant_id: item.variant?.id ?? null,
+    variant_name: item.variant?.name ?? null,
+    modifiers: item.modifiers,
+    quantity: item.quantity,
+    unit_price: item.unitPrice,
+    total_price: item.totalPrice,
+    discount_amount: item.discount ?? 0,
+    discount_type: item.discountType ?? null,
+    discount_value: item.discountValue ?? null,
+    discount_note: item.discountNote ?? null,
+    note: item.note ?? null,
+  })) as unknown as Json;
+
+  const { data: orderId, error } = await supabase.rpc("create_pos_order_with_customer_rewards", {
+    p_organization_id: input.organizationId,
+    p_store_id: input.storeId,
+    p_order_number: orderNumber,
+    p_table_id: input.tableId ?? null,
+    p_table_number: input.tableNumber ?? null,
+    p_cashier_id: input.cashierId,
+    p_customer_id: input.customerId ?? null,
+    p_coupon_id: input.couponId ?? null,
+    p_coupon_discount_amount: input.couponDiscountAmount ?? 0,
+    p_subtotal: input.cart.subtotal,
+    p_discount: input.cart.discount,
+    p_discount_note: input.cart.discountNote ?? null,
+    p_total: input.cart.total,
+    p_note: input.note ?? null,
+    p_items: items,
+    p_idempotency_key: idempotencyKey,
+  });
+
+  if (error || !orderId) {
+    return { data: null, error: mapError(error ?? new Error("ไม่สามารถสร้างออร์เดอร์ POS พร้อมลูกค้า/คูปองได้")) };
+  }
+
+  return getOrder(orderId);
+}
+
 export interface AddPaymentInput {
   method: "cash" | "qr_promptpay" | "credit_card" | "bank_transfer" | "other";
   amount: number;
@@ -167,6 +223,33 @@ export async function addPaymentAndClose(orderId: string, storeId: string, proce
   if (payErr) return { data: null, error: mapError(payErr) };
 
   return { data: mapPayment(payment), error: null };
+}
+
+export async function closePosOrderPaymentWithRewards(input: {
+  orderId: string;
+  storeId: string;
+  processedByUserId: string;
+  payment: AddPaymentInput;
+  idempotencyKey?: string | null;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("close_grocery_pos_order_payment_with_rewards", {
+    p_order_id: input.orderId,
+    p_store_id: input.storeId,
+    p_processed_by_user_id: input.processedByUserId,
+    p_method: input.payment.method,
+    p_amount: input.payment.amount,
+    p_received_amount: input.payment.receivedAmount ?? null,
+    p_change_amount: input.payment.changeAmount ?? null,
+    p_reference: input.payment.reference ?? null,
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
+
+  if (error) {
+    return { data: null, error: mapError(error) };
+  }
+
+  return getOrder(input.orderId);
 }
 
 export async function voidOrder(orderId: string, storeId: string, userId: string, reason: string) {

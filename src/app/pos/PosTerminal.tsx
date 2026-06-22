@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
 import {
@@ -14,8 +14,20 @@ import {
   removeItemDiscount,
 } from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
-import { submitOrderAction, collectPaymentAction, listSavedTicketsAction, saveSavedTicketAction, deleteSavedTicketAction, listOrdersHistoryAction, listTodayOrdersAction, voidOrderAction } from "./actions";
+import {
+  submitOrderAction,
+  collectPaymentAction,
+  searchPosCustomersAction,
+  evaluatePosCouponAction,
+  listSavedTicketsAction,
+  saveSavedTicketAction,
+  deleteSavedTicketAction,
+  listOrdersHistoryAction,
+  listTodayOrdersAction,
+  voidOrderAction,
+} from "./actions";
 import { signOut } from "../(dashboard)/actions";
+import type { CustomerProfile } from "@/modules/customers/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import { CashSessionPanel } from "./CashSessionPanel";
@@ -24,6 +36,7 @@ import { QrCode } from "@/shared/components/ui/QrCode";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
+import { publishCustomerDisplaySnapshot } from "@/modules/grocery-pos/customer-display";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -32,6 +45,7 @@ type TicketDraft = Pick<SavedOrderTicket, "tableId" | "tableNumber" | "customerN
 type DiscountDraft = { mode: DiscountType; amount: string; percentage: string; note: string };
 type HistoryRangeMode = "today" | "7d" | "30d" | "custom";
 type BillHistoryRange = { mode: HistoryRangeMode; fromDate: string; toDate: string };
+type AppliedCoupon = { couponId: string; code: string; discount: number };
 type ReceiptOrder = {
   orderNumber: string;
   items: CartItem[];
@@ -74,6 +88,12 @@ interface Props {
   storeTimezone: string;
   printers: Printer[];
   printerLoadError: string | null;
+  couponEnabled: boolean;
+  couponUnavailableMessage: string | null;
+  loyaltyEnabled: boolean;
+  loyaltyUnavailableMessage: string | null;
+  customerDisplayEnabled: boolean;
+  customerDisplayUnavailableMessage: string | null;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -90,6 +110,22 @@ function printSuccessMessage(base: string, result: ReceiptPrintResult, printerLo
 
 function priceStr(n: number) {
   return `฿${n.toLocaleString("th-TH")}`;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function buildCouponPreviewCart(cart: Cart, couponDiscount: number): Cart {
+  const normalizedDiscount = roundMoney(Math.max(0, Math.min(couponDiscount, Math.max(0, cart.subtotal - cart.discount))));
+  if (normalizedDiscount <= 0) return cart;
+  const discount = roundMoney(cart.discount + normalizedDiscount);
+  return {
+    ...cart,
+    discount,
+    discountNote: cart.discountNote ? `${cart.discountNote}; Coupon` : "Coupon",
+    total: roundMoney(Math.max(0, cart.subtotal - discount)),
+  };
 }
 
 function productInitials(name: string) {
@@ -515,6 +551,9 @@ function ProductPickerModal({
 
 function CartPanel({
   cart,
+  displayCart,
+  appliedCoupon,
+  checkoutTools,
   onUpdateQty,
   onRemove,
   onCheckout,
@@ -543,6 +582,9 @@ function CartPanel({
   onClose,
 }: {
   cart: Cart;
+  displayCart?: Cart;
+  appliedCoupon?: AppliedCoupon | null;
+  checkoutTools?: ReactNode;
   onUpdateQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
@@ -570,6 +612,7 @@ function CartPanel({
   onOpenBillHistory: () => void;
   onClose?: () => void;
 }) {
+  const summaryCart = displayCart ?? cart;
   const discountInputValue = discountMode === "percentage" ? discountPercentage : discountAmount;
   const parsedDiscountValue = Number(discountInputValue);
   const percentagePreview =
@@ -697,6 +740,7 @@ function CartPanel({
       </div>
 
       <div className="border-t border-gray-100 px-4 py-3 space-y-2">
+        {checkoutTools}
         {canDiscount && (
           <div className="space-y-2 rounded-lg border border-teal-100 bg-teal-50/50 p-2">
             <div className="flex items-start justify-between gap-2">
@@ -824,7 +868,7 @@ function CartPanel({
         )}
         <div className="flex justify-between text-xs text-gray-500">
           <span>ยอดรวม</span>
-          <span className="tabular-nums">{priceStr(cart.subtotal)}</span>
+          <span className="tabular-nums">{priceStr(summaryCart.subtotal)}</span>
         </div>
         {cart.discount > 0 && (
           <div className="flex justify-between text-xs text-green-600">
@@ -832,9 +876,15 @@ function CartPanel({
             <span className="tabular-nums">-{priceStr(cart.discount)}</span>
           </div>
         )}
+        {appliedCoupon && (
+          <div className="flex justify-between text-xs text-green-600">
+            <span>คูปอง {appliedCoupon.code}</span>
+            <span className="tabular-nums">-{priceStr(appliedCoupon.discount)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-sm font-semibold text-gray-900 pt-1 border-t border-gray-100">
           <span>รวมทั้งหมด</span>
-          <span className="tabular-nums">{priceStr(cart.total)}</span>
+          <span className="tabular-nums">{priceStr(summaryCart.total)}</span>
         </div>
         <button
           type="button"
@@ -845,6 +895,180 @@ function CartPanel({
           ชำระเงิน
         </button>
       </div>
+    </div>
+  );
+}
+
+function CustomerCouponPanel({
+  cart,
+  loyaltyEnabled,
+  loyaltyUnavailableMessage,
+  couponEnabled,
+  couponUnavailableMessage,
+  customerDisplayEnabled,
+  customerDisplayUnavailableMessage,
+  customerQuery,
+  customerResults,
+  selectedCustomer,
+  couponCode,
+  appliedCoupon,
+  message,
+  isPending,
+  onCustomerQueryChange,
+  onSearchCustomer,
+  onSelectCustomer,
+  onClearCustomer,
+  onCouponCodeChange,
+  onApplyCoupon,
+  onClearCoupon,
+}: {
+  cart: Cart;
+  loyaltyEnabled: boolean;
+  loyaltyUnavailableMessage: string | null;
+  couponEnabled: boolean;
+  couponUnavailableMessage: string | null;
+  customerDisplayEnabled: boolean;
+  customerDisplayUnavailableMessage: string | null;
+  customerQuery: string;
+  customerResults: CustomerProfile[];
+  selectedCustomer: CustomerProfile | null;
+  couponCode: string;
+  appliedCoupon: AppliedCoupon | null;
+  message: string | null;
+  isPending: boolean;
+  onCustomerQueryChange: (value: string) => void;
+  onSearchCustomer: () => void;
+  onSelectCustomer: (customer: CustomerProfile) => void;
+  onClearCustomer: () => void;
+  onCouponCodeChange: (value: string) => void;
+  onApplyCoupon: () => void;
+  onClearCoupon: () => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold text-slate-600">ลูกค้า / คูปอง / จอลูกค้า</p>
+        {customerDisplayEnabled ? (
+          <a
+            href="/pos/display"
+            target="_blank"
+            rel="noreferrer"
+            className="min-h-8 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+          >
+            จอลูกค้า
+          </a>
+        ) : (
+          <span
+            title={customerDisplayUnavailableMessage ?? undefined}
+            className="rounded-lg border border-slate-100 bg-white px-2 py-1 text-[11px] font-semibold text-slate-300"
+          >
+            จอลูกค้า
+          </span>
+        )}
+      </div>
+
+      {loyaltyEnabled ? (
+        selectedCustomer ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-2 text-xs">
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-slate-800">{selectedCustomer.name}</p>
+              <p className="text-[11px] text-slate-500">
+                {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้ม {selectedCustomer.pointsBalance ?? 0}
+              </p>
+            </div>
+            <button type="button" onClick={onClearCustomer} className="min-h-9 px-2 text-[11px] font-semibold text-red-500">
+              ล้าง
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <input
+                value={customerQuery}
+                onChange={(event) => onCustomerQueryChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onSearchCustomer();
+                }}
+                placeholder="ค้นชื่อลูกค้าหรือเบอร์โทร"
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 placeholder:text-slate-400"
+              />
+              <button
+                type="button"
+                disabled={isPending || customerQuery.trim().length === 0}
+                onClick={onSearchCustomer}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ค้นหา
+              </button>
+            </div>
+            {customerResults.length > 0 && (
+              <div className="max-h-28 space-y-1 overflow-y-auto">
+                {customerResults.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() => onSelectCustomer(customer)}
+                    className="min-h-10 w-full rounded-lg border border-slate-100 bg-white px-2 py-1 text-left text-xs text-slate-700"
+                  >
+                    <span className="block truncate font-semibold">{customer.name}</span>
+                    <span className="block text-[11px] text-slate-500">
+                      {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} · แต้ม {customer.pointsBalance ?? 0}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      ) : (
+        <p className="rounded-lg bg-white px-2 py-2 text-[11px] text-slate-400">
+          {loyaltyUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับสะสมแต้ม"}
+        </p>
+      )}
+
+      {couponEnabled ? (
+        <div className="space-y-1.5">
+          {appliedCoupon ? (
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-green-50 px-2 py-2 text-xs text-green-700">
+              <span className="truncate font-semibold">ใช้คูปอง {appliedCoupon.code} -{priceStr(appliedCoupon.discount)}</span>
+              <button type="button" onClick={onClearCoupon} className="min-h-9 px-2 text-[11px] font-semibold text-red-500">
+                ล้าง
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <input
+                value={couponCode}
+                onChange={(event) => onCouponCodeChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onApplyCoupon();
+                }}
+                disabled={cart.items.length === 0}
+                placeholder="รหัสคูปอง"
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs uppercase text-slate-800 placeholder:normal-case placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
+              />
+              <button
+                type="button"
+                disabled={isPending || cart.items.length === 0 || couponCode.trim().length === 0}
+                onClick={onApplyCoupon}
+                className="min-h-10 rounded-lg border border-green-200 bg-white px-2 text-[11px] font-semibold text-green-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ใช้คูปอง
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="rounded-lg bg-white px-2 py-2 text-[11px] text-slate-400">
+          {couponUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง"}
+        </p>
+      )}
+
+      {message && (
+        <p aria-live="polite" className="text-[11px] text-slate-600">
+          {message}
+        </p>
+      )}
     </div>
   );
 }
@@ -1889,7 +2113,27 @@ function ReceiptPanel({
 
 // ─── Main POS Terminal ────────────────────────────────────────────
 
-export function PosTerminal({ storeId, storeName, categories, products, receiptSettings, exitHref, cashSession, cashSalesPreview, currency, canDiscount, storeTimezone, printers, printerLoadError }: Props) {
+export function PosTerminal({
+  storeId,
+  storeName,
+  categories,
+  products,
+  receiptSettings,
+  exitHref,
+  cashSession,
+  cashSalesPreview,
+  currency,
+  canDiscount,
+  storeTimezone,
+  printers,
+  printerLoadError,
+  couponEnabled,
+  couponUnavailableMessage,
+  loyaltyEnabled,
+  loyaltyUnavailableMessage,
+  customerDisplayEnabled,
+  customerDisplayUnavailableMessage,
+}: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
   const [discountFormOpen, setDiscountFormOpen] = useState(false);
@@ -1910,6 +2154,12 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
   const [printStatusMessage, setPrintStatusMessage] = useState<string | null>(null);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerResults, setCustomerResults] = useState<CustomerProfile[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
+  const [customerCouponMessage, setCustomerCouponMessage] = useState<string | null>(null);
   const [billHistory, setBillHistory] = useState<Order[]>([]);
   const [historyRange, setHistoryRange] = useState<BillHistoryRange>(() => createHistoryRange("today", storeTimezone));
   const [isBillHistoryPending, setIsBillHistoryPending] = useState(false);
@@ -1919,6 +2169,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const [isPending, startTransition] = useTransition();
   const [isTicketSyncPending, startTicketTransition] = useTransition();
   const historyRequestIdRef = useRef(0);
+  const checkoutIdempotencyKeyRef = useRef<string | null>(null);
 
   const filteredProducts = selectedCategoryId
     ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
@@ -1926,10 +2177,17 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
   const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen;
+  const displayCart = useMemo(
+    () => buildCouponPreviewCart(cart, appliedCoupon?.discount ?? 0),
+    [cart, appliedCoupon?.discount],
+  );
 
   function commitCart(nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {}) {
+    checkoutIdempotencyKeyRef.current = null;
     setCart(nextCart);
     setDiscountDraft(discountDraftFromCart(nextCart));
+    setAppliedCoupon(null);
+    setCustomerCouponMessage(null);
     if (options.resetItemDiscountForms || nextCart.items.length === 0) {
       setItemDiscountResetKey((current) => current + 1);
     }
@@ -1947,6 +2205,8 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setDiscountFormOpen(false);
     setActiveTicketId(null);
     setTicketDraft(EMPTY_TICKET_DRAFT);
+    setCouponCode("");
+    setCustomerResults([]);
     setTicketMessage(message);
   }
 
@@ -2030,6 +2290,15 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     // Load once per store/terminal mount; manual refresh handles later updates.
   }, [refreshBillHistory, storeId, storeTimezone]);
 
+  useEffect(() => {
+    if (!customerDisplayEnabled) return;
+    const status = phase === "receipt" ? "paid" : phase === "payment" ? "checkout" : displayCart.items.length > 0 ? "scanning" : "idle";
+    publishCustomerDisplaySnapshot(displayCart, {
+      status,
+      customerName: selectedCustomer?.name,
+    });
+  }, [customerDisplayEnabled, displayCart, phase, selectedCustomer?.name]);
+
   function handleProductClick(product: Product) {
     if (cartLocked) return;
     if (!product.isActive || !product.availableForPos) return;
@@ -2042,6 +2311,82 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
 
   function handleAddFromPicker(input: AddToCartInput) {
     commitCart(addToCart(cart, input));
+  }
+
+  function handleCustomerQueryChange(value: string) {
+    setCustomerQuery(value);
+    if (!value.trim()) setCustomerResults([]);
+  }
+
+  function handleSearchCustomer() {
+    if (!loyaltyEnabled) {
+      setCustomerCouponMessage(loyaltyUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับสะสมแต้ม");
+      return;
+    }
+    const query = customerQuery.trim();
+    if (!query) return;
+    startTransition(async () => {
+      const result = await searchPosCustomersAction(query);
+      if (result.error) {
+        setCustomerCouponMessage(result.error);
+        setCustomerResults([]);
+        return;
+      }
+      setCustomerResults(result.customers);
+      setCustomerCouponMessage(result.customers.length > 0 ? null : "ไม่พบลูกค้าจากคำค้นนี้");
+    });
+  }
+
+  function handleSelectCustomer(customer: CustomerProfile) {
+    checkoutIdempotencyKeyRef.current = null;
+    setSelectedCustomer(customer);
+    setCustomerQuery("");
+    setCustomerResults([]);
+    setAppliedCoupon(null);
+    setCustomerCouponMessage(`เลือกลูกค้า ${customer.name} แล้ว`);
+  }
+
+  function handleClearCustomer() {
+    checkoutIdempotencyKeyRef.current = null;
+    setSelectedCustomer(null);
+    setCustomerResults([]);
+    setAppliedCoupon(null);
+    setCustomerCouponMessage("ล้างลูกค้าแล้ว");
+  }
+
+  function handleApplyCoupon() {
+    if (!couponEnabled) {
+      setCustomerCouponMessage(couponUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง");
+      return;
+    }
+    if (cart.items.length === 0) {
+      setCustomerCouponMessage("กรุณาเพิ่มสินค้าในออร์เดอร์ก่อนใช้คูปอง");
+      return;
+    }
+    const code = couponCode.trim();
+    if (!code) return;
+    startTransition(async () => {
+      const result = await evaluatePosCouponAction(code, cart, selectedCustomer?.id ?? null);
+      if (result.error || !result.couponId || !result.normalizedCode) {
+        setAppliedCoupon(null);
+        setCustomerCouponMessage(result.error ?? "คูปองนี้ใช้ไม่ได้");
+        return;
+      }
+      setAppliedCoupon({
+        couponId: result.couponId,
+        code: result.normalizedCode,
+        discount: result.discount,
+      });
+      checkoutIdempotencyKeyRef.current = null;
+      setCouponCode(result.normalizedCode);
+      setCustomerCouponMessage(`ใช้คูปอง ${result.normalizedCode} แล้ว`);
+    });
+  }
+
+  function handleClearCoupon() {
+    checkoutIdempotencyKeyRef.current = null;
+    setAppliedCoupon(null);
+    setCustomerCouponMessage("ล้างคูปองแล้ว");
   }
 
   function handleSaveTicket() {
@@ -2113,6 +2458,11 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setPhase("ordering");
     setReceipt(null);
     setPayError(null);
+    setSelectedCustomer(null);
+    setCustomerResults([]);
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCustomerCouponMessage(null);
     setOrderPanelOpen(true);
     setTicketMessage(`เรียกตั๋ว ${ticket.ticketNumber} กลับมาแล้ว`);
     return true;
@@ -2225,6 +2575,10 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
 
   function handleConfirmPayment(method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) {
     setPayError(null);
+    if (couponCode.trim() && !appliedCoupon) {
+      setPayError("กรุณากดใช้คูปองก่อนชำระเงิน");
+      return;
+    }
     startTransition(async () => {
       let order = pendingOrder;
       if (!order) {
@@ -2233,10 +2587,16 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
           tableNumber: ticketDraft.tableNumber?.trim() || activeTicket?.tableNumber,
           note: ticketDraft.note?.trim() || activeTicket?.note,
         };
+        const checkoutIdempotencyKey = checkoutIdempotencyKeyRef.current ?? createTicketId();
+        checkoutIdempotencyKeyRef.current = checkoutIdempotencyKey;
         const orderResult = await submitOrderAction(cart, {
           tableId: checkoutTicketContext.tableId,
           tableNumber: checkoutTicketContext.tableNumber,
           note: checkoutTicketContext.note,
+          customerId: selectedCustomer?.id ?? null,
+          couponCode: appliedCoupon?.code ?? null,
+          clientCouponDiscountAmount: appliedCoupon?.discount ?? 0,
+          idempotencyKey: checkoutIdempotencyKey,
         });
         if (orderResult.error) {
           setPayError(orderResult.error);
@@ -2251,10 +2611,12 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       }
       const payResult = await collectPaymentAction(order.orderId, {
         method,
-        amount: cart.total,
+        amount: displayCart.total,
         receivedAmount: received,
-        changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined,
+        changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined,
+      }, {
+        idempotencyKey: createTicketId(),
       });
       if (payResult.error) {
         setPayError(payResult.error);
@@ -2262,14 +2624,14 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       }
       setReceipt({
         orderNumber: order.orderNumber,
-        items: cart.items,
-        subtotal: cart.subtotal,
-        discount: cart.discount,
-        discountNote: cart.discountNote,
-        total: cart.total,
+        items: displayCart.items,
+        subtotal: displayCart.subtotal,
+        discount: displayCart.discount,
+        discountNote: displayCart.discountNote,
+        total: displayCart.total,
         method,
         receivedAmount: received,
-        changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined,
+        changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
       });
       if (activeTicketId) {
         const deleteResult = await deleteSavedTicketAction(activeTicketId);
@@ -2293,6 +2655,12 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     setPendingOrder(null);
     setActiveTicketId(null);
     setTicketDraft(EMPTY_TICKET_DRAFT);
+    setCustomerQuery("");
+    setCustomerResults([]);
+    setSelectedCustomer(null);
+    setCouponCode("");
+    setAppliedCoupon(null);
+    setCustomerCouponMessage(null);
     setTicketMessage(null);
     setPrintStatusMessage(null);
     setOrderPanelOpen(false);
@@ -2391,6 +2759,36 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
     });
   }
 
+  const customerCouponTools = (
+    <CustomerCouponPanel
+      cart={cart}
+      loyaltyEnabled={loyaltyEnabled}
+      loyaltyUnavailableMessage={loyaltyUnavailableMessage}
+      couponEnabled={couponEnabled}
+      couponUnavailableMessage={couponUnavailableMessage}
+      customerDisplayEnabled={customerDisplayEnabled}
+      customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
+      customerQuery={customerQuery}
+      customerResults={customerResults}
+      selectedCustomer={selectedCustomer}
+      couponCode={couponCode}
+      appliedCoupon={appliedCoupon}
+      message={customerCouponMessage}
+      isPending={isPending}
+      onCustomerQueryChange={handleCustomerQueryChange}
+      onSearchCustomer={handleSearchCustomer}
+      onSelectCustomer={handleSelectCustomer}
+      onClearCustomer={handleClearCustomer}
+      onCouponCodeChange={(value) => {
+        checkoutIdempotencyKeyRef.current = null;
+        setCouponCode(value);
+        setAppliedCoupon(null);
+      }}
+      onApplyCoupon={handleApplyCoupon}
+      onClearCoupon={handleClearCoupon}
+    />
+  );
+
   function renderOrderPanelContent(onClose?: () => void) {
     return (
       <>
@@ -2406,6 +2804,9 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         {phase === "ordering" && (
           <CartPanel
             cart={cart}
+            displayCart={displayCart}
+            appliedCoupon={appliedCoupon}
+            checkoutTools={customerCouponTools}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
@@ -2442,7 +2843,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         )}
         {phase === "payment" && (
           <PaymentPanel
-            cart={cart}
+            cart={displayCart}
             onConfirm={handleConfirmPayment}
             onBack={() => {
               if (pendingOrder) {
@@ -2606,7 +3007,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
       >
         <span>เปิดออร์เดอร์</span>
         <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
-          {cart.items.length} · {priceStr(cart.total)}
+          {cart.items.length} · {priceStr(displayCart.total)}
         </span>
       </button>
 
@@ -2636,6 +3037,9 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         {phase === "ordering" && (
           <CartPanel
             cart={cart}
+            displayCart={displayCart}
+            appliedCoupon={appliedCoupon}
+            checkoutTools={customerCouponTools}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
@@ -2672,7 +3076,7 @@ export function PosTerminal({ storeId, storeName, categories, products, receiptS
         )}
         {phase === "payment" && (
           <PaymentPanel
-            cart={cart}
+            cart={displayCart}
             onConfirm={handleConfirmPayment}
             onBack={() => {
               if (pendingOrder) {

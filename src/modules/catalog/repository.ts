@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { withDataClient } from "@/shared/services/data-client";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
@@ -141,6 +142,7 @@ function mapProduct(
     storeId: row.store_id,
     organizationId: row.organization_id,
     categoryId: row.category_id,
+    menuLinkId: row.menu_link_id ?? undefined,
     name: row.name,
     description: row.description ?? undefined,
     barcode: row.barcode ?? undefined,
@@ -356,6 +358,7 @@ export interface CreateProductInput {
   storeId: string;
   organizationId: string;
   categoryId: string;
+  menuLinkId?: string;
   name: string;
   description?: string;
   barcode?: string;
@@ -368,12 +371,15 @@ export interface CreateProductInput {
 
 export async function createProduct(input: CreateProductInput) {
   const supabase = await createSupabaseServerClient();
+  const productId = randomUUID();
   const { data, error } = await supabase
     .from("products")
     .insert({
+      id: productId,
       store_id: input.storeId,
       organization_id: input.organizationId,
       category_id: input.categoryId,
+      menu_link_id: input.menuLinkId ?? productId,
       name: input.name,
       description: input.description,
       barcode: input.barcode ?? null,
@@ -875,4 +881,604 @@ export async function deleteModifierOption(id: string, storeId: string) {
   const { error } = await supabase.from("modifier_options").delete().eq("id", id);
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
+}
+
+export type CatalogCopyPriceMode = "copy" | "preserve";
+export type CatalogCopyDuplicateMode = "skip" | "update";
+
+export interface CopyProductsAcrossBranchesInput {
+  organizationId: string;
+  sourceStoreId: string;
+  targetStoreIds: string[];
+  productIds: string[];
+  priceMode: CatalogCopyPriceMode;
+  duplicateMode: CatalogCopyDuplicateMode;
+}
+
+export interface CopyProductsAcrossBranchesSummary {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+function normalizeNameKey(value: string) {
+  return value.trim().toLocaleLowerCase("th-TH");
+}
+
+function normalizePriceKey(value: number | string | null | undefined) {
+  const numericValue = Number(value ?? 0);
+  return Number.isFinite(numericValue) ? numericValue.toFixed(2) : String(value ?? 0);
+}
+
+function catalogTemplateKey(template: { name: string; price_adjustment: number | string | null }) {
+  return `${normalizeNameKey(template.name)}::${normalizePriceKey(template.price_adjustment)}`;
+}
+
+function existingVariantPriceByName(product?: Product) {
+  return new Map((product?.variants ?? []).map((variant) => [normalizeNameKey(variant.name), variant.priceAdjustment]));
+}
+
+function existingModifierPriceByName(product?: Product) {
+  const prices = new Map<string, number>();
+  for (const group of product?.modifierGroups ?? []) {
+    for (const option of group.options) {
+      prices.set(`${normalizeNameKey(group.name)}::${normalizeNameKey(option.name)}`, option.priceAdjustment);
+    }
+  }
+  return prices;
+}
+
+async function deleteProductChildren(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  productId: string,
+) {
+  const { data: groups, error: groupsError } = await supabase
+    .from("modifier_groups")
+    .select("id")
+    .eq("product_id", productId);
+  if (groupsError) return groupsError;
+
+  const groupIds = (groups ?? []).map((group) => group.id);
+  if (groupIds.length > 0) {
+    const { error: optionsError } = await supabase
+      .from("modifier_options")
+      .delete()
+      .in("modifier_group_id", groupIds);
+    if (optionsError) return optionsError;
+
+    const { error: modifierGroupsError } = await supabase
+      .from("modifier_groups")
+      .delete()
+      .in("id", groupIds);
+    if (modifierGroupsError) return modifierGroupsError;
+  }
+
+  const { error: variantsError } = await supabase
+    .from("product_variants")
+    .delete()
+    .eq("product_id", productId);
+  return variantsError;
+}
+
+async function restoreExistingProductSnapshot(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  product: Product,
+) {
+  await deleteProductChildren(supabase, product.id);
+  await supabase
+    .from("products")
+    .update({
+      category_id: product.categoryId,
+      name: product.name,
+      description: product.description ?? null,
+      barcode: product.barcode ?? null,
+      image_url: product.imageUrl ?? null,
+      base_price: product.basePrice,
+      is_active: product.isActive,
+      available_for_pos: product.availableForPos,
+      available_for_qr: product.availableForQr,
+      sort_order: product.sortOrder,
+      updated_at: product.updatedAt,
+    })
+    .eq("id", product.id)
+    .eq("store_id", product.storeId);
+
+  for (const variant of product.variants) {
+    await supabase.from("product_variants").insert({
+      id: variant.id,
+      product_id: product.id,
+      name: variant.name,
+      barcode: variant.barcode ?? null,
+      sku: variant.sku ?? null,
+      price_adjustment: variant.priceAdjustment,
+      track_stock: variant.trackStock,
+      stock_quantity: variant.stockQuantity ?? null,
+      is_active: variant.isActive,
+      sort_order: variant.sortOrder,
+    });
+  }
+
+  for (const group of product.modifierGroups) {
+    await supabase.from("modifier_groups").insert({
+      id: group.id,
+      product_id: product.id,
+      name: group.name,
+      selection_type: group.selectionType,
+      is_required: group.isRequired,
+      min_selections: group.minSelections,
+      max_selections: group.maxSelections,
+      sort_order: group.sortOrder,
+    });
+
+    for (const option of group.options) {
+      await supabase.from("modifier_options").insert({
+        id: option.id,
+        modifier_group_id: group.id,
+        name: option.name,
+        price_adjustment: option.priceAdjustment,
+        is_default: option.isDefault,
+        is_active: option.isActive,
+        sort_order: option.sortOrder,
+      });
+    }
+  }
+}
+
+async function deleteCopiedProduct(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  productId: string,
+) {
+  await deleteProductChildren(supabase, productId);
+  await supabase.from("products").delete().eq("id", productId);
+}
+
+async function runRollbackSteps(rollbackSteps: Array<() => Promise<void>>) {
+  for (const rollback of rollbackSteps.slice().reverse()) {
+    try {
+      await rollback();
+    } catch {
+      // Best-effort rollback; the original write error is returned to the caller.
+    }
+  }
+}
+
+async function cloneProductChildren(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  sourceProduct: Product,
+  targetProductId: string,
+  input: {
+    priceMode: CatalogCopyPriceMode;
+    existingProduct?: Product;
+  },
+) {
+  const variantPrices = existingVariantPriceByName(input.existingProduct);
+  const modifierPrices = existingModifierPriceByName(input.existingProduct);
+
+  for (const variant of sourceProduct.variants) {
+    const { error } = await supabase.from("product_variants").insert({
+      product_id: targetProductId,
+      name: variant.name,
+      barcode: variant.barcode ?? null,
+      sku: variant.sku ?? null,
+      price_adjustment:
+        input.priceMode === "preserve"
+          ? (variantPrices.get(normalizeNameKey(variant.name)) ?? variant.priceAdjustment)
+          : variant.priceAdjustment,
+      track_stock: variant.trackStock,
+      stock_quantity: variant.stockQuantity ?? null,
+      is_active: variant.isActive,
+      sort_order: variant.sortOrder,
+    });
+    if (error) return error;
+  }
+
+  for (const group of sourceProduct.modifierGroups) {
+    const { data: createdGroup, error: groupError } = await supabase
+      .from("modifier_groups")
+      .insert({
+        product_id: targetProductId,
+        name: group.name,
+        selection_type: group.selectionType,
+        is_required: group.isRequired,
+        min_selections: group.minSelections,
+        max_selections: group.maxSelections,
+        sort_order: group.sortOrder,
+      })
+      .select()
+      .single();
+    if (groupError) return groupError;
+
+    for (const option of group.options) {
+      const priceKey = `${normalizeNameKey(group.name)}::${normalizeNameKey(option.name)}`;
+      const { error } = await supabase.from("modifier_options").insert({
+        modifier_group_id: createdGroup.id,
+        name: option.name,
+        price_adjustment:
+          input.priceMode === "preserve"
+            ? (modifierPrices.get(priceKey) ?? option.priceAdjustment)
+            : option.priceAdjustment,
+        is_default: option.isDefault,
+        is_active: option.isActive,
+        sort_order: option.sortOrder,
+      });
+      if (error) return error;
+    }
+  }
+
+  return null;
+}
+
+async function copyCatalogTemplateLibrary(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  input: {
+    sourceStoreId: string;
+    targetStoreId: string;
+    rollbackSteps: Array<() => Promise<void>>;
+  },
+) {
+  const { data: sourceVariantTemplates, error: sourceVariantTemplatesError } = await supabase
+    .from("catalog_variant_templates")
+    .select("*")
+    .eq("store_id", input.sourceStoreId);
+  if (sourceVariantTemplatesError) return sourceVariantTemplatesError;
+
+  const { data: targetVariantTemplates, error: targetVariantTemplatesError } = await supabase
+    .from("catalog_variant_templates")
+    .select("*")
+    .eq("store_id", input.targetStoreId);
+  if (targetVariantTemplatesError) return targetVariantTemplatesError;
+
+  const targetVariantKeys = new Set(
+    (targetVariantTemplates ?? []).map((template) => catalogTemplateKey(template)),
+  );
+  for (const template of sourceVariantTemplates ?? []) {
+    if (targetVariantKeys.has(catalogTemplateKey(template))) continue;
+
+    const { data: createdTemplate, error } = await supabase
+      .from("catalog_variant_templates")
+      .insert({
+        store_id: input.targetStoreId,
+        name: template.name,
+        price_adjustment: template.price_adjustment,
+        sort_order: template.sort_order,
+      })
+      .select("id")
+      .single();
+    if (error) return error;
+
+    targetVariantKeys.add(catalogTemplateKey(template));
+    input.rollbackSteps.push(async () => {
+      await supabase
+        .from("catalog_variant_templates")
+        .delete()
+        .eq("id", createdTemplate.id)
+        .eq("store_id", input.targetStoreId);
+    });
+  }
+
+  const { data: sourceGroupTemplates, error: sourceGroupTemplatesError } = await supabase
+    .from("catalog_modifier_group_templates")
+    .select("*")
+    .eq("store_id", input.sourceStoreId);
+  if (sourceGroupTemplatesError) return sourceGroupTemplatesError;
+
+  const sourceGroupTemplateIds = (sourceGroupTemplates ?? []).map((template) => template.id);
+  const { data: sourceOptionTemplates, error: sourceOptionTemplatesError } = sourceGroupTemplateIds.length
+    ? await supabase
+        .from("catalog_modifier_option_templates")
+        .select("*")
+        .in("group_template_id", sourceGroupTemplateIds)
+    : { data: [], error: null };
+  if (sourceOptionTemplatesError) return sourceOptionTemplatesError;
+
+  const { data: targetGroupTemplates, error: targetGroupTemplatesError } = await supabase
+    .from("catalog_modifier_group_templates")
+    .select("*")
+    .eq("store_id", input.targetStoreId);
+  if (targetGroupTemplatesError) return targetGroupTemplatesError;
+
+  const targetGroupTemplateIds = (targetGroupTemplates ?? []).map((template) => template.id);
+  const { data: targetOptionTemplates, error: targetOptionTemplatesError } = targetGroupTemplateIds.length
+    ? await supabase
+        .from("catalog_modifier_option_templates")
+        .select("*")
+        .in("group_template_id", targetGroupTemplateIds)
+    : { data: [], error: null };
+  if (targetOptionTemplatesError) return targetOptionTemplatesError;
+
+  const targetGroupsByName = new Map(
+    (targetGroupTemplates ?? []).map((template) => [normalizeNameKey(template.name), template]),
+  );
+  const targetOptionsByGroupId = new Map<string, Set<string>>();
+  for (const option of targetOptionTemplates ?? []) {
+    const optionKeys = targetOptionsByGroupId.get(option.group_template_id) ?? new Set<string>();
+    optionKeys.add(catalogTemplateKey(option));
+    targetOptionsByGroupId.set(option.group_template_id, optionKeys);
+  }
+
+  for (const sourceGroup of sourceGroupTemplates ?? []) {
+    let targetGroup = targetGroupsByName.get(normalizeNameKey(sourceGroup.name));
+    if (!targetGroup) {
+      const { data: createdGroup, error } = await supabase
+        .from("catalog_modifier_group_templates")
+        .insert({
+          store_id: input.targetStoreId,
+          name: sourceGroup.name,
+          selection_type: sourceGroup.selection_type,
+          is_required: sourceGroup.is_required,
+          min_selections: sourceGroup.min_selections,
+          max_selections: sourceGroup.max_selections,
+          sort_order: sourceGroup.sort_order,
+        })
+        .select()
+        .single();
+      if (error) return error;
+
+      targetGroup = createdGroup;
+      targetGroupsByName.set(normalizeNameKey(createdGroup.name), createdGroup);
+      targetOptionsByGroupId.set(createdGroup.id, new Set<string>());
+      input.rollbackSteps.push(async () => {
+        await supabase
+          .from("catalog_modifier_group_templates")
+          .delete()
+          .eq("id", createdGroup.id)
+          .eq("store_id", input.targetStoreId);
+      });
+    }
+
+    const targetOptionKeys = targetOptionsByGroupId.get(targetGroup.id) ?? new Set<string>();
+    for (const sourceOption of (sourceOptionTemplates ?? []).filter(
+      (option) => option.group_template_id === sourceGroup.id,
+    )) {
+      if (targetOptionKeys.has(catalogTemplateKey(sourceOption))) continue;
+
+      const { data: createdOption, error } = await supabase
+        .from("catalog_modifier_option_templates")
+        .insert({
+          group_template_id: targetGroup.id,
+          name: sourceOption.name,
+          price_adjustment: sourceOption.price_adjustment,
+          is_default: sourceOption.is_default,
+          sort_order: sourceOption.sort_order,
+        })
+        .select("id")
+        .single();
+      if (error) return error;
+
+      targetOptionKeys.add(catalogTemplateKey(sourceOption));
+      targetOptionsByGroupId.set(targetGroup.id, targetOptionKeys);
+      input.rollbackSteps.push(async () => {
+        await supabase
+          .from("catalog_modifier_option_templates")
+          .delete()
+          .eq("id", createdOption.id)
+          .eq("group_template_id", targetGroup.id);
+      });
+    }
+  }
+
+  return null;
+}
+
+export async function copyProductsAcrossBranches(input: CopyProductsAcrossBranchesInput) {
+  const supabase = await createSupabaseServerClient();
+  const targetStoreIds = [...new Set(input.targetStoreIds)].filter((id) => id !== input.sourceStoreId);
+  const productIds = [...new Set(input.productIds)];
+
+  if (targetStoreIds.length === 0) {
+    return { data: null, error: mapError(new Error("กรุณาเลือกสาขาปลายทาง")) };
+  }
+  if (productIds.length === 0) {
+    return { data: null, error: mapError(new Error("กรุณาเลือกสินค้า")) };
+  }
+
+  const { data: stores, error: storesError } = await supabase
+    .from("stores")
+    .select("id")
+    .eq("organization_id", input.organizationId)
+    .in("id", [input.sourceStoreId, ...targetStoreIds])
+    .eq("is_active", true);
+  if (storesError) return { data: null, error: mapError(storesError) };
+
+  const allowedStoreIds = new Set((stores ?? []).map((store) => store.id));
+  if (!allowedStoreIds.has(input.sourceStoreId) || targetStoreIds.some((id) => !allowedStoreIds.has(id))) {
+    return { data: null, error: mapError(new Error("พบสาขาที่ไม่อยู่ในองค์กรนี้")) };
+  }
+
+  const { data: productRows, error: productRowsError } = await supabase
+    .from("products")
+    .select("*")
+    .eq("organization_id", input.organizationId)
+    .eq("store_id", input.sourceStoreId)
+    .in("id", productIds);
+  if (productRowsError) return { data: null, error: mapError(productRowsError) };
+  if (!productRows?.length) return { data: null, error: mapError(new Error("ไม่พบสินค้าที่เลือก")) };
+
+  const sourceProductIds = productRows.map((product) => product.id);
+  const sourceCategoryIds = [...new Set(productRows.map((product) => product.category_id))];
+  const { data: variants, error: variantsError } = await supabase
+    .from("product_variants")
+    .select("*")
+    .in("product_id", sourceProductIds);
+  if (variantsError) return { data: null, error: mapError(variantsError) };
+
+  const { data: groups, error: groupsError } = await supabase
+    .from("modifier_groups")
+    .select("*")
+    .in("product_id", sourceProductIds);
+  if (groupsError) return { data: null, error: mapError(groupsError) };
+
+  const groupIds = (groups ?? []).map((group) => group.id);
+  const { data: options, error: optionsError } = groupIds.length
+    ? await supabase.from("modifier_options").select("*").in("modifier_group_id", groupIds)
+    : { data: [], error: null };
+  if (optionsError) return { data: null, error: mapError(optionsError) };
+
+  const { data: sourceCategories, error: categoriesError } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("organization_id", input.organizationId)
+    .in("id", sourceCategoryIds);
+  if (categoriesError) return { data: null, error: mapError(categoriesError) };
+
+  const categoriesById = new Map((sourceCategories ?? []).map((category) => [category.id, category]));
+  const sourceProducts = productRows.map((row) => mapProduct(row, variants ?? [], groups ?? [], options ?? []));
+  const summary: CopyProductsAcrossBranchesSummary = { created: 0, updated: 0, skipped: 0 };
+  const rollbackSteps: Array<() => Promise<void>> = [];
+  async function rollbackAndReturn(error: unknown) {
+    await runRollbackSteps(rollbackSteps);
+    return { data: null, error: mapError(error instanceof Error ? error : (error as { message?: string })) };
+  }
+
+  for (const targetStoreId of targetStoreIds) {
+    const menuLinkIds = sourceProducts.map((product) => product.menuLinkId ?? product.id);
+    const { data: targetProductRows, error: targetProductsError } = await supabase
+      .from("products")
+      .select("*")
+      .eq("organization_id", input.organizationId)
+      .eq("store_id", targetStoreId)
+      .in("menu_link_id", menuLinkIds);
+    if (targetProductsError) return rollbackAndReturn(targetProductsError);
+
+    const targetProductIds = (targetProductRows ?? []).map((product) => product.id);
+    const { data: targetVariants, error: targetVariantsError } = targetProductIds.length
+      ? await supabase.from("product_variants").select("*").in("product_id", targetProductIds)
+      : { data: [], error: null };
+    if (targetVariantsError) return rollbackAndReturn(targetVariantsError);
+
+    const { data: targetGroups, error: targetGroupsError } = targetProductIds.length
+      ? await supabase.from("modifier_groups").select("*").in("product_id", targetProductIds)
+      : { data: [], error: null };
+    if (targetGroupsError) return rollbackAndReturn(targetGroupsError);
+
+    const targetGroupIds = (targetGroups ?? []).map((group) => group.id);
+    const { data: targetOptions, error: targetOptionsError } = targetGroupIds.length
+      ? await supabase.from("modifier_options").select("*").in("modifier_group_id", targetGroupIds)
+      : { data: [], error: null };
+    if (targetOptionsError) return rollbackAndReturn(targetOptionsError);
+
+    const existingProducts = new Map(
+      (targetProductRows ?? []).map((row) => [
+        row.menu_link_id,
+        mapProduct(row, targetVariants ?? [], targetGroups ?? [], targetOptions ?? []),
+      ]),
+    );
+
+    const { data: targetCategories, error: targetCategoriesError } = await supabase
+      .from("categories")
+      .select("*")
+      .eq("organization_id", input.organizationId)
+      .eq("store_id", targetStoreId);
+    if (targetCategoriesError) return rollbackAndReturn(targetCategoriesError);
+
+    const targetCategoriesByName = new Map(
+      (targetCategories ?? []).map((category) => [normalizeNameKey(category.name), category]),
+    );
+
+    const templateCopyError = await copyCatalogTemplateLibrary(supabase, {
+      sourceStoreId: input.sourceStoreId,
+      targetStoreId,
+      rollbackSteps,
+    });
+    if (templateCopyError) return rollbackAndReturn(templateCopyError);
+
+    for (const sourceProduct of sourceProducts) {
+      const menuLinkId = sourceProduct.menuLinkId ?? sourceProduct.id;
+      const existingProduct = existingProducts.get(menuLinkId) ?? undefined;
+      if (existingProduct && input.duplicateMode === "skip") {
+        summary.skipped += 1;
+        continue;
+      }
+
+      const sourceCategory = categoriesById.get(sourceProduct.categoryId);
+      if (!sourceCategory) {
+        return rollbackAndReturn(new Error(`ไม่พบหมวดหมู่ของ ${sourceProduct.name}`));
+      }
+
+      let targetCategory = targetCategoriesByName.get(normalizeNameKey(sourceCategory.name));
+      if (!targetCategory) {
+        const { data: createdCategory, error: categoryCreateError } = await supabase
+          .from("categories")
+          .insert({
+            store_id: targetStoreId,
+            organization_id: input.organizationId,
+            name: sourceCategory.name,
+            description: sourceCategory.description,
+            sort_order: sourceCategory.sort_order,
+            is_active: sourceCategory.is_active,
+          })
+          .select()
+          .single();
+        if (categoryCreateError) return rollbackAndReturn(categoryCreateError);
+        targetCategory = createdCategory;
+        targetCategoriesByName.set(normalizeNameKey(createdCategory.name), createdCategory);
+        rollbackSteps.push(async () => {
+          await supabase
+            .from("categories")
+            .delete()
+            .eq("id", createdCategory.id)
+            .eq("store_id", targetStoreId);
+        });
+      }
+
+      const productPayload = {
+        organization_id: input.organizationId,
+        store_id: targetStoreId,
+        category_id: targetCategory.id,
+        menu_link_id: menuLinkId,
+        name: sourceProduct.name,
+        description: sourceProduct.description ?? null,
+        barcode: sourceProduct.barcode ?? null,
+        image_url: sourceProduct.imageUrl ?? null,
+        base_price:
+          input.priceMode === "preserve" && existingProduct
+            ? existingProduct.basePrice
+            : sourceProduct.basePrice,
+        is_active: sourceProduct.isActive,
+        available_for_pos: sourceProduct.availableForPos,
+        available_for_qr: sourceProduct.availableForQr,
+        sort_order: sourceProduct.sortOrder,
+      };
+
+      let targetProductId = existingProduct?.id;
+      if (existingProduct) {
+        const { error: updateError } = await supabase
+          .from("products")
+          .update({
+            ...productPayload,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingProduct.id)
+          .eq("store_id", targetStoreId);
+        if (updateError) return rollbackAndReturn(updateError);
+
+        rollbackSteps.push(async () => restoreExistingProductSnapshot(supabase, existingProduct));
+        const childrenError = await deleteProductChildren(supabase, existingProduct.id);
+        if (childrenError) return rollbackAndReturn(childrenError);
+        summary.updated += 1;
+      } else {
+        const { data: createdProduct, error: createError } = await supabase
+          .from("products")
+          .insert(productPayload)
+          .select()
+          .single();
+        if (createError) return rollbackAndReturn(createError);
+        targetProductId = createdProduct.id;
+        rollbackSteps.push(async () => deleteCopiedProduct(supabase, createdProduct.id));
+        summary.created += 1;
+      }
+
+      if (!targetProductId) {
+        return rollbackAndReturn(new Error("สร้างสินค้าปลายทางไม่สำเร็จ"));
+      }
+
+      const cloneError = await cloneProductChildren(supabase, sourceProduct, targetProductId, {
+        priceMode: input.priceMode,
+        existingProduct,
+      });
+      if (cloneError) return rollbackAndReturn(cloneError);
+    }
+  }
+
+  return { data: summary, error: null };
 }

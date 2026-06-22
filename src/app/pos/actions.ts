@@ -1,10 +1,26 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
-import { requirePermission } from "@/modules/auth/guards";
+import { getResolvedCurrentPermissions, requireFeature, requirePermission } from "@/modules/auth/guards";
 import { listProducts } from "@/modules/catalog/repository";
-import { createOrderWithItems, addPaymentAndClose, listOrdersHistory, listTodayOrders, voidOrder } from "@/modules/pos/order-repository";
+import { searchCustomersForStore } from "@/modules/customers/repository";
+import type { CustomerProfile } from "@/modules/customers/types";
+import { buildGroceryCheckoutCart } from "@/modules/grocery-pos/rewards";
+import { mapGroceryCouponError } from "@/modules/grocery-pos/checkout-service";
+import { evaluateCouponForCart } from "@/modules/promotions/coupon-policy";
+import { findCouponPolicyByCode } from "@/modules/promotions/repository";
+import {
+  createOrderWithItems,
+  addPaymentAndClose,
+  closePosOrderPaymentWithRewards,
+  createPosOrderWithCustomerRewards,
+  getOrder,
+  listOrdersHistory,
+  listTodayOrders,
+  voidOrder,
+} from "@/modules/pos/order-repository";
 import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
@@ -140,9 +156,96 @@ export async function listOrdersHistoryAction(input?: {
   }
 }
 
+export async function searchPosCustomersAction(
+  query: string,
+): Promise<{ customers: CustomerProfile[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    await requireFeature("loyaltyPoints");
+    const { ctx } = await getStoreContext();
+    const result = await searchCustomersForStore(ctx.storeId, query);
+    if (result.error) return { customers: [], error: result.error.userMessage };
+    return { customers: result.data ?? [], error: null };
+  } catch (e) {
+    return { customers: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function evaluatePosCouponAction(
+  code: string,
+  cart: Cart,
+  customerId?: string | null,
+): Promise<{
+  couponId: string | null;
+  discount: number;
+  normalizedCode: string | null;
+  error: string | null;
+}> {
+  try {
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { couponId: null, discount: 0, normalizedCode: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    await requireFeature("couponManagement");
+
+    if (cart.storeId !== ctx.storeId) {
+      return { couponId: null, discount: 0, normalizedCode: null, error: "ร้านค้าในตะกร้าไม่ถูกต้อง" };
+    }
+
+    const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
+    if (productsRes.error || !productsRes.data) {
+      return { couponId: null, discount: 0, normalizedCode: null, error: productsRes.error?.userMessage ?? "ไม่พบข้อมูลสินค้า" };
+    }
+
+    const trustedCart = buildTrustedCartFromCatalog(cart, productsRes.data, {
+      storeId: ctx.storeId,
+      canDiscount: resolved.can("pos.discount"),
+    });
+
+    const couponRes = await findCouponPolicyByCode(ctx.storeId, code, customerId);
+    if (couponRes.error) {
+      return { couponId: null, discount: 0, normalizedCode: null, error: couponRes.error.userMessage };
+    }
+    if (!couponRes.data) {
+      return { couponId: null, discount: 0, normalizedCode: null, error: "ไม่พบคูปองนี้" };
+    }
+
+    const evaluation = evaluateCouponForCart({
+      coupon: couponRes.data,
+      cart: trustedCart,
+      code,
+      customerId,
+    });
+
+    if (!evaluation.ok) {
+      return {
+        couponId: null,
+        discount: 0,
+        normalizedCode: evaluation.normalizedCode,
+        error: mapGroceryCouponError(evaluation.reason),
+      };
+    }
+
+    return {
+      couponId: evaluation.couponId,
+      discount: evaluation.discount,
+      normalizedCode: evaluation.normalizedCode,
+      error: null,
+    };
+  } catch (e) {
+    return { couponId: null, discount: 0, normalizedCode: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
 export async function submitOrderAction(
   cart: Cart,
-  opts?: { tableId?: string; tableNumber?: string; note?: string },
+  opts?: {
+    tableId?: string;
+    tableNumber?: string;
+    note?: string;
+    customerId?: string | null;
+    couponCode?: string | null;
+    clientCouponDiscountAmount?: number;
+    idempotencyKey?: string | null;
+  },
 ): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
   try {
     await requirePermission("pos.use");
@@ -166,17 +269,64 @@ export async function submitOrderAction(
       return { orderId: null, orderNumber: null, error: "ไม่พบโต๊ะนี้ในร้านค้า" };
     }
     const buffetSessionId = tableRes?.data?.currentSessionId;
+    const customerId = opts?.customerId?.trim() || null;
+    const couponCode = opts?.couponCode?.trim() || null;
+    const clientCouponDiscountAmount = opts?.clientCouponDiscountAmount ?? 0;
+    if (customerId) await requireFeature("loyaltyPoints");
+    if (couponCode || clientCouponDiscountAmount > 0) await requireFeature("couponManagement");
+    if (clientCouponDiscountAmount > 0 && !couponCode) {
+      return { orderId: null, orderNumber: null, error: "ต้องระบุรหัสคูปอง" };
+    }
+    if ((customerId || couponCode) && !opts?.idempotencyKey?.trim()) {
+      return { orderId: null, orderNumber: null, error: "ต้องมี idempotency key สำหรับ POS customer/coupon checkout" };
+    }
 
-    const result = await createOrderWithItems({
-      storeId: ctx.storeId,
-      organizationId: ctx.organizationId,
-      cashierId: user.id,
-      storeTimezone: ctx.storeTimezone,
-      cart: trustedCart,
-      tableId: opts?.tableId,
-      tableNumber: opts?.tableNumber,
-      note: opts?.note,
-    });
+    const result = customerId || couponCode
+      ? await (async () => {
+          const couponRes = couponCode
+            ? await findCouponPolicyByCode(ctx.storeId, couponCode, customerId)
+            : { data: null, error: null };
+          if (couponRes.error) return { data: null, error: couponRes.error };
+
+          const checkout = buildGroceryCheckoutCart({
+            trustedCart,
+            coupon: couponRes.data,
+            couponCode,
+            customerId,
+            clientCouponDiscountAmount,
+          });
+          if (!checkout.ok) {
+            const message = checkout.error.startsWith("coupon_")
+              ? mapGroceryCouponError(checkout.error)
+              : checkout.error;
+            return { data: null, error: { userMessage: message } };
+          }
+
+          return createPosOrderWithCustomerRewards({
+            storeId: ctx.storeId,
+            organizationId: ctx.organizationId,
+            cashierId: user.id,
+            storeTimezone: ctx.storeTimezone,
+            cart: checkout.cart,
+            tableId: opts?.tableId,
+            tableNumber: opts?.tableNumber,
+            note: opts?.note,
+            customerId,
+            couponId: checkout.couponId,
+            couponDiscountAmount: checkout.couponDiscountAmount,
+            idempotencyKey: opts?.idempotencyKey,
+          });
+        })()
+      : await createOrderWithItems({
+          storeId: ctx.storeId,
+          organizationId: ctx.organizationId,
+          cashierId: user.id,
+          storeTimezone: ctx.storeTimezone,
+          cart: trustedCart,
+          tableId: opts?.tableId,
+          tableNumber: opts?.tableNumber,
+          note: opts?.note,
+        });
 
     if (result.error) return { orderId: null, orderNumber: null, error: result.error.userMessage };
     if (buffetSessionId) {
@@ -218,6 +368,7 @@ export async function submitOrderAction(
 export async function collectPaymentAction(
   orderId: string,
   payment: AddPaymentInput,
+  opts?: { idempotencyKey?: string | null },
 ): Promise<{ error: string | null }> {
   try {
     await requirePermission("pos.use");
@@ -227,20 +378,46 @@ export async function collectPaymentAction(
       return { error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
     }
 
-    const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, payment);
+    const orderRes = await getOrder(orderId);
+    if (orderRes.error) return { error: orderRes.error.userMessage };
+    if (orderRes.data?.storeId !== ctx.storeId) return { error: "ร้านค้าในออร์เดอร์ไม่ถูกต้อง" };
 
-    if (result.error) return { error: result.error.userMessage };
+    let paymentId: string | null = null;
+    let paidAmount = payment.amount;
+    let paidMethod = payment.method;
+    if (orderRes.data?.customerId) {
+      await requireFeature("loyaltyPoints");
+      const result = await closePosOrderPaymentWithRewards({
+        orderId,
+        storeId: ctx.storeId,
+        processedByUserId: user.id,
+        payment,
+        idempotencyKey: opts?.idempotencyKey ?? randomUUID(),
+      });
+      if (result.error) return { error: result.error.userMessage };
+      const completedPayment = result.data?.payments.find((item) => item.status === "completed") ?? result.data?.payments[0];
+      paymentId = completedPayment?.id ?? null;
+      paidAmount = completedPayment?.amount ?? paidAmount;
+      paidMethod = completedPayment?.method ?? paidMethod;
+    } else {
+      const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, payment);
+      if (result.error) return { error: result.error.userMessage };
+      paymentId = result.data.id;
+      paidAmount = result.data.amount;
+      paidMethod = result.data.method;
+    }
+
     notifyOwnerSafely({
       type: "payment",
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "ชำระเงินแล้ว",
-      message: `รับชำระเงิน ${result.data.amount.toFixed(2)} ผ่าน ${result.data.method}`,
+      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${paidMethod}`,
       metadata: {
         orderId,
-        paymentId: result.data.id,
-        amount: result.data.amount,
-        method: result.data.method,
+        paymentId,
+        amount: paidAmount,
+        method: paidMethod,
       },
     });
     return { error: null };

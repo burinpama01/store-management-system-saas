@@ -72,23 +72,26 @@ export function CustomerDisplayScreen() {
       <style jsx>{`
         .customer-display {
           min-height: 100vh;
-          background: #101828;
-          color: #f8fafc;
+          background: var(--color-bg);
+          color: var(--color-text-primary);
           display: grid;
           grid-template-rows: auto 1fr auto;
           padding: 32px;
           gap: 24px;
         }
         .customer-display-total {
-          border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-          padding-bottom: 24px;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-xs);
+          padding: 24px;
         }
         .customer-display-total p,
         .customer-display-total h1 {
           margin: 0;
         }
         .customer-display-total p {
-          color: #93c5fd;
+          color: var(--color-brand);
           font-weight: 800;
           font-size: 22px;
         }
@@ -100,7 +103,7 @@ export function CustomerDisplayScreen() {
         .customer-display-total span {
           display: inline-block;
           margin-top: 12px;
-          color: #d1fae5;
+          color: var(--color-success);
           font-size: 22px;
         }
         .customer-display-list {
@@ -108,13 +111,18 @@ export function CustomerDisplayScreen() {
           align-content: start;
           gap: 14px;
           overflow: auto;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-xs);
+          padding: 20px;
         }
         .customer-display-item {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto auto;
           gap: 18px;
           align-items: center;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+          border-bottom: 1px solid var(--color-border);
           padding-bottom: 14px;
           font-size: 24px;
         }
@@ -125,7 +133,7 @@ export function CustomerDisplayScreen() {
         .customer-display-item span,
         .customer-display-empty,
         .customer-display-summary {
-          color: #cbd5e1;
+          color: var(--color-text-secondary);
         }
         .customer-display-item div span {
           display: block;

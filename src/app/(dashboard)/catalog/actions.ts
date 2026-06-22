@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
+import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import {
   createCategory,
   updateCategory,
@@ -26,6 +28,9 @@ import {
   deleteModifierOption,
   getProduct,
   getModifierGroupStoreId,
+  copyProductsAcrossBranches,
+  type CatalogCopyDuplicateMode,
+  type CatalogCopyPriceMode,
 } from "@/modules/catalog/repository";
 import type { ModifierGroupTemplate } from "@/modules/catalog/types";
 
@@ -39,7 +44,14 @@ async function getStoreContext() {
 }
 
 function revalidate() {
-  revalidatePath("/catalog", "page");
+  revalidatePath("/catalog");
+}
+
+function readFormList(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .map((value) => String(value).trim())
+    .filter(Boolean);
 }
 
 function isDuplicateVariantError(error: { code?: string; message?: string } | null) {
@@ -243,6 +255,55 @@ export async function deleteProductAction(id: string): Promise<{ error: string |
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function copyProductsAcrossBranchesAction(
+  _prev: { error: string | null; message: string | null },
+  formData: FormData,
+): Promise<{ error: string | null; message: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    const features = getPlanFeatures(billingState);
+    if (!features.multiBranchReporting) {
+      return { error: "แพ็กเกจปัจจุบันยังไม่รองรับหลายสาขา", message: null };
+    }
+
+    const productIds = readFormList(formData, "productIds");
+    const targetStoreIds = readFormList(formData, "targetStoreIds");
+    const priceMode = (formData.get("priceMode") as CatalogCopyPriceMode | null) ?? "copy";
+    const duplicateMode = (formData.get("duplicateMode") as CatalogCopyDuplicateMode | null) ?? "skip";
+
+    if (productIds.length === 0) return { error: "กรุณาเลือกสินค้า", message: null };
+    if (targetStoreIds.length === 0) return { error: "กรุณาเลือกสาขาปลายทาง", message: null };
+    if (priceMode !== "copy" && priceMode !== "preserve") {
+      return { error: "นโยบายราคาไม่ถูกต้อง", message: null };
+    }
+    if (duplicateMode !== "skip" && duplicateMode !== "update") {
+      return { error: "นโยบายสินค้าซ้ำไม่ถูกต้อง", message: null };
+    }
+
+    const result = await copyProductsAcrossBranches({
+      organizationId: ctx.organizationId,
+      sourceStoreId: ctx.storeId,
+      targetStoreIds,
+      productIds,
+      priceMode,
+      duplicateMode,
+    });
+    if (result.error || !result.data) {
+      return { error: result.error?.userMessage ?? "คัดลอกสินค้าไม่สำเร็จ", message: null };
+    }
+
+    revalidate();
+    return {
+      error: null,
+      message: `คัดลอกสินค้าแล้ว ${result.data.created} รายการ อัปเดต ${result.data.updated} รายการ ข้าม ${result.data.skipped} รายการ`,
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", message: null };
   }
 }
 

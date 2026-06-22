@@ -70,6 +70,8 @@ export function BillingManager({
   slipVerificationReady: boolean;
   premiumTrialAvailable: boolean;
 }) {
+  const isEnterprise = plan === "enterprise";
+  const enterpriseActive = isEnterprise && isActive;
   const isTrial = status === "trialing" && isActive;
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -221,17 +223,35 @@ export function BillingManager({
           <h1 className="page-title">การเรียกเก็บเงิน & แพ็กเกจ</h1>
           <p className="page-kicker">{orgName} · ชำระผ่าน PromptPay ยืนยันอัตโนมัติด้วย slip2go</p>
         </div>
-        <span className={`badge ${isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
-          {isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "ยังไม่เปิดใช้งาน"}
+        <span className={`badge ${enterpriseActive ? "badge-brand" : isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
+          {enterpriseActive
+            ? "Enterprise contract"
+            : isEnterprise
+              ? "ติดต่อผู้ดูแลแพลตฟอร์ม"
+              : isTrial
+                ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน`
+                : isActive
+                  ? "ใช้งานอยู่"
+                  : "ยังไม่เปิดใช้งาน"}
         </span>
       </div>
 
-      {isTrial && (
+      {enterpriseActive && (
+        <p className="rounded-[var(--radius-md)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] px-3 py-2 text-sm text-[var(--tenant-primary-strong)]">
+          องค์กรนี้ถูกตั้งค่าเป็น Enterprise โดยผู้ดูแลแพลตฟอร์ม: ไม่มีกำหนดหมดอายุ ไม่ต้องต่ออายุแพ็กเกจ และเปิดใช้หลายสาขาได้ตามสัญญา
+        </p>
+      )}
+      {isEnterprise && !isActive && (
+        <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          บัญชี Enterprise นี้ยังไม่เปิดใช้งาน กรุณาติดต่อผู้ดูแลแพลตฟอร์มเพื่อเปิดสิทธิ์ใช้งาน
+        </p>
+      )}
+      {!isEnterprise && isTrial && (
         <p className="rounded-[var(--radius-md)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] px-3 py-2 text-sm text-[var(--tenant-primary-strong)]">
           คุณกำลังทดลองใช้ฟรี (สิทธิ์ระดับ Premium) เหลืออีก {daysLeft(currentPeriodEnd)} วัน · เลือกแพ็กเกจด้านล่างเพื่อใช้งานต่อหลังหมดทดลอง
         </p>
       )}
-      {expired && !isActive && (
+      {!isEnterprise && expired && !isActive && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           แพ็กเกจหมดอายุหรือยังไม่ได้ชำระเงิน กรุณาชำระเพื่อใช้งานระบบต่อ
         </p>
@@ -246,9 +266,9 @@ export function BillingManager({
       <section className="panel max-w-3xl p-5">
         <h2 className="panel-title mb-3">แพ็กเกจปัจจุบัน</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoItem label="แพ็กเกจ" value={isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
-          <InfoItem label="สถานะ" value={isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
-          <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />
+          <InfoItem label={isEnterprise ? "สัญญา" : "แพ็กเกจ"} value={isEnterprise ? "Enterprise contract" : isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
+          <InfoItem label="สถานะ" value={enterpriseActive ? "ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ" : isEnterprise ? "ต้องติดต่อผู้ดูแลแพลตฟอร์ม" : isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
+          {!isEnterprise && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
         </div>
       </section>
 
@@ -263,13 +283,13 @@ export function BillingManager({
         </p>
       )}
 
-      {canManage && !paymentConfigured && !trialAvailable && (
+      {!isEnterprise && canManage && !paymentConfigured && !trialAvailable && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่าช่องทางรับชำระเงิน (PromptPay) กรุณาติดต่อผู้ดูแล
         </p>
       )}
 
-      {canManage && (paymentConfigured || trialAvailable) && (
+      {!isEnterprise && canManage && (paymentConfigured || trialAvailable) && (
         <section className="panel p-5">
           <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
 
