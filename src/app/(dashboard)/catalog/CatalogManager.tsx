@@ -10,7 +10,7 @@ import type {
 } from "@/modules/catalog/types";
 import type { BillingPlan } from "@/modules/billing/types";
 import type { Role } from "@/modules/tenants/types";
-import { ModalDialog, ImageUpload } from "@/shared/components/ui";
+import { ModalDialog, ImageUpload, LocalizedLoading } from "@/shared/components/ui";
 import {
   createCategoryAction,
   updateCategoryAction,
@@ -339,8 +339,16 @@ function ProductForm({
   return (
     <form
       action={onSubmit}
-      className="space-y-3"
+      className="relative space-y-3"
+      aria-busy={isPending}
     >
+      {isPending && (
+        <LocalizedLoading
+          variant="overlay"
+          message="กำลังบันทึกสินค้า"
+          detail="บันทึกเฉพาะฟอร์มสินค้า ไม่โหลดหน้าเมนูใหม่"
+        />
+      )}
       <ErrorBanner message={error} />
       <InputField
         label="ชื่อสินค้า"
@@ -1194,7 +1202,14 @@ function BranchCopyPanel({
     !canManageCatalog || !canUseMultiBranch || products.length === 0 || targetStores.length === 0 || isPending;
 
   return (
-    <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+    <section className="relative mb-4 rounded-lg border border-slate-200 bg-white p-3" aria-busy={isPending}>
+      {isPending && (
+        <LocalizedLoading
+          variant="overlay"
+          message="กำลังคัดลอกสินค้าไปสาขา"
+          detail="คัดลอกเฉพาะรายการที่เลือก เมนูหน้านี้ยังดูได้"
+        />
+      )}
       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-sm font-bold text-slate-900">คัดลอกสินค้าไปสาขา</h3>

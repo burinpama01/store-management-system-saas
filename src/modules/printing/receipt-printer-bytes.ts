@@ -1,4 +1,5 @@
 import { buildEscPosReceipt, type EscPosReceiptInput } from "./escpos";
+import { buildReceiptPromptPayQr } from "./receipt-qr";
 import { renderReceiptRaster } from "./receipt-raster-client";
 import { normalizePrintCopies, type ReceiptData } from "./types";
 
@@ -17,11 +18,18 @@ function repeatReceiptJob(job: Uint8Array, copies: number): Uint8Array {
  */
 export function buildReceiptPrinterBytes(escpos: EscPosReceiptInput, browser: ReceiptData): Uint8Array {
   const copies = normalizePrintCopies(browser.printCopies);
+  const requiresRaster = Boolean(buildReceiptPromptPayQr(browser));
   try {
     const raster = renderReceiptRaster(browser);
     if (raster && raster.length > 8) return repeatReceiptJob(raster, copies);
   } catch {
+    if (requiresRaster) {
+      throw new Error("QR PromptPay ต้องพิมพ์ผ่าน raster image กรุณาสั่งพิมพ์จาก browser ที่รองรับ canvas");
+    }
     /* fall through to text ESC/POS */
+  }
+  if (requiresRaster) {
+    throw new Error("QR PromptPay ต้องพิมพ์ผ่าน raster image กรุณาสั่งพิมพ์จาก browser ที่รองรับ canvas");
   }
   return repeatReceiptJob(buildEscPosReceipt(escpos), copies);
 }

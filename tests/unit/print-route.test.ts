@@ -149,6 +149,55 @@ describe("POST /api/print/ip", () => {
     expect(socketWrites).toEqual([Array.from(printJob)]);
   });
 
+  it("rejects PromptPay QR receipts without prebuilt raster bytes", async () => {
+    vi.resetModules();
+    const socketWrites: number[][] = [];
+    class MockSocket {
+      connect(_port: number, _host: string, cb: () => void) {
+        cb();
+      }
+      write(data: Uint8Array, cb: (err?: Error) => void) {
+        socketWrites.push(Array.from(data));
+        cb();
+      }
+      end() {}
+      destroy() {}
+      on() {
+        return this;
+      }
+    }
+    const getPrinter = vi.fn().mockResolvedValue({ data: scopedPrinter(), error: null });
+
+    mockRouteAuth(true);
+    vi.doMock("net", () => ({
+      default: { Socket: MockSocket, isIPv4: () => true, isIPv6: () => false },
+      Socket: MockSocket,
+      isIPv4: () => true,
+      isIPv6: () => false,
+    }));
+    vi.doMock("@/modules/stores/repository", () => ({ getPrinter }));
+
+    const { POST } = await import("@/app/api/print/ip/route");
+    const response = await POST(new Request("http://local/api/print/ip", {
+      method: "POST",
+      body: JSON.stringify({
+        receiptData: {
+          ...receiptData,
+          payments: [{ method: "qr_promptpay", amount: 45 }],
+          paymentStatus: "unpaid",
+          showQrPayment: true,
+          promptpayId: "0812345678",
+        },
+        printerId: "printer-1",
+      }),
+    }) as never);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toContain("QR PromptPay");
+    expect(socketWrites).toEqual([]);
+  });
+
   it("rejects invalid printJobBase64 before socket writes", async () => {
     vi.resetModules();
     const getPrinter = vi.fn().mockResolvedValue({ data: scopedPrinter(), error: null });

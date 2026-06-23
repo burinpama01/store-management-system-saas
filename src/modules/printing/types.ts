@@ -39,6 +39,7 @@ export interface ReceiptData {
   discountNote?: string;
   total: number;
   payments: ReceiptPayment[];
+  paymentStatus?: "unpaid" | "paid";
   footerText?: string;
   showQrPayment: boolean;
   promptpayId?: string;
@@ -94,6 +95,7 @@ export function buildReceiptData(
       receivedAmount: p.receivedAmount,
       changeAmount: p.changeAmount,
     })),
+    paymentStatus: "paid",
     footerText: settings.footerText,
     showQrPayment: settings.showQrPayment,
     promptpayId: settings.promptpayId,

@@ -8,4 +8,4 @@ export { ProgressBar } from "./ProgressBar";
 export { QrCode } from "./QrCode";
 export { MapPicker } from "./MapPicker";
 export { ImageUpload } from "./ImageUpload";
-export { Skeleton, SkeletonText, PageSkeleton } from "./Skeleton";
+export { Skeleton, SkeletonText, LocalizedLoading, PageSkeleton } from "./Skeleton";

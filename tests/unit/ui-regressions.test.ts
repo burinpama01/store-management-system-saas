@@ -6,6 +6,18 @@ const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("UX/UI regression guards", () => {
+  it("has a shared localized loading component for partial data waits", () => {
+    const source = read("src/shared/components/ui/Skeleton.tsx");
+    const exports = read("src/shared/components/ui/index.ts");
+
+    expect(source).toContain("LocalizedLoading");
+    expect(source).toContain('role="status"');
+    expect(source).toContain("aria-live");
+    expect(source).toContain("percent");
+    expect(source).toContain("ไม่สร้างเปอร์เซ็นต์ปลอม");
+    expect(exports).toContain("LocalizedLoading");
+  });
+
   it("publishes public app privacy policy and terms pages", () => {
     const legalPagePath = "src/app/(legal)/LegalPage.tsx";
     const privacyPath = "src/app/(legal)/privacy-policy/page.tsx";

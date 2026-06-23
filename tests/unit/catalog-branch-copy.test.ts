@@ -494,4 +494,19 @@ describe("catalog cross-branch menu copy", () => {
     expect(manager).toContain("ข้ามสินค้าที่เชื่อมโยงแล้ว");
     expect(manager).toContain("อัปเดตข้อมูล แต่คงราคาตาม policy");
   });
+
+  it("catalog UI shows localized loading inside dialogs while product or branch-copy actions run", () => {
+    const manager = read("src/app/(dashboard)/catalog/CatalogManager.tsx");
+    const productFormStart = manager.indexOf("function ProductForm(");
+    const productFormSource = manager.slice(productFormStart, manager.indexOf("// ─── Variant", productFormStart));
+    const branchCopyStart = manager.indexOf("function BranchCopyPanel(");
+    const branchCopySource = manager.slice(branchCopyStart, manager.indexOf("function CatalogToolsDialogs", branchCopyStart));
+
+    expect(manager).toContain("LocalizedLoading");
+    expect(productFormSource).toContain("isPending &&");
+    expect(productFormSource).toContain("กำลังบันทึกสินค้า");
+    expect(branchCopySource).toContain("isPending &&");
+    expect(branchCopySource).toContain("กำลังคัดลอกสินค้าไปสาขา");
+    expect(branchCopySource).toContain("relative");
+  });
 });

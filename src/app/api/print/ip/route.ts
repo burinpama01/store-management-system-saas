@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import net from "net";
 import { AuthorizationError, getOptionalResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { buildEscPosReceipt } from "@/modules/printing/escpos";
+import { buildReceiptPromptPayQr } from "@/modules/printing/receipt-qr";
 import { isAllowedNetworkPrinterHost } from "@/modules/printing/network-printer";
 import { getPrinter } from "@/modules/stores/repository";
 import type { ReceiptData } from "@/modules/printing/types";
@@ -49,6 +50,10 @@ function decodePrintJobBase64(printJobBase64: unknown): { bytes?: Uint8Array; er
     return { error: "Receipt too large" };
   }
   return { bytes };
+}
+
+function needsClientRasterPrintJob(receiptData: ReceiptData): boolean {
+  return Boolean(buildReceiptPromptPayQr(receiptData));
 }
 
 export async function POST(req: NextRequest) {
@@ -110,6 +115,12 @@ export async function POST(req: NextRequest) {
   const decodedPrintJob = decodePrintJobBase64(printJobBase64);
   if (decodedPrintJob.error) {
     return NextResponse.json({ error: decodedPrintJob.error }, { status: 400 });
+  }
+  if (!decodedPrintJob.bytes && needsClientRasterPrintJob(receiptData)) {
+    return NextResponse.json(
+      { error: "QR PromptPay ต้องใช้ printJobBase64 แบบ raster จาก browser ก่อนส่งไปเครื่องพิมพ์ IP" },
+      { status: 400 },
+    );
   }
 
   const bytes = decodedPrintJob.bytes ?? buildEscPosReceipt({

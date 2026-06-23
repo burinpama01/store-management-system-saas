@@ -33,6 +33,7 @@ import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/pri
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
+import { LocalizedLoading } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
@@ -1205,7 +1206,15 @@ function TicketPanel({
     : savedTickets;
 
   return (
-    <div className="space-y-4">
+    <div className="relative space-y-4" aria-busy={isTicketSyncPending}>
+      {isTicketSyncPending && (
+        <LocalizedLoading
+          variant="overlay"
+          message="กำลังซิงค์ตั๋ว"
+          detail="อัปเดตเฉพาะระบบตั๋ว หน้าขายยังไม่ต้องโหลดใหม่"
+        />
+      )}
+      <fieldset disabled={isTicketSyncPending} aria-disabled={isTicketSyncPending} className="space-y-4 disabled:opacity-60">
       <div className="grid grid-cols-2 gap-2">
         <label className="text-[11px] font-semibold text-gray-500">
           โต๊ะ
@@ -1324,6 +1333,7 @@ function TicketPanel({
           </ul>
         )}
       </div>
+      </fieldset>
     </div>
   );
 }
@@ -1353,7 +1363,14 @@ function BillHistoryPanel({
   const visibleOrders = historyMode === "sheet" ? orders : orders.slice(0, compactBillHistoryLimit);
 
   return (
-    <div className="space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2">
+    <div className="relative space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2" aria-busy={isPending}>
+      {isPending && (
+        <LocalizedLoading
+          variant="overlay"
+          message="กำลังโหลดประวัติบิล"
+          detail="โหลดเฉพาะรายการบิลในช่วงที่เลือก"
+        />
+      )}
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-[11px] font-semibold text-gray-600">บิลย้อนหลัง</p>
@@ -2019,9 +2036,10 @@ function ReceiptPanel({
           receivedAmount: order.receivedAmount,
           changeAmount: order.changeAmount,
         }],
+        paymentStatus: "paid" as const,
         footerText: settings.footerText,
         headerText: settings.headerText,
-        showQrPayment: settings.showQrPayment,
+        showQrPayment: false,
         promptpayId: settings.promptpayId,
         paperWidth: settings.paperWidth,
         printCopies: settings.printCopies,
@@ -2494,6 +2512,10 @@ export function PosTerminal({
       setTicketMessage("สร้างออร์เดอร์แล้ว กรุณาชำระเงินให้จบก่อนเรียกตั๋วอื่น");
       return false;
     }
+    if (isTicketSyncPending) {
+      setTicketMessage("กำลังซิงค์ตั๋ว กรุณารอสักครู่");
+      return false;
+    }
     commitCart(ticket.cart, { resetItemDiscountForms: true });
     setDiscountFormOpen(false);
     setActiveTicketId(ticket.id);
@@ -2593,9 +2615,10 @@ export function PosTerminal({
       discountNote: cart.discountNote,
       total: cart.total,
       payments: [],
+      paymentStatus: "unpaid" as const,
       footerText: "ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ",
-      showQrPayment: false,
-      promptpayId: undefined,
+      showQrPayment: settings.showQrPayment,
+      promptpayId: settings.promptpayId,
       headerText: "*** ใบสั่งออเดอร์ ***",
       paperWidth: settings.paperWidth,
       printCopies: settings.printCopies,
@@ -2774,8 +2797,9 @@ export function PosTerminal({
         receivedAmount: payment.receivedAmount,
         changeAmount: payment.changeAmount,
       })),
+      paymentStatus: "paid" as const,
       footerText: settings.footerText,
-      showQrPayment: settings.showQrPayment,
+      showQrPayment: false,
       promptpayId: settings.promptpayId,
       paperWidth: settings.paperWidth,
       printCopies: settings.printCopies,
