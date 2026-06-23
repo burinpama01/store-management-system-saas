@@ -548,6 +548,31 @@ describe("UX/UI regression guards", () => {
     expect(source).toContain("รูปเมนู");
   });
 
+  it("POS memoizes product category filtering for fast cashier taps", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+
+    expect(source).toContain("const filteredProducts = useMemo(");
+    expect(source).toContain("[products, selectedCategoryId]");
+    expect(source).toContain("const PosProductTile = memo(");
+  });
+
+  it("POS exposes printer reconnect controls without leaving the cashier screen", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const connectionPanel = read("src/modules/printing/PrinterConnectionPanel.tsx");
+
+    expect(source).toContain("PrinterConnectionPanel");
+    expect(source).toContain("printerConnectionOpen");
+    expect(source).toContain("เชื่อมต่อเครื่องพิมพ์");
+    expect(connectionPanel).toContain("connectBluetoothPrinter");
+    expect(connectionPanel).toContain("connectUsbPrinter");
+    expect(connectionPanel).toContain("isBluetoothPrinterConnected");
+    expect(connectionPanel).toContain("isUsbPrinterConnected");
+    expect(connectionPanel).toContain("rememberedDevice");
+    expect(connectionPanel).toContain("connectedDevice");
+    expect(connectionPanel).toContain("เคยเชื่อมต่อ:");
+    expect(connectionPanel).toContain("พร้อมใช้:");
+  });
+
   it("settings test buttons live in their respective tabs (no combined diagnostics tab)", () => {
     const nav = read("src/app/(dashboard)/settings/SettingsNav.tsx");
     const notifPage = read("src/app/(dashboard)/settings/notifications/page.tsx");

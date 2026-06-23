@@ -311,7 +311,7 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("discountPercentage={discountDraft.percentage}");
     expect(source).toContain("discountMode={discountDraft.mode}");
     expect(source).toContain("discountNote={discountDraft.note}");
-    expect(source).toContain("function commitCart(nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {})");
+    expect(source).toContain("const commitCart = useCallback((nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {})");
     expect(source).toContain("setDiscountDraft(discountDraftFromCart(nextCart))");
     expect(loadTicketSource).toContain("commitCart(ticket.cart, { resetItemDiscountForms: true })");
     expect(source).toContain("commitCart(emptyCart(storeId), { resetItemDiscountForms: true })");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
 import {
@@ -35,6 +35,7 @@ import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
 import { LocalizedLoading } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
+import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
 import { publishCustomerDisplaySnapshot, type CustomerDisplayPayment } from "@/modules/grocery-pos/customer-display";
@@ -152,6 +153,42 @@ function PosProductImage({ product }: { product: Product }) {
     </div>
   );
 }
+
+const PosProductTile = memo(function PosProductTile({
+  product,
+  disabled,
+  onSelect,
+}: {
+  product: Product;
+  disabled: boolean;
+  onSelect: (product: Product) => void;
+}) {
+  const handleSelect = useCallback(() => onSelect(product), [onSelect, product]);
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={handleSelect}
+      className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+    >
+      <div className="aspect-[4/3] border-b border-gray-100">
+        <PosProductImage product={product} />
+      </div>
+      <div className="p-3">
+        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
+          {product.name}
+        </p>
+        <p className="mt-1.5 text-sm font-semibold text-gray-700 tabular-nums">
+          {priceStr(product.basePrice)}
+        </p>
+        {product.variants.length > 0 && (
+          <p className="text-xs text-gray-400 mt-0.5">{product.variants.length} ขนาด</p>
+        )}
+      </div>
+    </button>
+  );
+});
 
 function changeStr(received: number, total: number) {
   const change = received - total;
@@ -2201,6 +2238,7 @@ export function PosTerminal({
   const [showTableBill, setShowTableBill] = useState(false);
   const [showTableOpen, setShowTableOpen] = useState(false);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  const [printerConnectionOpen, setPrinterConnectionOpen] = useState(false);
   const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
   const [billHistoryPanelOpen, setBillHistoryPanelOpen] = useState(false);
   const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>([]);
@@ -2224,10 +2262,18 @@ export function PosTerminal({
   const [isTicketSyncPending, startTicketTransition] = useTransition();
   const historyRequestIdRef = useRef(0);
   const checkoutIdempotencyKeyRef = useRef<string | null>(null);
+  const cartRef = useRef(cart);
 
-  const filteredProducts = selectedCategoryId
-    ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
-    : products.filter((p) => p.isActive && p.availableForPos);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  const filteredProducts = useMemo(
+    () => selectedCategoryId
+      ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
+      : products.filter((p) => p.isActive && p.availableForPos),
+    [products, selectedCategoryId],
+  );
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
   const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen;
@@ -2236,8 +2282,9 @@ export function PosTerminal({
     [cart, appliedCoupon?.discount],
   );
 
-  function commitCart(nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {}) {
+  const commitCart = useCallback((nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {}) => {
     checkoutIdempotencyKeyRef.current = null;
+    cartRef.current = nextCart;
     setCart(nextCart);
     setDiscountDraft(discountDraftFromCart(nextCart));
     setAppliedCoupon(null);
@@ -2248,7 +2295,7 @@ export function PosTerminal({
     if (nextCart.items.length === 0) {
       setDiscountFormOpen(false);
     }
-  }
+  }, []);
 
   function updateDiscountDraft(patch: Partial<DiscountDraft>) {
     setDiscountDraft((current) => ({ ...current, ...patch }));
@@ -2366,19 +2413,19 @@ export function PosTerminal({
     });
   }
 
-  function handleProductClick(product: Product) {
+  const handleProductClick = useCallback((product: Product) => {
     if (cartLocked) return;
     if (!product.isActive || !product.availableForPos) return;
     if (product.variants.length === 0 && product.modifierGroups.length === 0) {
-      commitCart(addToCart(cart, { product, variant: null, modifiers: [] }));
+      commitCart(addToCart(cartRef.current, { product, variant: null, modifiers: [] }));
       return;
     }
     setPicker({ product, selectedVariant: null, selectedModifiers: {} });
-  }
+  }, [cartLocked, commitCart]);
 
-  function handleAddFromPicker(input: AddToCartInput) {
-    commitCart(addToCart(cart, input));
-  }
+  const handleAddFromPicker = useCallback((input: AddToCartInput) => {
+    commitCart(addToCart(cartRef.current, input));
+  }, [commitCart]);
 
   function handleCustomerQueryChange(value: string) {
     setCustomerQuery(value);
@@ -2987,6 +3034,16 @@ export function PosTerminal({
               cashSalesPreview={cashSalesPreview}
               currency={currency}
             />
+            <button
+              type="button"
+              onClick={() => setPrinterConnectionOpen((open) => !open)}
+              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+              aria-expanded={printerConnectionOpen}
+              aria-controls="pos-printer-connection"
+            >
+              <span className="sm:hidden">ปริ้น</span>
+              <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
+            </button>
             {exitHref ? (
               <a href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
                 ←<span className="hidden sm:inline"> กลับ</span>
@@ -3005,6 +3062,12 @@ export function PosTerminal({
         {printerLoadError && (
           <div role="status" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
             โหลดการตั้งค่าเครื่องพิมพ์ไม่สำเร็จ: {printerLoadError} · ระบบจะใช้ช่องทางสำรองเมื่อพิมพ์
+          </div>
+        )}
+
+        {printerConnectionOpen && (
+          <div id="pos-printer-connection">
+            <PrinterConnectionPanel variant="compact" />
           </div>
         )}
 
@@ -3046,28 +3109,12 @@ export function PosTerminal({
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
               {filteredProducts.map((product) => (
-                <button
+                <PosProductTile
                   key={product.id}
-                  type="button"
                   disabled={cartLocked}
-                  onClick={() => handleProductClick(product)}
-                  className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
-                >
-                  <div className="aspect-[4/3] border-b border-gray-100">
-                    <PosProductImage product={product} />
-                  </div>
-                  <div className="p-3">
-                    <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
-                      {product.name}
-                    </p>
-                    <p className="mt-1.5 text-sm font-semibold text-gray-700 tabular-nums">
-                      {priceStr(product.basePrice)}
-                    </p>
-                    {product.variants.length > 0 && (
-                      <p className="text-xs text-gray-400 mt-0.5">{product.variants.length} ขนาด</p>
-                    )}
-                  </div>
-                </button>
+                  onSelect={handleProductClick}
+                  product={product}
+                />
               ))}
             </div>
           )}
