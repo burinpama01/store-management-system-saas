@@ -27,6 +27,41 @@ describe("ESC/POS raster (image) printing", () => {
     expect(out.length).toBe(8 + 2 * 2);
   });
 
+  it("splits tall raster images into short bands for mobile printers", () => {
+    const pixels = new Uint8Array(8 * 300);
+    for (let row = 0; row < 300; row += 1) {
+      for (let bit = 0; bit < 8; bit += 1) {
+        pixels[row * 8 + bit] = (row & (0x80 >> bit)) ? 1 : 0;
+      }
+    }
+
+    const out = packEscPosRaster(8, 300, pixels);
+    const commands: { bytesPerRow: number; height: number; payloadStart: number }[] = [];
+    let offset = 0;
+
+    while (offset < out.length) {
+      expect([...out.slice(offset, offset + 4)]).toEqual([0x1d, 0x76, 0x30, 0x00]);
+      const bytesPerRow = out[offset + 4] + (out[offset + 5] << 8);
+      const height = out[offset + 6] + (out[offset + 7] << 8);
+      commands.push({ bytesPerRow, height, payloadStart: offset + 8 });
+      expect(out[offset + 7]).toBe(0);
+      expect(height).toBeLessThanOrEqual(255);
+      offset += 8 + bytesPerRow * height;
+    }
+
+    expect(commands.length).toBeGreaterThan(1);
+    expect(commands.reduce((sum, command) => sum + command.height, 0)).toBe(300);
+
+    let sourceRow = 0;
+    for (const command of commands) {
+      expect(command.bytesPerRow).toBe(1);
+      for (let row = 0; row < command.height; row += 1) {
+        expect(out[command.payloadStart + row]).toBe((sourceRow + row) & 0xff);
+      }
+      sourceRow += command.height;
+    }
+  });
+
   it("thresholds RGBA luminance to black dots (transparent = white)", () => {
     // pixel0 black opaque, pixel1 white opaque, pixel2 black but transparent
     const rgba = Uint8ClampedArray.from([
