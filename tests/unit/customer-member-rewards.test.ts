@@ -75,7 +75,7 @@ describe("customer member rewards", () => {
     const sms = read("src/modules/notifications/smskub.ts");
 
     expect(page).toContain("MemberPortal");
-    expect(page).toContain("getStoreBySlug");
+    expect(page).not.toContain("getStoreBySlug");
     expect(page).toContain("portalCode");
     expect(actions).toContain("requestMemberOtpAction");
     expect(actions).toContain("verifyMemberOtpAction");
@@ -90,6 +90,9 @@ describe("customer member rewards", () => {
     expect(portal).toContain("ต้องเปิดจาก QR ของร้าน");
     expect(repository).toContain("customer_member_sessions");
     expect(repository).toContain("customer_member_portal_links");
+    expect(repository).toContain("getStoreForMemberPortal");
+    expect(repository).toContain('from("stores")');
+    expect(repository).toContain("mapStore(data)");
     expect(repository).toContain("getOrganizationBillingState");
     expect(repository).toContain("canUseFeature");
     expect(repository).toContain("แพ็กเกจ Enterprise");
@@ -143,9 +146,12 @@ describe("customer member rewards", () => {
     );
 
     expect(resolveBlock).toContain("MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE");
+    expect(resolveBlock).toContain("getStoreForMemberPortal(supabase, storeSlug)");
+    expect(resolveBlock).toContain("store: null");
     expect(resolveBlock).toContain('console.warn("[member-portal] portal link lookup failed"');
     expect(resolveBlock).toContain("codePrefix: cleanCode.slice(0, 6)");
     expect(resolveBlock).not.toContain("return { store: storeRes.data, link: null, error: mapError(error).userMessage }");
+    expect(resolveBlock).not.toContain("return { store: storeRes.data, link: null");
     expect(portal).toContain('{data.error ?? "ลิงก์นี้ใช้ได้เฉพาะ QR ที่ร้านสร้างให้เท่านั้น"}');
   });
 

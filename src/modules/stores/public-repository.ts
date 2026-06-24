@@ -13,7 +13,7 @@ type VariantRow = Database["public"]["Tables"]["product_variants"]["Row"];
 type ModGroupRow = Database["public"]["Tables"]["modifier_groups"]["Row"];
 type ModOptionRow = Database["public"]["Tables"]["modifier_options"]["Row"];
 
-function mapStore(row: StoreRow): Store {
+export function mapStore(row: StoreRow): Store {
   return {
     id: row.id,
     organizationId: row.organization_id,

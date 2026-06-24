@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
-import { getStoreBySlug } from "@/modules/stores/public-repository";
+import { mapStore } from "@/modules/stores/public-repository";
 import type { Store } from "@/modules/stores/types";
 import type { LoyaltyReward } from "@/modules/loyalty/repository";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
@@ -109,22 +109,22 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
   const cleanCode = portalCode.trim();
   if (!cleanCode) return { store: null, link: null, error: "ต้องเปิดจาก QR ของร้าน" };
 
-  const storeRes = await getStoreBySlug(storeSlug, { requireQrOrdering: false });
+  const supabase = await createSupabaseServiceClient();
+  const storeRes = await getStoreForMemberPortal(supabase, storeSlug);
   if (storeRes.error || !storeRes.data || !storeRes.data.isActive) {
-    return { store: null, link: null, error: "ไม่พบร้านนี้" };
+    return { store: null, link: null, error: storeRes.error ?? "ไม่พบร้านนี้" };
   }
 
   const billingState =
     (await getOrganizationBillingState(storeRes.data.organizationId)) ?? DEFAULT_BILLING_STATE;
   if (!canUseFeature(billingState, "loyaltyPoints")) {
     return {
-      store: storeRes.data,
+      store: null,
       link: null,
       error: ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE,
     };
   }
 
-  const supabase = await createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("customer_member_portal_links")
     .select("*")
@@ -142,7 +142,7 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
       supabaseHost: safeSupabaseHost(),
       error: error.message,
     });
-    return { store: storeRes.data, link: null, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
+    return { store: null, link: null, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
   }
   if (!data) {
     console.warn("[member-portal] portal link not found", {
@@ -152,9 +152,32 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
       codePrefix: cleanCode.slice(0, 6),
       supabaseHost: safeSupabaseHost(),
     });
-    return { store: storeRes.data, link: null, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
+    return { store: null, link: null, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
   }
   return { store: storeRes.data, link: data, error: null };
+}
+
+async function getStoreForMemberPortal(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  storeSlug: string,
+) {
+  const { data, error } = await supabase
+    .from("stores")
+    .select("*")
+    .eq("slug", storeSlug)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[member-portal] store lookup failed", {
+      storeSlug,
+      supabaseHost: safeSupabaseHost(),
+      error: error.message,
+    });
+    return { data: null, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
+  }
+  if (!data) return { data: null, error: "ไม่พบร้านนี้" };
+  return { data: mapStore(data), error: null };
 }
 
 function safeSupabaseHost() {
