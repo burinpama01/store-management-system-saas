@@ -1,9 +1,13 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
+const readMaybe = (path: string) => {
+  const fullPath = join(root, path);
+  return existsSync(fullPath) ? readFileSync(fullPath, "utf8") : "";
+};
 
 describe("cash session (open/close) RPC", () => {
   const migration = read("supabase/migrations/20260607000001_cash_sessions.sql");
@@ -40,6 +44,39 @@ describe("cash session (open/close) RPC", () => {
     expect(migration).toContain("status        = 'closed'");
   });
 
+  it("reconciles cash drawer sales from received cash minus change", () => {
+    const fixMigration = readMaybe("supabase/migrations/20260623000001_cash_session_net_cash_and_pos_gate.sql");
+    const repo = read("src/modules/cashflow/repository.ts");
+
+    expect(`${migration}\n${fixMigration}`).toContain("p.received_amount - p.change_amount");
+    expect(`${migration}\n${fixMigration}`).toContain("else p.amount");
+    expect(repo).toContain("cashIntoDrawer");
+    expect(repo).toContain("payment.received_amount - payment.change_amount");
+  });
+
+  it("enforces cashflow.record permission in cash session RPCs", () => {
+    const fixMigration = readMaybe("supabase/migrations/20260623000001_cash_session_net_cash_and_pos_gate.sql");
+
+    expect(fixMigration).toContain("create or replace function auth_user_has_permission");
+    expect(fixMigration).toContain("membership_permission_overrides");
+    expect(fixMigration).toContain("permission_key = p_permission_key");
+    expect(fixMigration).toContain("auth_user_has_permission(v_org_id, p_store_id, 'cashflow.record')");
+    expect(fixMigration).toContain("auth_user_has_permission(v_session.organization_id, p_store_id, 'cashflow.record')");
+  });
+
+  it("requires an open cash session inside the POS cash payment RPC", () => {
+    const fixMigration = readMaybe("supabase/migrations/20260623000001_cash_session_net_cash_and_pos_gate.sql");
+
+    expect(fixMigration).toContain("create or replace function close_pos_order_payment");
+    expect(fixMigration).toContain("auth_user_has_permission(v_order.organization_id, p_store_id, 'pos.use')");
+    expect(fixMigration).toContain("auth_user_has_permission(v_order.organization_id, p_store_id, 'cashflow.record')");
+    expect(fixMigration).toContain("v_open_cash_session_id");
+    expect(fixMigration).toContain("from cash_sessions");
+    expect(fixMigration).toContain("status = 'open'");
+    expect(fixMigration).toContain("for update");
+    expect(fixMigration).toContain("ต้องเปิดรอบเงินสดก่อนรับเงินสด");
+  });
+
   it("locks RPC execution to authenticated callers only", () => {
     expect(migration).toContain("revoke execute on function open_cash_session(uuid, numeric, text) from public, anon");
     expect(migration).toContain("grant execute on function open_cash_session(uuid, numeric, text) to authenticated");
@@ -53,8 +90,24 @@ describe("cash session (open/close) RPC", () => {
     expect(repo).toContain('supabase.rpc("close_cash_session"');
 
     const actions = read("src/app/pos/cash-actions.ts");
-    expect(actions).toContain('requirePermission("pos.use")');
+    expect(actions).toContain('requirePermission("cashflow.record")');
     expect(actions).toContain("openCashSession");
     expect(actions).toContain("closeCashSession");
+  });
+
+  it("forces cashiers to open a cash session before taking cash in POS", () => {
+    const terminal = read("src/app/pos/PosTerminal.tsx");
+    const panel = read("src/app/pos/CashSessionPanel.tsx");
+    const page = read("src/app/pos/page.tsx");
+    const actions = read("src/app/pos/actions.ts");
+
+    expect(page).toContain('canRecordCashflow={resolved.can("cashflow.record")}');
+    expect(terminal).toContain("canRecordCashflow");
+    expect(terminal).toContain("cashSessionRequired");
+    expect(terminal).toContain("ต้องเปิดรอบเงินสดก่อนรับเงินสด");
+    expect(terminal).toContain("forceOpenPrompt={!cashSession && canRecordCashflow}");
+    expect(panel).toContain("forceOpenPrompt?: boolean");
+    expect(actions).toContain("getOpenCashSession");
+    expect(actions).toContain("ต้องเปิดรอบเงินสดก่อนรับเงินสด");
   });
 });

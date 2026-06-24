@@ -34,6 +34,7 @@ export class ReceiptPrintFallbackError extends Error {
 
 interface PrintReceiptWithFallbackInput {
   printers: Printer[];
+  preferredPrinterId?: string | null;
   escpos: EscPosReceiptInput;
   browser: ReceiptData;
   onConfiguredPrinterError?: (error: unknown, printer: Printer) => void;
@@ -43,44 +44,53 @@ export function selectDefaultPrinter(printers: Printer[]): Printer | null {
   return printers.find((printer) => printer.isDefault) ?? null;
 }
 
+export function selectConfiguredPrinter(printers: Printer[], preferredPrinterId?: string | null): Printer | null {
+  if (preferredPrinterId) {
+    const preferredPrinter = printers.find((printer) => printer.id === preferredPrinterId);
+    if (preferredPrinter) return preferredPrinter;
+  }
+  return selectDefaultPrinter(printers);
+}
+
 export async function printReceiptWithFallback({
   printers,
+  preferredPrinterId,
   escpos,
   browser,
   onConfiguredPrinterError,
 }: PrintReceiptWithFallbackInput): Promise<ReceiptPrintResult> {
-  const defaultPrinter = selectDefaultPrinter(printers);
+  const configuredPrinter = selectConfiguredPrinter(printers, preferredPrinterId);
   let configuredPrinterError: unknown;
 
-  if (defaultPrinter) {
+  if (configuredPrinter) {
     try {
-      await printService.print(defaultPrinter, {
+      await printService.print(configuredPrinter, {
         ...browser,
-        paperWidth: defaultPrinter.paperWidth,
+        paperWidth: configuredPrinter.paperWidth,
       });
-      return { channel: "configured", printer: defaultPrinter };
+      return { channel: "configured", printer: configuredPrinter };
     } catch (error) {
       configuredPrinterError = error;
-      onConfiguredPrinterError?.(error, defaultPrinter);
+      onConfiguredPrinterError?.(error, configuredPrinter);
     }
   }
 
   let channel: PrintChannel;
   const skipBluetoothFallback =
-    defaultPrinter?.type === "bluetooth" && isBluetoothPrinterMismatchError(configuredPrinterError);
+    configuredPrinter?.type === "bluetooth" && isBluetoothPrinterMismatchError(configuredPrinterError);
   try {
     channel = skipBluetoothFallback
       ? await printReceiptAuto(escpos, browser, { skipBluetooth: true })
       : await printReceiptAuto(escpos, browser);
   } catch (fallbackError) {
-    if (configuredPrinterError && defaultPrinter) {
-      throw new ReceiptPrintFallbackError(defaultPrinter, configuredPrinterError, fallbackError);
+    if (configuredPrinterError && configuredPrinter) {
+      throw new ReceiptPrintFallbackError(configuredPrinter, configuredPrinterError, fallbackError);
     }
     throw fallbackError;
   }
   return {
     channel,
-    fallbackFromPrinter: configuredPrinterError ? defaultPrinter ?? undefined : undefined,
+    fallbackFromPrinter: configuredPrinterError ? configuredPrinter ?? undefined : undefined,
     configuredPrinterError,
   };
 }

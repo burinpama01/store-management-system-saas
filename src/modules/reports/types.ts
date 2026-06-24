@@ -48,5 +48,6 @@ export interface ReportData {
 export interface DashboardData {
   todaySales: SalesSummary;
   pendingOrderCount: number;
+  paymentMethodsToday: PaymentMethodSummary[];
   topProductsToday: TopProduct[];
 }

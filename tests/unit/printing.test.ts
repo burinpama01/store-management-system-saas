@@ -800,11 +800,93 @@ describe("printer adapters", () => {
       byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30 && bytes[index + 3] === 0,
     );
     const qrDots = fillRects.filter((rect) => rect.fillStyle === "#000" && rect.width >= 3 && rect.height >= 3);
+    const storeNameTextCalls = vi.mocked(ctx.fillText).mock.calls.filter(([text]) => text === "Each Other");
 
     expect(bytes.slice(0, 2)).toEqual([0x1b, 0x40]);
     expect(rasterCommandIndex).toBeGreaterThanOrEqual(2);
     expect(bytes.slice(rasterCommandIndex + 8, -7).some((byte) => byte !== 0)).toBe(true);
     expect(qrDots.length).toBeGreaterThan(50);
+    expect(storeNameTextCalls).toHaveLength(2);
+    expect(Number(storeNameTextCalls[1]?.[1])).toBeCloseTo(Number(storeNameTextCalls[0]?.[1]) + 0.7);
+  });
+
+  it("turns light gray anti-aliased receipt text into black raster dots", () => {
+    type MockCanvas = {
+      width: number;
+      height: number;
+      getContext(type: "2d"): MockCanvasContext;
+    };
+    type MockCanvasContext = {
+      fillStyle: string;
+      textBaseline: string;
+      font: string;
+      textAlign: CanvasTextAlign;
+      fillRect(x: number, y: number, width: number, height: number): void;
+      fillText(text: string, x: number, y: number, maxWidth?: number): void;
+      getImageData(x: number, y: number, width: number, height: number): { data: Uint8ClampedArray };
+    };
+
+    let canvasWidth = 0;
+    let canvasHeight = 0;
+    let pixelBuffer = new Uint8ClampedArray();
+    const ensureBuffer = () => {
+      const needed = canvasWidth * canvasHeight * 4;
+      if (pixelBuffer.length !== needed) pixelBuffer = new Uint8ClampedArray(needed);
+    };
+    const paintPixel = (x: number, y: number, value: number) => {
+      ensureBuffer();
+      const xx = Math.max(0, Math.min(canvasWidth - 1, Math.floor(x)));
+      const yy = Math.max(0, Math.min(canvasHeight - 1, Math.floor(y)));
+      const offset = (yy * canvasWidth + xx) * 4;
+      pixelBuffer[offset] = value;
+      pixelBuffer[offset + 1] = value;
+      pixelBuffer[offset + 2] = value;
+      pixelBuffer[offset + 3] = 255;
+    };
+    const ctx: MockCanvasContext = {
+      fillStyle: "#000",
+      textBaseline: "top",
+      font: "",
+      textAlign: "left",
+      fillRect() {
+        ensureBuffer();
+        pixelBuffer.fill(this.fillStyle === "#000" ? 0 : 255);
+      },
+      fillText: vi.fn((_text, x, y) => {
+        paintPixel(x, y, 190);
+      }),
+      getImageData: vi.fn((_x, _y, width, height) => {
+        ensureBuffer();
+        return { data: pixelBuffer.slice(0, width * height * 4) };
+      }),
+    };
+    const canvas: MockCanvas = {
+      get width() {
+        return canvasWidth;
+      },
+      set width(value: number) {
+        canvasWidth = value;
+      },
+      get height() {
+        return canvasHeight;
+      },
+      set height(value: number) {
+        canvasHeight = value;
+      },
+      getContext: vi.fn(() => ctx),
+    };
+    vi.stubGlobal("document", { createElement: vi.fn(() => canvas) });
+
+    const job = renderReceiptRaster(receiptFixture);
+    const bytes = Array.from(job ?? []);
+    const rasterCommandIndex = bytes.findIndex((byte, index) =>
+      byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30 && bytes[index + 3] === 0,
+    );
+    const rasterPayload = bytes.slice(rasterCommandIndex + 8, -7);
+
+    expect(rasterCommandIndex).toBeGreaterThanOrEqual(2);
+    expect(rasterPayload.some((byte) => byte !== 0)).toBe(true);
+    expect(ctx.fillText).toHaveBeenCalled();
   });
 
   it("does not print to a connected Bluetooth device that does not match the configured printer", async () => {

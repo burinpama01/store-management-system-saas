@@ -30,6 +30,7 @@ import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
+import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers";
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
@@ -38,7 +39,12 @@ import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
-import { publishCustomerDisplaySnapshot, type CustomerDisplayPayment } from "@/modules/grocery-pos/customer-display";
+import {
+  publishCustomerDisplaySnapshot,
+  resolveCustomerDisplayPublishCart,
+  type CustomerDisplayCustomer,
+  type CustomerDisplayPayment,
+} from "@/modules/grocery-pos/customer-display";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -87,6 +93,7 @@ interface Props {
   cashSalesPreview: number;
   currency: string;
   canDiscount: boolean;
+  canRecordCashflow: boolean;
   storeTimezone: string;
   printers: Printer[];
   printerLoadError: string | null;
@@ -1802,6 +1809,7 @@ function PaymentPanel({
   promptpayId,
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
+  cashSessionRequired,
 }: {
   cart: Cart;
   onConfirm: (method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) => void;
@@ -1813,6 +1821,7 @@ function PaymentPanel({
   promptpayId?: string;
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
+  cashSessionRequired: boolean;
 }) {
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState<string>("");
@@ -1821,7 +1830,7 @@ function PaymentPanel({
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
-  const cashReady = method !== "cash" || receivedNum >= cart.total;
+  const cashReady = method !== "cash" || (!cashSessionRequired && receivedNum >= cart.total);
   const qrReady = method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
 
   let promptPayPayload: string | null = null;
@@ -1881,6 +1890,11 @@ function PaymentPanel({
 
         {method === "cash" && (
           <div className="space-y-1.5">
+            {cashSessionRequired && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                ต้องเปิดรอบเงินสดก่อนรับเงินสด
+              </p>
+            )}
             <label className="block text-xs font-semibold text-gray-600">รับเงินมา (บาท)</label>
             <input
               type="number"
@@ -2013,6 +2027,7 @@ function ReceiptPanel({
   receiptSettings,
   storeName,
   printers,
+  preferredPrinterId,
   printerLoadError,
   onNewOrder,
 }: {
@@ -2020,6 +2035,7 @@ function ReceiptPanel({
   receiptSettings: ReceiptSettings | null;
   storeName: string;
   printers: Printer[];
+  preferredPrinterId: string | null;
   printerLoadError: string | null;
   onNewOrder: () => void;
 }) {
@@ -2084,6 +2100,7 @@ function ReceiptPanel({
       };
       const result = await printReceiptWithFallback({
         printers,
+        preferredPrinterId,
         escpos: {
           storeName: receiptData.storeName,
           address: receiptData.address,
@@ -2215,6 +2232,7 @@ export function PosTerminal({
   cashSalesPreview,
   currency,
   canDiscount,
+  canRecordCashflow,
   storeTimezone,
   printers,
   printerLoadError,
@@ -2239,6 +2257,7 @@ export function PosTerminal({
   const [showTableOpen, setShowTableOpen] = useState(false);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
   const [printerConnectionOpen, setPrinterConnectionOpen] = useState(false);
+  const [preferredPrinterId, setPreferredPrinterId] = useState<string | null>(null);
   const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
   const [billHistoryPanelOpen, setBillHistoryPanelOpen] = useState(false);
   const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>([]);
@@ -2258,11 +2277,15 @@ export function PosTerminal({
   const [isPrintingTicket, setIsPrintingTicket] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
   const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
+  const preferredPrinterIdForPrint = printers.some((printer) => printer.id === preferredPrinterId) ? preferredPrinterId : null;
   const [isPending, startTransition] = useTransition();
   const [isTicketSyncPending, startTicketTransition] = useTransition();
   const historyRequestIdRef = useRef(0);
   const checkoutIdempotencyKeyRef = useRef<string | null>(null);
   const cartRef = useRef(cart);
+  const paidDisplayCartRef = useRef<Cart | null>(null);
+  const paidCustomerNameRef = useRef<string | undefined>(undefined);
+  const paidCustomerRef = useRef<CustomerDisplayCustomer | null>(null);
 
   useEffect(() => {
     cartRef.current = cart;
@@ -2394,17 +2417,33 @@ export function PosTerminal({
   useEffect(() => {
     if (!customerDisplayEnabled) return;
     const status = phase === "receipt" ? "paid" : phase === "payment" ? "checkout" : displayCart.items.length > 0 ? "scanning" : "idle";
-    publishCustomerDisplaySnapshot(displayCart, {
+    publishCustomerDisplaySnapshot(resolveCustomerDisplayPublishCart({
+      liveCart: displayCart,
+      paidCart: paidDisplayCartRef.current,
       status,
-      customerName: selectedCustomer?.name,
+    }), {
+      status,
+      customerName: status === "paid" ? paidCustomerNameRef.current : selectedCustomer?.name,
+      customer: status === "paid" ? paidCustomerRef.current : selectedCustomer
+        ? {
+            name: selectedCustomer.name,
+            pointsBalance: selectedCustomer.pointsBalance,
+          }
+        : null,
     });
-  }, [customerDisplayEnabled, displayCart, phase, selectedCustomer?.name]);
+  }, [customerDisplayEnabled, displayCart, phase, selectedCustomer]);
 
   function handleShowPromptPayOnCustomerDisplay(payment: CustomerDisplayPayment, cart: Cart = displayCart) {
     if (!customerDisplayEnabled) return;
     publishCustomerDisplaySnapshot(cart, {
       status: "checkout",
       customerName: selectedCustomer?.name,
+      customer: selectedCustomer
+        ? {
+            name: selectedCustomer.name,
+            pointsBalance: selectedCustomer.pointsBalance,
+          }
+        : null,
       payment: {
         method: payment.method,
         amount: payment.amount,
@@ -2420,7 +2459,11 @@ export function PosTerminal({
       commitCart(addToCart(cartRef.current, { product, variant: null, modifiers: [] }));
       return;
     }
-    setPicker({ product, selectedVariant: null, selectedModifiers: {} });
+    setPicker({
+      product,
+      selectedVariant: null,
+      selectedModifiers: buildDefaultModifierSelections(product.modifierGroups),
+    });
   }, [cartLocked, commitCart]);
 
   const handleAddFromPicker = useCallback((input: AddToCartInput) => {
@@ -2678,6 +2721,7 @@ export function PosTerminal({
     try {
       const result = await printReceiptWithFallback({
         printers,
+        preferredPrinterId: preferredPrinterIdForPrint,
         escpos: ticketData,
         browser: ticketData,
       });
@@ -2741,6 +2785,25 @@ export function PosTerminal({
         setPayError(payResult.error);
         return;
       }
+      paidDisplayCartRef.current = displayCart;
+      paidCustomerNameRef.current = selectedCustomer?.name;
+      paidCustomerRef.current = selectedCustomer && payResult.order
+        ? {
+            name: selectedCustomer.name,
+            pointsEarned: payResult.order.loyaltyPointsEarned,
+            pointsBalance:
+              typeof selectedCustomer.pointsBalance === "number"
+                ? selectedCustomer.pointsBalance + (payResult.order.loyaltyPointsEarned ?? 0) - (payResult.order.loyaltyPointsRedeemed ?? 0)
+                : selectedCustomer.pointsBalance,
+          }
+        : null;
+      if (customerDisplayEnabled) {
+        publishCustomerDisplaySnapshot(displayCart, {
+          status: "paid",
+          customerName: selectedCustomer?.name,
+          customer: paidCustomerRef.current,
+        });
+      }
       setReceipt({
         orderNumber: order.orderNumber,
         items: displayCart.items,
@@ -2772,6 +2835,9 @@ export function PosTerminal({
     setReceipt(null);
     setPayError(null);
     setPendingOrder(null);
+    paidDisplayCartRef.current = null;
+    paidCustomerNameRef.current = undefined;
+    paidCustomerRef.current = null;
     setActiveTicketId(null);
     setTicketDraft(EMPTY_TICKET_DRAFT);
     setCustomerQuery("");
@@ -2856,6 +2922,7 @@ export function PosTerminal({
     try {
       const result = await printReceiptWithFallback({
         printers,
+        preferredPrinterId: preferredPrinterIdForPrint,
         escpos: receiptData,
         browser: receiptData,
       });
@@ -2980,6 +3047,7 @@ export function PosTerminal({
             promptpayId={receiptSettings?.promptpayId}
             customerDisplayEnabled={customerDisplayEnabled}
             customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
+            cashSessionRequired={!cashSession}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -2988,6 +3056,7 @@ export function PosTerminal({
             receiptSettings={receiptSettings}
             storeName={storeName}
             printers={printers}
+            preferredPrinterId={preferredPrinterIdForPrint}
             printerLoadError={printerLoadError}
             onNewOrder={handleNewOrder}
           />
@@ -3033,6 +3102,7 @@ export function PosTerminal({
               session={cashSession}
               cashSalesPreview={cashSalesPreview}
               currency={currency}
+              forceOpenPrompt={!cashSession && canRecordCashflow}
             />
             <button
               type="button"
@@ -3067,7 +3137,14 @@ export function PosTerminal({
 
         {printerConnectionOpen && (
           <div id="pos-printer-connection">
-            <PrinterConnectionPanel variant="compact" />
+            <PrinterConnectionPanel
+              variant="compact"
+              printers={printers}
+              printerLoadError={printerLoadError}
+              storeName={receiptSettings?.storeName ?? storeName}
+              paperWidth={receiptSettings?.paperWidth ?? "80mm"}
+              onNetworkPrinterSelect={setPreferredPrinterId}
+            />
           </div>
         )}
 
@@ -3216,6 +3293,7 @@ export function PosTerminal({
             promptpayId={receiptSettings?.promptpayId}
             customerDisplayEnabled={customerDisplayEnabled}
             customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
+            cashSessionRequired={!cashSession}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -3224,6 +3302,7 @@ export function PosTerminal({
             receiptSettings={receiptSettings}
             storeName={storeName}
             printers={printers}
+            preferredPrinterId={preferredPrinterIdForPrint}
             printerLoadError={printerLoadError}
             onNewOrder={handleNewOrder}
           />

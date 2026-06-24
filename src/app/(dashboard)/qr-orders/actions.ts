@@ -27,6 +27,9 @@ export async function updatePrepStatusAction(
     const { ctx } = await getStoreContext();
     if (!UUID_RE.test(orderId)) return { error: "ออร์เดอร์ไม่ถูกต้อง" };
     if (!PREP_STATUSES.includes(prepStatus)) return { error: "สถานะไม่ถูกต้อง" };
+    if (ctx.role === "staff") {
+      return { error: "พนักงานครัวไม่สามารถเปลี่ยนสถานะทั้งออร์เดอร์" };
+    }
 
     const result = await updateOrderPrepStatus(orderId, ctx.storeId, prepStatus);
     if (result.error) return { error: result.error.userMessage };

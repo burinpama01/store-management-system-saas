@@ -1,11 +1,17 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import type { Role, PermissionKey } from "@/modules/tenants/types";
-import type { Database } from "@/server/integrations/supabase/database.types";
+import type { Database, Json } from "@/server/integrations/supabase/database.types";
+import {
+  normalizeCustomerDisplaySettingsInput,
+  type CustomerDisplaySettings,
+  type CustomerDisplaySettingsInput,
+} from "./customer-display";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ReceiptSettingsRow = Database["public"]["Tables"]["receipt_settings"]["Row"];
+type CustomerDisplaySettingsRow = Database["public"]["Tables"]["customer_display_settings"]["Row"];
 type MembershipRow = Database["public"]["Tables"]["memberships"]["Row"];
 type OverrideRow = Database["public"]["Tables"]["membership_permission_overrides"]["Row"];
 
@@ -49,6 +55,25 @@ function mapReceiptSettings(row: ReceiptSettingsRow): ReceiptSettings {
   };
 }
 
+function mapCustomerDisplaySettings(row: CustomerDisplaySettingsRow): CustomerDisplaySettings {
+  const normalized = normalizeCustomerDisplaySettingsInput({
+    adEnabled: row.ad_enabled,
+    adLayout: row.ad_layout,
+    topSlotEnabled: row.top_slot_enabled,
+    bottomSlotEnabled: row.bottom_slot_enabled,
+    slideIntervalSeconds: row.slide_interval_seconds,
+    topSlides: row.top_slides,
+    bottomSlides: row.bottom_slides,
+  });
+  return {
+    ...normalized,
+    id: row.id,
+    storeId: row.store_id,
+    organizationId: row.organization_id,
+    updatedAt: row.updated_at,
+  };
+}
+
 export async function getReceiptSettings(storeId: string, organizationId: string) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
@@ -59,6 +84,18 @@ export async function getReceiptSettings(storeId: string, organizationId: string
     .maybeSingle();
   if (error) return { data: null, error: mapError(error) };
   return { data: data ? mapReceiptSettings(data) : null, error: null };
+}
+
+export async function getCustomerDisplaySettings(storeId: string, organizationId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("customer_display_settings")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: data ? mapCustomerDisplaySettings(data) : null, error: null };
 }
 
 export interface ReceiptSettingsInput {
@@ -96,6 +133,31 @@ export async function upsertReceiptSettings(
       footer_text: input.footerText ?? null,
       paper_width: input.paperWidth,
       print_copies: input.printCopies,
+    },
+    { onConflict: "store_id" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function upsertCustomerDisplaySettings(
+  storeId: string,
+  organizationId: string,
+  input: CustomerDisplaySettingsInput,
+) {
+  const normalized = normalizeCustomerDisplaySettingsInput(input);
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("customer_display_settings").upsert(
+    {
+      organization_id: organizationId,
+      store_id: storeId,
+      ad_enabled: normalized.adEnabled,
+      ad_layout: normalized.adLayout,
+      top_slot_enabled: normalized.topSlotEnabled,
+      bottom_slot_enabled: normalized.bottomSlotEnabled,
+      slide_interval_seconds: normalized.slideIntervalSeconds,
+      top_slides: normalized.topSlides as unknown as Json,
+      bottom_slides: normalized.bottomSlides as unknown as Json,
     },
     { onConflict: "store_id" },
   );

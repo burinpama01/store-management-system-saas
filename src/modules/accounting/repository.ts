@@ -74,6 +74,33 @@ export async function listAccountingCategories(storeId: string) {
   return { data: (data ?? []).map(mapCategory), error: null };
 }
 
+export interface CreateAccountingCategoryInput {
+  storeId: string;
+  organizationId: string;
+  name: string;
+  type: Extract<TransactionType, "income" | "expense">;
+  isDefault?: boolean;
+  sortOrder?: number;
+}
+
+export async function createAccountingCategory(input: CreateAccountingCategoryInput) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounting_categories")
+    .insert({
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      name: input.name,
+      type: input.type,
+      is_default: input.isDefault ?? false,
+      sort_order: input.sortOrder ?? 100,
+    })
+    .select()
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: mapCategory(data), error: null };
+}
+
 export async function getDefaultAccountingCategory(
   storeId: string,
   type: TransactionType,

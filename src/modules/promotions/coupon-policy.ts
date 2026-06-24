@@ -53,6 +53,14 @@ export function evaluateCouponForCart(input: CouponEvaluationInput): CouponEvalu
   if (
     input.coupon.maxRedemptionsPerCustomer !== null &&
     input.coupon.maxRedemptionsPerCustomer !== undefined &&
+    !input.customerId
+  ) {
+    return reject(normalizedCode, "coupon_customer_required");
+  }
+
+  if (
+    input.coupon.maxRedemptionsPerCustomer !== null &&
+    input.coupon.maxRedemptionsPerCustomer !== undefined &&
     input.coupon.customerRedeemedCount >= input.coupon.maxRedemptionsPerCustomer
   ) {
     return reject(normalizedCode, "coupon_customer_usage_limit");

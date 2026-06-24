@@ -10,6 +10,7 @@ import { addBarcodeMatchToGroceryCart } from "@/modules/grocery-pos/cart-adapter
 import {
   publishCustomerDisplaySnapshot,
   resolveCustomerDisplayPublishCart,
+  type CustomerDisplayCustomer,
 } from "@/modules/grocery-pos/customer-display";
 import {
   buildGroceryCatalogVersion,
@@ -132,6 +133,7 @@ export function GroceryPosTerminal({
   const scannerState = useRef<ScannerBufferState>({ value: "", updatedAtMs: 0 });
   const paidDisplayCartRef = useRef<Cart | null>(null);
   const paidCustomerNameRef = useRef<string | undefined>(undefined);
+  const paidCustomerRef = useRef<CustomerDisplayCustomer | null>(null);
 
   const productCount = products.length;
   const categoryCount = categories.length;
@@ -185,8 +187,14 @@ export function GroceryPosTerminal({
     }), {
       status,
       customerName: status === "paid" ? paidCustomerNameRef.current : selectedCustomer?.name,
+      customer: status === "paid" ? paidCustomerRef.current : selectedCustomer
+        ? {
+            name: selectedCustomer.name,
+            pointsBalance: selectedCustomer.pointsBalance,
+          }
+        : null,
     });
-  }, [checkoutOrder, displayCart, selectedCustomer?.name]);
+  }, [checkoutOrder, displayCart, selectedCustomer]);
 
   function resetCheckoutDraft() {
     setAppliedCoupon(null);
@@ -194,6 +202,7 @@ export function GroceryPosTerminal({
     setCheckoutMessage(null);
     paidDisplayCartRef.current = null;
     paidCustomerNameRef.current = undefined;
+    paidCustomerRef.current = null;
   }
 
   async function refreshOfflineSyncState() {
@@ -415,9 +424,20 @@ export function GroceryPosTerminal({
 
       paidDisplayCartRef.current = displayCart;
       paidCustomerNameRef.current = selectedCustomer?.name;
+      paidCustomerRef.current = selectedCustomer
+        ? {
+            name: selectedCustomer.name,
+            pointsEarned: result.order.loyaltyPointsEarned,
+            pointsBalance:
+              typeof selectedCustomer.pointsBalance === "number"
+                ? selectedCustomer.pointsBalance + (result.order.loyaltyPointsEarned ?? 0) - (result.order.loyaltyPointsRedeemed ?? 0)
+                : selectedCustomer.pointsBalance,
+          }
+        : null;
       publishCustomerDisplaySnapshot(displayCart, {
         status: "paid",
         customerName: selectedCustomer?.name,
+        customer: paidCustomerRef.current,
       });
       setCheckoutOrder(result.order);
       setCheckoutMessage(`ชำระเงินแล้ว เงินทอน ${money(received - checkoutOrder.total, currency)}`);

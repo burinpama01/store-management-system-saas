@@ -5,8 +5,10 @@ import type { PermissionKey } from "@/modules/tenants/types";
 import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/modules/auth/guards";
 import { getUserStores } from "@/modules/auth/session";
 import { buildThemeStyle } from "@/modules/theme/presets";
+import { listAssignedKitchenStationIdsForUser } from "@/modules/qr-ordering/kitchen-stations";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
+import { QrOrderGlobalNotifier } from "./QrOrderGlobalNotifier";
 import { signOut } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -22,18 +24,28 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }
   const { stores } = await getUserStores();
   const can = (permission: PermissionKey) => resolved.can(permission);
+  const canManageQr = can("orders.manage_qr");
+  const currentStoreRow = stores.find((s) => s.id === storeContext.storeId) as
+    | { buffet_enabled?: boolean; qr_ordering_enabled?: boolean }
+    | undefined;
+  const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
+  const assignedKitchenStationIds =
+    canManageQr && qrOrderingEnabled && storeContext.role === "staff"
+      ? (await listAssignedKitchenStationIdsForUser(storeContext.storeId, user.id)).data ?? []
+      : [];
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
     ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
-    ...(can("orders.manage_qr") ? [{ href: "/qr-orders", label: "QR Order" }] : []),
+    ...(can("pos.use") ? [{ href: "/customers", label: "ลูกค้า" }] : []),
+    ...(canManageQr ? [{ href: "/qr-orders", label: "QR Order" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(
-      storeContext && can("orders.manage_qr") && (stores.find((s) => s.id === storeContext.storeId) as { buffet_enabled?: boolean } | undefined)?.buffet_enabled
+      storeContext && canManageQr && currentStoreRow?.buffet_enabled
         ? [{ href: "/buffet", label: "บุฟเฟต์" }]
         : []
     ),
@@ -110,6 +122,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <SideNav items={navItems} orientation="horizontal" />
         </nav>
       </div>
+      <QrOrderGlobalNotifier
+        storeId={storeContext.storeId}
+        storeName={storeContext.storeName}
+        qrOrderingEnabled={qrOrderingEnabled}
+        canManageQr={canManageQr}
+        canViewEveryKitchenStation={storeContext.role !== "staff"}
+        assignedKitchenStationIds={assignedKitchenStationIds}
+      />
     </div>
   );
 }

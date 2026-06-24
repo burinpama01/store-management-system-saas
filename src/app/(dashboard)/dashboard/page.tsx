@@ -3,12 +3,22 @@ import type { CSSProperties } from "react";
 import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { getDashboardData } from "@/modules/reports/repository";
+import type { PaymentMethodSummary } from "@/modules/reports/types";
 import { getLatestCashBalance } from "@/modules/accounting/repository";
 
 export const dynamic = "force-dynamic";
 
+const TRANSFER_PAYMENT_METHODS = new Set(["qr_promptpay", "bank_transfer"]);
+
 function fmt(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2 });
+}
+
+function sumPaymentMethods(paymentMethods: PaymentMethodSummary[], methods: Set<string> | string) {
+  return paymentMethods.reduce((sum, item) => {
+    const matches = typeof methods === "string" ? item.method === methods : methods.has(item.method);
+    return matches ? sum + item.totalAmount : sum;
+  }, 0);
 }
 
 export default async function DashboardPage() {
@@ -34,7 +44,9 @@ export default async function DashboardPage() {
     getLatestCashBalance(ctx.storeId),
   ]);
 
-  const { todaySales, pendingOrderCount, topProductsToday } = dashData;
+  const { todaySales, pendingOrderCount, paymentMethodsToday, topProductsToday } = dashData;
+  const cashSalesToday = sumPaymentMethods(paymentMethodsToday, "cash");
+  const transferSalesToday = sumPaymentMethods(paymentMethodsToday, TRANSFER_PAYMENT_METHODS);
 
   return (
     <div className="page-shell">
@@ -49,16 +61,30 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <KpiCard
-          label="ยอดขายวันนี้"
+          label="ยอดขายรวมวันนี้"
           value={`฿${fmt(todaySales.revenue)}`}
           sub={`${todaySales.orderCount} ออร์เดอร์`}
           accent="var(--tenant-primary)"
           spark={[42, 48, 34, 58, 50, 68, 61, 78]}
         />
         <KpiCard
-          label="เงินสดปัจจุบัน"
+          label="ยอดขายเงินสด"
+          value={`฿${fmt(cashSalesToday)}`}
+          sub="รับเงินจริงจาก POS"
+          accent="var(--cat-tea)"
+          spark={[24, 32, 29, 40, 38, 44, 41, 48]}
+        />
+        <KpiCard
+          label="ยอดขายเงินโอน"
+          value={`฿${fmt(transferSalesToday)}`}
+          sub="QR PromptPay / โอนเงิน"
+          accent="var(--cat-cold)"
+          spark={[22, 28, 35, 38, 36, 45, 50, 56]}
+        />
+        <KpiCard
+          label="เงินสดในลิ้นชัก"
           value={`฿${fmt(cashBalance)}`}
           accent={cashBalance >= 0 ? "var(--cat-cold)" : "var(--color-danger)"}
           spark={[28, 36, 35, 44, 39, 42, 40, 46]}
@@ -129,7 +155,9 @@ export default async function DashboardPage() {
           <div className="space-y-3">
             <StatusRow label="QR Order" value={`${todaySales.qrOrderCount} รายการ`} color="var(--cat-cold)" />
             <StatusRow label="POS" value={`${todaySales.posOrderCount} รายการ`} color="var(--tenant-primary)" />
-            <StatusRow label="Cash drawer" value={`฿${fmt(cashBalance)}`} color="var(--cat-tea)" />
+            <StatusRow label="ยอดขายเงินสด" value={`฿${fmt(cashSalesToday)}`} color="var(--cat-tea)" />
+            <StatusRow label="ยอดขายเงินโอน" value={`฿${fmt(transferSalesToday)}`} color="var(--cat-cold)" />
+            <StatusRow label="เงินสดในลิ้นชัก" value={`฿${fmt(cashBalance)}`} color="var(--tenant-primary)" />
           </div>
         </div>
       </div>

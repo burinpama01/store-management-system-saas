@@ -10,12 +10,18 @@ const ctx = {
   role: "cashier",
 };
 
-function mockRouteAuth(canUsePos: boolean) {
+function mockRouteAuth(canUsePos: boolean, canManagePrinter = true) {
   vi.doMock("@/modules/auth/guards", () => ({
     getOptionalResolvedCurrentPermissions: vi.fn().mockResolvedValue({
       user,
       ctx,
-      resolved: { can: (key: string) => (key === "pos.use" ? canUsePos : true) },
+      resolved: {
+        can: (key: string) => {
+          if (key === "pos.use") return canUsePos;
+          if (key === "settings.manage_printer") return canManagePrinter;
+          return true;
+        },
+      },
     }),
   }));
 }
@@ -59,11 +65,11 @@ afterEach(() => {
 });
 
 describe("POST /api/print/ip", () => {
-  it("denies printing when the resolved current permissions revoke pos.use", async () => {
+  it("denies printing when the resolved current permissions revoke both POS and printer management", async () => {
     vi.resetModules();
     const getPrinter = vi.fn();
 
-    mockRouteAuth(false);
+    mockRouteAuth(false, false);
     vi.doMock("@/modules/auth/session", () => ({
       getCurrentUser: vi.fn().mockResolvedValue(user),
       getUserStores: vi.fn().mockResolvedValue({
@@ -86,6 +92,50 @@ describe("POST /api/print/ip", () => {
 
     expect(response.status).toBe(403);
     expect(getPrinter).not.toHaveBeenCalled();
+  });
+
+  it("allows printer managers to test a network printer without POS permission", async () => {
+    vi.resetModules();
+    const socketWrites: number[][] = [];
+    class MockSocket {
+      connect(_port: number, _host: string, cb: () => void) {
+        cb();
+      }
+      write(data: Uint8Array, cb: (err?: Error) => void) {
+        socketWrites.push(Array.from(data));
+        cb();
+      }
+      end() {}
+      destroy() {}
+      on() {
+        return this;
+      }
+    }
+    const getPrinter = vi.fn().mockResolvedValue({ data: scopedPrinter(), error: null });
+
+    mockRouteAuth(false, true);
+    vi.doMock("net", () => ({
+      default: { Socket: MockSocket, isIPv4: () => true, isIPv6: () => false },
+      Socket: MockSocket,
+      isIPv4: () => true,
+      isIPv6: () => false,
+    }));
+    vi.doMock("@/modules/stores/repository", () => ({ getPrinter }));
+
+    const printJob = Uint8Array.from([0x1b, 0x40, 0x1d, 0x56, 0x41]);
+    const { POST } = await import("@/app/api/print/ip/route");
+    const response = await POST(new Request("http://local/api/print/ip", {
+      method: "POST",
+      body: JSON.stringify({
+        receiptData,
+        printerId: "printer-1",
+        printJobBase64: Buffer.from(printJob).toString("base64"),
+      }),
+    }) as never);
+
+    expect(response.status).toBe(200);
+    expect(getPrinter).toHaveBeenCalledWith("printer-1", "store-1", "org-1");
+    expect(socketWrites).toEqual([[0x1b, 0x40, 0x1d, 0x56, 0x41]]);
   });
 
   it("returns 404 when the scoped printer is missing", async () => {

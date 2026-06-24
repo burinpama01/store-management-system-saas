@@ -8,6 +8,8 @@ export interface QrOrderLine {
   id: string;
   productName: string;
   variantName?: string;
+  kitchenStationId?: string;
+  kitchenStationName?: string;
   modifiers: SelectedModifier[];
   quantity: number;
   unitPrice: number;

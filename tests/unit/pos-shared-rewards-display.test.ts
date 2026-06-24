@@ -48,6 +48,9 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(terminal).toContain("buildPromptPayPayload({ recipientId: promptpayId, amount: cart.total })");
     expect(terminal).toContain("publishCustomerDisplaySnapshot(cart, {");
     expect(terminal).toContain("payment: {");
+    expect(terminal).toContain("customer: selectedCustomer");
+    expect(terminal).toContain("pointsBalance: selectedCustomer.pointsBalance");
+    expect(terminal).not.toContain("phone: selectedCustomer.phone");
     expect(terminal).toContain('method: "qr_promptpay"');
     expect(terminal).toContain("amount: cart.total");
     expect(terminal).toContain("promptPayPayload");
@@ -67,6 +70,7 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(actions).toContain("buildGroceryCheckoutCart");
     expect(actions).toContain("createPosOrderWithCustomerRewards");
     expect(actions).toContain("closePosOrderPaymentWithRewards");
+    expect(actions).toContain("Promise<{ order: Order | null; error: string | null }>");
     expect(actions).toContain("customerId?: string | null");
     expect(actions).toContain("couponCode?: string | null");
     expect(submitSource).toContain("!opts?.idempotencyKey?.trim()");
@@ -77,6 +81,28 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(repository).toContain("const idempotencyKey = input.idempotencyKey?.trim()");
     expect(repository).toContain("closePosOrderPaymentWithRewards");
     expect(repository).toContain("close_grocery_pos_order_payment_with_rewards");
+  });
+
+  it("publishes normal POS paid customer display points from the paid order result", () => {
+    const terminal = read("src/app/pos/PosTerminal.tsx");
+
+    expect(terminal).toContain("payResult.order");
+    expect(terminal).toContain("pointsEarned: payResult.order.loyaltyPointsEarned");
+    expect(terminal).toContain("selectedCustomer.pointsBalance + (payResult.order.loyaltyPointsEarned ?? 0)");
+    expect(terminal).toContain("publishCustomerDisplaySnapshot(displayCart, {");
+    expect(terminal).toContain('status: "paid"');
+  });
+
+  it("keeps non-customer payment success when the post-payment order refresh fails", () => {
+    const actions = read("src/app/pos/actions.ts");
+    const collectStart = actions.indexOf("export async function collectPaymentAction");
+    const collectEnd = actions.indexOf("const UUID_RE", collectStart);
+    const collectSource = actions.slice(collectStart, collectEnd);
+
+    expect(collectSource).toContain("const paidOrderRes = await getOrder(orderId);");
+    expect(collectSource).toContain("if (!paidOrderRes.error) {");
+    expect(collectSource).toContain("paidOrder = paidOrderRes.data ?? null;");
+    expect(collectSource).not.toContain("if (paidOrderRes.error) return { order: null, error: paidOrderRes.error.userMessage };");
   });
 
   it("ships the normal POS customer/coupon rewards RPC migration", () => {

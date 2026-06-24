@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import type { Database } from "@/server/integrations/supabase/database.types";
-import type { CustomerProfile } from "./types";
+import type { CustomerProfile, CustomerSaveInput } from "./types";
 
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
 type LoyaltyAccountRow = Pick<
@@ -29,6 +29,40 @@ function mapCustomer(row: CustomerRow, loyaltyAccount?: LoyaltyAccountRow): Cust
   };
 }
 
+async function mapCustomersWithLoyaltyAccounts(storeId: string, customers: CustomerRow[]) {
+  if (customers.length === 0) return { data: [], error: null };
+
+  const supabase = await createSupabaseServerClient();
+  const accountsRes = await supabase
+    .from("loyalty_accounts")
+    .select("id, customer_id, points_balance")
+    .eq("store_id", storeId)
+    .in("customer_id", customers.map((customer) => customer.id));
+  if (accountsRes.error) return { data: null, error: mapError(accountsRes.error) };
+
+  const accountsByCustomer = new Map(
+    (accountsRes.data ?? []).map((account) => [account.customer_id, account]),
+  );
+  return { data: customers.map((customer) => mapCustomer(customer, accountsByCustomer.get(customer.id))), error: null };
+}
+
+export async function listCustomersForStore(storeId: string, options: { includeInactive?: boolean; limit?: number } = {}) {
+  const supabase = await createSupabaseServerClient();
+  const safeLimit = Math.min(Math.max(Math.floor(options.limit ?? 100), 1), 250);
+  let query = supabase
+    .from("customers")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("updated_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (!options.includeInactive) query = query.eq("is_active", true);
+
+  const { data, error } = await query;
+  if (error) return { data: null, error: mapError(error) };
+  return mapCustomersWithLoyaltyAccounts(storeId, data ?? []);
+}
+
 export async function searchCustomersForStore(storeId: string, query: string, limit = 10) {
   const normalized = normalizeCustomerQuery(query);
   if (!normalized) return { data: [], error: null };
@@ -46,18 +80,49 @@ export async function searchCustomersForStore(storeId: string, query: string, li
     .limit(safeLimit);
 
   if (error) return { data: null, error: mapError(error) };
-  const customers = data ?? [];
-  if (customers.length === 0) return { data: [], error: null };
+  return mapCustomersWithLoyaltyAccounts(storeId, data ?? []);
+}
 
-  const accountsRes = await supabase
-    .from("loyalty_accounts")
-    .select("id, customer_id, points_balance")
+export async function saveCustomer(input: CustomerSaveInput) {
+  const supabase = await createSupabaseServerClient();
+  const payload = {
+    organization_id: input.organizationId,
+    store_id: input.storeId,
+    name: input.name.trim(),
+    phone: input.phone?.trim() || null,
+    email: input.email?.trim() || null,
+    is_active: input.isActive ?? true,
+    updated_at: new Date().toISOString(),
+  };
+
+  const result = input.id
+    ? await supabase
+        .from("customers")
+        .update(payload)
+        .eq("id", input.id)
+        .eq("store_id", input.storeId)
+        .select("*")
+        .single()
+    : await supabase
+        .from("customers")
+        .insert(payload)
+        .select("*")
+        .single();
+
+  if (result.error) return { data: null, error: mapError(result.error) };
+
+  return { data: mapCustomer(result.data), error: null };
+}
+
+export async function deleteCustomer(id: string, storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("customers")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", id)
     .eq("store_id", storeId)
-    .in("customer_id", customers.map((customer) => customer.id));
-  if (accountsRes.error) return { data: null, error: mapError(accountsRes.error) };
-
-  const accountsByCustomer = new Map(
-    (accountsRes.data ?? []).map((account) => [account.customer_id, account]),
-  );
-  return { data: customers.map((customer) => mapCustomer(customer, accountsByCustomer.get(customer.id))), error: null };
+    .select("id")
+    .single();
+  if (error) return { error: mapError(error) };
+  return { error: null };
 }

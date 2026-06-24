@@ -11,6 +11,7 @@ interface Props {
   /** POS cash collected since the session opened (preview of expected drawer). */
   cashSalesPreview: number;
   currency: string;
+  forceOpenPrompt?: boolean;
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -21,9 +22,9 @@ function formatMoney(amount: number, currency: string): string {
   }).format(amount);
 }
 
-export function CashSessionPanel({ session, cashSalesPreview, currency }: Props) {
+export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpenPrompt = false }: Props) {
   const router = useRouter();
-  const [modal, setModal] = useState<"open" | "close" | null>(null);
+  const [modal, setModal] = useState<"open" | "close" | null>(() => forceOpenPrompt && !session ? "open" : null);
   const [floatInput, setFloatInput] = useState("");
   const [countInput, setCountInput] = useState("");
   const [note, setNote] = useState("");
@@ -34,8 +35,10 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
   const expectedCash = session ? session.openingFloat + cashSalesPreview : 0;
   const countNum = parseFloat(countInput);
   const variancePreview = !isNaN(countNum) ? countNum - expectedCash : null;
+  const forcedOpen = forceOpenPrompt && !session;
 
-  function close() {
+  function close(force = false) {
+    if (!force && forcedOpen && modal === "open") return;
     setModal(null);
     setError(null);
     setFloatInput("");
@@ -57,7 +60,7 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
         setError(res.error);
         return;
       }
-      close();
+      close(true);
       router.refresh();
     });
   }
@@ -106,7 +109,7 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
 
       {modal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={isPending ? undefined : close} />
+          <div className="absolute inset-0 bg-black/40" onClick={isPending || forcedOpen ? undefined : () => close()} />
           <div className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
             {/* Close result screen */}
             {result ? (
@@ -130,14 +133,18 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
                     }
                   />
                 </dl>
-                <button onClick={close} className="btn-primary mt-5 min-h-11 w-full text-sm">
+                <button onClick={() => close()} className="btn-primary mt-5 min-h-11 w-full text-sm">
                   เสร็จสิ้น
                 </button>
               </div>
             ) : modal === "open" ? (
               <>
                 <h2 className="text-lg font-bold text-gray-900">เปิดรอบเงินสด</h2>
-                <p className="mt-1 text-xs text-gray-500">บันทึกเงินสดตั้งต้นในลิ้นชัก (opening float)</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {forcedOpen
+                    ? "ต้องเปิดรอบเงินสดก่อนเริ่มรับเงินสดใน POS วันนี้"
+                    : "บันทึกเงินสดตั้งต้นในลิ้นชัก (opening float)"}
+                </p>
                 <label className="mt-4 block text-sm font-medium text-gray-700">
                   เงินเปิดร้าน
                   <input
@@ -164,9 +171,11 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
                 </label>
                 {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
                 <div className="mt-5 flex gap-2">
-                  <button onClick={close} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
-                    ยกเลิก
-                  </button>
+                  {!forcedOpen && (
+                    <button onClick={() => close()} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
+                      ยกเลิก
+                    </button>
+                  )}
                   <button onClick={handleOpen} disabled={isPending} className="btn-primary min-h-11 flex-1 text-sm">
                     {isPending ? "กำลังเปิด..." : "เปิดรอบ"}
                   </button>
@@ -221,7 +230,7 @@ export function CashSessionPanel({ session, cashSalesPreview, currency }: Props)
                 </label>
                 {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
                 <div className="mt-5 flex gap-2">
-                  <button onClick={close} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
+                  <button onClick={() => close()} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
                     ยกเลิก
                   </button>
                   <button onClick={handleClose} disabled={isPending} className="btn-primary min-h-11 flex-1 text-sm">

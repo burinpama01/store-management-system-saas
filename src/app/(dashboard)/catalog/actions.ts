@@ -20,12 +20,14 @@ import {
   getModifierGroupTemplate,
   createModifierOptionTemplate,
   deleteModifierOptionTemplate,
+  setModifierOptionTemplateDefault,
   createVariant,
   deleteVariant,
   createModifierGroup,
   deleteModifierGroup,
   createModifierOption,
   deleteModifierOption,
+  setModifierOptionDefault,
   getProduct,
   getModifierGroupStoreId,
   copyProductsAcrossBranches,
@@ -459,6 +461,7 @@ export async function addModifierOptionTemplateAction(
     const name = (formData.get("optionName") as string | null)?.trim() ?? "";
     const priceAdjRaw = formData.get("priceAdjustment") as string | null;
     const priceAdj = priceAdjRaw ? parseFloat(priceAdjRaw) : 0;
+    const isDefault = formData.get("isDefault") === "on";
 
     if (!name) return { error: "กรุณาระบุชื่อตัวเลือก", message: null };
     if (isNaN(priceAdj)) return { error: "ราคาปรับไม่ถูกต้อง", message: null };
@@ -472,6 +475,7 @@ export async function addModifierOptionTemplateAction(
       name,
       priceAdjustment: priceAdj,
       sortOrder: groupTemplate.data.options.length,
+      isDefault,
     });
     if (result.error) {
       return {
@@ -493,6 +497,22 @@ export async function deleteModifierOptionTemplateAction(id: string): Promise<{ 
     await requirePermission("catalog.manage");
     const ctx = await getStoreContext();
     const result = await deleteModifierOptionTemplate(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function setModifierOptionTemplateDefaultAction(
+  id: string,
+  isDefault: boolean,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const result = await setModifierOptionTemplateDefault(id, ctx.storeId, isDefault);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
     return { error: null };
@@ -726,6 +746,7 @@ export async function addModifierOptionAction(
     const name = (formData.get("optionName") as string | null)?.trim() ?? "";
     const priceAdjRaw = formData.get("priceAdjustment") as string | null;
     const priceAdj = priceAdjRaw ? parseFloat(priceAdjRaw) : 0;
+    const isDefault = formData.get("isDefault") === "on";
 
     if (!name) return { error: "กรุณาระบุชื่อตัวเลือก" };
     if (isNaN(priceAdj)) return { error: "ราคาปรับไม่ถูกต้อง" };
@@ -737,6 +758,7 @@ export async function addModifierOptionAction(
       modifierGroupId: groupId,
       name,
       priceAdjustment: priceAdj,
+      isDefault,
     });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
@@ -751,6 +773,22 @@ export async function deleteModifierOptionAction(id: string): Promise<{ error: s
     await requirePermission("catalog.manage");
     const ctx = await getStoreContext();
     const result = await deleteModifierOption(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function setModifierOptionDefaultAction(
+  id: string,
+  isDefault: boolean,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const result = await setModifierOptionDefault(id, ctx.storeId, isDefault);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
     return { error: null };

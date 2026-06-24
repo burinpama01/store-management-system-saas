@@ -63,14 +63,15 @@ describe("ESC/POS raster (image) printing", () => {
   });
 
   it("thresholds RGBA luminance to black dots (transparent = white)", () => {
-    // pixel0 black opaque, pixel1 white opaque, pixel2 black but transparent
+    // pixel0 black opaque, pixel1 white opaque, pixel2 black but transparent, pixel3 light-gray text edge
     const rgba = Uint8ClampedArray.from([
       0, 0, 0, 255,
       255, 255, 255, 255,
       0, 0, 0, 0,
+      190, 190, 190, 255,
     ]);
-    const mono = rgbaToMono(rgba, 3, 1);
-    expect([...mono]).toEqual([1, 0, 0]);
+    const mono = rgbaToMono(rgba, 4, 1);
+    expect([...mono]).toEqual([1, 0, 0, 1]);
   });
 
   it("wraps a raster image with printer init + feed/cut", () => {

@@ -33,6 +33,11 @@ type ReportOrderRow = DashboardOrderRow & {
   paid_at: string | null;
 };
 
+type PaymentRow = {
+  method: string;
+  amount: number | string | null;
+};
+
 type BranchStoreRow = {
   id: string;
   name: string;
@@ -154,10 +159,25 @@ function aggregateTopProducts(
     .slice(0, limit);
 }
 
+function aggregatePaymentMethods(payments: PaymentRow[]): PaymentMethodSummary[] {
+  const methodMap = new Map<string, PaymentMethodSummary>();
+  for (const p of payments) {
+    const amount = toNumber(p.amount);
+    const existing = methodMap.get(p.method);
+    if (existing) {
+      existing.count += 1;
+      existing.totalAmount = round2(existing.totalAmount + amount);
+    } else {
+      methodMap.set(p.method, { method: p.method, count: 1, totalAmount: round2(amount) });
+    }
+  }
+  return Array.from(methodMap.values()).sort((a, b) => b.totalAmount - a.totalAmount);
+}
+
 async function fetchPaymentsInBatches(
   orderIds: string[],
   storeId: string,
-): Promise<{ method: string; amount: number }[]> {
+): Promise<PaymentRow[]> {
   const supabase = await createSupabaseServerClient();
   const chunks: string[][] = [];
   for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
@@ -176,7 +196,7 @@ async function fetchPaymentsInBatches(
   if (batches.some((r) => r.error)) {
     throw new Error("Unable to load report payment methods");
   }
-  return batches.flatMap((r) => r.data ?? []);
+  return batches.flatMap((r) => r.data ?? []) as PaymentRow[];
 }
 
 async function fetchOrderItemsInBatches(
@@ -306,20 +326,7 @@ export async function getReportData(
     fetchOrderItemsInBatches(orderIds, storeId),
   ]);
 
-  const methodMap = new Map<string, PaymentMethodSummary>();
-  for (const p of allPayments) {
-    const existing = methodMap.get(p.method);
-    if (existing) {
-      existing.count += 1;
-      existing.totalAmount = round2(existing.totalAmount + p.amount);
-    } else {
-      methodMap.set(p.method, { method: p.method, count: 1, totalAmount: p.amount });
-    }
-  }
-  const paymentMethods = Array.from(methodMap.values()).sort(
-    (a, b) => b.totalAmount - a.totalAmount,
-  );
-
+  const paymentMethods = aggregatePaymentMethods(allPayments);
   const topProducts = aggregateTopProducts(allItems, 20);
 
   return { salesSummary, paymentMethods, topProducts, dailySales };
@@ -421,11 +428,15 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
   const pendingOrderCount = countResult.count ?? 0;
 
   if (orderIds.length === 0) {
-    return { todaySales, pendingOrderCount, topProductsToday: [] };
+    return { todaySales, pendingOrderCount, paymentMethodsToday: [], topProductsToday: [] };
   }
 
-  const items = await fetchOrderItemsInBatches(orderIds, storeId);
+  const [allPayments, items] = await Promise.all([
+    fetchPaymentsInBatches(orderIds, storeId),
+    fetchOrderItemsInBatches(orderIds, storeId),
+  ]);
+  const paymentMethodsToday = aggregatePaymentMethods(allPayments);
   const topProductsToday = aggregateTopProducts(items, 5);
 
-  return { todaySales, pendingOrderCount, topProductsToday };
+  return { todaySales, pendingOrderCount, paymentMethodsToday, topProductsToday };
 }

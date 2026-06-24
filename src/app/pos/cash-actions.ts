@@ -26,7 +26,7 @@ export async function openCashSessionAction(
   note?: string,
 ): Promise<{ error: string | null }> {
   try {
-    await requirePermission("pos.use");
+    await requirePermission("cashflow.record");
     const { ctx } = await getStoreContext();
 
     const amount = parseMoney(openingFloat);
@@ -50,7 +50,7 @@ export async function closeCashSessionAction(
   note?: string,
 ): Promise<{ error: string | null; session: CashSession | null }> {
   try {
-    await requirePermission("pos.use");
+    await requirePermission("cashflow.record");
     const { ctx } = await getStoreContext();
 
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

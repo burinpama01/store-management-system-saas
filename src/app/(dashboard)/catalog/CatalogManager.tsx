@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useTransition, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   Category,
   Product,
@@ -25,11 +26,13 @@ import {
   deleteModifierGroupTemplateAction,
   addModifierOptionTemplateAction,
   deleteModifierOptionTemplateAction,
+  setModifierOptionTemplateDefaultAction,
   applyModifierGroupTemplateAction,
   deleteVariantAction,
   deleteModifierGroupAction,
   addModifierOptionAction,
   deleteModifierOptionAction,
+  setModifierOptionDefaultAction,
   copyProductsAcrossBranchesAction,
 } from "./actions";
 import type { Store } from "@/modules/stores/types";
@@ -569,6 +572,7 @@ function ModifierGroupTemplateCard({
   template: ModifierGroupTemplate;
   canManageCatalog: boolean;
 }) {
+  const router = useRouter();
   const [addOptionState, addOptionAction, addOptionPending] = useActionState(
     async (prev: { error: string | null; message?: string | null }, fd: FormData) =>
       addModifierOptionTemplateAction(template.id, prev, fd),
@@ -577,6 +581,7 @@ function ModifierGroupTemplateCard({
   const [optionMessage, setOptionMessage] = useState<string | null>(null);
   const [optionError, setOptionError] = useState<string | null>(null);
   const [deletingOptionId, setDeletingOptionId] = useState<string | null>(null);
+  const [defaultingOptionId, setDefaultingOptionId] = useState<string | null>(null);
 
   async function handleDeleteOption(option: ModifierGroupTemplate["options"][number]) {
     setOptionMessage(null);
@@ -589,6 +594,21 @@ function ModifierGroupTemplateCard({
       return;
     }
     setOptionMessage(`ลบตัวเลือก ${option.name} แล้ว`);
+  }
+
+  async function handleDefaultOption(option: ModifierGroupTemplate["options"][number]) {
+    setOptionMessage(null);
+    setOptionError(null);
+    setDefaultingOptionId(option.id);
+    const nextDefault = !option.isDefault;
+    const result = await setModifierOptionTemplateDefaultAction(option.id, nextDefault);
+    setDefaultingOptionId(null);
+    if (result.error) {
+      setOptionError(result.error);
+      return;
+    }
+    setOptionMessage(nextDefault ? `ตั้ง ${option.name} เป็นค่าเริ่มต้นแล้ว` : `ยกเลิกค่าเริ่มต้น ${option.name} แล้ว`);
+    router.refresh();
   }
 
   return (
@@ -615,16 +635,34 @@ function ModifierGroupTemplateCard({
             >
               <span className="font-semibold">{option.name}</span>
               <span className="text-slate-500">{priceDeltaStr(option.priceAdjustment)}</span>
-              {canManageCatalog && (
-                <button
-                  type="button"
-                  onClick={() => { void handleDeleteOption(option); }}
-                  disabled={deletingOptionId === option.id}
-                  className="font-semibold text-red-500 hover:text-red-700 disabled:opacity-50"
-                  aria-label={`ลบตัวเลือก ${option.name}`}
-                >
-                  {deletingOptionId === option.id ? "..." : "ลบ"}
-                </button>
+              {canManageCatalog ? (
+                <>
+                  <label className="inline-flex min-h-7 items-center gap-1 rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={option.isDefault}
+                      onChange={() => { void handleDefaultOption(option); }}
+                      disabled={defaultingOptionId === option.id}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                    />
+                    ค่าเริ่มต้น
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { void handleDeleteOption(option); }}
+                    disabled={deletingOptionId === option.id}
+                    className="font-semibold text-red-500 hover:text-red-700 disabled:opacity-50"
+                    aria-label={`ลบตัวเลือก ${option.name}`}
+                  >
+                    {deletingOptionId === option.id ? "..." : "ลบ"}
+                  </button>
+                </>
+              ) : (
+                option.isDefault && (
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                    ค่าเริ่มต้น
+                  </span>
+                )
               )}
             </span>
           ))}
@@ -636,7 +674,7 @@ function ModifierGroupTemplateCard({
       )}
 
       {canManageCatalog && (
-        <form action={addOptionAction} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_auto]">
+        <form action={addOptionAction} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_130px_auto]">
           <input
             name="optionName"
             placeholder="เช่น 0%, 25%, ธรรมดา, พิเศษ"
@@ -650,6 +688,10 @@ function ModifierGroupTemplateCard({
             placeholder="+ราคา"
             className="min-h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
           />
+          <label className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
+            <input type="checkbox" name="isDefault" className="rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
+            ค่าเริ่มต้น
+          </label>
           <button
             type="submit"
             disabled={addOptionPending}
@@ -657,7 +699,7 @@ function ModifierGroupTemplateCard({
           >
             เพิ่ม
           </button>
-          <div className="space-y-2 sm:col-span-3">
+          <div className="space-y-2 sm:col-span-4">
             <ErrorBanner message={addOptionState.error || optionError} />
             <NoticeBanner message={optionMessage || addOptionState.message} />
           </div>
@@ -859,12 +901,31 @@ function VariantsSection({
 // ─── Modifier groups sub-section ──────────────────────────────────
 
 function ModifierGroupSection({ group }: { group: ModifierGroup }) {
+  const router = useRouter();
   const [addOptState, addOptAction, addOptPending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) =>
       addModifierOptionAction(group.id, prev, fd),
     { error: null },
   );
   const [, startDelete] = useTransition();
+  const [defaultingOptionId, setDefaultingOptionId] = useState<string | null>(null);
+  const [defaultMessage, setDefaultMessage] = useState<string | null>(null);
+  const [defaultError, setDefaultError] = useState<string | null>(null);
+
+  async function handleDefaultOption(option: ModifierGroup["options"][number]) {
+    setDefaultMessage(null);
+    setDefaultError(null);
+    setDefaultingOptionId(option.id);
+    const nextDefault = !option.isDefault;
+    const result = await setModifierOptionDefaultAction(option.id, nextDefault);
+    setDefaultingOptionId(null);
+    if (result.error) {
+      setDefaultError(result.error);
+      return;
+    }
+    setDefaultMessage(nextDefault ? `ตั้ง ${option.name} เป็นค่าเริ่มต้นแล้ว` : `ยกเลิกค่าเริ่มต้น ${option.name} แล้ว`);
+    router.refresh();
+  }
 
   return (
     <div className="border border-gray-200 rounded p-2 space-y-1.5">
@@ -889,6 +950,16 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
           <span className="text-xs text-gray-700">{opt.name}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">{priceDeltaStr(opt.priceAdjustment)}</span>
+            <label className="inline-flex min-h-7 items-center gap-1 rounded-full bg-gray-50 px-2 text-[11px] font-medium text-gray-600">
+              <input
+                type="checkbox"
+                checked={opt.isDefault}
+                onChange={() => { void handleDefaultOption(opt); }}
+                disabled={defaultingOptionId === opt.id}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-gray-700 focus:ring-gray-400"
+              />
+              ค่าเริ่มต้น
+            </label>
             <button
               type="button"
               onClick={() => startDelete(() => { deleteModifierOptionAction(opt.id); })}
@@ -899,19 +970,23 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
           </div>
         </div>
       ))}
-      <form action={addOptAction} className="flex gap-1.5 pt-0.5">
+      <form action={addOptAction} className="grid gap-1.5 pt-0.5 sm:grid-cols-[minmax(0,1fr)_72px_120px_auto]">
         <input
           name="optionName"
           placeholder="ชื่อตัวเลือก"
-          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="min-h-8 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
         <input
           name="priceAdjustment"
           type="number"
           defaultValue={0}
           step="1"
-          className="w-16 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="min-h-8 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
+        <label className="inline-flex min-h-8 items-center justify-center gap-1 rounded border border-gray-300 bg-white px-2 text-xs text-gray-600">
+          <input type="checkbox" name="isDefault" className="rounded border-gray-300 text-gray-700 focus:ring-gray-400" />
+          ค่าเริ่มต้น
+        </label>
         <button
           type="submit"
           disabled={addOptPending}
@@ -920,7 +995,8 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
           +
         </button>
       </form>
-      <ErrorBanner message={addOptState.error} />
+      <ErrorBanner message={addOptState.error || defaultError} />
+      <NoticeBanner message={defaultMessage} />
     </div>
   );
 }

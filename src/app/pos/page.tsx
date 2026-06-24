@@ -79,6 +79,7 @@ export default async function PosPage() {
         cashSalesPreview={cashSalesPreview}
         currency={storeResult.data?.currencyCode ?? "THB"}
         canDiscount={resolved.can("pos.discount")}
+        canRecordCashflow={resolved.can("cashflow.record")}
         storeTimezone={ctx.storeTimezone}
         printers={printersResult.data ?? []}
         printerLoadError={printersResult.error?.userMessage ?? null}

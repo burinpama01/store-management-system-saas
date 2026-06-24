@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
 
   if (!authz) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { ctx, resolved } = authz;
-  if (!resolved.can("pos.use")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!resolved.can("pos.use") && !resolved.can("settings.manage_printer")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   let body: { receiptData: ReceiptData; printerId: string; printJobBase64?: string };
   try {

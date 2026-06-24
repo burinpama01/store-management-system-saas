@@ -211,6 +211,18 @@ describe("UX/UI regression guards", () => {
     expect(reports).toContain("min-w-[520px]");
   });
 
+  it("dashboard exposes total, cash, and transfer sales KPIs", () => {
+    const dashboard = read("src/app/(dashboard)/dashboard/page.tsx");
+
+    expect(dashboard).toContain("paymentMethodsToday");
+    expect(dashboard).toContain("ยอดขายรวมวันนี้");
+    expect(dashboard).toContain("ยอดขายเงินสด");
+    expect(dashboard).toContain("ยอดขายเงินโอน");
+    expect(dashboard).toContain("qr_promptpay");
+    expect(dashboard).toContain("bank_transfer");
+    expect(dashboard).toContain("เงินสดในลิ้นชัก");
+  });
+
   it("mobile dashboard header guards long store names from overlap", () => {
     const layout = read("src/app/(dashboard)/layout.tsx");
     const storeSwitcher = read("src/shared/components/store-switcher.tsx");

@@ -11,3 +11,13 @@ export interface CustomerProfile {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CustomerSaveInput {
+  id?: string | null;
+  organizationId: string;
+  storeId: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  isActive?: boolean;
+}

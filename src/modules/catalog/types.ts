@@ -16,6 +16,7 @@ export interface Product {
   organizationId: string;
   categoryId: string;
   menuLinkId?: string;
+  kitchenStationId?: string;
   name: string;
   description?: string;
   barcode?: string;

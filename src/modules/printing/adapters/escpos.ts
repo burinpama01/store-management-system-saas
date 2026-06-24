@@ -1,15 +1,7 @@
 import type { PrintAdapter, ReceiptData } from "../types";
 import type { Printer } from "@/modules/stores/types";
+import { bytesToBase64 } from "../print-job-base64";
 import { buildReceiptPrinterBytes } from "../receipt-printer-bytes";
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
 
 export const escposAdapter: PrintAdapter = {
   name: "escpos",

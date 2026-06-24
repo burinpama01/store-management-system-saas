@@ -5,7 +5,11 @@ import { useActionState, useTransition, useState } from "react";
 import type { Transaction, AccountingCategory, TransactionType } from "@/modules/accounting/types";
 import type { CashflowSummary } from "@/modules/accounting/types";
 import { ModalDialog } from "@/shared/components/ui";
-import { createTransactionAction, deleteTransactionAction } from "./actions";
+import {
+  createAccountingCategoryAction,
+  createTransactionAction,
+  deleteTransactionAction,
+} from "./actions";
 
 const TYPE_LABEL: Record<TransactionType, string> = {
   income: "รายรับ",
@@ -55,6 +59,7 @@ export function AccountingManager({
   const [isPending, startTransition] = useTransition();
 
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
 
   // Filter state (local before submit)
   const [localDateFrom, setLocalDateFrom] = useState(dateFrom);
@@ -117,33 +122,79 @@ export function AccountingManager({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {canRecord && (
+        {(canRecord || canManage) && (
           <>
-            <div className="xl:col-span-1 bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-medium text-gray-800 mb-2">เพิ่มรายการ</h2>
-              <p className="mb-4 text-sm text-gray-500">
-                เพิ่มรายรับหรือรายจ่ายผ่าน dialog เพื่อไม่เบียดพื้นที่ตารางรายการ
-              </p>
-              <button
-                type="button"
-                onClick={() => setEntryDialogOpen(true)}
-                className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-              >
-                เพิ่มรายการ
-              </button>
+            <div className="xl:col-span-1 space-y-3">
+              {canRecord && (
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h2 className="font-medium text-gray-800 mb-2">เพิ่มรายการ</h2>
+                  <p className="mb-4 text-sm text-gray-500">
+                    เพิ่มรายรับหรือรายจ่ายผ่าน dialog เพื่อไม่เบียดพื้นที่ตารางรายการ
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setEntryDialogOpen(true)}
+                    className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                  >
+                    เพิ่มรายการ
+                  </button>
+                </div>
+              )}
+
+              {canManage && (
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h2 className="font-medium text-gray-800 mb-2">หมวดหมู่รายรับ-จ่าย</h2>
+                  <p className="mb-3 text-sm text-gray-500">
+                    ใช้กับการบันทึกรายรับรายจ่ายและยอดขาย POS
+                  </p>
+                  <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+                    <CategoryCount
+                      label="รายรับ"
+                      value={categories.filter((category) => category.type === "income").length}
+                      color="text-green-700"
+                    />
+                    <CategoryCount
+                      label="รายจ่าย"
+                      value={categories.filter((category) => category.type === "expense").length}
+                      color="text-red-700"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCategoryDialogOpen(true)}
+                    className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    เพิ่มหมวดหมู่
+                  </button>
+                </div>
+              )}
             </div>
 
             {entryDialogOpen && (
               <AccountingEntryDialog
                 categories={categories}
                 onClose={() => setEntryDialogOpen(false)}
+                onSaved={() => {
+                  setEntryDialogOpen(false);
+                  router.refresh();
+                }}
+              />
+            )}
+
+            {categoryDialogOpen && (
+              <AccountingCategoryDialog
+                onClose={() => setCategoryDialogOpen(false)}
+                onSaved={() => {
+                  setCategoryDialogOpen(false);
+                  router.refresh();
+                }}
               />
             )}
           </>
         )}
 
         {/* Transaction table (right columns) */}
-        <div className={`${canRecord ? "xl:col-span-2" : "xl:col-span-3"} space-y-3`}>
+        <div className={`${canRecord || canManage ? "xl:col-span-2" : "xl:col-span-3"} space-y-3`}>
           {/* Filter bar */}
           <div className="bg-white rounded-lg border border-gray-200 p-3 flex flex-wrap gap-2 items-end">
             <div>
@@ -289,16 +340,18 @@ export function AccountingManager({
 function AccountingEntryDialog({
   categories,
   onClose,
+  onSaved,
 }: {
   categories: AccountingCategory[];
   onClose: () => void;
+  onSaved: () => void;
 }) {
   const [addType, setAddType] = useState<"income" | "expense">("income");
   const filteredCats = categories.filter((c) => c.type === addType);
   const [formState, formAction] = useActionState(
     async (prev: { error: string | null }, fd: FormData) => {
       const result = await createTransactionAction(prev, fd);
-      if (!result.error) onClose();
+      if (!result.error) onSaved();
       return result;
     },
     { error: null },
@@ -400,6 +453,100 @@ function AccountingEntryDialog({
         </button>
       </form>
     </ModalDialog>
+  );
+}
+
+function AccountingCategoryDialog({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [categoryType, setCategoryType] = useState<"income" | "expense">("income");
+  const [formState, formAction] = useActionState(
+    async (prev: { error: string | null }, fd: FormData) => {
+      const result = await createAccountingCategoryAction(prev, fd);
+      if (!result.error) onSaved();
+      return result;
+    },
+    { error: null },
+  );
+
+  return (
+    <ModalDialog
+      open
+      title="เพิ่มหมวดหมู่"
+      onClose={onClose}
+      size="sm"
+    >
+      <div className="flex border border-gray-200 rounded overflow-hidden">
+        {(["income", "expense"] as const).map((type) => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => setCategoryType(type)}
+            className={`flex-1 py-1.5 text-sm font-medium transition-colors ${
+              categoryType === type
+                ? type === "income"
+                  ? "bg-green-600 text-white"
+                  : "bg-red-600 text-white"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {TYPE_LABEL[type]}
+          </button>
+        ))}
+      </div>
+
+      <form action={formAction} className="space-y-3">
+        <input type="hidden" name="categoryType" value={categoryType} />
+
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">ชื่อหมวดหมู่</label>
+          <input
+            type="text"
+            name="categoryName"
+            maxLength={60}
+            required
+            placeholder={categoryType === "income" ? "เช่น ค่าส่ง / รายรับอื่น" : "เช่น วัตถุดิบ / ค่าแรง"}
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        {formState.error && (
+          <p className="text-xs text-red-600">{formState.error}</p>
+        )}
+
+        <button
+          type="submit"
+          className={`w-full py-2 text-sm font-medium text-white rounded transition-colors ${
+            categoryType === "income"
+              ? "bg-green-600 hover:bg-green-700"
+              : "bg-red-600 hover:bg-red-700"
+          }`}
+        >
+          บันทึกหมวด{TYPE_LABEL[categoryType]}
+        </button>
+      </form>
+    </ModalDialog>
+  );
+}
+
+function CategoryCount({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div className="rounded border border-gray-100 bg-gray-50 px-2 py-1.5">
+      <span className="block text-gray-500">{label}</span>
+      <span className={`font-semibold tabular-nums ${color}`}>{value} หมวด</span>
+    </div>
   );
 }
 

@@ -42,7 +42,7 @@ function couponErrorMessage(reason: string): string {
     coupon_min_subtotal: "ยอดซื้อยังไม่ถึงขั้นต่ำของคูปอง",
     coupon_usage_limit: "คูปองนี้ถูกใช้ครบจำนวนแล้ว",
     coupon_customer_usage_limit: "ลูกค้าคนนี้ใช้คูปองครบจำนวนแล้ว",
-    coupon_customer_required: "คูปองนี้ใช้ได้เฉพาะลูกค้าที่กำหนด",
+    coupon_customer_required: "ต้องเลือกลูกค้าก่อนใช้คูปองนี้",
     coupon_manual_discount_conflict: "คูปองนี้ใช้ร่วมกับส่วนลดท้ายบิลไม่ได้",
     coupon_invalid_discount: "มูลค่าคูปองไม่ถูกต้อง",
   };

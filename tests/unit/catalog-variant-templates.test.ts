@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,8 +27,10 @@ const mocks = vi.hoisted(() => ({
   deleteModifierGroup: vi.fn(),
   createModifierOptionTemplate: vi.fn(),
   deleteModifierOptionTemplate: vi.fn(),
+  setModifierOptionTemplateDefault: vi.fn(),
   createModifierOption: vi.fn(),
   deleteModifierOption: vi.fn(),
+  setModifierOptionDefault: vi.fn(),
   getProduct: vi.fn(),
   getModifierGroupStoreId: vi.fn(),
 }));
@@ -67,8 +69,10 @@ vi.mock("@/modules/catalog/repository", () => ({
   deleteModifierGroup: mocks.deleteModifierGroup,
   createModifierOptionTemplate: mocks.createModifierOptionTemplate,
   deleteModifierOptionTemplate: mocks.deleteModifierOptionTemplate,
+  setModifierOptionTemplateDefault: mocks.setModifierOptionTemplateDefault,
   createModifierOption: mocks.createModifierOption,
   deleteModifierOption: mocks.deleteModifierOption,
+  setModifierOptionDefault: mocks.setModifierOptionDefault,
   getProduct: mocks.getProduct,
   getModifierGroupStoreId: mocks.getModifierGroupStoreId,
 }));
@@ -139,7 +143,11 @@ describe("catalog variant templates", () => {
       data: { id: "group-1", name: "ระดับความหวาน" },
       error: null,
     });
+    mocks.createModifierOptionTemplate.mockResolvedValue({ data: { id: "option-template-1" }, error: null });
     mocks.createModifierOption.mockResolvedValue({ data: { id: "option-1" }, error: null });
+    mocks.getModifierGroupStoreId.mockResolvedValue("store-1");
+    mocks.setModifierOptionTemplateDefault.mockResolvedValue({ ok: true, error: null });
+    mocks.setModifierOptionDefault.mockResolvedValue({ ok: true, error: null });
   });
 
   it("adds a store-scoped variant template table with RLS", () => {
@@ -165,6 +173,20 @@ describe("catalog variant templates", () => {
     expect(types).toContain("catalog_variant_templates");
     expect(types).toContain("catalog_modifier_group_templates");
     expect(types).toContain("catalog_modifier_option_templates");
+  });
+
+  it("enforces one default option in single-choice modifier groups at the database layer", () => {
+    const migrations = readdirSync(join(process.cwd(), "supabase/migrations"))
+      .filter((file) => file.endsWith(".sql"))
+      .map((file) => read(`supabase/migrations/${file}`))
+      .join("\n");
+
+    expect(migrations).toContain("modifier_options_single_default_guard");
+    expect(migrations).toContain("catalog_modifier_option_templates_single_default_guard");
+    expect(migrations).toContain("ensure_single_modifier_option_default");
+    expect(migrations).toContain("ensure_single_modifier_option_template_default");
+    expect(migrations).toContain("for update");
+    expect(migrations).toContain("is_default = false");
   });
 
   it("exposes repository and actions to manage templates and apply them to products", () => {
@@ -225,6 +247,15 @@ describe("catalog variant templates", () => {
     expect(source).toContain("variantTemplateMessage");
     expect(source).toContain("await deleteVariantTemplateAction(template.id)");
     expect(source).toContain("setVariantTemplateMessage");
+  });
+
+  it("surfaces modifier default controls in catalog template and product option UI", () => {
+    const source = read("src/app/(dashboard)/catalog/CatalogManager.tsx");
+
+    expect(source).toContain("setModifierOptionTemplateDefaultAction");
+    expect(source).toContain("setModifierOptionDefaultAction");
+    expect(source).toContain('name="isDefault"');
+    expect(source).toContain("ค่าเริ่มต้น");
   });
 
   it("rejects applying a template from another store before creating a variant", async () => {
@@ -363,6 +394,50 @@ describe("catalog variant templates", () => {
       isDefault: false,
       sortOrder: 0,
     });
+  });
+
+  it("allows modifier defaults to be configured from existing template and product options", async () => {
+    const {
+      addModifierOptionTemplateAction,
+      setModifierOptionTemplateDefaultAction,
+      addModifierOptionAction,
+      setModifierOptionDefaultAction,
+    } = await import("@/app/(dashboard)/catalog/actions");
+
+    const templateCreateResult = await addModifierOptionTemplateAction(
+      "group-template-1",
+      { error: null, message: null },
+      fd({ optionName: "100%", priceAdjustment: "0", isDefault: "on" }),
+    );
+    const templateDefaultResult = await setModifierOptionTemplateDefaultAction("opt-template-2", true);
+    const productCreateResult = await addModifierOptionAction(
+      "group-1",
+      { error: null },
+      fd({ optionName: "นมสด", priceAdjustment: "0", isDefault: "on" }),
+    );
+    const productDefaultResult = await setModifierOptionDefaultAction("option-2", true);
+
+    expect(templateCreateResult.error).toBeNull();
+    expect(templateDefaultResult.error).toBeNull();
+    expect(productCreateResult.error).toBeNull();
+    expect(productDefaultResult.error).toBeNull();
+    expect(mocks.createModifierOptionTemplate).toHaveBeenCalledWith({
+      groupTemplateId: "group-template-1",
+      name: "100%",
+      priceAdjustment: 0,
+      sortOrder: 2,
+      isDefault: true,
+    });
+    expect(mocks.setModifierOptionTemplateDefault).toHaveBeenCalledTimes(1);
+    expect(mocks.setModifierOptionTemplateDefault).toHaveBeenCalledWith("opt-template-2", "store-1", true);
+    expect(mocks.createModifierOption).toHaveBeenCalledWith({
+      modifierGroupId: "group-1",
+      name: "นมสด",
+      priceAdjustment: 0,
+      isDefault: true,
+    });
+    expect(mocks.setModifierOptionDefault).toHaveBeenCalledTimes(1);
+    expect(mocks.setModifierOptionDefault).toHaveBeenCalledWith("option-2", "store-1", true);
   });
 
   it("copies multiple modifier group templates from one form submission", async () => {

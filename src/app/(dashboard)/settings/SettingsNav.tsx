@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import type { FeatureKey } from "@/modules/billing/types";
+
 export interface SettingsTab {
   href: string;
   label: string;
+  featureKey?: FeatureKey;
 }
 
 export function SettingsNav({ tabs }: { tabs: SettingsTab[] }) {

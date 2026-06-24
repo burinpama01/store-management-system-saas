@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline Support Scope Decision v1</title>
+  <style>
+    :root {
+      --ink: #162033;
+      --muted: #64748b;
+      --line: #d8e0ea;
+      --paper: #f8fafc;
+      --panel: #ffffff;
+      --blue: #2563eb;
+      --green: #0f766e;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --violet: #6d28d9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 12px;
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 24px;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .hero,
+    .panel,
+    .option,
+    .warning,
+    .flow {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .hero {
+      padding: 28px;
+    }
+
+    .summary {
+      color: var(--muted);
+      font-size: 17px;
+      max-width: 760px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #e0f2fe;
+      color: #075985;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .status {
+      padding: 24px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .status-item {
+      display: grid;
+      gap: 4px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .status-item:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .value {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .option {
+      padding: 20px;
+      display: grid;
+      gap: 12px;
+      min-height: 100%;
+    }
+
+    .option strong {
+      color: var(--blue);
+    }
+
+    .option.recommended {
+      border-color: #94a3b8;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 0.95em;
+    }
+
+    .warning {
+      border-color: #fecaca;
+      background: #fff7ed;
+      padding: 18px 20px;
+      margin: 20px 0;
+    }
+
+    .warning h2 {
+      color: var(--red);
+    }
+
+    .flow {
+      padding: 22px;
+      margin: 20px 0;
+      overflow-x: auto;
+    }
+
+    .steps {
+      min-width: 760px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8fafc;
+      min-height: 132px;
+    }
+
+    .step b {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .step small {
+      color: var(--muted);
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .panel {
+      padding: 20px;
+    }
+
+    .risk-high {
+      color: var(--red);
+      font-weight: 700;
+    }
+
+    .risk-mid {
+      color: var(--amber);
+      font-weight: 700;
+    }
+
+    .risk-low {
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf2f7;
+      color: #334155;
+      font-size: 13px;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    @media (max-width: 860px) {
+      header,
+      .grid,
+      .decision {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <section class="hero">
+        <h1>Offline Support Scope Decision v1</h1>
+        <p class="summary">
+          เป้าหมายคือทำให้ StoreOS ใช้งานได้เมื่ออินเทอร์เน็ตหลุด โดยไม่ทำให้ order, payment, stock หรือสิทธิ์ผู้ใช้ sync ซ้ำ/ผิดร้าน.
+          เอกสารนี้ล็อกขอบเขตก่อนเริ่มแก้โค้ด เพราะ offline full sync เป็นงาน data safety ไม่ใช่แค่เพิ่ม service worker.
+        </p>
+        <div class="badge-row">
+          <span class="badge">Next.js App Router</span>
+          <span class="badge">Supabase</span>
+          <span class="badge">POS-sensitive</span>
+          <span class="badge">Needs approval</span>
+        </div>
+      </section>
+
+      <aside class="status">
+        <div class="status-item">
+          <span class="label">Source checked</span>
+          <span class="value">Graphify updated 2026-06-23</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Existing PWA files</span>
+          <span class="value">ยังไม่พบ manifest/service worker</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Existing roadmap</span>
+          <span class="value">มี POS offline roadmap แล้ว</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Recommended next</span>
+          <span class="value">เลือก scope แล้วค่อยทำ TDD</span>
+        </div>
+      </aside>
+    </header>
+
+    <section class="warning">
+      <h2>ข้อควรระวังหลัก</h2>
+      <p>
+        แผนเดิมใน <code>Plan/POS Grocery Loyalty Offline Enterprise Roadmap v1.html</code> ระบุชัดว่า
+        full offline checkout ต้องมี idempotency key, conflict policy, operation log, sync monitor และ replay endpoint ก่อนเปิดใช้จริง.
+        ถ้าข้ามส่วนนี้ มีความเสี่ยง order/payment/stock ซ้ำหรือข้อมูลข้าม tenant.
+      </p>
+    </section>
+
+    <section>
+      <h2>ตัวเลือกขอบเขต</h2>
+      <div class="grid">
+        <article class="option">
+          <h3>A. Offline Shell</h3>
+          <p><strong>เร็วและเสี่ยงต่ำ</strong> เหมาะสำหรับให้แอปเปิดได้ตอนเน็ตหลุด แต่ยังไม่รับ transaction offline.</p>
+          <ul>
+            <li>เพิ่ม <code>manifest.webmanifest</code></li>
+            <li>เพิ่ม service worker cache เฉพาะ app shell/static assets</li>
+            <li>เพิ่ม offline fallback page และ network status banner</li>
+            <li>ไม่ queue order/payment/stock write</li>
+          </ul>
+          <p class="risk-low">Risk: low</p>
+        </article>
+
+        <article class="option recommended">
+          <h3>B. POS Offline Queue</h3>
+          <p><strong>แนะนำสำหรับคำว่า offline จริง</strong> แต่ต้องทำเป็น phase เพราะกระทบ data integrity.</p>
+          <ul>
+            <li>เพิ่ม IndexedDB operation queue</li>
+            <li>กำหนด idempotency key ต่อ transaction</li>
+            <li>เพิ่ม sync state และ replay endpoint</li>
+            <li>เพิ่ม conflict policy สำหรับ order/payment/stock</li>
+            <li>ผูก feature gate <code>offlinePos</code></li>
+          </ul>
+          <p class="risk-mid">Risk: medium/high</p>
+        </article>
+
+        <article class="option">
+          <h3>C. Enterprise Offline</h3>
+          <p><strong>ใหญ่สุด</strong> ครอบคลุมหลาย device, หลายสาขา และ inventory reconciliation.</p>
+          <ul>
+            <li>device registration</li>
+            <li>multi-device conflict resolution</li>
+            <li>inventory reconciliation job</li>
+            <li>audit dashboard สำหรับ sync errors</li>
+          </ul>
+          <p class="risk-high">Risk: high</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="flow">
+      <h2>Recommended Implementation Flow</h2>
+      <div class="steps">
+        <div class="step">
+          <b>1. App Shell</b>
+          <small>manifest, service worker, offline fallback, installability.</small>
+        </div>
+        <div class="step">
+          <b>2. Queue Contract</b>
+          <small>IndexedDB schema, operation type, idempotency key, retry state.</small>
+        </div>
+        <div class="step">
+          <b>3. Server Replay</b>
+          <small>endpoint validates tenant/store/device/session and rejects duplicate operations.</small>
+        </div>
+        <div class="step">
+          <b>4. POS Integration</b>
+          <small>offline checkout queues operation, UI shows pending sync and lockouts.</small>
+        </div>
+        <div class="step">
+          <b>5. QA Gate</b>
+          <small>DevTools offline test, reconnect sync, duplicate-submit test, cross-tenant guard.</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="decision">
+      <article class="panel">
+        <h2>สิ่งที่ทำได้ทันทีหลังอนุมัติ</h2>
+        <ul>
+          <li>ถ้าเลือก A: ลงโค้ด PWA/offline shell ได้เลยแบบ TDD เท่าที่เหมาะกับ config/static behavior.</li>
+          <li>ถ้าเลือก B: เริ่มจาก spec + implementation plan แล้วทำ phase แรกของ queue contract ก่อน.</li>
+          <li>ถ้าเลือก C: ต้องแตกเป็น roadmap ย่อยก่อน เพราะใหญ่เกิน single implementation pass.</li>
+        </ul>
+      </article>
+
+      <article class="panel">
+        <h2>คำถามเพื่ออนุมัติ</h2>
+        <p>
+          ต้องการให้เริ่มจากตัวเลือกไหน?
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>เลือก</th>
+              <th>ความหมาย</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>A</td>
+              <td>ทำให้แอปเปิดได้ตอน offline แต่ไม่บันทึก transaction offline</td>
+            </tr>
+            <tr>
+              <td>B</td>
+              <td>ทำ POS offline queue แบบปลอดภัย เริ่มจาก contract + phase แรก</td>
+            </tr>
+            <tr>
+              <td>C</td>
+              <td>ทำ enterprise offline เต็มระบบ ต้องแตกแผนใหญ่ก่อน</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -27,6 +27,7 @@ import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
+import { getOpenCashSession } from "@/modules/cashflow/repository";
 import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
@@ -369,22 +370,29 @@ export async function collectPaymentAction(
   orderId: string,
   payment: AddPaymentInput,
   opts?: { idempotencyKey?: string | null },
-): Promise<{ error: string | null }> {
+): Promise<{ order: Order | null; error: string | null }> {
   try {
     await requirePermission("pos.use");
     const { user, ctx } = await getStoreContext();
 
+    if (payment.method === "cash") {
+      const cashSession = await getOpenCashSession(ctx.storeId);
+      if (cashSession.error) return { order: null, error: cashSession.error.userMessage };
+      if (!cashSession.data) return { order: null, error: "ต้องเปิดรอบเงินสดก่อนรับเงินสด" };
+    }
+
     if (payment.method === "qr_promptpay" && payment.qrPaymentVerified !== true) {
-      return { error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
+      return { order: null, error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
     }
 
     const orderRes = await getOrder(orderId);
-    if (orderRes.error) return { error: orderRes.error.userMessage };
-    if (orderRes.data?.storeId !== ctx.storeId) return { error: "ร้านค้าในออร์เดอร์ไม่ถูกต้อง" };
+    if (orderRes.error) return { order: null, error: orderRes.error.userMessage };
+    if (orderRes.data?.storeId !== ctx.storeId) return { order: null, error: "ร้านค้าในออร์เดอร์ไม่ถูกต้อง" };
 
     let paymentId: string | null = null;
     let paidAmount = payment.amount;
     let paidMethod = payment.method;
+    let paidOrder: Order | null = null;
     if (orderRes.data?.customerId) {
       await requireFeature("loyaltyPoints");
       const result = await closePosOrderPaymentWithRewards({
@@ -394,17 +402,22 @@ export async function collectPaymentAction(
         payment,
         idempotencyKey: opts?.idempotencyKey ?? randomUUID(),
       });
-      if (result.error) return { error: result.error.userMessage };
+      if (result.error) return { order: null, error: result.error.userMessage };
+      paidOrder = result.data ?? null;
       const completedPayment = result.data?.payments.find((item) => item.status === "completed") ?? result.data?.payments[0];
       paymentId = completedPayment?.id ?? null;
       paidAmount = completedPayment?.amount ?? paidAmount;
       paidMethod = completedPayment?.method ?? paidMethod;
     } else {
       const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, payment);
-      if (result.error) return { error: result.error.userMessage };
+      if (result.error) return { order: null, error: result.error.userMessage };
       paymentId = result.data.id;
       paidAmount = result.data.amount;
       paidMethod = result.data.method;
+      const paidOrderRes = await getOrder(orderId);
+      if (!paidOrderRes.error) {
+        paidOrder = paidOrderRes.data ?? null;
+      }
     }
 
     notifyOwnerSafely({
@@ -420,9 +433,9 @@ export async function collectPaymentAction(
         method: paidMethod,
       },
     });
-    return { error: null };
+    return { order: paidOrder, error: null };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+    return { order: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 

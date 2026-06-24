@@ -1,0 +1,704 @@
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import type { CustomerProfile } from "@/modules/customers/types";
+import type { LoyaltyReward, LoyaltySettingsSummary } from "@/modules/loyalty/repository";
+import type { CouponPolicy } from "@/modules/promotions/types";
+import {
+  adjustCustomerPointsAction,
+  deleteCouponAction,
+  deleteCustomerAction,
+  deleteRewardAction,
+  generateMemberPortalQrAction,
+  saveCouponAction,
+  saveCustomerAction,
+  saveLoyaltySettingsAction,
+  saveRewardAction,
+} from "./actions";
+
+interface Props {
+  customers: CustomerProfile[];
+  coupons: CouponPolicy[];
+  loyaltySettings: LoyaltySettingsSummary | null;
+  rewards: LoyaltyReward[];
+  memberPortalUrl: string | null;
+  memberPortalQrDataUrl: string | null;
+  planName: string;
+  loyaltyEnabled: boolean;
+  couponEnabled: boolean;
+  canManageCustomers: boolean;
+  canManageCoupons: boolean;
+  canManageLoyaltySettings: boolean;
+  errors: string[];
+}
+
+type SectionKey = "rewards" | "customers" | "points" | "coupons";
+type OpenSections = Record<SectionKey, boolean>;
+type SimpleActionResult = { error: string | null };
+type MemberPortalQrResult = SimpleActionResult & {
+  memberPortalUrl?: string | null;
+  memberPortalQrDataUrl?: string | null;
+};
+
+function StatusMessage({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+      {message}
+    </div>
+  );
+}
+
+function LockNotice({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--muted)]">
+      {children}
+    </div>
+  );
+}
+
+function ToggleSection({
+  sectionKey,
+  title,
+  description,
+  summary,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  sectionKey: SectionKey;
+  title: string;
+  description: string;
+  summary: string;
+  isOpen: boolean;
+  onToggle: (sectionKey: SectionKey) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">{title}</h2>
+          <p className="text-sm text-[var(--muted)]">{description}</p>
+        </div>
+        <button
+          className="btn-secondary"
+          type="button"
+          aria-expanded={isOpen}
+          aria-controls={`${sectionKey}-form-panel`}
+          onClick={() => onToggle(sectionKey)}
+        >
+          {isOpen ? "ปิดฟอร์ม" : "เปิดฟอร์ม"}
+        </button>
+      </div>
+      {isOpen ? (
+        <div id={`${sectionKey}-form-panel`} className="mt-4">
+          {children}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--muted)]">
+          {summary}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function formatPoints(value?: number) {
+  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(value ?? 0);
+}
+
+function toDateTimeInput(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 16);
+}
+
+export function CustomerLoyaltyManager({
+  customers,
+  coupons,
+  loyaltySettings,
+  rewards,
+  memberPortalUrl,
+  memberPortalQrDataUrl,
+  planName,
+  loyaltyEnabled,
+  couponEnabled,
+  canManageCustomers,
+  canManageCoupons,
+  canManageLoyaltySettings,
+  errors,
+}: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string | null>(errors[0] ?? null);
+  const [memberPortalQr, setMemberPortalQr] = useState<{
+    memberPortalUrl: string | null;
+    memberPortalQrDataUrl: string | null;
+  } | null>(null);
+  const [openSections, setOpenSections] = useState<OpenSections>({
+    rewards: false,
+    customers: false,
+    points: false,
+    coupons: false,
+  });
+  const activeCustomers = useMemo(() => customers.filter((customer) => customer.isActive), [customers]);
+  const activeCoupons = useMemo(() => coupons.filter((coupon) => coupon.isActive), [coupons]);
+  const activeRewards = useMemo(() => rewards.filter((reward) => reward.isActive), [rewards]);
+  const currentMemberPortalUrl = memberPortalQr?.memberPortalUrl ?? memberPortalUrl;
+  const currentMemberPortalQrDataUrl = memberPortalQr?.memberPortalQrDataUrl ?? memberPortalQrDataUrl;
+
+  function runFormAction(action: (formData: FormData) => Promise<{ error: string | null }>, formData: FormData) {
+    startTransition(async () => {
+      const result = await action(formData);
+      setMessage(result.error ?? "บันทึกข้อมูลแล้ว");
+      if (!result.error) router.refresh();
+    });
+  }
+
+  function runIdAction(action: (id: string) => Promise<{ error: string | null }>, id: string) {
+    startTransition(async () => {
+      const result = await action(id);
+      setMessage(result.error ?? "ปิดใช้งานข้อมูลแล้ว");
+      if (!result.error) router.refresh();
+    });
+  }
+
+  function runMemberPortalQrAction(action: () => Promise<MemberPortalQrResult>, successMessage: string) {
+    startTransition(async () => {
+      const result = await action();
+      setMessage(result.error ?? successMessage);
+      if (!result.error) {
+        setMemberPortalQr({
+          memberPortalUrl: result.memberPortalUrl ?? null,
+          memberPortalQrDataUrl: result.memberPortalQrDataUrl ?? null,
+        });
+        router.refresh();
+      }
+    });
+  }
+
+  function toggleSection(sectionKey: SectionKey) {
+    setOpenSections((current) => ({
+      ...current,
+      [sectionKey]: !current[sectionKey],
+    }));
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <p className="page-kicker">แพ็กเกจ {planName}</p>
+            <h1 className="panel-title">ลูกค้า คูปอง และสะสมแต้ม</h1>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className={loyaltyEnabled ? "badge badge-success" : "badge badge-warning"}>สะสมแต้ม</span>
+            <span className={couponEnabled ? "badge badge-success" : "badge badge-warning"}>คูปอง</span>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-[var(--border)] p-4">
+            <p className="text-sm text-[var(--muted)]">ลูกค้าที่ใช้งาน</p>
+            <p className="text-2xl font-bold text-[var(--foreground)]">{activeCustomers.length}</p>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] p-4">
+            <p className="text-sm text-[var(--muted)]">คูปองที่เปิดใช้</p>
+            <p className="text-2xl font-bold text-[var(--foreground)]">{activeCoupons.length}</p>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] p-4">
+            <p className="text-sm text-[var(--muted)]">อัตราแต้ม</p>
+            <p className="text-2xl font-bold text-[var(--foreground)]">
+              {loyaltySettings?.pointsPerCurrency ?? 0.01} / 1 บาท
+            </p>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] p-4">
+            <p className="text-sm text-[var(--muted)]">ของรางวัล</p>
+            <p className="text-2xl font-bold text-[var(--foreground)]">{activeRewards.length}</p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <StatusMessage message={message} />
+        </div>
+      </section>
+
+      <ToggleSection
+        sectionKey="rewards"
+        title="ของรางวัลแลกแต้ม"
+        description="เพิ่มรางวัลให้ลูกค้านำแต้มมาแลกผ่าน QR member portal"
+        summary={`มีของรางวัล ${activeRewards.length} รายการ กดเปิดฟอร์มเพื่อเพิ่มหรือแก้ไข`}
+        isOpen={openSections.rewards}
+        onToggle={toggleSection}
+      >
+        {!loyaltyEnabled ? (
+          <LockNotice>ต้องใช้แพ็กเกจที่รองรับสะสมแต้มเพื่อจัดการของรางวัล</LockNotice>
+        ) : (
+          <div className="space-y-4">
+            <form
+              action={(formData) => runFormAction(saveRewardAction, formData)}
+              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1fr_1.5fr_0.7fr_0.7fr_auto]"
+            >
+              <input type="hidden" name="isActive" value="on" />
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อรางวัล</span>
+                <input className="form-input" name="name" maxLength={120} required placeholder="เครื่องดื่มฟรี" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">รายละเอียด</span>
+                <input className="form-input" name="description" maxLength={240} placeholder="แลกได้ที่หน้าเคาน์เตอร์" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">แต้มที่ใช้</span>
+                <input className="form-input" name="pointsCost" type="number" min="1" step="1" required />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">สต็อก</span>
+                <input className="form-input" name="stockQuantity" type="number" min="0" step="1" placeholder="ไม่จำกัด" />
+              </label>
+              <div className="flex items-end">
+                <button className="btn-primary w-full" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                  เพิ่มรางวัล
+                </button>
+              </div>
+            </form>
+
+            <div className="grid gap-3">
+              {rewards.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-[var(--border)] p-4 text-sm text-[var(--muted)]">
+                  ยังไม่มีของรางวัลสำหรับแลกแต้ม
+                </p>
+              ) : (
+                rewards.map((reward) => (
+                  <form
+                    action={(formData) => runFormAction(saveRewardAction, formData)}
+                    className="grid gap-3 rounded-lg border border-[var(--border)] p-4 xl:grid-cols-[1fr_1.5fr_0.65fr_0.65fr_0.75fr_auto]"
+                    key={reward.id}
+                  >
+                    <input type="hidden" name="id" value={reward.id} />
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อ</span>
+                      <input className="form-input" name="name" defaultValue={reward.name} maxLength={120} required />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">รายละเอียด</span>
+                      <input className="form-input" name="description" defaultValue={reward.description ?? ""} maxLength={240} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">แต้ม</span>
+                      <input
+                        className="form-input"
+                        name="pointsCost"
+                        type="number"
+                        min="1"
+                        step="1"
+                        defaultValue={reward.pointsCost}
+                        required
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">สต็อก</span>
+                      <input
+                        className="form-input"
+                        name="stockQuantity"
+                        type="number"
+                        min="0"
+                        step="1"
+                        defaultValue={reward.stockQuantity ?? ""}
+                      />
+                    </label>
+                    <label className="flex items-end gap-2 text-sm text-[var(--muted)]">
+                      <input name="isActive" type="checkbox" defaultChecked={reward.isActive} />
+                      เปิดให้แลก
+                    </label>
+                    <div className="flex items-end gap-2">
+                      <button className="btn-secondary" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                        บันทึก
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={!canManageLoyaltySettings || isPending || !reward.isActive}
+                        onClick={() => runIdAction(deleteRewardAction, reward.id)}
+                      >
+                        ปิดใช้
+                      </button>
+                    </div>
+                  </form>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </ToggleSection>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">QR สมัครสมาชิก</h2>
+            <p className="text-sm text-[var(--muted)]">ลูกค้าต้องเปิดจาก QR ของร้านนี้ก่อนสมัครหรือดูแต้ม</p>
+          </div>
+          <button
+            className="btn-secondary"
+            type="button"
+            disabled={!canManageLoyaltySettings || isPending || !loyaltyEnabled}
+            onClick={() => runMemberPortalQrAction(generateMemberPortalQrAction, "สร้าง QR สมัครสมาชิกแล้ว")}
+          >
+            สร้าง QR ใหม่
+          </button>
+        </div>
+        {!loyaltyEnabled ? (
+          <LockNotice>ต้องใช้แพ็กเกจที่รองรับสะสมแต้มจึงจะสร้าง QR สมาชิกได้</LockNotice>
+        ) : currentMemberPortalUrl ? (
+          <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+            <div className="rounded-lg border border-[var(--border)] bg-white p-3">
+              {currentMemberPortalQrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={currentMemberPortalQrDataUrl}
+                  alt="QR สมัครสมาชิก"
+                  width={220}
+                  height={220}
+                  className="mx-auto rounded-md bg-white"
+                />
+              ) : (
+                <div className="grid aspect-square place-items-center rounded-md bg-[var(--surface-muted)] text-sm text-[var(--muted)]">
+                  สร้างรูป QR ไม่สำเร็จ
+                </div>
+              )}
+            </div>
+            <div className="space-y-3 rounded-lg border border-[var(--border)] p-4">
+              <div>
+                <p className="text-xs font-semibold uppercase text-[var(--muted)]">ลิงก์สำหรับ QR ของร้านนี้เท่านั้น</p>
+                <p className="break-all text-sm font-semibold text-[var(--foreground)]">{currentMemberPortalUrl}</p>
+              </div>
+              <p className="text-sm text-[var(--muted)]">
+                กรณีลูกค้าใช้หลายร้าน ระบบจะแยก session และแต้มตามร้านจาก QR ที่สแกน ไม่ให้ดูแต้มข้ามร้านจาก URL สาธารณะ
+              </p>
+            </div>
+          </div>
+        ) : (
+          <LockNotice>ยังไม่มี QR สมัครสมาชิก กด “สร้าง QR ใหม่” เพื่อเริ่มใช้งาน member portal ของร้านนี้</LockNotice>
+        )}
+      </section>
+
+      <ToggleSection
+        sectionKey="customers"
+        title="ลูกค้า"
+        description="เพิ่ม แก้ไข หรือปิดใช้งานลูกค้าที่ใช้กับ POS"
+        summary={`มีลูกค้าใช้งาน ${activeCustomers.length} ราย กดเปิดฟอร์มเพื่อเพิ่มหรือแก้ไข`}
+        isOpen={openSections.customers}
+        onToggle={toggleSection}
+      >
+        {!loyaltyEnabled ? (
+          <LockNotice>แพ็กเกจนี้ยังไม่รองรับสะสมแต้มและฐานลูกค้า</LockNotice>
+        ) : (
+          <div className="space-y-4">
+            <form
+              action={(formData) => runFormAction(saveCustomerAction, formData)}
+              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 md:grid-cols-4"
+            >
+              <input type="hidden" name="isActive" value="on" />
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อลูกค้า</span>
+                <input className="form-input" name="name" maxLength={120} required placeholder="คุณสมชาย" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">โทรศัพท์</span>
+                <input className="form-input" name="phone" placeholder="0812345678" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">อีเมล</span>
+                <input className="form-input" name="email" type="email" placeholder="customer@example.com" />
+              </label>
+              <div className="flex items-end">
+                <button className="btn-primary w-full" type="submit" disabled={!canManageCustomers || isPending}>
+                  เพิ่มลูกค้า
+                </button>
+              </div>
+            </form>
+            <div className="grid gap-3">
+              {customers.map((customer) => (
+                <form
+                  action={(formData) => runFormAction(saveCustomerAction, formData)}
+                  className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1.4fr_1fr_1fr_0.8fr_auto]"
+                  key={customer.id}
+                >
+                  <input type="hidden" name="id" value={customer.id} />
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อ</span>
+                    <input className="form-input" name="name" defaultValue={customer.name} maxLength={120} required />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">โทรศัพท์</span>
+                    <input className="form-input" name="phone" defaultValue={customer.phone ?? ""} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">อีเมล</span>
+                    <input className="form-input" name="email" type="email" defaultValue={customer.email ?? ""} />
+                  </label>
+                  <div className="flex items-end justify-between gap-3">
+                    <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+                      <input name="isActive" type="checkbox" defaultChecked={customer.isActive} />
+                      ใช้งาน
+                    </label>
+                    <span className="text-sm font-semibold text-[var(--foreground)]">
+                      {formatPoints(customer.pointsBalance)} แต้ม
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <button className="btn-secondary" type="submit" disabled={!canManageCustomers || isPending}>
+                      บันทึก
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      disabled={!canManageCustomers || isPending || !customer.isActive}
+                      onClick={() => runIdAction(deleteCustomerAction, customer.id)}
+                    >
+                      ปิดใช้
+                    </button>
+                  </div>
+                </form>
+              ))}
+            </div>
+          </div>
+        )}
+      </ToggleSection>
+
+      <ToggleSection
+        sectionKey="points"
+        title="สะสมแต้ม"
+        description="ตั้งค่าอัตราแต้มพื้นฐานของร้าน"
+        summary={`อัตราปัจจุบัน ${loyaltySettings?.pointsPerCurrency ?? 0.01} แต้ม / 1 บาท กดเปิดฟอร์มเพื่อปรับแต้ม`}
+        isOpen={openSections.points}
+        onToggle={toggleSection}
+      >
+        {!loyaltyEnabled ? (
+          <LockNotice>ต้องใช้แพ็กเกจที่รองรับสะสมแต้ม</LockNotice>
+        ) : (
+          <div className="space-y-4">
+            <form
+              action={(formData) => runFormAction(saveLoyaltySettingsAction, formData)}
+              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 md:grid-cols-4"
+            >
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">แต้มต่อ 1 บาท</span>
+                <input
+                  className="form-input"
+                  name="pointsPerCurrency"
+                  type="number"
+                  min="0.0001"
+                  max="10"
+                  step="0.0001"
+                  defaultValue={loyaltySettings?.pointsPerCurrency ?? 0.01}
+                  required
+                />
+              </label>
+              <label className="flex items-end gap-2 text-sm text-[var(--muted)]">
+                <input name="earnEnabled" type="checkbox" defaultChecked={loyaltySettings?.earnEnabled ?? true} />
+                เปิดรับแต้ม
+              </label>
+              <label className="flex items-end gap-2 text-sm text-[var(--muted)]">
+                <input name="redeemEnabled" type="checkbox" defaultChecked={loyaltySettings?.redeemEnabled ?? false} />
+                เปิดแลกแต้ม
+              </label>
+              <div className="flex items-end">
+                <button className="btn-primary w-full" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                  บันทึกแต้ม
+                </button>
+              </div>
+            </form>
+
+            <form
+              action={(formData) => runFormAction(adjustCustomerPointsAction, formData)}
+              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1.4fr_0.7fr_1.6fr_auto]"
+            >
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ปรับแต้มลูกค้า</span>
+                <select className="form-input" name="customerId" required defaultValue="">
+                  <option value="" disabled>เลือกลูกค้า</option>
+                  {activeCustomers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name} ({formatPoints(customer.pointsBalance)} แต้ม)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">เพิ่ม/ลดแต้ม</span>
+                <input className="form-input" name="pointsDelta" type="number" step="1" placeholder="100 หรือ -50" required />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">เหตุผล</span>
+                <input className="form-input" name="reason" maxLength={200} placeholder="ปรับแต้มจากแคมเปญ / แก้ไขรายการ" />
+              </label>
+              <div className="flex items-end">
+                <button className="btn-primary w-full" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                  ปรับแต้ม
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </ToggleSection>
+
+      <ToggleSection
+        sectionKey="coupons"
+        title="คูปอง"
+        description="สร้างและควบคุมคูปองส่วนลดสำหรับ POS"
+        summary={`มีคูปองเปิดใช้ ${activeCoupons.length} รายการ กดเปิดฟอร์มเพื่อเพิ่มหรือแก้ไข`}
+        isOpen={openSections.coupons}
+        onToggle={toggleSection}
+      >
+        {!couponEnabled ? (
+          <LockNotice>แพ็กเกจนี้ยังไม่รองรับคูปอง</LockNotice>
+        ) : (
+          <div className="space-y-4">
+            <form
+              action={(formData) => runFormAction(saveCouponAction, formData)}
+              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 md:grid-cols-8"
+            >
+              <input type="hidden" name="isActive" value="on" />
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">รหัส</span>
+                <input className="form-input" name="code" required placeholder="SAVE10" />
+              </label>
+              <label className="space-y-1 md:col-span-2">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อ</span>
+                <input className="form-input" name="name" required placeholder="ส่วนลดสมาชิก" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ประเภท</span>
+                <select className="form-input" name="discountType" defaultValue="amount">
+                  <option value="amount">บาท</option>
+                  <option value="percentage">%</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ส่วนลด</span>
+                <input className="form-input" name="discountValue" type="number" min="0.01" step="0.01" required />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ใช้ได้รวม</span>
+                <input className="form-input" name="maxRedemptions" type="number" min="1" step="1" placeholder="ไม่จำกัด" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">1 user ใช้ได้</span>
+                <input
+                  className="form-input"
+                  name="maxRedemptionsPerCustomer"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="ไม่จำกัด"
+                />
+              </label>
+              <div className="flex items-end">
+                <button className="btn-primary w-full" type="submit" disabled={!canManageCoupons || isPending}>
+                  เพิ่มคูปอง
+                </button>
+              </div>
+            </form>
+            <div className="grid gap-3">
+              {coupons.map((coupon) => (
+                <form
+                  action={(formData) => runFormAction(saveCouponAction, formData)}
+                  className="grid gap-3 rounded-lg border border-[var(--border)] p-4 xl:grid-cols-[0.8fr_1.2fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr_0.7fr_auto]"
+                  key={coupon.id}
+                >
+                  <input type="hidden" name="id" value={coupon.id} />
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">รหัส</span>
+                    <input className="form-input" name="code" defaultValue={coupon.code} required />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อ</span>
+                    <input className="form-input" name="name" defaultValue={coupon.name} required />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ประเภท</span>
+                    <select className="form-input" name="discountType" defaultValue={coupon.discountType}>
+                      <option value="amount">บาท</option>
+                      <option value="percentage">%</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ส่วนลด</span>
+                    <input
+                      className="form-input"
+                      name="discountValue"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      defaultValue={coupon.discountValue}
+                      required
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ขั้นต่ำ</span>
+                    <input className="form-input" name="minSubtotal" type="number" min="0" step="0.01" defaultValue={coupon.minSubtotal} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">หมดเขต</span>
+                    <input className="form-input" name="endsAt" type="datetime-local" defaultValue={toDateTimeInput(coupon.endsAt)} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ใช้ได้รวม</span>
+                    <input
+                      className="form-input"
+                      name="maxRedemptions"
+                      type="number"
+                      min="1"
+                      step="1"
+                      defaultValue={coupon.maxRedemptions ?? ""}
+                      placeholder="ไม่จำกัด"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">1 user ใช้ได้</span>
+                    <input
+                      className="form-input"
+                      name="maxRedemptionsPerCustomer"
+                      type="number"
+                      min="1"
+                      step="1"
+                      defaultValue={coupon.maxRedemptionsPerCustomer ?? ""}
+                      placeholder="ไม่จำกัด"
+                    />
+                  </label>
+                  <div className="grid gap-2">
+                    <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+                      <input name="isActive" type="checkbox" defaultChecked={coupon.isActive} />
+                      ใช้งาน
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+                      <input name="stackableWithManualDiscount" type="checkbox" defaultChecked={coupon.stackableWithManualDiscount} />
+                      รวมส่วนลดมือ
+                    </label>
+                    <div className="flex gap-2">
+                      <button className="btn-secondary" type="submit" disabled={!canManageCoupons || isPending}>
+                        บันทึก
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={!canManageCoupons || isPending || !coupon.isActive}
+                        onClick={() => runIdAction(deleteCouponAction, coupon.id)}
+                      >
+                        ปิดใช้
+                      </button>
+                    </div>
+                    <p className="text-xs text-[var(--muted)]">ใช้แล้ว {coupon.redeemedCount} ครั้ง</p>
+                  </div>
+                </form>
+              ))}
+            </div>
+          </div>
+        )}
+      </ToggleSection>
+    </div>
+  );
+}

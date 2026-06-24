@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
@@ -20,6 +20,8 @@ interface Props {
   initialActiveOrders: QrOrderView[];
   initialHistory: QrOrderView[];
   initialRequests: ServiceRequest[];
+  assignedKitchenStationIds: string[];
+  canSeeAllKitchenStations: boolean;
 }
 
 function fmt(amount: number, currency: string): string {
@@ -52,25 +54,37 @@ const PREP_BADGE: Record<PrepStatus, string> = {
   done: "bg-gray-100 text-gray-500",
 };
 
-function beep() {
-  try {
-    const Ctx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    gain.gain.value = 0.1;
-    osc.start();
-    osc.stop(ctx.currentTime + 0.18);
-    osc.onended = () => ctx.close();
-  } catch {
-    /* ignore */
+const UNASSIGNED_STATION = "__unassigned";
+
+type QrOrderItem = QrOrderView["items"][number];
+
+function itemMatchesStation(item: QrOrderItem, stationId: string) {
+  if (stationId === "all") return true;
+  return stationId === UNASSIGNED_STATION
+    ? !item.kitchenStationId
+    : item.kitchenStationId === stationId;
+}
+
+function orderMatchesStation(order: QrOrderView, stationId: string) {
+  if (stationId === "all") return true;
+  return order.items.some((item) =>
+    itemMatchesStation(item, stationId),
+  );
+}
+
+function itemsByStation(items: QrOrderItem[]) {
+  const groups = new Map<string, { id: string; name: string; items: QrOrderItem[] }>();
+  for (const item of items) {
+    const id = item.kitchenStationId ?? UNASSIGNED_STATION;
+    const group = groups.get(id) ?? {
+      id,
+      name: item.kitchenStationName ?? "Unassigned",
+      items: [],
+    };
+    group.items.push(item);
+    groups.set(id, group);
   }
+  return [...groups.values()];
 }
 
 export function QrOrdersBoard({
@@ -79,13 +93,55 @@ export function QrOrdersBoard({
   initialActiveOrders,
   initialHistory,
   initialRequests,
+  assignedKitchenStationIds,
+  canSeeAllKitchenStations,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [live, setLive] = useState(true);
+  const [selectedStation, setSelectedStation] = useState("all");
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stationOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const order of [...initialActiveOrders, ...initialHistory]) {
+      for (const item of order.items) {
+        if (item.kitchenStationId) {
+          options.set(item.kitchenStationId, item.kitchenStationName ?? "Kitchen station");
+        } else {
+          options.set(UNASSIGNED_STATION, "Unassigned");
+        }
+      }
+    }
+    return [...options.entries()].map(([id, name]) => ({ id, name }));
+  }, [initialActiveOrders, initialHistory]);
+
+  const filteredActiveOrders = useMemo(
+    () => initialActiveOrders.filter((order) => orderMatchesStation(order, selectedStation)),
+    [initialActiveOrders, selectedStation],
+  );
+  const filteredHistory = useMemo(
+    () => initialHistory.filter((order) => orderMatchesStation(order, selectedStation)),
+    [initialHistory, selectedStation],
+  );
+  const ordersByTable = useMemo(() => {
+    const groups = new Map<string, { key: string; tableNumber: string; orders: QrOrderView[] }>();
+    for (const order of filteredActiveOrders) {
+      const key = order.tableId ?? order.tableNumber ?? order.id;
+      const group = groups.get(key) ?? {
+        key,
+        tableNumber: order.tableNumber ?? "-",
+        orders: [],
+      };
+      group.orders.push(order);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [filteredActiveOrders]);
+  const hasAssignedStationScope =
+    canSeeAllKitchenStations || assignedKitchenStationIds.length > 0;
 
   // Realtime: refresh data (debounced) and chime when new work arrives.
   useEffect(() => {
@@ -99,8 +155,7 @@ export function QrOrdersBoard({
       client,
       table: "orders",
       filter: `store_id=eq.${storeId}`,
-      onEvent: (payload) => {
-        if (payload.eventType === "INSERT" && payload.new?.qr_order_source) beep();
+      onEvent: () => {
         scheduleRefresh();
       },
       onError: () => setLive(false),
@@ -109,8 +164,7 @@ export function QrOrdersBoard({
       client,
       table: "service_requests",
       filter: `store_id=eq.${storeId}`,
-      onEvent: (payload) => {
-        if (payload.eventType === "INSERT") beep();
+      onEvent: () => {
         scheduleRefresh();
       },
       onError: () => setLive(false),
@@ -149,6 +203,103 @@ export function QrOrdersBoard({
     });
   }
 
+  function renderOrderCard(order: QrOrderView) {
+    const flow = PREP_FLOW[order.prepStatus];
+    const visibleItems = order.items.filter((item) =>
+      itemMatchesStation(item, selectedStation),
+    );
+    const stationGroups = itemsByStation(visibleItems);
+    const canAdvanceOrder = selectedStation === "all" && canSeeAllKitchenStations;
+
+    return (
+      <article key={order.id} className="flex flex-col rounded-lg border border-gray-200 bg-white p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-bold text-gray-900">โต๊ะ {order.tableNumber ?? "-"}</p>
+            <p className="text-xs text-gray-400">
+              #{order.orderNumber} · {timeAgo(order.createdAt)}
+            </p>
+          </div>
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${PREP_BADGE[order.prepStatus]}`}>
+            {PREP_STATUS_LABEL[order.prepStatus]}
+          </span>
+        </div>
+
+        <div className="mt-3 space-y-3 text-sm">
+          {canSeeAllKitchenStations && selectedStation === "all"
+            ? stationGroups.map((station) => (
+                <div key={station.id} className="space-y-1.5 rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                    {station.name}
+                  </p>
+                  <ul className="space-y-1.5">
+                    {station.items.map((it) => (
+                      <li key={it.id} className="flex justify-between gap-2">
+                        <span className="text-gray-700">
+                          <span className="font-semibold">{it.quantity}×</span> {it.productName}
+                          {it.variantName ? ` (${it.variantName})` : ""}
+                          {it.modifiers.length > 0 && (
+                            <span className="block text-xs text-gray-400">
+                              {it.modifiers.map((m) => m.option.name).join(", ")}
+                            </span>
+                          )}
+                          {it.note && <span className="block text-xs italic text-gray-400">“{it.note}”</span>}
+                        </span>
+                        <span className="shrink-0 text-gray-500">{fmt(it.totalPrice, currency)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            : (
+                <ul className="space-y-1.5">
+                  {visibleItems.map((it) => (
+                    <li key={it.id} className="flex justify-between gap-2">
+                      <span className="text-gray-700">
+                        <span className="font-semibold">{it.quantity}×</span> {it.productName}
+                        {it.variantName ? ` (${it.variantName})` : ""}
+                        <span className="block text-xs text-sky-700">
+                          {it.kitchenStationName ?? "Unassigned"}
+                        </span>
+                        {it.modifiers.length > 0 && (
+                          <span className="block text-xs text-gray-400">
+                            {it.modifiers.map((m) => m.option.name).join(", ")}
+                          </span>
+                        )}
+                        {it.note && <span className="block text-xs italic text-gray-400">“{it.note}”</span>}
+                      </span>
+                      <span className="shrink-0 text-gray-500">{fmt(it.totalPrice, currency)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
+          <span className="text-sm font-bold text-gray-900">{fmt(order.total, currency)}</span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {flow && canAdvanceOrder ? (
+              <button
+                onClick={() => advance(order)}
+                disabled={isPending}
+                className="btn-primary min-h-11 px-3 text-xs"
+              >
+                {flow.label}
+              </button>
+            ) : flow && canSeeAllKitchenStations ? (
+              <span className="max-w-44 text-right text-xs text-gray-500">
+                เลือก All stations เพื่อเปลี่ยนสถานะทั้งออร์เดอร์
+              </span>
+            ) : null}
+            <Link href="/pos" className="btn-secondary min-h-11 px-3 text-xs">
+              ชำระเงิน
+            </Link>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -167,6 +318,31 @@ export function QrOrdersBoard({
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-3">
+        <label className="min-w-64 space-y-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Kitchen station
+          </span>
+          <select
+            className="form-input"
+            value={selectedStation}
+            onChange={(event) => setSelectedStation(event.target.value)}
+          >
+            <option value="all">
+              {canSeeAllKitchenStations ? "All stations" : "ครัวที่ผูกกับฉัน"}
+            </option>
+            {stationOptions.map((station) => (
+              <option key={station.id} value={station.id}>
+                {station.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="pb-2 text-xs text-gray-500">
+          Showing {filteredActiveOrders.length} active orders
+        </p>
+      </div>
 
       {/* Service requests */}
       {initialRequests.length > 0 && (
@@ -205,68 +381,31 @@ export function QrOrdersBoard({
 
       {/* Active orders */}
       <section className="space-y-2">
-        <h2 className="text-sm font-bold text-[var(--ink)]">ออร์เดอร์ที่กำลังดำเนินการ ({initialActiveOrders.length})</h2>
-        {initialActiveOrders.length === 0 ? (
+        <h2 className="text-sm font-bold text-[var(--ink)]">ออร์เดอร์ที่กำลังดำเนินการ ({filteredActiveOrders.length})</h2>
+        {filteredActiveOrders.length === 0 ? (
           <p className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-400">
-            ยังไม่มีออร์เดอร์ QR ที่ค้างอยู่
+            {hasAssignedStationScope ? "ครัวนี้ยังไม่มีงาน" : "บัญชีนี้ยังไม่ได้ผูกกับครัว"}
           </p>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {initialActiveOrders.map((order) => {
-              const flow = PREP_FLOW[order.prepStatus];
-              return (
-                <article key={order.id} className="flex flex-col rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-bold text-gray-900">โต๊ะ {order.tableNumber ?? "-"}</p>
-                      <p className="text-xs text-gray-400">
-                        #{order.orderNumber} · {timeAgo(order.createdAt)}
-                      </p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${PREP_BADGE[order.prepStatus]}`}>
-                      {PREP_STATUS_LABEL[order.prepStatus]}
-                    </span>
+          canSeeAllKitchenStations ? (
+            <div className="space-y-4">
+              {ordersByTable.map((group) => (
+                <section key={group.key} className="rounded-lg border border-gray-200 bg-white/60 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 className="font-bold text-gray-900">โต๊ะ {group.tableNumber}</h3>
+                    <span className="text-xs text-gray-500">{group.orders.length} order(s)</span>
                   </div>
-
-                  <ul className="mt-3 space-y-1.5 text-sm">
-                    {order.items.map((it) => (
-                      <li key={it.id} className="flex justify-between gap-2">
-                        <span className="text-gray-700">
-                          <span className="font-semibold">{it.quantity}×</span> {it.productName}
-                          {it.variantName ? ` (${it.variantName})` : ""}
-                          {it.modifiers.length > 0 && (
-                            <span className="block text-xs text-gray-400">
-                              {it.modifiers.map((m) => m.option.name).join(", ")}
-                            </span>
-                          )}
-                          {it.note && <span className="block text-xs italic text-gray-400">“{it.note}”</span>}
-                        </span>
-                        <span className="shrink-0 text-gray-500">{fmt(it.totalPrice, currency)}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
-                    <span className="text-sm font-bold text-gray-900">{fmt(order.total, currency)}</span>
-                    <div className="flex gap-2">
-                      {flow && (
-                        <button
-                          onClick={() => advance(order)}
-                          disabled={isPending}
-                          className="btn-primary min-h-11 px-3 text-xs"
-                        >
-                          {flow.label}
-                        </button>
-                      )}
-                      <Link href="/pos" className="btn-secondary min-h-11 px-3 text-xs">
-                        ชำระเงิน
-                      </Link>
-                    </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {group.orders.map((order) => renderOrderCard(order))}
                   </div>
-                </article>
-              );
-            })}
-          </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {filteredActiveOrders.map((order) => renderOrderCard(order))}
+            </div>
+          )
         )}
       </section>
 
@@ -276,11 +415,11 @@ export function QrOrdersBoard({
           onClick={() => setShowHistory((v) => !v)}
           className="text-sm font-bold text-[var(--ink)] hover:underline"
         >
-          {showHistory ? "▼" : "▶"} ประวัติออร์เดอร์ QR ({initialHistory.length})
+          {showHistory ? "▼" : "▶"} ประวัติออร์เดอร์ QR ({filteredHistory.length})
         </button>
         {showHistory && (
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-            {initialHistory.length === 0 ? (
+            {filteredHistory.length === 0 ? (
               <p className="p-6 text-center text-sm text-gray-400">ยังไม่มีประวัติ</p>
             ) : (
               <table className="w-full text-sm">
@@ -294,7 +433,7 @@ export function QrOrdersBoard({
                   </tr>
                 </thead>
                 <tbody>
-                  {initialHistory.map((o) => (
+                  {filteredHistory.map((o) => (
                     <tr key={o.id} className="border-b border-gray-50 last:border-0">
                       <td className="px-4 py-2 text-gray-700">#{o.orderNumber}</td>
                       <td className="px-4 py-2 text-gray-700">{o.tableNumber ?? "-"}</td>

@@ -5,6 +5,8 @@ import { buildReceiptLines } from "./receipt-lines";
 import { RASTER_WIDTH, packEscPosRaster, rgbaToMono, wrapRasterJob } from "./escpos-raster";
 import { getReceiptQrMetrics } from "./receipt-qr";
 
+const TEXT_DARKEN_OFFSET_DOTS = 0.7;
+
 /**
  * Renders the receipt to a monochrome bitmap on a <canvas> (Thai text via the
  * browser's own font rendering) and returns a full ESC/POS raster print job.
@@ -42,6 +44,11 @@ export function renderReceiptRaster(data: ReceiptData): Uint8Array | null {
   ctx.textBaseline = "top";
   const baseFont = `${fontPx}px "Courier New", "Sarabun", monospace`;
 
+  const drawText = (text: string, x: number, y: number, maxWidth: number) => {
+    ctx.fillText(text, x, y, maxWidth);
+    ctx.fillText(text, x + TEXT_DARKEN_OFFSET_DOTS, y, maxWidth);
+  };
+
   let y = padY;
   for (const line of lines) {
     if (line.qrPayload) {
@@ -66,14 +73,14 @@ export function renderReceiptRaster(data: ReceiptData): Uint8Array | null {
       continue;
     }
 
-    ctx.font = line.bold ? `bold ${baseFont}` : baseFont;
+    ctx.font = line.bold ? `700 ${baseFont}` : `600 ${baseFont}`;
     const text = line.text ?? "";
     if (line.align === "center") {
       ctx.textAlign = "center";
-      ctx.fillText(text, width / 2, y, width - padX * 2);
+      drawText(text, width / 2, y, width - padX * 2);
     } else {
       ctx.textAlign = "left";
-      ctx.fillText(text, padX, y, width - padX * 2);
+      drawText(text, padX, y, width - padX * 2);
     }
     y += lineH;
   }

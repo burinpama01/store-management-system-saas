@@ -18,6 +18,8 @@ function mapLine(row: OrderItemRow): QrOrderLine {
     id: row.id,
     productName: row.product_name,
     variantName: row.variant_name ?? undefined,
+    kitchenStationId: row.kitchen_station_id ?? undefined,
+    kitchenStationName: row.kitchen_station_name ?? undefined,
     modifiers: (row.modifiers as unknown as SelectedModifier[]) ?? [],
     quantity: row.quantity,
     unitPrice: row.unit_price,
@@ -54,6 +56,27 @@ function mapServiceRequest(row: ServiceRequestRow): ServiceRequest {
     createdAt: row.created_at,
     resolvedAt: row.resolved_at ?? undefined,
   };
+}
+
+export function filterQrOrdersForStations(
+  orders: QrOrderView[],
+  stationIds: string[],
+): QrOrderView[] {
+  const allowedStationIds = new Set(stationIds);
+  if (allowedStationIds.size === 0) return [];
+
+  return orders
+    .map((order) => {
+      const items = order.items.filter((item) =>
+        item.kitchenStationId ? allowedStationIds.has(item.kitchenStationId) : false,
+      );
+      return {
+        ...order,
+        items,
+        total: items.reduce((sum, item) => sum + item.totalPrice, 0),
+      };
+    })
+    .filter((order) => order.items.length > 0);
 }
 
 /** Fetch items for the given order ids, grouped by order id. */

@@ -67,10 +67,11 @@ export function wrapRasterJob(raster: Uint8Array): Uint8Array {
 }
 
 /**
- * Converts RGBA canvas pixels to a 1-bit monochrome buffer via luminance
- * threshold (default mid-gray). Returns 1 = black dot.
+ * Converts RGBA canvas pixels to a 1-bit monochrome buffer. The default
+ * threshold is intentionally high so anti-aliased text edges print darker on
+ * low-density thermal printers. Returns 1 = black dot.
  */
-export function rgbaToMono(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, threshold = 160): Uint8Array {
+export function rgbaToMono(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, threshold = 220): Uint8Array {
   const mono = new Uint8Array(width * height);
   for (let i = 0; i < width * height; i++) {
     const r = rgba[i * 4];

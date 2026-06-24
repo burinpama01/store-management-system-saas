@@ -143,6 +143,7 @@ function mapProduct(
     organizationId: row.organization_id,
     categoryId: row.category_id,
     menuLinkId: row.menu_link_id ?? undefined,
+    kitchenStationId: row.kitchen_station_id ?? undefined,
     name: row.name,
     description: row.description ?? undefined,
     barcode: row.barcode ?? undefined,
@@ -643,6 +644,35 @@ export async function deleteModifierOptionTemplate(id: string, storeId: string) 
   return { ok: true, error: null };
 }
 
+export async function setModifierOptionTemplateDefault(id: string, storeId: string, isDefault: boolean) {
+  const supabase = await createSupabaseServerClient();
+  const { data: option, error: optionError } = await supabase
+    .from("catalog_modifier_option_templates")
+    .select("group_template_id")
+    .eq("id", id)
+    .single();
+  if (optionError) return { ok: false, error: mapError(optionError) };
+  if (!option) return { ok: false, error: mapError(new Error("Modifier option template not found")) };
+
+  const { data: group, error: groupError } = await supabase
+    .from("catalog_modifier_group_templates")
+    .select("store_id")
+    .eq("id", option.group_template_id)
+    .single();
+  if (groupError) return { ok: false, error: mapError(groupError) };
+  if (!group || group.store_id !== storeId)
+    return { ok: false, error: mapError(new Error("ไม่มีสิทธิ์")) };
+
+  const updatedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("catalog_modifier_option_templates")
+    .update({ is_default: isDefault, updated_at: updatedAt })
+    .eq("id", id);
+  if (error) return { ok: false, error: mapError(error) };
+
+  return { ok: true, error: null };
+}
+
 // --- Variants ---
 
 export interface CreateVariantInput {
@@ -880,6 +910,39 @@ export async function deleteModifierOption(id: string, storeId: string) {
     return { ok: false, error: mapError(new Error("ไม่มีสิทธิ์")) };
   const { error } = await supabase.from("modifier_options").delete().eq("id", id);
   if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function setModifierOptionDefault(id: string, storeId: string, isDefault: boolean) {
+  const supabase = await createSupabaseServerClient();
+  const { data: option } = await supabase
+    .from("modifier_options")
+    .select("modifier_group_id")
+    .eq("id", id)
+    .single();
+  if (!option) return { ok: false, error: mapError(new Error("Modifier option not found")) };
+
+  const { data: group } = await supabase
+    .from("modifier_groups")
+    .select("product_id")
+    .eq("id", option.modifier_group_id)
+    .single();
+  if (!group) return { ok: false, error: mapError(new Error("Modifier group not found")) };
+
+  const { data: product } = await supabase
+    .from("products")
+    .select("store_id")
+    .eq("id", group.product_id)
+    .single();
+  if (!product || product.store_id !== storeId)
+    return { ok: false, error: mapError(new Error("ไม่มีสิทธิ์")) };
+
+  const { error } = await supabase
+    .from("modifier_options")
+    .update({ is_default: isDefault })
+    .eq("id", id);
+  if (error) return { ok: false, error: mapError(error) };
+
   return { ok: true, error: null };
 }
 
