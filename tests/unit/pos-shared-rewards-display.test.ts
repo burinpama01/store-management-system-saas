@@ -87,8 +87,10 @@ describe("normal POS shared coupon loyalty and display", () => {
     const terminal = read("src/app/pos/PosTerminal.tsx");
 
     expect(terminal).toContain("payResult.order");
-    expect(terminal).toContain("pointsEarned: payResult.order.loyaltyPointsEarned");
-    expect(terminal).toContain("selectedCustomer.pointsBalance + (payResult.order.loyaltyPointsEarned ?? 0)");
+    expect(terminal).toContain("pointsEarned: paidOrder.loyaltyPointsEarned");
+    expect(terminal).toContain("hasPaidPointMovement");
+    expect(terminal).toContain("pointsBalance: hasPaidPointMovement ? paidOrder.loyaltyPointsBalance : undefined");
+    expect(terminal).toContain("loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance");
     expect(terminal).toContain("publishCustomerDisplaySnapshot(displayCart, {");
     expect(terminal).toContain('status: "paid"');
   });

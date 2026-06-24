@@ -42,6 +42,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/" ||
     request.nextUrl.pathname === "/qr" ||
     request.nextUrl.pathname.startsWith("/qr/") ||
+    request.nextUrl.pathname === "/member" ||
+    request.nextUrl.pathname.startsWith("/member/") ||
     request.nextUrl.pathname === "/pricing" ||
     request.nextUrl.pathname === "/register" ||
     request.nextUrl.pathname === "/privacy-policy" ||

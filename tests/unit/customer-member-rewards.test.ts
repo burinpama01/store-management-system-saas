@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 const migrationPath = "supabase/migrations/20260624103000_customer_member_rewards.sql";
+const enterprisePackageMigrationPath =
+  "supabase/migrations/20260624235000_enterprise_member_package_settings.sql";
+const stableMemberQrMigrationPath =
+  "supabase/migrations/20260625013000_member_portal_single_active_link.sql";
 
 describe("customer member rewards", () => {
   it("adds the database contract for member login, rewards, and safe redemption", () => {
@@ -47,6 +51,9 @@ describe("customer member rewards", () => {
     expect(manager).toContain("maxRedemptionsPerCustomer");
     expect(manager).toContain("1 user ใช้ได้");
     expect(manager).toContain("QR สมัครสมาชิก");
+    expect(manager).toContain("QR ถาวรของร้าน");
+    expect(manager).toContain("สร้าง/แสดง QR ถาวร");
+    expect(manager).not.toContain("สร้าง QR ใหม่");
     expect(actions).toContain('requirePermission("settings.manage_store")');
     expect(actions).toContain("adjustCustomerPoints");
     expect(actions).toContain("saveLoyaltyReward");
@@ -64,6 +71,7 @@ describe("customer member rewards", () => {
     const actions = read("src/app/member/[storeSlug]/actions.ts");
     const portal = read("src/app/member/[storeSlug]/MemberPortal.tsx");
     const repository = read("src/modules/customers/member-repository.ts");
+    const middleware = read("src/server/integrations/supabase/middleware.ts");
     const sms = read("src/modules/notifications/smskub.ts");
 
     expect(page).toContain("MemberPortal");
@@ -82,10 +90,15 @@ describe("customer member rewards", () => {
     expect(portal).toContain("ต้องเปิดจาก QR ของร้าน");
     expect(repository).toContain("customer_member_sessions");
     expect(repository).toContain("customer_member_portal_links");
+    expect(repository).toContain("getOrganizationBillingState");
+    expect(repository).toContain("canUseFeature");
+    expect(repository).toContain("แพ็กเกจ Enterprise");
     expect(repository).toContain("getCustomerPortalData");
     expect(repository).toContain("createOrFindMemberCustomer");
     expect(repository).toContain("findCustomerByEmail");
     expect(repository).toContain("กรุณาเข้าสู่ระบบหรือแจ้งร้านเพื่อยืนยันข้อมูลสมาชิก");
+    expect(middleware).toContain('request.nextUrl.pathname === "/member"');
+    expect(middleware).toContain('request.nextUrl.pathname.startsWith("/member/")');
     const createOrFindBlock = repository.slice(
       repository.indexOf("export async function createOrFindMemberCustomer"),
       repository.indexOf("export async function requestMemberOtp"),
@@ -95,5 +108,36 @@ describe("customer member rewards", () => {
     expect(sms).toContain("SMSKUB_API_KEY");
     expect(sms).toContain("SMSKUB_SENDER_NAME");
     expect(sms).toContain("SMSKUB_API_URL");
+  });
+
+  it("keeps the member signup QR stable for each store", () => {
+    const repository = read("src/modules/customers/member-repository.ts");
+    const actions = read("src/app/(dashboard)/customers/actions.ts");
+
+    const generateBlock = repository.slice(
+      repository.indexOf("export async function generateMemberPortalLink"),
+      repository.length,
+    );
+
+    expect(generateBlock).toContain("getActiveMemberPortalLinkForStore(input.storeId)");
+    expect(generateBlock).toContain("if (activeLink.data) return { data: activeLink.data, error: null };");
+    expect(generateBlock).not.toContain(".update({ is_active: false");
+    expect(generateBlock).toContain('token: randomUUID().replace(/-/g, "")');
+    expect(actions).toContain("/member/${storeSlug}?code=");
+    expect(actions).not.toContain("Date.now()");
+
+    const stableQrMigration = read(stableMemberQrMigrationPath);
+    expect(stableQrMigration).toContain("customer_member_portal_links_one_active_per_store_idx");
+    expect(stableQrMigration).toContain("on customer_member_portal_links(store_id)");
+    expect(stableQrMigration).toContain("where is_active = true");
+    expect(stableQrMigration).toContain("row_number() over (partition by store_id order by created_at desc, id desc)");
+  });
+
+  it("moves member-commerce pricing copy into Enterprise without overwriting edited copy", () => {
+    const migration = read(enterprisePackageMigrationPath);
+
+    expect(migration).toContain("Member QR + Loyalty + Coupons + Customer display");
+    expect(migration).toContain("Preserve admin-edited package copy");
+    expect(migration).toContain("ps.feature_lines = updates.old_feature_lines or ps.feature_lines = '[]'::jsonb");
   });
 });

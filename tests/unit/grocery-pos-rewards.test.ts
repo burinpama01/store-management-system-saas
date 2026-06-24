@@ -234,16 +234,19 @@ describe("grocery POS reward data contract", () => {
   it("updates billing package gates and visible plan copy together", () => {
     expect(canUseFeature(state("free"), "groceryPos")).toBe(false);
     expect(canUseFeature(state("starter"), "groceryPos")).toBe(true);
-    expect(canUseFeature(state("standard"), "couponManagement")).toBe(true);
-    expect(canUseFeature(state("standard"), "loyaltyPoints")).toBe(true);
+    expect(canUseFeature(state("standard"), "couponManagement")).toBe(false);
+    expect(canUseFeature(state("standard"), "loyaltyPoints")).toBe(false);
     expect(canUseFeature(state("starter"), "couponManagement")).toBe(false);
-    expect(canUseFeature(state("premium"), "customerDisplay")).toBe(true);
+    expect(canUseFeature(state("premium"), "customerDisplay")).toBe(false);
     expect(canUseFeature(state("standard"), "customerDisplay")).toBe(false);
+    expect(canUseFeature(state("enterprise"), "couponManagement")).toBe(true);
+    expect(canUseFeature(state("enterprise"), "loyaltyPoints")).toBe(true);
+    expect(canUseFeature(state("enterprise"), "customerDisplay")).toBe(true);
 
-    const migration = read("supabase/migrations/20260621021000_update_plan_settings_grocery_pos.sql");
-    expect(migration).toContain("Grocery POS + Barcode");
-    expect(migration).toContain("Coupon + Loyalty");
-    expect(migration).toContain("Customer display");
+    const groceryMigration = read("supabase/migrations/20260621021000_update_plan_settings_grocery_pos.sql");
+    const enterpriseMigration = read("supabase/migrations/20260624235000_enterprise_member_package_settings.sql");
+    expect(groceryMigration).toContain("Grocery POS + Barcode");
+    expect(enterpriseMigration).toContain("Member QR + Loyalty + Coupons + Customer display");
   });
 
   it("keeps grocery reward actions server-gated", () => {

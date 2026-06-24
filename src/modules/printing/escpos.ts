@@ -101,6 +101,14 @@ function summaryLine(label: string, value: string, paperWidth: "58mm" | "80mm"):
   return encodeText(line);
 }
 
+function pointsStr(value: number): string {
+  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 // ─── Full receipt builder ────────────────────────────────────────────
 
 export interface EscPosReceiptInput {
@@ -116,6 +124,8 @@ export interface EscPosReceiptInput {
   discountNote?: string;
   total: number;
   payments: { method: string; amount: number; receivedAmount?: number; changeAmount?: number }[];
+  loyaltyPointsEarned?: number;
+  loyaltyPointsBalance?: number;
   footerText?: string;
   paperWidth: "58mm" | "80mm";
   printedAt: string;
@@ -187,6 +197,23 @@ export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
     }
     if (payment.changeAmount !== undefined && payment.changeAmount > 0) {
       push(summaryLine("  Change", formatPrice(payment.changeAmount), paperWidth));
+    }
+  }
+
+  const earnedPoints = receipt.loyaltyPointsEarned;
+  const hasEarnedPoints = isFiniteNumber(earnedPoints) && earnedPoints > 0;
+  const balancePoints = hasEarnedPoints ? receipt.loyaltyPointsBalance : undefined;
+  const hasBalancePoints = isFiniteNumber(balancePoints);
+  if (hasEarnedPoints || hasBalancePoints) {
+    push(divider(paperWidth));
+    push(CMD.ALIGN_CENTER, CMD.BOLD_ON);
+    push(encodeText("สะสมแต้ม\n"));
+    push(CMD.BOLD_OFF, CMD.ALIGN_LEFT);
+    if (hasEarnedPoints) {
+      push(summaryLine("แต้มที่ได้รับ", `+${pointsStr(earnedPoints)}`, paperWidth));
+    }
+    if (hasBalancePoints) {
+      push(summaryLine("แต้มคงเหลือ", pointsStr(balancePoints), paperWidth));
     }
   }
 

@@ -64,6 +64,8 @@ type ReceiptOrder = {
   method: string;
   receivedAmount?: number;
   changeAmount?: number;
+  loyaltyPointsEarned?: number;
+  loyaltyPointsBalance?: number;
 };
 
 const EMPTY_TICKET_DRAFT: TicketDraft = {
@@ -2090,6 +2092,8 @@ function ReceiptPanel({
           changeAmount: order.changeAmount,
         }],
         paymentStatus: "paid" as const,
+        loyaltyPointsEarned: order.loyaltyPointsEarned,
+        loyaltyPointsBalance: order.loyaltyPointsBalance,
         footerText: settings.footerText,
         headerText: settings.headerText,
         showQrPayment: false,
@@ -2121,6 +2125,8 @@ function ReceiptPanel({
           discountNote: receiptData.discountNote,
           total: receiptData.total,
           payments: receiptData.payments,
+          loyaltyPointsEarned: receiptData.loyaltyPointsEarned,
+          loyaltyPointsBalance: receiptData.loyaltyPointsBalance,
           footerText: receiptData.footerText,
           paperWidth: receiptData.paperWidth,
           printedAt: receiptData.printedAt,
@@ -2787,14 +2793,14 @@ export function PosTerminal({
       }
       paidDisplayCartRef.current = displayCart;
       paidCustomerNameRef.current = selectedCustomer?.name;
-      paidCustomerRef.current = selectedCustomer && payResult.order
+      const paidOrder = payResult.order;
+      const paidPointsEarned = paidOrder?.loyaltyPointsEarned;
+      const hasPaidPointMovement = typeof paidPointsEarned === "number" && paidPointsEarned > 0;
+      paidCustomerRef.current = selectedCustomer && paidOrder
         ? {
             name: selectedCustomer.name,
-            pointsEarned: payResult.order.loyaltyPointsEarned,
-            pointsBalance:
-              typeof selectedCustomer.pointsBalance === "number"
-                ? selectedCustomer.pointsBalance + (payResult.order.loyaltyPointsEarned ?? 0) - (payResult.order.loyaltyPointsRedeemed ?? 0)
-                : selectedCustomer.pointsBalance,
+            pointsEarned: paidOrder.loyaltyPointsEarned,
+            pointsBalance: hasPaidPointMovement ? paidOrder.loyaltyPointsBalance : undefined,
           }
         : null;
       if (customerDisplayEnabled) {
@@ -2814,6 +2820,8 @@ export function PosTerminal({
         method,
         receivedAmount: received,
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
+        loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned,
+        loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance,
       });
       if (activeTicketId) {
         const deleteResult = await deleteSavedTicketAction(activeTicketId);
@@ -2911,6 +2919,8 @@ export function PosTerminal({
         changeAmount: payment.changeAmount,
       })),
       paymentStatus: "paid" as const,
+      loyaltyPointsEarned: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsEarned : undefined,
+      loyaltyPointsBalance: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsBalance : undefined,
       footerText: settings.footerText,
       showQrPayment: false,
       promptpayId: settings.promptpayId,

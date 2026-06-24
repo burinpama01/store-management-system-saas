@@ -62,8 +62,8 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     maxStores: 3,
     maxMembers: 10,
     groceryPos: true,
-    couponManagement: true,
-    loyaltyPoints: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
@@ -81,13 +81,13 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     maxStores: 5,
     maxMembers: 50,
     groceryPos: true,
-    couponManagement: true,
-    loyaltyPoints: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: true,
-    customerDisplay: true,
+    customerDisplay: false,
     offlinePos: true,
     lineNotify: true,
     attendanceGps: true,
@@ -179,19 +179,21 @@ describe("canUseFeature — plan tiers", () => {
     expect(canUseFeature(s, "buffetManagement")).toBe(false);
     expect(canUseFeature(s, "qrOrdering")).toBe(false);
   });
-  it("standard: buffet yes, qr no", () => {
+  it("standard: buffet yes but member commerce and qr/display no", () => {
     const s = state("standard", "active");
-    expect(canUseFeature(s, "couponManagement")).toBe(true);
-    expect(canUseFeature(s, "loyaltyPoints")).toBe(true);
+    expect(canUseFeature(s, "couponManagement")).toBe(false);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(false);
     expect(canUseFeature(s, "buffetManagement")).toBe(true);
     expect(canUseFeature(s, "stockManagement")).toBe(true);
     expect(canUseFeature(s, "qrOrdering")).toBe(false);
     expect(canUseFeature(s, "customerDisplay")).toBe(false);
   });
-  it("premium: all features including qr + gps", () => {
+  it("premium: qr + gps but no member commerce/display", () => {
     const s = state("premium", "active");
     expect(canUseFeature(s, "qrOrdering")).toBe(true);
-    expect(canUseFeature(s, "customerDisplay")).toBe(true);
+    expect(canUseFeature(s, "couponManagement")).toBe(false);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(false);
+    expect(canUseFeature(s, "customerDisplay")).toBe(false);
     expect(canUseFeature(s, "offlinePos")).toBe(true);
     expect(canUseFeature(s, "attendanceGps")).toBe(true);
     expect(canUseFeature(s, "lineNotify")).toBe(true);
@@ -199,6 +201,9 @@ describe("canUseFeature — plan tiers", () => {
   });
   it("enterprise: all features including multi-branch", () => {
     const s = state("enterprise", "active");
+    expect(canUseFeature(s, "couponManagement")).toBe(true);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(true);
+    expect(canUseFeature(s, "customerDisplay")).toBe(true);
     expect(canUseFeature(s, "multiBranchReporting")).toBe(true);
     expect(canUseFeature(s, "apiIntegration")).toBe(true);
   });

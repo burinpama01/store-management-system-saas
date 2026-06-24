@@ -18,6 +18,8 @@ export default async function CustomerDisplaySettingsPage() {
       <CustomerDisplaySettingsForm
         settings={settingsRes.data}
         storeName={ctx.storeName}
+        organizationId={ctx.organizationId}
+        storeId={ctx.storeId}
         loadError={settingsRes.error?.userMessage ?? null}
       />
     </div>

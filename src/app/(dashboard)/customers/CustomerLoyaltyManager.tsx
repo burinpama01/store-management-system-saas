@@ -338,15 +338,15 @@ export function CustomerLoyaltyManager({
         <div className="panel-header">
           <div>
             <h2 className="panel-title">QR สมัครสมาชิก</h2>
-            <p className="text-sm text-[var(--muted)]">ลูกค้าต้องเปิดจาก QR ของร้านนี้ก่อนสมัครหรือดูแต้ม</p>
+            <p className="text-sm text-[var(--muted)]">QR ถาวรของร้าน ลูกค้าสแกนซ้ำเพื่อกลับมาดูแต้มได้</p>
           </div>
           <button
             className="btn-secondary"
             type="button"
             disabled={!canManageLoyaltySettings || isPending || !loyaltyEnabled}
-            onClick={() => runMemberPortalQrAction(generateMemberPortalQrAction, "สร้าง QR สมัครสมาชิกแล้ว")}
+            onClick={() => runMemberPortalQrAction(generateMemberPortalQrAction, "พร้อมใช้ QR สมัครสมาชิกถาวรแล้ว")}
           >
-            สร้าง QR ใหม่
+            สร้าง/แสดง QR ถาวร
           </button>
         </div>
         {!loyaltyEnabled ? (
@@ -380,7 +380,7 @@ export function CustomerLoyaltyManager({
             </div>
           </div>
         ) : (
-          <LockNotice>ยังไม่มี QR สมัครสมาชิก กด “สร้าง QR ใหม่” เพื่อเริ่มใช้งาน member portal ของร้านนี้</LockNotice>
+          <LockNotice>ยังไม่มี QR สมัครสมาชิก กด “สร้าง/แสดง QR ถาวร” เพื่อเริ่มใช้งาน member portal ของร้านนี้</LockNotice>
         )}
       </section>
 

@@ -295,6 +295,54 @@ describe("buildReceiptLines", () => {
     expect(text).toContain("55.00");
   });
 
+  it("shows earned and remaining loyalty points when a paid receipt has customer rewards", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      loyaltyPointsEarned: 12,
+      loyaltyPointsBalance: 240,
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).toContain("แต้มที่ได้รับ");
+    expect(text).toContain("+12");
+    expect(text).toContain("แต้มคงเหลือ");
+    expect(text).toContain("240");
+  });
+
+  it("does not print a loyalty section when no points were earned", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      loyaltyPointsEarned: 0,
+      loyaltyPointsBalance: 240,
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).not.toContain("สะสมแต้ม");
+    expect(text).not.toContain("แต้มที่ได้รับ");
+    expect(text).not.toContain("แต้มคงเหลือ");
+  });
+
+  it("passes paid customer reward points from POS payment results into receipt data", () => {
+    const normalPos = read("src/app/pos/PosTerminal.tsx");
+    const groceryPos = read("src/app/pos/grocery/GroceryPosTerminal.tsx");
+    const escpos = read("src/modules/printing/escpos.ts");
+    const orderRepository = read("src/modules/pos/order-repository.ts");
+    const types = read("src/modules/printing/types.ts");
+
+    expect(types).toContain("loyaltyPointsEarned?: number");
+    expect(types).toContain("loyaltyPointsBalance?: number");
+    expect(escpos).toContain("loyaltyPointsEarned?: number");
+    expect(escpos).toContain("loyaltyPointsBalance?: number");
+    expect(orderRepository).toContain('.from("loyalty_accounts")');
+    expect(orderRepository).toContain("loyaltyPointsBalance");
+    expect(normalPos).toContain("loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned");
+    expect(normalPos).toContain("loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance");
+    expect(groceryPos).toContain("loyaltyPointsEarned: checkoutOrder.loyaltyPointsEarned");
+    expect(groceryPos).toContain("loyaltyPointsBalance: checkoutOrder.loyaltyPointsBalance");
+  });
+
   it("shows item-level discount details on receipt lines", () => {
     const { lines } = buildReceiptLines({
       storeName: "Test Cafe",
@@ -956,5 +1004,79 @@ describe("receipt data", () => {
     };
 
     expect(buildReceiptData(order, settings).printCopies).toBe(3);
+  });
+
+  it("uses the post-payment customer loyalty balance from the order receipt payload", () => {
+    const order: Order = {
+      id: "order-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      orderNumber: "260620-0001",
+      status: "paid",
+      cashierId: "cashier-1",
+      customerId: "customer-1",
+      loyaltyPointsEarned: 12,
+      loyaltyPointsBalance: 240,
+      items: [],
+      subtotal: 1200,
+      discount: 0,
+      total: 1200,
+      payments: [],
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      paidAt: "2026-06-20T00:00:00.000Z",
+    };
+    const settings: ReceiptSettings = {
+      id: "settings-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      storeName: "Each Other",
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printCopies: 1,
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    };
+
+    expect(buildReceiptData(order, settings)).toMatchObject({
+      loyaltyPointsEarned: 12,
+      loyaltyPointsBalance: 240,
+    });
+  });
+
+  it("omits zero earned points from generated receipt data", () => {
+    const order: Order = {
+      id: "order-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      orderNumber: "260620-0001",
+      status: "paid",
+      cashierId: "cashier-1",
+      customerId: "customer-1",
+      loyaltyPointsEarned: 0,
+      loyaltyPointsBalance: 240,
+      items: [],
+      subtotal: 50,
+      discount: 0,
+      total: 50,
+      payments: [],
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      paidAt: "2026-06-20T00:00:00.000Z",
+    };
+    const settings: ReceiptSettings = {
+      id: "settings-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      storeName: "Each Other",
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printCopies: 1,
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    };
+
+    expect(buildReceiptData(order, settings).loyaltyPointsEarned).toBeUndefined();
+    expect(buildReceiptData(order, settings).loyaltyPointsBalance).toBeUndefined();
   });
 });

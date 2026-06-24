@@ -8,6 +8,14 @@ function priceStr(n: number): string {
   return n.toFixed(2);
 }
 
+function pointsStr(n: number): string {
+  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(n);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function padLine(label: string, value: string, width: number): string {
   const gap = width - label.length - value.length;
   return label + (gap > 0 ? " ".repeat(gap) : " ") + value;
@@ -143,6 +151,21 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     }
     if (p.changeAmount !== undefined && p.changeAmount > 0) {
       lines.push({ text: padLine("  เงินทอน", priceStr(p.changeAmount), cols) });
+    }
+  }
+
+  const earnedPoints = data.loyaltyPointsEarned;
+  const hasEarnedPoints = isFiniteNumber(earnedPoints) && earnedPoints > 0;
+  const balancePoints = hasEarnedPoints ? data.loyaltyPointsBalance : undefined;
+  const hasBalancePoints = isFiniteNumber(balancePoints);
+  if (hasEarnedPoints || hasBalancePoints) {
+    lines.push({ text: div });
+    lines.push({ text: "สะสมแต้ม", align: "center", bold: true });
+    if (hasEarnedPoints) {
+      lines.push({ text: padLine("แต้มที่ได้รับ", `+${pointsStr(earnedPoints)}`, cols) });
+    }
+    if (hasBalancePoints) {
+      lines.push({ text: padLine("แต้มคงเหลือ", pointsStr(balancePoints), cols) });
     }
   }
 

@@ -33,6 +33,49 @@ describe("customer display ad settings", () => {
     expect(form).toContain("contain");
   });
 
+  it("lets customer display slides upload image and video files into store-scoped storage", () => {
+    const page = read("src/app/(dashboard)/settings/customer-display/page.tsx");
+    const actions = read("src/app/(dashboard)/settings/customer-display/actions.ts");
+    const form = read("src/app/(dashboard)/settings/customer-display/CustomerDisplaySettingsForm.tsx");
+    const policy = read("supabase/migrations/20260601000010_product_images_store_policies.sql");
+    const customerDisplayStoragePolicy = read("supabase/migrations/20260624235900_customer_display_storage_permission_policy.sql");
+
+    expect(page).toContain("organizationId={ctx.organizationId}");
+    expect(page).toContain("storeId={ctx.storeId}");
+    expect(actions).toContain("createCustomerDisplayMediaUploadAction");
+    expect(actions).toContain("requirePermission(\"settings.manage_store\")");
+    expect(actions).toContain("createSupabaseServiceClient");
+    expect(actions).toContain("createSignedUploadUrl(path)");
+    expect(actions).toContain("input.organizationId !== ctx.organizationId || input.storeId !== ctx.storeId");
+    expect(form).toContain("getSupabaseBrowserClient");
+    expect(form).toContain("createCustomerDisplayMediaUploadAction");
+    expect(form).toContain('accept="image/*,video/*"');
+    expect(form).toContain('.from("product-images")');
+    expect(form).toContain("uploadToSignedUrl(signedUpload.path, signedUpload.token");
+    expect(form).not.toContain(".upload(path, uploadBody");
+    expect(form).toContain("customer-display");
+    expect(policy).toContain("array_length(storage.foldername(name), 1) = 3");
+    expect(actions).toContain("const fileName = `${randomUUID()}.${extension}`;");
+    expect(actions).toContain("const path = `${ctx.organizationId}/${ctx.storeId}/customer-display/${fileName}`;");
+    expect(form).not.toContain("customer-display/${crypto.randomUUID()}/media");
+    expect(form).toContain("URL จะถูกเติมหลังอัพโหลดสำเร็จ");
+    expect(form).toContain("const [uploadingCount, setUploadingCount]");
+    expect(form).toContain("const isUploading = uploadingCount > 0");
+    expect(form).toContain("disabled={isPending || isUploading}");
+    expect(form).toContain("onUploadStart");
+    expect(form).toContain("onUploadFinish");
+    expect(form).toContain("กำลังอัพโหลดไฟล์...");
+    expect(form).toContain('const mediaType: CustomerDisplayMediaType = file.type.startsWith("video/") ? "video" : "image"');
+    expect(form).toContain("shouldCompressCustomerDisplayImage(file)");
+    expect(form).toContain('file.name.toLowerCase().endsWith(".apng")');
+    expect(form).toContain('case "image/apng":');
+    expect(form).toContain('return "apng";');
+    expect(form).toContain('id: `${slot}-${crypto.randomUUID()}`');
+    expect(customerDisplayStoragePolicy).toContain('"product-images: settings managers can upload customer display"');
+    expect(customerDisplayStoragePolicy).toContain("(storage.foldername(name))[3] = 'customer-display'");
+    expect(customerDisplayStoragePolicy).toContain("auth_user_has_permission(s.organization_id, s.id, 'settings.manage_store')");
+  });
+
   it("stores customer display media settings as store-scoped typed config", () => {
     const repository = read("src/modules/settings/repository.ts");
     const types = read("src/modules/settings/customer-display.ts");

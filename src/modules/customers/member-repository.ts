@@ -1,5 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { getStoreBySlug } from "@/modules/stores/public-repository";
 import type { Store } from "@/modules/stores/types";
 import type { LoyaltyReward } from "@/modules/loyalty/repository";
@@ -15,6 +17,9 @@ type RewardRedemptionRow = Database["public"]["Tables"]["loyalty_reward_redempti
 type MemberOtpRow = Database["public"]["Tables"]["customer_member_otps"]["Row"];
 
 export type OtpSender = (phone: string, code: string) => Promise<unknown>;
+
+const ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE =
+  "ระบบสมัครสมาชิก สะสมแต้ม และคูปองอยู่ในแพ็กเกจ Enterprise เท่านั้น";
 
 export interface CustomerMemberProfile {
   id: string;
@@ -106,6 +111,16 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
   const storeRes = await getStoreBySlug(storeSlug, { requireQrOrdering: false });
   if (storeRes.error || !storeRes.data || !storeRes.data.isActive) {
     return { store: null, link: null, error: "ไม่พบร้านนี้" };
+  }
+
+  const billingState =
+    (await getOrganizationBillingState(storeRes.data.organizationId)) ?? DEFAULT_BILLING_STATE;
+  if (!canUseFeature(billingState, "loyaltyPoints")) {
+    return {
+      store: storeRes.data,
+      link: null,
+      error: ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE,
+    };
   }
 
   const supabase = await createSupabaseServiceClient();
@@ -503,13 +518,11 @@ export async function generateMemberPortalLink(input: {
   storeId: string;
   label?: string | null;
 }) {
-  const supabase = await createSupabaseServiceClient();
-  await supabase
-    .from("customer_member_portal_links")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("store_id", input.storeId)
-    .eq("is_active", true);
+  const activeLink = await getActiveMemberPortalLinkForStore(input.storeId);
+  if (activeLink.error) return { data: null, error: activeLink.error };
+  if (activeLink.data) return { data: activeLink.data, error: null };
 
+  const supabase = await createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("customer_member_portal_links")
     .insert({

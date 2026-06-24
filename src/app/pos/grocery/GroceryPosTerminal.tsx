@@ -5,6 +5,8 @@ import type { Category, Product } from "@/modules/catalog/types";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { Cart, Order } from "@/modules/pos/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
+import { buildReceiptData } from "@/modules/printing/types";
+import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import { emptyCart, updateQuantity, removeFromCart } from "@/modules/pos/cart";
 import { addBarcodeMatchToGroceryCart } from "@/modules/grocery-pos/cart-adapter";
 import {
@@ -57,6 +59,14 @@ function money(value: number, currency: string) {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function printSuccessMessage(base: string, result: ReceiptPrintResult, printerLoadError?: string | null): string {
+  if (printerLoadError) {
+    return `${base} (โหลดการตั้งค่าเครื่องพิมพ์ไม่สำเร็จ: ${printerLoadError} จึงใช้ช่องทางสำรอง)`;
+  }
+  if (!result.fallbackFromPrinter) return base;
+  return `${base} (เครื่อง ${result.fallbackFromPrinter.name} ใช้ไม่ได้ จึงใช้ช่องทางสำรอง)`;
 }
 
 function buildCouponPreviewCart(cart: Cart, couponDiscount: number): Cart {
@@ -127,6 +137,7 @@ export function GroceryPosTerminal({
   const [checkoutOrder, setCheckoutOrder] = useState<Order | null>(null);
   const [cashReceived, setCashReceived] = useState("");
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
+  const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
   const [deviceId, setDeviceId] = useState("");
   const [offlineSyncState, setOfflineSyncState] = useState<GroceryOfflineSyncState>(() => defaultOfflineSyncState());
   const [isPending, startTransition] = useTransition();
@@ -424,14 +435,13 @@ export function GroceryPosTerminal({
 
       paidDisplayCartRef.current = displayCart;
       paidCustomerNameRef.current = selectedCustomer?.name;
+      const paidPointsEarned = result.order.loyaltyPointsEarned;
+      const hasPaidPointMovement = typeof paidPointsEarned === "number" && paidPointsEarned > 0;
       paidCustomerRef.current = selectedCustomer
         ? {
             name: selectedCustomer.name,
-            pointsEarned: result.order.loyaltyPointsEarned,
-            pointsBalance:
-              typeof selectedCustomer.pointsBalance === "number"
-                ? selectedCustomer.pointsBalance + (result.order.loyaltyPointsEarned ?? 0) - (result.order.loyaltyPointsRedeemed ?? 0)
-                : selectedCustomer.pointsBalance,
+            pointsEarned: paidPointsEarned,
+            pointsBalance: hasPaidPointMovement ? result.order.loyaltyPointsBalance : undefined,
           }
         : null;
       publishCustomerDisplaySnapshot(displayCart, {
@@ -448,6 +458,49 @@ export function GroceryPosTerminal({
       setSelectedCustomer(null);
       setCustomerQuery("");
     });
+  }
+
+  async function handlePrintReceipt() {
+    if (!checkoutOrder || checkoutOrder.status !== "paid") {
+      setCheckoutMessage("ต้องชำระเงินก่อนพิมพ์ใบเสร็จ");
+      return;
+    }
+
+    const settings: ReceiptSettings = receiptSettings ?? {
+      id: "",
+      storeId,
+      organizationId: "",
+      storeName,
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printCopies: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const receiptData = {
+      ...buildReceiptData(checkoutOrder, settings),
+      storeName: settings.storeName || storeName,
+      showQrPayment: false,
+      loyaltyPointsEarned: checkoutOrder.loyaltyPointsEarned,
+      loyaltyPointsBalance: checkoutOrder.loyaltyPointsBalance,
+      printedAt: new Date().toISOString(),
+    };
+
+    setIsPrintingReceipt(true);
+    setCheckoutMessage("กำลังพิมพ์ใบเสร็จ...");
+    try {
+      const result = await printReceiptWithFallback({
+        printers,
+        preferredPrinterId: defaultPrinter?.id ?? null,
+        escpos: receiptData,
+        browser: receiptData,
+      });
+      setCheckoutMessage(printSuccessMessage("พิมพ์ใบเสร็จแล้ว", result, printerLoadError));
+    } catch (error) {
+      setCheckoutMessage(error instanceof Error ? error.message : "พิมพ์ใบเสร็จไม่สำเร็จ");
+    } finally {
+      setIsPrintingReceipt(false);
+    }
   }
 
   function handleVoidOrder() {
@@ -684,6 +737,13 @@ export function GroceryPosTerminal({
               รับเงินสด
             </button>
           </div>
+          <button
+            type="button"
+            onClick={handlePrintReceipt}
+            disabled={isPending || isPrintingReceipt || !checkoutOrder || checkoutOrder.status !== "paid"}
+          >
+            {isPrintingReceipt ? "กำลังพิมพ์..." : "พิมพ์ใบเสร็จ"}
+          </button>
           {checkoutMessage ? <p className="grocery-pos-message">{checkoutMessage}</p> : null}
         </div>
       </section>

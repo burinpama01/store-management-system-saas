@@ -47,7 +47,7 @@ function mapOrderItem(row: OrderItemRow): OrderItem {
   };
 }
 
-function mapOrder(row: OrderRow, items: OrderItem[], payments: Payment[]): Order {
+function mapOrder(row: OrderRow, items: OrderItem[], payments: Payment[], loyaltyPointsBalance?: number): Order {
   return {
     id: row.id,
     storeId: row.store_id,
@@ -63,6 +63,7 @@ function mapOrder(row: OrderRow, items: OrderItem[], payments: Payment[]): Order
     couponDiscountAmount: row.coupon_discount_amount,
     loyaltyPointsEarned: row.loyalty_points_earned,
     loyaltyPointsRedeemed: row.loyalty_points_redeemed,
+    loyaltyPointsBalance,
     items,
     subtotal: row.subtotal,
     discount: row.discount,
@@ -285,7 +286,21 @@ export async function getOrder(orderId: string) {
 
   const items = (itemsRes.data ?? []).map(mapOrderItem);
   const payments = (paymentsRes.data ?? []).map(mapPayment);
-  return { data: mapOrder(orderRes.data, items, payments), error: null };
+  const customerId = orderRes.data.customer_id;
+  let loyaltyPointsBalance: number | undefined;
+  if (customerId) {
+    const accountRes = await supabase
+      .from("loyalty_accounts")
+      .select("points_balance")
+      .eq("organization_id", orderRes.data.organization_id)
+      .eq("store_id", orderRes.data.store_id)
+      .eq("customer_id", customerId)
+      .maybeSingle();
+    if (!accountRes.error) {
+      loyaltyPointsBalance = accountRes.data?.points_balance;
+    }
+  }
+  return { data: mapOrder(orderRes.data, items, payments, loyaltyPointsBalance), error: null };
 }
 
 function normalizedHistoryDate(value: string | undefined, fallback: string) {

@@ -1,5 +1,6 @@
 "use client";
 
+import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { useActionState, useMemo, useState } from "react";
 import {
   CUSTOMER_DISPLAY_SLIDE_LIMIT,
@@ -9,7 +10,9 @@ import {
   type CustomerDisplayMediaFit,
   type CustomerDisplayMediaType,
 } from "@/modules/settings/customer-display";
-import { upsertCustomerDisplaySettingsAction } from "./actions";
+import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
+import { compressImage } from "@/shared/services/image";
+import { createCustomerDisplayMediaUploadAction, upsertCustomerDisplaySettingsAction } from "./actions";
 
 type SlideDraft = CustomerDisplayAdSlide;
 
@@ -18,14 +21,19 @@ const singleSlotImageRecommendation =
   "ขนาดรูปภาพที่แนะนำ: 1080 x 1920 px สำหรับโฆษณาเต็มพื้นที่ด้านขวา เลือก cover เพื่อเต็มกรอบ หรือ contain เพื่อไม่ครอปภาพ";
 const splitSlotImageRecommendation =
   "ขนาดรูปภาพที่แนะนำ: 1200 x 900 px ต่อช่องสำหรับโหมดแบ่งครึ่งบน/ล่าง เลือก cover เพื่อเต็มกรอบ หรือ contain เพื่อเห็นทั้งภาพ";
+const compressibleCustomerDisplayImageTypes = new Set(["image/jpeg", "image/png"]);
 
 export function CustomerDisplaySettingsForm({
   settings,
   storeName,
+  organizationId,
+  storeId,
   loadError,
 }: {
   settings: CustomerDisplaySettings | null;
   storeName: string;
+  organizationId: string;
+  storeId: string;
   loadError: string | null;
 }) {
   const initial = settings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
@@ -36,12 +44,28 @@ export function CustomerDisplaySettingsForm({
   const [bottomSlotEnabled, setBottomSlotEnabled] = useState(initial.bottomSlotEnabled);
   const [topSlides, setTopSlides] = useState<SlideDraft[]>(initial.topSlides);
   const [bottomSlides, setBottomSlides] = useState<SlideDraft[]>(initial.bottomSlides);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   const topSlidesJson = useMemo(() => JSON.stringify(topSlides), [topSlides]);
   const bottomSlidesJson = useMemo(() => JSON.stringify(bottomSlides), [bottomSlides]);
+  const isUploading = uploadingCount > 0;
+
+  function onUploadStart() {
+    setUploadingCount((count) => count + 1);
+  }
+
+  function onUploadFinish() {
+    setUploadingCount((count) => Math.max(0, count - 1));
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (isUploading) {
+      event.preventDefault();
+    }
+  }
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="space-y-5" onSubmit={handleSubmit}>
       <input type="hidden" name="topSlidesJson" value={topSlidesJson} />
       <input type="hidden" name="bottomSlidesJson" value={bottomSlidesJson} />
 
@@ -143,6 +167,10 @@ export function CustomerDisplaySettingsForm({
           disabled={!adEnabled || !topSlotEnabled}
           slides={topSlides}
           recommendation={adLayout === "split" ? splitSlotImageRecommendation : singleSlotImageRecommendation}
+          organizationId={organizationId}
+          storeId={storeId}
+          onUploadStart={onUploadStart}
+          onUploadFinish={onUploadFinish}
           onChange={setTopSlides}
         />
         <SlideEditor
@@ -152,13 +180,22 @@ export function CustomerDisplaySettingsForm({
           disabled={!adEnabled || !bottomSlotEnabled}
           slides={bottomSlides}
           recommendation={splitSlotImageRecommendation}
+          organizationId={organizationId}
+          storeId={storeId}
+          onUploadStart={onUploadStart}
+          onUploadFinish={onUploadFinish}
           onChange={setBottomSlides}
         />
       </div>
 
-      <div className="flex justify-end">
-        <button type="submit" className="btn-primary" disabled={isPending}>
-          {isPending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
+      <div className="flex flex-col items-end gap-2">
+        {isUploading ? (
+          <p className="text-xs font-medium text-[var(--muted)]" aria-live="polite">
+            รอให้อัพโหลดไฟล์เสร็จก่อนบันทึกการตั้งค่า
+          </p>
+        ) : null}
+        <button type="submit" className="btn-primary" disabled={isPending || isUploading}>
+          {isUploading ? "กำลังอัพโหลดไฟล์..." : isPending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
         </button>
       </div>
     </form>
@@ -172,6 +209,10 @@ function SlideEditor({
   disabled,
   slides,
   recommendation,
+  organizationId,
+  storeId,
+  onUploadStart,
+  onUploadFinish,
   onChange,
 }: {
   title: string;
@@ -180,17 +221,64 @@ function SlideEditor({
   disabled: boolean;
   slides: SlideDraft[];
   recommendation: string;
-  onChange: (slides: SlideDraft[]) => void;
+  organizationId: string;
+  storeId: string;
+  onUploadStart: () => void;
+  onUploadFinish: () => void;
+  onChange: Dispatch<SetStateAction<SlideDraft[]>>;
 }) {
+  const [uploadingSlideId, setUploadingSlideId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   function updateSlide(index: number, patch: Partial<SlideDraft>) {
-    onChange(slides.map((slide, itemIndex) => (itemIndex === index ? { ...slide, ...patch } : slide)));
+    const slide = slides[index];
+    if (!slide) return;
+    updateSlideById(slide.id, patch);
+  }
+
+  function updateSlideById(slideId: string, patch: Partial<SlideDraft>) {
+    onChange((currentSlides) => currentSlides.map((slide) => (slide.id === slideId ? { ...slide, ...patch } : slide)));
+  }
+
+  async function uploadSlideFile(index: number, file: File) {
+    const slide = slides[index];
+    if (!slide) return;
+    setUploadError(null);
+    setUploadingSlideId(slide.id);
+    onUploadStart();
+    try {
+      const mediaType: CustomerDisplayMediaType = file.type.startsWith("video/") ? "video" : "image";
+      const shouldCompress = mediaType === "image" && shouldCompressCustomerDisplayImage(file);
+      const uploadBody = shouldCompress ? await compressImage(file) : file;
+      const extension = shouldCompress ? "jpg" : safeExtension(file.name, fallbackExtension(file.type, mediaType));
+      const signedUpload = await createCustomerDisplayMediaUploadAction({ organizationId, storeId, extension });
+      if (signedUpload.error || !signedUpload.path || !signedUpload.token || !signedUpload.publicUrl) {
+        setUploadError(signedUpload.error ?? "เตรียมอัพโหลดไฟล์ไม่สำเร็จ");
+        return;
+      }
+      const contentType = shouldCompress ? "image/jpeg" : file.type || fallbackContentType(mediaType);
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.storage
+        .from("product-images")
+        .uploadToSignedUrl(signedUpload.path, signedUpload.token, uploadBody, { contentType });
+      if (error) {
+        setUploadError(error.message);
+        return;
+      }
+      updateSlideById(slide.id, { mediaType, url: signedUpload.publicUrl });
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "อัพโหลดไฟล์ไม่สำเร็จ");
+    } finally {
+      setUploadingSlideId(null);
+      onUploadFinish();
+    }
   }
 
   function addSlide(mediaType: CustomerDisplayMediaType) {
-    onChange([
-      ...slides,
+    onChange((currentSlides) => [
+      ...currentSlides,
       {
-        id: `${slot}-${Date.now()}`,
+        id: `${slot}-${crypto.randomUUID()}`,
         slot,
         mediaType,
         url: "",
@@ -265,6 +353,24 @@ function SlideEditor({
                   placeholder={slide.mediaType === "video" ? "https://.../promo.mp4" : "https://.../promo.gif"}
                   disabled={disabled}
                 />
+                <span className="block text-[11px] font-medium text-[var(--muted)]">URL จะถูกเติมหลังอัพโหลดสำเร็จ</span>
+              </label>
+              <label className="space-y-1 text-xs font-semibold text-[var(--text)]">
+                อัพโหลดไฟล์
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  className="block w-full text-xs text-[var(--muted)]"
+                  disabled={disabled || uploadingSlideId === slide.id}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void uploadSlideFile(index, file);
+                    event.currentTarget.value = "";
+                  }}
+                />
+                {uploadingSlideId === slide.id ? (
+                  <span className="block text-[11px] font-medium text-[var(--muted)]">กำลังอัพโหลด...</span>
+                ) : null}
               </label>
               <label className="space-y-1 text-xs font-semibold text-[var(--text)]">
                 การจัดภาพ
@@ -303,7 +409,7 @@ function SlideEditor({
               <button
                 type="button"
                 className="text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-40"
-                onClick={() => onChange(slides.filter((_, itemIndex) => itemIndex !== index))}
+                onClick={() => onChange((currentSlides) => currentSlides.filter((item) => item.id !== slide.id))}
                 disabled={disabled}
               >
                 ลบสไลด์
@@ -312,6 +418,42 @@ function SlideEditor({
           </div>
         ))}
       </div>
+      {uploadError ? <p className="alert-danger text-xs">{uploadError}</p> : null}
     </section>
   );
+}
+
+function shouldCompressCustomerDisplayImage(file: File) {
+  if (file.name.toLowerCase().endsWith(".apng")) return false;
+  return compressibleCustomerDisplayImageTypes.has(file.type.toLowerCase());
+}
+
+function fallbackContentType(mediaType: CustomerDisplayMediaType) {
+  return mediaType === "video" ? "video/mp4" : "image/jpeg";
+}
+
+function fallbackExtension(fileType: string, mediaType: CustomerDisplayMediaType) {
+  switch (fileType.toLowerCase()) {
+    case "image/gif":
+      return "gif";
+    case "image/webp":
+      return "webp";
+    case "image/apng":
+      return "apng";
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "video/webm":
+      return "webm";
+    case "video/quicktime":
+      return "mov";
+    default:
+      return mediaType === "video" ? "mp4" : "jpg";
+  }
+}
+
+function safeExtension(fileName: string, fallback: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return extension || fallback;
 }

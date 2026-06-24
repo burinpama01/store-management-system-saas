@@ -85,6 +85,7 @@ export interface Order {
   couponDiscountAmount?: number;
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
+  loyaltyPointsBalance?: number;
   items: OrderItem[];
   subtotal: number;
   discount: number;
