@@ -20,6 +20,7 @@ export type OtpSender = (phone: string, code: string) => Promise<unknown>;
 
 const ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE =
   "ระบบสมัครสมาชิก สะสมแต้ม และคูปองอยู่ในแพ็กเกจ Enterprise เท่านั้น";
+const MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE = "ไม่สามารถตรวจสอบ QR ได้ กรุณาลองใหม่หรือแจ้งร้านค้า";
 
 export interface CustomerMemberProfile {
   id: string;
@@ -132,9 +133,36 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
     .eq("is_active", true)
     .maybeSingle();
 
-  if (error) return { store: storeRes.data, link: null, error: mapError(error).userMessage };
-  if (!data) return { store: storeRes.data, link: null, error: "ต้องเปิดจาก QR ของร้าน" };
+  if (error) {
+    console.warn("[member-portal] portal link lookup failed", {
+      storeSlug,
+      storeId: storeRes.data.id,
+      codeLength: cleanCode.length,
+      codePrefix: cleanCode.slice(0, 6),
+      supabaseHost: safeSupabaseHost(),
+      error: error.message,
+    });
+    return { store: storeRes.data, link: null, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
+  }
+  if (!data) {
+    console.warn("[member-portal] portal link not found", {
+      storeSlug,
+      storeId: storeRes.data.id,
+      codeLength: cleanCode.length,
+      codePrefix: cleanCode.slice(0, 6),
+      supabaseHost: safeSupabaseHost(),
+    });
+    return { store: storeRes.data, link: null, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
+  }
   return { store: storeRes.data, link: data, error: null };
+}
+
+function safeSupabaseHost() {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").host;
+  } catch {
+    return "invalid-url";
+  }
 }
 
 async function listActiveRewards(storeId: string) {

@@ -74,7 +74,9 @@ export function MemberPortal({ storeSlug, portalCode, data }: Props) {
         <div className="mx-auto max-w-md rounded-lg border border-[var(--border)] bg-white p-5 text-center shadow-sm">
           <p className="text-xs font-bold uppercase text-[var(--muted)]">Member Portal</p>
           <h1 className="mt-2 text-xl font-bold text-[var(--foreground)]">ต้องเปิดจาก QR ของร้าน</h1>
-          <p className="mt-2 text-sm text-[var(--muted)]">ลิงก์นี้ใช้ได้เฉพาะ QR ที่ร้านสร้างให้เท่านั้น</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            {data.error ?? "ลิงก์นี้ใช้ได้เฉพาะ QR ที่ร้านสร้างให้เท่านั้น"}
+          </p>
         </div>
       </main>
     );

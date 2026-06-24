@@ -133,6 +133,22 @@ describe("customer member rewards", () => {
     expect(stableQrMigration).toContain("row_number() over (partition by store_id order by created_at desc, id desc)");
   });
 
+  it("keeps public member portal lookup errors generic while logging masked diagnostics server-side", () => {
+    const repository = read("src/modules/customers/member-repository.ts");
+    const portal = read("src/app/member/[storeSlug]/MemberPortal.tsx");
+
+    const resolveBlock = repository.slice(
+      repository.indexOf("async function resolvePortalLink"),
+      repository.indexOf("async function listActiveRewards"),
+    );
+
+    expect(resolveBlock).toContain("MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE");
+    expect(resolveBlock).toContain('console.warn("[member-portal] portal link lookup failed"');
+    expect(resolveBlock).toContain("codePrefix: cleanCode.slice(0, 6)");
+    expect(resolveBlock).not.toContain("return { store: storeRes.data, link: null, error: mapError(error).userMessage }");
+    expect(portal).toContain('{data.error ?? "ลิงก์นี้ใช้ได้เฉพาะ QR ที่ร้านสร้างให้เท่านั้น"}');
+  });
+
   it("moves member-commerce pricing copy into Enterprise without overwriting edited copy", () => {
     const migration = read(enterprisePackageMigrationPath);
 
