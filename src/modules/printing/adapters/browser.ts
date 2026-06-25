@@ -21,6 +21,10 @@ function buildReceiptBlob(html: string): Blob {
 }
 
 function renderReceiptLine(line: ReceiptLine, paperWidth: ReceiptData["paperWidth"]): string {
+  if (line.imageUrl) {
+    const kind = line.imageKind === "logo" ? "is-logo" : "is-footer";
+    return `<div class="receipt-image ${kind}"><img src="${escapeHtml(line.imageUrl)}" alt=""></div>`;
+  }
   if (line.qrPayload) {
     return `<div class="promptpay-qr">${renderReceiptQrSvg(line.qrPayload, paperWidth)}</div>`;
   }
@@ -100,6 +104,12 @@ function buildReceiptHtml(data: ReceiptData): string {
   .receipt-line.is-bold { font-weight: 700; }
   .promptpay-qr { display: flex; justify-content: center; padding: 2mm 0 1mm; }
   .promptpay-qr-image { display: block; background: #fff; image-rendering: pixelated; }
+  .receipt-image { display: flex; justify-content: center; }
+  .receipt-image img { display: block; max-width: 100%; height: auto; }
+  .receipt-image.is-logo { padding: 0 0 1.5mm; }
+  .receipt-image.is-logo img { max-height: 24mm; object-fit: contain; }
+  .receipt-image.is-footer { padding: 1.5mm 0 0; }
+  .receipt-image.is-footer img { max-height: 40mm; object-fit: contain; }
   @media print {
     body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .print-actions { display: none; }

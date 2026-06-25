@@ -8,6 +8,17 @@ import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import { upsertReceiptSettings } from "@/modules/settings/repository";
 import { upsertNetworkPrinter } from "@/modules/stores/repository";
 
+/** Accepts only http(s) image URLs within a sane length (Supabase public URL or pasted link). */
+function isValidImageUrl(value: string): boolean {
+  if (value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 async function getStoreContext() {
   const user = await getCurrentUser();
   if (!user) throw new Error("ไม่มีสิทธิ์เข้าถึง");
@@ -34,6 +45,8 @@ export async function upsertReceiptSettingsAction(
     const promptpayId = (formData.get("promptpayId") as string | null)?.trim() || undefined;
     const headerText = (formData.get("headerText") as string | null)?.trim() || undefined;
     const footerText = (formData.get("footerText") as string | null)?.trim() || undefined;
+    const logoUrl = (formData.get("logoUrl") as string | null)?.trim() || undefined;
+    const footerImageUrl = (formData.get("footerImageUrl") as string | null)?.trim() || undefined;
     const paperWidth = formData.get("paperWidth") as "58mm" | "80mm" | null;
     const printCopiesRaw = formData.get("printCopies") as string | null;
 
@@ -48,6 +61,8 @@ export async function upsertReceiptSettingsAction(
       return { error: `ข้อความส่วนหัวยาวเกิน ${RECEIPT_MESSAGE_MAX_LENGTH} ตัวอักษร` };
     if (footerText && footerText.length > RECEIPT_MESSAGE_MAX_LENGTH)
       return { error: `ข้อความส่วนท้ายยาวเกิน ${RECEIPT_MESSAGE_MAX_LENGTH} ตัวอักษร` };
+    if (logoUrl && !isValidImageUrl(logoUrl)) return { error: "ลิงก์โลโก้หัวใบเสร็จไม่ถูกต้อง" };
+    if (footerImageUrl && !isValidImageUrl(footerImageUrl)) return { error: "ลิงก์รูปท้ายใบเสร็จไม่ถูกต้อง" };
     if (!paperWidth || !["58mm", "80mm"].includes(paperWidth))
       return { error: "ความกว้างกระดาษไม่ถูกต้อง" };
     const printCopies = parseInt(printCopiesRaw ?? "", 10);
@@ -64,6 +79,8 @@ export async function upsertReceiptSettingsAction(
       promptpayId,
       headerText,
       footerText,
+      logoUrl,
+      footerImageUrl,
       paperWidth,
       printCopies,
     });

@@ -309,6 +309,7 @@ export async function getReceiptSettings(storeId: string) {
           headerText: data.header_text ?? undefined,
           footerText: data.footer_text ?? undefined,
           logoUrl: data.logo_url ?? undefined,
+          footerImageUrl: data.footer_image_url ?? undefined,
           paperWidth: data.paper_width,
           printCopies: data.print_copies,
           updatedAt: data.updated_at,

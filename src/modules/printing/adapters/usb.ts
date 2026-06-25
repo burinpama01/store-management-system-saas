@@ -86,7 +86,7 @@ export const usbAdapter: PrintAdapter = {
 
     try {
       await device.claimInterface(ep.interfaceNum);
-      const bytes = buildReceiptPrinterBytes(data, data);
+      const bytes = await buildReceiptPrinterBytes(data, data);
       await device.transferOut(ep.endpointNum, bytes.buffer as ArrayBuffer);
     } finally {
       await device.releaseInterface(ep.interfaceNum).catch(() => undefined);

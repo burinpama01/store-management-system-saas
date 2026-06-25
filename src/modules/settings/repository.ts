@@ -29,6 +29,7 @@ export interface ReceiptSettings {
   headerText?: string;
   footerText?: string;
   logoUrl?: string;
+  footerImageUrl?: string;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
   updatedAt: string;
@@ -49,6 +50,7 @@ function mapReceiptSettings(row: ReceiptSettingsRow): ReceiptSettings {
     headerText: row.header_text ?? undefined,
     footerText: row.footer_text ?? undefined,
     logoUrl: row.logo_url ?? undefined,
+    footerImageUrl: row.footer_image_url ?? undefined,
     paperWidth: row.paper_width,
     printCopies: row.print_copies,
     updatedAt: row.updated_at,
@@ -108,6 +110,8 @@ export interface ReceiptSettingsInput {
   promptpayId?: string;
   headerText?: string;
   footerText?: string;
+  logoUrl?: string;
+  footerImageUrl?: string;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
 }
@@ -131,6 +135,8 @@ export async function upsertReceiptSettings(
       promptpay_id: input.promptpayId ?? null,
       header_text: input.headerText ?? null,
       footer_text: input.footerText ?? null,
+      logo_url: input.logoUrl ?? null,
+      footer_image_url: input.footerImageUrl ?? null,
       paper_width: input.paperWidth,
       print_copies: input.printCopies,
     },

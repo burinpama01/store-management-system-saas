@@ -5,6 +5,7 @@ import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { buildEscPosReceipt, CMD } from "@/modules/printing/escpos";
 import { renderReceiptRaster } from "@/modules/printing/receipt-raster-client";
 import { buildReceiptLines } from "@/modules/printing/receipt-lines";
+import { floydSteinbergMono } from "@/modules/printing/escpos-raster";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
 import { bluetoothAdapter } from "@/modules/printing/adapters/bluetooth";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
@@ -295,6 +296,29 @@ describe("buildReceiptLines", () => {
     expect(text).toContain("55.00");
   });
 
+  it("places the store logo at the top and the footer image at the very bottom", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      logoUrl: "https://cdn.example.com/logo.png",
+      footerImageUrl: "https://cdn.example.com/line-qr.png",
+      footerText: "ขอบคุณที่อุดหนุน",
+    });
+
+    const imageLines = lines.filter((line) => line.imageUrl);
+    expect(imageLines).toHaveLength(2);
+
+    // Logo is the first line (before the store name); footer image is the last line.
+    expect(lines[0]?.imageUrl).toBe("https://cdn.example.com/logo.png");
+    expect(lines[0]?.imageKind).toBe("logo");
+    expect(lines[lines.length - 1]?.imageUrl).toBe("https://cdn.example.com/line-qr.png");
+    expect(lines[lines.length - 1]?.imageKind).toBe("footer");
+  });
+
+  it("omits image lines when no logo or footer image is configured", () => {
+    const { lines } = buildReceiptLines(receiptFixture);
+    expect(lines.some((line) => line.imageUrl)).toBe(false);
+  });
+
   it("shows earned and remaining loyalty points when a paid receipt has customer rewards", () => {
     const { lines } = buildReceiptLines({
       ...receiptFixture,
@@ -515,6 +539,40 @@ describe("buildReceiptLines", () => {
   });
 });
 
+describe("floydSteinbergMono", () => {
+  function solid(width: number, height: number, gray: number): Uint8ClampedArray {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < width * height; i++) {
+      rgba[i * 4] = gray;
+      rgba[i * 4 + 1] = gray;
+      rgba[i * 4 + 2] = gray;
+      rgba[i * 4 + 3] = 255;
+    }
+    return rgba;
+  }
+
+  it("maps fully black and fully white regions to all-on / all-off dots", () => {
+    const black = floydSteinbergMono(solid(8, 8, 0), 8, 8);
+    const white = floydSteinbergMono(solid(8, 8, 255), 8, 8);
+    expect(black.every((v) => v === 1)).toBe(true);
+    expect(white.every((v) => v === 0)).toBe(true);
+  });
+
+  it("dithers a mid-gray region into a mix of on and off dots", () => {
+    const mono = floydSteinbergMono(solid(16, 16, 128), 16, 16);
+    const onDots = mono.reduce((sum, v) => sum + v, 0);
+    // ~50% gray should diffuse into roughly half-on dots, never all-or-nothing.
+    expect(onDots).toBeGreaterThan(mono.length * 0.25);
+    expect(onDots).toBeLessThan(mono.length * 0.75);
+  });
+
+  it("treats transparent pixels as white (off)", () => {
+    const rgba = new Uint8ClampedArray(4 * 4 * 4); // all zero → transparent black
+    const mono = floydSteinbergMono(rgba, 4, 4);
+    expect(mono.every((v) => v === 0)).toBe(true);
+  });
+});
+
 describe("printer adapters", () => {
   it("wires bluetooth adapter instead of leaving the printer type unsupported", () => {
     const service = read("src/modules/printing/print-service.ts");
@@ -536,6 +594,35 @@ describe("printer adapters", () => {
     expect(adapter).toContain("navigator.share");
     expect(adapter).toContain("URL.createObjectURL");
     expect(adapter).toContain("เบราว์เซอร์บล็อกหน้าต่างพิมพ์");
+  });
+
+  it("renders header logo and footer image as <img> blocks in the browser receipt HTML", async () => {
+    const documentWrite = vi.fn();
+    const browserReceipt = {
+      ...receiptFixture,
+      logoUrl: "https://cdn.example.com/logo.png",
+      footerImageUrl: "https://cdn.example.com/line-qr.png",
+    } satisfies ReceiptData;
+
+    vi.stubGlobal("window", {
+      open: vi.fn(() => ({
+        document: { open: vi.fn(), write: documentWrite, close: vi.fn() },
+        focus: vi.fn(),
+        print: vi.fn(),
+        addEventListener: vi.fn(),
+        close: vi.fn(),
+      })),
+    });
+
+    await browserAdapter.print(browserReceipt, printerFixture({ type: "browser" }));
+
+    const html = String(documentWrite.mock.calls[0]?.[0] ?? "");
+    expect(html).toContain('class="receipt-image is-logo"');
+    expect(html).toContain('<img src="https://cdn.example.com/logo.png"');
+    expect(html).toContain('class="receipt-image is-footer"');
+    expect(html).toContain('<img src="https://cdn.example.com/line-qr.png"');
+    // Logo must appear before the footer image in the document order.
+    expect(html.indexOf("logo.png")).toBeLessThan(html.indexOf("line-qr.png"));
   });
 
   it("downloads the receipt when popup print is blocked and native share rejects", async () => {
@@ -739,9 +826,9 @@ describe("printer adapters", () => {
     expect(builder).toContain("repeatReceiptJob");
   });
 
-  it("thermal byte builder repeats the actual receipt bytes for configured print copies", () => {
-    const single = buildReceiptPrinterBytes(receiptFixture, { ...receiptFixture, printCopies: 1 });
-    const repeated = buildReceiptPrinterBytes(receiptFixture, { ...receiptFixture, printCopies: 3 });
+  it("thermal byte builder repeats the actual receipt bytes for configured print copies", async () => {
+    const single = await buildReceiptPrinterBytes(receiptFixture, { ...receiptFixture, printCopies: 1 });
+    const repeated = await buildReceiptPrinterBytes(receiptFixture, { ...receiptFixture, printCopies: 3 });
 
     expect(repeated.length).toBe(single.length * 3);
     expect(Array.from(repeated.slice(0, single.length))).toEqual(Array.from(single));
@@ -749,8 +836,8 @@ describe("printer adapters", () => {
     expect(Array.from(repeated.slice(single.length * 2))).toEqual(Array.from(single));
   });
 
-  it("does not fall back to text ESC/POS when PromptPay QR needs raster output", () => {
-    expect(() =>
+  it("does not fall back to text ESC/POS when PromptPay QR needs raster output", async () => {
+    await expect(
       buildReceiptPrinterBytes(
         receiptFixture,
         {
@@ -761,10 +848,10 @@ describe("printer adapters", () => {
           promptpayId: "0812345678",
         },
       ),
-    ).toThrow("QR PromptPay");
+    ).rejects.toThrow("QR PromptPay");
   });
 
-  it("renders a PromptPay QR block into ESC/POS raster bytes", () => {
+  it("renders a PromptPay QR block into ESC/POS raster bytes", async () => {
     type MockCanvas = {
       width: number;
       height: number;
@@ -836,7 +923,7 @@ describe("printer adapters", () => {
       createElement: vi.fn(() => canvas),
     });
 
-    const job = renderReceiptRaster({
+    const job = await renderReceiptRaster({
       ...receiptFixture,
       payments: [{ method: "qr_promptpay", amount: 65 }],
       paymentStatus: "unpaid",
@@ -860,7 +947,7 @@ describe("printer adapters", () => {
     expect(Number(storeNameTextCalls[1]?.[1])).toBeCloseTo(Number(storeNameTextCalls[0]?.[1]) + 0.7);
   });
 
-  it("turns light gray anti-aliased receipt text into black raster dots", () => {
+  it("turns light gray anti-aliased receipt text into black raster dots", async () => {
     type MockCanvas = {
       width: number;
       height: number;
@@ -927,7 +1014,7 @@ describe("printer adapters", () => {
     };
     vi.stubGlobal("document", { createElement: vi.fn(() => canvas) });
 
-    const job = renderReceiptRaster(receiptFixture);
+    const job = await renderReceiptRaster(receiptFixture);
     const bytes = Array.from(job ?? []);
     const rasterCommandIndex = bytes.findIndex((byte, index) =>
       byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30 && bytes[index + 3] === 0,

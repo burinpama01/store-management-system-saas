@@ -2440,6 +2440,7 @@ export interface Database {
           header_text: string | null;
           footer_text: string | null;
           logo_url: string | null;
+          footer_image_url: string | null;
           paper_width: "58mm" | "80mm";
           print_copies: number;
           updated_at: string;
@@ -2458,6 +2459,7 @@ export interface Database {
           header_text?: string | null;
           footer_text?: string | null;
           logo_url?: string | null;
+          footer_image_url?: string | null;
           paper_width?: "58mm" | "80mm";
           print_copies?: number;
           updated_at?: string;
@@ -2476,6 +2478,7 @@ export interface Database {
           header_text?: string | null;
           footer_text?: string | null;
           logo_url?: string | null;
+          footer_image_url?: string | null;
           paper_width?: "58mm" | "80mm";
           print_copies?: number;
           updated_at?: string;

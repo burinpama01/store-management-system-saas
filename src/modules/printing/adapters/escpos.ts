@@ -15,7 +15,7 @@ export const escposAdapter: PrintAdapter = {
     if (!printer.id) {
       throw new Error("ESC/POS ต้องเลือกเครื่องพิมพ์จากการตั้งค่าร้าน");
     }
-    const printJobBase64 = bytesToBase64(buildReceiptPrinterBytes(data, data));
+    const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(data, data));
     await sendNetworkPrintJob(printer, { receiptData: data, printerId: printer.id, printJobBase64 });
   },
 };
