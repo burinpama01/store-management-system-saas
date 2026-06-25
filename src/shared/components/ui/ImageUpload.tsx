@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
+import { uploadStoreImageAction } from "@/modules/storage/image-actions";
 import { compressImage } from "@/shared/services/image";
 
 /**
- * Image field: upload a photo (auto-resized/compressed before upload) to the
- * product-images bucket, or paste a URL. Emits the final URL via a hidden input
- * named `name` so it submits with the surrounding form.
+ * Image field: upload a photo (auto-resized/compressed client-side, then uploaded via a server
+ * action) to the product-images bucket, or paste a URL. Emits the final URL via a hidden input
+ * named `name` so it submits with the surrounding form. `organizationId`/`storeId` are accepted
+ * for call-site compatibility but the upload path is derived from the session server-side.
  */
 export function ImageUpload({
   name,
   defaultValue,
-  organizationId,
-  storeId,
   label = "รูปภาพ",
 }: {
   name: string;
@@ -31,17 +30,14 @@ export function ImageUpload({
     setBusy(true);
     try {
       const blob = await compressImage(file);
-      const path = `${organizationId}/${storeId}/${crypto.randomUUID()}/image.jpg`;
-      const supabase = getSupabaseBrowserClient();
-      const { error: upErr } = await supabase.storage
-        .from("product-images")
-        .upload(path, blob, { contentType: "image/jpeg", upsert: false });
-      if (upErr) {
-        setError(upErr.message);
+      const fd = new FormData();
+      fd.append("file", blob, "image.jpg");
+      const result = await uploadStoreImageAction(fd);
+      if (result.error || !result.url) {
+        setError(result.error ?? "อัปโหลดไม่สำเร็จ");
         return;
       }
-      const { data } = supabase.storage.from("product-images").getPublicUrl(path);
-      setUrl(data.publicUrl);
+      setUrl(result.url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ");
     } finally {
