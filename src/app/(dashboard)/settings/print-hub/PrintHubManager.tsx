@@ -112,7 +112,7 @@ export function PrintHubManager({
     2,
   );
   const installCommand = [
-    "powershell -ExecutionPolicy Bypass -File scripts\\print-hub\\install-windows.ps1 `",
+    "powershell -ExecutionPolicy Bypass -File .\\print-hub\\install-windows.ps1 `",
     `  -ServerUrl "${serverUrl}" \``,
     `  -StoreId   "${storeId}" \``,
     `  -HubToken  "${token ?? "<โทเค็น>"}"`,
@@ -182,6 +182,13 @@ export function PrintHubManager({
         <p className="label-muted mb-3">
           สร้างโทเค็นลับสำหรับร้านนี้ แล้วนำไปใส่ตอนติดตั้ง Print Hub บนเครื่องแคชเชียร์ (เก็บเป็นความลับ)
         </p>
+        <a
+          href="/downloads/storeos-print-hub.zip"
+          download
+          className="btn-primary mb-3 inline-flex min-h-11 items-center gap-2 px-4 text-sm font-semibold"
+        >
+          ⬇ ดาวน์โหลดตัวติดตั้ง (.zip)
+        </a>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -247,8 +254,8 @@ export function PrintHubManager({
         <h3 className="panel-title mb-2">วิธีตั้งค่า (ทำครั้งเดียวต่อร้าน)</h3>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-[var(--ink)]">
           <li>เปิดเครื่อง Windows ในร้าน (มินิพีซี/เครื่องแคชเชียร์) ต่อ WiFi เดียวกับเครื่องพิมพ์ และติดตั้ง Node.js LTS</li>
-          <li>คัดลอกโฟลเดอร์ <code>scripts</code> มาไว้ในเครื่องแคชเชียร์ (มี <code>print-hub.mjs</code> และโฟลเดอร์ <code>print-hub/</code>)</li>
-          <li>กด “สร้างโทเค็น” ด้านบน แล้วคัดลอกคำสั่งติดตั้งไปวางใน PowerShell (Run as Administrator)</li>
+          <li>กด “ดาวน์โหลดตัวติดตั้ง (.zip)” ด้านบน แล้วแตกไฟล์ (Extract All) จะได้โฟลเดอร์ <code>storeos-print-hub</code></li>
+          <li>กด “สร้างโทเค็น” ด้านบน → เปิด PowerShell (Run as Administrator) → <code>cd</code> เข้าโฟลเดอร์ที่แตกไว้ → วางคำสั่งติดตั้ง</li>
           <li>เสร็จแล้ว Hub จะเปิดเองทุกครั้งที่เปิดเครื่อง — สถานะด้านบนจะเป็น 🟢 ออนไลน์ แล้วกด “ทดสอบพิมพ์”</li>
         </ol>
         <p className="mt-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm text-[var(--muted)]">

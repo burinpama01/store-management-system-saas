@@ -14,35 +14,37 @@ Print Hub คืออะไร?
      เดียวกับเครื่องพิมพ์
   2) ติดตั้ง Node.js LTS ก่อน: https://nodejs.org  (กด Next ไปจนจบ)
   3) ค่า StoreId และ Hub Token จากระบบ:
-     StoreOS → ตั้งค่า → Print Hub → กดสร้าง/คัดลอกโทเค็น
+     StoreOS -> ตั้งค่า -> Print Hub -> กดสร้าง/คัดลอกโทเค็น
 
 ติดตั้ง (ทำครั้งเดียว)
-  1) คัดลอกโฟลเดอร์ scripts ทั้งหมดมาไว้ในเครื่องแคชเชียร์
-  2) คลิกขวาที่ปุ่ม Start → "Windows PowerShell (Admin)"
-  3) วางคำสั่งนี้ (แก้ค่า 3 ตัวให้ตรงกับของร้าน) แล้ว Enter:
+  1) ที่หน้า StoreOS -> ตั้งค่า -> Print Hub กดปุ่ม "ดาวน์โหลดตัวติดตั้ง"
+     จะได้ไฟล์ storeos-print-hub.zip
+  2) แตกไฟล์ (คลิกขวา -> Extract All) จะได้โฟลเดอร์ storeos-print-hub
+  3) คลิกขวาที่ปุ่ม Start -> "Windows PowerShell (Admin)"
+  4) cd เข้าโฟลเดอร์ที่แตกไว้ เช่น:
+        cd "$HOME\Downloads\storeos-print-hub"
+  5) วางคำสั่งนี้ (แก้ค่า 3 ตัวให้ตรงกับของร้าน) แล้ว Enter:
 
-     powershell -ExecutionPolicy Bypass -File ^
-       scripts\print-hub\install-windows.ps1 ^
-       -ServerUrl "https://store-os-manage.vercel.app" ^
-       -StoreId   "<วาง StoreId>" ^
+     powershell -ExecutionPolicy Bypass -File .\print-hub\install-windows.ps1 `
+       -ServerUrl "https://store-os-manage.vercel.app" `
+       -StoreId   "<วาง StoreId>" `
        -HubToken  "<วาง Hub Token>"
 
   เสร็จแล้ว Print Hub จะ "เปิดเองทุกครั้งที่เปิดเครื่อง" และพิมพ์
   งานจาก iPad/แท็บเล็ตให้อัตโนมัติ
 
 ตรวจสอบว่าทำงานอยู่ไหม
-  - ที่หน้า StoreOS → ตั้งค่า → Print Hub จะขึ้นสถานะ 🟢 ออนไลน์
-  - กดปุ่ม "ทดสอบพิมพ์" แล้วใบทดสอบควรออกที่เครื่องพิมพ์
+  - ที่หน้า StoreOS -> ตั้งค่า -> Print Hub จะขึ้นสถานะ ออนไลน์ (จุดเขียว)
+  - กดปุ่ม "ทดสอบพิมพ์ผ่าน Hub" แล้วใบทดสอบควรออกที่เครื่องพิมพ์
 
 ทดสอบ/รันด้วยมือ (ถ้าต้องการดู log)
-  ดับเบิลคลิก  scripts\print-hub\print-hub.cmd
+  ดับเบิลคลิก  print-hub\print-hub.cmd
 
 ถอนการติดตั้ง
-  powershell -ExecutionPolicy Bypass -File ^
-    scripts\print-hub\uninstall-windows.ps1
+  powershell -ExecutionPolicy Bypass -File .\print-hub\uninstall-windows.ps1
 
 ปัญหาที่พบบ่อย
-  - สถานะขึ้น 🔴 ออฟไลน์ : เครื่องแคชเชียร์ปิด / Node ไม่ได้ติดตั้ง /
+  - สถานะขึ้น ออฟไลน์ : เครื่องแคชเชียร์ปิด / Node ไม่ได้ติดตั้ง /
     Token ไม่ตรง — เปิดเครื่อง, ติดตั้ง Node, แล้วติดตั้งใหม่
   - พิมพ์ไม่ออก : เช็คว่าเครื่องพิมพ์เปิดอยู่และอยู่ WiFi เดียวกัน,
     IP เครื่องพิมพ์ในระบบถูกต้อง (เช่น 192.168.x.x)
