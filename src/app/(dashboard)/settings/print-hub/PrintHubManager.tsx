@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { enqueueTestPrintAction, rotateHubTokenAction } from "./actions";
+import { rotateHubTokenAction } from "./actions";
+import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
+import { bytesToBase64 } from "@/modules/printing/print-job-base64";
+import type { ReceiptData } from "@/modules/printing/types";
 
 interface HubStatus {
   online: boolean;
@@ -9,13 +12,38 @@ interface HubStatus {
   pendingJobs: number;
 }
 
+interface TestPrinter {
+  id: string;
+  paperWidth: "58mm" | "80mm";
+}
+
 interface PrintHubManagerProps {
   serverUrl: string;
   storeId: string;
+  storeName: string;
   hasToken: boolean;
-  hasNetworkPrinter: boolean;
+  testPrinter: TestPrinter | null;
   initialStatus: HubStatus;
   loadError: string | null;
+}
+
+/** Mirrors the real POS receipt so the test exercises the same raster path. */
+function buildHubTestReceipt(storeName: string, paperWidth: "58mm" | "80mm"): ReceiptData {
+  return {
+    storeName,
+    showTaxId: false,
+    orderNumber: "PRINT-HUB-TEST",
+    items: [{ name: "ทดสอบ Print Hub", quantity: 1, unitPrice: 1, totalPrice: 1, modifierNames: [] }],
+    subtotal: 1,
+    discount: 0,
+    total: 1,
+    payments: [{ method: "test", amount: 1 }],
+    paymentStatus: "paid",
+    footerText: "ทดสอบส่งงานพิมพ์ผ่าน StoreOS Print Hub",
+    showQrPayment: false,
+    paperWidth,
+    printedAt: new Date().toISOString(),
+  };
 }
 
 function formatAgo(secondsAgo: number | null): string {
@@ -28,8 +56,9 @@ function formatAgo(secondsAgo: number | null): string {
 export function PrintHubManager({
   serverUrl,
   storeId,
+  storeName,
   hasToken,
-  hasNetworkPrinter,
+  testPrinter,
   initialStatus,
   loadError,
 }: PrintHubManagerProps) {
@@ -90,17 +119,32 @@ export function PrintHubManager({
   }
 
   async function testPrint() {
+    if (!testPrinter) {
+      setError("ยังไม่มีเครื่องพิมพ์ IP/WiFi ที่บันทึกไว้ — เพิ่มในแท็บ “เครื่องพิมพ์” ก่อน");
+      return;
+    }
     setBusy("test");
     setError(null);
     setMessage(null);
     try {
-      const result = await enqueueTestPrintAction();
-      if (result.error) {
-        setError(result.error);
+      // Render the receipt to a raster bitmap in the browser (same path as real
+      // POS prints) so Thai text is not garbled by the printer code page.
+      const receipt = buildHubTestReceipt(storeName, testPrinter.paperWidth);
+      const printJobBase64 = bytesToBase64(buildReceiptPrinterBytes(receipt, receipt));
+      const res = await fetch("/api/print/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printerId: testPrinter.id, printJobBase64 }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "ส่งงานพิมพ์ไม่สำเร็จ");
         return;
       }
       setMessage("ส่งใบทดสอบเข้าคิวแล้ว — Print Hub บนเครื่องแคชเชียร์จะพิมพ์ภายในไม่กี่วินาที");
       void refreshStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ส่งงานพิมพ์ไม่สำเร็จ");
     } finally {
       setBusy(null);
     }
@@ -156,7 +200,7 @@ export function PrintHubManager({
             onClick={testPrint}
             disabled={busy !== null}
             className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40"
-            title={hasNetworkPrinter ? "ส่งใบทดสอบเข้าคิว" : "ยังไม่มีเครื่องพิมพ์ IP/WiFi"}
+            title={testPrinter ? "ส่งใบทดสอบเข้าคิว" : "ยังไม่มีเครื่องพิมพ์ IP/WiFi"}
           >
             {busy === "test" ? "กำลังส่ง..." : "ทดสอบพิมพ์ผ่าน Hub"}
           </button>
@@ -169,7 +213,7 @@ export function PrintHubManager({
             รีเฟรชสถานะ
           </button>
         </div>
-        {!hasNetworkPrinter && (
+        {!testPrinter && (
           <p className="mt-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             ยังไม่มีเครื่องพิมพ์ IP/WiFi ที่บันทึกไว้ — เพิ่มในแท็บ “เครื่องพิมพ์” ก่อนทดสอบ
           </p>

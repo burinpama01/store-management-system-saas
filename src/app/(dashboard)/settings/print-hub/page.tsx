@@ -27,16 +27,21 @@ export default async function PrintHubSettingsPage() {
   ]);
 
   const summary = summarizeHubStatus(statusRes.data?.lastSeen ?? null);
-  const hasNetworkPrinter = (printersRes.data ?? []).some(
+  const networkPrinters = (printersRes.data ?? []).filter(
     (printer) => (printer.type === "ip" || printer.type === "escpos") && printer.ipAddress,
   );
+  const defaultPrinter = networkPrinters.find((p) => p.isDefault) ?? networkPrinters[0] ?? null;
+  const testPrinter = defaultPrinter
+    ? { id: defaultPrinter.id, paperWidth: (defaultPrinter.paperWidth ?? "80mm") as "58mm" | "80mm" }
+    : null;
 
   return (
     <PrintHubManager
       serverUrl={serverUrl}
       storeId={ctx.storeId}
+      storeName={ctx.storeName}
       hasToken={Boolean(authRes.data?.tokenHash)}
-      hasNetworkPrinter={hasNetworkPrinter}
+      testPrinter={testPrinter}
       initialStatus={{
         online: summary.online,
         secondsAgo: summary.secondsAgo,
