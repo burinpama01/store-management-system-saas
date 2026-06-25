@@ -51,6 +51,10 @@ export function localPrintBridgeUnavailableMessage() {
   return "เครื่องพิมพ์ WiFi บน production ต้องเปิด StoreOS Print Bridge บนเครื่องแคชเชียร์ก่อน แล้วลองพิมพ์ใหม่";
 }
 
+export function printHubUnavailableMessage() {
+  return "ส่งงานพิมพ์ไม่สำเร็จ: เปิด StoreOS Print Hub บนเครื่องแคชเชียร์ของร้าน แล้วลองพิมพ์ใหม่อีกครั้ง";
+}
+
 async function postJson(fetcher: Fetcher, url: string, body: unknown) {
   const res = await fetcher(url, {
     method: "POST",
@@ -75,6 +79,7 @@ export async function sendNetworkPrintJob(
     if (!printer.ipAddress) throw new Error("ยังไม่ได้ตั้งค่า IP เครื่องพิมพ์");
     const bridgeUrl = (options.bridgeUrl ?? getConfiguredBridgeUrl()).replace(/\/+$/, "");
     try {
+      // Fast path: the cashier PC running a loopback bridge prints instantly.
       await postJson(fetcher, `${bridgeUrl}/print`, {
         host: printer.ipAddress,
         port: printer.port ?? 9100,
@@ -82,8 +87,20 @@ export async function sendNetworkPrintJob(
       });
       return;
     } catch (error) {
-      if (error instanceof TypeError) throw new Error(localPrintBridgeUnavailableMessage());
-      throw error;
+      // A real bridge/printer error (e.g. printer offline) should surface as-is.
+      if (!(error instanceof TypeError)) throw error;
+      // The loopback bridge is unreachable — typical on a tablet/iPad. Fall back
+      // to the central Print Hub queue: enqueue and let the cashier PC Hub print.
+      try {
+        await postJson(fetcher, "/api/print/enqueue", {
+          printerId: payload.printerId,
+          printJobBase64: payload.printJobBase64,
+        });
+        return;
+      } catch (enqueueError) {
+        if (enqueueError instanceof TypeError) throw new Error(printHubUnavailableMessage());
+        throw enqueueError;
+      }
     }
   }
 

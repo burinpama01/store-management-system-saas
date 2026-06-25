@@ -72,6 +72,8 @@ function store(id: string, organizationId = ORG): StoreRow {
     theme_primary_soft_color: "#fbede4",
     theme_accent_color: "#3c8fb0",
     timezone: "Asia/Bangkok",
+    print_hub_token_hash: null,
+    print_hub_last_seen: null,
     created_at: "2026-06-01T00:00:00Z",
     updated_at: "2026-06-01T00:00:00Z",
   };

@@ -28,6 +28,7 @@ export function buildSettingsTabs(resolved: ResolvedPermissions, billingState: B
   }
   if (resolved.can("settings.manage_store") || resolved.can("settings.manage_printer")) {
     tabs.push({ href: "/settings/receipt", label: "เครื่องพิมพ์" });
+    tabs.push({ href: "/settings/print-hub", label: "Print Hub" });
   }
   if (resolved.can("billing.manage")) {
     tabs.push({ href: "/settings/billing", label: "แพ็กเกจ" });

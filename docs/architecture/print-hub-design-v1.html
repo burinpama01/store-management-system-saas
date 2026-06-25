@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StoreOS Print Hub — Design v1 (ISSUE-20260625-008)</title>
+<style>
+  :root{
+    --bg:#0f1115; --surface:#171a21; --surface-2:#1f242e; --border:#2b3240;
+    --ink:#e8edf5; --muted:#9aa6b8; --accent:#4f9cff; --good:#37d399; --warn:#ffb454; --bad:#ff6b6b;
+    --radius:14px; --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI","Noto Sans Thai",system-ui,sans-serif;line-height:1.65;padding:32px 18px 80px}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px}
+  h2{font-size:19px;margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);color:#fff}
+  h3{font-size:15px;margin:20px 0 6px;color:var(--accent)}
+  p,li{color:var(--ink)}
+  .muted{color:var(--muted)}
+  .tag{display:inline-block;font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);margin-right:6px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  code,pre{font-family:var(--mono);font-size:13px}
+  pre{background:#0b0d11;border:1px solid var(--border);border-radius:10px;padding:14px;overflow:auto;color:#cbd5e6}
+  .rec{border-left:4px solid var(--good)}
+  .rej{border-left:4px solid var(--bad);opacity:.92}
+  .pill{font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px}
+  .pill.good{background:rgba(55,211,153,.15);color:var(--good)}
+  .pill.bad{background:rgba(255,107,107,.15);color:var(--bad)}
+  .pill.warn{background:rgba(255,180,84,.15);color:var(--warn)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+  th,td{border:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--surface-2);color:#fff}
+  .flow{font-family:var(--mono);font-size:13px;background:#0b0d11;border:1px solid var(--border);border-radius:10px;padding:16px;white-space:pre;overflow:auto;color:#cbd5e6}
+  ul{margin:6px 0 6px 4px;padding-left:20px}
+  .files li{font-family:var(--mono);font-size:13px}
+  .foot{margin-top:40px;color:var(--muted);font-size:13px;border-top:1px dashed var(--border);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="tag">ISSUE-20260625-008</span>
+  <span class="tag">v1 · 2026-06-25</span>
+  <span class="tag">branch: codex/grocery-pos-phase1-3</span>
+  <h1>StoreOS Print Hub — เอกสารออกแบบ v1</h1>
+  <p class="muted">เป้าหมาย: ให้ร้านที่ใช้ POS บน tablet/iPad สั่งพิมพ์ใบเสร็จผ่าน <b>Print Hub กลาง</b> บนเครื่อง Windows (มินิพีซี/เครื่องแคชเชียร์) โดยไม่ต้องให้ผู้ใช้รัน <code>npm run print:bridge</code> เอง และ Hub เปิดเอง/ตรวจสถานะเองได้</p>
+
+  <h2>1. ปัญหา &amp; ข้อจำกัดทางเทคนิค</h2>
+  <div class="card">
+    <p>วันนี้ระบบมี <code>scripts/print-bridge.mjs</code> = HTTP server ที่ <code>127.0.0.1:17878</code> รับ <code>/print</code> แล้ว forward ESC/POS bytes ไป TCP printer ทำงานได้บนเครื่องแคชเชียร์ที่เปิด bridge เอง แต่:</p>
+    <ul>
+      <li>เปิดด้วย <code>npm run print:bridge</code> = dev-oriented, non-dev ทำไม่เป็น, ไม่ auto-start, ไม่มี status</li>
+      <li>bridge bind เฉพาะ <code>127.0.0.1</code> → tablet/iPad เครื่องอื่นใน LAN เข้าไม่ถึง</li>
+    </ul>
+    <p><span class="pill bad">ข้อจำกัดหัวใจ</span> POS production เสิร์ฟผ่าน <b>HTTPS</b> (<code>store-os-manage.vercel.app</code>) แต่ bridge เป็น <b>HTTP</b>:</p>
+    <ul>
+      <li>กรณี <code>127.0.0.1</code> เบราว์เซอร์ยกเว้นให้ (localhost = potentially-trustworthy) → เครื่องแคชเชียร์ที่เปิด POS บนเครื่องตัวเองพิมพ์ได้</li>
+      <li>กรณี iPad ยิงข้าม LAN ไป <code>http://192.168.x.x:17878</code> = <b>Mixed-Content Block</b> โดน Safari/Chrome บล็อกถาวร ไม่มีปุ่ม override บน iOS</li>
+    </ul>
+  </div>
+
+  <h2>2. ทางเลือก transport (จุดตัดสินสถาปัตยกรรม)</h2>
+  <div class="grid2">
+    <div class="card rej">
+      <h3>ตัวเลือก A — Direct LAN fetch (tablet → Hub)</h3>
+      <p class="muted">iPad ยิง <code>fetch("http://192.168.x.x:17878/print")</code> ตรงไป Hub</p>
+      <p>ต้องแก้ mixed-content ด้วยวิธีใดวิธีหนึ่ง:</p>
+      <ul>
+        <li>ติดตั้ง trusted cert ของ hostname บน Hub + ลง CA cert ในทุก iPad → <span class="pill bad">setup โหดมากต่อร้าน</span></li>
+        <li>หรือใช้ public DNS ชี้ private IP + Let's Encrypt (DNS-01) แล้วฝัง private key ลง Hub → <span class="pill bad">เสี่ยงความปลอดภัย + IP ต่อร้านไม่เท่ากัน</span></li>
+      </ul>
+      <p><b>สรุป:</b> ทำได้แต่เปราะ ต้องตั้งค่าต่อเครื่อง ดูแลยาก ไม่เหมาะ non-dev</p>
+    </div>
+    <div class="card rec">
+      <h3>ตัวเลือก C — Cloud relay / print queue <span class="pill good">แนะนำ</span></h3>
+      <p class="muted">มาตรฐานเดียวกับ Star CloudPRNT / Epson Server-Direct-Print</p>
+      <div class="flow">tablet/iPad (HTTPS) ──enqueue──▶ StoreOS server (queue)
+                                  ▲
+                                  │ long-poll + claim (HTTPS, server-to-server)
+                                  │
+                       Print Hub (cashier PC) ──TCP 9100──▶ printer</div>
+      <ul>
+        <li>เบราว์เซอร์ยิงเฉพาะ <b>HTTPS → server</b> → <span class="pill good">ไม่มี mixed-content เลย</span></li>
+        <li>Hub <b>poll</b> งานจาก server (ขาออกจาก LAN) → ไม่ต้องเปิด port เข้า LAN, ไม่ต้อง cert</li>
+        <li>iPad กี่เครื่องก็ได้ ทุกเครื่อง enqueue งานไปคิวเดียว Hub ดึงไปพิมพ์</li>
+        <li>ได้ของแถม: retry, สถานะงาน (pending/printed/failed), heartbeat รู้ว่า Hub online ไหม</li>
+      </ul>
+      <p><b>แลกกับ:</b> ต้องเพิ่ม print queue ฝั่ง server (1 ตาราง + 3 endpoint) และ hub token ต่อร้าน</p>
+    </div>
+  </div>
+  <div class="card">
+    <p><b>คำแนะนำของผม:</b> ใช้ <b>ตัวเลือก C</b> เพราะมัน <u>ตอบโจทย์ "แต่ละ tablet พิมพ์ผ่าน Hub" ได้ตรงกว่า</u> และเลี่ยง mixed-content ทั้งหมดโดยไม่ต้องยุ่งกับ cert บน iPad ส่วน path เดิม (POS บนเครื่องแคชเชียร์ → <code>127.0.0.1</code> bridge) ยังเก็บไว้ทำงานคู่กันได้ (fast path เมื่อเปิดบนเครื่องเดียวกัน)</p>
+  </div>
+
+  <h2>3. Data model (Supabase migration)</h2>
+  <div class="card">
+    <h3>ตาราง <code>print_jobs</code> (คิวงานพิมพ์)</h3>
+<pre>id            uuid pk
+organization_id uuid
+store_id      uuid            -- scope ต่อร้าน
+printer_id    uuid null       -- เครื่องเป้าหมาย (หรือ default)
+target_host   text            -- IP printer (validate private LAN)
+target_port   int default 9100
+payload_b64   text            -- ESC/POS raster bytes, base64 (&le;256KB)
+status        text            -- 'pending' | 'claimed' | 'printed' | 'failed'
+claimed_at    timestamptz null
+printed_at    timestamptz null
+error         text null
+attempts      int default 0
+created_at    timestamptz default now()</pre>
+    <h3>เพิ่มใน <code>stores</code> (หรือ <code>store_print_hubs</code>)</h3>
+<pre>print_hub_token       text   -- secret ต่อร้าน, Hub ใช้ auth (เก็บแบบ hash)
+print_hub_last_seen   timestamptz  -- heartbeat ล่าสุด → ใช้โชว์ online/offline</pre>
+    <p class="muted">RLS: enqueue ผ่าน server action (มี store context อยู่แล้ว); poll/claim/ack ใช้ service client + ตรวจ <code>print_hub_token</code> เท่านั้น (Hub ไม่มี user session)</p>
+  </div>
+
+  <h2>4. Endpoints</h2>
+  <table>
+    <tr><th>Route</th><th>ผู้เรียก</th><th>หน้าที่</th></tr>
+    <tr><td><code>POST /api/print/enqueue</code></td><td>POS (tablet, HTTPS)</td><td>สร้างงานพิมพ์ลงคิว (auth = user session + store)</td></tr>
+    <tr><td><code>POST /api/print/hub/poll</code></td><td>Print Hub</td><td>claim งาน pending ของร้าน (auth = hub token) + อัปเดต last_seen</td></tr>
+    <tr><td><code>POST /api/print/hub/ack</code></td><td>Print Hub</td><td>รายงานผล printed/failed (+error)</td></tr>
+    <tr><td><code>GET /api/print/hub/status</code></td><td>Settings UI</td><td>คืน last_seen + จำนวนงานค้าง → โชว์สถานะ Hub</td></tr>
+  </table>
+
+  <h2>5. Print Hub agent (แทน print-bridge เดิม)</h2>
+  <div class="card">
+    <p><code>scripts/print-hub.mjs</code> — long-poll loop:</p>
+    <pre>loop:
+  POST /api/print/hub/poll  {storeId, hubToken}
+    → job? → ส่ง payload ทาง TCP ไป target_host:target_port
+           → POST /api/print/hub/ack {jobId, ok|error}
+    → ว่าง → backoff sleep แล้ว poll ต่อ
+  ส่ง heartbeat ทุก poll (last_seen)</pre>
+    <p>config อ่านจาก <code>print-hub.config.json</code> (ข้าง exe): <code>{ serverUrl, storeId, hubToken, pollIntervalMs }</code></p>
+    <p class="muted">เก็บ bridge เดิม (loopback) ไว้สำหรับ fast path เครื่องแคชเชียร์ ใช้โค้ด TCP-send ร่วมกัน</p>
+  </div>
+
+  <h2>6. Installer + auto-start (Windows)</h2>
+  <div class="card">
+    <ul class="files">
+      <li>scripts/print-hub/install-windows.ps1 — สร้าง config, ลง Task Scheduler "at logon", start ทันที</li>
+      <li>scripts/print-hub/uninstall-windows.ps1 — ลบ task + config</li>
+      <li>scripts/print-hub/print-hub.cmd — launcher เรียก node print-hub.mjs (ซ่อนหน้าต่าง)</li>
+      <li>scripts/print-hub/README-TH.txt — คู่มือ 3 ขั้นตอนสำหรับเจ้าของร้าน</li>
+    </ul>
+    <p class="muted">ใช้ Task Scheduler (มากับ Windows) → auto-start ตอน logon, restart เมื่อ crash; ไม่ต้องลง toolchain เพิ่ม นอกจาก Node runtime (จะแถม note ดาวน์โหลด Node LTS หรือ bundle node.exe ภายหลัง)</p>
+  </div>
+
+  <h2>7. Settings UI — หน้า "Print Hub" (/settings/print-hub)</h2>
+  <div class="card">
+    <ul>
+      <li><b>สถานะ Hub:</b> 🟢 online / 🔴 offline (จาก last_seen heartbeat) + งานค้างในคิว</li>
+      <li><b>Hub token:</b> ปุ่มสร้าง/หมุน token + คัดลอก (ใส่ใน config ของ Hub)</li>
+      <li><b>ดาวน์โหลดตัวติดตั้ง:</b> ลิงก์ installer + คู่มือภาษาไทย</li>
+      <li><b>ทดสอบพิมพ์:</b> ปุ่ม enqueue ใบทดสอบ → ดูว่า Hub ดึงไปออกจริง</li>
+      <li><b>คำอธิบาย:</b> "iPad/tablet ใช้ POS ได้เลย งานพิมพ์ส่งผ่าน Print Hub กลางบนเครื่องแคชเชียร์อัตโนมัติ"</li>
+    </ul>
+  </div>
+
+  <h2>8. แผนทำเป็นเฟส</h2>
+  <table>
+    <tr><th>เฟส</th><th>ขอบเขต</th><th>ผลลัพธ์</th></tr>
+    <tr><td>P1</td><td>migration <code>print_jobs</code> + hub token/heartbeat + 4 endpoints + unit tests</td><td>backend คิวพร้อม</td></tr>
+    <tr><td>P2</td><td><code>scripts/print-hub.mjs</code> agent + แชร์โค้ด TCP-send กับ bridge เดิม + tests</td><td>Hub ดึงงานพิมพ์ได้</td></tr>
+    <tr><td>P3</td><td>client: <code>network-print-client.ts</code> เลือก enqueue เมื่อ production/tablet, ใช้ loopback เมื่อเครื่องเดียวกัน</td><td>POS ส่งงานเข้าคิว</td></tr>
+    <tr><td>P4</td><td>installer ps1/cmd + README ไทย</td><td>ติดตั้ง 1 คลิก auto-start</td></tr>
+    <tr><td>P5</td><td>Settings UI <code>/settings/print-hub</code> + สถานะ/token/ดาวน์โหลด/ทดสอบ</td><td>เจ้าของร้านคุมเองได้</td></tr>
+  </table>
+
+  <h2>9. ความปลอดภัย</h2>
+  <ul>
+    <li>hub token เก็บแบบ hash, เทียบ constant-time, หมุนได้จาก UI</li>
+    <li>enqueue ตรวจ store membership + feature gate (เครื่องพิมพ์/Enterprise ตามแพ็กเกจ)</li>
+    <li>validate <code>target_host</code> เป็น private LAN เท่านั้น (เหมือน bridge เดิม) ป้องกัน SSRF</li>
+    <li>จำกัด payload &le;256KB, จำกัด attempts, หมดอายุงานเก่าในคิว</li>
+    <li>poll/ack ไม่คืนข้อมูลร้านอื่น (scope ด้วย storeId+token)</li>
+  </ul>
+
+  <h2>10. แผนทดสอบ &amp; verify</h2>
+  <ul>
+    <li>unit: enqueue validation, hub auth, claim atomicity (1 งาน 1 Hub), private-LAN guard, ack state machine</li>
+    <li>unit: agent poll/print/ack loop ด้วย mock fetch + mock socket</li>
+    <li>local e2e: รัน agent ชี้ dev server → enqueue จากหน้า POS → ดู job ไหลถึง mock printer</li>
+    <li>residual (ต้องฮาร์ดแวร์จริง): ทดสอบ iPad จริง + เครื่องพิมพ์ WiFi จริงในร้าน — ผมทำแทนไม่ได้</li>
+  </ul>
+
+  <div class="foot">
+    เอกสารนี้เป็น v1 — หากปรับสถาปัตยกรรมหลัง review ให้สร้าง v2 ใหม่ (ไม่เขียนทับ ตามกฎ AGENTS.md)<br/>
+    StoreOS · Store management system SaaS · Print Hub design
+  </div>
+</div>
+</body>
+</html>

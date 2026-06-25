@@ -432,6 +432,8 @@ export interface Database {
           theme_primary_strong_color: string;
           theme_primary_soft_color: string;
           theme_accent_color: string;
+          print_hub_token_hash: string | null;
+          print_hub_last_seen: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -455,6 +457,8 @@ export interface Database {
           theme_primary_strong_color?: string;
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
+          print_hub_token_hash?: string | null;
+          print_hub_last_seen?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -478,8 +482,58 @@ export interface Database {
           theme_primary_strong_color?: string;
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
+          print_hub_token_hash?: string | null;
+          print_hub_last_seen?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      print_jobs: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          printer_id: string | null;
+          target_host: string;
+          target_port: number;
+          payload_b64: string;
+          status: "pending" | "claimed" | "printed" | "failed";
+          attempts: number;
+          error: string | null;
+          claimed_at: string | null;
+          printed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          printer_id?: string | null;
+          target_host: string;
+          target_port?: number;
+          payload_b64: string;
+          status?: "pending" | "claimed" | "printed" | "failed";
+          attempts?: number;
+          error?: string | null;
+          claimed_at?: string | null;
+          printed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          printer_id?: string | null;
+          target_host?: string;
+          target_port?: number;
+          payload_b64?: string;
+          status?: "pending" | "claimed" | "printed" | "failed";
+          attempts?: number;
+          error?: string | null;
+          claimed_at?: string | null;
+          printed_at?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };
