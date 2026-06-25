@@ -54,7 +54,10 @@ $Config = [ordered]@{
   hubToken       = $HubToken
   pollIntervalMs = $PollIntervalMs
 }
-$Config | ConvertTo-Json | Out-File -FilePath $ConfigPath -Encoding UTF8
+# Write UTF-8 WITHOUT a BOM. PowerShell 5.1's `Out-File -Encoding UTF8` prepends
+# a BOM that breaks Node's JSON.parse, so use .NET to write clean UTF-8.
+$Json = $Config | ConvertTo-Json
+[System.IO.File]::WriteAllText($ConfigPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "เขียน config แล้ว: $ConfigPath" -ForegroundColor Green
 
 # (Re)register the scheduled task.

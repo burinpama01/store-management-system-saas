@@ -105,11 +105,18 @@ export async function runPollCycle({ config, fetchImpl, printJob }) {
 
 function loadConfig() {
   const here = dirname(fileURLToPath(import.meta.url));
+  const configPath = join(here, "print-hub.config.json");
   let fileConfig = {};
   try {
-    fileConfig = JSON.parse(readFileSync(join(here, "print-hub.config.json"), "utf8"));
-  } catch {
-    // Fall back to env vars below.
+    // Strip a UTF-8 BOM (PowerShell/Notepad may prepend one) before parsing,
+    // otherwise JSON.parse throws on the leading U+FEFF.
+    const raw = readFileSync(configPath, "utf8").replace(/^﻿/, "");
+    fileConfig = JSON.parse(raw);
+  } catch (err) {
+    // Missing file is fine (env vars may supply config); surface parse errors.
+    if (err && err.code !== "ENOENT") {
+      console.error(`Could not read ${configPath}: ${err instanceof Error ? err.message : err}`);
+    }
   }
   const config = {
     serverUrl: (process.env.STOREOS_HUB_SERVER_URL ?? fileConfig.serverUrl ?? "").replace(/\/+$/, ""),
