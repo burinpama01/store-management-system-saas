@@ -17,6 +17,13 @@ import {
   saveRewardAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+import { ImageUpload } from "@/shared/components/ui/ImageUpload";
+
+export interface RewardProductOption {
+  id: string;
+  name: string;
+  basePrice: number;
+}
 
 interface Props {
   customers: CustomerProfile[];
@@ -25,6 +32,9 @@ interface Props {
   rewards: LoyaltyReward[];
   memberPortalUrl: string | null;
   memberPortalQrDataUrl: string | null;
+  organizationId: string;
+  storeId: string;
+  rewardProducts: RewardProductOption[];
   planName: string;
   loyaltyEnabled: boolean;
   couponEnabled: boolean;
@@ -117,6 +127,169 @@ function toDateTimeInput(value?: string | null) {
   return date.toISOString().slice(0, 16);
 }
 
+function RewardForm({
+  reward,
+  organizationId,
+  storeId,
+  rewardProducts,
+  isPending,
+  canManage,
+  onSubmit,
+  onDelete,
+}: {
+  reward?: LoyaltyReward;
+  organizationId: string;
+  storeId: string;
+  rewardProducts: RewardProductOption[];
+  isPending: boolean;
+  canManage: boolean;
+  onSubmit: (formData: FormData) => void;
+  onDelete?: () => void;
+}) {
+  const isEdit = Boolean(reward);
+  const [rewardType, setRewardType] = useState<"discount" | "product">(reward?.rewardType ?? "product");
+  const [codeMode, setCodeMode] = useState<"auto" | "manual">(reward?.codeMode ?? "auto");
+
+  return (
+    <form action={onSubmit} className="grid gap-3 rounded-lg border border-[var(--border)] p-4">
+      {isEdit ? (
+        <input type="hidden" name="id" value={reward!.id} />
+      ) : (
+        <input type="hidden" name="isActive" value="on" />
+      )}
+
+      <div className="grid gap-3 md:grid-cols-[2fr_1fr]">
+        <label className="space-y-1">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อรางวัล</span>
+          <input className="form-input" name="name" defaultValue={reward?.name ?? ""} maxLength={120} required placeholder="เครื่องดื่มฟรี" />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">แต้มที่ใช้</span>
+          <input className="form-input" name="pointsCost" type="number" min="1" step="1" defaultValue={reward?.pointsCost ?? ""} required />
+        </label>
+      </div>
+
+      <label className="space-y-1">
+        <span className="text-xs font-semibold uppercase text-[var(--muted)]">รายละเอียด</span>
+        <input className="form-input" name="description" defaultValue={reward?.description ?? ""} maxLength={240} placeholder="แลกได้ที่หน้าเคาน์เตอร์" />
+      </label>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-1">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">ประเภทของรางวัล</span>
+          <select
+            className="form-input"
+            name="rewardType"
+            value={rewardType}
+            onChange={(event) => setRewardType(event.target.value === "discount" ? "discount" : "product")}
+          >
+            <option value="product">สินค้า / ของรางวัล</option>
+            <option value="discount">ส่วนลดเงินสด</option>
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">สต็อก</span>
+          <input className="form-input" name="stockQuantity" type="number" min="0" step="1" defaultValue={reward?.stockQuantity ?? ""} placeholder="ไม่จำกัด" />
+        </label>
+      </div>
+
+      {rewardType === "discount" ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชนิดส่วนลด</span>
+            <select className="form-input" name="discountKind" defaultValue={reward?.discountKind ?? "amount"}>
+              <option value="amount">บาท</option>
+              <option value="percentage">%</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-semibold uppercase text-[var(--muted)]">มูลค่าส่วนลด</span>
+            <input
+              className="form-input"
+              name="discountValue"
+              type="number"
+              min="0.01"
+              step="0.01"
+              defaultValue={reward?.discountValue ?? ""}
+              placeholder="เช่น 10"
+            />
+          </label>
+        </div>
+      ) : (
+        <label className="space-y-1">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">สินค้าที่ใช้แลก (จาก catalog)</span>
+          <select className="form-input" name="rewardProductId" defaultValue={reward?.rewardProductId ?? ""}>
+            <option value="" disabled>
+              เลือกสินค้าในระบบ
+            </option>
+            {rewardProducts.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name} (฿{product.basePrice})
+              </option>
+            ))}
+          </select>
+          {rewardProducts.length === 0 && (
+            <span className="text-xs text-amber-600">ยังไม่มีสินค้าในระบบ — เพิ่มสินค้าที่เมนูสินค้าก่อน</span>
+          )}
+        </label>
+      )}
+
+      <ImageUpload
+        name="imageUrl"
+        defaultValue={reward?.imageUrl ?? ""}
+        organizationId={organizationId}
+        storeId={storeId}
+        label="รูปของรางวัล"
+      />
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-1">
+          <span className="text-xs font-semibold uppercase text-[var(--muted)]">รหัสแลกรับ</span>
+          <select
+            className="form-input"
+            name="codeMode"
+            value={codeMode}
+            onChange={(event) => setCodeMode(event.target.value === "manual" ? "manual" : "auto")}
+          >
+            <option value="auto">ระบบสร้างให้อัตโนมัติ</option>
+            <option value="manual">กำหนดรหัสเอง</option>
+          </select>
+        </label>
+        {codeMode === "manual" && (
+          <label className="space-y-1">
+            <span className="text-xs font-semibold uppercase text-[var(--muted)]">รหัสที่กำหนด</span>
+            <input className="form-input" name="manualCode" defaultValue={reward?.manualCode ?? ""} maxLength={24} placeholder="เช่น HAT" />
+            <span className="text-xs text-[var(--muted)]">ระบบจะต่อท้ายอักษรสุ่มทุกครั้งที่แลก เพื่อกันโค้ดซ้ำ/ถูกเดา</span>
+          </label>
+        )}
+      </div>
+
+      {isEdit && (
+        <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+          <input name="isActive" type="checkbox" defaultChecked={reward!.isActive} />
+          เปิดให้แลก
+        </label>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant={isEdit ? "secondary" : "primary"} type="submit" loading={isPending} disabled={!canManage}>
+          {isEdit ? "บันทึก" : "เพิ่มรางวัล"}
+        </Button>
+        {isEdit && onDelete && (
+          <button
+            className="btn-secondary"
+            type="button"
+            disabled={!canManage || isPending || !reward!.isActive}
+            onClick={onDelete}
+          >
+            ปิดใช้
+          </button>
+        )}
+      </div>
+    </form>
+  );
+}
+
 export function CustomerLoyaltyManager({
   customers,
   coupons,
@@ -124,6 +297,9 @@ export function CustomerLoyaltyManager({
   rewards,
   memberPortalUrl,
   memberPortalQrDataUrl,
+  organizationId,
+  storeId,
+  rewardProducts,
   planName,
   loyaltyEnabled,
   couponEnabled,
@@ -238,33 +414,14 @@ export function CustomerLoyaltyManager({
           <LockNotice>ต้องใช้แพ็กเกจที่รองรับสะสมแต้มเพื่อจัดการของรางวัล</LockNotice>
         ) : (
           <div className="space-y-4">
-            <form
-              action={(formData) => runFormAction(saveRewardAction, formData)}
-              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1fr_1.5fr_0.7fr_0.7fr_auto]"
-            >
-              <input type="hidden" name="isActive" value="on" />
-              <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อรางวัล</span>
-                <input className="form-input" name="name" maxLength={120} required placeholder="เครื่องดื่มฟรี" />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase text-[var(--muted)]">รายละเอียด</span>
-                <input className="form-input" name="description" maxLength={240} placeholder="แลกได้ที่หน้าเคาน์เตอร์" />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase text-[var(--muted)]">แต้มที่ใช้</span>
-                <input className="form-input" name="pointsCost" type="number" min="1" step="1" required />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase text-[var(--muted)]">สต็อก</span>
-                <input className="form-input" name="stockQuantity" type="number" min="0" step="1" placeholder="ไม่จำกัด" />
-              </label>
-              <div className="flex items-end">
-                <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageLoyaltySettings}>
-                  เพิ่มรางวัล
-                </Button>
-              </div>
-            </form>
+            <RewardForm
+              organizationId={organizationId}
+              storeId={storeId}
+              rewardProducts={rewardProducts}
+              isPending={isPending}
+              canManage={canManageLoyaltySettings}
+              onSubmit={(formData) => runFormAction(saveRewardAction, formData)}
+            />
 
             <div className="grid gap-3">
               {rewards.length === 0 ? (
@@ -273,61 +430,17 @@ export function CustomerLoyaltyManager({
                 </p>
               ) : (
                 rewards.map((reward) => (
-                  <form
-                    action={(formData) => runFormAction(saveRewardAction, formData)}
-                    className="grid gap-3 rounded-lg border border-[var(--border)] p-4 xl:grid-cols-[1fr_1.5fr_0.65fr_0.65fr_0.75fr_auto]"
+                  <RewardForm
                     key={reward.id}
-                  >
-                    <input type="hidden" name="id" value={reward.id} />
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">ชื่อ</span>
-                      <input className="form-input" name="name" defaultValue={reward.name} maxLength={120} required />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">รายละเอียด</span>
-                      <input className="form-input" name="description" defaultValue={reward.description ?? ""} maxLength={240} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">แต้ม</span>
-                      <input
-                        className="form-input"
-                        name="pointsCost"
-                        type="number"
-                        min="1"
-                        step="1"
-                        defaultValue={reward.pointsCost}
-                        required
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold uppercase text-[var(--muted)]">สต็อก</span>
-                      <input
-                        className="form-input"
-                        name="stockQuantity"
-                        type="number"
-                        min="0"
-                        step="1"
-                        defaultValue={reward.stockQuantity ?? ""}
-                      />
-                    </label>
-                    <label className="flex items-end gap-2 text-sm text-[var(--muted)]">
-                      <input name="isActive" type="checkbox" defaultChecked={reward.isActive} />
-                      เปิดให้แลก
-                    </label>
-                    <div className="flex items-end gap-2">
-                      <Button variant="secondary" type="submit" loading={isPending} disabled={!canManageLoyaltySettings}>
-                        บันทึก
-                      </Button>
-                      <button
-                        className="btn-secondary"
-                        type="button"
-                        disabled={!canManageLoyaltySettings || isPending || !reward.isActive}
-                        onClick={() => runIdAction(deleteRewardAction, reward.id)}
-                      >
-                        ปิดใช้
-                      </button>
-                    </div>
-                  </form>
+                    reward={reward}
+                    organizationId={organizationId}
+                    storeId={storeId}
+                    rewardProducts={rewardProducts}
+                    isPending={isPending}
+                    canManage={canManageLoyaltySettings}
+                    onSubmit={(formData) => runFormAction(saveRewardAction, formData)}
+                    onDelete={() => runIdAction(deleteRewardAction, reward.id)}
+                  />
                 ))
               )}
             </div>

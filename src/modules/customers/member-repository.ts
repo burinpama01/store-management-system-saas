@@ -38,6 +38,13 @@ export interface CustomerRewardRedemption {
   pointsSpent: number;
   status: "pending" | "fulfilled" | "cancelled";
   createdAt: string;
+  voucherCode: string | null;
+  expiresAt: string | null;
+  usedAt: string | null;
+  rewardType: "discount" | "product";
+  discountKind: "amount" | "percentage" | null;
+  discountValue: number | null;
+  rewardImageUrl: string | null;
 }
 
 export interface CustomerPortalData {
@@ -90,6 +97,13 @@ function mapReward(row: LoyaltyRewardRow): LoyaltyReward {
     description: row.description ?? undefined,
     pointsCost: row.points_cost,
     stockQuantity: row.stock_quantity,
+    rewardType: row.reward_type,
+    discountKind: row.discount_kind,
+    discountValue: row.discount_value,
+    rewardProductId: row.reward_product_id,
+    imageUrl: row.image_url,
+    codeMode: row.code_mode,
+    manualCode: row.manual_code,
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -260,19 +274,32 @@ async function listRewardRedemptions(storeId: string, customerId: string) {
   if (rows.length === 0) return { data: [] as CustomerRewardRedemption[], error: null };
 
   const rewardIds = [...new Set(rows.map((row) => row.reward_id))];
-  const rewardsRes = await supabase.from("loyalty_rewards").select("id, name").in("id", rewardIds);
+  const rewardsRes = await supabase
+    .from("loyalty_rewards")
+    .select("id, name, reward_type, discount_kind, discount_value, image_url")
+    .in("id", rewardIds);
   if (rewardsRes.error) return { data: [] as CustomerRewardRedemption[], error: mapError(rewardsRes.error).userMessage };
 
-  const rewardsById = new Map((rewardsRes.data ?? []).map((reward) => [reward.id, reward.name]));
+  const rewardsById = new Map((rewardsRes.data ?? []).map((reward) => [reward.id, reward]));
   return {
-    data: rows.map((row: RewardRedemptionRow) => ({
-      id: row.id,
-      rewardId: row.reward_id,
-      rewardName: rewardsById.get(row.reward_id) ?? "ของรางวัล",
-      pointsSpent: row.points_spent,
-      status: row.status,
-      createdAt: row.created_at,
-    })),
+    data: rows.map((row: RewardRedemptionRow) => {
+      const reward = rewardsById.get(row.reward_id);
+      return {
+        id: row.id,
+        rewardId: row.reward_id,
+        rewardName: reward?.name ?? "ของรางวัล",
+        pointsSpent: row.points_spent,
+        status: row.status,
+        createdAt: row.created_at,
+        voucherCode: row.voucher_code,
+        expiresAt: row.expires_at,
+        usedAt: row.used_at,
+        rewardType: reward?.reward_type ?? "product",
+        discountKind: reward?.discount_kind ?? null,
+        discountValue: reward?.discount_value ?? null,
+        rewardImageUrl: reward?.image_url ?? null,
+      };
+    }),
     error: null,
   };
 }

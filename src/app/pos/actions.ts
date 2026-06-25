@@ -10,7 +10,12 @@ import type { CustomerProfile } from "@/modules/customers/types";
 import { buildGroceryCheckoutCart } from "@/modules/grocery-pos/rewards";
 import { mapGroceryCouponError } from "@/modules/grocery-pos/checkout-service";
 import { evaluateCouponForCart } from "@/modules/promotions/coupon-policy";
+import { isCouponAttemptBlocked, recordCouponAttempt } from "@/modules/promotions/coupon-attempt-guard";
 import { findCouponPolicyByCode } from "@/modules/promotions/repository";
+import {
+  consumeProductRewardVoucher,
+  findProductRewardVoucher,
+} from "@/modules/loyalty/repository";
 import {
   createOrderWithItems,
   addPaymentAndClose,
@@ -172,6 +177,12 @@ export async function searchPosCustomersAction(
   }
 }
 
+export interface RewardProductLine {
+  voucherCode: string;
+  productId: string;
+  productName: string;
+}
+
 export async function evaluatePosCouponAction(
   code: string,
   cart: Cart,
@@ -180,6 +191,7 @@ export async function evaluatePosCouponAction(
   couponId: string | null;
   discount: number;
   normalizedCode: string | null;
+  rewardProduct?: RewardProductLine | null;
   error: string | null;
 }> {
   try {
@@ -201,11 +213,41 @@ export async function evaluatePosCouponAction(
       canDiscount: resolved.can("pos.discount"),
     });
 
+    if (await isCouponAttemptBlocked(ctx.storeId)) {
+      return {
+        couponId: null,
+        discount: 0,
+        normalizedCode: null,
+        error: "กรอกรหัสคูปองผิดบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+      };
+    }
+    const organizationId = ctx.organizationId ?? null;
+
     const couponRes = await findCouponPolicyByCode(ctx.storeId, code, customerId);
     if (couponRes.error) {
       return { couponId: null, discount: 0, normalizedCode: null, error: couponRes.error.userMessage };
     }
     if (!couponRes.data) {
+      // Not a discount coupon — it may be a product reward voucher (added as a ฿0 line, not a discount).
+      const voucherRes = await findProductRewardVoucher(ctx.storeId, code);
+      if (voucherRes.error) {
+        return { couponId: null, discount: 0, normalizedCode: null, error: voucherRes.error.userMessage };
+      }
+      if (voucherRes.data) {
+        await recordCouponAttempt({ organizationId, storeId: ctx.storeId, code, succeeded: true });
+        return {
+          couponId: null,
+          discount: 0,
+          normalizedCode: voucherRes.data.voucherCode,
+          rewardProduct: {
+            voucherCode: voucherRes.data.voucherCode,
+            productId: voucherRes.data.productId,
+            productName: voucherRes.data.rewardName,
+          },
+          error: null,
+        };
+      }
+      await recordCouponAttempt({ organizationId, storeId: ctx.storeId, code, succeeded: false });
       return { couponId: null, discount: 0, normalizedCode: null, error: "ไม่พบคูปองนี้" };
     }
 
@@ -215,6 +257,7 @@ export async function evaluatePosCouponAction(
       code,
       customerId,
     });
+    await recordCouponAttempt({ organizationId, storeId: ctx.storeId, code, succeeded: evaluation.ok });
 
     if (!evaluation.ok) {
       return {
@@ -253,15 +296,54 @@ export async function submitOrderAction(
     const { user, ctx } = await getStoreContext();
 
     if (cart.items.length === 0) return { orderId: null, orderNumber: null, error: "ไม่มีรายการในออร์เดอร์" };
+    const rewardItems = cart.items.filter((item) => item.rewardVoucherCode);
+    const normalCart: Cart = { ...cart, items: cart.items.filter((item) => !item.rewardVoucherCode) };
     const canDiscount = !cartRequestsDiscount(cart) || await requirePermission("pos.discount").then(() => true).catch(() => false);
     const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
     if (productsRes.error || !productsRes.data) {
       return { orderId: null, orderNumber: null, error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };
     }
-    const trustedCart = buildTrustedCartFromCatalog(cart, productsRes.data, {
+    const trustedCart = buildTrustedCartFromCatalog(normalCart, productsRes.data, {
       storeId: ctx.storeId,
       canDiscount,
     });
+
+    // Product reward vouchers: validate the voucher + catalog server-side, then append a ฿0
+    // line (stock still deducts via the order RPC). Consumed single-use after the order exists.
+    const rewardConsumptions: { redemptionId: string }[] = [];
+    const rewardLines: Cart["items"] = [];
+    if (rewardItems.length > 0) {
+      await requireFeature("loyaltyPoints");
+      for (const rewardItem of rewardItems) {
+        const voucherRes = await findProductRewardVoucher(ctx.storeId, rewardItem.rewardVoucherCode ?? "");
+        if (voucherRes.error) return { orderId: null, orderNumber: null, error: voucherRes.error.userMessage };
+        if (!voucherRes.data) {
+          return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลใช้ไม่ได้หรือหมดอายุ" };
+        }
+        if (voucherRes.data.productId !== rewardItem.productId) {
+          return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลไม่ตรงกับสินค้า" };
+        }
+        const product = productsRes.data.find((candidate) => candidate.id === voucherRes.data!.productId);
+        if (!product || !product.isActive || !product.availableForPos) {
+          return { orderId: null, orderNumber: null, error: "สินค้าของรางวัลไม่พร้อมใช้งาน" };
+        }
+        rewardLines.push({
+          key: `reward:${voucherRes.data.voucherCode}`,
+          productId: product.id,
+          productName: product.name,
+          categoryId: product.categoryId,
+          variant: null,
+          modifiers: [],
+          quantity: 1,
+          unitPrice: 0,
+          totalPrice: 0,
+          note: `🎁 ของรางวัล · ${voucherRes.data.voucherCode}`,
+        });
+        rewardConsumptions.push({ redemptionId: voucherRes.data.redemptionId });
+      }
+    }
+    const finalCart: Cart =
+      rewardLines.length > 0 ? { ...trustedCart, items: [...trustedCart.items, ...rewardLines] } : trustedCart;
     const tableRes = opts?.tableId ? await getTable(opts.tableId, ctx.storeId) : null;
     if (tableRes?.error) {
       return { orderId: null, orderNumber: null, error: tableRes.error.userMessage };
@@ -290,7 +372,7 @@ export async function submitOrderAction(
           if (couponRes.error) return { data: null, error: couponRes.error };
 
           const checkout = buildGroceryCheckoutCart({
-            trustedCart,
+            trustedCart: finalCart,
             coupon: couponRes.data,
             couponCode,
             customerId,
@@ -323,13 +405,27 @@ export async function submitOrderAction(
           organizationId: ctx.organizationId,
           cashierId: user.id,
           storeTimezone: ctx.storeTimezone,
-          cart: trustedCart,
+          cart: finalCart,
           tableId: opts?.tableId,
           tableNumber: opts?.tableNumber,
           note: opts?.note,
         });
 
     if (result.error) return { orderId: null, orderNumber: null, error: result.error.userMessage };
+
+    // Burn product reward vouchers now that the order (with the ฿0 reward line) exists.
+    for (const consumption of rewardConsumptions) {
+      const consumed = await consumeProductRewardVoucher(ctx.storeId, consumption.redemptionId, result.data.id);
+      if (consumed.error || !consumed.consumed) {
+        console.warn("[pos] reward voucher consume issue", {
+          storeId: ctx.storeId,
+          orderId: result.data.id,
+          redemptionId: consumption.redemptionId,
+          consumed: consumed.consumed,
+          error: consumed.error?.userMessage ?? null,
+        });
+      }
+    }
     if (buffetSessionId) {
       notifyOwnerSafely({
         type: "new_buffet_order",

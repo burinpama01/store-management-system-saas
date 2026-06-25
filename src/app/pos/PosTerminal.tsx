@@ -25,6 +25,7 @@ import {
   listOrdersHistoryAction,
   listTodayOrdersAction,
   voidOrderAction,
+  type RewardProductLine,
 } from "./actions";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
@@ -137,6 +138,26 @@ function buildCouponPreviewCart(cart: Cart, couponDiscount: number): Cart {
     discountNote: cart.discountNote ? `${cart.discountNote}; Coupon` : "Coupon",
     total: roundMoney(Math.max(0, cart.subtotal - discount)),
   };
+}
+
+// Append a redeemed product reward as a ฿0 line. The server re-validates the voucher
+// and rebuilds the line authoritatively from the catalog at checkout.
+function appendRewardLine(cart: Cart, reward: RewardProductLine): Cart {
+  if (cart.items.some((item) => item.rewardVoucherCode === reward.voucherCode)) return cart;
+  const rewardItem: CartItem = {
+    key: `reward:${reward.voucherCode}`,
+    productId: reward.productId,
+    productName: reward.productName,
+    categoryId: "",
+    variant: null,
+    modifiers: [],
+    quantity: 1,
+    unitPrice: 0,
+    totalPrice: 0,
+    rewardVoucherCode: reward.voucherCode,
+    note: "🎁 ของรางวัล",
+  };
+  return { ...cart, items: [...cart.items, rewardItem] };
 }
 
 function productInitials(name: string) {
@@ -2535,6 +2556,19 @@ export function PosTerminal({
     if (!code) return;
     startTransition(async () => {
       const result = await evaluatePosCouponAction(code, cart, selectedCustomer?.id ?? null);
+      if (result.rewardProduct) {
+        const next = appendRewardLine(cartRef.current, result.rewardProduct);
+        cartRef.current = next;
+        setCart(next);
+        checkoutIdempotencyKeyRef.current = null;
+        setCouponCode("");
+        setCustomerCouponMessage(
+          next === cart
+            ? `ของรางวัล ${result.rewardProduct.productName} ถูกเพิ่มไว้แล้ว`
+            : `เพิ่มของรางวัล ${result.rewardProduct.productName} (โค้ด ${result.rewardProduct.voucherCode}) ลงบิลแล้ว`,
+        );
+        return;
+      }
       if (result.error || !result.couponId || !result.normalizedCode) {
         setAppliedCoupon(null);
         setCustomerCouponMessage(result.error ?? "คูปองนี้ใช้ไม่ได้");

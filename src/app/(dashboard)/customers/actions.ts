@@ -242,6 +242,13 @@ export async function saveRewardAction(formData: FormData): Promise<ActionResult
     const pointsCost = Number(text(formData, "pointsCost"));
     const stockValue = text(formData, "stockQuantity");
     const stockQuantity = stockValue ? Number(stockValue) : null;
+    const rewardType = text(formData, "rewardType") === "discount" ? "discount" : "product";
+    const discountKind = text(formData, "discountKind") === "percentage" ? "percentage" : "amount";
+    const discountValue = Number(text(formData, "discountValue"));
+    const rewardProductId = text(formData, "rewardProductId");
+    const imageUrl = text(formData, "imageUrl");
+    const codeMode = text(formData, "codeMode") === "manual" ? "manual" : "auto";
+    const manualCode = text(formData, "manualCode");
 
     if (id && !UUID_RE.test(id)) return { error: "ข้อมูลของรางวัลไม่ถูกต้อง" };
     if (!name) return { error: "กรุณาระบุชื่อของรางวัล" };
@@ -252,6 +259,28 @@ export async function saveRewardAction(formData: FormData): Promise<ActionResult
     if (stockQuantity !== null && (!Number.isInteger(stockQuantity) || stockQuantity < 0)) {
       return { error: "จำนวนสต็อกของรางวัลไม่ถูกต้อง" };
     }
+    if (imageUrl && imageUrl.length > 500) return { error: "ลิงก์รูปยาวเกินไป" };
+
+    if (rewardType === "discount") {
+      if (!Number.isFinite(discountValue) || discountValue <= 0) {
+        return { error: "กรุณาระบุมูลค่าส่วนลดของรางวัล" };
+      }
+      if (discountKind === "percentage" && discountValue > 100) {
+        return { error: "เปอร์เซ็นต์ส่วนลดต้องไม่เกิน 100" };
+      }
+    } else if (!UUID_RE.test(rewardProductId)) {
+      return { error: "กรุณาเลือกสินค้าในระบบสำหรับของรางวัลแบบสินค้า" };
+    }
+
+    if (codeMode === "manual") {
+      const cleaned = manualCode.replace(/\s+/g, "");
+      if (cleaned.length < 3 || cleaned.length > 24) {
+        return { error: "รหัสที่กำหนดเองต้องยาว 3–24 ตัวอักษร" };
+      }
+      if (!/^[A-Za-z0-9_-]+$/.test(cleaned)) {
+        return { error: "รหัสที่กำหนดเองใช้ได้เฉพาะ A-Z 0-9 - _" };
+      }
+    }
 
     const result = await saveLoyaltyReward({
       id: id || null,
@@ -261,6 +290,13 @@ export async function saveRewardAction(formData: FormData): Promise<ActionResult
       description,
       pointsCost,
       stockQuantity,
+      rewardType,
+      discountKind: rewardType === "discount" ? discountKind : null,
+      discountValue: rewardType === "discount" ? discountValue : null,
+      rewardProductId: rewardType === "product" ? rewardProductId : null,
+      imageUrl,
+      codeMode,
+      manualCode: codeMode === "manual" ? manualCode : null,
       isActive: formData.get("isActive") === "on",
     });
     if (result.error) return { error: result.error.userMessage };

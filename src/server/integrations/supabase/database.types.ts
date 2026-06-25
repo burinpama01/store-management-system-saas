@@ -1528,6 +1528,13 @@ export interface Database {
           description: string | null;
           points_cost: number;
           stock_quantity: number | null;
+          reward_type: "discount" | "product";
+          discount_kind: "amount" | "percentage" | null;
+          discount_value: number | null;
+          reward_product_id: string | null;
+          image_url: string | null;
+          code_mode: "auto" | "manual";
+          manual_code: string | null;
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -1540,6 +1547,13 @@ export interface Database {
           description?: string | null;
           points_cost: number;
           stock_quantity?: number | null;
+          reward_type?: "discount" | "product";
+          discount_kind?: "amount" | "percentage" | null;
+          discount_value?: number | null;
+          reward_product_id?: string | null;
+          image_url?: string | null;
+          code_mode?: "auto" | "manual";
+          manual_code?: string | null;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -1552,6 +1566,13 @@ export interface Database {
           description?: string | null;
           points_cost?: number;
           stock_quantity?: number | null;
+          reward_type?: "discount" | "product";
+          discount_kind?: "amount" | "percentage" | null;
+          discount_value?: number | null;
+          reward_product_id?: string | null;
+          image_url?: string | null;
+          code_mode?: "auto" | "manual";
+          manual_code?: string | null;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -1569,6 +1590,11 @@ export interface Database {
           points_spent: number;
           status: "pending" | "fulfilled" | "cancelled";
           idempotency_key: string;
+          voucher_code: string | null;
+          coupon_id: string | null;
+          expires_at: string | null;
+          used_at: string | null;
+          used_order_id: string | null;
           created_at: string;
           fulfilled_at: string | null;
         };
@@ -1582,6 +1608,11 @@ export interface Database {
           points_spent: number;
           status?: "pending" | "fulfilled" | "cancelled";
           idempotency_key: string;
+          voucher_code?: string | null;
+          coupon_id?: string | null;
+          expires_at?: string | null;
+          used_at?: string | null;
+          used_order_id?: string | null;
           created_at?: string;
           fulfilled_at?: string | null;
         };
@@ -1595,8 +1626,43 @@ export interface Database {
           points_spent?: number;
           status?: "pending" | "fulfilled" | "cancelled";
           idempotency_key?: string;
+          voucher_code?: string | null;
+          coupon_id?: string | null;
+          expires_at?: string | null;
+          used_at?: string | null;
+          used_order_id?: string | null;
           created_at?: string;
           fulfilled_at?: string | null;
+        };
+        Relationships: [];
+      };
+      pos_coupon_code_attempts: {
+        Row: {
+          id: string;
+          organization_id: string | null;
+          store_id: string;
+          user_id: string | null;
+          code_normalized: string | null;
+          succeeded: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id?: string | null;
+          store_id: string;
+          user_id?: string | null;
+          code_normalized?: string | null;
+          succeeded: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string | null;
+          store_id?: string;
+          user_id?: string | null;
+          code_normalized?: string | null;
+          succeeded?: boolean;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -2887,7 +2953,7 @@ export interface Database {
           p_reward_id: string;
           p_idempotency_key: string;
         };
-        Returns: string;
+        Returns: Json;
       };
       create_qr_order_with_items: {
         Args: {

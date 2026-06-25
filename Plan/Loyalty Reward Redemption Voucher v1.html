@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>แผนงาน: ปรับปรุงหน้าแลกแต้มของลูกค้า (Reward Voucher) v1</title>
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --muted: #94a3b8; --fg: #e2e8f0;
+    --accent: #38bdf8; --green: #34d399; --amber: #fbbf24; --red: #f87171; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", "Sarabun", system-ui, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 21px; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); color: var(--accent); }
+  h3 { font-size: 16px; margin: 20px 0 8px; color: var(--green); }
+  .kicker { color: var(--muted); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 5px; color: var(--amber); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .t-new { background: rgba(52,211,153,.15); color: var(--green); }
+  .t-edit { background: rgba(56,189,248,.15); color: var(--accent); }
+  .t-db { background: rgba(251,191,36,.15); color: var(--amber); }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .phase { border-left: 4px solid var(--accent); padding-left: 16px; margin: 18px 0; }
+  .phase.p2 { border-color: var(--amber); }
+  .phase.p3 { border-color: var(--green); }
+  .muted { color: var(--muted); }
+  .flow { background: #0b1220; border-radius: 10px; padding: 16px; font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; color: #cbd5e1; }
+  .pill { font-size: 12px; background: #0b1220; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; margin-right: 6px; color: var(--muted); }
+  .warn { border-left: 4px solid var(--amber); background: rgba(251,191,36,.07); padding: 10px 14px; border-radius: 0 8px 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Store Management SaaS · Loyalty</p>
+  <h1>ปรับปรุงหน้าแลกแต้มของลูกค้า — ระบบโค้ดแลกรับ (Reward Voucher)</h1>
+  <p class="muted">เวอร์ชัน v1 · 2026-06-25 · สถานะ: รออนุมัติก่อนลงมือ</p>
+
+  <h2>1. เป้าหมาย (จากคำขอ + คำตอบเจ้าของร้าน)</h2>
+  <div class="card">
+    <ul>
+      <li><b>กดแลกแล้วได้ "โค้ดแลกรับ"</b> ที่นำไปกรอกในช่องคูปองที่ POS ได้เลย — เจ้าของร้านเลือกได้ว่าให้ระบบสร้างโค้ดอัตโนมัติ หรือกำหนดโค้ดเอง</li>
+      <li><b>ของรางวัลแบบส่วนลด</b> (เช่น 10 แต้ม = ลด 10 บาท) → ตอนแลก ระบบ <b>ออกคูปองส่วนลดอัตโนมัติ</b> ใช้กับช่องคูปอง POS เดิม</li>
+      <li><b>ของรางวัลแบบสินค้า</b> (เช่น 50 แต้ม = หมวก, 100 แต้ม = แก้วน้ำ) → ตอนแลกได้โค้ด พนักงานกรอกโค้ดที่ POS เพื่อ <b>เพิ่มสินค้าเป็นรายการบนใบเสร็จ</b></li>
+      <li><b>เพิ่มรูปภาพ</b> ให้แต่ละรายการของรางวัล</li>
+      <li><b>ประวัติแลก</b> กดดูรายละเอียดได้ + แท็บ "รายการแลกของรางวัล" เก็บประวัติทั้งหมดในหน้า member portal</li>
+    </ul>
+    <h3>กติกาของโค้ด (ยืนยันแล้ว)</h3>
+    <ul>
+      <li>คูปอง/โค้ดมีอายุ <b>30 วัน</b> นับจากวันแลก</li>
+      <li><b>ใช้ได้ครั้งเดียวเท่านั้น</b> — เมื่อใช้แล้วตัดทันที</li>
+      <li>แต้มถูกหักทันทีตอนกดแลก (เหมือนเดิม)</li>
+    </ul>
+  </div>
+
+  <h2>2. แนวคิดออกแบบ</h2>
+  <div class="card">
+    <p>ใช้ของเดิมให้มากที่สุด: ตาราง <code>coupons</code> + ระบบ evaluate คูปองที่ POS รองรับ single-use / หมดอายุ / ผูกลูกค้า อยู่แล้ว ดังนั้น <b>reward แบบส่วนลด = สร้าง row คูปองจริง</b> → ไม่ต้องแก้โค้ด POS เลย</p>
+    <p>ส่วน reward แบบสินค้า ต้องมี path ใหม่ที่ POS (เติมรายการลงตะกร้า) จึงแยกเป็น Phase 2</p>
+    <table>
+      <tr><th>ประเภท reward</th><th>ตอนกดแลก</th><th>ตอนใช้ที่ POS</th></tr>
+      <tr>
+        <td><b>ส่วนลด</b> (discount)</td>
+        <td>หักแต้ม + สร้าง row ใน <code>coupons</code> (single-use, 30 วัน, ส่วนลดตาม reward) + บันทึก voucher</td>
+        <td>กรอกโค้ดในช่องคูปองเดิม → ระบบหักส่วนลดอัตโนมัติ (ใช้ flow เดิม)</td>
+      </tr>
+      <tr>
+        <td><b>สินค้า</b> (product)</td>
+        <td>หักแต้ม + สร้าง voucher (โค้ด + อายุ 30 วัน) — ไม่สร้างคูปองส่วนลด</td>
+        <td>กรอกโค้ดในช่องเดิม → ระบบเติมสินค้าของรางวัลเป็นรายการราคา 0 บนบิล + ตัด voucher</td>
+      </tr>
+    </table>
+  </div>
+
+  <h2>3. การเปลี่ยนโครงสร้างฐานข้อมูล <span class="tag t-db">migration ใหม่</span></h2>
+  <div class="card">
+    <h3>3.1 ตาราง <code>loyalty_rewards</code> — เพิ่มคอลัมน์</h3>
+    <table>
+      <tr><th>คอลัมน์</th><th>ชนิด</th><th>ความหมาย</th></tr>
+      <tr><td><code>reward_type</code></td><td>text check('discount','product') default 'product'</td><td>ประเภทของรางวัล</td></tr>
+      <tr><td><code>discount_kind</code></td><td>text check('amount','percentage') null</td><td>สำหรับแบบส่วนลด: บาท/เปอร์เซ็นต์</td></tr>
+      <tr><td><code>discount_value</code></td><td>numeric(12,2) null</td><td>มูลค่าส่วนลด</td></tr>
+      <tr><td><code>reward_product_id</code></td><td>uuid null → products(id)</td><td>(ทางเลือก) ผูกสินค้าจริงสำหรับแบบสินค้า เพื่อเติมรายการที่ POS</td></tr>
+      <tr><td><code>image_url</code></td><td>text null</td><td>รูปของรางวัล</td></tr>
+      <tr><td><code>code_mode</code></td><td>text check('auto','manual') default 'auto'</td><td>สร้างโค้ดอัตโนมัติ หรือกำหนดเอง</td></tr>
+      <tr><td><code>manual_code</code></td><td>text null</td><td>โค้ดที่เจ้าของกำหนด (เมื่อ code_mode='manual')</td></tr>
+    </table>
+
+    <h3>3.2 ตาราง <code>loyalty_reward_redemptions</code> — เพิ่มคอลัมน์ (เก็บ voucher)</h3>
+    <table>
+      <tr><th>คอลัมน์</th><th>ชนิด</th><th>ความหมาย</th></tr>
+      <tr><td><code>voucher_code</code></td><td>text — unique(store_id, voucher_code)</td><td>โค้ดที่ลูกค้านำไปกรอก</td></tr>
+      <tr><td><code>coupon_id</code></td><td>uuid null → coupons(id)</td><td>สำหรับ reward ส่วนลด: คูปองที่ออกให้</td></tr>
+      <tr><td><code>expires_at</code></td><td>timestamptz</td><td>วันหมดอายุ (แลก + 30 วัน)</td></tr>
+      <tr><td><code>used_at</code></td><td>timestamptz null</td><td>เวลาที่ใช้โค้ด</td></tr>
+      <tr><td><code>used_order_id</code></td><td>uuid null → orders(id)</td><td>บิลที่ใช้โค้ด</td></tr>
+    </table>
+    <p class="muted">สถานะใช้คอลัมน์ <code>status</code> เดิม: <code>pending</code>=ใช้ได้ · <code>fulfilled</code>=ใช้แล้ว · <code>cancelled</code>=ยกเลิก/หมดอายุ</p>
+
+    <h3>3.3 RPC <code>redeem_loyalty_reward</code> — ปรับให้ออก voucher/คูปองแบบ atomic</h3>
+    <ul>
+      <li>หลังหักแต้ม + ลด stock เดิม → คำนวณ <code>voucher_code</code> (auto = สุ่ม 6–8 ตัว ตรวจชนกัน / manual = ใช้ <code>manual_code</code>)</li>
+      <li>ถ้า <code>reward_type='discount'</code> → insert row <code>coupons</code> (code=voucher_code, discount จาก reward, max_redemptions=1, ends_at=now+30d) แล้วเก็บ <code>coupon_id</code></li>
+      <li>set <code>expires_at = now() + interval '30 days'</code> ใน redemption</li>
+      <li>คืน <code>voucher_code</code> + ประเภท เพื่อแสดงผลฝั่งลูกค้า</li>
+    </ul>
+    <h3>3.4 RPC ใหม่ <code>consume_reward_product_voucher</code> (Phase 2)</h3>
+    <p class="muted">ตรวจ voucher แบบสินค้า (ยังไม่ใช้ + ไม่หมดอายุ) แล้ว mark used + ผูก order — เรียกตอนปิดบิลที่ POS</p>
+  </div>
+
+  <h2>4. งานแยกตาม Phase</h2>
+
+  <div class="phase">
+    <h3>Phase 1 — โครงสร้าง + ฝั่งจัดการ (หลังร้าน) + ฝั่งลูกค้า (member portal)</h3>
+    <p><span class="pill">ความเสี่ยงต่ำ</span><span class="pill">ได้คุณค่าหลัก</span></p>
+    <table>
+      <tr><th>ไฟล์</th><th>งาน</th></tr>
+      <tr><td><span class="tag t-db">DB</span> <code>supabase/migrations/&lt;new&gt;.sql</code></td><td>เพิ่มคอลัมน์ตาม §3.1–3.2 + แก้ RPC §3.3</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>server/.../database.types.ts</code></td><td>อัปเดต types ของตารางที่แก้</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>modules/loyalty/repository.ts</code></td><td>เพิ่ม field ใหม่ใน <code>LoyaltyReward</code>/<code>LoyaltyRewardSaveInput</code> + map; คืน voucher จาก redeem</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>customers/actions.ts</code> · <code>saveRewardAction</code></td><td>รับ reward_type / discount / image_url / code_mode / manual_code + validate</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>customers/CustomerLoyaltyManager.tsx</code></td><td>ฟอร์มของรางวัล: เลือกประเภท (ส่วนลด/สินค้า), ช่องมูลค่าส่วนลด, <code>ImageUpload</code>, โหมดโค้ด (auto/manual)</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>member/[storeSlug]/MemberPortal.tsx</code></td><td>การ์ดรางวัลโชว์รูป + ประเภท; หลังแลกโชว์ <b>โค้ด</b>เด่นๆ; แท็บ "รายการแลกของรางวัล" + กดดูรายละเอียด (modal)</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>customers/member-repository.ts</code></td><td><code>CustomerRewardRedemption</code> เพิ่ม voucher_code / expiresAt / type / discount; ส่ง voucher กลับจาก redeem action</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>member/[storeSlug]/actions.ts</code></td><td><code>redeemMemberRewardAction</code> คืน voucher_code ให้ UI แสดง</td></tr>
+    </table>
+    <p class="muted">จบ Phase 1: ของรางวัล <b>แบบส่วนลด</b> ใช้งานครบวงจร (แลก → ได้โค้ด → กรอกที่ POS → ลดเงิน) เพราะเป็นคูปองจริง · มีรูป · มีประวัติ/รายละเอียด</p>
+  </div>
+
+  <div class="phase p2">
+    <h3>Phase 2 — ของรางวัลแบบสินค้า เชื่อม POS</h3>
+    <p><span class="pill">แตะ POS cart</span></p>
+    <table>
+      <tr><th>ไฟล์</th><th>งาน</th></tr>
+      <tr><td><span class="tag t-db">DB</span> migration</td><td>RPC <code>consume_reward_product_voucher</code> §3.4</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>pos/actions.ts</code> · <code>evaluatePosCouponAction</code></td><td>เมื่อโค้ดไม่ใช่คูปองส่วนลด ให้ลองตรวจเป็น voucher สินค้า → คืนข้อมูลสินค้าของรางวัลเพื่อเติมตะกร้า</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> <code>pos/PosTerminal.tsx</code></td><td>รับผลแบบ "เพิ่มรายการของรางวัล" → ใส่ line ราคา 0 (ติดป้าย 🎁 ของรางวัล) ลงตะกร้า</td></tr>
+      <tr><td><span class="tag t-edit">edit</span> ปิดบิล (<code>close_pos_order_payment</code> / actions)</td><td>เรียก consume voucher ตอนชำระเงินจริง เพื่อตัด single-use + ผูก order</td></tr>
+    </table>
+    <p class="warn">จุดที่ต้องระวัง: voucher แบบสินค้าต้องตัด "ตอนปิดบิลสำเร็จ" ไม่ใช่ตอนเติมตะกร้า เพื่อกันกรณียกเลิกบิลแล้วโค้ดถูกเผาทิ้ง</p>
+  </div>
+
+  <div class="phase p3">
+    <h3>Phase 3 — ทดสอบ + เอกสาร</h3>
+    <ul>
+      <li>Unit tests: ออก voucher (auto/manual code ชนกัน), หมดอายุ 30 วัน, ใช้ซ้ำไม่ได้, ส่วนลด vs สินค้า</li>
+      <li>ทดสอบ preview: แลกในร้าน → กรอกที่ POS ครบวงจร (ทั้ง 2 ประเภท)</li>
+      <li>อัปเดต log ลง Obsidian + memory</li>
+    </ul>
+  </div>
+
+  <h2>5. ตัวอย่าง flow ฝั่งลูกค้า</h2>
+  <div class="flow">[member portal] กด "แลก" หมวก (50 แต้ม)
+   → หักแต้ม 50, สร้าง voucher code "GIFT-7K2P9" (อายุ 30 วัน)
+   → จอแสดง:  ✅ แลกสำเร็จ
+              โค้ดแลกรับ: <b>GIFT-7K2P9</b>
+              นำโค้ดนี้ให้พนักงานที่ร้าน · ใช้ได้ถึง 25 ก.ค. 2026
+   → แท็บ "รายการแลกของรางวัล": หมวก · GIFT-7K2P9 · รอใช้ · กดดูรายละเอียด
+
+[POS] พนักงานกรอก "GIFT-7K2P9" ในช่องคูปอง
+   → (ส่วนลด) หักเงินอัตโนมัติ  /  (สินค้า) เพิ่ม "🎁 หมวก ฿0" ลงบิล
+   → ปิดบิล → voucher = ใช้แล้ว (ตัด single-use)</div>
+
+  <h2>6. คำถาม/ข้อกำหนดที่ตั้งเป็นค่าเริ่มต้นไว้ (ทักท้วงได้)</h2>
+  <div class="card">
+    <ul>
+      <li><b>รูปแบบโค้ด auto</b>: ตัวอักษร+ตัวเลข 6–8 หลัก (เลี่ยงตัวสับสน 0/O/1/I) เช่น <code>R7K2P9</code></li>
+      <li><b>โค้ด manual</b>: ถ้าเจ้าของกำหนดเอง ระบบต่อท้ายเลขลำดับสั้นๆ เพื่อให้ unique ต่อการแลก (กัน single-use ชนกัน) — หรือถ้าต้องการโค้ดตายตัวตัวเดียว แจ้งได้</li>
+      <li><b>reward แบบสินค้า + ผูกสินค้าจริง</b>: ใช้ <code>reward_product_id</code> เพื่อเติมรายการที่ POS อัตโนมัติ ถ้าไม่ผูก = พนักงานเพิ่มรายการเอง โดยโค้ดเป็นเพียงหลักฐาน</li>
+      <li><b>Bucket รูป</b>: ใช้ <code>product-images</code> เดิม (อัปโหลดฝั่งหลังร้าน/manager, ลูกค้าอ่าน public)</li>
+      <li><b>ฟีเจอร์ gating</b>: ยังอยู่ใต้ <code>loyaltyPoints</code> (Enterprise) เหมือนเดิม</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

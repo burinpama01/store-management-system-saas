@@ -7,6 +7,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { getActiveMemberPortalLinkForStore } from "@/modules/customers/member-repository";
 import { listCustomersForStore } from "@/modules/customers/repository";
 import { getLoyaltySettingsForStore, listLoyaltyRewardsForStore } from "@/modules/loyalty/repository";
+import { listProducts } from "@/modules/catalog/repository";
 import { listCouponsForStore } from "@/modules/promotions/repository";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { CustomerLoyaltyManager } from "./CustomerLoyaltyManager";
@@ -25,24 +26,31 @@ export default async function CustomersPage() {
   const origin = (await headers()).get("origin") ?? "";
   const supabase = await createSupabaseServerClient();
 
-  const [customersRes, couponsRes, loyaltySettingsRes, rewardsRes, portalLinkRes, storeRes] = await Promise.all([
-    features.loyaltyPoints
-      ? listCustomersForStore(ctx.storeId, { includeInactive: true })
-      : Promise.resolve({ data: [], error: null }),
-    features.couponManagement
-      ? listCouponsForStore(ctx.storeId, { includeInactive: true })
-      : Promise.resolve({ data: [], error: null }),
-    features.loyaltyPoints
-      ? getLoyaltySettingsForStore(ctx.storeId, ctx.organizationId)
-      : Promise.resolve({ data: null, error: null }),
-    features.loyaltyPoints
-      ? listLoyaltyRewardsForStore(ctx.storeId, { includeInactive: true })
-      : Promise.resolve({ data: [], error: null }),
-    features.loyaltyPoints
-      ? getActiveMemberPortalLinkForStore(ctx.storeId)
-      : Promise.resolve({ data: null, error: null }),
-    supabase.from("stores").select("slug").eq("id", ctx.storeId).maybeSingle(),
-  ]);
+  const [customersRes, couponsRes, loyaltySettingsRes, rewardsRes, portalLinkRes, productsRes, storeRes] =
+    await Promise.all([
+      features.loyaltyPoints
+        ? listCustomersForStore(ctx.storeId, { includeInactive: true })
+        : Promise.resolve({ data: [], error: null }),
+      features.couponManagement
+        ? listCouponsForStore(ctx.storeId, { includeInactive: true })
+        : Promise.resolve({ data: [], error: null }),
+      features.loyaltyPoints
+        ? getLoyaltySettingsForStore(ctx.storeId, ctx.organizationId)
+        : Promise.resolve({ data: null, error: null }),
+      features.loyaltyPoints
+        ? listLoyaltyRewardsForStore(ctx.storeId, { includeInactive: true })
+        : Promise.resolve({ data: [], error: null }),
+      features.loyaltyPoints
+        ? getActiveMemberPortalLinkForStore(ctx.storeId)
+        : Promise.resolve({ data: null, error: null }),
+      features.loyaltyPoints
+        ? listProducts(ctx.storeId)
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from("stores").select("slug").eq("id", ctx.storeId).maybeSingle(),
+    ]);
+  const rewardProducts = (productsRes.data ?? [])
+    .filter((product) => product.isActive)
+    .map((product) => ({ id: product.id, name: product.name, basePrice: product.basePrice }));
   const storeSlug = storeRes.data?.slug ?? null;
   const memberPortalUrl =
     origin && storeSlug && portalLinkRes.data
@@ -60,6 +68,9 @@ export default async function CustomersPage() {
       rewards={rewardsRes.data ?? []}
       memberPortalUrl={memberPortalUrl}
       memberPortalQrDataUrl={memberPortalQrDataUrl}
+      organizationId={ctx.organizationId}
+      storeId={ctx.storeId}
+      rewardProducts={rewardProducts}
       planName={billingState.plan}
       loyaltyEnabled={features.loyaltyPoints}
       couponEnabled={features.couponManagement}

@@ -17,6 +17,17 @@ type MemberActionResult = {
   maskedPhone?: string;
 };
 
+type RedeemRewardActionResult = MemberActionResult & {
+  voucher?: {
+    code: string;
+    rewardType: "discount" | "product";
+    rewardName: string;
+    discountKind: "amount" | "percentage" | null;
+    discountValue: number | null;
+    expiresAt: string;
+  };
+};
+
 const PUBLIC_MEMBER_ERROR_MESSAGES = new Set([
   "ต้องเปิดจาก QR ของร้าน",
   "ไม่พบร้านนี้",
@@ -116,7 +127,7 @@ export async function verifyMemberOtpAction(formData: FormData): Promise<MemberA
   }
 }
 
-export async function redeemMemberRewardAction(formData: FormData): Promise<MemberActionResult> {
+export async function redeemMemberRewardAction(formData: FormData): Promise<RedeemRewardActionResult> {
   try {
     const storeSlug = text(formData, "storeSlug");
     const portalCode = text(formData, "portalCode");
@@ -140,7 +151,19 @@ export async function redeemMemberRewardAction(formData: FormData): Promise<Memb
     }
 
     revalidateMemberPortal(storeSlug);
-    return { error: null };
+    return {
+      error: null,
+      voucher: result.data
+        ? {
+            code: result.data.voucherCode,
+            rewardType: result.data.rewardType,
+            rewardName: result.data.rewardName,
+            discountKind: result.data.discountKind,
+            discountValue: result.data.discountValue,
+            expiresAt: result.data.expiresAt,
+          }
+        : undefined,
+    };
   } catch (e) {
     logPublicMemberActionError("redeemMemberReward", e);
     return { error: "แลกของรางวัลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า" };
