@@ -14,6 +14,7 @@ import {
   deleteAdjustmentAction,
   saveHrSettingsAction,
 } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   members: MemberWithEmail[];
@@ -149,9 +150,9 @@ export function StaffManager({
                     </select>
                   </label>
                   <div className="flex items-end">
-                    <button type="submit" disabled={isPending} className="btn-primary min-h-11 w-full text-sm">
+                    <Button type="submit" variant="primary" loading={isPending} className="min-h-11 w-full text-sm">
                       เพิ่มพนักงาน
-                    </button>
+                    </Button>
                   </div>
                   <p className="text-xs text-gray-400 sm:col-span-2 lg:col-span-4">
                     ระบบจะสร้างบัญชีให้ทันที (ยืนยันอีเมลแล้ว) — แจ้งรหัสผ่านชั่วคราวให้พนักงานเปลี่ยนภายหลัง
@@ -264,9 +265,9 @@ export function StaffManager({
                           มีสิทธิ์ OT
                         </label>
                         <div className="flex items-end lg:col-span-3">
-                          <button type="submit" disabled={isPending} className="btn-primary min-h-11 px-6 text-sm">
+                          <Button type="submit" variant="primary" loading={isPending} className="min-h-11 px-6 text-sm">
                             บันทึกค่าจ้าง
-                          </button>
+                          </Button>
                         </div>
                       </form>
                     )}
@@ -416,7 +417,7 @@ export function StaffManager({
                 <input name="note" maxLength={200} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <div className="flex items-end">
-                <button type="submit" disabled={isPending} className="btn-primary min-h-11 w-full text-sm">เพิ่ม</button>
+                <Button type="submit" variant="primary" loading={isPending} className="min-h-11 w-full text-sm">เพิ่ม</Button>
               </div>
             </form>
 
@@ -432,13 +433,13 @@ export function StaffManager({
                       </span>
                       {a.note ? ` · ${a.note}` : ""}
                     </span>
-                    <button
+                    <Button
                       onClick={() => run(() => deleteAdjustmentAction(a.id))}
-                      disabled={isPending}
+                      loading={isPending}
                       className="shrink-0 text-xs text-red-500 hover:underline"
                     >
                       ลบ
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -483,7 +484,7 @@ export function StaffManager({
                 <input name="backdatedRightsPerMonth" type="number" min={0} max={31} step="1" defaultValue={hrSettings.backdatedRightsPerMonth} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <div className="flex items-end lg:col-span-3">
-                <button type="submit" disabled={isPending} className="btn-primary min-h-11 px-6 text-sm">{isPending ? "กำลังบันทึก..." : "บันทึกนโยบาย"}</button>
+                <Button type="submit" variant="primary" loading={isPending} loadingText="กำลังบันทึก..." className="min-h-11 px-6 text-sm">บันทึกนโยบาย</Button>
               </div>
             </form>
           </div>

@@ -7,6 +7,7 @@ import {
   requestMemberOtpAction,
   verifyMemberOtpAction,
 } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   storeSlug: string;
@@ -138,9 +139,9 @@ export function MemberPortal({ storeSlug, portalCode, data }: Props) {
                     <input className="form-input w-full px-3" name="identifier" required />
                   </label>
                 )}
-                <button className="btn-primary w-full" type="submit" disabled={isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending}>
                   รับ OTP
-                </button>
+                </Button>
               </form>
             ) : (
               <form action={verifyOtp} className="grid gap-3">
@@ -151,12 +152,12 @@ export function MemberPortal({ storeSlug, portalCode, data }: Props) {
                   <span className="text-xs font-semibold uppercase text-[var(--muted)]">OTP {maskedPhone ? `(${maskedPhone})` : ""}</span>
                   <input className="form-input w-full px-3 text-center text-xl font-bold" name="code" inputMode="numeric" maxLength={6} required />
                 </label>
-                <button className="btn-primary w-full" type="submit" disabled={isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending}>
                   ยืนยัน OTP
-                </button>
-                <button className="btn-secondary w-full" type="button" onClick={() => setOtpId(null)} disabled={isPending}>
+                </Button>
+                <Button variant="secondary" className="w-full" onClick={() => setOtpId(null)} loading={isPending}>
                   เปลี่ยนข้อมูล
-                </button>
+                </Button>
               </form>
             )}
           </section>
@@ -202,9 +203,9 @@ export function MemberPortal({ storeSlug, portalCode, data }: Props) {
                               : ""}
                           </p>
                         </div>
-                        <button className="btn-primary self-end" type="submit" disabled={!canRedeem || isPending}>
+                        <Button variant="primary" className="self-end" type="submit" loading={isPending} disabled={!canRedeem}>
                           แลก
-                        </button>
+                        </Button>
                       </form>
                     );
                   })

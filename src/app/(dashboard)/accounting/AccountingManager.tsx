@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useTransition, useState } from "react";
 import type { Transaction, AccountingCategory, TransactionType } from "@/modules/accounting/types";
 import type { CashflowSummary } from "@/modules/accounting/types";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, Button } from "@/shared/components/ui";
 import {
   createAccountingCategoryAction,
   createTransactionAction,
@@ -348,7 +348,7 @@ function AccountingEntryDialog({
 }) {
   const [addType, setAddType] = useState<"income" | "expense">("income");
   const filteredCats = categories.filter((c) => c.type === addType);
-  const [formState, formAction] = useActionState(
+  const [formState, formAction, isPending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) => {
       const result = await createTransactionAction(prev, fd);
       if (!result.error) onSaved();
@@ -441,8 +441,9 @@ function AccountingEntryDialog({
           <p className="text-xs text-red-600">{formState.error}</p>
         )}
 
-        <button
+        <Button
           type="submit"
+          loading={isPending}
           className={`w-full py-2 text-sm font-medium text-white rounded transition-colors ${
             addType === "income"
               ? "bg-green-600 hover:bg-green-700"
@@ -450,7 +451,7 @@ function AccountingEntryDialog({
           }`}
         >
           บันทึก{TYPE_LABEL[addType]}
-        </button>
+        </Button>
       </form>
     </ModalDialog>
   );
@@ -464,7 +465,7 @@ function AccountingCategoryDialog({
   onSaved: () => void;
 }) {
   const [categoryType, setCategoryType] = useState<"income" | "expense">("income");
-  const [formState, formAction] = useActionState(
+  const [formState, formAction, isPending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) => {
       const result = await createAccountingCategoryAction(prev, fd);
       if (!result.error) onSaved();
@@ -518,8 +519,9 @@ function AccountingCategoryDialog({
           <p className="text-xs text-red-600">{formState.error}</p>
         )}
 
-        <button
+        <Button
           type="submit"
+          loading={isPending}
           className={`w-full py-2 text-sm font-medium text-white rounded transition-colors ${
             categoryType === "income"
               ? "bg-green-600 hover:bg-green-700"
@@ -527,7 +529,7 @@ function AccountingCategoryDialog({
           }`}
         >
           บันทึกหมวด{TYPE_LABEL[categoryType]}
-        </button>
+        </Button>
       </form>
     </ModalDialog>
   );

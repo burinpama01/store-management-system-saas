@@ -13,6 +13,7 @@ import {
   type ServiceRequest,
 } from "@/modules/qr-ordering/types";
 import { updatePrepStatusAction, resolveServiceRequestAction } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   storeId: string;
@@ -279,13 +280,14 @@ export function QrOrdersBoard({
           <span className="text-sm font-bold text-gray-900">{fmt(order.total, currency)}</span>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {flow && canAdvanceOrder ? (
-              <button
+              <Button
+                variant="primary"
                 onClick={() => advance(order)}
-                disabled={isPending}
-                className="btn-primary min-h-11 px-3 text-xs"
+                loading={isPending}
+                className="min-h-11 px-3 text-xs"
               >
                 {flow.label}
-              </button>
+              </Button>
             ) : flow && canSeeAllKitchenStations ? (
               <span className="max-w-44 text-right text-xs text-gray-500">
                 เลือก All stations เพื่อเปลี่ยนสถานะทั้งออร์เดอร์
@@ -366,13 +368,14 @@ export function QrOrdersBoard({
                     {SERVICE_REQUEST_LABEL[req.type]} · {timeAgo(req.createdAt)}
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => resolveRequest(req.id)}
-                  disabled={isPending}
-                  className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+                  loading={isPending}
+                  className="min-h-11 shrink-0 px-3 text-xs"
                 >
                   รับเรื่อง
-                </button>
+                </Button>
               </div>
             ))}
           </div>

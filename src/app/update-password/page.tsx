@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
+import { Button } from "@/shared/components/ui";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -138,13 +139,16 @@ export default function UpdatePasswordPage() {
               className="form-input disabled:opacity-50"
             />
           </div>
-          <button
+          <Button
             type="submit"
-            disabled={isPending || !canUpdatePassword}
-            className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
+            variant="primary"
+            loading={isPending}
+            loadingText="กำลังบันทึก..."
+            disabled={!canUpdatePassword}
+            className="w-full disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPending ? "กำลังบันทึก..." : "บันทึกรหัสผ่าน"}
-          </button>
+            บันทึกรหัสผ่าน
+          </Button>
         </form>
       </div>
     </main>

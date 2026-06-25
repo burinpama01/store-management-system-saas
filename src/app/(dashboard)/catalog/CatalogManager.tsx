@@ -11,7 +11,7 @@ import type {
 } from "@/modules/catalog/types";
 import type { BillingPlan } from "@/modules/billing/types";
 import type { Role } from "@/modules/tenants/types";
-import { ModalDialog, ImageUpload, LocalizedLoading } from "@/shared/components/ui";
+import { ModalDialog, ImageUpload, LocalizedLoading, Button } from "@/shared/components/ui";
 import {
   createCategoryAction,
   updateCategoryAction,
@@ -247,13 +247,14 @@ function AddCategoryForm({
       <InputField label="ชื่อหมวดหมู่" name="name" required />
       <InputField label="คำอธิบาย" name="description" placeholder="ไม่บังคับ" />
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
+          loading={isPending}
+          loadingText="กำลังบันทึก..."
           className="flex-1 py-1.5 text-sm font-medium text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors"
         >
-          {isPending ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+          บันทึก
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -295,13 +296,14 @@ function EditCategoryForm({
         placeholder="ไม่บังคับ"
       />
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
+          loading={isPending}
+          loadingText="กำลังบันทึก..."
           className="flex-1 py-1.5 text-sm font-medium text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors"
         >
-          {isPending ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+          บันทึก
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -440,13 +442,14 @@ function ProductForm({
         )}
       </div>
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
+          loading={isPending}
+          loadingText="กำลังบันทึก..."
           className="flex-1 py-1.5 text-sm font-medium text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors"
         >
-          {isPending ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+          บันทึก
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -540,13 +543,13 @@ function VariantTemplatesPanel({
             className="min-h-10 rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
             placeholder="+ราคา"
           />
-          <button
+          <Button
             type="submit"
-            disabled={addPending}
+            loading={addPending}
             className="min-h-10 rounded-md bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
           >
             เพิ่มตัวเลือก
-          </button>
+          </Button>
           <div className="sm:col-span-3">
             <ErrorBanner message={addState.error} />
           </div>
@@ -692,13 +695,13 @@ function ModifierGroupTemplateCard({
             <input type="checkbox" name="isDefault" className="rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
             ค่าเริ่มต้น
           </label>
-          <button
+          <Button
             type="submit"
-            disabled={addOptionPending}
+            loading={addOptionPending}
             className="min-h-10 rounded-md bg-slate-700 px-4 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-50"
           >
             เพิ่ม
-          </button>
+          </Button>
           <div className="space-y-2 sm:col-span-4">
             <ErrorBanner message={addOptionState.error || optionError} />
             <NoticeBanner message={optionMessage || addOptionState.message} />
@@ -794,13 +797,13 @@ function ModifierGroupTemplatesPanel({
               <option value="single">อันเดียว</option>
               <option value="multiple">หลายอัน</option>
             </select>
-            <button
+            <Button
               type="submit"
-              disabled={addPending}
+              loading={addPending}
               className="min-h-10 rounded-md bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
             >
               เพิ่มกลุ่ม
-            </button>
+            </Button>
           </div>
           <label className="flex min-h-10 items-center gap-2 text-xs text-slate-600">
             <input type="checkbox" name="isRequired" className="rounded border-slate-300" />
@@ -882,13 +885,14 @@ function VariantsSection({
           className="hidden"
           placeholder="±ราคา"
         />
-        <button
+        <Button
           type="submit"
-          disabled={applyPending || variantTemplates.length === 0}
+          loading={applyPending}
+          disabled={variantTemplates.length === 0}
           className="px-2 py-1 text-sm text-white bg-gray-700 rounded hover:bg-gray-900 disabled:opacity-50"
         >
           +
-        </button>
+        </Button>
       </form>
       {variantTemplates.length === 0 && (
         <p className="text-xs text-gray-500">เพิ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
@@ -987,13 +991,13 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
           <input type="checkbox" name="isDefault" className="rounded border-gray-300 text-gray-700 focus:ring-gray-400" />
           ค่าเริ่มต้น
         </label>
-        <button
+        <Button
           type="submit"
-          disabled={addOptPending}
+          loading={addOptPending}
           className="px-2 py-1 text-xs text-white bg-gray-600 rounded hover:bg-gray-800 disabled:opacity-50"
         >
           +
-        </button>
+        </Button>
       </form>
       <ErrorBanner message={addOptState.error || defaultError} />
       <NoticeBanner message={defaultMessage} />
@@ -1135,14 +1139,16 @@ function ModifierGroupsSection({
             <p className="text-xs text-gray-500">เพิ่มกลุ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
           )}
         </div>
-        <button
+        <Button
           type="submit"
-          disabled={applyPending || selectedCount === 0}
+          loading={applyPending}
+          loadingText="กำลังเพิ่ม..."
+          disabled={selectedCount === 0}
           title="เพิ่มกลุ่มที่เลือก"
           className="min-h-10 w-full rounded bg-gray-700 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-50"
         >
-          {applyPending ? "กำลังเพิ่ม..." : `+ เพิ่มที่เลือก${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
-        </button>
+          {`+ เพิ่มที่เลือก${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+        </Button>
       </form>
       <ErrorBanner message={applyState.error} />
       <NoticeBanner message={applyState.message} />
@@ -1381,13 +1387,15 @@ function BranchCopyPanel({
 
           <ErrorBanner message={state.error} />
           <NoticeBanner message={state.message} />
-          <button
+          <Button
             type="submit"
+            loading={isPending}
+            loadingText="กำลังคัดลอก..."
             disabled={disabled}
             className="min-h-10 rounded-md bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            {isPending ? "กำลังคัดลอก..." : "คัดลอกสินค้าไปสาขา"}
-          </button>
+            คัดลอกสินค้าไปสาขา
+          </Button>
         </div>
       </form>
     </section>

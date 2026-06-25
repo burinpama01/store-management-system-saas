@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { runTelegramNotificationTestAction } from "./actions";
 import type { ActionFeedbackState } from "./feedback";
 import { NotificationFeedbackDialog } from "./NotificationFeedbackDialog";
+import { Button } from "@/shared/components/ui";
 
 export function NotificationTest({ canRun }: { canRun: boolean }) {
   const [dialogFeedback, setDialogFeedback] = useState<ActionFeedbackState | null>(null);
@@ -32,14 +33,16 @@ export function NotificationTest({ canRun }: { canRun: boolean }) {
             ส่งข้อความ [TEST] ผ่าน Telegram group ของ tenant ปัจจุบัน
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={run}
-          disabled={!canRun || pending}
-          className="btn-secondary shrink-0 text-xs disabled:opacity-40"
+          loading={pending}
+          loadingText="กำลังทดสอบ..."
+          disabled={!canRun}
+          className="shrink-0 text-xs disabled:opacity-40"
         >
-          {pending ? "กำลังทดสอบ..." : "ทดสอบ"}
-        </button>
+          ทดสอบ
+        </Button>
       </div>
       {!canRun && (
         <p className="mt-2 text-xs text-amber-700">ต้องมีสิทธิ์ notifications.manage, ตั้งค่า Telegram group และบันทึก chat ID ก่อนจึงจะทดสอบได้</p>

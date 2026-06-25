@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useState, useTransition } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
-import { ModalDialog, MapPicker } from "@/shared/components/ui";
+import { ModalDialog, MapPicker, Button } from "@/shared/components/ui";
 import {
   clockInAction,
   clockOutAction,
@@ -232,9 +232,9 @@ export function AttendanceManager({
             <p className="font-extrabold text-amber-900">คุณยังไม่ได้ลงชื่อเข้างานวันนี้</p>
             <p className="text-sm text-amber-800">กดปุ่มด้านขวาเพื่อเริ่มบันทึกเวลาทำงานของวันนี้</p>
           </div>
-          <button onClick={handleClockIn} disabled={clocking} className="btn-primary shrink-0 disabled:opacity-40">
-            {clocking ? "กำลังบันทึก..." : "ลงชื่อเข้างาน"}
-          </button>
+          <Button onClick={handleClockIn} loading={clocking} loadingText="กำลังบันทึก..." variant="primary" className="shrink-0 disabled:opacity-40">
+            ลงชื่อเข้างาน
+          </Button>
         </div>
       )}
 
@@ -269,14 +269,14 @@ export function AttendanceManager({
         {clockError && <p className="alert-danger mb-3" role="alert">{clockError}</p>}
 
         {!isClockedIn && !isClockedOut && (
-          <button onClick={handleClockIn} disabled={clocking} className="btn-primary w-full disabled:opacity-40">
-            {clocking ? "กำลังบันทึก..." : "ลงชื่อเข้างาน"}
-          </button>
+          <Button onClick={handleClockIn} loading={clocking} loadingText="กำลังบันทึก..." variant="primary" className="w-full disabled:opacity-40">
+            ลงชื่อเข้างาน
+          </Button>
         )}
         {isClockedIn && (
-          <button onClick={handleClockOut} disabled={clocking} className="btn-primary w-full disabled:opacity-40">
-            {clocking ? "กำลังบันทึก..." : "ลงชื่อออกงาน"}
-          </button>
+          <Button onClick={handleClockOut} loading={clocking} loadingText="กำลังบันทึก..." variant="primary" className="w-full disabled:opacity-40">
+            ลงชื่อออกงาน
+          </Button>
         )}
         {isClockedOut && (
           <p className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-center text-sm text-[var(--muted)]">
@@ -336,7 +336,7 @@ export function AttendanceManager({
               ชื่อวันหยุด (ไม่บังคับ)
               <input name="name" maxLength={100} placeholder="เช่น วันสงกรานต์" className="mt-1 block min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
             </label>
-            <button type="submit" disabled={isEditing} className="btn-primary min-h-11 px-4 text-sm">เพิ่มวันหยุด</button>
+            <Button type="submit" variant="primary" loading={isEditing} className="min-h-11 px-4 text-sm">เพิ่มวันหยุด</Button>
           </form>
           {holidays.length > 0 && (
             <ul className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
@@ -409,9 +409,9 @@ export function AttendanceManager({
                   className="mt-1 block w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
                 />
               </label>
-              <button type="submit" disabled={isEditing} className="btn-primary min-h-11 self-end px-4 text-sm">
-                {isEditing ? "กำลังบันทึก..." : "เพิ่มวันหยุดพนักงาน"}
-              </button>
+              <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 self-end px-4 text-sm">
+                เพิ่มวันหยุดพนักงาน
+              </Button>
             </form>
             {leaveAdjustments.length > 0 ? (
               <ul className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
@@ -734,9 +734,9 @@ export function AttendanceManager({
                   <input name="note" maxLength={200} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
                 </label>
                 {editError && <p className="text-xs text-red-600">{editError}</p>}
-                <button type="submit" disabled={isEditing} className="btn-primary min-h-11 w-full text-sm">
-                  {isEditing ? "กำลังบันทึก..." : "เพิ่มบันทึก"}
-                </button>
+                <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 w-full text-sm">
+                  เพิ่มบันทึก
+                </Button>
               </form>
             </ModalDialog>
           )}
@@ -764,9 +764,9 @@ export function AttendanceManager({
                   <input name="note" maxLength={200} defaultValue={editTarget.note ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
                 </label>
                 {editError && <p className="text-xs text-red-600">{editError}</p>}
-                <button type="submit" disabled={isEditing} className="btn-primary min-h-11 w-full text-sm">
-                  {isEditing ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
-                </button>
+                <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 w-full text-sm">
+                  บันทึกการแก้ไข
+                </Button>
               </form>
             </ModalDialog>
           )}
@@ -802,9 +802,9 @@ export function AttendanceManager({
               <input name="note" maxLength={200} placeholder="เช่น ลืมลงเวลา" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
             </label>
             {editError && <p className="text-xs text-red-600">{editError}</p>}
-            <button type="submit" disabled={isEditing} className="btn-primary min-h-11 w-full text-sm">
-              {isEditing ? "กำลังบันทึก..." : "ลงเวลาย้อนหลัง"}
-            </button>
+            <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 w-full text-sm">
+              ลงเวลาย้อนหลัง
+            </Button>
           </form>
         </ModalDialog>
       )}
@@ -958,13 +958,14 @@ function AttendanceSettingsDialog({
         {settingsState.success && !settingsState.error && (
           <p className="text-xs text-green-700">บันทึกแล้ว</p>
         )}
-        <button
+        <Button
           type="submit"
-          disabled={settingsPending}
+          loading={settingsPending}
+          loadingText="กำลังบันทึก..."
           className="px-3 py-1.5 text-sm bg-gray-900 text-white rounded disabled:opacity-40"
         >
-          {settingsPending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
-        </button>
+          บันทึกการตั้งค่า
+        </Button>
       </form>
     </ModalDialog>
   );

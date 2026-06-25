@@ -16,6 +16,7 @@ import {
   saveLoyaltySettingsAction,
   saveRewardAction,
 } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   customers: CustomerProfile[];
@@ -259,9 +260,9 @@ export function CustomerLoyaltyManager({
                 <input className="form-input" name="stockQuantity" type="number" min="0" step="1" placeholder="ไม่จำกัด" />
               </label>
               <div className="flex items-end">
-                <button className="btn-primary w-full" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageLoyaltySettings}>
                   เพิ่มรางวัล
-                </button>
+                </Button>
               </div>
             </form>
 
@@ -314,9 +315,9 @@ export function CustomerLoyaltyManager({
                       เปิดให้แลก
                     </label>
                     <div className="flex items-end gap-2">
-                      <button className="btn-secondary" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                      <Button variant="secondary" type="submit" loading={isPending} disabled={!canManageLoyaltySettings}>
                         บันทึก
-                      </button>
+                      </Button>
                       <button
                         className="btn-secondary"
                         type="button"
@@ -414,9 +415,9 @@ export function CustomerLoyaltyManager({
                 <input className="form-input" name="email" type="email" placeholder="customer@example.com" />
               </label>
               <div className="flex items-end">
-                <button className="btn-primary w-full" type="submit" disabled={!canManageCustomers || isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageCustomers}>
                   เพิ่มลูกค้า
-                </button>
+                </Button>
               </div>
             </form>
             <div className="grid gap-3">
@@ -449,9 +450,9 @@ export function CustomerLoyaltyManager({
                     </span>
                   </div>
                   <div className="flex items-end gap-2">
-                    <button className="btn-secondary" type="submit" disabled={!canManageCustomers || isPending}>
+                    <Button variant="secondary" type="submit" loading={isPending} disabled={!canManageCustomers}>
                       บันทึก
-                    </button>
+                    </Button>
                     <button
                       className="btn-secondary"
                       type="button"
@@ -506,9 +507,9 @@ export function CustomerLoyaltyManager({
                 เปิดแลกแต้ม
               </label>
               <div className="flex items-end">
-                <button className="btn-primary w-full" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageLoyaltySettings}>
                   บันทึกแต้ม
-                </button>
+                </Button>
               </div>
             </form>
 
@@ -536,9 +537,9 @@ export function CustomerLoyaltyManager({
                 <input className="form-input" name="reason" maxLength={200} placeholder="ปรับแต้มจากแคมเปญ / แก้ไขรายการ" />
               </label>
               <div className="flex items-end">
-                <button className="btn-primary w-full" type="submit" disabled={!canManageLoyaltySettings || isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageLoyaltySettings}>
                   ปรับแต้ม
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -597,9 +598,9 @@ export function CustomerLoyaltyManager({
                 />
               </label>
               <div className="flex items-end">
-                <button className="btn-primary w-full" type="submit" disabled={!canManageCoupons || isPending}>
+                <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageCoupons}>
                   เพิ่มคูปอง
-                </button>
+                </Button>
               </div>
             </form>
             <div className="grid gap-3">
@@ -679,9 +680,9 @@ export function CustomerLoyaltyManager({
                       รวมส่วนลดมือ
                     </label>
                     <div className="flex gap-2">
-                      <button className="btn-secondary" type="submit" disabled={!canManageCoupons || isPending}>
+                      <Button variant="secondary" type="submit" loading={isPending} disabled={!canManageCoupons}>
                         บันทึก
-                      </button>
+                      </Button>
                       <button
                         className="btn-secondary"
                         type="button"

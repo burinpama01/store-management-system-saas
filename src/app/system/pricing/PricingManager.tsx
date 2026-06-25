@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { Button, SubmitButton } from "@/shared/components/ui";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import { DURATION_LABELS, PAID_TIERS, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
 import type { Promotion, PlanSetting } from "@/modules/billing/pricing-repository";
@@ -90,7 +91,7 @@ export function PricingManager({
                     <form action={togglePromotionAction}>
                       <input type="hidden" name="id" value={p.id} />
                       <input type="hidden" name="active" value={p.active ? "0" : "1"} />
-                      <button type="submit" className="btn-secondary text-xs">{p.active ? "ปิด" : "เปิด"}</button>
+                      <SubmitButton variant="secondary" className="text-xs">{p.active ? "ปิด" : "เปิด"}</SubmitButton>
                     </form>
                   </td>
                 </tr>
@@ -118,9 +119,9 @@ function PriceCell({ tier, duration, amount }: { tier: PaidTier; duration: Billi
       <p className="label-muted mb-1">{PLAN_LABELS[tier]} · {DURATION_LABELS[duration]}</p>
       <div className="flex items-center gap-2">
         <input type="number" name="amount" defaultValue={amount} min={0} step={1} className="form-input tabular-nums" />
-        <button type="submit" disabled={pending} className="btn-primary text-xs disabled:opacity-40">
-          {pending ? "..." : "บันทึก"}
-        </button>
+        <Button type="submit" variant="primary" loading={pending} loadingText="..." className="text-xs disabled:opacity-40">
+          บันทึก
+        </Button>
       </div>
       {state.error && <p className="alert-danger mt-2">{state.error}</p>}
       {state.ok && <p className="mt-1 text-xs text-emerald-700">บันทึกแล้ว</p>}
@@ -154,9 +155,9 @@ function PlanSettingCard({ setting }: { setting: PlanSetting }) {
       </div>
       {state.error && <p className="alert-danger">{state.error}</p>}
       {state.ok && <p className="text-xs text-emerald-700">บันทึกแล้ว</p>}
-      <button type="submit" disabled={pending} className="btn-primary text-xs disabled:opacity-40">
-        {pending ? "กำลังบันทึก..." : "บันทึก"}
-      </button>
+      <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="text-xs disabled:opacity-40">
+        บันทึก
+      </Button>
     </form>
   );
 }
@@ -195,9 +196,9 @@ function PromotionForm() {
       <div className="xl:col-span-5">
         {state.error && <p className="alert-danger mb-2">{state.error}</p>}
         {state.ok && <p className="mb-2 text-xs text-emerald-700">สร้างโปรโมชั่นแล้ว</p>}
-        <button type="submit" disabled={pending} className="btn-primary disabled:opacity-40">
-          {pending ? "กำลังสร้าง..." : "สร้างโปรโมชั่น"}
-        </button>
+        <Button type="submit" variant="primary" loading={pending} loadingText="กำลังสร้าง..." className="disabled:opacity-40">
+          สร้างโปรโมชั่น
+        </Button>
       </div>
     </form>
   );

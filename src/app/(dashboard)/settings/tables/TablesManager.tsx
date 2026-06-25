@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Table } from "@/modules/stores/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
 import { ConfirmDialog } from "@/shared/components/ui/ConfirmDialog";
+import { Button } from "@/shared/components/ui";
 import { saveTableAction, deleteTableAction } from "./actions";
 
 interface Props {
@@ -111,9 +112,9 @@ export function TablesManager({ tables, storeSlug, qrOrderingEnabled, baseUrl }:
           </div>
           <div className="flex gap-2 lg:col-span-4">
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary min-h-11 flex-1 text-sm">ยกเลิก</button>
-            <button type="submit" disabled={isPending} className="btn-primary min-h-11 flex-1 text-sm">
+            <Button type="submit" variant="primary" loading={isPending} className="min-h-11 flex-1 text-sm">
               {editing ? "บันทึก" : "เพิ่มโต๊ะ"}
-            </button>
+            </Button>
           </div>
         </form>
       )}

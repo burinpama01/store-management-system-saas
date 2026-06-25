@@ -8,6 +8,7 @@ import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-byt
 import { connectUsbPrinter, getUsbPrinterName, isUsbPrinterConnected } from "@/modules/printing/usb-client";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
+import { Button } from "@/shared/components/ui";
 
 type NetworkPrinterActionState = { error: string | null; saved?: boolean };
 type SaveNetworkPrinterAction = (
@@ -296,9 +297,9 @@ export function PrinterConnectionPanel({
             ตั้งเป็นเครื่องพิมพ์หลัก
           </label>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button type="submit" disabled={savingNetworkPrinter} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
-              {savingNetworkPrinter ? "กำลังบันทึก..." : "บันทึก IP / WiFi"}
-            </button>
+            <Button type="submit" variant="secondary" loading={savingNetworkPrinter} loadingText="กำลังบันทึก..." className="min-h-11 px-3 text-xs disabled:opacity-40">
+              บันทึก IP / WiFi
+            </Button>
             <p className="text-xs text-[var(--muted)]">
               รองรับ Private LAN เช่น 192.168.x.x, 10.x.x.x, 172.16-31.x.x; production ต้องเปิด StoreOS Print Bridge บนเครื่องแคชเชียร์
             </p>

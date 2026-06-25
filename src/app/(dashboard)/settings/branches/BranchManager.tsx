@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import type { Store } from "@/modules/stores/types";
 import { createBranchAction, type BranchActionState } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 const INITIAL_STATE: BranchActionState = { error: null };
 
@@ -81,13 +82,16 @@ export function BranchManager({
               required
             />
           </label>
-          <button
+          <Button
             type="submit"
-            className="btn-primary min-h-11"
-            disabled={!canCreate || pending}
+            variant="primary"
+            className="min-h-11"
+            loading={pending}
+            loadingText="กำลังเพิ่มสาขา..."
+            disabled={!canCreate}
           >
-            {pending ? "กำลังเพิ่มสาขา..." : "เพิ่มสาขา"}
-          </button>
+            เพิ่มสาขา
+          </Button>
           {state.error && <p className="alert-danger">{state.error}</p>}
           {state.ok && <p className="text-sm font-bold text-emerald-700">เพิ่มสาขาแล้ว</p>}
         </form>

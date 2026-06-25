@@ -26,6 +26,7 @@ import {
   type GroceryOfflineSyncState,
 } from "@/modules/grocery-pos/offline-sync";
 import { applyScannerKey, type ScannerBufferState } from "@/modules/grocery-pos/scanner";
+import { Button } from "@/shared/components/ui";
 import {
   closeGroceryOrderPaymentAction,
   createGroceryOrderAction,
@@ -566,9 +567,9 @@ export function GroceryPosTerminal({
             placeholder="ยิงบาร์โค้ดหรือพิมพ์ SKU"
             autoFocus
           />
-          <button type="button" onClick={handleManualSubmit} disabled={isPending}>
+          <Button loading={isPending} onClick={handleManualSubmit}>
             เพิ่มสินค้า
-          </button>
+          </Button>
         </div>
         {message ? <p className="grocery-pos-message">{message}</p> : null}
       </section>
@@ -677,9 +678,9 @@ export function GroceryPosTerminal({
               onChange={(event) => setCustomerQuery(event.target.value)}
               placeholder="ค้นชื่อลูกค้าหรือเบอร์โทร"
             />
-            <button type="button" onClick={handleCustomerSearch} disabled={isPending}>
+            <Button loading={isPending} onClick={handleCustomerSearch}>
               ค้นหา
-            </button>
+            </Button>
           </div>
           {customerResults.length > 0 ? (
             <div className="grocery-pos-customer-results">
@@ -709,9 +710,9 @@ export function GroceryPosTerminal({
               }}
               placeholder="รหัสคูปอง"
             />
-            <button type="button" onClick={handleApplyCoupon} disabled={isPending}>
+            <Button loading={isPending} onClick={handleApplyCoupon}>
               ใช้คูปอง
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -720,12 +721,12 @@ export function GroceryPosTerminal({
             <h2>ชำระเงิน</h2>
             <span>{checkoutOrder?.orderNumber ?? "ยังไม่สร้างออร์เดอร์"}</span>
           </div>
-          <button className="grocery-pos-primary" type="button" onClick={handleCreateOrder} disabled={isPending || cart.items.length === 0}>
+          <Button className="grocery-pos-primary" loading={isPending} onClick={handleCreateOrder} disabled={cart.items.length === 0}>
             สร้างออร์เดอร์
-          </button>
-          <button type="button" onClick={handleVoidOrder} disabled={isPending || !checkoutOrder || checkoutOrder.status === "paid"}>
+          </Button>
+          <Button loading={isPending} onClick={handleVoidOrder} disabled={!checkoutOrder || checkoutOrder.status === "paid"}>
             ยกเลิกออร์เดอร์
-          </button>
+          </Button>
           <div className="grocery-pos-inline">
             <input
               value={cashReceived}
@@ -733,17 +734,18 @@ export function GroceryPosTerminal({
               placeholder={money(displayCart.total, currency)}
               inputMode="decimal"
             />
-            <button type="button" onClick={handleCashPayment} disabled={isPending || !checkoutOrder}>
+            <Button loading={isPending} onClick={handleCashPayment} disabled={!checkoutOrder}>
               รับเงินสด
-            </button>
+            </Button>
           </div>
-          <button
-            type="button"
+          <Button
+            loading={isPending || isPrintingReceipt}
             onClick={handlePrintReceipt}
-            disabled={isPending || isPrintingReceipt || !checkoutOrder || checkoutOrder.status !== "paid"}
+            disabled={!checkoutOrder || checkoutOrder.status !== "paid"}
+            loadingText={isPrintingReceipt ? "กำลังพิมพ์..." : undefined}
           >
-            {isPrintingReceipt ? "กำลังพิมพ์..." : "พิมพ์ใบเสร็จ"}
-          </button>
+            พิมพ์ใบเสร็จ
+          </Button>
           {checkoutMessage ? <p className="grocery-pos-message">{checkoutMessage}</p> : null}
         </div>
       </section>

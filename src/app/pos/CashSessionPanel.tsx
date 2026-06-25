@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { CashSession } from "@/modules/cashflow/types";
 import { openCashSessionAction, closeCashSessionAction } from "./cash-actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   session: CashSession | null;
@@ -176,9 +177,9 @@ export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpe
                       ยกเลิก
                     </button>
                   )}
-                  <button onClick={handleOpen} disabled={isPending} className="btn-primary min-h-11 flex-1 text-sm">
-                    {isPending ? "กำลังเปิด..." : "เปิดรอบ"}
-                  </button>
+                  <Button variant="primary" loading={isPending} loadingText="กำลังเปิด..." onClick={handleOpen} className="min-h-11 flex-1 text-sm">
+                    เปิดรอบ
+                  </Button>
                 </div>
               </>
             ) : (
@@ -233,9 +234,9 @@ export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpe
                   <button onClick={() => close()} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
                     ยกเลิก
                   </button>
-                  <button onClick={handleClose} disabled={isPending} className="btn-primary min-h-11 flex-1 text-sm">
-                    {isPending ? "กำลังปิด..." : "ปิดรอบ"}
-                  </button>
+                  <Button variant="primary" loading={isPending} loadingText="กำลังปิด..." onClick={handleClose} className="min-h-11 flex-1 text-sm">
+                    ปิดรอบ
+                  </Button>
                 </div>
               </>
             )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Button } from "./Button";
 
 interface Props {
   open: boolean;
@@ -9,7 +10,10 @@ interface Props {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
-  onConfirm: () => void;
+  /** Disables the confirm button + shows a spinner while an action is running. */
+  loading?: boolean;
+  /** May return a Promise — the confirm button auto-blocks repeat clicks until it settles. */
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -20,6 +24,7 @@ export function ConfirmDialog({
   confirmLabel = "ยืนยัน",
   cancelLabel = "ยกเลิก",
   danger = false,
+  loading = false,
   onConfirm,
   onCancel,
 }: Props) {
@@ -70,7 +75,8 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </button>
-          <button
+          <Button
+            loading={loading}
             onClick={onConfirm}
             className={`px-3 py-1.5 text-xs font-medium text-white rounded-md transition-colors focus:outline-none focus:ring-2 ${
               danger
@@ -79,7 +85,7 @@ export function ConfirmDialog({
             }`}
           >
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

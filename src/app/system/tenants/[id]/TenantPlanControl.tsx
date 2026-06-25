@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import type { BillingPlan } from "@/modules/billing/types";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import { setTenantPlanAction } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 const PLANS: BillingPlan[] = ["free", "starter", "standard", "premium", "enterprise"];
 
@@ -47,14 +48,16 @@ export function TenantPlanControl({
             <option key={p} value={p}>{PLAN_LABELS[p]}</option>
           ))}
         </select>
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={save}
-          disabled={pending || plan === currentPlan}
-          className="btn-primary text-xs disabled:opacity-40"
+          loading={pending}
+          loadingText="กำลังบันทึก..."
+          disabled={plan === currentPlan}
+          className="text-xs disabled:opacity-40"
         >
-          {pending ? "กำลังบันทึก..." : "บันทึกแพ็กเกจ"}
-        </button>
+          บันทึกแพ็กเกจ
+        </Button>
       </div>
       {error && <p className="alert-danger mt-2">{error}</p>}
       {done && <p className="mt-2 text-xs text-emerald-700">เปลี่ยนแพ็กเกจแล้ว</p>}

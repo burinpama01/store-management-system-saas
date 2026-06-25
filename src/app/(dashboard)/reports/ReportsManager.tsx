@@ -10,6 +10,7 @@ import type {
   ReportData,
   TopProduct,
 } from "@/modules/reports/types";
+import { Button } from "@/shared/components/ui";
 
 const METHOD_LABEL: Record<string, string> = {
   cash: "เงินสด",
@@ -80,13 +81,15 @@ export function ReportsManager({
             className="px-3 py-1.5 text-sm"
           />
         </div>
-        <button
+        <Button
+          variant="primary"
           onClick={applyFilters}
-          disabled={isPending}
-          className="btn-primary disabled:opacity-50"
+          loading={isPending}
+          loadingText="กำลังโหลด..."
+          className="disabled:opacity-50"
         >
-          {isPending ? "กำลังโหลด..." : "ดูรายงาน"}
-        </button>
+          ดูรายงาน
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

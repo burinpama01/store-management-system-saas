@@ -61,7 +61,7 @@ describe("customer display ad settings", () => {
     expect(form).toContain("URL จะถูกเติมหลังอัพโหลดสำเร็จ");
     expect(form).toContain("const [uploadingCount, setUploadingCount]");
     expect(form).toContain("const isUploading = uploadingCount > 0");
-    expect(form).toContain("disabled={isPending || isUploading}");
+    expect(form).toContain("loading={isPending || isUploading}");
     expect(form).toContain("onUploadStart");
     expect(form).toContain("onUploadFinish");
     expect(form).toContain("กำลังอัพโหลดไฟล์...");

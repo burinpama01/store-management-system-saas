@@ -9,6 +9,7 @@ import {
 } from "./actions";
 import type { ActionFeedbackState } from "./feedback";
 import { NotificationFeedbackDialog } from "./NotificationFeedbackDialog";
+import { Button, SubmitButton } from "@/shared/components/ui";
 
 interface LineAccountLinkPanelProps {
   lineAccountLink: LineAccountLink | null;
@@ -111,27 +112,28 @@ export function LineAccountLinkPanel({
             )}
             {linked && canManage && (
               <form action={unlinkLineAccountAction}>
-                <button className="btn-secondary" type="submit">
+                <SubmitButton variant="secondary">
                   ยกเลิกการผูก LINE
-                </button>
+                </SubmitButton>
               </form>
             )}
             {canRenderLineTest && (
-              <button
-                className="btn-secondary"
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={runLineTest}
-                disabled={!canTestLine || pending}
+                loading={pending}
+                loadingText="กำลังทดสอบ..."
+                disabled={!canTestLine}
                 title="ส่ง LINE test"
               >
-                {pending ? "กำลังทดสอบ..." : "ทดสอบ LINE"}
-              </button>
+                ทดสอบ LINE
+              </Button>
             )}
             {groupLinked && canManageLineGroup && (
               <form action={unlinkLineNotificationTargetAction}>
-                <button className="btn-secondary" type="submit">
+                <SubmitButton variant="secondary">
                   ยกเลิกการผูก LINE กลุ่ม
-                </button>
+                </SubmitButton>
               </form>
             )}
           </div>

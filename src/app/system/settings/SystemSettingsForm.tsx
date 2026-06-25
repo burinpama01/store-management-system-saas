@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
-import { ProgressBar } from "@/shared/components/ui";
+import { ProgressBar, Button } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
 import { updatePlatformSettingsAction, type PlatformSettingsState } from "./actions";
 
@@ -108,9 +108,9 @@ export function SystemSettingsForm({
           </div>
         )}
 
-        <button type="submit" disabled={pending} className="btn-primary disabled:opacity-40">
-          {pending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
-        </button>
+        <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
+          บันทึกการตั้งค่า
+        </Button>
       </form>
 
       <div className="mt-6 border-t border-[var(--border)] pt-5">

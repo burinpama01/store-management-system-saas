@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { BuffetPackage } from "@/modules/buffet/types";
 import { createBuffetPackageAction, toggleBuffetPackageAction, type BuffetSettingsState } from "./actions";
+import { Button, SubmitButton } from "@/shared/components/ui";
 
 const INITIAL: BuffetSettingsState = { error: null, ok: false };
 
@@ -43,9 +44,9 @@ export function BuffetPackageSettings({
             <div className="sm:col-span-3">
               {state.error && <p className="alert-danger mb-2">{state.error}</p>}
               {state.ok && <p className="mb-2 text-xs text-emerald-700">เพิ่มแพ็กเกจแล้ว</p>}
-              <button type="submit" disabled={pending} className="btn-primary disabled:opacity-40">
-                {pending ? "กำลังบันทึก..." : "เพิ่มแพ็กเกจ"}
-              </button>
+              <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
+                เพิ่มแพ็กเกจ
+              </Button>
             </div>
           </form>
         </section>
@@ -80,7 +81,7 @@ export function BuffetPackageSettings({
                       <form action={toggleBuffetPackageAction}>
                         <input type="hidden" name="id" value={p.id} />
                         <input type="hidden" name="active" value={p.active ? "0" : "1"} />
-                        <button type="submit" className="btn-secondary text-xs">{p.active ? "ปิด" : "เปิด"}</button>
+                        <SubmitButton variant="secondary" className="text-xs">{p.active ? "ปิด" : "เปิด"}</SubmitButton>
                       </form>
                     )}
                   </td>

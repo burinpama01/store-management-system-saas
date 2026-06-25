@@ -13,6 +13,7 @@ import {
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { compressImage } from "@/shared/services/image";
 import { createCustomerDisplayMediaUploadAction, upsertCustomerDisplaySettingsAction } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 type SlideDraft = CustomerDisplayAdSlide;
 
@@ -194,9 +195,14 @@ export function CustomerDisplaySettingsForm({
             รอให้อัพโหลดไฟล์เสร็จก่อนบันทึกการตั้งค่า
           </p>
         ) : null}
-        <button type="submit" className="btn-primary" disabled={isPending || isUploading}>
-          {isUploading ? "กำลังอัพโหลดไฟล์..." : isPending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}
-        </button>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={isPending || isUploading}
+          loadingText={isUploading ? "กำลังอัพโหลดไฟล์..." : "กำลังบันทึก..."}
+        >
+          บันทึกการตั้งค่า
+        </Button>
       </div>
     </form>
   );

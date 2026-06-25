@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import type { Role } from "@/modules/tenants/types";
 import { runNotificationDiagnosticAction } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 type TestKey = "notification" | "receipt" | "promptpay" | "printer";
 type DiagnosticStatus = "success" | "warning" | "error";
@@ -121,14 +122,15 @@ export function DiagnosticsPanel({
                 <h2 className="text-base font-bold text-slate-950">{test.title}</h2>
                 <p className="mt-1 text-sm text-slate-500">{test.description}</p>
               </div>
-              <button
-                type="button"
+              <Button
                 onClick={() => runTest(test)}
+                loading={pendingKey === test.key}
+                loadingText="กำลังเทส..."
                 disabled={!canRunTest(test.key) || isPending}
                 className="min-h-11 shrink-0 rounded-md bg-slate-950 px-3 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {pendingKey === test.key ? "กำลังเทส..." : "เทส"}
-              </button>
+                เทส
+              </Button>
             </div>
             {results[test.key] && (
               <p

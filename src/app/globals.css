@@ -3450,3 +3450,55 @@ a:focus-visible {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Button loading / double-click protection.
+   Kept UNLAYERED (outside @layer utilities) on purpose: Tailwind v4 tree-shakes
+   rules inside @layer based on class usage, which dropped .btn-spinner /
+   .is-loading. Unlayered rules are always emitted and also win the cascade over
+   layered .btn-* styles. Applies to every .btn-* when natively disabled, marked
+   aria-disabled, or carrying .is-loading (set by the shared <Button>).
+--------------------------------------------------------------------------- */
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled,
+.btn-primary[aria-disabled="true"],
+.btn-secondary[aria-disabled="true"],
+.btn-danger[aria-disabled="true"],
+.btn-primary.is-loading,
+.btn-secondary.is-loading,
+.btn-danger.is-loading {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary.is-loading,
+.btn-secondary.is-loading,
+.btn-danger.is-loading {
+  pointer-events: none;
+}
+
+/* Spinner shown while a button is loading. Inherits currentColor so it reads
+   correctly on both filled (white text) and outline buttons. */
+.btn-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner {
+    animation-duration: 1.2s;
+  }
+}

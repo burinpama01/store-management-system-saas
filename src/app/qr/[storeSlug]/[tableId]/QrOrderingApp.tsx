@@ -18,6 +18,7 @@ import {
   type QrOrderItem,
 } from "./actions";
 import { PREP_STATUS_LABEL, type QrOrderView, type ServiceRequestType } from "@/modules/qr-ordering/types";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   store: Store;
@@ -429,13 +430,15 @@ function CartView({
           <span className="text-base font-bold text-gray-900">ยอดรวม</span>
           <span className="text-base font-bold text-gray-900">{formatPrice(cart.total, currency)}</span>
         </div>
-        <button
+        <Button
+          loading={isPending}
+          loadingText="กำลังส่งออร์เดอร์..."
           onClick={onSubmit}
-          disabled={isPending || cart.items.length === 0}
+          disabled={cart.items.length === 0}
           className="w-full min-h-11 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm disabled:opacity-40 active:bg-orange-600 transition-colors"
         >
-          {isPending ? "กำลังส่งออร์เดอร์..." : "ส่งออร์เดอร์"}
-        </button>
+          ส่งออร์เดอร์
+        </Button>
         <p className="text-xs text-gray-400 text-center mt-2">
           ชำระเงินที่เคาน์เตอร์เมื่อรับประทานเสร็จ
         </p>
@@ -569,39 +572,39 @@ function TrackView({
         {serviceMsg && <p className="text-xs text-green-600 text-center">{serviceMsg}</p>}
         {menuOpen ? (
           <div className="space-y-2">
-            <button
+            <Button
               onClick={() => { onService("call_staff", undefined, "เรียกพนักงานแล้ว กำลังไปหาคุณ"); setMenuOpen(false); }}
-              disabled={servicePending}
+              loading={servicePending}
               className="w-full min-h-11 py-3 rounded-xl bg-amber-100 text-amber-800 font-semibold text-sm disabled:opacity-50"
             >
               🙋 เรียกพนักงานทั่วไป
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => { onService("request_bill", undefined, "แจ้งขอเช็คบิลแล้ว"); setMenuOpen(false); }}
-              disabled={servicePending}
+              loading={servicePending}
               className="w-full min-h-11 py-3 rounded-xl bg-purple-100 text-purple-800 font-semibold text-sm disabled:opacity-50"
             >
               🧾 ขอเช็คบิล
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => { onService("call_staff", "เกิดปัญหา", "แจ้งปัญหาให้พนักงานแล้ว"); setMenuOpen(false); }}
-              disabled={servicePending}
+              loading={servicePending}
               className="w-full min-h-11 py-3 rounded-xl bg-red-100 text-red-800 font-semibold text-sm disabled:opacity-50"
             >
               ⚠️ เกิดปัญหา
-            </button>
+            </Button>
             <button onClick={() => setMenuOpen(false)} className="w-full min-h-11 py-2 text-xs text-gray-400">
               ยกเลิก
             </button>
           </div>
         ) : (
-          <button
+          <Button
             onClick={() => setMenuOpen(true)}
-            disabled={servicePending}
+            loading={servicePending}
             className="w-full min-h-11 py-3 rounded-xl bg-amber-500 text-white font-semibold text-sm disabled:opacity-50"
           >
             🔔 เรียกพนักงาน
-          </button>
+          </Button>
         )}
         <p className="text-xs text-gray-400 text-center">กดเรียกพนักงานเพื่อขอเช็คบิล แจ้งปัญหา หรือสอบถาม</p>
       </div>

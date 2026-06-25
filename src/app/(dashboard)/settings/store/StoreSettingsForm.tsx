@@ -8,7 +8,7 @@ import {
   getThemePreset,
   type ThemeTokens,
 } from "@/modules/theme/presets";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, Button } from "@/shared/components/ui";
 import { updateStoreAction } from "./actions";
 
 const TIMEZONES = [
@@ -391,13 +391,15 @@ function StoreSettingsDialog({
         )}
 
         {canEdit && (
-          <button
+          <Button
             type="submit"
-            disabled={pending}
-            className="btn-primary disabled:opacity-40"
+            variant="primary"
+            loading={pending}
+            loadingText="กำลังบันทึก..."
+            className="disabled:opacity-40"
           >
-            {pending ? "กำลังบันทึก..." : "บันทึก"}
-          </button>
+            บันทึก
+          </Button>
         )}
 
         {!canEdit && (

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 import type { BuffetSession } from "@/modules/buffet/types";
 import type { StoreTable } from "@/modules/buffet/repository";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, Button } from "@/shared/components/ui";
 import { createSessionAction, updateGuestCountAction, closeSessionAction } from "./actions";
 
 function fmt(n: number) {
@@ -164,7 +164,7 @@ function BuffetSessionDialog({
   tables: StoreTable[];
   onClose: () => void;
 }) {
-  const [formState, formAction] = useActionState(
+  const [formState, formAction, isPending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) => {
       const result = await createSessionAction(prev, fd);
       if (!result.error) onClose();
@@ -251,12 +251,13 @@ function BuffetSessionDialog({
           <p className="text-xs text-red-600">{formState.error}</p>
         )}
 
-        <button
+        <Button
           type="submit"
+          loading={isPending}
           className="w-full py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
         >
           เปิดเซสชัน
-        </button>
+        </Button>
       </form>
     </ModalDialog>
   );
@@ -320,14 +321,14 @@ function BuffetGuestCountDialog({
         {error && (
           <p className="text-xs text-red-600">{error}</p>
         )}
-        <button
-          type="button"
+        <Button
           onClick={handleSubmit}
-          disabled={pending}
+          loading={pending}
+          loadingText="กำลังบันทึก..."
           className="w-full py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-40 transition-colors"
         >
-          {pending ? "กำลังบันทึก..." : "บันทึกจำนวนคน"}
-        </button>
+          บันทึกจำนวนคน
+        </Button>
       </div>
     </ModalDialog>
   );

@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import type { ReceiptSettings } from "@/modules/settings/repository";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, Button } from "@/shared/components/ui";
 import { upsertReceiptSettingsAction } from "./actions";
 
 interface Props {
@@ -231,13 +231,14 @@ function ReceiptSettingsDialog({
           )}
 
           {canEdit && (
-            <button
+            <Button
               type="submit"
-              disabled={pending}
+              loading={pending}
+              loadingText="กำลังบันทึก..."
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-40 transition-colors"
             >
-              {pending ? "กำลังบันทึก..." : "บันทึก"}
-            </button>
+              บันทึก
+            </Button>
           )}
 
           {!canEdit && (

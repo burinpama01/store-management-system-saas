@@ -10,6 +10,7 @@ import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { QrOrderGlobalNotifier } from "./QrOrderGlobalNotifier";
 import { signOut } from "./actions";
+import { SubmitButton } from "@/shared/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -89,12 +90,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </div>
           </div>
           <form action={signOut}>
-            <button
-              type="submit"
-              className="btn-secondary w-full text-xs"
-            >
+            <SubmitButton variant="secondary" className="w-full text-xs">
               ออกจากระบบ
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </aside>

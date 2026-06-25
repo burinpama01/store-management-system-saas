@@ -34,7 +34,7 @@ import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers"
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
-import { LocalizedLoading } from "@/shared/components/ui";
+import { LocalizedLoading, Button, SubmitButton } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
@@ -740,14 +740,15 @@ function CartPanel({
               {billHistoryCount}
             </span>
           </button>
-          <button
-            type="button"
-            disabled={cart.items.length === 0 || isTicketSyncPending}
+          <Button
+            loading={isTicketSyncPending}
+            loadingText="กำลังบันทึก..."
+            disabled={cart.items.length === 0}
             onClick={onSaveTicket}
             className="col-span-2 min-h-11 rounded-lg border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {isTicketSyncPending ? "กำลังบันทึก..." : activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
-          </button>
+            {activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
+          </Button>
         </div>
         {(ticketMessage || printStatusMessage) && (
           <div className="space-y-1">
@@ -1291,22 +1292,24 @@ function TicketPanel({
         </label>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={cart.items.length === 0 || isTicketSyncPending}
+        <Button
+          loading={isTicketSyncPending}
+          loadingText="กำลังบันทึก..."
+          disabled={cart.items.length === 0}
           onClick={onSaveTicket}
           className="min-h-11 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isTicketSyncPending ? "กำลังบันทึก..." : activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
-        </button>
-        <button
-          type="button"
-          disabled={cart.items.length === 0 || isPrintingTicket}
+          {activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
+        </Button>
+        <Button
+          loading={isPrintingTicket}
+          loadingText="กำลังพิมพ์..."
+          disabled={cart.items.length === 0}
           onClick={onPrintTicket}
           className="min-h-11 rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isPrintingTicket ? "กำลังพิมพ์..." : "พิมพ์ใบสั่ง"}
-        </button>
+          พิมพ์ใบสั่ง
+        </Button>
       </div>
       <p className="text-[11px] text-gray-500">ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ</p>
       {ticketMessage && (
@@ -2003,9 +2006,11 @@ function PaymentPanel({
       </div>
 
       <div className="p-4 border-t border-gray-100">
-        <button
-          type="button"
-          disabled={!cashReady || !qrReady || isPending || (method === "qr_promptpay" && !promptPayPayload)}
+        <Button
+          variant="primary"
+          loading={isPending}
+          loadingText="กำลังชำระเงิน..."
+          disabled={!cashReady || !qrReady || (method === "qr_promptpay" && !promptPayPayload)}
           onClick={() =>
             onConfirm(
               method,
@@ -2013,10 +2018,10 @@ function PaymentPanel({
               { qrPaymentVerified: method === "qr_promptpay" ? qrPaymentVerified : undefined },
             )
           }
-          className="btn-primary w-full disabled:opacity-40"
+          className="w-full disabled:opacity-40"
         >
-          {isPending ? "กำลังชำระเงิน..." : "ยืนยันการชำระ"}
-        </button>
+          ยืนยันการชำระ
+        </Button>
       </div>
     </div>
   );
@@ -3130,10 +3135,10 @@ export function PosTerminal({
               </a>
             ) : (
               <form action={signOut} className="shrink-0">
-                <button type="submit" className="btn-secondary min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
+                <SubmitButton variant="secondary" className="min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
                   <span className="sm:hidden">⎋</span>
                   <span className="hidden sm:inline">ออกจากระบบ</span>
-                </button>
+                </SubmitButton>
               </form>
             )}
           </div>

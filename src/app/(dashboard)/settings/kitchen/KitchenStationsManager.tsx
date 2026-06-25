@@ -13,6 +13,7 @@ import {
   deleteStationAction,
   saveStationAction,
 } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   stations: KitchenStation[];
@@ -168,9 +169,9 @@ export function KitchenStationsManager({
               />
             </label>
             <div className="flex gap-2 md:col-span-3">
-              <button className="btn-primary" type="submit" disabled={isPending}>
+              <Button variant="primary" type="submit" loading={isPending}>
                 Save station
-              </button>
+              </Button>
               {formStation && (
                 <button
                   className="btn-secondary"
@@ -221,14 +222,13 @@ export function KitchenStationsManager({
                       </button>
                     )}
                     {station.isActive && (
-                      <button
-                        type="button"
-                        className="btn-danger"
+                      <Button
+                        variant="danger"
                         onClick={() => handleDelete(station.id)}
-                        disabled={isPending}
+                        loading={isPending}
                       >
                         Disable
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {station.isActive && (
@@ -265,9 +265,9 @@ export function KitchenStationsManager({
                           ))}
                         </div>
                       )}
-                      <button type="submit" className="btn-secondary min-h-11 px-3 text-xs" disabled={isPending}>
+                      <Button type="submit" variant="secondary" className="min-h-11 px-3 text-xs" loading={isPending}>
                         Save staff routing
-                      </button>
+                      </Button>
                     </form>
                   )}
                 </div>
