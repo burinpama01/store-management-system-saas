@@ -62,11 +62,16 @@ const portalLinkRow = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
-function createQuery(result: { data: unknown; error: null | { message: string } }) {
+function createQuery(result: { data: unknown; error: null | { message: string }; count?: number }) {
   const query = {
+    ...result,
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
+    gte: vi.fn(() => query),
+    insert: vi.fn(() => query),
+    delete: vi.fn(() => query),
     order: vi.fn(() => result),
+    single: vi.fn(async () => result),
     maybeSingle: vi.fn(async () => result),
   };
   return query;
@@ -76,6 +81,7 @@ function setupServiceClient(portalResult: { data: unknown; error: null | { messa
   const queries = {
     stores: createQuery({ data: storeRow, error: null }),
     customer_member_portal_links: createQuery(portalResult),
+    customer_member_otps: createQuery({ data: { id: "otp-1" }, count: 0, error: null }),
     loyalty_rewards: createQuery({ data: [], error: null }),
   };
   const client = {
@@ -124,5 +130,119 @@ describe("customer member portal behavior", () => {
     expect(mocks.cookies).not.toHaveBeenCalled();
     expect(queries.customer_member_portal_links.eq).toHaveBeenCalledWith("store_id", "store-1");
     expect(queries.customer_member_portal_links.eq).toHaveBeenCalledWith("token", "wrong-code");
+  });
+
+  it("keeps SMS provider failures generic on the public member portal", async () => {
+    const { queries } = setupServiceClient({ data: portalLinkRow, error: null });
+    const { requestMemberOtp } = await import("@/modules/customers/member-repository");
+
+    const result = await requestMemberOtp(
+      {
+        storeSlug: "each-other-ii-f62fc0",
+        portalCode: "valid-code",
+        mode: "register",
+        name: "Member One",
+        phone: "0812345678",
+      },
+      async () => {
+        throw new Error("SMSKUB send failed (401)");
+      },
+    );
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBe("ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า");
+    expect(result.error).not.toContain("SMSKUB");
+    expect(queries.customer_member_otps.delete).toHaveBeenCalled();
+    expect(queries.customer_member_otps.eq).toHaveBeenCalledWith("id", "otp-1");
+    expect(console.warn).toHaveBeenCalledWith(
+      "[member-portal] otp send failed",
+      expect.objectContaining({
+        storeId: "store-1",
+        otpId: "otp-1",
+        maskedPhone: "081****78",
+        error: "SMSKUB send failed (401)",
+        cleanupError: null,
+      }),
+    );
+  });
+
+  it("hides unexpected repository errors from public OTP actions", async () => {
+    const actions = await import("@/app/member/[storeSlug]/actions");
+    const repository = await import("@/modules/customers/member-repository");
+    vi.spyOn(repository, "requestMemberOtp").mockResolvedValue({
+      data: null,
+      error: "internal customer_member_otps constraint failed",
+    });
+
+    const formData = new FormData();
+    formData.set("storeSlug", "each-other-ii-f62fc0");
+    formData.set("portalCode", "valid-code");
+    formData.set("mode", "register");
+    formData.set("name", "Member One");
+    formData.set("phone", "0812345678");
+
+    const result = await actions.requestMemberOtpAction(formData);
+
+    expect(result.error).toBe("ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า");
+    expect(result.error).not.toContain("customer_member_otps");
+    expect(console.warn).toHaveBeenCalledWith(
+      "[member-portal] internal error hidden",
+      { message: "internal customer_member_otps constraint failed" },
+    );
+  });
+
+  it("preserves safe business validation messages on public member actions", async () => {
+    const actions = await import("@/app/member/[storeSlug]/actions");
+    const repository = await import("@/modules/customers/member-repository");
+    const loyalty = await import("@/modules/loyalty/repository");
+    vi.spyOn(repository, "verifyMemberOtp").mockResolvedValue({
+      data: null,
+      error: "OTP หมดอายุแล้ว",
+    });
+    vi.spyOn(repository, "getCustomerPortalData").mockResolvedValue({
+      store: {
+        id: "store-1",
+        organizationId: "org-1",
+        name: "each other II",
+        slug: "each-other-ii-f62fc0",
+        currencyCode: "THB",
+        timezone: "Asia/Bangkok",
+        locale: "th-TH",
+        isActive: true,
+        buffetEnabled: false,
+        qrOrderingEnabled: true,
+        dineInDurationMinutes: 90,
+        themePresetId: "default",
+        themePrimaryColor: "#c45d32",
+        themePrimaryStrongColor: "#964323",
+        themePrimarySoftColor: "#f7e5dc",
+        themeAccentColor: "#2f4f4f",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+      portalCode: "valid-code",
+      portalValid: true,
+      customer: { id: "customer-1", name: "Member One", pointsBalance: 0 },
+      rewards: [],
+      redemptions: [],
+      error: null,
+    });
+    vi.spyOn(loyalty, "redeemRewardForCurrentCustomer").mockResolvedValue({
+      data: null,
+      error: { code: "P0001", message: "ของรางวัลหมด", userMessage: "ของรางวัลหมด" },
+    });
+
+    const otpForm = new FormData();
+    otpForm.set("storeSlug", "each-other-ii-f62fc0");
+    otpForm.set("portalCode", "valid-code");
+    otpForm.set("otpId", "otp-1");
+    otpForm.set("code", "123456");
+    await expect(actions.verifyMemberOtpAction(otpForm)).resolves.toEqual({ error: "OTP หมดอายุแล้ว" });
+
+    const redeemForm = new FormData();
+    redeemForm.set("storeSlug", "each-other-ii-f62fc0");
+    redeemForm.set("portalCode", "valid-code");
+    redeemForm.set("rewardId", "11111111-1111-4111-8111-111111111111");
+    await expect(actions.redeemMemberRewardAction(redeemForm)).resolves.toEqual({ error: "ของรางวัลหมด" });
   });
 });

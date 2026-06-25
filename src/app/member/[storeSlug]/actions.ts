@@ -17,12 +17,57 @@ type MemberActionResult = {
   maskedPhone?: string;
 };
 
+const PUBLIC_MEMBER_ERROR_MESSAGES = new Set([
+  "ต้องเปิดจาก QR ของร้าน",
+  "ไม่พบร้านนี้",
+  "ระบบสมัครสมาชิก สะสมแต้ม และคูปองอยู่ในแพ็กเกจ Enterprise เท่านั้น",
+  "ไม่สามารถตรวจสอบ QR ได้ กรุณาลองใหม่หรือแจ้งร้านค้า",
+  "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน",
+  "ไม่พบสมาชิกของร้านนี้",
+  "ต้องมีเบอร์โทรศัพท์เพื่อรับ OTP",
+  "กรุณาระบุชื่อสำหรับสมัครสมาชิก",
+  "กรุณาเข้าสู่ระบบหรือแจ้งร้านเพื่อยืนยันข้อมูลสมาชิก",
+  "ขอ OTP บ่อยเกินไป กรุณารอสักครู่",
+  "ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า",
+  "รหัส OTP ไม่ถูกต้องหรือหมดอายุ",
+  "รหัส OTP ไม่ถูกต้อง",
+  "รหัส OTP หมดอายุแล้ว กรุณาขอใหม่",
+  "OTP นี้ถูกใช้แล้ว",
+  "OTP หมดอายุแล้ว",
+  "กรอก OTP ผิดเกินจำนวนที่กำหนด",
+  "ไม่สามารถสร้างสมาชิกได้",
+  "กรุณาเข้าสู่ระบบก่อนแลกของรางวัล",
+  "ข้อมูลของรางวัลไม่ถูกต้อง",
+  "idempotency key ไม่ถูกต้อง",
+  "ไม่พบสมาชิกที่ใช้งาน",
+  "ไม่พบของรางวัล",
+  "แต้มสะสมไม่เพียงพอ",
+  "ของรางวัลนี้ปิดใช้งานแล้ว",
+  "ของรางวัลหมดแล้ว",
+  "ของรางวัลหมด",
+  "แต้มไม่พอแลกของรางวัล",
+]);
+
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
 function revalidateMemberPortal(storeSlug: string) {
   revalidatePath(`/member/${storeSlug}`, "page");
+}
+
+function logPublicMemberActionError(action: string, error: unknown) {
+  console.warn("[member-portal] action failed", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function publicMemberError(message: string | null | undefined, fallback: string) {
+  if (!message) return fallback;
+  if (PUBLIC_MEMBER_ERROR_MESSAGES.has(message)) return message;
+  console.warn("[member-portal] internal error hidden", { message });
+  return fallback;
 }
 
 export async function requestMemberOtpAction(formData: FormData): Promise<MemberActionResult> {
@@ -43,10 +88,13 @@ export async function requestMemberOtpAction(formData: FormData): Promise<Member
       sendSmskubOtp,
     );
 
-    if (result.error || !result.data) return { error: result.error ?? "ส่ง OTP ไม่สำเร็จ" };
+    if (result.error || !result.data) {
+      return { error: publicMemberError(result.error, "ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า") };
+    }
     return { error: null, otpId: result.data.otpId, maskedPhone: result.data.maskedPhone };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+    logPublicMemberActionError("requestMemberOtp", e);
+    return { error: "ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า" };
   }
 }
 
@@ -59,11 +107,12 @@ export async function verifyMemberOtpAction(formData: FormData): Promise<MemberA
       otpId: text(formData, "otpId"),
       code: text(formData, "code"),
     });
-    if (result.error) return { error: result.error };
+    if (result.error) return { error: publicMemberError(result.error, "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า") };
     revalidateMemberPortal(storeSlug);
     return { error: null };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+    logPublicMemberActionError("verifyMemberOtp", e);
+    return { error: "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า" };
   }
 }
 
@@ -75,7 +124,9 @@ export async function redeemMemberRewardAction(formData: FormData): Promise<Memb
     if (!UUID_RE.test(rewardId)) return { error: "ข้อมูลของรางวัลไม่ถูกต้อง" };
 
     const portalData = await getCustomerPortalData(storeSlug, portalCode);
-    if (!portalData.portalValid || !portalData.store) return { error: portalData.error ?? "ต้องเปิดจาก QR ของร้าน" };
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
     if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนแลกของรางวัล" };
 
     const result = await redeemRewardForCurrentCustomer({
@@ -84,11 +135,14 @@ export async function redeemMemberRewardAction(formData: FormData): Promise<Memb
       customerId: portalData.customer.id,
       rewardId,
     });
-    if (result.error) return { error: result.error.userMessage };
+    if (result.error) {
+      return { error: publicMemberError(result.error.userMessage, "แลกของรางวัลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า") };
+    }
 
     revalidateMemberPortal(storeSlug);
     return { error: null };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+    logPublicMemberActionError("redeemMemberReward", e);
+    return { error: "แลกของรางวัลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า" };
   }
 }

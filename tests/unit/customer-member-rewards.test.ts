@@ -82,6 +82,9 @@ describe("customer member rewards", () => {
     expect(actions).toContain("getCustomerPortalData");
     expect(actions).toContain("redeemRewardForCurrentCustomer");
     expect(actions).toContain("sendSmskubOtp");
+    expect(actions).toContain("ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า");
+    expect(actions).toContain('logPublicMemberActionError("requestMemberOtp", e)');
+    expect(actions).not.toContain("return { error: e instanceof Error ? e.message");
     expect(actions).not.toContain("signInWithOtp");
     expect(portal).toContain("สมัครสมาชิก");
     expect(portal).toContain("เข้าสู่ระบบ");
@@ -100,6 +103,8 @@ describe("customer member rewards", () => {
     expect(repository).toContain("createOrFindMemberCustomer");
     expect(repository).toContain("findCustomerByEmail");
     expect(repository).toContain("กรุณาเข้าสู่ระบบหรือแจ้งร้านเพื่อยืนยันข้อมูลสมาชิก");
+    expect(repository).toContain("MEMBER_OTP_SEND_ERROR_MESSAGE");
+    expect(repository).toContain('console.warn("[member-portal] otp send failed"');
     expect(middleware).toContain('request.nextUrl.pathname === "/member"');
     expect(middleware).toContain('request.nextUrl.pathname.startsWith("/member/")');
     const createOrFindBlock = repository.slice(

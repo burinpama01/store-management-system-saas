@@ -21,6 +21,7 @@ export type OtpSender = (phone: string, code: string) => Promise<unknown>;
 const ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE =
   "ระบบสมัครสมาชิก สะสมแต้ม และคูปองอยู่ในแพ็กเกจ Enterprise เท่านั้น";
 const MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE = "ไม่สามารถตรวจสอบ QR ได้ กรุณาลองใหม่หรือแจ้งร้านค้า";
+const MEMBER_OTP_SEND_ERROR_MESSAGE = "ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า";
 
 export interface CustomerMemberProfile {
   id: string;
@@ -461,7 +462,21 @@ export async function requestMemberOtp(
 
   if (otp.error) return { data: null, error: mapError(otp.error).userMessage };
 
-  await sendOtp(phone, code);
+  try {
+    await sendOtp(phone, code);
+  } catch (error) {
+    const cleanup = await supabase.from("customer_member_otps").delete().eq("id", otp.data.id);
+    console.warn("[member-portal] otp send failed", {
+      storeSlug: input.storeSlug,
+      storeId: portal.store.id,
+      otpId: otp.data.id,
+      mode: input.mode,
+      maskedPhone: maskPhone(phone),
+      error: error instanceof Error ? error.message : String(error),
+      cleanupError: cleanup.error?.message ?? null,
+    });
+    return { data: null, error: MEMBER_OTP_SEND_ERROR_MESSAGE };
+  }
   return { data: { otpId: otp.data.id, maskedPhone: maskPhone(phone) }, error: null };
 }
 
