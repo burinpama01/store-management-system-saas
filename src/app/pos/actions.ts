@@ -13,8 +13,10 @@ import { evaluateCouponForCart } from "@/modules/promotions/coupon-policy";
 import { isCouponAttemptBlocked, recordCouponAttempt } from "@/modules/promotions/coupon-attempt-guard";
 import { findCouponPolicyByCode } from "@/modules/promotions/repository";
 import {
-  consumeProductRewardVoucher,
+  attachRewardVoucherOrder,
   findProductRewardVoucher,
+  releaseProductRewardVoucher,
+  reserveProductRewardVoucher,
 } from "@/modules/loyalty/repository";
 import {
   createOrderWithItems,
@@ -309,11 +311,16 @@ export async function submitOrderAction(
     });
 
     // Product reward vouchers: validate the voucher + catalog server-side, then append a ฿0
-    // line (stock still deducts via the order RPC). Consumed single-use after the order exists.
-    const rewardConsumptions: { redemptionId: string }[] = [];
+    // line (stock still deducts via the order RPC). Vouchers are reserved (single-use) before
+    // the order is created and released if creation fails.
+    const rewardRedemptionIds: string[] = [];
     const rewardLines: Cart["items"] = [];
     if (rewardItems.length > 0) {
       await requireFeature("loyaltyPoints");
+      // A free reward must accompany a real purchase — a ฿0-only order has no payment to collect.
+      if (trustedCart.items.length === 0) {
+        return { orderId: null, orderNumber: null, error: "ของรางวัลแบบสินค้าต้องแลกพร้อมรายการสั่งซื้ออื่น" };
+      }
       for (const rewardItem of rewardItems) {
         const voucherRes = await findProductRewardVoucher(ctx.storeId, rewardItem.rewardVoucherCode ?? "");
         if (voucherRes.error) return { orderId: null, orderNumber: null, error: voucherRes.error.userMessage };
@@ -339,11 +346,27 @@ export async function submitOrderAction(
           totalPrice: 0,
           note: `🎁 ของรางวัล · ${voucherRes.data.voucherCode}`,
         });
-        rewardConsumptions.push({ redemptionId: voucherRes.data.redemptionId });
+        rewardRedemptionIds.push(voucherRes.data.redemptionId);
       }
     }
     const finalCart: Cart =
       rewardLines.length > 0 ? { ...trustedCart, items: [...trustedCart.items, ...rewardLines] } : trustedCart;
+
+    // Reserve vouchers (atomic single-use) before creating the order; release if anything fails.
+    const reservedRedemptionIds: string[] = [];
+    async function releaseReservedVouchers() {
+      for (const redemptionId of reservedRedemptionIds) {
+        await releaseProductRewardVoucher(ctx.storeId, redemptionId);
+      }
+    }
+    for (const redemptionId of rewardRedemptionIds) {
+      const reserved = await reserveProductRewardVoucher(ctx.storeId, redemptionId);
+      if (reserved.error || !reserved.reserved) {
+        await releaseReservedVouchers();
+        return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลถูกใช้ไปแล้ว" };
+      }
+      reservedRedemptionIds.push(redemptionId);
+    }
     const tableRes = opts?.tableId ? await getTable(opts.tableId, ctx.storeId) : null;
     if (tableRes?.error) {
       return { orderId: null, orderNumber: null, error: tableRes.error.userMessage };
@@ -411,18 +434,20 @@ export async function submitOrderAction(
           note: opts?.note,
         });
 
-    if (result.error) return { orderId: null, orderNumber: null, error: result.error.userMessage };
+    if (result.error) {
+      await releaseReservedVouchers();
+      return { orderId: null, orderNumber: null, error: result.error.userMessage };
+    }
 
-    // Burn product reward vouchers now that the order (with the ฿0 reward line) exists.
-    for (const consumption of rewardConsumptions) {
-      const consumed = await consumeProductRewardVoucher(ctx.storeId, consumption.redemptionId, result.data.id);
-      if (consumed.error || !consumed.consumed) {
-        console.warn("[pos] reward voucher consume issue", {
+    // Order exists — link the reserved reward vouchers to it (best-effort; single-use already locked).
+    for (const redemptionId of reservedRedemptionIds) {
+      const attached = await attachRewardVoucherOrder(ctx.storeId, redemptionId, result.data.id);
+      if (attached.error) {
+        console.warn("[pos] reward voucher attach issue", {
           storeId: ctx.storeId,
           orderId: result.data.id,
-          redemptionId: consumption.redemptionId,
-          consumed: consumed.consumed,
-          error: consumed.error?.userMessage ?? null,
+          redemptionId,
+          error: attached.error.userMessage,
         });
       }
     }

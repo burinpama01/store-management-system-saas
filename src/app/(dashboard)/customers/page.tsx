@@ -50,7 +50,12 @@ export default async function CustomersPage() {
     ]);
   const rewardProducts = (productsRes.data ?? [])
     .filter((product) => product.isActive)
-    .map((product) => ({ id: product.id, name: product.name, basePrice: product.basePrice }));
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      basePrice: product.basePrice,
+      hasVariants: product.variants.length > 0,
+    }));
   const storeSlug = storeRes.data?.slug ?? null;
   const memberPortalUrl =
     origin && storeSlug && portalLinkRes.data

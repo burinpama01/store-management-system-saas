@@ -130,24 +130,50 @@ describe("loyalty reward vouchers", () => {
     const terminal = read("src/app/pos/PosTerminal.tsx");
     const posTypes = read("src/modules/pos/types.ts");
 
-    // repository: find by code (product reward only) + single-use atomic consume
+    // repository: find by code (product reward only) + single-use reserve/attach/release
     expect(repo).toContain("export async function findProductRewardVoucher");
-    expect(repo).toContain("export async function consumeProductRewardVoucher");
+    expect(repo).toContain("export async function reserveProductRewardVoucher");
+    expect(repo).toContain("export async function attachRewardVoucherOrder");
+    expect(repo).toContain("export async function releaseProductRewardVoucher");
     expect(repo).toContain('.is("used_at", null)');
 
     // POS coupon action also recognises product reward vouchers
     expect(posActions).toContain("findProductRewardVoucher");
     expect(posActions).toContain("rewardProduct");
 
-    // checkout validates voucher↔product, appends a ฿0 line, consumes after order exists
+    // checkout validates voucher↔product, appends a ฿0 line
     expect(posActions).toContain("rewardItems");
     expect(posActions).toContain("โค้ดของรางวัลใช้ไม่ได้หรือหมดอายุ");
     expect(posActions).toContain("โค้ดของรางวัลไม่ตรงกับสินค้า");
-    expect(posActions).toContain("consumeProductRewardVoucher");
 
     // cart line model + terminal wiring
     expect(posTypes).toContain("rewardVoucherCode?: string");
     expect(terminal).toContain("appendRewardLine");
     expect(terminal).toContain("result.rewardProduct");
+  });
+
+  it("hardens the product reward edge cases (race, ฿0-only order, variant products)", () => {
+    const repo = read("src/modules/loyalty/repository.ts");
+    const posActions = read("src/app/pos/actions.ts");
+    const customerActions = read("src/app/(dashboard)/customers/actions.ts");
+    const manager = read("src/app/(dashboard)/customers/CustomerLoyaltyManager.tsx");
+    const page = read("src/app/(dashboard)/customers/page.tsx");
+
+    // race: reserve before order, release on failure, attach after success
+    expect(repo).toContain("reserveProductRewardVoucher");
+    expect(repo).toContain("releaseProductRewardVoucher");
+    expect(posActions).toContain("reserveProductRewardVoucher");
+    expect(posActions).toContain("releaseReservedVouchers");
+    expect(posActions).toContain("โค้ดของรางวัลถูกใช้ไปแล้ว");
+    expect(posActions).toContain("attachRewardVoucherOrder");
+
+    // ฿0-only order guard
+    expect(posActions).toContain("ของรางวัลแบบสินค้าต้องแลกพร้อมรายการสั่งซื้ออื่น");
+
+    // variant products excluded from rewards (UI filter + server validation)
+    expect(page).toContain("hasVariants: product.variants.length > 0");
+    expect(manager).toContain("selectableProducts");
+    expect(customerActions).toContain("product.variants.length > 0");
+    expect(customerActions).toContain("สินค้าของรางวัลต้องไม่มีตัวเลือก");
   });
 });

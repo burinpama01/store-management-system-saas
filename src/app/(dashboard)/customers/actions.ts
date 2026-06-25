@@ -7,6 +7,7 @@ import { requireFeature, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { generateMemberPortalLink } from "@/modules/customers/member-repository";
 import { deleteCustomer, saveCustomer } from "@/modules/customers/repository";
+import { listProducts } from "@/modules/catalog/repository";
 import { deleteCoupon, saveCoupon } from "@/modules/promotions/repository";
 import {
   adjustCustomerPoints,
@@ -268,8 +269,19 @@ export async function saveRewardAction(formData: FormData): Promise<ActionResult
       if (discountKind === "percentage" && discountValue > 100) {
         return { error: "เปอร์เซ็นต์ส่วนลดต้องไม่เกิน 100" };
       }
-    } else if (!UUID_RE.test(rewardProductId)) {
-      return { error: "กรุณาเลือกสินค้าในระบบสำหรับของรางวัลแบบสินค้า" };
+    } else {
+      if (!UUID_RE.test(rewardProductId)) {
+        return { error: "กรุณาเลือกสินค้าในระบบสำหรับของรางวัลแบบสินค้า" };
+      }
+      const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
+      if (productsRes.error || !productsRes.data) {
+        return { error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };
+      }
+      const product = productsRes.data.find((candidate) => candidate.id === rewardProductId);
+      if (!product) return { error: "ไม่พบสินค้าที่เลือกในระบบ" };
+      if (product.variants.length > 0) {
+        return { error: "สินค้าของรางวัลต้องไม่มีตัวเลือก (variant) เพื่อให้ตัดสต็อกถูกต้อง" };
+      }
     }
 
     if (codeMode === "manual") {

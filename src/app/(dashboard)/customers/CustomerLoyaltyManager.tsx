@@ -23,6 +23,7 @@ export interface RewardProductOption {
   id: string;
   name: string;
   basePrice: number;
+  hasVariants: boolean;
 }
 
 interface Props {
@@ -149,6 +150,10 @@ function RewardForm({
   const isEdit = Boolean(reward);
   const [rewardType, setRewardType] = useState<"discount" | "product">(reward?.rewardType ?? "product");
   const [codeMode, setCodeMode] = useState<"auto" | "manual">(reward?.codeMode ?? "auto");
+  // Only no-variant products can be rewards so the ฿0 line deducts stock correctly at POS.
+  const selectableProducts = rewardProducts.filter(
+    (product) => !product.hasVariants || product.id === reward?.rewardProductId,
+  );
 
   return (
     <form action={onSubmit} className="grid gap-3 rounded-lg border border-[var(--border)] p-4">
@@ -222,14 +227,19 @@ function RewardForm({
             <option value="" disabled>
               เลือกสินค้าในระบบ
             </option>
-            {rewardProducts.map((product) => (
+            {selectableProducts.map((product) => (
               <option key={product.id} value={product.id}>
                 {product.name} (฿{product.basePrice})
               </option>
             ))}
           </select>
-          {rewardProducts.length === 0 && (
-            <span className="text-xs text-amber-600">ยังไม่มีสินค้าในระบบ — เพิ่มสินค้าที่เมนูสินค้าก่อน</span>
+          <span className="text-xs text-[var(--muted)]">
+            แสดงเฉพาะสินค้าที่ไม่มีตัวเลือก (variant) เพื่อให้ตัดสต็อกตอนแลกได้ถูกต้อง
+          </span>
+          {selectableProducts.length === 0 && (
+            <span className="text-xs text-amber-600">
+              ยังไม่มีสินค้าที่ไม่มีตัวเลือกในระบบ — เพิ่มสินค้าที่เมนูสินค้าก่อน
+            </span>
           )}
         </label>
       )}

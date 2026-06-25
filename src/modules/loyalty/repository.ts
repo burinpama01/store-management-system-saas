@@ -366,22 +366,46 @@ export async function findProductRewardVoucher(storeId: string, code: string) {
 }
 
 /**
- * Atomically consume a product reward voucher (single-use guard via `used_at is null`).
- * Returns consumed=false if it was already used (e.g. a concurrent checkout won the race).
+ * Atomically reserve a product reward voucher BEFORE the order is created
+ * (single-use guard via `used_at is null`). Returns reserved=false if another
+ * checkout already used it. Pair with attachRewardVoucherOrder on success or
+ * releaseProductRewardVoucher if the order ultimately fails.
  */
-export async function consumeProductRewardVoucher(storeId: string, redemptionId: string, orderId: string) {
+export async function reserveProductRewardVoucher(storeId: string, redemptionId: string) {
   const supabase = await createSupabaseServiceClient();
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("loyalty_reward_redemptions")
-    .update({ status: "fulfilled", used_at: now, used_order_id: orderId, fulfilled_at: now })
+    .update({ status: "fulfilled", used_at: now, fulfilled_at: now })
     .eq("store_id", storeId)
     .eq("id", redemptionId)
     .is("used_at", null)
     .select("id")
     .maybeSingle();
-  if (error) return { consumed: false, error: mapError(error) };
-  return { consumed: Boolean(data), error: null };
+  if (error) return { reserved: false, error: mapError(error) };
+  return { reserved: Boolean(data), error: null };
+}
+
+/** Link a reserved reward voucher to the order it was redeemed on (best-effort). */
+export async function attachRewardVoucherOrder(storeId: string, redemptionId: string, orderId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("loyalty_reward_redemptions")
+    .update({ used_order_id: orderId })
+    .eq("store_id", storeId)
+    .eq("id", redemptionId);
+  return { error: error ? mapError(error) : null };
+}
+
+/** Revert a reserved reward voucher back to usable (compensating action on failure). */
+export async function releaseProductRewardVoucher(storeId: string, redemptionId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("loyalty_reward_redemptions")
+    .update({ status: "pending", used_at: null, used_order_id: null, fulfilled_at: null })
+    .eq("store_id", storeId)
+    .eq("id", redemptionId);
+  return { error: error ? mapError(error) : null };
 }
 
 export async function saveLoyaltySettings(input: {
