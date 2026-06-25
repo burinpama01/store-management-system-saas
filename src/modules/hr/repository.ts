@@ -50,6 +50,7 @@ function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
     latePenaltyMaxPerDay: row.late_penalty_max_per_day,
     absentPenaltyPerDay: row.absent_penalty_per_day,
     backdatedRightsPerMonth: row.backdated_rights_per_month,
+    workingDays: row.working_days ?? [0, 1, 2, 3, 4, 5, 6],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -170,6 +171,26 @@ export async function upsertStoreHrSettings(input: UpsertHrSettingsInput) {
       late_penalty_max_per_day: input.latePenaltyMaxPerDay,
       absent_penalty_per_day: input.absentPenaltyPerDay,
       backdated_rights_per_month: input.backdatedRightsPerMonth,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/** Update only the store's open weekdays; other HR settings keep their values/DB defaults. */
+export async function updateStoreWorkingDays(
+  storeId: string,
+  organizationId: string,
+  workingDays: number[],
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("store_hr_settings").upsert(
+    {
+      store_id: storeId,
+      organization_id: organizationId,
+      working_days: workingDays,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "store_id" },

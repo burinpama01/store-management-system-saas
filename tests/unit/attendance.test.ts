@@ -192,7 +192,9 @@ describe("attendance GPS policy", () => {
     const center = { lat: 13.7563, lng: 100.5018 };
 
     expect(validateAttendanceGpsPolicy({}, { gpsEnabled: false, center, radiusMeters: 20 })).toBeNull();
-    expect(validateAttendanceGpsPolicy({}, { gpsEnabled: true })).toBeNull();
+    // GPS on (geofence enabled) now requires a real captured location even without a center/radius.
+    expect(validateAttendanceGpsPolicy({}, { gpsEnabled: true })).toBe("กรุณาอนุญาตตำแหน่งเพื่อบันทึกเวลา");
+    expect(validateAttendanceGpsPolicy({ lat: 13.7563, lng: 100.5018 }, { gpsEnabled: true })).toBeNull();
     expect(validateAttendanceGpsPolicy({}, { gpsEnabled: true, center, radiusMeters: 20 })).toBe("กรุณาอนุญาตตำแหน่งเพื่อบันทึกเวลา");
     expect(validateAttendanceGpsPolicy({ lat: 13.7564, lng: 100.5019 }, { gpsEnabled: true, center, radiusMeters: 25 })).toBeNull();
     expect(validateAttendanceGpsPolicy({ lat: 13.7367, lng: 100.5231 }, { gpsEnabled: true, center, radiusMeters: 25 })).toBe("ตำแหน่งอยู่นอกพื้นที่ที่กำหนด");

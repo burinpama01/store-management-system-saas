@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState, useTransition, type ReactNode } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
 import { ModalDialog, MapPicker, Button } from "@/shared/components/ui";
 import {
   clockInAction,
   clockOutAction,
   saveAttendanceSettingsAction,
+  saveStoreWorkingDaysAction,
   addManualAttendanceAction,
   adjustAttendanceAction,
   deleteAttendanceAction,
@@ -17,6 +18,7 @@ import {
   addEmployeeLeaveAction,
   deleteEmployeeLeaveAction,
 } from "./actions";
+import { WEEKDAY_LABELS } from "@/modules/hr/types";
 import { AttendanceCalendar } from "./AttendanceCalendar";
 import type { DayStatus } from "@/modules/attendance/calendar";
 import type { StoreHoliday } from "@/modules/attendance/repository";
@@ -36,6 +38,8 @@ interface Props {
   today: string;
   backdatedRights: number;
   backdatedUsed: number;
+  /** Store-level open weekdays (0=Sun .. 6=Sat). */
+  storeWorkingDays: number[];
   /** The viewer's own clock-in/out records for the current month (personal calendar). */
   myMonthRecords: AttendanceRecord[];
   currentMonth: string;
@@ -97,6 +101,38 @@ async function getGps(): Promise<{ lat?: number; lng?: number; label?: string }>
   });
 }
 
+/** Collapsible form section so manager tools don't all take up space at once. */
+function Collapsible({
+  title,
+  desc,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  desc?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="bg-white rounded-lg border border-gray-200 max-w-3xl">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 p-4 text-left"
+        aria-expanded={open}
+      >
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+          {desc && <p className="text-xs text-gray-500">{desc}</p>}
+        </div>
+        <span className="shrink-0 text-xs font-semibold text-gray-400">{open ? "▲ ปิด" : "▼ เปิด"}</span>
+      </button>
+      {open && <div className="border-t border-gray-100 p-4">{children}</div>}
+    </section>
+  );
+}
+
 export function AttendanceManager({
   todayRecord,
   canManage,
@@ -110,6 +146,7 @@ export function AttendanceManager({
   today,
   backdatedRights,
   backdatedUsed,
+  storeWorkingDays,
   myMonthRecords,
   currentMonth,
   dayStatus,
@@ -320,13 +357,14 @@ export function AttendanceManager({
 
       {/* Store holidays — owner/admin only */}
       {canManageHolidays && (
-        <section className="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl">
-          <h2 className="text-sm font-semibold text-gray-900">วันหยุดร้าน</h2>
-          <p className="text-xs text-gray-500">เฉพาะเจ้าของ/แอดมิน — วันหยุดจะแสดงบนปฏิทินและไม่นับเป็นขาดงาน</p>
-          {editError && <p className="mt-2 text-xs text-red-600">{editError}</p>}
+        <Collapsible
+          title="วันหยุดร้าน (ปิดทั้งร้าน)"
+          desc="เฉพาะเจ้าของ/แอดมิน — ทั้งร้านหยุดวันนี้ ใช้กับพนักงานทุกคน แสดงบนปฏิทินและไม่นับเป็นขาดงาน"
+        >
+          {editError && <p className="mb-2 text-xs text-red-600">{editError}</p>}
           <form
             action={(fd) => runEdit(() => addHolidayAction(fd), () => {}, "เพิ่มวันหยุดร้านแล้ว")}
-            className="mt-3 flex flex-wrap items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
           >
             <label className="text-xs font-medium text-gray-600">
               วันที่
@@ -356,20 +394,19 @@ export function AttendanceManager({
               ))}
             </ul>
           )}
-        </section>
+        </Collapsible>
       )}
 
       {/* Manage sections — visible to attendance.manage only */}
       {canManage && (
         <>
-          <section className="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl">
-            <h2 className="text-sm font-semibold text-gray-900">วันหยุดพนักงาน</h2>
-            <p className="text-xs text-gray-500">
-              ระบุวันลา/วันหยุดเฉพาะพนักงาน รายการนี้จะแสดงบนปฏิทินและไม่นับเป็นขาดงาน
-            </p>
+          <Collapsible
+            title="วันลาพนักงาน (รายบุคคล)"
+            desc="ลาเฉพาะพนักงานคนนั้น (ลาพักร้อน/ลากิจ/ลาป่วย) — คนละอย่างกับ 'วันหยุดร้าน' ที่ปิดทั้งร้าน; แสดงบนปฏิทินและไม่นับเป็นขาดงาน"
+          >
             <form
-              action={(fd) => runEdit(() => addEmployeeLeaveAction(fd), () => {}, "เพิ่มวันหยุดพนักงานแล้ว")}
-              className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1.4fr_auto]"
+              action={(fd) => runEdit(() => addEmployeeLeaveAction(fd), () => {}, "เพิ่มวันลาพนักงานแล้ว")}
+              className="grid gap-2 md:grid-cols-[1fr_1fr_1.4fr_auto]"
             >
               <label className="text-xs font-medium text-gray-600">
                 วันที่
@@ -410,7 +447,7 @@ export function AttendanceManager({
                 />
               </label>
               <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 self-end px-4 text-sm">
-                เพิ่มวันหยุดพนักงาน
+                เพิ่มวันลาพนักงาน
               </Button>
             </form>
             {leaveAdjustments.length > 0 ? (
@@ -422,7 +459,7 @@ export function AttendanceManager({
                       {leave.note ? <span className="text-gray-500"> · {leave.note}</span> : null}
                     </span>
                     <button
-                      onClick={() => runEdit(() => deleteEmployeeLeaveAction(leave.id), () => {}, "ลบวันหยุดพนักงานแล้ว")}
+                      onClick={() => runEdit(() => deleteEmployeeLeaveAction(leave.id), () => {}, "ลบวันลาพนักงานแล้ว")}
                       disabled={isEditing}
                       className="text-xs text-red-500 hover:underline disabled:opacity-40"
                     >
@@ -433,19 +470,50 @@ export function AttendanceManager({
               </ul>
             ) : (
               <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                ยังไม่มีวันหยุดพนักงานในช่วงวันที่นี้
+                ยังไม่มีวันลาพนักงานในช่วงวันที่นี้
               </p>
             )}
-          </section>
+          </Collapsible>
+
+          {/* วันเปิดทำการของร้าน (ค่าเริ่มต้นของปฏิทิน) */}
+          <Collapsible
+            title="วันเปิดทำการของร้าน"
+            desc="ร้านเปิดวันไหนบ้าง (รวมเสาร์-อาทิตย์ได้) — ใช้เป็นค่าเริ่มต้นของปฏิทิน วันที่เปิดทำการแต่ไม่มีคนเข้างานจะนับเป็น 'ขาด'"
+          >
+            <form
+              action={(fd) => runEdit(() => saveStoreWorkingDaysAction(fd), () => {}, "บันทึกวันเปิดทำการแล้ว")}
+              className="space-y-3"
+            >
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAY_LABELS.map((label, day) => (
+                  <label
+                    key={day}
+                    className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-3 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      name="workingDays"
+                      value={day}
+                      defaultChecked={storeWorkingDays.includes(day)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 px-4 text-sm">
+                บันทึกวันเปิดทำการ
+              </Button>
+            </form>
+          </Collapsible>
 
           {canUseGps && (
             <>
-              <section className="bg-white rounded-lg border border-gray-200 p-4 max-w-3xl">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-900">ตั้งค่า GPS เข้างาน</h2>
-                    <p className="text-xs text-gray-500">ดูค่า geofence ปัจจุบันและเปิด dialog เพื่อแก้ไข</p>
-                  </div>
+              <Collapsible
+                title="ตั้งค่า GPS เข้างาน"
+                desc="กำหนด geofence ของร้าน — เปิดแล้วพนักงานต้องจับตำแหน่งจริงจึงจะลงเวลาได้"
+              >
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => {
@@ -478,7 +546,7 @@ export function AttendanceManager({
                       : "ยังไม่ได้ตั้งค่า"}
                   />
                 </div>
-              </section>
+              </Collapsible>
 
               {attendanceSettingsDialogOpen && (
                 <AttendanceSettingsDialog

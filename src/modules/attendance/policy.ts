@@ -51,10 +51,12 @@ export function validateAttendanceGpsPolicy(
   policy: AttendanceGpsPolicy,
 ): string | null {
   if (!policy.gpsEnabled) return null;
-  if (!policy.center || policy.radiusMeters === undefined) return null;
+  // When GPS is on, a real captured location is mandatory before clocking in/out.
   if (location.lat === undefined || location.lng === undefined) {
     return "กรุณาอนุญาตตำแหน่งเพื่อบันทึกเวลา";
   }
+  // No geofence radius configured → a captured location is enough.
+  if (!policy.center || policy.radiusMeters === undefined) return null;
   return isWithinRadius(
     { lat: location.lat, lng: location.lng },
     policy.center,

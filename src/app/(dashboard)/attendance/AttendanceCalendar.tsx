@@ -152,7 +152,7 @@ export function AttendanceCalendar({
                     <p
                       key={`${leave.userId}-${leave.date}`}
                       className="truncate text-[10px] leading-tight text-blue-700"
-                      title={`${leave.employeeName} วันหยุดพนักงาน${leave.note ? ` · ${leave.note}` : ""}`}
+                      title={`${leave.employeeName} วันลาพนักงาน${leave.note ? ` · ${leave.note}` : ""}`}
                     >
                       ลา {leave.employeeName.split("@")[0].slice(0, 8)}
                     </p>
@@ -185,7 +185,7 @@ export function AttendanceCalendar({
             <span className="inline-block h-2 w-2 rounded-sm bg-gray-300" /> วันหยุดร้าน
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-sm bg-blue-300" /> วันหยุดพนักงาน
+            <span className="inline-block h-2 w-2 rounded-sm bg-blue-300" /> วันลาพนักงาน
           </span>
         </div>
       )}

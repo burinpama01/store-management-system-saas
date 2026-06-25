@@ -58,6 +58,7 @@ export default async function AccountingPage({
         storeId={ctx.storeId}
         canManage={canManageCashflow}
         canRecord={resolved.can("cashflow.record")}
+        canViewTotals={resolved.can("reports.view")}
         initialTransactions={txRes.data ?? []}
         totalCount={txRes.count}
         categories={catsRes.data ?? []}

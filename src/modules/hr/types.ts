@@ -33,6 +33,8 @@ export interface StoreHrSettings {
   latePenaltyMaxPerDay: number;
   absentPenaltyPerDay: number;
   backdatedRightsPerMonth: number;
+  /** Weekdays the store is open (0=Sun .. 6=Sat). Default for the attendance calendar. */
+  workingDays: number[];
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +47,7 @@ export const DEFAULT_HR_SETTINGS: Omit<StoreHrSettings, "storeId" | "organizatio
   latePenaltyMaxPerDay: 0,
   absentPenaltyPerDay: 0,
   backdatedRightsPerMonth: 3,
+  workingDays: [0, 1, 2, 3, 4, 5, 6],
 };
 
 export const WEEKDAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];

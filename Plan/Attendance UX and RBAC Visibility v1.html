@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>แผนงาน: ปรับปรุงระบบเข้า-ออกงาน + การมองเห็นตามสิทธิ์ (RBAC) v1</title>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--muted:#94a3b8;--fg:#e2e8f0;--accent:#38bdf8;--green:#34d399;--amber:#fbbf24;--red:#f87171;--border:#334155;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Segoe UI","Sarabun",system-ui,sans-serif;background:var(--bg);color:var(--fg);line-height:1.7;}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 24px 80px;}
+  h1{font-size:27px;margin:0 0 4px;}
+  h2{font-size:20px;margin:32px 0 10px;padding-bottom:8px;border-bottom:2px solid var(--border);color:var(--accent);}
+  h3{font-size:15px;margin:16px 0 6px;color:var(--green);}
+  .kicker{color:var(--muted);font-size:13px;letter-spacing:1px;text-transform:uppercase;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:12px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:5px;color:var(--amber);font-size:13px;}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{color:var(--accent);font-size:12px;text-transform:uppercase;}
+  ul{margin:6px 0;padding-left:20px;} li{margin:3px 0;}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;}
+  .t-new{background:rgba(52,211,153,.15);color:var(--green);}
+  .t-edit{background:rgba(56,189,248,.15);color:var(--accent);}
+  .t-db{background:rgba(251,191,36,.15);color:var(--amber);}
+  .t-exist{background:rgba(148,163,184,.15);color:var(--muted);}
+  .num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#06283d;font-weight:800;font-size:13px;margin-right:8px;}
+  .decision{border-left:4px solid var(--green);background:rgba(52,211,153,.07);padding:8px 12px;border-radius:0 8px 8px 0;margin:8px 0;font-size:14px;}
+  .muted{color:var(--muted);} .pill{font-size:12px;background:#0b1220;border:1px solid var(--border);border-radius:999px;padding:3px 10px;margin-right:6px;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Store Management SaaS · Attendance & RBAC</p>
+  <h1>ปรับปรุงระบบเข้า-ออกงาน + การมองเห็นตามสิทธิ์</h1>
+  <p class="muted">v1 · 2026-06-26 · รออนุมัติก่อนลงมือ · role hierarchy: super_admin &gt; owner &gt; admin &gt; manager &gt; cashier &gt; staff ("ต่ำกว่า manager" = cashier, staff)</p>
+
+  <h2>สรุปการตัดสินใจ (ยืนยันแล้ว)</h2>
+  <div class="card">
+    <div class="decision"><b>ข้อ 2 GPS:</b> บังคับจับตำแหน่งจริง <b>เฉพาะร้านที่เปิด geofence</b> — เปิดแล้วไม่มี location = กดเข้างานไม่ได้ (ร้านที่ไม่เปิดไม่กระทบ)</div>
+    <div class="decision"><b>ข้อ 3 วันทำงาน:</b> เพิ่ม <b>ตั้งค่า "วันเปิดทำการ" ระดับร้าน</b> (ดีฟอลต์ 7 วัน) ใช้เป็นค่าเริ่มต้นของปฏิทิน (per-employee ที่มีอยู่ยัง override ได้)</div>
+    <div class="decision"><b>ข้อ 7 บัญชี:</b> cashier/staff ยัง <b>บันทึกเงินสดได้</b> แต่ <b>ซ่อนการ์ดกำไร/ขาดทุน + ยอดรวม</b> (เห็นเฉพาะ manager+)</div>
+  </div>
+
+  <h2>งานรายข้อ</h2>
+
+  <div class="card">
+    <h3><span class="num">1</span>ฟอร์มเปิด-ปิดตามหัวข้อ (ไม่กินพื้นที่)</h3>
+    <p>ปรับ <code>AttendanceManager.tsx</code> ให้ส่วนของผู้จัดการ/เจ้าของเป็น <b>ToggleSection</b> (เปิด-ปิดได้) แบบเดียวกับ <code>CustomerLoyaltyManager</code>: รายการ+ฟิลเตอร์, เพิ่มเวลาย้อนหลัง, แก้ไขเวลา, วันหยุดร้าน, วันลา, ตั้งค่า GPS/วันเปิดทำการ</p>
+    <p><span class="tag t-edit">edit</span> <code>app/(dashboard)/attendance/AttendanceManager.tsx</code> · UI ล้วน</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">2</span>บังคับจับตำแหน่งจริงจึงเข้างานได้ (เมื่อเปิด GPS)</h3>
+    <ul>
+      <li><code>getAttendanceGpsPolicy</code>: ให้ <code>gpsEnabled = settings.geofenceEnabled</code> (ผูกกับ "ร้านเปิด GPS" ไม่ใช่แค่ feature ของแพ็กเกจ)</li>
+      <li><code>validateAttendanceGpsPolicy</code>: ถ้า <code>gpsEnabled</code> และไม่มี lat/lng → error "กรุณาอนุญาตตำแหน่งเพื่อบันทึกเวลา" (เดิมบังคับเฉพาะตอนตั้ง center); ถ้ามี center ก็ตรวจรัศมีต่อ</li>
+      <li>ใช้กับทั้ง clock-in และ clock-out</li>
+    </ul>
+    <p><span class="tag t-edit">edit</span> <code>modules/attendance/policy.ts</code> · <code>app/(dashboard)/attendance/actions.ts</code></p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">3</span>ปฏิทิน: ทำงาน เสาร์-อาทิตย์ (วันเปิดทำการระดับร้าน)</h3>
+    <ul>
+      <li><span class="tag t-db">migration</span> เพิ่ม <code>store_hr_settings.working_days int[]</code> default <code>{0,1,2,3,4,5,6}</code> (เปิด 7 วัน)</li>
+      <li><code>hr/types.ts</code> + <code>hr/repository.ts</code>: เพิ่ม <code>workingDays</code> ใน <code>StoreHrSettings</code> + map + upsert; <code>database.types.ts</code> อัปเดต</li>
+      <li><code>attendance/page.tsx</code>: ส่ง <b>store working_days เป็น fallback</b> ให้ <code>computeDayStatuses</code> (per-employee profile ยังชนะถ้ามี) → เสาร์-อาทิตย์ที่เปิดทำการจะถูกนับ (มา/สาย/ขาด) ไม่ใช่ "off"</li>
+      <li>UI ตั้งค่าวันเปิดทำการ (checkbox 7 วัน) ในส่วนตั้งค่าของ AttendanceManager (สิทธิ์ <code>settings.manage_store</code>)</li>
+    </ul>
+    <p class="muted">หมายเหตุ: วัน "holiday" มาจาก <code>store_holidays</code> เท่านั้น — ระบบไม่เคยมาร์คเสาร์-อาทิตย์เป็น holiday อยู่แล้ว ปัญหาคือมันถูกมองเป็น "off" (ไม่นับขาด) เพราะ default Mon-Fri งานนี้แก้ที่ default</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">4</span>ตั้งวันหยุดโดยเจ้าของ <span class="tag t-exist">มีอยู่แล้ว</span></h3>
+    <p><code>store_holidays</code> + <code>addHolidayAction/deleteHolidayAction</code> (สิทธิ์ <code>settings.manage_store</code> = owner/admin) มีครบแล้ว — งานนี้แค่จัดให้อยู่ใน ToggleSection ของข้อ 1 ให้ใช้ง่าย</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">5</span>เจ้าของแก้ไขเวลาเข้า-ออกย้อนหลัง <span class="tag t-exist">มีอยู่แล้ว</span></h3>
+    <p><code>addManualAttendanceAction</code> (เพิ่มย้อนหลัง) + <code>adjustAttendanceAction</code> (แก้เวลา) + <code>deleteAttendanceAction</code> (สิทธิ์ <code>attendance.manage</code> = manager+/owner) มีครบ — จัดเข้า ToggleSection + ยืนยันเจ้าของใช้ได้</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">6</span>cashier/staff ออกงานไม่ได้ถ้ายังไม่ปิดรอบเงินสด</h3>
+    <ul>
+      <li>ใน <code>clockOutAction</code>: ถ้า role เป็น <b>cashier/staff</b> และ <code>getOpenCashSession(storeId)</code> มีรอบเปิดอยู่ → block "กรุณาปิดรอบเงินสดก่อนออกงาน"</li>
+      <li>cash session เป็น per-store (1 รอบ/ร้าน) — manager+ ไม่ติด gate นี้</li>
+    </ul>
+    <p><span class="tag t-edit">edit</span> <code>app/(dashboard)/attendance/actions.ts</code> (เรียก <code>getOpenCashSession</code> จาก cashflow)</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">7</span>ซ่อนกำไร/ขาดทุนจากพนักงานต่ำกว่า manager</h3>
+    <ul>
+      <li>หน้า <code>/accounting</code> โชว์การ์ด <b>"กำไร/ขาดทุน" (netCashflow)</b> ให้ทุกคนที่มี <code>cashflow.view</code> (รวม cashier/staff)</li>
+      <li>เพิ่ม prop <code>canViewTotals = can("reports.view")</code> (manager+) → ซ่อนการ์ดสรุป (กำไร/ยอดรวม) สำหรับ cashier/staff; <b>คงฟอร์มบันทึกรายรับ-จ่าย + รอบเงินสด</b></li>
+    </ul>
+    <p><span class="tag t-edit">edit</span> <code>accounting/page.tsx</code> · <code>accounting/AccountingManager.tsx</code></p>
+    <p class="muted">/dashboard + /reports กัน manager+ อยู่แล้ว (ไม่ต้องแก้)</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">8</span>ซ่อน "การจัดการลูกค้า" จากพนักงานต่ำกว่า manager</h3>
+    <ul>
+      <li>เมนู + หน้า <code>/customers</code> ปัจจุบัน gate ด้วย <code>pos.use</code> → cashier/staff เห็นด้วย</li>
+      <li>เปลี่ยน gate เป็น <code>catalog.manage</code> (manager+) ทั้ง nav (<code>layout.tsx</code>) และ redirect ในหน้า (<code>customers/page.tsx</code>)</li>
+      <li><b>ฟีเจอร์ลูกค้าที่ POS</b> (ค้นลูกค้า/สะสมแต้มตอนจ่าย) ยังอยู่ครบ — เป็นคนละ surface (กัน <code>pos.use</code>)</li>
+    </ul>
+    <p><span class="tag t-edit">edit</span> <code>app/(dashboard)/layout.tsx</code> · <code>app/(dashboard)/customers/page.tsx</code></p>
+  </div>
+
+  <h2>Migration</h2>
+  <div class="card">
+    <p><span class="tag t-db">ใหม่</span> <code>supabase/migrations/&lt;ts&gt;_store_working_days.sql</code> — เพิ่ม <code>working_days int[] not null default '{0,1,2,3,4,5,6}'</code> ใน <code>store_hr_settings</code> (additive, ปลอดภัย). ข้ออื่นไม่ต้องแตะ DB</p>
+  </div>
+
+  <h2>ลำดับ + ทดสอบ</h2>
+  <div class="card">
+    <p><span class="pill">Phase A</span> ข้อ 6,7,8 (RBAC/gate — เสี่ยงต่ำ ได้ผลเร็ว) → <span class="pill">Phase B</span> ข้อ 2,3 + migration (ตรรกะ attendance) → <span class="pill">Phase C</span> ข้อ 1,4,5 (UI collapsible)</p>
+    <ul>
+      <li>Unit tests: GPS บังคับเมื่อเปิด, working_days fallback ของปฏิทิน (เสาร์-อาทิตย์นับ), clock-out gate ตาม role+cash session, การมองเห็นการ์ดบัญชี/เมนูลูกค้าตาม role</li>
+      <li>typecheck/lint/vitest + ทดสอบ preview ตาม role (manager vs cashier)</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

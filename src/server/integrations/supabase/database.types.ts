@@ -2193,6 +2193,7 @@ export interface Database {
           late_penalty_max_per_day: number;
           absent_penalty_per_day: number;
           backdated_rights_per_month: number;
+          working_days: number[];
           created_at: string;
           updated_at: string;
         };
@@ -2206,6 +2207,7 @@ export interface Database {
           late_penalty_max_per_day?: number;
           absent_penalty_per_day?: number;
           backdated_rights_per_month?: number;
+          working_days?: number[];
           created_at?: string;
           updated_at?: string;
         };
@@ -2217,6 +2219,7 @@ export interface Database {
           late_penalty_max_per_day?: number;
           absent_penalty_per_day?: number;
           backdated_rights_per_month?: number;
+          working_days?: number[];
           updated_at?: string;
         };
         Relationships: [];

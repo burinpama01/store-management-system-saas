@@ -26,8 +26,10 @@ import {
   addPayrollAdjustment,
   deletePayrollAdjustment,
   getStoreHrSettings,
+  updateStoreWorkingDays,
 } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
+import { getOpenCashSession } from "@/modules/cashflow/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
@@ -56,8 +58,11 @@ async function getAttendanceGpsPolicy(
   if (settingsResult.error) throw new Error(settingsResult.error.userMessage);
 
   const settings = settingsResult.data;
+  // GPS is required only for stores that turned the geofence ON. When ON, a real captured
+  // location is mandatory; if a center/radius is also set, the location must be within it.
+  if (!settings?.geofenceEnabled) return { gpsEnabled: false };
+
   if (
-    !settings?.geofenceEnabled ||
     settings.geofenceCenterLat === undefined ||
     settings.geofenceCenterLng === undefined ||
     settings.geofenceRadiusMeters === undefined
@@ -160,6 +165,13 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     const today = getStoreLocalDate(ctx.storeTimezone, now);
     const active = await getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today);
     if (!active) return { error: "ไม่พบรายการที่รอลงชื่อออก" };
+
+    // Cashier/staff must close the store's open cash session before clocking out.
+    if (ctx.role === "cashier" || ctx.role === "staff") {
+      const openSession = await getOpenCashSession(ctx.storeId);
+      if (openSession.error) return { error: openSession.error.userMessage };
+      if (openSession.data) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
+    }
 
     const gpsPolicy = await getAttendanceGpsPolicy(ctx.storeId, ctx.organizationId);
     const locationAllowed = gpsPolicy.gpsEnabled;
@@ -268,6 +280,25 @@ export async function saveAttendanceSettingsAction(
     if (result.error) return { error: result.error.userMessage };
     revalidatePath("/attendance", "page");
     return { error: null, success: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** Set which weekdays the store is open (0=Sun .. 6=Sat) — drives the attendance calendar default. */
+export async function saveStoreWorkingDaysAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { ctx } = await getStoreContext();
+    const raw = formData.getAll("workingDays").map((v) => Number(String(v)));
+    const workingDays = [...new Set(raw)]
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+      .sort((a, b) => a - b);
+    if (workingDays.length === 0) return { error: "ต้องเลือกวันเปิดทำการอย่างน้อย 1 วัน" };
+    const result = await updateStoreWorkingDays(ctx.storeId, ctx.organizationId, workingDays);
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/attendance", "page");
+    return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
