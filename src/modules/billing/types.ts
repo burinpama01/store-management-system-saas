@@ -21,10 +21,15 @@ export interface BillingState {
 export interface PlanFeatures {
   maxStores: number;
   maxMembers: number;
+  groceryPos: boolean;
+  couponManagement: boolean;
+  loyaltyPoints: boolean;
   buffetManagement: boolean;
   stockManagement: boolean;
   advancedPrinting: boolean;
   qrOrdering: boolean;
+  customerDisplay: boolean;
+  offlinePos: boolean;
   lineNotify: boolean;
   attendanceGps: boolean;
   advancedReports: boolean;
@@ -46,10 +51,15 @@ export const DEFAULT_BILLING_STATE: BillingState = {
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
   maxStores: "จำนวนสาขา",
   maxMembers: "จำนวนสมาชิก",
+  groceryPos: "Grocery POS",
+  couponManagement: "คูปอง",
+  loyaltyPoints: "สะสมแต้ม",
   buffetManagement: "บุฟเฟต์",
   stockManagement: "จัดการสต็อก",
   advancedPrinting: "ปริ้นขั้นสูง",
   qrOrdering: "QR Ordering",
+  customerDisplay: "จอลูกค้า",
+  offlinePos: "Offline POS",
   lineNotify: "LINE Notify",
   attendanceGps: "GPS ลงเวลา",
   advancedReports: "รายงานขั้นสูง",
@@ -70,10 +80,15 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   free: {
     maxStores: 1,
     maxMembers: 1,
+    groceryPos: false,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: false,
     stockManagement: false,
     advancedPrinting: false,
     qrOrdering: false,
+    customerDisplay: false,
+    offlinePos: false,
     lineNotify: false,
     attendanceGps: false,
     advancedReports: false,
@@ -84,10 +99,15 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   starter: {
     maxStores: 1,
     maxMembers: 3,
+    groceryPos: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: false,
     stockManagement: false,
     advancedPrinting: false,
     qrOrdering: false,
+    customerDisplay: false,
+    offlinePos: false,
     lineNotify: false,
     attendanceGps: false,
     advancedReports: false,
@@ -98,10 +118,15 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   standard: {
     maxStores: 3,
     maxMembers: 10,
+    groceryPos: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: false,
+    customerDisplay: false,
+    offlinePos: false,
     lineNotify: false,
     attendanceGps: false,
     advancedReports: true,
@@ -112,10 +137,15 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   premium: {
     maxStores: 5,
     maxMembers: 50,
+    groceryPos: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: true,
+    customerDisplay: false,
+    offlinePos: true,
     lineNotify: true,
     attendanceGps: true,
     advancedReports: true,
@@ -126,10 +156,15 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
   enterprise: {
     maxStores: Infinity,
     maxMembers: Infinity,
+    groceryPos: true,
+    couponManagement: true,
+    loyaltyPoints: true,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: true,
+    customerDisplay: true,
+    offlinePos: true,
     lineNotify: true,
     attendanceGps: true,
     advancedReports: true,

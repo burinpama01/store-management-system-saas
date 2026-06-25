@@ -39,6 +39,9 @@ export interface ReceiptData {
   discountNote?: string;
   total: number;
   payments: ReceiptPayment[];
+  paymentStatus?: "unpaid" | "paid";
+  loyaltyPointsEarned?: number;
+  loyaltyPointsBalance?: number;
   footerText?: string;
   showQrPayment: boolean;
   promptpayId?: string;
@@ -63,6 +66,10 @@ export function buildReceiptData(
   order: Order,
   settings: ReceiptSettings,
 ): ReceiptData {
+  const loyaltyPointsEarned =
+    order.customerId && typeof order.loyaltyPointsEarned === "number" && order.loyaltyPointsEarned > 0
+      ? order.loyaltyPointsEarned
+      : undefined;
   return {
     storeName: settings.storeName,
     address: settings.address,
@@ -94,6 +101,9 @@ export function buildReceiptData(
       receivedAmount: p.receivedAmount,
       changeAmount: p.changeAmount,
     })),
+    paymentStatus: "paid",
+    loyaltyPointsEarned,
+    loyaltyPointsBalance: loyaltyPointsEarned !== undefined ? order.loyaltyPointsBalance : undefined,
     footerText: settings.footerText,
     showQrPayment: settings.showQrPayment,
     promptpayId: settings.promptpayId,

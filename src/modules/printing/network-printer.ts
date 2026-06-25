@@ -23,3 +23,43 @@ export function isAllowedNetworkPrinterHost(ip: string): boolean {
 
   return PRIVATE_LAN_RANGES.some((range) => range.test(ip));
 }
+
+export function normalizeNetworkPrinterEndpoint(input: { host: string; port?: number | null }) {
+  const host = input.host.trim();
+  const port = input.port ?? 9100;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("Invalid port number");
+  }
+  if (!isAllowedNetworkPrinterHost(host)) {
+    throw new Error("Invalid or disallowed IP address");
+  }
+  return { host, port };
+}
+
+export function probeNetworkPrinter(input: {
+  host: string;
+  port: number;
+  timeoutMs?: number;
+}): Promise<{ ok: true; latencyMs: number }> {
+  const startedAt = Date.now();
+  const timeoutMs = input.timeoutMs ?? 1500;
+
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket();
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`Connection timed out (${timeoutMs}ms)`));
+    }, timeoutMs);
+
+    socket.connect(input.port, input.host, () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve({ ok: true, latencyMs: Date.now() - startedAt });
+    });
+
+    socket.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}

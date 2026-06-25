@@ -23,6 +23,27 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("ไม่ใช่ใบเสร็จ");
   });
 
+  it("prints saved tickets as unpaid bills with PromptPay QR and paid receipts without QR blocks", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const printTicketStart = source.indexOf("async function handlePrintTicket()");
+    const printTicketEnd = source.indexOf("function handleConfirmPayment", printTicketStart);
+    const printTicketSource = source.slice(printTicketStart, printTicketEnd);
+    const receiptPanelStart = source.indexOf("function ReceiptPanel(");
+    const receiptPanelEnd = source.indexOf("//", receiptPanelStart + 1);
+    const receiptPanelSource = source.slice(receiptPanelStart, receiptPanelEnd);
+    const historyStart = source.indexOf("async function handlePrintHistoryOrder");
+    const historyEnd = source.indexOf("setPrintStatusMessage", historyStart);
+    const historySource = source.slice(historyStart, historyEnd);
+
+    expect(printTicketSource).toContain('paymentStatus: "unpaid"');
+    expect(printTicketSource).toContain("showQrPayment: settings.showQrPayment");
+    expect(printTicketSource).toContain("promptpayId: settings.promptpayId");
+    expect(receiptPanelSource).toContain('paymentStatus: "paid"');
+    expect(receiptPanelSource).toContain("showQrPayment: false");
+    expect(historySource).toContain('paymentStatus: "paid"');
+    expect(historySource).toContain("showQrPayment: false");
+  });
+
   it("moves the order panel into a full-screen drawer below desktop widths", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
@@ -62,6 +83,36 @@ describe("POS ticket UX guards", () => {
     expect(cartPanelSource).not.toContain("ticketDraft");
     expect(cartPanelSource).not.toContain("filteredSavedTickets");
     expect(cartPanelSource).not.toContain("<BillHistoryPanel");
+  });
+
+  it("shows localized loading states for ticket sync and bill history instead of blank sheet waits", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const ticketPanelStart = source.indexOf("function TicketPanel(");
+    const billHistoryStart = source.indexOf("function BillHistoryPanel(");
+    const ticketPanelSource = source.slice(ticketPanelStart, billHistoryStart);
+    const billHistorySource = source.slice(billHistoryStart, source.indexOf("function CartItemRow", billHistoryStart));
+
+    expect(source).toContain("LocalizedLoading");
+    expect(ticketPanelSource).toContain("isTicketSyncPending &&");
+    expect(ticketPanelSource).toContain("กำลังซิงค์ตั๋ว");
+    expect(billHistorySource).toContain("isPending &&");
+    expect(billHistorySource).toContain("กำลังโหลดประวัติบิล");
+    expect(billHistorySource).toContain("relative");
+  });
+
+  it("blocks ticket panel interactions while ticket sync is pending", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const ticketPanelStart = source.indexOf("function TicketPanel(");
+    const billHistoryStart = source.indexOf("function BillHistoryPanel(");
+    const ticketPanelSource = source.slice(ticketPanelStart, billHistoryStart);
+    const loadHandlerStart = source.indexOf("function handleLoadTicket");
+    const loadHandlerSource = source.slice(loadHandlerStart, source.indexOf("function handleDeleteTicket", loadHandlerStart));
+
+    expect(ticketPanelSource).toContain("<fieldset disabled={isTicketSyncPending}");
+    expect(ticketPanelSource).toContain("aria-disabled={isTicketSyncPending}");
+    expect(loadHandlerSource).toContain("isTicketSyncPending");
+    expect(loadHandlerSource).toContain("กำลังซิงค์ตั๋ว");
+    expect(loadHandlerSource).toContain("return false;");
   });
 
   it("shows full item details for variants, modifier groups, modifier prices, and item notes", () => {
@@ -230,7 +281,7 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("receivedAmount?: number");
     expect(source).toContain("changeAmount?: number");
     expect(confirmSource).toContain("receivedAmount: received");
-    expect(confirmSource).toContain("changeAmount: received !== undefined ? Math.max(0, received - cart.total) : undefined");
+    expect(confirmSource).toContain("changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined");
     expect(receiptPanelSource).toContain("receivedAmount: order.receivedAmount");
     expect(receiptPanelSource).toContain("changeAmount: order.changeAmount");
     expect(receiptPanelSource).toContain("รับเงิน {priceStr(order.receivedAmount)}");
@@ -260,7 +311,7 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("discountPercentage={discountDraft.percentage}");
     expect(source).toContain("discountMode={discountDraft.mode}");
     expect(source).toContain("discountNote={discountDraft.note}");
-    expect(source).toContain("function commitCart(nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {})");
+    expect(source).toContain("const commitCart = useCallback((nextCart: Cart, options: { resetItemDiscountForms?: boolean } = {})");
     expect(source).toContain("setDiscountDraft(discountDraftFromCart(nextCart))");
     expect(loadTicketSource).toContain("commitCart(ticket.cart, { resetItemDiscountForms: true })");
     expect(source).toContain("commitCart(emptyCart(storeId), { resetItemDiscountForms: true })");

@@ -7,6 +7,7 @@ import {
   INITIAL_ACTION_FEEDBACK_STATE,
 } from "./feedback";
 import { NotificationFeedbackDialog } from "./NotificationFeedbackDialog";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   type: NotificationType;
@@ -60,13 +61,14 @@ export function NotificationSettingToggle({
           </span>
         </label>
         {canManage && !settingsLoadFailed && (
-          <button
+          <Button
             type="submit"
-            disabled={pending}
+            loading={pending}
+            loadingText="กำลังบันทึก..."
             className="min-h-11 rounded-md border border-[var(--color-border)] px-3 text-xs font-bold text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] disabled:opacity-40"
           >
-            {pending ? "กำลังบันทึก..." : "บันทึก"}
-          </button>
+            บันทึก
+          </Button>
         )}
       </form>
 

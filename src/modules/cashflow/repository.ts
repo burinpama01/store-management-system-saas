@@ -83,19 +83,26 @@ export async function closeCashSession(
   return { data: data ? mapSession(data) : null, error: null };
 }
 
+function cashIntoDrawer(payment: { amount: number | null; received_amount: number | null; change_amount: number | null }): number {
+  if (payment.received_amount !== null && payment.change_amount !== null) {
+    return payment.received_amount - payment.change_amount;
+  }
+  return payment.amount ?? 0;
+}
+
 /**
- * POS cash collected since a given time (net cash into drawer = payments.amount).
+ * POS cash collected since a given time (net cash into drawer = received - change).
  * Used to preview the expected drawer total while a session is still open.
  */
 export async function getCashSalesSince(storeId: string, since: string): Promise<number> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("payments")
-    .select("amount, orders!inner(store_id)")
+    .select("amount, received_amount, change_amount, orders!inner(store_id)")
     .eq("orders.store_id", storeId)
     .eq("method", "cash")
     .eq("status", "completed")
     .gte("processed_at", since);
   if (error || !data) return 0;
-  return data.reduce((sum, row) => sum + (row.amount ?? 0), 0);
+  return data.reduce((sum, payment) => sum + cashIntoDrawer(payment), 0);
 }

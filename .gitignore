@@ -34,7 +34,10 @@ yarn-error.log*
 *.stderr.log
 *.stdout.log
 .codex-dev*.log
+.codex*.log
 .next-dev-*.log
+.preview-dev.log
+.playwright-cli/
 
 # Vercel
 .vercel

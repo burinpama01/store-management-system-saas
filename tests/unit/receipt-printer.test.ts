@@ -15,7 +15,12 @@ vi.mock("@/modules/printing/print-service", () => ({
 
 import { printReceiptAuto } from "@/modules/printing/print-router";
 import { printService } from "@/modules/printing/print-service";
-import { ReceiptPrintFallbackError, printReceiptWithFallback, selectDefaultPrinter } from "@/modules/printing/receipt-printer";
+import {
+  ReceiptPrintFallbackError,
+  printReceiptWithFallback,
+  selectConfiguredPrinter,
+  selectDefaultPrinter,
+} from "@/modules/printing/receipt-printer";
 
 const receipt: ReceiptData = {
   storeName: "Each Other",
@@ -70,6 +75,26 @@ describe("printReceiptWithFallback", () => {
     expect(printService.print).toHaveBeenCalledWith(defaultPrinter, {
       ...receipt,
       paperWidth: "80mm",
+    });
+    expect(printReceiptAuto).not.toHaveBeenCalled();
+  });
+
+  it("uses a selected preferred printer before the configured default printer", async () => {
+    const defaultPrinter = printer("default-printer", true, "80mm");
+    const selectedPrinter = printer("selected-printer", false, "58mm");
+
+    const result = await printReceiptWithFallback({
+      printers: [defaultPrinter, selectedPrinter],
+      preferredPrinterId: selectedPrinter.id,
+      escpos,
+      browser: receipt,
+    });
+
+    expect(result.channel).toBe("configured");
+    expect(result.printer).toBe(selectedPrinter);
+    expect(printService.print).toHaveBeenCalledWith(selectedPrinter, {
+      ...receipt,
+      paperWidth: "58mm",
     });
     expect(printReceiptAuto).not.toHaveBeenCalled();
   });
@@ -156,5 +181,12 @@ describe("printReceiptWithFallback", () => {
 describe("selectDefaultPrinter", () => {
   it("does not guess a printer when none is marked as default", () => {
     expect(selectDefaultPrinter([printer("first", false), printer("second", false)])).toBeNull();
+  });
+
+  it("prefers an explicitly selected printer over the default printer", () => {
+    const defaultPrinter = printer("default-printer", true);
+    const selectedPrinter = printer("selected-printer", false);
+
+    expect(selectConfiguredPrinter([defaultPrinter, selectedPrinter], selectedPrinter.id)).toBe(selectedPrinter);
   });
 });

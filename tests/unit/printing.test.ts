@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { buildEscPosReceipt, CMD } from "@/modules/printing/escpos";
+import { renderReceiptRaster } from "@/modules/printing/receipt-raster-client";
 import { buildReceiptLines } from "@/modules/printing/receipt-lines";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
 import { bluetoothAdapter } from "@/modules/printing/adapters/bluetooth";
@@ -294,6 +295,54 @@ describe("buildReceiptLines", () => {
     expect(text).toContain("55.00");
   });
 
+  it("shows earned and remaining loyalty points when a paid receipt has customer rewards", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      loyaltyPointsEarned: 12,
+      loyaltyPointsBalance: 240,
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).toContain("แต้มที่ได้รับ");
+    expect(text).toContain("+12");
+    expect(text).toContain("แต้มคงเหลือ");
+    expect(text).toContain("240");
+  });
+
+  it("does not print a loyalty section when no points were earned", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      loyaltyPointsEarned: 0,
+      loyaltyPointsBalance: 240,
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).not.toContain("สะสมแต้ม");
+    expect(text).not.toContain("แต้มที่ได้รับ");
+    expect(text).not.toContain("แต้มคงเหลือ");
+  });
+
+  it("passes paid customer reward points from POS payment results into receipt data", () => {
+    const normalPos = read("src/app/pos/PosTerminal.tsx");
+    const groceryPos = read("src/app/pos/grocery/GroceryPosTerminal.tsx");
+    const escpos = read("src/modules/printing/escpos.ts");
+    const orderRepository = read("src/modules/pos/order-repository.ts");
+    const types = read("src/modules/printing/types.ts");
+
+    expect(types).toContain("loyaltyPointsEarned?: number");
+    expect(types).toContain("loyaltyPointsBalance?: number");
+    expect(escpos).toContain("loyaltyPointsEarned?: number");
+    expect(escpos).toContain("loyaltyPointsBalance?: number");
+    expect(orderRepository).toContain('.from("loyalty_accounts")');
+    expect(orderRepository).toContain("loyaltyPointsBalance");
+    expect(normalPos).toContain("loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned");
+    expect(normalPos).toContain("loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance");
+    expect(groceryPos).toContain("loyaltyPointsEarned: checkoutOrder.loyaltyPointsEarned");
+    expect(groceryPos).toContain("loyaltyPointsBalance: checkoutOrder.loyaltyPointsBalance");
+  });
+
   it("shows item-level discount details on receipt lines", () => {
     const { lines } = buildReceiptLines({
       storeName: "Test Cafe",
@@ -326,6 +375,143 @@ describe("buildReceiptLines", () => {
     expect(text).toContain("ส่วนลดรายการ");
     expect(text).toContain("-3.50");
     expect(text).toContain("สมาชิก");
+  });
+
+  it("adds a locked PromptPay QR block without printing the EMV payload as text", () => {
+    const { lines } = buildReceiptLines({
+      storeName: "Test Cafe",
+      orderNumber: "260622-0001",
+      showTaxId: false,
+      items: [
+        {
+          name: "Latte",
+          modifierNames: [],
+          quantity: 1,
+          unitPrice: 45,
+          totalPrice: 45,
+        },
+      ],
+      subtotal: 45,
+      discount: 0,
+      total: 45,
+      payments: [{ method: "qr_promptpay", amount: 45 }],
+      paymentStatus: "unpaid",
+      showQrPayment: true,
+      promptpayId: "0812345678",
+      paperWidth: "58mm",
+      printedAt: "2026-06-22T00:00:00.000Z",
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+    const qrLine = lines.find((line) => (line as { qrPayload?: string }).qrPayload);
+
+    expect(text).toContain("QR PromptPay");
+    expect(text).toContain("45.00");
+    expect(text).not.toContain("000201");
+    expect(qrLine).toMatchObject({ qrAmount: 45 });
+    expect((qrLine as { qrPayload?: string }).qrPayload).toContain("A000000677010111");
+  });
+
+  it("does not add a PromptPay QR block to paid receipts even when receipt QR is enabled", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      payments: [{ method: "qr_promptpay", amount: 65 }],
+      paymentStatus: "paid",
+      showQrPayment: true,
+      promptpayId: "0812345678",
+    });
+
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).toContain("QR PromptPay");
+    expect(text).not.toContain("QR PromptPay ล็อกยอด");
+    expect(lines.some((line) => Boolean((line as { qrPayload?: string }).qrPayload))).toBe(false);
+  });
+
+  it("wraps a 1000-character receipt footer instead of rendering it as one squeezed line", () => {
+    const { lines, cols } = buildReceiptLines({
+      ...receiptFixture,
+      footerText: "F".repeat(1000),
+    });
+
+    const footerLines = lines.filter((line) => /^F+$/.test(line.text));
+
+    expect(footerLines.length).toBeGreaterThan(20);
+    expect(footerLines.every((line) => line.text.length <= cols)).toBe(true);
+  });
+
+  it("wraps long Thai footer text without starting a line with a combining mark", () => {
+    const thaiFooter = "ขอบคุณที่ใช้บริการ ร้านกาแฟชุมชน ยินดีต้อนรับกลับมาอีกครั้ง ".repeat(25);
+    const { lines, cols } = buildReceiptLines({
+      ...receiptFixture,
+      footerText: thaiFooter,
+    });
+    const div = "-".repeat(cols);
+    const footerStart = lines.map((line) => line.text).lastIndexOf(div);
+    const footerLines = lines.slice(footerStart + 1);
+    const startsWithCombiningMark = (text: string) => /^\p{Mark}/u.test(text);
+    const segmenter =
+      typeof Intl !== "undefined" && "Segmenter" in Intl
+        ? new Intl.Segmenter("th", { granularity: "grapheme" })
+        : null;
+    const graphemeCount = (text: string) =>
+      segmenter ? Array.from(segmenter.segment(text)).length : Array.from(text).length;
+
+    expect(footerLines.length).toBeGreaterThan(20);
+    expect(footerLines.every((line) => graphemeCount(line.text) <= cols)).toBe(true);
+    expect(footerLines.some((line) => startsWithCombiningMark(line.text))).toBe(false);
+  });
+
+  it("keeps Thai combining marks attached when Intl.Segmenter is unavailable", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "Segmenter");
+    Object.defineProperty(Intl, "Segmenter", { value: undefined, configurable: true });
+    try {
+      const thaiFooter = "กำลังชำระเงินแล้ว ขอบคุณค่ะ ".repeat(40);
+      const { lines, cols } = buildReceiptLines({
+        ...receiptFixture,
+        footerText: thaiFooter,
+      });
+      const div = "-".repeat(cols);
+      const footerStart = lines.map((line) => line.text).lastIndexOf(div);
+      const footerLines = lines.slice(footerStart + 1);
+      const startsWithCombiningMark = (text: string) => /^\p{Mark}/u.test(text);
+
+      expect(footerLines.length).toBeGreaterThan(20);
+      expect(footerLines.some((line) => startsWithCombiningMark(line.text))).toBe(false);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(Intl, "Segmenter", descriptor);
+      } else {
+        Reflect.deleteProperty(Intl, "Segmenter");
+      }
+    }
+  });
+
+  it("keeps Thai sara am attached when Intl.Segmenter is unavailable", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "Segmenter");
+    Object.defineProperty(Intl, "Segmenter", { value: undefined, configurable: true });
+    try {
+      const thaiFooter = `${"F".repeat(31)}กำลังชำระเงินแล้ว`;
+      const { lines, cols } = buildReceiptLines({
+        ...receiptFixture,
+        footerText: thaiFooter,
+        paperWidth: "58mm",
+      });
+      const div = "-".repeat(cols);
+      const footerStart = lines.map((line) => line.text).lastIndexOf(div);
+      const footerLines = lines.slice(footerStart + 1);
+      const startsWithDetachedThaiMark = (text: string) => /^[\p{Mark}\u0E33]/u.test(text);
+
+      expect(cols).toBe(32);
+      expect(footerLines.every((line) => line.text.length <= cols)).toBe(true);
+      expect(footerLines.some((line) => startsWithDetachedThaiMark(line.text))).toBe(false);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(Intl, "Segmenter", descriptor);
+      } else {
+        Reflect.deleteProperty(Intl, "Segmenter");
+      }
+    }
   });
 });
 
@@ -438,13 +624,53 @@ describe("printer adapters", () => {
     expect(addEventListener).toHaveBeenCalledWith("afterprint", expect.any(Function));
   });
 
+  it("renders PromptPay QR as an image block in the browser receipt HTML", async () => {
+    const documentWrite = vi.fn();
+    const print = vi.fn();
+    const focus = vi.fn();
+    const close = vi.fn();
+    const addEventListener = vi.fn();
+    const browserReceipt = {
+      ...receiptFixture,
+      payments: [{ method: "qr_promptpay", amount: 65 }],
+      paymentStatus: "unpaid",
+      showQrPayment: true,
+      promptpayId: "0812345678",
+    } satisfies ReceiptData;
+
+    vi.stubGlobal("window", {
+      open: vi.fn(() => ({
+        document: {
+          open: vi.fn(),
+          write: documentWrite,
+          close,
+        },
+        focus,
+        print,
+        addEventListener,
+        close,
+      })),
+    });
+
+    await browserAdapter.print(browserReceipt, printerFixture({ type: "browser" }));
+
+    const html = String(documentWrite.mock.calls[0]?.[0] ?? "");
+
+    expect(html).toContain("QR PromptPay ล็อกยอด");
+    expect(html).toContain("promptpay-qr");
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("000201");
+    expect(print).toHaveBeenCalled();
+  });
+
   it("wires escpos adapter so schema printer type fails closed with clear setup guidance", () => {
     const service = read("src/modules/printing/print-service.ts");
     const adapter = read("src/modules/printing/adapters/escpos.ts");
 
     expect(service).toContain("escposAdapter");
     expect(service).toContain("escpos: escposAdapter");
-    expect(adapter).toContain("/api/print/ip");
+    expect(adapter).toContain("sendNetworkPrintJob");
+    expect(adapter).not.toContain("/api/print/ip");
     expect(adapter).toContain("ESC/POS ต้องเลือกเครื่องพิมพ์จากการตั้งค่าร้าน");
   });
 
@@ -502,6 +728,7 @@ describe("printer adapters", () => {
     expect(ipAdapter).toContain("printJobBase64");
     expect(ipAdapter).toContain("buildReceiptPrinterBytes(data, data)");
     expect(escposAdapter).toContain("printJobBase64");
+    expect(escposAdapter).toContain("buildReceiptPrinterBytes(data, data)");
     expect(route).toContain("printJobBase64");
   });
 
@@ -520,6 +747,196 @@ describe("printer adapters", () => {
     expect(Array.from(repeated.slice(0, single.length))).toEqual(Array.from(single));
     expect(Array.from(repeated.slice(single.length, single.length * 2))).toEqual(Array.from(single));
     expect(Array.from(repeated.slice(single.length * 2))).toEqual(Array.from(single));
+  });
+
+  it("does not fall back to text ESC/POS when PromptPay QR needs raster output", () => {
+    expect(() =>
+      buildReceiptPrinterBytes(
+        receiptFixture,
+        {
+          ...receiptFixture,
+          payments: [{ method: "qr_promptpay", amount: 65 }],
+          paymentStatus: "unpaid",
+          showQrPayment: true,
+          promptpayId: "0812345678",
+        },
+      ),
+    ).toThrow("QR PromptPay");
+  });
+
+  it("renders a PromptPay QR block into ESC/POS raster bytes", () => {
+    type MockCanvas = {
+      width: number;
+      height: number;
+      getContext(type: "2d"): MockCanvasContext;
+    };
+    type MockCanvasContext = {
+      fillStyle: string;
+      textBaseline: string;
+      font: string;
+      textAlign: CanvasTextAlign;
+      fillRect(x: number, y: number, width: number, height: number): void;
+      fillText(text: string, x: number, y: number, maxWidth?: number): void;
+      getImageData(x: number, y: number, width: number, height: number): { data: Uint8ClampedArray };
+    };
+
+    const fillRects: Array<{ x: number; y: number; width: number; height: number; fillStyle: string }> = [];
+    let pixelBuffer = new Uint8ClampedArray();
+    let canvasWidth = 0;
+    let canvasHeight = 0;
+
+    const ensureBuffer = () => {
+      const needed = canvasWidth * canvasHeight * 4;
+      if (pixelBuffer.length !== needed) pixelBuffer = new Uint8ClampedArray(needed);
+    };
+    const paint = (x: number, y: number, width: number, height: number, fillStyle: string) => {
+      ensureBuffer();
+      const black = fillStyle === "#000";
+      for (let yy = Math.max(0, Math.floor(y)); yy < Math.min(canvasHeight, Math.ceil(y + height)); yy += 1) {
+        for (let xx = Math.max(0, Math.floor(x)); xx < Math.min(canvasWidth, Math.ceil(x + width)); xx += 1) {
+          const offset = (yy * canvasWidth + xx) * 4;
+          pixelBuffer[offset] = black ? 0 : 255;
+          pixelBuffer[offset + 1] = black ? 0 : 255;
+          pixelBuffer[offset + 2] = black ? 0 : 255;
+          pixelBuffer[offset + 3] = 255;
+        }
+      }
+    };
+    const ctx: MockCanvasContext = {
+      fillStyle: "#000",
+      textBaseline: "top",
+      font: "",
+      textAlign: "left",
+      fillRect(x, y, width, height) {
+        fillRects.push({ x, y, width, height, fillStyle: this.fillStyle });
+        paint(x, y, width, height, this.fillStyle);
+      },
+      fillText: vi.fn(),
+      getImageData: vi.fn((_x, _y, width, height) => {
+        ensureBuffer();
+        return { data: pixelBuffer.slice(0, width * height * 4) };
+      }),
+    };
+    const canvas: MockCanvas = {
+      get width() {
+        return canvasWidth;
+      },
+      set width(value: number) {
+        canvasWidth = value;
+      },
+      get height() {
+        return canvasHeight;
+      },
+      set height(value: number) {
+        canvasHeight = value;
+      },
+      getContext: vi.fn(() => ctx),
+    };
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => canvas),
+    });
+
+    const job = renderReceiptRaster({
+      ...receiptFixture,
+      payments: [{ method: "qr_promptpay", amount: 65 }],
+      paymentStatus: "unpaid",
+      showQrPayment: true,
+      promptpayId: "0812345678",
+    });
+
+    expect(job).toBeInstanceOf(Uint8Array);
+    const bytes = Array.from(job ?? []);
+    const rasterCommandIndex = bytes.findIndex((byte, index) =>
+      byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30 && bytes[index + 3] === 0,
+    );
+    const qrDots = fillRects.filter((rect) => rect.fillStyle === "#000" && rect.width >= 3 && rect.height >= 3);
+    const storeNameTextCalls = vi.mocked(ctx.fillText).mock.calls.filter(([text]) => text === "Each Other");
+
+    expect(bytes.slice(0, 2)).toEqual([0x1b, 0x40]);
+    expect(rasterCommandIndex).toBeGreaterThanOrEqual(2);
+    expect(bytes.slice(rasterCommandIndex + 8, -7).some((byte) => byte !== 0)).toBe(true);
+    expect(qrDots.length).toBeGreaterThan(50);
+    expect(storeNameTextCalls).toHaveLength(2);
+    expect(Number(storeNameTextCalls[1]?.[1])).toBeCloseTo(Number(storeNameTextCalls[0]?.[1]) + 0.7);
+  });
+
+  it("turns light gray anti-aliased receipt text into black raster dots", () => {
+    type MockCanvas = {
+      width: number;
+      height: number;
+      getContext(type: "2d"): MockCanvasContext;
+    };
+    type MockCanvasContext = {
+      fillStyle: string;
+      textBaseline: string;
+      font: string;
+      textAlign: CanvasTextAlign;
+      fillRect(x: number, y: number, width: number, height: number): void;
+      fillText(text: string, x: number, y: number, maxWidth?: number): void;
+      getImageData(x: number, y: number, width: number, height: number): { data: Uint8ClampedArray };
+    };
+
+    let canvasWidth = 0;
+    let canvasHeight = 0;
+    let pixelBuffer = new Uint8ClampedArray();
+    const ensureBuffer = () => {
+      const needed = canvasWidth * canvasHeight * 4;
+      if (pixelBuffer.length !== needed) pixelBuffer = new Uint8ClampedArray(needed);
+    };
+    const paintPixel = (x: number, y: number, value: number) => {
+      ensureBuffer();
+      const xx = Math.max(0, Math.min(canvasWidth - 1, Math.floor(x)));
+      const yy = Math.max(0, Math.min(canvasHeight - 1, Math.floor(y)));
+      const offset = (yy * canvasWidth + xx) * 4;
+      pixelBuffer[offset] = value;
+      pixelBuffer[offset + 1] = value;
+      pixelBuffer[offset + 2] = value;
+      pixelBuffer[offset + 3] = 255;
+    };
+    const ctx: MockCanvasContext = {
+      fillStyle: "#000",
+      textBaseline: "top",
+      font: "",
+      textAlign: "left",
+      fillRect() {
+        ensureBuffer();
+        pixelBuffer.fill(this.fillStyle === "#000" ? 0 : 255);
+      },
+      fillText: vi.fn((_text, x, y) => {
+        paintPixel(x, y, 190);
+      }),
+      getImageData: vi.fn((_x, _y, width, height) => {
+        ensureBuffer();
+        return { data: pixelBuffer.slice(0, width * height * 4) };
+      }),
+    };
+    const canvas: MockCanvas = {
+      get width() {
+        return canvasWidth;
+      },
+      set width(value: number) {
+        canvasWidth = value;
+      },
+      get height() {
+        return canvasHeight;
+      },
+      set height(value: number) {
+        canvasHeight = value;
+      },
+      getContext: vi.fn(() => ctx),
+    };
+    vi.stubGlobal("document", { createElement: vi.fn(() => canvas) });
+
+    const job = renderReceiptRaster(receiptFixture);
+    const bytes = Array.from(job ?? []);
+    const rasterCommandIndex = bytes.findIndex((byte, index) =>
+      byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30 && bytes[index + 3] === 0,
+    );
+    const rasterPayload = bytes.slice(rasterCommandIndex + 8, -7);
+
+    expect(rasterCommandIndex).toBeGreaterThanOrEqual(2);
+    expect(rasterPayload.some((byte) => byte !== 0)).toBe(true);
+    expect(ctx.fillText).toHaveBeenCalled();
   });
 
   it("does not print to a connected Bluetooth device that does not match the configured printer", async () => {
@@ -589,5 +1006,79 @@ describe("receipt data", () => {
     };
 
     expect(buildReceiptData(order, settings).printCopies).toBe(3);
+  });
+
+  it("uses the post-payment customer loyalty balance from the order receipt payload", () => {
+    const order: Order = {
+      id: "order-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      orderNumber: "260620-0001",
+      status: "paid",
+      cashierId: "cashier-1",
+      customerId: "customer-1",
+      loyaltyPointsEarned: 12,
+      loyaltyPointsBalance: 240,
+      items: [],
+      subtotal: 1200,
+      discount: 0,
+      total: 1200,
+      payments: [],
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      paidAt: "2026-06-20T00:00:00.000Z",
+    };
+    const settings: ReceiptSettings = {
+      id: "settings-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      storeName: "Each Other",
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printCopies: 1,
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    };
+
+    expect(buildReceiptData(order, settings)).toMatchObject({
+      loyaltyPointsEarned: 12,
+      loyaltyPointsBalance: 240,
+    });
+  });
+
+  it("omits zero earned points from generated receipt data", () => {
+    const order: Order = {
+      id: "order-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      orderNumber: "260620-0001",
+      status: "paid",
+      cashierId: "cashier-1",
+      customerId: "customer-1",
+      loyaltyPointsEarned: 0,
+      loyaltyPointsBalance: 240,
+      items: [],
+      subtotal: 50,
+      discount: 0,
+      total: 50,
+      payments: [],
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      paidAt: "2026-06-20T00:00:00.000Z",
+    };
+    const settings: ReceiptSettings = {
+      id: "settings-1",
+      storeId: "store-1",
+      organizationId: "org-1",
+      storeName: "Each Other",
+      showTaxId: false,
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printCopies: 1,
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    };
+
+    expect(buildReceiptData(order, settings).loyaltyPointsEarned).toBeUndefined();
+    expect(buildReceiptData(order, settings).loyaltyPointsBalance).toBeUndefined();
   });
 });

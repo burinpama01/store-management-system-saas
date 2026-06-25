@@ -102,16 +102,38 @@ export async function submitQrOrderAction(
   const productIds = [...new Set(items.map((i) => i.productId))];
   const { data: productRows, error: productsErr } = await supabase
     .from("products")
-    .select("id, store_id, name, base_price, is_active, available_for_qr")
+    .select("id, store_id, name, base_price, is_active, available_for_qr, kitchen_station_id")
     .in("id", productIds);
   if (productsErr) return { orderId: null, orderNumber: null, error: "Failed to verify menu items" };
 
   const productMap = new Map((productRows ?? []).map((p) => [p.id, p]));
+  const kitchenStationIds = [
+    ...new Set((productRows ?? []).map((p) => p.kitchen_station_id).filter((id): id is string => Boolean(id))),
+  ];
+  const { data: activeStationRows, error: stationsErr } = kitchenStationIds.length > 0
+    ? await supabase
+        .from("kitchen_stations")
+        .select("id")
+        .eq("store_id", storeId)
+        .eq("is_active", true)
+        .in("id", kitchenStationIds)
+    : { data: [], error: null };
+  if (stationsErr) {
+    return { orderId: null, orderNumber: null, error: "Failed to verify menu items" };
+  }
+  const activeKitchenStationIds = new Set((activeStationRows ?? []).map((station) => station.id));
   for (const id of productIds) {
     const p = productMap.get(id);
     if (!p || p.store_id !== storeId) return { orderId: null, orderNumber: null, error: "Menu item not found" };
     if (!p.is_active || !p.available_for_qr) {
       return { orderId: null, orderNumber: null, error: "Menu item is not available" };
+    }
+    if (!p.kitchen_station_id || !activeKitchenStationIds.has(p.kitchen_station_id)) {
+      return {
+        orderId: null,
+        orderNumber: null,
+        error: "QR menu item must be assigned to a kitchen station",
+      };
     }
   }
 
@@ -387,7 +409,7 @@ export async function getTableOrdersAction(
 
   const { data: itemRows } = await supabase
     .from("order_items")
-    .select("id, order_id, product_name, variant_name, modifiers, quantity, unit_price, total_price, note")
+    .select("id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note")
     .in("order_id", rows.map((r) => r.id));
 
   const itemsByOrder = new Map<string, QrOrderView["items"]>();
@@ -397,6 +419,8 @@ export async function getTableOrdersAction(
       id: it.id,
       productName: it.product_name,
       variantName: it.variant_name ?? undefined,
+      kitchenStationId: it.kitchen_station_id ?? undefined,
+      kitchenStationName: it.kitchen_station_name ?? undefined,
       modifiers: (it.modifiers as unknown as SelectedModifier[]) ?? [],
       quantity: it.quantity,
       unitPrice: it.unit_price,

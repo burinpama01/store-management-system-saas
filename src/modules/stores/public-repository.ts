@@ -13,7 +13,7 @@ type VariantRow = Database["public"]["Tables"]["product_variants"]["Row"];
 type ModGroupRow = Database["public"]["Tables"]["modifier_groups"]["Row"];
 type ModOptionRow = Database["public"]["Tables"]["modifier_options"]["Row"];
 
-function mapStore(row: StoreRow): Store {
+export function mapStore(row: StoreRow): Store {
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -133,6 +133,7 @@ function mapProduct(
     isActive: row.is_active,
     availableForPos: row.available_for_pos,
     availableForQr: row.available_for_qr,
+    kitchenStationId: row.kitchen_station_id ?? undefined,
     sortOrder: row.sort_order,
     variants: variants
       .filter((v) => v.product_id === row.id)
@@ -147,15 +148,16 @@ function mapProduct(
   };
 }
 
-export async function getStoreBySlug(slug: string) {
+export async function getStoreBySlug(slug: string, options: { requireQrOrdering?: boolean } = {}) {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("stores")
     .select("*")
     .eq("slug", slug)
-    .eq("is_active", true)
-    .eq("qr_ordering_enabled", true)
-    .single();
+    .eq("is_active", true);
+  if (options.requireQrOrdering ?? true) query = query.eq("qr_ordering_enabled", true);
+
+  const { data, error } = await query.single();
   if (error) return { data: null, error: mapError(error) };
   return { data: mapStore(data), error: null };
 }
@@ -189,7 +191,14 @@ export async function listPublicMenu(storeId: string) {
 
   const [categoriesRes, productsRes] = await Promise.all([
     supabase.from("categories").select("*").eq("store_id", storeId).eq("is_active", true).order("sort_order"),
-    supabase.from("products").select("*").eq("store_id", storeId).eq("is_active", true).eq("available_for_qr", true).order("sort_order"),
+    supabase
+      .from("products")
+      .select("*")
+      .eq("store_id", storeId)
+      .eq("is_active", true)
+      .eq("available_for_qr", true)
+      .not("kitchen_station_id", "is", null)
+      .order("sort_order"),
   ]);
 
   if (categoriesRes.error) return { data: null, error: mapError(categoriesRes.error) };
@@ -202,7 +211,31 @@ export async function listPublicMenu(storeId: string) {
     return { data: { categories, products: [] as Product[] }, error: null };
   }
 
-  const productIds = productRows.map((p) => p.id);
+  const kitchenStationIds = [
+    ...new Set(productRows.map((p) => p.kitchen_station_id).filter((id): id is string => Boolean(id))),
+  ];
+  const stationsRes = kitchenStationIds.length > 0
+    ? await supabase
+        .from("kitchen_stations")
+        .select("id")
+        .eq("store_id", storeId)
+        .eq("is_active", true)
+        .in("id", kitchenStationIds)
+    : { data: [], error: null };
+  if (stationsRes.error) return { data: null, error: mapError(stationsRes.error) };
+
+  const activeKitchenStationIds = new Set((stationsRes.data ?? []).map((station) => station.id));
+  const routableProductRows = productRows.filter(
+    (product) =>
+      product.kitchen_station_id !== null &&
+      activeKitchenStationIds.has(product.kitchen_station_id),
+  );
+
+  if (routableProductRows.length === 0) {
+    return { data: { categories, products: [] as Product[] }, error: null };
+  }
+
+  const productIds = routableProductRows.map((p) => p.id);
 
   const [variantsRes, groupsRes] = await Promise.all([
     supabase.from("product_variants").select("*").in("product_id", productIds).eq("is_active", true),
@@ -220,7 +253,7 @@ export async function listPublicMenu(storeId: string) {
 
   if (optionsRes.error) return { data: null, error: mapError(optionsRes.error) };
 
-  const products = productRows.map((row) =>
+  const products = routableProductRows.map((row) =>
     mapProduct(row, variantsRes.data ?? [], groupsRes.data ?? [], optionsRes.data ?? []),
   );
 

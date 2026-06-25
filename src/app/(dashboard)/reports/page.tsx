@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
-import { getReportData } from "@/modules/reports/repository";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
+import { getBranchReportData, getReportData } from "@/modules/reports/repository";
 import { ReportsManager } from "./ReportsManager";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +34,24 @@ export default async function ReportsPage({
     dateTo = new Date(Date.parse(dateFrom) + MAX_DAYS * MS_PER_DAY).toISOString().split("T")[0];
   }
 
-  const reportData = await getReportData(ctx.storeId, dateFrom, dateTo);
+  const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+  const branchReportingEnabled = canUseFeature(billingState, "multiBranchReporting");
+  const branchReportingUnavailableMessage = branchReportingEnabled
+    ? null
+    : explainFeatureLock(billingState, "multiBranchReporting");
+  const [reportData, branchSummaries] = await Promise.all([
+    getReportData(ctx.storeId, dateFrom, dateTo),
+    branchReportingEnabled
+      ? getBranchReportData(ctx.organizationId, dateFrom, dateTo)
+      : Promise.resolve([]),
+  ]);
 
   return (
     <ReportsManager
       reportData={reportData}
+      branchSummaries={branchSummaries}
+      branchReportingEnabled={branchReportingEnabled}
+      branchReportingUnavailableMessage={branchReportingUnavailableMessage}
       dateFrom={dateFrom}
       dateTo={dateTo}
     />

@@ -39,6 +39,8 @@ export interface CartItem {
   discountValue?: number;
   discountNote?: string;
   note?: string;
+  /** Set when this line is a redeemed product reward (priced ฿0, validated server-side via the voucher). */
+  rewardVoucherCode?: string;
 }
 
 export type DiscountType = "amount" | "percentage";
@@ -80,6 +82,12 @@ export interface Order {
   tableNumber?: string;
   buffetSessionId?: string;
   cashierId: string;
+  customerId?: string;
+  couponId?: string;
+  couponDiscountAmount?: number;
+  loyaltyPointsEarned?: number;
+  loyaltyPointsRedeemed?: number;
+  loyaltyPointsBalance?: number;
   items: OrderItem[];
   subtotal: number;
   discount: number;

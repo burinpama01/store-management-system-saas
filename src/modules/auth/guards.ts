@@ -11,7 +11,7 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock, type FeatureKey } from "@/modules/billing/types";
 import { isOrganizationSuspended } from "@/modules/system/repository";
-import { isPaidTier, isSubscriptionCurrent } from "@/modules/billing/pricing";
+import { hasBillingAccess } from "@/modules/billing/pricing";
 import { headers } from "next/headers";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 
@@ -93,8 +93,7 @@ export async function getOptionalResolvedCurrentPermissions(): Promise<{
       path.startsWith("/api/");
     if (!exempt) {
       const state = await getOrganizationBillingState(ctx.organizationId);
-      const active =
-        !!state && isPaidTier(state.plan) && isSubscriptionCurrent(state.currentPeriodEnd);
+      const active = !!state && hasBillingAccess(state);
       if (!active) redirect("/settings/billing?expired=1");
     }
   }

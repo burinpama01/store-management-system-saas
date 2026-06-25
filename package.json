@@ -1,12 +1,15 @@
 {
   "name": "store-management-saas",
-  "version": "0.16.0",
+  "version": "0.29.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "print:bridge": "node scripts/print-bridge.mjs",
+    "print:hub": "node scripts/print-hub.mjs",
+    "build:print-hub-zip": "node scripts/build-print-hub-zip.mjs",
     "risk:check": "node scripts/risk-readiness.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

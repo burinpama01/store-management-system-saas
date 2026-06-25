@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getResolvedCurrentPermissions, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
+  createAccountingCategory,
   createTransaction,
   deleteTransaction,
   getTransaction,
@@ -27,6 +28,62 @@ async function getStoreContext() {
 
 function revalidate() {
   revalidatePath("/accounting", "page");
+}
+
+export async function createAccountingCategoryAction(
+  _prev: { error: string | null },
+  formData: FormData,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("cashflow.manage");
+    const { ctx } = await getStoreContext();
+
+    const type = formData.get("categoryType") as "income" | "expense" | null;
+    const categoryName = (formData.get("categoryName") as string | null)?.trim() ?? "";
+
+    if (!type || !["income", "expense"].includes(type))
+      return { error: "ประเภทหมวดหมู่ไม่ถูกต้อง" };
+    if (!categoryName) return { error: "กรุณากรอกชื่อหมวดหมู่" };
+    if (categoryName.length > 60) return { error: "ชื่อหมวดหมู่ยาวเกิน 60 ตัวอักษร" };
+
+    const catsRes = await listAccountingCategories(ctx.storeId);
+    if (catsRes.error) return { error: catsRes.error.userMessage };
+    const existingCategories = catsRes.data ?? [];
+    const normalizedName = categoryName.toLowerCase();
+    if (
+      existingCategories.some(
+        (category) =>
+          category.type === type && category.name.trim().toLowerCase() === normalizedName,
+      )
+    ) {
+      return { error: "มีหมวดหมู่นี้แล้ว" };
+    }
+
+    const sortOrder =
+      Math.max(
+        0,
+        ...existingCategories
+          .filter((category) => category.type === type)
+          .map((category) => category.sortOrder),
+      ) + 1;
+
+    const result = await createAccountingCategory({
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      name: categoryName,
+      type,
+      sortOrder,
+    });
+    if (result.error) {
+      if (result.error.code === "23505") return { error: "มีหมวดหมู่นี้แล้ว" };
+      return { error: result.error.userMessage };
+    }
+
+    revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
 }
 
 export async function createTransactionAction(

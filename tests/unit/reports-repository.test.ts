@@ -71,15 +71,23 @@ function mockDashboardClient({
   summaryResult = { data: [{ order_count: 0, revenue: 0, avg_order_value: 0, qr_order_count: 0, pos_order_count: 0 }], error: null },
   paidOrdersResult = { data: [], error: null },
   pendingCountResult = { data: null, error: null, count: 0 },
+  paymentsResult = { data: [], error: null },
   orderItemsResult = { data: [], error: null },
 }: {
   summaryResult?: { data?: unknown; error?: unknown };
   paidOrdersResult?: { data?: unknown; error?: unknown };
   pendingCountResult?: { data?: unknown; error?: unknown; count?: number | null };
+  paymentsResult?: { data?: unknown; error?: unknown };
   orderItemsResult?: { data?: unknown; error?: unknown };
 }) {
   const paidOrdersQuery = chainResult(paidOrdersResult, ["lt"]);
   const pendingCountQuery = chainResult(pendingCountResult, ["in"]);
+  const paymentsQuery: Record<string, ReturnType<typeof vi.fn>> = {};
+  paymentsQuery.select = vi.fn(() => paymentsQuery);
+  paymentsQuery.in = vi.fn(() => paymentsQuery);
+  paymentsQuery.eq = vi.fn(() =>
+    paymentsQuery.eq.mock.calls.length >= 2 ? Promise.resolve(paymentsResult) : paymentsQuery,
+  );
   const orderItemsQuery = chainResult(orderItemsResult, ["eq"]);
   let ordersQueryCount = 0;
   const client = {
@@ -89,6 +97,9 @@ function mockDashboardClient({
         ordersQueryCount += 1;
         return ordersQueryCount === 1 ? paidOrdersQuery : pendingCountQuery;
       }
+      if (table === "payments") {
+        return paymentsQuery;
+      }
       if (table === "order_items") {
         return orderItemsQuery;
       }
@@ -97,7 +108,7 @@ function mockDashboardClient({
   };
 
   mockSupabaseClient(client);
-  return { client, paidOrdersQuery, pendingCountQuery, orderItemsQuery };
+  return { client, paidOrdersQuery, pendingCountQuery, paymentsQuery, orderItemsQuery };
 }
 
 describe("reports repository dashboard behavior", () => {
@@ -108,7 +119,7 @@ describe("reports repository dashboard behavior", () => {
 
   it("computes dashboard sales from paid orders when the sales summary RPC fails", async () => {
     vi.resetModules();
-    const { paidOrdersQuery } = mockDashboardClient({
+    const { paidOrdersQuery, paymentsQuery } = mockDashboardClient({
       summaryResult: { data: null, error: { message: "missing function" } },
       paidOrdersResult: {
         data: [
@@ -118,6 +129,13 @@ describe("reports repository dashboard behavior", () => {
         error: null,
       },
       pendingCountResult: { data: null, error: null, count: 3 },
+      paymentsResult: {
+        data: [
+          { method: "cash", amount: "10.25" },
+          { method: "qr_promptpay", amount: 21.5 },
+        ],
+        error: null,
+      },
       orderItemsResult: {
         data: [{ product_id: "p-1", product_name: "Latte", quantity: 2, total_price: 31.75 }],
         error: null,
@@ -128,6 +146,7 @@ describe("reports repository dashboard behavior", () => {
     const dashboard = await getDashboardData("store-1");
 
     expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source");
+    expect(paymentsQuery.select).toHaveBeenCalledWith("method, amount, orders!inner(store_id)");
     expect(dashboard.todaySales).toMatchObject({
       orderCount: 2,
       revenue: 31.75,
@@ -138,6 +157,10 @@ describe("reports repository dashboard behavior", () => {
     expect(dashboard.pendingOrderCount).toBe(3);
     expect(dashboard.topProductsToday).toEqual([
       { productId: "p-1", productName: "Latte", quantitySold: 2, revenue: 31.75 },
+    ]);
+    expect(dashboard.paymentMethodsToday).toEqual([
+      { method: "qr_promptpay", count: 1, totalAmount: 21.5 },
+      { method: "cash", count: 1, totalAmount: 10.25 },
     ]);
   });
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { printReceiptAuto, CHANNEL_LABELS } from "@/modules/printing/print-router";
 import type { ReceiptData } from "@/modules/printing/types";
+import type { Printer } from "@/modules/stores/types";
 
 const SAMPLE_ITEMS = [
   { name: "กาแฟดำ", quantity: 1, unitPrice: 45, totalPrice: 45, modifierNames: [] as string[] },
@@ -15,10 +16,12 @@ export function ReceiptTests({
   promptpayConfigured,
   storeName,
   paperWidth,
+  printers = [],
 }: {
   promptpayConfigured: boolean;
   storeName: string;
   paperWidth: "58mm" | "80mm";
+  printers?: Printer[];
 }) {
   const [results, setResults] = useState<Record<Key, { ok: boolean; message: string } | null>>({
     receipt: null,
@@ -86,6 +89,10 @@ export function ReceiptTests({
     if (nav?.usb) caps.push("USB");
     if (nav?.bluetooth) caps.push("Bluetooth");
     if (nav?.serial) caps.push("Serial");
+    const networkPrinters = printers.filter((printer) =>
+      (printer.type === "ip" || printer.type === "escpos") && printer.ipAddress,
+    );
+    if (networkPrinters.length > 0) caps.push(`IP/WiFi (${networkPrinters.length})`);
     caps.push("Browser");
     set("printer", true, `ช่องทางที่เบราว์เซอร์รองรับ: ${caps.join(", ")}`);
   }

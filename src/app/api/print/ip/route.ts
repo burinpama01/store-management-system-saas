@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import net from "net";
 import { AuthorizationError, getOptionalResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { buildEscPosReceipt } from "@/modules/printing/escpos";
+import { buildReceiptPromptPayQr } from "@/modules/printing/receipt-qr";
 import { isAllowedNetworkPrinterHost } from "@/modules/printing/network-printer";
 import { getPrinter } from "@/modules/stores/repository";
 import type { ReceiptData } from "@/modules/printing/types";
@@ -51,6 +52,10 @@ function decodePrintJobBase64(printJobBase64: unknown): { bytes?: Uint8Array; er
   return { bytes };
 }
 
+function needsClientRasterPrintJob(receiptData: ReceiptData): boolean {
+  return Boolean(buildReceiptPromptPayQr(receiptData));
+}
+
 export async function POST(req: NextRequest) {
   let authz: Awaited<ReturnType<typeof getOptionalResolvedCurrentPermissions>>;
   try {
@@ -64,7 +69,9 @@ export async function POST(req: NextRequest) {
 
   if (!authz) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { ctx, resolved } = authz;
-  if (!resolved.can("pos.use")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!resolved.can("pos.use") && !resolved.can("settings.manage_printer")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   let body: { receiptData: ReceiptData; printerId: string; printJobBase64?: string };
   try {
@@ -110,6 +117,12 @@ export async function POST(req: NextRequest) {
   const decodedPrintJob = decodePrintJobBase64(printJobBase64);
   if (decodedPrintJob.error) {
     return NextResponse.json({ error: decodedPrintJob.error }, { status: 400 });
+  }
+  if (!decodedPrintJob.bytes && needsClientRasterPrintJob(receiptData)) {
+    return NextResponse.json(
+      { error: "QR PromptPay ต้องใช้ printJobBase64 แบบ raster จาก browser ก่อนส่งไปเครื่องพิมพ์ IP" },
+      { status: 400 },
+    );
   }
 
   const bytes = decodedPrintJob.bytes ?? buildEscPosReceipt({

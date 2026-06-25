@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
+import { Button } from "@/shared/components/ui";
 
 export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
@@ -78,13 +79,15 @@ export default function ResetPasswordPage() {
               className="form-input disabled:opacity-50"
             />
           </div>
-          <button
+          <Button
             type="submit"
-            disabled={isPending}
-            className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
+            variant="primary"
+            loading={isPending}
+            loadingText="กำลังส่ง..."
+            className="w-full disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPending ? "กำลังส่ง..." : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
-          </button>
+            ส่งลิงก์รีเซ็ตรหัสผ่าน
+          </Button>
           <div className="text-center">
             <Link href="/login" className="text-sm font-bold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]">
               กลับไปเข้าสู่ระบบ

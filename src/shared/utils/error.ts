@@ -17,16 +17,35 @@ const ERROR_MAP: Record<string, string> = {
   auth_weak_password: "Password is too weak. Use at least 8 characters.",
 };
 
-export function mapError(err: unknown): AppError {
+function getErrorFields(err: unknown): { code: string; message: string } | null {
   if (err instanceof Error) {
     const anyErr = err as unknown as Record<string, unknown>;
-    // Supabase auth errors and Postgres errors both surface their semantic code in `err.code`
-    const code = (anyErr["code"] as string | undefined) ?? "unknown";
+    return {
+      code: (anyErr["code"] as string | undefined) ?? "unknown",
+      message: err.message,
+    };
+  }
+
+  if (err && typeof err === "object") {
+    const anyErr = err as Record<string, unknown>;
+    const code = typeof anyErr["code"] === "string" ? anyErr["code"] : "unknown";
+    const message =
+      typeof anyErr["message"] === "string" ? anyErr["message"] : String(err);
+    return { code, message };
+  }
+
+  return null;
+}
+
+export function mapError(err: unknown): AppError {
+  const fields = getErrorFields(err);
+  if (fields) {
+    const { code, message } = fields;
     const userMessage =
       ERROR_MAP[code] ??
-      (err.message || "An unexpected error occurred. Please try again.");
+      (message || "An unexpected error occurred. Please try again.");
 
-    return { code, message: err.message, userMessage };
+    return { code, message, userMessage };
   }
 
   return {

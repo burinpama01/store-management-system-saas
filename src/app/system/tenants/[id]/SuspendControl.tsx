@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ConfirmDialog } from "@/shared/components/ui";
+import { ConfirmDialog, Button } from "@/shared/components/ui";
 import { setTenantSuspensionAction } from "./actions";
 
 export function SuspendControl({
@@ -61,14 +61,15 @@ export function SuspendControl({
 
       {error && <p className="alert-danger mt-3">{error}</p>}
 
-      <button
-        type="button"
+      <Button
+        variant={suspended ? "primary" : "secondary"}
         onClick={() => setConfirmOpen(true)}
-        disabled={isPending}
-        className={`mt-4 ${suspended ? "btn-primary" : "btn-secondary"} disabled:opacity-40`}
+        loading={isPending}
+        loadingText="กำลังดำเนินการ..."
+        className="mt-4 disabled:opacity-40"
       >
-        {isPending ? "กำลังดำเนินการ..." : suspended ? "ปลดระงับ tenant" : "ระงับ tenant"}
-      </button>
+        {suspended ? "ปลดระงับ tenant" : "ระงับ tenant"}
+      </Button>
 
       <ConfirmDialog
         open={confirmOpen}

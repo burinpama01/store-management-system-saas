@@ -432,6 +432,8 @@ export interface Database {
           theme_primary_strong_color: string;
           theme_primary_soft_color: string;
           theme_accent_color: string;
+          print_hub_token_hash: string | null;
+          print_hub_last_seen: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -455,6 +457,8 @@ export interface Database {
           theme_primary_strong_color?: string;
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
+          print_hub_token_hash?: string | null;
+          print_hub_last_seen?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -478,8 +482,58 @@ export interface Database {
           theme_primary_strong_color?: string;
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
+          print_hub_token_hash?: string | null;
+          print_hub_last_seen?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      print_jobs: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          printer_id: string | null;
+          target_host: string;
+          target_port: number;
+          payload_b64: string;
+          status: "pending" | "claimed" | "printed" | "failed";
+          attempts: number;
+          error: string | null;
+          claimed_at: string | null;
+          printed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          printer_id?: string | null;
+          target_host: string;
+          target_port?: number;
+          payload_b64: string;
+          status?: "pending" | "claimed" | "printed" | "failed";
+          attempts?: number;
+          error?: string | null;
+          claimed_at?: string | null;
+          printed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          printer_id?: string | null;
+          target_host?: string;
+          target_port?: number;
+          payload_b64?: string;
+          status?: "pending" | "claimed" | "printed" | "failed";
+          attempts?: number;
+          error?: string | null;
+          claimed_at?: string | null;
+          printed_at?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -628,14 +682,50 @@ export interface Database {
         };
         Relationships: [];
       };
+      catalog_barcodes: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          normalized_barcode: string;
+          product_id: string | null;
+          variant_id: string | null;
+          source: "product" | "variant";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          normalized_barcode: string;
+          product_id?: string | null;
+          variant_id?: string | null;
+          source: "product" | "variant";
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          normalized_barcode?: string;
+          product_id?: string | null;
+          variant_id?: string | null;
+          source?: "product" | "variant";
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       products: {
         Row: {
           id: string;
           organization_id: string;
           store_id: string;
           category_id: string;
+          menu_link_id: string | null;
+          kitchen_station_id: string | null;
           name: string;
           description: string | null;
+          barcode: string | null;
           image_url: string | null;
           base_price: number;
           is_active: boolean;
@@ -650,8 +740,11 @@ export interface Database {
           organization_id: string;
           store_id: string;
           category_id: string;
+          menu_link_id?: string | null;
+          kitchen_station_id?: string | null;
           name: string;
           description?: string | null;
+          barcode?: string | null;
           image_url?: string | null;
           base_price?: number;
           is_active?: boolean;
@@ -666,8 +759,11 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           category_id?: string;
+          menu_link_id?: string | null;
+          kitchen_station_id?: string | null;
           name?: string;
           description?: string | null;
+          barcode?: string | null;
           image_url?: string | null;
           base_price?: number;
           is_active?: boolean;
@@ -676,6 +772,69 @@ export interface Database {
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      kitchen_stations: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          description: string | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          description?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          description?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      kitchen_station_staff: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          kitchen_station_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          kitchen_station_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          kitchen_station_id?: string;
+          user_id?: string;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -785,7 +944,9 @@ export interface Database {
         Row: {
           id: string;
           product_id: string;
+          store_id: string;
           name: string;
+          barcode: string | null;
           price_adjustment: number;
           sku: string | null;
           stock_quantity: number | null;
@@ -796,7 +957,9 @@ export interface Database {
         Insert: {
           id?: string;
           product_id: string;
+          store_id?: string;
           name: string;
+          barcode?: string | null;
           price_adjustment?: number;
           sku?: string | null;
           stock_quantity?: number | null;
@@ -807,7 +970,9 @@ export interface Database {
         Update: {
           id?: string;
           product_id?: string;
+          store_id?: string;
           name?: string;
+          barcode?: string | null;
           price_adjustment?: number;
           sku?: string | null;
           stock_quantity?: number | null;
@@ -985,6 +1150,600 @@ export interface Database {
         };
         Relationships: [];
       };
+      pos_devices: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          device_key: string;
+          label: string | null;
+          last_seen_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          device_key: string;
+          label?: string | null;
+          last_seen_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          device_key?: string;
+          label?: string | null;
+          last_seen_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      pos_sync_operations: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          device_id: string;
+          operation_type: "create_order";
+          status: "pending" | "processing" | "succeeded" | "failed" | "conflict";
+          idempotency_key: string;
+          catalog_version: string;
+          payload: Json;
+          result_order_id: string | null;
+          error_message: string | null;
+          attempt_count: number;
+          last_attempt_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          device_id: string;
+          operation_type: "create_order";
+          status?: "pending" | "processing" | "succeeded" | "failed" | "conflict";
+          idempotency_key: string;
+          catalog_version: string;
+          payload?: Json;
+          result_order_id?: string | null;
+          error_message?: string | null;
+          attempt_count?: number;
+          last_attempt_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          device_id?: string;
+          operation_type?: "create_order";
+          status?: "pending" | "processing" | "succeeded" | "failed" | "conflict";
+          idempotency_key?: string;
+          catalog_version?: string;
+          payload?: Json;
+          result_order_id?: string | null;
+          error_message?: string | null;
+          attempt_count?: number;
+          last_attempt_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      customers: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          phone: string | null;
+          email: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          phone?: string | null;
+          email?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          phone?: string | null;
+          email?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      customer_member_portal_links: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          token: string;
+          label: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          token: string;
+          label?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          token?: string;
+          label?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      customer_member_otps: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          portal_link_id: string;
+          customer_id: string | null;
+          purpose: "register" | "login";
+          phone: string;
+          email: string | null;
+          name: string | null;
+          code_hash: string;
+          attempts: number;
+          expires_at: string;
+          consumed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          portal_link_id: string;
+          customer_id?: string | null;
+          purpose: "register" | "login";
+          phone: string;
+          email?: string | null;
+          name?: string | null;
+          code_hash: string;
+          attempts?: number;
+          expires_at: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          portal_link_id?: string;
+          customer_id?: string | null;
+          purpose?: "register" | "login";
+          phone?: string;
+          email?: string | null;
+          name?: string | null;
+          code_hash?: string;
+          attempts?: number;
+          expires_at?: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      customer_member_sessions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          customer_id: string;
+          session_token_hash: string;
+          expires_at: string;
+          created_at: string;
+          last_seen_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          customer_id: string;
+          session_token_hash: string;
+          expires_at: string;
+          created_at?: string;
+          last_seen_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          customer_id?: string;
+          session_token_hash?: string;
+          expires_at?: string;
+          created_at?: string;
+          last_seen_at?: string;
+        };
+        Relationships: [];
+      };
+      coupons: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          code: string;
+          normalized_code: string;
+          name: string;
+          discount_type: "amount" | "percentage";
+          discount_value: number;
+          min_subtotal: number;
+          starts_at: string | null;
+          ends_at: string | null;
+          max_redemptions: number | null;
+          max_redemptions_per_customer: number | null;
+          customer_ids: string[];
+          stackable_with_manual_discount: boolean;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          code: string;
+          normalized_code?: string;
+          name: string;
+          discount_type: "amount" | "percentage";
+          discount_value: number;
+          min_subtotal?: number;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          max_redemptions?: number | null;
+          max_redemptions_per_customer?: number | null;
+          customer_ids?: string[];
+          stackable_with_manual_discount?: boolean;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          code?: string;
+          normalized_code?: string;
+          name?: string;
+          discount_type?: "amount" | "percentage";
+          discount_value?: number;
+          min_subtotal?: number;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          max_redemptions?: number | null;
+          max_redemptions_per_customer?: number | null;
+          customer_ids?: string[];
+          stackable_with_manual_discount?: boolean;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      coupon_redemptions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          coupon_id: string;
+          customer_id: string | null;
+          order_id: string;
+          discount_amount: number;
+          idempotency_key: string;
+          voided_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          coupon_id: string;
+          customer_id?: string | null;
+          order_id: string;
+          discount_amount: number;
+          idempotency_key: string;
+          voided_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          coupon_id?: string;
+          customer_id?: string | null;
+          order_id?: string;
+          discount_amount?: number;
+          idempotency_key?: string;
+          voided_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      loyalty_accounts: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          customer_id: string;
+          points_balance: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          customer_id: string;
+          points_balance?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          customer_id?: string;
+          points_balance?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      loyalty_rewards: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          description: string | null;
+          points_cost: number;
+          stock_quantity: number | null;
+          reward_type: "discount" | "product";
+          discount_kind: "amount" | "percentage" | null;
+          discount_value: number | null;
+          reward_product_id: string | null;
+          image_url: string | null;
+          code_mode: "auto" | "manual";
+          manual_code: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          description?: string | null;
+          points_cost: number;
+          stock_quantity?: number | null;
+          reward_type?: "discount" | "product";
+          discount_kind?: "amount" | "percentage" | null;
+          discount_value?: number | null;
+          reward_product_id?: string | null;
+          image_url?: string | null;
+          code_mode?: "auto" | "manual";
+          manual_code?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          description?: string | null;
+          points_cost?: number;
+          stock_quantity?: number | null;
+          reward_type?: "discount" | "product";
+          discount_kind?: "amount" | "percentage" | null;
+          discount_value?: number | null;
+          reward_product_id?: string | null;
+          image_url?: string | null;
+          code_mode?: "auto" | "manual";
+          manual_code?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      loyalty_reward_redemptions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          reward_id: string;
+          account_id: string;
+          customer_id: string;
+          points_spent: number;
+          status: "pending" | "fulfilled" | "cancelled";
+          idempotency_key: string;
+          voucher_code: string | null;
+          coupon_id: string | null;
+          expires_at: string | null;
+          used_at: string | null;
+          used_order_id: string | null;
+          created_at: string;
+          fulfilled_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          reward_id: string;
+          account_id: string;
+          customer_id: string;
+          points_spent: number;
+          status?: "pending" | "fulfilled" | "cancelled";
+          idempotency_key: string;
+          voucher_code?: string | null;
+          coupon_id?: string | null;
+          expires_at?: string | null;
+          used_at?: string | null;
+          used_order_id?: string | null;
+          created_at?: string;
+          fulfilled_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          reward_id?: string;
+          account_id?: string;
+          customer_id?: string;
+          points_spent?: number;
+          status?: "pending" | "fulfilled" | "cancelled";
+          idempotency_key?: string;
+          voucher_code?: string | null;
+          coupon_id?: string | null;
+          expires_at?: string | null;
+          used_at?: string | null;
+          used_order_id?: string | null;
+          created_at?: string;
+          fulfilled_at?: string | null;
+        };
+        Relationships: [];
+      };
+      pos_coupon_code_attempts: {
+        Row: {
+          id: string;
+          organization_id: string | null;
+          store_id: string;
+          user_id: string | null;
+          code_normalized: string | null;
+          succeeded: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id?: string | null;
+          store_id: string;
+          user_id?: string | null;
+          code_normalized?: string | null;
+          succeeded: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string | null;
+          store_id?: string;
+          user_id?: string | null;
+          code_normalized?: string | null;
+          succeeded?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      loyalty_settings: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          points_per_currency: number;
+          earn_enabled: boolean;
+          redeem_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          points_per_currency?: number;
+          earn_enabled?: boolean;
+          redeem_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          points_per_currency?: number;
+          earn_enabled?: boolean;
+          redeem_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      loyalty_ledger: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          account_id: string;
+          customer_id: string;
+          order_id: string | null;
+          type: "earn" | "redeem" | "reversal" | "adjustment";
+          points_delta: number;
+          reason: string | null;
+          reversed_entry_id: string | null;
+          idempotency_key: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          account_id: string;
+          customer_id: string;
+          order_id?: string | null;
+          type: "earn" | "redeem" | "reversal" | "adjustment";
+          points_delta: number;
+          reason?: string | null;
+          reversed_entry_id?: string | null;
+          idempotency_key: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          account_id?: string;
+          customer_id?: string;
+          order_id?: string | null;
+          type?: "earn" | "redeem" | "reversal" | "adjustment";
+          points_delta?: number;
+          reason?: string | null;
+          reversed_entry_id?: string | null;
+          idempotency_key?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       orders: {
         Row: {
           id: string;
@@ -997,6 +1756,11 @@ export interface Database {
           buffet_session_id: string | null;
           cashier_id: string;
           system_account_id: string | null;
+          customer_id: string | null;
+          coupon_id: string | null;
+          coupon_discount_amount: number;
+          loyalty_points_earned: number;
+          loyalty_points_redeemed: number;
           subtotal: number;
           discount: number;
           discount_note: string | null;
@@ -1022,6 +1786,11 @@ export interface Database {
           buffet_session_id?: string | null;
           cashier_id: string;
           system_account_id?: string | null;
+          customer_id?: string | null;
+          coupon_id?: string | null;
+          coupon_discount_amount?: number;
+          loyalty_points_earned?: number;
+          loyalty_points_redeemed?: number;
           subtotal?: number;
           discount?: number;
           discount_note?: string | null;
@@ -1047,6 +1816,11 @@ export interface Database {
           buffet_session_id?: string | null;
           cashier_id?: string;
           system_account_id?: string | null;
+          customer_id?: string | null;
+          coupon_id?: string | null;
+          coupon_discount_amount?: number;
+          loyalty_points_earned?: number;
+          loyalty_points_redeemed?: number;
           subtotal?: number;
           discount?: number;
           discount_note?: string | null;
@@ -1071,6 +1845,8 @@ export interface Database {
           product_name: string;
           variant_id: string | null;
           variant_name: string | null;
+          kitchen_station_id: string | null;
+          kitchen_station_name: string | null;
           modifiers: Json;
           quantity: number;
           unit_price: number;
@@ -1088,6 +1864,8 @@ export interface Database {
           product_name: string;
           variant_id?: string | null;
           variant_name?: string | null;
+          kitchen_station_id?: string | null;
+          kitchen_station_name?: string | null;
           modifiers?: Json;
           quantity: number;
           unit_price: number;
@@ -1105,6 +1883,8 @@ export interface Database {
           product_name?: string;
           variant_id?: string | null;
           variant_name?: string | null;
+          kitchen_station_id?: string | null;
+          kitchen_station_name?: string | null;
           modifiers?: Json;
           quantity?: number;
           unit_price?: number;
@@ -1702,6 +2482,51 @@ export interface Database {
         };
         Relationships: [];
       };
+      customer_display_settings: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          ad_enabled: boolean;
+          ad_layout: "single" | "split";
+          top_slot_enabled: boolean;
+          bottom_slot_enabled: boolean;
+          slide_interval_seconds: number;
+          top_slides: Json;
+          bottom_slides: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          ad_enabled?: boolean;
+          ad_layout?: "single" | "split";
+          top_slot_enabled?: boolean;
+          bottom_slot_enabled?: boolean;
+          slide_interval_seconds?: number;
+          top_slides?: Json;
+          bottom_slides?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          ad_enabled?: boolean;
+          ad_layout?: "single" | "split";
+          top_slot_enabled?: boolean;
+          bottom_slot_enabled?: boolean;
+          slide_interval_seconds?: number;
+          top_slides?: Json;
+          bottom_slides?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       line_account_links: {
         Row: {
           id: string;
@@ -1924,6 +2749,17 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      adjust_customer_loyalty_points: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_customer_id: string;
+          p_points_delta: number;
+          p_reason?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
       auth_user_organization_ids: { Args: Record<string, never>; Returns: string[] };
       auth_user_store_ids: { Args: Record<string, never>; Returns: string[] };
       auth_user_role_in_org: { Args: { org_id: string; min_role: string }; Returns: boolean };
@@ -2010,6 +2846,114 @@ export interface Database {
           p_items?: Json;
         };
         Returns: string;
+      };
+      create_pos_order_with_customer_rewards: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_order_number: string;
+          p_table_id?: string | null;
+          p_table_number?: string | null;
+          p_cashier_id?: string | null;
+          p_customer_id?: string | null;
+          p_coupon_id?: string | null;
+          p_coupon_discount_amount?: number;
+          p_subtotal?: number;
+          p_discount?: number;
+          p_discount_note?: string | null;
+          p_total?: number;
+          p_note?: string | null;
+          p_items?: Json;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
+      create_grocery_pos_order_with_rewards: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_order_number: string;
+          p_cashier_id?: string | null;
+          p_customer_id?: string | null;
+          p_coupon_id?: string | null;
+          p_coupon_discount_amount?: number;
+          p_subtotal?: number;
+          p_discount?: number;
+          p_discount_note?: string | null;
+          p_total?: number;
+          p_note?: string | null;
+          p_items?: Json;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
+      close_grocery_pos_order_payment_with_rewards: {
+        Args: {
+          p_order_id: string;
+          p_store_id: string;
+          p_processed_by_user_id: string;
+          p_method: string;
+          p_amount: number;
+          p_received_amount?: number | null;
+          p_change_amount?: number | null;
+          p_reference?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
+      void_grocery_pos_order_with_rewards: {
+        Args: {
+          p_order_id: string;
+          p_store_id: string;
+          p_voided_by_user_id: string;
+          p_reason?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
+      replay_grocery_pos_create_order_with_sync: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_device_key: string;
+          p_catalog_version: string;
+          p_operation_payload: Json;
+          p_order_number: string;
+          p_cashier_id?: string | null;
+          p_customer_id?: string | null;
+          p_coupon_id?: string | null;
+          p_coupon_discount_amount?: number;
+          p_subtotal?: number;
+          p_discount?: number;
+          p_discount_note?: string | null;
+          p_total?: number;
+          p_note?: string | null;
+          p_items?: Json;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
+      record_grocery_pos_sync_conflict: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_device_key: string;
+          p_catalog_version: string;
+          p_operation_payload: Json;
+          p_idempotency_key: string;
+          p_error_message?: string | null;
+        };
+        Returns: string;
+      };
+      redeem_loyalty_reward: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_customer_id: string;
+          p_reward_id: string;
+          p_idempotency_key: string;
+        };
+        Returns: Json;
       };
       create_qr_order_with_items: {
         Args: {

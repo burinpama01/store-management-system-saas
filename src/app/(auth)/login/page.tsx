@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { MarketingBrand } from "@/shared/components/marketing/MarketingShell";
 import { signIn } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -141,13 +142,15 @@ export default function LoginPage() {
               ลืมรหัสผ่าน?
             </Link>
 
-            <button
+            <Button
               type="submit"
-              disabled={isPending}
-              className="btn-primary reference-login-submit disabled:cursor-not-allowed disabled:opacity-50"
+              variant="primary"
+              loading={isPending}
+              loadingText="กำลังเข้าสู่ระบบ..."
+              className="reference-login-submit disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isPending ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
-            </button>
+              เข้าสู่ระบบ
+            </Button>
           </form>
 
           <p className="reference-auth-register">

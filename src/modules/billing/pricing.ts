@@ -1,4 +1,4 @@
-import type { BillingPlan } from "./types";
+import { isAccessAllowed, type BillingPlan, type BillingState } from "./types";
 
 export type BillingDuration = "30d" | "1y";
 
@@ -67,4 +67,11 @@ export function isSubscriptionCurrent(
   if (!currentExpiryISO) return false;
   const exp = new Date(currentExpiryISO);
   return !Number.isNaN(exp.getTime()) && exp.getTime() > now.getTime();
+}
+
+/** True when the tenant should be allowed into the app billing gate. */
+export function hasBillingAccess(state: BillingState, now: Date = new Date()): boolean {
+  if (!isAccessAllowed(state)) return false;
+  if (state.plan === "enterprise") return true;
+  return isPaidTier(state.plan) && isSubscriptionCurrent(state.currentPeriodEnd, now);
 }

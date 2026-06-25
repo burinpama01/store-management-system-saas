@@ -6,6 +6,7 @@ import type {
   DailySales,
   ReportData,
   DashboardData,
+  BranchSalesSummary,
 } from "./types";
 
 type SalesAggregateRow = {
@@ -32,9 +33,26 @@ type ReportOrderRow = DashboardOrderRow & {
   paid_at: string | null;
 };
 
+type PaymentRow = {
+  method: string;
+  amount: number | string | null;
+};
+
+type BranchStoreRow = {
+  id: string;
+  name: string;
+};
+
+type BranchOrderRow = {
+  store_id: string;
+  total: number | string | null;
+  qr_order_source: boolean | null;
+};
+
 // PostgREST serialises .in() as a URL query param; keep batches small to stay
 // well within the typical 8 KB URL limit.
 const BATCH_SIZE = 200;
+const QUERY_PAGE_SIZE = 1000;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -141,10 +159,25 @@ function aggregateTopProducts(
     .slice(0, limit);
 }
 
+function aggregatePaymentMethods(payments: PaymentRow[]): PaymentMethodSummary[] {
+  const methodMap = new Map<string, PaymentMethodSummary>();
+  for (const p of payments) {
+    const amount = toNumber(p.amount);
+    const existing = methodMap.get(p.method);
+    if (existing) {
+      existing.count += 1;
+      existing.totalAmount = round2(existing.totalAmount + amount);
+    } else {
+      methodMap.set(p.method, { method: p.method, count: 1, totalAmount: round2(amount) });
+    }
+  }
+  return Array.from(methodMap.values()).sort((a, b) => b.totalAmount - a.totalAmount);
+}
+
 async function fetchPaymentsInBatches(
   orderIds: string[],
   storeId: string,
-): Promise<{ method: string; amount: number }[]> {
+): Promise<PaymentRow[]> {
   const supabase = await createSupabaseServerClient();
   const chunks: string[][] = [];
   for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
@@ -163,7 +196,7 @@ async function fetchPaymentsInBatches(
   if (batches.some((r) => r.error)) {
     throw new Error("Unable to load report payment methods");
   }
-  return batches.flatMap((r) => r.data ?? []);
+  return batches.flatMap((r) => r.data ?? []) as PaymentRow[];
 }
 
 async function fetchOrderItemsInBatches(
@@ -188,6 +221,58 @@ async function fetchOrderItemsInBatches(
     throw new Error("Unable to load report order items");
   }
   return batches.flatMap((r) => r.data ?? []);
+}
+
+async function fetchBranchStoresInPages(organizationId: string): Promise<BranchStoreRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const stores: BranchStoreRow[] = [];
+  for (let offset = 0; ; offset += QUERY_PAGE_SIZE) {
+    const result = await supabase
+      .from("stores")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("is_active", true)
+      .order("name")
+      .range(offset, offset + QUERY_PAGE_SIZE - 1);
+    if (result.error) {
+      throw new Error("Unable to load branch stores");
+    }
+    const rows = (result.data ?? []) as BranchStoreRow[];
+    stores.push(...rows);
+    if (rows.length < QUERY_PAGE_SIZE) break;
+  }
+  return stores;
+}
+
+async function fetchBranchOrdersInBatches(
+  storeIds: string[],
+  organizationId: string,
+  dateFrom: string,
+  nextDayExclusive: string,
+): Promise<BranchOrderRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const orders: BranchOrderRow[] = [];
+  for (let index = 0; index < storeIds.length; index += BATCH_SIZE) {
+    const batchStoreIds = storeIds.slice(index, index + BATCH_SIZE);
+    for (let offset = 0; ; offset += QUERY_PAGE_SIZE) {
+      const result = await supabase
+        .from("orders")
+        .select("store_id, total, qr_order_source")
+        .eq("organization_id", organizationId)
+        .in("store_id", batchStoreIds)
+        .eq("status", "paid")
+        .gte("paid_at", dateFrom)
+        .lt("paid_at", nextDayExclusive)
+        .range(offset, offset + QUERY_PAGE_SIZE - 1);
+      if (result.error) {
+        throw new Error("Unable to load branch sales summary");
+      }
+      const rows = (result.data ?? []) as BranchOrderRow[];
+      orders.push(...rows);
+      if (rows.length < QUERY_PAGE_SIZE) break;
+    }
+  }
+  return orders;
 }
 
 export async function getReportData(
@@ -241,23 +326,64 @@ export async function getReportData(
     fetchOrderItemsInBatches(orderIds, storeId),
   ]);
 
-  const methodMap = new Map<string, PaymentMethodSummary>();
-  for (const p of allPayments) {
-    const existing = methodMap.get(p.method);
-    if (existing) {
-      existing.count += 1;
-      existing.totalAmount = round2(existing.totalAmount + p.amount);
-    } else {
-      methodMap.set(p.method, { method: p.method, count: 1, totalAmount: p.amount });
-    }
-  }
-  const paymentMethods = Array.from(methodMap.values()).sort(
-    (a, b) => b.totalAmount - a.totalAmount,
-  );
-
+  const paymentMethods = aggregatePaymentMethods(allPayments);
   const topProducts = aggregateTopProducts(allItems, 20);
 
   return { salesSummary, paymentMethods, topProducts, dailySales };
+}
+
+export async function getBranchReportData(
+  organizationId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BranchSalesSummary[]> {
+  const nextDayExclusive = addUtcDays(dateTo, 1);
+
+  const stores = await fetchBranchStoresInPages(organizationId);
+  const storeIds = stores.map((store) => store.id);
+  if (storeIds.length === 0) return [];
+
+  const branchOrders = await fetchBranchOrdersInBatches(
+    storeIds,
+    organizationId,
+    dateFrom,
+    nextDayExclusive,
+  );
+
+  const summaries = new Map<string, BranchSalesSummary>();
+  for (const store of stores) {
+    summaries.set(store.id, {
+      storeId: store.id,
+      storeName: store.name,
+      orderCount: 0,
+      revenue: 0,
+      avgOrderValue: 0,
+      qrOrderCount: 0,
+      posOrderCount: 0,
+      revenueSharePercent: 0,
+    });
+  }
+
+  for (const order of branchOrders) {
+    const summary = summaries.get(order.store_id);
+    if (!summary) continue;
+    summary.orderCount += 1;
+    summary.revenue = round2(summary.revenue + toNumber(order.total));
+    if (order.qr_order_source === true) {
+      summary.qrOrderCount += 1;
+    } else {
+      summary.posOrderCount += 1;
+    }
+  }
+
+  const totalRevenue = round2(Array.from(summaries.values()).reduce((sum, summary) => sum + summary.revenue, 0));
+  return Array.from(summaries.values())
+    .map((summary) => ({
+      ...summary,
+      avgOrderValue: summary.orderCount > 0 ? round2(summary.revenue / summary.orderCount) : 0,
+      revenueSharePercent: totalRevenue > 0 ? round2((summary.revenue / totalRevenue) * 100) : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue || a.storeName.localeCompare(b.storeName, "th"));
 }
 
 export async function getDashboardData(storeId: string): Promise<DashboardData> {
@@ -302,11 +428,15 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
   const pendingOrderCount = countResult.count ?? 0;
 
   if (orderIds.length === 0) {
-    return { todaySales, pendingOrderCount, topProductsToday: [] };
+    return { todaySales, pendingOrderCount, paymentMethodsToday: [], topProductsToday: [] };
   }
 
-  const items = await fetchOrderItemsInBatches(orderIds, storeId);
+  const [allPayments, items] = await Promise.all([
+    fetchPaymentsInBatches(orderIds, storeId),
+    fetchOrderItemsInBatches(orderIds, storeId),
+  ]);
+  const paymentMethodsToday = aggregatePaymentMethods(allPayments);
   const topProductsToday = aggregateTopProducts(items, 5);
 
-  return { todaySales, pendingOrderCount, topProductsToday };
+  return { todaySales, pendingOrderCount, paymentMethodsToday, topProductsToday };
 }

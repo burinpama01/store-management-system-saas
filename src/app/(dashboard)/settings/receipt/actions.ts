@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
+import { normalizeNetworkPrinterEndpoint } from "@/modules/printing/network-printer";
+import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import { upsertReceiptSettings } from "@/modules/settings/repository";
+import { upsertNetworkPrinter } from "@/modules/stores/repository";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -40,8 +43,11 @@ export async function upsertReceiptSettingsAction(
       return { error: "เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข ไม่เกิน 13 หลัก" };
     if (promptpayId && (promptpayId.length > 13 || !/^\d+$/.test(promptpayId)))
       return { error: "PromptPay ID ต้องเป็นตัวเลข ไม่เกิน 13 หลัก" };
-    if (headerText && headerText.length > 200) return { error: "ข้อความส่วนหัวยาวเกิน 200 ตัวอักษร" };
-    if (footerText && footerText.length > 200) return { error: "ข้อความส่วนท้ายยาวเกิน 200 ตัวอักษร" };
+    if (showQrPayment && !promptpayId) return { error: "กรุณาระบุหมายเลข PromptPay" };
+    if (headerText && headerText.length > RECEIPT_MESSAGE_MAX_LENGTH)
+      return { error: `ข้อความส่วนหัวยาวเกิน ${RECEIPT_MESSAGE_MAX_LENGTH} ตัวอักษร` };
+    if (footerText && footerText.length > RECEIPT_MESSAGE_MAX_LENGTH)
+      return { error: `ข้อความส่วนท้ายยาวเกิน ${RECEIPT_MESSAGE_MAX_LENGTH} ตัวอักษร` };
     if (!paperWidth || !["58mm", "80mm"].includes(paperWidth))
       return { error: "ความกว้างกระดาษไม่ถูกต้อง" };
     const printCopies = parseInt(printCopiesRaw ?? "", 10);
@@ -66,6 +72,51 @@ export async function upsertReceiptSettingsAction(
 
     revalidatePath("/settings/receipt");
     return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function saveNetworkPrinterAction(
+  _prev: { error: string | null; saved?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; saved?: boolean }> {
+  try {
+    await requirePermission("settings.manage_printer");
+    const { ctx } = await getStoreContext();
+
+    const id = (formData.get("printerId") as string | null)?.trim() || undefined;
+    const name = (formData.get("name") as string | null)?.trim() ?? "";
+    const ipAddress = (formData.get("ipAddress") as string | null)?.trim() ?? "";
+    const portRaw = (formData.get("port") as string | null)?.trim() ?? "";
+    const paperWidthRaw = (formData.get("paperWidth") as string | null)?.trim() ?? "";
+    const isDefault = formData.get("isDefault") === "on";
+
+    if (!name) return { error: "กรุณาระบุชื่อเครื่องพิมพ์" };
+    if (!ipAddress) return { error: "กรุณาระบุ IP เครื่องพิมพ์" };
+    const port = portRaw ? Number(portRaw) : 9100;
+    if (!Number.isInteger(port)) return { error: "พอร์ตต้องเป็นตัวเลขจำนวนเต็ม" };
+    if (paperWidthRaw !== "58mm" && paperWidthRaw !== "80mm") return { error: "ขนาดกระดาษไม่ถูกต้อง" };
+
+    let endpoint: { host: string; port: number };
+    try {
+      endpoint = normalizeNetworkPrinterEndpoint({ host: ipAddress, port });
+    } catch {
+      return { error: "IP/พอร์ตไม่ถูกต้อง ต้องเป็น Private LAN เช่น 192.168.x.x, 10.x.x.x หรือ 172.16-31.x.x" };
+    }
+
+    const result = await upsertNetworkPrinter(ctx.storeId, ctx.organizationId, {
+      id,
+      name,
+      ipAddress: endpoint.host,
+      port: endpoint.port,
+      paperWidth: paperWidthRaw,
+      isDefault,
+    });
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidatePath("/settings/receipt");
+    return { error: null, saved: true };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }

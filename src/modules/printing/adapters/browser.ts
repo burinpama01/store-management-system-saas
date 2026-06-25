@@ -1,17 +1,7 @@
 import { normalizePrintCopies, type PrintAdapter, type ReceiptData } from "../types";
 import type { Printer } from "@/modules/stores/types";
-
-// Column characters per paper width for browser rendering
-const CHAR_WIDTH: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 42 };
-
-function priceStr(n: number): string {
-  return n.toFixed(2);
-}
-
-function padLine(label: string, value: string, width: number): string {
-  const gap = width - label.length - value.length;
-  return label + (gap > 0 ? " ".repeat(gap) : " ") + value;
-}
+import { buildReceiptLines, type ReceiptLine } from "../receipt-lines";
+import { renderReceiptQrSvg } from "../receipt-qr";
 
 function escapeHtml(text: string): string {
   return text
@@ -28,6 +18,19 @@ function receiptFileName(data: ReceiptData): string {
 
 function buildReceiptBlob(html: string): Blob {
   return new Blob([html], { type: "text/html;charset=utf-8" });
+}
+
+function renderReceiptLine(line: ReceiptLine, paperWidth: ReceiptData["paperWidth"]): string {
+  if (line.qrPayload) {
+    return `<div class="promptpay-qr">${renderReceiptQrSvg(line.qrPayload, paperWidth)}</div>`;
+  }
+
+  const classes = [
+    "receipt-line",
+    line.align === "center" ? "is-center" : "",
+    line.bold ? "is-bold" : "",
+  ].filter(Boolean).join(" ");
+  return `<div class="${classes}">${escapeHtml(line.text) || "&nbsp;"}</div>`;
 }
 
 async function fallbackReceiptDownload(data: ReceiptData, html: string): Promise<void> {
@@ -67,70 +70,13 @@ async function fallbackReceiptDownload(data: ReceiptData, html: string): Promise
 }
 
 function buildReceiptHtml(data: ReceiptData): string {
-  const cols = CHAR_WIDTH[data.paperWidth];
-  const div = "-".repeat(cols);
-  const lines: string[] = [];
-
-  lines.push(data.storeName);
-  if (data.address) lines.push(data.address);
-  if (data.phone) lines.push(`โทร: ${data.phone}`);
-  if (data.showTaxId && data.taxId) lines.push(`เลขประจำตัวผู้เสียภาษี: ${data.taxId}`);
-  if (data.headerText) lines.push(data.headerText);
-  lines.push(div);
-  lines.push(`ออร์เดอร์: ${data.orderNumber}`);
-  if (data.tableNumber) lines.push(`โต๊ะ: ${data.tableNumber}`);
-  lines.push(
-    new Date(data.printedAt).toLocaleString("th-TH", {
-      year: "2-digit", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit",
-    }),
-  );
-  lines.push(div);
-
-  for (const item of data.items) {
-    const displayName = item.variantName ? `${item.name} (${item.variantName})` : item.name;
-    const priceField = `x${item.quantity} ${priceStr(item.totalPrice)}`;
-    const nameWidth = cols - priceField.length - 1;
-    const name = displayName.length > nameWidth ? displayName.slice(0, nameWidth - 1) + "…" : displayName.padEnd(nameWidth);
-    lines.push(`${name} ${priceField}`);
-    if (item.modifierNames.length > 0) lines.push(`  + ${item.modifierNames.join(", ")}`);
-    if (item.note) lines.push(`  * ${item.note}`);
-    if ((item.discount ?? 0) > 0) {
-      const label = item.discountNote ? `ส่วนลดรายการ (${item.discountNote})` : "ส่วนลดรายการ";
-      lines.push(`  ${label}: -${priceStr(item.discount ?? 0)}`);
-    }
-  }
-
-  lines.push(div);
-  lines.push(padLine("ยอดรวมย่อย", priceStr(data.subtotal), cols));
-  if (data.discount > 0) {
-    const label = data.discountNote ? `ส่วนลด (${data.discountNote})` : "ส่วนลด";
-    lines.push(padLine(label, `-${priceStr(data.discount)}`, cols));
-  }
-  lines.push(padLine("** รวมสุทธิ **", priceStr(data.total), cols));
-
-  for (const p of data.payments) {
-    const methodMap: Record<string, string> = {
-      cash: "เงินสด", qr_promptpay: "QR PromptPay",
-      credit_card: "บัตร", bank_transfer: "โอนเงิน", other: "อื่น ๆ",
-    };
-    const displayAmount = p.method === "cash" && p.receivedAmount !== undefined ? p.receivedAmount : p.amount;
-    lines.push(padLine(methodMap[p.method] ?? p.method, priceStr(displayAmount), cols));
-    if (p.method !== "cash" && p.receivedAmount !== undefined) lines.push(padLine("  รับเงิน", priceStr(p.receivedAmount), cols));
-    if (p.changeAmount !== undefined && p.changeAmount > 0) lines.push(padLine("  เงินทอน", priceStr(p.changeAmount), cols));
-  }
-
-  if (data.footerText) {
-    lines.push(div);
-    lines.push(data.footerText);
-  }
-
   const paperWidthCss = data.paperWidth === "58mm" ? "58mm" : "80mm";
-  const receiptText = lines.map((line) => escapeHtml(line)).join("\n");
+  const { lines } = buildReceiptLines(data);
+  const receiptContent = lines.map((line) => renderReceiptLine(line, data.paperWidth)).join("");
   const copies = normalizePrintCopies(data.printCopies);
   const receiptCopies = Array.from({ length: copies }, (_, index) => `
 <section class="receipt-copy" aria-label="receipt copy ${index + 1}">
-<pre>${receiptText}</pre>
+<div class="receipt-text">${receiptContent}</div>
 </section>`).join("");
   const filename = receiptFileName(data);
 
@@ -148,7 +94,12 @@ function buildReceiptHtml(data: ReceiptData): string {
   .print-actions button.secondary { background: #fff; color: #7c341a; }
   .receipt-copy { width: ${paperWidthCss}; padding: 4mm 2mm; background: #fff; }
   .receipt-copy + .receipt-copy { break-before: page; page-break-before: always; margin-top: 8mm; }
-  pre { margin: 0; white-space: pre-wrap; font: 11px 'Courier New', Courier, monospace; }
+  .receipt-text { font: 11px 'Courier New', Courier, monospace; }
+  .receipt-line { min-height: 1.25em; white-space: pre-wrap; line-height: 1.25; }
+  .receipt-line.is-center { text-align: center; }
+  .receipt-line.is-bold { font-weight: 700; }
+  .promptpay-qr { display: flex; justify-content: center; padding: 2mm 0 1mm; }
+  .promptpay-qr-image { display: block; background: #fff; image-rendering: pixelated; }
   @media print {
     body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .print-actions { display: none; }

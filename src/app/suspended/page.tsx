@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/modules/auth/session";
 import { signOut } from "../(dashboard)/actions";
+import { SubmitButton } from "@/shared/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,9 @@ export default async function SuspendedPage() {
           ติดต่อฝ่ายสนับสนุน
         </a>
         <form action={signOut}>
-          <button type="submit" className="btn-secondary w-full">
+          <SubmitButton variant="secondary" className="w-full">
             ออกจากระบบ
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </main>

@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import type { ReceiptSettings } from "@/modules/settings/repository";
-import { ModalDialog } from "@/shared/components/ui";
+import { ModalDialog, Button } from "@/shared/components/ui";
 import { upsertReceiptSettingsAction } from "./actions";
 
 interface Props {
@@ -156,7 +157,7 @@ function ReceiptSettingsDialog({
                 type="checkbox"
                 name="showQrPayment"
                 value="1"
-                defaultChecked={settings?.showQrPayment ?? false}
+                checked={showQrPayment}
                 disabled={!canEdit}
                 onChange={(e) => setShowQrPayment(e.target.checked)}
               />
@@ -164,27 +165,25 @@ function ReceiptSettingsDialog({
             </label>
           </div>
 
-          {showQrPayment && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">หมายเลข PromptPay</label>
-              <input
-                type="text"
-                name="promptpayId"
-                maxLength={20}
-                defaultValue={settings?.promptpayId ?? ""}
-                disabled={!canEdit}
-                placeholder="เบอร์มือถือหรือเลขบัตรประชาชน"
-                className={field}
-              />
-            </div>
-          )}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">หมายเลข PromptPay</label>
+            <input
+              type="text"
+              name="promptpayId"
+              maxLength={20}
+              defaultValue={settings?.promptpayId ?? ""}
+              disabled={!canEdit}
+              placeholder="เบอร์มือถือหรือเลขบัตรประชาชน"
+              className={field}
+            />
+          </div>
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">ข้อความส่วนหัว</label>
             <textarea
               name="headerText"
-              rows={2}
-              maxLength={200}
+              rows={4}
+              maxLength={RECEIPT_MESSAGE_MAX_LENGTH}
               defaultValue={settings?.headerText ?? ""}
               disabled={!canEdit}
               className={field}
@@ -195,8 +194,8 @@ function ReceiptSettingsDialog({
             <label className="block text-xs text-gray-500 mb-1">ข้อความส่วนท้าย</label>
             <textarea
               name="footerText"
-              rows={2}
-              maxLength={200}
+              rows={4}
+              maxLength={RECEIPT_MESSAGE_MAX_LENGTH}
               defaultValue={settings?.footerText ?? ""}
               disabled={!canEdit}
               className={field}
@@ -232,13 +231,14 @@ function ReceiptSettingsDialog({
           )}
 
           {canEdit && (
-            <button
+            <Button
               type="submit"
-              disabled={pending}
+              loading={pending}
+              loadingText="กำลังบันทึก..."
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-40 transition-colors"
             >
-              {pending ? "กำลังบันทึก..." : "บันทึก"}
-            </button>
+              บันทึก
+            </Button>
           )}
 
           {!canEdit && (

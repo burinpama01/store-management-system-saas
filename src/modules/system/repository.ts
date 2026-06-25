@@ -1,6 +1,8 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import type { BillingPlan, BillingStatus } from "@/modules/billing/types";
 
+const ENTERPRISE_PERIOD_END = "2099-12-31T23:59:59Z";
+
 export interface TenantOverview {
   organizationId: string;
   name: string;
@@ -150,6 +152,8 @@ export async function setTenantPlan(input: {
 }): Promise<{ ok: boolean; error: string | null }> {
   const supabase = await createSupabaseServiceClient();
   const now = new Date().toISOString();
+  const enterprisePeriodEnd = input.plan === "enterprise" ? ENTERPRISE_PERIOD_END : null;
+  const nextPeriodEnd = enterprisePeriodEnd ?? new Date(Date.now() + 30 * 86_400_000).toISOString();
 
   const { data: existing } = await supabase
     .from("subscriptions")
@@ -160,18 +164,24 @@ export async function setTenantPlan(input: {
   if (existing) {
     const { error } = await supabase
       .from("subscriptions")
-      .update({ plan: input.plan, updated_at: now })
+      .update({
+        plan: input.plan,
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_start: now,
+        current_period_end: nextPeriodEnd,
+        updated_at: now,
+      })
       .eq("organization_id", input.organizationId);
     if (error) return { ok: false, error: error.message };
   } else {
-    const end = new Date(Date.now() + 30 * 86_400_000).toISOString();
     const { error } = await supabase.from("subscriptions").upsert(
       {
         organization_id: input.organizationId,
         plan: input.plan,
         status: "active",
         current_period_start: now,
-        current_period_end: end,
+        current_period_end: nextPeriodEnd,
         cancel_at_period_end: false,
         updated_at: now,
       },

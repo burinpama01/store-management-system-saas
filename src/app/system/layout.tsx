@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { requireSystemAccess } from "@/modules/auth/guards";
 import { signOut } from "../(dashboard)/actions";
 import { SystemNav } from "./SystemNav";
+import { SubmitButton } from "@/shared/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +19,9 @@ export default async function SystemLayout({ children }: { children: ReactNode }
         <div className="flex-1" />
         <span className="hidden text-xs text-[var(--muted)] sm:inline">{user.email}</span>
         <form action={signOut}>
-          <button type="submit" className="btn-secondary text-xs">
+          <SubmitButton variant="secondary" className="text-xs">
             ออกจากระบบ
-          </button>
+          </SubmitButton>
         </form>
       </header>
       <main className="page-shell">

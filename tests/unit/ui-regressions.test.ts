@@ -6,6 +6,18 @@ const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("UX/UI regression guards", () => {
+  it("has a shared localized loading component for partial data waits", () => {
+    const source = read("src/shared/components/ui/Skeleton.tsx");
+    const exports = read("src/shared/components/ui/index.ts");
+
+    expect(source).toContain("LocalizedLoading");
+    expect(source).toContain('role="status"');
+    expect(source).toContain("aria-live");
+    expect(source).toContain("percent");
+    expect(source).toContain("ไม่สร้างเปอร์เซ็นต์ปลอม");
+    expect(exports).toContain("LocalizedLoading");
+  });
+
   it("publishes public app privacy policy and terms pages", () => {
     const legalPagePath = "src/app/(legal)/LegalPage.tsx";
     const privacyPath = "src/app/(legal)/privacy-policy/page.tsx";
@@ -197,6 +209,18 @@ describe("UX/UI regression guards", () => {
     expect(dashboard).toContain("min-w-[520px]");
     expect(reports).toContain("overflow-x-auto");
     expect(reports).toContain("min-w-[520px]");
+  });
+
+  it("dashboard exposes total, cash, and transfer sales KPIs", () => {
+    const dashboard = read("src/app/(dashboard)/dashboard/page.tsx");
+
+    expect(dashboard).toContain("paymentMethodsToday");
+    expect(dashboard).toContain("ยอดขายรวมวันนี้");
+    expect(dashboard).toContain("ยอดขายเงินสด");
+    expect(dashboard).toContain("ยอดขายเงินโอน");
+    expect(dashboard).toContain("qr_promptpay");
+    expect(dashboard).toContain("bank_transfer");
+    expect(dashboard).toContain("เงินสดในลิ้นชัก");
   });
 
   it("mobile dashboard header guards long store names from overlap", () => {
@@ -534,6 +558,31 @@ describe("UX/UI regression guards", () => {
     expect(source).toContain("aspect-[4/3]");
     expect(source).toContain("loading=\"lazy\"");
     expect(source).toContain("รูปเมนู");
+  });
+
+  it("POS memoizes product category filtering for fast cashier taps", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+
+    expect(source).toContain("const filteredProducts = useMemo(");
+    expect(source).toContain("[products, selectedCategoryId]");
+    expect(source).toContain("const PosProductTile = memo(");
+  });
+
+  it("POS exposes printer reconnect controls without leaving the cashier screen", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const connectionPanel = read("src/modules/printing/PrinterConnectionPanel.tsx");
+
+    expect(source).toContain("PrinterConnectionPanel");
+    expect(source).toContain("printerConnectionOpen");
+    expect(source).toContain("เชื่อมต่อเครื่องพิมพ์");
+    expect(connectionPanel).toContain("connectBluetoothPrinter");
+    expect(connectionPanel).toContain("connectUsbPrinter");
+    expect(connectionPanel).toContain("isBluetoothPrinterConnected");
+    expect(connectionPanel).toContain("isUsbPrinterConnected");
+    expect(connectionPanel).toContain("rememberedDevice");
+    expect(connectionPanel).toContain("connectedDevice");
+    expect(connectionPanel).toContain("เคยเชื่อมต่อ:");
+    expect(connectionPanel).toContain("พร้อมใช้:");
   });
 
   it("settings test buttons live in their respective tabs (no combined diagnostics tab)", () => {

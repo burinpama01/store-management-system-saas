@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { QrCode } from "@/shared/components/ui/QrCode";
+import { Button } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { listOpenQrOrdersAction, collectPaymentAction, closeTableAction } from "./actions";
@@ -184,13 +185,16 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
                 <button onClick={() => { setSettle(null); setError(null); setQrPaymentVerified(false); }} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
                   ย้อนกลับ
                 </button>
-                <button
+                <Button
+                  variant="primary"
+                  loading={isPending}
+                  loadingText="กำลังชำระ..."
                   onClick={confirmPayment}
-                  disabled={isPending || !cashReady || !qrReady || (method === "qr_promptpay" && !payload)}
-                  className="btn-primary min-h-11 flex-1 text-sm disabled:opacity-40"
+                  disabled={!cashReady || !qrReady || (method === "qr_promptpay" && !payload)}
+                  className="min-h-11 flex-1 text-sm disabled:opacity-40"
                 >
-                  {isPending ? "กำลังชำระ..." : "ยืนยันชำระ"}
-                </button>
+                  ยืนยันชำระ
+                </Button>
               </div>
             </div>
           ) : loading ? (

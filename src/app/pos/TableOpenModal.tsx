@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { listTablesForOpenAction, openTableAction, closeTableAction, type OpenTableStatus } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   onClose: () => void;
@@ -113,13 +114,13 @@ export function TableOpenModal({ onClose, onSelectTable }: Props) {
                             ใช้กับตั๋ว
                           </button>
                         )}
-                        <button onClick={() => close(t)} disabled={isPending} className="min-h-9 px-2 text-xs text-red-500">ปิด</button>
+                        <Button onClick={() => close(t)} loading={isPending} className="min-h-9 px-2 text-xs text-red-500">ปิด</Button>
                       </div>
                     </>
                   ) : (
-                    <button onClick={() => open(t)} disabled={isPending} className="btn-primary mt-2 min-h-9 w-full text-xs">
+                    <Button variant="primary" onClick={() => open(t)} loading={isPending} className="mt-2 min-h-9 w-full text-xs">
                       เปิดโต๊ะ + พิมพ์ QR
-                    </button>
+                    </Button>
                   )}
                 </li>
               ))}

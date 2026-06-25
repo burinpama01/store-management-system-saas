@@ -1,0 +1,1 @@
+export const RECEIPT_MESSAGE_MAX_LENGTH = 1000;

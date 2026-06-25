@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { Product } from "@/modules/catalog/types";
 import { setStockAction, type StockState } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 const INITIAL: StockState = { error: null, ok: false };
 const LOW = 5;
@@ -89,9 +90,9 @@ function StockRow({ variantId, current }: { variantId: string; current: number }
         step={1}
         className="form-input w-24 tabular-nums"
       />
-      <button type="submit" disabled={pending} className="btn-secondary text-xs disabled:opacity-40">
-        {pending ? "..." : "บันทึก"}
-      </button>
+      <Button type="submit" variant="secondary" loading={pending} loadingText="..." className="text-xs disabled:opacity-40">
+        บันทึก
+      </Button>
       {state.error && <span className="text-xs text-red-600">{state.error}</span>}
       {state.ok && <span className="text-xs text-emerald-700">✓</span>}
     </form>

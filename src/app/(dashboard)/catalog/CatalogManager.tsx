@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useTransition, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   Category,
   Product,
@@ -10,7 +11,7 @@ import type {
 } from "@/modules/catalog/types";
 import type { BillingPlan } from "@/modules/billing/types";
 import type { Role } from "@/modules/tenants/types";
-import { ModalDialog, ImageUpload } from "@/shared/components/ui";
+import { ModalDialog, ImageUpload, LocalizedLoading, Button } from "@/shared/components/ui";
 import {
   createCategoryAction,
   updateCategoryAction,
@@ -25,12 +26,16 @@ import {
   deleteModifierGroupTemplateAction,
   addModifierOptionTemplateAction,
   deleteModifierOptionTemplateAction,
+  setModifierOptionTemplateDefaultAction,
   applyModifierGroupTemplateAction,
   deleteVariantAction,
   deleteModifierGroupAction,
   addModifierOptionAction,
   deleteModifierOptionAction,
+  setModifierOptionDefaultAction,
+  copyProductsAcrossBranchesAction,
 } from "./actions";
+import type { Store } from "@/modules/stores/types";
 
 type PanelMode =
   | "closed"
@@ -39,9 +44,16 @@ type PanelMode =
   | "add-product"
   | "edit-product";
 
+type ToolDialogMode =
+  | "closed"
+  | "branch-copy"
+  | "variant-templates"
+  | "modifier-group-templates";
+
 interface Props {
   categories: Category[];
   products: Product[];
+  branchStores: Store[];
   variantTemplates: VariantTemplate[];
   modifierGroupTemplates: ModifierGroupTemplate[];
   role: Role;
@@ -50,6 +62,7 @@ interface Props {
   organizationId: string;
   planName: BillingPlan;
   canManageCatalog: boolean;
+  canUseMultiBranch: boolean;
   canUseQrOrdering: boolean;
   canUseStock: boolean;
 }
@@ -234,13 +247,14 @@ function AddCategoryForm({
       <InputField label="ชื่อหมวดหมู่" name="name" required />
       <InputField label="คำอธิบาย" name="description" placeholder="ไม่บังคับ" />
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
+          loading={isPending}
+          loadingText="กำลังบันทึก..."
           className="flex-1 py-1.5 text-sm font-medium text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors"
         >
-          {isPending ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+          บันทึก
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -282,13 +296,14 @@ function EditCategoryForm({
         placeholder="ไม่บังคับ"
       />
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
+          loading={isPending}
+          loadingText="กำลังบันทึก..."
           className="flex-1 py-1.5 text-sm font-medium text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors"
         >
-          {isPending ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+          บันทึก
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -329,8 +344,16 @@ function ProductForm({
   return (
     <form
       action={onSubmit}
-      className="space-y-3"
+      className="relative space-y-3"
+      aria-busy={isPending}
     >
+      {isPending && (
+        <LocalizedLoading
+          variant="overlay"
+          message="กำลังบันทึกสินค้า"
+          detail="บันทึกเฉพาะฟอร์มสินค้า ไม่โหลดหน้าเมนูใหม่"
+        />
+      )}
       <ErrorBanner message={error} />
       <InputField
         label="ชื่อสินค้า"
@@ -419,13 +442,14 @@ function ProductForm({
         )}
       </div>
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="submit"
-          disabled={isPending}
+          loading={isPending}
+          loadingText="กำลังบันทึก..."
           className="flex-1 py-1.5 text-sm font-medium text-white bg-gray-900 rounded hover:bg-gray-700 disabled:opacity-50 transition-colors"
         >
-          {isPending ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+          บันทึก
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -519,13 +543,13 @@ function VariantTemplatesPanel({
             className="min-h-10 rounded-md border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
             placeholder="+ราคา"
           />
-          <button
+          <Button
             type="submit"
-            disabled={addPending}
+            loading={addPending}
             className="min-h-10 rounded-md bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
           >
             เพิ่มตัวเลือก
-          </button>
+          </Button>
           <div className="sm:col-span-3">
             <ErrorBanner message={addState.error} />
           </div>
@@ -551,6 +575,7 @@ function ModifierGroupTemplateCard({
   template: ModifierGroupTemplate;
   canManageCatalog: boolean;
 }) {
+  const router = useRouter();
   const [addOptionState, addOptionAction, addOptionPending] = useActionState(
     async (prev: { error: string | null; message?: string | null }, fd: FormData) =>
       addModifierOptionTemplateAction(template.id, prev, fd),
@@ -559,6 +584,7 @@ function ModifierGroupTemplateCard({
   const [optionMessage, setOptionMessage] = useState<string | null>(null);
   const [optionError, setOptionError] = useState<string | null>(null);
   const [deletingOptionId, setDeletingOptionId] = useState<string | null>(null);
+  const [defaultingOptionId, setDefaultingOptionId] = useState<string | null>(null);
 
   async function handleDeleteOption(option: ModifierGroupTemplate["options"][number]) {
     setOptionMessage(null);
@@ -571,6 +597,21 @@ function ModifierGroupTemplateCard({
       return;
     }
     setOptionMessage(`ลบตัวเลือก ${option.name} แล้ว`);
+  }
+
+  async function handleDefaultOption(option: ModifierGroupTemplate["options"][number]) {
+    setOptionMessage(null);
+    setOptionError(null);
+    setDefaultingOptionId(option.id);
+    const nextDefault = !option.isDefault;
+    const result = await setModifierOptionTemplateDefaultAction(option.id, nextDefault);
+    setDefaultingOptionId(null);
+    if (result.error) {
+      setOptionError(result.error);
+      return;
+    }
+    setOptionMessage(nextDefault ? `ตั้ง ${option.name} เป็นค่าเริ่มต้นแล้ว` : `ยกเลิกค่าเริ่มต้น ${option.name} แล้ว`);
+    router.refresh();
   }
 
   return (
@@ -597,16 +638,34 @@ function ModifierGroupTemplateCard({
             >
               <span className="font-semibold">{option.name}</span>
               <span className="text-slate-500">{priceDeltaStr(option.priceAdjustment)}</span>
-              {canManageCatalog && (
-                <button
-                  type="button"
-                  onClick={() => { void handleDeleteOption(option); }}
-                  disabled={deletingOptionId === option.id}
-                  className="font-semibold text-red-500 hover:text-red-700 disabled:opacity-50"
-                  aria-label={`ลบตัวเลือก ${option.name}`}
-                >
-                  {deletingOptionId === option.id ? "..." : "ลบ"}
-                </button>
+              {canManageCatalog ? (
+                <>
+                  <label className="inline-flex min-h-7 items-center gap-1 rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={option.isDefault}
+                      onChange={() => { void handleDefaultOption(option); }}
+                      disabled={defaultingOptionId === option.id}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                    />
+                    ค่าเริ่มต้น
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { void handleDeleteOption(option); }}
+                    disabled={deletingOptionId === option.id}
+                    className="font-semibold text-red-500 hover:text-red-700 disabled:opacity-50"
+                    aria-label={`ลบตัวเลือก ${option.name}`}
+                  >
+                    {deletingOptionId === option.id ? "..." : "ลบ"}
+                  </button>
+                </>
+              ) : (
+                option.isDefault && (
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                    ค่าเริ่มต้น
+                  </span>
+                )
               )}
             </span>
           ))}
@@ -618,7 +677,7 @@ function ModifierGroupTemplateCard({
       )}
 
       {canManageCatalog && (
-        <form action={addOptionAction} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_auto]">
+        <form action={addOptionAction} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_130px_auto]">
           <input
             name="optionName"
             placeholder="เช่น 0%, 25%, ธรรมดา, พิเศษ"
@@ -632,14 +691,18 @@ function ModifierGroupTemplateCard({
             placeholder="+ราคา"
             className="min-h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
           />
-          <button
+          <label className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
+            <input type="checkbox" name="isDefault" className="rounded border-slate-300 text-slate-700 focus:ring-slate-400" />
+            ค่าเริ่มต้น
+          </label>
+          <Button
             type="submit"
-            disabled={addOptionPending}
+            loading={addOptionPending}
             className="min-h-10 rounded-md bg-slate-700 px-4 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-50"
           >
             เพิ่ม
-          </button>
-          <div className="space-y-2 sm:col-span-3">
+          </Button>
+          <div className="space-y-2 sm:col-span-4">
             <ErrorBanner message={addOptionState.error || optionError} />
             <NoticeBanner message={optionMessage || addOptionState.message} />
           </div>
@@ -734,13 +797,13 @@ function ModifierGroupTemplatesPanel({
               <option value="single">อันเดียว</option>
               <option value="multiple">หลายอัน</option>
             </select>
-            <button
+            <Button
               type="submit"
-              disabled={addPending}
+              loading={addPending}
               className="min-h-10 rounded-md bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
             >
               เพิ่มกลุ่ม
-            </button>
+            </Button>
           </div>
           <label className="flex min-h-10 items-center gap-2 text-xs text-slate-600">
             <input type="checkbox" name="isRequired" className="rounded border-slate-300" />
@@ -822,13 +885,14 @@ function VariantsSection({
           className="hidden"
           placeholder="±ราคา"
         />
-        <button
+        <Button
           type="submit"
-          disabled={applyPending || variantTemplates.length === 0}
+          loading={applyPending}
+          disabled={variantTemplates.length === 0}
           className="px-2 py-1 text-sm text-white bg-gray-700 rounded hover:bg-gray-900 disabled:opacity-50"
         >
           +
-        </button>
+        </Button>
       </form>
       {variantTemplates.length === 0 && (
         <p className="text-xs text-gray-500">เพิ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
@@ -841,12 +905,31 @@ function VariantsSection({
 // ─── Modifier groups sub-section ──────────────────────────────────
 
 function ModifierGroupSection({ group }: { group: ModifierGroup }) {
+  const router = useRouter();
   const [addOptState, addOptAction, addOptPending] = useActionState(
     async (prev: { error: string | null }, fd: FormData) =>
       addModifierOptionAction(group.id, prev, fd),
     { error: null },
   );
   const [, startDelete] = useTransition();
+  const [defaultingOptionId, setDefaultingOptionId] = useState<string | null>(null);
+  const [defaultMessage, setDefaultMessage] = useState<string | null>(null);
+  const [defaultError, setDefaultError] = useState<string | null>(null);
+
+  async function handleDefaultOption(option: ModifierGroup["options"][number]) {
+    setDefaultMessage(null);
+    setDefaultError(null);
+    setDefaultingOptionId(option.id);
+    const nextDefault = !option.isDefault;
+    const result = await setModifierOptionDefaultAction(option.id, nextDefault);
+    setDefaultingOptionId(null);
+    if (result.error) {
+      setDefaultError(result.error);
+      return;
+    }
+    setDefaultMessage(nextDefault ? `ตั้ง ${option.name} เป็นค่าเริ่มต้นแล้ว` : `ยกเลิกค่าเริ่มต้น ${option.name} แล้ว`);
+    router.refresh();
+  }
 
   return (
     <div className="border border-gray-200 rounded p-2 space-y-1.5">
@@ -871,6 +954,16 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
           <span className="text-xs text-gray-700">{opt.name}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">{priceDeltaStr(opt.priceAdjustment)}</span>
+            <label className="inline-flex min-h-7 items-center gap-1 rounded-full bg-gray-50 px-2 text-[11px] font-medium text-gray-600">
+              <input
+                type="checkbox"
+                checked={opt.isDefault}
+                onChange={() => { void handleDefaultOption(opt); }}
+                disabled={defaultingOptionId === opt.id}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-gray-700 focus:ring-gray-400"
+              />
+              ค่าเริ่มต้น
+            </label>
             <button
               type="button"
               onClick={() => startDelete(() => { deleteModifierOptionAction(opt.id); })}
@@ -881,28 +974,33 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
           </div>
         </div>
       ))}
-      <form action={addOptAction} className="flex gap-1.5 pt-0.5">
+      <form action={addOptAction} className="grid gap-1.5 pt-0.5 sm:grid-cols-[minmax(0,1fr)_72px_120px_auto]">
         <input
           name="optionName"
           placeholder="ชื่อตัวเลือก"
-          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="min-h-8 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
         <input
           name="priceAdjustment"
           type="number"
           defaultValue={0}
           step="1"
-          className="w-16 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+          className="min-h-8 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
         />
-        <button
+        <label className="inline-flex min-h-8 items-center justify-center gap-1 rounded border border-gray-300 bg-white px-2 text-xs text-gray-600">
+          <input type="checkbox" name="isDefault" className="rounded border-gray-300 text-gray-700 focus:ring-gray-400" />
+          ค่าเริ่มต้น
+        </label>
+        <Button
           type="submit"
-          disabled={addOptPending}
+          loading={addOptPending}
           className="px-2 py-1 text-xs text-white bg-gray-600 rounded hover:bg-gray-800 disabled:opacity-50"
         >
           +
-        </button>
+        </Button>
       </form>
-      <ErrorBanner message={addOptState.error} />
+      <ErrorBanner message={addOptState.error || defaultError} />
+      <NoticeBanner message={defaultMessage} />
     </div>
   );
 }
@@ -1041,14 +1139,16 @@ function ModifierGroupsSection({
             <p className="text-xs text-gray-500">เพิ่มกลุ่มตัวเลือกจากคลังด้านนอกก่อน แล้วค่อยเลือกใช้ในเมนูนี้</p>
           )}
         </div>
-        <button
+        <Button
           type="submit"
-          disabled={applyPending || selectedCount === 0}
+          loading={applyPending}
+          loadingText="กำลังเพิ่ม..."
+          disabled={selectedCount === 0}
           title="เพิ่มกลุ่มที่เลือก"
           className="min-h-10 w-full rounded bg-gray-700 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:opacity-50"
         >
-          {applyPending ? "กำลังเพิ่ม..." : `+ เพิ่มที่เลือก${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
-        </button>
+          {`+ เพิ่มที่เลือก${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+        </Button>
       </form>
       <ErrorBanner message={applyState.error} />
       <NoticeBanner message={applyState.message} />
@@ -1162,11 +1262,275 @@ function CatalogDialog({
   );
 }
 
+function BranchCopyPanel({
+  products,
+  branchStores,
+  storeId,
+  canManageCatalog,
+  canUseMultiBranch,
+}: {
+  products: Product[];
+  branchStores: Store[];
+  storeId: string;
+  canManageCatalog: boolean;
+  canUseMultiBranch: boolean;
+}) {
+  const targetStores = branchStores.filter((store) => store.id !== storeId && store.isActive);
+  const [state, formAction, isPending] = useActionState(copyProductsAcrossBranchesAction, {
+    error: null,
+    message: null,
+  });
+  const disabled =
+    !canManageCatalog || !canUseMultiBranch || products.length === 0 || targetStores.length === 0 || isPending;
+
+  return (
+    <section className="relative mb-4 rounded-lg border border-slate-200 bg-white p-3" aria-busy={isPending}>
+      {isPending && (
+        <LocalizedLoading
+          variant="overlay"
+          message="กำลังคัดลอกสินค้าไปสาขา"
+          detail="คัดลอกเฉพาะรายการที่เลือก เมนูหน้านี้ยังดูได้"
+        />
+      )}
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">คัดลอกสินค้าไปสาขา</h3>
+          <p className="text-xs text-slate-500">
+            {canUseMultiBranch
+              ? "ใช้เมนูชุดเดียวกันข้ามสาขาได้ แต่ปลายทางยังแก้ราคาและตัวเลือกเองได้"
+              : "ฟีเจอร์นี้ต้องใช้แพ็กเกจที่รองรับหลายสาขา"}
+          </p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+          {targetStores.length} สาขาปลายทาง
+        </span>
+      </div>
+
+      <form action={formAction} className="mt-3 grid gap-3 xl:grid-cols-[1fr_1fr]">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-slate-600">สินค้า</p>
+          <div className="max-h-52 space-y-1 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2">
+            {products.length > 0 ? (
+              products.map((product) => (
+                <label
+                  key={product.id}
+                  className="flex items-center gap-2 rounded bg-white px-2 py-1.5 text-xs text-slate-700"
+                >
+                  <input
+                    type="checkbox"
+                    name="productIds"
+                    value={product.id}
+                    disabled={disabled}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{product.name}</span>
+                  <span className="tabular-nums text-slate-500">{priceStr(product.basePrice)}</span>
+                </label>
+              ))
+            ) : (
+              <p className="px-2 py-3 text-xs text-slate-500">ยังไม่มีสินค้าให้คัดลอก</p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-600">สาขาปลายทาง</p>
+            <div className="grid gap-1 sm:grid-cols-2">
+              {targetStores.length > 0 ? (
+                targetStores.map((store) => (
+                  <label
+                    key={store.id}
+                    className="flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5 text-xs text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      name="targetStoreIds"
+                      value={store.id}
+                      disabled={disabled}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    <span className="min-w-0 truncate">{store.name}</span>
+                  </label>
+                ))
+              ) : (
+                <p className="rounded border border-dashed border-slate-200 px-2 py-3 text-xs text-slate-500">
+                  ยังไม่มีสาขาอื่นในองค์กรนี้
+                </p>
+              )}
+            </div>
+          </div>
+
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-semibold text-slate-600">นโยบายราคา</legend>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="priceMode" value="copy" defaultChecked disabled={disabled} />
+              คัดลอกราคาเหมือนต้นทาง
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="priceMode" value="preserve" disabled={disabled} />
+              คงราคาสาขาปลายทาง
+            </label>
+          </fieldset>
+
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-semibold text-slate-600">สินค้าที่มีอยู่แล้ว</legend>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="duplicateMode" value="skip" defaultChecked disabled={disabled} />
+              ข้ามสินค้าที่เชื่อมโยงแล้ว
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="radio" name="duplicateMode" value="update" disabled={disabled} />
+              อัปเดตข้อมูล แต่คงราคาตาม policy
+            </label>
+          </fieldset>
+
+          <ErrorBanner message={state.error} />
+          <NoticeBanner message={state.message} />
+          <Button
+            type="submit"
+            loading={isPending}
+            loadingText="กำลังคัดลอก..."
+            disabled={disabled}
+            className="min-h-10 rounded-md bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            คัดลอกสินค้าไปสาขา
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function CatalogToolsDialogs({
+  products,
+  branchStores,
+  storeId,
+  variantTemplates,
+  modifierGroupTemplates,
+  canManageCatalog,
+  canUseMultiBranch,
+}: {
+  products: Product[];
+  branchStores: Store[];
+  storeId: string;
+  variantTemplates: VariantTemplate[];
+  modifierGroupTemplates: ModifierGroupTemplate[];
+  canManageCatalog: boolean;
+  canUseMultiBranch: boolean;
+}) {
+  const [dialogMode, setDialogMode] = useState<ToolDialogMode>("closed");
+  const targetStores = branchStores.filter((store) => store.id !== storeId && store.isActive);
+  const dialogTitle =
+    dialogMode === "branch-copy"
+      ? "คัดลอกสินค้าไปสาขา"
+      : dialogMode === "variant-templates"
+        ? "คลังตัวเลือกสินค้า"
+        : dialogMode === "modifier-group-templates"
+          ? "คลังกลุ่มตัวเลือก"
+          : "เครื่องมือเมนูสินค้า";
+
+  return (
+    <>
+      <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">เครื่องมือเมนูสินค้า</h3>
+            <p className="text-xs text-slate-500">
+              เปิดเฉพาะงานที่ต้องใช้ เพื่อให้หน้าเมนูสินค้าอ่านง่ายขึ้น
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            <a
+              href="/pos/display"
+              className="min-h-10 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 hover:bg-orange-100"
+            >
+              เปิดจอคู่ POS
+            </a>
+            <a
+              href="/pos/grocery"
+              className="min-h-10 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-center text-sm font-bold text-sky-800 hover:bg-sky-100"
+            >
+              เปิด Grocery POS
+            </a>
+            <a
+              href="/pos/grocery/display"
+              className="min-h-10 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 hover:bg-orange-100"
+            >
+              เปิดจอคู่ Grocery
+            </a>
+            <button
+              type="button"
+              onClick={() => setDialogMode("branch-copy")}
+              className="min-h-10 rounded-md border border-teal-200 bg-teal-50 px-3 text-sm font-bold text-teal-800 hover:bg-teal-100"
+            >
+              เปิดคัดลอกสินค้าไปสาขา
+              <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-xs text-teal-700">
+                {targetStores.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDialogMode("variant-templates")}
+              className="min-h-10 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
+            >
+              เปิดคลังตัวเลือกสินค้า
+              <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                {variantTemplates.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDialogMode("modifier-group-templates")}
+              className="min-h-10 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
+            >
+              เปิดคลังกลุ่มตัวเลือก
+              <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
+                {modifierGroupTemplates.length}
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <ModalDialog
+        open={dialogMode !== "closed"}
+        title={dialogTitle}
+        size={dialogMode === "branch-copy" || dialogMode === "modifier-group-templates" ? "xl" : "lg"}
+        onClose={() => setDialogMode("closed")}
+      >
+        {dialogMode === "branch-copy" && (
+          <BranchCopyPanel
+            products={products}
+            branchStores={branchStores}
+            storeId={storeId}
+            canManageCatalog={canManageCatalog}
+            canUseMultiBranch={canUseMultiBranch}
+          />
+        )}
+        {dialogMode === "variant-templates" && (
+          <VariantTemplatesPanel
+            variantTemplates={variantTemplates}
+            canManageCatalog={canManageCatalog}
+          />
+        )}
+        {dialogMode === "modifier-group-templates" && (
+          <ModifierGroupTemplatesPanel
+            modifierGroupTemplates={modifierGroupTemplates}
+            canManageCatalog={canManageCatalog}
+          />
+        )}
+      </ModalDialog>
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────
 
 export function CatalogManager({
   categories,
   products,
+  branchStores,
   variantTemplates,
   modifierGroupTemplates,
   role,
@@ -1175,6 +1539,7 @@ export function CatalogManager({
   organizationId,
   planName,
   canManageCatalog,
+  canUseMultiBranch,
   canUseQrOrdering,
   canUseStock,
 }: Props) {
@@ -1345,13 +1710,14 @@ export function CatalogManager({
         </aside>
 
         <section className="min-w-0 bg-slate-50 p-4">
-          <VariantTemplatesPanel
+          <CatalogToolsDialogs
+            products={products}
+            branchStores={branchStores}
+            storeId={storeId}
             variantTemplates={variantTemplates}
-            canManageCatalog={canManageCatalog}
-          />
-          <ModifierGroupTemplatesPanel
             modifierGroupTemplates={modifierGroupTemplates}
             canManageCatalog={canManageCatalog}
+            canUseMultiBranch={canUseMultiBranch}
           />
           <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>

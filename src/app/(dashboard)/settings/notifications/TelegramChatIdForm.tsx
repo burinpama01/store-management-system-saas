@@ -6,6 +6,7 @@ import {
   INITIAL_ACTION_FEEDBACK_STATE,
 } from "./feedback";
 import { NotificationFeedbackDialog } from "./NotificationFeedbackDialog";
+import { Button } from "@/shared/components/ui";
 
 interface Props {
   telegramChatId: string;
@@ -47,13 +48,16 @@ export function TelegramChatIdForm({
         {telegramTargetLoadFailed && (
           <p className="text-xs text-red-700">โหลด Telegram target ไม่สำเร็จ</p>
         )}
-        <button
+        <Button
           type="submit"
-          disabled={disabled}
-          className="btn-primary min-h-11 w-full text-sm disabled:opacity-40"
+          variant="primary"
+          loading={pending}
+          loadingText="กำลังบันทึก..."
+          disabled={!canManageTelegramTarget || telegramTargetLoadFailed}
+          className="min-h-11 w-full text-sm disabled:opacity-40"
         >
-          {pending ? "กำลังบันทึก..." : "บันทึก Telegram chat ID"}
-        </button>
+          บันทึก Telegram chat ID
+        </Button>
       </form>
 
       <NotificationFeedbackDialog

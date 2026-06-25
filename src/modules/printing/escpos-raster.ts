@@ -8,6 +8,7 @@ export const RASTER_WIDTH: Record<"58mm" | "80mm", number> = { "58mm": 384, "80m
 
 const ESC = 0x1b;
 const GS = 0x1d;
+const MAX_RASTER_BAND_HEIGHT = 240;
 
 /**
  * Packs a 1-byte-per-pixel monochrome bitmap (1 = black dot, 0 = white) into an
@@ -16,27 +17,39 @@ const GS = 0x1d;
  */
 export function packEscPosRaster(width: number, height: number, pixels: Uint8Array): Uint8Array {
   const bytesPerRow = Math.ceil(width / 8);
-  const body = new Uint8Array(8 + bytesPerRow * height);
-  // GS v 0 m xL xH yL yH
-  body[0] = GS;
-  body[1] = 0x76; // 'v'
-  body[2] = 0x30; // '0'
-  body[3] = 0; // m = normal
-  body[4] = bytesPerRow & 0xff;
-  body[5] = (bytesPerRow >> 8) & 0xff;
-  body[6] = height & 0xff;
-  body[7] = (height >> 8) & 0xff;
+  let totalLength = 0;
+  for (let y = 0; y < height; y += MAX_RASTER_BAND_HEIGHT) {
+    const bandHeight = Math.min(MAX_RASTER_BAND_HEIGHT, height - y);
+    totalLength += 8 + bytesPerRow * bandHeight;
+  }
 
-  let p = 8;
-  for (let y = 0; y < height; y++) {
-    const rowStart = y * width;
-    for (let bx = 0; bx < bytesPerRow; bx++) {
-      let b = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const x = bx * 8 + bit;
-        if (x < width && pixels[rowStart + x]) b |= 0x80 >> bit;
+  const body = new Uint8Array(totalLength);
+  let p = 0;
+
+  for (let bandTop = 0; bandTop < height; bandTop += MAX_RASTER_BAND_HEIGHT) {
+    const bandHeight = Math.min(MAX_RASTER_BAND_HEIGHT, height - bandTop);
+
+    // GS v 0 m xL xH yL yH. Keep yH zero because some mobile printers ignore
+    // it and print the remaining raster bytes as garbage at the receipt tail.
+    body[p++] = GS;
+    body[p++] = 0x76; // 'v'
+    body[p++] = 0x30; // '0'
+    body[p++] = 0; // m = normal
+    body[p++] = bytesPerRow & 0xff;
+    body[p++] = (bytesPerRow >> 8) & 0xff;
+    body[p++] = bandHeight & 0xff;
+    body[p++] = 0;
+
+    for (let y = 0; y < bandHeight; y++) {
+      const rowStart = (bandTop + y) * width;
+      for (let bx = 0; bx < bytesPerRow; bx++) {
+        let b = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const x = bx * 8 + bit;
+          if (x < width && pixels[rowStart + x]) b |= 0x80 >> bit;
+        }
+        body[p++] = b;
       }
-      body[p++] = b;
     }
   }
   return body;
@@ -54,10 +67,11 @@ export function wrapRasterJob(raster: Uint8Array): Uint8Array {
 }
 
 /**
- * Converts RGBA canvas pixels to a 1-bit monochrome buffer via luminance
- * threshold (default mid-gray). Returns 1 = black dot.
+ * Converts RGBA canvas pixels to a 1-bit monochrome buffer. The default
+ * threshold is intentionally high so anti-aliased text edges print darker on
+ * low-density thermal printers. Returns 1 = black dot.
  */
-export function rgbaToMono(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, threshold = 160): Uint8Array {
+export function rgbaToMono(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, threshold = 220): Uint8Array {
   const mono = new Uint8Array(width * height);
   for (let i = 0; i < width * height; i++) {
     const r = rgba[i * 4];

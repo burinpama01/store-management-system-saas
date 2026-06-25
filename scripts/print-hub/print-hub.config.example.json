@@ -1,0 +1,6 @@
+{
+  "serverUrl": "https://store-os-manage.vercel.app",
+  "storeId": "00000000-0000-0000-0000-000000000000",
+  "hubToken": "paste-the-hub-token-from-settings-here",
+  "pollIntervalMs": 2500
+}

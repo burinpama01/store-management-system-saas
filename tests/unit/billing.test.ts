@@ -23,10 +23,15 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
   free: {
     maxStores: 1,
     maxMembers: 1,
+    groceryPos: false,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: false,
     stockManagement: false,
     advancedPrinting: false,
     qrOrdering: false,
+    customerDisplay: false,
+    offlinePos: false,
     lineNotify: false,
     attendanceGps: false,
     advancedReports: false,
@@ -37,10 +42,15 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
   starter: {
     maxStores: 1,
     maxMembers: 3,
+    groceryPos: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: false,
     stockManagement: false,
     advancedPrinting: false,
     qrOrdering: false,
+    customerDisplay: false,
+    offlinePos: false,
     lineNotify: false,
     attendanceGps: false,
     advancedReports: false,
@@ -51,10 +61,15 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
   standard: {
     maxStores: 3,
     maxMembers: 10,
+    groceryPos: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: false,
+    customerDisplay: false,
+    offlinePos: false,
     lineNotify: false,
     attendanceGps: false,
     advancedReports: true,
@@ -65,10 +80,15 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
   premium: {
     maxStores: 5,
     maxMembers: 50,
+    groceryPos: true,
+    couponManagement: false,
+    loyaltyPoints: false,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: true,
+    customerDisplay: false,
+    offlinePos: true,
     lineNotify: true,
     attendanceGps: true,
     advancedReports: true,
@@ -79,10 +99,15 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
   enterprise: {
     maxStores: Infinity,
     maxMembers: Infinity,
+    groceryPos: true,
+    couponManagement: true,
+    loyaltyPoints: true,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
     qrOrdering: true,
+    customerDisplay: true,
+    offlinePos: true,
     lineNotify: true,
     attendanceGps: true,
     advancedReports: true,
@@ -142,30 +167,43 @@ describe("getPlanFeatures — package matrix contract", () => {
 describe("canUseFeature — plan tiers", () => {
   it("free: no buffet, no qr, no advanced printing", () => {
     const s = state("free", "active");
+    expect(canUseFeature(s, "groceryPos")).toBe(false);
     expect(canUseFeature(s, "buffetManagement")).toBe(false);
     expect(canUseFeature(s, "qrOrdering")).toBe(false);
     expect(canUseFeature(s, "advancedPrinting")).toBe(false);
   });
   it("starter: no buffet, no qr", () => {
     const s = state("starter", "active");
+    expect(canUseFeature(s, "groceryPos")).toBe(true);
+    expect(canUseFeature(s, "couponManagement")).toBe(false);
     expect(canUseFeature(s, "buffetManagement")).toBe(false);
     expect(canUseFeature(s, "qrOrdering")).toBe(false);
   });
-  it("standard: buffet yes, qr no", () => {
+  it("standard: buffet yes but member commerce and qr/display no", () => {
     const s = state("standard", "active");
+    expect(canUseFeature(s, "couponManagement")).toBe(false);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(false);
     expect(canUseFeature(s, "buffetManagement")).toBe(true);
     expect(canUseFeature(s, "stockManagement")).toBe(true);
     expect(canUseFeature(s, "qrOrdering")).toBe(false);
+    expect(canUseFeature(s, "customerDisplay")).toBe(false);
   });
-  it("premium: all features including qr + gps", () => {
+  it("premium: qr + gps but no member commerce/display", () => {
     const s = state("premium", "active");
     expect(canUseFeature(s, "qrOrdering")).toBe(true);
+    expect(canUseFeature(s, "couponManagement")).toBe(false);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(false);
+    expect(canUseFeature(s, "customerDisplay")).toBe(false);
+    expect(canUseFeature(s, "offlinePos")).toBe(true);
     expect(canUseFeature(s, "attendanceGps")).toBe(true);
     expect(canUseFeature(s, "lineNotify")).toBe(true);
     expect(canUseFeature(s, "multiBranchReporting")).toBe(false);
   });
   it("enterprise: all features including multi-branch", () => {
     const s = state("enterprise", "active");
+    expect(canUseFeature(s, "couponManagement")).toBe(true);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(true);
+    expect(canUseFeature(s, "customerDisplay")).toBe(true);
     expect(canUseFeature(s, "multiBranchReporting")).toBe(true);
     expect(canUseFeature(s, "apiIntegration")).toBe(true);
   });

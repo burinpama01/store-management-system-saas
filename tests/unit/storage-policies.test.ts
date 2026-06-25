@@ -46,4 +46,16 @@ describe("storage policies", () => {
     expect(corrective).toContain('drop policy if exists "product-images: manager+ can delete"');
     expect(productPolicies).not.toContain("where auth_user_role_in_org(o.id, 'manager')");
   });
+
+  it("keeps customer display media writes behind settings.manage_store permission", () => {
+    const corrective = read("supabase/migrations/20260624235900_customer_display_storage_permission_policy.sql");
+
+    expect(corrective).toContain('drop policy if exists "product-images: manager+ can upload"');
+    expect(corrective).toContain('drop policy if exists "product-images: manager+ can update"');
+    expect(corrective).toContain('drop policy if exists "product-images: manager+ can delete"');
+    expect(corrective).toContain("and (storage.foldername(name))[3] <> 'customer-display'");
+    expect(corrective).toContain('"product-images: settings managers can upload customer display"');
+    expect(corrective).toContain("(storage.foldername(name))[3] = 'customer-display'");
+    expect(corrective).toContain("auth_user_has_permission(s.organization_id, s.id, 'settings.manage_store')");
+  });
 });

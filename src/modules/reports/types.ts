@@ -27,6 +27,17 @@ export interface DailySales {
   revenue: number;
 }
 
+export interface BranchSalesSummary {
+  storeId: string;
+  storeName: string;
+  orderCount: number;
+  revenue: number;
+  avgOrderValue: number;
+  qrOrderCount: number;
+  posOrderCount: number;
+  revenueSharePercent: number;
+}
+
 export interface ReportData {
   salesSummary: SalesSummary;
   paymentMethods: PaymentMethodSummary[];
@@ -37,5 +48,6 @@ export interface ReportData {
 export interface DashboardData {
   todaySales: SalesSummary;
   pendingOrderCount: number;
+  paymentMethodsToday: PaymentMethodSummary[];
   topProductsToday: TopProduct[];
 }

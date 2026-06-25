@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { registerOwner, type RegisterState } from "./actions";
+import { Button } from "@/shared/components/ui";
 
 const INITIAL: RegisterState = { error: null, notice: null };
 
@@ -109,13 +110,15 @@ export default function RegisterPage() {
               />
             </div>
 
-            <button
+            <Button
               type="submit"
-              disabled={isPending}
-              className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
+              variant="primary"
+              loading={isPending}
+              loadingText="กำลังสร้างบัญชี..."
+              className="w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isPending ? "กำลังสร้างบัญชี..." : "สร้างบัญชี"}
-            </button>
+              สร้างบัญชี
+            </Button>
 
             <p className="text-center text-xs text-[var(--muted)]">
               เมื่อสมัคร ถือว่ายอมรับเงื่อนไขการใช้งานของ StoreOS

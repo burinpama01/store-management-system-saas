@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dedicated Grocery POS Barcode Loyalty Offline Enterprise Roadmap v1</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --ink: #172033;
+      --muted: #5f6b7d;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --brand: #08745f;
+      --brand-soft: #dff6ef;
+      --blue: #2457a6;
+      --blue-soft: #e8f0ff;
+      --warn: #8a5b00;
+      --warn-soft: #fff4cf;
+      --danger: #9b1c1c;
+      --danger-soft: #fee2e2;
+      --ok: #166534;
+      --ok-soft: #dcfce7;
+      --code: #111827;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1200px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+
+    header.hero, section, .card, .phase, .lane {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    header.hero {
+      padding: 28px;
+      box-shadow: 0 18px 42px rgba(16, 24, 40, 0.08);
+    }
+
+    section {
+      margin-top: 18px;
+      padding: 22px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h1 { font-size: clamp(28px, 4vw, 42px); }
+    h2 { font-size: 24px; }
+    h3 { font-size: 18px; }
+    p { margin: 10px 0 0; }
+
+    ul, ol {
+      margin: 10px 0 0;
+      padding-left: 22px;
+    }
+
+    li + li { margin-top: 6px; }
+
+    code {
+      color: var(--code);
+      background: #eef2f7;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card {
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .card.info { background: var(--blue-soft); border-color: #bed0f4; }
+    .card.warn { background: var(--warn-soft); border-color: #f3d27c; }
+    .card.danger { background: var(--danger-soft); border-color: #f3a7a7; }
+    .card.ok { background: var(--ok-soft); border-color: #9bd8aa; }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .phase {
+      padding: 16px;
+      min-height: 240px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .phase strong {
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--brand);
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .lanes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(170px, 1fr));
+      gap: 10px;
+      overflow-x: auto;
+      margin-top: 16px;
+      padding-bottom: 2px;
+    }
+
+    .lane {
+      min-height: 180px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef3f8;
+      font-size: 13px;
+      color: #344054;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .status.ready { background: var(--ok-soft); color: var(--ok); }
+    .status.gap { background: var(--danger-soft); color: var(--danger); }
+    .status.partial { background: var(--warn-soft); color: var(--warn); }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .checkitem {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .agent-brief {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .brief-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .brief-list li {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 0;
+    }
+
+    .brief-list li:last-child { border-bottom: 0; }
+
+    .brief-list b {
+      display: inline-block;
+      min-width: 118px;
+      color: #344054;
+    }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; }
+
+    @media (max-width: 900px) {
+      main { width: min(100vw - 20px, 720px); padding-top: 18px; }
+      header.hero, section { padding: 18px; }
+      .grid, .grid.two, .timeline, .checklist, .agent-brief { grid-template-columns: 1fr; }
+      .lanes { grid-template-columns: minmax(230px, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <h1>Dedicated Grocery POS, Barcode, Loyalty, Offline, Enterprise Roadmap v1</h1>
+      <p>แผนนี้แก้เป็นแนวทางสร้าง <strong>POS ร้านของชำแยกจาก POS ปัจจุบัน</strong> โดยใช้ domain/service เดิมเป็นฐานเท่าที่ปลอดภัย เช่น cart/order/payment/printing แต่ไม่ยัด logic ร้านของชำเข้า <code>src/app/pos/PosTerminal.tsx</code>.</p>
+      <div class="pill-row">
+        <span class="pill">Status: revised planning artifact</span>
+        <span class="pill">Created: 2026-06-21</span>
+        <span class="pill">Revised: dedicated grocery POS</span>
+        <span class="pill">No runtime code changed</span>
+        <span class="pill">No migration applied</span>
+        <span class="pill">Requires phased approval</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>Agent Execution Brief</h2>
+      <div class="agent-brief">
+        <div class="card info">
+          <h3>อ่านตรงนี้ก่อนเริ่มงาน</h3>
+          <ul class="brief-list">
+            <li><b>Goal:</b> สร้าง POS ร้านของชำ + barcode scanner เป็นระบบแยก ไม่ใช่ refactor POS ร้านอาหารเดิม</li>
+            <li><b>New route:</b> <code>/pos/grocery</code> ผ่าน <code>src/app/pos/grocery/page.tsx</code></li>
+            <li><b>New UI:</b> <code>src/app/pos/grocery/GroceryPosTerminal.tsx</code></li>
+            <li><b>New module:</b> <code>src/modules/grocery-pos/*</code> สำหรับ scanner, barcode lookup, grocery cart adapter</li>
+            <li><b>Reuse allowed:</b> <code>src/modules/pos/cart.ts</code>, <code>server-cart.ts</code>, <code>order-repository.ts</code>, <code>printing/*</code></li>
+            <li><b>Do not:</b> เพิ่ม grocery mode, scanner state หรือ shortcut จำนวนมากเข้า <code>src/app/pos/PosTerminal.tsx</code></li>
+          </ul>
+        </div>
+        <div class="card warn">
+          <h3>Definition of Done ของ Phase 1</h3>
+          <ul>
+            <li>POS เดิมที่ <code>/pos</code> ยังทำงานเหมือนเดิมและ tests เดิมยังผ่าน</li>
+            <li>POS ใหม่ที่ <code>/pos/grocery</code> scan barcode แล้วเพิ่มสินค้าลง cart ได้</li>
+            <li>barcode lookup ทำฝั่ง server/repository และไม่ข้าม <code>store_id</code></li>
+            <li>มี tests สำหรับ migration, repository lookup, scanner parser, cart behavior และ navigation/access guard</li>
+            <li>ผ่าน <code>code_reviewer</code> หลังมี runtime/migration change</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Source Of Truth ที่ตรวจแล้ว</h2>
+      <div class="grid">
+        <div class="card ok">
+          <h3>Graphify</h3>
+          <p>รัน <code>graphify update .</code> แล้วสำเร็จ: 1242 nodes, 3220 edges, 92 communities. ใช้ภาพรวมล่าสุดของ repo ก่อนวาง phase.</p>
+        </div>
+        <div class="card warn">
+          <h3>SocratiCode</h3>
+          <p>พยายาม build graph แล้วล้มด้วย <code>fetch failed</code>. แผนนี้จึงใช้ <code>rg</code> + context-mode เป็น fallback และต้องทำ impact review เพิ่มก่อน runtime change.</p>
+        </div>
+        <div class="card info">
+          <h3>Repo Evidence</h3>
+          <p>ตรวจ <code>src/app/pos</code>, <code>src/modules/pos</code>, <code>src/modules/printing</code>, <code>src/modules/billing/types.ts</code>, migrations และ tests ที่เกี่ยวกับ POS/printing/billing.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Current Capability Snapshot</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>สถานะปัจจุบัน</th>
+            <th>Evidence</th>
+            <th>ช่องว่างที่ต้องปิด</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>POS order/payment</td>
+            <td><span class="status ready">มีฐานแล้ว</span></td>
+            <td><code>src/app/pos/PosTerminal.tsx</code>, <code>src/modules/pos/order-repository.ts</code>, RPC <code>close_pos_order_payment</code></td>
+            <td>ใช้เป็นฐาน service ได้ แต่ POS ร้านของชำต้องสร้าง route/component/module ใหม่ เพื่อไม่ให้ regression กับ POS ร้านอาหาร/โต๊ะ/บุฟเฟต์เดิม.</td>
+          </tr>
+          <tr>
+            <td>Discount</td>
+            <td><span class="status partial">บางส่วน</span></td>
+            <td><code>src/modules/pos/discount-policy.ts</code>, cart/order discount fields</td>
+            <td>ยังไม่มี coupon policy, redemption, usage limit, stacking rule, customer targeting.</td>
+          </tr>
+          <tr>
+            <td>Customer loyalty</td>
+            <td><span class="status gap">ยังไม่มี</span></td>
+            <td>ไม่พบ table/domain ชัดเจนสำหรับ loyalty ledger หรือ customer profile ใน POS flow</td>
+            <td>ต้องเพิ่ม customers, loyalty account, ledger, earn/redeem/reversal แบบ idempotent.</td>
+          </tr>
+          <tr>
+            <td>Grocery barcode</td>
+            <td><span class="status partial">ต้องแยกเป็น POS ใหม่</span></td>
+            <td><code>ProductVariant.sku</code>, <code>stockQuantity</code>, <code>trackStock</code></td>
+            <td>สร้าง <code>/pos/grocery</code>, เพิ่ม barcode lookup, product-level barcode, variant-level barcode, scanner input flow, duplicate-scan quantity.</td>
+          </tr>
+          <tr>
+            <td>WiFi/IP printer</td>
+            <td><span class="status partial">มี adapter แล้ว</span></td>
+            <td><code>src/modules/printing/adapters/ip.ts</code>, <code>src/app/api/print/ip/route.ts</code>, <code>advancedPrinting</code></td>
+            <td>ต้อง harden config-only target, health check, queue/retry, per-store permission, no arbitrary client IP.</td>
+          </tr>
+          <tr>
+            <td>Offline full sync</td>
+            <td><span class="status gap">ยังไม่มี</span></td>
+            <td>ไม่พบ IndexedDB queue/service worker/sync domain สำหรับ POS transaction</td>
+            <td>ต้องออกแบบ offline operation log, conflict rule, idempotency key, sync monitor, replay endpoint.</td>
+          </tr>
+          <tr>
+            <td>Customer display / dual screen</td>
+            <td><span class="status gap">ยังไม่มี</span></td>
+            <td>ไม่พบ route หรือ broadcast state สำหรับจอลูกค้า</td>
+            <td>ต้องมี display session, second-window mode, BroadcastChannel/local sync และ privacy control.</td>
+          </tr>
+          <tr>
+            <td>Enterprise multi-branch</td>
+            <td><span class="status partial">มี boundary แล้ว</span></td>
+            <td><code>stores</code>, org-wide membership, <code>multiBranchReporting</code>, <code>maxStores: Infinity</code></td>
+            <td>ต้องเพิ่ม centralized branch dashboard, branch transfer/reporting, package gate และ cross-store RLS tests.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Recommended Phasing</h2>
+      <div class="timeline">
+        <div class="phase">
+          <strong>1</strong>
+          <h3>Dedicated Grocery POS + Barcode</h3>
+          <p>เริ่มจาก POS ร้านของชำแยกต่างหากที่ <code>/pos/grocery</code>. ใช้ POS เดิมเป็น reference/service base แต่ไม่แก้ <code>PosTerminal.tsx</code> ให้กลายเป็น multi-mode component.</p>
+          <ul>
+            <li>เพิ่ม route ใหม่ <code>src/app/pos/grocery/page.tsx</code>.</li>
+            <li>เพิ่ม UI ใหม่ <code>GroceryPosTerminal.tsx</code> สำหรับ scan-first flow.</li>
+            <li>เพิ่ม product/variant barcode contract และ lookup by barcode/SKU.</li>
+            <li>เพิ่ม scanner buffer สำหรับ keyboard wedge scanner, duplicate-scan quantity และ not-found workflow.</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <strong>2</strong>
+          <h3>Coupon + Loyalty Points</h3>
+          <p>ต่อจาก cart/order contract ที่ชัดแล้ว เพื่อไม่ให้ discount กับ point ledger ขัดกัน.</p>
+          <ul>
+            <li>เพิ่ม customer profile และ membership lookup.</li>
+            <li>เพิ่ม coupon policy engine ฝั่ง server.</li>
+            <li>เพิ่ม loyalty ledger earn/redeem/reversal.</li>
+            <li>ผูก receipt และ order history.</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <strong>3</strong>
+          <h3>WiFi Printer + Dual Screen</h3>
+          <p>ยกระดับหน้าร้าน: พิมพ์ใบเสร็จผ่าน WiFi แบบปลอดภัย และเปิดจอลูกค้าแยกจาก POS operator.</p>
+          <ul>
+            <li>ใช้ printer config จากฐานข้อมูลเท่านั้น.</li>
+            <li>เพิ่ม printer health test และ retry status.</li>
+            <li>เพิ่ม customer display route/session.</li>
+            <li>รองรับ second window และ external monitor.</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <strong>4</strong>
+          <h3>Offline-First + Enterprise</h3>
+          <p>ทำหลัง order/coupon/loyalty/printer contract นิ่ง เพราะ phase นี้แตะ transaction, sync และ reporting ข้ามสาขา.</p>
+          <ul>
+            <li>IndexedDB operation queue + sync state.</li>
+            <li>Idempotency key ต่อ order/payment/redemption.</li>
+            <li>Conflict/replay policy ฝั่ง server.</li>
+            <li>Enterprise branch dashboard/reporting.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Target Architecture</h2>
+      <div class="lanes">
+        <div class="lane">
+          <h3>Catalog</h3>
+          <ul>
+            <li><code>barcode</code> ที่ product และ variant.</li>
+            <li><code>sku</code> ยังใช้ได้ แต่ไม่แทน barcode.</li>
+            <li>unique ต่อ <code>store_id</code> สำหรับ barcode ที่ active.</li>
+            <li>รองรับ grocery unit: ชิ้น, แพ็ค, กล่อง, กิโลกรัม ใน phase ถัดไปถ้าต้องชั่งน้ำหนัก.</li>
+          </ul>
+        </div>
+        <div class="lane">
+          <h3>Dedicated Grocery POS</h3>
+          <ul>
+            <li>สร้าง bounded context ใหม่ที่ <code>src/modules/grocery-pos</code>.</li>
+            <li>สร้าง route ใหม่ <code>src/app/pos/grocery</code> และ component <code>GroceryPosTerminal.tsx</code>.</li>
+            <li>reuse cart/order/payment/printing service เดิมผ่าน adapter ที่เล็กและ test ได้.</li>
+            <li>ห้ามยัด scanner state หรือ grocery shortcuts เข้า <code>PosTerminal.tsx</code>.</li>
+          </ul>
+        </div>
+        <div class="lane">
+          <h3>Promotion</h3>
+          <ul>
+            <li>coupon validation ฝั่ง server เท่านั้น.</li>
+            <li>policy: date, min spend, customer, store, usage limit.</li>
+            <li>ระบุ stacking rule กับ manual discount.</li>
+            <li>redemption ต้อง reverse ได้เมื่อ void order.</li>
+          </ul>
+        </div>
+        <div class="lane">
+          <h3>Loyalty</h3>
+          <ul>
+            <li>ledger เป็น append-only.</li>
+            <li>earn point หลัง payment success เท่านั้น.</li>
+            <li>redeem point เป็น discount source แยกจาก coupon.</li>
+            <li>void/refund ต้องสร้าง reversal entry.</li>
+          </ul>
+        </div>
+        <div class="lane">
+          <h3>Offline Sync</h3>
+          <ul>
+            <li>IndexedDB queue เก็บ draft operation.</li>
+            <li>service worker สำหรับ app shell/cache.</li>
+            <li>sync endpoint ตรวจ idempotency และ catalog version.</li>
+            <li>UI ต้องแสดง pending/synced/failed ชัดเจน.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Data Model Direction</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Tables / Columns</th>
+            <th>Invariant สำคัญ</th>
+            <th>Test ที่ต้องมี</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Barcode</td>
+            <td><code>products.barcode</code>, <code>product_variants.barcode</code>, optional <code>catalog_barcodes</code> ถ้าสินค้าหนึ่งตัวมีหลาย barcode</td>
+            <td>barcode ต้อง unique ภายใน store สำหรับ item ที่ active และต้องไม่ข้าม tenant.</td>
+            <td>migration test, repository lookup test, POS scanner duplicate quantity test.</td>
+          </tr>
+          <tr>
+            <td>Customers</td>
+            <td><code>customers</code>, phone/email fields, <code>customer_id</code> ใน orders</td>
+            <td>เบอร์โทรซ้ำได้เฉพาะถ้าถูก merge ตาม policy; POS ต้องไม่เปิดข้อมูลลูกค้าข้ามร้าน.</td>
+            <td>RLS/store boundary test, customer lookup action test, order history test.</td>
+          </tr>
+          <tr>
+            <td>Coupons</td>
+            <td><code>coupons</code>, <code>coupon_redemptions</code>, <code>orders.coupon_id</code>, discount source metadata</td>
+            <td>redeem ต้อง atomic กับ order/payment หรือมี reserved state ที่หมดอายุได้.</td>
+            <td>policy matrix test, usage-limit race test, void reversal test.</td>
+          </tr>
+          <tr>
+            <td>Loyalty</td>
+            <td><code>loyalty_accounts</code>, <code>loyalty_ledger</code>, <code>orders.loyalty_points_earned</code>, <code>orders.loyalty_points_redeemed</code></td>
+            <td>ledger append-only; balance derive จาก ledger หรือ materialized balance ที่ update แบบ locked transaction.</td>
+            <td>earn/redeem/reversal tests, idempotency tests, negative balance denial.</td>
+          </tr>
+          <tr>
+            <td>Offline</td>
+            <td><code>pos_devices</code>, <code>pos_sync_operations</code>, client IndexedDB stores</td>
+            <td>ทุก operation ต้องมี <code>idempotency_key</code>, <code>device_id</code>, <code>store_id</code>, <code>catalog_version</code>.</td>
+            <td>queue replay test, duplicate replay test, stale catalog conflict test, sync UI state test.</td>
+          </tr>
+          <tr>
+            <td>Enterprise</td>
+            <td>ใช้ <code>stores</code>, เพิ่ม report views/RPC ตาม branch aggregation</td>
+            <td>Enterprise เห็น cross-store aggregate ได้ แต่ store-scoped staff ยังเห็นเฉพาะ store.</td>
+            <td>billing gate test, RLS aggregate test, report filter test.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Package / Billing Impact</h2>
+      <div class="grid two">
+        <div class="card info">
+          <h3>Suggested Feature Gates</h3>
+          <ul>
+            <li><code>groceryPos</code>: Starter ขึ้นไป หรือ Standard ถ้ารวม stock-heavy flow.</li>
+            <li><code>couponManagement</code>: Standard ขึ้นไป.</li>
+            <li><code>loyaltyPoints</code>: Standard หรือ Premium ตาม product contract ที่ต้องการ.</li>
+            <li><code>offlinePos</code>: Premium ขึ้นไป เพราะกระทบ device/session/sync.</li>
+            <li><code>customerDisplay</code>: Premium ขึ้นไป.</li>
+            <li><code>multiBranchOperations</code>: Enterprise เท่านั้น.</li>
+          </ul>
+        </div>
+        <div class="card warn">
+          <h3>Surfaces ที่ต้องอัปเดตพร้อมกัน</h3>
+          <ul>
+            <li><code>src/modules/billing/types.ts</code> เป็น runtime feature matrix.</li>
+            <li>visible package copy ใน billing/pricing UI.</li>
+            <li><code>plan_settings.feature_lines</code> migration แบบ preserve admin-edited copy.</li>
+            <li><code>tests/unit/billing.test.ts</code> ต้องเป็น full-matrix contract test.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Agent Task Map</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Create</th>
+            <th>Modify</th>
+            <th>Do Not Touch</th>
+            <th>Verification</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. Dedicated Grocery POS shell</td>
+            <td><code>src/app/pos/grocery/page.tsx</code>, <code>src/app/pos/grocery/GroceryPosTerminal.tsx</code>, <code>src/app/pos/grocery/actions.ts</code></td>
+            <td><code>src/app/pos/page.tsx</code> เฉพาะเพิ่ม link/entry point ถ้าจำเป็น</td>
+            <td><code>src/app/pos/PosTerminal.tsx</code> ยกเว้น bug fix ที่เกี่ยวกับ shared type เท่านั้น</td>
+            <td><code>npm test -- tests/unit/ui-regressions.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>2. Barcode catalog contract</td>
+            <td>migration ใหม่ใน <code>supabase/migrations/*_grocery_barcode.sql</code></td>
+            <td><code>src/modules/catalog/types.ts</code>, <code>src/modules/catalog/repository.ts</code>, <code>src/server/integrations/supabase/database.types.ts</code></td>
+            <td>อย่าเปลี่ยนความหมาย <code>sku</code>; ให้ <code>barcode</code> เป็น field แยก</td>
+            <td><code>npm test -- tests/unit/catalog-variant-templates.test.ts</code> และ test migration ใหม่</td>
+          </tr>
+          <tr>
+            <td>3. Scanner parser + lookup</td>
+            <td><code>src/modules/grocery-pos/scanner.ts</code>, <code>src/modules/grocery-pos/barcode-lookup.ts</code>, <code>tests/unit/grocery-pos-scanner.test.ts</code></td>
+            <td><code>src/app/pos/grocery/actions.ts</code></td>
+            <td>อย่า query barcode จาก client โดยตรง; action ต้อง enforce store context</td>
+            <td><code>npm test -- tests/unit/grocery-pos-scanner.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>4. Grocery cart adapter</td>
+            <td><code>src/modules/grocery-pos/cart-adapter.ts</code>, <code>tests/unit/grocery-pos-cart.test.ts</code></td>
+            <td>reuse <code>src/modules/pos/cart.ts</code> ผ่าน wrapper เท่านั้นถ้าไม่จำเป็นต้องแก้ shared cart</td>
+            <td>อย่าเพิ่ม grocery-only discount/coupon ลง cart เดิมใน Phase 1</td>
+            <td><code>npm test -- tests/unit/grocery-pos-cart.test.ts tests/unit/pos-cart.test.ts tests/unit/pos-server-cart.test.ts</code></td>
+          </tr>
+          <tr>
+            <td>5. Payment/receipt reuse smoke</td>
+            <td>test ใหม่ถ้าจำเป็น: <code>tests/unit/grocery-pos-order.test.ts</code></td>
+            <td><code>src/app/pos/grocery/actions.ts</code> เรียก <code>createOrderWithItems</code> และ <code>addPaymentAndClose</code> ผ่าน contract เดิม</td>
+            <td>อย่าเปลี่ยน RPC <code>close_pos_order_payment</code> ก่อนมี test ครอบ restaurant POS เดิม</td>
+            <td><code>npm test -- tests/unit/accounting-pos-link.test.ts tests/unit/printing.test.ts</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Implementation Checklist</h2>
+      <div class="checklist">
+        <div class="checkitem">
+          <h3>Phase 1: Dedicated Grocery POS + Barcode</h3>
+          <ul>
+            <li>สร้าง route/component ใหม่ <code>/pos/grocery</code> แยกจาก POS เดิม.</li>
+            <li>เพิ่ม migration barcode + indexes + RLS compatible constraints.</li>
+            <li>เพิ่ม <code>src/modules/grocery-pos/scanner.ts</code> สำหรับ keyboard wedge scanner.</li>
+            <li>เพิ่ม <code>barcode-lookup.ts</code> ที่ enforce <code>store_id</code>.</li>
+            <li>เพิ่ม grocery cart adapter ที่ reuse cart/order service เดิมโดยไม่เปลี่ยน behavior ของ <code>/pos</code>.</li>
+            <li>เพิ่ม tests: migration, repository lookup, scanner parser, grocery cart, POS regression.</li>
+          </ul>
+        </div>
+        <div class="checkitem">
+          <h3>Phase 2 Checklist</h3>
+          <ul>
+            <li>เพิ่ม customer/coupon/loyalty migrations.</li>
+            <li>เพิ่ม server-side coupon policy และ loyalty ledger service.</li>
+            <li>ผูก order/payment/void flow แบบ atomic.</li>
+            <li>เพิ่ม tests: policy matrix, ledger, redemption, receipt output.</li>
+          </ul>
+        </div>
+        <div class="checkitem">
+          <h3>Phase 3 Checklist</h3>
+          <ul>
+            <li>review printer SSRF boundary ก่อนเพิ่ม health/retry.</li>
+            <li>เพิ่ม printer status panel และ test print feedback.</li>
+            <li>เพิ่ม customer display route + BroadcastChannel.</li>
+            <li>verify desktop/mobile/second-window flow ด้วย browser test.</li>
+          </ul>
+        </div>
+        <div class="checkitem">
+          <h3>Phase 4 Checklist</h3>
+          <ul>
+            <li>เพิ่ม POS device/session model และ operation queue.</li>
+            <li>เพิ่ม IndexedDB abstraction + sync worker.</li>
+            <li>เพิ่ม replay endpoint/RPC พร้อม idempotency lock.</li>
+            <li>เพิ่ม Enterprise branch report + gate + RLS tests.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Verification Strategy</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Command / Method</th>
+            <th>Expected Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Unit</td>
+            <td><code>npm test -- tests/unit/grocery-pos-scanner.test.ts tests/unit/grocery-pos-cart.test.ts tests/unit/pos-cart.test.ts tests/unit/pos-server-cart.test.ts tests/unit/printing.test.ts</code></td>
+            <td>POS ร้านของชำทำงานตาม contract ใหม่ และ POS/cart/printing เดิมยังไม่ regress.</td>
+          </tr>
+          <tr>
+            <td>Typecheck</td>
+            <td><code>npm run typecheck</code></td>
+            <td>Next.js/TypeScript type contract ผ่านก่อน browser QA.</td>
+          </tr>
+          <tr>
+            <td>Lint</td>
+            <td><code>npm run lint</code></td>
+            <td>ไม่มี client/server boundary หรือ import issue ใหม่.</td>
+          </tr>
+          <tr>
+            <td>Build</td>
+            <td><code>npm run build</code></td>
+            <td>App Router build ผ่านหลังเพิ่ม routes/components.</td>
+          </tr>
+          <tr>
+            <td>Browser QA</td>
+            <td>เปิด <code>/pos</code> และ <code>/pos/grocery</code>; ทดสอบ scan barcode simulation, duplicate scan, not-found, collect payment, receipt preview.</td>
+            <td>POS เดิมยังทำงานเหมือนเดิม; POS ร้านของชำไม่มี console error, ไม่มี layout overlap และ flow scan-first จบได้.</td>
+          </tr>
+          <tr>
+            <td>Offline QA</td>
+            <td>DevTools offline mode + queued orders + reconnect sync.</td>
+            <td>สถานะ pending/synced/failed ถูกต้อง และ duplicate replay ไม่สร้าง order/payment ซ้ำ.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Risks / Stop Conditions</h2>
+      <div class="grid">
+        <div class="card danger">
+          <h3>POS Boundary</h3>
+          <p>ห้ามเปลี่ยน <code>src/app/pos/PosTerminal.tsx</code> ให้รองรับ grocery mode แบบรวมทุกอย่างในไฟล์เดียว. ถ้าต้องใช้ logic เดิม ให้ extract/shared service แบบมี tests ก่อน.</p>
+        </div>
+        <div class="card danger">
+          <h3>Production / DB</h3>
+          <p>ห้าม apply remote migration, production deploy, printer hardware claim หรือ DB write UAT โดยไม่มี approval แยก พร้อม target/backup/rollback.</p>
+        </div>
+        <div class="card warn">
+          <h3>Offline Sync</h3>
+          <p>ถ้าไม่มี idempotency และ conflict policy ที่ชัด ห้ามเปิด offline full sync ให้ร้านจริง เพราะเสี่ยง order/payment/stock ซ้ำ.</p>
+        </div>
+        <div class="card warn">
+          <h3>Printer Security</h3>
+          <p>IP printer ต้องพิมพ์เฉพาะ host/port ที่บันทึกใน store printer config และผ่าน permission/package gate เท่านั้น.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Recommended Next Step</h2>
+      <p>เริ่ม implementation จาก Phase 1 ก่อน: สร้าง <code>/pos/grocery</code> เป็น POS ร้านของชำแยกจาก POS เดิม. ขอบเขตเล็กสุดที่ให้ผลจริงคือ route ใหม่, barcode contract, scanner parser, product lookup และ cart quantity behavior โดยยังไม่แตะ coupon/offline. หลัง Phase 1 ผ่าน tests และ code review แล้วค่อยต่อ Phase 2.</p>
+      <p class="muted small">หมายเหตุ: แผนนี้เป็น artifact สำหรับตัดสินใจและแตกงาน ไม่ได้แก้ code runtime, migration หรือ production environment.</p>
+    </section>
+  </main>
+</body>
+</html>
