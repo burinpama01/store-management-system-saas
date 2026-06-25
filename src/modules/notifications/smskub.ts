@@ -1,4 +1,4 @@
-const DEFAULT_SMSKUB_API_URL = "https://console.sms-kub.com/api/messages";
+const DEFAULT_SMSKUB_API_URL = "https://console.sms-kub.com/api/campaigns";
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -20,17 +20,15 @@ export async function sendSmskubOtp(phone: string, code: string) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "X-API-Key": apiKey,
+      key: apiKey,
     },
     body: JSON.stringify({
-      to: phone,
-      phone,
-      recipients: [phone],
+      name: "StoreOS OTP",
       message,
-      text: message,
-      sender: senderName,
-      sender_name: senderName,
+      to: [phone],
+      from: senderName,
+      is_schedule: false,
+      frequency: "onetime",
     }),
   });
 

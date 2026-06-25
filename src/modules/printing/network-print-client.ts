@@ -1,0 +1,91 @@
+import type { Printer } from "@/modules/stores/types";
+import type { ReceiptData } from "./types";
+
+export const DEFAULT_LOCAL_PRINT_BRIDGE_URL = "http://127.0.0.1:17878";
+
+export interface NetworkPrintPayload {
+  printerId: string;
+  receiptData: ReceiptData;
+  printJobBase64: string;
+}
+
+type Fetcher = typeof fetch;
+
+interface SendNetworkPrintJobOptions {
+  fetcher?: Fetcher;
+  hostname?: string;
+  bridgeUrl?: string;
+}
+
+function getBrowserHostname() {
+  return typeof window === "undefined" ? "localhost" : window.location.hostname;
+}
+
+function getConfiguredBridgeUrl() {
+  if (typeof window === "undefined") return DEFAULT_LOCAL_PRINT_BRIDGE_URL;
+  const stored = window.localStorage.getItem("storeos.printBridgeUrl")?.trim();
+  return (stored || process.env.NEXT_PUBLIC_PRINT_BRIDGE_URL || DEFAULT_LOCAL_PRINT_BRIDGE_URL).replace(/\/+$/, "");
+}
+
+function isPrivateLanHostname(hostname: string) {
+  return (
+    /^(10)\.(\d{1,3}\.){2}\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\.(\d{1,3}\.)\d{1,3}$/.test(hostname) ||
+    /^192\.168\.(\d{1,3}\.)\d{1,3}$/.test(hostname)
+  );
+}
+
+function parseErrorBody(body: unknown) {
+  if (body && typeof body === "object" && "error" in body && typeof body.error === "string") {
+    return body.error;
+  }
+  return null;
+}
+
+export function shouldUseLocalPrintBridge(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized !== "localhost" && normalized !== "127.0.0.1" && normalized !== "::1" && !isPrivateLanHostname(normalized);
+}
+
+export function localPrintBridgeUnavailableMessage() {
+  return "เครื่องพิมพ์ WiFi บน production ต้องเปิด StoreOS Print Bridge บนเครื่องแคชเชียร์ก่อน แล้วลองพิมพ์ใหม่";
+}
+
+async function postJson(fetcher: Fetcher, url: string, body: unknown) {
+  const res = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(parseErrorBody(json) ?? `เชื่อมต่อ IP / WiFi ไม่สำเร็จ (${res.status})`);
+  }
+}
+
+export async function sendNetworkPrintJob(
+  printer: Printer,
+  payload: NetworkPrintPayload,
+  options: SendNetworkPrintJobOptions = {},
+) {
+  const fetcher = options.fetcher ?? fetch;
+  const hostname = options.hostname ?? getBrowserHostname();
+
+  if (shouldUseLocalPrintBridge(hostname)) {
+    if (!printer.ipAddress) throw new Error("ยังไม่ได้ตั้งค่า IP เครื่องพิมพ์");
+    const bridgeUrl = (options.bridgeUrl ?? getConfiguredBridgeUrl()).replace(/\/+$/, "");
+    try {
+      await postJson(fetcher, `${bridgeUrl}/print`, {
+        host: printer.ipAddress,
+        port: printer.port ?? 9100,
+        printJobBase64: payload.printJobBase64,
+      });
+      return;
+    } catch (error) {
+      if (error instanceof TypeError) throw new Error(localPrintBridgeUnavailableMessage());
+      throw error;
+    }
+  }
+
+  await postJson(fetcher, "/api/print/ip", payload);
+}

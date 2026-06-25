@@ -669,7 +669,8 @@ describe("printer adapters", () => {
 
     expect(service).toContain("escposAdapter");
     expect(service).toContain("escpos: escposAdapter");
-    expect(adapter).toContain("/api/print/ip");
+    expect(adapter).toContain("sendNetworkPrintJob");
+    expect(adapter).not.toContain("/api/print/ip");
     expect(adapter).toContain("ESC/POS ต้องเลือกเครื่องพิมพ์จากการตั้งค่าร้าน");
   });
 
@@ -727,6 +728,7 @@ describe("printer adapters", () => {
     expect(ipAdapter).toContain("printJobBase64");
     expect(ipAdapter).toContain("buildReceiptPrinterBytes(data, data)");
     expect(escposAdapter).toContain("printJobBase64");
+    expect(escposAdapter).toContain("buildReceiptPrinterBytes(data, data)");
     expect(route).toContain("printJobBase64");
   });
 

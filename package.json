@@ -1,12 +1,13 @@
 {
   "name": "store-management-saas",
-  "version": "0.27.3",
+  "version": "0.27.5",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "print:bridge": "node scripts/print-bridge.mjs",
     "risk:check": "node scripts/risk-readiness.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

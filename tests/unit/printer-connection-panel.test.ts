@@ -109,7 +109,7 @@ describe("PrinterConnectionPanel network printer controls", () => {
     const repository = read("src/modules/stores/repository.ts");
 
     expect(panel).toContain("IP / WiFi");
-    expect(panel).toContain("/api/print/ip");
+    expect(panel).toContain("sendNetworkPrintJob");
     expect(panel).toContain("buildNetworkPrinterTestPayload(printer, storeName, paperWidth)");
     expect(panel).toContain("printJobBase64");
     expect(panel).toContain("saveNetworkPrinterAction");

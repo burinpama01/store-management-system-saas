@@ -103,6 +103,44 @@ describe("customer member portal behavior", () => {
     vi.restoreAllMocks();
   });
 
+  it("sends SMSKUB OTP with the documented API key header and campaign payload", async () => {
+    vi.resetModules();
+    const originalFetch = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    process.env.SMSKUB_API_KEY = "smskub-test-key";
+    process.env.SMSKUB_SENDER_NAME = "StoreOS";
+    process.env.SMSKUB_API_URL = "https://console.sms-kub.com/api/campaigns";
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const { sendSmskubOtp } = await import("@/modules/notifications/smskub");
+      await sendSmskubOtp("0801234567", "123456");
+    } finally {
+      global.fetch = originalFetch;
+      delete process.env.SMSKUB_API_KEY;
+      delete process.env.SMSKUB_SENDER_NAME;
+      delete process.env.SMSKUB_API_URL;
+    }
+
+    expect(fetchMock).toHaveBeenCalledWith("https://console.sms-kub.com/api/campaigns", expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({
+        "Content-Type": "application/json",
+        key: "smskub-test-key",
+      }),
+    }));
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("X-API-Key");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({
+      name: "StoreOS OTP",
+      to: ["0801234567"],
+      from: "StoreOS",
+      is_schedule: false,
+      frequency: "onetime",
+    });
+    expect(body.message).toContain("123456");
+  });
+
   it("opens a valid permanent QR without a staff session", async () => {
     const { queries } = setupServiceClient({ data: portalLinkRow, error: null });
     const { getCustomerPortalData } = await import("@/modules/customers/member-repository");

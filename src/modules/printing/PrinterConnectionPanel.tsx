@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected } from "@/modules/printing/bluetooth-client";
+import { sendNetworkPrintJob } from "@/modules/printing/network-print-client";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
 import { connectUsbPrinter, getUsbPrinterName, isUsbPrinterConnected } from "@/modules/printing/usb-client";
@@ -155,15 +156,7 @@ export function PrinterConnectionPanel({
     setNetworkMessage(null);
     setBusy(true);
     try {
-      const res = await fetch("/api/print/ip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildNetworkPrinterTestPayload(printer, storeName, paperWidth)),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? `เชื่อมต่อ IP / WiFi ไม่สำเร็จ (${res.status})`);
-      }
+      await sendNetworkPrintJob(printer, buildNetworkPrinterTestPayload(printer, storeName, paperWidth));
       setConnectedDevice({ kind: "IP / WiFi", name: printer.name });
       setRememberedDevice(null);
       setNetworkMessage(`ส่งใบทดสอบไปที่ ${printer.name} แล้ว`);
@@ -306,7 +299,9 @@ export function PrinterConnectionPanel({
             <button type="submit" disabled={savingNetworkPrinter} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
               {savingNetworkPrinter ? "กำลังบันทึก..." : "บันทึก IP / WiFi"}
             </button>
-            <p className="text-xs text-[var(--muted)]">รองรับ Private LAN เช่น 192.168.x.x, 10.x.x.x, 172.16-31.x.x</p>
+            <p className="text-xs text-[var(--muted)]">
+              รองรับ Private LAN เช่น 192.168.x.x, 10.x.x.x, 172.16-31.x.x; production ต้องเปิด StoreOS Print Bridge บนเครื่องแคชเชียร์
+            </p>
           </div>
           {saveState.error && (
             <p className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{saveState.error}</p>
