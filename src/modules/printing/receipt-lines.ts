@@ -98,6 +98,10 @@ export interface ReceiptLine {
   bold?: boolean;
   qrPayload?: string;
   qrAmount?: number;
+  /** A bitmap image to render (store logo at the header, QR/promo at the footer). */
+  imageUrl?: string;
+  /** Logo gets dithered (photo-like); footer is thresholded (sharp, keeps QR scannable). */
+  imageKind?: "logo" | "footer";
 }
 
 export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; cols: number } {
@@ -105,6 +109,9 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   const div = "-".repeat(cols);
   const lines: ReceiptLine[] = [];
 
+  if (data.logoUrl) {
+    lines.push({ text: "", align: "center", imageUrl: data.logoUrl, imageKind: "logo" });
+  }
   lines.push({ text: data.storeName, align: "center", bold: true });
   if (data.address) lines.push({ text: data.address, align: "center" });
   if (data.phone) lines.push({ text: `โทร: ${data.phone}`, align: "center" });
@@ -185,6 +192,10 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   if (data.footerText) {
     lines.push({ text: div });
     pushWrapped(lines, data.footerText, cols, { align: "center" });
+  }
+
+  if (data.footerImageUrl) {
+    lines.push({ text: "", align: "center", imageUrl: data.footerImageUrl, imageKind: "footer" });
   }
 
   return { lines, cols };

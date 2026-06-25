@@ -31,6 +31,7 @@ interface Props {
   storeId: string;
   canManage: boolean;
   canRecord: boolean;
+  canViewTotals: boolean;
   initialTransactions: Transaction[];
   totalCount: number;
   categories: AccountingCategory[];
@@ -45,6 +46,7 @@ interface Props {
 export function AccountingManager({
   canManage,
   canRecord,
+  canViewTotals,
   initialTransactions,
   totalCount,
   categories,
@@ -109,15 +111,19 @@ export function AccountingManager({
     <div className="page-shell">
       <h1 className="text-xl font-semibold text-gray-900">บัญชี / รายรับ-จ่าย</h1>
 
-      {/* Summary strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <SummaryCard label="รายรับ (เลือก)" value={summary.totalIncome} color="text-green-600" />
-        <SummaryCard label="รายจ่าย (เลือก)" value={summary.totalExpense} color="text-red-600" />
-        <SummaryCard
-          label="กำไร/ขาดทุน"
-          value={summary.netCashflow}
-          color={summary.netCashflow >= 0 ? "text-green-600" : "text-red-600"}
-        />
+      {/* Summary strip — รายรับ/รายจ่าย/กำไร-ขาดทุน เป็นข้อมูลระดับ manager+; ต่ำกว่านั้นเห็นเฉพาะเงินสดในลิ้นชัก */}
+      <div className={`grid gap-3 ${canViewTotals ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-1"}`}>
+        {canViewTotals && (
+          <>
+            <SummaryCard label="รายรับ (เลือก)" value={summary.totalIncome} color="text-green-600" />
+            <SummaryCard label="รายจ่าย (เลือก)" value={summary.totalExpense} color="text-red-600" />
+            <SummaryCard
+              label="กำไร/ขาดทุน"
+              value={summary.netCashflow}
+              color={summary.netCashflow >= 0 ? "text-green-600" : "text-red-600"}
+            />
+          </>
+        )}
         <SummaryCard label="เงินสดปัจจุบัน" value={cashBalance} color="text-blue-600" />
       </div>
 

@@ -55,6 +55,7 @@ export interface ReceiptSettings {
   headerText?: string;
   footerText?: string;
   logoUrl?: string;
+  footerImageUrl?: string;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
   updatedAt: string;

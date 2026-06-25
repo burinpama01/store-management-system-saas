@@ -25,6 +25,8 @@ export default async function ReceiptSettingsPage() {
           settings={settingsRes.data}
           storeName={ctx.storeName}
           canEdit={canEdit}
+          organizationId={ctx.organizationId}
+          storeId={ctx.storeId}
         />
       )}
       <PrinterConnect

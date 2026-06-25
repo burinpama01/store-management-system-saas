@@ -116,15 +116,15 @@ describe("attendance manager employee leave and feedback UX", () => {
 
     expect(manager).toContain("actionNotice");
     expect(manager).toContain('aria-live="polite"');
-    expect(manager).toContain("วันหยุดพนักงาน");
+    expect(manager).toContain("วันลาพนักงาน");
     expect(manager).toContain("addEmployeeLeaveAction");
     expect(manager).toContain("deleteEmployeeLeaveAction");
     expect(manager).toContain("employeeLeaveDates={leaveAdjustments}");
-    expect(manager).toContain("เพิ่มวันหยุดพนักงานแล้ว");
-    expect(manager).toContain("ลบวันหยุดพนักงานแล้ว");
+    expect(manager).toContain("เพิ่มวันลาพนักงานแล้ว");
+    expect(manager).toContain("ลบวันลาพนักงานแล้ว");
     expect(manager).toContain("บันทึกการตั้งค่า GPS เข้างานแล้ว");
 
     expect(calendar).toContain("employeeLeaveDates");
-    expect(calendar).toContain("วันหยุดพนักงาน");
+    expect(calendar).toContain("วันลาพนักงาน");
   });
 });

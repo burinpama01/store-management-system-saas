@@ -46,6 +46,8 @@ export interface ReceiptData {
   showQrPayment: boolean;
   promptpayId?: string;
   headerText?: string;
+  logoUrl?: string;
+  footerImageUrl?: string;
   paperWidth: "58mm" | "80mm";
   printCopies?: number;
   printedAt: string;
@@ -108,6 +110,8 @@ export function buildReceiptData(
     showQrPayment: settings.showQrPayment,
     promptpayId: settings.promptpayId,
     headerText: settings.headerText,
+    logoUrl: settings.logoUrl,
+    footerImageUrl: settings.footerImageUrl,
     paperWidth: settings.paperWidth,
     printCopies: normalizePrintCopies(settings.printCopies),
     printedAt: new Date().toISOString(),

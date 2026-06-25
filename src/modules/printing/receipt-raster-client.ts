@@ -1,11 +1,41 @@
 "use client";
 
 import type { ReceiptData } from "./types";
-import { buildReceiptLines } from "./receipt-lines";
-import { RASTER_WIDTH, packEscPosRaster, rgbaToMono, wrapRasterJob } from "./escpos-raster";
+import { buildReceiptLines, type ReceiptLine } from "./receipt-lines";
+import { RASTER_WIDTH, floydSteinbergMono, packEscPosRaster, rgbaToMono, wrapRasterJob } from "./escpos-raster";
 import { getReceiptQrMetrics } from "./receipt-qr";
 
 const TEXT_DARKEN_OFFSET_DOTS = 0.7;
+
+interface PreparedImage {
+  img: HTMLImageElement;
+  drawW: number;
+  drawH: number;
+  kind: NonNullable<ReceiptLine["imageKind"]>;
+}
+
+/** Loads an image with CORS enabled so the canvas it is drawn onto is not tainted. */
+function loadImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+/** Fits an image into the printable width, capped by a per-kind max height. */
+function fitImage(natW: number, natH: number, maxW: number, maxH: number): { drawW: number; drawH: number } {
+  if (natW <= 0 || natH <= 0) return { drawW: 0, drawH: 0 };
+  let drawW = Math.min(natW, maxW);
+  let drawH = Math.round((drawW / natW) * natH);
+  if (drawH > maxH) {
+    drawH = maxH;
+    drawW = Math.round((drawH / natH) * natW);
+  }
+  return { drawW: Math.max(1, drawW), drawH: Math.max(1, drawH) };
+}
 
 /**
  * Renders the receipt to a monochrome bitmap on a <canvas> (Thai text via the
@@ -13,9 +43,12 @@ const TEXT_DARKEN_OFFSET_DOTS = 0.7;
  * This is the reliable Bluetooth/USB path for Thai receipts — it does not depend
  * on the printer supporting any Thai code page.
  *
+ * Header logo + footer image (e.g. a LINE/static QR) are drawn onto the same
+ * bitmap, so every channel (BT/USB/IP bridge/Print Hub) prints them identically.
+ *
  * Returns null if a canvas 2D context is unavailable (caller should fall back).
  */
-export function renderReceiptRaster(data: ReceiptData): Uint8Array | null {
+export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array | null> {
   if (typeof document === "undefined") return null;
 
   const width = RASTER_WIDTH[data.paperWidth];
@@ -27,7 +60,35 @@ export function renderReceiptRaster(data: ReceiptData): Uint8Array | null {
   const padX = 8;
   const padY = 8;
   const qrGap = Math.round(lineH * 0.6);
+  const imageGap = Math.round(lineH * 0.5);
+  const maxImgW = width - padX * 2;
+  const logoMaxH = Math.round(width * 0.5);
+  const footerMaxH = Math.round(width * 0.85);
+
+  // Pre-load images so their dimensions are known before the canvas is sized.
+  const prepared = new Map<ReceiptLine, PreparedImage>();
+  await Promise.all(
+    lines
+      .filter((line) => line.imageUrl)
+      .map(async (line) => {
+        const img = await loadImage(line.imageUrl as string);
+        if (!img || !img.naturalWidth || !img.naturalHeight) return;
+        const kind = line.imageKind ?? "footer";
+        const { drawW, drawH } = fitImage(
+          img.naturalWidth,
+          img.naturalHeight,
+          maxImgW,
+          kind === "logo" ? logoMaxH : footerMaxH,
+        );
+        if (drawW > 0 && drawH > 0) prepared.set(line, { img, drawW, drawH, kind });
+      }),
+  );
+
   const height = padY * 2 + lines.reduce((sum, line) => {
+    if (line.imageUrl) {
+      const prep = prepared.get(line);
+      return prep ? sum + prep.drawH + imageGap : sum;
+    }
     if (!line.qrPayload) return sum + lineH;
     return sum + getReceiptQrMetrics(line.qrPayload, data.paperWidth).drawDots + qrGap;
   }, 0);
@@ -49,8 +110,47 @@ export function renderReceiptRaster(data: ReceiptData): Uint8Array | null {
     ctx.fillText(text, x + TEXT_DARKEN_OFFSET_DOTS, y, maxWidth);
   };
 
+  /** Draws a prepared image as a dithered/thresholded 1-bit stamp onto the canvas. */
+  const drawImageMono = (prep: PreparedImage, x0: number, y: number) => {
+    const tmp = document.createElement("canvas");
+    tmp.width = prep.drawW;
+    tmp.height = prep.drawH;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    tctx.fillStyle = "#fff";
+    tctx.fillRect(0, 0, prep.drawW, prep.drawH);
+    tctx.drawImage(prep.img, 0, 0, prep.drawW, prep.drawH);
+    let src: Uint8ClampedArray;
+    try {
+      src = tctx.getImageData(0, 0, prep.drawW, prep.drawH).data;
+    } catch {
+      return; // tainted canvas (image lacked CORS headers) — skip silently
+    }
+    const mono = prep.kind === "logo"
+      ? floydSteinbergMono(src, prep.drawW, prep.drawH)
+      : rgbaToMono(src, prep.drawW, prep.drawH, 200);
+    const out = ctx.createImageData(prep.drawW, prep.drawH);
+    for (let i = 0; i < mono.length; i++) {
+      const v = mono[i] ? 0 : 255;
+      out.data[i * 4] = v;
+      out.data[i * 4 + 1] = v;
+      out.data[i * 4 + 2] = v;
+      out.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(out, x0, y);
+  };
+
   let y = padY;
   for (const line of lines) {
+    if (line.imageUrl) {
+      const prep = prepared.get(line);
+      if (!prep) continue;
+      const x0 = Math.floor((width - prep.drawW) / 2);
+      drawImageMono(prep, x0, y);
+      y += prep.drawH + imageGap;
+      continue;
+    }
+
     if (line.qrPayload) {
       const { matrix, quietModules, cellDots, drawDots } = getReceiptQrMetrics(line.qrPayload, data.paperWidth);
       const x0 = Math.floor((width - drawDots) / 2);

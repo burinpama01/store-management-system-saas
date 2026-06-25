@@ -67,18 +67,20 @@ export default async function AttendancePage({
   ]);
   const holidays = holidaysRes.data ?? [];
   const ownProfile = (profilesRes.data ?? []).find((p) => p.userId === user.id) ?? null;
+  // Store-level open days are the calendar default; a per-employee schedule still overrides.
+  const storeWorkingDays = hrSettings.workingDays?.length ? hrSettings.workingDays : [0, 1, 2, 3, 4, 5, 6];
+  const effectiveWorkingDays =
+    ownProfile?.workingDays?.length ? ownProfile.workingDays : storeWorkingDays;
   const dayStatusMap = computeDayStatuses({
     month: currentMonth,
     today,
     timezone: ctx.storeTimezone,
     records: myMonthRecords,
-    profile: ownProfile
-      ? {
-          expectedStartTime: ownProfile.expectedStartTime,
-          lateGraceMinutes: ownProfile.lateGraceMinutes,
-          workingDays: ownProfile.workingDays,
-        }
-      : null,
+    profile: {
+      expectedStartTime: ownProfile?.expectedStartTime,
+      lateGraceMinutes: ownProfile?.lateGraceMinutes ?? 0,
+      workingDays: effectiveWorkingDays,
+    },
     holidays: new Set(holidays.map((h) => h.date)),
     leaveDates: new Set(myLeaveDates),
   });
@@ -142,6 +144,7 @@ export default async function AttendancePage({
       today={today}
       backdatedRights={hrSettings.backdatedRightsPerMonth}
       backdatedUsed={backdatedUsed}
+      storeWorkingDays={storeWorkingDays}
       myMonthRecords={myMonthRecords}
       currentMonth={currentMonth}
       dayStatus={dayStatus}

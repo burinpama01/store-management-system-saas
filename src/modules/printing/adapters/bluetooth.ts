@@ -43,6 +43,6 @@ export const bluetoothAdapter: PrintAdapter = {
       throw new Error("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ Bluetooth กรุณาเชื่อมต่อจากหน้าตั้งค่าเครื่องพิมพ์ก่อน");
     }
     assertConfiguredBluetoothPrinter(printer);
-    await printViaBluetooth(buildReceiptPrinterBytes(data, data));
+    await printViaBluetooth(await buildReceiptPrinterBytes(data, data));
   },
 };

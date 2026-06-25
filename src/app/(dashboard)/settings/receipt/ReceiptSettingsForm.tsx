@@ -4,15 +4,18 @@ import { useActionState, useState } from "react";
 import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import type { ReceiptSettings } from "@/modules/settings/repository";
 import { ModalDialog, Button } from "@/shared/components/ui";
+import { ImageUpload } from "@/shared/components/ui/ImageUpload";
 import { upsertReceiptSettingsAction } from "./actions";
 
 interface Props {
   settings: ReceiptSettings | null;
   storeName: string;
   canEdit: boolean;
+  organizationId: string;
+  storeId: string;
 }
 
-export function ReceiptSettingsForm({ settings, storeName, canEdit }: Props) {
+export function ReceiptSettingsForm({ settings, storeName, canEdit, organizationId, storeId }: Props) {
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
 
   const field =
@@ -55,6 +58,8 @@ export function ReceiptSettingsForm({ settings, storeName, canEdit }: Props) {
           settings={settings}
           storeName={storeName}
           canEdit={canEdit}
+          organizationId={organizationId}
+          storeId={storeId}
           field={field}
           onClose={() => setReceiptDialogOpen(false)}
         />
@@ -67,6 +72,8 @@ function ReceiptSettingsDialog({
   settings,
   storeName,
   canEdit,
+  organizationId,
+  storeId,
   field,
   onClose,
 }: Props & {
@@ -178,6 +185,16 @@ function ReceiptSettingsDialog({
             />
           </div>
 
+          {canEdit && (
+            <ImageUpload
+              name="logoUrl"
+              label="โลโก้หัวใบเสร็จ (พิมพ์เป็นรูปบนสุด)"
+              defaultValue={settings?.logoUrl}
+              organizationId={organizationId}
+              storeId={storeId}
+            />
+          )}
+
           <div>
             <label className="block text-xs text-gray-500 mb-1">ข้อความส่วนหัว</label>
             <textarea
@@ -201,6 +218,16 @@ function ReceiptSettingsDialog({
               className={field}
             />
           </div>
+
+          {canEdit && (
+            <ImageUpload
+              name="footerImageUrl"
+              label="รูปท้ายใบเสร็จ เช่น QR LINE / พร้อมเพย์ (พิมพ์เป็นรูปล่างสุด)"
+              defaultValue={settings?.footerImageUrl}
+              organizationId={organizationId}
+              storeId={storeId}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

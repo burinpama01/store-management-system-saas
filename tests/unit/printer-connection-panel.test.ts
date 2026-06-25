@@ -144,7 +144,7 @@ describe("PrinterConnectionPanel network printer controls", () => {
     expect(panel).toContain("กดเพื่อพิมพ์ทดสอบ");
   });
 
-  it("builds a raster print job for the IP/WiFi printer test button payload", () => {
+  it("builds a raster print job for the IP/WiFi printer test button payload", async () => {
     installFakeCanvasDocument();
     const printer = {
       id: "printer-ip-1",
@@ -160,7 +160,7 @@ describe("PrinterConnectionPanel network printer controls", () => {
       updatedAt: "2026-06-24T00:00:00.000Z",
     } satisfies Printer;
 
-    const payload = buildNetworkPrinterTestPayload(printer, "each other home&cafe", "58mm");
+    const payload = await buildNetworkPrinterTestPayload(printer, "each other home&cafe", "58mm");
     const bytes = new Uint8Array(Buffer.from(payload.printJobBase64, "base64"));
     const rasterCommandIndex = bytes.findIndex((value, index, array) =>
       value === 0x1d && array[index + 1] === 0x76 && array[index + 2] === 0x30,

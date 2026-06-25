@@ -29,11 +29,11 @@ export async function printReceiptAuto(
   options: PrintReceiptAutoOptions = {},
 ): Promise<PrintChannel> {
   if (!options.skipBluetooth && await ensureBluetoothConnected()) {
-    await printViaBluetooth(buildReceiptPrinterBytes(escpos, browser));
+    await printViaBluetooth(await buildReceiptPrinterBytes(escpos, browser));
     return "bluetooth";
   }
   if (await ensureUsbConnected()) {
-    await printViaUsb(buildReceiptPrinterBytes(escpos, browser));
+    await printViaUsb(await buildReceiptPrinterBytes(escpos, browser));
     return "usb";
   }
   await browserAdapter.print(browser, {} as unknown as Printer);

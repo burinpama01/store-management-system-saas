@@ -130,7 +130,7 @@ export function PrintHubManager({
       // Render the receipt to a raster bitmap in the browser (same path as real
       // POS prints) so Thai text is not garbled by the printer code page.
       const receipt = buildHubTestReceipt(storeName, testPrinter.paperWidth);
-      const printJobBase64 = bytesToBase64(buildReceiptPrinterBytes(receipt, receipt));
+      const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(receipt, receipt));
       const res = await fetch("/api/print/enqueue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

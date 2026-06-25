@@ -16,11 +16,11 @@ function repeatReceiptJob(job: Uint8Array, copies: number): Uint8Array {
  * Prefer browser-rendered raster bytes so Thai text does not depend on a
  * thermal printer code page. Fall back to text ESC/POS when canvas is absent.
  */
-export function buildReceiptPrinterBytes(escpos: EscPosReceiptInput, browser: ReceiptData): Uint8Array {
+export async function buildReceiptPrinterBytes(escpos: EscPosReceiptInput, browser: ReceiptData): Promise<Uint8Array> {
   const copies = normalizePrintCopies(browser.printCopies);
   const requiresRaster = Boolean(buildReceiptPromptPayQr(browser));
   try {
-    const raster = renderReceiptRaster(browser);
+    const raster = await renderReceiptRaster(browser);
     if (raster && raster.length > 8) return repeatReceiptJob(raster, copies);
   } catch {
     if (requiresRaster) {

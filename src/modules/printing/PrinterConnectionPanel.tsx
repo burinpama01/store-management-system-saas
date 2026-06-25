@@ -74,13 +74,13 @@ function buildNetworkTestReceipt(storeName: string, paperWidth: "58mm" | "80mm")
   };
 }
 
-export function buildNetworkPrinterTestPayload(
+export async function buildNetworkPrinterTestPayload(
   printer: Printer,
   storeName: string,
   paperWidth: "58mm" | "80mm",
-): { printerId: string; receiptData: ReceiptData; printJobBase64: string } {
+): Promise<{ printerId: string; receiptData: ReceiptData; printJobBase64: string }> {
   const receiptData = buildNetworkTestReceipt(storeName, printer.paperWidth ?? paperWidth);
-  const printJobBase64 = bytesToBase64(buildReceiptPrinterBytes(receiptData, receiptData));
+  const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(receiptData, receiptData));
   return { printerId: printer.id, receiptData, printJobBase64 };
 }
 
@@ -157,7 +157,7 @@ export function PrinterConnectionPanel({
     setNetworkMessage(null);
     setBusy(true);
     try {
-      await sendNetworkPrintJob(printer, buildNetworkPrinterTestPayload(printer, storeName, paperWidth));
+      await sendNetworkPrintJob(printer, await buildNetworkPrinterTestPayload(printer, storeName, paperWidth));
       setConnectedDevice({ kind: "IP / WiFi", name: printer.name });
       setRememberedDevice(null);
       setNetworkMessage(`ส่งใบทดสอบไปที่ ${printer.name} แล้ว`);

@@ -70,6 +70,9 @@ export function wrapRasterJob(raster: Uint8Array): Uint8Array {
  * Converts RGBA canvas pixels to a 1-bit monochrome buffer. The default
  * threshold is intentionally high so anti-aliased text edges print darker on
  * low-density thermal printers. Returns 1 = black dot.
+ *
+ * Use this for sharp graphics like QR codes — thresholding keeps the modules
+ * crisp and scannable. For photos/logos prefer `floydSteinbergMono`.
  */
 export function rgbaToMono(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, threshold = 220): Uint8Array {
   const mono = new Uint8Array(width * height);
@@ -81,6 +84,39 @@ export function rgbaToMono(rgba: Uint8ClampedArray | Uint8Array, width: number, 
     // Treat transparent as white; luminance below threshold = black dot.
     const lum = a < 128 ? 255 : 0.299 * r + 0.587 * g + 0.114 * b;
     mono[i] = lum < threshold ? 1 : 0;
+  }
+  return mono;
+}
+
+/**
+ * Floyd–Steinberg error-diffusion dithering to 1-bit. Gives photos and logos a
+ * grayscale-like appearance on a 1-bit thermal printer instead of a harsh hard
+ * threshold. Returns 1 = black dot.
+ */
+export function floydSteinbergMono(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number): Uint8Array {
+  // Luminance buffer (0 = black, 255 = white); transparent treated as white.
+  const lum = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    const a = rgba[i * 4 + 3];
+    lum[i] = a < 128 ? 255 : 0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2];
+  }
+
+  const mono = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const old = lum[idx];
+      const newVal = old < 128 ? 0 : 255;
+      mono[idx] = newVal === 0 ? 1 : 0;
+      const err = old - newVal;
+      // Distribute the quantization error to neighbouring pixels.
+      if (x + 1 < width) lum[idx + 1] += (err * 7) / 16;
+      if (y + 1 < height) {
+        if (x > 0) lum[idx + width - 1] += (err * 3) / 16;
+        lum[idx + width] += (err * 5) / 16;
+        if (x + 1 < width) lum[idx + width + 1] += (err * 1) / 16;
+      }
+    }
   }
   return mono;
 }

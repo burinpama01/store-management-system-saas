@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 
 export default async function CustomersPage() {
   const { ctx, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("pos.use")) redirect("/dashboard");
+  // Customer/loyalty management is a manager+ surface; cashiers still use customers at POS checkout.
+  if (!resolved.can("catalog.manage")) redirect("/dashboard");
 
   const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
   const features = getPlanFeatures(billingState);
