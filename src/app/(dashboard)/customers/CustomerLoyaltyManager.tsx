@@ -661,7 +661,7 @@ export function CustomerLoyaltyManager({
               </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold uppercase text-[var(--muted)]">เพิ่ม/ลดแต้ม</span>
-                <input className="form-input" name="pointsDelta" type="number" step="1" placeholder="100 หรือ -50" required />
+                <input className="form-input" name="pointsDelta" type="number" step="0.01" placeholder="1.01 หรือ -0.50" required />
               </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold uppercase text-[var(--muted)]">เหตุผล</span>
