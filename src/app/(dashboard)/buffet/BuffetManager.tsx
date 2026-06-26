@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import type { BuffetSession } from "@/modules/buffet/types";
 import type { StoreTable } from "@/modules/buffet/repository";
 import { ModalDialog, Button } from "@/shared/components/ui";
+import { formatStoreTime } from "@/shared/utils/datetime";
 import { createSessionAction, updateGuestCountAction, closeSessionAction } from "./actions";
 
 function fmt(n: number) {
@@ -22,9 +23,11 @@ interface Props {
   closedToday: BuffetSession[];
   tables: StoreTable[];
   canManage: boolean;
+  /** IANA timezone of the store; session timestamps are stored UTC and shown in this zone. */
+  storeTimezone: string;
 }
 
-export function BuffetManager({ openSessions, closedToday, tables, canManage }: Props) {
+export function BuffetManager({ openSessions, closedToday, tables, canManage, storeTimezone }: Props) {
   const router = useRouter();
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [guestDialogSession, setGuestDialogSession] = useState<BuffetSession | null>(null);
@@ -113,6 +116,7 @@ export function BuffetManager({ openSessions, closedToday, tables, canManage }: 
                 onClose={() => handleClose(s.id)}
                 closing={closingId === s.id}
                 canManage={canManage}
+                timeZone={storeTimezone}
               />
             ))
           )}
@@ -142,7 +146,7 @@ export function BuffetManager({ openSessions, closedToday, tables, canManage }: 
                           ฿{fmt(s.totalCharge)}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-400 text-xs whitespace-nowrap">
-                          {s.startedAt.slice(11, 16)} – {s.endedAt ? s.endedAt.slice(11, 16) : "—"}
+                          {formatStoreTime(s.startedAt, storeTimezone)} – {s.endedAt ? formatStoreTime(s.endedAt, storeTimezone) : "—"}
                         </td>
                       </tr>
                     ))}
@@ -341,6 +345,7 @@ function SessionCard({
   onClose,
   closing,
   canManage,
+  timeZone,
 }: {
   session: BuffetSession;
   tableLabel: string;
@@ -348,6 +353,7 @@ function SessionCard({
   onClose: () => void;
   closing: boolean;
   canManage: boolean;
+  timeZone: string;
 }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -355,7 +361,7 @@ function SessionCard({
         <div>
           <p className="font-medium text-gray-800">{session.packageName}</p>
           <p className="text-xs text-gray-500 mt-0.5">
-            {tableLabel} · เริ่ม {session.startedAt.slice(11, 16)} น.
+            {tableLabel} · เริ่ม {formatStoreTime(session.startedAt, timeZone)} น.
             · <span className="text-yellow-600">{fmtElapsed(session.startedAt)}</span>
           </p>
         </div>

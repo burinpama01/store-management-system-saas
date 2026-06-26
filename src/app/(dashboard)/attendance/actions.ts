@@ -30,7 +30,7 @@ import {
 } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
-import { getStoreLocalDate } from "@/modules/attendance/date";
+import { getStoreLocalDate, storeDateTimeToUtc } from "@/modules/attendance/date";
 import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
@@ -317,13 +317,13 @@ export async function saveStoreWorkingDaysAction(formData: FormData): Promise<{ 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Parse "YYYY-MM-DDTHH:MM" local input into an ISO timestamp; returns null if invalid. */
-function parseLocalDateTime(raw: unknown): string | null {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
-  const t = Date.parse(s);
-  if (isNaN(t)) return null;
-  return new Date(t).toISOString();
+/**
+ * Parse a "YYYY-MM-DDTHH:MM" datetime-local value as wall-clock time in the store's timezone and
+ * return the matching UTC ISO instant; returns null if invalid. The timezone matters: the input is
+ * what the manager typed in store-local time, but the server clock is UTC.
+ */
+function parseLocalDateTime(raw: unknown, timeZone: string): string | null {
+  return storeDateTimeToUtc(String(raw ?? "").trim(), timeZone);
 }
 
 function revalidateAttendancePayrollPaths() {
@@ -358,10 +358,10 @@ export async function addManualAttendanceAction(formData: FormData): Promise<{ e
     const date = String(formData.get("date") ?? "").trim();
     if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
 
-    const clockInAt = parseLocalDateTime(formData.get("clockInAt"));
+    const clockInAt = parseLocalDateTime(formData.get("clockInAt"), ctx.storeTimezone);
     if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
     const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
-    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw) : null;
+    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw, ctx.storeTimezone) : null;
     if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
     if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
       return { error: "เวลาออกต้องหลังเวลาเข้า" };
@@ -394,10 +394,10 @@ export async function adjustAttendanceAction(formData: FormData): Promise<{ erro
 
     const id = String(formData.get("id") ?? "");
     if (!UUID_RE.test(id)) return { error: "รายการไม่ถูกต้อง" };
-    const clockInAt = parseLocalDateTime(formData.get("clockInAt"));
+    const clockInAt = parseLocalDateTime(formData.get("clockInAt"), ctx.storeTimezone);
     if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
     const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
-    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw) : null;
+    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw, ctx.storeTimezone) : null;
     if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
     if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
       return { error: "เวลาออกต้องหลังเวลาเข้า" };
@@ -430,10 +430,10 @@ export async function selfBackdatedClockAction(formData: FormData): Promise<{ er
     const today = getStoreLocalDate(ctx.storeTimezone);
     if (date >= today) return { error: "ลงย้อนหลังได้เฉพาะวันที่ผ่านมาแล้ว" };
 
-    const clockInAt = parseLocalDateTime(formData.get("clockInAt"));
+    const clockInAt = parseLocalDateTime(formData.get("clockInAt"), ctx.storeTimezone);
     if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
     const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
-    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw) : null;
+    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw, ctx.storeTimezone) : null;
     if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
     if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
       return { error: "เวลาออกต้องหลังเวลาเข้า" };

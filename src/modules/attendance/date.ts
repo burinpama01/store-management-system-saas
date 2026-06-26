@@ -1,4 +1,9 @@
-const DEFAULT_ATTENDANCE_TIME_ZONE = "Asia/Bangkok";
+import { DEFAULT_TIME_ZONE } from "@/shared/utils/datetime";
+
+// Re-exported for existing callers; the implementations live in the shared datetime utils.
+export { formatStoreTime, toStoreDateTimeLocal, storeDateTimeToUtc } from "@/shared/utils/datetime";
+
+const DEFAULT_ATTENDANCE_TIME_ZONE = DEFAULT_TIME_ZONE;
 
 function formatLocalDate(timeZone: string, now: Date): Intl.DateTimeFormatPart[] {
   return new Intl.DateTimeFormat("en-CA", {

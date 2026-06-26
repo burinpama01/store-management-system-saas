@@ -139,6 +139,7 @@ export default async function AttendancePage({
       dateTo={dateTo}
       canUseGps={features.attendanceGps}
       userEmail={user.email ?? user.id}
+      storeTimezone={ctx.storeTimezone}
       attendanceSettings={attendanceSettings}
       members={members}
       today={today}

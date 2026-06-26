@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useState, useTransition, type ReactNode } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
+import { formatStoreTime, toStoreDateTimeLocal } from "@/modules/attendance/date";
 import { ModalDialog, MapPicker, Button } from "@/shared/components/ui";
 import {
   clockInAction,
@@ -33,6 +34,8 @@ interface Props {
   dateTo: string;
   canUseGps: boolean;
   userEmail: string;
+  /** IANA timezone of the store; all clock times are stored UTC and shown/edited in this zone. */
+  storeTimezone: string;
   attendanceSettings: AttendanceSettings | null;
   members: { userId: string; name: string }[];
   today: string;
@@ -48,17 +51,6 @@ interface Props {
   holidayDates: string[];
   canManageHolidays: boolean;
   leaveAdjustments: PayrollAdjustment[];
-}
-
-/** Convert an ISO timestamp to a value for <input type="datetime-local"> in local time. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fmtTime(iso: string) {
-  return iso.slice(11, 16);
 }
 
 function fmtDuration(inIso: string, outIso: string | null): string {
@@ -139,6 +131,7 @@ export function AttendanceManager({
   dateFrom,
   dateTo,
   canUseGps,
+  storeTimezone,
   attendanceSettings,
   members,
   today,
@@ -154,6 +147,8 @@ export function AttendanceManager({
   leaveAdjustments,
 }: Props) {
   const router = useRouter();
+  /** Clock timestamps are UTC; render them as "HH:MM" in the store's timezone. */
+  const fmtTime = (iso: string) => formatStoreTime(iso, storeTimezone);
   const [selfBackdateOpen, setSelfBackdateOpen] = useState(false);
   const [clocking, setClocking] = useState(false);
   const [clockError, setClockError] = useState<string | null>(null);
@@ -352,6 +347,7 @@ export function AttendanceManager({
           employees={[]}
           title="ปฏิทินการเข้า-ออกงานของฉัน"
           dayStatus={dayStatus}
+          timeZone={storeTimezone}
         />
       )}
 
@@ -654,6 +650,7 @@ export function AttendanceManager({
             employees={members}
             holidayDates={holidayDates}
             employeeLeaveDates={leaveAdjustments}
+            timeZone={storeTimezone}
           />
 
           {/* Attendance records */}
@@ -820,11 +817,11 @@ export function AttendanceManager({
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block text-xs font-medium text-gray-600">
                     เวลาเข้า
-                    <input name="clockInAt" type="datetime-local" required defaultValue={toLocalInput(editTarget.clockInAt)} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                    <input name="clockInAt" type="datetime-local" required defaultValue={toStoreDateTimeLocal(editTarget.clockInAt, storeTimezone)} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
                   </label>
                   <label className="block text-xs font-medium text-gray-600">
                     เวลาออก (ไม่บังคับ)
-                    <input name="clockOutAt" type="datetime-local" defaultValue={editTarget.clockOutAt ? toLocalInput(editTarget.clockOutAt) : ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                    <input name="clockOutAt" type="datetime-local" defaultValue={editTarget.clockOutAt ? toStoreDateTimeLocal(editTarget.clockOutAt, storeTimezone) : ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
                   </label>
                 </div>
                 <label className="block text-xs font-medium text-gray-600">

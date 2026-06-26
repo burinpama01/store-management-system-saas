@@ -3,12 +3,9 @@
 import { useMemo, useState } from "react";
 import type { AttendanceRecord } from "@/modules/attendance/types";
 import type { DayStatus } from "@/modules/attendance/calendar";
+import { formatStoreTime } from "@/modules/attendance/date";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
-
-function fmtTime(iso: string) {
-  return iso.slice(11, 16);
-}
 
 // Per-day status palette + labels for the personal calendar.
 const STATUS_META: Record<Exclude<DayStatus, "off">, { cell: string; dot: string; label: string }> = {
@@ -32,6 +29,8 @@ interface Props {
   holidayDates?: string[];
   /** Team mode: per-employee leave/holiday dates from payroll adjustments. */
   employeeLeaveDates?: { date: string; userId: string; employeeName: string; note?: string }[];
+  /** IANA timezone of the store — clock times are stored UTC and rendered in this zone. */
+  timeZone: string;
 }
 
 export function AttendanceCalendar({
@@ -42,8 +41,10 @@ export function AttendanceCalendar({
   dayStatus,
   holidayDates,
   employeeLeaveDates,
+  timeZone,
 }: Props) {
   const [filterUser, setFilterUser] = useState<string>("");
+  const fmtTime = (iso: string) => formatStoreTime(iso, timeZone);
   const personal = !!dayStatus;
   const holidaySet = useMemo(() => new Set(holidayDates ?? []), [holidayDates]);
 

@@ -17,6 +17,7 @@ import {
 } from "@/modules/loyalty/repository";
 import type { CouponDiscountType } from "@/modules/promotions/types";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { storeDateTimeToUtc } from "@/shared/utils/datetime";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -52,12 +53,12 @@ function optionalNumber(formData: FormData, key: string) {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-function optionalDateTime(formData: FormData, key: string) {
+// datetime-local inputs carry no timezone; interpret them as store-local wall time, not UTC.
+function optionalDateTime(formData: FormData, key: string, timeZone: string) {
   if (!formData.has(key)) return undefined;
   const value = text(formData, key);
   if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  return storeDateTimeToUtc(value, timeZone);
 }
 
 export async function saveCustomerAction(formData: FormData): Promise<ActionResult> {
@@ -148,8 +149,8 @@ export async function saveCouponAction(formData: FormData): Promise<ActionResult
       discountType,
       discountValue,
       minSubtotal: minSubtotal === null ? 0 : minSubtotal,
-      startsAt: optionalDateTime(formData, "startsAt"),
-      endsAt: optionalDateTime(formData, "endsAt"),
+      startsAt: optionalDateTime(formData, "startsAt", ctx.storeTimezone),
+      endsAt: optionalDateTime(formData, "endsAt", ctx.storeTimezone),
       maxRedemptions,
       maxRedemptionsPerCustomer,
       stackableWithManualDiscount: formData.get("stackableWithManualDiscount") === "on",

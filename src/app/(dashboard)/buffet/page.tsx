@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getUserStores } from "@/modules/auth/session";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listBuffetSessions, listStoreTables } from "@/modules/buffet/repository";
+import { getStoreLocalDate } from "@/modules/attendance/date";
 import { BuffetManager } from "./BuffetManager";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function BuffetPage() {
 
   if (!resolved.can("orders.manage_qr")) redirect("/dashboard");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getStoreLocalDate(ctx.storeTimezone);
 
   const [openRes, closedRes, tablesRes] = await Promise.all([
     listBuffetSessions(ctx.storeId, { status: "open" }),
@@ -30,6 +31,7 @@ export default async function BuffetPage() {
       closedToday={closedRes.data ?? []}
       tables={tablesRes.data ?? []}
       canManage={resolved.can("orders.manage_qr")}
+      storeTimezone={ctx.storeTimezone}
     />
   );
 }

@@ -18,6 +18,7 @@ import {
 } from "./actions";
 import { Button } from "@/shared/components/ui";
 import { ImageUpload } from "@/shared/components/ui/ImageUpload";
+import { toStoreDateTimeLocal } from "@/shared/utils/datetime";
 
 export interface RewardProductOption {
   id: string;
@@ -43,6 +44,8 @@ interface Props {
   canManageCoupons: boolean;
   canManageLoyaltySettings: boolean;
   errors: string[];
+  /** IANA timezone of the store; coupon expiry is stored UTC and shown/edited in this zone. */
+  storeTimezone: string;
 }
 
 type SectionKey = "rewards" | "customers" | "points" | "coupons";
@@ -121,11 +124,12 @@ function formatPoints(value?: number) {
   return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(value ?? 0);
 }
 
-function toDateTimeInput(value?: string | null) {
+function toDateTimeInput(value: string | null | undefined, timeZone: string) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 16);
+  // Coupon expiry is stored UTC; show it in the store timezone so 18:00 means 18:00 locally.
+  return toStoreDateTimeLocal(value, timeZone);
 }
 
 function RewardForm({
@@ -317,6 +321,7 @@ export function CustomerLoyaltyManager({
   canManageCoupons,
   canManageLoyaltySettings,
   errors,
+  storeTimezone,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -767,7 +772,7 @@ export function CustomerLoyaltyManager({
                   </label>
                   <label className="space-y-1">
                     <span className="text-xs font-semibold uppercase text-[var(--muted)]">หมดเขต</span>
-                    <input className="form-input" name="endsAt" type="datetime-local" defaultValue={toDateTimeInput(coupon.endsAt)} />
+                    <input className="form-input" name="endsAt" type="datetime-local" defaultValue={toDateTimeInput(coupon.endsAt, storeTimezone)} />
                   </label>
                   <label className="space-y-1">
                     <span className="text-xs font-semibold uppercase text-[var(--muted)]">ใช้ได้รวม</span>

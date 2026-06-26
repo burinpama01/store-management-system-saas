@@ -83,6 +83,7 @@ export default async function CustomersPage() {
       canManageCustomers={canManageCustomers}
       canManageCoupons={canManageCoupons}
       canManageLoyaltySettings={canManageLoyaltySettings}
+      storeTimezone={ctx.storeTimezone}
       errors={[
         customersRes.error?.userMessage,
         couponsRes.error?.userMessage,
