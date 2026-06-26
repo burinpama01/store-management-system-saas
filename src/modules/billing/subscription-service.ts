@@ -3,6 +3,7 @@ import { computeNewExpiry, type BillingDuration } from "./pricing";
 import { getPremiumFreeTrialEligibility, getUpgradeQuote } from "./pricing-repository";
 import { getPlatformSettings } from "./platform-settings";
 import { receiverMatches } from "./promptpay-provider";
+import { describeDiscountRejection } from "./discount-code";
 import {
   verifySlipByPayload,
   verifySlipByImageBase64,
@@ -41,6 +42,7 @@ export interface SubmitPaymentInput {
   plan: PaidTier;
   duration: BillingDuration;
   submittedByUserId: string;
+  discountCode?: string;
   slipPayload?: string;
   slipImageBase64?: string;
   slipImageContentType?: string;
@@ -73,9 +75,14 @@ export async function submitPromptPayPayment(
   input: SubmitPaymentInput,
 ): Promise<SubmitPaymentResult> {
   const supabase = await createSupabaseServiceClient();
-  const quote = await getUpgradeQuote(input.organizationId, input.plan, input.duration);
+  const quote = await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
   if (!quote) {
     return { status: "rejected", reason: "แพ็กเกจนี้ชำระผ่าน PromptPay ไม่ได้", newExpiry: null };
+  }
+  // A supplied code that no longer applies (expired, limit reached, etc.) is
+  // rejected before charging so the tenant is not quietly billed the full price.
+  if (quote.discountRejection) {
+    return { status: "rejected", reason: describeDiscountRejection(quote.discountRejection), newExpiry: null };
   }
   const expected = quote.finalAmount;
 
@@ -108,6 +115,8 @@ export async function submitPromptPayPayment(
     status: "verified",
     reason: null,
     submitted_by: input.submittedByUserId,
+    discount_code_id: quote.discountCode?.id ?? null,
+    discount_amount: quote.discount,
     verified_at: now.toISOString(),
   });
   if (claimErr) {

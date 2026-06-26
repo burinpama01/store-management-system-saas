@@ -36,6 +36,8 @@ interface PaymentQuoteView {
   basePrice: number | null;
   credit: number;
   promotionLabel: string | null;
+  discount: number;
+  discountLabel: string | null;
   freeTrialAvailable: boolean;
 }
 
@@ -79,6 +81,7 @@ export function BillingManager({
 
   const [selectedPlan, setSelectedPlan] = useState<PaidTier>(premiumTrialAvailable ? "premium" : "starter");
   const [duration, setDuration] = useState<BillingDuration>("30d");
+  const [discountCode, setDiscountCode] = useState("");
   const [trialAvailable, setTrialAvailable] = useState(premiumTrialAvailable);
   const [qr, setQr] = useState<SubscriptionQr | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
@@ -111,8 +114,9 @@ export function BillingManager({
     setError(null);
     setResult(null);
     setBusy(true);
+    const requestCode = discountCode.trim();
     try {
-      const res = await getPaymentQrAction(requestPlan, requestDuration);
+      const res = await getPaymentQrAction(requestPlan, requestDuration, requestCode || undefined);
       if (!res.ok) {
         showError(res.error ?? "สร้าง QR ไม่สำเร็จ");
         return;
@@ -125,6 +129,8 @@ export function BillingManager({
         basePrice: res.basePrice,
         credit: res.credit,
         promotionLabel: res.promotionLabel,
+        discount: res.discount,
+        discountLabel: res.discountLabel,
         freeTrialAvailable: res.freeTrialAvailable,
       });
       setQr(res.qr);
@@ -143,6 +149,7 @@ export function BillingManager({
     const fd = new FormData();
     fd.set("plan", paymentQuote?.plan ?? selectedPlan);
     fd.set("duration", paymentQuote?.duration ?? duration);
+    if (discountCode.trim()) fd.set("discountCode", discountCode.trim());
     fd.set("slip", file);
     try {
       const res = await uploadWithProgress<{
@@ -344,6 +351,27 @@ export function BillingManager({
             </div>
           </div>
 
+          {!selectedPremiumTrial && (
+            <div className="mt-4">
+              <label htmlFor="billing-discount-code" className="field-label">
+                โค้ดส่วนลด (ถ้ามี)
+              </label>
+              <input
+                id="billing-discount-code"
+                type="text"
+                value={discountCode}
+                onChange={(e) => { setDiscountCode(e.target.value.toUpperCase()); resetGeneratedPayment(); }}
+                disabled={busy}
+                placeholder="กรอกโค้ดส่วนลด แล้วกดสร้าง QR เพื่อตรวจสอบ"
+                maxLength={40}
+                className="form-input uppercase tracking-wide disabled:opacity-50"
+              />
+              <p className="mt-1 text-[11px] text-[var(--muted)]">
+                ส่วนลดจะถูกตรวจสอบและหักออกจากยอดเมื่อกดสร้าง QR
+              </p>
+            </div>
+          )}
+
           {paymentQuote && (
             <div className="mt-3 rounded-md border border-[var(--border)] bg-white p-3 text-sm">
               <p className="font-bold text-[var(--ink)]">ยอดที่ต้องโอนตรงกับ QR ด้านล่าง</p>
@@ -356,6 +384,12 @@ export function BillingManager({
                   <div className="flex justify-between gap-3">
                     <dt>โปรโมชัน</dt>
                     <dd className="font-bold text-[var(--tenant-primary-strong)]">{paymentQuote.promotionLabel}</dd>
+                  </div>
+                )}
+                {paymentQuote.discount > 0 && (
+                  <div className="flex justify-between gap-3">
+                    <dt>โค้ดส่วนลด{paymentQuote.discountLabel ? ` · ${paymentQuote.discountLabel}` : ""}</dt>
+                    <dd className="font-bold text-emerald-700">-{paymentQuote.discount.toLocaleString()} บาท</dd>
                   </div>
                 )}
                 {paymentQuote.credit > 0 && (

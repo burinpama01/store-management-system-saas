@@ -6,6 +6,7 @@ import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { resolveSubscriptionQr, type SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
 import { getPremiumFreeTrialEligibility, getUpgradeQuote } from "@/modules/billing/pricing-repository";
+import { describeDiscountRejection } from "@/modules/billing/discount-code";
 import {
   claimPremiumFreeTrial,
   submitPromptPayPayment,
@@ -26,6 +27,8 @@ export interface PaymentQrResult {
   basePrice: number | null;
   credit: number;
   promotionLabel: string | null;
+  discount: number;
+  discountLabel: string | null;
   qr: SubscriptionQr | null;
   freeTrialAvailable: boolean;
   error: string | null;
@@ -34,6 +37,7 @@ export interface PaymentQrResult {
 export async function getPaymentQrAction(
   plan: string,
   duration: string,
+  discountCode?: string,
 ): Promise<PaymentQrResult> {
   try {
     const { ctx, user, resolved } = await getResolvedCurrentPermissions();
@@ -43,6 +47,8 @@ export async function getPaymentQrAction(
       basePrice: null,
       credit: 0,
       promotionLabel: null,
+      discount: 0,
+      discountLabel: null,
       qr: null,
       freeTrialAvailable: false,
     };
@@ -53,8 +59,12 @@ export async function getPaymentQrAction(
     const d = parseDuration(duration);
     if (!p || !d) return { ...base, error: "แพ็กเกจหรือระยะเวลาไม่ถูกต้อง" };
 
-    const quote = await getUpgradeQuote(ctx.organizationId, p, d);
+    const quote = await getUpgradeQuote(ctx.organizationId, p, d, discountCode);
     if (!quote) return { ...base, error: "ไม่พบราคาแพ็กเกจ" };
+    // A supplied code that does not apply blocks QR creation so the tenant can fix it.
+    if (quote.discountRejection) {
+      return { ...base, error: describeDiscountRejection(quote.discountRejection) };
+    }
     const freeTrial = await getPremiumFreeTrialEligibility(ctx.organizationId, user.id, p, d);
     if (freeTrial.available) {
       return {
@@ -63,6 +73,8 @@ export async function getPaymentQrAction(
         basePrice: freeTrial.basePrice,
         credit: freeTrial.credit,
         promotionLabel: freeTrial.promotionLabel,
+        discount: 0,
+        discountLabel: null,
         qr: null,
         freeTrialAvailable: true,
         error: null,
@@ -76,13 +88,17 @@ export async function getPaymentQrAction(
       basePrice: quote.price,
       credit: quote.credit,
       promotionLabel: quote.promotion ? `${quote.promotion.description} (-${quote.promotion.percentOff}%)` : null,
+      discount: quote.discount,
+      discountLabel: quote.discountCode
+        ? `${quote.discountCode.description} (${quote.discountCode.normalizedCode})`
+        : null,
       qr: resolveSubscriptionQr(settings, quote.finalAmount),
       freeTrialAvailable: false,
       error: null,
     };
   } catch (e) {
     if (e instanceof AuthorizationError) {
-      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, qr: null, freeTrialAvailable: false, error: "ไม่มีสิทธิ์" };
+      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, discount: 0, discountLabel: null, qr: null, freeTrialAvailable: false, error: "ไม่มีสิทธิ์" };
     }
     throw e;
   }
@@ -96,6 +112,7 @@ export interface SubmitPaymentActionResult extends SubmitPaymentResult {
 export async function submitPaymentAction(input: {
   plan: string;
   duration: string;
+  discountCode?: string;
   slipImageBase64?: string;
   slipPayload?: string;
 }): Promise<SubmitPaymentActionResult> {
@@ -118,6 +135,7 @@ export async function submitPaymentAction(input: {
       plan: p,
       duration: d,
       submittedByUserId: user.id,
+      discountCode: input.discountCode,
       slipImageBase64: input.slipImageBase64,
       slipPayload: input.slipPayload,
     });

@@ -13,6 +13,12 @@ import {
   PREMIUM_FREE_TRIAL_PROMO_CODE,
   type PremiumFreeTrialOffer,
 } from "./premium-trial";
+import {
+  evaluateBillingDiscount,
+  normalizeDiscountCode,
+  type BillingDiscountCode,
+  type DiscountRejectionReason,
+} from "./discount-code";
 
 export interface Promotion {
   id: string;
@@ -174,25 +180,115 @@ export function computeUpgradeCredit(input: {
   return Math.round(input.lastPaidAmount * (remaining / total));
 }
 
+// ── Discount codes (#package-discount) ────────────────────────────────
+
+function mapDiscountCode(row: {
+  id: string;
+  code: string;
+  normalized_code: string;
+  description: string;
+  discount_type: "percentage" | "fixed";
+  discount_value: number;
+  plan: string | null;
+  duration: string | null;
+  min_amount: number;
+  max_redemptions: number | null;
+  max_redemptions_per_org: number | null;
+  active: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+}): BillingDiscountCode {
+  return {
+    id: row.id,
+    code: row.code,
+    normalizedCode: row.normalized_code,
+    description: row.description,
+    discountType: row.discount_type,
+    discountValue: Number(row.discount_value),
+    plan: isPaidTier(row.plan ?? "") ? (row.plan as PaidTier) : null,
+    duration: row.duration === "30d" || row.duration === "1y" ? row.duration : null,
+    minAmount: Number(row.min_amount ?? 0),
+    maxRedemptions: row.max_redemptions,
+    maxRedemptionsPerOrg: row.max_redemptions_per_org,
+    active: row.active,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+  };
+}
+
+const DISCOUNT_CODE_COLUMNS =
+  "id, code, normalized_code, description, discount_type, discount_value, plan, duration, min_amount, max_redemptions, max_redemptions_per_org, active, starts_at, ends_at";
+
+async function findDiscountCode(code: string): Promise<BillingDiscountCode | null> {
+  const normalized = normalizeDiscountCode(code);
+  if (!normalized) return null;
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("billing_discount_codes")
+    .select(DISCOUNT_CODE_COLUMNS)
+    .eq("normalized_code", normalized)
+    .maybeSingle();
+  return data ? mapDiscountCode(data) : null;
+}
+
+/** Verified redemptions of a code globally and (optionally) for one org. */
+async function getDiscountRedemptionCounts(
+  discountCodeId: string,
+  organizationId: string,
+): Promise<{ globalRedeemed: number; orgRedeemed: number }> {
+  const supabase = await createSupabaseServiceClient();
+  const [globalRes, orgRes] = await Promise.all([
+    supabase
+      .from("payment_submissions")
+      .select("id", { count: "exact", head: true })
+      .eq("discount_code_id", discountCodeId)
+      .eq("status", "verified"),
+    supabase
+      .from("payment_submissions")
+      .select("id", { count: "exact", head: true })
+      .eq("discount_code_id", discountCodeId)
+      .eq("organization_id", organizationId)
+      .eq("status", "verified"),
+  ]);
+  return {
+    globalRedeemed: globalRes.count ?? 0,
+    orgRedeemed: orgRes.count ?? 0,
+  };
+}
+
+export interface AppliedDiscount {
+  id: string;
+  description: string;
+  normalizedCode: string;
+}
+
 export interface UpgradeQuote {
   base: number;
   price: number;
   credit: number;
   finalAmount: number;
   promotion: Promotion | null;
+  /** Baht taken off by the applied discount code (0 when none/invalid). */
+  discount: number;
+  /** The discount code that was successfully applied (null otherwise). */
+  discountCode: AppliedDiscount | null;
+  /** Why a supplied discount code did not apply (null when none supplied or valid). */
+  discountRejection: DiscountRejectionReason | null;
 }
 
 /**
- * Final amount a tenant must pay for a plan/duration, after active promotion and
+ * Final amount a tenant must pay for a plan/duration, after active promotion,
+ * an optional discount code (applied to the post-promotion price), and the
  * pro-rated credit from their current subscription's remaining value.
  */
 export async function getUpgradeQuote(
   organizationId: string,
   plan: string,
   duration: BillingDuration,
+  discountCodeInput?: string | null,
 ): Promise<UpgradeQuote | null> {
   const eff = await getEffectivePrice(plan, duration);
-  if (!eff) return null;
+  if (!eff || !isPaidTier(plan)) return null;
 
   const supabase = await createSupabaseServiceClient();
   const [{ data: sub }, { data: lastPaid }] = await Promise.all([
@@ -217,13 +313,104 @@ export async function getUpgradeQuote(
     lastPaidAmount: Number(lastPaid?.verified_amount ?? 0),
   });
 
+  let discount = 0;
+  let discountCode: AppliedDiscount | null = null;
+  let discountRejection: DiscountRejectionReason | null = null;
+
+  const trimmedCode = (discountCodeInput ?? "").trim();
+  if (trimmedCode) {
+    const found = await findDiscountCode(trimmedCode);
+    if (!found) {
+      discountRejection = "code_not_found";
+    } else {
+      const counts = await getDiscountRedemptionCounts(found.id, organizationId);
+      const evaluation = evaluateBillingDiscount({
+        code: trimmedCode,
+        plan,
+        duration,
+        baseAmount: eff.amount,
+        discount: found,
+        globalRedeemed: counts.globalRedeemed,
+        orgRedeemed: counts.orgRedeemed,
+      });
+      if (evaluation.ok) {
+        discount = evaluation.discount;
+        discountCode = {
+          id: evaluation.codeId!,
+          description: evaluation.description ?? found.description,
+          normalizedCode: evaluation.normalizedCode,
+        };
+      } else {
+        discountRejection = evaluation.reason ?? "invalid_discount";
+      }
+    }
+  }
+
   return {
     base: eff.base,
     price: eff.amount,
     credit,
-    finalAmount: Math.max(0, eff.amount - credit),
+    finalAmount: Math.max(0, eff.amount - discount - credit),
     promotion: eff.promotion,
+    discount,
+    discountCode,
+    discountRejection,
   };
+}
+
+// ── Super-admin discount-code management ──────────────────────────────
+
+export async function listDiscountCodes(): Promise<BillingDiscountCode[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("billing_discount_codes")
+    .select(DISCOUNT_CODE_COLUMNS)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapDiscountCode);
+}
+
+export async function createDiscountCode(input: {
+  code: string;
+  description: string;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+  plan: PaidTier | null;
+  duration: BillingDuration | null;
+  minAmount: number;
+  maxRedemptions: number | null;
+  maxRedemptionsPerOrg: number | null;
+  startsAt: string | null;
+  endsAt: string | null;
+}) {
+  const supabase = await createSupabaseServiceClient();
+  const normalized = normalizeDiscountCode(input.code);
+  if (!normalized) return { ok: false as const, error: { userMessage: "กรุณากรอกโค้ดส่วนลด" } };
+  const { error } = await supabase.from("billing_discount_codes").insert({
+    code: normalized,
+    normalized_code: normalized,
+    description: input.description,
+    discount_type: input.discountType,
+    discount_value: input.discountValue,
+    plan: input.plan,
+    duration: input.duration,
+    min_amount: input.minAmount,
+    max_redemptions: input.maxRedemptions,
+    max_redemptions_per_org: input.maxRedemptionsPerOrg,
+    starts_at: input.startsAt,
+    ends_at: input.endsAt,
+  });
+  if (error) return { ok: false as const, error: mapError(error) };
+  return { ok: true as const, error: null };
+}
+
+export async function setDiscountCodeActive(id: string, active: boolean) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("billing_discount_codes")
+    .update({ active, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { ok: false as const, error: mapError(error) };
+  return { ok: true as const, error: null };
 }
 
 export async function getPremiumFreeTrialEligibility(

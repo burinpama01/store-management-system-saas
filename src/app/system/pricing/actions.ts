@@ -8,8 +8,11 @@ import {
   createPromotion,
   setPromotionActive,
   updatePlanSettings,
+  createDiscountCode,
+  setDiscountCodeActive,
   type PlanTier,
 } from "@/modules/billing/pricing-repository";
+import { normalizeDiscountCode } from "@/modules/billing/discount-code";
 
 const VALID_TIERS: PlanTier[] = ["starter", "standard", "premium", "enterprise"];
 
@@ -108,5 +111,73 @@ export async function togglePromotionAction(fd: FormData): Promise<void> {
   const active = fd.get("active") === "1";
   if (!id) return;
   await setPromotionActive(id, active);
+  revalidatePath("/system/pricing");
+}
+
+function parseOptionalPositiveInt(value: FormDataEntryValue | null): number | null {
+  const raw = ((value as string | null) ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+export async function createDiscountCodeAction(_prev: PricingState, fd: FormData): Promise<PricingState> {
+  const g = await guard();
+  if (g) return { ok: false, error: g.error };
+
+  const code = normalizeDiscountCode((fd.get("code") as string | null) ?? "");
+  const description = ((fd.get("description") as string | null) ?? "").trim();
+  const discountType = (fd.get("discountType") as string | null) ?? "";
+  const discountValue = Number(fd.get("discountValue"));
+  const planRaw = (fd.get("plan") as string | null) ?? "";
+  const plan = isPaidTier(planRaw) ? (planRaw as PaidTier) : null; // "" -> all plans
+  const durationRaw = (fd.get("duration") as string | null) ?? "";
+  const duration = durationRaw === "30d" || durationRaw === "1y" ? durationRaw : null; // "" -> all
+  const minAmount = Number(fd.get("minAmount") || 0);
+  const maxRedemptions = parseOptionalPositiveInt(fd.get("maxRedemptions"));
+  const maxRedemptionsPerOrg = parseOptionalPositiveInt(fd.get("maxRedemptionsPerOrg"));
+  const startsAt = ((fd.get("startsAt") as string | null) ?? "").trim() || null;
+  const endsAt = ((fd.get("endsAt") as string | null) ?? "").trim() || null;
+
+  if (!code) return { ok: false, error: "กรุณากรอกโค้ดส่วนลด" };
+  if (!description) return { ok: false, error: "กรุณากรอกคำอธิบาย" };
+  if (discountType !== "percentage" && discountType !== "fixed") {
+    return { ok: false, error: "ประเภทส่วนลดไม่ถูกต้อง" };
+  }
+  if (!Number.isFinite(discountValue) || discountValue <= 0) {
+    return { ok: false, error: "มูลค่าส่วนลดต้องมากกว่า 0" };
+  }
+  if (discountType === "percentage" && discountValue > 100) {
+    return { ok: false, error: "ส่วนลดแบบ % ต้องไม่เกิน 100" };
+  }
+  if (!Number.isFinite(minAmount) || minAmount < 0) {
+    return { ok: false, error: "ยอดขั้นต่ำไม่ถูกต้อง" };
+  }
+
+  const res = await createDiscountCode({
+    code,
+    description,
+    discountType,
+    discountValue,
+    plan,
+    duration,
+    minAmount,
+    maxRedemptions,
+    maxRedemptionsPerOrg,
+    startsAt: startsAt ? new Date(startsAt).toISOString() : null,
+    endsAt: endsAt ? new Date(endsAt).toISOString() : null,
+  });
+  if (!res.ok) return { ok: false, error: res.error?.userMessage ?? "สร้างโค้ดส่วนลดไม่สำเร็จ" };
+  revalidatePath("/system/pricing");
+  return { ok: true, error: null };
+}
+
+export async function toggleDiscountCodeAction(fd: FormData): Promise<void> {
+  const g = await guard();
+  if (g) return;
+  const id = fd.get("id") as string;
+  const active = fd.get("active") === "1";
+  if (!id) return;
+  await setDiscountCodeActive(id, active);
   revalidatePath("/system/pricing");
 }
