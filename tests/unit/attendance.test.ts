@@ -197,7 +197,17 @@ describe("attendance GPS policy", () => {
     expect(validateAttendanceGpsPolicy({ lat: 13.7563, lng: 100.5018 }, { gpsEnabled: true })).toBeNull();
     expect(validateAttendanceGpsPolicy({}, { gpsEnabled: true, center, radiusMeters: 20 })).toBe("กรุณาอนุญาตตำแหน่งเพื่อบันทึกเวลา");
     expect(validateAttendanceGpsPolicy({ lat: 13.7564, lng: 100.5019 }, { gpsEnabled: true, center, radiusMeters: 25 })).toBeNull();
-    expect(validateAttendanceGpsPolicy({ lat: 13.7367, lng: 100.5231 }, { gpsEnabled: true, center, radiusMeters: 25 })).toBe("ตำแหน่งอยู่นอกพื้นที่ที่กำหนด");
+    expect(validateAttendanceGpsPolicy({ lat: 13.7367, lng: 100.5231 }, { gpsEnabled: true, center, radiusMeters: 25 })).toMatch(/นอกพื้นที่ที่กำหนด/);
+
+    // GPS accuracy margin: a point ~33m from center is outside a 25m radius, but allowed when the
+    // device reports ~50m accuracy (capped at 200m), and still rejected with no/precise accuracy.
+    const justOutside = { lat: 13.7566, lng: 100.5018 };
+    expect(validateAttendanceGpsPolicy(justOutside, { gpsEnabled: true, center, radiusMeters: 25 })).toMatch(/นอกพื้นที่/);
+    expect(validateAttendanceGpsPolicy({ ...justOutside, accuracy: 50 }, { gpsEnabled: true, center, radiusMeters: 25 })).toBeNull();
+    // A device far away with huge (capped) accuracy is still rejected.
+    expect(
+      validateAttendanceGpsPolicy({ lat: 13.7367, lng: 100.5231, accuracy: 5000 }, { gpsEnabled: true, center, radiusMeters: 25 }),
+    ).toMatch(/นอกพื้นที่/);
   });
 
   it("wires GPS policy validation into clock-in and clock-out actions", () => {

@@ -108,12 +108,16 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
     const locationAllowed = gpsPolicy.gpsEnabled;
     const latRaw = formData.get("lat") as string | null;
     const lngRaw = formData.get("lng") as string | null;
+    const accuracyRaw = formData.get("accuracy") as string | null;
     const locationLabel = locationAllowed
       ? (formData.get("locationLabel") as string | null)?.trim() || undefined
       : undefined;
     const note = (formData.get("note") as string | null)?.trim() || undefined;
 
-    const location = parseClockLocation({ lat: latRaw, lng: lngRaw, locationLabel }, locationAllowed);
+    const location = parseClockLocation(
+      { lat: latRaw, lng: lngRaw, accuracy: accuracyRaw, locationLabel },
+      locationAllowed,
+    );
     const gpsPolicyError = validateAttendanceGpsPolicy(location, gpsPolicy);
     if (gpsPolicyError) return { error: gpsPolicyError };
 
@@ -177,12 +181,16 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     const locationAllowed = gpsPolicy.gpsEnabled;
     const latRaw = formData.get("lat") as string | null;
     const lngRaw = formData.get("lng") as string | null;
+    const accuracyRaw = formData.get("accuracy") as string | null;
     const locationLabel = locationAllowed
       ? (formData.get("locationLabel") as string | null)?.trim() || undefined
       : undefined;
     const note = (formData.get("note") as string | null)?.trim() || undefined;
 
-    const location = parseClockLocation({ lat: latRaw, lng: lngRaw, locationLabel }, locationAllowed);
+    const location = parseClockLocation(
+      { lat: latRaw, lng: lngRaw, accuracy: accuracyRaw, locationLabel },
+      locationAllowed,
+    );
     const gpsPolicyError = validateAttendanceGpsPolicy(location, gpsPolicy);
     if (gpsPolicyError) return { error: gpsPolicyError };
 
