@@ -77,26 +77,24 @@ function fmtMoney(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2 });
 }
 
-async function getGps(): Promise<{ lat?: number; lng?: number; label?: string }> {
+async function getGps(): Promise<{ lat?: number; lng?: number; label?: string; accuracy?: number }> {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       resolve({});
       return;
     }
-    const timer = setTimeout(() => resolve({}), 5000);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        clearTimeout(timer);
         resolve({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
+          accuracy: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : undefined,
           label: `${pos.coords.latitude.toFixed(5)},${pos.coords.longitude.toFixed(5)}`,
         });
       },
-      () => {
-        clearTimeout(timer);
-        resolve({});
-      },
+      () => resolve({}),
+      // High accuracy uses real GPS (not coarse network/IP) and needs a longer timeout for a fix.
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
   });
 }
@@ -199,6 +197,7 @@ export function AttendanceManager({
     const fd = new FormData();
     if (gps.lat !== undefined) fd.append("lat", String(gps.lat));
     if (gps.lng !== undefined) fd.append("lng", String(gps.lng));
+    if (gps.accuracy !== undefined) fd.append("accuracy", String(gps.accuracy));
     if (gps.label) fd.append("locationLabel", gps.label);
     const result = await clockInAction(fd);
     setClocking(false);
@@ -218,6 +217,7 @@ export function AttendanceManager({
     const fd = new FormData();
     if (gps.lat !== undefined) fd.append("lat", String(gps.lat));
     if (gps.lng !== undefined) fd.append("lng", String(gps.lng));
+    if (gps.accuracy !== undefined) fd.append("accuracy", String(gps.accuracy));
     if (gps.label) fd.append("locationLabel", gps.label);
     const result = await clockOutAction(fd);
     setClocking(false);
