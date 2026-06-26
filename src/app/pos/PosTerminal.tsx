@@ -35,7 +35,7 @@ import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers"
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
-import { LocalizedLoading, Button, SubmitButton } from "@/shared/components/ui";
+import { LocalizedLoading, Button, SubmitButton, ModalDialog } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
@@ -1431,6 +1431,7 @@ function BillHistoryPanel({
 }) {
   const compactBillHistoryLimit = 8;
   const visibleOrders = historyMode === "sheet" ? orders : orders.slice(0, compactBillHistoryLimit);
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null);
 
   return (
     <div className="relative space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2" aria-busy={isPending}>
@@ -1541,28 +1542,177 @@ function BillHistoryPanel({
                   {order.status}
                 </span>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-1">
+              <div className="mt-2 space-y-1">
                 <button
                   type="button"
-                  onClick={() => onPrint(order)}
-                  className="min-h-9 rounded border border-gray-200 px-2 text-[11px] text-gray-700"
+                  onClick={() => setDetailOrder(order)}
+                  className="min-h-9 w-full rounded border border-teal-100 bg-teal-50 px-2 text-[11px] font-semibold text-teal-800"
                 >
-                  พิมพ์ซ้ำ
+                  ดูรายละเอียด
                 </button>
-                <button
-                  type="button"
-                  disabled={order.status === "paid" || order.status === "voided"}
-                  onClick={() => onVoid(order)}
-                  className="min-h-9 rounded border border-red-100 px-2 text-[11px] text-red-500 disabled:opacity-40"
-                >
-                  ยกเลิก
-                </button>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onPrint(order)}
+                    className="min-h-9 rounded border border-gray-200 px-2 text-[11px] text-gray-700"
+                  >
+                    พิมพ์ซ้ำ
+                  </button>
+                  <button
+                    type="button"
+                    disabled={order.status === "paid" || order.status === "voided"}
+                    onClick={() => onVoid(order)}
+                    className="min-h-9 rounded border border-red-100 px-2 text-[11px] text-red-500 disabled:opacity-40"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
               </div>
             </li>
           ))}
         </ul>
       )}
+      {detailOrder && (
+        <BillDetailModal
+          order={detailOrder}
+          storeTimezone={storeTimezone}
+          onClose={() => setDetailOrder(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function paymentMethodLabel(method: string) {
+  if (method === "cash") return "เงินสด";
+  if (method === "qr_promptpay") return "QR พร้อมเพย์";
+  if (method === "credit_card") return "บัตรเครดิต";
+  if (method === "bank_transfer") return "โอนธนาคาร";
+  return method;
+}
+
+function BillDetailModal({
+  order,
+  storeTimezone,
+  onClose,
+}: {
+  order: Order;
+  storeTimezone: string;
+  onClose: () => void;
+}) {
+  const dateLabel = (() => {
+    try {
+      return new Intl.DateTimeFormat("th-TH", {
+        timeZone: storeTimezone,
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(order.createdAt));
+    } catch {
+      return order.createdAt;
+    }
+  })();
+  const cashPayment = order.payments.find((payment) => payment.method === "cash");
+  const statusClass =
+    order.status === "paid"
+      ? "bg-green-50 text-green-700"
+      : order.status === "voided"
+        ? "bg-red-50 text-red-600"
+        : "bg-amber-50 text-amber-700";
+
+  return (
+    <ModalDialog open title={`บิล ${order.orderNumber}`} onClose={onClose} size="md">
+      <div className="space-y-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-gray-500">{dateLabel}</span>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}>{order.status}</span>
+        </div>
+        {order.tableNumber && <p className="text-xs text-gray-500">โต๊ะ {order.tableNumber}</p>}
+        {order.note && <p className="text-xs text-gray-600">หมายเหตุ: {order.note}</p>}
+
+        <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+          {order.items.map((item) => {
+            const details = [
+              item.variantName,
+              ...item.modifiers.map(modifierDetail),
+              item.note ? `หมายเหตุ: ${item.note}` : null,
+            ].filter(Boolean);
+            return (
+              <div key={item.id} className="p-2">
+                <div className="flex justify-between gap-2">
+                  <span className="font-medium text-gray-800">
+                    {item.quantity}x {item.productName}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-gray-700">{priceStr(item.totalPrice)}</span>
+                </div>
+                {details.length > 0 && (
+                  <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{details.join(" · ")}</p>
+                )}
+                <p className="text-[11px] text-gray-400">
+                  @ {priceStr(item.unitPrice)}
+                  {item.discount ? ` · ส่วนลด -${priceStr(item.discount)}` : ""}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="space-y-0.5">
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>ยอดรวม</span>
+            <span className="tabular-nums">{priceStr(order.subtotal)}</span>
+          </div>
+          {order.discount > 0 && (
+            <div className="flex justify-between text-xs text-gray-600">
+              <span>ส่วนลด</span>
+              <span className="tabular-nums">-{priceStr(order.discount)}</span>
+            </div>
+          )}
+          {order.couponDiscountAmount ? (
+            <div className="flex justify-between text-xs text-gray-600">
+              <span>คูปอง</span>
+              <span className="tabular-nums">-{priceStr(order.couponDiscountAmount)}</span>
+            </div>
+          ) : null}
+          <div className="flex justify-between border-t border-gray-100 pt-1 text-sm font-semibold text-gray-900">
+            <span>สุทธิ</span>
+            <span className="tabular-nums">{priceStr(order.total)}</span>
+          </div>
+        </div>
+
+        {order.payments.length > 0 && (
+          <div className="space-y-0.5 rounded-lg border border-gray-200 p-2 text-xs">
+            {order.payments.map((payment) => (
+              <div key={payment.id} className="flex justify-between text-gray-700">
+                <span>
+                  {paymentMethodLabel(payment.method)}
+                  {payment.status !== "completed" ? ` (${payment.status})` : ""}
+                </span>
+                <span className="tabular-nums">{priceStr(payment.amount)}</span>
+              </div>
+            ))}
+            {cashPayment?.receivedAmount !== undefined && (
+              <div className="flex justify-between text-gray-400">
+                <span>รับเงิน</span>
+                <span className="tabular-nums">{priceStr(cashPayment.receivedAmount)}</span>
+              </div>
+            )}
+            {cashPayment?.changeAmount !== undefined && (
+              <div className="flex justify-between text-gray-400">
+                <span>เงินทอน</span>
+                <span className="tabular-nums">{priceStr(cashPayment.changeAmount)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? (
+          <p className="text-[11px] text-gray-500">
+            {order.loyaltyPointsEarned ? `ได้แต้ม +${order.loyaltyPointsEarned} ` : ""}
+            {order.loyaltyPointsRedeemed ? `ใช้แต้ม -${order.loyaltyPointsRedeemed}` : ""}
+          </p>
+        ) : null}
+      </div>
+    </ModalDialog>
   );
 }
 
