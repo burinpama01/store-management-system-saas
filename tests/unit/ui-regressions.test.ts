@@ -890,10 +890,11 @@ describe("UX/UI regression guards", () => {
     expect(pricing).toContain("marketing-page");
     expect(pricing).toContain("PricingPlans");
     expect(pricing).toContain('id="enterprise-contact"');
-    expect(pricing).toContain("support@storeos.app");
+    // Enterprise CTA points to the dedicated request form instead of a mailto link.
+    expect(pricing).toContain("/enterprise");
     expect(pricingPlans).toContain("useState<BillingPeriod>");
     expect(pricingPlans).toContain("price1y");
-    expect(pricingPlans).toContain("#enterprise-contact");
+    expect(pricingPlans).toContain("/enterprise");
     expect(pricingPlans).not.toContain("/register?plan=enterprise");
     expect(login).toContain("reference-auth-page");
   });

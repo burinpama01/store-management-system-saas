@@ -33,6 +33,48 @@ export interface Database {
         };
         Relationships: [];
       };
+      enterprise_requests: {
+        Row: {
+          id: string;
+          company_name: string;
+          contact_name: string;
+          email: string;
+          phone: string | null;
+          branch_count: number | null;
+          message: string | null;
+          organization_id: string | null;
+          status: "new" | "contacted" | "closed";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_name: string;
+          contact_name: string;
+          email: string;
+          phone?: string | null;
+          branch_count?: number | null;
+          message?: string | null;
+          organization_id?: string | null;
+          status?: "new" | "contacted" | "closed";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          company_name?: string;
+          contact_name?: string;
+          email?: string;
+          phone?: string | null;
+          branch_count?: number | null;
+          message?: string | null;
+          organization_id?: string | null;
+          status?: "new" | "contacted" | "closed";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       payment_submissions: {
         Row: {
           id: string;

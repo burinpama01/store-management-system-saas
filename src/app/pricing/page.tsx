@@ -31,8 +31,8 @@ export default async function PricingPage() {
           <h2>ต้องการ Enterprise สำหรับหลายสาขา?</h2>
           <p>คุยกับทีม StoreOS เพื่อวางแพ็กเกจ รายปี การย้ายข้อมูล และการเชื่อมต่อระบบที่เหมาะกับองค์กร</p>
         </div>
-        <Link href="mailto:support@storeos.app?subject=StoreOS%20Enterprise" className="btn-primary">
-          ติดต่อฝ่ายขาย
+        <Link href="/enterprise" className="btn-primary">
+          กรอกฟอร์มขอใช้งาน
         </Link>
       </GlassPanel>
 
