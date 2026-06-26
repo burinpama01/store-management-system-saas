@@ -121,7 +121,10 @@ function ToggleSection({
 }
 
 function formatPoints(value?: number) {
-  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(value ?? 0);
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value ?? 0);
 }
 
 function toDateTimeInput(value: string | null | undefined, timeZone: string) {

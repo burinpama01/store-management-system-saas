@@ -26,7 +26,10 @@ interface RedeemedVoucher {
 }
 
 function formatPoints(value: number) {
-  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatDate(value: string | null | undefined) {

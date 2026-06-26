@@ -37,6 +37,7 @@ import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
 import { LocalizedLoading, Button, SubmitButton, ModalDialog } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
+import { formatPoints } from "@/shared/utils/points";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
@@ -1042,7 +1043,7 @@ function CustomerCouponPanel({
             <div className="min-w-0">
               <p className="truncate font-semibold text-slate-800">{selectedCustomer.name}</p>
               <p className="text-[11px] text-slate-500">
-                {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้ม {selectedCustomer.pointsBalance ?? 0}
+                {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้ม {formatPoints(selectedCustomer.pointsBalance)}
               </p>
             </div>
             <button type="button" onClick={onClearCustomer} className="min-h-9 px-2 text-[11px] font-semibold text-red-500">
@@ -1081,7 +1082,7 @@ function CustomerCouponPanel({
                   >
                     <span className="block truncate font-semibold">{customer.name}</span>
                     <span className="block text-[11px] text-slate-500">
-                      {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} · แต้ม {customer.pointsBalance ?? 0}
+                      {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} · แต้ม {formatPoints(customer.pointsBalance)}
                     </span>
                   </button>
                 ))}
@@ -1707,8 +1708,8 @@ function BillDetailModal({
 
         {(order.loyaltyPointsEarned || order.loyaltyPointsRedeemed) ? (
           <p className="text-[11px] text-gray-500">
-            {order.loyaltyPointsEarned ? `ได้แต้ม +${order.loyaltyPointsEarned} ` : ""}
-            {order.loyaltyPointsRedeemed ? `ใช้แต้ม -${order.loyaltyPointsRedeemed}` : ""}
+            {order.loyaltyPointsEarned ? `ได้แต้ม +${formatPoints(order.loyaltyPointsEarned)} ` : ""}
+            {order.loyaltyPointsRedeemed ? `ใช้แต้ม -${formatPoints(order.loyaltyPointsRedeemed)}` : ""}
           </p>
         ) : null}
       </div>
