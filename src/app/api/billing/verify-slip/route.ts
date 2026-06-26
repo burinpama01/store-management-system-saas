@@ -20,6 +20,8 @@ export async function POST(req: Request) {
     const plan = form.get("plan");
     const duration = form.get("duration");
     const slip = form.get("slip");
+    const discountCodeRaw = form.get("discountCode");
+    const discountCode = typeof discountCodeRaw === "string" ? discountCodeRaw : undefined;
 
     if (typeof plan !== "string" || !isPaidTier(plan as PaidTier)) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
@@ -37,6 +39,7 @@ export async function POST(req: Request) {
       plan: plan as PaidTier,
       duration: duration as BillingDuration,
       submittedByUserId: perms.user.id,
+      discountCode,
       slipImageBase64: base64,
       slipImageContentType: slip.type || "image/jpeg",
     });

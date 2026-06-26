@@ -5,11 +5,14 @@ import { Button, SubmitButton } from "@/shared/components/ui";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import { DURATION_LABELS, PAID_TIERS, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
 import type { Promotion, PlanSetting } from "@/modules/billing/pricing-repository";
+import type { BillingDiscountCode } from "@/modules/billing/discount-code";
 import {
   updatePriceAction,
   createPromotionAction,
   togglePromotionAction,
   updatePlanSettingsAction,
+  createDiscountCodeAction,
+  toggleDiscountCodeAction,
   type PricingState,
 } from "./actions";
 
@@ -20,10 +23,12 @@ export function PricingManager({
   prices,
   promotions,
   planSettings,
+  discountCodes,
 }: {
   prices: Record<PaidTier, Record<BillingDuration, number>>;
   promotions: Promotion[];
   planSettings: PlanSetting[];
+  discountCodes: BillingDiscountCode[];
 }) {
   return (
     <div className="space-y-5">
@@ -92,6 +97,65 @@ export function PricingManager({
                       <input type="hidden" name="id" value={p.id} />
                       <input type="hidden" name="active" value={p.active ? "0" : "1"} />
                       <SubmitButton variant="secondary" className="text-xs">{p.active ? "ปิด" : "เปิด"}</SubmitButton>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="panel-title mb-3">สร้างโค้ดส่วนลด (ใช้ตอนซื้อแพ็กเกจ)</h2>
+        <DiscountCodeForm />
+      </section>
+
+      <section className="panel overflow-x-auto p-0">
+        <h2 className="panel-title px-4 pt-4">โค้ดส่วนลดทั้งหมด ({discountCodes.length})</h2>
+        {discountCodes.length === 0 ? (
+          <p className="p-4 text-sm text-[var(--muted)]">ยังไม่มีโค้ดส่วนลด</p>
+        ) : (
+          <table className="mt-3 w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--muted)]">
+                <th className="px-4 py-2 font-bold">โค้ด</th>
+                <th className="px-4 py-2 font-bold">คำอธิบาย</th>
+                <th className="px-4 py-2 text-right font-bold">ส่วนลด</th>
+                <th className="px-4 py-2 font-bold">ขอบเขต</th>
+                <th className="px-4 py-2 font-bold">จำกัดใช้</th>
+                <th className="px-4 py-2 font-bold">ช่วงเวลา</th>
+                <th className="px-4 py-2 font-bold">สถานะ</th>
+                <th className="px-4 py-2 font-bold"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {discountCodes.map((c) => (
+                <tr key={c.id} className="border-b border-[var(--border)] last:border-0">
+                  <td className="px-4 py-2 font-mono font-bold text-[var(--ink)]">{c.normalizedCode}</td>
+                  <td className="px-4 py-2 text-[var(--ink-2)]">{c.description}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {c.discountType === "percentage" ? `${c.discountValue}%` : `${c.discountValue.toLocaleString()} บาท`}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-[var(--muted)]">
+                    {c.plan ? PLAN_LABELS[c.plan] : "ทุกแพ็กเกจ"}
+                    {" · "}
+                    {c.duration ? DURATION_LABELS[c.duration] : "ทุกระยะเวลา"}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-[var(--muted)]">
+                    รวม {c.maxRedemptions ?? "∞"} · /ราย {c.maxRedemptionsPerOrg ?? "∞"}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-[var(--muted)]">{fmt(c.startsAt)} – {fmt(c.endsAt)}</td>
+                  <td className="px-4 py-2">
+                    <span className={`badge ${c.active ? "badge-success" : "badge-warning"}`}>
+                      {c.active ? "เปิดใช้" : "ปิด"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <form action={toggleDiscountCodeAction}>
+                      <input type="hidden" name="id" value={c.id} />
+                      <input type="hidden" name="active" value={c.active ? "0" : "1"} />
+                      <SubmitButton variant="secondary" className="text-xs">{c.active ? "ปิด" : "เปิด"}</SubmitButton>
                     </form>
                   </td>
                 </tr>
@@ -198,6 +262,80 @@ function PromotionForm() {
         {state.ok && <p className="mb-2 text-xs text-emerald-700">สร้างโปรโมชั่นแล้ว</p>}
         <Button type="submit" variant="primary" loading={pending} loadingText="กำลังสร้าง..." className="disabled:opacity-40">
           สร้างโปรโมชั่น
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DiscountCodeForm() {
+  const [state, action, pending] = useActionState(createDiscountCodeAction, INITIAL);
+  return (
+    <form action={action} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div>
+        <label className="field-label">โค้ด</label>
+        <input name="code" type="text" required maxLength={40} placeholder="เช่น NEWYEAR50" className="form-input font-mono uppercase" />
+      </div>
+      <div className="xl:col-span-2">
+        <label className="field-label">คำอธิบาย</label>
+        <input name="description" type="text" required maxLength={120} placeholder="เช่น ส่วนลดปีใหม่" className="form-input" />
+      </div>
+      <div>
+        <label className="field-label">ประเภท</label>
+        <select name="discountType" className="form-input">
+          <option value="percentage">เปอร์เซ็นต์ (%)</option>
+          <option value="fixed">จำนวนเงิน (บาท)</option>
+        </select>
+      </div>
+      <div>
+        <label className="field-label">มูลค่าส่วนลด</label>
+        <input name="discountValue" type="number" min={1} step="0.01" required className="form-input" />
+      </div>
+      <div>
+        <label className="field-label">เฉพาะแพ็กเกจ</label>
+        <select name="plan" className="form-input">
+          <option value="">ทุกแพ็กเกจ</option>
+          {PAID_TIERS.map((t) => (
+            <option key={t} value={t}>{PLAN_LABELS[t]}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="field-label">เฉพาะระยะเวลา</label>
+        <select name="duration" className="form-input">
+          <option value="">ทุกระยะเวลา</option>
+          {DURATIONS.map((d) => (
+            <option key={d} value={d}>{DURATION_LABELS[d]}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="field-label">ยอดขั้นต่ำ (บาท)</label>
+        <input name="minAmount" type="number" min={0} step={1} defaultValue={0} className="form-input" />
+      </div>
+      <div>
+        <label className="field-label">จำกัดใช้รวม (ว่าง = ไม่จำกัด)</label>
+        <input name="maxRedemptions" type="number" min={1} step={1} placeholder="∞" className="form-input" />
+      </div>
+      <div>
+        <label className="field-label">จำกัดต่อบัญชี (ว่าง = ไม่จำกัด)</label>
+        <input name="maxRedemptionsPerOrg" type="number" min={1} step={1} placeholder="∞" className="form-input" />
+      </div>
+      <div className="grid grid-cols-2 gap-2 xl:col-span-2">
+        <div>
+          <label className="field-label">เริ่ม</label>
+          <input name="startsAt" type="date" className="form-input" />
+        </div>
+        <div>
+          <label className="field-label">สิ้นสุด</label>
+          <input name="endsAt" type="date" className="form-input" />
+        </div>
+      </div>
+      <div className="xl:col-span-4">
+        {state.error && <p className="alert-danger mb-2">{state.error}</p>}
+        {state.ok && <p className="mb-2 text-xs text-emerald-700">สร้างโค้ดส่วนลดแล้ว</p>}
+        <Button type="submit" variant="primary" loading={pending} loadingText="กำลังสร้าง..." className="disabled:opacity-40">
+          สร้างโค้ดส่วนลด
         </Button>
       </div>
     </form>
