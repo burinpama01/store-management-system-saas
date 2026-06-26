@@ -139,7 +139,7 @@ describe("grocery POS checkout reward composition", () => {
 });
 
 describe("grocery POS loyalty ledger", () => {
-  it("earns points only from paid totals and stores idempotent ledger entries", () => {
+  it("earns fractional points (2 decimals) from paid totals and stores idempotent ledger entries", () => {
     const entry = createEarnPointsEntry({
       accountId: "account-1",
       orderId: "order-1",
@@ -152,9 +152,29 @@ describe("grocery POS loyalty ledger", () => {
       accountId: "account-1",
       orderId: "order-1",
       type: "earn",
-      pointsDelta: 2,
+      pointsDelta: 2.5,
       idempotencyKey: "order-1:earn",
     });
+
+    // ฿101 × 0.01 = 1.01 (previously floored to 1), and small orders still earn (> 0).
+    expect(
+      createEarnPointsEntry({
+        accountId: "account-1",
+        orderId: "order-2",
+        paidTotal: 101,
+        pointsPerCurrency: 0.01,
+        idempotencyKey: "order-2:earn",
+      }).pointsDelta,
+    ).toBe(1.01);
+    expect(
+      createEarnPointsEntry({
+        accountId: "account-1",
+        orderId: "order-3",
+        paidTotal: 80,
+        pointsPerCurrency: 0.01,
+        idempotencyKey: "order-3:earn",
+      }).pointsDelta,
+    ).toBe(0.8);
   });
 
   it("prevents negative balances and models void/refund as reversal entries", () => {

@@ -1,3 +1,5 @@
+import { roundPoints } from "@/shared/utils/points";
+
 export type LoyaltyLedgerEntryType = "earn" | "redeem" | "reversal";
 
 export interface LoyaltyLedgerEntry {
@@ -16,11 +18,13 @@ function assertIdempotencyKey(idempotencyKey: string) {
   }
 }
 
-function assertPositiveInteger(points: number, message: string): number {
-  if (!Number.isInteger(points) || points <= 0) {
+/** Points accrue to 2 decimals; reject non-positive amounts after rounding. */
+function assertPositivePoints(points: number, message: string): number {
+  const rounded = roundPoints(points);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
     throw new Error(message);
   }
-  return points;
+  return rounded;
 }
 
 export function computeLoyaltyBalance(entries: LoyaltyLedgerEntry[]): number {
@@ -42,8 +46,10 @@ export function createEarnPointsEntry(input: {
     throw new Error("อัตราสะสมแต้มไม่ถูกต้อง");
   }
 
-  const points = Math.floor(input.paidTotal * input.pointsPerCurrency);
-  assertPositiveInteger(points, "ยอดนี้ยังไม่เกิดแต้มสะสม");
+  const points = assertPositivePoints(
+    input.paidTotal * input.pointsPerCurrency,
+    "ยอดนี้ยังไม่เกิดแต้มสะสม",
+  );
 
   return {
     accountId: input.accountId,
@@ -62,7 +68,7 @@ export function createRedeemPointsEntry(input: {
   idempotencyKey: string;
 }): LoyaltyLedgerEntry {
   assertIdempotencyKey(input.idempotencyKey);
-  const points = assertPositiveInteger(input.points, "จำนวนแต้มที่ใช้ไม่ถูกต้อง");
+  const points = assertPositivePoints(input.points, "จำนวนแต้มที่ใช้ไม่ถูกต้อง");
   if (points > input.currentBalance) {
     throw new Error("แต้มสะสมไม่พอ");
   }

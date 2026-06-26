@@ -27,6 +27,7 @@ import {
 } from "@/modules/grocery-pos/offline-sync";
 import { applyScannerKey, type ScannerBufferState } from "@/modules/grocery-pos/scanner";
 import { Button } from "@/shared/components/ui";
+import { formatPoints } from "@/shared/utils/points";
 import {
   closeGroceryOrderPaymentAction,
   createGroceryOrderAction,
@@ -668,7 +669,7 @@ export function GroceryPosTerminal({
             <h2>ลูกค้า</h2>
             <span>
               {selectedCustomer
-                ? `${selectedCustomer.name} / ${selectedCustomer.pointsBalance ?? 0} แต้ม`
+                ? `${selectedCustomer.name} / ${formatPoints(selectedCustomer.pointsBalance)} แต้ม`
                 : "ไม่ระบุ"}
             </span>
           </div>
@@ -688,7 +689,7 @@ export function GroceryPosTerminal({
                 <button type="button" key={customer.id} onClick={() => selectCustomer(customer)}>
                   <strong>{customer.name}</strong>
                   <span>
-                    {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} / {customer.pointsBalance ?? 0} แต้ม
+                    {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} / {formatPoints(customer.pointsBalance)} แต้ม
                   </span>
                 </button>
               ))}

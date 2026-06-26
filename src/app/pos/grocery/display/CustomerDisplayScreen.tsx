@@ -24,7 +24,8 @@ function money(value: number) {
 
 function points(value: number) {
   return new Intl.NumberFormat("th-TH", {
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
+import { roundPoints } from "@/shared/utils/points";
 
 type LoyaltyAccountRow = Database["public"]["Tables"]["loyalty_accounts"]["Row"];
 type LoyaltySettingsRow = Database["public"]["Tables"]["loyalty_settings"]["Row"];
@@ -253,7 +254,7 @@ export async function adjustCustomerPoints(input: {
     p_organization_id: input.organizationId,
     p_store_id: input.storeId,
     p_customer_id: input.customerId,
-    p_points_delta: Math.trunc(input.pointsDelta),
+    p_points_delta: roundPoints(input.pointsDelta),
     p_reason: input.reason ?? null,
     p_idempotency_key: `manual:${randomUUID()}`,
   });

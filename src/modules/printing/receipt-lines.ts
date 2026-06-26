@@ -1,5 +1,6 @@
 import type { ReceiptData } from "./types";
 import { buildReceiptPromptPayQr } from "./receipt-qr";
+import { formatPoints } from "@/shared/utils/points";
 
 // Characters per row for each paper width (monospace layout).
 export const RECEIPT_COLS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 42 };
@@ -9,7 +10,7 @@ function priceStr(n: number): string {
 }
 
 function pointsStr(n: number): string {
-  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(n);
+  return formatPoints(n);
 }
 
 function isFiniteNumber(value: unknown): value is number {
