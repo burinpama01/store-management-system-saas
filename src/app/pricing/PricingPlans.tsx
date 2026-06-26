@@ -105,7 +105,7 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
               </div>
 
               <Link
-                href={isEnterprise ? "#enterprise-contact" : `/register?plan=${plan.tier}`}
+                href={isEnterprise ? "/enterprise" : `/register?plan=${plan.tier}`}
                 className={isPremium ? "btn-primary reference-plan-action" : "btn-secondary reference-plan-action"}
               >
                 {copy.cta}
