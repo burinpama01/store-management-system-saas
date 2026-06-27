@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildEnterpriseSubmittedEmail,
   buildEnterpriseStatusEmail,
+  buildEnterpriseTestEmail,
 } from "@/modules/enterprise/email";
 
 describe("buildEnterpriseSubmittedEmail", () => {
@@ -32,5 +33,14 @@ describe("buildEnterpriseStatusEmail", () => {
 
     // Subjects differ so the recipient can tell updates apart.
     expect(new Set([contacted.subject, closed.subject, fresh.subject]).size).toBe(3);
+  });
+});
+
+describe("buildEnterpriseTestEmail", () => {
+  it("produces a self-describing test email", () => {
+    const email = buildEnterpriseTestEmail();
+    expect(email.subject).toContain("ทดสอบ");
+    expect(email.text).toContain("ทดสอบ");
+    expect(email.html).toContain("StoreOS");
   });
 });

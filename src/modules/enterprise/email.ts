@@ -1,4 +1,5 @@
 import { sendTransactionalEmail } from "@/modules/notifications/email";
+import { getEnterpriseFromEmail } from "@/modules/billing/platform-settings";
 import type { EnterpriseRequestStatus } from "./repository";
 
 export interface BuiltEmail {
@@ -62,9 +63,27 @@ export function buildEnterpriseStatusEmail(input: {
   };
 }
 
+/** Email used by the super-admin "test send" button. Pure. */
+export function buildEnterpriseTestEmail(): BuiltEmail {
+  const headline = "ทดสอบส่งอีเมล Enterprise สำเร็จ ✅";
+  const body = "นี่คืออีเมลทดสอบจากระบบคำขอ Enterprise ของ StoreOS หากคุณได้รับอีเมลนี้ แสดงว่าการตั้งค่าผู้ส่งถูกต้องและพร้อมใช้งาน";
+  return {
+    subject: "StoreOS — ทดสอบส่งอีเมล Enterprise",
+    html: wrapHtml(headline, body),
+    text: `${headline}\n\n${body}\n\nStoreOS`,
+  };
+}
+
+export async function sendEnterpriseTestEmail(input: { to: string }) {
+  const from = (await getEnterpriseFromEmail()) ?? undefined;
+  const email = buildEnterpriseTestEmail();
+  return sendTransactionalEmail({ to: input.to, from, ...email });
+}
+
 export async function sendEnterpriseSubmittedEmail(input: { to: string; companyName: string }) {
+  const from = (await getEnterpriseFromEmail()) ?? undefined;
   const email = buildEnterpriseSubmittedEmail({ companyName: input.companyName });
-  return sendTransactionalEmail({ to: input.to, ...email });
+  return sendTransactionalEmail({ to: input.to, from, ...email });
 }
 
 export async function sendEnterpriseStatusEmail(input: {
@@ -72,6 +91,7 @@ export async function sendEnterpriseStatusEmail(input: {
   companyName: string;
   status: EnterpriseRequestStatus;
 }) {
+  const from = (await getEnterpriseFromEmail()) ?? undefined;
   const email = buildEnterpriseStatusEmail({ companyName: input.companyName, status: input.status });
-  return sendTransactionalEmail({ to: input.to, ...email });
+  return sendTransactionalEmail({ to: input.to, from, ...email });
 }

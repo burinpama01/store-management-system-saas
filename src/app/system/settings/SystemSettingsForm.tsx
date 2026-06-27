@@ -5,9 +5,15 @@ import { useRouter } from "next/navigation";
 import type { PlatformPromptPaySettings } from "@/modules/billing/platform-settings";
 import { ProgressBar, Button } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
-import { updatePlatformSettingsAction, type PlatformSettingsState } from "./actions";
+import {
+  updatePlatformSettingsAction,
+  sendTestEnterpriseEmailAction,
+  type PlatformSettingsState,
+  type TestEmailState,
+} from "./actions";
 
 const INITIAL: PlatformSettingsState = { error: null, ok: false };
+const TEST_INITIAL: TestEmailState = { error: null, notice: null };
 
 export function SystemSettingsForm({
   settings,
@@ -108,10 +114,29 @@ export function SystemSettingsForm({
           </div>
         )}
 
+        <div className="border-t border-[var(--border)] pt-4">
+          <label className="field-label">อีเมลผู้ส่ง (สำหรับอีเมลคำขอ Enterprise)</label>
+          <input
+            type="text"
+            name="enterpriseFromEmail"
+            defaultValue={settings.enterpriseFromEmail ?? ""}
+            placeholder="StoreOS <no-reply@yourdomain.com>"
+            className="form-input"
+          />
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            ใช้เป็นผู้ส่งอีเมลยืนยัน/แจ้งสถานะคำขอ Enterprise · เว้นว่าง = ใช้ค่าจาก env (ENTERPRISE_FROM_EMAIL) ·
+            โดเมนต้อง verify ใน Resend ก่อนจึงจะส่งหาอีเมลใดก็ได้
+          </p>
+        </div>
+
         <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
           บันทึกการตั้งค่า
         </Button>
       </form>
+
+      <div className="mt-6 border-t border-[var(--border)] pt-5">
+        <TestEmailPanel />
+      </div>
 
       <div className="mt-6 border-t border-[var(--border)] pt-5">
         <label className="field-label">อัปโหลดรูป QR Code (สำหรับบัญชีที่ไม่มี PromptPay ID)</label>
@@ -146,5 +171,39 @@ export function SystemSettingsForm({
         )}
       </div>
     </section>
+  );
+}
+
+function TestEmailPanel() {
+  const [state, action, pending] = useActionState(sendTestEnterpriseEmailAction, TEST_INITIAL);
+  return (
+    <div>
+      <h3 className="text-sm font-bold text-[var(--ink)]">ทดสอบส่งอีเมล Enterprise</h3>
+      <p className="mb-2 text-xs text-[var(--muted)]">
+        ยิงอีเมลทดสอบไปยังอีเมลที่กรอก โดยใช้ผู้ส่งที่บันทึกไว้ (บันทึกการตั้งค่าก่อนทดสอบ)
+      </p>
+      <form action={action} className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <label className="field-label" htmlFor="testEmail">อีเมลปลายทาง</label>
+          <input
+            id="testEmail"
+            type="email"
+            name="testEmail"
+            required
+            placeholder="you@example.com"
+            className="form-input"
+          />
+        </div>
+        <Button type="submit" variant="secondary" loading={pending} loadingText="กำลังส่ง..." className="disabled:opacity-40">
+          ยิงทดสอบ
+        </Button>
+      </form>
+      {state.error && <p className="alert-danger mt-2">{state.error}</p>}
+      {state.notice && (
+        <p className="mt-2 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {state.notice}
+        </p>
+      )}
+    </div>
   );
 }

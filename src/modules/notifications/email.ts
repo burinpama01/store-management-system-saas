@@ -9,6 +9,8 @@ export interface SendEmailInput {
   subject: string;
   html: string;
   text?: string;
+  /** Overrides the env sender. Used by the super-admin-configured Enterprise sender. */
+  from?: string;
 }
 
 export interface SendEmailResult {
@@ -42,7 +44,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 
 export async function sendTransactionalEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.ENTERPRISE_FROM_EMAIL || process.env.EMAIL_FROM;
+  const from = input.from?.trim() || process.env.ENTERPRISE_FROM_EMAIL || process.env.EMAIL_FROM;
   if (!apiKey || !from) {
     return { ok: true, skipped: true, message: "อีเมลยังไม่พร้อมใช้งาน (ไม่ได้ตั้งค่า Resend)" };
   }
