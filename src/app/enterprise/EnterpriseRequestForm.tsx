@@ -6,7 +6,12 @@ import { submitEnterpriseRequest, type EnterpriseRequestState } from "./actions"
 
 const INITIAL: EnterpriseRequestState = { error: null, notice: null };
 
-export function EnterpriseRequestForm() {
+interface FormDefaults {
+  companyName?: string;
+  email?: string;
+}
+
+export function EnterpriseRequestForm({ defaults = {} }: { defaults?: FormDefaults }) {
   const [state, formAction, isPending] = useActionState(submitEnterpriseRequest, INITIAL);
 
   if (state.notice) {
@@ -37,6 +42,7 @@ export function EnterpriseRequestForm() {
             required
             maxLength={150}
             disabled={isPending}
+            defaultValue={defaults.companyName ?? ""}
             placeholder="เช่น Caramel Group"
             className="form-input disabled:opacity-50"
           />
@@ -63,6 +69,7 @@ export function EnterpriseRequestForm() {
             required
             autoComplete="email"
             disabled={isPending}
+            defaultValue={defaults.email ?? ""}
             placeholder="you@example.com"
             className="form-input disabled:opacity-50"
           />

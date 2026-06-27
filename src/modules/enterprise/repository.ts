@@ -106,12 +106,25 @@ export async function listEnterpriseRequests(): Promise<EnterpriseRequest[]> {
   return (data ?? []).map(mapRequest);
 }
 
+/** A tenant's own Enterprise requests, newest first (for in-dashboard tracking). */
+export async function listEnterpriseRequestsForOrg(organizationId: string): Promise<EnterpriseRequest[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("enterprise_requests")
+    .select(REQUEST_COLUMNS)
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapRequest);
+}
+
 export async function updateEnterpriseRequestStatus(id: string, status: EnterpriseRequestStatus) {
   const supabase = await createSupabaseServiceClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("enterprise_requests")
     .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) return { ok: false as const, error: mapError(error) };
-  return { ok: true as const, error: null };
+    .eq("id", id)
+    .select(REQUEST_COLUMNS)
+    .maybeSingle();
+  if (error) return { ok: false as const, error: mapError(error), request: null };
+  return { ok: true as const, error: null, request: data ? mapRequest(data) : null };
 }

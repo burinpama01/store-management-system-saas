@@ -6,6 +6,7 @@ import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { hasBillingAccess } from "@/modules/billing/pricing";
 import { getPremiumFreeTrialEligibility, listBillingPrices } from "@/modules/billing/pricing-repository";
 import { isSlip2goConfigured } from "@/modules/billing/slip2go";
+import { listEnterpriseRequestsForOrg } from "@/modules/enterprise/repository";
 import { BillingManager } from "./BillingManager";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,8 @@ export default async function BillingSettingsPage() {
   const settings = await getPlatformSettings();
   const prices = await listBillingPrices();
   const premiumTrial = await getPremiumFreeTrialEligibility(ctx.organizationId, user.id, "premium", "30d");
+  const enterpriseRequests = await listEnterpriseRequestsForOrg(ctx.organizationId);
+  const latestEnterpriseRequest = enterpriseRequests[0] ?? null;
 
   const active = hasBillingAccess(billingState);
 
@@ -35,6 +38,11 @@ export default async function BillingSettingsPage() {
       recipientName={settings.promptpayName}
       slipVerificationReady={isSlip2goConfigured()}
       premiumTrialAvailable={premiumTrial.available}
+      enterpriseRequest={
+        latestEnterpriseRequest
+          ? { status: latestEnterpriseRequest.status, createdAt: latestEnterpriseRequest.createdAt }
+          : null
+      }
     />
   );
 }
