@@ -170,6 +170,30 @@ function ReceiptSettingsDialog({
               />
               <span className="text-sm text-gray-700">แสดง QR PromptPay ในใบเสร็จ</span>
             </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="autoPrintReceipt"
+                value="1"
+                defaultChecked={settings?.autoPrintReceipt ?? false}
+                disabled={!canEdit}
+              />
+              <span className="text-sm text-gray-700">พิมพ์ใบเสร็จอัตโนมัติเมื่อชำระเงินสำเร็จ</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="autoPrintStationTickets"
+                value="1"
+                defaultChecked={settings?.autoPrintStationTickets ?? false}
+                disabled={!canEdit}
+              />
+              <span className="text-sm text-gray-700">
+                พิมพ์ตั๋วครัว/บาร์อัตโนมัติเมื่อมีออร์เดอร์เข้า (แยกตามเครื่องพิมพ์ของแต่ละสถานี)
+              </span>
+            </label>
           </div>
 
           <div>

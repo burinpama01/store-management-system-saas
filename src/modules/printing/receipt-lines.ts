@@ -105,7 +105,41 @@ export interface ReceiptLine {
   imageKind?: "logo" | "footer";
 }
 
+/**
+ * Compact kitchen/bar prep ticket: station name, order/table, time and the
+ * items routed to this station — quantities emphasised, NO prices or payments.
+ */
+function buildKitchenTicketLines(data: ReceiptData): { lines: ReceiptLine[]; cols: number } {
+  const cols = RECEIPT_COLS[data.paperWidth];
+  const div = "-".repeat(cols);
+  const lines: ReceiptLine[] = [];
+
+  lines.push({ text: data.stationName || "ครัว", align: "center", bold: true });
+  lines.push({ text: "** ตั๋วเตรียมอาหาร **", align: "center" });
+  lines.push({ text: div });
+  lines.push({ text: `ออร์เดอร์: ${data.orderNumber}`, bold: true });
+  if (data.tableNumber) lines.push({ text: `โต๊ะ: ${data.tableNumber}`, bold: true });
+  lines.push({
+    text: new Date(data.printedAt).toLocaleString("th-TH", {
+      year: "2-digit", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    }),
+  });
+  lines.push({ text: div });
+
+  for (const item of data.items) {
+    const displayName = item.variantName ? `${item.name} (${item.variantName})` : item.name;
+    lines.push({ text: `${item.quantity} x ${displayName}`, bold: true });
+    if (item.modifierNames.length > 0) lines.push({ text: `   + ${item.modifierNames.join(", ")}` });
+    if (item.note) lines.push({ text: `   * ${item.note}` });
+  }
+
+  lines.push({ text: div });
+  return { lines, cols };
+}
+
 export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; cols: number } {
+  if (data.ticketMode === "kitchen") return buildKitchenTicketLines(data);
+
   const cols = RECEIPT_COLS[data.paperWidth];
   const div = "-".repeat(cols);
   const lines: ReceiptLine[] = [];

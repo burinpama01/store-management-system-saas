@@ -19,6 +19,7 @@ type ParsedStation =
       description?: string;
       sortOrder: number;
       isActive: boolean;
+      printerId: string | null;
     };
 
 async function getStoreContext() {
@@ -47,11 +48,15 @@ function parseStation(formData: FormData): ParsedStation {
     return { error: "Sort order must be 0-999" };
   }
 
+  const printerRaw = String(formData.get("printerId") ?? "").trim();
+  if (printerRaw && !UUID_RE.test(printerRaw)) return { error: "Invalid printer" };
+
   return {
     name,
     description: description || undefined,
     sortOrder,
     isActive: true,
+    printerId: printerRaw || null,
   };
 }
 

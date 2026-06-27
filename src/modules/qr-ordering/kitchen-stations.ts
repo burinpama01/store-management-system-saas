@@ -15,6 +15,7 @@ export interface KitchenStation {
   description?: string;
   sortOrder: number;
   isActive: boolean;
+  printerId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +28,7 @@ export interface SaveKitchenStationInput {
   description?: string;
   sortOrder?: number;
   isActive?: boolean;
+  printerId?: string | null;
 }
 
 export interface KitchenStationStaffAssignment {
@@ -54,6 +56,7 @@ function mapStation(row: KitchenStationRow): KitchenStation {
     description: row.description ?? undefined,
     sortOrder: row.sort_order,
     isActive: row.is_active,
+    printerId: row.printer_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -176,6 +179,7 @@ export async function saveKitchenStation(input: SaveKitchenStationInput) {
     description: input.description ?? null,
     sort_order: input.sortOrder ?? 0,
     is_active: input.isActive ?? true,
+    printer_id: input.printerId ?? null,
   };
 
   if (input.id) {

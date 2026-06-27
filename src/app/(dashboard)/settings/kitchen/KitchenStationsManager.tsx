@@ -15,11 +15,18 @@ import {
 } from "./actions";
 import { Button } from "@/shared/components/ui";
 
+interface StationPrinterOption {
+  id: string;
+  name: string;
+  type: string;
+}
+
 interface Props {
   stations: KitchenStation[];
   products: Product[];
   staffMembers: Array<{ userId: string; email: string }>;
   staffAssignments: KitchenStationStaffAssignment[];
+  printers: StationPrinterOption[];
   stationError?: string | null;
   productError?: string | null;
 }
@@ -29,6 +36,7 @@ export function KitchenStationsManager({
   products,
   staffMembers,
   staffAssignments,
+  printers,
   stationError,
   productError,
 }: Props) {
@@ -45,6 +53,10 @@ export function KitchenStationsManager({
   const stationById = useMemo(
     () => new Map(stations.map((station) => [station.id, station])),
     [stations],
+  );
+  const printerById = useMemo(
+    () => new Map(printers.map((printer) => [printer.id, printer])),
+    [printers],
   );
   const assignedStaffByStation = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -159,7 +171,7 @@ export function KitchenStationsManager({
                 defaultValue={formStation?.sortOrder ?? 0}
               />
             </label>
-            <label className="space-y-1 md:col-span-3">
+            <label className="space-y-1 md:col-span-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</span>
               <input
                 className="form-input"
@@ -167,6 +179,17 @@ export function KitchenStationsManager({
                 defaultValue={formStation?.description ?? ""}
                 placeholder="Optional notes for staff"
               />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">เครื่องพิมพ์ตั๋ว</span>
+              <select className="form-input" name="printerId" defaultValue={formStation?.printerId ?? ""}>
+                <option value="">— ไม่พิมพ์อัตโนมัติ —</option>
+                {printers.map((printer) => (
+                  <option key={printer.id} value={printer.id}>
+                    {printer.name} ({printer.type})
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="flex gap-2 md:col-span-3">
               <Button variant="primary" type="submit" loading={isPending}>
@@ -206,6 +229,12 @@ export function KitchenStationsManager({
                     </div>
                     <p className="text-sm text-gray-500">
                       {station.description || "No description"} · sort {station.sortOrder}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      เครื่องพิมพ์:{" "}
+                      {station.printerId
+                        ? printerById.get(station.printerId)?.name ?? "(ถูกลบแล้ว)"
+                        : "ยังไม่ผูก"}
                     </p>
                   </div>
                   <div className="flex flex-wrap justify-start gap-2 lg:justify-end">

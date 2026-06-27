@@ -30,6 +30,8 @@ export interface ReceiptSettings {
   footerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  autoPrintReceipt: boolean;
+  autoPrintStationTickets: boolean;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
   updatedAt: string;
@@ -51,6 +53,8 @@ function mapReceiptSettings(row: ReceiptSettingsRow): ReceiptSettings {
     footerText: row.footer_text ?? undefined,
     logoUrl: row.logo_url ?? undefined,
     footerImageUrl: row.footer_image_url ?? undefined,
+    autoPrintReceipt: row.auto_print_receipt,
+    autoPrintStationTickets: row.auto_print_station_tickets,
     paperWidth: row.paper_width,
     printCopies: row.print_copies,
     updatedAt: row.updated_at,
@@ -112,6 +116,8 @@ export interface ReceiptSettingsInput {
   footerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  autoPrintReceipt?: boolean;
+  autoPrintStationTickets?: boolean;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
 }
@@ -137,6 +143,8 @@ export async function upsertReceiptSettings(
       footer_text: input.footerText ?? null,
       logo_url: input.logoUrl ?? null,
       footer_image_url: input.footerImageUrl ?? null,
+      auto_print_receipt: input.autoPrintReceipt ?? false,
+      auto_print_station_tickets: input.autoPrintStationTickets ?? false,
       paper_width: input.paperWidth,
       print_copies: input.printCopies,
     },
