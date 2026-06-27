@@ -20,32 +20,43 @@ interface PreparedImage {
   kind: NonNullable<ReceiptLine["imageKind"]>;
 }
 
+/** Fetches a URL and decodes it to a non-tainting bitmap, or null on any failure. */
+async function decodeBitmap(url: string, init?: RequestInit): Promise<LoadedImage | null> {
+  try {
+    const res = await fetch(url, { cache: "no-store", ...init });
+    if (!res.ok) return null;
+    const bitmap = await createImageBitmap(await res.blob());
+    if (bitmap.width > 0 && bitmap.height > 0) {
+      return { source: bitmap, width: bitmap.width, height: bitmap.height };
+    }
+  } catch {
+    /* caller falls back */
+  }
+  return null;
+}
+
 /**
- * Loads an image for canvas drawing without tainting the canvas.
+ * Loads a receipt image for canvas drawing without tainting the canvas — the
+ * reason uploaded logos/QRs printed blank on the IP / Print Hub raster path
+ * while showing fine on the browser/PDF receipt.
  *
- * Primary path: `fetch` the bytes (Supabase storage sends `Access-Control-
- * Allow-Origin: *`) and decode via `createImageBitmap`. A blob-decoded bitmap
- * is never origin-tainted, so `getImageData` always works. This also sidesteps
- * a Safari/iPad quirk where a `crossOrigin` <img> fails (onerror) when the same
- * URL was already cached by a plain <img> (e.g. the upload preview) — which is
- * why uploaded logos/QRs printed blank on the IP/raster path.
+ * Order of attempts:
+ *  1. Same-origin proxy (`/api/receipt-image`) — bulletproof: the image is
+ *     served from our own origin, so there is no CORS/cache/browser variance
+ *     and the canvas is never tainted (works on PC, iPad, Android alike).
+ *  2. Direct CORS fetch — for non-Supabase pasted URLs that send CORS headers.
+ *  3. `crossOrigin` <img> with a cache-buster — last resort.
  *
- * Fallback: a `crossOrigin` <img> with a cache-busting query param so it cannot
- * reuse a non-CORS cache entry.
+ * A blob-decoded `ImageBitmap` (1 & 2) is never origin-tainted, so getImageData
+ * always succeeds and the image ends up in the raster bytes.
  */
 async function loadImage(url: string): Promise<LoadedImage | null> {
   if (typeof fetch === "function" && typeof createImageBitmap === "function") {
-    try {
-      const res = await fetch(url, { mode: "cors", cache: "no-store" });
-      if (res.ok) {
-        const bitmap = await createImageBitmap(await res.blob());
-        if (bitmap.width > 0 && bitmap.height > 0) {
-          return { source: bitmap, width: bitmap.width, height: bitmap.height };
-        }
-      }
-    } catch {
-      /* fall through to <img> */
-    }
+    const proxied = await decodeBitmap(`/api/receipt-image?src=${encodeURIComponent(url)}`);
+    if (proxied) return proxied;
+
+    const direct = await decodeBitmap(url, { mode: "cors" });
+    if (direct) return direct;
   }
 
   return new Promise((resolve) => {
