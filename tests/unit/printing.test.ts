@@ -664,12 +664,16 @@ describe("printer adapters", () => {
 
   it("receipt-image proxy only allows Supabase storage public objects (SSRF guard)", () => {
     const route = read("src/app/api/receipt-image/route.ts");
+    const middleware = read("src/server/integrations/supabase/middleware.ts");
 
     expect(route).toContain("NEXT_PUBLIC_SUPABASE_URL");
     expect(route).toContain('url.pathname.startsWith("/storage/v1/object/public/")');
     expect(route).toContain("url.origin !== base.origin");
     expect(route).toContain('contentType.startsWith("image/")');
     expect(route).toContain("MAX_IMAGE_BYTES");
+    // The proxy must be a public route so the auth redirect never replaces the
+    // image with the login HTML (which would break the raster image load).
+    expect(middleware).toContain('request.nextUrl.pathname === "/api/receipt-image"');
   });
 
   it("downloads the receipt when popup print is blocked and native share rejects", async () => {
