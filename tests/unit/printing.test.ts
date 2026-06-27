@@ -649,17 +649,27 @@ describe("printer adapters", () => {
     expect(html.indexOf("logo.png")).toBeLessThan(html.indexOf("line-qr.png"));
   });
 
-  it("loads raster images via fetch+createImageBitmap so they don't taint the canvas on IP/raster prints", () => {
+  it("loads raster images via the same-origin proxy + blob bitmap so they don't taint the canvas on IP/Print Hub prints", () => {
     const rasterClient = read("src/modules/printing/receipt-raster-client.ts");
 
+    // Same-origin proxy first → no CORS/cache/browser variance, canvas never tainted.
+    expect(rasterClient).toContain("/api/receipt-image?src=${encodeURIComponent(url)}");
     // Blob-decoded bitmaps never taint the canvas → getImageData works → image
     // is included in the raster bytes sent to IP/USB/Bluetooth/Print Hub.
     expect(rasterClient).toContain("createImageBitmap(await res.blob())");
-    expect(rasterClient).toContain('fetch(url, { mode: "cors", cache: "no-store" })');
-    // Fallback <img> must cache-bust so it cannot reuse a non-CORS cached entry
-    // (the Safari/iPad quirk that made uploaded logos print blank).
+    // Last-resort <img> must cache-bust so it cannot reuse a non-CORS cache entry.
     expect(rasterClient).toContain("storeosCors=1");
     expect(rasterClient).toContain('img.crossOrigin = "anonymous"');
+  });
+
+  it("receipt-image proxy only allows Supabase storage public objects (SSRF guard)", () => {
+    const route = read("src/app/api/receipt-image/route.ts");
+
+    expect(route).toContain("NEXT_PUBLIC_SUPABASE_URL");
+    expect(route).toContain('url.pathname.startsWith("/storage/v1/object/public/")');
+    expect(route).toContain("url.origin !== base.origin");
+    expect(route).toContain('contentType.startsWith("image/")');
+    expect(route).toContain("MAX_IMAGE_BYTES");
   });
 
   it("downloads the receipt when popup print is blocked and native share rejects", async () => {
