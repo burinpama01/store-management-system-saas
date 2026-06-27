@@ -36,6 +36,10 @@ function mapTransaction(row: TransactionRow): Transaction {
     categoryId: row.category_id,
     categoryName: row.category_name,
     amount: row.amount,
+    paymentMethod:
+      (row as TransactionRow & { payment_method?: string | null }).payment_method === "transfer"
+        ? "transfer"
+        : "cash",
     note: row.note ?? undefined,
     date: row.date,
     createdByUserId: row.created_by_user_id,
@@ -142,6 +146,7 @@ export interface CreateTransactionInput {
   categoryId: string;
   categoryName: string;
   amount: number;
+  paymentMethod?: "cash" | "transfer";
   note?: string;
   date: string;
   createdByUserId: string;
@@ -159,11 +164,13 @@ export async function createTransaction(input: CreateTransactionInput) {
       category_id: input.categoryId,
       category_name: input.categoryName,
       amount: input.amount,
+      // payment_method column added in 20260627140000; not yet in generated types.
+      payment_method: input.paymentMethod ?? "cash",
       note: input.note ?? null,
       date: input.date,
       created_by_user_id: input.createdByUserId,
       order_id: input.orderId ?? null,
-    })
+    } as Database["public"]["Tables"]["transactions"]["Insert"])
     .select()
     .single();
   if (error) return { data: null, error: mapError(error) };

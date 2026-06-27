@@ -1,4 +1,6 @@
 export type TransactionType = "income" | "expense" | "cash_adjustment";
+/** How a manual income/expense was settled. Only cash moves the cash drawer. */
+export type AccountingPaymentMethod = "cash" | "transfer";
 
 export interface AccountingCategory {
   id: string;
@@ -20,6 +22,7 @@ export interface Transaction {
   categoryId: string;
   categoryName: string;
   amount: number;
+  paymentMethod: AccountingPaymentMethod;
   note?: string;
   date: string;
   createdByUserId: string;

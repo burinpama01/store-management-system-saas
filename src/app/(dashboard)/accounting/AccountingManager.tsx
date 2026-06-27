@@ -283,7 +283,18 @@ export function AccountingManager({
                           {TYPE_LABEL[tx.type]}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-gray-700">{tx.categoryName}</td>
+                      <td className="px-3 py-2 text-gray-700">
+                        {tx.categoryName}
+                        <span
+                          className={`ml-1.5 inline-block rounded px-1 py-0.5 text-[10px] ${
+                            tx.paymentMethod === "transfer"
+                              ? "bg-blue-50 text-blue-600"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          {tx.paymentMethod === "transfer" ? "โอน" : "เงินสด"}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-gray-500 truncate max-w-[160px]">
                         {tx.note ?? "—"}
                       </td>
@@ -430,6 +441,19 @@ function AccountingEntryDialog({
             placeholder="0.00"
             className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">วิธีชำระ</label>
+          <select
+            name="paymentMethod"
+            defaultValue="cash"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="cash">เงินสด</option>
+            <option value="transfer">โอน</option>
+          </select>
+          <p className="mt-1 text-[11px] text-gray-400">โอน = นับรวมกำไร/ขาดทุน แต่ไม่กระทบเงินสดในลิ้นชัก</p>
         </div>
 
         <div>

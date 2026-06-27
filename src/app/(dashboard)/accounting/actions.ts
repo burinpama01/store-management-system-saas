@@ -101,6 +101,13 @@ export async function createTransactionAction(
     const amountRaw = formData.get("amount") as string | null;
     const note = (formData.get("note") as string | null)?.trim() ?? "";
     const date = (formData.get("date") as string | null)?.trim() ?? "";
+    // Cash adjustments are always cash; income/expense default to cash unless marked transfer.
+    const paymentMethod: "cash" | "transfer" =
+      type === "cash_adjustment"
+        ? "cash"
+        : (formData.get("paymentMethod") as string | null) === "transfer"
+          ? "transfer"
+          : "cash";
 
     if (!type || !["income", "expense", "cash_adjustment"].includes(type))
       return { error: "ประเภทรายการไม่ถูกต้อง" };
@@ -128,24 +135,28 @@ export async function createTransactionAction(
       categoryId,
       categoryName: category.name,
       amount,
+      paymentMethod,
       note: note || undefined,
       date,
       createdByUserId: user.id,
     });
     if (txRes.error) return { error: txRes.error.userMessage };
 
-    // Append to cash ledger — best-effort (TOCTOU risk accepted for MVP; see ISSUE-056)
-    const delta = type === "expense" ? -amount : amount;
-    const prevBalance = await getLatestCashBalance(ctx.storeId);
-    await addCashLedgerEntry({
-      storeId: ctx.storeId,
-      organizationId: ctx.organizationId,
-      type: type === "cash_adjustment" ? "adjustment" : type,
-      amount: Math.abs(delta),
-      balanceAfter: prevBalance + delta,
-      transactionId: txRes.data!.id,
-      createdByUserId: user.id,
-    });
+    // Only cash entries move the cash drawer; transfers count in P&L but not the drawer.
+    if (paymentMethod === "cash") {
+      // Append to cash ledger — best-effort (TOCTOU risk accepted for MVP; see ISSUE-056)
+      const delta = type === "expense" ? -amount : amount;
+      const prevBalance = await getLatestCashBalance(ctx.storeId);
+      await addCashLedgerEntry({
+        storeId: ctx.storeId,
+        organizationId: ctx.organizationId,
+        type: type === "cash_adjustment" ? "adjustment" : type,
+        amount: Math.abs(delta),
+        balanceAfter: prevBalance + delta,
+        transactionId: txRes.data!.id,
+        createdByUserId: user.id,
+      });
+    }
 
     revalidate();
     return { error: null };
@@ -169,19 +180,22 @@ export async function deleteTransactionAction(id: string): Promise<{ error: stri
     // MN-01: Block deletion of POS-linked transactions
     if (tx.orderId) return { error: "รายการที่เชื่อมกับออร์เดอร์ไม่สามารถลบได้" };
 
-    // CR-02: Reverse the cash ledger entry to maintain balance integrity
-    const originalDelta = tx.type === "expense" ? -tx.amount : tx.amount;
-    const reversalDelta = -originalDelta;
-    const prevBalance = await getLatestCashBalance(ctx.storeId);
-    await addCashLedgerEntry({
-      storeId: ctx.storeId,
-      organizationId: ctx.organizationId,
-      type: "adjustment",
-      amount: Math.abs(reversalDelta),
-      balanceAfter: prevBalance + reversalDelta,
-      note: `ยกเลิก: ${tx.categoryName}`,
-      createdByUserId: user.id,
-    });
+    // CR-02: Reverse the cash ledger entry to maintain balance integrity — only for cash
+    // transactions (transfers never touched the drawer, so there is nothing to reverse).
+    if (tx.paymentMethod === "cash") {
+      const originalDelta = tx.type === "expense" ? -tx.amount : tx.amount;
+      const reversalDelta = -originalDelta;
+      const prevBalance = await getLatestCashBalance(ctx.storeId);
+      await addCashLedgerEntry({
+        storeId: ctx.storeId,
+        organizationId: ctx.organizationId,
+        type: "adjustment",
+        amount: Math.abs(reversalDelta),
+        balanceAfter: prevBalance + reversalDelta,
+        note: `ยกเลิก: ${tx.categoryName}`,
+        createdByUserId: user.id,
+      });
+    }
 
     const result = await deleteTransaction(id, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
