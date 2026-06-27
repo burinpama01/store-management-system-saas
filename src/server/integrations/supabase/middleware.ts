@@ -50,7 +50,11 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/terms-of-service" ||
     request.nextUrl.pathname === "/api/line/webhook" ||
     request.nextUrl.pathname === "/api/print/hub/poll" ||
-    request.nextUrl.pathname === "/api/print/hub/ack";
+    request.nextUrl.pathname === "/api/print/hub/ack" ||
+    // Same-origin proxy for receipt logo/footer images. Serves only public
+    // Supabase storage objects (SSRF-guarded), so it needs no session — and
+    // staying public avoids any auth-redirect breaking the raster image load.
+    request.nextUrl.pathname === "/api/receipt-image";
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
