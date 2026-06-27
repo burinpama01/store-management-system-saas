@@ -649,6 +649,19 @@ describe("printer adapters", () => {
     expect(html.indexOf("logo.png")).toBeLessThan(html.indexOf("line-qr.png"));
   });
 
+  it("loads raster images via fetch+createImageBitmap so they don't taint the canvas on IP/raster prints", () => {
+    const rasterClient = read("src/modules/printing/receipt-raster-client.ts");
+
+    // Blob-decoded bitmaps never taint the canvas → getImageData works → image
+    // is included in the raster bytes sent to IP/USB/Bluetooth/Print Hub.
+    expect(rasterClient).toContain("createImageBitmap(await res.blob())");
+    expect(rasterClient).toContain('fetch(url, { mode: "cors", cache: "no-store" })');
+    // Fallback <img> must cache-bust so it cannot reuse a non-CORS cached entry
+    // (the Safari/iPad quirk that made uploaded logos print blank).
+    expect(rasterClient).toContain("storeosCors=1");
+    expect(rasterClient).toContain('img.crossOrigin = "anonymous"');
+  });
+
   it("downloads the receipt when popup print is blocked and native share rejects", async () => {
     const click = vi.fn();
     const remove = vi.fn();

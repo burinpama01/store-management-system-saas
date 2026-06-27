@@ -7,21 +7,53 @@ import { getReceiptQrMetrics } from "./receipt-qr";
 
 const TEXT_DARKEN_OFFSET_DOTS = 0.7;
 
+interface LoadedImage {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+}
+
 interface PreparedImage {
-  img: HTMLImageElement;
+  source: CanvasImageSource;
   drawW: number;
   drawH: number;
   kind: NonNullable<ReceiptLine["imageKind"]>;
 }
 
-/** Loads an image with CORS enabled so the canvas it is drawn onto is not tainted. */
-function loadImage(url: string): Promise<HTMLImageElement | null> {
+/**
+ * Loads an image for canvas drawing without tainting the canvas.
+ *
+ * Primary path: `fetch` the bytes (Supabase storage sends `Access-Control-
+ * Allow-Origin: *`) and decode via `createImageBitmap`. A blob-decoded bitmap
+ * is never origin-tainted, so `getImageData` always works. This also sidesteps
+ * a Safari/iPad quirk where a `crossOrigin` <img> fails (onerror) when the same
+ * URL was already cached by a plain <img> (e.g. the upload preview) — which is
+ * why uploaded logos/QRs printed blank on the IP/raster path.
+ *
+ * Fallback: a `crossOrigin` <img> with a cache-busting query param so it cannot
+ * reuse a non-CORS cache entry.
+ */
+async function loadImage(url: string): Promise<LoadedImage | null> {
+  if (typeof fetch === "function" && typeof createImageBitmap === "function") {
+    try {
+      const res = await fetch(url, { mode: "cors", cache: "no-store" });
+      if (res.ok) {
+        const bitmap = await createImageBitmap(await res.blob());
+        if (bitmap.width > 0 && bitmap.height > 0) {
+          return { source: bitmap, width: bitmap.width, height: bitmap.height };
+        }
+      }
+    } catch {
+      /* fall through to <img> */
+    }
+  }
+
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
+    img.onload = () => resolve({ source: img, width: img.naturalWidth, height: img.naturalHeight });
     img.onerror = () => resolve(null);
-    img.src = url;
+    img.src = url + (url.includes("?") ? "&" : "?") + "storeosCors=1";
   });
 }
 
@@ -71,16 +103,16 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
     lines
       .filter((line) => line.imageUrl)
       .map(async (line) => {
-        const img = await loadImage(line.imageUrl as string);
-        if (!img || !img.naturalWidth || !img.naturalHeight) return;
+        const loaded = await loadImage(line.imageUrl as string);
+        if (!loaded || !loaded.width || !loaded.height) return;
         const kind = line.imageKind ?? "footer";
         const { drawW, drawH } = fitImage(
-          img.naturalWidth,
-          img.naturalHeight,
+          loaded.width,
+          loaded.height,
           maxImgW,
           kind === "logo" ? logoMaxH : footerMaxH,
         );
-        if (drawW > 0 && drawH > 0) prepared.set(line, { img, drawW, drawH, kind });
+        if (drawW > 0 && drawH > 0) prepared.set(line, { source: loaded.source, drawW, drawH, kind });
       }),
   );
 
@@ -119,7 +151,7 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
     if (!tctx) return;
     tctx.fillStyle = "#fff";
     tctx.fillRect(0, 0, prep.drawW, prep.drawH);
-    tctx.drawImage(prep.img, 0, 0, prep.drawW, prep.drawH);
+    tctx.drawImage(prep.source, 0, 0, prep.drawW, prep.drawH);
     let src: Uint8ClampedArray;
     try {
       src = tctx.getImageData(0, 0, prep.drawW, prep.drawH).data;
