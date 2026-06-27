@@ -14,7 +14,7 @@ export default async function SystemSettingsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">ตั้งค่าแพลตฟอร์ม</h1>
-          <p className="page-kicker">ช่องทางรับชำระเงินค่าสมาชิก SaaS</p>
+          <p className="page-kicker">ช่องทางรับชำระเงินค่าสมาชิก SaaS และอีเมลผู้ส่งคำขอ Enterprise</p>
         </div>
       </div>
       <SystemSettingsForm settings={settings} slipReady={isSlip2goConfigured()} />

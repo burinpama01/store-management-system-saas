@@ -10,6 +10,7 @@ export interface Database {
           promptpay_id: string | null;
           promptpay_name: string | null;
           promptpay_static_payload: string | null;
+          enterprise_from_email: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -19,6 +20,7 @@ export interface Database {
           promptpay_id?: string | null;
           promptpay_name?: string | null;
           promptpay_static_payload?: string | null;
+          enterprise_from_email?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -28,6 +30,7 @@ export interface Database {
           promptpay_id?: string | null;
           promptpay_name?: string | null;
           promptpay_static_payload?: string | null;
+          enterprise_from_email?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
