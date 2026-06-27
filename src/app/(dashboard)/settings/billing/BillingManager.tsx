@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { BillingPlan } from "@/modules/billing/types";
 import { PLAN_LABELS } from "@/modules/billing/types";
@@ -59,6 +60,7 @@ export function BillingManager({
   recipientName,
   slipVerificationReady,
   premiumTrialAvailable,
+  enterpriseRequest = null,
 }: {
   orgName: string;
   plan: BillingPlan;
@@ -71,6 +73,7 @@ export function BillingManager({
   recipientName: string | null;
   slipVerificationReady: boolean;
   premiumTrialAvailable: boolean;
+  enterpriseRequest?: { status: "new" | "contacted" | "closed"; createdAt: string } | null;
 }) {
   const isEnterprise = plan === "enterprise";
   const enterpriseActive = isEnterprise && isActive;
@@ -278,6 +281,8 @@ export function BillingManager({
           {!isEnterprise && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
         </div>
       </section>
+
+      {!enterpriseActive && <EnterpriseRequestCard request={enterpriseRequest} />}
 
       {(result?.status === "verified" || result?.status === "claimed") && (
         <p className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
@@ -549,5 +554,46 @@ function InfoItem({ label, value }: { label: string; value: string }) {
       <p className="label-muted">{label}</p>
       <p className="mt-1 text-sm font-bold text-[var(--ink-2)]">{value}</p>
     </div>
+  );
+}
+
+const ENTERPRISE_STATUS_LABELS: Record<"new" | "contacted" | "closed", string> = {
+  new: "รอดำเนินการ",
+  contacted: "กำลังติดต่อกลับ",
+  closed: "ปิดงานแล้ว",
+};
+
+const ENTERPRISE_STATUS_BADGE: Record<"new" | "contacted" | "closed", string> = {
+  new: "badge-brand",
+  contacted: "badge-success",
+  closed: "badge-warning",
+};
+
+function EnterpriseRequestCard({
+  request,
+}: {
+  request: { status: "new" | "contacted" | "closed"; createdAt: string } | null;
+}) {
+  return (
+    <section className="panel max-w-3xl p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="panel-title">คำขอใช้งาน Enterprise</h2>
+          <p className="page-kicker">
+            {request
+              ? `คำขอล่าสุดเมื่อ ${formatDate(request.createdAt)}`
+              : "ต้องการหลายสาขาแบบไม่จำกัด? ส่งคำขอให้ทีมงานออกแบบแพ็กเกจให้"}
+          </p>
+        </div>
+        {request ? (
+          <span className={`badge ${ENTERPRISE_STATUS_BADGE[request.status]}`}>
+            {ENTERPRISE_STATUS_LABELS[request.status]}
+          </span>
+        ) : null}
+      </div>
+      <Link href="/enterprise" className="btn-secondary mt-3 inline-flex text-sm">
+        {request ? "ดู/ส่งคำขอเพิ่ม" : "ขอใช้งาน Enterprise"}
+      </Link>
+    </section>
   );
 }
