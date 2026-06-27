@@ -8,29 +8,51 @@ import { getPrinter } from "@/modules/stores/repository";
 import type { ReceiptData } from "@/modules/printing/types";
 
 const DEFAULT_TIMEOUT_MS = 5000;
+const SEND_TIMEOUT_MS = 30000;
 const MAX_RECEIPT_BYTES = 256 * 1024; // Raster receipts can exceed text ESC/POS size.
 const MAX_PRINT_JOB_BASE64_CHARS = Math.ceil((MAX_RECEIPT_BYTES * 4) / 3) + 4;
+// Pace bytes so a large (image) raster doesn't overrun a cheap thermal printer's
+// buffer — otherwise it loses GS v 0 sync and prints the raster as garbage.
+const PRINT_CHUNK_BYTES = 1024;
+const PRINT_CHUNK_DELAY_MS = 20;
 
 function sendToSocket(host: string, port: number, data: Uint8Array): Promise<void> {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`Connection timed out (${DEFAULT_TIMEOUT_MS}ms)`));
-    }, DEFAULT_TIMEOUT_MS);
-
-    socket.connect(port, host, () => {
-      socket.write(data, (err) => {
-        clearTimeout(timer);
-        socket.end();
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    socket.on("error", (err) => {
+    let done = false;
+    let timer = setTimeout(
+      () => settle(new Error(`Connection timed out (${DEFAULT_TIMEOUT_MS}ms)`)),
+      DEFAULT_TIMEOUT_MS,
+    );
+    function settle(err?: Error) {
+      if (done) return;
+      done = true;
       clearTimeout(timer);
-      reject(err);
+      if (err) {
+        socket.destroy();
+        reject(err);
+      } else {
+        socket.end();
+        resolve();
+      }
+    }
+
+    socket.on("error", settle);
+    socket.connect(port, host, async () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => settle(new Error(`Print send timed out (${SEND_TIMEOUT_MS}ms)`)), SEND_TIMEOUT_MS);
+      try {
+        for (let offset = 0; offset < data.length && !done; offset += PRINT_CHUNK_BYTES) {
+          const chunk = data.subarray(offset, Math.min(offset + PRINT_CHUNK_BYTES, data.length));
+          await new Promise<void>((res, rej) => socket.write(chunk, (e) => (e ? rej(e) : res())));
+          if (offset + PRINT_CHUNK_BYTES < data.length) {
+            await new Promise<void>((res) => setTimeout(res, PRINT_CHUNK_DELAY_MS));
+          }
+        }
+        settle();
+      } catch (err) {
+        settle(err instanceof Error ? err : new Error("Print failed"));
+      }
     });
   });
 }

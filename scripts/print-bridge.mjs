@@ -6,6 +6,17 @@ const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.STOREOS_PRINT_BRIDGE_PORT ?? "17878", 10);
 const MAX_PRINT_JOB_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5000;
+const SEND_TIMEOUT_MS = 30000;
+
+function clampInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+}
+
+// Pace bytes to the printer so a large (image) raster doesn't overrun a cheap
+// thermal printer's buffer (otherwise it loses GS v 0 sync and prints garbage).
+const PRINT_CHUNK_BYTES = clampInt(process.env.STOREOS_PRINT_BRIDGE_CHUNK_BYTES, 1024);
+const PRINT_CHUNK_DELAY_MS = clampInt(process.env.STOREOS_PRINT_BRIDGE_CHUNK_DELAY_MS, 20);
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://store-os-manage.vercel.app",
   "http://localhost:3000",
@@ -89,23 +100,40 @@ function decodePrintJobBase64(value) {
 function sendToSocket(host, port, data) {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`Connection timed out (${DEFAULT_TIMEOUT_MS}ms)`));
-    }, DEFAULT_TIMEOUT_MS);
-
-    socket.connect(port, host, () => {
-      socket.write(data, (err) => {
-        clearTimeout(timer);
-        socket.end();
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    socket.on("error", (err) => {
+    let done = false;
+    let timer = setTimeout(
+      () => settle(new Error(`Connection timed out (${DEFAULT_TIMEOUT_MS}ms)`)),
+      DEFAULT_TIMEOUT_MS,
+    );
+    function settle(err) {
+      if (done) return;
+      done = true;
       clearTimeout(timer);
-      reject(err);
+      if (err) {
+        socket.destroy();
+        reject(err);
+      } else {
+        socket.end();
+        resolve();
+      }
+    }
+
+    socket.on("error", settle);
+    socket.connect(port, host, async () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => settle(new Error(`Print send timed out (${SEND_TIMEOUT_MS}ms)`)), SEND_TIMEOUT_MS);
+      try {
+        for (let offset = 0; offset < data.length && !done; offset += PRINT_CHUNK_BYTES) {
+          const end = Math.min(offset + PRINT_CHUNK_BYTES, data.length);
+          await new Promise((res, rej) => socket.write(data.subarray(offset, end), (e) => (e ? rej(e) : res())));
+          if (PRINT_CHUNK_DELAY_MS > 0 && end < data.length) {
+            await new Promise((res) => setTimeout(res, PRINT_CHUNK_DELAY_MS));
+          }
+        }
+        settle();
+      } catch (err) {
+        settle(err);
+      }
     });
   });
 }
