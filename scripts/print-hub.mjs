@@ -15,8 +15,23 @@ import { fileURLToPath } from "node:url";
 
 const MAX_PRINT_JOB_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5000;
+const SEND_TIMEOUT_MS = 30000;
 const DEFAULT_POLL_INTERVAL_MS = 2500;
 const ERROR_BACKOFF_MS = 8000;
+
+function clampInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+}
+
+// Pace bytes to the printer. A cheap thermal printer's input buffer overruns
+// when a large raster (e.g. a receipt with a logo/QR image) is written in one
+// shot over TCP -- it loses sync mid GS v 0 and prints the rest of the raster as
+// garbage characters. Writing in small chunks with a short delay (like the
+// Bluetooth client) lets the printer keep up. Tunable via env if a printer
+// needs to go slower.
+const PRINT_CHUNK_BYTES = clampInt(process.env.STOREOS_HUB_CHUNK_BYTES, 1024);
+const PRINT_CHUNK_DELAY_MS = clampInt(process.env.STOREOS_HUB_CHUNK_DELAY_MS, 20);
 
 const PRIVATE_LAN_RANGES = [/^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./];
 const BLOCKED_LAN_RANGES = [/^127\./, /^169\.254\./, /^0\./, /^255\./];
@@ -40,24 +55,42 @@ export function decodePrintJobBase64(value) {
   return bytes;
 }
 
-export function sendToSocket(host, port, data, timeoutMs = DEFAULT_TIMEOUT_MS) {
+export function sendToSocket(host, port, data, options = {}) {
+  const connectTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const chunkBytes = options.chunkBytes ?? PRINT_CHUNK_BYTES;
+  const chunkDelayMs = options.chunkDelayMs ?? PRINT_CHUNK_DELAY_MS;
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`Connection timed out (${timeoutMs}ms)`));
-    }, timeoutMs);
-    socket.connect(port, host, () => {
-      socket.write(data, (err) => {
-        clearTimeout(timer);
-        socket.end();
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-    socket.on("error", (err) => {
+    let done = false;
+    let timer = setTimeout(() => settle(new Error(`Connection timed out (${connectTimeoutMs}ms)`)), connectTimeoutMs);
+    function settle(err) {
+      if (done) return;
+      done = true;
       clearTimeout(timer);
-      reject(err);
+      if (err) {
+        socket.destroy();
+        reject(err);
+      } else {
+        socket.end();
+        resolve();
+      }
+    }
+    socket.on("error", settle);
+    socket.connect(port, host, async () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => settle(new Error(`Print send timed out (${SEND_TIMEOUT_MS}ms)`)), SEND_TIMEOUT_MS);
+      try {
+        for (let offset = 0; offset < data.length && !done; offset += chunkBytes) {
+          const end = Math.min(offset + chunkBytes, data.length);
+          await new Promise((res, rej) => socket.write(data.subarray(offset, end), (e) => (e ? rej(e) : res())));
+          if (chunkDelayMs > 0 && end < data.length) {
+            await new Promise((res) => setTimeout(res, chunkDelayMs));
+          }
+        }
+        settle();
+      } catch (err) {
+        settle(err);
+      }
     });
   });
 }
@@ -110,7 +143,7 @@ function loadConfig() {
   try {
     // Strip a UTF-8 BOM (PowerShell/Notepad may prepend one) before parsing,
     // otherwise JSON.parse throws on the leading U+FEFF.
-    const raw = readFileSync(configPath, "utf8").replace(/^﻿/, "");
+    const raw = readFileSync(configPath, "utf8").replace(/^\uFEFF/, "");
     fileConfig = JSON.parse(raw);
   } catch (err) {
     // Missing file is fine (env vars may supply config); surface parse errors.
@@ -134,7 +167,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const config = loadConfig();
-  console.log(`StoreOS Print Hub started for store ${config.storeId} → ${config.serverUrl}`);
+  console.log(`StoreOS Print Hub started for store ${config.storeId} -> ${config.serverUrl}`);
   let running = true;
   process.on("SIGINT", () => { running = false; });
   process.on("SIGTERM", () => { running = false; });
