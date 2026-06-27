@@ -56,6 +56,8 @@ export interface ReceiptSettings {
   footerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  autoPrintReceipt: boolean;
+  autoPrintStationTickets: boolean;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
   updatedAt: string;

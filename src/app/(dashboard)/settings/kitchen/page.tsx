@@ -6,6 +6,7 @@ import {
   listKitchenStations,
 } from "@/modules/qr-ordering/kitchen-stations";
 import { listStoreMemberships } from "@/modules/settings/repository";
+import { listPrinters } from "@/modules/stores/repository";
 import { KitchenStationsManager } from "./KitchenStationsManager";
 
 export const dynamic = "force-dynamic";
@@ -15,11 +16,12 @@ export default async function KitchenSettingsPage() {
   if (!resolved.can("settings.view")) redirect("/dashboard");
   if (!resolved.can("settings.manage_store")) redirect("/settings/store");
 
-  const [stationsRes, productsRes, staffAssignmentsRes, membersRes] = await Promise.all([
+  const [stationsRes, productsRes, staffAssignmentsRes, membersRes, printersRes] = await Promise.all([
     listKitchenStations(ctx.storeId, { includeInactive: true }),
     listProducts(ctx.storeId, { includeInactive: true }),
     listKitchenStationStaffAssignments(ctx.storeId),
     listStoreMemberships(ctx.organizationId, ctx.storeId),
+    listPrinters(ctx.storeId, ctx.organizationId),
   ]);
   const staffMembers = (membersRes.data ?? []).filter((member) => member.role === "staff");
 
@@ -32,6 +34,11 @@ export default async function KitchenSettingsPage() {
         email: member.email,
       }))}
       staffAssignments={staffAssignmentsRes.data ?? []}
+      printers={(printersRes.data ?? []).map((printer) => ({
+        id: printer.id,
+        name: printer.name,
+        type: printer.type,
+      }))}
       stationError={stationsRes.error?.userMessage ?? null}
       productError={
         productsRes.error?.userMessage ??

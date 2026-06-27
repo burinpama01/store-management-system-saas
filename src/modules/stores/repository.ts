@@ -310,6 +310,8 @@ export async function getReceiptSettings(storeId: string) {
           footerText: data.footer_text ?? undefined,
           logoUrl: data.logo_url ?? undefined,
           footerImageUrl: data.footer_image_url ?? undefined,
+          autoPrintReceipt: data.auto_print_receipt,
+          autoPrintStationTickets: data.auto_print_station_tickets,
           paperWidth: data.paper_width,
           printCopies: data.print_copies,
           updatedAt: data.updated_at,

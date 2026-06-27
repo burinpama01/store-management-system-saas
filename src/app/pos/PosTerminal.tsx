@@ -2221,6 +2221,7 @@ function ReceiptPanel({
   const [isPrinting, setIsPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [printNotice, setPrintNotice] = useState<string | null>(null);
+  const autoPrintedRef = useRef(false);
 
   async function handlePrint() {
     setPrintError(null);
@@ -2234,6 +2235,8 @@ function ReceiptPanel({
         storeName,
         showTaxId: false,
         showQrPayment: false,
+        autoPrintReceipt: false,
+        autoPrintStationTickets: false,
         paperWidth: "80mm",
         printCopies: 1,
         updatedAt: new Date().toISOString(),
@@ -2317,6 +2320,16 @@ function ReceiptPanel({
       setIsPrinting(false);
     }
   }
+
+  // Auto-print the receipt once when the store has it enabled (fires on the
+  // payment-success receipt screen). The ref guards against a double print.
+  useEffect(() => {
+    if (receiptSettings?.autoPrintReceipt && !autoPrintedRef.current) {
+      autoPrintedRef.current = true;
+      void handlePrint();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
@@ -2871,6 +2884,8 @@ export function PosTerminal({
       storeName,
       showTaxId: false,
       showQrPayment: false,
+      autoPrintReceipt: false,
+      autoPrintStationTickets: false,
       paperWidth: "80mm" as const,
       printCopies: 1,
       updatedAt: new Date().toISOString(),
@@ -3073,6 +3088,8 @@ export function PosTerminal({
       storeName,
       showTaxId: false,
       showQrPayment: false,
+      autoPrintReceipt: false,
+      autoPrintStationTickets: false,
       paperWidth: "80mm" as const,
       printCopies: 1,
       updatedAt: new Date().toISOString(),

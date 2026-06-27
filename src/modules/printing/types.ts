@@ -48,6 +48,10 @@ export interface ReceiptData {
   headerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  /** "receipt" (default) prints the full bill; "kitchen" prints a station prep ticket (no prices). */
+  ticketMode?: "receipt" | "kitchen";
+  /** Station label shown at the top of a kitchen ticket (e.g. "ครัวร้อน", "บาร์น้ำ"). */
+  stationName?: string;
   paperWidth: "58mm" | "80mm";
   printCopies?: number;
   printedAt: string;

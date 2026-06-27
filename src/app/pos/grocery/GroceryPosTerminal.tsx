@@ -459,11 +459,15 @@ export function GroceryPosTerminal({
       setCashReceived("");
       setSelectedCustomer(null);
       setCustomerQuery("");
+      if (receiptSettings?.autoPrintReceipt) {
+        void handlePrintReceipt(result.order);
+      }
     });
   }
 
-  async function handlePrintReceipt() {
-    if (!checkoutOrder || checkoutOrder.status !== "paid") {
+  async function handlePrintReceipt(orderArg?: Order) {
+    const order = orderArg ?? checkoutOrder;
+    if (!order || order.status !== "paid") {
       setCheckoutMessage("ต้องชำระเงินก่อนพิมพ์ใบเสร็จ");
       return;
     }
@@ -475,16 +479,18 @@ export function GroceryPosTerminal({
       storeName,
       showTaxId: false,
       showQrPayment: false,
+      autoPrintReceipt: false,
+      autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 1,
       updatedAt: new Date().toISOString(),
     };
     const receiptData = {
-      ...buildReceiptData(checkoutOrder, settings),
+      ...buildReceiptData(order, settings),
       storeName: settings.storeName || storeName,
       showQrPayment: false,
-      loyaltyPointsEarned: checkoutOrder.loyaltyPointsEarned,
-      loyaltyPointsBalance: checkoutOrder.loyaltyPointsBalance,
+      loyaltyPointsEarned: order.loyaltyPointsEarned,
+      loyaltyPointsBalance: order.loyaltyPointsBalance,
       printedAt: new Date().toISOString(),
     };
 
@@ -741,7 +747,7 @@ export function GroceryPosTerminal({
           </div>
           <Button
             loading={isPending || isPrintingReceipt}
-            onClick={handlePrintReceipt}
+            onClick={() => handlePrintReceipt()}
             disabled={!checkoutOrder || checkoutOrder.status !== "paid"}
             loadingText={isPrintingReceipt ? "กำลังพิมพ์..." : undefined}
           >

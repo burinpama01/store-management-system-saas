@@ -319,6 +319,30 @@ describe("buildReceiptLines", () => {
     expect(lines.some((line) => line.imageUrl)).toBe(false);
   });
 
+  it("renders a station kitchen ticket with quantities but no prices or payments", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      ticketMode: "kitchen",
+      stationName: "ครัวร้อน",
+      tableNumber: "7",
+      items: [
+        { name: "ผัดกะเพรา", modifierNames: ["เผ็ดมาก"], quantity: 2, unitPrice: 0, totalPrice: 0, note: "ไข่ดาว" },
+      ],
+    });
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).toContain("ครัวร้อน");
+    expect(text).toContain("ตั๋วเตรียมอาหาร");
+    expect(text).toContain("โต๊ะ: 7");
+    expect(text).toContain("2 x ผัดกะเพรา");
+    expect(text).toContain("+ เผ็ดมาก");
+    expect(text).toContain("* ไข่ดาว");
+    // Kitchen tickets never show money or payment sections.
+    expect(text).not.toContain("รวมสุทธิ");
+    expect(text).not.toContain("เงินสด");
+    expect(text).not.toMatch(/\d+\.\d{2}/);
+  });
+
   it("shows earned and remaining loyalty points when a paid receipt has customer rewards", () => {
     const { lines } = buildReceiptLines({
       ...receiptFixture,
@@ -363,8 +387,8 @@ describe("buildReceiptLines", () => {
     expect(orderRepository).toContain("loyaltyPointsBalance");
     expect(normalPos).toContain("loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned");
     expect(normalPos).toContain("loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance");
-    expect(groceryPos).toContain("loyaltyPointsEarned: checkoutOrder.loyaltyPointsEarned");
-    expect(groceryPos).toContain("loyaltyPointsBalance: checkoutOrder.loyaltyPointsBalance");
+    expect(groceryPos).toContain("loyaltyPointsEarned: order.loyaltyPointsEarned");
+    expect(groceryPos).toContain("loyaltyPointsBalance: order.loyaltyPointsBalance");
   });
 
   it("shows item-level discount details on receipt lines", () => {
@@ -1087,6 +1111,8 @@ describe("receipt data", () => {
       storeName: "Each Other",
       showTaxId: false,
       showQrPayment: false,
+      autoPrintReceipt: false,
+      autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 3,
       updatedAt: "2026-06-20T00:00:00.000Z",
@@ -1122,6 +1148,8 @@ describe("receipt data", () => {
       storeName: "Each Other",
       showTaxId: false,
       showQrPayment: false,
+      autoPrintReceipt: false,
+      autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 1,
       updatedAt: "2026-06-20T00:00:00.000Z",
@@ -1160,6 +1188,8 @@ describe("receipt data", () => {
       storeName: "Each Other",
       showTaxId: false,
       showQrPayment: false,
+      autoPrintReceipt: false,
+      autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 1,
       updatedAt: "2026-06-20T00:00:00.000Z",

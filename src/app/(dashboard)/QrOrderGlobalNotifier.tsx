@@ -13,6 +13,8 @@ import {
   isUsbPrinterConnected,
 } from "@/modules/printing/usb-client";
 import { printReceiptAuto } from "@/modules/printing/print-router";
+import { buildStationTicketJobs } from "@/modules/printing/station-routing";
+import { enqueueStationTickets } from "@/modules/printing/station-print-client";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
@@ -66,6 +68,12 @@ interface PrinterState {
   label: string;
 }
 
+interface StationPrinter {
+  id: string;
+  name: string;
+  printerId?: string;
+}
+
 interface Props {
   storeId: string;
   storeName: string;
@@ -73,6 +81,11 @@ interface Props {
   canManageQr: boolean;
   canViewEveryKitchenStation: boolean;
   assignedKitchenStationIds: string[];
+  /** Active kitchen stations with their bound network printers, for per-station routing. */
+  stationPrinters: StationPrinter[];
+  /** Store setting: auto-print per-station tickets to their printers when an order arrives. */
+  autoPrintStationTickets: boolean;
+  receiptPaperWidth: "58mm" | "80mm";
 }
 
 function readAutoPrintPreference() {
@@ -182,6 +195,9 @@ export function QrOrderGlobalNotifier({
   canManageQr,
   canViewEveryKitchenStation,
   assignedKitchenStationIds,
+  stationPrinters,
+  autoPrintStationTickets,
+  receiptPaperWidth,
 }: Props) {
   const router = useRouter();
   const seenOrderIds = useRef(new Set<string>());
@@ -271,6 +287,39 @@ export function QrOrderGlobalNotifier({
           if (!visibleOrder) return;
           playOrderSound();
           setOrders((prev) => [...prev, visibleOrder]);
+
+          // Multi-printer routing: split the order into per-station tickets and
+          // enqueue each to its station's network printer via the Print Hub.
+          // Only the all-station (manager) view drives this to avoid each staff
+          // client double-enqueuing the same order.
+          if (autoPrintStationTickets && canViewEveryKitchenStation && stationPrinters.some((s) => s.printerId)) {
+            const { jobs } = buildStationTicketJobs({
+              orderNumber: visibleOrder.orderNumber,
+              tableNumber: visibleOrder.tableNumber,
+              paperWidth: receiptPaperWidth,
+              printedAt: visibleOrder.createdAt,
+              items: visibleOrder.items.map((item) => ({
+                name: item.productName,
+                variantName: item.variantName,
+                modifierNames: item.modifierNames,
+                quantity: item.quantity,
+                note: item.note,
+                kitchenStationId: item.kitchenStationId,
+              })),
+              stations: stationPrinters,
+            });
+            if (jobs.length > 0) {
+              setPrintStatus(`กำลังพิมพ์ตั๋ว ${jobs.length} สถานี`);
+              void enqueueStationTickets(jobs).then((res) => {
+                setPrintStatus(
+                  res.failed.length === 0
+                    ? `พิมพ์ตั๋วครัว ${res.printed} สถานีแล้ว`
+                    : `พิมพ์ตั๋ว ${res.printed} สำเร็จ, ล้มเหลว ${res.failed.length}`,
+                );
+              });
+            }
+          }
+
           if (!readAutoPrintPreference()) return;
           const latestPrinterState = getPrinterState();
           setPrinterState(latestPrinterState);
@@ -291,10 +340,13 @@ export function QrOrderGlobalNotifier({
     return unsubscribe;
   }, [
     allowedStationIds,
+    autoPrintStationTickets,
     canManageQr,
     canViewEveryKitchenStation,
     fetchVisibleOrder,
     qrOrderingEnabled,
+    receiptPaperWidth,
+    stationPrinters,
     storeId,
     storeName,
   ]);

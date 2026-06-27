@@ -889,6 +889,7 @@ export interface Database {
           description: string | null;
           sort_order: number;
           is_active: boolean;
+          printer_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -900,6 +901,7 @@ export interface Database {
           description?: string | null;
           sort_order?: number;
           is_active?: boolean;
+          printer_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -911,6 +913,7 @@ export interface Database {
           description?: string | null;
           sort_order?: number;
           is_active?: boolean;
+          printer_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -2549,6 +2552,8 @@ export interface Database {
           footer_text: string | null;
           logo_url: string | null;
           footer_image_url: string | null;
+          auto_print_receipt: boolean;
+          auto_print_station_tickets: boolean;
           paper_width: "58mm" | "80mm";
           print_copies: number;
           updated_at: string;
@@ -2568,6 +2573,8 @@ export interface Database {
           footer_text?: string | null;
           logo_url?: string | null;
           footer_image_url?: string | null;
+          auto_print_receipt?: boolean;
+          auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
           print_copies?: number;
           updated_at?: string;
@@ -2587,6 +2594,8 @@ export interface Database {
           footer_text?: string | null;
           logo_url?: string | null;
           footer_image_url?: string | null;
+          auto_print_receipt?: boolean;
+          auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
           print_copies?: number;
           updated_at?: string;
