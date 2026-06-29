@@ -92,25 +92,24 @@ describe("buildPromptPayPayload", () => {
     expect(payload).not.toContain("5402");
   });
 
-  it("converts Thai phone 0XXXXXXXXX to 66XXXXXXXXX", () => {
+  it("encodes Thai phone 0XXXXXXXXX as the 13-digit EMV mobile proxy", () => {
     const payload = buildPromptPayPayload({ recipientId: "0812345678" });
-    // Should contain 66812345678 in the merchant account field
-    expect(payload).toContain("011166812345678");
-    expect(payload).toContain("66812345678");
+    // Mobile proxy: tag 01, length 13, value "0066" + subscriber number.
+    expect(payload).toContain("01130066812345678");
   });
 
   it("treats +66 phone format as a mobile PromptPay ID", () => {
     const payload = buildPromptPayPayload({ recipientId: "+66 81 234 5678" });
 
-    expect(payload).toContain("011166812345678");
-    expect(payload).not.toContain("021166812345678");
+    expect(payload).toContain("01130066812345678");
+    expect(payload).not.toContain("02130066812345678");
   });
 
   it("treats compact +66 phone format as a mobile PromptPay ID", () => {
     const payload = buildPromptPayPayload({ recipientId: "+66812345678" });
 
-    expect(payload).toContain("011166812345678");
-    expect(payload).not.toContain("021166812345678");
+    expect(payload).toContain("01130066812345678");
+    expect(payload).not.toContain("02130066812345678");
   });
 
   it("uses the national ID PromptPay tag for 13-digit IDs", () => {

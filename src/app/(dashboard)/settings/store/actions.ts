@@ -8,7 +8,7 @@ import {
 } from "@/modules/billing/types";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
-import { updateStore } from "@/modules/stores/repository";
+import { updateStore, getStore } from "@/modules/stores/repository";
 import { resolveThemeSelection } from "@/modules/theme/presets";
 
 const ALLOWED_TIMEZONES = new Set([
@@ -43,6 +43,7 @@ export async function updateStoreAction(
     const { ctx } = await getStoreContext();
 
     const name = (formData.get("name") as string | null)?.trim() ?? "";
+    const logoUrl = (formData.get("logoUrl") as string | null)?.trim() || null;
     const address = (formData.get("address") as string | null)?.trim() || undefined;
     const phone = (formData.get("phone") as string | null)?.trim() || undefined;
     const timezone = (formData.get("timezone") as string | null)?.trim() ?? "Asia/Bangkok";
@@ -50,6 +51,9 @@ export async function updateStoreAction(
     const currencyCode = (formData.get("currencyCode") as string | null)?.trim() ?? "THB";
     const buffetEnabled = formData.get("buffetEnabled") === "1";
     const qrOrderingEnabled = formData.get("qrOrderingEnabled") === "1";
+    const qrOrderingMode =
+      formData.get("qrOrderingMode") === "session_printed" ? "session_printed" : "table_bound";
+    const musicRequestEnabled = formData.get("musicRequestEnabled") === "1";
     const dineInRaw = parseInt((formData.get("dineInDurationMinutes") as string | null) ?? "", 10);
     const dineInDurationMinutes =
       Number.isInteger(dineInRaw) && dineInRaw >= 15 && dineInRaw <= 600 ? dineInRaw : 120;
@@ -81,9 +85,20 @@ export async function updateStoreAction(
     if (qrOrderingEnabled && !features.qrOrdering) {
       return { error: "แพ็กเกจปัจจุบันยังไม่รองรับ QR Ordering" };
     }
+    // Music can only be turned on by Enterprise stores with an approved license.
+    if (musicRequestEnabled) {
+      if (!features.musicRequest) {
+        return { error: "ฟีเจอร์ขอเพลงสำหรับแพ็กเกจ Enterprise เท่านั้น" };
+      }
+      const storeRes = await getStore(ctx.storeId);
+      if (storeRes.data?.musicLicenseStatus !== "approved") {
+        return { error: "ต้องได้รับการอนุมัติ Music License ก่อนจึงจะเปิดการขอเพลงได้" };
+      }
+    }
 
     const result = await updateStore(ctx.storeId, ctx.organizationId, {
       name,
+      logoUrl,
       address: address ?? null,
       phone: phone ?? null,
       timezone,
@@ -91,6 +106,8 @@ export async function updateStoreAction(
       currencyCode,
       buffetEnabled,
       qrOrderingEnabled,
+      qrOrderingMode,
+      musicRequestEnabled,
       dineInDurationMinutes,
       themePresetId: theme.theme.presetId,
       themePrimaryColor: theme.theme.primaryColor,

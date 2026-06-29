@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Ordering Music Request Enterprise Plan v1</title>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #5f6b7a;
+      --line: #d9e0e8;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --brand: #0f766e;
+      --brand-soft: #d9f5ef;
+      --warn: #b45309;
+      --warn-soft: #fff3d6;
+      --danger: #b91c1c;
+      --danger-soft: #fde2e2;
+      --ok: #166534;
+      --ok-soft: #dcfce7;
+      --code: #101827;
+      --blue: #1d4ed8;
+      --blue-soft: #dbeafe;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+      line-height: 1.55;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    header {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3 { line-height: 1.22; margin: 0 0 12px; }
+    h1 { font-size: 30px; }
+    h2 { font-size: 22px; margin-top: 8px; }
+    h3 { font-size: 17px; }
+    p { margin: 0 0 10px; }
+    ul, ol { margin: 8px 0 0 22px; padding: 0; }
+    li { margin: 5px 0; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .meta div, .card, .phase, .task, .agent-box {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+    }
+
+    .value { font-weight: 700; }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      margin: 14px 0;
+    }
+
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .band {
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      margin: 14px 0;
+    }
+
+    .band.ok { background: var(--ok-soft); border-color: #86efac; }
+    .band.warn { background: var(--warn-soft); border-color: #facc15; }
+    .band.danger { background: var(--danger-soft); border-color: #fecaca; }
+    .band.info { background: var(--blue-soft); border-color: #93c5fd; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 26px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: #115e59;
+      font-weight: 700;
+      font-size: 12px;
+      margin: 2px 4px 2px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 12px 0;
+      font-size: 14px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: #eef3f7; font-weight: 800; }
+    tr:last-child td { border-bottom: 0; }
+
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+    }
+
+    code {
+      background: #eef3f7;
+      border: 1px solid #d7dee8;
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+
+    pre {
+      margin: 10px 0 0;
+      padding: 13px;
+      border-radius: 8px;
+      overflow-x: auto;
+      background: var(--code);
+      color: #e5e7eb;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .phase {
+      margin: 16px 0;
+      border-left: 5px solid var(--brand);
+    }
+
+    .task {
+      margin: 12px 0;
+    }
+
+    .task h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--brand);
+      color: white;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .checklist li {
+      list-style: none;
+      position: relative;
+      padding-left: 26px;
+    }
+
+    .checklist li::before {
+      content: "□";
+      position: absolute;
+      left: 0;
+      color: var(--brand);
+      font-weight: 900;
+    }
+
+    .muted { color: var(--muted); }
+    .strong { font-weight: 800; }
+
+    @media (max-width: 860px) {
+      .meta, .grid.two, .grid.three { grid-template-columns: 1fr; }
+      .shell { width: min(100vw - 20px, 1180px); padding-top: 14px; }
+      header { padding: 18px; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="pill">Implementation Plan</p>
+      <p class="pill">QR Ordering</p>
+      <p class="pill">Enterprise Music Request</p>
+      <h1>QR Ordering Music Request Enterprise Plan v1</h1>
+      <p>
+        แผนนี้สำหรับ agent ที่จะเพิ่มแท็บ <span class="strong">ขอเพลง</span> ใน QR Ordering ปัจจุบัน พร้อมปรับ QR mode ให้ร้านเลือกได้ว่า QR ผูกโต๊ะถาวรหรือเป็น QR ชั่วคราวจาก session ที่พิมพ์ตอนเปิดโต๊ะ
+      </p>
+      <div class="meta">
+        <div>
+          <span class="label">Project</span>
+          <span class="value">Store management system saas</span>
+        </div>
+        <div>
+          <span class="label">cwd</span>
+          <span class="value">D:\Store management system saas</span>
+        </div>
+        <div>
+          <span class="label">Date</span>
+          <span class="value">2026-06-29</span>
+        </div>
+        <div>
+          <span class="label">Status</span>
+          <span class="value">Ready for review</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="band info">
+      <h2>For Agentic Workers</h2>
+      <p><span class="strong">Required sub-skill:</span> ใช้ <code>superpowers:test-driven-development</code> ก่อนเขียน production code และใช้ <code>superpowers:subagent-driven-development</code> หรือ <code>superpowers:executing-plans</code> เมื่อลงมือทำตาม task</p>
+      <p><span class="strong">Workflow:</span> Scope → Route → Implement → Review → Fix → Verify → Document</p>
+      <p><span class="strong">Local rules:</span> รายงาน/plan/document ต้องเป็นภาษาไทย, plan artifact ต้องเป็น HTML, ต้องบันทึก Obsidian เมื่อจบงาน, ถ้ามี code/runtime change ต้องให้ <code>code_reviewer</code> ตรวจ</p>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <h2>Goal</h2>
+        <p>
+          เพิ่มฟีเจอร์ขอเพลงสำหรับร้าน Enterprise ที่มี license approved โดยอยู่ในหน้า QR Ordering เดิมเป็นแท็บใหม่ และทำให้ QR Ordering รองรับ 2 โหมด: QR ผูกโต๊ะถาวร กับ QR ชั่วคราวที่พิมพ์ตอนเปิดโต๊ะ
+        </p>
+      </div>
+      <div class="card">
+        <h2>Architecture</h2>
+        <p>
+          แยก eligibility ของแท็บอาหารและแท็บขอเพลงออกจากกัน ใช้ route เดิม <code>/qr/[storeSlug]/[tableId]</code> แต่เพิ่มตัวตรวจ QR mode/session token สำหรับโหมด printed และเพิ่ม module ใหม่ <code>music-requests</code> สำหรับ data model, gate, repository, dashboard และ audit
+        </p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Source of Truth ที่ตรวจแล้ว</h2>
+      <ul>
+        <li><code>src/app/qr/[storeSlug]/[tableId]/page.tsx</code> ตรวจ public QR gate ปัจจุบัน</li>
+        <li><code>src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx</code> ตรวจ customer QR UI ปัจจุบัน</li>
+        <li><code>src/app/qr/[storeSlug]/[tableId]/actions.ts</code> ตรวจ server action สำหรับ submit order/service request</li>
+        <li><code>src/modules/qr-ordering/repository.ts</code> ตรวจ active/history QR order และ prep status</li>
+        <li><code>src/app/(dashboard)/qr-orders/QrOrdersBoard.tsx</code> ตรวจ dashboard realtime/polling pattern</li>
+        <li><code>src/app/pos/actions.ts</code> ตรวจ open/close table session</li>
+        <li><code>src/modules/stores/repository.ts</code>, <code>src/modules/stores/types.ts</code>, <code>src/modules/stores/public-repository.ts</code> ตรวจ store/table mapping</li>
+        <li><code>src/modules/billing/types.ts</code> ตรวจ package feature gate source of truth</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Locked Business Rules</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>เรื่อง</th>
+            <th>กฎที่ล็อกแล้ว</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ตำแหน่งฟีเจอร์ขอเพลง</td>
+            <td>เพิ่มเป็นแท็บใน QR Ordering เดิม ไม่ทำ route แยกใน MVP</td>
+          </tr>
+          <tr>
+            <td>แพ็กเกจ</td>
+            <td>Music Request ใช้ได้เฉพาะ Enterprise และต้องมี license approved เท่านั้น</td>
+          </tr>
+          <tr>
+            <td>QR ผูกโต๊ะ</td>
+            <td>ขอเพลง/ดูคิวเพลงได้แม้ไม่มี active bill/session และหลังเช็คบิลแล้วก็ยังใช้ได้</td>
+          </tr>
+          <tr>
+            <td>QR ไม่ผูกโต๊ะ</td>
+            <td>QR สร้างตอนเปิดโต๊ะและพิมพ์ให้ลูกค้า ใช้ได้เฉพาะ session active; หลังเช็คบิลให้แสดงหน้า QR หมดอายุ</td>
+          </tr>
+          <tr>
+            <td>อาหาร</td>
+            <td>แท็บอาหารยังต้องมี active table session เหมือนเดิมทุกโหมด</td>
+          </tr>
+          <tr>
+            <td>เพลงร้านเปิดเอง</td>
+            <td>ไม่เข้าคิวเพลง; คิวเพลงมีเฉพาะ customer requests</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Eligibility Matrix</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>QR mode</th>
+            <th>Session state</th>
+            <th>สั่งอาหาร</th>
+            <th>ขอเพลง/ดูคิว</th>
+            <th>ผลที่ต้องแสดง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>table_bound</code></td>
+            <td>ไม่มี active session</td>
+            <td>ไม่ได้</td>
+            <td>ได้ ถ้า music gate ผ่าน</td>
+            <td>แท็บอาหารขึ้นข้อความให้เปิดบิล; แท็บเพลงใช้งานได้</td>
+          </tr>
+          <tr>
+            <td><code>table_bound</code></td>
+            <td>active session</td>
+            <td>ได้</td>
+            <td>ได้ ถ้า music gate ผ่าน</td>
+            <td>ใช้งานได้ทั้งสองแท็บ</td>
+          </tr>
+          <tr>
+            <td><code>session_printed</code></td>
+            <td>active session และ query session ตรงกับ <code>current_session_id</code></td>
+            <td>ได้</td>
+            <td>ได้ ถ้า music gate ผ่าน</td>
+            <td>ใช้งานได้ทั้งสองแท็บ</td>
+          </tr>
+          <tr>
+            <td><code>session_printed</code></td>
+            <td>ไม่มี session, session หมดอายุ, หรือ query session ไม่ตรง</td>
+            <td>ไม่ได้</td>
+            <td>ไม่ได้</td>
+            <td>หน้าเต็ม: QR หมดอายุแล้ว กรุณาขอ QR ใหม่จากพนักงาน</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Data Model Proposal</h2>
+      <div class="band warn">
+        <p><span class="strong">Migration warning:</span> ห้าม apply production migration โดยไม่ขอ approval แยก ต้องทำ local/preview validation ก่อน</p>
+      </div>
+      <pre><code>-- supabase/migrations/YYYYMMDDHHMMSS_qr_music_request_enterprise.sql
+
+alter table stores
+  add column if not exists qr_ordering_mode text not null default 'table_bound'
+    check (qr_ordering_mode in ('table_bound', 'session_printed')),
+  add column if not exists music_request_enabled boolean not null default false,
+  add column if not exists music_license_status text not null default 'not_requested'
+    check (music_license_status in ('not_requested', 'pending', 'approved', 'rejected', 'expired')),
+  add column if not exists music_license_approved_at timestamptz,
+  add column if not exists music_license_note text;
+
+create table if not exists music_requests (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references stores(id) on delete cascade,
+  table_id uuid references tables(id) on delete set null,
+  table_number text,
+  session_id uuid,
+  requester_label text,
+  song_title text not null,
+  artist_name text,
+  note text,
+  status text not null default 'pending'
+    check (status in ('pending', 'approved', 'played', 'rejected', 'skipped', 'expired')),
+  requested_at timestamptz not null default now(),
+  decided_at timestamptz,
+  decided_by uuid references auth.users(id),
+  played_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists music_requests_store_status_created_idx
+  on music_requests(store_id, status, requested_at);
+
+create table if not exists music_request_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references stores(id) on delete cascade,
+  music_request_id uuid references music_requests(id) on delete set null,
+  actor_user_id uuid references auth.users(id),
+  actor_type text not null check (actor_type in ('customer', 'staff', 'system')),
+  action text not null,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table music_requests enable row level security;
+alter table music_request_audit_logs enable row level security;
+
+revoke all on music_requests from public, anon, authenticated;
+revoke all on music_request_audit_logs from public, anon, authenticated;</code></pre>
+      <p class="muted">
+        MVP ใช้ <code>tables.current_session_id</code> เป็น session token ใน URL สำหรับ <code>session_printed</code>. URL ที่พิมพ์ตอนเปิดโต๊ะคือ <code>/qr/[storeSlug]/[tableId]?s=[current_session_id]</code>. เมื่อปิดโต๊ะ/เช็คบิลแล้ว <code>close_table_session</code> จะ clear session ทำให้ QR เดิมหมดอายุ
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>File Map</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Path</th>
+            <th>Responsibility</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/modules/billing/types.ts</code></td>
+            <td>เพิ่ม feature key <code>musicRequest</code> เป็น Enterprise only</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/modules/music-requests/types.ts</code></td>
+            <td>types/status labels/eligibility result</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/modules/music-requests/gates.ts</code></td>
+            <td>คำนวณ music eligibility แยกจาก food eligibility</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/modules/music-requests/repository.ts</code></td>
+            <td>list/create/update music requests และ audit log</td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/modules/stores/types.ts</code></td>
+            <td>เพิ่ม <code>qrOrderingMode</code>, <code>musicRequestEnabled</code>, <code>musicLicenseStatus</code></td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/modules/stores/repository.ts</code></td>
+            <td>map/save store settings สำหรับ QR mode และ music toggle</td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/modules/stores/public-repository.ts</code></td>
+            <td>public QR page อ่าน QR mode/license/music flags ที่จำเป็น</td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/app/qr/[storeSlug]/[tableId]/page.tsx</code></td>
+            <td>แยก food eligibility กับ music eligibility และรองรับ session-printed expired page</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/app/qr/[storeSlug]/[tableId]/music-actions.ts</code></td>
+            <td>public server actions สำหรับ list queue และ submit music request</td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx</code></td>
+            <td>เพิ่มแท็บ <code>สั่งอาหาร</code>/<code>ขอเพลง</code> และ UI ของ music request</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/app/(dashboard)/music-requests/page.tsx</code></td>
+            <td>dashboard queue สำหรับ staff/admin</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/app/(dashboard)/music-requests/MusicRequestsBoard.tsx</code></td>
+            <td>approve/reject/played/skipped board ใช้ realtime/polling pattern คล้าย <code>QrOrdersBoard</code></td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/app/(dashboard)/music-requests/actions.ts</code></td>
+            <td>server actions สำหรับ staff decisions และ audit</td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/app/(dashboard)/settings/store/StoreSettingsForm.tsx</code></td>
+            <td>เพิ่ม QR mode และ music enabled toggle เฉพาะเมื่อ license approved</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/app/system/music-licenses/page.tsx</code></td>
+            <td>platform admin ตรวจ/อนุมัติ license status ของร้าน</td>
+          </tr>
+          <tr>
+            <td>Create</td>
+            <td><code>src/app/system/music-licenses/actions.ts</code></td>
+            <td>system admin action สำหรับ approve/reject/expire license</td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/app/pos/actions.ts</code></td>
+            <td><code>openTableAction</code> คืน QR URL ที่มี <code>?s=current_session_id</code> เมื่อร้านใช้ <code>session_printed</code></td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/app/pos/TableOpenModal.tsx</code></td>
+            <td>แสดง/พิมพ์ QR ชั่วคราวตอนเปิดโต๊ะสำหรับ <code>session_printed</code></td>
+          </tr>
+          <tr>
+            <td>Modify</td>
+            <td><code>src/shared/components/SideNav.tsx</code> หรือ nav source ใน <code>src/app/(dashboard)/layout.tsx</code></td>
+            <td>เพิ่มเมนู Music Requests เฉพาะผู้มีสิทธิ์และ gate ผ่าน</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 1: Billing, Store Settings, และ DB Foundation</h2>
+      <div class="task">
+        <h3><span class="badge">T1</span> Feature gate และ tests</h3>
+        <p><span class="strong">Files:</span> modify <code>src/modules/billing/types.ts</code>; test <code>tests/unit/billing.test.ts</code></p>
+        <ul class="checklist">
+          <li>เขียน failing test ว่า <code>musicRequest</code> เปิดเฉพาะ Enterprise และปิดใน free/starter/standard/premium</li>
+          <li>รัน <code>npm test -- tests/unit/billing.test.ts</code> ต้อง fail เพราะยังไม่มี feature key</li>
+          <li>เพิ่ม <code>musicRequest: boolean</code> ใน <code>PlanFeatures</code>, <code>FEATURE_LABELS</code>, <code>PLAN_FEATURES</code></li>
+          <li>รัน test ให้ผ่าน แล้วรัน <code>npm run typecheck</code></li>
+        </ul>
+      </div>
+
+      <div class="task">
+        <h3><span class="badge">T2</span> Migration และ database type refresh</h3>
+        <p><span class="strong">Files:</span> create migration <code>supabase/migrations/YYYYMMDDHHMMSS_qr_music_request_enterprise.sql</code>; generated/modify <code>src/server/integrations/supabase/database.types.ts</code></p>
+        <ul class="checklist">
+          <li>เขียน migration สำหรับ store flags และ music request tables ตาม Data Model Proposal</li>
+          <li>เพิ่ม RLS deny-by-default; public/customer writes ต้องผ่าน server action/RPC เท่านั้น</li>
+          <li>รัน local migration validation ด้วย Supabase local ถ้าพร้อม; ถ้า environment ไม่พร้อมให้หยุดและรายงาน blocker ไม่เดา</li>
+          <li>อัปเดต database types ตาม workflow ของ repo</li>
+        </ul>
+      </div>
+
+      <div class="task">
+        <h3><span class="badge">T3</span> Store settings types/repository</h3>
+        <p><span class="strong">Files:</span> modify <code>src/modules/stores/types.ts</code>, <code>src/modules/stores/repository.ts</code>, <code>src/modules/stores/public-repository.ts</code>; test <code>tests/unit/qr-ordering-session-mode.test.ts</code></p>
+        <ul class="checklist">
+          <li>เขียน failing tests สำหรับ map default <code>table_bound</code> และ public store reads ที่คืน music/license flags</li>
+          <li>เพิ่ม type <code>QrOrderingMode = "table_bound" | "session_printed"</code></li>
+          <li>map fields จาก DB เป็น camelCase: <code>qrOrderingMode</code>, <code>musicRequestEnabled</code>, <code>musicLicenseStatus</code></li>
+          <li>update store settings ให้ tenant แก้ <code>qrOrderingMode</code> และ <code>musicRequestEnabled</code> ได้ แต่ไม่แก้ license status เอง</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 2: QR Session Mode</h2>
+      <div class="task">
+        <h3><span class="badge">T4</span> Public QR gate แยก food/music/session</h3>
+        <p><span class="strong">Files:</span> modify <code>src/app/qr/[storeSlug]/[tableId]/page.tsx</code>; create <code>src/modules/music-requests/gates.ts</code>; test <code>tests/unit/qr-music-eligibility.test.ts</code></p>
+        <ul class="checklist">
+          <li>เขียน failing test สำหรับ <code>table_bound</code>: food ปิดเมื่อไม่มี active session แต่ music เปิดเมื่อ Enterprise+license approved+enabled</li>
+          <li>เขียน failing test สำหรับ <code>session_printed</code>: ไม่มี <code>?s=</code> หรือ session ไม่ตรง ต้อง expired ทั้งหน้า</li>
+          <li>สร้าง function <code>resolveQrMusicEligibility(input)</code> ที่คืน <code>{ canViewQueue, canSubmitRequest, reason }</code></li>
+          <li>ปรับ page ให้ส่ง props แยก <code>foodEligibility</code> และ <code>musicEligibility</code> เข้า client app</li>
+        </ul>
+        <pre><code>type QrMode = "table_bound" | "session_printed";
+
+interface QrMusicEligibilityInput {
+  qrMode: QrMode;
+  querySessionId: string | null;
+  currentSessionId: string | null;
+  sessionActive: boolean;
+  isEnterprise: boolean;
+  musicLicenseStatus: "not_requested" | "pending" | "approved" | "rejected" | "expired";
+  musicRequestEnabled: boolean;
+}
+
+interface QrMusicEligibility {
+  canViewQueue: boolean;
+  canSubmitRequest: boolean;
+  expiredWholeQr: boolean;
+  reason: string | null;
+}</code></pre>
+      </div>
+
+      <div class="task">
+        <h3><span class="badge">T5</span> POS printed QR ตอนเปิดโต๊ะ</h3>
+        <p><span class="strong">Files:</span> modify <code>src/app/pos/actions.ts</code>, <code>src/app/pos/TableOpenModal.tsx</code>, receipt/print path ที่เปิดโต๊ะใช้จริง</p>
+        <ul class="checklist">
+          <li>เขียน failing test ว่า <code>openTableAction</code> คืน QR URL พร้อม <code>?s=current_session_id</code> เมื่อ store mode เป็น <code>session_printed</code></li>
+          <li>ถ้า mode เป็น <code>table_bound</code> ให้ URL ไม่มี session query และ QR settings/tables ยังใช้ pattern เดิม</li>
+          <li>ปรับ modal/print receipt ให้แสดง QR ชั่วคราวหลังเปิดโต๊ะสำเร็จ</li>
+          <li>หลัง <code>closeTableAction</code> session ถูก clear แล้ว public QR เก่าต้องเห็น expired page</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 3: Music Request Domain</h2>
+      <div class="task">
+        <h3><span class="badge">T6</span> Music repository และ audit</h3>
+        <p><span class="strong">Files:</span> create <code>src/modules/music-requests/types.ts</code>, <code>src/modules/music-requests/repository.ts</code>; test <code>tests/unit/music-request-repository.test.ts</code></p>
+        <ul class="checklist">
+          <li>เขียน failing tests สำหรับ create request, list public queue, update status และ audit log</li>
+          <li>จำกัด input: song title 1-120 chars, artist 0-120 chars, requester label 0-60 chars, note 0-240 chars</li>
+          <li>public queue แสดงเฉพาะ <code>pending</code>, <code>approved</code>, <code>played</code> ล่าสุดตาม limit ที่กำหนด ไม่แสดง internal rejected reason</li>
+          <li>staff action ทุกครั้งต้องสร้าง audit log</li>
+        </ul>
+      </div>
+
+      <div class="task">
+        <h3><span class="badge">T7</span> Public music actions</h3>
+        <p><span class="strong">Files:</span> create <code>src/app/qr/[storeSlug]/[tableId]/music-actions.ts</code>; test <code>tests/unit/music-request-actions.test.ts</code></p>
+        <ul class="checklist">
+          <li>เขียน failing test ว่า non-Enterprise submit ไม่ได้</li>
+          <li>เขียน failing test ว่า Enterprise แต่ license ไม่ approved submit ไม่ได้</li>
+          <li>เขียน failing test ว่า <code>session_printed</code> หลัง session ปิด submit/list queue ไม่ได้และคืน expired reason</li>
+          <li>เพิ่ม rate limit เบื้องต้นใน server action แบบ store/table/session scoped ถ้า repo มี utility เดิมให้ใช้เดิม; ถ้าไม่มีให้ทำ guard ต่ำสุดด้วย duplicate window ใน DB query</li>
+          <li>ส่ง notification ไป owner/staff เมื่อมี request ใหม่ โดยใช้ pattern <code>notifyOwnerSafely</code> ถ้าประเภท notification รองรับ; ถ้าไม่รองรับให้บันทึกเป็น follow-up ใน issue/log ไม่ฝืนเพิ่ม channel ใหญ่</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 4: Customer QR UI</h2>
+      <div class="task">
+        <h3><span class="badge">T8</span> Tabs ใน QrOrderingApp</h3>
+        <p><span class="strong">Files:</span> modify <code>src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx</code>; optional create child components under same folder</p>
+        <ul class="checklist">
+          <li>เขียน failing component/behavior test ถ้า test setup รองรับ; ถ้าไม่มี UI test harness ให้เขียน unit test สำหรับ tab eligibility presenter</li>
+          <li>เพิ่ม segmented tabs <code>สั่งอาหาร</code> และ <code>ขอเพลง</code></li>
+          <li>Food tab ใช้ flow เดิม และแสดง disabled state เมื่อไม่มี active session</li>
+          <li>Music tab แสดง queue, form ขอเพลง, status message, และ disabled reason ตาม <code>musicEligibility</code></li>
+          <li>ถ้า <code>expiredWholeQr</code> เป็น true ให้หน้า QR แสดง expired page ทั้งหน้า ไม่แสดง tabs</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 5: Staff Dashboard และ License Admin</h2>
+      <div class="task">
+        <h3><span class="badge">T9</span> Dashboard music queue</h3>
+        <p><span class="strong">Files:</span> create <code>src/app/(dashboard)/music-requests/page.tsx</code>, <code>MusicRequestsBoard.tsx</code>, <code>actions.ts</code>; modify nav source</p>
+        <ul class="checklist">
+          <li>เขียน failing tests ว่า staff/admin ที่ไม่มี permission ใช้ action ไม่ได้</li>
+          <li>เพิ่ม board ที่แสดง pending/approved/played ล่าสุด พร้อมปุ่ม approve/reject/played/skipped</li>
+          <li>ใช้ realtime refresh หรือ polling pattern เดียวกับ <code>QrOrdersBoard</code></li>
+          <li>เมนูแสดงเฉพาะ Enterprise + license approved + music enabled และผู้มี permission ที่เหมาะสม</li>
+        </ul>
+      </div>
+
+      <div class="task">
+        <h3><span class="badge">T10</span> System admin license approval</h3>
+        <p><span class="strong">Files:</span> create <code>src/app/system/music-licenses/page.tsx</code>, <code>src/app/system/music-licenses/actions.ts</code>; modify system nav if needed</p>
+        <ul class="checklist">
+          <li>เขียน failing tests ว่าเฉพาะ system admin เปลี่ยน <code>music_license_status</code> ได้</li>
+          <li>เพิ่ม action สำหรับ approve/reject/expire พร้อม note และ timestamp</li>
+          <li>tenant setting เห็นสถานะ license แต่แก้เองไม่ได้</li>
+          <li>ถ้า license ถูก expire/reject ให้ <code>musicRequestEnabled</code> ถูกปิดหรือ action ฝั่ง music gate ปฏิเสธทันที</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 6: Verification, Review, และ Documentation</h2>
+      <div class="task">
+        <h3><span class="badge">T11</span> Verification commands</h3>
+        <ul class="checklist">
+          <li>รัน targeted tests: <code>npm test -- tests/unit/billing.test.ts tests/unit/qr-order-rpc.test.ts tests/unit/qr-order-fulfillment.test.ts tests/unit/qr-music-eligibility.test.ts tests/unit/music-request-repository.test.ts tests/unit/music-request-actions.test.ts</code></li>
+          <li>รัน <code>npm run typecheck</code></li>
+          <li>รัน <code>npm run lint</code></li>
+          <li>รัน <code>git diff --check</code></li>
+          <li>ทำ browser QA: table_bound ไม่มี active session แล้ว food disabled/music usable; session_printed active ใช้ได้; session_printed closed แสดง expired page</li>
+        </ul>
+      </div>
+
+      <div class="task">
+        <h3><span class="badge">T12</span> Code review และ Obsidian</h3>
+        <ul class="checklist">
+          <li>ส่ง <code>code_reviewer</code> พร้อม Mandatory Context Package หลัง code/config/migration change</li>
+          <li>ถ้า reviewer พบ issue ให้บันทึกใน Obsidian log แล้วแก้/verify/re-review</li>
+          <li>อัปเดต <code>Projects/Store management system saas/log.md</code>, <code>current.md</code>, <code>log-index.md</code>, และ <code>issue.md</code>/<code>issue-index.md</code> ถ้ามี issue</li>
+          <li>ห้าม deploy/apply production migration จนกว่าผู้ใช้อนุมัติ environment และ backup/rollback</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Acceptance Criteria</h2>
+      <ul class="checklist">
+        <li>ร้านสามารถเลือก QR mode ได้ที่ store settings: <code>table_bound</code> หรือ <code>session_printed</code></li>
+        <li><code>table_bound</code>: ลูกค้าขอเพลงและดูคิวได้แม้ไม่มี active food session แต่สั่งอาหารไม่ได้</li>
+        <li><code>session_printed</code>: QR ต้องมี session query ตรงกับ active table session จึงใช้ได้</li>
+        <li>หลังเช็คบิลใน <code>session_printed</code> QR เก่าแสดงหน้า expired และทำ action ใดไม่ได้</li>
+        <li>Music Request เปิดเฉพาะ Enterprise + license approved + store music enabled</li>
+        <li>non-Enterprise หรือ license ไม่ approved ไม่สามารถ submit/list queue ผ่าน server action ได้</li>
+        <li>dashboard staff/admin จัดการคิวเพลงได้: approve, reject, played, skipped</li>
+        <li>ทุก staff/admin decision มี audit log</li>
+        <li>เพลงที่ร้านเปิดเองไม่เข้า <code>music_requests</code></li>
+        <li>tests/typecheck/lint ผ่าน หรือบันทึก blocker ชัดเจน</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Mandatory Context Package สำหรับส่ง Agent</h2>
+      <pre><code>Project:
+Store management system saas, cwd=D:\Store management system saas
+
+Goal:
+เพิ่มแท็บขอเพลงใน QR Ordering และเพิ่ม QR mode table_bound/session_printed พร้อม Enterprise+license gate
+
+Agent role:
+เลือกตาม task: backend_dev สำหรับ DB/repository/actions, frontend_web สำหรับ QR UI/dashboard, qa_engineer สำหรับ tests, code_reviewer หลัง implementation
+
+Expected output:
+patch summary, files changed, tests run, known risks, blocker, review findings ตาม role contract
+
+Scope:
+Plan นี้เท่านั้น: QR Ordering mode, Music Request tab, Enterprise/license gate, dashboard queue, system admin license approval, tests
+
+Out of scope:
+auto-play เพลง, payment priority, Spotify/YouTube playback, production migration apply, deploy production
+
+Files changed:
+ให้ agent ระบุจริงหลังทำ task
+
+Files to inspect:
+src/app/qr/[storeSlug]/[tableId]/page.tsx
+src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx
+src/app/qr/[storeSlug]/[tableId]/actions.ts
+src/modules/qr-ordering/repository.ts
+src/app/(dashboard)/qr-orders/QrOrdersBoard.tsx
+src/app/pos/actions.ts
+src/modules/stores/repository.ts
+src/modules/billing/types.ts
+
+Diff/commit:
+ยังไม่มี commit ใน plan phase
+
+Tests/verification run:
+ต้องใช้ TDD; target commands อยู่ใน Phase 6
+
+Known failures/blockers:
+SocratiCode graph build เคย fail ด้วย fetch failed; production migration/deploy ต้องขออนุมัติ
+
+Constraints:
+ภาษาไทย, Plan เป็น HTML, PowerShell UTF-8, no secrets, no production action without approval, version bump ก่อน build/commit
+
+Risks to focus:
+server-side gate, QR session invalidation, RLS/RPC, public route data leak, Enterprise license enforcement, duplicate/spam requests
+
+User requirements:
+เพิ่มแท็บขอเพลงใน QR Ordering; QR ผูกโต๊ะขอเพลงหลังเช็คบิลได้; QR ไม่ผูกโต๊ะหมดอายุหลังเช็คบิล; Enterprise only; license approved required
+
+Obsidian paths:
+C:\Users\burin\Documents\Obsidian Vault\Projects\Store management system saas\log.md
+C:\Users\burin\Documents\Obsidian Vault\Projects\Store management system saas\current.md
+C:\Users\burin\Documents\Obsidian Vault\Projects\Store management system saas\issue.md
+
+Plan/spec/checklist:
+Plan\QR Ordering Music Request Enterprise Plan v1.html
+
+Deadline/priority:
+QA-first, implementation after user approves plan</code></pre>
+    </section>
+
+    <section class="band danger">
+      <h2>Stop Conditions</h2>
+      <ul>
+        <li>ต้อง apply migration บน production หรือ deploy production</li>
+        <li>ขาด Supabase/Vercel auth หรือ CLI ใช้งานไม่ได้</li>
+        <li>พบว่า license state ต้องแก้ customer/private data โดยตรง</li>
+        <li>test บ่งชี้ว่า QR เก่าหลังเช็คบิลยัง submit ได้ใน <code>session_printed</code></li>
+        <li>ไม่สามารถ enforce Enterprise/license gate ที่ server action/repository/RPC ได้</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Self Review</h2>
+      <table>
+        <tbody>
+          <tr>
+            <td>Spec coverage</td>
+            <td>ครอบคลุม QR mode, food/music gate, Enterprise/license, session expiration, dashboard, system admin, tests, review และ Obsidian</td>
+          </tr>
+          <tr>
+            <td>ตรวจช่องว่างงานค้าง</td>
+            <td>ไม่มีช่องว่างงานค้าง; timestamp migration ให้ agent สร้างตามเวลาจริงเพื่อเลี่ยง collision กับ migration อื่น</td>
+          </tr>
+          <tr>
+            <td>Type consistency</td>
+            <td>ใช้ชื่อหลักคงที่: <code>qrOrderingMode</code>, <code>musicRequestEnabled</code>, <code>musicLicenseStatus</code>, <code>musicRequest</code></td>
+          </tr>
+          <tr>
+            <td>Residual risk</td>
+            <td>ต้องยืนยัน print flow จริงของใบเปิดโต๊ะและ local Supabase migration environment ตอน implement</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

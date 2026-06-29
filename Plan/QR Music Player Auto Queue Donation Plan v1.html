@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Music Player Auto Queue Donation Plan v1</title>
+  <style>
+    :root {
+      --ink: #17202a; --muted: #5f6b7a; --line: #d9e0e8; --paper: #f7f9fb; --panel: #ffffff;
+      --brand: #7c3aed; --brand-soft: #ede9fe; --warn: #b45309; --warn-soft: #fff3d6;
+      --danger: #b91c1c; --danger-soft: #fde2e2; --ok: #166534; --ok-soft: #dcfce7;
+      --code: #101827; --blue: #1d4ed8; --blue-soft: #dbeafe;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: Arial, "Noto Sans Thai", sans-serif; line-height: 1.55; }
+    .shell { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 56px; }
+    header { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 28px; margin-bottom: 18px; }
+    h1, h2, h3 { line-height: 1.22; margin: 0 0 12px; }
+    h1 { font-size: 30px; } h2 { font-size: 22px; margin-top: 8px; } h3 { font-size: 17px; }
+    p { margin: 0 0 10px; } ul, ol { margin: 8px 0 0 22px; padding: 0; } li { margin: 5px 0; }
+    .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+    .meta div, .card, .phase, .task { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+    .label { display: block; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+    .value { font-weight: 700; }
+    .grid { display: grid; gap: 14px; margin: 14px 0; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .band { padding: 16px; border-radius: 8px; border: 1px solid var(--line); margin: 14px 0; }
+    .band.ok { background: var(--ok-soft); border-color: #86efac; }
+    .band.warn { background: var(--warn-soft); border-color: #facc15; }
+    .band.danger { background: var(--danger-soft); border-color: #fecaca; }
+    .band.info { background: var(--blue-soft); border-color: #93c5fd; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 3px 9px; border-radius: 999px; background: var(--brand-soft); color: #5b21b6; font-weight: 700; font-size: 12px; margin: 2px 4px 2px 0; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 12px 0; font-size: 14px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { background: #eef3f7; font-weight: 800; } tr:last-child td { border-bottom: 0; }
+    code, pre { font-family: Consolas, "Courier New", monospace; }
+    code { background: #eef3f7; border: 1px solid #d7dee8; border-radius: 5px; padding: 1px 5px; }
+    pre { margin: 10px 0 0; padding: 13px; border-radius: 8px; overflow-x: auto; background: var(--code); color: #e5e7eb; font-size: 13px; line-height: 1.45; }
+    .phase { margin: 16px 0; border-left: 5px solid var(--brand); }
+    .task { margin: 12px 0; }
+    .task h3 { display: flex; align-items: center; gap: 8px; }
+    .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 24px; border-radius: 6px; background: var(--brand); color: white; font-size: 12px; font-weight: 800; }
+    .checklist li { list-style: none; position: relative; padding-left: 26px; }
+    .checklist li::before { content: "\2610"; position: absolute; left: 0; color: var(--brand); font-weight: 900; }
+    .muted { color: var(--muted); } .strong { font-weight: 800; }
+    @media (max-width: 860px) { .meta, .grid.two { grid-template-columns: 1fr; } .shell { width: min(100vw - 20px, 1180px); padding-top: 14px; } header { padding: 18px; } h1 { font-size: 24px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="pill">Implementation Plan</p>
+      <p class="pill">Auto Music Player</p>
+      <p class="pill">YouTube + Donation Queue</p>
+      <h1>QR Music Player Auto Queue Donation Plan v1</h1>
+      <p>
+        ต่อยอดจากฟีเจอร์ "คิวคำขอเพลง" เดิม ให้กลายเป็น <span class="strong">เครื่องเล่นเพลงอัตโนมัติ</span>:
+        ร้านมีหน้า player แยกที่เล่นเพลงพื้นฐานของร้านต่อเนื่อง ลูกค้าค้นหา+ขอเพลงผ่าน QR
+        เพลงที่ขอจะ<span class="strong">แทรกคิวเล่นต่อเมื่อเพลงปัจจุบันจบ</span> และมี<span class="strong">ระบบโดเนทเพื่อแซงคิว</span>
+        โดยทุกอย่างเล่นอัตโนมัติ พนักงานไม่ต้องคอยเปลี่ยนเพลง
+      </p>
+      <div class="meta">
+        <div><span class="label">Project</span><span class="value">Store management system saas</span></div>
+        <div><span class="label">cwd</span><span class="value">D:\Store management system saas</span></div>
+        <div><span class="label">Date</span><span class="value">2026-06-29</span></div>
+        <div><span class="label">Status</span><span class="value">Ready for review</span></div>
+      </div>
+    </header>
+
+    <section class="band info">
+      <h2>For Agentic Workers</h2>
+      <p><span class="strong">Required sub-skill:</span> ใช้ <code>superpowers:test-driven-development</code> ก่อนเขียน production code และ <code>superpowers:executing-plans</code> ตอนลงมือ</p>
+      <p><span class="strong">Workflow:</span> Scope → Route → Implement → Review → Fix → Verify → Document</p>
+      <p><span class="strong">Local rules:</span> รายงาน/plan/document เป็นภาษาไทย, plan เป็น HTML, PowerShell UTF-8, บันทึก Obsidian เมื่อจบงาน, code/runtime change ต้องผ่าน <code>code_reviewer</code>, ห้าม apply production migration/deploy โดยไม่ขอ approval</p>
+    </section>
+
+    <section class="band warn">
+      <h2>⚠️ คำเตือนเรื่องลิขสิทธิ์เพลง (อ่านก่อน)</h2>
+      <p>
+        การเปิดเพลงในร้านเชิงพาณิชย์ในไทยมีภาระ<span class="strong">ค่าลิขสิทธิ์ (เช่น MCT, GMM, ลิขสิทธิ์เพลงสากล)</span>
+        และ <span class="strong">YouTube ToS</span> ห้ามใช้คอนเทนต์เชิงพาณิชย์บางกรณี ระบบนี้เป็นเพียง "เครื่องมือจัดคิว/เล่น"
+        — <span class="strong">ความรับผิดชอบด้านลิขสิทธิ์เป็นของเจ้าของร้าน</span> ต้องแสดง disclaimer ใน Settings และให้ร้านยอมรับก่อนเปิดใช้
+      </p>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <h2>Goal</h2>
+        <p>เปลี่ยนคิวคำขอเพลงเป็น auto-player: หน้า player เล่นต่อเนื่องเอง, ลูกค้าค้นหา YouTube + ขอเพลง, แทรกคิวเมื่อเพลงจบ, โดเนทแซงคิวด้วย PromptPay+สลิป, ลดงานพนักงาน</p>
+      </div>
+      <div class="card">
+        <h2>Architecture</h2>
+        <p>หน้า player แยก (เหมือน customer-display) ใช้ <code>YouTube IFrame Player API</code> + Supabase realtime sync; queue engine จัดลำดับ donation→FIFO; ค้นหาผ่าน <code>YouTube Data API</code> ฝั่ง server; โดเนท reuse PromptPay/slip2go เดิม; ต่อยอด module <code>music-requests</code> เดิม</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Locked Decisions (จากผู้ใช้ 2026-06-29)</h2>
+      <table>
+        <thead><tr><th>เรื่อง</th><th>ตัดสินใจ</th></tr></thead>
+        <tbody>
+          <tr><td>แหล่งเพลง</td><td><span class="strong">YouTube IFrame Player API</span> เล่นใน iframe + ค้นหาด้วย YouTube Data API v3 (ฝั่ง server, ซ่อน API key)</td></tr>
+          <tr><td>โดเนทแซงคิว</td><td><span class="strong">PromptPay + สลิป</span> — reuse PromptPay payload + slip2go verify เดิม; ยอดมากขึ้น = priority สูงขึ้น; <span class="strong">ขั้นต่ำ 10 บาท</span></td></tr>
+          <tr><td>ความเป็นส่วนตัวของยอด</td><td><span class="strong">ไม่แสดงยอดโดเนทในทุกรายการ</span> (customer/player/dashboard) — แสดงแค่ป้าย "โดเนท"; ยอดใช้ภายในเพื่อจัดลำดับเท่านั้น</td></tr>
+          <tr><td>Preview ลำดับคิว</td><td>ตอนลูกค้ากรอกยอด ระบบบอก<span class="strong">ลำดับที่จะได้</span>โดย<span class="strong">ไม่เปิดเผยยอดของคิวก่อนหน้า</span> เช่น "ยอดที่คุณระบุจะอยู่ในลำดับ 3 — เพิ่มเงินเพื่อเล่นก่อน"</td></tr>
+          <tr><td>หน้า player</td><td>เปิดเป็นหน้า/แท็บแยก (เหมือนจอลูกค้า) + กัน <code>beforeunload</code> ป้องกันเผลอปิดแล้วเพลงดับ</td></tr>
+          <tr><td>การแทรกคิว</td><td>เพลงที่ขอ<span class="strong">ไม่ตัดเพลงปัจจุบัน</span> — เล่นต่อเมื่อเพลงปัจจุบันจบ (ENDED event)</td></tr>
+          <tr><td>เพลงพื้นฐานร้าน</td><td>ร้านตั้ง base playlist (YouTube IDs); เล่นวน/สุ่มเมื่อคิวคำขอว่าง — base playlist <span class="strong">ไม่เข้า</span> ตาราง music_requests</td></tr>
+          <tr><td>อัตโนมัติ</td><td>auto-advance ทุกครั้งที่เพลงจบ; มีโหมด auto-approve (ข้ามการกดอนุมัติของพนักงาน) ตั้งได้ที่ร้าน</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Priority / Queue Engine</h2>
+      <p>เมื่อเพลงปัจจุบันจบ ระบบเลือกเพลงถัดไปตามลำดับ:</p>
+      <ol>
+        <li><span class="strong">โดเนทที่ verified</span> เรียง <code>donation_amount DESC</code> แล้ว <code>requested_at ASC</code></li>
+        <li><span class="strong">คำขอปกติ</span> ที่ <code>approved</code> (หรือ pending ถ้าเปิด auto-approve) เรียง <code>requested_at ASC</code> (FIFO)</li>
+        <li>ถ้าคิวว่าง → <span class="strong">base playlist</span> ของร้าน (วน/สุ่ม)</li>
+      </ol>
+      <p class="muted">โดเนทใหม่ที่ยอดสูงกว่าแซงเฉพาะเพลงที่ "ยังไม่เล่น" — ไม่ตัดเพลงที่กำลังเล่น</p>
+      <div class="band warn">
+        <p><span class="strong">ความเป็นส่วนตัวของยอด (บังคับ):</span> ยอดโดเนทเป็นข้อมูลภายในใช้จัดลำดับเท่านั้น
+        — <span class="strong">ห้าม</span>ส่งยอดของผู้อื่นไป client ทุกกรณี (queue/now-playing/preview ส่งแค่ position + flag "โดเนท")
+        Preview ลำดับคำนวณฝั่ง server: <code>position = 1 + จำนวนโดเนท verified ที่ยังไม่เล่นและยอด ≥ ยอดที่กรอก</code>
+        (+ offset คำขอปกติถ้าจัดหลังโดเนท) แล้วคืน<span class="strong">เฉพาะตัวเลขลำดับ</span></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Source of Truth ที่ต้องตรวจ</h2>
+      <ul>
+        <li><code>src/modules/music-requests/{types,repository,gates}.ts</code> — domain เดิม (Phase 1-5 v1)</li>
+        <li><code>supabase/migrations/20260629120000_qr_music_request_enterprise.sql</code> — schema เดิม (music_requests, RPC)</li>
+        <li><code>src/app/qr/[storeSlug]/[tableId]/{MusicTab.tsx,music-actions.ts}</code> — UI/actions ลูกค้าเดิม</li>
+        <li><code>src/app/(dashboard)/settings/customer-display/*</code> — pattern หน้าแยก/อัปโหลด/realtime สำหรับ player page</li>
+        <li><code>src/modules/printing/promptpay-qr.ts</code>, billing slip2go/PromptPay verify — reuse โดเนท</li>
+        <li><code>src/modules/billing/types.ts</code> — feature gate (<code>musicRequest</code> เดิม / เพิ่ม <code>musicPlayer</code>)</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Data Model Proposal</h2>
+      <div class="band warn"><p><span class="strong">Migration warning:</span> ห้าม apply production โดยไม่ขอ approval แยก; local/preview validate ก่อน</p></div>
+      <pre><code>-- supabase/migrations/YYYYMMDDHHMMSS_qr_music_player.sql
+
+-- 1. ขยาย music_requests รองรับ YouTube + โดเนท
+alter table music_requests
+  add column if not exists youtube_video_id text,
+  add column if not exists youtube_title text,
+  add column if not exists thumbnail_url text,
+  add column if not exists duration_seconds integer
+    check (duration_seconds is null or (duration_seconds > 0 and duration_seconds <= 1800)),
+  add column if not exists donation_amount numeric(12,2) not null default 0
+    check (donation_amount >= 0),
+  add column if not exists donation_status text not null default 'none'
+    check (donation_status in ('none','pending','verified','rejected')),
+  add column if not exists donation_slip_url text,
+  add column if not exists donation_ref text;
+
+-- 2. ตั้งค่า player + base playlist ต่อร้าน
+create table if not exists store_music_player_settings (
+  store_id uuid primary key references stores(id) on delete cascade,
+  organization_id uuid not null references organizations(id) on delete cascade,
+  player_enabled boolean not null default false,
+  auto_approve boolean not null default true,
+  donation_enabled boolean not null default false,
+  min_donation numeric(12,2) not null default 10 check (min_donation >= 0),
+  max_duration_seconds integer not null default 600,
+  base_playlist jsonb not null default '[]'::jsonb,   -- [{videoId,title,thumbnailUrl,durationSeconds}]
+  licensing_acknowledged_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+-- 3. now-playing สำหรับ sync ไป player/customer (1 แถวต่อร้าน)
+create table if not exists store_now_playing (
+  store_id uuid primary key references stores(id) on delete cascade,
+  music_request_id uuid references music_requests(id) on delete set null,
+  source text not null default 'base' check (source in ('request','base')),
+  youtube_video_id text,
+  title text,
+  started_at timestamptz not null default now(),
+  duration_seconds integer,
+  updated_at timestamptz not null default now()
+);
+
+alter table store_music_player_settings enable row level security;
+alter table store_now_playing enable row level security;
+-- RLS: store member read/update settings ผ่าน permission; now_playing เขียนผ่าน RPC/service เท่านั้น
+-- realtime: store_now_playing, music_requests (มีอยู่แล้ว)</code></pre>
+      <p class="muted">โดเนทไม่เก็บบัตร/บัญชี — แค่ยอด + อ้างอิงสลิป (URL ใน storage) + สถานะ verify; reuse slip2go เดิม</p>
+    </section>
+
+    <section class="card">
+      <h2>File Map</h2>
+      <table>
+        <thead><tr><th>Action</th><th>Path</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td>Create</td><td><code>supabase/migrations/..._qr_music_player.sql</code></td><td>schema ข้างบน + RPC <code>advance_now_playing</code>, <code>verify_music_donation</code></td></tr>
+          <tr><td>Modify</td><td><code>src/server/integrations/supabase/database.types.ts</code></td><td>คอลัมน์/ตาราง/RPC ใหม่</td></tr>
+          <tr><td>Modify</td><td><code>src/modules/billing/types.ts</code></td><td>(ออปชัน) เพิ่ม <code>musicPlayer</code> หรือ reuse <code>musicRequest</code></td></tr>
+          <tr><td>Create</td><td><code>src/modules/music-requests/youtube.ts</code></td><td>YouTube Data API search (server, ซ่อน key) + parse duration ISO8601</td></tr>
+          <tr><td>Create</td><td><code>src/modules/music-requests/queue-engine.ts</code></td><td>pure: เลือกเพลงถัดไป (donation→FIFO→base) + <code>previewDonationPosition(amount)</code> คืนแค่ลำดับ — TDD หลัก</td></tr>
+          <tr><td>Modify</td><td><code>src/modules/music-requests/{types,repository}.ts</code></td><td>YouTube/โดเนทฟิลด์, player settings repo, now-playing</td></tr>
+          <tr><td>Create</td><td><code>src/app/player/[storeSlug]/page.tsx</code> + <code>PlayerApp.tsx</code></td><td>หน้า player แยก: IFrame API, auto-advance, realtime, beforeunload guard</td></tr>
+          <tr><td>Create</td><td><code>src/app/player/[storeSlug]/actions.ts</code></td><td>advance/now-playing/queue read (gate player_enabled)</td></tr>
+          <tr><td>Modify</td><td><code>src/app/qr/[storeSlug]/[tableId]/MusicTab.tsx</code></td><td>ค้นหา YouTube → เลือกผล → ขอ; ปุ่มโดเนท (PromptPay+สลิป); แสดง now-playing + คิว</td></tr>
+          <tr><td>Modify</td><td><code>src/app/qr/[storeSlug]/[tableId]/music-actions.ts</code></td><td>search action, submit พร้อม videoId/duration, donation submit+slip, <code>previewDonationPositionAction</code> (คืนแค่ลำดับ)</td></tr>
+          <tr><td>Create</td><td><code>src/app/(dashboard)/settings/music-player/*</code></td><td>ตั้งค่า player: base playlist, auto-approve, donation, min, licensing ack + ปุ่มเปิดหน้า player</td></tr>
+          <tr><td>Modify</td><td><code>src/app/(dashboard)/music-requests/*</code></td><td>โชว์ now-playing + โดเนท + ปุ่ม moderate (skip/ban) — งานพนักงานน้อยลง</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 1: Data Model + Player Settings</h2>
+      <div class="task"><h3><span class="badge">T1</span> Migration + types</h3>
+        <ul class="checklist">
+          <li>เขียน migration: music_requests columns + store_music_player_settings + store_now_playing + RLS</li>
+          <li>RPC <code>advance_now_playing(store)</code> เลือกเพลงถัดไป atomic (mark played + set now_playing)</li>
+          <li>อัปเดต database.types; local validate; ห้าม apply prod โดยไม่ขอ approval</li>
+        </ul>
+      </div>
+      <div class="task"><h3><span class="badge">T2</span> Player settings repo + UI</h3>
+        <ul class="checklist">
+          <li>failing test: map base_playlist, default auto_approve=true, donation defaults</li>
+          <li>repo: get/update settings (permission <code>settings.manage_store</code>); licensing ack บังคับก่อน player_enabled=true</li>
+          <li>หน้า <code>/settings/music-player</code>: เพิ่ม/ลบ base playlist (วาง YouTube URL/ID), toggle, min donation, ปุ่ม "เปิดหน้า player"</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 2: YouTube Search + Queue Engine</h2>
+      <div class="task"><h3><span class="badge">T3</span> YouTube search (server)</h3>
+        <ul class="checklist">
+          <li>failing test: parse ISO8601 duration → seconds; กรอง max_duration; map result</li>
+          <li><code>youtube.ts</code>: เรียก Data API v3 search+videos (server, <code>YOUTUBE_API_KEY</code> ใน env เท่านั้น); handle quota/error</li>
+          <li>กันวิดีโอที่ embed ไม่ได้ (status.embeddable=false) ออกจากผลค้น</li>
+        </ul>
+      </div>
+      <div class="task"><h3><span class="badge">T4</span> Queue engine (pure)</h3>
+        <ul class="checklist">
+          <li>failing tests: donation verified เรียงยอด desc แซง FIFO; คิวว่าง → base playlist (วน/สุ่ม); ไม่ตัดเพลงปัจจุบัน</li>
+          <li><code>selectNextTrack(queue, basePlaylist, lastPlayed)</code> คืนเพลงถัดไป + source</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 3: Player Page (Auto-Advance)</h2>
+      <div class="task"><h3><span class="badge">T5</span> Player page + IFrame API</h3>
+        <ul class="checklist">
+          <li><code>/player/[storeSlug]</code> gate player_enabled + permission; โหลด YT IFrame API</li>
+          <li>ปุ่ม "เริ่มเล่น" (1 gesture แก้ autoplay policy) → เล่นต่อเนื่อง; <code>onStateChange ENDED</code> → เรียก advance → เล่นเพลงถัดไป</li>
+          <li><code>beforeunload</code> เตือนก่อนปิดแท็บ; reconnect resume จาก store_now_playing</li>
+          <li>fallback: วิดีโอเล่นไม่ได้ (error 100/101/150) → ข้าม + mark skipped อัตโนมัติ</li>
+        </ul>
+      </div>
+      <div class="task"><h3><span class="badge">T6</span> Realtime now-playing</h3>
+        <ul class="checklist">
+          <li>advance เขียน store_now_playing → realtime ไป customer/dashboard</li>
+          <li>auto-approve mode: pending เข้า queue engine ได้เลย; ปิด = ต้อง approved ก่อน</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 4: Customer Search + Request UX</h2>
+      <div class="task"><h3><span class="badge">T7</span> MusicTab search→select</h3>
+        <ul class="checklist">
+          <li>ลูกค้าพิมพ์ค้นหา → เห็นผล YouTube (รูป/ชื่อ/ความยาว) → เลือก → ขอ (ส่ง videoId/title/duration)</li>
+          <li>แสดง "กำลังเล่น" (now-playing realtime) + คิวถัดไป พร้อมป้ายโดเนท</li>
+          <li>คง gate Enterprise+license+session เดิม; validate duration ≤ max_duration</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 5: Donation Queue-Jump (PromptPay + สลิป)</h2>
+      <div class="task"><h3><span class="badge">T8</span> โดเนท + verify</h3>
+        <ul class="checklist">
+          <li>ลูกค้าเลือก "โดเนทแซงคิว" → กรอกยอด (≥ <span class="strong">10 บาท</span>) → แสดง PromptPay QR (reuse <code>promptpay-qr</code>) → อัปสลิป</li>
+          <li>RPC/action <code>verify_music_donation</code>: reuse slip2go verify; ตรวจยอด+เลขอ้างอิง; ผ่าน → donation_status=verified + priority</li>
+          <li>กันสลิปซ้ำ/ปลอม: เก็บ donation_ref unique; verify ฝั่ง server เท่านั้น (ห้ามเชื่อ client)</li>
+          <li>queue engine จัด donation verified แซงทันที (realtime ไป player/customer)</li>
+        </ul>
+      </div>
+      <div class="task"><h3><span class="badge">T9</span> Preview ลำดับคิว (ไม่เปิดเผยยอด)</h3>
+        <ul class="checklist">
+          <li>failing test: <code>previewDonationPosition(amount, queue)</code> คืนเฉพาะ position; ยอดสูงขึ้น → ลำดับดีขึ้น; <span class="strong">output ไม่มียอดของผู้อื่น</span></li>
+          <li>action <code>previewDonationPositionAction(storeId, amount)</code> คำนวณฝั่ง server, คืนแค่ตัวเลขลำดับ (re-resolve gate; rate-limit เบา)</li>
+          <li>UI โดเนทเรียก preview ตอนพิมพ์/ปรับยอด → แสดง "ยอดที่คุณระบุจะอยู่ในลำดับ N — เพิ่มเงินเพื่อเล่นก่อน"</li>
+          <li>ทุก list (customer/player/dashboard) แสดงแค่ป้าย "โดเนท" — <span class="strong">ไม่มี</span>ยอดในผลลัพธ์ที่ส่ง client</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>Phase 6: Dashboard Moderate + Verify/Review/Doc</h2>
+      <div class="task"><h3><span class="badge">T10</span> Dashboard + verify</h3>
+        <ul class="checklist">
+          <li>board: now-playing + คิว + ป้าย "โดเนท" (<span class="strong">ไม่โชว์ยอด</span>) + ปุ่ม skip/ban (พนักงานแทรกได้เมื่อจำเป็น)</li>
+          <li>targeted tests + typecheck + lint + git diff --check; browser QA full cycle</li>
+          <li><code>code_reviewer</code> + Obsidian log; ห้าม deploy/apply prod จน approve</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Acceptance Criteria</h2>
+      <ul class="checklist">
+        <li>หน้า player เล่น base playlist ต่อเนื่องเองโดยไม่ต้องแตะ; เพลงจบ → เล่นถัดไปอัตโนมัติ</li>
+        <li>ลูกค้าค้นหา YouTube + ขอเพลง → แทรกคิวเล่นหลังเพลงปัจจุบันจบ (ไม่ตัดเพลง)</li>
+        <li>โดเนท verified แซงคิวตามยอด; ยอดสูงกว่าอยู่ก่อน; <span class="strong">ขั้นต่ำ 10 บาท</span></li>
+        <li>โดเนท verify ฝั่ง server (PromptPay+สลิป) เท่านั้น; กันสลิปซ้ำ/ปลอม</li>
+        <li><span class="strong">ไม่แสดงยอดโดเนทในทุกรายการ</span> (customer/player/dashboard) — แสดงแค่ป้าย "โดเนท"; payload ที่ส่ง client ต้องไม่มียอดของผู้อื่น</li>
+        <li>ตอนกรอกยอดโดเนท แสดง<span class="strong">ลำดับคิวที่จะได้</span> ("...จะอยู่ในลำดับ N เพิ่มเงินเพื่อเล่นก่อน") โดย<span class="strong">ไม่เปิดเผยยอดของคิวก่อนหน้า</span></li>
+        <li>ปิด/รีเฟรชแท็บ player แล้ว resume จาก now-playing; beforeunload เตือน</li>
+        <li>auto-approve เปิด/ปิดได้; ปิดแล้วต้อง approved ก่อนเข้าคิว</li>
+        <li>วิดีโอ embed ไม่ได้/เล่นไม่ได้ → ข้ามอัตโนมัติ</li>
+        <li>คง gate Enterprise+license เดิม; licensing disclaimer ต้อง ack ก่อนเปิด player</li>
+        <li>tests/typecheck/lint ผ่าน หรือบันทึก blocker ชัด</li>
+      </ul>
+    </section>
+
+    <section class="band danger">
+      <h2>Stop Conditions</h2>
+      <ul>
+        <li>ต้อง apply migration prod / deploy โดยไม่ได้ approve</li>
+        <li>ขาด <code>YOUTUBE_API_KEY</code> หรือ quota หมด → หยุดรายงาน</li>
+        <li>โดเนท verify ฝั่ง client ได้ (ต้อง server-only)</li>
+        <li>สลิปซ้ำผ่าน verify ได้ / โดเนทไม่จ่ายแต่แซงคิวได้</li>
+        <li>ยอดโดเนทของผู้อื่นหลุดไป client (queue/now-playing/preview ต้องไม่มียอด)</li>
+        <li>player เล่นต่อเนื่องไม่ได้เพราะ autoplay policy แก้ไม่ตก</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Out of Scope (v1)</h2>
+      <ul>
+        <li>Spotify/Apple Music playback, multi-room sync, offline</li>
+        <li>การเคลียร์ค่าลิขสิทธิ์เพลง (เป็นภาระร้าน) — แค่ disclaimer + ack</li>
+        <li>คืนเงินโดเนท/ระบบบัญชีโดเนทเชิงลึก (บันทึกยอดพอ)</li>
+        <li>AI recommend/auto-DJ เลือกเพลงเอง</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Risks to Focus</h2>
+      <ul>
+        <li>YouTube ToS/quota; วิดีโอ region-block/embed-disabled → ต้อง fallback</li>
+        <li>Browser autoplay policy → ต้องมี gesture เริ่ม + คงแท็บเปิด</li>
+        <li>โดเนท fraud (สลิปปลอม/ซ้ำ) → verify server + ref unique</li>
+        <li>Race: 2 player tab/หลายจอ → now-playing single-row + advance atomic (RPC)</li>
+        <li>Public route leak; คง Enterprise/license enforcement ที่ server</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Self Review</h2>
+      <table><tbody>
+        <tr><td>Spec coverage</td><td>ครอบ player page, search, queue engine, donation, realtime, moderate, licensing — ตรง flow ผู้ใช้</td></tr>
+        <tr><td>Reuse</td><td>ต่อยอด module music-requests + PromptPay/slip2go + customer-display pattern เดิม ไม่สร้างซ้ำ</td></tr>
+        <tr><td>Type consistency</td><td><code>youtubeVideoId</code>, <code>donationAmount</code>, <code>donationStatus</code>, <code>playerEnabled</code>, <code>autoApprove</code>, <code>basePlaylist</code></td></tr>
+        <tr><td>Residual risk</td><td>ต้องยืนยัน YouTube quota จริง + autoplay บนอุปกรณ์ร้านจริง + slip verify edge cases ตอน implement</td></tr>
+      </tbody></table>
+    </section>
+  </main>
+</body>
+</html>

@@ -828,6 +828,17 @@ a:focus-visible {
     box-shadow: var(--shadow-sm);
   }
 
+  .brand-mark--logo {
+    background-color: #fff;
+    background-image: var(--platform-logo, url(/logo.png));
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 0;
+    overflow: hidden;
+    color: transparent;
+  }
+
   .brand-name {
     color: var(--ink);
     font-size: 1rem;
@@ -867,6 +878,12 @@ a:focus-visible {
     background: var(--canvas-2);
     color: var(--tenant-primary-strong);
     font-weight: 800;
+  }
+
+  .store-dot--logo {
+    overflow: hidden;
+    background: #fff;
+    padding: 0;
   }
 
   .store-meta {

@@ -36,6 +36,7 @@ export interface PlanFeatures {
   advancedPermissions: boolean;
   multiBranchReporting: boolean;
   apiIntegration: boolean;
+  musicRequest: boolean;
 }
 
 export type FeatureKey = keyof PlanFeatures;
@@ -66,6 +67,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   advancedPermissions: "สิทธิ์ขั้นสูง",
   multiBranchReporting: "รายงานหลายสาขา",
   apiIntegration: "API Integration",
+  musicRequest: "ขอเพลง",
 };
 
 export const PLAN_LABELS: Record<BillingPlan, string> = {
@@ -95,6 +97,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   starter: {
     maxStores: 1,
@@ -114,6 +117,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   standard: {
     maxStores: 3,
@@ -133,6 +137,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   premium: {
     maxStores: 5,
@@ -152,6 +157,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
     advancedPermissions: true,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   enterprise: {
     maxStores: Infinity,
@@ -171,6 +177,7 @@ const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
     advancedPermissions: true,
     multiBranchReporting: true,
     apiIntegration: true,
+    musicRequest: true,
   },
 };
 

@@ -11,6 +11,7 @@ export interface Database {
           promptpay_name: string | null;
           promptpay_static_payload: string | null;
           enterprise_from_email: string | null;
+          logo_url: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -21,6 +22,7 @@ export interface Database {
           promptpay_name?: string | null;
           promptpay_static_payload?: string | null;
           enterprise_from_email?: string | null;
+          logo_url?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -31,6 +33,7 @@ export interface Database {
           promptpay_name?: string | null;
           promptpay_static_payload?: string | null;
           enterprise_from_email?: string | null;
+          logo_url?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -540,6 +543,11 @@ export interface Database {
           theme_primary_strong_color: string;
           theme_primary_soft_color: string;
           theme_accent_color: string;
+          qr_ordering_mode: "table_bound" | "session_printed";
+          music_request_enabled: boolean;
+          music_license_status: "not_requested" | "pending" | "approved" | "rejected" | "expired";
+          music_license_approved_at: string | null;
+          music_license_note: string | null;
           print_hub_token_hash: string | null;
           print_hub_last_seen: string | null;
           created_at: string;
@@ -565,6 +573,11 @@ export interface Database {
           theme_primary_strong_color?: string;
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
+          qr_ordering_mode?: "table_bound" | "session_printed";
+          music_request_enabled?: boolean;
+          music_license_status?: "not_requested" | "pending" | "approved" | "rejected" | "expired";
+          music_license_approved_at?: string | null;
+          music_license_note?: string | null;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
           created_at?: string;
@@ -590,6 +603,11 @@ export interface Database {
           theme_primary_strong_color?: string;
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
+          qr_ordering_mode?: "table_bound" | "session_printed";
+          music_request_enabled?: boolean;
+          music_license_status?: "not_requested" | "pending" | "approved" | "rejected" | "expired";
+          music_license_approved_at?: string | null;
+          music_license_note?: string | null;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
           created_at?: string;
@@ -2238,6 +2256,200 @@ export interface Database {
         };
         Relationships: [];
       };
+      music_requests: {
+        Row: {
+          id: string;
+          store_id: string;
+          organization_id: string;
+          table_id: string | null;
+          table_number: string | null;
+          session_id: string | null;
+          requester_label: string | null;
+          song_title: string;
+          artist_name: string | null;
+          note: string | null;
+          status: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
+          requested_at: string;
+          decided_at: string | null;
+          decided_by: string | null;
+          played_at: string | null;
+          youtube_video_id: string | null;
+          youtube_title: string | null;
+          thumbnail_url: string | null;
+          duration_seconds: number | null;
+          donation_amount: number;
+          donation_status: "none" | "pending" | "verified" | "rejected";
+          donation_slip_url: string | null;
+          donation_ref: string | null;
+          donation_play_now: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          store_id: string;
+          organization_id: string;
+          table_id?: string | null;
+          table_number?: string | null;
+          session_id?: string | null;
+          requester_label?: string | null;
+          song_title: string;
+          artist_name?: string | null;
+          note?: string | null;
+          status?: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
+          requested_at?: string;
+          decided_at?: string | null;
+          decided_by?: string | null;
+          played_at?: string | null;
+          youtube_video_id?: string | null;
+          youtube_title?: string | null;
+          thumbnail_url?: string | null;
+          duration_seconds?: number | null;
+          donation_amount?: number;
+          donation_status?: "none" | "pending" | "verified" | "rejected";
+          donation_slip_url?: string | null;
+          donation_ref?: string | null;
+          donation_play_now?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          status?: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
+          decided_at?: string | null;
+          decided_by?: string | null;
+          played_at?: string | null;
+          youtube_video_id?: string | null;
+          youtube_title?: string | null;
+          thumbnail_url?: string | null;
+          duration_seconds?: number | null;
+          donation_amount?: number;
+          donation_status?: "none" | "pending" | "verified" | "rejected";
+          donation_slip_url?: string | null;
+          donation_ref?: string | null;
+          donation_play_now?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      music_request_audit_logs: {
+        Row: {
+          id: string;
+          store_id: string;
+          music_request_id: string | null;
+          actor_user_id: string | null;
+          actor_type: "customer" | "staff" | "system";
+          action: string;
+          details: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          store_id: string;
+          music_request_id?: string | null;
+          actor_user_id?: string | null;
+          actor_type: "customer" | "staff" | "system";
+          action: string;
+          details?: Json;
+          created_at?: string;
+        };
+        Update: {
+          details?: Json;
+        };
+        Relationships: [];
+      };
+      store_music_player_settings: {
+        Row: {
+          store_id: string;
+          organization_id: string;
+          player_enabled: boolean;
+          auto_approve: boolean;
+          donation_enabled: boolean;
+          min_donation: number;
+          max_duration_seconds: number;
+          base_playlist: Json;
+          licensing_acknowledged_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          store_id: string;
+          organization_id: string;
+          player_enabled?: boolean;
+          auto_approve?: boolean;
+          donation_enabled?: boolean;
+          min_donation?: number;
+          max_duration_seconds?: number;
+          base_playlist?: Json;
+          licensing_acknowledged_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          player_enabled?: boolean;
+          auto_approve?: boolean;
+          donation_enabled?: boolean;
+          min_donation?: number;
+          max_duration_seconds?: number;
+          base_playlist?: Json;
+          licensing_acknowledged_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_now_playing: {
+        Row: {
+          store_id: string;
+          music_request_id: string | null;
+          source: "request" | "base";
+          youtube_video_id: string | null;
+          title: string | null;
+          duration_seconds: number | null;
+          started_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          store_id: string;
+          music_request_id?: string | null;
+          source?: "request" | "base";
+          youtube_video_id?: string | null;
+          title?: string | null;
+          duration_seconds?: number | null;
+          started_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          music_request_id?: string | null;
+          source?: "request" | "base";
+          youtube_video_id?: string | null;
+          title?: string | null;
+          duration_seconds?: number | null;
+          started_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_play_history: {
+        Row: {
+          id: string;
+          store_id: string;
+          music_request_id: string | null;
+          source: "request" | "base";
+          youtube_video_id: string | null;
+          title: string | null;
+          played_at: string;
+        };
+        Insert: {
+          id?: string;
+          store_id: string;
+          music_request_id?: string | null;
+          source?: "request" | "base";
+          youtube_video_id?: string | null;
+          title?: string | null;
+          played_at?: string;
+        };
+        Update: {
+          title?: string | null;
+        };
+        Relationships: [];
+      };
       employee_profiles: {
         Row: {
           id: string;
@@ -3097,6 +3309,25 @@ export interface Database {
           p_note?: string | null;
         };
         Returns: string;
+      };
+      create_music_request: {
+        Args: {
+          p_store_id: string;
+          p_table_id: string;
+          p_session_id: string | null;
+          p_song_title: string;
+          p_artist_name?: string | null;
+          p_requester_label?: string | null;
+          p_note?: string | null;
+        };
+        Returns: string;
+      };
+      decide_music_request: {
+        Args: {
+          p_request_id: string;
+          p_action: string;
+        };
+        Returns: undefined;
       };
       open_table_session: {
         Args: { p_store_id: string; p_table_id: string; p_minutes: number };

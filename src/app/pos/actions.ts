@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { getResolvedCurrentPermissions, requireFeature, requirePermission } from "@/modules/auth/guards";
 import { listProducts } from "@/modules/catalog/repository";
@@ -33,11 +34,13 @@ import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
+import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
 import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
+import type { QrOrderingMode } from "@/modules/stores/types";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -621,11 +624,18 @@ export async function listTablesForOpenAction(): Promise<{ tables: OpenTableStat
 export async function openTableAction(
   tableId: string,
   minutesOverride?: number,
-): Promise<{ error: string | null; expiresAt: string | null; storeSlug: string | null }> {
+): Promise<{
+  error: string | null;
+  expiresAt: string | null;
+  storeSlug: string | null;
+  qrMode: QrOrderingMode | null;
+  qrUrl: string | null;
+}> {
+  const empty = { expiresAt: null, storeSlug: null, qrMode: null, qrUrl: null };
   try {
     await requirePermission("pos.use");
     const { ctx } = await getStoreContext();
-    if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง", expiresAt: null, storeSlug: null };
+    if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง", ...empty };
 
     const storeRes = await getStore(ctx.storeId);
     const minutes = Number.isInteger(minutesOverride)
@@ -633,12 +643,35 @@ export async function openTableAction(
       : storeRes.data?.dineInDurationMinutes ?? 120;
 
     const res = await openTableSession(ctx.storeId, tableId, minutes);
-    if (res.error) return { error: res.error.userMessage, expiresAt: null, storeSlug: null };
+    if (res.error) return { error: res.error.userMessage, ...empty };
+
+    // For session_printed stores, build the temporary QR (with the active
+    // session token) the cashier prints and hands to the customer.
+    const store = storeRes.data;
+    const qrMode = store?.qrOrderingMode ?? null;
+    let qrUrl: string | null = null;
+    if (store && qrMode === "session_printed") {
+      const tableRes = await getTable(tableId, ctx.storeId);
+      const sessionId = tableRes.data?.currentSessionId ?? null;
+      const h = await headers();
+      const host = h.get("host") ?? "";
+      const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+      const baseUrl = host ? `${proto}://${host}` : "";
+      if (baseUrl) {
+        qrUrl = buildTableQrUrl({ baseUrl, storeSlug: store.slug, tableId, qrMode, sessionId });
+      }
+    }
 
     revalidatePath("/pos", "page");
-    return { error: null, expiresAt: res.data, storeSlug: storeRes.data?.slug ?? null };
+    return {
+      error: null,
+      expiresAt: res.data,
+      storeSlug: store?.slug ?? null,
+      qrMode,
+      qrUrl,
+    };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", expiresAt: null, storeSlug: null };
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", ...empty };
   }
 }
 

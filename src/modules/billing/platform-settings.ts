@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 
@@ -9,6 +10,8 @@ export interface PlatformPromptPaySettings {
   promptpayStaticPayload: string | null;
   /** Sender for Enterprise request emails; null falls back to ENTERPRISE_FROM_EMAIL env. */
   enterpriseFromEmail: string | null;
+  /** Super-admin system logo (StoreOS brand mark); null falls back to /logo.png. */
+  logoUrl: string | null;
 }
 
 const DEFAULTS: PlatformPromptPaySettings = {
@@ -17,6 +20,7 @@ const DEFAULTS: PlatformPromptPaySettings = {
   promptpayName: null,
   promptpayStaticPayload: null,
   enterpriseFromEmail: null,
+  logoUrl: null,
 };
 
 /** Reads the singleton platform settings row. Service-client only. */
@@ -24,7 +28,7 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("platform_settings")
-    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email")
+    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url")
     .eq("id", "singleton")
     .maybeSingle();
   if (!data) return DEFAULTS;
@@ -34,7 +38,30 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
     promptpayName: data.promptpay_name,
     promptpayStaticPayload: data.promptpay_static_payload,
     enterpriseFromEmail: data.enterprise_from_email,
+    logoUrl: data.logo_url ?? null,
   };
+}
+
+/** Per-request cached system logo URL (read on every page that renders the brand). */
+export const getPlatformLogoUrl = cache(async (): Promise<string | null> => {
+  const { logoUrl } = await getPlatformSettings();
+  return logoUrl?.trim() || null;
+});
+
+/** Updates only the system logo on the singleton row. */
+export async function updatePlatformLogo(logoUrl: string | null, actorUserId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.from("platform_settings").upsert(
+    {
+      id: "singleton",
+      logo_url: logoUrl?.trim() || null,
+      updated_by: actorUserId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
 }
 
 /**

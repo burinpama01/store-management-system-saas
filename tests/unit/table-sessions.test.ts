@@ -45,6 +45,8 @@ describe("timed table sessions (buffet + à la carte QR)", () => {
     const receipt = read("src/app/table-receipt/page.tsx");
     expect(receipt).toContain("QrCode");
     expect(receipt).toContain("ใช้ได้ถึง");
-    expect(receipt).toContain("/qr/${store.slug}/${table.id}");
+    // QR URL is built via buildTableQrUrl so session_printed stores embed ?s=<session>.
+    expect(receipt).toContain("buildTableQrUrl");
+    expect(receipt).toContain("sessionId: table.currentSessionId");
   });
 });

@@ -240,6 +240,8 @@ describe("promptpay-provider", () => {
       promptpayId: null,
       promptpayName: "X",
       promptpayStaticPayload: null,
+      enterpriseFromEmail: null,
+      logoUrl: null,
     };
     const dynamic = resolveSubscriptionQr({ ...base, promptpayId: "0812345678" }, 690);
     expect(dynamic.type).toBe("payload");

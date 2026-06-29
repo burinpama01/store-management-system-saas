@@ -9,6 +9,7 @@ import {
   type ThemeTokens,
 } from "@/modules/theme/presets";
 import { ModalDialog, Button } from "@/shared/components/ui";
+import { uploadStoreImageAction } from "@/modules/storage/image-actions";
 import { updateStoreAction } from "./actions";
 
 const TIMEZONES = [
@@ -165,6 +166,9 @@ function StoreSettingsDialog({
   onClose: () => void;
 }) {
   const [themePresetId, setThemePresetId] = useState(store.themePresetId);
+  const [logoUrl, setLogoUrl] = useState(store.logoUrl ?? "");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoErr, setLogoErr] = useState<string | null>(null);
   const [customTheme, setCustomTheme] = useState<Omit<ThemeTokens, "presetId">>({
     primaryColor: store.themePrimaryColor,
     primaryStrongColor: store.themePrimaryStrongColor,
@@ -198,6 +202,53 @@ function StoreSettingsDialog({
       size="lg"
     >
       <form action={formAction} className="space-y-4">
+        <input type="hidden" name="logoUrl" value={logoUrl} />
+        <div>
+          <label className="field-label">โลโก้ร้าน (Avatar)</label>
+          <div className="flex items-center gap-3">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" className="h-14 w-14 rounded-xl border border-[var(--border)] bg-white object-cover" />
+            ) : (
+              <span className="flex h-14 w-14 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] text-xl font-bold text-[var(--muted)]">
+                {store.name?.[0]?.toUpperCase() ?? "S"}
+              </span>
+            )}
+            {canEdit && (
+              <div className="flex flex-col gap-1">
+                <label className="block">
+                  <span className="btn-secondary inline-flex min-h-9 cursor-pointer items-center px-3 text-sm">
+                    {logoUploading ? "กำลังอัปโหลด..." : "เลือกรูปโลโก้"}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={logoUploading}
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      setLogoErr(null);
+                      setLogoUploading(true);
+                      const fd = new FormData();
+                      fd.set("file", f);
+                      const res = await uploadStoreImageAction(fd);
+                      setLogoUploading(false);
+                      if (res.error || !res.url) setLogoErr(res.error ?? "อัปโหลดไม่สำเร็จ");
+                      else setLogoUrl(res.url);
+                    }}
+                  />
+                </label>
+                {logoUrl && (
+                  <button type="button" onClick={() => setLogoUrl("")} className="text-left text-xs text-[var(--muted)]">
+                    ลบโลโก้
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {logoErr && <p className="alert-danger mt-2">{logoErr}</p>}
+        </div>
         <div>
           <label className="field-label">ชื่อร้านค้า *</label>
           <input
@@ -382,6 +433,59 @@ function StoreSettingsDialog({
           <p className="mt-1 text-xs text-[var(--muted)]">
             ลูกค้าสแกน QR ในใบเปิดโต๊ะ à la carte แล้วสั่งอาหารได้ภายในเวลานี้ (บุฟเฟต์ใช้เวลาจากแพ็กเกจ)
           </p>
+        </div>
+
+        <div className="max-w-xs">
+          <label className="field-label" htmlFor="qrOrderingMode">
+            รูปแบบ QR ของโต๊ะ
+          </label>
+          <select
+            id="qrOrderingMode"
+            name="qrOrderingMode"
+            defaultValue={store.qrOrderingMode}
+            disabled={!canEdit || !canUseQrOrdering}
+            className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm"
+          >
+            <option value="table_bound">ผูกโต๊ะถาวร (QR เดิมใช้ได้ตลอด)</option>
+            <option value="session_printed">พิมพ์ใหม่ทุกครั้งที่เปิดโต๊ะ (หมดอายุหลังเช็คบิล)</option>
+          </select>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            แบบ “พิมพ์ใหม่” QR จะมีรหัสรอบโต๊ะติดมาด้วย เมื่อปิดโต๊ะ/เช็คบิล QR เดิมจะหมดอายุทันที
+          </p>
+        </div>
+
+        <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-[var(--ink-2)]">ขอเพลง (Music Request)</span>
+            <span className="badge badge-warning">
+              ใบอนุญาต:{" "}
+              {store.musicLicenseStatus === "approved"
+                ? "อนุมัติแล้ว"
+                : store.musicLicenseStatus === "pending"
+                  ? "รอตรวจ"
+                  : store.musicLicenseStatus === "rejected"
+                    ? "ปฏิเสธ"
+                    : store.musicLicenseStatus === "expired"
+                      ? "หมดอายุ"
+                      : "ยังไม่ขอ"}
+            </span>
+          </div>
+          <label className="mt-3 flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              name="musicRequestEnabled"
+              value="1"
+              defaultChecked={store.musicRequestEnabled && store.musicLicenseStatus === "approved"}
+              disabled={!canEdit || store.musicLicenseStatus !== "approved"}
+              className="rounded border-gray-300"
+            />
+            <span className="text-sm font-medium text-[var(--ink-2)]">เปิดให้ลูกค้าขอเพลงผ่าน QR</span>
+          </label>
+          {store.musicLicenseStatus !== "approved" && (
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              ต้องได้รับการอนุมัติใบอนุญาตจากผู้ดูแลระบบก่อน จึงจะเปิดให้ลูกค้าขอเพลงได้ (เฉพาะแพ็กเกจ Enterprise)
+            </p>
+          )}
         </div>
 
         {state.error && (

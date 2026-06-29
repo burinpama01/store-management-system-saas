@@ -38,6 +38,7 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   starter: {
     maxStores: 1,
@@ -57,6 +58,7 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   standard: {
     maxStores: 3,
@@ -76,6 +78,7 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   premium: {
     maxStores: 5,
@@ -95,6 +98,7 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     advancedPermissions: true,
     multiBranchReporting: false,
     apiIntegration: false,
+    musicRequest: false,
   },
   enterprise: {
     maxStores: Infinity,
@@ -114,6 +118,7 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     advancedPermissions: true,
     multiBranchReporting: true,
     apiIntegration: true,
+    musicRequest: true,
   },
 };
 
@@ -218,6 +223,23 @@ describe("canUseFeature — plan tiers", () => {
   it("past_due standard still has standard features", () => {
     const s = state("standard", "past_due");
     expect(canUseFeature(s, "buffetManagement")).toBe(true);
+  });
+});
+
+describe("musicRequest — Enterprise only", () => {
+  it("is enabled only for enterprise plan", () => {
+    expect(canUseFeature(state("free", "active"), "musicRequest")).toBe(false);
+    expect(canUseFeature(state("starter", "active"), "musicRequest")).toBe(false);
+    expect(canUseFeature(state("standard", "active"), "musicRequest")).toBe(false);
+    expect(canUseFeature(state("premium", "active"), "musicRequest")).toBe(false);
+    expect(canUseFeature(state("enterprise", "active"), "musicRequest")).toBe(true);
+  });
+  it("degrades to locked when enterprise billing is blocked", () => {
+    expect(canUseFeature(state("enterprise", "canceled"), "musicRequest")).toBe(false);
+  });
+  it("has a Thai feature label", () => {
+    expect(explainFeatureLock(state("premium", "active"), "musicRequest")).toContain("Premium");
+    expect(explainFeatureLock(state("enterprise", "active"), "musicRequest")).toBeNull();
   });
 });
 

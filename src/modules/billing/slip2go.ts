@@ -17,6 +17,8 @@ export interface Slip2goVerification {
   receiverName: string | null;
   receiverAccount: string | null;
   transRef: string | null;
+  /** Transaction timestamp from the slip (ISO), when slip2go provides it. */
+  transDate?: string | null;
   raw: unknown;
   error: string | null;
 }
@@ -79,6 +81,22 @@ export function parseSlip2goResponse(json: unknown): Slip2goVerification {
     root.transRef,
   );
 
+  const transDateRaw = pickString(
+    data.transDate,
+    data.dateTime,
+    data.transTimestamp,
+    data.transDateTime,
+    data.date,
+    data.paidAt,
+    data.timestamp,
+  );
+  const transDate = transDateRaw
+    ? (() => {
+        const t = Date.parse(transDateRaw);
+        return Number.isNaN(t) ? null : new Date(t).toISOString();
+      })()
+    : null;
+
   // slip2go envelope: { code, message, data }. "200000" = verified;
   // "200500" = fraud/unreadable. Fall back to a usable transRef + amount.
   const code = pickString(root.code, data.code);
@@ -98,6 +116,7 @@ export function parseSlip2goResponse(json: unknown): Slip2goVerification {
     receiverName,
     receiverAccount: receiverAcct,
     transRef,
+    transDate,
     raw: json,
     error: ok ? null : (message || "ตรวจสลิปไม่สำเร็จ"),
   };
@@ -119,6 +138,7 @@ async function callSlip2go(path: string, body: Record<string, unknown>): Promise
       receiverName: null,
       receiverAccount: null,
       transRef: null,
+      transDate: null,
       raw: null,
       error: "ยังไม่ได้ตั้งค่า SLIP2GO_API_KEY",
     };
@@ -140,6 +160,7 @@ async function callSlip2go(path: string, body: Record<string, unknown>): Promise
         receiverName: null,
         receiverAccount: null,
         transRef: null,
+        transDate: null,
         raw: json,
         error: `slip2go HTTP ${res.status}`,
       };
@@ -152,6 +173,7 @@ async function callSlip2go(path: string, body: Record<string, unknown>): Promise
       receiverName: null,
       receiverAccount: null,
       transRef: null,
+      transDate: null,
       raw: null,
       error: e instanceof Error ? e.message : "slip2go request failed",
     };
@@ -172,6 +194,7 @@ async function callSlip2goImage(
       receiverName: null,
       receiverAccount: null,
       transRef: null,
+      transDate: null,
       raw: null,
       error: "ยังไม่ได้ตั้งค่า SLIP2GO_API_KEY",
     };
@@ -197,6 +220,7 @@ async function callSlip2goImage(
         receiverName: null,
         receiverAccount: null,
         transRef: null,
+        transDate: null,
         raw: json,
         error: msg,
       };
@@ -209,6 +233,7 @@ async function callSlip2goImage(
       receiverName: null,
       receiverAccount: null,
       transRef: null,
+      transDate: null,
       raw: null,
       error: e instanceof Error ? e.message : "slip2go request failed",
     };
