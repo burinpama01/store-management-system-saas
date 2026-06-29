@@ -2,7 +2,7 @@ import { withDataClient } from "@/shared/services/data-client";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { mapError } from "@/shared/utils/error";
-import type { Store, Table, ReceiptSettings, Printer, QrOrderingMode } from "@/modules/stores/types";
+import type { Store, Table, ReceiptSettings, Printer, QrOrderingMode, TableOpenPolicy } from "@/modules/stores/types";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
 type StoreRow = Database["public"]["Tables"]["stores"]["Row"];
@@ -34,6 +34,7 @@ function mapStore(row: StoreRow): Store {
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
     qrOrderingMode: row.qr_ordering_mode,
+    tableOpenPolicy: row.table_open_policy,
     musicRequestEnabled: row.music_request_enabled,
     musicLicenseStatus: row.music_license_status,
     musicLicenseApprovedAt: row.music_license_approved_at ?? undefined,
@@ -162,6 +163,7 @@ export interface UpdateStoreInput {
   buffetEnabled?: boolean;
   qrOrderingEnabled?: boolean;
   qrOrderingMode?: QrOrderingMode;
+  tableOpenPolicy?: TableOpenPolicy;
   musicRequestEnabled?: boolean;
   dineInDurationMinutes?: number;
   themePresetId?: string;
@@ -186,6 +188,7 @@ export async function updateStore(storeId: string, organizationId: string, input
       buffet_enabled: input.buffetEnabled,
       qr_ordering_enabled: input.qrOrderingEnabled,
       qr_ordering_mode: input.qrOrderingMode,
+      table_open_policy: input.tableOpenPolicy,
       music_request_enabled: input.musicRequestEnabled,
       dine_in_duration_minutes: input.dineInDurationMinutes,
       theme_preset_id: input.themePresetId,

@@ -26,6 +26,7 @@ function row(overrides: Partial<StoreRow> = {}): StoreRow {
     theme_primary_soft_color: "#ffffff",
     theme_accent_color: "#111111",
     qr_ordering_mode: "table_bound",
+    table_open_policy: "staff_only",
     music_request_enabled: false,
     music_license_status: "not_requested",
     music_license_approved_at: null,

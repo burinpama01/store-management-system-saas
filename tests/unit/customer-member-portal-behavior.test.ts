@@ -250,6 +250,7 @@ describe("customer member portal behavior", () => {
         buffetEnabled: false,
         qrOrderingEnabled: true,
         qrOrderingMode: "table_bound",
+        tableOpenPolicy: "staff_only",
         musicRequestEnabled: false,
         musicLicenseStatus: "not_requested",
         dineInDurationMinutes: 90,

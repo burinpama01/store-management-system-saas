@@ -61,7 +61,7 @@ export async function submitQrOrderAction(
   // Verify store
   const { data: store, error: storeErr } = await supabase
     .from("stores")
-    .select("id, organization_id, qr_ordering_enabled, is_active, timezone")
+    .select("id, organization_id, qr_ordering_enabled, is_active, timezone, qr_ordering_mode, table_open_policy")
     .eq("id", storeId)
     .single();
   if (storeErr || !store) return { orderId: null, orderNumber: null, error: "Store not found" };
@@ -92,10 +92,24 @@ export async function submitQrOrderAction(
   if (!table.is_active || !table.qr_enabled) {
     return { orderId: null, orderNumber: null, error: "Table is not available for QR ordering" };
   }
-  // Timed session gate: reject orders when the table session is closed or expired.
+  // Timed session gate: orders need an active table session. For stores that let
+  // customers open the table themselves (table_bound + customer_self), the first
+  // order opens the session automatically; otherwise reject (staff must open it).
   const sessionExpiry = table.session_expires_at ? Date.parse(table.session_expires_at) : null;
-  if (sessionExpiry === null || sessionExpiry <= Date.now()) {
-    return { orderId: null, orderNumber: null, error: "หมดเวลาสั่งอาหารของโต๊ะนี้แล้ว กรุณาแจ้งพนักงาน" };
+  const sessionActive = sessionExpiry !== null && sessionExpiry > Date.now();
+  if (!sessionActive) {
+    const canSelfOpen =
+      store.qr_ordering_mode === "table_bound" && store.table_open_policy === "customer_self";
+    if (!canSelfOpen) {
+      return { orderId: null, orderNumber: null, error: "หมดเวลาสั่งอาหารของโต๊ะนี้แล้ว กรุณาแจ้งพนักงาน" };
+    }
+    const { error: openErr } = await supabase.rpc("open_table_session_self", {
+      p_store_id: storeId,
+      p_table_id: tableId,
+    });
+    if (openErr) {
+      return { orderId: null, orderNumber: null, error: "ไม่สามารถเปิดโต๊ะได้ กรุณาแจ้งพนักงาน" };
+    }
   }
 
   // Batch-fetch products

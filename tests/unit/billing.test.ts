@@ -84,8 +84,8 @@ const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
     maxStores: 5,
     maxMembers: 50,
     groceryPos: true,
-    couponManagement: false,
-    loyaltyPoints: false,
+    couponManagement: true,
+    loyaltyPoints: true,
     buffetManagement: true,
     stockManagement: true,
     advancedPrinting: true,
@@ -193,11 +193,11 @@ describe("canUseFeature — plan tiers", () => {
     expect(canUseFeature(s, "qrOrdering")).toBe(false);
     expect(canUseFeature(s, "customerDisplay")).toBe(false);
   });
-  it("premium: qr + gps but no member commerce/display", () => {
+  it("premium: qr + gps + coupon/loyalty but no display/multi-branch", () => {
     const s = state("premium", "active");
     expect(canUseFeature(s, "qrOrdering")).toBe(true);
-    expect(canUseFeature(s, "couponManagement")).toBe(false);
-    expect(canUseFeature(s, "loyaltyPoints")).toBe(false);
+    expect(canUseFeature(s, "couponManagement")).toBe(true);
+    expect(canUseFeature(s, "loyaltyPoints")).toBe(true);
     expect(canUseFeature(s, "customerDisplay")).toBe(false);
     expect(canUseFeature(s, "offlinePos")).toBe(true);
     expect(canUseFeature(s, "attendanceGps")).toBe(true);

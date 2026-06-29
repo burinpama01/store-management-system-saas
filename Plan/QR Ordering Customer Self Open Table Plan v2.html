@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QR Ordering Customer Self-Open Table Plan v2</title>
+<style>
+  :root{--ink:#17202a;--muted:#5f6b7a;--line:#d9e0e8;--paper:#f7f9fb;--panel:#fff;
+    --brand:#0f766e;--brand-soft:#d9f5ef;--warn:#b45309;--warn-soft:#fff3d6;
+    --danger:#b91c1c;--danger-soft:#fde2e2;--ok:#166534;--ok-soft:#dcfce7;
+    --code:#101827;--blue:#1d4ed8;--blue-soft:#dbeafe;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:Arial,"Noto Sans Thai",sans-serif;line-height:1.55;}
+  .shell{width:min(1180px,calc(100vw - 32px));margin:0 auto;padding:28px 0 56px;}
+  header,.card,.phase,.task{background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;padding:18px 20px;margin-bottom:16px;}
+  h1{font-size:28px;margin:0 0 8px;}
+  h2{font-size:21px;margin:6px 0 12px;}
+  h3{font-size:16px;margin:0 0 8px;display:flex;align-items:center;gap:8px;}
+  p{margin:0 0 10px;}
+  ul,ol{margin:8px 0 0 22px;padding:0;}
+  li{margin:5px 0;}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+    background:var(--brand-soft);color:#115e59;font-weight:700;font-size:12px;margin:2px 4px 2px 0;}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;overflow:hidden;margin:12px 0;font-size:13.5px;}
+  th,td{border-bottom:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;}
+  th{background:#eef3f7;font-weight:800;}
+  tr:last-child td{border-bottom:0;}
+  code{font-family:Consolas,monospace;background:#eef3f7;border:1px solid #d7dee8;border-radius:5px;padding:1px 5px;}
+  pre{margin:10px 0 0;padding:13px;border-radius:8px;overflow-x:auto;background:var(--code);color:#e5e7eb;font-size:12.5px;line-height:1.5;}
+  .band{padding:14px 16px;border-radius:8px;border:1px solid var(--line);margin:12px 0;}
+  .band.ok{background:var(--ok-soft);border-color:#86efac;}
+  .band.warn{background:var(--warn-soft);border-color:#facc15;}
+  .band.danger{background:var(--danger-soft);border-color:#fecaca;}
+  .band.info{background:var(--blue-soft);border-color:#93c5fd;}
+  .new{color:var(--brand);font-weight:800;}
+  .badge{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:22px;
+    border-radius:6px;background:var(--brand);color:#fff;font-size:12px;font-weight:800;}
+  .phase{border-left:5px solid var(--brand);}
+  .tag{font-size:11px;padding:1px 7px;border-radius:5px;margin-left:6px;}
+  .tag.s{background:#dcfce7;color:#166534;}
+  .tag.m{background:#fff3d6;color:#b45309;}
+  .meta{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;}
+  .meta div{background:#f3f7f9;border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
+  .label{display:block;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;}
+  .muted{color:var(--muted);}
+  td.y{color:#166534;font-weight:700;}
+  td.n{color:#b91c1c;}
+  td.nw{color:var(--brand);font-weight:700;}
+  @media(max-width:860px){.meta{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <span class="pill">Implementation Plan</span>
+    <span class="pill">QR Ordering</span>
+    <span class="pill">Customer Self-Open Table</span>
+    <h1>QR Ordering Customer Self-Open Table Plan v2</h1>
+    <p>ต่อยอดจาก <code>QR Ordering Music Request Enterprise Plan v1</code> (ทำเสร็จแล้ว) — แผนนี้ (1) อัปเดต Eligibility Matrix อุดช่องที่ขาด และ (2) เพิ่มโหมดให้ <span class="new">ลูกค้าเปิดโต๊ะเองตอนกดสั่งออเดอร์แรก</span> โดยร้านเลือกได้</p>
+    <div class="meta">
+      <div><span class="label">Project</span>Store management system saas</div>
+      <div><span class="label">Date</span>2026-06-29</div>
+      <div><span class="label">Base</span>v1 (DONE)</div>
+      <div><span class="label">Status</span>Ready for review</div>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>สิ่งที่เปลี่ยนใน v2</h2>
+    <ol>
+      <li><span class="new">โหมดเปิดโต๊ะ (Table Open Policy)</span> ใหม่ระดับร้าน: <code>staff_only</code> (เดิม) กับ <code>customer_self</code></li>
+      <li><code>customer_self</code>: ลูกค้าสแกน QR → <span class="strong">ดูเมนูได้ทันทีแม้ยังไม่มี session</span> → กดสั่งออเดอร์แรก → <span class="new">เปิด session ใหม่อัตโนมัติ</span></li>
+      <li>รองรับลูกค้า <span class="strong">เช็คบิลแล้วนั่งต่อ</span>: session ถูกเคลียร์ตอนเช็คบิล → กดสั่งใหม่ = เปิด session ใหม่อีกครั้ง</li>
+      <li>อุดช่องว่าง matrix v1: <code>table_bound + ไม่มี session + music gate ไม่ผ่าน</code> ขึ้นหน้าเต็ม (เคสที่ v1 ไม่ได้ระบุ)</li>
+    </ol>
+    <div class="band warn">
+      <p><span class="strong">ขอบเขตการโต้ตอบกับโหมดเดิม:</span> <code>customer_self</code> ใช้ได้เฉพาะ <code>qr_ordering_mode = table_bound</code>. โหมด <code>session_printed</code> เป็น staff-driven (พนักงานพิมพ์ QR ที่มี <code>?s=</code>) จึงบังคับ <code>staff_only</code> เสมอ</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Eligibility Matrix (อัปเดต)</h2>
+    <p class="muted">มิติใหม่: <code>tableOpenPolicy</code> (มีผลเฉพาะ <code>table_bound</code>). คอลัมน์ "สั่งอาหาร" แยกเป็น ดูเมนู / กดสั่ง</p>
+    <table>
+      <thead>
+        <tr><th>QR mode</th><th>open policy</th><th>session</th><th>ดูเมนู</th><th>กดสั่ง</th><th>ขอเพลง/คิว</th><th>ผลที่แสดง</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>table_bound</code></td><td>staff_only</td><td>ไม่มี</td>
+          <td class="n">ไม่ได้</td><td class="n">ไม่ได้</td><td class="y">ได้ ถ้า gate ผ่าน</td>
+          <td>แท็บอาหารแจ้งให้พนักงานเปิดโต๊ะ; แท็บเพลงใช้ได้</td>
+        </tr>
+        <tr>
+          <td><code>table_bound</code></td><td>staff_only</td><td>ไม่มี + เพลงไม่ผ่าน</td>
+          <td class="n">ไม่ได้</td><td class="n">ไม่ได้</td><td class="n">ไม่ได้</td>
+          <td><span class="new">หน้าเต็ม: ยังไม่เปิดโต๊ะ</span> (อุดช่อง v1)</td>
+        </tr>
+        <tr>
+          <td><code>table_bound</code></td><td class="nw">customer_self</td><td>ไม่มี / หลังเช็คบิล</td>
+          <td class="nw">ได้</td><td class="nw">ได้ → เปิด session</td><td class="y">ได้ ถ้า gate ผ่าน</td>
+          <td><span class="new">เข้าแอป เห็นเมนู ปุ่ม "สั่งและเปิดโต๊ะ"</span></td>
+        </tr>
+        <tr>
+          <td><code>table_bound</code></td><td>any</td><td>active</td>
+          <td class="y">ได้</td><td class="y">ได้</td><td class="y">ได้ ถ้า gate ผ่าน</td>
+          <td>ใช้งานได้ทั้งสองแท็บ</td>
+        </tr>
+        <tr>
+          <td><code>session_printed</code></td><td>(staff)</td><td>active + <code>?s=</code> ตรง</td>
+          <td class="y">ได้</td><td class="y">ได้</td><td class="y">ได้ ถ้า gate ผ่าน</td>
+          <td>ใช้งานได้ทั้งสองแท็บ</td>
+        </tr>
+        <tr>
+          <td><code>session_printed</code></td><td>(staff)</td><td>หมด / <code>?s=</code> ไม่ตรง</td>
+          <td class="n">ไม่ได้</td><td class="n">ไม่ได้</td><td class="n">ไม่ได้</td>
+          <td>หน้าเต็ม: QR หมดอายุ</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Locked Business Rules (เพิ่มเติม)</h2>
+    <table>
+      <tbody>
+        <tr><td>ใครเปิดโต๊ะ</td><td>ร้านเลือก <code>staff_only</code> หรือ <code>customer_self</code> ที่ store settings</td></tr>
+        <tr><td>เปิด session เมื่อใด (customer_self)</td><td>ตอนกดสั่งออเดอร์ "แรก" สำเร็จเท่านั้น — ดูเมนูเฉยๆ ไม่เปิด session</td></tr>
+        <tr><td>ปุ่มสั่งครั้งแรก</td><td>แสดงปุ่ม <span class="new">"สั่งและเปิดโต๊ะ"</span> (โปร่งใส บอกลูกค้าว่าจะเปิดโต๊ะ)</td></tr>
+        <tr><td>ยืนยันออเดอร์แรก</td><td><span class="new">ระบบยืนยันอัตโนมัติ (auto-confirm)</span> — ไม่มีขั้นตอนพนักงานกดอนุมัติ/ปฏิเสธ; ออเดอร์เข้าบอร์ด QR ตามปกติพร้อมเปิด session</td></tr>
+        <tr><td>ระยะเวลา session</td><td>= <code>stores.dine_in_duration_minutes</code> (default 120) <span class="new">ค่าเดียวกับที่พนักงานเปิด</span></td></tr>
+        <tr><td>เช็คบิลแล้วนั่งต่อ</td><td>เช็คบิล = เคลียร์ session; กดสั่งใหม่ = เปิด session ใหม่ (idempotent)</td></tr>
+        <tr><td>session_printed</td><td>ไม่รองรับ customer_self (บังคับ staff_only)</td></tr>
+        <tr><td>บุฟเฟต์</td><td>customer_self เปิดได้เฉพาะ session แบบ à la carte (ไม่เลือกแพ็กเกจบุฟเฟต์) — ร้านบุฟเฟต์แนะนำ staff_only</td></tr>
+        <tr><td>เพลง</td><td>ไม่เปลี่ยน — music eligibility แยกอิสระจาก session เหมือนเดิม</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Auto-Session Flow (customer_self)</h2>
+    <pre><code>ลูกค้าสแกน QR (table_bound, customer_self)
+  └─ page.tsx: ไม่มี session → โหลดเมนู (เพราะ policy=customer_self) → เข้าแอป
+       ปุ่ม CTA = "สั่งและเปิดโต๊ะ"
+  └─ ลูกค้าเลือกเมนู กดสั่งออเดอร์แรก
+       └─ submitQrOrderAction (service client, re-resolve policy ฝั่ง server)
+            ├─ ไม่มี session active และ policy=customer_self และ mode=table_bound
+            │    → RPC open_table_session_self(store, table)  [for update lock, idempotent]
+            │        ตั้ง current_session_id + session_expires_at = now()+duration
+            ├─ มี session active อยู่แล้ว → ใช้ session เดิม (กดพร้อมกัน 2 ครั้งก็ไม่ซ้ำ)
+            └─ สร้างออเดอร์ + ระบบยืนยันอัตโนมัติ (ไม่มีขั้นตอนอนุมัติ/ปฏิเสธ)
+               → ออเดอร์ขึ้นบอร์ด QR เหมือนออเดอร์ปกติ
+  └─ พนักงานเช็คบิล → close_table_session เคลียร์ session
+  └─ ลูกค้านั่งต่อ กดสั่งใหม่ → เปิด session ใหม่อัตโนมัติ (วนซ้ำ)</code></pre>
+  </section>
+
+  <section class="card">
+    <h2>Data Model</h2>
+    <div class="band warn"><p><span class="strong">Migration warning:</span> ห้าม apply production โดยไม่ขอ approval แยก; local/preview validate ก่อน</p></div>
+    <pre><code>-- supabase/migrations/YYYYMMDDHHMMSS_table_open_policy.sql
+
+alter table stores
+  add column if not exists table_open_policy text not null default 'staff_only'
+    check (table_open_policy in ('staff_only', 'customer_self'));
+
+-- เปิด session โดยลูกค้า: enforce policy ฝั่ง DB + idempotent + audit
+create or replace function open_table_session_self(p_store_id uuid, p_table_id uuid)
+returns timestamptz
+language plpgsql security definer set search_path = public as $$
+declare v_minutes int; v_mode text; v_policy text;
+        v_expires timestamptz; v_session uuid;
+begin
+  select dine_in_duration_minutes, qr_ordering_mode, table_open_policy
+    into v_minutes, v_mode, v_policy
+  from stores where id = p_store_id and is_active;
+  if not found then raise exception 'store_unavailable'; end if;
+  if v_mode <> 'table_bound' or v_policy <> 'customer_self' then
+    raise exception 'self_open_not_allowed';
+  end if;
+
+  -- ล็อกแถวโต๊ะกัน race; ถ้ามี session active อยู่แล้วคืนของเดิม
+  select session_expires_at into v_expires
+  from tables where id = p_table_id and store_id = p_store_id for update;
+  if v_expires is not null and v_expires > now() then
+    return v_expires;
+  end if;
+
+  v_session := gen_random_uuid();
+  v_expires := now() + (coalesce(v_minutes,120) || ' minutes')::interval;
+  update tables set current_session_id = v_session, session_expires_at = v_expires
+    where id = p_table_id and store_id = p_store_id;
+  return v_expires;
+end $$;
+
+revoke execute on function open_table_session_self(uuid, uuid) from public, anon, authenticated;
+-- เรียกผ่าน service client (server action) เท่านั้น</code></pre>
+  </section>
+
+  <section class="card">
+    <h2>File Map</h2>
+    <table>
+      <thead><tr><th>Action</th><th>Path</th><th>Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td>Create</td><td><code>supabase/migrations/..._table_open_policy.sql</code></td><td>column + RPC ตาม Data Model</td></tr>
+        <tr><td>Modify</td><td><code>src/modules/stores/types.ts</code></td><td>เพิ่ม <code>TableOpenPolicy</code> + <code>tableOpenPolicy</code> ใน Store</td></tr>
+        <tr><td>Modify</td><td><code>src/modules/stores/repository.ts</code>, <code>public-repository.ts</code></td><td>map field + ให้ tenant แก้; public read คืน policy</td></tr>
+        <tr><td>Modify</td><td><code>src/app/qr/[storeSlug]/[tableId]/page.tsx</code></td><td>โหลดเมนูเมื่อ <code>sessionActive || (table_bound &amp;&amp; customer_self)</code>; ส่ง prop <code>canSelfOpen</code></td></tr>
+        <tr><td>Modify</td><td><code>src/app/qr/[storeSlug]/[tableId]/actions.ts</code></td><td>submit: ถ้าไม่มี session + policy=customer_self → เรียก RPC เปิด session ก่อนสร้างออเดอร์</td></tr>
+        <tr><td>Modify</td><td><code>QrOrderingApp.tsx</code> + food tab</td><td>เมื่อ canSelfOpen และไม่มี session: แสดงเมนู + ปุ่ม "สั่งและเปิดโต๊ะ" แทน disabled</td></tr>
+        <tr><td>Modify</td><td><code>src/modules/qr-ordering/repository.ts</code> หรือ stores repo</td><td>helper <code>openTableSessionSelf()</code> เรียก RPC ผ่าน service client</td></tr>
+        <tr><td>Modify</td><td><code>settings/store</code> form + action</td><td>dropdown เลือก open policy (disabled/บังคับ staff_only เมื่อ session_printed)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="phase">
+    <h2>Tasks (TDD)</h2>
+    <div class="task"><h3><span class="badge">T1</span> Store policy type + settings <span class="tag s">เล็ก</span></h3>
+      <ul><li>failing test: default <code>staff_only</code>, map camelCase, tenant แก้ได้</li>
+      <li>บังคับ staff_only เมื่อ mode=session_printed (validate ที่ action)</li></ul></div>
+    <div class="task"><h3><span class="badge">T2</span> Migration + RPC <span class="tag m">กลาง</span></h3>
+      <ul><li>column + <code>open_table_session_self</code> (idempotent, for-update, enforce policy/mode)</li>
+      <li>local/preview validate; database.types.ts อัปเดต</li></ul></div>
+    <div class="task"><h3><span class="badge">T3</span> Submit auto-open <span class="tag m">กลาง</span></h3>
+      <ul><li>failing test: ไม่มี session + customer_self → เปิด session แล้วสร้างออเดอร์สำเร็จ</li>
+      <li>failing test: staff_only + ไม่มี session → ยัง reject เหมือนเดิม</li>
+      <li>failing test: session active อยู่แล้ว → ไม่เปิดซ้ำ (idempotent)</li>
+      <li>failing test: session_printed → ไม่เข้าเส้น self-open</li></ul></div>
+    <div class="task"><h3><span class="badge">T4</span> page.tsx + UI <span class="tag m">กลาง</span></h3>
+      <ul><li>โหลดเมนูเมื่อ canSelfOpen แม้ไม่มี session</li>
+      <li>food tab แสดงเมนู + ปุ่ม "สั่งและเปิดโต๊ะ"; หลังสั่งสำเร็จ refresh เป็น session active</li>
+      <li>คง matrix แถวอื่นไม่ให้ regress (staff_only ยังเหมือนเดิม)</li></ul></div>
+    <div class="task"><h3><span class="badge">T5</span> Verify + review <span class="tag s">เล็ก</span></h3>
+      <ul><li>targeted tests + typecheck + lint + diff --check</li>
+      <li>browser QA: customer_self ดูเมนู→สั่ง→เปิด session; เช็คบิล→สั่งใหม่→เปิดใหม่; staff_only ไม่เปลี่ยน</li>
+      <li>code_reviewer + Obsidian log</li></ul></div>
+  </section>
+
+  <section class="card">
+    <h2>Risks &amp; Open Questions</h2>
+    <div class="band ok">
+      <p><span class="strong">ตัดสินแล้ว (จากผู้ใช้):</span></p>
+      <ul>
+        <li><span class="strong">ออเดอร์แรก = ระบบ auto-confirm</span> — ไม่เพิ่มขั้นตอนพนักงานอนุมัติ/ปฏิเสธ ออเดอร์ไหลเข้าบอร์ดปกติ (frictionless)</li>
+        <li><span class="strong">ปุ่ม = "สั่งและเปิดโต๊ะ"</span> (แสดงให้ลูกค้ารู้ว่าจะเปิดโต๊ะ)</li>
+        <li><span class="strong">duration = ค่าเดียวกับพนักงานเปิด</span> (<code>dine_in_duration_minutes</code>)</li>
+        <li>notify: ใช้ของเดิมตอนมีออเดอร์ใหม่ ไม่เพิ่ม channel</li>
+      </ul>
+    </div>
+    <div class="band warn">
+      <p><span class="strong">R1 — Abuse (ยอมรับความเสี่ยง):</span> customer_self ใครสแกน QR โต๊ะก็เปิด session + สั่งได้เอง โดยไม่มีพนักงานคัดกรอง (โมเดล dine-in เชื่อใจ ตามที่ผู้ใช้เลือก). ร้านที่กลัวสั่งป่วนเลือก staff_only ได้. <span class="muted">ถ้าต้องการคุมเพิ่มภายหลัง: rate-limit ออเดอร์ต่อโต๊ะ/ต่อช่วงเวลา (follow-up นอก MVP).</span></p>
+    </div>
+    <div class="band warn">
+      <p><span class="strong">R2 — บุฟเฟต์:</span> self-open สร้างได้เฉพาะ session à la carte (ไม่มีการเลือกแพ็กเกจ). ต้องกันไม่ให้ร้านบุฟเฟต์เผลอเปิด customer_self หรือชี้แจงในหน้า settings.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Acceptance Criteria</h2>
+    <ul>
+      <li>ร้านเลือก table open policy ได้ที่ settings; session_printed บังคับ staff_only</li>
+      <li>customer_self: ลูกค้าดูเมนูได้แม้ยังไม่มี session</li>
+      <li>customer_self: food tab แสดงปุ่ม "สั่งและเปิดโต๊ะ" เมื่อยังไม่มี session</li>
+      <li>customer_self: กดสั่งออเดอร์แรก → session เปิดอัตโนมัติ (duration = ค่าร้าน) + ออเดอร์ถูกบันทึกและ <span class="new">ยืนยันโดยระบบทันที</span> (ไม่มีขั้นตอนอนุมัติ/ปฏิเสธ)</li>
+      <li>เช็คบิลแล้วกดสั่งใหม่ → เปิด session ใหม่ได้</li>
+      <li>กดสั่งซ้อนกัน/สองคนพร้อมกัน → ได้ session เดียว (idempotent, ไม่ซ้อน)</li>
+      <li>staff_only ทำงานเหมือนเดิมทุกประการ (ไม่ regress)</li>
+      <li>policy ถูก enforce ทั้งที่ server action และ RPC (กันปลอม client)</li>
+      <li>tests/typecheck/lint ผ่าน</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Self Review</h2>
+    <table><tbody>
+      <tr><td>ฐานอ้างอิงโค้ดจริง</td><td><code>actions.ts:95-99</code> (gate), <code>open_table_session</code> RPC (20260607000005), <code>page.tsx:134</code> (menu load gate), <code>gates.ts</code> (music แยกอิสระ)</td></tr>
+      <tr><td>ไม่กระทบ v1</td><td>music eligibility/ session_printed ไม่เปลี่ยน; เพิ่มเฉพาะเส้น customer_self บน table_bound</td></tr>
+      <tr><td>Concurrency</td><td>RPC ใช้ <code>for update</code> + idempotent คืน session เดิมเมื่อ active</td></tr>
+      <tr><td>Residual</td><td>โมเดล abuse (R1), บุฟเฟต์ (R2), 3 คำถาม UX (Q1-Q3) รอยืนยันก่อน implement</td></tr>
+    </tbody></table>
+  </section>
+</main>
+</body>
+</html>

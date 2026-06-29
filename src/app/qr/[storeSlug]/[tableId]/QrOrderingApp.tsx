@@ -29,6 +29,8 @@ interface Props {
   products: Product[];
   /** Food tab is usable only while the table has an active session. */
   foodOrderingEnabled?: boolean;
+  /** Store lets customers open the table themselves on the first order (table_bound + customer_self). */
+  canSelfOpen?: boolean;
   /** Music tab eligibility (Enterprise + license + QR mode/session). */
   musicEligibility?: QrMusicEligibility;
   /** Session id from the QR URL (`?s=`), forwarded to music actions. */
@@ -367,6 +369,7 @@ function CartView({
   onQuantityChange,
   onSubmit,
   isPending,
+  submitLabel,
 }: {
   cart: Cart;
   currency: string;
@@ -375,6 +378,7 @@ function CartView({
   onQuantityChange: (key: string, qty: number) => void;
   onSubmit: () => void;
   isPending: boolean;
+  submitLabel: string;
 }) {
   return (
     <div className="flex flex-col h-full">
@@ -445,7 +449,7 @@ function CartView({
           disabled={cart.items.length === 0}
           className="w-full min-h-11 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm disabled:opacity-40 active:bg-orange-600 transition-colors"
         >
-          ส่งออร์เดอร์
+          {submitLabel}
         </Button>
         <p className="text-xs text-gray-400 text-center mt-2">
           ชำระเงินที่เคาน์เตอร์เมื่อรับประทานเสร็จ
@@ -628,12 +632,18 @@ export default function QrOrderingApp({
   categories,
   products,
   foodOrderingEnabled = true,
+  canSelfOpen = false,
   musicEligibility,
   querySessionId = null,
 }: Props) {
   const musicTabAvailable = !!musicEligibility?.canViewQueue;
+  // In customer_self stores the food tab is usable before a session exists:
+  // placing the first order opens the table session automatically.
+  const foodTabUsable = foodOrderingEnabled || canSelfOpen;
+  const orderSubmitLabel =
+    !foodOrderingEnabled && canSelfOpen ? "สั่งและเปิดโต๊ะ" : "ส่งออร์เดอร์";
   const [mainTab, setMainTab] = useState<"food" | "music">(
-    foodOrderingEnabled ? "food" : musicTabAvailable ? "music" : "food",
+    foodTabUsable ? "food" : musicTabAvailable ? "music" : "food",
   );
   const [view, setView] = useState<AppView>("menu");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -835,7 +845,7 @@ export default function QrOrderingApp({
           querySessionId={querySessionId}
           eligibility={musicEligibility}
         />
-      ) : !foodOrderingEnabled ? (
+      ) : !foodTabUsable ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="mb-3 text-4xl">🍽️</div>
           <p className="text-sm font-semibold text-gray-700">ยังไม่ได้เปิดโต๊ะสำหรับสั่งอาหาร</p>
@@ -869,6 +879,7 @@ export default function QrOrderingApp({
           onQuantityChange={(key, qty) => setCart((prev) => updateQuantity(prev, key, qty))}
           onSubmit={handleSubmit}
           isPending={isPending}
+          submitLabel={orderSubmitLabel}
         />
       ) : (
         <>

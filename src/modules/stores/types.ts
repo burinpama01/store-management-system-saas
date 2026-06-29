@@ -1,5 +1,7 @@
 export type QrOrderingMode = "table_bound" | "session_printed";
 
+export type TableOpenPolicy = "staff_only" | "customer_self";
+
 export type MusicLicenseStatus =
   | "not_requested"
   | "pending"
@@ -22,6 +24,7 @@ export interface Store {
   buffetEnabled: boolean;
   qrOrderingEnabled: boolean;
   qrOrderingMode: QrOrderingMode;
+  tableOpenPolicy: TableOpenPolicy;
   musicRequestEnabled: boolean;
   musicLicenseStatus: MusicLicenseStatus;
   musicLicenseApprovedAt?: string;

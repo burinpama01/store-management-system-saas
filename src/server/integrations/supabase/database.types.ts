@@ -3,6 +3,45 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          id: string;
+          organization_id: string;
+          name: string;
+          key_prefix: string;
+          key_hash: string;
+          scopes: string[];
+          last_used_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          name: string;
+          key_prefix: string;
+          key_hash: string;
+          scopes?: string[];
+          last_used_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          revoked_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          name?: string;
+          key_prefix?: string;
+          key_hash?: string;
+          scopes?: string[];
+          last_used_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
       platform_settings: {
         Row: {
           id: string;
@@ -544,6 +583,7 @@ export interface Database {
           theme_primary_soft_color: string;
           theme_accent_color: string;
           qr_ordering_mode: "table_bound" | "session_printed";
+          table_open_policy: "staff_only" | "customer_self";
           music_request_enabled: boolean;
           music_license_status: "not_requested" | "pending" | "approved" | "rejected" | "expired";
           music_license_approved_at: string | null;
@@ -574,6 +614,7 @@ export interface Database {
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
           qr_ordering_mode?: "table_bound" | "session_printed";
+          table_open_policy?: "staff_only" | "customer_self";
           music_request_enabled?: boolean;
           music_license_status?: "not_requested" | "pending" | "approved" | "rejected" | "expired";
           music_license_approved_at?: string | null;
@@ -604,6 +645,7 @@ export interface Database {
           theme_primary_soft_color?: string;
           theme_accent_color?: string;
           qr_ordering_mode?: "table_bound" | "session_printed";
+          table_open_policy?: "staff_only" | "customer_self";
           music_request_enabled?: boolean;
           music_license_status?: "not_requested" | "pending" | "approved" | "rejected" | "expired";
           music_license_approved_at?: string | null;
@@ -3331,6 +3373,10 @@ export interface Database {
       };
       open_table_session: {
         Args: { p_store_id: string; p_table_id: string; p_minutes: number };
+        Returns: string;
+      };
+      open_table_session_self: {
+        Args: { p_store_id: string; p_table_id: string };
         Returns: string;
       };
       close_table_session: {

@@ -29,6 +29,8 @@ interface Props {
   branchSummaries: BranchSalesSummary[];
   branchReportingEnabled: boolean;
   branchReportingUnavailableMessage: string | null;
+  advancedReportsEnabled: boolean;
+  advancedReportsUnavailableMessage: string | null;
   dateFrom: string;
   dateTo: string;
 }
@@ -38,6 +40,8 @@ export function ReportsManager({
   branchSummaries,
   branchReportingEnabled,
   branchReportingUnavailableMessage,
+  advancedReportsEnabled,
+  advancedReportsUnavailableMessage,
   dateFrom,
   dateTo,
 }: Props) {
@@ -51,6 +55,22 @@ export function ReportsManager({
   function applyFilters() {
     const params = new URLSearchParams({ dateFrom: localFrom, dateTo: localTo });
     startTransition(() => router.push(`/reports?${params}`));
+  }
+
+  function exportCsv() {
+    const rows: string[] = [];
+    rows.push("ประเภท,รายการ,จำนวน,ยอดขาย");
+    rows.push(`สรุป,ยอดขายรวม,${salesSummary.orderCount},${salesSummary.revenue}`);
+    for (const m of paymentMethods) rows.push(`ช่องทางชำระเงิน,${m.method},${m.count},${m.totalAmount}`);
+    for (const d of dailySales) rows.push(`รายวัน,${d.date},${d.orderCount},${d.revenue}`);
+    for (const p of topProducts) rows.push(`สินค้าขายดี,${p.productName.replace(/,/g, " ")},${p.quantitySold},${p.revenue}`);
+    const blob = new Blob(["﻿" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `report-${dateFrom}-${dateTo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -90,17 +110,27 @@ export function ReportsManager({
         >
           ดูรายงาน
         </Button>
+        {advancedReportsEnabled && (
+          <Button variant="secondary" onClick={exportCsv} className="ml-auto">
+            ส่งออก CSV
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard label="ยอดขายรวม" value={`฿${fmt(salesSummary.revenue)}`} sub={`${salesSummary.orderCount} ออร์เดอร์`} color="text-green-600" />
-        <SummaryCard label="ค่าเฉลี่ย/ออร์เดอร์" value={`฿${fmt(salesSummary.avgOrderValue)}`} color="text-gray-700" />
-        <SummaryCard label="QR Orders" value={String(salesSummary.qrOrderCount)} sub="จากระบบ QR" color="text-purple-600" />
-        <SummaryCard label="POS Orders" value={String(salesSummary.posOrderCount)} sub="จาก POS" color="text-blue-600" />
+        {advancedReportsEnabled && (
+          <>
+            <SummaryCard label="ค่าเฉลี่ย/ออร์เดอร์" value={`฿${fmt(salesSummary.avgOrderValue)}`} color="text-gray-700" />
+            <SummaryCard label="QR Orders" value={String(salesSummary.qrOrderCount)} sub="จากระบบ QR" color="text-purple-600" />
+            <SummaryCard label="POS Orders" value={String(salesSummary.posOrderCount)} sub="จาก POS" color="text-blue-600" />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Payment methods */}
+        {/* Payment methods (advanced) */}
+        {advancedReportsEnabled && (
         <Section title="ช่องทางชำระเงิน">
           {paymentMethods.length === 0 ? (
             <EmptyRow />
@@ -123,6 +153,7 @@ export function ReportsManager({
             </div>
           )}
         </Section>
+        )}
 
         {/* Daily sales */}
         <Section title="ยอดขายรายวัน">
@@ -162,30 +193,40 @@ export function ReportsManager({
         </div>
       )}
 
-      {/* Top products */}
-      <Section title="สินค้าขายดี (Top 20)">
-        {topProducts.length === 0 ? (
-          <EmptyRow />
-        ) : (
-          <div className="overflow-x-auto">
-          <table className="min-w-[520px] w-full text-sm">
-            <thead className="bg-[var(--color-surface-muted)] text-xs font-bold text-[var(--color-text-secondary)]">
-              <tr>
-                <th className="px-3 py-2 text-left">#</th>
-                <th className="px-3 py-2 text-left">สินค้า</th>
-                <th className="px-3 py-2 text-right">จำนวนที่ขาย</th>
-                <th className="px-3 py-2 text-right">ยอดขาย</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
-              {topProducts.map((p, i) => (
-                <TopProductRow key={p.productId} item={p} rank={i + 1} />
-              ))}
-            </tbody>
-          </table>
-          </div>
-        )}
-      </Section>
+      {/* Top products (advanced) */}
+      {advancedReportsEnabled ? (
+        <Section title="สินค้าขายดี (Top 20)">
+          {topProducts.length === 0 ? (
+            <EmptyRow />
+          ) : (
+            <div className="overflow-x-auto">
+            <table className="min-w-[520px] w-full text-sm">
+              <thead className="bg-[var(--color-surface-muted)] text-xs font-bold text-[var(--color-text-secondary)]">
+                <tr>
+                  <th className="px-3 py-2 text-left">#</th>
+                  <th className="px-3 py-2 text-left">สินค้า</th>
+                  <th className="px-3 py-2 text-right">จำนวนที่ขาย</th>
+                  <th className="px-3 py-2 text-right">ยอดขาย</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {topProducts.map((p, i) => (
+                  <TopProductRow key={p.productId} item={p} rank={i + 1} />
+                ))}
+              </tbody>
+            </table>
+            </div>
+          )}
+        </Section>
+      ) : (
+        <div className="panel p-4">
+          <p className="text-sm font-bold text-[var(--color-text-primary)]">รายงานขั้นสูง</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            {advancedReportsUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับรายงานขั้นสูง"} —
+            อัปเกรดเพื่อดูช่องทางชำระเงิน สินค้าขายดี ค่าเฉลี่ย/ออร์เดอร์ และส่งออก CSV
+          </p>
+        </div>
+      )}
     </div>
   );
 }

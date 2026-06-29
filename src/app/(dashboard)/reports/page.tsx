@@ -39,6 +39,12 @@ export default async function ReportsPage({
   const branchReportingUnavailableMessage = branchReportingEnabled
     ? null
     : explainFeatureLock(billingState, "multiBranchReporting");
+  // Advanced analytics (payment-method breakdown, top products, AOV, QR/POS split,
+  // CSV export) are gated to standard+. Basic revenue/daily totals stay available.
+  const advancedReportsEnabled = canUseFeature(billingState, "advancedReports");
+  const advancedReportsUnavailableMessage = advancedReportsEnabled
+    ? null
+    : explainFeatureLock(billingState, "advancedReports") ?? "แพ็กเกจนี้ยังไม่รองรับรายงานขั้นสูง";
   const [reportData, branchSummaries] = await Promise.all([
     getReportData(ctx.storeId, dateFrom, dateTo),
     branchReportingEnabled
@@ -52,6 +58,8 @@ export default async function ReportsPage({
       branchSummaries={branchSummaries}
       branchReportingEnabled={branchReportingEnabled}
       branchReportingUnavailableMessage={branchReportingUnavailableMessage}
+      advancedReportsEnabled={advancedReportsEnabled}
+      advancedReportsUnavailableMessage={advancedReportsUnavailableMessage}
       dateFrom={dateFrom}
       dateTo={dateTo}
     />

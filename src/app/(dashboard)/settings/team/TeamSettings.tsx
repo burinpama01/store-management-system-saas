@@ -67,6 +67,8 @@ interface Props {
   currentUserId: string;
   canManageUsers: boolean;
   canManagePermissions: boolean;
+  /** Set when the user holds permissions.manage but the plan lacks advancedPermissions. */
+  permissionsLockedMessage?: string | null;
   canManagePlatform: boolean;
 }
 
@@ -75,6 +77,7 @@ export function TeamSettings({
   currentUserId,
   canManageUsers,
   canManagePermissions,
+  permissionsLockedMessage = null,
   canManagePlatform,
 }: Props) {
   const router = useRouter();
@@ -154,6 +157,11 @@ export function TeamSettings({
       {actionError && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
           {actionError}
+        </p>
+      )}
+      {permissionsLockedMessage && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          {permissionsLockedMessage} — อัปเกรดเป็นแพ็กเกจ Premium ขึ้นไปเพื่อกำหนดสิทธิ์รายบุคคล
         </p>
       )}
 
