@@ -1,4 +1,4 @@
-import { cache } from "react";
+import { unstable_noStore as noStore } from "next/cache";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 
@@ -42,11 +42,15 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
   };
 }
 
-/** Per-request cached system logo URL (read on every page that renders the brand). */
-export const getPlatformLogoUrl = cache(async (): Promise<string | null> => {
+/**
+ * System logo URL (read on every page that renders the brand). Marked dynamic
+ * so the shared root layout reflects a freshly uploaded logo without a rebuild.
+ */
+export async function getPlatformLogoUrl(): Promise<string | null> {
+  noStore();
   const { logoUrl } = await getPlatformSettings();
   return logoUrl?.trim() || null;
-});
+}
 
 /** Updates only the system logo on the singleton row. */
 export async function updatePlatformLogo(logoUrl: string | null, actorUserId: string) {
