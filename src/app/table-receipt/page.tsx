@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getStore, getTable } from "@/modules/stores/repository";
+import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
 import { QrCode } from "@/shared/components/ui/QrCode";
 import { nowMs } from "@/shared/utils/time";
 import { PrintButton } from "../payslip/PrintButton";
@@ -40,7 +41,13 @@ export default async function TableReceiptPage({
   const host = h.get("host") ?? "";
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const baseUrl = host ? `${proto}://${host}` : "";
-  const qrUrl = `${baseUrl}/qr/${store.slug}/${table.id}`;
+  const qrUrl = buildTableQrUrl({
+    baseUrl,
+    storeSlug: store.slug,
+    tableId: table.id,
+    qrMode: store.qrOrderingMode,
+    sessionId: table.currentSessionId ?? null,
+  });
 
   const active = table.sessionExpiresAt && Date.parse(table.sessionExpiresAt) > nowMs();
 

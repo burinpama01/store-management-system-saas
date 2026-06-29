@@ -8,6 +8,8 @@ import { uploadWithProgress } from "@/shared/services/upload";
 import {
   updatePlatformSettingsAction,
   sendTestEnterpriseEmailAction,
+  uploadPlatformLogoAction,
+  resetPlatformLogoAction,
   type PlatformSettingsState,
   type TestEmailState,
 } from "./actions";
@@ -24,6 +26,11 @@ export function SystemSettingsForm({
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(updatePlatformSettingsAction, INITIAL);
+  const [logoState, logoAction, logoPending] = useActionState(uploadPlatformLogoAction, INITIAL);
+  const [logoResetState, logoResetAction, logoResetPending] = useActionState(
+    resetPlatformLogoAction,
+    INITIAL,
+  );
 
   const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
   const [uploadPercent, setUploadPercent] = useState(0);
@@ -55,6 +62,50 @@ export function SystemSettingsForm({
   }
 
   return (
+    <>
+    <section className="panel max-w-2xl p-5 mb-4">
+      <h2 className="panel-title mb-1">โลโก้ระบบ</h2>
+      <p className="label-muted mb-4">โลโก้ที่แสดงเป็นแบรนด์ StoreOS ทุกหน้า (แนะนำรูปสี่เหลี่ยมจัตุรัส พื้นโปร่งใส/ขาว ≤ 2MB)</p>
+      <div className="flex items-center gap-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={settings.logoUrl ?? "/logo.png"}
+          alt="โลโก้ระบบ"
+          className="h-16 w-16 rounded-xl border border-[var(--line)] bg-white object-contain"
+        />
+        <div className="flex flex-col gap-2">
+          <form action={logoAction}>
+            <label className="block">
+              <span className="btn-secondary inline-flex min-h-9 cursor-pointer items-center px-3 text-sm">
+                {logoPending ? "กำลังอัปโหลด..." : "เลือกรูปโลโก้"}
+              </span>
+              <input
+                type="file"
+                name="file"
+                accept="image/*"
+                className="hidden"
+                disabled={logoPending}
+                onChange={(e) => e.currentTarget.form?.requestSubmit()}
+              />
+            </label>
+          </form>
+          {settings.logoUrl && (
+            <form action={logoResetAction}>
+              <Button variant="secondary" loading={logoResetPending} className="min-h-8 px-2 text-xs text-[var(--muted)]">
+                ใช้โลโก้เริ่มต้น
+              </Button>
+            </form>
+          )}
+        </div>
+      </div>
+      {(logoState.error || logoResetState.error) && (
+        <p className="alert-danger mt-3">{logoState.error ?? logoResetState.error}</p>
+      )}
+      {(logoState.ok || logoResetState.ok) && (
+        <p className="mt-3 text-sm text-green-600">บันทึกโลโก้แล้ว</p>
+      )}
+    </section>
+
     <section className="panel max-w-2xl p-5">
       <h2 className="panel-title mb-1">ช่องทางรับชำระเงิน SaaS</h2>
       <p className="label-muted mb-4">
@@ -171,6 +222,7 @@ export function SystemSettingsForm({
         )}
       </div>
     </section>
+    </>
   );
 }
 

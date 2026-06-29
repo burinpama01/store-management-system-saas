@@ -15,7 +15,7 @@ const PRICING_NAV_ITEMS = NAV_ITEMS.filter((item) => item.key === "features" || 
 export function MarketingBrand() {
   return (
     <Link href="/" className="marketing-brand" aria-label="StoreOS">
-      <span className="brand-mark">S</span>
+      <span className="brand-mark brand-mark--logo" aria-hidden="true" />
       <span>
         <strong className="brand-name">StoreOS</strong>
       </span>

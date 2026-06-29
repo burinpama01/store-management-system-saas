@@ -1,13 +1,18 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { AuthorizationError, requireSystemAccess } from "@/modules/auth/guards";
+import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import {
   getPlatformSettings,
   updatePlatformPromptPay,
   updateEnterpriseFromEmail,
+  updatePlatformLogo,
 } from "@/modules/billing/platform-settings";
 import { sendEnterpriseTestEmail } from "@/modules/enterprise/email";
+
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 export interface PlatformSettingsState {
   error: string | null;
@@ -61,6 +66,56 @@ export async function updatePlatformSettingsAction(
   if (!emailRes.ok) return { ok: false, error: emailRes.error?.userMessage ?? "บันทึกอีเมลผู้ส่งไม่สำเร็จ" };
 
   revalidatePath("/system/settings");
+  return { ok: true, error: null };
+}
+
+/** Super-admin uploads the system logo (StoreOS brand mark). */
+export async function uploadPlatformLogoAction(
+  _prev: PlatformSettingsState,
+  formData: FormData,
+): Promise<PlatformSettingsState> {
+  let user;
+  try {
+    user = await requireSystemAccess();
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { ok: false, error: "ต้องเป็นผู้ดูแลแพลตฟอร์ม" };
+    throw e;
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "ไม่พบไฟล์รูป" };
+  if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "ไฟล์โลโก้ใหญ่เกินไป (เกิน 2MB)" };
+  const contentType = file.type && file.type.startsWith("image/") ? file.type : "image/png";
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const path = `platform/logo/${randomUUID()}/logo.png`;
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.storage
+    .from("product-images")
+    .upload(path, buffer, { contentType, upsert: false });
+  if (error) return { ok: false, error: error.message };
+
+  const { data } = supabase.storage.from("product-images").getPublicUrl(path);
+  const res = await updatePlatformLogo(data.publicUrl, user.id);
+  if (!res.ok) return { ok: false, error: res.error?.userMessage ?? "บันทึกโลโก้ไม่สำเร็จ" };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+export async function resetPlatformLogoAction(
+  _prev: PlatformSettingsState,
+): Promise<PlatformSettingsState> {
+  let user;
+  try {
+    user = await requireSystemAccess();
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { ok: false, error: "ต้องเป็นผู้ดูแลแพลตฟอร์ม" };
+    throw e;
+  }
+  const res = await updatePlatformLogo(null, user.id);
+  if (!res.ok) return { ok: false, error: res.error?.userMessage ?? "รีเซ็ตโลโก้ไม่สำเร็จ" };
+  revalidatePath("/", "layout");
   return { ok: true, error: null };
 }
 

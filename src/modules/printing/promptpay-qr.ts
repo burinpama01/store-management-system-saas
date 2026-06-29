@@ -21,11 +21,13 @@ function crc16(data: string): string {
 
 function normalizePhoneNumber(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
-  // Convert local format (0812345678) → international (66812345678)
-  if (digits.startsWith("0") && digits.length === 10) return "66" + digits.slice(1);
-  // Already international
-  if (digits.startsWith("66") && digits.length === 11) return digits;
-  return null;
+  // Extract the 9-digit subscriber number (without the leading 0 / country code).
+  let local: string | null = null;
+  if (digits.startsWith("0") && digits.length === 10) local = digits.slice(1);
+  else if (digits.startsWith("66") && digits.length === 11) local = digits.slice(2);
+  if (!local || local.length !== 9) return null;
+  // EMVCo PromptPay mobile proxy is 13 digits: "0066" + subscriber number.
+  return "0066" + local;
 }
 
 function normalizeTaxId(id: string): string | null {

@@ -11,6 +11,18 @@ interface Props {
   currentStoreId: string;
 }
 
+function StoreDot({ store }: { store: StoreRow | undefined }) {
+  if (store?.logo_url) {
+    return (
+      <span className="store-dot store-dot--logo">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={store.logo_url} alt="" className="h-full w-full rounded-full object-cover" />
+      </span>
+    );
+  }
+  return <span className="store-dot">{store?.name?.[0]?.toUpperCase() ?? "S"}</span>;
+}
+
 export function StoreSwitcher({ stores, currentStoreId }: Props) {
   const [isPending, startTransition] = useTransition();
 
@@ -18,10 +30,12 @@ export function StoreSwitcher({ stores, currentStoreId }: Props) {
     return <span className="text-sm text-[var(--color-text-muted)]">ไม่มีร้านค้า</span>;
   }
 
+  const current = stores.find((s) => s.id === currentStoreId) ?? stores[0];
+
   if (stores.length === 1) {
     return (
       <span className="store-switch max-w-full">
-        <span className="store-dot">S</span>
+        <StoreDot store={stores[0]} />
         <span className="store-meta">
           <b>{stores[0].name}</b>
           <span>สาขาปัจจุบัน</span>
@@ -32,7 +46,7 @@ export function StoreSwitcher({ stores, currentStoreId }: Props) {
 
   return (
     <span className="store-switch max-w-full">
-      <span className="store-dot">S</span>
+      <StoreDot store={current} />
       <span className="store-meta">
         <b>เลือกร้าน</b>
         <span>{stores.length} สาขา</span>

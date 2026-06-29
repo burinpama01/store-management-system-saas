@@ -18,6 +18,8 @@ import {
   type QrOrderItem,
 } from "./actions";
 import { PREP_STATUS_LABEL, type QrOrderView, type ServiceRequestType } from "@/modules/qr-ordering/types";
+import type { QrMusicEligibility } from "@/modules/music-requests/gates";
+import { MusicTab } from "./MusicTab";
 import { Button } from "@/shared/components/ui";
 
 interface Props {
@@ -25,6 +27,12 @@ interface Props {
   table: Table;
   categories: Category[];
   products: Product[];
+  /** Food tab is usable only while the table has an active session. */
+  foodOrderingEnabled?: boolean;
+  /** Music tab eligibility (Enterprise + license + QR mode/session). */
+  musicEligibility?: QrMusicEligibility;
+  /** Session id from the QR URL (`?s=`), forwarded to music actions. */
+  querySessionId?: string | null;
 }
 
 type AppView = "menu" | "cart" | "success" | "track";
@@ -614,7 +622,19 @@ function TrackView({
 
 // --- Main component ---
 
-export default function QrOrderingApp({ store, table, categories, products }: Props) {
+export default function QrOrderingApp({
+  store,
+  table,
+  categories,
+  products,
+  foodOrderingEnabled = true,
+  musicEligibility,
+  querySessionId = null,
+}: Props) {
+  const musicTabAvailable = !!musicEligibility?.canViewQueue;
+  const [mainTab, setMainTab] = useState<"food" | "music">(
+    foodOrderingEnabled ? "food" : musicTabAvailable ? "music" : "food",
+  );
   const [view, setView] = useState<AppView>("menu");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [cart, setCart] = useState<Cart>(() => emptyCart(store.id));
@@ -786,7 +806,44 @@ export default function QrOrderingApp({ store, table, categories, products }: Pr
         )}
       </header>
 
-      {view === "success" && orderNumber ? (
+      {/* Food / Music tab switcher (only when the music tab is available) */}
+      {musicTabAvailable && (
+        <div className="flex border-b border-gray-100 bg-white">
+          <button
+            onClick={() => setMainTab("food")}
+            className={`flex-1 min-h-11 py-3 text-sm font-semibold transition-colors ${
+              mainTab === "food" ? "text-orange-600 border-b-2 border-orange-500" : "text-gray-400"
+            }`}
+          >
+            สั่งอาหาร
+          </button>
+          <button
+            onClick={() => setMainTab("music")}
+            className={`flex-1 min-h-11 py-3 text-sm font-semibold transition-colors ${
+              mainTab === "music" ? "text-orange-600 border-b-2 border-orange-500" : "text-gray-400"
+            }`}
+          >
+            ขอเพลง
+          </button>
+        </div>
+      )}
+
+      {mainTab === "music" && musicEligibility ? (
+        <MusicTab
+          storeId={store.id}
+          tableId={table.id}
+          querySessionId={querySessionId}
+          eligibility={musicEligibility}
+        />
+      ) : !foodOrderingEnabled ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div className="mb-3 text-4xl">🍽️</div>
+          <p className="text-sm font-semibold text-gray-700">ยังไม่ได้เปิดโต๊ะสำหรับสั่งอาหาร</p>
+          <p className="mt-2 text-sm text-gray-400">
+            กรุณาให้พนักงานเปิดโต๊ะเพื่อเริ่มสั่งอาหาร{musicTabAvailable ? " หรือไปที่แท็บ “ขอเพลง”" : ""}
+          </p>
+        </div>
+      ) : view === "success" && orderNumber ? (
         <SuccessScreen
           orderNumber={orderNumber}
           onTrack={() => setView("track")}

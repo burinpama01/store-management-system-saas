@@ -31,9 +31,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const can = (permission: PermissionKey) => resolved.can(permission);
   const canManageQr = can("orders.manage_qr");
   const currentStoreRow = stores.find((s) => s.id === storeContext.storeId) as
-    | { buffet_enabled?: boolean; qr_ordering_enabled?: boolean }
+    | {
+        buffet_enabled?: boolean;
+        qr_ordering_enabled?: boolean;
+        music_request_enabled?: boolean;
+        music_license_status?: string;
+      }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
+  const musicRequestsVisible =
+    canManageQr &&
+    Boolean(currentStoreRow?.music_request_enabled) &&
+    currentStoreRow?.music_license_status === "approved";
   const assignedKitchenStationIds =
     canManageQr && qrOrderingEnabled && storeContext.role === "staff"
       ? (await listAssignedKitchenStationIdsForUser(storeContext.storeId, user.id)).data ?? []
@@ -57,6 +66,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
     ...(can("catalog.manage") ? [{ href: "/customers", label: "ลูกค้า" }] : []),
     ...(canManageQr ? [{ href: "/qr-orders", label: "QR Order" }] : []),
+    ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
@@ -81,7 +91,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <div className="storeos-app" style={themeStyle}>
       <aside className="storeos-sidebar hidden md:flex">
         <div className="brand">
-          <div className="brand-mark">S</div>
+          <div className="brand-mark brand-mark--logo" aria-hidden="true" />
           <div className="min-w-0">
             <div className="brand-name">StoreOS</div>
             <div className="brand-sub truncate">{storeContext?.orgName ?? "ระบบจัดการร้าน"}</div>

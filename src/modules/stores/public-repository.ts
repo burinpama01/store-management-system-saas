@@ -28,6 +28,12 @@ export function mapStore(row: StoreRow): Store {
     isActive: row.is_active,
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
+    qrOrderingMode: row.qr_ordering_mode,
+    musicRequestEnabled: row.music_request_enabled,
+    musicLicenseStatus: row.music_license_status,
+    musicLicenseApprovedAt: row.music_license_approved_at ?? undefined,
+    // musicLicenseNote is an internal admin note — never expose on the public QR page.
+    musicLicenseNote: undefined,
     dineInDurationMinutes: row.dine_in_duration_minutes,
     themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
     themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,

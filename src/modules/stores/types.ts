@@ -1,3 +1,12 @@
+export type QrOrderingMode = "table_bound" | "session_printed";
+
+export type MusicLicenseStatus =
+  | "not_requested"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired";
+
 export interface Store {
   id: string;
   organizationId: string;
@@ -12,6 +21,11 @@ export interface Store {
   isActive: boolean;
   buffetEnabled: boolean;
   qrOrderingEnabled: boolean;
+  qrOrderingMode: QrOrderingMode;
+  musicRequestEnabled: boolean;
+  musicLicenseStatus: MusicLicenseStatus;
+  musicLicenseApprovedAt?: string;
+  musicLicenseNote?: string;
   dineInDurationMinutes: number;
   themePresetId: string;
   themePrimaryColor: string;

@@ -14,7 +14,7 @@ export default function RegisterPage() {
     <main className="grid min-h-screen overflow-hidden bg-[var(--canvas)] lg:grid-cols-[minmax(0,1fr)_460px]">
       <section className="hidden min-h-screen flex-col justify-between p-10 lg:flex">
         <Link href="/pricing" className="brand p-0">
-          <div className="brand-mark">S</div>
+          <div className="brand-mark brand-mark--logo" aria-hidden="true" />
           <div>
             <div className="brand-name">StoreOS</div>
             <div className="brand-sub">ระบบจัดการร้าน</div>

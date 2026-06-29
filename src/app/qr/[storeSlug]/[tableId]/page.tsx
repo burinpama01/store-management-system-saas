@@ -10,16 +10,20 @@ import {
   listPublicMenu,
 } from "@/modules/stores/public-repository";
 import { nowMs } from "@/shared/utils/time";
+import { resolveQrMusicEligibility } from "@/modules/music-requests/gates";
 import QrOrderingApp from "./QrOrderingApp";
 
 export const dynamic = "force-dynamic";
 
 interface QrOrderPageProps {
   params: Promise<{ storeSlug: string; tableId: string }>;
+  searchParams: Promise<{ s?: string | string[] }>;
 }
 
-export default async function QrOrderPage({ params }: QrOrderPageProps) {
+export default async function QrOrderPage({ params, searchParams }: QrOrderPageProps) {
   const { storeSlug, tableId } = await params;
+  const sp = await searchParams;
+  const querySessionId = typeof sp.s === "string" ? sp.s : null;
 
   if (storeSlug.length > 100 || tableId.length > 100) notFound();
 
@@ -83,7 +87,34 @@ export default async function QrOrderPage({ params }: QrOrderPageProps) {
   const now = nowMs();
   const expiresAt = table.sessionExpiresAt ? Date.parse(table.sessionExpiresAt) : null;
   const sessionActive = expiresAt !== null && expiresAt > now;
-  if (!sessionActive) {
+
+  const musicEligibility = resolveQrMusicEligibility({
+    qrMode: store.qrOrderingMode,
+    querySessionId,
+    currentSessionId: table.currentSessionId ?? null,
+    sessionActive,
+    isEnterprise: features.musicRequest,
+    musicLicenseStatus: store.musicLicenseStatus,
+    musicRequestEnabled: store.musicRequestEnabled,
+  });
+
+  // session_printed: a printed QR is only valid for its own active session.
+  // Once the bill is settled (session cleared) or replaced, the whole QR expires.
+  if (store.qrOrderingMode === "session_printed" && musicEligibility.expiredWholeQr) {
+    return (
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center p-8 max-w-sm mx-auto text-center">
+        <div className="mb-4 text-4xl">⏰</div>
+        <p className="text-lg font-semibold text-gray-700">QR หมดอายุแล้ว</p>
+        <p className="mt-2 text-sm text-gray-400">
+          กรุณาขอ QR ใหม่จากพนักงานเพื่อสั่งอาหารหรือขอเพลง
+        </p>
+      </main>
+    );
+  }
+
+  // Food ordering needs an active session. When food is unavailable but the
+  // customer can still use the music tab (table_bound), fall through to the app.
+  if (!sessionActive && !musicEligibility.canViewQueue) {
     const expired = expiresAt !== null && expiresAt <= now;
     return (
       <main className="min-h-screen bg-white flex flex-col items-center justify-center p-8 max-w-sm mx-auto text-center">
@@ -100,7 +131,9 @@ export default async function QrOrderPage({ params }: QrOrderPageProps) {
     );
   }
 
-  const menuRes = await listPublicMenu(store.id);
+  const menuRes = sessionActive
+    ? await listPublicMenu(store.id)
+    : { data: { categories: [], products: [] }, error: null };
   if (menuRes.error || !menuRes.data) {
     return (
       <main className="min-h-screen bg-white flex flex-col items-center justify-center p-8 max-w-sm mx-auto text-center">
@@ -118,6 +151,9 @@ export default async function QrOrderPage({ params }: QrOrderPageProps) {
       table={table}
       categories={categories}
       products={products}
+      foodOrderingEnabled={sessionActive}
+      musicEligibility={musicEligibility}
+      querySessionId={querySessionId}
     />
   );
 }
