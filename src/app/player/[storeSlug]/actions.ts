@@ -11,6 +11,7 @@ import {
   listPlayHistory,
   playPreviousTrack,
   playRequestNow,
+  playBaseTrackNow,
   type PlayHistoryItem,
 } from "@/modules/music-requests/repository";
 import { orderQueue, type NextTrack } from "@/modules/music-requests/queue-engine";
@@ -35,9 +36,16 @@ export interface PlayerQueueItem {
   playNow: boolean;
 }
 
+/** A store-curated song (base playlist) — staff-only, never shown to customers. */
+export interface PlayerBaseTrack {
+  videoId: string;
+  title: string;
+}
+
 export async function getPlayerStateAction(): Promise<{
   nowPlaying: NowPlaying | null;
   upcoming: PlayerQueueItem[];
+  basePlaylist: PlayerBaseTrack[];
   interrupt: boolean;
   error: string | null;
 }> {
@@ -56,14 +64,19 @@ export async function getPlayerStateAction(): Promise<{
       isDonation: q.donationStatus === "verified",
       playNow: Boolean(q.playNow),
     }));
+    const basePlaylist = (settingsRes.data?.basePlaylist ?? []).map((t) => ({
+      videoId: t.videoId,
+      title: t.title,
+    }));
     // A "play now" donation that isn't already the current track must interrupt.
     const currentId = npRes.data?.musicRequestId ?? null;
     const interrupt = ordered.some((q) => q.playNow && q.id !== currentId);
-    return { nowPlaying: npRes.data, upcoming, interrupt, error: null };
+    return { nowPlaying: npRes.data, upcoming, basePlaylist, interrupt, error: null };
   } catch (e) {
     return {
       nowPlaying: null,
       upcoming: [],
+      basePlaylist: [],
       interrupt: false,
       error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
     };
@@ -114,6 +127,23 @@ export async function playQueueItemAction(
     const { ctx } = await getStoreContext();
     if (!UUID_RE.test(requestId)) return { next: null, error: "คำขอไม่ถูกต้อง" };
     const res = await playRequestNow(ctx.storeId, requestId);
+    if (res.error) return { next: null, error: res.error.userMessage };
+    return { next: res.data, error: null };
+  } catch (e) {
+    return { next: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** Immediately plays a specific store song (base playlist) — staff-only. */
+export async function playBaseTrackAction(
+  videoId: string,
+  title: string,
+): Promise<{ next: NextTrack | null; error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    const { ctx } = await getStoreContext();
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { next: null, error: "วิดีโอไม่ถูกต้อง" };
+    const res = await playBaseTrackNow(ctx.storeId, videoId, (title ?? "").slice(0, 200));
     if (res.error) return { next: null, error: res.error.userMessage };
     return { next: res.data, error: null };
   } catch (e) {

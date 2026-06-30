@@ -587,6 +587,60 @@ export async function playRequestNow(
   return { data: next, error: null };
 }
 
+/**
+ * Immediately play a specific store song (base playlist track). Staff-only;
+ * never enters the customer-visible request queue. Marks the outgoing track
+ * played, sets now-playing (source "base"), and records history.
+ */
+export async function playBaseTrackNow(
+  storeId: string,
+  youtubeVideoId: string,
+  title: string,
+): Promise<{ data: NextTrack | null; error: ReturnType<typeof mapError> | null }> {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+
+  const { data: current } = await supabase
+    .from("store_now_playing")
+    .select("music_request_id")
+    .eq("store_id", storeId)
+    .maybeSingle();
+  if (current?.music_request_id) {
+    await supabase
+      .from("music_requests")
+      .update({ status: "played", played_at: now, updated_at: now })
+      .eq("id", current.music_request_id)
+      .neq("status", "played");
+  }
+
+  const next: NextTrack = { source: "base", youtubeVideoId, title };
+
+  const { error } = await supabase.from("store_now_playing").upsert(
+    {
+      store_id: storeId,
+      music_request_id: null,
+      source: "base",
+      youtube_video_id: youtubeVideoId,
+      title,
+      duration_seconds: null,
+      started_at: now,
+      updated_at: now,
+    },
+    { onConflict: "store_id" },
+  );
+  if (error) return { data: null, error: mapError(error) };
+
+  await supabase.from("store_play_history").insert({
+    store_id: storeId,
+    music_request_id: null,
+    source: "base",
+    youtube_video_id: youtubeVideoId,
+    title,
+    played_at: now,
+  });
+  return { data: next, error: null };
+}
+
 export interface PlayHistoryItem {
   id: string;
   source: "request" | "base";
