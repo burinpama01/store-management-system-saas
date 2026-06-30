@@ -247,7 +247,7 @@ function ProductModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-sm bg-white rounded-t-2xl max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-sm sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col">
         {product.imageUrl && (
           <Image
             src={product.imageUrl}
@@ -718,6 +718,11 @@ export default function QrOrderingApp({
     });
   }
 
+  // Only show categories that actually have orderable (QR) products on the menu.
+  const visibleCategories = categories.filter((c) =>
+    products.some((p) => p.categoryId === c.id),
+  );
+
   const visibleProducts =
     selectedCategoryId === null
       ? products
@@ -799,7 +804,7 @@ export default function QrOrderingApp({
   const cartCount = cart.items.reduce((s, i) => s + i.quantity, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-sm mx-auto">
+    <div className="min-h-screen bg-gray-50 flex flex-col w-full max-w-md sm:max-w-3xl mx-auto">
       {/* Header */}
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -886,7 +891,7 @@ export default function QrOrderingApp({
           {/* Category tabs */}
           <div className="bg-white px-4 pt-3 pb-2 sticky top-0 z-10 border-b border-gray-100">
             <CategoryTabs
-              categories={categories}
+              categories={visibleCategories}
               selectedId={selectedCategoryId}
               onSelect={setSelectedCategoryId}
             />
@@ -897,7 +902,7 @@ export default function QrOrderingApp({
             {visibleProducts.length === 0 ? (
               <p className="text-sm text-gray-400 text-center mt-8">ไม่มีรายการในหมวดนี้</p>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {visibleProducts.map((product) => (
                   <ProductCard
                     key={product.id}

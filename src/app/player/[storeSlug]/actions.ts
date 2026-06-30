@@ -10,6 +10,7 @@ import {
   decideMusicRequest,
   listPlayHistory,
   playPreviousTrack,
+  playRequestNow,
   type PlayHistoryItem,
 } from "@/modules/music-requests/repository";
 import { orderQueue, type NextTrack } from "@/modules/music-requests/queue-engine";
@@ -101,6 +102,22 @@ export async function removeQueueItemAction(
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** Immediately plays a specific request from the queue (staff selection). */
+export async function playQueueItemAction(
+  requestId: string,
+): Promise<{ next: NextTrack | null; error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(requestId)) return { next: null, error: "คำขอไม่ถูกต้อง" };
+    const res = await playRequestNow(ctx.storeId, requestId);
+    if (res.error) return { next: null, error: res.error.userMessage };
+    return { next: res.data, error: null };
+  } catch (e) {
+    return { next: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 

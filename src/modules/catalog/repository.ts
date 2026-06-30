@@ -367,6 +367,7 @@ export interface CreateProductInput {
   basePrice?: number;
   availableForPos?: boolean;
   availableForQr?: boolean;
+  kitchenStationId?: string | null;
   sortOrder?: number;
 }
 
@@ -388,6 +389,7 @@ export async function createProduct(input: CreateProductInput) {
       base_price: input.basePrice ?? 0,
       available_for_pos: input.availableForPos ?? true,
       available_for_qr: input.availableForQr ?? false,
+      kitchen_station_id: input.kitchenStationId ?? null,
       sort_order: input.sortOrder ?? 0,
     })
     .select()
@@ -416,7 +418,7 @@ export async function updateProduct(
       | "sortOrder"
       | "categoryId"
     >
-  >,
+  > & { kitchenStationId?: string | null },
 ) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase
@@ -430,6 +432,7 @@ export async function updateProduct(
       is_active: input.isActive,
       available_for_pos: input.availableForPos,
       available_for_qr: input.availableForQr,
+      kitchen_station_id: input.kitchenStationId,
       sort_order: input.sortOrder,
       category_id: input.categoryId,
       updated_at: new Date().toISOString(),

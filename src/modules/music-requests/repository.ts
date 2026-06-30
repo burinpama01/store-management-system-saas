@@ -510,6 +510,83 @@ export async function advanceNowPlaying(
   return { data: next, error: null };
 }
 
+/**
+ * Immediately play a specific queued request (staff picks it from the queue).
+ * Marks the outgoing track played, sets it as now-playing, and records history.
+ */
+export async function playRequestNow(
+  storeId: string,
+  requestId: string,
+): Promise<{ data: NextTrack | null; error: ReturnType<typeof mapError> | null }> {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+
+  const { data: req, error: reqErr } = await supabase
+    .from("music_requests")
+    .select("id, youtube_video_id, youtube_title, song_title, duration_seconds")
+    .eq("id", requestId)
+    .eq("store_id", storeId)
+    .in("status", ["pending", "approved"])
+    .not("youtube_video_id", "is", null)
+    .maybeSingle();
+  if (reqErr) return { data: null, error: mapError(reqErr) };
+  if (!req || !req.youtube_video_id) {
+    return { data: null, error: mapError(new Error("ไม่พบเพลงในคิว")) };
+  }
+
+  const { data: current } = await supabase
+    .from("store_now_playing")
+    .select("music_request_id")
+    .eq("store_id", storeId)
+    .maybeSingle();
+  if (current?.music_request_id && current.music_request_id !== requestId) {
+    await supabase
+      .from("music_requests")
+      .update({ status: "played", played_at: now, updated_at: now })
+      .eq("id", current.music_request_id)
+      .neq("status", "played");
+  }
+
+  const next: NextTrack = {
+    source: "request",
+    requestId: req.id,
+    youtubeVideoId: req.youtube_video_id,
+    title: req.youtube_title ?? req.song_title,
+    durationSeconds: req.duration_seconds ?? undefined,
+  };
+
+  await supabase
+    .from("music_requests")
+    .update({ status: "played", played_at: now, decided_at: now, updated_at: now })
+    .eq("id", req.id)
+    .neq("status", "played");
+
+  const { error } = await supabase.from("store_now_playing").upsert(
+    {
+      store_id: storeId,
+      music_request_id: next.requestId ?? null,
+      source: next.source,
+      youtube_video_id: next.youtubeVideoId,
+      title: next.title,
+      duration_seconds: next.durationSeconds ?? null,
+      started_at: now,
+      updated_at: now,
+    },
+    { onConflict: "store_id" },
+  );
+  if (error) return { data: null, error: mapError(error) };
+
+  await supabase.from("store_play_history").insert({
+    store_id: storeId,
+    music_request_id: next.requestId ?? null,
+    source: next.source,
+    youtube_video_id: next.youtubeVideoId,
+    title: next.title,
+    played_at: now,
+  });
+  return { data: next, error: null };
+}
+
 export interface PlayHistoryItem {
   id: string;
   source: "request" | "base";

@@ -7,6 +7,7 @@ import {
   advancePlayerAction,
   getPlayerStateAction,
   playPreviousAction,
+  playQueueItemAction,
   removeQueueItemAction,
   getPlayHistoryAction,
   type PlayerQueueItem,
@@ -145,6 +146,32 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     void (async () => {
       const res = await removeQueueItemAction(requestId);
       if (res.error) setError(res.error);
+      setBusy(false);
+      void refreshState();
+    })();
+  }
+
+  function playItem(requestId: string) {
+    setBusy(true);
+    void (async () => {
+      const res = await playQueueItemAction(requestId);
+      if (res.error) setError(res.error);
+      else if (res.next && VIDEO_ID_RE.test(res.next.youtubeVideoId)) {
+        playingRef.current = true;
+        setIdle(false);
+        setNow({
+          storeId: "",
+          source: res.next.source,
+          musicRequestId: res.next.requestId,
+          youtubeVideoId: res.next.youtubeVideoId,
+          title: res.next.title,
+          durationSeconds: res.next.durationSeconds,
+          startedAt: new Date().toISOString(),
+        });
+        if (playerRef.current && readyRef.current) {
+          playerRef.current.loadVideoById(res.next.youtubeVideoId);
+        }
+      }
       setBusy(false);
       void refreshState();
     })();
@@ -322,6 +349,14 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
                       💸 โดเนท
                     </span>
                   ) : null}
+                  <button
+                    onClick={() => playItem(q.id)}
+                    disabled={busy}
+                    title="เล่นเพลงนี้เลย"
+                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
+                  >
+                    ▶
+                  </button>
                   <button
                     onClick={() => removeItem(q.id)}
                     disabled={busy}
