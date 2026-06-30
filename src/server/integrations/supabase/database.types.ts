@@ -226,6 +226,8 @@ export interface Database {
           enterprise_from_email: string | null;
           logo_url: string | null;
           jdc_functions_base_url: string | null;
+          jdc_api_key: string | null;
+          jdc_webhook_secret: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -238,6 +240,8 @@ export interface Database {
           enterprise_from_email?: string | null;
           logo_url?: string | null;
           jdc_functions_base_url?: string | null;
+          jdc_api_key?: string | null;
+          jdc_webhook_secret?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -250,6 +254,8 @@ export interface Database {
           enterprise_from_email?: string | null;
           logo_url?: string | null;
           jdc_functions_base_url?: string | null;
+          jdc_api_key?: string | null;
+          jdc_webhook_secret?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };

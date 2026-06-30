@@ -9,7 +9,7 @@ import {
   updatePlatformPromptPay,
   updateEnterpriseFromEmail,
   updatePlatformLogo,
-  updateJdcFunctionsBaseUrl,
+  updateJdcConnectConfig,
 } from "@/modules/billing/platform-settings";
 import { sendEnterpriseTestEmail } from "@/modules/enterprise/email";
 
@@ -75,8 +75,13 @@ export async function updatePlatformSettingsAction(
       return { ok: false, error: "URL ของ JDC Edge Functions ไม่ถูกต้อง (เช่น https://xxx.supabase.co/functions/v1)" };
     }
   }
-  const jdcRes = await updateJdcFunctionsBaseUrl(jdcUrl || null, user.id);
-  if (!jdcRes.ok) return { ok: false, error: jdcRes.error?.userMessage ?? "บันทึก URL ของ JDC ไม่สำเร็จ" };
+  const jdcApiKey = ((formData.get("jdcApiKey") as string | null) ?? "").trim();
+  const jdcWebhookSecret = ((formData.get("jdcWebhookSecret") as string | null) ?? "").trim();
+  const jdcRes = await updateJdcConnectConfig(
+    { functionsBaseUrl: jdcUrl || null, apiKey: jdcApiKey || null, webhookSecret: jdcWebhookSecret || null },
+    user.id,
+  );
+  if (!jdcRes.ok) return { ok: false, error: jdcRes.error?.userMessage ?? "บันทึกค่า StoreOS Connect ไม่สำเร็จ" };
 
   revalidatePath("/system/settings");
   return { ok: true, error: null };

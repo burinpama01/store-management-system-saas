@@ -8,7 +8,7 @@ import {
   listConnectOrders,
   getDeliveryProducts,
 } from "@/modules/connect/repository";
-import { getJdcFunctionsBaseUrl } from "@/modules/billing/platform-settings";
+import { getJdcFunctionsBaseUrl, getJdcWebhookSecret } from "@/modules/billing/platform-settings";
 import { ConnectManager } from "./ConnectManager";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +22,12 @@ export default async function ConnectSettingsPage() {
     (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
   const featureEnabled = canUseFeature(billing, "apiIntegration");
 
-  const [links, orders, deliveryProducts, jdcBaseUrl] = await Promise.all([
+  const [links, orders, deliveryProducts, jdcBaseUrl, jdcSecret] = await Promise.all([
     listChannelLinks(ctx.organizationId),
     listConnectOrders(ctx.organizationId, 50),
     getDeliveryProducts(ctx.storeId),
     getJdcFunctionsBaseUrl(),
+    getJdcWebhookSecret(),
   ]);
 
   const h = await headers();
@@ -42,7 +43,6 @@ export default async function ConnectSettingsPage() {
           channel: l.channel,
           externalMerchantId: l.externalMerchantId,
           status: l.status,
-          webhookSecret: l.webhookSecret,
           autoAccept: l.autoAccept,
           storeId: l.storeId,
         }))}
@@ -58,7 +58,7 @@ export default async function ConnectSettingsPage() {
         deliveryProductCount={deliveryProducts.length}
         webhookUrl={webhookUrl}
         featureEnabled={featureEnabled}
-        jdcConfigured={Boolean(jdcBaseUrl)}
+        jdcConfigured={Boolean(jdcBaseUrl && jdcSecret)}
         canManageOrders={resolved.can("orders.manage_qr")}
       />
     </div>

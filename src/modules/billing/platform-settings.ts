@@ -14,6 +14,10 @@ export interface PlatformPromptPaySettings {
   logoUrl: string | null;
   /** StoreOS Connect: base URL ของ JDC Edge Functions (เช่น https://xxx.supabase.co/functions/v1). */
   jdcFunctionsBaseUrl: string | null;
+  /** StoreOS Connect: JDC API key (แนบ Authorization ตอนเรียก edge function) — JDC ออกให้ชุดเดียวทั้งระบบ. */
+  jdcApiKey: string | null;
+  /** StoreOS Connect: shared HMAC secret ทั้งขาเข้า/ออก — JDC ออกให้ชุดเดียวทั้งระบบ. */
+  jdcWebhookSecret: string | null;
 }
 
 const DEFAULTS: PlatformPromptPaySettings = {
@@ -24,6 +28,8 @@ const DEFAULTS: PlatformPromptPaySettings = {
   enterpriseFromEmail: null,
   logoUrl: null,
   jdcFunctionsBaseUrl: null,
+  jdcApiKey: null,
+  jdcWebhookSecret: null,
 };
 
 /** Reads the singleton platform settings row. Service-client only. */
@@ -31,7 +37,7 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("platform_settings")
-    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url, jdc_functions_base_url")
+    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url, jdc_functions_base_url, jdc_api_key, jdc_webhook_secret")
     .eq("id", "singleton")
     .maybeSingle();
   if (!data) return DEFAULTS;
@@ -43,6 +49,8 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
     enterpriseFromEmail: data.enterprise_from_email,
     logoUrl: data.logo_url ?? null,
     jdcFunctionsBaseUrl: data.jdc_functions_base_url ?? null,
+    jdcApiKey: data.jdc_api_key ?? null,
+    jdcWebhookSecret: data.jdc_webhook_secret ?? null,
   };
 }
 
@@ -52,13 +60,34 @@ export async function getJdcFunctionsBaseUrl(): Promise<string | null> {
   return jdcFunctionsBaseUrl?.trim() || null;
 }
 
-/** อัปเดตเฉพาะ JDC Functions URL บน singleton row */
-export async function updateJdcFunctionsBaseUrl(url: string | null, actorUserId: string) {
+/** StoreOS Connect: JDC API key (Authorization ตอนเรียก edge function). null = ไม่แนบ (verify_jwt=false) */
+export async function getJdcApiKey(): Promise<string | null> {
+  const { jdcApiKey } = await getPlatformSettings();
+  return jdcApiKey?.trim() || null;
+}
+
+/** StoreOS Connect: shared HMAC secret (ทั้งขาเข้า/ออก). null = ยังไม่ตั้ง */
+export async function getJdcWebhookSecret(): Promise<string | null> {
+  const { jdcWebhookSecret } = await getPlatformSettings();
+  return jdcWebhookSecret?.trim() || null;
+}
+
+/** อัปเดต config StoreOS Connect ระดับแพลตฟอร์ม (URL + JDC key + webhook secret) */
+export async function updateJdcConnectConfig(
+  input: { functionsBaseUrl?: string | null; apiKey?: string | null; webhookSecret?: string | null },
+  actorUserId: string,
+) {
   const supabase = await createSupabaseServiceClient();
   const { error } = await supabase.from("platform_settings").upsert(
     {
       id: "singleton",
-      jdc_functions_base_url: url?.trim() || null,
+      ...(input.functionsBaseUrl !== undefined
+        ? { jdc_functions_base_url: input.functionsBaseUrl?.trim() || null }
+        : {}),
+      ...(input.apiKey !== undefined ? { jdc_api_key: input.apiKey?.trim() || null } : {}),
+      ...(input.webhookSecret !== undefined
+        ? { jdc_webhook_secret: input.webhookSecret?.trim() || null }
+        : {}),
       updated_by: actorUserId,
       updated_at: new Date().toISOString(),
     },
