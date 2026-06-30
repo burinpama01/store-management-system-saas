@@ -5,7 +5,7 @@ import {
   getConnectOrder,
   insertConnectOrder,
   recordEvent,
-  resolveProductIdByExternalRef,
+  resolveProductsForInbound,
   type ChannelLink,
 } from "./repository";
 import type { InboundOrderItem, InboundOrderPayload } from "./types";
@@ -20,6 +20,11 @@ export interface IngestResult {
   error?: string;
 }
 
+/** ยอดที่ร้านต้องได้รับ = merchant_total ที่ JDC ส่งมา ไม่งั้นใช้ผลรวมราคาสินค้า */
+function resolveMerchantTotal(payload: InboundOrderPayload, itemsSubtotal: number): number {
+  return typeof payload.merchant_total === "number" ? payload.merchant_total : itemsSubtotal;
+}
+
 function buildOrderNote(payload: InboundOrderPayload, unmapped: string[]): string {
   const parts = [`ออเดอร์เดลิเวอรี JDC #${payload.booking_id.slice(0, 8)}`];
   if (payload.customer && typeof payload.customer === "object") {
@@ -30,11 +35,18 @@ function buildOrderNote(payload: InboundOrderPayload, unmapped: string[]): strin
   return parts.join(" | ").slice(0, 500);
 }
 
+/** แปลงตัวเลือกยิบย่อยเป็น modifiers jsonb รูปแบบเดียวกับ QR (กันให้ตั๋วครัว/ใบเสร็จ render ได้) */
+function toModifiers(options: InboundOrderItem["options"]): { option: { name: string; price: number } }[] {
+  if (!options) return [];
+  return options.map((o) => ({ option: { name: o.name, price: o.price ?? 0 } }));
+}
+
 /**
  * idempotent ด้วย unique(link_id, external_order_id):
  * - ถ้าเคยรับแล้ว → duplicate
- * - map รายการผ่าน external_ref (= product.id) → สร้าง order(status=paid) + order_items
- * - บันทึก connect_orders (origin=jdc) แล้ว auto_accept ถ้าตั้งไว้
+ * - map รายการผ่าน external_ref (= product.id) → สร้าง order(status=open, ยังไม่ชำระ) + order_items
+ *   (เก็บ kitchen_station + ตัวเลือกยิบย่อย) แล้ว auto_accept ถ้าตั้งไว้
+ * - ออเดอร์จะขึ้น "ชำระแล้ว" ตอนคนขับกดรับอาหาร (ดู status-sync.applyInboundStatus)
  */
 export async function processInboundOrder(
   link: ChannelLink,
@@ -46,24 +58,46 @@ export async function processInboundOrder(
   }
 
   const items: InboundOrderItem[] = payload.items ?? [];
-  const mapped: { productId: string; name: string; qty: number; price: number }[] = [];
+  const resolved = await resolveProductsForInbound(
+    link.storeId,
+    items.map((it) => it.external_ref ?? "").filter(Boolean),
+  );
+
+  const mapped: {
+    productId: string;
+    name: string;
+    qty: number;
+    price: number;
+    note: string | null;
+    modifiers: { option: { name: string; price: number } }[];
+    kitchenStationId: string | null;
+    kitchenStationName: string | null;
+  }[] = [];
   const unmapped: string[] = [];
   for (const it of items) {
-    const ref = it.external_ref ?? null;
-    const productId = ref ? await resolveProductIdByExternalRef(link.storeId, ref) : null;
-    if (productId) {
-      mapped.push({ productId, name: it.name, qty: it.qty, price: it.price });
+    const r = it.external_ref ? resolved.get(it.external_ref) : undefined;
+    if (r) {
+      mapped.push({
+        productId: r.productId,
+        name: it.name,
+        qty: it.qty,
+        price: it.price,
+        note: it.note ?? null,
+        modifiers: toModifiers(it.options),
+        kitchenStationId: r.kitchenStationId,
+        kitchenStationName: r.kitchenStationName,
+      });
     } else {
       unmapped.push(it.name);
     }
   }
 
-  const subtotal = mapped.reduce((s, m) => s + m.qty * m.price, 0);
-  const total = typeof payload.total === "number" ? payload.total : subtotal;
+  const itemsSubtotal = mapped.reduce((s, m) => s + m.qty * m.price, 0);
+  const merchantTotal = resolveMerchantTotal(payload, itemsSubtotal);
   const now = new Date().toISOString();
   const supabase = await createSupabaseServiceClient();
 
-  // สร้าง order ภายใน (ชำระโดย JDC → status=paid). ถ้าไม่มีรายการ map ได้เลย ข้ามการสร้าง order
+  // สร้าง order ภายใน — status=open (ยังไม่ชำระ จนกว่าคนขับจะรับอาหาร)
   let internalOrderId: string | null = null;
   if (mapped.length > 0) {
     const { data: order, error: orderErr } = await supabase
@@ -72,13 +106,12 @@ export async function processInboundOrder(
         organization_id: link.organizationId,
         store_id: link.storeId,
         order_number: `JDC-${payload.booking_id.slice(0, 8).toUpperCase()}`,
-        status: "paid",
+        status: "open",
         cashier_id: CONNECT_SYSTEM_USER,
-        subtotal,
-        total,
+        subtotal: merchantTotal,
+        total: merchantTotal,
         note: buildOrderNote(payload, unmapped),
         qr_order_source: false,
-        paid_at: now,
       })
       .select("id")
       .single();
@@ -102,6 +135,10 @@ export async function processInboundOrder(
       quantity: m.qty,
       unit_price: m.price,
       total_price: m.qty * m.price,
+      note: m.note,
+      modifiers: m.modifiers as never,
+      kitchen_station_id: m.kitchenStationId,
+      kitchen_station_name: m.kitchenStationName,
     }));
     const { error: itemErr } = await supabase.from("order_items").insert(rows);
     if (itemErr) {

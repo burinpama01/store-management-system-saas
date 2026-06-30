@@ -135,6 +135,9 @@ export interface InboundOrderItem {
   qty: number;
   price: number;
   name: string;
+  /** ตัวเลือกยิบย่อย (เพิ่มไข่/เผ็ด/ขนาด ฯลฯ) — ราคา price ของ item รวมตัวเลือกแล้ว */
+  options?: { name: string; price?: number }[];
+  note?: string;
 }
 
 /** payload webhook ขาเข้าจาก JDC */
@@ -146,7 +149,10 @@ export interface InboundOrderPayload {
   items?: InboundOrderItem[];
   customer?: Record<string, unknown>;
   dropoff?: Record<string, unknown>;
+  /** ยอดรวมฝั่งลูกค้า (รวมค่าส่ง) — ไม่ใช่ยอดที่ร้านได้ */
   total?: number;
+  /** ยอดที่ร้านต้องได้รับ = ยอดที่คนขับต้องจ่ายร้าน (ถ้าไม่ส่งมา ใช้ผลรวมราคาสินค้า) */
+  merchant_total?: number;
   paid?: boolean;
   ts?: number;
 }

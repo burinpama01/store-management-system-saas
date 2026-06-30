@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runPollCycle, isAllowedNetworkPrinterHost, decodePrintJobBase64, normalizeComPort } from "../../scripts/print-hub.mjs";
+import { runPollCycle, isAllowedNetworkPrinterHost, decodePrintJobBase64, normalizeComPort, sendToComPort } from "../../scripts/print-hub.mjs";
 
 const config = { serverUrl: "https://hub.example", storeId: "store-1", hubToken: "secret" };
 
@@ -130,6 +130,20 @@ describe("print hub agent — guards", () => {
     expect(normalizeComPort("LPT1")).toBeNull();
     expect(normalizeComPort("COM5; rm -rf")).toBeNull();
     expect(normalizeComPort("")).toBeNull();
+  });
+});
+
+describe("print hub agent — sendToComPort", () => {
+  it("normalizes the port and hands the payload to the serial runner", async () => {
+    const runner = vi.fn().mockResolvedValue(undefined);
+    await sendToComPort(" com5 ", Buffer.from("x"), { runner, baud: 19200 });
+    expect(runner).toHaveBeenCalledWith("COM5", expect.any(Buffer), 19200);
+  });
+
+  it("rejects an invalid COM port without invoking the runner", async () => {
+    const runner = vi.fn();
+    await expect(sendToComPort("LPT1", Buffer.from("x"), { runner })).rejects.toThrow(/COM port/);
+    expect(runner).not.toHaveBeenCalled();
   });
 });
 

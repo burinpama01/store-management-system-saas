@@ -5,18 +5,9 @@ import {
   createChannelLinkAction,
   setShopStatusAction,
   syncMenuNowAction,
-  updateDeliveryOrderStatusAction,
   updateLinkAction,
   type ConnectActionState,
 } from "./actions";
-
-type FulfillmentStatus =
-  | "received"
-  | "accepted"
-  | "preparing"
-  | "ready"
-  | "completed"
-  | "cancelled";
 
 interface LinkVM {
   id: string;
@@ -26,37 +17,6 @@ interface LinkVM {
   autoAccept: boolean;
   storeId: string;
 }
-
-interface OrderVM {
-  id: string;
-  externalOrderId: string;
-  fulfillmentStatus: FulfillmentStatus;
-  lastStatusOrigin: string | null;
-  orderNumber: string | null;
-  total: number | null;
-  receivedAt: string;
-}
-
-const STATUS_LABEL: Record<FulfillmentStatus, string> = {
-  received: "รับเข้าใหม่",
-  accepted: "รับออเดอร์แล้ว",
-  preparing: "กำลังทำ",
-  ready: "พร้อมรับ",
-  completed: "เสร็จสิ้น",
-  cancelled: "ยกเลิก",
-};
-
-const NEXT_ACTIONS: Record<FulfillmentStatus, { next: FulfillmentStatus; label: string; danger?: boolean }[]> = {
-  received: [
-    { next: "accepted", label: "รับออเดอร์" },
-    { next: "cancelled", label: "ยกเลิก", danger: true },
-  ],
-  accepted: [{ next: "preparing", label: "กำลังทำ" }],
-  preparing: [{ next: "ready", label: "พร้อมรับ" }],
-  ready: [], // พร้อมรับแล้ว — คนขับเข้ารับ, JDC ปิดงานเอง (in_transit → completed)
-  completed: [],
-  cancelled: [],
-};
 
 const INITIAL: ConnectActionState = { error: null };
 
@@ -224,63 +184,23 @@ function LinkCard({ link, deliveryProductCount }: { link: LinkVM; deliveryProduc
   );
 }
 
-function OrderRow({ order, canManage }: { order: OrderVM; canManage: boolean }) {
-  const actions = NEXT_ACTIONS[order.fulfillmentStatus];
-  return (
-    <div className="flex items-center justify-between rounded border border-gray-200 px-3 py-2">
-      <div>
-        <span className="text-sm font-medium text-gray-900">
-          {order.orderNumber ?? `#${order.externalOrderId.slice(0, 8)}`}
-        </span>
-        {order.total != null && <span className="ml-2 text-xs text-gray-500">฿{order.total}</span>}
-        <span className="ml-2 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-          {STATUS_LABEL[order.fulfillmentStatus]}
-        </span>
-        {order.lastStatusOrigin && (
-          <span className="ml-1 text-[10px] text-gray-400">({order.lastStatusOrigin})</span>
-        )}
-      </div>
-      {canManage && actions.length > 0 && (
-        <div className="flex gap-2">
-          {actions.map((a) => (
-            <ActionButton
-              key={a.next}
-              action={updateDeliveryOrderStatusAction}
-              fields={{ connectOrderId: order.id, next: a.next }}
-              className={`rounded px-3 py-1 text-xs text-white ${
-                a.danger ? "bg-red-500 hover:bg-red-600" : "bg-blue-600 hover:bg-blue-700"
-              }`}
-            >
-              {a.label}
-            </ActionButton>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function ConnectManager({
   links,
-  orders,
   deliveryProductCount,
   featureEnabled,
   jdcConfigured,
-  canManageOrders,
 }: {
   links: LinkVM[];
-  orders: OrderVM[];
   deliveryProductCount: number;
   featureEnabled: boolean;
   jdcConfigured: boolean;
-  canManageOrders: boolean;
 }) {
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold text-gray-900">StoreOS Connect — เชื่อมเดลิเวอรี (JDC)</h1>
         <p className="text-sm text-gray-500">
-          ดันเมนูขึ้น JDC · รับออเดอร์เข้า POS · sync สถานะสองทาง · เปิด-ปิดร้าน
+          ตั้งค่าการเชื่อมร้านกับ JDC · ดูออเดอร์เดลิเวอรีที่เมนู “เดลิเวอรี”
         </p>
       </div>
 
@@ -311,21 +231,6 @@ export function ConnectManager({
           ))}
         </section>
       )}
-
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-gray-900 mb-3">
-          ออเดอร์เดลิเวอรีล่าสุด ({orders.length})
-        </h2>
-        {orders.length === 0 ? (
-          <p className="text-xs text-gray-400">ยังไม่มีออเดอร์จาก JDC</p>
-        ) : (
-          <div className="space-y-2">
-            {orders.map((o) => (
-              <OrderRow key={o.id} order={o} canManage={canManageOrders} />
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

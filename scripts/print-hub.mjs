@@ -8,8 +8,9 @@
 //     "storeId": "<uuid>", "hubToken": "<token>", "pollIntervalMs": 2500 }
 
 import net from "node:net";
-import { readFileSync, createWriteStream } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -103,67 +104,68 @@ export function sendToSocket(host, port, data, options = {}) {
   });
 }
 
-// Best-effort serial config for a Bluetooth SPP COM port. Virtual SPP ports
-// usually ignore these, but some drivers need them; failures are non-fatal.
-function defaultConfigureComPort(port) {
-  spawnSync("cmd", ["/c", "mode", `${port}:`, "BAUD=9600", "PARITY=N", "DATA=8", "STOP=1"], {
-    windowsHide: true,
-  });
+// PowerShell that opens the COM port via .NET SerialPort and writes a payload
+// file in small paced chunks. Node's fs cannot reliably open a Windows serial
+// device (it fails with "UNKNOWN: unknown error, open '\\.\COMx'"), so we use
+// System.IO.Ports.SerialPort, which is the supported way to talk to a COM port.
+// `port` is pre-validated to /^COM\d+$/ and `file` is an internal temp path, so
+// neither can inject into the script.
+function buildSerialPortScript(port, file, baud) {
+  return [
+    "$ErrorActionPreference='Stop';",
+    `$bytes=[System.IO.File]::ReadAllBytes('${file}');`,
+    `$sp=New-Object System.IO.Ports.SerialPort('${port}',${baud},[System.IO.Ports.Parity]::None,8,[System.IO.Ports.StopBits]::One);`,
+    "$sp.WriteTimeout=8000; $sp.Open();",
+    "$i=0; while($i -lt $bytes.Length){ $n=[Math]::Min(256,$bytes.Length-$i); $sp.Write($bytes,$i,$n); Start-Sleep -Milliseconds 15; $i+=$n }",
+    "Start-Sleep -Milliseconds 400; $sp.Close();",
+  ].join(" ");
 }
 
 /**
  * Writes ESC/POS bytes to a Bluetooth printer paired to this PC as a Windows
- * SPP COM port (e.g. COM5). Chunked + paced like the TCP path because cheap
- * thermal printers drop data when flooded. `configure` is injectable for tests.
+ * SPP COM port (e.g. COM5), via PowerShell's .NET SerialPort. Paced in 256-byte
+ * chunks because cheap thermal printers drop data when flooded. `runner` is
+ * injectable so tests do not spawn PowerShell.
  */
 export function sendToComPort(comPort, data, options = {}) {
-  const chunkBytes = options.chunkBytes ?? PRINT_CHUNK_BYTES;
-  const chunkDelayMs = options.chunkDelayMs ?? PRINT_CHUNK_DELAY_MS;
-  const configure = options.configure ?? defaultConfigureComPort;
+  // Most Bluetooth SPP ports ignore baud, but a few printers need a specific
+  // rate; allow STOREOS_HUB_BAUD to override without a code change.
+  const baud = options.baud ?? clampInt(process.env.STOREOS_HUB_BAUD, 9600);
+  const runner = options.runner ?? defaultSerialRunner;
   return new Promise((resolve, reject) => {
     const port = normalizeComPort(comPort);
     if (!port) {
       reject(new Error("Invalid or disallowed Bluetooth COM port"));
       return;
     }
+    runner(port, data, baud).then(resolve, reject);
+  });
+}
+
+function defaultSerialRunner(port, data, baud) {
+  return new Promise((resolve, reject) => {
+    const file = join(tmpdir(), `storeos-hub-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
     try {
-      configure(port);
-    } catch {
-      // Ignore mode failures -- many virtual SPP ports do not support `mode`.
+      writeFileSync(file, data);
+    } catch (err) {
+      reject(err);
+      return;
     }
-    // Windows device path prefix built from char codes so the source stays
-    // ASCII/escape-free (vite-node's .mjs loader mis-parses backslash literals).
-    const devicePrefix = String.fromCharCode(92, 92, 46, 92);
-    const openStream = options.openStream ?? ((p) => createWriteStream(devicePrefix + p));
-    const stream = openStream(port);
-    let done = false;
-    const timer = setTimeout(() => settle(new Error(`Print send timed out (${SEND_TIMEOUT_MS}ms)`)), SEND_TIMEOUT_MS);
-    function settle(err) {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      if (err) {
-        stream.destroy();
-        reject(err);
-      } else {
-        stream.end(() => resolve());
-      }
-    }
-    stream.on("error", settle);
-    (async () => {
-      try {
-        for (let offset = 0; offset < data.length && !done; offset += chunkBytes) {
-          const end = Math.min(offset + chunkBytes, data.length);
-          await new Promise((res, rej) => stream.write(data.subarray(offset, end), (e) => (e ? rej(e) : res())));
-          if (chunkDelayMs > 0 && end < data.length) {
-            await new Promise((res) => setTimeout(res, chunkDelayMs));
-          }
+    const script = buildSerialPortScript(port, file, baud);
+    execFile(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { timeout: SEND_TIMEOUT_MS, windowsHide: true },
+      (err, _stdout, stderr) => {
+        try { unlinkSync(file); } catch { /* temp file cleanup is best-effort */ }
+        if (err) {
+          const detail = (stderr || err.message || "COM write failed").toString().trim().replace(/\s+/g, " ");
+          reject(new Error(detail.slice(0, 200)));
+          return;
         }
-        settle();
-      } catch (err) {
-        settle(err);
-      }
-    })();
+        resolve();
+      },
+    );
   });
 }
 

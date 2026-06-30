@@ -15,18 +15,33 @@ import {
   type FulfillmentStatus,
 } from "./types";
 
-/** ยกเลิก/ปิดออเดอร์ภายในให้สอดคล้องกับ fulfillment (เฉพาะกรณีที่กระทบ orders) */
+/**
+ * ปรับสถานะ order ภายในให้สอดคล้องกับ fulfillment:
+ * - completed (คนขับรับอาหาร/นำส่ง) → ชำระแล้ว (เงินไหลร้านตอนคนขับรับของ)
+ * - cancelled → ยกเลิก
+ * - อื่น ๆ ไม่แตะ (order ยังเป็น open รออยู่)
+ */
 async function syncInternalOrderStatus(
   internalOrderId: string | null,
   fulfillment: FulfillmentStatus,
 ): Promise<void> {
   if (!internalOrderId) return;
-  if (fulfillment !== "cancelled") return; // completed: ออเดอร์ยังเป็น paid; อื่น ๆ ไม่แตะ
+  const now = new Date().toISOString();
   const supabase = await createSupabaseServiceClient();
-  await supabase
-    .from("orders")
-    .update({ status: "cancelled", updated_at: new Date().toISOString() })
-    .eq("id", internalOrderId);
+  if (fulfillment === "completed") {
+    await supabase
+      .from("orders")
+      .update({ status: "paid", paid_at: now, updated_at: now })
+      .eq("id", internalOrderId)
+      .neq("status", "cancelled");
+    return;
+  }
+  if (fulfillment === "cancelled") {
+    await supabase
+      .from("orders")
+      .update({ status: "cancelled", updated_at: now })
+      .eq("id", internalOrderId);
+  }
 }
 
 /**
