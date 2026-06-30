@@ -51,6 +51,10 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/api/line/webhook" ||
     request.nextUrl.pathname === "/api/print/hub/poll" ||
     request.nextUrl.pathname === "/api/print/hub/ack" ||
+    // StoreOS Connect: webhook ขาเข้าจาก JDC (auth ด้วย HMAC ใน handler ไม่ใช้ session)
+    request.nextUrl.pathname.startsWith("/api/connect/v1/webhooks/") ||
+    // Public REST API (Enterprise) — auth ด้วย API key ใน handler เอง ไม่ใช้ session
+    request.nextUrl.pathname.startsWith("/api/v1/") ||
     // Same-origin proxy for receipt logo/footer images. Serves only public
     // Supabase storage objects (SSRF-guarded), so it needs no session — and
     // staying public avoids any auth-redirect breaking the raster image load.
