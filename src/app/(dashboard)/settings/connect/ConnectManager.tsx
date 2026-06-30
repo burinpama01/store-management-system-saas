@@ -156,7 +156,7 @@ function CreateLinkForm() {
   );
 }
 
-function LinkCard({ link, webhookUrl, deliveryProductCount }: { link: LinkVM; webhookUrl: string; deliveryProductCount: number }) {
+function LinkCard({ link, deliveryProductCount }: { link: LinkVM; deliveryProductCount: number }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -175,12 +175,12 @@ function LinkCard({ link, webhookUrl, deliveryProductCount }: { link: LinkVM; we
         <span className="text-xs text-gray-400">เมนูเดลิเวอรี {deliveryProductCount} รายการ</span>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        <CopyField label="merchant_id (JDC)" value={link.externalMerchantId} />
-        <CopyField label="Webhook URL (ตั้งฝั่ง JDC = STOREOS WEBHOOK URL)" value={webhookUrl} />
+      <div className="grid gap-2">
+        <CopyField label="merchant_id (JDC) ของร้านนี้" value={link.externalMerchantId} />
       </div>
       <p className="text-xs text-gray-400">
-        JDC key + webhook secret ใช้ชุดเดียวทั้งระบบ — ผู้ดูแลแพลตฟอร์มตั้งที่หน้าตั้งค่าระบบ
+        การเชื่อมระบบ (Webhook URL, JDC key, webhook secret) ตั้งครั้งเดียวโดยผู้ดูแลแพลตฟอร์ม —
+        ร้านค้ามีหน้าที่แค่ใส่ merchant_id ของร้านในแอป JDC
       </p>
 
       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
@@ -264,7 +264,6 @@ export function ConnectManager({
   links,
   orders,
   deliveryProductCount,
-  webhookUrl,
   featureEnabled,
   jdcConfigured,
   canManageOrders,
@@ -272,7 +271,6 @@ export function ConnectManager({
   links: LinkVM[];
   orders: OrderVM[];
   deliveryProductCount: number;
-  webhookUrl: string;
   featureEnabled: boolean;
   jdcConfigured: boolean;
   canManageOrders: boolean;
@@ -309,12 +307,7 @@ export function ConnectManager({
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-900">ช่องทางที่เชื่อม</h2>
           {links.map((l) => (
-            <LinkCard
-              key={l.id}
-              link={l}
-              webhookUrl={webhookUrl}
-              deliveryProductCount={deliveryProductCount}
-            />
+            <LinkCard key={l.id} link={l} deliveryProductCount={deliveryProductCount} />
           ))}
         </section>
       )}

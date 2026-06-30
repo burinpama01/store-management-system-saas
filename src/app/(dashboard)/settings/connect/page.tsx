@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
@@ -30,11 +29,6 @@ export default async function ConnectSettingsPage() {
     getJdcWebhookSecret(),
   ]);
 
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const webhookUrl = host ? `${proto}://${host}/api/connect/v1/webhooks/jdc/order` : "";
-
   return (
     <div className="page-shell">
       <ConnectManager
@@ -56,7 +50,6 @@ export default async function ConnectSettingsPage() {
           receivedAt: o.receivedAt,
         }))}
         deliveryProductCount={deliveryProducts.length}
-        webhookUrl={webhookUrl}
         featureEnabled={featureEnabled}
         jdcConfigured={Boolean(jdcBaseUrl && jdcSecret)}
         canManageOrders={resolved.can("orders.manage_qr")}
