@@ -13,6 +13,7 @@ import { getReceiptSettings } from "@/modules/settings/repository";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { QrOrderGlobalNotifier } from "./QrOrderGlobalNotifier";
+import { DeliveryGlobalNotifier } from "./DeliveryGlobalNotifier";
 import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
 
@@ -66,6 +67,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
     ...(can("catalog.manage") ? [{ href: "/customers", label: "ลูกค้า" }] : []),
     ...(canManageQr ? [{ href: "/qr-orders", label: "QR Order" }] : []),
+    ...(canManageQr ? [{ href: "/delivery", label: "เดลิเวอรี" }] : []),
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
@@ -157,6 +159,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         autoPrintStationTickets={autoPrintStationTickets}
         receiptPaperWidth={receiptPaperWidth}
       />
+      <DeliveryGlobalNotifier storeId={storeContext.storeId} canManage={canManageQr} />
     </div>
   );
 }

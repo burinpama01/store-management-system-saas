@@ -245,6 +245,53 @@ export async function resolveProductIdByExternalRef(
   return data?.id ?? null;
 }
 
+export interface ResolvedInboundProduct {
+  productId: string;
+  kitchenStationId: string | null;
+  kitchenStationName: string | null;
+}
+
+/**
+ * map external_ref (= products.id) → ข้อมูลสินค้า + ครัวที่รับผิดชอบ (batch)
+ * ใช้ตอนรับออเดอร์ JDC เพื่อสร้าง order_items + route ตั๋วครัวตาม kitchen station
+ */
+export async function resolveProductsForInbound(
+  storeId: string,
+  externalRefs: string[],
+): Promise<Map<string, ResolvedInboundProduct>> {
+  const refs = [...new Set(externalRefs.filter(Boolean))];
+  if (refs.length === 0) return new Map();
+  const supabase = await createSupabaseServiceClient();
+  const { data: products } = await supabase
+    .from("products")
+    .select("id, kitchen_station_id")
+    .eq("store_id", storeId)
+    .in("id", refs);
+  const stationIds = [
+    ...new Set((products ?? []).map((p) => p.kitchen_station_id).filter((v): v is string => Boolean(v))),
+  ];
+  const stationNames = new Map<string, string>();
+  if (stationIds.length > 0) {
+    const { data: stations } = await supabase
+      .from("kitchen_stations")
+      .select("id, name")
+      .in("id", stationIds);
+    for (const s of stations ?? []) stationNames.set(s.id, s.name);
+  }
+  return new Map(
+    (products ?? []).map((p) => [
+      p.id,
+      {
+        productId: p.id,
+        kitchenStationId: p.kitchen_station_id,
+        kitchenStationName: p.kitchen_station_id
+          ? stationNames.get(p.kitchen_station_id) ?? null
+          : null,
+      },
+    ]),
+  );
+}
+
 // ── connect_orders ──────────────────────────────────────────────────────
 export interface ConnectOrder {
   id: string;
@@ -360,6 +407,7 @@ export async function updateConnectOrderStatus(
 export interface ConnectOrderListItem extends ConnectOrder {
   orderNumber: string | null;
   total: number | null;
+  rawPayload: unknown;
 }
 
 export async function listConnectOrders(
@@ -369,18 +417,20 @@ export async function listConnectOrders(
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("connect_orders")
-    .select(CO_COLS + ", orders(order_number, total)")
+    .select(CO_COLS + ", raw_payload, orders(order_number, total)")
     .eq("organization_id", organizationId)
     .order("received_at", { ascending: false })
     .limit(limit);
   return (data ?? []).map((r) => {
     const rec = r as unknown as ConnectOrderRow & {
+      raw_payload: unknown;
       orders: { order_number: string; total: number } | null;
     };
     return {
       ...mapConnectOrder(rec),
       orderNumber: rec.orders?.order_number ?? null,
       total: rec.orders?.total ?? null,
+      rawPayload: rec.raw_payload,
     };
   });
 }

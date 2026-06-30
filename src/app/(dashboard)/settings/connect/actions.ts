@@ -6,13 +6,11 @@ import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/au
 import {
   createChannelLink,
   getChannelLinkById,
-  getConnectOrderById,
   updateChannelLink,
 } from "@/modules/connect/repository";
 import { syncMenuForLink } from "@/modules/connect/menu-sync";
-import { applyPosStatus } from "@/modules/connect/status-sync";
 import { pushShopStatus } from "@/modules/connect/jdc-client";
-import { CONNECT_CHANNEL_JDC, type FulfillmentStatus } from "@/modules/connect/types";
+import { CONNECT_CHANNEL_JDC } from "@/modules/connect/types";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -129,30 +127,6 @@ export async function setShopStatusAction(
     const res = await pushShopStatus(link, isOpen);
     if (!res.ok) return { error: `ส่งสถานะร้านไป JDC ไม่สำเร็จ (HTTP ${res.status})` };
     return { error: null, ok: true, message: isOpen ? "เปิดรับออเดอร์ JDC แล้ว" : "ปิดรับออเดอร์ JDC แล้ว" };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
-  }
-}
-
-export async function updateDeliveryOrderStatusAction(
-  _prev: ConnectActionState,
-  formData: FormData,
-): Promise<ConnectActionState> {
-  try {
-    await requirePermission("orders.manage_qr");
-    const { ctx } = await getStoreContext();
-    const connectOrderId = (formData.get("connectOrderId") as string | null)?.trim() ?? "";
-    const next = (formData.get("next") as string | null)?.trim() as FulfillmentStatus;
-
-    const co = await getConnectOrderById(ctx.organizationId, connectOrderId);
-    if (!co) return { error: "ไม่พบออเดอร์" };
-    const link = await getChannelLinkById(ctx.organizationId, co.linkId);
-    if (!link) return { error: "ไม่พบช่องทางที่เชื่อม" };
-
-    const res = await applyPosStatus(link, co, next);
-    if (!res.ok) return { error: res.error };
-    revalidatePath("/settings/connect");
-    return { error: null, ok: true };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
