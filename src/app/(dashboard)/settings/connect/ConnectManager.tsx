@@ -23,7 +23,6 @@ interface LinkVM {
   channel: string;
   externalMerchantId: string;
   status: "active" | "paused" | "disconnected";
-  webhookSecret: string;
   autoAccept: boolean;
   storeId: string;
 }
@@ -178,9 +177,11 @@ function LinkCard({ link, webhookUrl, deliveryProductCount }: { link: LinkVM; we
 
       <div className="grid gap-2 sm:grid-cols-2">
         <CopyField label="merchant_id (JDC)" value={link.externalMerchantId} />
-        <CopyField label="webhook_secret (ตั้งฝั่ง JDC)" value={link.webhookSecret} />
-        <CopyField label="Webhook URL (ตั้งฝั่ง JDC)" value={webhookUrl} />
+        <CopyField label="Webhook URL (ตั้งฝั่ง JDC = STOREOS WEBHOOK URL)" value={webhookUrl} />
       </div>
+      <p className="text-xs text-gray-400">
+        JDC key + webhook secret ใช้ชุดเดียวทั้งระบบ — ผู้ดูแลแพลตฟอร์มตั้งที่หน้าตั้งค่าระบบ
+      </p>
 
       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
         <ActionButton
@@ -292,7 +293,7 @@ export function ConnectManager({
       )}
       {!jdcConfigured && (
         <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่า URL ของ JDC — การส่งเมนู/สถานะไป JDC จะยังไม่ทำงานจนกว่าจะตั้งที่ระบบส่วนกลาง
+          ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่า JDC (URL / webhook secret) — การส่งเมนู/สถานะไป JDC และการรับ webhook จะยังไม่ทำงานจนกว่าจะตั้งที่ตั้งค่าระบบส่วนกลาง
         </div>
       )}
 

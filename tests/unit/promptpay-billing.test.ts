@@ -243,6 +243,8 @@ describe("promptpay-provider", () => {
       enterpriseFromEmail: null,
       logoUrl: null,
       jdcFunctionsBaseUrl: null,
+      jdcApiKey: null,
+      jdcWebhookSecret: null,
     };
     const dynamic = resolveSubscriptionQr({ ...base, promptpayId: "0812345678" }, 690);
     expect(dynamic.type).toBe("payload");

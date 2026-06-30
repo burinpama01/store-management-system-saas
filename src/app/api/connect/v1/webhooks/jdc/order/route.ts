@@ -5,6 +5,7 @@ import { isFreshTimestamp, verifyConnectSignature } from "@/modules/connect/hmac
 import { processInboundOrder } from "@/modules/connect/order-ingestion";
 import { applyInboundStatus } from "@/modules/connect/status-sync";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { getJdcWebhookSecret } from "@/modules/billing/platform-settings";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import type { InboundOrderPayload } from "@/modules/connect/types";
 
@@ -35,9 +36,13 @@ export async function POST(req: Request): Promise<Response> {
   const link = await getActiveLinkByMerchant(merchantId);
   if (!link) return json(404, { error: "No active channel link for merchant" });
 
-  // ตรวจ signature + timestamp
+  // ตรวจ signature + timestamp (HMAC ด้วย shared secret ระดับแพลตฟอร์ม — JDC ออกชุดเดียวทั้งระบบ)
+  const webhookSecret = await getJdcWebhookSecret();
+  if (!webhookSecret) {
+    return json(503, { error: "Connect not configured (missing JDC webhook secret)" });
+  }
   const signature = req.headers.get("x-connect-signature");
-  if (!verifyConnectSignature(raw, link.webhookSecret, signature)) {
+  if (!verifyConnectSignature(raw, webhookSecret, signature)) {
     return json(401, { error: "Invalid signature" });
   }
   if (!isFreshTimestamp(payload.ts)) {

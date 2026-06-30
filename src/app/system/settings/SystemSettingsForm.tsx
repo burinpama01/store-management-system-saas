@@ -193,6 +193,32 @@ export function SystemSettingsForm({
             ปลายทางกลางที่ StoreOS ใช้ส่งเมนู/สถานะ/เปิด-ปิดร้านไปยัง JDC (เดลิเวอรี) ·
             ใช้ร่วมกันทุกร้าน · เว้นว่าง = ปิดการส่งออกไป JDC
           </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="field-label">JDC API key</label>
+              <input
+                type="text"
+                name="jdcApiKey"
+                defaultValue={settings.jdcApiKey ?? ""}
+                placeholder="jdc_..."
+                className="form-input font-mono text-xs"
+              />
+            </div>
+            <div>
+              <label className="field-label">JDC webhook secret (shared HMAC)</label>
+              <input
+                type="text"
+                name="jdcWebhookSecret"
+                defaultValue={settings.jdcWebhookSecret ?? ""}
+                placeholder="whsec_..."
+                className="form-input font-mono text-xs"
+              />
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            คัดลอกจากหน้า StoreOS Connect ในแอดมิน JDC (ออก key/secret ชุดเดียวทั้งระบบ) ·
+            webhook secret ใช้ตรวจ/เซ็น HMAC ทั้งขาเข้า-ออก ต้องตรงกันสองฝั่ง
+          </p>
         </div>
 
         <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
