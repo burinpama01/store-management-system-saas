@@ -20,9 +20,11 @@ const TEST_INITIAL: TestEmailState = { error: null, notice: null };
 export function SystemSettingsForm({
   settings,
   slipReady,
+  connectWebhookUrl,
 }: {
   settings: PlatformPromptPaySettings;
   slipReady: boolean;
+  connectWebhookUrl: string;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(updatePlatformSettingsAction, INITIAL);
@@ -219,6 +221,27 @@ export function SystemSettingsForm({
             คัดลอกจากหน้า StoreOS Connect ในแอดมิน JDC (ออก key/secret ชุดเดียวทั้งระบบ) ·
             webhook secret ใช้ตรวจ/เซ็น HMAC ทั้งขาเข้า-ออก ต้องตรงกันสองฝั่ง
           </p>
+          <div className="mt-3">
+            <label className="field-label">StoreOS Webhook URL (นำไปใส่ช่อง “STOREOS WEBHOOK URL” ในแอดมิน JDC)</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={connectWebhookUrl}
+                className="form-input font-mono text-xs"
+                onFocus={(e) => e.currentTarget.select()}
+              />
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(connectWebhookUrl)}
+                className="btn-secondary whitespace-nowrap px-3 text-sm"
+              >
+                คัดลอก
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              endpoint เดียวทั้งระบบ · JDC แยกร้านด้วย merchant_id ใน payload (ร้านค้าไม่ต้องตั้งค่านี้)
+            </p>
+          </div>
         </div>
 
         <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
