@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StoreOS Connect — แผนสถาปัตยกรรม v2 (สถานะสองทาง)</title>
+<style>
+  :root{
+    --bg:#0f1216;--panel:#161b22;--panel2:#1c2230;--line:#2a3240;--ink:#e6edf3;--muted:#9aa7b4;
+    --brand:#4f8cff;--brand2:#7c5cff;--jdc:#ff7043;--connect:#22c55e;--warn:#fbbf24;--danger:#ef4444;
+    --radius:14px;--mono:ui-monospace,Menlo,Consolas,monospace;--sans:'Segoe UI',Tahoma,'Sarabun',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;font-size:15px}
+  .wrap{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+  nav{position:sticky;top:0;height:100vh;overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:20px 16px}
+  nav h1{font-size:15px;margin:0 0 4px;color:var(--brand)}
+  nav .ver{font-size:11px;color:var(--muted);margin-bottom:16px}
+  nav a{display:block;color:var(--muted);text-decoration:none;font-size:13px;padding:6px 10px;border-radius:8px;margin:2px 0}
+  nav a:hover{background:var(--panel2);color:var(--ink)}
+  nav .grp{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#5b6675;margin:14px 6px 4px}
+  main{padding:40px 56px;max-width:1100px}
+  section{margin-bottom:54px;scroll-margin-top:20px}
+  h2{font-size:26px;margin:0 0 6px;border-bottom:2px solid var(--line);padding-bottom:10px}
+  h3{font-size:19px;margin:28px 0 8px;color:#cdd9e5}
+  h4{font-size:15px;margin:18px 0 6px;color:var(--brand)}
+  p{color:#cdd6df}
+  code{font-family:var(--mono);background:var(--panel2);padding:2px 6px;border-radius:6px;font-size:13px;color:#ffd9a8}
+  pre{background:#0b0e12;border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font-family:var(--mono);font-size:12.5px;color:#cfe3ff}
+  .lead{font-size:17px;color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .pill{display:inline-block;font-size:11px;padding:3px 10px;border-radius:999px;font-weight:600}
+  .p-storeos{background:rgba(79,140,255,.15);color:#9cc0ff;border:1px solid #3a5a9a}
+  .p-jdc{background:rgba(255,112,67,.15);color:#ffb59a;border:1px solid #a8542f}
+  .p-connect{background:rgba(34,197,94,.15);color:#86efac;border:1px solid #2e7d4f}
+  .new{background:rgba(34,197,94,.15);color:#86efac;border:1px solid #2e7d4f;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;background:var(--panel2)}
+  .arrow{color:var(--connect);font-weight:700}
+  ul{padding-left:20px}li{margin:4px 0}
+  .note{border-left:3px solid var(--brand);background:rgba(79,140,255,.07);padding:10px 16px;border-radius:0 8px 8px 0;margin:12px 0}
+  .note.warn{border-color:var(--warn);background:rgba(251,191,36,.07)}
+  .note.danger{border-color:var(--danger);background:rgba(239,68,68,.07)}
+  .note.ok{border-color:var(--connect);background:rgba(34,197,94,.07)}
+  .flow-step{display:flex;gap:14px;margin:10px 0;align-items:flex-start}
+  .flow-num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .flow-step.jdc .flow-num{background:var(--jdc)}.flow-step.connect .flow-num{background:var(--connect)}
+  .timeline{border-left:2px solid var(--line);margin-left:10px;padding-left:24px}
+  .ph{position:relative;margin-bottom:22px}
+  .ph::before{content:'';position:absolute;left:-31px;top:4px;width:14px;height:14px;border-radius:50%;background:var(--brand);border:3px solid var(--bg)}
+  .ph.future::before{background:var(--muted)}
+  .tag{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:8px 0}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .status-todo{color:var(--warn);font-weight:600}
+  footer{color:#5b6675;font-size:12px;border-top:1px solid var(--line);padding-top:18px;margin-top:30px}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:24px}.grid2,.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <h1>StoreOS Connect</h1>
+  <div class="ver">แผนสถาปัตยกรรม v2 · 2026-06-30</div>
+  <div class="grp">ภาพรวม</div>
+  <a href="#whatsnew">0. อะไรเปลี่ยนจาก v1</a>
+  <a href="#vision">1. วิสัยทัศน์ &amp; โมเดล</a>
+  <a href="#roles">2. การ map บทบาท</a>
+  <a href="#decisions">3. ข้อสรุป Scope</a>
+  <div class="grp">สถาปัตยกรรม</div>
+  <a href="#arch">4. สถาปัตยกรรมระบบ</a>
+  <a href="#schema">5. ตารางข้อมูลใหม่</a>
+  <a href="#mapping">6. การ map ข้อมูล</a>
+  <div class="grp">Flow MVP</div>
+  <a href="#flow1">F1. Sync เมนู/ราคา/สต็อก</a>
+  <a href="#flow2">F2. รับออเดอร์เข้า POS</a>
+  <a href="#flow3">F3. สถานะสองทาง</a>
+  <a href="#flow4">F4. เปิด-ปิดร้าน</a>
+  <div class="grp">สัญญา &amp; ความปลอดภัย</div>
+  <a href="#contract">7. API Contract</a>
+  <a href="#loop">8. กัน Loop (Bidirectional)</a>
+  <a href="#security">9. Security &amp; Reliability</a>
+  <div class="grp">ส่งมอบ</div>
+  <a href="#roadmap">10. Roadmap &amp; Phase</a>
+  <a href="#risks">11. ความเสี่ยง &amp; คำถามเปิด</a>
+</nav>
+<main>
+
+<section id="whatsnew">
+  <h2>0. อะไรเปลี่ยนจาก v1</h2>
+  <div class="note ok"><b>Decision ใหม่ (ผู้ใช้ยืนยัน):</b> กดสถานะออเดอร์ได้ <b>ทั้งสองฝั่ง</b> — JDC merchant app และ StoreOS POS sync หากันแบบ real-time</div>
+  <table>
+    <tr><th>หัวข้อ</th><th>v1</th><th>v2 (ฉบับนี้)</th></tr>
+    <tr><td>Flow สถานะ</td><td>StoreOS → JDC อย่างเดียว</td><td><b>สองทาง</b> StoreOS ⇄ JDC</td></tr>
+    <tr><td>กัน loop/echo</td><td>—</td><td><span class="new">ใหม่</span> origin tagging ทั้ง 2 ฝั่ง (§8)</td></tr>
+    <tr><td>เลือกสินค้า/ราคา JDC</td><td>กล่าวลอย ๆ</td><td><span class="new">ใหม่</span> field <code>available_for_delivery</code> + <code>delivery_price</code> (§5, §6)</td></tr>
+    <tr><td>โมเดลเงิน</td><td>เปิดคำถาม settlement</td><td><b>ปิดแล้ว</b>: เงินไม่ผ่าน StoreOS, แค่ mark "ชำระโดย JDC"</td></tr>
+  </table>
+</section>
+
+<section id="vision">
+  <h2>1. วิสัยทัศน์ &amp; โมเดล</h2>
+  <p class="lead">เชื่อม <b>StoreOS</b> (POS หลังร้าน) เข้ากับ <b>JDC</b> (แอปเดลิเวอรี) ผ่านตัวกลาง <b>StoreOS Connect</b> โดยจำลองโมเดล <b>LINE MAN × Wongnai POS</b></p>
+  <div class="card">หลักการ 4 ข้อ:
+    <ul>
+      <li><b>POS เป็นแหล่งความจริงของเมนู</b> — จัดการเมนู/ราคา/สต็อกที่เดียวแล้วดันขึ้น JDC</li>
+      <li><b>ออเดอร์จาก JDC ไหลเข้า POS อัตโนมัติ</b></li>
+      <li><b>สถานะ sync สองทาง real-time</b> — กดที่ไหนก็ได้ อีกฝั่งเห็นทันที</li>
+      <li><b>เปิด-ปิดร้าน &amp; ของหมด sync</b></li>
+    </ul>
+  </div>
+  <div class="note danger"><b>ข้อค้นพบที่กำหนดสถาปัตยกรรม:</b> StoreOS (<code>lcsxee…</code>) กับ JDC (<code>tfwhf…</code>) อยู่ <b>คนละ Supabase project</b> → Connect = API/Event bridge ระหว่าง 2 ฐานข้อมูล (ตรงโมเดล LINE MAN × Wongnai)</div>
+</section>
+
+<section id="roles">
+  <h2>2. การ map บทบาท</h2>
+  <table>
+    <tr><th>LINE MAN × Wongnai</th><th>ระบบของคุณ</th><th>Stack</th><th>หน้าที่</th></tr>
+    <tr><td>Wongnai POS</td><td><span class="pill p-storeos">StoreOS</span></td><td>Next.js 16 + Supabase</td><td>POS, เมนูต้นทาง, ครัว/KDS, ชำระเงินหน้าร้าน</td></tr>
+    <tr><td>LINE MAN App</td><td><span class="pill p-jdc">JDC</span></td><td>Flutter + Supabase</td><td>ลูกค้า, คนขับ, จ่ายเงินร้าน</td></tr>
+    <tr><td>Partner API</td><td><span class="pill p-connect">StoreOS Connect</span></td><td>โมดูลใน StoreOS</td><td>bridge เมนู ↔ ออเดอร์ ↔ สถานะ + คิว/retry</td></tr>
+  </table>
+  <div class="note">ใช้ของเดิมต่อ: <code>/api/v1/</code> + <code>api_keys</code> (hash) + billing gate Enterprise <code>apiIntegration</code></div>
+</section>
+
+<section id="decisions">
+  <h2>3. ข้อสรุป Scope</h2>
+  <div class="grid3">
+    <div class="card"><h4>① Deliverable</h4>ออกแบบ/แผน (ไฟล์นี้)</div>
+    <div class="card"><h4>② ตำแหน่ง Connect</h4>โมดูลใน StoreOS</div>
+    <div class="card"><h4>③ Flow MVP</h4>ครบ 4 + สถานะ <b>สองทาง</b></div>
+    <div class="card"><h4>④ ผูกร้าน</h4>ด้วยมือ (<code>store_id↔merchant_id</code>)</div>
+    <div class="card"><h4>⑤ เงิน</h4>JDC จ่ายร้านเอง; StoreOS mark "ชำระโดย JDC"</div>
+    <div class="card"><h4>⑥ เมนู/ราคา</h4>เลือกสินค้าขึ้น JDC + ราคา JDC แยก</div>
+  </div>
+</section>
+
+<section id="arch">
+  <h2>4. สถาปัตยกรรมระบบ</h2>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--brand)"></span> StoreOS</span>
+    <span><span class="dot" style="background:var(--jdc)"></span> JDC</span>
+    <span><span class="dot" style="background:var(--connect)"></span> Connect / sync</span>
+  </div>
+  <svg viewBox="0 0 980 470" style="width:100%;background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-top:8px" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#22c55e"/></marker>
+      <marker id="ahb" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#4f8cff"/></marker>
+    </defs>
+    <rect x="20" y="40" width="260" height="390" rx="12" fill="#11203a" stroke="#3a5a9a"/>
+    <text x="150" y="66" fill="#9cc0ff" font-size="15" font-weight="700" text-anchor="middle">StoreOS (Next.js + Supabase A)</text>
+    <rect x="40" y="82" width="220" height="38" rx="8" fill="#16243f" stroke="#2a3a5a"/><text x="150" y="106" fill="#cdd9e5" font-size="12" text-anchor="middle">POS / KDS / จัดการเมนู</text>
+    <rect x="40" y="128" width="220" height="38" rx="8" fill="#16243f" stroke="#2a3a5a"/><text x="150" y="152" fill="#cdd9e5" font-size="12" text-anchor="middle">products · orders · inventory</text>
+    <rect x="40" y="180" width="220" height="230" rx="10" fill="#0f2a1c" stroke="#2e7d4f"/>
+    <text x="150" y="202" fill="#86efac" font-size="13" font-weight="700" text-anchor="middle">StoreOS Connect (โมดูล)</text>
+    <rect x="54" y="214" width="192" height="30" rx="6" fill="#13321f" stroke="#2e7d4f"/><text x="150" y="234" fill="#bdf0cf" font-size="11" text-anchor="middle">Channel Link · Menu Map</text>
+    <rect x="54" y="250" width="192" height="30" rx="6" fill="#13321f" stroke="#2e7d4f"/><text x="150" y="270" fill="#bdf0cf" font-size="11" text-anchor="middle">Menu/Stock Push</text>
+    <rect x="54" y="286" width="192" height="30" rx="6" fill="#13321f" stroke="#2e7d4f"/><text x="150" y="306" fill="#bdf0cf" font-size="11" text-anchor="middle">Order Ingestion (webhook in)</text>
+    <rect x="54" y="322" width="192" height="30" rx="6" fill="#13321f" stroke="#2e7d4f"/><text x="150" y="342" fill="#bdf0cf" font-size="11" text-anchor="middle">Status Sync (สองทาง+กัน loop)</text>
+    <rect x="54" y="358" width="192" height="30" rx="6" fill="#13321f" stroke="#2e7d4f"/><text x="150" y="378" fill="#bdf0cf" font-size="11" text-anchor="middle">Outbox/Inbox · Retry · Audit</text>
+    <rect x="700" y="40" width="260" height="390" rx="12" fill="#2e1a12" stroke="#a8542f"/>
+    <text x="830" y="66" fill="#ffb59a" font-size="15" font-weight="700" text-anchor="middle">JDC (Flutter + Supabase B)</text>
+    <rect x="720" y="82" width="220" height="38" rx="8" fill="#3a2419" stroke="#7a4226"/><text x="830" y="106" fill="#f3d3c4" font-size="12" text-anchor="middle">Customer · Driver · Merchant</text>
+    <rect x="720" y="128" width="220" height="38" rx="8" fill="#3a2419" stroke="#7a4226"/><text x="830" y="152" fill="#f3d3c4" font-size="12" text-anchor="middle">bookings · booking_items · menu_items</text>
+    <rect x="720" y="180" width="220" height="230" rx="10" fill="#3a2419" stroke="#7a4226"/>
+    <text x="830" y="202" fill="#ffcdb8" font-size="13" font-weight="700" text-anchor="middle">JDC Connect Adapter</text>
+    <rect x="734" y="214" width="192" height="30" rx="6" fill="#46291b" stroke="#7a4226"/><text x="830" y="234" fill="#f3d3c4" font-size="11" text-anchor="middle">Edge Fn: upsert_menu</text>
+    <rect x="734" y="250" width="192" height="30" rx="6" fill="#46291b" stroke="#7a4226"/><text x="830" y="270" fill="#f3d3c4" font-size="11" text-anchor="middle">Edge Fn: update_order_status</text>
+    <rect x="734" y="286" width="192" height="30" rx="6" fill="#46291b" stroke="#7a4226"/><text x="830" y="306" fill="#f3d3c4" font-size="11" text-anchor="middle">Trigger: order/สถานะ → out</text>
+    <rect x="734" y="322" width="192" height="30" rx="6" fill="#46291b" stroke="#7a4226"/><text x="830" y="342" fill="#f3d3c4" font-size="11" text-anchor="middle">Edge Fn: set_shop_status</text>
+    <rect x="734" y="358" width="192" height="30" rx="6" fill="#46291b" stroke="#7a4226"/><text x="830" y="378" fill="#f3d3c4" font-size="11" text-anchor="middle">status_origin (กัน loop)</text>
+    <line x1="262" y1="265" x2="732" y2="229" stroke="#22c55e" stroke-width="2.5" marker-end="url(#ah)"/>
+    <text x="497" y="240" fill="#86efac" font-size="11" text-anchor="middle">เมนู/สต็อก/เปิด-ปิด →</text>
+    <line x1="732" y1="301" x2="262" y2="305" stroke="#4f8cff" stroke-width="2.5" marker-end="url(#ahb)"/>
+    <text x="497" y="294" fill="#9cc0ff" font-size="11" text-anchor="middle">← ออเดอร์ใหม่ + สถานะ (JDC)</text>
+    <line x1="262" y1="340" x2="732" y2="265" stroke="#22c55e" stroke-width="2.5" marker-end="url(#ah)"/>
+    <text x="497" y="362" fill="#86efac" font-size="11" text-anchor="middle">สถานะ (StoreOS) → ⇄ สองทาง</text>
+    <text x="490" y="425" fill="#5b6675" font-size="11" text-anchor="middle">ทุก request เซ็น HMAC + ts + status_origin · HTTPS</text>
+  </svg>
+</section>
+
+<section id="schema">
+  <h2>5. ตารางข้อมูลใหม่ (ฝั่ง StoreOS)</h2>
+<pre>-- 1) ผูกร้าน ↔ ช่องทางขายภายนอก
+create table connect_channel_links (
+  id uuid primary key default uuid_generate_v4(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  store_id uuid not null references stores(id) on delete cascade,
+  channel text not null default 'jdc',
+  external_merchant_id text not null,        -- profiles.id ฝั่ง JDC
+  status text not null default 'active',
+  webhook_secret text not null,              -- HMAC (เก็บ encrypted/ref)
+  jdc_functions_base_url text not null,      -- ปลายทาง Edge Functions ฝั่ง JDC
+  auto_accept boolean not null default false,
+  config jsonb not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (store_id, channel)
+);
+
+-- 2) แผนที่สินค้า ↔ เมนูปลายทาง
+create table connect_menu_map (
+  id uuid primary key default uuid_generate_v4(),
+  link_id uuid not null references connect_channel_links(id) on delete cascade,
+  product_id uuid not null references products(id) on delete cascade,
+  external_item_id text, sync_hash text, last_synced_at timestamptz, last_error text,
+  unique (link_id, product_id)
+);
+
+-- 3) ออเดอร์ที่รับเข้า (idempotency + fulfillment สถานะครัว)
+create table connect_orders (
+  id uuid primary key default uuid_generate_v4(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  link_id uuid not null references connect_channel_links(id) on delete cascade,
+  external_order_id text not null,           -- bookings.id ฝั่ง JDC
+  internal_order_id uuid references orders(id) on delete set null,
+  channel text not null default 'jdc',
+  fulfillment_status text not null default 'received', -- received|accepted|preparing|ready|completed|cancelled
+  last_status_origin text,                   -- 'jdc'|'storeos' ★ กัน loop (v2)
+  raw_payload jsonb not null,
+  received_at timestamptz not null default now(),
+  unique (link_id, external_order_id)
+);
+
+-- 4) คิว event สองทาง + retry + audit
+create table connect_events (
+  id uuid primary key default uuid_generate_v4(),
+  link_id uuid not null references connect_channel_links(id) on delete cascade,
+  direction text not null, topic text not null, payload jsonb not null,
+  status text not null default 'pending', attempts int not null default 0,
+  next_retry_at timestamptz, last_error text, created_at timestamptz not null default now()
+);
+
+-- 5) field ใหม่ใน products (v2) — เลือกสินค้า/ราคา JDC
+alter table products add column if not exists available_for_delivery boolean not null default false;
+alter table products add column if not exists delivery_price numeric(12,2);  -- null = ใช้ base_price</pre>
+  <div class="note warn"><b>สถานะครัวเดลิเวอรี:</b> <code>orders.status</code> เดิม (draft/open/paid/…) ไม่มี accepted/preparing/ready → ใช้ <code>connect_orders.fulfillment_status</code> + ผูก kitchen ticket เดิม. ออเดอร์ JDC ตั้ง orders.status='paid' ทันที (ชำระโดย JDC)</div>
+</section>
+
+<section id="mapping">
+  <h2>6. การ map ข้อมูล</h2>
+  <h3>6.1 สินค้า → เมนู <span class="pill p-storeos">products</span> <span class="arrow">→</span> <span class="pill p-jdc">menu_items</span></h3>
+  <table>
+    <tr><th>StoreOS</th><th></th><th>JDC</th><th>หมายเหตุ</th></tr>
+    <tr><td><code>available_for_delivery=true</code></td><td class="arrow">→</td><td>เงื่อนไขว่าจะดันหรือไม่</td><td><span class="new">v2</span> sync เฉพาะที่ติ๊ก</td></tr>
+    <tr><td><code>delivery_price ?? base_price</code></td><td class="arrow">→</td><td><code>price</code></td><td><span class="new">v2</span> ราคา JDC แยกจากหน้าร้าน</td></tr>
+    <tr><td><code>id</code></td><td class="arrow">→</td><td><code>external_ref</code> (+ menu_map)</td><td>คีย์เชื่อม</td></tr>
+    <tr><td><code>name/description/image_url</code></td><td class="arrow">→</td><td>เหมือนกัน</td><td>ตรง</td></tr>
+    <tr><td><code>is_active</code> AND สต็อก</td><td class="arrow">→</td><td><code>is_available</code></td><td>รวมของหมด</td></tr>
+    <tr><td>ชื่อ category (จาก FK)</td><td class="arrow">→</td><td><code>category</code> (text)</td><td>ส่งชื่อหมวด</td></tr>
+  </table>
+  <h3>6.2 ออเดอร์ <span class="pill p-jdc">bookings + booking_items</span> <span class="arrow">→</span> <span class="pill p-storeos">orders + order_items</span></h3>
+  <table>
+    <tr><th>JDC</th><th></th><th>StoreOS</th><th>หมายเหตุ</th></tr>
+    <tr><td><code>bookings.id</code></td><td class="arrow">→</td><td><code>connect_orders.external_order_id</code></td><td>idempotency</td></tr>
+    <tr><td><code>booking_items.menu_item_id</code></td><td class="arrow">→</td><td><code>order_items.product_id</code></td><td>map ย้อนผ่าน menu_map</td></tr>
+    <tr><td><code>quantity/price/name</code></td><td class="arrow">→</td><td><code>quantity/unit_price/product_name</code></td><td>ตรง</td></tr>
+    <tr><td>ยอด + paid:true</td><td class="arrow">→</td><td><code>total</code>, status=<code>paid</code></td><td>ชำระโดย JDC</td></tr>
+  </table>
+</section>
+
+<section id="flow1">
+  <h2 style="color:var(--connect)">F1. Sync เมนู/ราคา/สต็อก <span class="tag">StoreOS → JDC</span></h2>
+  <div class="flow-step connect"><div class="flow-num">1</div><div>ร้านแก้สินค้า/ติ๊ก <code>available_for_delivery</code>/ตั้ง <code>delivery_price</code> หรือกด "เผยแพร่ขึ้น JDC" → event <code>menu.upsert</code></div></div>
+  <div class="flow-step connect"><div class="flow-num">2</div><div>Connect map ตาม §6.1 (ส่งเฉพาะที่ติ๊ก, ราคา = delivery_price??base_price) → เทียบ <code>sync_hash</code></div></div>
+  <div class="flow-step connect"><div class="flow-num">3</div><div>เรียก JDC <code>connect_upsert_menu</code> (HMAC) → upsert <code>menu_items</code></div></div>
+  <div class="flow-step connect"><div class="flow-num">4</div><div>บันทึก <code>external_item_id</code>+<code>last_synced_at</code>; ของหมด → <code>is_available=false</code></div></div>
+  <div class="note">cron reconcile รายชั่วโมง + ปุ่ม "Sync ทั้งหมด" สำหรับ initial load</div>
+</section>
+
+<section id="flow2">
+  <h2 style="color:var(--brand)">F2. รับออเดอร์เข้า POS <span class="tag">JDC → StoreOS</span></h2>
+  <div class="flow-step jdc"><div class="flow-num">1</div><div>ลูกค้าสั่งใน JDC → สร้าง booking (food) + ชำระออนไลน์</div></div>
+  <div class="flow-step jdc"><div class="flow-num">2</div><div>trigger JDC ยิง webhook <code>order.created</code> → <code>POST /api/connect/v1/webhooks/jdc/order</code> (HMAC+ts)</div></div>
+  <div class="flow-step connect"><div class="flow-num">3</div><div>Connect verify → idempotency ด้วย booking.id → map รายการ → สร้าง <code>orders</code>(status=paid)+<code>order_items</code> + <code>connect_orders</code> (fulfillment=received)</div></div>
+  <div class="flow-step"><div class="flow-num">4</div><div>โผล่บน POS/KDS + พิมพ์ตั๋วครัว; ถ้า auto_accept → ไป F3</div></div>
+  <div class="note danger">webhook ตอบ 2xx เร็ว (รับเข้า inbox ก่อน) + JDC retry + idempotency กันซ้ำ</div>
+</section>
+
+<section id="flow3">
+  <h2 style="color:var(--connect)">F3. สถานะออเดอร์ <span class="tag">สองทาง StoreOS ⇄ JDC</span> <span class="new">เปลี่ยนใน v2</span></h2>
+  <div class="grid2">
+    <div class="card">
+      <h4>3A. ร้านกดในแอป JDC → StoreOS</h4>
+      <div class="flow-step jdc"><div class="flow-num">1</div><div>ร้านกดรับ/อาหารพร้อม (status_origin='jdc')</div></div>
+      <div class="flow-step jdc"><div class="flow-num">2</div><div>trigger ยิง <code>order.status</code> → webhook StoreOS</div></div>
+      <div class="flow-step connect"><div class="flow-num">3</div><div>Connect อัปเดต <code>fulfillment_status</code> (<b>ไม่ push กลับ</b>) → POS เห็นสถานะ live</div></div>
+    </div>
+    <div class="card">
+      <h4>3B. พนักงานกดใน StoreOS POS → JDC</h4>
+      <div class="flow-step"><div class="flow-num">1</div><div>พนักงานกดรับ/พร้อม บน POS/KDS</div></div>
+      <div class="flow-step connect"><div class="flow-num">2</div><div>set <code>fulfillment_status</code> (origin=storeos) → event <code>order.status</code></div></div>
+      <div class="flow-step connect"><div class="flow-num">3</div><div>เรียก JDC <code>connect_update_order_status</code> (set status_origin='storeos' ฝั่ง JDC → ไม่ยิงกลับ)</div></div>
+      <div class="flow-step jdc"><div class="flow-num">4</div><div>JDC จ่ายงานคนขับ + แจ้งลูกค้า</div></div>
+    </div>
+  </div>
+  <div class="note warn"><b>StoreOS set ได้เฉพาะ:</b> preparing / ready_for_pickup / cancelled — สถานะของคนขับ (matched/driver_accepted/in_transit) เป็นของ JDC ห้ามแตะ (ดู §8)</div>
+</section>
+
+<section id="flow4">
+  <h2 style="color:var(--jdc)">F4. เปิด-ปิดร้าน &amp; ของหมด</h2>
+  <div class="flow-step"><div class="flow-num">1</div><div>เปิด/ปิดรับเดลิเวอรีใน StoreOS → event <code>shop.status</code> → JDC <code>connect_set_shop_status</code> เซ็ต <code>profiles.shop_status</code></div></div>
+  <div class="flow-step"><div class="flow-num">2</div><div>สินค้าหมดใน StoreOS → <code>menu.upsert</code> (is_available=false)</div></div>
+</section>
+
+<section id="contract">
+  <h2>7. API Contract</h2>
+  <h4>ขาเข้า StoreOS (JDC เรียก)</h4>
+<pre>POST /api/connect/v1/webhooks/jdc/order
+Headers: X-Connect-Signature: sha256=...   X-Connect-Timestamp: ...
+Body: { topic:'order.created'|'order.status', booking_id, merchant_id, status,
+        items:[{menu_item_id,qty,price,name}], customer, dropoff, total, paid:true, ts }
+→ 202 { received:true }</pre>
+  <h4>ขาออก StoreOS (เรียก JDC Edge Functions)</h4>
+<pre>POST {jdc}/functions/v1/connect_upsert_menu          { merchant_id, items[], full_sync }
+POST {jdc}/functions/v1/connect_update_order_status  { booking_id, status }   ← v2 จำเป็น
+POST {jdc}/functions/v1/connect_set_shop_status      { merchant_id, is_open }</pre>
+</section>
+
+<section id="loop">
+  <h2>8. กัน Loop ในการ sync สองทาง (หัวใจของ v2)</h2>
+  <p>ปัญหา: A อัปเดต B → B แจ้งกลับ A → A อัปเดต → วนไม่จบ · แก้ด้วย <b>origin tagging</b> ทั้ง 2 ฝั่ง</p>
+  <table>
+    <tr><th>เหตุการณ์</th><th>ใครเขียน</th><th>origin</th><th>ยิงข้ามฝั่ง?</th></tr>
+    <tr><td>ร้านกดในแอป JDC</td><td>JDC app</td><td><code>jdc</code></td><td>✓ JDC→StoreOS</td></tr>
+    <tr><td>พนักงานกดใน POS</td><td>StoreOS</td><td><code>storeos</code></td><td>✓ StoreOS→JDC</td></tr>
+    <tr><td>JDC รับ update จาก StoreOS</td><td>Edge Fn</td><td>เขียน <code>storeos</code></td><td>✗ trigger เห็น origin=storeos → ข้าม</td></tr>
+    <tr><td>StoreOS รับ webhook จาก JDC</td><td>Connect</td><td>set last_status_origin=<code>jdc</code></td><td>✗ ไม่ push กลับ</td></tr>
+  </table>
+  <div class="note ok"><b>กฎทอง:</b> emit เฉพาะการเปลี่ยนที่เกิดจากผู้ใช้ฝั่งตัวเอง + ถ้า status ที่รับ = ปัจจุบันอยู่แล้ว → no-op (idempotent)</div>
+</section>
+
+<section id="security">
+  <h2>9. Security &amp; Reliability</h2>
+  <div class="grid2">
+    <div class="card"><h4>ความปลอดภัย</h4>
+      <ul>
+        <li>HMAC สองทาง + timestamp กัน replay (≤5 นาที)</li>
+        <li>ไม่เก็บ service key/secret ของ JDC แบบ plaintext — ใช้ Vercel env / secret store</li>
+        <li>ต่อยอด <code>api_keys</code> + scope <code>connect</code> + Enterprise gate</li>
+        <li>RLS org-scoped ทุกตาราง <code>connect_*</code></li>
+      </ul>
+    </div>
+    <div class="card"><h4>ความทนทาน</h4>
+      <ul>
+        <li>Outbox/Inbox + retry backoff → dead-letter</li>
+        <li>Idempotency: order=booking_id, menu=sync_hash, status=no-op เมื่อซ้ำ</li>
+        <li>กัน loop: origin tagging (§8)</li>
+        <li>Reconcile cron + หน้า admin retry event fail</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note warn">Blocker (AGENTS.md): secret/JDC keys ต้องตั้งใน Vercel env ก่อน deploy — ขอจากผู้ใช้</div>
+</section>
+
+<section id="roadmap">
+  <h2>10. Roadmap &amp; Phase</h2>
+  <div class="timeline">
+    <div class="ph"><b>Phase 0 — ฐานราก</b>
+      <ul><li>migration <code>connect_*</code> 4 ตาราง + RLS + products.<code>available_for_delivery</code>/<code>delivery_price</code></li>
+      <li>โมดูล <code>src/modules/connect/</code> (repo, mapping, JDC client, hmac)</li>
+      <li>หน้า admin ผูกร้าน + gen secret · API contract spec ส่งให้ JDC</li></ul>
+    </div>
+    <div class="ph"><b>Phase 1a — Menu/Price/Stock sync</b> (F1 + F4 ของหมด) — เลือกสินค้า + delivery_price</div>
+    <div class="ph"><b>Phase 1b — รับออเดอร์เข้า POS</b> (F2) — webhook in + map + KDS/ตั๋วครัว + mark paid</div>
+    <div class="ph"><b>Phase 1c — สถานะสองทาง + เปิด-ปิดร้าน</b> (F3 3A+3B, F4) — origin tagging + ปุ่มสถานะบน POS</div>
+    <div class="ph future"><b>Phase 2</b> — reconcile cron, dashboard retry, รายงานยอดเดลิเวอรี, auto-provision linking</div>
+    <div class="ph future"><b>Phase 3</b> — multi-channel abstraction (รองรับ LINE MAN/Grab จริง)</div>
+  </div>
+</section>
+
+<section id="risks">
+  <h2>11. ความเสี่ยง &amp; คำถามเปิด</h2>
+  <table>
+    <tr><th>หัวข้อ</th><th>ประเด็น</th><th>สถานะ</th></tr>
+    <tr><td>เงิน/settlement</td><td>JDC จ่ายร้านเอง, StoreOS mark paid</td><td><span style="color:var(--connect)">ปิดแล้ว</span></td></tr>
+    <tr><td>ทิศสถานะ</td><td>สองทาง + กัน loop ด้วย origin tagging</td><td><span style="color:var(--connect)">ปิดแล้ว (v2)</span></td></tr>
+    <tr><td>Modifiers/variants</td><td>StoreOS product_variants/modifiers vs JDC menu_options ต่างกัน → MVP sync เฉพาะสินค้าหลัก+ราคา</td><td>ยอมรับขอบเขต MVP</td></tr>
+    <tr><td>การยกเลิก</td><td><b>เคาะแล้ว:</b> ร้านกดรับแล้วยกเลิกไม่ได้ (POS ยกเลิกได้เฉพาะตอน received) · admin JDC ยกเลิกได้ทุกสถานะ (มาทาง webhook ขาเข้า)</td><td style="color:var(--connect)">ปิดแล้ว + implement</td></tr>
+    <tr><td>Secrets</td><td>JDC keys + webhook secret ใน Vercel env</td><td class="status-todo">Blocker</td></tr>
+    <tr><td>หลาย store/org</td><td>link ต่อ store (unique store_id+channel)</td><td>รองรับแล้ว</td></tr>
+  </table>
+</section>
+
+<footer>
+  StoreOS Connect — แผนสถาปัตยกรรม v2 (สถานะสองทาง) · 2026-06-30 · สถานะ: ออกแบบ (Design) รออนุมัติ Phase 0<br>
+  แทนที่ v1 · คู่กับ JDC: <code>StoreOS-Connect-JDC-Side-Guide-v2.html</code> · เอกสารภาษาไทย · log ลง Obsidian
+</footer>
+
+</main>
+</div>
+</body>
+</html>

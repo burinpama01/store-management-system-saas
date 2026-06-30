@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { normalizeNetworkPrinterEndpoint } from "@/modules/printing/network-printer";
+import { validateHubBluetoothPort } from "@/modules/printing/print-hub";
 import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import { upsertReceiptSettings } from "@/modules/settings/repository";
-import { upsertNetworkPrinter } from "@/modules/stores/repository";
+import { upsertHubBluetoothPrinter, upsertNetworkPrinter } from "@/modules/stores/repository";
 
 /** Accepts only http(s) image URLs within a sane length (Supabase public URL or pasted link). */
 function isValidImageUrl(value: string): boolean {
@@ -131,6 +132,44 @@ export async function saveNetworkPrinterAction(
       name,
       ipAddress: endpoint.host,
       port: endpoint.port,
+      paperWidth: paperWidthRaw,
+      isDefault,
+    });
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidatePath("/settings/receipt");
+    return { error: null, saved: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function saveHubBluetoothPrinterAction(
+  _prev: { error: string | null; saved?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; saved?: boolean }> {
+  try {
+    await requirePermission("settings.manage_printer");
+    const { ctx } = await getStoreContext();
+
+    const id = (formData.get("printerId") as string | null)?.trim() || undefined;
+    const name = (formData.get("name") as string | null)?.trim() ?? "";
+    const comPortRaw = (formData.get("comPort") as string | null)?.trim() ?? "";
+    const paperWidthRaw = (formData.get("paperWidth") as string | null)?.trim() ?? "";
+    const isDefault = formData.get("isDefault") === "on";
+
+    if (!name) return { error: "กรุณาระบุชื่อเครื่องพิมพ์" };
+    if (paperWidthRaw !== "58mm" && paperWidthRaw !== "80mm") return { error: "ขนาดกระดาษไม่ถูกต้อง" };
+
+    const portCheck = validateHubBluetoothPort(comPortRaw);
+    if (portCheck.error || !portCheck.device) {
+      return { error: portCheck.error ?? "พอร์ต COM ไม่ถูกต้อง" };
+    }
+
+    const result = await upsertHubBluetoothPrinter(ctx.storeId, ctx.organizationId, {
+      id,
+      name,
+      comPort: portCheck.device,
       paperWidth: paperWidthRaw,
       isDefault,
     });

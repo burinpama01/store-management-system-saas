@@ -7,9 +7,12 @@ import {
   advancePlayerAction,
   getPlayerStateAction,
   playPreviousAction,
+  playQueueItemAction,
+  playBaseTrackAction,
   removeQueueItemAction,
   getPlayHistoryAction,
   type PlayerQueueItem,
+  type PlayerBaseTrack,
 } from "./actions";
 
 interface YTPlayer {
@@ -42,7 +45,8 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [idle, setIdle] = useState(false);
   const [history, setHistory] = useState<PlayHistoryItem[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [basePlaylist, setBasePlaylist] = useState<PlayerBaseTrack[]>([]);
+  const [panel, setPanel] = useState<"queue" | "base" | "history">("queue");
   const [busy, setBusy] = useState(false);
 
   const playerRef = useRef<YTPlayer | null>(null);
@@ -96,6 +100,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     const res = await getPlayerStateAction();
     if (res.error) return;
     setUpcoming(res.upcoming);
+    setBasePlaylist(res.basePlaylist);
     // A "play now" donation interrupts immediately; otherwise start when idle.
     if (res.interrupt) void advanceRef.current();
     else if (!playingRef.current && res.upcoming.length > 0) void advanceRef.current();
@@ -145,6 +150,58 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     void (async () => {
       const res = await removeQueueItemAction(requestId);
       if (res.error) setError(res.error);
+      setBusy(false);
+      void refreshState();
+    })();
+  }
+
+  function playBase(videoId: string, title: string) {
+    setBusy(true);
+    void (async () => {
+      const res = await playBaseTrackAction(videoId, title);
+      if (res.error) setError(res.error);
+      else if (res.next && VIDEO_ID_RE.test(res.next.youtubeVideoId)) {
+        playingRef.current = true;
+        setIdle(false);
+        setNow({
+          storeId: "",
+          source: res.next.source,
+          musicRequestId: res.next.requestId,
+          youtubeVideoId: res.next.youtubeVideoId,
+          title: res.next.title,
+          durationSeconds: res.next.durationSeconds,
+          startedAt: new Date().toISOString(),
+        });
+        if (playerRef.current && readyRef.current) {
+          playerRef.current.loadVideoById(res.next.youtubeVideoId);
+        }
+      }
+      setBusy(false);
+      void refreshState();
+    })();
+  }
+
+  function playItem(requestId: string) {
+    setBusy(true);
+    void (async () => {
+      const res = await playQueueItemAction(requestId);
+      if (res.error) setError(res.error);
+      else if (res.next && VIDEO_ID_RE.test(res.next.youtubeVideoId)) {
+        playingRef.current = true;
+        setIdle(false);
+        setNow({
+          storeId: "",
+          source: res.next.source,
+          musicRequestId: res.next.requestId,
+          youtubeVideoId: res.next.youtubeVideoId,
+          title: res.next.title,
+          durationSeconds: res.next.durationSeconds,
+          startedAt: new Date().toISOString(),
+        });
+        if (playerRef.current && readyRef.current) {
+          playerRef.current.loadVideoById(res.next.youtubeVideoId);
+        }
+      }
       setBusy(false);
       void refreshState();
     })();
@@ -267,11 +324,21 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
             </button>
             <button
               onClick={() => {
-                const next = !showHistory;
-                setShowHistory(next);
-                if (next) void loadHistory();
+                const next = panel === "base" ? "queue" : "base";
+                setPanel(next);
+                if (next === "base") void refreshState();
               }}
-              className={`rounded-lg px-3 py-2 text-sm ${showHistory ? "bg-violet-600" : "bg-white/10"}`}
+              className={`rounded-lg px-3 py-2 text-sm ${panel === "base" ? "bg-violet-600" : "bg-white/10"}`}
+            >
+              🎵 เพลงของร้าน
+            </button>
+            <button
+              onClick={() => {
+                const next = panel === "history" ? "queue" : "history";
+                setPanel(next);
+                if (next === "history") void loadHistory();
+              }}
+              className={`rounded-lg px-3 py-2 text-sm ${panel === "history" ? "bg-violet-600" : "bg-white/10"}`}
             >
               📜 ประวัติเพลง
             </button>
@@ -281,7 +348,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
 
       {/* Queue side panel */}
       <aside className="w-full shrink-0 overflow-y-auto border-t border-white/10 p-4 md:max-h-screen md:w-80 md:border-l md:border-t-0">
-        {showHistory ? (
+        {panel === "history" ? (
           <>
             <p className="text-sm font-semibold text-white/80">ประวัติเพลง ({history.length})</p>
             <ul className="mt-3 space-y-2">
@@ -299,6 +366,34 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
               ))}
               {history.length === 0 && (
                 <li className="py-6 text-center text-sm text-white/30">ยังไม่มีประวัติ</li>
+              )}
+            </ul>
+          </>
+        ) : panel === "base" ? (
+          <>
+            <p className="text-sm font-semibold text-white/80">เพลงของร้าน ({basePlaylist.length})</p>
+            <p className="mt-1 text-xs text-white/40">เฉพาะพนักงาน — ลูกค้าไม่เห็น เลือกเพลงเพื่อเล่นทันที</p>
+            <ul className="mt-3 space-y-2">
+              {basePlaylist.map((t) => (
+                <li
+                  key={t.videoId}
+                  className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                  <button
+                    onClick={() => playBase(t.videoId, t.title)}
+                    disabled={busy}
+                    title="เล่นเพลงนี้เลย"
+                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
+                  >
+                    ▶
+                  </button>
+                </li>
+              ))}
+              {basePlaylist.length === 0 && (
+                <li className="py-6 text-center text-sm text-white/30">
+                  ยังไม่มีเพลงของร้าน — เพิ่มที่ ตั้งค่า → เครื่องเล่นเพลง
+                </li>
               )}
             </ul>
           </>
@@ -322,6 +417,14 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
                       💸 โดเนท
                     </span>
                   ) : null}
+                  <button
+                    onClick={() => playItem(q.id)}
+                    disabled={busy}
+                    title="เล่นเพลงนี้เลย"
+                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
+                  >
+                    ▶
+                  </button>
                   <button
                     onClick={() => removeItem(q.id)}
                     disabled={busy}

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getResolvedCurrentPermissions, requirePermission } from "@/modules/auth/guards";
+import { getResolvedCurrentPermissions, requireFeature, requirePermission } from "@/modules/auth/guards";
 import { validatePermissionMutation } from "@/modules/auth/permission-resolver";
 import {
   upsertPermissionOverride,
@@ -84,6 +84,8 @@ export async function upsertPermissionOverrideAction(
 ): Promise<{ error: string | null }> {
   try {
     await requirePermission("permissions.manage");
+    // Per-user permission overrides are an "advanced permissions" feature (premium+).
+    await requireFeature("advancedPermissions");
     const { user, ctx, resolved } = await getActorContext();
 
     if (!UUID_RE.test(membershipId)) return { error: "ID ไม่ถูกต้อง" };
@@ -155,6 +157,7 @@ export async function removePermissionOverrideAction(
   try {
     void _targetUserId;
     await requirePermission("permissions.manage");
+    await requireFeature("advancedPermissions");
     const { user, ctx, resolved } = await getActorContext();
 
     if (!UUID_RE.test(membershipId)) return { error: "ID ไม่ถูกต้อง" };

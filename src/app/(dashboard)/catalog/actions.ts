@@ -189,6 +189,12 @@ export async function createProductAction(
     const imageUrl = readOptionalUrl(formData, "imageUrl");
     if (imageUrl.error) return { error: imageUrl.error };
 
+    const availableForQr = formData.get("availableForQr") === "on";
+    const kitchenStationId = (formData.get("kitchenStationId") as string | null) || null;
+    if (availableForQr && !kitchenStationId) {
+      return { error: "กรุณาเลือกครัว/บาร์สำหรับสินค้าที่ขายผ่าน QR (เพิ่มได้ที่ ตั้งค่า → Kitchen)" };
+    }
+
     const result = await createProduct({
       storeId: ctx.storeId,
       organizationId: ctx.organizationId,
@@ -198,7 +204,8 @@ export async function createProductAction(
       imageUrl: imageUrl.value,
       basePrice,
       availableForPos: formData.get("availableForPos") === "on",
-      availableForQr: formData.get("availableForQr") === "on",
+      availableForQr,
+      kitchenStationId: availableForQr ? kitchenStationId : null,
     });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
@@ -229,6 +236,12 @@ export async function updateProductAction(
     const imageUrl = readOptionalUrl(formData, "imageUrl");
     if (imageUrl.error) return { error: imageUrl.error };
 
+    const availableForQr = formData.get("availableForQr") === "on";
+    const kitchenStationId = (formData.get("kitchenStationId") as string | null) || null;
+    if (availableForQr && !kitchenStationId) {
+      return { error: "กรุณาเลือกครัว/บาร์สำหรับสินค้าที่ขายผ่าน QR (เพิ่มได้ที่ ตั้งค่า → Kitchen)" };
+    }
+
     const result = await updateProduct(id, ctx.storeId, {
       name,
       categoryId,
@@ -236,7 +249,8 @@ export async function updateProductAction(
       imageUrl: imageUrl.value,
       basePrice,
       availableForPos: formData.get("availableForPos") === "on",
-      availableForQr: formData.get("availableForQr") === "on",
+      availableForQr,
+      kitchenStationId: availableForQr ? kitchenStationId : null,
       isActive: formData.get("isActive") !== "off",
     });
     if (result.error) return { error: result.error.userMessage };

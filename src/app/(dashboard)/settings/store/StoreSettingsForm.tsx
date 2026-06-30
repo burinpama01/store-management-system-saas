@@ -454,6 +454,26 @@ function StoreSettingsDialog({
           </p>
         </div>
 
+        <div className="max-w-xs">
+          <label className="field-label" htmlFor="tableOpenPolicy">
+            การเปิดโต๊ะ
+          </label>
+          <select
+            id="tableOpenPolicy"
+            name="tableOpenPolicy"
+            defaultValue={store.tableOpenPolicy}
+            disabled={!canEdit || !canUseQrOrdering}
+            className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm"
+          >
+            <option value="staff_only">พนักงานเปิดโต๊ะก่อน (ค่าเริ่มต้น)</option>
+            <option value="customer_self">ลูกค้าเปิดโต๊ะเองตอนสั่งออเดอร์แรก</option>
+          </select>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            “ลูกค้าเปิดเอง” ใช้ได้เฉพาะ QR แบบผูกโต๊ะ และไม่ใช่โหมดบุฟเฟต์ — ลูกค้าดูเมนูได้ก่อน
+            เมื่อกดสั่งครั้งแรกระบบจะเปิดโต๊ะให้อัตโนมัติ
+          </p>
+        </div>
+
         <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-bold text-[var(--ink-2)]">ขอเพลง (Music Request)</span>

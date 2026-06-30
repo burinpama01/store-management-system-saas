@@ -9,6 +9,7 @@ import {
   listVariantTemplates,
 } from "@/modules/catalog/repository";
 import { listBranchStores } from "@/modules/stores/repository";
+import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { CatalogManager } from "./CatalogManager";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export default async function CatalogPage() {
     variantTemplatesResult,
     modifierGroupTemplatesResult,
     branchStoresResult,
+    kitchenStationsResult,
     billingState,
   ] = await Promise.all([
     listCategories(ctx.storeId),
@@ -30,6 +32,7 @@ export default async function CatalogPage() {
     listVariantTemplates(ctx.storeId),
     listModifierGroupTemplates(ctx.storeId),
     listBranchStores(ctx.organizationId),
+    listKitchenStations(ctx.storeId),
     getOrganizationBillingState(ctx.organizationId),
   ]);
 
@@ -38,6 +41,7 @@ export default async function CatalogPage() {
   const variantTemplates = variantTemplatesResult.data ?? [];
   const modifierGroupTemplates = modifierGroupTemplatesResult.data ?? [];
   const branchStores = branchStoresResult.data ?? [];
+  const kitchenStations = (kitchenStationsResult.data ?? []).map((s) => ({ id: s.id, name: s.name }));
   const state = billingState ?? DEFAULT_BILLING_STATE;
   const features = getPlanFeatures(state);
 
@@ -58,6 +62,7 @@ export default async function CatalogPage() {
         canUseMultiBranch={features.multiBranchReporting}
         canUseQrOrdering={features.qrOrdering}
         canUseStock={features.stockManagement}
+        kitchenStations={kitchenStations}
       />
     </div>
   );

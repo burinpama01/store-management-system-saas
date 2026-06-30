@@ -40,8 +40,10 @@ export async function POST(req: NextRequest) {
 
   const jobs = claimed.data.map((job) => ({
     id: job.id,
+    kind: job.targetKind,
     host: job.targetHost,
     port: job.targetPort,
+    device: job.targetDevice,
     printJobBase64: job.payloadB64,
   }));
   return NextResponse.json({ ok: true, jobs });

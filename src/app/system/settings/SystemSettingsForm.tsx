@@ -180,6 +180,21 @@ export function SystemSettingsForm({
           </p>
         </div>
 
+        <div className="border-t border-[var(--border)] pt-4">
+          <label className="field-label">StoreOS Connect — URL ของ JDC Edge Functions</label>
+          <input
+            type="text"
+            name="jdcFunctionsBaseUrl"
+            defaultValue={settings.jdcFunctionsBaseUrl ?? ""}
+            placeholder="https://xxxx.supabase.co/functions/v1"
+            className="form-input"
+          />
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            ปลายทางกลางที่ StoreOS ใช้ส่งเมนู/สถานะ/เปิด-ปิดร้านไปยัง JDC (เดลิเวอรี) ·
+            ใช้ร่วมกันทุกร้าน · เว้นว่าง = ปิดการส่งออกไป JDC
+          </p>
+        </div>
+
         <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
           บันทึกการตั้งค่า
         </Button>

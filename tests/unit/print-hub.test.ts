@@ -6,6 +6,7 @@ import {
   summarizeHubStatus,
   validatePrintTarget,
   validatePrintPayloadBase64,
+  validateHubBluetoothPort,
   HUB_OFFLINE_THRESHOLD_MS,
   MAX_PRINT_JOB_BYTES,
 } from "@/modules/printing/print-hub";
@@ -80,6 +81,22 @@ describe("validatePrintTarget", () => {
   it("rejects out-of-range ports", () => {
     expect(validatePrintTarget({ host: "192.168.1.50", port: 0 }).error).toBeTruthy();
     expect(validatePrintTarget({ host: "192.168.1.50", port: 70000 }).error).toBeTruthy();
+  });
+});
+
+describe("validateHubBluetoothPort", () => {
+  it("accepts and normalizes valid COM ports", () => {
+    expect(validateHubBluetoothPort("com5")).toEqual({ device: "COM5" });
+    expect(validateHubBluetoothPort(" COM12 ")).toEqual({ device: "COM12" });
+    expect(validateHubBluetoothPort("COM999")).toEqual({ device: "COM999" });
+  });
+
+  it("rejects empty, malformed, and unsafe values", () => {
+    expect(validateHubBluetoothPort("").error).toBeTruthy();
+    expect(validateHubBluetoothPort("COM0").error).toBeTruthy();
+    expect(validateHubBluetoothPort("LPT1").error).toBeTruthy();
+    expect(validateHubBluetoothPort("COM5; rm -rf /").error).toBeTruthy();
+    expect(validateHubBluetoothPort(undefined).error).toBeTruthy();
   });
 });
 

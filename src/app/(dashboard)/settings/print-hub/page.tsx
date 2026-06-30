@@ -4,6 +4,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { summarizeHubStatus } from "@/modules/printing/print-hub";
 import { getHubStatus, getStoreHubAuth } from "@/modules/printing/print-hub-repository";
 import { listPrinters } from "@/modules/stores/repository";
+import { saveHubBluetoothPrinterAction, saveNetworkPrinterAction } from "../receipt/actions";
 import { PrintHubManager } from "./PrintHubManager";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +28,16 @@ export default async function PrintHubSettingsPage() {
   ]);
 
   const summary = summarizeHubStatus(statusRes.data?.lastSeen ?? null);
-  const networkPrinters = (printersRes.data ?? []).filter(
-    (printer) => (printer.type === "ip" || printer.type === "escpos") && printer.ipAddress,
+  const printers = printersRes.data ?? [];
+  // Any printer the Hub can print to: LAN (IP/escpos) or Bluetooth-via-Hub.
+  const printablePrinters = printers.filter(
+    (printer) =>
+      ((printer.type === "ip" || printer.type === "escpos") && printer.ipAddress) ||
+      (printer.type === "bluetooth" && printer.hubBluetoothPort),
   );
-  const defaultPrinter = networkPrinters.find((p) => p.isDefault) ?? networkPrinters[0] ?? null;
-  const testPrinter = defaultPrinter
-    ? { id: defaultPrinter.id, paperWidth: (defaultPrinter.paperWidth ?? "80mm") as "58mm" | "80mm" }
-    : null;
+  const defaultPrinter = printablePrinters.find((p) => p.isDefault) ?? printablePrinters[0] ?? null;
+  const paperWidth = (defaultPrinter?.paperWidth ?? "80mm") as "58mm" | "80mm";
+  const testPrinter = defaultPrinter ? { id: defaultPrinter.id, paperWidth } : null;
 
   return (
     <PrintHubManager
@@ -42,12 +46,16 @@ export default async function PrintHubSettingsPage() {
       storeName={ctx.storeName}
       hasToken={Boolean(authRes.data?.tokenHash)}
       testPrinter={testPrinter}
+      printers={printers}
+      paperWidth={paperWidth}
       initialStatus={{
         online: summary.online,
         secondsAgo: summary.secondsAgo,
         pendingJobs: statusRes.data?.pendingJobs ?? 0,
       }}
       loadError={statusRes.error?.userMessage ?? null}
+      saveNetworkPrinterAction={saveNetworkPrinterAction}
+      saveHubBluetoothPrinterAction={saveHubBluetoothPrinterAction}
     />
   );
 }

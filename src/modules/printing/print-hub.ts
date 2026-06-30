@@ -72,6 +72,23 @@ export function validatePrintTarget(input: {
   return { target: { host, port } };
 }
 
+/** Windows Bluetooth SPP ports are COM1..COM999. Strict so it is safe to pass
+ *  to the cashier PC's `mode` command / device path without injection risk. */
+const COM_PORT_RE = /^COM([1-9]\d{0,2})$/;
+
+/**
+ * Validates + normalizes a cashier-PC Bluetooth COM port (e.g. " com5 " →
+ * "COM5"). This is the target for a Hub-routed Bluetooth printer.
+ */
+export function validateHubBluetoothPort(value: unknown): { device?: string; error?: string } {
+  const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (!raw) return { error: "Missing Bluetooth COM port" };
+  if (!COM_PORT_RE.test(raw)) {
+    return { error: "พอร์ต Bluetooth ไม่ถูกต้อง ต้องเป็นรูปแบบ COM1–COM999 (เช่น COM5)" };
+  }
+  return { device: raw };
+}
+
 /** Ensures a base64 print payload is well-formed and within size limits. */
 export function validatePrintPayloadBase64(value: unknown): { payload?: string; error?: string } {
   if (typeof value !== "string" || value.length === 0) {

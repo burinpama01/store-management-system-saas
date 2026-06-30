@@ -73,6 +73,7 @@ function store(id: string, organizationId = ORG): StoreRow {
     theme_accent_color: "#3c8fb0",
     timezone: "Asia/Bangkok",
     qr_ordering_mode: "table_bound",
+    table_open_policy: "staff_only",
     music_request_enabled: false,
     music_license_status: "not_requested",
     music_license_approved_at: null,

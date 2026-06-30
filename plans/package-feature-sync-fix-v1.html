@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>แผนแก้: ปรับ Package ↔ Feature ให้ตรงกัน (v1)</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #181b24; --panel2: #1f2430; --ink: #e7eaf0; --muted: #9aa3b2;
+    --line: #2a3040; --accent: #4f8cff; --green: #3fb950; --amber: #d29922; --red: #f85149;
+    --chip: #232a38;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", "Sarabun", system-ui, sans-serif; line-height: 1.65; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 21px; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 22px 0 8px; color: #cdd6e4; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 8px; }
+  .chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 12px; font-size: 13px; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin: 14px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: #cdd6e4; }
+  td.c, th.c { text-align: center; }
+  .yes { color: var(--green); font-weight: 700; }
+  .no { color: var(--red); }
+  .new { color: var(--amber); font-weight: 700; }
+  code { background: #11141c; border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; font-size: 13px; color: #ffd596; }
+  .ws { border-left: 4px solid var(--accent); }
+  .ws.small { border-left-color: var(--green); }
+  .ws.med { border-left-color: var(--amber); }
+  .ws.large { border-left-color: var(--red); }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 6px;
+    margin-left: 6px; vertical-align: middle; }
+  .tag.s { background: #133a1e; color: var(--green); border: 1px solid #1e5631; }
+  .tag.m { background: #3a2f10; color: var(--amber); border: 1px solid #5e4d18; }
+  .tag.l { background: #3a1414; color: var(--red); border: 1px solid #5e1e1e; }
+  .files { font-size: 13px; color: var(--muted); }
+  .files code { color: #9fc2ff; }
+  .q { background: #1a1f2b; border: 1px dashed var(--amber); border-radius: 10px;
+    padding: 12px 16px; margin: 10px 0; }
+  .done { color: var(--green); }
+  footer { margin-top: 50px; color: var(--muted); font-size: 13px;
+    border-top: 1px solid var(--line); padding-top: 16px; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .flow span { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 4px 12px; font-size: 13px; }
+  .flow span::after { content: " →"; color: var(--muted); }
+  .flow span:last-child::after { content: ""; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>แผนแก้: ปรับ Package ↔ Feature ให้ตรงความจริง</h1>
+  <p class="sub">Store Management System (SaaS) — ปรับสิ่งที่ "โฆษณาบน landing" ให้ตรงกับ "สิทธิ์ที่ gate จริง" และ "ฟีเจอร์ที่มีจริง"</p>
+  <div class="meta">
+    <span class="chip">เวอร์ชัน v1</span>
+    <span class="chip">วันที่ 2026-06-29</span>
+    <span class="chip">แนวทาง: Build จริงทั้งหมด</span>
+    <span class="chip">Workflow: Scope → Route → Implement → Review → Fix → Verify → Document</span>
+  </div>
+
+  <h2>1. บริบท &amp; ปัญหา (จากการวิเคราะห์)</h2>
+  <div class="panel">
+    <p>ระบบมี <b>2 แหล่งความจริงที่ไม่ผูกกัน</b>:</p>
+    <ul>
+      <li><b>Gate จริง</b> = <code>PLAN_FEATURES</code> ใน <code>src/modules/billing/types.ts</code> (บังคับจริงผ่าน <code>canUseFeature</code>/<code>requireFeature</code>)</li>
+      <li><b>ข้อความขาย</b> = <code>plan_settings.feature_lines</code> ใน DB (แก้เองที่ <code>/system/pricing</code>) แสดงบน <code>/pricing</code></li>
+    </ul>
+    <p>ผลคือเกิดความไม่ตรงกัน 4 จุด ที่แผนนี้จะแก้:</p>
+    <table>
+      <tr><th>#</th><th>ปัญหา</th><th>สถานะปัจจุบัน</th><th>การตัดสินใจ</th></tr>
+      <tr><td>1</td><td><b>apiIntegration</b> — Enterprise โฆษณา "เชื่อมต่อ API"</td><td>ไม่มีฟีเจอร์จริง + ไม่มี gate</td><td class="new">Build API จริง</td></tr>
+      <tr><td>2</td><td><b>advancedReports / advancedPermissions</b></td><td>flag ตาย — ตั้งใน matrix แต่ไม่มีโค้ดเช็ก</td><td class="new">Implement gating จริง</td></tr>
+      <tr><td>3</td><td><b>คูปอง + สะสมแต้ม</b></td><td>ล็อก Enterprise-only (Premium ก็ไม่ได้)</td><td class="new">ปลดลงมาที่ Premium</td></tr>
+      <tr><td>4</td><td><b>Migration เปราะ</b> — seed copy ของ Premium มี "จอแสดงผลลูกค้า" ที่ premium ไม่มีจริง</td><td>รอด live เพราะ admin แก้มือ แต่ DB ใหม่จะโฆษณาเกินจริง</td><td class="new">เพิ่ม guard test + แก้ seed</td></tr>
+    </table>
+  </div>
+
+  <h2>2. Target Matrix (สิทธิ์เป้าหมายหลังแก้)</h2>
+  <p class="sub"><span class="new">สีเหลือง</span> = เปลี่ยนจากปัจจุบัน</p>
+  <table>
+    <tr>
+      <th>Feature</th><th class="c">starter</th><th class="c">standard</th><th class="c">premium</th><th class="c">enterprise</th>
+    </tr>
+    <tr><td>Grocery POS</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+    <tr><td>บุฟเฟต์ / สต็อก / พิมพ์ขั้นสูง</td><td class="c no">✗</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+    <tr><td><b>รายงานขั้นสูง</b> (advancedReports)</td><td class="c no">✗</td><td class="c yes">✓ <small>(gate ใหม่)</small></td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+    <tr><td>QR Ordering / Offline POS / LINE / GPS</td><td class="c no">✗</td><td class="c no">✗</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+    <tr><td><b>สิทธิ์ขั้นสูง</b> (advancedPermissions)</td><td class="c no">✗</td><td class="c no">✗</td><td class="c yes">✓ <small>(gate ใหม่)</small></td><td class="c yes">✓</td></tr>
+    <tr><td><b>คูปอง + สะสมแต้ม</b></td><td class="c no">✗</td><td class="c no">✗</td><td class="c new">✓ ใหม่</td><td class="c yes">✓</td></tr>
+    <tr><td>จอลูกค้า (customer display)</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c yes">✓</td></tr>
+    <tr><td>รายงานหลายสาขา / ขอเพลง</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c yes">✓</td></tr>
+    <tr><td><b>API Integration</b></td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td><td class="c new">✓ จริง</td></tr>
+  </table>
+
+  <h2>3. แผนงานแยกเป็น 5 Workstreams</h2>
+  <p class="sub">เรียงตามลำดับแนะนำ (A เริ่มได้ทันที, D ก้อนใหญ่สุด)</p>
+
+  <!-- WS-A -->
+  <div class="panel ws small">
+    <h3>WS-A · ปลดคูปอง + สะสมแต้ม ลงมาที่ Premium <span class="tag s">เล็ก · ความเสี่ยงต่ำ</span></h3>
+    <p>เปิด 2 flag ให้ premium — gate ที่ POS/member เปิดให้อัตโนมัติเพราะใช้ <code>canUseFeature</code> อยู่แล้ว ไม่ต้องแก้ logic เพิ่ม</p>
+    <ol>
+      <li>แก้ <code>PLAN_FEATURES.premium</code>: <code>couponManagement: true</code>, <code>loyaltyPoints: true</code></li>
+      <li>อัปเดต expectation ใน test (premium coupon/loyalty = true)</li>
+      <li>อัปเดต <code>feature_lines</code> ของ premium: เพิ่มบรรทัด "คูปอง + สะสมแต้ม"</li>
+      <li>ปรับ copy enterprise: เดิม "สมาชิก QR + สะสมแต้ม + คูปอง + จอลูกค้า" → ให้ enterprise ชูเฉพาะส่วนต่าง (จอลูกค้า, รายงานหลายสาขา, API) เพราะ coupon/loyalty ลงไป premium แล้ว</li>
+      <li>เขียน migration อัปเดต <code>plan_settings</code> (conditional update กัน copy ที่ admin แก้เอง)</li>
+    </ol>
+    <p class="files">ไฟล์: <code>src/modules/billing/types.ts</code> · <code>tests/unit/billing.test.ts</code> · <code>tests/unit/grocery-pos-rewards.test.ts</code> · <code>supabase/migrations/2026____ _premium_coupon_loyalty.sql</code></p>
+    <p class="files">ตรวจ dependency: <code>src/app/pos/page.tsx</code> (couponEnabled/loyaltyEnabled), <code>src/modules/customers/member-repository.ts</code> — ไม่ต้องแก้ เปิดอัตโนมัติ</p>
+  </div>
+
+  <!-- WS-B -->
+  <div class="panel ws med">
+    <h3>WS-B · advancedReports — ทำ gate จริง <span class="tag m">กลาง</span></h3>
+    <p><b>นิยาม "รายงานขั้นสูง":</b> แยก report ออกเป็น Basic (ทุก plan ที่มี <code>reports.view</code>) vs Advanced (standard+)</p>
+    <table>
+      <tr><th>Basic (ทุก plan)</th><th>Advanced (standard+ ผ่าน gate ใหม่)</th></tr>
+      <tr>
+        <td>ยอดขายรวม, ยอดขายรายวัน</td>
+        <td>Top products, สัดส่วนช่องทางชำระเงิน, AOV, แยก QR/POS, Export CSV</td>
+      </tr>
+    </table>
+    <ol>
+      <li>ใน <code>reports/page.tsx</code> คำนวณ <code>advancedReportsEnabled = canUseFeature(state, "advancedReports")</code></li>
+      <li>ส่ง prop ลง <code>ReportsManager</code> เพื่อแสดง/ซ่อนการ์ด Advanced + ปุ่ม Export (พร้อมข้อความ upsell เมื่อ lock)</li>
+      <li>ใส่ <code>requireFeature("advancedReports")</code> ใน server action/route ของ Export</li>
+      <li>เพิ่ม test: standard เห็น advanced, starter ไม่เห็น</li>
+    </ol>
+    <p class="files">ไฟล์: <code>src/app/(dashboard)/reports/page.tsx</code> · <code>src/app/(dashboard)/reports/ReportsManager.tsx</code> · (เพิ่ม) export action · <code>tests/unit/*reports*</code></p>
+  </div>
+
+  <!-- WS-C -->
+  <div class="panel ws med">
+    <h3>WS-C · advancedPermissions — ทำ gate จริง <span class="tag m">กลาง</span></h3>
+    <p><b>นิยาม "สิทธิ์ขั้นสูง":</b> = ความสามารถตั้ง <i>per-user permission overrides</i> (<code>membership_permission_overrides</code>) ผ่านหน้า Team Settings. Plan ต่ำ = ใช้สิทธิ์ตาม role default เท่านั้น; premium+ = ปรับสิทธิ์รายคนได้</p>
+    <ol>
+      <li><b>Gate ฝั่ง write เท่านั้น</b> (ปลอดภัยกว่า): <code>setPermissionOverrideAction</code> ใน <code>settings/team/actions.ts</code> เรียก <code>requireFeature("advancedPermissions")</code></li>
+      <li>UI <code>TeamSettings.tsx</code>: ซ่อน/disable ตัวปรับ override + แสดงข้อความ upsell เมื่อไม่มีสิทธิ์</li>
+      <li>เพิ่ม test: premium ตั้ง override ได้, standard ถูกปฏิเสธ</li>
+    </ol>
+    <div class="q">
+      <b>⚠️ จุดต้องตัดสินใจ (C-1):</b> เมื่อ tenant <i>ลดแพ็กเกจ</i> ลงต่ำกว่า premium — override ที่ตั้งไว้เดิมควรทำงานต่อไหม?<br>
+      <b>ข้อเสนอ (default ปลอดภัย):</b> ไม่แตะ <code>permission-resolver.ts</code> — override เดิมยัง apply (grandfather) แต่ <u>สร้าง/แก้ใหม่ไม่ได้</u>. เหตุผล: ถ้า ignore override ที่เป็นการ "ถอนสิทธิ์" จะทำให้ user ได้สิทธิ์คืนแบบไม่ตั้งใจ = ช่องโหว่ความปลอดภัย. การ gate แค่ write-path เลี่ยงปัญหานี้.
+    </div>
+    <p class="files">ไฟล์: <code>src/app/(dashboard)/settings/team/actions.ts</code> · <code>src/app/(dashboard)/settings/team/TeamSettings.tsx</code></p>
+  </div>
+
+  <!-- WS-D -->
+  <div class="panel ws large">
+    <h3>WS-D · API Integration — build จริง (Enterprise) <span class="tag l">ใหญ่ · ก้อนหลัก</span></h3>
+    <p>สร้าง Public REST API พร้อมระบบ API key ต่อ organization, gate ด้วย <code>apiIntegration</code></p>
+
+    <h3 style="margin-top:14px">D-1 · Data layer</h3>
+    <ul>
+      <li>migration ตาราง <code>api_keys</code>: <code>id, organization_id, name, key_prefix, key_hash (sha-256), scopes[], last_used_at, created_at, revoked_at</code></li>
+      <li>RLS: อ่าน/จัดการได้เฉพาะสมาชิก org (เขียนต้อง admin+); การ verify ฝั่ง API ใช้ service client</li>
+    </ul>
+
+    <h3>D-2 · Auth middleware สำหรับ API</h3>
+    <ul>
+      <li>helper <code>authenticateApiKey(req)</code>: อ่าน <code>Authorization: Bearer &lt;key&gt;</code> → hash → lookup → ได้ <code>organizationId</code></li>
+      <li>เช็ก <code>canUseFeature(billingState, "apiIntegration")</code> + เช็ก subscription ยัง active → 402/403 ถ้าไม่ผ่าน</li>
+      <li>อัปเดต <code>last_used_at</code>; รองรับ scope ต่อ endpoint</li>
+    </ul>
+
+    <h3>D-3 · Endpoints v1 (read-only ก่อน)</h3>
+    <div class="flow">
+      <span>GET /api/v1/products</span><span>GET /api/v1/orders</span><span>GET /api/v1/inventory</span><span>GET /api/v1/customers</span>
+    </div>
+    <p class="sub">รูปแบบ: pagination + filter วันที่, ตอบ JSON มาตรฐาน, error envelope สม่ำเสมอ. (Write endpoints เป็น phase ถัดไป)</p>
+
+    <h3>D-4 · หน้าจัดการ key + เอกสาร</h3>
+    <ul>
+      <li>หน้า <code>/settings/integrations</code> (หรือ <code>/settings/api</code>): สร้าง/ตั้งชื่อ/เพิกถอน key — โชว์ค่า key เต็มครั้งเดียวตอนสร้าง; ทุก action เรียก <code>requireFeature("apiIntegration")</code></li>
+      <li>เพิ่ม tab ใน <code>settings/layout.tsx</code> ผูก <code>featureKey: "apiIntegration"</code> (ซ่อนอัตโนมัติเมื่อ plan ไม่มี)</li>
+      <li>เอกสาร API (markdown) + ตัวอย่าง curl</li>
+    </ul>
+
+    <div class="q">
+      <b>⚠️ จุดต้องตัดสินใจ (D-1):</b> Scope รอบแรก — <b>read-only 4 endpoint</b> (แนะนำ, คุม risk) หรือรวม write ตั้งแต่แรก?<br>
+      <b>(D-2):</b> Rate limiting — ใส่เลย(เช่น token bucket ต่อ key) หรือเลื่อนเป็น follow-up? แนะนำใส่ขั้นต่ำเพื่อกัน abuse.
+    </div>
+    <p class="files">ไฟล์ (ใหม่): <code>supabase/migrations/2026____ _api_keys.sql</code> · <code>src/modules/api-keys/{repository,auth}.ts</code> · <code>src/app/api/v1/**/route.ts</code> · <code>src/app/(dashboard)/settings/integrations/*</code> · <code>docs/api-v1.md</code> · tests</p>
+  </div>
+
+  <!-- WS-E -->
+  <div class="panel ws small">
+    <h3>WS-E · Guard test + migration hygiene <span class="tag s">เล็ก · สำคัญ (กันหลุดซ้ำ)</span></h3>
+    <ol>
+      <li><b>Keyword-guard test:</b> สร้าง map keyword→featureKey (เช่น "จอลูกค้า"→customerDisplay, "API"→apiIntegration, "คูปอง"→couponManagement). assert ว่า seed <code>feature_lines</code> ของแต่ละ tier <u>ห้ามมี keyword ของ feature ที่ tier นั้นไม่มีใน <code>PLAN_FEATURES</code></u> → กันโฆษณาเกินจริงในอนาคต</li>
+      <li><b>แก้ seed เปราะ:</b> เขียน migration ที่ทำให้ historical seed copy ของ premium ไม่มี "จอแสดงผลลูกค้า" (customerDisplay เป็น enterprise-only); ตรวจ migration chain ทั้งหมดให้ลำดับสุดท้ายถูกต้องบน DB ใหม่</li>
+    </ol>
+    <p class="files">ไฟล์: <code>tests/unit/plan-copy-feature-sync.test.ts</code> (ใหม่) · migration แก้ seed</p>
+  </div>
+
+  <h2>4. ลำดับการทำ &amp; Verify</h2>
+  <div class="panel">
+    <div class="flow" style="margin-bottom:12px">
+      <span>WS-A (เปิด flag)</span><span>WS-E (guard test)</span><span>WS-B + WS-C (gate จริง)</span><span>WS-D (API)</span><span>Review</span><span>Migration apply</span><span>Deploy</span>
+    </div>
+    <ul>
+      <li><b>Verify ต่อ WS:</b> <code>npm run typecheck</code> + <code>npm run lint</code> + unit test ที่เกี่ยวข้อง</li>
+      <li><b>Preview e2e:</b> ทดสอบ tier premium เห็นคูปอง/สะสมแต้ม/รายงานขั้นสูง/สิทธิ์ขั้นสูง; enterprise สร้าง API key + ยิง endpoint ได้; starter ถูก lock ถูกจุด</li>
+      <li><b>Full suite</b> ก่อน merge (baseline: 784 pass / 3 fail pre-existing — ต้องไม่เพิ่ม fail)</li>
+      <li><b>Migration:</b> apply ผ่าน <code>SUPABASE_DATABASE_URL</code> ตามแนวเดิม → smoke 200 → ตรวจ <code>/pricing</code> โชว์ copy ใหม่</li>
+    </ul>
+  </div>
+
+  <h2>5. ความเสี่ยง &amp; ข้อควรระวัง</h2>
+  <table>
+    <tr><th>ความเสี่ยง</th><th>การรับมือ</th></tr>
+    <tr><td>WS-A เปิด coupon/loyalty ให้ premium แล้วกระทบคิดเงิน/แต้มที่ POS</td><td>มี gate <code>canUseFeature</code> อยู่แล้ว — เพิ่ม test ครอบ premium; ทดสอบ preview รอบสั่ง-ชำระจริง</td></tr>
+    <tr><td>WS-C gate ผิดทางทำให้ override ความปลอดภัยรั่ว</td><td>gate เฉพาะ write-path ไม่แตะ resolver (ดู C-1)</td></tr>
+    <tr><td>WS-D key hash / leak</td><td>เก็บเฉพาะ hash (sha-256), โชว์ key เต็มครั้งเดียว, รองรับ revoke, gate ทุก write ด้วย requireFeature</td></tr>
+    <tr><td>Migration conditional ไม่ match copy ที่ admin แก้</td><td>ใช้รูปแบบ conditional เดิม (update เฉพาะ row ที่ตรง seed/ว่าง) + guard test กันหลุด</td></tr>
+  </table>
+
+  <h2>6. คำถามค้างให้ยืนยันก่อนลงมือ</h2>
+  <div class="q"><b>C-1</b> — เมื่อลดแพ็กเกจ: override เดิมให้ grandfather (ทำงานต่อ) ตามที่เสนอ ใช่ไหม?</div>
+  <div class="q"><b>D-1</b> — API รอบแรก read-only 4 endpoint พอไหม หรือต้องการ write ด้วย?</div>
+  <div class="q"><b>D-2</b> — ใส่ rate limiting ตั้งแต่รอบแรกไหม?</div>
+  <div class="q"><b>นิยาม advancedReports</b> — การแบ่ง Basic/Advanced ตามตารางใน WS-B โอเคไหม หรืออยากแบ่งเส้นอื่น?</div>
+
+  <footer>
+    ไฟล์แผน: <code>plans/package-feature-sync-fix-v1.html</code> · กฎ: ห้ามเขียนทับ — แก้รอบหน้าให้สร้าง v2<br>
+    บันทึก log จบงานลง Obsidian: <code>Projects/Store management system saas/</code>
+  </footer>
+
+</div>
+</body>
+</html>

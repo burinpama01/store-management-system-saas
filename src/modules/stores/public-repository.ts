@@ -29,6 +29,7 @@ export function mapStore(row: StoreRow): Store {
     buffetEnabled: row.buffet_enabled,
     qrOrderingEnabled: row.qr_ordering_enabled,
     qrOrderingMode: row.qr_ordering_mode,
+    tableOpenPolicy: row.table_open_policy,
     musicRequestEnabled: row.music_request_enabled,
     musicLicenseStatus: row.music_license_status,
     musicLicenseApprovedAt: row.music_license_approved_at ?? undefined,

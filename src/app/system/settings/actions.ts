@@ -9,6 +9,7 @@ import {
   updatePlatformPromptPay,
   updateEnterpriseFromEmail,
   updatePlatformLogo,
+  updateJdcFunctionsBaseUrl,
 } from "@/modules/billing/platform-settings";
 import { sendEnterpriseTestEmail } from "@/modules/enterprise/email";
 
@@ -64,6 +65,18 @@ export async function updatePlatformSettingsAction(
   }
   const emailRes = await updateEnterpriseFromEmail(enterpriseFromEmail || null, user.id);
   if (!emailRes.ok) return { ok: false, error: emailRes.error?.userMessage ?? "บันทึกอีเมลผู้ส่งไม่สำเร็จ" };
+
+  const jdcUrl = ((formData.get("jdcFunctionsBaseUrl") as string | null) ?? "").trim();
+  if (jdcUrl) {
+    try {
+      const u = new URL(jdcUrl);
+      if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error();
+    } catch {
+      return { ok: false, error: "URL ของ JDC Edge Functions ไม่ถูกต้อง (เช่น https://xxx.supabase.co/functions/v1)" };
+    }
+  }
+  const jdcRes = await updateJdcFunctionsBaseUrl(jdcUrl || null, user.id);
+  if (!jdcRes.ok) return { ok: false, error: jdcRes.error?.userMessage ?? "บันทึก URL ของ JDC ไม่สำเร็จ" };
 
   revalidatePath("/system/settings");
   return { ok: true, error: null };

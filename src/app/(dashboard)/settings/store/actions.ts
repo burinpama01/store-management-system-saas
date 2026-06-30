@@ -54,6 +54,7 @@ export async function updateStoreAction(
     const qrOrderingMode =
       formData.get("qrOrderingMode") === "session_printed" ? "session_printed" : "table_bound";
     const musicRequestEnabled = formData.get("musicRequestEnabled") === "1";
+    const requestedSelfOpen = formData.get("tableOpenPolicy") === "customer_self";
     const dineInRaw = parseInt((formData.get("dineInDurationMinutes") as string | null) ?? "", 10);
     const dineInDurationMinutes =
       Number.isInteger(dineInRaw) && dineInRaw >= 15 && dineInRaw <= 600 ? dineInRaw : 120;
@@ -85,6 +86,14 @@ export async function updateStoreAction(
     if (qrOrderingEnabled && !features.qrOrdering) {
       return { error: "แพ็กเกจปัจจุบันยังไม่รองรับ QR Ordering" };
     }
+    // Customer self-open only applies to table_bound à la carte ordering.
+    if (requestedSelfOpen && qrOrderingMode !== "table_bound") {
+      return { error: "โหมดให้ลูกค้าเปิดโต๊ะเองใช้ได้เฉพาะ QR แบบผูกโต๊ะ (table_bound)" };
+    }
+    if (requestedSelfOpen && buffetEnabled) {
+      return { error: "โหมดบุฟเฟต์ต้องให้พนักงานเปิดโต๊ะ ไม่รองรับให้ลูกค้าเปิดเอง" };
+    }
+    const tableOpenPolicy = requestedSelfOpen ? "customer_self" : "staff_only";
     // Music can only be turned on by Enterprise stores with an approved license.
     if (musicRequestEnabled) {
       if (!features.musicRequest) {
@@ -107,6 +116,7 @@ export async function updateStoreAction(
       buffetEnabled,
       qrOrderingEnabled,
       qrOrderingMode,
+      tableOpenPolicy,
       musicRequestEnabled,
       dineInDurationMinutes,
       themePresetId: theme.theme.presetId,

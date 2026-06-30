@@ -40,7 +40,7 @@ describe("generateOrderNumber", () => {
 
     expect(posAction).toContain("storeTimezone: ctx.storeTimezone");
     expect(posRepository).toContain("generateOrderNumber({ timeZone: input.storeTimezone })");
-    expect(qrAction).toContain(".select(\"id, organization_id, qr_ordering_enabled, is_active, timezone\")");
+    expect(qrAction).toContain(".select(\"id, organization_id, qr_ordering_enabled, is_active, timezone, qr_ordering_mode, table_open_policy\")");
     expect(qrAction).toContain("generateOrderNumber({ timeZone: store.timezone })");
   });
 });

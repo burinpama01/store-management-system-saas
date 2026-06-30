@@ -119,7 +119,10 @@ describe("PrinterConnectionPanel network printer controls", () => {
     expect(actions).toContain("normalizeNetworkPrinterEndpoint");
     expect(actions).toContain("upsertNetworkPrinter");
     expect(repository).toContain("upsertNetworkPrinter");
-    expect(repository).not.toMatch(/if \(input\.isDefault\)[\s\S]*?const query = input\.id/);
+    // Within any one upsert function, default-clearing must come AFTER the
+    // upsert query (never before). Scoped to a single function body so a second
+    // upsert function (e.g. Bluetooth) does not create a cross-boundary match.
+    expect(repository).not.toMatch(/if \(input\.isDefault\)(?:(?!export async function)[\s\S])*?const query = input\.id/);
     expect(page).toContain("listPrinters");
     expect(page).toMatch(/<PrinterConnect[\s\S]*printers={printersRes\.data}/);
     expect(page).toMatch(/<ReceiptTests[\s\S]*printers={printersRes\.data}/);

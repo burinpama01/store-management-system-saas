@@ -87,6 +87,10 @@ export default async function QrOrderPage({ params, searchParams }: QrOrderPageP
   const now = nowMs();
   const expiresAt = table.sessionExpiresAt ? Date.parse(table.sessionExpiresAt) : null;
   const sessionActive = expiresAt !== null && expiresAt > now;
+  // customer_self (table_bound): the customer may browse the menu and open the
+  // table themselves by placing the first order, even without an active session.
+  const canSelfOpen =
+    store.qrOrderingMode === "table_bound" && store.tableOpenPolicy === "customer_self";
 
   const musicEligibility = resolveQrMusicEligibility({
     qrMode: store.qrOrderingMode,
@@ -113,8 +117,9 @@ export default async function QrOrderPage({ params, searchParams }: QrOrderPageP
   }
 
   // Food ordering needs an active session. When food is unavailable but the
-  // customer can still use the music tab (table_bound), fall through to the app.
-  if (!sessionActive && !musicEligibility.canViewQueue) {
+  // customer can still use the music tab (table_bound) or open the table
+  // themselves (customer_self), fall through to the app.
+  if (!sessionActive && !musicEligibility.canViewQueue && !canSelfOpen) {
     const expired = expiresAt !== null && expiresAt <= now;
     return (
       <main className="min-h-screen bg-white flex flex-col items-center justify-center p-8 max-w-sm mx-auto text-center">
@@ -131,7 +136,7 @@ export default async function QrOrderPage({ params, searchParams }: QrOrderPageP
     );
   }
 
-  const menuRes = sessionActive
+  const menuRes = sessionActive || canSelfOpen
     ? await listPublicMenu(store.id)
     : { data: { categories: [], products: [] }, error: null };
   if (menuRes.error || !menuRes.data) {
@@ -152,6 +157,7 @@ export default async function QrOrderPage({ params, searchParams }: QrOrderPageP
       categories={categories}
       products={products}
       foodOrderingEnabled={sessionActive}
+      canSelfOpen={canSelfOpen}
       musicEligibility={musicEligibility}
       querySessionId={querySessionId}
     />

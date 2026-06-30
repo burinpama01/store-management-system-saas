@@ -2,10 +2,14 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { mapError, type AppError } from "@/shared/utils/error";
 import { generateHubToken, hashHubToken } from "@/modules/printing/print-hub";
 
+export type PrintTargetKind = "ip" | "bt";
+
 export interface ClaimedPrintJob {
   id: string;
-  targetHost: string;
+  targetKind: PrintTargetKind;
+  targetHost: string | null;
   targetPort: number;
+  targetDevice: string | null;
   payloadB64: string;
 }
 
@@ -26,8 +30,11 @@ export async function enqueuePrintJob(input: {
   organizationId: string;
   storeId: string;
   printerId: string | null;
-  host: string;
-  port: number;
+  /** "ip" prints over LAN TCP (host/port); "bt" prints to a cashier-PC COM port. */
+  kind?: PrintTargetKind;
+  host?: string | null;
+  port?: number;
+  device?: string | null;
   payloadB64: string;
 }): Result<{ id: string }> {
   const supabase = await createSupabaseServiceClient();
@@ -37,8 +44,10 @@ export async function enqueuePrintJob(input: {
       organization_id: input.organizationId,
       store_id: input.storeId,
       printer_id: input.printerId,
-      target_host: input.host,
-      target_port: input.port,
+      target_kind: input.kind ?? "ip",
+      target_host: input.host ?? null,
+      target_port: input.port ?? 9100,
+      target_device: input.device ?? null,
       payload_b64: input.payloadB64,
       status: "pending",
     })
@@ -96,13 +105,15 @@ export async function claimPendingPrintJobs(storeId: string, limit = 5): Result<
     .update({ status: "claimed", claimed_at: new Date().toISOString() })
     .in("id", ids)
     .eq("status", "pending")
-    .select("id, target_host, target_port, payload_b64");
+    .select("id, target_kind, target_host, target_port, target_device, payload_b64");
   if (claimError) return { data: null, error: mapError(claimError) };
 
   const jobs = (claimed ?? []).map((row) => ({
     id: row.id,
+    targetKind: (row.target_kind === "bt" ? "bt" : "ip") as PrintTargetKind,
     targetHost: row.target_host,
     targetPort: row.target_port,
+    targetDevice: row.target_device,
     payloadB64: row.payload_b64,
   }));
   return { data: jobs, error: null };

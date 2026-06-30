@@ -29,6 +29,8 @@ interface Props {
   products: Product[];
   /** Food tab is usable only while the table has an active session. */
   foodOrderingEnabled?: boolean;
+  /** Store lets customers open the table themselves on the first order (table_bound + customer_self). */
+  canSelfOpen?: boolean;
   /** Music tab eligibility (Enterprise + license + QR mode/session). */
   musicEligibility?: QrMusicEligibility;
   /** Session id from the QR URL (`?s=`), forwarded to music actions. */
@@ -245,7 +247,7 @@ function ProductModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-sm bg-white rounded-t-2xl max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-sm sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col">
         {product.imageUrl && (
           <Image
             src={product.imageUrl}
@@ -367,6 +369,7 @@ function CartView({
   onQuantityChange,
   onSubmit,
   isPending,
+  submitLabel,
 }: {
   cart: Cart;
   currency: string;
@@ -375,6 +378,7 @@ function CartView({
   onQuantityChange: (key: string, qty: number) => void;
   onSubmit: () => void;
   isPending: boolean;
+  submitLabel: string;
 }) {
   return (
     <div className="flex flex-col h-full">
@@ -445,7 +449,7 @@ function CartView({
           disabled={cart.items.length === 0}
           className="w-full min-h-11 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm disabled:opacity-40 active:bg-orange-600 transition-colors"
         >
-          ส่งออร์เดอร์
+          {submitLabel}
         </Button>
         <p className="text-xs text-gray-400 text-center mt-2">
           ชำระเงินที่เคาน์เตอร์เมื่อรับประทานเสร็จ
@@ -628,12 +632,18 @@ export default function QrOrderingApp({
   categories,
   products,
   foodOrderingEnabled = true,
+  canSelfOpen = false,
   musicEligibility,
   querySessionId = null,
 }: Props) {
   const musicTabAvailable = !!musicEligibility?.canViewQueue;
+  // In customer_self stores the food tab is usable before a session exists:
+  // placing the first order opens the table session automatically.
+  const foodTabUsable = foodOrderingEnabled || canSelfOpen;
+  const orderSubmitLabel =
+    !foodOrderingEnabled && canSelfOpen ? "สั่งและเปิดโต๊ะ" : "ส่งออร์เดอร์";
   const [mainTab, setMainTab] = useState<"food" | "music">(
-    foodOrderingEnabled ? "food" : musicTabAvailable ? "music" : "food",
+    foodTabUsable ? "food" : musicTabAvailable ? "music" : "food",
   );
   const [view, setView] = useState<AppView>("menu");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -707,6 +717,11 @@ export default function QrOrderingApp({
       setServiceMsg(res.error ? res.error : (okMsg ?? "แจ้งพนักงานแล้ว กำลังไปหาคุณ"));
     });
   }
+
+  // Only show categories that actually have orderable (QR) products on the menu.
+  const visibleCategories = categories.filter((c) =>
+    products.some((p) => p.categoryId === c.id),
+  );
 
   const visibleProducts =
     selectedCategoryId === null
@@ -789,7 +804,7 @@ export default function QrOrderingApp({
   const cartCount = cart.items.reduce((s, i) => s + i.quantity, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col max-w-sm mx-auto">
+    <div className="min-h-screen bg-gray-50 flex flex-col w-full max-w-md sm:max-w-3xl mx-auto">
       {/* Header */}
       <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -835,7 +850,7 @@ export default function QrOrderingApp({
           querySessionId={querySessionId}
           eligibility={musicEligibility}
         />
-      ) : !foodOrderingEnabled ? (
+      ) : !foodTabUsable ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="mb-3 text-4xl">🍽️</div>
           <p className="text-sm font-semibold text-gray-700">ยังไม่ได้เปิดโต๊ะสำหรับสั่งอาหาร</p>
@@ -869,13 +884,14 @@ export default function QrOrderingApp({
           onQuantityChange={(key, qty) => setCart((prev) => updateQuantity(prev, key, qty))}
           onSubmit={handleSubmit}
           isPending={isPending}
+          submitLabel={orderSubmitLabel}
         />
       ) : (
         <>
           {/* Category tabs */}
           <div className="bg-white px-4 pt-3 pb-2 sticky top-0 z-10 border-b border-gray-100">
             <CategoryTabs
-              categories={categories}
+              categories={visibleCategories}
               selectedId={selectedCategoryId}
               onSelect={setSelectedCategoryId}
             />
@@ -886,7 +902,7 @@ export default function QrOrderingApp({
             {visibleProducts.length === 0 ? (
               <p className="text-sm text-gray-400 text-center mt-8">ไม่มีรายการในหมวดนี้</p>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {visibleProducts.map((product) => (
                   <ProductCard
                     key={product.id}

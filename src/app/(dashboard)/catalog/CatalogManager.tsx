@@ -65,6 +65,7 @@ interface Props {
   canUseMultiBranch: boolean;
   canUseQrOrdering: boolean;
   canUseStock: boolean;
+  kitchenStations: { id: string; name: string }[];
 }
 
 function priceStr(n: number) {
@@ -323,6 +324,7 @@ function ProductForm({
   categories,
   defaultCategoryId,
   canUseQrOrdering,
+  kitchenStations,
   storeId,
   organizationId,
   onSubmit,
@@ -334,6 +336,7 @@ function ProductForm({
   categories: Category[];
   defaultCategoryId?: string;
   canUseQrOrdering: boolean;
+  kitchenStations: { id: string; name: string }[];
   storeId: string;
   organizationId: string;
   onSubmit: (fd: FormData) => void;
@@ -341,6 +344,9 @@ function ProductForm({
   isPending: boolean;
   error: string | null;
 }) {
+  const [qrOn, setQrOn] = useState(
+    canUseQrOrdering ? (product?.availableForQr ?? false) : false,
+  );
   return (
     <form
       action={onSubmit}
@@ -420,7 +426,8 @@ function ProductForm({
           <input
             type="checkbox"
             name="availableForQr"
-            defaultChecked={canUseQrOrdering ? (product?.availableForQr ?? false) : false}
+            checked={qrOn}
+            onChange={(e) => setQrOn(e.target.checked)}
             disabled={!canUseQrOrdering}
             className="rounded border-gray-300"
           />
@@ -441,6 +448,30 @@ function ProductForm({
           </label>
         )}
       </div>
+      {qrOn && (
+        <div className="space-y-1">
+          <label className="block text-xs font-medium text-gray-700">
+            ครัว/บาร์ที่พิมพ์ออเดอร์ <span className="text-amber-700">(จำเป็นสำหรับ QR)</span>
+          </label>
+          {kitchenStations.length === 0 ? (
+            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              ยังไม่มีครัว/บาร์ — สินค้า QR ต้องผูกครัว/บาร์ก่อนถึงจะแสดงในเมนูลูกค้า{" "}
+              <a href="/settings/kitchen" className="font-semibold underline">เพิ่มที่ ตั้งค่า → Kitchen</a>
+            </p>
+          ) : (
+            <select
+              name="kitchenStationId"
+              defaultValue={product?.kitchenStationId ?? ""}
+              className="w-full rounded border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400"
+            >
+              <option value="">— เลือกครัว/บาร์ —</option>
+              {kitchenStations.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
       <div className="flex gap-2 pt-1">
         <Button
           type="submit"
@@ -1166,6 +1197,7 @@ function CatalogDialog({
   variantTemplates,
   modifierGroupTemplates,
   canUseQrOrdering,
+  kitchenStations,
   storeId,
   organizationId,
   onClose,
@@ -1177,6 +1209,7 @@ function CatalogDialog({
   variantTemplates: VariantTemplate[];
   modifierGroupTemplates: ModifierGroupTemplate[];
   canUseQrOrdering: boolean;
+  kitchenStations: { id: string; name: string }[];
   storeId: string;
   organizationId: string;
   onClose: () => void;
@@ -1228,6 +1261,7 @@ function CatalogDialog({
           categories={categories}
           defaultCategoryId={selectedCategory?.id}
           canUseQrOrdering={canUseQrOrdering}
+          kitchenStations={kitchenStations}
           storeId={storeId}
           organizationId={organizationId}
           onSubmit={addProductAction}
@@ -1242,6 +1276,7 @@ function CatalogDialog({
             product={selectedProduct}
             categories={categories}
             canUseQrOrdering={canUseQrOrdering}
+            kitchenStations={kitchenStations}
             storeId={storeId}
             organizationId={organizationId}
             onSubmit={editProductAction}
@@ -1542,6 +1577,7 @@ export function CatalogManager({
   canUseMultiBranch,
   canUseQrOrdering,
   canUseStock,
+  kitchenStations,
 }: Props) {
   const [panelMode, setPanelMode] = useState<PanelMode>("closed");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
@@ -1824,6 +1860,7 @@ export function CatalogManager({
         variantTemplates={variantTemplates}
         modifierGroupTemplates={modifierGroupTemplates}
         canUseQrOrdering={canUseQrOrdering}
+        kitchenStations={kitchenStations}
         storeId={storeId}
         organizationId={organizationId}
         onClose={closePanel}

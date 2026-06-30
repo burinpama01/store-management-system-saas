@@ -12,30 +12,57 @@ Print Hub คืออะไร?
 สิ่งที่ต้องมี
   1) เครื่อง Windows ในร้าน (เปิดทิ้งไว้ตอนเปิดร้าน) ต่อ WiFi/LAN
      เดียวกับเครื่องพิมพ์
-  2) ติดตั้ง Node.js LTS ก่อน: https://nodejs.org  (กด Next ไปจนจบ)
-  3) ค่า StoreId และ Hub Token จากระบบ:
-     StoreOS -> ตั้งค่า -> Print Hub -> กดสร้าง/คัดลอกโทเค็น
+  2) ไม่ต้องติดตั้ง Node.js เอง - ตัวติดตั้งจัดหาให้อัตโนมัติ:
+     ถ้ามี winget จะติดตั้งให้ ถ้าไม่มีจะดาวน์โหลด Node แบบพกพา (~30MB)
+     มาเก็บในโฟลเดอร์ storeos-print-hub\node ให้เอง
+     (ถ้าเป็นแบบพกพา อย่าลบโฟลเดอร์ node - ตัว Hub ใช้ไฟล์ในนั้นรันทุกครั้ง)
+  3) ไฟล์ตั้งค่า print-hub.config.json ดาวน์โหลดจากระบบ:
+     StoreOS -> ตั้งค่า -> Print Hub -> สร้างโทเค็น -> ดาวน์โหลดไฟล์ตั้งค่า
 
-ติดตั้ง (ทำครั้งเดียว)
-  1) ที่หน้า StoreOS -> ตั้งค่า -> Print Hub กดปุ่ม "ดาวน์โหลดตัวติดตั้ง"
-     จะได้ไฟล์ storeos-print-hub.zip
-  2) แตกไฟล์ (คลิกขวา -> Extract All) จะได้โฟลเดอร์ storeos-print-hub
-  3) คลิกขวาที่ปุ่ม Start -> "Windows PowerShell (Admin)"
-  4) cd เข้าโฟลเดอร์ที่แตกไว้ เช่น:
-        cd "$HOME\Downloads\storeos-print-hub"
-  5) วางคำสั่งนี้ (แก้ค่า 3 ตัวให้ตรงกับของร้าน) แล้ว Enter:
+ติดตั้งแบบง่าย (แนะนำ - ดับเบิลคลิก ไม่ต้องพิมพ์คำสั่ง)
+  1) ที่หน้า StoreOS -> ตั้งค่า -> Print Hub:
+       - กด "สร้างโทเค็น"
+       - กด "ดาวน์โหลดไฟล์ตั้งค่า" (ได้ไฟล์ print-hub.config.json)
+       - กด "ดาวน์โหลดตัวติดตั้ง (.zip)"
+  2) แตกไฟล์ zip (คลิกขวา -> Extract All) จะได้โฟลเดอร์ storeos-print-hub
+  3) ดับเบิลคลิก  install.cmd  ในโฟลเดอร์นั้น
+       - ถ้า Windows ถามสิทธิ์ผู้ดูแล (Administrator) กด Yes
+       - ตัวติดตั้งจะดึง print-hub.config.json จากโฟลเดอร์ Downloads ให้เอง
+         และจะติดตั้ง Node.js ให้อัตโนมัติถ้ายังไม่มี (ผ่าน winget)
+  4) รอจนขึ้นว่า Done เสร็จแล้ว Print Hub จะเปิดเองทุกครั้งที่เปิดเครื่อง
+
+  (ถ้า install.cmd หาไฟล์ตั้งค่าไม่เจอ ให้ย้าย print-hub.config.json
+   ที่ดาวน์โหลดไว้มาวางในโฟลเดอร์ storeos-print-hub แล้วดับเบิลคลิกใหม่)
+
+ติดตั้งแบบกำหนดเอง (ขั้นสูง - สำหรับผู้ที่ถนัด command line)
+  1) แตกไฟล์ zip
+  2) คลิกขวาที่ปุ่ม Start -> "Windows PowerShell (Admin)"
+  3) cd เข้าโฟลเดอร์ที่แตกไว้ เช่น:  cd "$HOME\Downloads\storeos-print-hub"
+  4) วางคำสั่งนี้ (แก้ค่า 3 ตัวให้ตรงกับของร้าน) แล้ว Enter:
 
      powershell -ExecutionPolicy Bypass -File .\print-hub\install-windows.ps1 `
        -ServerUrl "https://store-os-manage.vercel.app" `
        -StoreId   "<วาง StoreId>" `
        -HubToken  "<วาง Hub Token>"
 
-  เสร็จแล้ว Print Hub จะ "เปิดเองทุกครั้งที่เปิดเครื่อง" และพิมพ์
-  งานจาก iPad/แท็บเล็ตให้อัตโนมัติ
-
 ตรวจสอบว่าทำงานอยู่ไหม
   - ที่หน้า StoreOS -> ตั้งค่า -> Print Hub จะขึ้นสถานะ ออนไลน์ (จุดเขียว)
   - กดปุ่ม "ทดสอบพิมพ์ผ่าน Hub" แล้วใบทดสอบควรออกที่เครื่องพิมพ์
+
+ใช้เครื่องพิมพ์ Bluetooth ผ่าน Hub (สำหรับร้านที่ใช้ iPad/iOS)
+  iPad/iPhone ต่อเครื่องพิมพ์ Bluetooth ตรงไม่ได้ (iOS ไม่รองรับ Web Bluetooth)
+  แต่ให้เครื่องแคชเชียร์ Windows เป็นตัวพิมพ์ออก Bluetooth แทนได้:
+  1) ที่เครื่องแคชเชียร์: Settings -> Bluetooth & devices -> Add device
+     -> จับคู่ (pair) เครื่องพิมพ์ Bluetooth ให้เรียบร้อย
+  2) หาเลขพอร์ต COM ของเครื่องพิมพ์ - วิธีง่ายสุด:
+     ดับเบิลคลิก  find-bluetooth-ports.cmd  ในโฟลเดอร์ storeos-print-hub
+     จะแสดงรายการพอร์ต COM ทั้งหมดพร้อมชื่ออุปกรณ์ (เครื่องพิมพ์ Bluetooth
+     มักขึ้นว่า "Standard Serial over Bluetooth link") เช่น COM5
+     (วิธีดูเองใน Windows: Settings -> Bluetooth & devices ->
+      More Bluetooth settings -> แท็บ "COM Ports" -> บรรทัดที่เป็น "Outgoing")
+  3) ที่ StoreOS -> ตั้งค่า -> ใบเสร็จ -> "เครื่องพิมพ์ Bluetooth ผ่าน Hub"
+     กรอกชื่อเครื่อง + พอร์ต COM (เช่น COM5) แล้วบันทึก
+  4) Print Hub บนเครื่องแคชเชียร์ต้องเปิดอยู่ — iPad สั่งพิมพ์ได้เลย
 
 ทดสอบ/รันด้วยมือ (ถ้าต้องการดู log)
   ดับเบิลคลิก  print-hub\print-hub.cmd
@@ -48,4 +75,7 @@ Print Hub คืออะไร?
     Token ไม่ตรง — เปิดเครื่อง, ติดตั้ง Node, แล้วติดตั้งใหม่
   - พิมพ์ไม่ออก : เช็คว่าเครื่องพิมพ์เปิดอยู่และอยู่ WiFi เดียวกัน,
     IP เครื่องพิมพ์ในระบบถูกต้อง (เช่น 192.168.x.x)
+  - Bluetooth พิมพ์ไม่ออก : เช็คว่าจับคู่เครื่องพิมพ์กับเครื่องแคชเชียร์
+    แล้ว, เลขพอร์ต COM ตรงกับที่ตั้งไว้ (ใช้พอร์ตแบบ "Outgoing"),
+    และเครื่องพิมพ์เปิดอยู่ในระยะ Bluetooth
 ==================================================================
