@@ -26,6 +26,7 @@ export function buildSettingsTabs(resolved: ResolvedPermissions, billingState: B
       { href: "/settings/customer-display", label: "จอลูกค้า", featureKey: "customerDisplay" },
       { href: "/settings/music-player", label: "เครื่องเล่นเพลง", featureKey: "musicRequest" },
       { href: "/settings/integrations", label: "API", featureKey: "apiIntegration" },
+      { href: "/settings/connect", label: "เดลิเวอรี (JDC)", featureKey: "apiIntegration" },
     );
   }
   if (resolved.can("settings.manage_store") || resolved.can("settings.manage_printer")) {

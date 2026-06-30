@@ -12,6 +12,8 @@ export interface PlatformPromptPaySettings {
   enterpriseFromEmail: string | null;
   /** Super-admin system logo (StoreOS brand mark); null falls back to /logo.png. */
   logoUrl: string | null;
+  /** StoreOS Connect: base URL ของ JDC Edge Functions (เช่น https://xxx.supabase.co/functions/v1). */
+  jdcFunctionsBaseUrl: string | null;
 }
 
 const DEFAULTS: PlatformPromptPaySettings = {
@@ -21,6 +23,7 @@ const DEFAULTS: PlatformPromptPaySettings = {
   promptpayStaticPayload: null,
   enterpriseFromEmail: null,
   logoUrl: null,
+  jdcFunctionsBaseUrl: null,
 };
 
 /** Reads the singleton platform settings row. Service-client only. */
@@ -28,7 +31,7 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("platform_settings")
-    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url")
+    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url, jdc_functions_base_url")
     .eq("id", "singleton")
     .maybeSingle();
   if (!data) return DEFAULTS;
@@ -39,7 +42,30 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
     promptpayStaticPayload: data.promptpay_static_payload,
     enterpriseFromEmail: data.enterprise_from_email,
     logoUrl: data.logo_url ?? null,
+    jdcFunctionsBaseUrl: data.jdc_functions_base_url ?? null,
   };
+}
+
+/** StoreOS Connect: base URL ของ JDC Edge Functions (super-admin ตั้ง). null = ยังไม่ตั้ง */
+export async function getJdcFunctionsBaseUrl(): Promise<string | null> {
+  const { jdcFunctionsBaseUrl } = await getPlatformSettings();
+  return jdcFunctionsBaseUrl?.trim() || null;
+}
+
+/** อัปเดตเฉพาะ JDC Functions URL บน singleton row */
+export async function updateJdcFunctionsBaseUrl(url: string | null, actorUserId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.from("platform_settings").upsert(
+    {
+      id: "singleton",
+      jdc_functions_base_url: url?.trim() || null,
+      updated_by: actorUserId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
 }
 
 /**

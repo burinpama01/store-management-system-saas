@@ -42,6 +42,180 @@ export interface Database {
         };
         Relationships: [];
       };
+      connect_channel_links: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          channel: string;
+          external_merchant_id: string;
+          status: "active" | "paused" | "disconnected";
+          webhook_secret: string;
+          jdc_functions_base_url: string | null;
+          auto_accept: boolean;
+          config: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          channel?: string;
+          external_merchant_id: string;
+          status?: "active" | "paused" | "disconnected";
+          webhook_secret: string;
+          jdc_functions_base_url?: string | null;
+          auto_accept?: boolean;
+          config?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          channel?: string;
+          external_merchant_id?: string;
+          status?: "active" | "paused" | "disconnected";
+          webhook_secret?: string;
+          jdc_functions_base_url?: string | null;
+          auto_accept?: boolean;
+          config?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      connect_menu_map: {
+        Row: {
+          id: string;
+          link_id: string;
+          product_id: string;
+          external_item_id: string | null;
+          sync_hash: string | null;
+          last_synced_at: string | null;
+          last_error: string | null;
+        };
+        Insert: {
+          id?: string;
+          link_id: string;
+          product_id: string;
+          external_item_id?: string | null;
+          sync_hash?: string | null;
+          last_synced_at?: string | null;
+          last_error?: string | null;
+        };
+        Update: {
+          id?: string;
+          link_id?: string;
+          product_id?: string;
+          external_item_id?: string | null;
+          sync_hash?: string | null;
+          last_synced_at?: string | null;
+          last_error?: string | null;
+        };
+        Relationships: [];
+      };
+      connect_orders: {
+        Row: {
+          id: string;
+          organization_id: string;
+          link_id: string;
+          external_order_id: string;
+          internal_order_id: string | null;
+          channel: string;
+          fulfillment_status:
+            | "received"
+            | "accepted"
+            | "preparing"
+            | "ready"
+            | "completed"
+            | "cancelled";
+          last_status_origin: string | null;
+          raw_payload: Json;
+          received_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          link_id: string;
+          external_order_id: string;
+          internal_order_id?: string | null;
+          channel?: string;
+          fulfillment_status?:
+            | "received"
+            | "accepted"
+            | "preparing"
+            | "ready"
+            | "completed"
+            | "cancelled";
+          last_status_origin?: string | null;
+          raw_payload: Json;
+          received_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          link_id?: string;
+          external_order_id?: string;
+          internal_order_id?: string | null;
+          channel?: string;
+          fulfillment_status?:
+            | "received"
+            | "accepted"
+            | "preparing"
+            | "ready"
+            | "completed"
+            | "cancelled";
+          last_status_origin?: string | null;
+          raw_payload?: Json;
+          received_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      connect_events: {
+        Row: {
+          id: string;
+          link_id: string;
+          direction: "outbound" | "inbound";
+          topic: string;
+          payload: Json;
+          status: "pending" | "sent" | "failed" | "dead";
+          attempts: number;
+          next_retry_at: string | null;
+          last_error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          link_id: string;
+          direction: "outbound" | "inbound";
+          topic: string;
+          payload: Json;
+          status?: "pending" | "sent" | "failed" | "dead";
+          attempts?: number;
+          next_retry_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          link_id?: string;
+          direction?: "outbound" | "inbound";
+          topic?: string;
+          payload?: Json;
+          status?: "pending" | "sent" | "failed" | "dead";
+          attempts?: number;
+          next_retry_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       platform_settings: {
         Row: {
           id: string;
@@ -51,6 +225,7 @@ export interface Database {
           promptpay_static_payload: string | null;
           enterprise_from_email: string | null;
           logo_url: string | null;
+          jdc_functions_base_url: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -62,6 +237,7 @@ export interface Database {
           promptpay_static_payload?: string | null;
           enterprise_from_email?: string | null;
           logo_url?: string | null;
+          jdc_functions_base_url?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -73,6 +249,7 @@ export interface Database {
           promptpay_static_payload?: string | null;
           enterprise_from_email?: string | null;
           logo_url?: string | null;
+          jdc_functions_base_url?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -663,7 +840,9 @@ export interface Database {
           organization_id: string;
           store_id: string;
           printer_id: string | null;
-          target_host: string;
+          target_kind: "ip" | "bt";
+          target_host: string | null;
+          target_device: string | null;
           target_port: number;
           payload_b64: string;
           status: "pending" | "claimed" | "printed" | "failed";
@@ -678,7 +857,9 @@ export interface Database {
           organization_id: string;
           store_id: string;
           printer_id?: string | null;
-          target_host: string;
+          target_kind?: "ip" | "bt";
+          target_host?: string | null;
+          target_device?: string | null;
           target_port?: number;
           payload_b64: string;
           status?: "pending" | "claimed" | "printed" | "failed";
@@ -693,7 +874,9 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           printer_id?: string | null;
-          target_host?: string;
+          target_kind?: "ip" | "bt";
+          target_host?: string | null;
+          target_device?: string | null;
           target_port?: number;
           payload_b64?: string;
           status?: "pending" | "claimed" | "printed" | "failed";
@@ -899,6 +1082,8 @@ export interface Database {
           is_active: boolean;
           available_for_pos: boolean;
           available_for_qr: boolean;
+          available_for_delivery: boolean;
+          delivery_price: number | null;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -918,6 +1103,8 @@ export interface Database {
           is_active?: boolean;
           available_for_pos?: boolean;
           available_for_qr?: boolean;
+          available_for_delivery?: boolean;
+          delivery_price?: number | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -937,6 +1124,8 @@ export interface Database {
           is_active?: boolean;
           available_for_pos?: boolean;
           available_for_qr?: boolean;
+          available_for_delivery?: boolean;
+          delivery_price?: number | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -3085,6 +3274,7 @@ export interface Database {
           usb_vendor_id: string | null;
           usb_product_id: string | null;
           bluetooth_device_id: string | null;
+          hub_bluetooth_port: string | null;
           paper_width: "58mm" | "80mm";
           created_at: string;
           updated_at: string;
@@ -3101,6 +3291,7 @@ export interface Database {
           usb_vendor_id?: string | null;
           usb_product_id?: string | null;
           bluetooth_device_id?: string | null;
+          hub_bluetooth_port?: string | null;
           paper_width?: "58mm" | "80mm";
           created_at?: string;
           updated_at?: string;
@@ -3117,6 +3308,7 @@ export interface Database {
           usb_vendor_id?: string | null;
           usb_product_id?: string | null;
           bluetooth_device_id?: string | null;
+          hub_bluetooth_port?: string | null;
           paper_width?: "58mm" | "80mm";
           created_at?: string;
           updated_at?: string;
