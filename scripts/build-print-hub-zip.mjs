@@ -16,6 +16,9 @@ const outFile = join(outDir, "storeos-print-hub.zip");
 // Archive path (inside zip) -> source path on disk.
 const kit = join(here, "print-hub");
 const entries = [
+  // Top-level double-click helpers (what a non-technical operator runs first).
+  ["storeos-print-hub/install.cmd", join(kit, "install.cmd")],
+  ["storeos-print-hub/find-bluetooth-ports.cmd", join(kit, "find-bluetooth-ports.cmd")],
   ["storeos-print-hub/print-hub.mjs", join(here, "print-hub.mjs")],
   ["storeos-print-hub/print-hub/install-windows.ps1", join(kit, "install-windows.ps1")],
   ["storeos-print-hub/print-hub/uninstall-windows.ps1", join(kit, "uninstall-windows.ps1")],

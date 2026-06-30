@@ -94,6 +94,8 @@ export interface Printer {
   usbVendorId?: string;
   usbProductId?: string;
   bluetoothDeviceId?: string;
+  /** Cashier-PC Bluetooth SPP COM port (e.g. "COM5") for Hub-routed BT printing. */
+  hubBluetoothPort?: string;
   paperWidth: "58mm" | "80mm";
   createdAt: string;
   updatedAt: string;

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // StoreOS Print Hub agent.
 // Runs on the store's cashier PC / mini-PC. Long-polls the StoreOS server for
 // print jobs enqueued by tablet/iPad POS (which cannot reach a LAN printer over
@@ -9,7 +8,8 @@
 //     "storeId": "<uuid>", "hubToken": "<token>", "pollIntervalMs": 2500 }
 
 import net from "node:net";
-import { readFileSync } from "node:fs";
+import { readFileSync, createWriteStream } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,6 +42,14 @@ export function isAllowedNetworkPrinterHost(ip) {
   if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
   if (BLOCKED_LAN_RANGES.some((range) => range.test(ip))) return false;
   return PRIVATE_LAN_RANGES.some((range) => range.test(ip));
+}
+
+// Windows Bluetooth SPP ports are COM1..COM999. Validate + normalize strictly
+// so the value is safe to interpolate into the `mode` command / device path.
+export function normalizeComPort(value) {
+  if (typeof value !== "string") return null;
+  const raw = value.trim().toUpperCase();
+  return /^COM([1-9]\d{0,2})$/.test(raw) ? raw : null;
 }
 
 export function decodePrintJobBase64(value) {
@@ -95,10 +103,75 @@ export function sendToSocket(host, port, data, options = {}) {
   });
 }
 
+// Best-effort serial config for a Bluetooth SPP COM port. Virtual SPP ports
+// usually ignore these, but some drivers need them; failures are non-fatal.
+function defaultConfigureComPort(port) {
+  spawnSync("cmd", ["/c", "mode", `${port}:`, "BAUD=9600", "PARITY=N", "DATA=8", "STOP=1"], {
+    windowsHide: true,
+  });
+}
+
+/**
+ * Writes ESC/POS bytes to a Bluetooth printer paired to this PC as a Windows
+ * SPP COM port (e.g. COM5). Chunked + paced like the TCP path because cheap
+ * thermal printers drop data when flooded. `configure` is injectable for tests.
+ */
+export function sendToComPort(comPort, data, options = {}) {
+  const chunkBytes = options.chunkBytes ?? PRINT_CHUNK_BYTES;
+  const chunkDelayMs = options.chunkDelayMs ?? PRINT_CHUNK_DELAY_MS;
+  const configure = options.configure ?? defaultConfigureComPort;
+  return new Promise((resolve, reject) => {
+    const port = normalizeComPort(comPort);
+    if (!port) {
+      reject(new Error("Invalid or disallowed Bluetooth COM port"));
+      return;
+    }
+    try {
+      configure(port);
+    } catch {
+      // Ignore mode failures -- many virtual SPP ports do not support `mode`.
+    }
+    // Windows device path prefix built from char codes so the source stays
+    // ASCII/escape-free (vite-node's .mjs loader mis-parses backslash literals).
+    const devicePrefix = String.fromCharCode(92, 92, 46, 92);
+    const openStream = options.openStream ?? ((p) => createWriteStream(devicePrefix + p));
+    const stream = openStream(port);
+    let done = false;
+    const timer = setTimeout(() => settle(new Error(`Print send timed out (${SEND_TIMEOUT_MS}ms)`)), SEND_TIMEOUT_MS);
+    function settle(err) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (err) {
+        stream.destroy();
+        reject(err);
+      } else {
+        stream.end(() => resolve());
+      }
+    }
+    stream.on("error", settle);
+    (async () => {
+      try {
+        for (let offset = 0; offset < data.length && !done; offset += chunkBytes) {
+          const end = Math.min(offset + chunkBytes, data.length);
+          await new Promise((res, rej) => stream.write(data.subarray(offset, end), (e) => (e ? rej(e) : res())));
+          if (chunkDelayMs > 0 && end < data.length) {
+            await new Promise((res) => setTimeout(res, chunkDelayMs));
+          }
+        }
+        settle();
+      } catch (err) {
+        settle(err);
+      }
+    })();
+  });
+}
+
 /**
  * Runs one poll cycle: claim jobs, print each, ack the result. Pure w.r.t. its
  * injected `fetchImpl` and `printJob`, so it can be unit-tested without sockets.
- * Returns the number of jobs processed (and any auth/transport failure).
+ * `printJob(target, bytes)` receives an `{ kind: "ip", host, port }` or
+ * `{ kind: "bt", device }` target. Returns the number of jobs processed.
  */
 export async function runPollCycle({ config, fetchImpl, printJob }) {
   const { serverUrl, storeId, hubToken } = config;
@@ -119,9 +192,15 @@ export async function runPollCycle({ config, fetchImpl, printJob }) {
     let ok = true;
     let error = null;
     try {
-      if (!isAllowedNetworkPrinterHost(job.host)) throw new Error("Invalid or disallowed IP address");
       const bytes = decodePrintJobBase64(job.printJobBase64);
-      await printJob(job.host, job.port ?? 9100, bytes);
+      if (job.kind === "bt") {
+        const device = normalizeComPort(job.device);
+        if (!device) throw new Error("Invalid or disallowed Bluetooth COM port");
+        await printJob({ kind: "bt", device }, bytes);
+      } else {
+        if (!isAllowedNetworkPrinterHost(job.host)) throw new Error("Invalid or disallowed IP address");
+        await printJob({ kind: "ip", host: job.host, port: job.port ?? 9100 }, bytes);
+      }
     } catch (err) {
       ok = false;
       error = err instanceof Error ? err.message : "Print failed";
@@ -178,7 +257,10 @@ async function main() {
       const result = await runPollCycle({
         config,
         fetchImpl: fetch,
-        printJob: (host, port, bytes) => sendToSocket(host, port, bytes),
+        printJob: (target, bytes) =>
+          target.kind === "bt"
+            ? sendToComPort(target.device, bytes)
+            : sendToSocket(target.host, target.port, bytes),
       });
       if (result.authFailed) {
         console.error("Hub token rejected (401). Check storeId/hubToken in config.");

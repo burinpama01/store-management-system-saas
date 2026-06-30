@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>แผน: ทำให้ติดตั้ง Print Hub ง่ายขึ้นสำหรับผู้ใช้ทั่วไป (v1)</title>
+<style>
+  body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:#0f172a;color:#e2e8f0;line-height:1.7;padding:32px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{font-size:1.6rem;border-bottom:2px solid #38bdf8;padding-bottom:12px}
+  h2{color:#38bdf8;margin-top:30px}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px 20px;margin:12px 0}
+  code{background:#0b1220;color:#7dd3fc;padding:1px 6px;border-radius:5px}
+  table{border-collapse:collapse;width:100%;margin:8px 0}
+  th,td{border:1px solid #334155;padding:8px 10px;text-align:left;font-size:.92rem;vertical-align:top}
+  th{background:#0b1220;color:#38bdf8}
+  .p1{color:#34d399;font-weight:700}.p2{color:#fbbf24;font-weight:700}.p3{color:#f87171;font-weight:700}
+  .muted{color:#94a3b8}
+</style>
+</head>
+<body><div class="wrap">
+<h1>ทำให้ติดตั้ง/ใช้งาน Print Hub ง่ายขึ้นสำหรับผู้ใช้ทั่วไป</h1>
+<p class="muted">2026-06-30 · ผู้ใช้เลือกครบทุกข้อ → แบ่ง 3 เฟส ทำเฟส 1 ก่อน (ผลมากสุด เสี่ยงน้อยสุด)</p>
+
+<h2>ปัญหาเดิม (จุดที่ผู้ใช้ติด)</h2>
+<div class="card"><ol>
+<li>ต้องติดตั้ง Node.js แยกเอง</li>
+<li>ต้องเปิด PowerShell แบบ Admin + วางคำสั่งยาวพร้อมพารามิเตอร์ 3 ตัว</li>
+<li>ต้องคัดลอกโทเค็น/StoreId ไปมาเอง</li>
+<li>ต้องขุดหาเลขพอร์ต COM ของเครื่องพิมพ์ Bluetooth เอง</li>
+</ol></div>
+
+<h2><span class="p1">เฟส 1 — ทำตอนนี้</span> (ลดเหลือ "ดาวน์โหลด → ดับเบิลคลิก")</h2>
+<table>
+<tr><th>สิ่งที่ทำ</th><th>ไฟล์</th><th>แก้ปัญหา</th></tr>
+<tr><td>ปุ่ม "ดาวน์โหลด config สำเร็จรูป (.json)" ในหน้า Print Hub (สร้างจากโทเค็นที่เพิ่งสร้าง ฝั่ง client ด้วย Blob)</td><td>PrintHubManager.tsx</td><td>#3 ไม่ต้องคัดลอกโทเค็น</td></tr>
+<tr><td>ตัวติดตั้งดับเบิลคลิก: ดึง config จาก Downloads อัตโนมัติ → เช็ค Node → ถ้าไม่มีลง winget ให้ → เรียก PS installer (ไม่ต้องส่งพารามิเตอร์)</td><td>ใหม่: <code>install.cmd</code></td><td>#1 #2</td></tr>
+<tr><td>PS installer: ทำพารามิเตอร์เป็น optional → อ่านจาก config.json ที่วางไว้แทน</td><td>install-windows.ps1</td><td>#2</td></tr>
+<tr><td>ตัวตรวจหาเครื่องพิมพ์: ลิสต์ COM ports + ชื่ออุปกรณ์</td><td>ใหม่: <code>find-bluetooth-ports.cmd</code></td><td>#4</td></tr>
+<tr><td>เพิ่มไฟล์ใหม่เข้า zip + ตั้ง UTF-8 flag; ปรับ README + ข้อความหน้าเว็บ</td><td>build-print-hub-zip.mjs, README-TH.txt</td><td>รวม</td></tr>
+</table>
+<p class="muted">หมายเหตุ: ไฟล์ .cmd ใช้ข้อความคอนโซลภาษาอังกฤษสั้น ๆ (ASCII) เพื่อเลี่ยงปัญหา encoding ใน cmd.exe; คำอธิบายภาษาไทยอยู่ในหน้าเว็บ + README. winget auto-install Node ครอบคลุมผู้ใช้ส่วนใหญ่บน Win10/11 โดยไม่ต้องสร้าง .exe ใหญ่</p>
+
+<h2><span class="p2">เฟส 2 — ถัดไป</span> (วิซาร์ดในหน้าเว็บ)</h2>
+<div class="card">ปรับ <code>/settings/print-hub</code> เป็นขั้นตอน 1-2-3-4 มีภาพ/ไอคอนประกอบ (ใช้ SVG/diagram แทนสกรีนช็อตจริงที่สร้างไม่ได้) และรวมการตั้งค่าเครื่องพิมพ์ทั้ง <b>IP/WiFi และ Bluetooth</b> ไว้ในที่เดียว ("เพิ่มเครื่องพิมพ์" แบบเลือกชนิด)</div>
+
+<h2><span class="p3">เฟส 3 — ภายหลัง/ออปชัน</span> (รวม Node เป็น .exe)</h2>
+<div class="card">แพ็ก agent + Node เป็นไฟล์เดียวด้วย pkg/nexe (~50MB) เพื่อไม่ต้องมี Node เลย. งานหนัก + เสี่ยง AV false-positive + ต้องเซ็นโค้ด + ทดสอบบน Windows จริง. <b>เฟส 1 (winget auto-install) ลดความเจ็บปวดข้อนี้ไปแล้วเป็นส่วนใหญ่</b> จึงเลื่อนเป็นออปชัน</div>
+
+<h2>ตรวจสอบ (เฟส 1)</h2>
+<div class="card">typecheck + eslint สะอาด · full suite ไม่ regress · PS parser ผ่าน · rebuild zip · <b>ยังต้องทดสอบบน Windows จริง</b> (double-click flow, winget, COM detect) — flag ไว้</div>
+</div></body></html>

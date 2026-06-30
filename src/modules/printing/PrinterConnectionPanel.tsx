@@ -24,6 +24,7 @@ interface PrinterConnectionPanelProps {
   storeName?: string;
   paperWidth?: "58mm" | "80mm";
   saveNetworkPrinterAction?: SaveNetworkPrinterAction;
+  saveHubBluetoothPrinterAction?: SaveNetworkPrinterAction;
   onNetworkPrinterSelect?: (printerId: string) => void;
 }
 
@@ -93,6 +94,7 @@ export function PrinterConnectionPanel({
   storeName = "StoreOS",
   paperWidth = "80mm",
   saveNetworkPrinterAction,
+  saveHubBluetoothPrinterAction,
   onNetworkPrinterSelect,
 }: PrinterConnectionPanelProps) {
   const [rememberedDevice, setRememberedDevice] = useState<PrinterDevice | null>(null);
@@ -104,8 +106,15 @@ export function PrinterConnectionPanel({
     saveNetworkPrinterAction ?? (async () => ({ error: "ยังไม่พร้อมบันทึกเครื่องพิมพ์ IP/WiFi จากหน้านี้" })),
     { error: null },
   );
+  const [btSaveState, saveBtFormAction, savingBtPrinter] = useActionState(
+    saveHubBluetoothPrinterAction ?? (async () => ({ error: "ยังไม่พร้อมบันทึกเครื่องพิมพ์ Bluetooth จากหน้านี้" })),
+    { error: null },
+  );
   const networkPrinters = printers.filter((printer) =>
     (printer.type === "ip" || printer.type === "escpos") && printer.ipAddress,
+  );
+  const hubBluetoothPrinters = printers.filter(
+    (printer) => printer.type === "bluetooth" && printer.hubBluetoothPort,
   );
 
   useEffect(() => {
@@ -168,6 +177,32 @@ export function PrinterConnectionPanel({
     }
   }
 
+  async function testHubBluetoothPrinter(printer: Printer) {
+    setError(null);
+    setNetworkMessage(null);
+    setBusy(true);
+    try {
+      const receiptData = buildNetworkTestReceipt(storeName, printer.paperWidth ?? paperWidth);
+      const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(receiptData, receiptData));
+      const res = await fetch("/api/print/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printerId: printer.id, printJobBase64 }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `ส่งงานพิมพ์ไม่สำเร็จ (${res.status})`);
+      }
+      setConnectedDevice({ kind: "Bluetooth (ผ่าน Hub)", name: printer.name });
+      setRememberedDevice(null);
+      setNetworkMessage(`ส่งใบทดสอบไปที่ ${printer.name} (${printer.hubBluetoothPort}) ผ่าน Hub แล้ว`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ส่งงานพิมพ์ผ่าน Hub ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function markNetworkPrinterReady(printer: Printer) {
     setError(null);
     setNetworkMessage(null);
@@ -222,6 +257,18 @@ export function PrinterConnectionPanel({
               IP / WiFi
             </button>
           )}
+          {hubBluetoothPrinters.map((printer) => (
+            <button
+              key={printer.id}
+              type="button"
+              onClick={() => variant === "compact" ? markNetworkPrinterReady(printer) : void testHubBluetoothPrinter(printer)}
+              disabled={busy}
+              className={`btn-secondary min-h-11 px-3 text-xs disabled:opacity-40 ${variant === "compact" ? "max-w-52 truncate whitespace-nowrap" : ""}`}
+              title={`${printer.name} · ${printer.hubBluetoothPort} ผ่าน Hub${variant === "compact" ? " · กดเพื่อเลือกเครื่องนี้" : " · กดเพื่อพิมพ์ทดสอบผ่าน Hub"}`}
+            >
+              BT (Hub) · {printer.name}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -310,6 +357,70 @@ export function PrinterConnectionPanel({
           {saveState.saved && !saveState.error && (
             <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
               บันทึกเครื่องพิมพ์ IP/WiFi แล้ว
+            </p>
+          )}
+        </form>
+      )}
+
+      {variant !== "compact" && saveHubBluetoothPrinterAction && (
+        <form action={saveBtFormAction} className="mt-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+          <p className="mb-1 text-xs font-semibold text-[var(--ink)]">เครื่องพิมพ์ Bluetooth ผ่าน Hub (สำหรับ iPad/iOS)</p>
+          <p className="mb-3 text-[11px] text-[var(--muted)]">
+            จับคู่เครื่องพิมพ์ Bluetooth กับเครื่องแคชเชียร์ Windows ก่อน (จะได้พอร์ต COM เช่น COM5) แล้ว iPad/iOS จะสั่งพิมพ์ผ่าน Hub ได้
+          </p>
+          <div className="grid gap-3 sm:grid-cols-[1.4fr_0.8fr_0.7fr]">
+            <label className="text-xs font-medium text-[var(--muted)]">
+              ชื่อเครื่อง
+              <input
+                name="name"
+                type="text"
+                required
+                defaultValue={hubBluetoothPrinters[0]?.name ?? "เครื่องพิมพ์ Bluetooth"}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)]"
+              />
+            </label>
+            <label className="text-xs font-medium text-[var(--muted)]">
+              พอร์ต COM
+              <input
+                name="comPort"
+                type="text"
+                required
+                placeholder="COM5"
+                defaultValue={hubBluetoothPrinters[0]?.hubBluetoothPort ?? ""}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)]"
+              />
+            </label>
+            <label className="text-xs font-medium text-[var(--muted)]">
+              กระดาษ
+              <select
+                name="paperWidth"
+                defaultValue={hubBluetoothPrinters[0]?.paperWidth ?? paperWidth}
+                className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)]"
+              >
+                <option value="58mm">58mm</option>
+                <option value="80mm">80mm</option>
+              </select>
+            </label>
+          </div>
+          {hubBluetoothPrinters[0] && <input type="hidden" name="printerId" value={hubBluetoothPrinters[0].id} />}
+          <label className="mt-3 flex items-center gap-2 text-xs text-[var(--muted)]">
+            <input type="checkbox" name="isDefault" defaultChecked={Boolean(hubBluetoothPrinters[0]?.isDefault)} />
+            ตั้งเป็นเครื่องพิมพ์หลัก
+          </label>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button type="submit" variant="secondary" loading={savingBtPrinter} loadingText="กำลังบันทึก..." className="min-h-11 px-3 text-xs disabled:opacity-40">
+              บันทึก Bluetooth (Hub)
+            </Button>
+            <p className="text-xs text-[var(--muted)]">
+              ต้องเปิด StoreOS Print Hub บนเครื่องแคชเชียร์ที่จับคู่เครื่องพิมพ์ Bluetooth ไว้
+            </p>
+          </div>
+          {btSaveState.error && (
+            <p className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{btSaveState.error}</p>
+          )}
+          {btSaveState.saved && !btSaveState.error && (
+            <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
+              บันทึกเครื่องพิมพ์ Bluetooth (Hub) แล้ว
             </p>
           )}
         </form>

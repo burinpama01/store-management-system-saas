@@ -21,9 +21,9 @@
 #>
 
 param(
-  [Parameter(Mandatory = $true)] [string] $ServerUrl,
-  [Parameter(Mandatory = $true)] [string] $StoreId,
-  [Parameter(Mandatory = $true)] [string] $HubToken,
+  [string] $ServerUrl,
+  [string] $StoreId,
+  [string] $HubToken,
   [int] $PollIntervalMs = 2500
 )
 
@@ -40,25 +40,88 @@ if (-not (Test-Path $AgentPath)) {
   throw "ไม่พบ print-hub.mjs ที่ $AgentPath — โปรดวางโฟลเดอร์ scripts ให้ครบก่อนติดตั้ง"
 }
 
-# Node runtime is required.
-$Node = (Get-Command node -ErrorAction SilentlyContinue)
-if (-not $Node) {
-  throw "ไม่พบ Node.js — ติดตั้ง Node LTS จาก https://nodejs.org ก่อน แล้วรันสคริปต์นี้อีกครั้ง"
-}
-$NodePath = $Node.Source
+# Node runtime is required. Resolve it automatically so a non-technical operator
+# never has to install Node by hand: system PATH -> winget -> portable download.
+function Resolve-NodePath {
+  # 1) Already on PATH.
+  $cmd = Get-Command node -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
 
-# Write config (UTF-8, no BOM-sensitive consumers — JSON.parse handles it).
-$Config = [ordered]@{
-  serverUrl      = $ServerUrl.TrimEnd("/")
-  storeId        = $StoreId
-  hubToken       = $HubToken
-  pollIntervalMs = $PollIntervalMs
+  # 2) Default install location (winget/MSI) even if PATH was not refreshed.
+  $pf = Join-Path $env:ProgramFiles "nodejs\node.exe"
+  if (Test-Path $pf) { return $pf }
+
+  # 3) Try winget (Windows 10 1809+/11).
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Host "ไม่พบ Node.js — กำลังติดตั้งผ่าน winget..." -ForegroundColor Yellow
+    try {
+      & winget install -e --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    } catch { }
+    if (Test-Path $pf) { return $pf }
+    $cmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+  }
+
+  # 4) Last resort: download a portable Node runtime next to the agent (one-off).
+  #    Kept inside the kit folder; the scheduled task points at this exe, so do
+  #    not delete the 'node' folder afterwards.
+  Write-Host "กำลังดาวน์โหลด Node.js แบบพกพา (ครั้งเดียว ~30MB)..." -ForegroundColor Yellow
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  $ProgressPreference = "SilentlyContinue"
+  $index = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json"
+  $lts = $index | Where-Object { $_.lts } | Select-Object -First 1
+  if (-not $lts) { throw "หา Node.js LTS ไม่พบ" }
+  $ver = $lts.version
+  $url = "https://nodejs.org/dist/$ver/node-$ver-win-x64.zip"
+  $zip = Join-Path $env:TEMP "node-$ver-win-x64.zip"
+  Invoke-WebRequest -Uri $url -OutFile $zip
+  $nodeDir = Join-Path $ScriptsDir "node"
+  if (Test-Path $nodeDir) { Remove-Item -Recurse -Force $nodeDir }
+  Expand-Archive -Path $zip -DestinationPath $nodeDir -Force
+  Remove-Item -Force $zip -ErrorAction SilentlyContinue
+  $exe = Get-ChildItem -Path $nodeDir -Recurse -Filter "node.exe" | Select-Object -First 1
+  if (-not $exe) { throw "แตกไฟล์ Node.js ไม่สำเร็จ" }
+  return $exe.FullName
 }
-# Write UTF-8 WITHOUT a BOM. PowerShell 5.1's `Out-File -Encoding UTF8` prepends
-# a BOM that breaks Node's JSON.parse, so use .NET to write clean UTF-8.
-$Json = $Config | ConvertTo-Json
-[System.IO.File]::WriteAllText($ConfigPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "เขียน config แล้ว: $ConfigPath" -ForegroundColor Green
+
+$NodePath = Resolve-NodePath
+if (-not $NodePath -or -not (Test-Path $NodePath)) {
+  throw "ติดตั้ง Node.js อัตโนมัติไม่สำเร็จ — ติดตั้งเองจาก https://nodejs.org แล้วรันใหม่"
+}
+Write-Host "ใช้ Node.js: $NodePath" -ForegroundColor Green
+
+# Config can come from -ServerUrl/-StoreId/-HubToken params, OR from a
+# print-hub.config.json the operator downloaded from Settings and dropped next to
+# the agent (the double-click installer path). Params win when provided.
+$HaveParams = $ServerUrl -and $StoreId -and $HubToken
+if ($HaveParams) {
+  # Write config (UTF-8 WITHOUT a BOM — PS 5.1 `Out-File -Encoding UTF8` prepends
+  # a BOM that breaks Node's JSON.parse, so use .NET to write clean UTF-8).
+  $Config = [ordered]@{
+    serverUrl      = $ServerUrl.TrimEnd("/")
+    storeId        = $StoreId
+    hubToken       = $HubToken
+    pollIntervalMs = $PollIntervalMs
+  }
+  $Json = $Config | ConvertTo-Json
+  [System.IO.File]::WriteAllText($ConfigPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host "เขียน config แล้ว: $ConfigPath" -ForegroundColor Green
+}
+elseif (Test-Path $ConfigPath) {
+  # Validate the dropped config has the required fields before continuing.
+  try {
+    $existing = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+  } catch {
+    throw "อ่าน print-hub.config.json ไม่สำเร็จ (ไฟล์เสียหรือไม่ใช่ JSON) — ดาวน์โหลดไฟล์ตั้งค่าใหม่จากหน้า Settings"
+  }
+  if (-not $existing.serverUrl -or -not $existing.storeId -or -not $existing.hubToken) {
+    throw "print-hub.config.json ไม่ครบ (ต้องมี serverUrl, storeId, hubToken) — ดาวน์โหลดไฟล์ตั้งค่าใหม่จากหน้า Settings"
+  }
+  Write-Host "ใช้ค่าตั้งค่าจาก: $ConfigPath" -ForegroundColor Green
+}
+else {
+  throw "ไม่พบค่าตั้งค่า — ดาวน์โหลด print-hub.config.json จากหน้า StoreOS > ตั้งค่า > Print Hub มาวางไว้ในโฟลเดอร์นี้ก่อน (หรือส่ง -ServerUrl -StoreId -HubToken)"
+}
 
 # (Re)register the scheduled task.
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {

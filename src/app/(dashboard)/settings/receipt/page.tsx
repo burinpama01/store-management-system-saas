@@ -5,7 +5,7 @@ import { listPrinters } from "@/modules/stores/repository";
 import { ReceiptSettingsForm } from "./ReceiptSettingsForm";
 import { ReceiptTests } from "./ReceiptTests";
 import { PrinterConnect } from "./PrinterConnect";
-import { saveNetworkPrinterAction } from "./actions";
+import { saveHubBluetoothPrinterAction, saveNetworkPrinterAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,7 @@ export default async function ReceiptSettingsPage() {
         storeName={settingsRes.data?.storeName ?? ctx.storeName}
         paperWidth={settingsRes.data?.paperWidth === "58mm" ? "58mm" : "80mm"}
         saveNetworkPrinterAction={saveNetworkPrinterAction}
+        saveHubBluetoothPrinterAction={saveHubBluetoothPrinterAction}
       />
       {canEdit && (
         <ReceiptTests
