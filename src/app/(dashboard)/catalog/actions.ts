@@ -35,6 +35,27 @@ import {
   type CatalogCopyPriceMode,
 } from "@/modules/catalog/repository";
 import type { ModifierGroupTemplate } from "@/modules/catalog/types";
+import { getActiveLinkByStore } from "@/modules/connect/repository";
+import { syncMenuForLink } from "@/modules/connect/menu-sync";
+
+/** ดันเมนูขึ้น JDC อัตโนมัติหลังแก้สินค้า (best-effort ไม่บล็อกการบันทึก) */
+async function autoSyncDeliveryMenu(storeId: string) {
+  try {
+    const link = await getActiveLinkByStore(storeId);
+    if (link) await syncMenuForLink(link, false);
+  } catch {
+    /* ไม่ให้กระทบการบันทึกสินค้า */
+  }
+}
+
+/** อ่านราคาเดลิเวอรีจากฟอร์ม: ว่าง = null (ใช้ราคาหน้าร้าน) */
+function readDeliveryPrice(formData: FormData): { value: number | null; error: string | null } {
+  const raw = (formData.get("deliveryPrice") as string | null)?.trim();
+  if (!raw) return { value: null, error: null };
+  const n = parseFloat(raw);
+  if (isNaN(n) || n < 0) return { value: null, error: "ราคาเดลิเวอรีไม่ถูกต้อง" };
+  return { value: n, error: null };
+}
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -194,6 +215,8 @@ export async function createProductAction(
     if (availableForQr && !kitchenStationId) {
       return { error: "กรุณาเลือกครัว/บาร์สำหรับสินค้าที่ขายผ่าน QR (เพิ่มได้ที่ ตั้งค่า → Kitchen)" };
     }
+    const deliveryPrice = readDeliveryPrice(formData);
+    if (deliveryPrice.error) return { error: deliveryPrice.error };
 
     const result = await createProduct({
       storeId: ctx.storeId,
@@ -205,10 +228,13 @@ export async function createProductAction(
       basePrice,
       availableForPos: formData.get("availableForPos") === "on",
       availableForQr,
+      availableForDelivery: formData.get("availableForDelivery") === "on",
+      deliveryPrice: deliveryPrice.value,
       kitchenStationId: availableForQr ? kitchenStationId : null,
     });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -242,6 +268,9 @@ export async function updateProductAction(
       return { error: "กรุณาเลือกครัว/บาร์สำหรับสินค้าที่ขายผ่าน QR (เพิ่มได้ที่ ตั้งค่า → Kitchen)" };
     }
 
+    const deliveryPrice = readDeliveryPrice(formData);
+    if (deliveryPrice.error) return { error: deliveryPrice.error };
+
     const result = await updateProduct(id, ctx.storeId, {
       name,
       categoryId,
@@ -250,11 +279,14 @@ export async function updateProductAction(
       basePrice,
       availableForPos: formData.get("availableForPos") === "on",
       availableForQr,
+      availableForDelivery: formData.get("availableForDelivery") === "on",
+      deliveryPrice: deliveryPrice.value,
       kitchenStationId: availableForQr ? kitchenStationId : null,
       isActive: formData.get("isActive") !== "off",
     });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

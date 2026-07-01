@@ -2,6 +2,7 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { applyPosStatus } from "./status-sync";
 import {
+  applyDeliveryStockDelta,
   getConnectOrder,
   insertConnectOrder,
   recordEvent,
@@ -151,6 +152,16 @@ export async function processInboundOrder(
         lastError: `create order_items failed: ${itemErr.message}`,
       });
       return { ok: false, error: "สร้างรายการสินค้าไม่สำเร็จ" };
+    }
+
+    // ตัดสต็อก (best-effort — ไม่ให้กระทบการรับออเดอร์)
+    try {
+      await applyDeliveryStockDelta(
+        mapped.map((m) => ({ productId: m.productId, qty: m.qty })),
+        -1,
+      );
+    } catch {
+      /* stock ผิดพลาดไม่บล็อกออเดอร์ */
     }
   }
 

@@ -152,6 +152,8 @@ function mapProduct(
     isActive: row.is_active,
     availableForPos: row.available_for_pos,
     availableForQr: row.available_for_qr,
+    availableForDelivery: row.available_for_delivery,
+    deliveryPrice: row.delivery_price,
     sortOrder: row.sort_order,
     variants: variants
       .filter((v) => v.product_id === row.id)
@@ -367,6 +369,8 @@ export interface CreateProductInput {
   basePrice?: number;
   availableForPos?: boolean;
   availableForQr?: boolean;
+  availableForDelivery?: boolean;
+  deliveryPrice?: number | null;
   kitchenStationId?: string | null;
   sortOrder?: number;
 }
@@ -389,6 +393,8 @@ export async function createProduct(input: CreateProductInput) {
       base_price: input.basePrice ?? 0,
       available_for_pos: input.availableForPos ?? true,
       available_for_qr: input.availableForQr ?? false,
+      available_for_delivery: input.availableForDelivery ?? false,
+      delivery_price: input.deliveryPrice ?? null,
       kitchen_station_id: input.kitchenStationId ?? null,
       sort_order: input.sortOrder ?? 0,
     })
@@ -415,6 +421,8 @@ export async function updateProduct(
       | "isActive"
       | "availableForPos"
       | "availableForQr"
+      | "availableForDelivery"
+      | "deliveryPrice"
       | "sortOrder"
       | "categoryId"
     >
@@ -432,6 +440,8 @@ export async function updateProduct(
       is_active: input.isActive,
       available_for_pos: input.availableForPos,
       available_for_qr: input.availableForQr,
+      available_for_delivery: input.availableForDelivery,
+      delivery_price: input.deliveryPrice,
       kitchen_station_id: input.kitchenStationId,
       sort_order: input.sortOrder,
       category_id: input.categoryId,

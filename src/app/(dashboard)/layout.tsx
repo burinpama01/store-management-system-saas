@@ -50,7 +50,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       ? (await listAssignedKitchenStationIdsForUser(storeContext.storeId, user.id)).data ?? []
       : [];
   const [stationsForPrinting, receiptSettingsForPrinting, printersForPrinting] =
-    canManageQr && qrOrderingEnabled
+    canManageQr
       ? await Promise.all([
           listKitchenStations(storeContext.storeId),
           getReceiptSettings(storeContext.storeId, storeContext.organizationId),
@@ -61,6 +61,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const stationPrinters = (stationsForPrinting.data ?? [])
     .filter((station) => station.printerId)
     .map((station) => ({ id: station.id, name: station.name, printerId: station.printerId }));
+  const deliveryStationPrinters = (stationsForPrinting.data ?? [])
+    .filter((station) => station.printerId)
+    .map((station) => ({ id: station.id, name: station.name, printerId: station.printerId as string }));
   const autoPrintStationTickets = Boolean(receiptSettingsForPrinting.data?.autoPrintStationTickets);
   const receiptPaperWidth = receiptSettingsForPrinting.data?.paperWidth === "58mm" ? "58mm" : "80mm";
   const navItems = [
@@ -163,7 +166,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         receiptPaperWidth={receiptPaperWidth}
         receiptPrinters={receiptPrinters}
       />
-      <DeliveryGlobalNotifier storeId={storeContext.storeId} canManage={canManageQr} />
+      <DeliveryGlobalNotifier
+        storeId={storeContext.storeId}
+        canManage={canManageQr}
+        storeName={storeContext.storeName}
+        stationPrinters={deliveryStationPrinters}
+        paperWidth={receiptPaperWidth}
+        printers={receiptPrinters}
+        autoPrintOnArrival={autoPrintStationTickets}
+      />
     </div>
   );
 }
