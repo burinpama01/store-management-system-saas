@@ -70,6 +70,7 @@ export default async function DeliveryPage() {
       <DeliveryBoard
         orders={vms}
         canManage={canManage}
+        storeId={ctx.storeId}
         storeName={ctx.storeName}
         stationPrinters={stationPrinters}
         paperWidth={paperWidth}
