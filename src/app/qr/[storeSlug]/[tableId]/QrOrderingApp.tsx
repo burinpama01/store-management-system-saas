@@ -504,7 +504,7 @@ function TrackView({
   onRefresh,
   onBack,
   onService,
-  onCancelOrder,
+  onCancel,
   serviceMsg,
   servicePending,
 }: {
@@ -514,7 +514,7 @@ function TrackView({
   onRefresh: () => void;
   onBack: () => void;
   onService: (type: ServiceRequestType, reason?: string, okMsg?: string) => void;
-  onCancelOrder: (orderId: string) => void;
+  onCancel: (orderId: string) => void;
   serviceMsg: string | null;
   servicePending: boolean;
 }) {
@@ -581,7 +581,7 @@ function TrackView({
                 order.status !== "voided" && (
                   <button
                     onClick={() => {
-                      if (window.confirm(`ยกเลิกออเดอร์ #${order.orderNumber}?`)) onCancelOrder(order.id);
+                      if (window.confirm(`ยกเลิกออเดอร์ #${order.orderNumber}?`)) onCancel(order.id);
                     }}
                     disabled={servicePending}
                     className="mt-2 w-full min-h-11 rounded-lg border border-red-200 text-red-600 text-xs font-semibold disabled:opacity-50"
@@ -905,7 +905,7 @@ export default function QrOrderingApp({
           onRefresh={() => refreshTracked(myOrderIds)}
           onBack={() => setView("menu")}
           onService={callService}
-          onCancelOrder={cancelOrder}
+          onCancel={cancelOrder}
           serviceMsg={serviceMsg}
           servicePending={servicePending}
         />
