@@ -2120,7 +2120,7 @@ export interface Database {
           table_id: string | null;
           table_number: string | null;
           buffet_session_id: string | null;
-          cashier_id: string;
+          cashier_id: string | null;
           system_account_id: string | null;
           customer_id: string | null;
           coupon_id: string | null;
@@ -2150,7 +2150,7 @@ export interface Database {
           table_id?: string | null;
           table_number?: string | null;
           buffet_session_id?: string | null;
-          cashier_id: string;
+          cashier_id?: string | null;
           system_account_id?: string | null;
           customer_id?: string | null;
           coupon_id?: string | null;
@@ -2180,7 +2180,7 @@ export interface Database {
           table_id?: string | null;
           table_number?: string | null;
           buffet_session_id?: string | null;
-          cashier_id?: string;
+          cashier_id?: string | null;
           system_account_id?: string | null;
           customer_id?: string | null;
           coupon_id?: string | null;

@@ -81,7 +81,7 @@ export interface Order {
   tableId?: string;
   tableNumber?: string;
   buffetSessionId?: string;
-  cashierId: string;
+  cashierId: string | null;
   customerId?: string;
   couponId?: string;
   couponDiscountAmount?: number;
