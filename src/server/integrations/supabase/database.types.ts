@@ -1090,6 +1090,7 @@ export interface Database {
           available_for_qr: boolean;
           available_for_delivery: boolean;
           delivery_price: number | null;
+          delivery_out_of_stock: boolean;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -1111,6 +1112,7 @@ export interface Database {
           available_for_qr?: boolean;
           available_for_delivery?: boolean;
           delivery_price?: number | null;
+          delivery_out_of_stock?: boolean;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -1132,6 +1134,7 @@ export interface Database {
           available_for_qr?: boolean;
           available_for_delivery?: boolean;
           delivery_price?: number | null;
+          delivery_out_of_stock?: boolean;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;

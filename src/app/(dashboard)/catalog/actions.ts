@@ -230,6 +230,7 @@ export async function createProductAction(
       availableForQr,
       availableForDelivery: formData.get("availableForDelivery") === "on",
       deliveryPrice: deliveryPrice.value,
+      deliveryOutOfStock: formData.get("deliveryOutOfStock") === "on",
       kitchenStationId: availableForQr ? kitchenStationId : null,
     });
     if (result.error) return { error: result.error.userMessage };
@@ -281,6 +282,7 @@ export async function updateProductAction(
       availableForQr,
       availableForDelivery: formData.get("availableForDelivery") === "on",
       deliveryPrice: deliveryPrice.value,
+      deliveryOutOfStock: formData.get("deliveryOutOfStock") === "on",
       kitchenStationId: availableForQr ? kitchenStationId : null,
       isActive: formData.get("isActive") !== "off",
     });

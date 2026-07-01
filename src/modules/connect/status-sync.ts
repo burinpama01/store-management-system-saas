@@ -38,7 +38,15 @@ async function syncInternalOrderStatus(
     return;
   }
   if (fulfillment === "cancelled") {
-    // คืนสต็อกก่อน (อ่านรายการก่อนเปลี่ยนสถานะ) แล้วค่อยยกเลิก
+    const { data: order } = await supabase
+      .from("orders")
+      .select("status")
+      .eq("id", internalOrderId)
+      .maybeSingle();
+    // ปิดไปแล้ว (ยกเลิก/คืนเงิน) → ไม่ทำซ้ำ (กันคืนสต็อกซ้ำ)
+    if (!order || order.status === "cancelled" || order.status === "refunded") return;
+
+    // คืนสต็อกก่อน (อ่านรายการก่อนเปลี่ยนสถานะ)
     const { data: its } = await supabase
       .from("order_items")
       .select("product_id, quantity")
@@ -51,11 +59,12 @@ async function syncInternalOrderStatus(
     } catch {
       /* คืนสต็อกผิดพลาดไม่บล็อกการยกเลิก */
     }
+    // ชำระแล้ว (คนขับรับของไปแล้ว) → คืนเงิน; ยังไม่ชำระ → ยกเลิก (#11)
+    const nextStatus = order.status === "paid" ? "refunded" : "cancelled";
     await supabase
       .from("orders")
-      .update({ status: "cancelled", updated_at: now })
-      .eq("id", internalOrderId)
-      .neq("status", "cancelled");
+      .update({ status: nextStatus, updated_at: now })
+      .eq("id", internalOrderId);
   }
 }
 

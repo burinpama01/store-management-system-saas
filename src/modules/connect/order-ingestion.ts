@@ -99,14 +99,16 @@ export async function processInboundOrder(
   const supabase = await createSupabaseServiceClient();
 
   // สร้าง order ภายใน — status=open (ยังไม่ชำระ จนกว่าคนขับจะรับอาหาร)
+  // สร้างเสมอแม้ map สินค้าไม่ได้ทั้งหมด เพื่อให้เด้ง popup + มองเห็นในหน้า /delivery (#7)
+  // เลขบิลใช้ hex 12 หลักของ booking_id กันชนกัน (#10)
   let internalOrderId: string | null = null;
-  if (mapped.length > 0) {
+  {
     const { data: order, error: orderErr } = await supabase
       .from("orders")
       .insert({
         organization_id: link.organizationId,
         store_id: link.storeId,
-        order_number: `JDC-${payload.booking_id.slice(0, 8).toUpperCase()}`,
+        order_number: `JDC-${payload.booking_id.replace(/-/g, "").slice(0, 12).toUpperCase()}`,
         status: "open",
         cashier_id: CONNECT_SYSTEM_USER,
         subtotal: merchantTotal,
@@ -129,6 +131,9 @@ export async function processInboundOrder(
     }
     internalOrderId = order.id;
 
+    if (mapped.length === 0) {
+      // ไม่มีรายการที่ผูกเมนูได้ — ข้ามการสร้าง order_items/ตัดสต็อก (ดู note บนบิล)
+    } else {
     const rows = mapped.map((m) => ({
       order_id: order.id,
       product_id: m.productId,
@@ -162,6 +167,7 @@ export async function processInboundOrder(
       );
     } catch {
       /* stock ผิดพลาดไม่บล็อกออเดอร์ */
+    }
     }
   }
 

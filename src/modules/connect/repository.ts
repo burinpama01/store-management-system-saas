@@ -95,6 +95,13 @@ export async function getActiveLinkByMerchant(
   return data ? mapLink(data) : null;
 }
 
+/** ลิสต์ active link ทั้งหมด (สำหรับ reconcile cron) */
+export async function listAllActiveLinks(): Promise<ChannelLink[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase.from("connect_channel_links").select(LINK_COLS).eq("status", "active");
+  return (data ?? []).map(mapLink);
+}
+
 /** หา active link ของร้าน (สำหรับ auto-sync เมนูจาก catalog) */
 export async function getActiveLinkByStore(
   storeId: string,
@@ -171,7 +178,7 @@ export async function getDeliveryProducts(storeId: string): Promise<DeliveryProd
   const { data: products } = await supabase
     .from("products")
     .select(
-      "id, name, description, image_url, base_price, delivery_price, is_active, available_for_delivery, category_id",
+      "id, name, description, image_url, base_price, delivery_price, is_active, available_for_delivery, delivery_out_of_stock, category_id",
     )
     .eq("store_id", storeId)
     .eq("available_for_delivery", true)
@@ -194,6 +201,7 @@ export async function getDeliveryProducts(storeId: string): Promise<DeliveryProd
     delivery_price: p.delivery_price,
     is_active: p.is_active,
     available_for_delivery: p.available_for_delivery,
+    delivery_out_of_stock: p.delivery_out_of_stock,
     categoryName: nameById.get(p.category_id) ?? null,
   }));
 }
