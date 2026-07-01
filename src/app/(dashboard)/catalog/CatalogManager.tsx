@@ -466,7 +466,16 @@ function ProductForm({
           min="0"
           step="1"
         />
-        <p className="text-xs text-gray-400">ติ๊กแล้วบันทึก ระบบจะดันเมนูขึ้น JDC อัตโนมัติ</p>
+        <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            name="deliveryOutOfStock"
+            defaultChecked={product?.deliveryOutOfStock ?? false}
+            className="rounded border-gray-300"
+          />
+          ของหมดวันนี้ (ปิดขายชั่วคราวบน JDC — ยังอยู่ในเมนู)
+        </label>
+        <p className="text-xs text-gray-400">ติ๊กแล้วบันทึก ระบบจะดันเมนู/สถานะขึ้น JDC อัตโนมัติ</p>
       </div>
       {qrOn && (
         <div className="space-y-1">

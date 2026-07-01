@@ -93,6 +93,7 @@ describe("menu payload & sync hash", () => {
     delivery_price: null,
     is_active: true,
     available_for_delivery: true,
+    delivery_out_of_stock: false,
   };
 
   it("uses delivery_price when set, else base_price", () => {
@@ -106,6 +107,11 @@ describe("menu payload & sync hash", () => {
     expect(p.is_available).toBe(false);
     expect(p.external_ref).toBe("p1");
     expect(p.category).toBe("อาหาร");
+  });
+
+  it("out-of-stock (กดปิดเอง) forces is_available false even when active", () => {
+    expect(buildMenuItemPayload({ ...base, delivery_out_of_stock: true }, "อาหาร").is_available).toBe(false);
+    expect(buildMenuItemPayload({ ...base, delivery_out_of_stock: false }, "อาหาร").is_available).toBe(true);
   });
 
   it("hash is stable for same data and changes when price changes", () => {

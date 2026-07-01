@@ -4,6 +4,7 @@ import { buildMenuItemPayload, computeMenuSyncHash } from "./menu-payload";
 import {
   getDeliveryProducts,
   getMenuMapForLink,
+  listAllActiveLinks,
   recordEvent,
   upsertMenuMap,
   type ChannelLink,
@@ -75,4 +76,22 @@ export async function syncMenuForLink(
     });
   }
   return { ok: true, total: products.length, pushed: toPush.length, skipped };
+}
+
+/**
+ * Reconcile (cron): sync เมนูแบบ incremental ให้ทุก active link — กันเมนูตกหล่น
+ * เมื่อ push ครั้งก่อนล้มเหลว (JDC ล่มชั่วคราว) โดยดันเฉพาะที่ hash เปลี่ยน (#4)
+ */
+export async function reconcileConnectMenus(): Promise<{ links: number; synced: number }> {
+  const links = await listAllActiveLinks();
+  let synced = 0;
+  for (const link of links) {
+    try {
+      const res = await syncMenuForLink(link, false);
+      if (res.ok) synced += 1;
+    } catch {
+      /* ข้าม link ที่ error, ไปต่อ */
+    }
+  }
+  return { links: links.length, synced };
 }

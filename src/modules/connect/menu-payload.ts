@@ -11,6 +11,7 @@ export interface ProductForDelivery {
   delivery_price: number | null;
   is_active: boolean;
   available_for_delivery: boolean;
+  delivery_out_of_stock: boolean;
 }
 
 /** ราคาเดลิเวอรี = delivery_price ถ้าตั้งไว้ ไม่งั้นใช้ base_price */
@@ -29,7 +30,7 @@ export function buildMenuItemPayload(
     description: product.description,
     price: resolveDeliveryPrice(product),
     image_url: product.image_url,
-    is_available: product.is_active, // ของหมด/ปิดขาย → ส่ง false
+    is_available: product.is_active && !product.delivery_out_of_stock, // ร้านกดของหมด → false
     category: categoryName,
     preparation_time: null,
   };

@@ -27,6 +27,7 @@ export interface Product {
   availableForQr: boolean;
   availableForDelivery?: boolean;
   deliveryPrice?: number | null;
+  deliveryOutOfStock?: boolean;
   sortOrder: number;
   variants: ProductVariant[];
   modifierGroups: ModifierGroup[];

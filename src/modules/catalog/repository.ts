@@ -154,6 +154,7 @@ function mapProduct(
     availableForQr: row.available_for_qr,
     availableForDelivery: row.available_for_delivery,
     deliveryPrice: row.delivery_price,
+    deliveryOutOfStock: row.delivery_out_of_stock,
     sortOrder: row.sort_order,
     variants: variants
       .filter((v) => v.product_id === row.id)
@@ -371,6 +372,7 @@ export interface CreateProductInput {
   availableForQr?: boolean;
   availableForDelivery?: boolean;
   deliveryPrice?: number | null;
+  deliveryOutOfStock?: boolean;
   kitchenStationId?: string | null;
   sortOrder?: number;
 }
@@ -395,6 +397,7 @@ export async function createProduct(input: CreateProductInput) {
       available_for_qr: input.availableForQr ?? false,
       available_for_delivery: input.availableForDelivery ?? false,
       delivery_price: input.deliveryPrice ?? null,
+      delivery_out_of_stock: input.deliveryOutOfStock ?? false,
       kitchen_station_id: input.kitchenStationId ?? null,
       sort_order: input.sortOrder ?? 0,
     })
@@ -423,6 +426,7 @@ export async function updateProduct(
       | "availableForQr"
       | "availableForDelivery"
       | "deliveryPrice"
+      | "deliveryOutOfStock"
       | "sortOrder"
       | "categoryId"
     >
@@ -442,6 +446,7 @@ export async function updateProduct(
       available_for_qr: input.availableForQr,
       available_for_delivery: input.availableForDelivery,
       delivery_price: input.deliveryPrice,
+      delivery_out_of_stock: input.deliveryOutOfStock,
       kitchen_station_id: input.kitchenStationId,
       sort_order: input.sortOrder,
       category_id: input.categoryId,
