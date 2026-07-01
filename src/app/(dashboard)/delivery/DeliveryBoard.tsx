@@ -5,9 +5,10 @@ import { useState, useTransition } from "react";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { buildStationTicketJobs } from "@/modules/printing/station-routing";
 import { enqueueStationTickets } from "@/modules/printing/station-print-client";
-import { printReceiptAuto } from "@/modules/printing/print-router";
+import { autoPrintReceipt } from "@/modules/printing/receipt-printer";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
+import type { Printer } from "@/modules/stores/types";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import { updateDeliveryOrderStatusAction } from "./actions";
 
@@ -89,7 +90,7 @@ function extractModifierNames(value: Json): string[] {
 /** พิมพ์ตั๋วครัวตอนรับออเดอร์ — แยกตามสถานี ถ้าตั้งครัวไว้; ไม่งั้นพิมพ์ตั๋วรวมทั้งบิล */
 async function printKitchenForOrder(
   internalOrderId: string,
-  opts: { storeName: string; stationPrinters: StationPrinter[]; paperWidth: "58mm" | "80mm"; billNumber: string },
+  opts: { storeName: string; stationPrinters: StationPrinter[]; paperWidth: "58mm" | "80mm"; billNumber: string; printers: Printer[] },
 ): Promise<string> {
   const client = getSupabaseBrowserClient();
   const { data } = await client
@@ -163,8 +164,13 @@ async function printKitchenForOrder(
     printCopies: 1,
     printedAt: new Date().toISOString(),
   };
-  await printReceiptAuto(receipt, receipt);
-  return "สั่งพิมพ์ตั๋วครัว (รวมทั้งบิล) แล้ว";
+  // Enqueue to the Hub for a Hub-capable default printer (iPad-safe), else
+  // fall back to a directly-connected browser printer (BT/USB/PDF).
+  const printed = await autoPrintReceipt({ printers: opts.printers, escpos: receipt, browser: receipt });
+  if (!printed.printer) return "สั่งพิมพ์ตั๋วครัว (รวมทั้งบิล) แล้ว";
+  return printed.hubOnline === false
+    ? "ส่งเข้าคิวแล้ว แต่ Hub (เครื่องแคชเชียร์) ออฟไลน์ — จะพิมพ์เมื่อเปิดเครื่อง"
+    : "ส่งตั๋วครัว (รวมทั้งบิล) เข้าคิว Hub แล้ว";
 }
 
 function OrderCard({
@@ -174,7 +180,7 @@ function OrderCard({
 }: {
   order: DeliveryOrderVM;
   canManage: boolean;
-  printOpts: { storeName: string; stationPrinters: StationPrinter[]; paperWidth: "58mm" | "80mm" };
+  printOpts: { storeName: string; stationPrinters: StationPrinter[]; paperWidth: "58mm" | "80mm"; printers: Printer[] };
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -281,12 +287,14 @@ export function DeliveryBoard({
   storeName,
   stationPrinters,
   paperWidth,
+  printers,
 }: {
   orders: DeliveryOrderVM[];
   canManage: boolean;
   storeName: string;
   stationPrinters: StationPrinter[];
   paperWidth: "58mm" | "80mm";
+  printers: Printer[];
 }) {
   const active = orders.filter(
     (o) => o.fulfillmentStatus !== "completed" && o.fulfillmentStatus !== "cancelled",
@@ -294,7 +302,7 @@ export function DeliveryBoard({
   const closed = orders.filter(
     (o) => o.fulfillmentStatus === "completed" || o.fulfillmentStatus === "cancelled",
   );
-  const printOpts = { storeName, stationPrinters, paperWidth };
+  const printOpts = { storeName, stationPrinters, paperWidth, printers };
 
   return (
     <div className="space-y-6">

@@ -10,6 +10,7 @@ import {
   listKitchenStations,
 } from "@/modules/qr-ordering/kitchen-stations";
 import { getReceiptSettings } from "@/modules/settings/repository";
+import { listPrinters } from "@/modules/stores/repository";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { QrOrderGlobalNotifier } from "./QrOrderGlobalNotifier";
@@ -48,13 +49,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     canManageQr && qrOrderingEnabled && storeContext.role === "staff"
       ? (await listAssignedKitchenStationIdsForUser(storeContext.storeId, user.id)).data ?? []
       : [];
-  const [stationsForPrinting, receiptSettingsForPrinting] =
+  const [stationsForPrinting, receiptSettingsForPrinting, printersForPrinting] =
     canManageQr && qrOrderingEnabled
       ? await Promise.all([
           listKitchenStations(storeContext.storeId),
           getReceiptSettings(storeContext.storeId, storeContext.organizationId),
+          listPrinters(storeContext.storeId, storeContext.organizationId),
         ])
-      : [{ data: [] }, { data: null }];
+      : [{ data: [] }, { data: null }, { data: [] }];
+  const receiptPrinters = printersForPrinting.data ?? [];
   const stationPrinters = (stationsForPrinting.data ?? [])
     .filter((station) => station.printerId)
     .map((station) => ({ id: station.id, name: station.name, printerId: station.printerId }));
@@ -158,6 +161,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         stationPrinters={stationPrinters}
         autoPrintStationTickets={autoPrintStationTickets}
         receiptPaperWidth={receiptPaperWidth}
+        receiptPrinters={receiptPrinters}
       />
       <DeliveryGlobalNotifier storeId={storeContext.storeId} canManage={canManageQr} />
     </div>

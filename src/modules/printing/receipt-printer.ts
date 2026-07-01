@@ -1,5 +1,6 @@
 import { printReceiptAuto, type PrintChannel } from "./print-router";
 import { printService } from "./print-service";
+import { enqueueReceiptPrintJob } from "./network-print-client";
 import type { EscPosReceiptInput } from "./escpos";
 import type { Printer, ReceiptData } from "./types";
 
@@ -14,6 +15,8 @@ export interface ReceiptPrintResult {
   printer?: Printer;
   fallbackFromPrinter?: Printer;
   configuredPrinterError?: unknown;
+  /** For Hub-queued jobs: false = queued but the cashier PC Hub is offline. */
+  hubOnline?: boolean | null;
 }
 
 export class ReceiptPrintFallbackError extends Error {
@@ -52,6 +55,45 @@ export function selectConfiguredPrinter(printers: Printer[], preferredPrinterId?
   return selectDefaultPrinter(printers);
 }
 
+/**
+ * A printer the Print Hub can print to: a LAN printer (ip/escpos with an IP) or
+ * a Bluetooth printer paired to the cashier PC (bluetooth with a hub COM port).
+ * These route through the server queue, so they work on iPad/tablet POS.
+ */
+export function isHubReceiptPrinter(printer: Printer): boolean {
+  return (
+    ((printer.type === "ip" || printer.type === "escpos") && Boolean(printer.ipAddress)) ||
+    (printer.type === "bluetooth" && Boolean(printer.hubBluetoothPort))
+  );
+}
+
+/** The configured printer, but only if it can print through the Hub. */
+export function selectHubReceiptPrinter(printers: Printer[], preferredPrinterId?: string | null): Printer | null {
+  const configured = selectConfiguredPrinter(printers, preferredPrinterId);
+  return configured && isHubReceiptPrinter(configured) ? configured : null;
+}
+
+/**
+ * Auto-prints a receipt, preferring the Print Hub queue for a Hub-capable
+ * configured printer (works on iPad, incl. Bluetooth-via-Hub) and falling back
+ * to a directly-connected browser printer (BT → USB → PDF) otherwise. Shared by
+ * QR + delivery auto-print so every receipt point can reach the Hub.
+ */
+export async function autoPrintReceipt({
+  printers,
+  preferredPrinterId,
+  escpos,
+  browser,
+}: PrintReceiptWithFallbackInput): Promise<ReceiptPrintResult> {
+  const hubPrinter = selectHubReceiptPrinter(printers, preferredPrinterId);
+  if (hubPrinter) {
+    const { hubOnline } = await enqueueReceiptPrintJob(hubPrinter.id, { ...browser, paperWidth: hubPrinter.paperWidth });
+    return { channel: "configured", printer: hubPrinter, hubOnline };
+  }
+  const channel = await printReceiptAuto(escpos, browser);
+  return { channel };
+}
+
 export async function printReceiptWithFallback({
   printers,
   preferredPrinterId,
@@ -64,6 +106,15 @@ export async function printReceiptWithFallback({
 
   if (configuredPrinter) {
     try {
+      if (configuredPrinter.type === "bluetooth" && configuredPrinter.hubBluetoothPort) {
+        // Bluetooth-via-Hub prints through the server queue — Web Bluetooth is
+        // unavailable on iPad; the Hub agent writes to the paired COM port.
+        const { hubOnline } = await enqueueReceiptPrintJob(configuredPrinter.id, {
+          ...browser,
+          paperWidth: configuredPrinter.paperWidth,
+        });
+        return { channel: "configured", printer: configuredPrinter, hubOnline };
+      }
       await printService.print(configuredPrinter, {
         ...browser,
         paperWidth: configuredPrinter.paperWidth,

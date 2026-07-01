@@ -12,11 +12,12 @@ import {
   getUsbPrinterName,
   isUsbPrinterConnected,
 } from "@/modules/printing/usb-client";
-import { printReceiptAuto } from "@/modules/printing/print-router";
+import { autoPrintReceipt, selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
 import { buildStationTicketJobs } from "@/modules/printing/station-routing";
 import { enqueueStationTickets } from "@/modules/printing/station-print-client";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
+import type { Printer } from "@/modules/stores/types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
 
 const AUTO_PRINT_KEY = "qrOrderAutoPrintEnabled";
@@ -86,6 +87,8 @@ interface Props {
   /** Store setting: auto-print per-station tickets to their printers when an order arrives. */
   autoPrintStationTickets: boolean;
   receiptPaperWidth: "58mm" | "80mm";
+  /** Store printers, so the whole-order receipt can enqueue to the Hub (iPad-safe). */
+  receiptPrinters: Printer[];
 }
 
 function readAutoPrintPreference() {
@@ -165,12 +168,11 @@ function toReceiptData(storeName: string, order: IncomingQrOrder): ReceiptData &
   };
 }
 
-async function printQrKitchenOrder(storeName: string, order: IncomingQrOrder) {
-  if (!isBluetoothPrinterConnected() && !isUsbPrinterConnected()) {
-    throw new Error("Printer is not connected");
-  }
+async function printQrKitchenOrder(storeName: string, order: IncomingQrOrder, printers: Printer[]) {
   const receipt = toReceiptData(storeName, order);
-  await printReceiptAuto(receipt, receipt);
+  // Enqueue to the Hub for a Hub-capable default printer (works on iPad),
+  // else fall back to a directly-connected browser printer (BT/USB/PDF).
+  return autoPrintReceipt({ printers, escpos: receipt, browser: receipt });
 }
 
 function mapIncomingItems(rows: OrderItemRow[]): IncomingOrderItem[] {
@@ -198,6 +200,7 @@ export function QrOrderGlobalNotifier({
   stationPrinters,
   autoPrintStationTickets,
   receiptPaperWidth,
+  receiptPrinters,
 }: Props) {
   const router = useRouter();
   const seenOrderIds = useRef(new Set<string>());
@@ -321,16 +324,23 @@ export function QrOrderGlobalNotifier({
           }
 
           if (!readAutoPrintPreference()) return;
+          const hubPrinter = selectHubReceiptPrinter(receiptPrinters);
           const latestPrinterState = getPrinterState();
           setPrinterState(latestPrinterState);
-          if (!latestPrinterState.connected) {
-            setPrintStatus("เปิดพิมพ์อัตโนมัติอยู่ แต่เครื่องพิมพ์ยังไม่เชื่อมต่อ");
+          if (!hubPrinter && !latestPrinterState.connected) {
+            setPrintStatus("เปิดพิมพ์อัตโนมัติอยู่ แต่ยังไม่มีเครื่องพิมพ์ (ตั้งเครื่องพิมพ์หลักในตั้งค่า หรือเชื่อม BT/USB)");
             return;
           }
           try {
             setPrintStatus("กำลังสั่งพิมพ์ออร์เดอร์ QR");
-            await printQrKitchenOrder(storeName, visibleOrder);
-            setPrintStatus("สั่งพิมพ์ออร์เดอร์ QR แล้ว");
+            const printResult = await printQrKitchenOrder(storeName, visibleOrder, receiptPrinters);
+            setPrintStatus(
+              printResult.hubOnline === false
+                ? "ส่งเข้าคิวแล้ว แต่ Hub (เครื่องแคชเชียร์) ออฟไลน์ — จะพิมพ์เมื่อเปิดเครื่อง"
+                : hubPrinter
+                  ? "ส่งออร์เดอร์ QR เข้าคิว Hub แล้ว"
+                  : "สั่งพิมพ์ออร์เดอร์ QR แล้ว",
+            );
           } catch (error) {
             setPrintStatus(error instanceof Error ? error.message : "สั่งพิมพ์ไม่สำเร็จ");
           }
@@ -346,6 +356,7 @@ export function QrOrderGlobalNotifier({
     fetchVisibleOrder,
     qrOrderingEnabled,
     receiptPaperWidth,
+    receiptPrinters,
     stationPrinters,
     storeId,
     storeName,

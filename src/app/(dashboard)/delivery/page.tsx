@@ -3,6 +3,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listConnectOrders } from "@/modules/connect/repository";
 import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { getReceiptSettings } from "@/modules/settings/repository";
+import { listPrinters } from "@/modules/stores/repository";
 import type { InboundOrderItem, InboundOrderPayload } from "@/modules/connect/types";
 import { DeliveryBoard, type DeliveryOrderVM } from "./DeliveryBoard";
 
@@ -28,11 +29,13 @@ export default async function DeliveryPage() {
   if (!resolved.can("orders.manage_qr")) redirect("/dashboard");
   const canManage = resolved.can("orders.manage_qr");
 
-  const [orders, stations, receipt] = await Promise.all([
+  const [orders, stations, receipt, printersRes] = await Promise.all([
     listConnectOrders(ctx.organizationId, 80),
     listKitchenStations(ctx.storeId),
     getReceiptSettings(ctx.storeId, ctx.organizationId),
+    listPrinters(ctx.storeId, ctx.organizationId),
   ]);
+  const printers = printersRes.data ?? [];
 
   const stationPrinters = (stations.data ?? [])
     .filter((s) => s.printerId)
@@ -70,6 +73,7 @@ export default async function DeliveryPage() {
         storeName={ctx.storeName}
         stationPrinters={stationPrinters}
         paperWidth={paperWidth}
+        printers={printers}
       />
     </div>
   );
