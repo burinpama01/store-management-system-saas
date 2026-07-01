@@ -559,12 +559,15 @@ function TrackView({
               </div>
               <ul className="mt-2 space-y-1">
                 {order.items.map((it) => (
-                  <li key={it.id} className="flex justify-between text-sm text-gray-600">
-                    <span>
+                  <li key={it.id} className={`flex justify-between text-sm ${it.voided ? "text-gray-300" : "text-gray-600"}`}>
+                    <span className={it.voided ? "line-through" : ""}>
                       {it.quantity}× {it.productName}
                       {it.variantName ? ` (${it.variantName})` : ""}
+                      {it.voided && (
+                        <span className="ml-1 text-red-400 no-underline">({it.voidedReason ?? "ของหมด"})</span>
+                      )}
                     </span>
-                    <span>{formatPrice(it.totalPrice, currency)}</span>
+                    <span className={it.voided ? "line-through" : ""}>{formatPrice(it.totalPrice, currency)}</span>
                   </li>
                 ))}
               </ul>

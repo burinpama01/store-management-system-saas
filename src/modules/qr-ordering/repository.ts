@@ -25,6 +25,8 @@ function mapLine(row: OrderItemRow): QrOrderLine {
     unitPrice: row.unit_price,
     totalPrice: row.total_price,
     note: row.note ?? undefined,
+    voided: row.voided,
+    voidedReason: row.voided_reason ?? undefined,
   };
 }
 
@@ -157,6 +159,24 @@ export async function updateOrderPrepStatus(
     .eq("id", orderId)
     .eq("store_id", storeId)
     .eq("qr_order_source", true);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/** Kitchen voids one QR order line (e.g. out of stock) — restores stock + recomputes total. */
+export async function voidQrOrderItem(
+  storeId: string,
+  orderId: string,
+  itemId: string,
+  reason: string | null,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("void_qr_order_item", {
+    p_store_id: storeId,
+    p_order_id: orderId,
+    p_item_id: itemId,
+    p_reason: reason,
+  });
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
 }

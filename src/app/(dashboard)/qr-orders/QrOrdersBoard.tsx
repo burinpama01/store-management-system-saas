@@ -12,7 +12,7 @@ import {
   type PrepStatus,
   type ServiceRequest,
 } from "@/modules/qr-ordering/types";
-import { updatePrepStatusAction, resolveServiceRequestAction } from "./actions";
+import { updatePrepStatusAction, resolveServiceRequestAction, voidQrOrderItemAction } from "./actions";
 import { Button } from "@/shared/components/ui";
 
 interface Props {
@@ -204,6 +204,16 @@ export function QrOrdersBoard({
     });
   }
 
+  function voidItem(order: QrOrderView, itemId: string, name: string) {
+    if (!window.confirm(`ปฏิเสธ "${name}" (ของหมด)? ระบบจะคืนสต็อกและหักออกจากยอด`)) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await voidQrOrderItemAction(order.id, itemId, "ของหมด");
+      if (res.error) setError(res.error);
+      else router.refresh();
+    });
+  }
+
   function renderOrderCard(order: QrOrderView) {
     const flow = PREP_FLOW[order.prepStatus];
     const visibleItems = order.items.filter((item) =>
@@ -211,6 +221,44 @@ export function QrOrdersBoard({
     );
     const stationGroups = itemsByStation(visibleItems);
     const canAdvanceOrder = selectedStation === "all" && canSeeAllKitchenStations;
+    const canVoidItems =
+      canSeeAllKitchenStations &&
+      order.status === "open" &&
+      (order.prepStatus === "new" || order.prepStatus === "preparing");
+
+    const renderItemLine = (it: QrOrderView["items"][number], showStation: boolean) => (
+      <li key={it.id} className="flex justify-between gap-2">
+        <span className={it.voided ? "text-gray-300 line-through" : "text-gray-700"}>
+          <span className="font-semibold">{it.quantity}×</span> {it.productName}
+          {it.variantName ? ` (${it.variantName})` : ""}
+          {showStation && (
+            <span className="block text-xs text-sky-700 no-underline">
+              {it.kitchenStationName ?? "Unassigned"}
+            </span>
+          )}
+          {it.modifiers.length > 0 && (
+            <span className="block text-xs text-gray-400">
+              {it.modifiers.map((m) => m.option.name).join(", ")}
+            </span>
+          )}
+          {it.note && <span className="block text-xs italic text-gray-400">“{it.note}”</span>}
+          {it.voided && (
+            <span className="ml-1 text-xs text-red-500 no-underline">({it.voidedReason ?? "ยกเลิก"})</span>
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-gray-500">{fmt(it.totalPrice, currency)}</span>
+          {!it.voided && canVoidItems && (
+            <button
+              onClick={() => voidItem(order, it.id, it.productName)}
+              className="rounded border border-red-200 px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-50"
+            >
+              ของหมด
+            </button>
+          )}
+        </span>
+      </li>
+    );
 
     return (
       <article key={order.id} className="flex flex-col rounded-lg border border-gray-200 bg-white p-4">
@@ -234,44 +282,13 @@ export function QrOrdersBoard({
                     {station.name}
                   </p>
                   <ul className="space-y-1.5">
-                    {station.items.map((it) => (
-                      <li key={it.id} className="flex justify-between gap-2">
-                        <span className="text-gray-700">
-                          <span className="font-semibold">{it.quantity}×</span> {it.productName}
-                          {it.variantName ? ` (${it.variantName})` : ""}
-                          {it.modifiers.length > 0 && (
-                            <span className="block text-xs text-gray-400">
-                              {it.modifiers.map((m) => m.option.name).join(", ")}
-                            </span>
-                          )}
-                          {it.note && <span className="block text-xs italic text-gray-400">“{it.note}”</span>}
-                        </span>
-                        <span className="shrink-0 text-gray-500">{fmt(it.totalPrice, currency)}</span>
-                      </li>
-                    ))}
+                    {station.items.map((it) => renderItemLine(it, false))}
                   </ul>
                 </div>
               ))
             : (
                 <ul className="space-y-1.5">
-                  {visibleItems.map((it) => (
-                    <li key={it.id} className="flex justify-between gap-2">
-                      <span className="text-gray-700">
-                        <span className="font-semibold">{it.quantity}×</span> {it.productName}
-                        {it.variantName ? ` (${it.variantName})` : ""}
-                        <span className="block text-xs text-sky-700">
-                          {it.kitchenStationName ?? "Unassigned"}
-                        </span>
-                        {it.modifiers.length > 0 && (
-                          <span className="block text-xs text-gray-400">
-                            {it.modifiers.map((m) => m.option.name).join(", ")}
-                          </span>
-                        )}
-                        {it.note && <span className="block text-xs italic text-gray-400">“{it.note}”</span>}
-                      </span>
-                      <span className="shrink-0 text-gray-500">{fmt(it.totalPrice, currency)}</span>
-                    </li>
-                  ))}
+                  {visibleItems.map((it) => renderItemLine(it, true))}
                 </ul>
               )}
         </div>

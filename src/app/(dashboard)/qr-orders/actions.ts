@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
-import { updateOrderPrepStatus, resolveServiceRequest } from "@/modules/qr-ordering/repository";
+import { updateOrderPrepStatus, resolveServiceRequest, voidQrOrderItem } from "@/modules/qr-ordering/repository";
 import type { PrepStatus } from "@/modules/qr-ordering/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,6 +32,26 @@ export async function updatePrepStatusAction(
     }
 
     const result = await updateOrderPrepStatus(orderId, ctx.storeId, prepStatus);
+    if (result.error) return { error: result.error.userMessage };
+    revalidatePath("/qr-orders", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function voidQrOrderItemAction(
+  orderId: string,
+  itemId: string,
+  reason?: string,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(orderId) || !UUID_RE.test(itemId)) return { error: "รายการไม่ถูกต้อง" };
+    const trimmed = reason?.trim().slice(0, 100) || null;
+
+    const result = await voidQrOrderItem(ctx.storeId, orderId, itemId, trimmed);
     if (result.error) return { error: result.error.userMessage };
     revalidatePath("/qr-orders", "page");
     return { error: null };

@@ -423,7 +423,7 @@ export async function getTableOrdersAction(
 
   const { data: itemRows } = await supabase
     .from("order_items")
-    .select("id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note")
+    .select("id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note, voided, voided_reason")
     .in("order_id", rows.map((r) => r.id));
 
   const itemsByOrder = new Map<string, QrOrderView["items"]>();
@@ -440,6 +440,8 @@ export async function getTableOrdersAction(
       unitPrice: it.unit_price,
       totalPrice: it.total_price,
       note: it.note ?? undefined,
+      voided: it.voided,
+      voidedReason: it.voided_reason ?? undefined,
     });
     itemsByOrder.set(it.order_id, next);
   }
