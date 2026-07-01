@@ -5,6 +5,7 @@ import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { buildEscPosReceipt, CMD } from "@/modules/printing/escpos";
 import { renderReceiptRaster } from "@/modules/printing/receipt-raster-client";
 import { buildReceiptLines } from "@/modules/printing/receipt-lines";
+import { buildTableQrReceiptData } from "@/modules/printing/table-qr-slip";
 import { floydSteinbergMono } from "@/modules/printing/escpos-raster";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
 import { bluetoothAdapter } from "@/modules/printing/adapters/bluetooth";
@@ -339,6 +340,41 @@ describe("buildReceiptLines", () => {
     // Kitchen tickets never show money or payment sections.
     expect(text).not.toContain("รวมสุทธิ");
     expect(text).not.toContain("เงินสด");
+    expect(text).not.toMatch(/\d+\.\d{2}/);
+  });
+
+  it("buildTableQrReceiptData produces a table_qr receipt carrying the ordering URL", () => {
+    const data = buildTableQrReceiptData({
+      storeName: "Each Other",
+      tableLabel: "12",
+      qrPayload: "https://shop.example/qr/each-other/abc-123",
+      validUntil: "2026-06-30T15:00:00.000Z",
+      paperWidth: "58mm",
+    });
+    expect(data.ticketMode).toBe("table_qr");
+    expect(data.tableQrPayload).toBe("https://shop.example/qr/each-other/abc-123");
+    expect(data.tableNumber).toBe("12");
+    expect(data.paperWidth).toBe("58mm");
+    // buildReceiptLines must render its QR line from this data.
+    expect(buildReceiptLines(data).lines.some((l) => l.qrPayload)).toBe(true);
+  });
+
+  it("renders a table-open QR slip with a scannable qrPayload line and no prices", () => {
+    const { lines } = buildReceiptLines({
+      ...receiptFixture,
+      ticketMode: "table_qr",
+      tableNumber: "12",
+      tableQrPayload: "https://shop.example/qr/each-other/abc-123",
+      tableValidUntil: "2026-06-30T15:00:00.000Z",
+      items: [],
+    });
+    const text = lines.map((line) => line.text).join("\n");
+
+    expect(text).toContain("ใบเปิดโต๊ะ");
+    expect(text).toContain("โต๊ะ 12");
+    expect(text).toContain("สแกนเพื่อสั่งอาหาร");
+    expect(lines.some((line) => line.qrPayload === "https://shop.example/qr/each-other/abc-123")).toBe(true);
+    expect(text).not.toContain("รวมสุทธิ");
     expect(text).not.toMatch(/\d+\.\d{2}/);
   });
 
@@ -898,7 +934,7 @@ describe("printer adapters", () => {
           promptpayId: "0812345678",
         },
       ),
-    ).rejects.toThrow("QR PromptPay");
+    ).rejects.toThrow("raster");
   });
 
   it("renders a PromptPay QR block into ESC/POS raster bytes", async () => {

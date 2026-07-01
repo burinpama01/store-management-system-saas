@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="UTF-8"><title>แผน: พิมพ์ QR โต๊ะเป็นสลิปความร้อนผ่าน Hub (v1)</title>
+<style>body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:#0f172a;color:#e2e8f0;line-height:1.7;padding:32px}.wrap{max-width:900px;margin:0 auto}h1{font-size:1.5rem;border-bottom:2px solid #38bdf8;padding-bottom:10px}h2{color:#38bdf8;margin-top:26px}.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px 18px;margin:10px 0}code{background:#0b1220;color:#7dd3fc;padding:1px 6px;border-radius:5px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #334155;padding:7px 9px;text-align:left;font-size:.9rem;vertical-align:top}th{background:#0b1220;color:#38bdf8}.muted{color:#94a3b8}.new{color:#34d399;font-weight:700}</style></head><body><div class="wrap">
+<h1>พิมพ์ QR โต๊ะเป็นสลิปความร้อน (ผ่าน Print Hub) ตอนเปิดโต๊ะ</h1>
+<p class="muted">2026-06-30 · เดิม "เปิดโต๊ะ + พิมพ์ QR" เปิดหน้าเว็บ /table-receipt แล้วสั่งพิมพ์ผ่านเบราว์เซอร์ (A4) — ใช้กับเครื่องพิมพ์ความร้อน/บน iPad ไม่ได้</p>
+
+<h2>เป้าหมาย</h2>
+<div class="card">ตอนพนักงานเปิดโต๊ะ → พิมพ์สลิป QR โต๊ะออก<b>เครื่องพิมพ์ความร้อน</b>อัตโนมัติผ่าน Hub (ใช้บน iPad + BT/IP ได้) — ถ้าไม่มีเครื่องพิมพ์แบบ Hub ค่อย fallback เปิดหน้า /table-receipt (เบราว์เซอร์) เหมือนเดิม</div>
+
+<h2>ใช้ของเดิมที่มี</h2>
+<div class="card">ระบบ raster receipt รองรับ QR อยู่แล้ว: <code>ReceiptLine.qrPayload</code> → renderer วาดเป็น QR (receipt-raster-client). แค่เพิ่ม "โหมดสลิป QR โต๊ะ" ในตัวสร้างบรรทัด</div>
+
+<h2>ไฟล์ที่แก้/เพิ่ม</h2>
+<table>
+<tr><th>ไฟล์</th><th>เปลี่ยน</th></tr>
+<tr><td><code>printing/types.ts</code></td><td>ReceiptData: ticketMode += <code>"table_qr"</code>; เพิ่ม <code>tableQrPayload?</code>, <code>tableValidUntil?</code></td></tr>
+<tr><td><code>printing/receipt-lines.ts</code></td><td><span class="new">เพิ่ม</span> <code>buildTableQrLines</code> (ชื่อร้าน + โต๊ะ + ใช้ได้ถึง + บรรทัด qrPayload + คำอธิบาย) + branch ticketMode</td></tr>
+<tr><td><code>printing/receipt-printer-bytes.ts</code></td><td>requiresRaster เป็นจริงเมื่อ table_qr; ข้อความ error เป็น "QR" ทั่วไป</td></tr>
+<tr><td><code>printing/table-qr-slip.ts</code></td><td><span class="new">ใหม่</span> <code>buildTableQrReceiptData(input)</code> → ReceiptData</td></tr>
+<tr><td><code>pos/actions.ts</code></td><td><span class="new">เพิ่ม</span> <code>getTableQrSlipAction(tableId)</code> → { slip:{storeName,tableLabel,qrPayload,validUntil}, printers } (รองรับทั้ง table_bound + session_printed)</td></tr>
+<tr><td><code>pos/TableOpenModal.tsx</code></td><td>open(): หลังเปิดโต๊ะ → ถ้ามี Hub printer → enqueue สลิป (เตือน Hub ออฟไลน์ด้วย); ไม่งั้นเปิด /table-receipt; เพิ่ม notice state</td></tr>
+<tr><td>tests</td><td>buildReceiptLines(table_qr) มีบรรทัด qrPayload; buildTableQrReceiptData</td></tr>
+</table>
+
+<h2>Flow</h2>
+<div class="card"><code>เปิดโต๊ะ → openTableAction (สร้าง session) → getTableQrSlipAction → เลือก Hub printer → enqueueReceiptPrintJob(raster QR) → Hub agent พิมพ์ความร้อน</code><br>fallback: ไม่มี Hub printer → window.open('/table-receipt')</div>
+
+<h2>ตรวจสอบ</h2>
+<div class="card">typecheck+eslint สะอาด · unit test render QR line · full suite ไม่ regress · verify ได้ผ่าน DB queue (job kind + payload) — พิมพ์จริงผ่าน agent ที่ทำงานแล้ว</div>
+</div></body></html>

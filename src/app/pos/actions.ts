@@ -32,7 +32,7 @@ import {
 import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
-import { openTableSession, closeTableSession, getStore, getTable, listManagedTables } from "@/modules/stores/repository";
+import { openTableSession, closeTableSession, getStore, getTable, listManagedTables, listPrinters } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
@@ -40,7 +40,7 @@ import { getOpenCashSession } from "@/modules/cashflow/repository";
 import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
-import type { QrOrderingMode } from "@/modules/stores/types";
+import type { Printer, QrOrderingMode } from "@/modules/stores/types";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -672,6 +672,61 @@ export async function openTableAction(
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", ...empty };
+  }
+}
+
+/**
+ * Returns everything the client needs to print a table-open QR slip on a thermal
+ * printer through the Print Hub: the customer ordering QR (for both QR modes),
+ * table label, valid-until, and the store's printers. Read-only — call after
+ * openTableAction so the session (and session_printed token) already exists.
+ */
+export async function getTableQrSlipAction(tableId: string): Promise<{
+  error: string | null;
+  slip: { storeName: string; tableLabel: string; qrPayload: string; validUntil: string | null; logoUrl: string | null } | null;
+  printers: Printer[];
+}> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง", slip: null, printers: [] };
+
+    const [storeRes, tableRes, printersRes] = await Promise.all([
+      getStore(ctx.storeId),
+      getTable(tableId, ctx.storeId),
+      listPrinters(ctx.storeId, ctx.organizationId),
+    ]);
+    const store = storeRes.data;
+    const table = tableRes.data;
+    if (!store || !table) return { error: "ไม่พบร้าน/โต๊ะ", slip: null, printers: [] };
+
+    const h = await headers();
+    const host = h.get("host") ?? "";
+    const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+    const baseUrl = host ? `${proto}://${host}` : "";
+    if (!baseUrl) return { error: "สร้าง URL ไม่สำเร็จ", slip: null, printers: [] };
+
+    const qrPayload = buildTableQrUrl({
+      baseUrl,
+      storeSlug: store.slug,
+      tableId,
+      qrMode: store.qrOrderingMode,
+      sessionId: table.currentSessionId ?? null,
+    });
+
+    return {
+      error: null,
+      slip: {
+        storeName: store.name,
+        tableLabel: table.label ?? String(table.number),
+        qrPayload,
+        validUntil: table.sessionExpiresAt ?? null,
+        logoUrl: store.logoUrl ?? null,
+      },
+      printers: printersRes.data ?? [],
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", slip: null, printers: [] };
   }
 }
 
