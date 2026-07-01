@@ -41,7 +41,18 @@ if (-not (Test-Path $AgentPath)) {
 }
 
 # Node runtime is required. Resolve it automatically so a non-technical operator
-# never has to install Node by hand: system PATH -> winget -> portable download.
+# never has to install Node by hand, and so re-running the installer never
+# re-downloads Node: system PATH -> ProgramFiles -> saved portable copy -> winget
+# -> download portable (once) into a stable per-user folder.
+$PortableNodeRoot = Join-Path $env:LOCALAPPDATA "StoreOSPrintHub\node"
+
+function Find-PortableNode {
+  if (-not (Test-Path $PortableNodeRoot)) { return $null }
+  $exe = Get-ChildItem -Path $PortableNodeRoot -Recurse -Filter "node.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($exe) { return $exe.FullName }
+  return $null
+}
+
 function Resolve-NodePath {
   # 1) Already on PATH.
   $cmd = Get-Command node -ErrorAction SilentlyContinue
@@ -51,7 +62,15 @@ function Resolve-NodePath {
   $pf = Join-Path $env:ProgramFiles "nodejs\node.exe"
   if (Test-Path $pf) { return $pf }
 
-  # 3) Try winget (Windows 10 1809+/11).
+  # 3) A portable Node this installer downloaded before (survives re-extracting
+  #    the kit to a new folder, so re-installing does NOT re-download Node).
+  $saved = Find-PortableNode
+  if ($saved) {
+    Write-Host "ใช้ Node.js แบบพกพาที่เคยติดตั้งไว้: $saved" -ForegroundColor Green
+    return $saved
+  }
+
+  # 4) Try winget (Windows 10 1809+/11).
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host "ไม่พบ Node.js — กำลังติดตั้งผ่าน winget..." -ForegroundColor Yellow
     try {
@@ -62,9 +81,9 @@ function Resolve-NodePath {
     if ($cmd) { return $cmd.Source }
   }
 
-  # 4) Last resort: download a portable Node runtime next to the agent (one-off).
-  #    Kept inside the kit folder; the scheduled task points at this exe, so do
-  #    not delete the 'node' folder afterwards.
+  # 5) Last resort: download a portable Node runtime ONCE into a stable per-user
+  #    folder (%LOCALAPPDATA%\StoreOSPrintHub\node). The scheduled task points at
+  #    this exe; it is outside the kit folder so re-extracting the kit is safe.
   Write-Host "กำลังดาวน์โหลด Node.js แบบพกพา (ครั้งเดียว ~30MB)..." -ForegroundColor Yellow
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
   $ProgressPreference = "SilentlyContinue"
@@ -75,13 +94,13 @@ function Resolve-NodePath {
   $url = "https://nodejs.org/dist/$ver/node-$ver-win-x64.zip"
   $zip = Join-Path $env:TEMP "node-$ver-win-x64.zip"
   Invoke-WebRequest -Uri $url -OutFile $zip
-  $nodeDir = Join-Path $ScriptsDir "node"
-  if (Test-Path $nodeDir) { Remove-Item -Recurse -Force $nodeDir }
-  Expand-Archive -Path $zip -DestinationPath $nodeDir -Force
+  if (Test-Path $PortableNodeRoot) { Remove-Item -Recurse -Force $PortableNodeRoot }
+  New-Item -ItemType Directory -Force -Path $PortableNodeRoot | Out-Null
+  Expand-Archive -Path $zip -DestinationPath $PortableNodeRoot -Force
   Remove-Item -Force $zip -ErrorAction SilentlyContinue
-  $exe = Get-ChildItem -Path $nodeDir -Recurse -Filter "node.exe" | Select-Object -First 1
+  $exe = Find-PortableNode
   if (-not $exe) { throw "แตกไฟล์ Node.js ไม่สำเร็จ" }
-  return $exe.FullName
+  return $exe
 }
 
 $NodePath = Resolve-NodePath
