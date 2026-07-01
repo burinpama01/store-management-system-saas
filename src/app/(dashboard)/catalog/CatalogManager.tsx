@@ -448,6 +448,26 @@ function ProductForm({
           </label>
         )}
       </div>
+      <div className="rounded border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+        <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            name="availableForDelivery"
+            defaultChecked={product?.availableForDelivery ?? false}
+            className="rounded border-gray-300"
+          />
+          ขายบนเดลิเวอรี (JDC)
+        </label>
+        <InputField
+          label="ราคาเดลิเวอรี (บาท) — เว้นว่าง = ใช้ราคาหน้าร้าน"
+          name="deliveryPrice"
+          type="number"
+          defaultValue={product?.deliveryPrice ?? ""}
+          min="0"
+          step="1"
+        />
+        <p className="text-xs text-gray-400">ติ๊กแล้วบันทึก ระบบจะดันเมนูขึ้น JDC อัตโนมัติ</p>
+      </div>
       {qrOn && (
         <div className="space-y-1">
           <label className="block text-xs font-medium text-gray-700">

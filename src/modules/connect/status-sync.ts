@@ -2,6 +2,7 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { pushOrderStatus } from "./jdc-client";
 import {
+  applyDeliveryStockDelta,
   getConnectOrder,
   recordEvent,
   updateConnectOrderStatus,
@@ -37,10 +38,24 @@ async function syncInternalOrderStatus(
     return;
   }
   if (fulfillment === "cancelled") {
+    // คืนสต็อกก่อน (อ่านรายการก่อนเปลี่ยนสถานะ) แล้วค่อยยกเลิก
+    const { data: its } = await supabase
+      .from("order_items")
+      .select("product_id, quantity")
+      .eq("order_id", internalOrderId);
+    try {
+      await applyDeliveryStockDelta(
+        (its ?? []).map((r) => ({ productId: r.product_id, qty: r.quantity })),
+        1,
+      );
+    } catch {
+      /* คืนสต็อกผิดพลาดไม่บล็อกการยกเลิก */
+    }
     await supabase
       .from("orders")
       .update({ status: "cancelled", updated_at: now })
-      .eq("id", internalOrderId);
+      .eq("id", internalOrderId)
+      .neq("status", "cancelled");
   }
 }
 

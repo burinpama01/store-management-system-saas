@@ -74,6 +74,7 @@ export default async function DeliveryPage() {
         stationPrinters={stationPrinters}
         paperWidth={paperWidth}
         printers={printers}
+        autoPrintOnArrival={Boolean(receipt.data?.autoPrintStationTickets)}
       />
     </div>
   );

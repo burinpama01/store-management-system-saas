@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { managedRealtimeSubscription } from "@/shared/realtime/realtime-client";
+import type { Printer } from "@/modules/stores/types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
+import { printKitchenForOrder, type StationPrinter } from "./delivery/print-kitchen";
 
 type OrderInsertPayload = Pick<
   Database["public"]["Tables"]["orders"]["Row"],
@@ -65,9 +67,19 @@ function extractOptionNames(value: Json): string[] {
 export function DeliveryGlobalNotifier({
   storeId,
   canManage,
+  storeName,
+  stationPrinters,
+  paperWidth,
+  printers,
+  autoPrintOnArrival,
 }: {
   storeId: string;
   canManage: boolean;
+  storeName: string;
+  stationPrinters: StationPrinter[];
+  paperWidth: "58mm" | "80mm";
+  printers: Printer[];
+  autoPrintOnArrival: boolean;
 }) {
   const router = useRouter();
   const seen = useRef(new Set<string>());
@@ -106,10 +118,29 @@ export function DeliveryGlobalNotifier({
         seen.current.add(row.id);
         playOrderSound();
         void loadDetail(row).then((order) => setOrders((prev) => [...prev, order]));
+        // auto-print ตั๋วครัวตอนออเดอร์เข้า (ครอบคลุม auto-accept) — เมื่อร้านเปิดพิมพ์อัตโนมัติ
+        if (autoPrintOnArrival) {
+          void printKitchenForOrder(row.id, {
+            storeName,
+            stationPrinters,
+            paperWidth,
+            printers,
+            billNumber: row.order_number,
+          }).catch(() => {});
+        }
       },
     });
     return unsubscribe;
-  }, [canManage, loadDetail, storeId]);
+  }, [
+    autoPrintOnArrival,
+    canManage,
+    loadDetail,
+    paperWidth,
+    printers,
+    stationPrinters,
+    storeId,
+    storeName,
+  ]);
 
   if (!canManage || !current) return null;
 

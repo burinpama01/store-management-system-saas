@@ -95,6 +95,22 @@ export async function getActiveLinkByMerchant(
   return data ? mapLink(data) : null;
 }
 
+/** หา active link ของร้าน (สำหรับ auto-sync เมนูจาก catalog) */
+export async function getActiveLinkByStore(
+  storeId: string,
+  channel: string = CONNECT_CHANNEL_JDC,
+): Promise<ChannelLink | null> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("connect_channel_links")
+    .select(LINK_COLS)
+    .eq("store_id", storeId)
+    .eq("channel", channel)
+    .eq("status", "active")
+    .maybeSingle();
+  return data ? mapLink(data) : null;
+}
+
 export async function createChannelLink(input: {
   organizationId: string;
   storeId: string;
@@ -290,6 +306,31 @@ export async function resolveProductsForInbound(
       },
     ]),
   );
+}
+
+/**
+ * ตัด/คืนสต็อกสำหรับออเดอร์เดลิเวอรี (best-effort)
+ * สต็อกอยู่ระดับ variant — เมนู delivery เป็นระดับ product จึงตัดได้เฉพาะสินค้าที่มี
+ * variant ที่ track_stock "ตัวเดียว" (กำหนดชัด); ถ้าไม่มี/หลาย variant จะข้าม
+ * sign = -1 ตัดสต็อก (ตอนรับออเดอร์), +1 คืนสต็อก (ตอนยกเลิก)
+ */
+export async function applyDeliveryStockDelta(
+  items: { productId: string; qty: number }[],
+  sign: 1 | -1,
+): Promise<void> {
+  if (items.length === 0) return;
+  const supabase = await createSupabaseServiceClient();
+  for (const it of items) {
+    const { data: variants } = await supabase
+      .from("product_variants")
+      .select("id, stock_quantity")
+      .eq("product_id", it.productId)
+      .eq("track_stock", true);
+    if (!variants || variants.length !== 1) continue; // กำหนด variant ไม่ได้ → ข้าม
+    const current = variants[0].stock_quantity ?? 0;
+    const next = Math.max(0, current + sign * it.qty);
+    await supabase.from("product_variants").update({ stock_quantity: next }).eq("id", variants[0].id);
+  }
 }
 
 // ── connect_orders ──────────────────────────────────────────────────────
