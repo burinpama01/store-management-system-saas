@@ -15,6 +15,7 @@ import {
   submitQrOrderAction,
   getTableOrdersAction,
   requestServiceAction,
+  cancelQrOrderAction,
   type QrOrderItem,
 } from "./actions";
 import { PREP_STATUS_LABEL, type QrOrderView, type ServiceRequestType } from "@/modules/qr-ordering/types";
@@ -503,6 +504,7 @@ function TrackView({
   onRefresh,
   onBack,
   onService,
+  onCancelOrder,
   serviceMsg,
   servicePending,
 }: {
@@ -512,6 +514,7 @@ function TrackView({
   onRefresh: () => void;
   onBack: () => void;
   onService: (type: ServiceRequestType, reason?: string, okMsg?: string) => void;
+  onCancelOrder: (orderId: string) => void;
   serviceMsg: string | null;
   servicePending: boolean;
 }) {
@@ -569,6 +572,20 @@ function TrackView({
                 <span>รวม</span>
                 <span>{formatPrice(order.total, currency)}</span>
               </div>
+              {order.prepStatus === "new" &&
+                order.status !== "paid" &&
+                order.status !== "cancelled" &&
+                order.status !== "voided" && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`ยกเลิกออเดอร์ #${order.orderNumber}?`)) onCancelOrder(order.id);
+                    }}
+                    disabled={servicePending}
+                    className="mt-2 w-full min-h-11 rounded-lg border border-red-200 text-red-600 text-xs font-semibold disabled:opacity-50"
+                  >
+                    ยกเลิกออเดอร์
+                  </button>
+                )}
             </div>
           ))
         )}
@@ -715,6 +732,19 @@ export default function QrOrderingApp({
     startServiceTransition(async () => {
       const res = await requestServiceAction(store.id, table.id, type, reason);
       setServiceMsg(res.error ? res.error : (okMsg ?? "แจ้งพนักงานแล้ว กำลังไปหาคุณ"));
+    });
+  }
+
+  function cancelOrder(orderId: string) {
+    setServiceMsg(null);
+    startServiceTransition(async () => {
+      const res = await cancelQrOrderAction(store.id, table.id, orderId);
+      if (res.error) {
+        setServiceMsg(res.error);
+        return;
+      }
+      setServiceMsg("ยกเลิกออเดอร์แล้ว");
+      refreshTracked(myOrderIds);
     });
   }
 
@@ -872,6 +902,7 @@ export default function QrOrderingApp({
           onRefresh={() => refreshTracked(myOrderIds)}
           onBack={() => setView("menu")}
           onService={callService}
+          onCancelOrder={cancelOrder}
           serviceMsg={serviceMsg}
           servicePending={servicePending}
         />

@@ -3541,6 +3541,10 @@ export interface Database {
         };
         Returns: string;
       };
+      cancel_qr_order_by_customer: {
+        Args: { p_store_id: string; p_table_id: string; p_order_id: string };
+        Returns: undefined;
+      };
       create_service_request: {
         Args: {
           p_store_id: string;
