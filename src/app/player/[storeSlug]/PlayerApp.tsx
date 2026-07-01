@@ -11,8 +11,12 @@ import {
   playBaseTrackAction,
   removeQueueItemAction,
   getPlayHistoryAction,
+  searchPlayerMusicAction,
+  addStoreSongAction,
+  removeStoreSongAction,
   type PlayerQueueItem,
   type PlayerBaseTrack,
+  type PlayerSearchResult,
 } from "./actions";
 
 interface YTPlayer {
@@ -46,8 +50,11 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const [idle, setIdle] = useState(false);
   const [history, setHistory] = useState<PlayHistoryItem[]>([]);
   const [basePlaylist, setBasePlaylist] = useState<PlayerBaseTrack[]>([]);
-  const [panel, setPanel] = useState<"queue" | "base" | "history">("queue");
+  const [panel, setPanel] = useState<"queue" | "base" | "search" | "history">("queue");
   const [busy, setBusy] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PlayerSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
@@ -181,6 +188,39 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     })();
   }
 
+  function doSearch() {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    setError(null);
+    void (async () => {
+      const res = await searchPlayerMusicAction(q);
+      if (res.error) setError(res.error);
+      setSearchResults(res.results);
+      setSearching(false);
+    })();
+  }
+
+  function addStoreSong(videoId: string, title: string) {
+    setBusy(true);
+    void (async () => {
+      const res = await addStoreSongAction(videoId, title);
+      if (res.error) setError(res.error);
+      setBusy(false);
+      void refreshState();
+    })();
+  }
+
+  function removeStoreSong(videoId: string) {
+    setBusy(true);
+    void (async () => {
+      const res = await removeStoreSongAction(videoId);
+      if (res.error) setError(res.error);
+      setBusy(false);
+      void refreshState();
+    })();
+  }
+
   function playItem(requestId: string) {
     setBusy(true);
     void (async () => {
@@ -292,7 +332,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
           <h1 className="truncate text-base font-bold">{storeName} · เครื่องเล่นเพลง</h1>
           {error && <span className="shrink-0 text-xs text-red-400">{error}</span>}
         </div>
-        <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
+        <div className="relative mx-auto w-full max-w-3xl bg-black lg:max-w-4xl" style={{ aspectRatio: "16 / 9" }}>
           <div id="yt-player" className="absolute inset-0 h-full w-full" />
           {idle && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
@@ -301,7 +341,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
             </div>
           )}
         </div>
-        <div className="p-4">
+        <div className="mx-auto w-full max-w-3xl p-4 lg:max-w-4xl">
           <p className="text-sm text-white/60">กำลังเล่น</p>
           <p className="mt-1 truncate text-lg font-semibold">
             {now?.title ?? "—"}
@@ -321,6 +361,12 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
               className="rounded-lg bg-white/10 px-3 py-2 text-sm disabled:opacity-40"
             >
               ⏭ ข้ามเพลงนี้
+            </button>
+            <button
+              onClick={() => setPanel(panel === "search" ? "queue" : "search")}
+              className={`rounded-lg px-3 py-2 text-sm ${panel === "search" ? "bg-violet-600" : "bg-white/10"}`}
+            >
+              🔎 ค้นหาเพลง
             </button>
             <button
               onClick={() => {
@@ -347,7 +393,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
       </div>
 
       {/* Queue side panel */}
-      <aside className="w-full shrink-0 overflow-y-auto border-t border-white/10 p-4 md:max-h-screen md:w-80 md:border-l md:border-t-0">
+      <aside className="w-full shrink-0 overflow-y-auto border-t border-white/10 p-4 md:max-h-screen md:w-80 md:border-l md:border-t-0 lg:w-96 xl:w-[26rem]">
         {panel === "history" ? (
           <>
             <p className="text-sm font-semibold text-white/80">ประวัติเพลง ({history.length})</p>
@@ -388,12 +434,67 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
                   >
                     ▶
                   </button>
+                  <button
+                    onClick={() => removeStoreSong(t.videoId)}
+                    disabled={busy}
+                    title="ลบออกจากรายการ"
+                    className="shrink-0 px-1 text-white/40 hover:text-red-400 disabled:opacity-40"
+                  >
+                    ✕
+                  </button>
                 </li>
               ))}
               {basePlaylist.length === 0 && (
                 <li className="py-6 text-center text-sm text-white/30">
-                  ยังไม่มีเพลงของร้าน — เพิ่มที่ ตั้งค่า → เครื่องเล่นเพลง
+                  ยังไม่มีเพลงของร้าน — ไปที่ 🔎 ค้นหาเพลง เพื่อเพิ่ม
                 </li>
+              )}
+            </ul>
+          </>
+        ) : panel === "search" ? (
+          <>
+            <p className="text-sm font-semibold text-white/80">ค้นหาเพลง (YouTube)</p>
+            <p className="mt-1 text-xs text-white/40">พิมพ์ชื่อเพลง แล้วกดเล่นทันที หรือเพิ่มเข้ารายการเพลงร้าน</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }}
+                placeholder="ชื่อเพลง / ศิลปิน"
+                className="min-w-0 flex-1 rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none"
+              />
+              <button
+                onClick={doSearch}
+                disabled={searching || !searchQuery.trim()}
+                className="shrink-0 rounded-lg bg-violet-600 px-3 py-2 text-sm disabled:opacity-40"
+              >
+                {searching ? "…" : "ค้นหา"}
+              </button>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {searchResults.map((r) => (
+                <li key={r.videoId} className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate">{r.title}</span>
+                  <button
+                    onClick={() => playBase(r.videoId, r.title)}
+                    disabled={busy}
+                    title="เล่นเพลงนี้เลย"
+                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
+                  >
+                    ▶
+                  </button>
+                  <button
+                    onClick={() => addStoreSong(r.videoId, r.title)}
+                    disabled={busy}
+                    title="เพิ่มเข้ารายการเพลงร้าน"
+                    className="shrink-0 px-1 text-white/60 hover:text-sky-400 disabled:opacity-40"
+                  >
+                    ＋
+                  </button>
+                </li>
+              ))}
+              {searchResults.length === 0 && !searching && (
+                <li className="py-6 text-center text-sm text-white/30">พิมพ์ชื่อเพลงแล้วกดค้นหา</li>
               )}
             </ul>
           </>

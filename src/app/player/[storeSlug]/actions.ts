@@ -12,10 +12,12 @@ import {
   playPreviousTrack,
   playRequestNow,
   playBaseTrackNow,
+  upsertMusicPlayerSettings,
   type PlayHistoryItem,
 } from "@/modules/music-requests/repository";
+import { searchYouTube } from "@/modules/music-requests/youtube";
 import { orderQueue, type NextTrack } from "@/modules/music-requests/queue-engine";
-import type { NowPlaying } from "@/modules/music-requests/types";
+import type { NowPlaying, PlaylistTrack } from "@/modules/music-requests/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -179,5 +181,86 @@ export async function getPlayHistoryAction(): Promise<{
     return { history: res.data, error: null };
   } catch (e) {
     return { history: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export interface PlayerSearchResult {
+  videoId: string;
+  title: string;
+  thumbnailUrl?: string;
+  durationSeconds?: number;
+}
+
+/** Staff searches YouTube by name to find a song to play or add to the store list. */
+export async function searchPlayerMusicAction(
+  query: string,
+): Promise<{ results: PlayerSearchResult[]; error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    await getStoreContext();
+    const { results, error } = await searchYouTube(query, { limit: 10 });
+    return {
+      results: results.map((r) => ({
+        videoId: r.videoId,
+        title: r.title,
+        thumbnailUrl: r.thumbnailUrl,
+        durationSeconds: r.durationSeconds,
+      })),
+      error,
+    };
+  } catch (e) {
+    return { results: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+async function saveBasePlaylist(
+  storeId: string,
+  organizationId: string,
+  tracks: PlaylistTrack[],
+): Promise<{ error: string | null }> {
+  const settingsRes = await getMusicPlayerSettings(storeId, organizationId);
+  const s = settingsRes.data;
+  if (!s) return { error: settingsRes.error?.userMessage ?? "โหลดการตั้งค่าไม่สำเร็จ" };
+  const res = await upsertMusicPlayerSettings(storeId, organizationId, {
+    playerEnabled: s.playerEnabled,
+    autoApprove: s.autoApprove,
+    donationEnabled: s.donationEnabled,
+    minDonation: s.minDonation,
+    maxDurationSeconds: s.maxDurationSeconds,
+    basePlaylist: tracks,
+    licensingAcknowledged: Boolean(s.licensingAcknowledgedAt),
+  });
+  return { error: res.error ? res.error.userMessage : null };
+}
+
+/** Adds a searched song to the store's own playlist (stored with its real title). */
+export async function addStoreSongAction(
+  videoId: string,
+  title: string,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    const { ctx } = await getStoreContext();
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return { error: "วิดีโอไม่ถูกต้อง" };
+    const cur = (await getMusicPlayerSettings(ctx.storeId, ctx.organizationId)).data?.basePlaylist ?? [];
+    if (cur.some((t) => t.videoId === videoId)) return { error: "มีเพลงนี้ในรายการแล้ว" };
+    if (cur.length >= 100) return { error: "รายการเพลงเต็มแล้ว (สูงสุด 100)" };
+    const next: PlaylistTrack[] = [...cur, { videoId, title: (title ?? "").slice(0, 200) || videoId }];
+    return await saveBasePlaylist(ctx.storeId, ctx.organizationId, next);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** Removes a song from the store's own playlist. */
+export async function removeStoreSongAction(videoId: string): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    const { ctx } = await getStoreContext();
+    const cur = (await getMusicPlayerSettings(ctx.storeId, ctx.organizationId)).data?.basePlaylist ?? [];
+    const next = cur.filter((t) => t.videoId !== videoId);
+    return await saveBasePlaylist(ctx.storeId, ctx.organizationId, next);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
