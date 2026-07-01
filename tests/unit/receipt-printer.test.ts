@@ -13,13 +13,21 @@ vi.mock("@/modules/printing/print-service", () => ({
   },
 }));
 
+vi.mock("@/modules/printing/network-print-client", () => ({
+  enqueueReceiptPrintJob: vi.fn().mockResolvedValue({ hubOnline: true }),
+}));
+
 import { printReceiptAuto } from "@/modules/printing/print-router";
 import { printService } from "@/modules/printing/print-service";
+import { enqueueReceiptPrintJob } from "@/modules/printing/network-print-client";
 import {
   ReceiptPrintFallbackError,
+  autoPrintReceipt,
+  isHubReceiptPrinter,
   printReceiptWithFallback,
   selectConfiguredPrinter,
   selectDefaultPrinter,
+  selectHubReceiptPrinter,
 } from "@/modules/printing/receipt-printer";
 
 const receipt: ReceiptData = {
@@ -175,6 +183,82 @@ describe("printReceiptWithFallback", () => {
       fallbackError: fallbackFailure,
     });
     await expect(promise).rejects.toBeInstanceOf(ReceiptPrintFallbackError);
+  });
+});
+
+function btHubPrinter(id: string, isDefault: boolean, comPort = "COM5"): Printer {
+  return {
+    id,
+    storeId: "store-1",
+    organizationId: "org-1",
+    name: id,
+    type: "bluetooth",
+    isDefault,
+    hubBluetoothPort: comPort,
+    paperWidth: "80mm",
+    createdAt: "2026-06-19T00:00:00.000Z",
+    updatedAt: "2026-06-19T00:00:00.000Z",
+  };
+}
+
+describe("isHubReceiptPrinter", () => {
+  it("recognizes LAN and Bluetooth-via-Hub printers, not direct BT/USB", () => {
+    expect(isHubReceiptPrinter(printer("ip", true))).toBe(true);
+    expect(isHubReceiptPrinter(btHubPrinter("bt-hub", true))).toBe(true);
+    expect(isHubReceiptPrinter({ ...btHubPrinter("bt-direct", true), hubBluetoothPort: undefined })).toBe(false);
+    expect(isHubReceiptPrinter({ ...printer("no-ip", true), ipAddress: undefined })).toBe(false);
+  });
+});
+
+describe("autoPrintReceipt", () => {
+  beforeEach(() => {
+    vi.mocked(printReceiptAuto).mockClear();
+    vi.mocked(enqueueReceiptPrintJob).mockClear();
+    vi.mocked(enqueueReceiptPrintJob).mockResolvedValue({ hubOnline: true });
+  });
+
+  it("enqueues to the Hub for a Hub-capable default printer (iPad-safe)", async () => {
+    const btHub = btHubPrinter("bt-hub", true);
+    const result = await autoPrintReceipt({ printers: [btHub], escpos, browser: receipt });
+    expect(result.printer).toBe(btHub);
+    expect(enqueueReceiptPrintJob).toHaveBeenCalledWith(btHub.id, { ...receipt, paperWidth: "80mm" });
+    expect(printReceiptAuto).not.toHaveBeenCalled();
+  });
+
+  it("surfaces hubOnline=false so callers can warn that the cashier PC Hub is offline", async () => {
+    vi.mocked(enqueueReceiptPrintJob).mockResolvedValueOnce({ hubOnline: false });
+    const result = await autoPrintReceipt({ printers: [btHubPrinter("bt-hub", true)], escpos, browser: receipt });
+    expect(result.hubOnline).toBe(false);
+  });
+
+  it("falls back to browser printing when no Hub printer is configured", async () => {
+    const result = await autoPrintReceipt({ printers: [], escpos, browser: receipt });
+    expect(result.channel).toBe("pdf");
+    expect(enqueueReceiptPrintJob).not.toHaveBeenCalled();
+    expect(printReceiptAuto).toHaveBeenCalledWith(escpos, receipt);
+  });
+
+  it("selectHubReceiptPrinter ignores a direct Bluetooth default printer", () => {
+    const direct = { ...btHubPrinter("bt-direct", true), hubBluetoothPort: undefined };
+    expect(selectHubReceiptPrinter([direct])).toBeNull();
+  });
+});
+
+describe("printReceiptWithFallback — Bluetooth via Hub", () => {
+  beforeEach(() => {
+    vi.mocked(printReceiptAuto).mockClear();
+    vi.mocked(printService.print).mockClear();
+    vi.mocked(enqueueReceiptPrintJob).mockClear();
+    vi.mocked(enqueueReceiptPrintJob).mockResolvedValue({ hubOnline: true });
+  });
+
+  it("enqueues to the Hub instead of Web Bluetooth for a bt-hub configured printer", async () => {
+    const btHub = btHubPrinter("bt-hub", true);
+    const result = await printReceiptWithFallback({ printers: [btHub], escpos, browser: receipt });
+    expect(result.channel).toBe("configured");
+    expect(result.printer).toBe(btHub);
+    expect(enqueueReceiptPrintJob).toHaveBeenCalledWith(btHub.id, { ...receipt, paperWidth: "80mm" });
+    expect(printService.print).not.toHaveBeenCalled();
   });
 });
 

@@ -18,18 +18,21 @@ function repeatReceiptJob(job: Uint8Array, copies: number): Uint8Array {
  */
 export async function buildReceiptPrinterBytes(escpos: EscPosReceiptInput, browser: ReceiptData): Promise<Uint8Array> {
   const copies = normalizePrintCopies(browser.printCopies);
-  const requiresRaster = Boolean(buildReceiptPromptPayQr(browser));
+  // QR-bearing receipts (PromptPay, or a table-open QR slip) must render as a
+  // raster image so the QR is scannable and Thai text is code-page-independent.
+  const requiresRaster = Boolean(buildReceiptPromptPayQr(browser)) || browser.ticketMode === "table_qr";
+  const rasterError = "QR ต้องพิมพ์ผ่าน raster image กรุณาสั่งพิมพ์จาก browser ที่รองรับ canvas";
   try {
     const raster = await renderReceiptRaster(browser);
     if (raster && raster.length > 8) return repeatReceiptJob(raster, copies);
   } catch {
     if (requiresRaster) {
-      throw new Error("QR PromptPay ต้องพิมพ์ผ่าน raster image กรุณาสั่งพิมพ์จาก browser ที่รองรับ canvas");
+      throw new Error(rasterError);
     }
     /* fall through to text ESC/POS */
   }
   if (requiresRaster) {
-    throw new Error("QR PromptPay ต้องพิมพ์ผ่าน raster image กรุณาสั่งพิมพ์จาก browser ที่รองรับ canvas");
+    throw new Error(rasterError);
   }
   return repeatReceiptJob(buildEscPosReceipt(escpos), copies);
 }

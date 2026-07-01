@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>แผน: auto-print ใบเสร็จทุกจุดผ่าน Print Hub (v1)</title>
+<style>
+  body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:#0f172a;color:#e2e8f0;line-height:1.7;padding:32px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{font-size:1.55rem;border-bottom:2px solid #38bdf8;padding-bottom:12px}
+  h2{color:#38bdf8;margin-top:28px}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px 20px;margin:12px 0}
+  code{background:#0b1220;color:#7dd3fc;padding:1px 6px;border-radius:5px}
+  table{border-collapse:collapse;width:100%;margin:8px 0}
+  th,td{border:1px solid #334155;padding:8px 10px;text-align:left;font-size:.9rem;vertical-align:top}
+  th{background:#0b1220;color:#38bdf8}
+  .new{color:#34d399;font-weight:700}.old{color:#f87171}
+  .muted{color:#94a3b8}
+</style>
+</head>
+<body><div class="wrap">
+<h1>ทำให้ auto-print "ใบเสร็จ" ทุกจุดวิ่งผ่าน Print Hub</h1>
+<p class="muted">2026-06-30 · ปิดช่องโหว่: ปัจจุบันมีแต่ "ตั๋วครัว" ที่ผ่าน Hub; ใบเสร็จของ QR/Delivery ใช้เบราว์เซอร์ (Web Bluetooth/USB) → iPad พิมพ์ไม่ได้; POS ถ้าตั้ง printer เป็น Bluetooth ก็ไป Web Bluetooth</p>
+
+<h2>เป้าหมาย</h2>
+<div class="card">ใบเสร็จ auto-print ทุกจุด (POS / QR / Delivery) ต้อง <b>enqueue เข้า Hub ด้วย printerId</b> เมื่อเครื่องพิมพ์หลักเป็นชนิดที่ Hub รองรับ (IP/WiFi หรือ Bluetooth-ผ่าน-Hub) — ให้ทำงานบน iPad; ถ้าไม่มีเครื่องพิมพ์แบบ Hub ค่อย fallback ไปเบราว์เซอร์ (BT/USB) เหมือนเดิม</div>
+
+<h2>สถานะปัจจุบัน vs หลังแก้</h2>
+<table>
+<tr><th>จุด</th><th>ใบเสร็จ (ก่อน)</th><th>ใบเสร็จ (หลัง)</th></tr>
+<tr><td>POS จ่ายเงิน</td><td>IP=Hub ✅ / Bluetooth=Web BT ❌</td><td class="new">IP=Hub ✅ / BT-Hub=Hub ✅ / else browser</td></tr>
+<tr><td>QR orders</td><td class="old">เบราว์เซอร์เท่านั้น ❌</td><td class="new">Hub (ถ้ามี default printer แบบ Hub) ✅ / else browser</td></tr>
+<tr><td>Delivery (ตั๋วรวมบิล)</td><td class="old">เบราว์เซอร์เท่านั้น ❌</td><td class="new">Hub ✅ / else browser</td></tr>
+</table>
+
+<h2>ไฟล์ที่แก้</h2>
+<table>
+<tr><th>ไฟล์</th><th>เปลี่ยน</th></tr>
+<tr><td><code>network-print-client.ts</code></td><td><span class="new">เพิ่ม</span> <code>enqueueReceiptPrintJob(printerId, receiptData)</code> — render raster + POST /api/print/enqueue</td></tr>
+<tr><td><code>receipt-printer.ts</code></td><td>เพิ่ม <code>isHubReceiptPrinter()</code>, <code>selectHubReceiptPrinter()</code>, <code>autoPrintReceipt()</code> (Hub→browser); ใน <code>printReceiptWithFallback</code> เพิ่ม branch: printer ชนิด bluetooth+hubBluetoothPort → enqueue (แทน Web BT)</td></tr>
+<tr><td><code>QrOrderGlobalNotifier.tsx</code></td><td>รับ prop <code>receiptPrinters</code>; gate อนุญาตพิมพ์ถ้ามี Hub printer หรือ browser ต่อ; <code>printQrKitchenOrder</code> ใช้ <code>autoPrintReceipt</code></td></tr>
+<tr><td><code>layout.tsx</code></td><td>ดึง <code>listPrinters</code> ส่ง <code>receiptPrinters</code> เข้า QrOrderGlobalNotifier</td></tr>
+<tr><td><code>DeliveryBoard.tsx</code></td><td>printOpts เพิ่ม <code>printers</code>; ตั๋วรวมบิลใช้ <code>autoPrintReceipt</code></td></tr>
+<tr><td><code>delivery/page.tsx</code></td><td>ดึง <code>listPrinters</code> ส่งเข้า DeliveryBoard</td></tr>
+<tr><td>tests</td><td>isHubReceiptPrinter + autoPrintReceipt routing (inject fetcher/printReceiptAuto)</td></tr>
+</table>
+
+<h2>หลักการเลือกเครื่องพิมพ์</h2>
+<div class="card">
+<code>selectConfiguredPrinter(printers, preferredId)</code> → preferred ก่อน ไม่งั้น default (isDefault). ถ้าเครื่องที่เลือกเป็น <code>isHubReceiptPrinter</code> = ip/escpos ที่มี ipAddress <b>หรือ</b> bluetooth ที่มี hubBluetoothPort → enqueue เข้า Hub. ไม่งั้น → <code>printReceiptAuto</code> (BT/USB/PDF).
+<p class="muted">หมายเหตุ: ไม่แตะเส้น IP เดิมของ POS (printService→ipAdapter→sendNetworkPrintJob = bridge-ก่อน-แล้ว-enqueue เร็วบนเครื่องแคชเชียร์) — เพิ่มเฉพาะ BT-Hub + เปลี่ยน QR/Delivery มาใช้ router ใหม่</p>
+</div>
+
+<h2>ตรวจสอบ</h2>
+<div class="card">typecheck + eslint สะอาด · unit test router · full suite ไม่ regress · verify ได้จริงผ่าน DB queue (job kind/printerId ที่ถูก enqueue) — และ agent SerialPort ที่แก้ไปแล้วจะพิมพ์ออก</div>
+</div></body></html>

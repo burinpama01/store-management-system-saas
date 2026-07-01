@@ -15,6 +15,7 @@ import {
   submitQrOrderAction,
   getTableOrdersAction,
   requestServiceAction,
+  cancelQrOrderAction,
   type QrOrderItem,
 } from "./actions";
 import { PREP_STATUS_LABEL, type QrOrderView, type ServiceRequestType } from "@/modules/qr-ordering/types";
@@ -503,6 +504,7 @@ function TrackView({
   onRefresh,
   onBack,
   onService,
+  onCancel,
   serviceMsg,
   servicePending,
 }: {
@@ -512,6 +514,7 @@ function TrackView({
   onRefresh: () => void;
   onBack: () => void;
   onService: (type: ServiceRequestType, reason?: string, okMsg?: string) => void;
+  onCancel: (orderId: string) => void;
   serviceMsg: string | null;
   servicePending: boolean;
 }) {
@@ -556,12 +559,15 @@ function TrackView({
               </div>
               <ul className="mt-2 space-y-1">
                 {order.items.map((it) => (
-                  <li key={it.id} className="flex justify-between text-sm text-gray-600">
-                    <span>
+                  <li key={it.id} className={`flex justify-between text-sm ${it.voided ? "text-gray-300" : "text-gray-600"}`}>
+                    <span className={it.voided ? "line-through" : ""}>
                       {it.quantity}× {it.productName}
                       {it.variantName ? ` (${it.variantName})` : ""}
+                      {it.voided && (
+                        <span className="ml-1 text-red-400 no-underline">({it.voidedReason ?? "ของหมด"})</span>
+                      )}
                     </span>
-                    <span>{formatPrice(it.totalPrice, currency)}</span>
+                    <span className={it.voided ? "line-through" : ""}>{formatPrice(it.totalPrice, currency)}</span>
                   </li>
                 ))}
               </ul>
@@ -569,6 +575,20 @@ function TrackView({
                 <span>รวม</span>
                 <span>{formatPrice(order.total, currency)}</span>
               </div>
+              {order.prepStatus === "new" &&
+                order.status !== "paid" &&
+                order.status !== "cancelled" &&
+                order.status !== "voided" && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`ยกเลิกออเดอร์ #${order.orderNumber}?`)) onCancel(order.id);
+                    }}
+                    disabled={servicePending}
+                    className="mt-2 w-full min-h-11 rounded-lg border border-red-200 text-red-600 text-xs font-semibold disabled:opacity-50"
+                  >
+                    ยกเลิกออเดอร์
+                  </button>
+                )}
             </div>
           ))
         )}
@@ -715,6 +735,19 @@ export default function QrOrderingApp({
     startServiceTransition(async () => {
       const res = await requestServiceAction(store.id, table.id, type, reason);
       setServiceMsg(res.error ? res.error : (okMsg ?? "แจ้งพนักงานแล้ว กำลังไปหาคุณ"));
+    });
+  }
+
+  function cancelOrder(orderId: string) {
+    setServiceMsg(null);
+    startServiceTransition(async () => {
+      const res = await cancelQrOrderAction(store.id, table.id, orderId);
+      if (res.error) {
+        setServiceMsg(res.error);
+        return;
+      }
+      setServiceMsg("ยกเลิกออเดอร์แล้ว");
+      refreshTracked(myOrderIds);
     });
   }
 
@@ -872,6 +905,7 @@ export default function QrOrderingApp({
           onRefresh={() => refreshTracked(myOrderIds)}
           onBack={() => setView("menu")}
           onService={callService}
+          onCancel={cancelOrder}
           serviceMsg={serviceMsg}
           servicePending={servicePending}
         />

@@ -137,8 +137,40 @@ function buildKitchenTicketLines(data: ReceiptData): { lines: ReceiptLine[]; col
   return { lines, cols };
 }
 
+/**
+ * Table-open slip: store name, table, valid-until, and the customer ordering QR
+ * (rendered from `tableQrPayload`) so guests scan to order at their table.
+ */
+function buildTableQrLines(data: ReceiptData): { lines: ReceiptLine[]; cols: number } {
+  const cols = RECEIPT_COLS[data.paperWidth];
+  const div = "-".repeat(cols);
+  const lines: ReceiptLine[] = [];
+
+  if (data.logoUrl) lines.push({ text: "", align: "center", imageUrl: data.logoUrl, imageKind: "logo" });
+  lines.push({ text: data.storeName, align: "center", bold: true });
+  lines.push({ text: "ใบเปิดโต๊ะ", align: "center" });
+  lines.push({ text: div });
+  if (data.tableNumber) lines.push({ text: `โต๊ะ ${data.tableNumber}`, align: "center", bold: true });
+  if (data.tableValidUntil) {
+    lines.push({
+      text: `ใช้ได้ถึง ${new Date(data.tableValidUntil).toLocaleString("th-TH", {
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      })} น.`,
+      align: "center",
+    });
+  }
+  lines.push({ text: "สแกนเพื่อสั่งอาหาร", align: "center", bold: true });
+  if (data.tableQrPayload) {
+    lines.push({ text: "", align: "center", qrPayload: data.tableQrPayload });
+  }
+  lines.push({ text: "หมดเวลาแล้วกรุณาแจ้งพนักงาน", align: "center" });
+  lines.push({ text: div });
+  return { lines, cols };
+}
+
 export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; cols: number } {
   if (data.ticketMode === "kitchen") return buildKitchenTicketLines(data);
+  if (data.ticketMode === "table_qr") return buildTableQrLines(data);
 
   const cols = RECEIPT_COLS[data.paperWidth];
   const div = "-".repeat(cols);

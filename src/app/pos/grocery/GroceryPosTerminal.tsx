@@ -67,6 +67,9 @@ function printSuccessMessage(base: string, result: ReceiptPrintResult, printerLo
   if (printerLoadError) {
     return `${base} (โหลดการตั้งค่าเครื่องพิมพ์ไม่สำเร็จ: ${printerLoadError} จึงใช้ช่องทางสำรอง)`;
   }
+  if (result.hubOnline === false) {
+    return "ส่งเข้าคิวแล้ว แต่ Hub (เครื่องแคชเชียร์) ออฟไลน์ — จะพิมพ์เมื่อเปิดเครื่อง";
+  }
   if (!result.fallbackFromPrinter) return base;
   return `${base} (เครื่อง ${result.fallbackFromPrinter.name} ใช้ไม่ได้ จึงใช้ช่องทางสำรอง)`;
 }

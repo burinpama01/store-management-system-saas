@@ -2120,7 +2120,7 @@ export interface Database {
           table_id: string | null;
           table_number: string | null;
           buffet_session_id: string | null;
-          cashier_id: string;
+          cashier_id: string | null;
           system_account_id: string | null;
           customer_id: string | null;
           coupon_id: string | null;
@@ -2150,7 +2150,7 @@ export interface Database {
           table_id?: string | null;
           table_number?: string | null;
           buffet_session_id?: string | null;
-          cashier_id: string;
+          cashier_id?: string | null;
           system_account_id?: string | null;
           customer_id?: string | null;
           coupon_id?: string | null;
@@ -2180,7 +2180,7 @@ export interface Database {
           table_id?: string | null;
           table_number?: string | null;
           buffet_session_id?: string | null;
-          cashier_id?: string;
+          cashier_id?: string | null;
           system_account_id?: string | null;
           customer_id?: string | null;
           coupon_id?: string | null;
@@ -2222,6 +2222,8 @@ export interface Database {
           discount_value: number | null;
           discount_note: string | null;
           note: string | null;
+          voided: boolean;
+          voided_reason: string | null;
         };
         Insert: {
           id?: string;
@@ -2241,6 +2243,8 @@ export interface Database {
           discount_value?: number | null;
           discount_note?: string | null;
           note?: string | null;
+          voided?: boolean;
+          voided_reason?: string | null;
         };
         Update: {
           id?: string;
@@ -2260,6 +2264,8 @@ export interface Database {
           discount_value?: number | null;
           discount_note?: string | null;
           note?: string | null;
+          voided?: boolean;
+          voided_reason?: string | null;
         };
         Relationships: [];
       };
@@ -3540,6 +3546,14 @@ export interface Database {
           p_items?: Json;
         };
         Returns: string;
+      };
+      cancel_qr_order_by_customer: {
+        Args: { p_store_id: string; p_table_id: string; p_order_id: string };
+        Returns: undefined;
+      };
+      void_qr_order_item: {
+        Args: { p_store_id: string; p_order_id: string; p_item_id: string; p_reason?: string | null };
+        Returns: undefined;
       };
       create_service_request: {
         Args: {

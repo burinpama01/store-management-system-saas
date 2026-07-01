@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AuthorizationError, getOptionalResolvedCurrentPermissions } from "@/modules/auth/guards";
 import {
+  summarizeHubStatus,
   validateHubBluetoothPort,
   validatePrintPayloadBase64,
   validatePrintTarget,
 } from "@/modules/printing/print-hub";
-import { enqueuePrintJob } from "@/modules/printing/print-hub-repository";
+import { enqueuePrintJob, getHubStatus } from "@/modules/printing/print-hub-repository";
 import { getPrinter } from "@/modules/stores/repository";
+
+/** True when the store's Print Hub has polled recently (else jobs wait in queue). */
+async function isHubOnline(storeId: string): Promise<boolean> {
+  const status = await getHubStatus(storeId);
+  return summarizeHubStatus(status.data?.lastSeen ?? null).online;
+}
 
 /**
  * Enqueues a print job for the store's Print Hub. Used by tablet/iPad POS that
@@ -79,7 +86,7 @@ export async function POST(req: NextRequest) {
     if (enqueuedBt.error || !enqueuedBt.data) {
       return NextResponse.json({ error: enqueuedBt.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, jobId: enqueuedBt.data.id });
+    return NextResponse.json({ ok: true, jobId: enqueuedBt.data.id, hubOnline: await isHubOnline(ctx.storeId) });
   }
 
   if (printer.type !== "ip" && printer.type !== "escpos") {
@@ -107,5 +114,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: enqueued.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, jobId: enqueued.data.id });
+  return NextResponse.json({ ok: true, jobId: enqueued.data.id, hubOnline: await isHubOnline(ctx.storeId) });
 }

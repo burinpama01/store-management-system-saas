@@ -1,5 +1,7 @@
 import type { Printer } from "@/modules/stores/types";
 import type { ReceiptData } from "./types";
+import { bytesToBase64 } from "./print-job-base64";
+import { buildReceiptPrinterBytes } from "./receipt-printer-bytes";
 
 export const DEFAULT_LOCAL_PRINT_BRIDGE_URL = "http://127.0.0.1:17878";
 
@@ -65,6 +67,32 @@ async function postJson(fetcher: Fetcher, url: string, body: unknown) {
     const json = await res.json().catch(() => ({}));
     throw new Error(parseErrorBody(json) ?? `เชื่อมต่อ IP / WiFi ไม่สำเร็จ (${res.status})`);
   }
+}
+
+/**
+ * Renders a receipt to raster bytes and enqueues it to the store's Print Hub by
+ * printer id. The enqueue endpoint decides the transport from the printer type
+ * (LAN TCP for ip/escpos, COM/Bluetooth for bluetooth-via-Hub), so this works
+ * for any Hub-capable printer and on tablets/iPad that cannot print directly.
+ */
+export async function enqueueReceiptPrintJob(
+  printerId: string,
+  receiptData: ReceiptData,
+  options: { fetcher?: Fetcher } = {},
+): Promise<{ hubOnline: boolean | null }> {
+  const fetcher = options.fetcher ?? fetch;
+  const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(receiptData, receiptData));
+  const res = await fetcher("/api/print/enqueue", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ printerId, printJobBase64 }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(parseErrorBody(body) ?? `ส่งงานพิมพ์ผ่าน Hub ไม่สำเร็จ (${res.status})`);
+  }
+  // hubOnline=false means the job is queued but the cashier PC Hub is offline.
+  return { hubOnline: typeof body.hubOnline === "boolean" ? body.hubOnline : null };
 }
 
 export async function sendNetworkPrintJob(

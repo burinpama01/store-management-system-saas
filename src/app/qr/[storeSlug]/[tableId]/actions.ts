@@ -423,7 +423,7 @@ export async function getTableOrdersAction(
 
   const { data: itemRows } = await supabase
     .from("order_items")
-    .select("id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note")
+    .select("id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note, voided, voided_reason")
     .in("order_id", rows.map((r) => r.id));
 
   const itemsByOrder = new Map<string, QrOrderView["items"]>();
@@ -440,6 +440,8 @@ export async function getTableOrdersAction(
       unitPrice: it.unit_price,
       totalPrice: it.total_price,
       note: it.note ?? undefined,
+      voided: it.voided,
+      voidedReason: it.voided_reason ?? undefined,
     });
     itemsByOrder.set(it.order_id, next);
   }
@@ -523,5 +525,39 @@ export async function requestServiceAction(
       source: "qr",
     },
   });
+  return { ok: true, error: null };
+}
+
+/**
+ * Lets a customer cancel their own QR order — but only while the kitchen has not
+ * accepted it yet (prep_status = 'new'). Restores the stock deducted at creation.
+ */
+export async function cancelQrOrderAction(
+  storeId: string,
+  tableId: string,
+  orderId: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  if (!isUUID(storeId) || !isUUID(tableId) || !isUUID(orderId)) {
+    return { ok: false, error: "คำขอไม่ถูกต้อง" };
+  }
+
+  const supabase = await createSupabaseServiceClient();
+
+  const { data: store, error: storeErr } = await supabase
+    .from("stores")
+    .select("id, is_active, qr_ordering_enabled")
+    .eq("id", storeId)
+    .single();
+  if (storeErr || !store) return { ok: false, error: "ไม่พบร้าน" };
+  if (!store.is_active || !store.qr_ordering_enabled) {
+    return { ok: false, error: "ร้านไม่พร้อมรับ QR order" };
+  }
+
+  const { error } = await supabase.rpc("cancel_qr_order_by_customer", {
+    p_store_id: storeId,
+    p_table_id: tableId,
+    p_order_id: orderId,
+  });
+  if (error) return { ok: false, error: error.message };
   return { ok: true, error: null };
 }

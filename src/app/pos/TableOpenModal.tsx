@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { listTablesForOpenAction, openTableAction, closeTableAction, type OpenTableStatus } from "./actions";
+import { getTableQrSlipAction, listTablesForOpenAction, openTableAction, closeTableAction, type OpenTableStatus } from "./actions";
+import { selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
+import { enqueueReceiptPrintJob } from "@/modules/printing/network-print-client";
+import { buildTableQrReceiptData } from "@/modules/printing/table-qr-slip";
 import { Button } from "@/shared/components/ui";
 
 interface Props {
@@ -21,6 +24,7 @@ export function TableOpenModal({ onClose, onSelectTable }: Props) {
   const [tables, setTables] = useState<OpenTableStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const load = useCallback(() => {
@@ -39,14 +43,35 @@ export function TableOpenModal({ onClose, onSelectTable }: Props) {
 
   function open(t: OpenTableStatus) {
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const res = await openTableAction(t.id);
       if (res.error) {
         setError(res.error);
         return;
       }
-      // Open the printable table receipt (QR + valid-until) in a new tab.
-      window.open(`/table-receipt?tableId=${t.id}`, "_blank", "noopener,noreferrer");
+      const label = t.label ?? t.number;
+      try {
+        const slipRes = await getTableQrSlipAction(t.id);
+        const hubPrinter = slipRes.slip ? selectHubReceiptPrinter(slipRes.printers) : null;
+        if (hubPrinter && slipRes.slip) {
+          // Print the table QR on the thermal printer via the Print Hub (iPad-safe).
+          const receipt = buildTableQrReceiptData({ ...slipRes.slip, paperWidth: hubPrinter.paperWidth });
+          const { hubOnline } = await enqueueReceiptPrintJob(hubPrinter.id, receipt);
+          setNotice(
+            hubOnline === false
+              ? `เปิดโต๊ะ ${label} แล้ว · ส่ง QR เข้าคิว แต่ Hub ออฟไลน์ จะพิมพ์เมื่อเปิดเครื่องแคชเชียร์`
+              : `เปิดโต๊ะ ${label} + พิมพ์ QR ผ่าน Hub แล้ว`,
+          );
+        } else {
+          // No Hub printer configured — open the printable page (browser print).
+          window.open(`/table-receipt?tableId=${t.id}`, "_blank", "noopener,noreferrer");
+        }
+      } catch (e) {
+        // The table is open; printing failed — offer the browser printable page.
+        setError(e instanceof Error ? e.message : "พิมพ์ QR ไม่สำเร็จ");
+        window.open(`/table-receipt?tableId=${t.id}`, "_blank", "noopener,noreferrer");
+      }
       load();
     });
   }
@@ -76,6 +101,7 @@ export function TableOpenModal({ onClose, onSelectTable }: Props) {
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          {notice && <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
           {loading ? (
             <p className="py-8 text-center text-sm text-gray-400">กำลังโหลด...</p>
           ) : tables.length === 0 ? (

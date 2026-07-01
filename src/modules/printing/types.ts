@@ -48,10 +48,15 @@ export interface ReceiptData {
   headerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
-  /** "receipt" (default) prints the full bill; "kitchen" prints a station prep ticket (no prices). */
-  ticketMode?: "receipt" | "kitchen";
+  /** "receipt" (default) = full bill; "kitchen" = station prep ticket (no prices);
+   *  "table_qr" = a table-open slip with the customer ordering QR. */
+  ticketMode?: "receipt" | "kitchen" | "table_qr";
   /** Station label shown at the top of a kitchen ticket (e.g. "ครัวร้อน", "บาร์น้ำ"). */
   stationName?: string;
+  /** table_qr slip: the customer ordering URL rendered as a scannable QR. */
+  tableQrPayload?: string;
+  /** table_qr slip: ISO time the table session is valid until (shown on the slip). */
+  tableValidUntil?: string;
   paperWidth: "58mm" | "80mm";
   printCopies?: number;
   printedAt: string;

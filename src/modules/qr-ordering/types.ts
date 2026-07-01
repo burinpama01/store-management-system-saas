@@ -15,6 +15,8 @@ export interface QrOrderLine {
   unitPrice: number;
   totalPrice: number;
   note?: string;
+  voided?: boolean;
+  voidedReason?: string;
 }
 
 /** A QR order as seen by the customer (tracking) and the restaurant (board). */
