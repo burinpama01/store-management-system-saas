@@ -24,7 +24,7 @@ describe("reports repository store anchors", () => {
     expect(repository).toContain('rpc("get_report_sales_summary"');
     expect(repository).toContain('rpc("get_report_daily_sales"');
     expect(repository).not.toContain("throw new Error(\"Unable to load report sales summary\")");
-    expect(repository).toContain('select("id, total, qr_order_source, paid_at")');
+    expect(repository).toContain('select("id, total, qr_order_source, order_number, paid_at")');
     expect(repository).toContain("summaryResult.error");
     expect(repository).toContain("mapReportSalesFallback(reportOrders, dateFrom, dateTo)");
     expect(repository).toContain("mapDailySalesFallback(reportOrders)");
@@ -123,8 +123,9 @@ describe("reports repository dashboard behavior", () => {
       summaryResult: { data: null, error: { message: "missing function" } },
       paidOrdersResult: {
         data: [
-          { id: "order-1", total: "10.25", qr_order_source: true },
-          { id: "order-2", total: 21.5, qr_order_source: false },
+          { id: "order-1", total: "10.25", qr_order_source: true, order_number: "QR-0001" },
+          { id: "order-2", total: 21.5, qr_order_source: false, order_number: "POS-0001" },
+          { id: "order-3", total: 40, qr_order_source: false, order_number: "JDC-AB12CD34EF56" },
         ],
         error: null,
       },
@@ -145,14 +146,18 @@ describe("reports repository dashboard behavior", () => {
     const { getDashboardData } = await import("@/modules/reports/repository");
     const dashboard = await getDashboardData("store-1");
 
-    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source");
+    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, order_number");
     expect(paymentsQuery.select).toHaveBeenCalledWith("method, amount, orders!inner(store_id)");
     expect(dashboard.todaySales).toMatchObject({
-      orderCount: 2,
-      revenue: 31.75,
-      avgOrderValue: 15.88,
+      orderCount: 3,
+      revenue: 71.75,
+      avgOrderValue: 23.92,
       qrOrderCount: 1,
       posOrderCount: 1,
+      deliveryOrderCount: 1,
+      qrRevenue: 10.25,
+      posRevenue: 21.5,
+      deliveryRevenue: 40,
     });
     expect(dashboard.pendingOrderCount).toBe(3);
     expect(dashboard.topProductsToday).toEqual([
@@ -194,8 +199,8 @@ describe("reports repository dashboard behavior", () => {
     vi.resetModules();
     const paidOrdersQuery = chainResult({
       data: [
-        { id: "order-1", total: "120.50", qr_order_source: true, paid_at: "2026-06-05T03:00:00.000Z" },
-        { id: "order-2", total: 79.5, qr_order_source: false, paid_at: "2026-06-05T04:00:00.000Z" },
+        { id: "order-1", total: "120.50", qr_order_source: true, order_number: "QR-0001", paid_at: "2026-06-05T03:00:00.000Z" },
+        { id: "order-2", total: 79.5, qr_order_source: false, order_number: "POS-0001", paid_at: "2026-06-05T04:00:00.000Z" },
       ],
       error: null,
     }, ["lt"]);
@@ -225,13 +230,14 @@ describe("reports repository dashboard behavior", () => {
 
     const report = await getReportData("store-1", "2026-06-05", "2026-06-05");
 
-    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, paid_at");
+    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, order_number, paid_at");
     expect(report.salesSummary).toMatchObject({
       orderCount: 2,
       revenue: 200,
       avgOrderValue: 100,
       qrOrderCount: 1,
       posOrderCount: 1,
+      deliveryOrderCount: 0,
     });
     expect(report.dailySales).toEqual([{ date: "2026-06-05", orderCount: 2, revenue: 200 }]);
   });

@@ -112,6 +112,24 @@ export function canPosTransition(
   return { ok: true };
 }
 
+/** ตัวเลือกย่อยในกลุ่ม (→ JDC menu_options; price = ส่วนเพิ่มจากราคาเมนู, JDC เก็บเป็น int บาท) */
+export interface ConnectMenuOptionPayload {
+  name: string;
+  price: number;
+  is_available: boolean;
+}
+
+/**
+ * กลุ่มตัวเลือกของเมนู (→ JDC menu_option_groups + menu_item_option_links)
+ * มาจาก 2 แหล่งฝั่ง StoreOS: product_variants (กลุ่มบังคับเลือก 1) และ modifier_groups
+ */
+export interface ConnectMenuOptionGroupPayload {
+  name: string;
+  min_selection: number;
+  max_selection: number;
+  options: ConnectMenuOptionPayload[];
+}
+
 /** payload เมนูที่ส่งไป JDC (connect_upsert_menu) */
 export interface ConnectMenuItemPayload {
   external_ref: string;
@@ -122,6 +140,8 @@ export interface ConnectMenuItemPayload {
   is_available: boolean;
   category: string | null;
   preparation_time: number | null;
+  /** #12: ตัวเลือกยิบย่อย (variants + modifiers) — JDC upsert แบบ replace ทั้งชุดต่อเมนู */
+  option_groups: ConnectMenuOptionGroupPayload[];
 }
 
 /**

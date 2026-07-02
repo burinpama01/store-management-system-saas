@@ -6,6 +6,11 @@ export interface SalesSummary {
   avgOrderValue: number;
   qrOrderCount: number;
   posOrderCount: number;
+  /** ออเดอร์เดลิเวอรี (StoreOS Connect — เลขบิลขึ้นต้น JDC-) */
+  deliveryOrderCount: number;
+  qrRevenue: number;
+  posRevenue: number;
+  deliveryRevenue: number;
 }
 
 export interface PaymentMethodSummary {
@@ -35,6 +40,7 @@ export interface BranchSalesSummary {
   avgOrderValue: number;
   qrOrderCount: number;
   posOrderCount: number;
+  deliveryOrderCount: number;
   revenueSharePercent: number;
 }
 

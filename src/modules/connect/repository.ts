@@ -4,7 +4,12 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { mapError } from "@/shared/utils/error";
 import type { FulfillmentStatus } from "./types";
 import { CONNECT_CHANNEL_JDC } from "./types";
-import type { ProductForDelivery } from "./menu-payload";
+import type {
+  ModifierGroupForDelivery,
+  ModifierOptionForDelivery,
+  ProductForDelivery,
+  VariantForDelivery,
+} from "./menu-payload";
 
 export interface ChannelLink {
   id: string;
@@ -185,12 +190,68 @@ export async function getDeliveryProducts(storeId: string): Promise<DeliveryProd
     .order("name");
   if (!products || products.length === 0) return [];
 
+  const productIds = products.map((p) => p.id);
   const categoryIds = [...new Set(products.map((p) => p.category_id))];
-  const { data: cats } = await supabase
-    .from("categories")
-    .select("id, name")
-    .in("id", categoryIds);
+  // #12: ดึง variants + modifier groups มาสร้างกลุ่มตัวเลือกส่งขึ้น JDC
+  const [{ data: cats }, { data: variants }, { data: modGroups }] = await Promise.all([
+    supabase.from("categories").select("id, name").in("id", categoryIds),
+    supabase
+      .from("product_variants")
+      .select("product_id, name, price_adjustment, is_active, sort_order")
+      .in("product_id", productIds),
+    supabase
+      .from("modifier_groups")
+      .select("id, product_id, name, selection_type, is_required, min_selections, max_selections, sort_order")
+      .in("product_id", productIds),
+  ]);
   const nameById = new Map((cats ?? []).map((c) => [c.id, c.name]));
+
+  const groupIds = (modGroups ?? []).map((g) => g.id);
+  const { data: modOptions } = groupIds.length
+    ? await supabase
+        .from("modifier_options")
+        .select("modifier_group_id, name, price_adjustment, is_active, sort_order")
+        .in("modifier_group_id", groupIds)
+    : { data: [] as never[] };
+
+  const variantsByProduct = new Map<string, VariantForDelivery[]>();
+  for (const v of variants ?? []) {
+    const list = variantsByProduct.get(v.product_id) ?? [];
+    list.push({
+      name: v.name,
+      price_adjustment: v.price_adjustment,
+      is_active: v.is_active,
+      sort_order: v.sort_order,
+    });
+    variantsByProduct.set(v.product_id, list);
+  }
+
+  const optionsByGroup = new Map<string, ModifierOptionForDelivery[]>();
+  for (const o of modOptions ?? []) {
+    const list = optionsByGroup.get(o.modifier_group_id) ?? [];
+    list.push({
+      name: o.name,
+      price_adjustment: o.price_adjustment,
+      is_active: o.is_active,
+      sort_order: o.sort_order,
+    });
+    optionsByGroup.set(o.modifier_group_id, list);
+  }
+
+  const modGroupsByProduct = new Map<string, ModifierGroupForDelivery[]>();
+  for (const g of modGroups ?? []) {
+    const list = modGroupsByProduct.get(g.product_id) ?? [];
+    list.push({
+      name: g.name,
+      selection_type: g.selection_type as "single" | "multiple",
+      is_required: g.is_required,
+      min_selections: g.min_selections,
+      max_selections: g.max_selections,
+      sort_order: g.sort_order,
+      options: optionsByGroup.get(g.id) ?? [],
+    });
+    modGroupsByProduct.set(g.product_id, list);
+  }
 
   return products.map((p) => ({
     id: p.id,
@@ -202,6 +263,8 @@ export async function getDeliveryProducts(storeId: string): Promise<DeliveryProd
     is_active: p.is_active,
     available_for_delivery: p.available_for_delivery,
     delivery_out_of_stock: p.delivery_out_of_stock,
+    variants: variantsByProduct.get(p.id) ?? [],
+    modifier_groups: modGroupsByProduct.get(p.id) ?? [],
     categoryName: nameById.get(p.category_id) ?? null,
   }));
 }

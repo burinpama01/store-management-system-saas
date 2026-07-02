@@ -38,7 +38,7 @@ describe("enterprise branch reports", () => {
     expect(repository).toContain('.eq("organization_id", organizationId)');
     expect(repository).toContain('.eq("is_active", true)');
     expect(repository).toContain('.from("orders")');
-    expect(repository).toContain('.select("store_id, total, qr_order_source")');
+    expect(repository).toContain('.select("store_id, total, qr_order_source, order_number")');
     expect(repository).toContain('.eq("organization_id", organizationId)');
     expect(repository).toContain('.in("store_id", batchStoreIds)');
     expect(repository).toContain("fetchBranchStoresInPages");
@@ -76,10 +76,10 @@ describe("enterprise branch reports", () => {
     const ordersQuery = chainResult(
       {
         data: [
-          { store_id: "store-a", total: "100.50", qr_order_source: false },
-          { store_id: "store-a", total: "99.50", qr_order_source: true },
-          { store_id: "store-b", total: "50", qr_order_source: false },
-          { store_id: "store-other", total: "999", qr_order_source: false },
+          { store_id: "store-a", total: "100.50", qr_order_source: false, order_number: "JDC-AB12CD34EF56" },
+          { store_id: "store-a", total: "99.50", qr_order_source: true, order_number: "QR-0001" },
+          { store_id: "store-b", total: "50", qr_order_source: false, order_number: "POS-0001" },
+          { store_id: "store-other", total: "999", qr_order_source: false, order_number: "POS-0002" },
         ],
         error: null,
       },
@@ -105,7 +105,8 @@ describe("enterprise branch reports", () => {
         revenue: 200,
         avgOrderValue: 100,
         qrOrderCount: 1,
-        posOrderCount: 1,
+        posOrderCount: 0,
+        deliveryOrderCount: 1,
         revenueSharePercent: 80,
       },
       {
@@ -116,6 +117,7 @@ describe("enterprise branch reports", () => {
         avgOrderValue: 50,
         qrOrderCount: 0,
         posOrderCount: 1,
+        deliveryOrderCount: 0,
         revenueSharePercent: 20,
       },
     ]);
