@@ -2611,6 +2611,7 @@ export interface Database {
           auto_approve: boolean;
           donation_enabled: boolean;
           min_donation: number;
+          play_now_price: number;
           max_duration_seconds: number;
           base_playlist: Json;
           licensing_acknowledged_at: string | null;
@@ -2623,6 +2624,7 @@ export interface Database {
           auto_approve?: boolean;
           donation_enabled?: boolean;
           min_donation?: number;
+          play_now_price?: number;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;
@@ -2633,6 +2635,7 @@ export interface Database {
           auto_approve?: boolean;
           donation_enabled?: boolean;
           min_donation?: number;
+          play_now_price?: number;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;

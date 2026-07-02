@@ -284,6 +284,7 @@ export function mapMusicPlayerSettings(row: PlayerSettingsRow): MusicPlayerSetti
     autoApprove: row.auto_approve,
     donationEnabled: row.donation_enabled,
     minDonation: row.min_donation,
+    playNowPrice: row.play_now_price ?? 100,
     maxDurationSeconds: row.max_duration_seconds,
     basePlaylist: Array.isArray(row.base_playlist)
       ? (row.base_playlist as unknown as PlaylistTrack[])
@@ -305,6 +306,7 @@ export function defaultMusicPlayerSettings(
     autoApprove: true,
     donationEnabled: false,
     minDonation: 10,
+    playNowPrice: 100,
     maxDurationSeconds: 600,
     basePlaylist: [],
     licensingAcknowledgedAt: undefined,
@@ -331,6 +333,7 @@ export interface UpdateMusicPlayerSettingsInput {
   autoApprove: boolean;
   donationEnabled: boolean;
   minDonation: number;
+  playNowPrice: number;
   maxDurationSeconds: number;
   basePlaylist: PlaylistTrack[];
   licensingAcknowledged: boolean;
@@ -360,6 +363,7 @@ export async function upsertMusicPlayerSettings(
       auto_approve: input.autoApprove,
       donation_enabled: input.donationEnabled,
       min_donation: input.minDonation,
+      play_now_price: input.playNowPrice,
       max_duration_seconds: input.maxDurationSeconds,
       base_playlist: input.basePlaylist as unknown as Json,
       licensing_acknowledged_at: ackAt,

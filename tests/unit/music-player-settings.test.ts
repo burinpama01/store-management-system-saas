@@ -55,6 +55,7 @@ function row(overrides: Partial<SettingsRow> = {}): SettingsRow {
     auto_approve: true,
     donation_enabled: false,
     min_donation: 10,
+    play_now_price: 100,
     max_duration_seconds: 600,
     base_playlist: [],
     licensing_acknowledged_at: null,
@@ -69,6 +70,7 @@ describe("mapMusicPlayerSettings", () => {
     expect(s.playerEnabled).toBe(false);
     expect(s.autoApprove).toBe(true);
     expect(s.minDonation).toBe(10);
+    expect(s.playNowPrice).toBe(100);
     expect(s.basePlaylist).toEqual([]);
     expect(s.licensingAcknowledgedAt).toBeUndefined();
   });

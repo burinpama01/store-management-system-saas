@@ -43,6 +43,7 @@ interface MusicContext {
   maxDurationSeconds: number;
   donationEnabled: boolean;
   minDonation: number;
+  playNowPrice: number;
 }
 
 /** Re-resolves the music gate server-side; never trust client-provided flags. */
@@ -94,7 +95,7 @@ async function resolveMusicContext(
 
   const { data: settings } = await supabase
     .from("store_music_player_settings")
-    .select("max_duration_seconds, donation_enabled, min_donation")
+    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price")
     .eq("store_id", storeId)
     .maybeSingle();
 
@@ -106,6 +107,7 @@ async function resolveMusicContext(
       maxDurationSeconds: settings?.max_duration_seconds ?? 600,
       donationEnabled: settings?.donation_enabled ?? false,
       minDonation: settings?.min_donation ?? 10,
+      playNowPrice: settings?.play_now_price ?? 100,
     },
   };
 }
@@ -120,6 +122,7 @@ export async function listMusicQueueAction(
   nowPlayingTitle?: string | null;
   donationEnabled?: boolean;
   minDonation?: number;
+  playNowPrice?: number;
   error: string | null;
 }> {
   if (!isUUID(storeId) || !isUUID(tableId)) {
@@ -128,7 +131,7 @@ export async function listMusicQueueAction(
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { queue: [], expired: false, error: resolved.reason };
 
-  const { eligibility, donationEnabled, minDonation } = resolved.ctx;
+  const { eligibility, donationEnabled, minDonation, playNowPrice } = resolved.ctx;
   if (!eligibility.canViewQueue) {
     return { queue: [], expired: eligibility.expiredWholeQr, error: eligibility.reason };
   }
@@ -143,6 +146,7 @@ export async function listMusicQueueAction(
     nowPlayingTitle: np.data?.title ?? null,
     donationEnabled,
     minDonation,
+    playNowPrice,
     error: null,
   };
 }
@@ -282,10 +286,11 @@ export async function startMusicDonationAction(
 
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { ...empty, error: resolved.reason };
-  const { eligibility, donationEnabled, minDonation, maxDurationSeconds } = resolved.ctx;
+  const { eligibility, donationEnabled, minDonation, playNowPrice, maxDurationSeconds } = resolved.ctx;
   if (!eligibility.canSubmitRequest) return { ...empty, error: eligibility.reason ?? "ขอเพลงไม่ได้" };
   if (!donationEnabled) return { ...empty, error: "ร้านนี้ยังไม่เปิดรับโดเนท" };
-  const effectiveMin = playNow ? Math.max(100, minDonation) : minDonation;
+  // Store-configured prices: play-now is a fixed-price tier; queue-jump has a minimum.
+  const effectiveMin = playNow ? playNowPrice : minDonation;
   if (!Number.isFinite(amount) || amount < effectiveMin) {
     return { ...empty, error: `ยอดโดเนทขั้นต่ำ ${effectiveMin} บาท` };
   }
