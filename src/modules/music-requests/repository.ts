@@ -123,6 +123,10 @@ export async function submitMusicDonationRequest(
   if (error) return { data: null, error: mapError(error) };
   const id = data as string;
 
+  // A zero-price tier (store set the price to 0) needs no payment: the request
+  // is verified+approved immediately, exactly like a slip-confirmed donation.
+  const isFree = input.donationAmount <= 0;
+  const now = new Date().toISOString();
   const { error: upErr } = await supabase
     .from("music_requests")
     .update({
@@ -131,9 +135,10 @@ export async function submitMusicDonationRequest(
       thumbnail_url: input.thumbnailUrl ?? null,
       duration_seconds: input.durationSeconds ?? null,
       donation_amount: input.donationAmount,
-      donation_status: "pending",
+      donation_status: isFree ? "verified" : "pending",
       donation_play_now: Boolean(input.playNow),
-      updated_at: new Date().toISOString(),
+      ...(isFree ? { status: "approved", decided_at: now } : {}),
+      updated_at: now,
     })
     .eq("id", id);
   if (upErr) return { data: null, error: mapError(upErr) };

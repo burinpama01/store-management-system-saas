@@ -177,9 +177,10 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
     setDonationRequestId(null);
   }
 
-  function startDonation() {
+  function startDonation(tierOverride?: "queue" | "now", amountOverride?: number) {
     if (!selected) return;
-    const amt = Number(amount);
+    const tier = tierOverride ?? donateTier;
+    const amt = amountOverride ?? Number(amount);
     setErrMsg(null);
     start(async () => {
       const res = await startMusicDonationAction(
@@ -194,8 +195,17 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
         },
         requester.trim() || undefined,
         amt,
-        donateTier === "now",
+        tier === "now",
       );
+      if (res.free && res.requestId) {
+        // Zero-price tier: no payment step — the song is already in.
+        resetTrack();
+        setQuery("");
+        setResults([]);
+        setOkMsg(tier === "now" ? "ส่งเพลงแล้ว 🎉 กำลังจะเปิดทันที" : "ส่งเพลงแล้ว 🎉 เข้าคิวลำดับแรก");
+        void load();
+        return;
+      }
       if (res.error || !res.requestId || !res.promptPayPayload) {
         setErrMsg(res.error ?? "เริ่มโดเนทไม่สำเร็จ");
         return;
@@ -363,7 +373,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
               )}
               <Button
                 variant="primary"
-                onClick={startDonation}
+                onClick={() => startDonation()}
                 disabled={Number(amount) < effectiveMin || pending}
                 loading={pending}
                 className="w-full min-h-11 text-sm"
@@ -379,6 +389,11 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
             <div className="space-y-2">
               <button
                 onClick={() => {
+                  if (playNowPrice <= 0) {
+                    // Free tier (store priced it 0) — no payment step at all.
+                    startDonation("now", 0);
+                    return;
+                  }
                   setDonateTier("now");
                   setAmount(String(playNowPrice));
                 }}
@@ -387,17 +402,26 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
               >
                 <span className="block text-sm font-bold">⚡ เปิดทันที</span>
                 <span className="block text-xs text-white/90">
-                  ตัดหน้าทุกคิว เล่นเลย · ฿{playNowPrice.toLocaleString("th-TH")}
+                  ตัดหน้าทุกคิว เล่นเลย ·{" "}
+                  {playNowPrice <= 0 ? "ฟรี" : `฿${playNowPrice.toLocaleString("th-TH")}`}
                 </span>
               </button>
               <button
-                onClick={() => setDonateTier("queue")}
+                onClick={() => {
+                  if (minDonation <= 0) {
+                    startDonation("queue", 0);
+                    return;
+                  }
+                  setDonateTier("queue");
+                }}
                 disabled={pending}
                 className="w-full min-h-11 rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-2.5 text-amber-800 active:bg-amber-100 disabled:opacity-50"
               >
                 <span className="block text-sm font-semibold">💸 เข้าคิวแรก</span>
                 <span className="block text-xs text-amber-700">
-                  โดเนทแข่งลำดับ เริ่ม ฿{minDonation.toLocaleString("th-TH")}
+                  {minDonation <= 0
+                    ? "เข้าก่อนคิวปกติ · ฟรี"
+                    : `โดเนทแข่งลำดับ เริ่ม ฿${minDonation.toLocaleString("th-TH")}`}
                 </span>
               </button>
               <button

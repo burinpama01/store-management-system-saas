@@ -63,12 +63,12 @@ export function MusicPlayerSettingsForm({ settings, storeSlug, canEdit }: Props)
           <div>
             <label className="field-label" htmlFor="minDonation">เข้าคิวแรก — ขั้นต่ำ (บาท)</label>
             <input id="minDonation" type="number" name="minDonation" min={0} step="1" defaultValue={settings.minDonation} disabled={!canEdit} className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm" />
-            <p className="mt-1 text-xs text-[var(--muted)]">โดเนทแข่งลำดับคิว ยิ่งมากยิ่งได้เล่นก่อน</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">โดเนทแข่งลำดับคิว ยิ่งมากยิ่งได้เล่นก่อน · ตั้ง 0 = เข้าคิวแรกได้ฟรี</p>
           </div>
           <div>
             <label className="field-label" htmlFor="playNowPrice">เปิดทันที — ราคา (บาท)</label>
             <input id="playNowPrice" type="number" name="playNowPrice" min={0} step="1" defaultValue={settings.playNowPrice} disabled={!canEdit} className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm" />
-            <p className="mt-1 text-xs text-[var(--muted)]">จ่ายเท่านี้ = เพลงถูกเปิดทันที ตัดหน้าทุกคิว</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">จ่ายเท่านี้ = เพลงถูกเปิดทันที ตัดหน้าทุกคิว · ตั้ง 0 = เปิดทันทีได้ฟรี</p>
           </div>
         </div>
       </section>
