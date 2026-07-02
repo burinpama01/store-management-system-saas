@@ -27,4 +27,13 @@ describe("music zero-price tier = free (store's choice)", () => {
     expect(tab).toContain('startDonation("queue", 0)');
     expect(tab).toContain("res.free && res.requestId");
   });
+
+  it("client accepts 0 as a real price — no falsy guard that keeps the 100 default", () => {
+    const tab = read("src/app/qr/[storeSlug]/[tableId]/MusicTab.tsx");
+    // `if (res.playNowPrice)` skipped 0 and left the default 100, forcing payment.
+    expect(tab).not.toContain("if (res.playNowPrice)");
+    expect(tab).not.toContain("if (res.minDonation)");
+    expect(tab).toContain('typeof res.playNowPrice === "number"');
+    expect(tab).toContain('typeof res.minDonation === "number"');
+  });
 });
