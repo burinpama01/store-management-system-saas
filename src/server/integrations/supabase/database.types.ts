@@ -3625,6 +3625,10 @@ export interface Database {
           avg_order_value: number;
           qr_order_count: number;
           pos_order_count: number;
+          delivery_order_count: number;
+          qr_revenue: number;
+          pos_revenue: number;
+          delivery_revenue: number;
         }[];
       };
       get_report_daily_sales: {

@@ -15,6 +15,10 @@ type SalesAggregateRow = {
   avg_order_value: number | string | null;
   qr_order_count: number | string | null;
   pos_order_count: number | string | null;
+  delivery_order_count: number | string | null;
+  qr_revenue: number | string | null;
+  pos_revenue: number | string | null;
+  delivery_revenue: number | string | null;
 };
 
 type DailySalesAggregateRow = {
@@ -27,6 +31,7 @@ type DashboardOrderRow = {
   id: string;
   total: number | string | null;
   qr_order_source: boolean | null;
+  order_number: string | null;
 };
 
 type ReportOrderRow = DashboardOrderRow & {
@@ -47,6 +52,7 @@ type BranchOrderRow = {
   store_id: string;
   total: number | string | null;
   qr_order_source: boolean | null;
+  order_number: string | null;
 };
 
 // PostgREST serialises .in() as a URL query param; keep batches small to stay
@@ -68,6 +74,15 @@ function toNumber(value: number | string | null | undefined): number {
   return Number(value ?? 0);
 }
 
+type SalesChannel = "qr" | "delivery" | "pos";
+
+/** ช่องทางขายของออเดอร์: QR (qr_order_source) / เดลิเวอรี (เลขบิล JDC-) / POS */
+function orderChannel(row: { qr_order_source: boolean | null; order_number: string | null }): SalesChannel {
+  if (row.qr_order_source === true) return "qr";
+  if (row.order_number?.startsWith("JDC-")) return "delivery";
+  return "pos";
+}
+
 function mapSalesSummary(
   row: SalesAggregateRow | null | undefined,
   dateFrom: string,
@@ -81,6 +96,10 @@ function mapSalesSummary(
     avgOrderValue: toNumber(row?.avg_order_value),
     qrOrderCount: toNumber(row?.qr_order_count),
     posOrderCount: toNumber(row?.pos_order_count),
+    deliveryOrderCount: toNumber(row?.delivery_order_count),
+    qrRevenue: toNumber(row?.qr_revenue),
+    posRevenue: toNumber(row?.pos_revenue),
+    deliveryRevenue: toNumber(row?.delivery_revenue),
   };
 }
 
@@ -100,14 +119,26 @@ function mapDashboardSalesFallback(
   const revenue = round2(rows.reduce((sum, row) => sum + toNumber(row.total), 0));
   const orderCount = rows.length;
 
+  const counts: Record<SalesChannel, number> = { qr: 0, delivery: 0, pos: 0 };
+  const revenues: Record<SalesChannel, number> = { qr: 0, delivery: 0, pos: 0 };
+  for (const row of rows) {
+    const channel = orderChannel(row);
+    counts[channel] += 1;
+    revenues[channel] = round2(revenues[channel] + toNumber(row.total));
+  }
+
   return {
     dateFrom,
     dateTo,
     orderCount,
     revenue,
     avgOrderValue: orderCount > 0 ? round2(revenue / orderCount) : 0,
-    qrOrderCount: rows.filter((row) => row.qr_order_source === true).length,
-    posOrderCount: rows.filter((row) => row.qr_order_source !== true).length,
+    qrOrderCount: counts.qr,
+    posOrderCount: counts.pos,
+    deliveryOrderCount: counts.delivery,
+    qrRevenue: revenues.qr,
+    posRevenue: revenues.pos,
+    deliveryRevenue: revenues.delivery,
   };
 }
 
@@ -257,7 +288,7 @@ async function fetchBranchOrdersInBatches(
     for (let offset = 0; ; offset += QUERY_PAGE_SIZE) {
       const result = await supabase
         .from("orders")
-        .select("store_id, total, qr_order_source")
+        .select("store_id, total, qr_order_source, order_number")
         .eq("organization_id", organizationId)
         .in("store_id", batchStoreIds)
         .eq("status", "paid")
@@ -296,7 +327,7 @@ export async function getReportData(
     }),
     supabase
       .from("orders")
-      .select("id, total, qr_order_source, paid_at")
+      .select("id, total, qr_order_source, order_number, paid_at")
       .eq("store_id", storeId)
       .eq("status", "paid")
       .gte("paid_at", dateFrom)
@@ -360,6 +391,7 @@ export async function getBranchReportData(
       avgOrderValue: 0,
       qrOrderCount: 0,
       posOrderCount: 0,
+      deliveryOrderCount: 0,
       revenueSharePercent: 0,
     });
   }
@@ -369,8 +401,11 @@ export async function getBranchReportData(
     if (!summary) continue;
     summary.orderCount += 1;
     summary.revenue = round2(summary.revenue + toNumber(order.total));
-    if (order.qr_order_source === true) {
+    const channel = orderChannel(order);
+    if (channel === "qr") {
       summary.qrOrderCount += 1;
+    } else if (channel === "delivery") {
+      summary.deliveryOrderCount += 1;
     } else {
       summary.posOrderCount += 1;
     }
@@ -401,7 +436,7 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
     }),
     supabase
       .from("orders")
-      .select("id, total, qr_order_source")
+      .select("id, total, qr_order_source, order_number")
       .eq("store_id", storeId)
       .eq("status", "paid")
       .gte("paid_at", today)

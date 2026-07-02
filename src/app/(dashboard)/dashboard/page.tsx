@@ -99,7 +99,7 @@ export default async function DashboardPage() {
         <KpiCard
           label="ค่าเฉลี่ย/ออร์เดอร์"
           value={`฿${fmt(todaySales.avgOrderValue)}`}
-          sub={`QR ${todaySales.qrOrderCount} / POS ${todaySales.posOrderCount}`}
+          sub={`QR ${todaySales.qrOrderCount} / POS ${todaySales.posOrderCount} / JDC ${todaySales.deliveryOrderCount}`}
           accent="var(--cat-tea)"
           spark={[30, 33, 37, 34, 40, 39, 43, 42]}
         />
@@ -155,6 +155,7 @@ export default async function DashboardPage() {
           <div className="space-y-3">
             <StatusRow label="QR Order" value={`${todaySales.qrOrderCount} รายการ`} color="var(--cat-cold)" />
             <StatusRow label="POS" value={`${todaySales.posOrderCount} รายการ`} color="var(--tenant-primary)" />
+            <StatusRow label="เดลิเวอรี (JDC)" value={`${todaySales.deliveryOrderCount} รายการ`} color="var(--cat-bakery)" />
             <StatusRow label="ยอดขายเงินสด" value={`฿${fmt(cashSalesToday)}`} color="var(--cat-tea)" />
             <StatusRow label="ยอดขายเงินโอน" value={`฿${fmt(transferSalesToday)}`} color="var(--cat-cold)" />
             <StatusRow label="เงินสดในลิ้นชัก" value={`฿${fmt(cashBalance)}`} color="var(--tenant-primary)" />

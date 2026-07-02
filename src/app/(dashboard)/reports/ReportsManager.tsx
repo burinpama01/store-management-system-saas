@@ -61,6 +61,9 @@ export function ReportsManager({
     const rows: string[] = [];
     rows.push("ประเภท,รายการ,จำนวน,ยอดขาย");
     rows.push(`สรุป,ยอดขายรวม,${salesSummary.orderCount},${salesSummary.revenue}`);
+    rows.push(`ช่องทางขาย,POS,${salesSummary.posOrderCount},${salesSummary.posRevenue}`);
+    rows.push(`ช่องทางขาย,QR,${salesSummary.qrOrderCount},${salesSummary.qrRevenue}`);
+    rows.push(`ช่องทางขาย,เดลิเวอรี (JDC),${salesSummary.deliveryOrderCount},${salesSummary.deliveryRevenue}`);
     for (const m of paymentMethods) rows.push(`ช่องทางชำระเงิน,${m.method},${m.count},${m.totalAmount}`);
     for (const d of dailySales) rows.push(`รายวัน,${d.date},${d.orderCount},${d.revenue}`);
     for (const p of topProducts) rows.push(`สินค้าขายดี,${p.productName.replace(/,/g, " ")},${p.quantitySold},${p.revenue}`);
@@ -117,13 +120,14 @@ export function ReportsManager({
         )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard label="ยอดขายรวม" value={`฿${fmt(salesSummary.revenue)}`} sub={`${salesSummary.orderCount} ออร์เดอร์`} color="text-green-600" />
         {advancedReportsEnabled && (
           <>
             <SummaryCard label="ค่าเฉลี่ย/ออร์เดอร์" value={`฿${fmt(salesSummary.avgOrderValue)}`} color="text-gray-700" />
-            <SummaryCard label="QR Orders" value={String(salesSummary.qrOrderCount)} sub="จากระบบ QR" color="text-purple-600" />
-            <SummaryCard label="POS Orders" value={String(salesSummary.posOrderCount)} sub="จาก POS" color="text-blue-600" />
+            <SummaryCard label="POS" value={String(salesSummary.posOrderCount)} sub={`฿${fmt(salesSummary.posRevenue)}`} color="text-blue-600" />
+            <SummaryCard label="QR Orders" value={String(salesSummary.qrOrderCount)} sub={`฿${fmt(salesSummary.qrRevenue)}`} color="text-purple-600" />
+            <SummaryCard label="เดลิเวอรี (JDC)" value={String(salesSummary.deliveryOrderCount)} sub={`฿${fmt(salesSummary.deliveryRevenue)}`} color="text-orange-600" />
           </>
         )}
       </div>
@@ -280,6 +284,7 @@ function BranchReportTable({ items }: { items: BranchSalesSummary[] }) {
             <th className="px-3 py-2 text-right">เฉลี่ย/บิล</th>
             <th className="px-3 py-2 text-right">POS</th>
             <th className="px-3 py-2 text-right">QR</th>
+            <th className="px-3 py-2 text-right">เดลิเวอรี</th>
             <th className="px-3 py-2 text-right">สัดส่วน</th>
           </tr>
         </thead>
@@ -301,6 +306,9 @@ function BranchReportTable({ items }: { items: BranchSalesSummary[] }) {
               </td>
               <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
                 {item.qrOrderCount}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
+                {item.deliveryOrderCount}
               </td>
               <td className="px-3 py-2 text-right text-[var(--color-text-secondary)] tabular-nums">
                 {item.revenueSharePercent.toLocaleString("th-TH", { maximumFractionDigits: 2 })}%

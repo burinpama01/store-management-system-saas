@@ -441,6 +441,7 @@ export async function applyVariantTemplateAction(
       return { error: isDuplicateVariantError(result.error) ? "ตัวเลือกนี้อยู่ในเมนูแล้ว" : result.error.userMessage };
     }
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -680,6 +681,7 @@ export async function applyModifierGroupTemplateAction(
     }
 
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return {
       error: null,
       message:
@@ -714,6 +716,7 @@ export async function addVariantAction(
     const result = await createVariant({ productId, name, priceAdjustment: priceAdj });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -727,6 +730,7 @@ export async function deleteVariantAction(id: string): Promise<{ error: string |
     const result = await deleteVariant(id, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -764,6 +768,7 @@ export async function addModifierGroupAction(
     });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -777,6 +782,7 @@ export async function deleteModifierGroupAction(id: string): Promise<{ error: st
     const result = await deleteModifierGroup(id, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -810,6 +816,7 @@ export async function addModifierOptionAction(
     });
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -823,6 +830,7 @@ export async function deleteModifierOptionAction(id: string): Promise<{ error: s
     const result = await deleteModifierOption(id, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -839,6 +847,7 @@ export async function setModifierOptionDefaultAction(
     const result = await setModifierOptionDefault(id, ctx.storeId, isDefault);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
