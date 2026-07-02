@@ -28,13 +28,17 @@ export function verifyConnectSignature(
   return timingSafeEqual(a, b);
 }
 
-/** ตรวจว่า timestamp (epoch วินาที) อยู่ในหน้าต่างที่ยอมรับ; ถ้าไม่ส่ง ts มาให้ผ่าน (optional) */
+/**
+ * ตรวจว่า timestamp (epoch วินาที) อยู่ในหน้าต่างที่ยอมรับ; ถ้าไม่ส่ง ts มาให้ผ่าน (optional)
+ * รับ string ด้วย — pg trigger ฝั่ง JDC บางเวอร์ชันส่ง ts มาเป็น text
+ */
 export function isFreshTimestamp(
-  ts: number | undefined | null,
+  ts: number | string | undefined | null,
   nowSec: number = Math.floor(Date.now() / 1000),
   skewSec: number = CONNECT_TS_SKEW_SEC,
 ): boolean {
-  if (ts == null) return true;
-  if (!Number.isFinite(ts)) return false;
-  return Math.abs(nowSec - ts) <= skewSec;
+  if (ts == null || ts === "") return true;
+  const value = typeof ts === "string" ? Number(ts) : ts;
+  if (!Number.isFinite(value)) return false;
+  return Math.abs(nowSec - value) <= skewSec;
 }

@@ -1,6 +1,8 @@
 // เรียก Edge Functions ฝั่ง JDC
-// JDC ออก key/secret ชุดเดียวทั้งระบบ (เก็บใน platform_settings) → URL + JDC API key (Authorization)
-// + เซ็น HMAC ด้วย shared webhook secret. ผูกร้านปลายทางด้วย merchant_id ใน payload
+// JDC ออก key/secret ชุดเดียวทั้งระบบ (เก็บใน platform_settings) → URL + JDC connection key
+// (header X-JDC-Connection-Key ตาม contract ฝั่ง JDC) + เซ็น HMAC ด้วย shared webhook secret
+// + X-Connect-Event-Id กัน replay (JDC เก็บ event id ที่รับแล้ว). ผูกร้านด้วย merchant_id ใน payload
+import { randomUUID } from "node:crypto";
 import {
   getJdcApiKey,
   getJdcFunctionsBaseUrl,
@@ -28,20 +30,21 @@ async function callJdc(fnName: string, payload: unknown): Promise<JdcCallResult>
   if (!secret) {
     return { ok: false, status: 0, body: "ยังไม่ได้ตั้งค่า webhook secret ของ JDC (ผู้ดูแลแพลตฟอร์ม)" };
   }
+  if (!apiKey) {
+    return { ok: false, status: 0, body: "ยังไม่ได้ตั้งค่า JDC connection key (ผู้ดูแลแพลตฟอร์ม)" };
+  }
   const base = baseRaw.replace(/\/+$/, "");
   const url = `${base}/${fnName}`;
   const raw = JSON.stringify(payload);
   const signature = signConnectPayload(raw, secret);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    // contract ฝั่ง JDC (connect-auth.ts): ต้องมี connection key + event id + signature + timestamp
+    "X-JDC-Connection-Key": apiKey,
+    "X-Connect-Event-Id": randomUUID(),
     "X-Connect-Signature": signature,
     "X-Connect-Timestamp": Math.floor(Date.now() / 1000).toString(),
   };
-  // แนบ JDC API key ถ้ามี (กรณี edge functions เปิด verify_jwt / ตรวจ apikey)
-  if (apiKey) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
-    headers["apikey"] = apiKey;
-  }
   try {
     const res = await fetch(url, { method: "POST", headers, body: raw });
     const body = await res.text();

@@ -174,5 +174,6 @@ export interface InboundOrderPayload {
   /** ยอดที่ร้านต้องได้รับ = ยอดที่คนขับต้องจ่ายร้าน (ถ้าไม่ส่งมา ใช้ผลรวมราคาสินค้า) */
   merchant_total?: number;
   paid?: boolean;
-  ts?: number;
+  /** epoch วินาที — รับได้ทั้ง number และ string (pg trigger ส่งเป็น text ได้) */
+  ts?: number | string;
 }
