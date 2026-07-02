@@ -48,6 +48,10 @@ export async function updateMusicPlayerSettingsAction(
     const minRaw = parseFloat((formData.get("minDonation") as string | null) ?? "");
     const minDonation = Number.isFinite(minRaw) && minRaw >= 0 ? Math.round(minRaw * 100) / 100 : 10;
 
+    const playNowRaw = parseFloat((formData.get("playNowPrice") as string | null) ?? "");
+    const playNowPrice =
+      Number.isFinite(playNowRaw) && playNowRaw >= 0 ? Math.round(playNowRaw * 100) / 100 : 100;
+
     const durRaw = parseInt((formData.get("maxDurationSeconds") as string | null) ?? "", 10);
     const maxDurationSeconds =
       Number.isInteger(durRaw) && durRaw >= 60 && durRaw <= 1800 ? durRaw : 600;
@@ -59,6 +63,7 @@ export async function updateMusicPlayerSettingsAction(
       autoApprove,
       donationEnabled,
       minDonation,
+      playNowPrice,
       maxDurationSeconds,
       basePlaylist,
       licensingAcknowledged,

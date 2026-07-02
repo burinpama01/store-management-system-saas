@@ -24,6 +24,8 @@ export interface MusicPlayerSettings {
   autoApprove: boolean;
   donationEnabled: boolean;
   minDonation: number;
+  /** Price (THB) of the "play now" tier — store adjustable. */
+  playNowPrice: number;
   maxDurationSeconds: number;
   basePlaylist: PlaylistTrack[];
   licensingAcknowledgedAt?: string;

@@ -62,6 +62,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   // Donation flow
   const [donationEnabled, setDonationEnabled] = useState(false);
   const [minDonation, setMinDonation] = useState(10);
+  const [playNowPrice, setPlayNowPrice] = useState(100);
   const [donateTier, setDonateTier] = useState<"queue" | "now" | null>(null);
   const [amount, setAmount] = useState("");
   const [previewPos, setPreviewPos] = useState<number | null>(null);
@@ -76,6 +77,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       setNowPlaying(res.nowPlayingTitle ?? null);
       setDonationEnabled(Boolean(res.donationEnabled));
       if (res.minDonation) setMinDonation(res.minDonation);
+      if (res.playNowPrice) setPlayNowPrice(res.playNowPrice);
     }
   }, [storeId, tableId, querySessionId]);
 
@@ -143,7 +145,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
     });
   }
 
-  const effectiveMin = donateTier === "now" ? Math.max(100, minDonation) : minDonation;
+  const effectiveMin = donateTier === "now" ? playNowPrice : minDonation;
 
   // Live queue-position preview for the "queue jump" tier (no amounts revealed).
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -339,7 +341,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
               }`}
             >
               <p className="text-sm font-semibold text-gray-900">
-                {donateTier === "now" ? "⚡ เปิดทันที" : "💸 โดเนทแซงคิว"}
+                {donateTier === "now" ? "⚡ เปิดทันที" : "💸 เข้าคิวแรก"}
               </p>
               <input
                 type="number"
@@ -372,34 +374,50 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
                 ยกเลิก
               </button>
             </div>
-          ) : (
+          ) : selected && donationEnabled ? (
+            /* Tier hierarchy: play-now (hero) → queue-jump → free (smallest). */
             <div className="space-y-2">
-              <Button
-                variant="primary"
-                onClick={submit}
-                disabled={!selected || pending}
-                loading={pending}
-                className="w-full min-h-11 text-sm"
+              <button
+                onClick={() => {
+                  setDonateTier("now");
+                  setAmount(String(playNowPrice));
+                }}
+                disabled={pending}
+                className="w-full min-h-12 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 px-4 py-3 text-white shadow-md active:opacity-90 disabled:opacity-50"
               >
-                ส่งคำขอเพลง (ฟรี)
-              </Button>
-              {selected && donationEnabled && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setDonateTier("queue")}
-                    className="rounded-lg border border-amber-300 py-2 text-sm font-medium text-amber-700"
-                  >
-                    💸 ต่อคิว
-                  </button>
-                  <button
-                    onClick={() => setDonateTier("now")}
-                    className="rounded-lg border border-rose-300 py-2 text-sm font-medium text-rose-700"
-                  >
-                    ⚡ เปิดทันที
-                  </button>
-                </div>
-              )}
+                <span className="block text-sm font-bold">⚡ เปิดทันที</span>
+                <span className="block text-xs text-white/90">
+                  ตัดหน้าทุกคิว เล่นเลย · ฿{playNowPrice.toLocaleString("th-TH")}
+                </span>
+              </button>
+              <button
+                onClick={() => setDonateTier("queue")}
+                disabled={pending}
+                className="w-full min-h-11 rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-2.5 text-amber-800 active:bg-amber-100 disabled:opacity-50"
+              >
+                <span className="block text-sm font-semibold">💸 เข้าคิวแรก</span>
+                <span className="block text-xs text-amber-700">
+                  โดเนทแข่งลำดับ เริ่ม ฿{minDonation.toLocaleString("th-TH")}
+                </span>
+              </button>
+              <button
+                onClick={submit}
+                disabled={pending}
+                className="w-full min-h-11 rounded-lg py-2 text-sm text-gray-500 underline-offset-2 hover:underline disabled:opacity-50"
+              >
+                ส่งคำขอเพลงฟรี (รอคิวปกติ)
+              </button>
             </div>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={submit}
+              disabled={!selected || pending}
+              loading={pending}
+              className="w-full min-h-11 text-sm"
+            >
+              ส่งคำขอเพลง (ฟรี)
+            </Button>
           )}
         </div>
       ) : (
