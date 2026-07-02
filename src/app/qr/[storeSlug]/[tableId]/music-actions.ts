@@ -264,6 +264,8 @@ export async function previewDonationPositionAction(
 /**
  * Creates a pending donation request and returns a PromptPay payload to pay.
  * The request only enters the priority queue after the slip is verified.
+ * When the store priced the tier at 0 THB, the request is free: no payment
+ * step — it is verified immediately (`free: true`, no payload returned).
  */
 export async function startMusicDonationAction(
   storeId: string,
@@ -278,6 +280,7 @@ export async function startMusicDonationAction(
   promptPayPayload: string | null;
   promptpayId: string | null;
   amount: number | null;
+  free?: boolean;
   error: string | null;
 }> {
   const empty = { requestId: null, promptPayPayload: null, promptpayId: null, amount: null };
@@ -302,14 +305,20 @@ export async function startMusicDonationAction(
   const inQueue = await isVideoQueued(storeId, track.videoId);
   if (inQueue.queued) return { ...empty, error: "มีเพลงนี้ในคิวแล้ว" };
 
-  const supabase = await createSupabaseServiceClient();
-  const { data: rs } = await supabase
-    .from("receipt_settings")
-    .select("promptpay_id")
-    .eq("store_id", storeId)
-    .maybeSingle();
-  const promptpayId = rs?.promptpay_id;
-  if (!promptpayId) return { ...empty, error: "ร้านยังไม่ได้ตั้งค่า PromptPay" };
+  // Store priced this tier at 0 → free path: no PromptPay needed at all.
+  const isFree = amount <= 0;
+
+  let promptpayId: string | null = null;
+  if (!isFree) {
+    const supabase = await createSupabaseServiceClient();
+    const { data: rs } = await supabase
+      .from("receipt_settings")
+      .select("promptpay_id")
+      .eq("store_id", storeId)
+      .maybeSingle();
+    promptpayId = rs?.promptpay_id ?? null;
+    if (!promptpayId) return { ...empty, error: "ร้านยังไม่ได้ตั้งค่า PromptPay" };
+  }
 
   const res = await submitMusicDonationRequest({
     storeId,
@@ -321,14 +330,19 @@ export async function startMusicDonationAction(
     youtubeTitle: track.title,
     thumbnailUrl: track.thumbnailUrl,
     durationSeconds: track.durationSeconds,
-    donationAmount: amount,
+    donationAmount: isFree ? 0 : amount,
     playNow,
   });
   if (res.error) return { ...empty, error: res.error.userMessage };
 
+  if (isFree) {
+    // Verified at creation (repository) — the song is already in the priority queue.
+    return { requestId: res.data, promptPayPayload: null, promptpayId: null, amount: 0, free: true, error: null };
+  }
+
   let payload: string;
   try {
-    payload = buildPromptPayPayload({ recipientId: promptpayId, amount });
+    payload = buildPromptPayPayload({ recipientId: promptpayId!, amount });
   } catch {
     return { ...empty, error: "PromptPay ของร้านไม่ถูกต้อง" };
   }
