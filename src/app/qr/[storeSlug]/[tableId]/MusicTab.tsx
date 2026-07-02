@@ -76,8 +76,9 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       setQueue(res.queue);
       setNowPlaying(res.nowPlayingTitle ?? null);
       setDonationEnabled(Boolean(res.donationEnabled));
-      if (res.minDonation) setMinDonation(res.minDonation);
-      if (res.playNowPrice) setPlayNowPrice(res.playNowPrice);
+      // 0 is a valid price (free tier) — don't treat it as "missing".
+      if (typeof res.minDonation === "number") setMinDonation(res.minDonation);
+      if (typeof res.playNowPrice === "number") setPlayNowPrice(res.playNowPrice);
     }
   }, [storeId, tableId, querySessionId]);
 
