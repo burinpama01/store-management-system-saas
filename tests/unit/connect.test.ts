@@ -49,6 +49,14 @@ describe("connect hmac", () => {
     expect(isFreshTimestamp(now - 301, now)).toBe(false);
     expect(isFreshTimestamp(undefined, now)).toBe(true); // optional
   });
+
+  it("accepts ts as string (pg trigger sends text)", () => {
+    const now = 1_000_000;
+    expect(isFreshTimestamp(String(now), now)).toBe(true);
+    expect(isFreshTimestamp(String(now - 301), now)).toBe(false);
+    expect(isFreshTimestamp("not-a-number", now)).toBe(false);
+    expect(isFreshTimestamp("", now)).toBe(true); // ว่าง = ไม่ส่ง
+  });
 });
 
 describe("connect status mapping", () => {
