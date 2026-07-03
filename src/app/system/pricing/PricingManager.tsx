@@ -4,10 +4,17 @@ import { useActionState } from "react";
 import { Button, SubmitButton } from "@/shared/components/ui";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import { DURATION_LABELS, PAID_TIERS, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
+import {
+  BUSINESS_COMPONENTS,
+  BUSINESS_COMPONENT_LABELS,
+  type BusinessComponent,
+  type BusinessPriceMap,
+} from "@/modules/billing/business-plan";
 import type { Promotion, PlanSetting } from "@/modules/billing/pricing-repository";
-import type { BillingDiscountCode } from "@/modules/billing/discount-code";
+import type { BillingDiscountCode, DiscountablePlan } from "@/modules/billing/discount-code";
 import {
   updatePriceAction,
+  updateBusinessPriceAction,
   createPromotionAction,
   togglePromotionAction,
   updatePlanSettingsAction,
@@ -18,14 +25,17 @@ import {
 
 const INITIAL: PricingState = { error: null, ok: false };
 const DURATIONS: BillingDuration[] = ["30d", "1y"];
+const SCOPABLE_PLANS: DiscountablePlan[] = [...PAID_TIERS, "business"];
 
 export function PricingManager({
   prices,
+  businessPrices,
   promotions,
   planSettings,
   discountCodes,
 }: {
   prices: Record<PaidTier, Record<BillingDuration, number>>;
+  businessPrices: BusinessPriceMap;
   promotions: Promotion[];
   planSettings: PlanSetting[];
   discountCodes: BillingDiscountCode[];
@@ -45,6 +55,25 @@ export function PricingManager({
           {PAID_TIERS.map((tier) =>
             DURATIONS.map((duration) => (
               <PriceCell key={`${tier}-${duration}`} tier={tier} duration={duration} amount={prices[tier][duration]} />
+            )),
+          )}
+        </div>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="panel-title mb-3">ราคาแพ็กเกจ Business — คิดตามส่วนประกอบ (บาท)</h2>
+        <p className="page-kicker mb-3">
+          ลูกค้าเลือกที่นั่ง/สาขา/ฟีเจอร์เอง · ราคา = ค่าระบบพื้นฐาน + (ที่นั่ง × ราคาต่อที่นั่ง) + (สาขา × ราคาต่อสาขา) + ฟีเจอร์ที่เลือก
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {BUSINESS_COMPONENTS.map((component) =>
+            DURATIONS.map((duration) => (
+              <BusinessPriceCell
+                key={`${component}-${duration}`}
+                component={component}
+                duration={duration}
+                amount={businessPrices[component][duration]}
+              />
             )),
           )}
         </div>
@@ -193,6 +222,33 @@ function PriceCell({ tier, duration, amount }: { tier: PaidTier; duration: Billi
   );
 }
 
+function BusinessPriceCell({
+  component,
+  duration,
+  amount,
+}: {
+  component: BusinessComponent;
+  duration: BillingDuration;
+  amount: number;
+}) {
+  const [state, action, pending] = useActionState(updateBusinessPriceAction, INITIAL);
+  return (
+    <form action={action} className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+      <input type="hidden" name="component" value={component} />
+      <input type="hidden" name="duration" value={duration} />
+      <p className="label-muted mb-1">{BUSINESS_COMPONENT_LABELS[component]} · {DURATION_LABELS[duration]}</p>
+      <div className="flex items-center gap-2">
+        <input type="number" name="amount" defaultValue={amount} min={0} step={1} className="form-input tabular-nums" />
+        <Button type="submit" variant="primary" loading={pending} loadingText="..." className="text-xs disabled:opacity-40">
+          บันทึก
+        </Button>
+      </div>
+      {state.error && <p className="alert-danger mt-2">{state.error}</p>}
+      {state.ok && <p className="mt-1 text-xs text-emerald-700">บันทึกแล้ว</p>}
+    </form>
+  );
+}
+
 function PlanSettingCard({ setting }: { setting: PlanSetting }) {
   const [state, action, pending] = useActionState(updatePlanSettingsAction, INITIAL);
   return (
@@ -238,7 +294,7 @@ function PromotionForm() {
         <label className="field-label">เฉพาะแพ็กเกจ</label>
         <select name="plan" className="form-input">
           <option value="">ทุกแพ็กเกจ</option>
-          {PAID_TIERS.map((t) => (
+          {SCOPABLE_PLANS.map((t) => (
             <option key={t} value={t}>{PLAN_LABELS[t]}</option>
           ))}
         </select>
@@ -295,7 +351,7 @@ function DiscountCodeForm() {
         <label className="field-label">เฉพาะแพ็กเกจ</label>
         <select name="plan" className="form-input">
           <option value="">ทุกแพ็กเกจ</option>
-          {PAID_TIERS.map((t) => (
+          {SCOPABLE_PLANS.map((t) => (
             <option key={t} value={t}>{PLAN_LABELS[t]}</option>
           ))}
         </select>

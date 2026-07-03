@@ -122,7 +122,7 @@ export function computeBusinessPrice(
     prices.perSeat[duration] * config.seats +
     prices.perStore[duration] * config.stores;
   for (const key of config.features) {
-    total += prices[key]?.[duration] ?? 0;
+    if (isBusinessComponent(key)) total += prices[key][duration];
   }
   return Math.round(total);
 }

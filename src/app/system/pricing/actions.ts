@@ -5,6 +5,7 @@ import { AuthorizationError, requireSystemAccess } from "@/modules/auth/guards";
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
 import {
   updateBillingPrice,
+  updateBusinessPrice,
   createPromotion,
   setPromotionActive,
   updatePlanSettings,
@@ -12,9 +13,10 @@ import {
   setDiscountCodeActive,
   type PlanTier,
 } from "@/modules/billing/pricing-repository";
-import { normalizeDiscountCode } from "@/modules/billing/discount-code";
+import { isBusinessComponent } from "@/modules/billing/business-plan";
+import { isDiscountablePlan, normalizeDiscountCode } from "@/modules/billing/discount-code";
 
-const VALID_TIERS: PlanTier[] = ["starter", "standard", "premium", "enterprise"];
+const VALID_TIERS: PlanTier[] = ["starter", "standard", "premium", "business", "enterprise"];
 
 export interface PricingState {
   error: string | null;
@@ -48,6 +50,24 @@ export async function updatePriceAction(_prev: PricingState, fd: FormData): Prom
   return { ok: true, error: null };
 }
 
+export async function updateBusinessPriceAction(_prev: PricingState, fd: FormData): Promise<PricingState> {
+  const g = await guard();
+  if (g) return { ok: false, error: g.error };
+
+  const component = (fd.get("component") as string | null) ?? "";
+  const duration = fd.get("duration") as string;
+  const amount = Number(fd.get("amount"));
+  if (!isBusinessComponent(component)) return { ok: false, error: "component ไม่ถูกต้อง" };
+  if (duration !== "30d" && duration !== "1y") return { ok: false, error: "duration ไม่ถูกต้อง" };
+  if (!Number.isFinite(amount) || amount < 0) return { ok: false, error: "ราคาไม่ถูกต้อง" };
+
+  const res = await updateBusinessPrice(component, duration as BillingDuration, amount);
+  if (!res.ok) return { ok: false, error: res.error?.userMessage ?? "บันทึกไม่สำเร็จ" };
+  revalidatePath("/system/pricing");
+  revalidatePath("/pricing");
+  return { ok: true, error: null };
+}
+
 export async function createPromotionAction(_prev: PricingState, fd: FormData): Promise<PricingState> {
   const g = await guard();
   if (g) return { ok: false, error: g.error };
@@ -55,7 +75,7 @@ export async function createPromotionAction(_prev: PricingState, fd: FormData): 
   const description = ((fd.get("description") as string | null) ?? "").trim();
   const percentOff = Number(fd.get("percentOff"));
   const planRaw = (fd.get("plan") as string | null) ?? "";
-  const plan = isPaidTier(planRaw) ? (planRaw as PaidTier) : null; // "" -> all plans
+  const plan = isDiscountablePlan(planRaw) ? planRaw : null; // "" -> all plans
   const startsAt = ((fd.get("startsAt") as string | null) ?? "").trim() || null;
   const endsAt = ((fd.get("endsAt") as string | null) ?? "").trim() || null;
   if (!description) return { ok: false, error: "กรุณากรอกคำอธิบายโปรโมชั่น" };
@@ -130,7 +150,7 @@ export async function createDiscountCodeAction(_prev: PricingState, fd: FormData
   const discountType = (fd.get("discountType") as string | null) ?? "";
   const discountValue = Number(fd.get("discountValue"));
   const planRaw = (fd.get("plan") as string | null) ?? "";
-  const plan = isPaidTier(planRaw) ? (planRaw as PaidTier) : null; // "" -> all plans
+  const plan = isDiscountablePlan(planRaw) ? planRaw : null; // "" -> all plans
   const durationRaw = (fd.get("duration") as string | null) ?? "";
   const duration = durationRaw === "30d" || durationRaw === "1y" ? durationRaw : null; // "" -> all
   const minAmount = Number(fd.get("minAmount") || 0);

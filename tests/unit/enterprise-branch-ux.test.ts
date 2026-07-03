@@ -3,6 +3,7 @@ import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BUSINESS_DEFAULT_PRICES } from "@/modules/billing/business-plan";
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
 
@@ -280,6 +281,7 @@ describe("enterprise branch UX contract", () => {
           standard: { "30d": 1290, "1y": 12900 },
           premium: { "30d": 2290, "1y": 22900 },
         },
+        businessPrices: BUSINESS_DEFAULT_PRICES,
         canManage: true,
         paymentConfigured: true,
         recipientName: "StoreOS",

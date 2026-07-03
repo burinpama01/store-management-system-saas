@@ -628,14 +628,16 @@ describe("UX/UI regression guards", () => {
     const source = read("src/app/(dashboard)/settings/billing/BillingManager.tsx");
 
     expect(source).toContain("paymentQuote");
-    expect(source).toContain("plan: PaidTier");
+    expect(source).toContain("type SelectablePlan = PaidTier | \"business\"");
+    expect(source).toContain("plan: SelectablePlan");
     expect(source).toContain("duration: BillingDuration");
     expect(source).toContain("const requestPlan = selectedPlan");
     expect(source).toContain("const requestDuration = duration");
     expect(source).toContain("try {");
     expect(source).toContain("finally {");
     expect(source).toContain("setBusy(false)");
-    expect(source).toContain("fd.set(\"plan\", paymentQuote?.plan ?? selectedPlan)");
+    expect(source).toContain("const slipPlan = paymentQuote?.plan ?? selectedPlan");
+    expect(source).toContain("fd.set(\"plan\", slipPlan)");
     expect(source).toContain("fd.set(\"duration\", paymentQuote?.duration ?? duration)");
     expect(source).toContain("try {\n      const res = await uploadWithProgress");
     expect(source).toContain("catch {\n      showError(\"ตรวจสลิปไม่สำเร็จ\");");

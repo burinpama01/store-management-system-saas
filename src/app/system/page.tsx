@@ -6,7 +6,7 @@ import type { BillingPlan } from "@/modules/billing/types";
 
 export const dynamic = "force-dynamic";
 
-const PLAN_ORDER: BillingPlan[] = ["free", "starter", "standard", "premium", "enterprise"];
+const PLAN_ORDER: BillingPlan[] = ["free", "starter", "standard", "premium", "business", "enterprise"];
 
 function baht(n: number) {
   return `฿${n.toLocaleString("th-TH")}`;
