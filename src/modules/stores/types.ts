@@ -77,6 +77,9 @@ export interface ReceiptSettings {
   autoPrintStationTickets: boolean;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
+  /** พิมพ์บรรทัดแยกมูลค่าสินค้า/VAT ท้ายใบเสร็จ (VAT รวมในราคาแล้ว) */
+  showVatBreakdown: boolean;
+  vatRate: number;
   updatedAt: string;
 }
 

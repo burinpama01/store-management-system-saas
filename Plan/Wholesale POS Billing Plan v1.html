@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แผนงาน: POS ขายส่ง (Wholesale Billing) v1</title>
+<style>
+  :root { --brand:#0f766e; --bg:#f8fafc; --surface:#ffffff; --border:#e2e8f0; --text:#0f172a; --muted:#64748b; --warn:#b45309; }
+  * { box-sizing:border-box; }
+  body { font-family:'Segoe UI', Tahoma, sans-serif; background:var(--bg); color:var(--text); margin:0; padding:32px; line-height:1.65; }
+  main { max-width:1080px; margin:0 auto; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:19px; margin:28px 0 10px; color:var(--brand); border-bottom:2px solid var(--border); padding-bottom:6px; }
+  h3 { font-size:15px; margin:16px 0 6px; }
+  .meta { color:var(--muted); font-size:13px; margin-bottom:18px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 22px; margin-bottom:14px; box-shadow:0 1px 2px rgba(15,23,42,.05); }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { border:1px solid var(--border); padding:7px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  code { background:#f1f5f9; border-radius:4px; padding:1px 6px; font-size:12.5px; }
+  .tag { display:inline-block; background:#ecfdf5; color:var(--brand); border:1px solid #a7f3d0; border-radius:999px; padding:1px 10px; font-size:12px; font-weight:700; margin-right:6px; }
+  .warn { color:var(--warn); font-weight:700; }
+  ol li, ul li { margin-bottom:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>แผนงาน: POS ขายส่ง — ออกบิล + หลายหน่วย + ราคาหลายระดับ (v1)</h1>
+  <p class="meta">วันที่: 2026-07-03 · โปรเจค: Store management system saas (StoreOS) · ฐาน: ต่อยอด Grocery POS เดิม (/pos/grocery)</p>
+
+  <div class="card">
+    <h2 style="margin-top:0">1) Scope — Use case 8 ข้อ เทียบของเดิม</h2>
+    <table>
+      <tr><th>ข้อ</th><th>ความต้องการ</th><th>สถานะเดิม</th><th>งานที่ต้องทำ</th></tr>
+      <tr><td>1</td><td>ค้นหาสินค้า ชื่อ/รหัส/barcode + ราคา หน่วย สต๊อก</td><td>มีเฉพาะยิง barcode/SKU</td><td>ช่องค้นหาชื่อแบบ live filter (client-side จาก products ที่โหลดแล้ว) แสดงราคา/หน่วย/สต๊อก</td></tr>
+      <tr><td>2</td><td>คูณจำนวน + ราคาโหล/แพ็ค/ถาด</td><td>คูณจำนวนมี แต่ไม่มีหน่วยแพ็ค</td><td>ตาราง <code>product_units</code> (ชื่อหน่วย, ตัวคูณ, ราคาต่อ tier, barcode) + ปุ่มเลือกหน่วยตอนหยิบ + ช่องพิมพ์จำนวนตรง ๆ</td></tr>
+      <tr><td>3</td><td>รวมยอดบิล subtotal/ส่วนลด/VAT/สุทธิ/รับเงิน/ทอน</td><td>มีครบยกเว้นส่วนลดท้ายบิล (UI) และ VAT</td><td>ช่องส่วนลดท้ายบิล (บาท/%) + VAT-included breakdown บนใบเสร็จ (ตั้งค่าได้)</td></tr>
+      <tr><td>4</td><td>ใบเสร็จ thermal 58/80mm</td><td>มีครบ (BT/USB/IP/Hub/PDF)</td><td>เพิ่มบรรทัด "จำนวน x ราคาต่อหน่วย (ชื่อหน่วย)" สไตล์ห้าง + บรรทัด VAT</td></tr>
+      <tr><td>5</td><td>ประวัติบิลย้อนหลัง ลูกค้า/วันที่/ยอด</td><td>มี listOrdersHistory (POS หลัก)</td><td>Modal ประวัติบิลในหน้า POS ขายส่ง + กรองวันที่ + พิมพ์ใบเสร็จซ้ำ</td></tr>
+      <tr><td>6</td><td>ราคาปลีก/ส่ง/ตัวแทน/ลูกค้าประจำ</td><td>ไม่มี</td><td><code>customers.price_tier</code> + ราคาต่อ tier บนสินค้า/หน่วย + เลือก tier หน้า POS (auto จากลูกค้า) + repricing ตะกร้า</td></tr>
+      <tr><td>7</td><td>ตัดสต๊อกอัตโนมัติ + แจ้งใกล้หมด</td><td>มี (variant stock + alert)</td><td>แก้ RPC ให้ตัดสต๊อก = จำนวน × ตัวคูณหน่วย (ขาย 1 โหล ตัด 12 ชิ้น)</td></tr>
+      <tr><td>8</td><td>เพิ่มสินค้าง่าย</td><td>ฟอร์ม catalog เต็มรูปแบบ (หลายขั้น)</td><td>ปุ่ม "เพิ่มสินค้าเร็ว" ในหน้า POS: ชื่อ/บาร์โค้ด/ราคาปลีก-ส่ง/สต๊อก/หน่วยโหล-แพ็ค จบในฟอร์มเดียว + แก้หน่วยขายส่งใน catalog</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">2) Data model (migration <code>20260703000000_wholesale_pos.sql</code>)</h2>
+    <ul>
+      <li><span class="tag">customers</span> เพิ่ม <code>price_tier</code> text default 'retail' — ค่า: <code>retail | wholesale | agent | regular</code> (ปลีก/ส่ง/ตัวแทน/ลูกค้าประจำ)</li>
+      <li><span class="tag">products</span> เพิ่ม <code>unit_label</code> (หน่วยฐาน เช่น ชิ้น/ขวด), <code>price_wholesale</code>, <code>price_agent</code>, <code>price_regular</code> (null = ใช้ราคาปลีก)</li>
+      <li><span class="tag">product_units</span> ตารางใหม่: product_id, name (โหล/แพ็ค/ลัง), quantity (ตัวคูณ ≥2), price + ราคาต่อ tier, barcode (unique ต่อร้าน), sort_order, is_active + RLS อ่าน=สมาชิกร้าน เขียน=manager+</li>
+      <li><span class="tag">order_items</span> เพิ่ม <code>unit_id</code>, <code>unit_name</code>, <code>unit_quantity</code> (default 1)</li>
+      <li><span class="tag">receipt_settings</span> เพิ่ม <code>show_vat_breakdown</code> boolean, <code>vat_rate</code> numeric default 7 (VAT รวมในราคา — แสดงบนใบเสร็จเท่านั้น ไม่แตะบัญชี)</li>
+      <li><span class="tag">RPC</span> <code>create_pos_order_with_items</code>: รับ unit fields + validate ราคา unit ตรงกับราคา tier ที่ตั้งไว้ / <code>close_pos_order_payment</code>: ตัดสต๊อก <code>sum(quantity × unit_quantity)</code></li>
+    </ul>
+    <p class="warn">หมายเหตุ: สต๊อกยังอยู่ที่ variant เหมือนเดิม — สินค้าที่ต้องตัดสต๊อกต้องมี variant (ฟอร์มเพิ่มสินค้าเร็วสร้าง variant "มาตรฐาน" ให้อัตโนมัติ)</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">3) Code path ที่แก้</h2>
+    <table>
+      <tr><th>ชั้น</th><th>ไฟล์</th><th>งาน</th></tr>
+      <tr><td>Pricing</td><td><code>src/modules/pos/pricing.ts</code> (ใหม่)</td><td>PriceTier + resolveTierBasePrice / resolveUnitTierPrice + labels</td></tr>
+      <tr><td>Types</td><td>catalog/types, pos/types, customers/types, database.types</td><td>ProductUnit, CartItem.unit, OrderItem.unit*, CustomerProfile.priceTier</td></tr>
+      <tr><td>Repo</td><td>catalog/repository</td><td>โหลด units ใน listProducts/getProduct, CRUD units, barcode หา unit, tier prices ใน create/update</td></tr>
+      <tr><td>Repo</td><td>customers/repository</td><td>priceTier ใน map/save + getCustomerById</td></tr>
+      <tr><td>Cart</td><td>pos/cart.ts, pos/server-cart.ts</td><td>เพิ่มหน่วย+tier ใน addToCart + trusted validation (จำกัดจำนวน 9999, stock demand × ตัวคูณ)</td></tr>
+      <tr><td>Order</td><td>pos/order-repository, grocery-pos/order-repository</td><td>ส่ง/แมป unit fields</td></tr>
+      <tr><td>Checkout</td><td>grocery-pos/checkout-service, offline-sync, api sync route</td><td>priceTier ใน operation + ดึง tier ลูกค้าฝั่ง server, catalog version รวม units</td></tr>
+      <tr><td>Receipt</td><td>printing/types, printing/receipt-lines</td><td>บรรทัด qty×ราคา/หน่วย + ชื่อหน่วย + VAT breakdown</td></tr>
+      <tr><td>UI POS</td><td>app/pos/grocery/GroceryPosTerminal + actions</td><td>ค้นหาชื่อ, ปุ่มหน่วย, ช่องจำนวน, tier selector + reprice, ส่วนลดบิล, ประวัติบิล, เพิ่มสินค้าเร็ว</td></tr>
+      <tr><td>UI</td><td>(dashboard)/customers, (dashboard)/catalog, settings/receipt</td><td>เลือก tier ลูกค้า / แก้หน่วย+ราคาส่งใน catalog / toggle VAT</td></tr>
+      <tr><td>Test</td><td>tests/unit/wholesale-*.test.ts</td><td>pricing resolver, cart หน่วย, server-cart validation</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">4) กติกาความถูกต้องของราคา (trust model)</h2>
+    <ol>
+      <li>Client ส่ง cart → server สร้าง trusted cart ใหม่จาก catalog + tier เสมอ (เหมือนเดิม)</li>
+      <li>tier ที่ใช้: ถ้าเลือกลูกค้า → ใช้ tier ของลูกค้าจาก DB (client ปลอมไม่ได้); ถ้าไม่เลือกลูกค้า → แคชเชียร์เลือก tier ได้ (พฤติกรรมร้านขายส่งหน้าร้าน)</li>
+      <li>RPC ตรวจซ้ำ: ราคาต่อหน่วยต้องตรงกับราคา tier ใดราคาหนึ่งที่ตั้งไว้ในระบบเท่านั้น</li>
+      <li>ขาย 1 โหล → order_items 1 แถว (qty=จำนวนโหล, unit_quantity=12) → ตัดสต๊อก qty×12 ตอนปิดบิล</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">5) ลำดับ implement + Verify</h2>
+    <ol>
+      <li>Migration + database.types</li>
+      <li>pricing.ts + types + repositories</li>
+      <li>cart/server-cart + order repos + checkout/offline/sync</li>
+      <li>receipt lines + VAT + settings</li>
+      <li>UI: GroceryPosTerminal + quick add + history + customers tier + catalog units</li>
+      <li>Unit tests ใหม่ + รัน suite เดิม + typecheck</li>
+      <li>Document ลง Obsidian + memory</li>
+    </ol>
+    <p class="meta">นอก scope v1: ใบกำกับภาษีเต็มรูป, ราคาตามปริมาณอัตโนมัติ (quantity break), เครดิต/ลูกหนี้การค้า, ใบส่งของ</p>
+  </div>
+</main>
+</body>
+</html>

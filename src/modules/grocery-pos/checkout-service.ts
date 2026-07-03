@@ -10,6 +10,8 @@ import {
 import { buildGroceryCatalogVersion } from "@/modules/grocery-pos/offline-sync";
 import { buildTrustedCartFromCatalog, CartValidationError } from "@/modules/pos/server-cart";
 import { listProducts } from "@/modules/catalog/repository";
+import { getCustomerById } from "@/modules/customers/repository";
+import { normalizePriceTier, type PriceTier } from "@/modules/pos/pricing";
 import type { Cart, Order } from "@/modules/pos/types";
 import type { Json } from "@/server/integrations/supabase/database.types";
 
@@ -21,6 +23,8 @@ export interface CreateTrustedGroceryOrderInput {
   canDiscount: boolean;
   cart: Cart;
   customerId?: string | null;
+  /** ระดับราคาที่แคชเชียร์เลือกเอง (ใช้เมื่อไม่ได้เลือกลูกค้า — ถ้าเลือกลูกค้า ใช้ tier จาก DB เสมอ) */
+  priceTier?: PriceTier | null;
   couponCode?: string | null;
   clientCouponDiscountAmount?: number;
   idempotencyKey: string;
@@ -30,6 +34,21 @@ export interface CreateTrustedGroceryOrderInput {
     catalogVersion: string;
     operationPayload: Json;
   };
+}
+
+/** tier ที่เชื่อถือได้: ลูกค้าใน DB ชนะค่า client เสมอ */
+export async function resolveTrustedPriceTier(
+  storeId: string,
+  customerId: string | null | undefined,
+  requestedTier: string | null | undefined,
+): Promise<{ tier: PriceTier; error: string | null }> {
+  if (customerId) {
+    const customerRes = await getCustomerById(storeId, customerId);
+    if (customerRes.error) return { tier: "retail", error: customerRes.error.userMessage };
+    if (!customerRes.data) return { tier: "retail", error: "ลูกค้าไม่ถูกต้อง" };
+    return { tier: customerRes.data.priceTier, error: null };
+  }
+  return { tier: normalizePriceTier(requestedTier), error: null };
 }
 
 function couponErrorMessage(reason: string): string {
@@ -90,9 +109,13 @@ export async function createTrustedGroceryOrder(
       }
     }
 
+    const tierRes = await resolveTrustedPriceTier(input.storeId, input.customerId, input.priceTier);
+    if (tierRes.error) return { order: null, error: tierRes.error };
+
     const trustedCart = buildTrustedCartFromCatalog(input.cart, productsRes.data, {
       storeId: input.storeId,
       canDiscount: input.canDiscount,
+      priceTier: tierRes.tier,
     });
     const couponRes = input.couponCode
       ? await findCouponPolicyByCode(input.storeId, input.couponCode, input.customerId)

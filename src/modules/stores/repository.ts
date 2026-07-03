@@ -336,6 +336,8 @@ export async function getReceiptSettings(storeId: string) {
           autoPrintStationTickets: data.auto_print_station_tickets,
           paperWidth: data.paper_width,
           printCopies: data.print_copies,
+          showVatBreakdown: data.show_vat_breakdown,
+          vatRate: data.vat_rate,
           updatedAt: data.updated_at,
         },
         error: null,

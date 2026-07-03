@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent } from "react";
-import type { Category, Product } from "@/modules/catalog/types";
+import { useRouter } from "next/navigation";
+import type { Category, Product, ProductUnit } from "@/modules/catalog/types";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { Cart, Order } from "@/modules/pos/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { buildReceiptData } from "@/modules/printing/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
-import { emptyCart, updateQuantity, removeFromCart } from "@/modules/pos/cart";
-import { addBarcodeMatchToGroceryCart } from "@/modules/grocery-pos/cart-adapter";
+import { emptyCart, updateQuantity, removeFromCart, applyOrderDiscount, repriceCartForTier } from "@/modules/pos/cart";
+import { PRICE_TIER_LABELS, PRICE_TIERS, resolveTierBasePrice, resolveUnitTierPrice, type PriceTier } from "@/modules/pos/pricing";
+import { addBarcodeMatchToGroceryCart, type GroceryBarcodeMatch } from "@/modules/grocery-pos/cart-adapter";
 import {
   publishCustomerDisplaySnapshot,
   resolveCustomerDisplayPublishCart,
@@ -32,7 +34,9 @@ import {
   closeGroceryOrderPaymentAction,
   createGroceryOrderAction,
   evaluateGroceryCouponAction,
+  listGroceryOrdersHistoryAction,
   lookupGroceryBarcodeAction,
+  quickAddGroceryProductAction,
   searchGroceryCustomersAction,
   voidGroceryOrderAction,
 } from "./actions";
@@ -49,6 +53,8 @@ interface GroceryPosTerminalProps {
   printerLoadError: string | null;
   offlineEnabled: boolean;
   offlineUnavailableMessage: string | null;
+  canManageCatalog: boolean;
+  canDiscount: boolean;
 }
 
 function money(value: number, currency: string) {
@@ -85,17 +91,49 @@ function buildCouponPreviewCart(cart: Cart, couponDiscount: number): Cart {
   };
 }
 
-function findLocalBarcodeMatch(products: Product[], barcode: string) {
+function findLocalBarcodeMatch(products: Product[], barcode: string): GroceryBarcodeMatch | null {
   const normalized = barcode.trim().toLowerCase();
   for (const product of products) {
-    if (product.barcode?.toLowerCase() === normalized) return { product, variant: null, barcode };
+    if (product.barcode?.toLowerCase() === normalized) {
+      return { product, variant: product.variants[0] ?? null, unit: null, barcode };
+    }
     for (const variant of product.variants) {
       if (variant.barcode?.toLowerCase() === normalized || variant.sku?.toLowerCase() === normalized) {
-        return { product, variant, barcode };
+        return { product, variant, unit: null, barcode };
+      }
+    }
+    for (const unit of product.units ?? []) {
+      if (unit.barcode?.toLowerCase() === normalized) {
+        return { product, variant: product.variants[0] ?? null, unit, barcode };
       }
     }
   }
   return null;
+}
+
+function searchLocalProducts(products: Product[], query: string): Product[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return products
+    .filter(
+      (product) =>
+        product.name.toLowerCase().includes(q) ||
+        product.barcode?.toLowerCase().includes(q) ||
+        product.variants.some(
+          (variant) => variant.sku?.toLowerCase().includes(q) || variant.barcode?.toLowerCase().includes(q),
+        ) ||
+        (product.units ?? []).some((unit) => unit.barcode?.toLowerCase().includes(q)),
+    )
+    .slice(0, 30);
+}
+
+function productStockLabel(product: Product): string | null {
+  const tracked = product.variants.filter(
+    (variant) => variant.trackStock && typeof variant.stockQuantity === "number",
+  );
+  if (tracked.length === 0) return null;
+  const total = tracked.reduce((sum, variant) => sum + (variant.stockQuantity ?? 0), 0);
+  return `${total}`;
 }
 
 function defaultOfflineSyncState(): GroceryOfflineSyncState {
@@ -115,6 +153,57 @@ function isLikelyNetworkError(error: unknown): boolean {
   return /network|fetch|offline|load failed|failed to fetch/i.test(message);
 }
 
+interface QuickAddUnitDraft {
+  name: string;
+  quantity: string;
+  price: string;
+  priceWholesale: string;
+  barcode: string;
+}
+
+interface QuickAddDraft {
+  name: string;
+  barcode: string;
+  basePrice: string;
+  priceWholesale: string;
+  priceAgent: string;
+  priceRegular: string;
+  unitLabel: string;
+  initialStock: string;
+  units: QuickAddUnitDraft[];
+}
+
+function emptyQuickAddDraft(): QuickAddDraft {
+  return {
+    name: "",
+    barcode: "",
+    basePrice: "",
+    priceWholesale: "",
+    priceAgent: "",
+    priceRegular: "",
+    unitLabel: "ชิ้น",
+    initialStock: "",
+    units: [],
+  };
+}
+
+function parseOptionalPrice(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  paid: "ชำระแล้ว",
+  pending_payment: "รอชำระ",
+  open: "เปิดอยู่",
+  voided: "ยกเลิก",
+  cancelled: "ยกเลิก",
+  refunded: "คืนเงิน",
+  draft: "ร่าง",
+};
+
 export function GroceryPosTerminal({
   storeId,
   storeName,
@@ -126,10 +215,14 @@ export function GroceryPosTerminal({
   printerLoadError,
   offlineEnabled,
   offlineUnavailableMessage,
+  canManageCatalog,
+  canDiscount,
 }: GroceryPosTerminalProps) {
+  const router = useRouter();
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [scanValue, setScanValue] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [priceTier, setPriceTier] = useState<PriceTier>("retail");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerProfile[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
@@ -139,12 +232,22 @@ export function GroceryPosTerminal({
     code: string;
     discount: number;
   } | null>(null);
+  const [billDiscountType, setBillDiscountType] = useState<"amount" | "percentage">("amount");
+  const [billDiscountValue, setBillDiscountValue] = useState("");
   const [checkoutOrder, setCheckoutOrder] = useState<Order | null>(null);
   const [cashReceived, setCashReceived] = useState("");
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
   const [deviceId, setDeviceId] = useState("");
   const [offlineSyncState, setOfflineSyncState] = useState<GroceryOfflineSyncState>(() => defaultOfflineSyncState());
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
+  const [historyFromDate, setHistoryFromDate] = useState("");
+  const [historyToDate, setHistoryToDate] = useState("");
+  const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddDraft, setQuickAddDraft] = useState<QuickAddDraft>(() => emptyQuickAddDraft());
+  const [quickAddMessage, setQuickAddMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const scannerState = useRef<ScannerBufferState>({ value: "", updatedAtMs: 0 });
   const paidDisplayCartRef = useRef<Cart | null>(null);
@@ -156,11 +259,17 @@ export function GroceryPosTerminal({
   const defaultPrinter = printers.find((printer) => printer.isDefault) ?? printers[0] ?? null;
 
   const visibleProducts = useMemo(() => products.slice(0, 18), [products]);
+  const searchResults = useMemo(() => searchLocalProducts(products, scanValue), [products, scanValue]);
   const catalogVersion = useMemo(() => buildGroceryCatalogVersion({ products }), [products]);
   const displayCart = useMemo(
     () => buildCouponPreviewCart(cart, appliedCoupon?.discount ?? 0),
     [appliedCoupon?.discount, cart],
   );
+  const cashReceivedNumber = Number(cashReceived || 0);
+  const changePreview =
+    Number.isFinite(cashReceivedNumber) && cashReceivedNumber > displayCart.total
+      ? roundMoney(cashReceivedNumber - displayCart.total)
+      : 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -245,13 +354,27 @@ export function GroceryPosTerminal({
     setCheckoutMessage(`${reason} บันทึกในเครื่องแล้ว จะ sync อัตโนมัติเมื่อออนไลน์`);
   }
 
+  function addMatch(match: GroceryBarcodeMatch, quantity = 1) {
+    resetCheckoutDraft();
+    setCart((current) => addBarcodeMatchToGroceryCart(current, match, { quantity, priceTier }));
+    const unitInfo = match.unit ? ` (${match.unit.name})` : "";
+    setMessage(`เพิ่ม ${match.product.name}${unitInfo} แล้ว`);
+    setScanValue("");
+  }
+
+  function addProduct(product: Product, unit: ProductUnit | null) {
+    addMatch({
+      product,
+      variant: product.variants[0] ?? null,
+      unit,
+      barcode: unit?.barcode ?? product.barcode ?? product.id,
+    });
+  }
+
   function addBarcode(barcode: string) {
     const localMatch = findLocalBarcodeMatch(products, barcode);
     if (localMatch) {
-      resetCheckoutDraft();
-      setCart((current) => addBarcodeMatchToGroceryCart(current, localMatch));
-      setMessage(`เพิ่ม ${localMatch.product.name} แล้ว`);
-      setScanValue("");
+      addMatch(localMatch);
       return;
     }
 
@@ -262,10 +385,12 @@ export function GroceryPosTerminal({
         setMessage(result.error ?? "ไม่พบสินค้าจากบาร์โค้ดนี้");
         return;
       }
-      resetCheckoutDraft();
-      setCart((current) => addBarcodeMatchToGroceryCart(current, match));
-      setMessage(`เพิ่ม ${match.product.name} แล้ว`);
-      setScanValue("");
+      addMatch({
+        product: match.product,
+        variant: match.variant ?? match.product.variants[0] ?? null,
+        unit: match.unit ?? null,
+        barcode,
+      });
     });
   }
 
@@ -282,6 +407,33 @@ export function GroceryPosTerminal({
     const barcode = scanValue.trim();
     if (!barcode) return;
     addBarcode(barcode);
+  }
+
+  function changePriceTier(tier: PriceTier) {
+    setPriceTier(tier);
+    resetCheckoutDraft();
+    setCart((current) => repriceCartForTier(current, products, tier));
+    setMessage(`ใช้${PRICE_TIER_LABELS[tier]}กับทั้งบิลแล้ว`);
+  }
+
+  function setLineQuantity(key: string, quantity: number) {
+    if (!Number.isFinite(quantity)) return;
+    const next = Math.max(0, Math.min(9999, Math.floor(quantity)));
+    resetCheckoutDraft();
+    setCart((current) => updateQuantity(current, key, next));
+  }
+
+  function handleApplyBillDiscount() {
+    const value = Number(billDiscountValue);
+    if (!Number.isFinite(value) || value < 0) {
+      setCheckoutMessage("มูลค่าส่วนลดไม่ถูกต้อง");
+      return;
+    }
+    resetCheckoutDraft();
+    setCart((current) =>
+      applyOrderDiscount(current, { type: billDiscountType, value, note: "ส่วนลดท้ายบิล" }),
+    );
+    setCheckoutMessage(value > 0 ? "ใส่ส่วนลดท้ายบิลแล้ว" : "ล้างส่วนลดท้ายบิลแล้ว");
   }
 
   function handleCustomerSearch() {
@@ -309,7 +461,20 @@ export function GroceryPosTerminal({
     setCustomerResults([]);
     setAppliedCoupon(null);
     setCheckoutOrder(null);
-    setCheckoutMessage(`เลือกลูกค้า ${customer.name}`);
+    setPriceTier(customer.priceTier);
+    setCart((current) => repriceCartForTier(current, products, customer.priceTier));
+    setCheckoutMessage(`เลือกลูกค้า ${customer.name} (${PRICE_TIER_LABELS[customer.priceTier]})`);
+  }
+
+  function clearCustomer() {
+    setSelectedCustomer(null);
+    setCustomerQuery("");
+    setCustomerResults([]);
+    setAppliedCoupon(null);
+    setCheckoutOrder(null);
+    setPriceTier("retail");
+    setCart((current) => repriceCartForTier(current, products, "retail"));
+    setCheckoutMessage("ล้างลูกค้าแล้ว กลับเป็นราคาปลีก");
   }
 
   function handleApplyCoupon() {
@@ -324,7 +489,7 @@ export function GroceryPosTerminal({
     }
 
     startTransition(async () => {
-      const result = await evaluateGroceryCouponAction(code, cart, selectedCustomer?.id);
+      const result = await evaluateGroceryCouponAction(code, cart, selectedCustomer?.id, priceTier);
       if (result.error) {
         setAppliedCoupon(null);
         setCheckoutMessage(result.error);
@@ -357,6 +522,7 @@ export function GroceryPosTerminal({
         catalogVersion,
         cart,
         customerId: selectedCustomer?.id ?? null,
+        priceTier,
         couponCode: appliedCoupon?.code ?? null,
         clientCouponDiscountAmount: appliedCoupon?.discount ?? 0,
         note: "Grocery POS",
@@ -376,6 +542,7 @@ export function GroceryPosTerminal({
         result = await createGroceryOrderAction({
           cart,
           customerId: selectedCustomer?.id ?? null,
+          priceTier,
           couponCode: appliedCoupon?.code ?? null,
           clientCouponDiscountAmount: appliedCoupon?.discount ?? 0,
           idempotencyKey: operation.idempotencyKey,
@@ -459,9 +626,11 @@ export function GroceryPosTerminal({
       setCart(emptyCart(storeId));
       setCouponCode("");
       setAppliedCoupon(null);
+      setBillDiscountValue("");
       setCashReceived("");
       setSelectedCustomer(null);
       setCustomerQuery("");
+      setPriceTier("retail");
       if (receiptSettings?.autoPrintReceipt) {
         void handlePrintReceipt(result.order);
       }
@@ -486,6 +655,8 @@ export function GroceryPosTerminal({
       autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 1,
+      showVatBreakdown: false,
+      vatRate: 7,
       updatedAt: new Date().toISOString(),
     };
     const receiptData = {
@@ -534,18 +705,148 @@ export function GroceryPosTerminal({
     });
   }
 
+  function loadHistory(fromDate?: string, toDate?: string) {
+    startTransition(async () => {
+      setHistoryMessage("กำลังโหลด...");
+      const result = await listGroceryOrdersHistoryAction({
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        limit: 100,
+      });
+      if (result.error) {
+        setHistoryOrders([]);
+        setHistoryMessage(result.error);
+        return;
+      }
+      setHistoryOrders(result.orders);
+      setHistoryMessage(result.orders.length === 0 ? "ไม่พบบิลในช่วงวันที่นี้" : null);
+    });
+  }
+
+  function openHistory() {
+    setHistoryOpen(true);
+    loadHistory(historyFromDate, historyToDate);
+  }
+
+  function updateQuickAddUnit(index: number, patch: Partial<QuickAddUnitDraft>) {
+    setQuickAddDraft((draft) => ({
+      ...draft,
+      units: draft.units.map((unit, i) => (i === index ? { ...unit, ...patch } : unit)),
+    }));
+  }
+
+  function handleQuickAddSubmit() {
+    const basePrice = Number(quickAddDraft.basePrice);
+    if (!quickAddDraft.name.trim()) {
+      setQuickAddMessage("กรุณากรอกชื่อสินค้า");
+      return;
+    }
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      setQuickAddMessage("ราคาปลีกไม่ถูกต้อง");
+      return;
+    }
+    const units = quickAddDraft.units
+      .filter((unit) => unit.name.trim())
+      .map((unit) => ({
+        name: unit.name,
+        quantity: Number(unit.quantity),
+        price: Number(unit.price),
+        priceWholesale: parseOptionalPrice(unit.priceWholesale),
+        barcode: unit.barcode.trim() || null,
+      }));
+    for (const unit of units) {
+      if (!Number.isInteger(unit.quantity) || unit.quantity < 2) {
+        setQuickAddMessage(`หน่วย "${unit.name}" ต้องระบุจำนวนชิ้นต่อหน่วยตั้งแต่ 2 ขึ้นไป`);
+        return;
+      }
+      if (!Number.isFinite(unit.price) || unit.price < 0) {
+        setQuickAddMessage(`หน่วย "${unit.name}" ราคาไม่ถูกต้อง`);
+        return;
+      }
+    }
+    const initialStockValue = quickAddDraft.initialStock.trim();
+    const initialStock = initialStockValue ? Number(initialStockValue) : null;
+    if (initialStock !== null && (!Number.isFinite(initialStock) || initialStock < 0)) {
+      setQuickAddMessage("จำนวนสต๊อกเริ่มต้นไม่ถูกต้อง");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await quickAddGroceryProductAction({
+        name: quickAddDraft.name,
+        barcode: quickAddDraft.barcode.trim() || null,
+        basePrice,
+        unitLabel: quickAddDraft.unitLabel.trim() || null,
+        priceWholesale: parseOptionalPrice(quickAddDraft.priceWholesale),
+        priceAgent: parseOptionalPrice(quickAddDraft.priceAgent),
+        priceRegular: parseOptionalPrice(quickAddDraft.priceRegular),
+        initialStock,
+        units,
+      });
+      if (!result.ok) {
+        setQuickAddMessage(result.error ?? "เพิ่มสินค้าไม่สำเร็จ");
+        return;
+      }
+      setQuickAddMessage(null);
+      setQuickAddOpen(false);
+      setQuickAddDraft(emptyQuickAddDraft());
+      setMessage(`เพิ่มสินค้า ${quickAddDraft.name} แล้ว กำลังรีเฟรชรายการสินค้า...`);
+      router.refresh();
+    });
+  }
+
+  function renderUnitChips(product: Product) {
+    const units = product.units ?? [];
+    if (units.length === 0) return null;
+    return (
+      <span className="grocery-pos-unit-chips">
+        <button
+          type="button"
+          className="grocery-pos-unit-chip"
+          onClick={(event) => {
+            event.stopPropagation();
+            addProduct(product, null);
+          }}
+        >
+          {product.unitLabel || "ชิ้น"} {money(resolveTierBasePrice(product, priceTier), currency)}
+        </button>
+        {units.map((unit) => (
+          <button
+            type="button"
+            key={unit.id}
+            className="grocery-pos-unit-chip pack"
+            onClick={(event) => {
+              event.stopPropagation();
+              addProduct(product, unit);
+            }}
+          >
+            {unit.name} ({unit.quantity}) {money(resolveUnitTierPrice(unit, priceTier), currency)}
+          </button>
+        ))}
+      </span>
+    );
+  }
+
   return (
     <main className="grocery-pos-shell">
       <header className="grocery-pos-header">
         <div>
-          <p className="grocery-pos-eyebrow">Dedicated Grocery POS</p>
+          <p className="grocery-pos-eyebrow">POS ขายส่ง / ร้านของชำ</p>
           <h1>{storeName}</h1>
           <p>
-            สแกนสินค้าเร็วสำหรับร้านของชำ แยกจาก POS โต๊ะ/บุฟเฟต์เดิม แต่ใช้ cart/order/printing contract เดียวกัน
+            ยิงบาร์โค้ดหรือค้นหาชื่อสินค้า รองรับราคาหลายหน่วย (โหล/แพ็ค) และราคาหลายระดับลูกค้า
           </p>
         </div>
         <div className="grocery-pos-actions">
-          <a className="grocery-pos-link" href="/pos/grocery/display">
+          {canManageCatalog ? (
+            <button type="button" className="grocery-pos-link" onClick={() => setQuickAddOpen(true)}>
+              + เพิ่มสินค้าเร็ว
+            </button>
+          ) : null}
+          <button type="button" className="grocery-pos-link" onClick={openHistory}>
+            ประวัติบิล
+          </button>
+          <a className="grocery-pos-link secondary" href="/pos/grocery/display">
             เปิดจอคู่ร้านของชำ
           </a>
           <a className="grocery-pos-link secondary" href="/pos">
@@ -562,19 +863,33 @@ export function GroceryPosTerminal({
             {offlineSyncState.failedOperations}
           </span>
         </div>
+        <div className="grocery-pos-tier-picker">
+          <span>ระดับราคา:</span>
+          {PRICE_TIERS.map((tier) => (
+            <button
+              type="button"
+              key={tier}
+              className={priceTier === tier ? "grocery-pos-tier active" : "grocery-pos-tier"}
+              disabled={!!selectedCustomer}
+              onClick={() => changePriceTier(tier)}
+            >
+              {PRICE_TIER_LABELS[tier]}
+            </button>
+          ))}
+        </div>
         {offlineEnabled ? null : <p>{offlineUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับ Offline POS"}</p>}
         {offlineEnabled && offlineSyncState.lastError ? <p>{offlineSyncState.lastError}</p> : null}
       </section>
 
-      <section className="grocery-pos-scan" aria-label="barcode scanner">
-        <label htmlFor="grocery-barcode">Barcode / SKU</label>
+      <section className="grocery-pos-scan" aria-label="product search">
+        <label htmlFor="grocery-barcode">ค้นหาสินค้า (ชื่อ / รหัส / บาร์โค้ด)</label>
         <div className="grocery-pos-scan-row">
           <input
             id="grocery-barcode"
             value={scanValue}
             onChange={(event) => setScanValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="ยิงบาร์โค้ดหรือพิมพ์ SKU"
+            placeholder="ยิงบาร์โค้ด พิมพ์ชื่อสินค้า หรือ SKU"
             autoFocus
           />
           <Button loading={isPending} onClick={handleManualSubmit}>
@@ -582,6 +897,35 @@ export function GroceryPosTerminal({
           </Button>
         </div>
         {message ? <p className="grocery-pos-message">{message}</p> : null}
+        {searchResults.length > 0 ? (
+          <div className="grocery-pos-search-results">
+            {searchResults.map((product) => {
+              const stock = productStockLabel(product);
+              return (
+                <div
+                  className="grocery-pos-search-row"
+                  key={product.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => addProduct(product, null)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") addProduct(product, null);
+                  }}
+                >
+                  <div className="grocery-pos-search-info">
+                    <strong>{product.name}</strong>
+                    <span>
+                      {money(resolveTierBasePrice(product, priceTier), currency)} / {product.unitLabel || "ชิ้น"}
+                      {stock !== null ? ` · คงเหลือ ${stock}` : ""}
+                      {product.barcode ? ` · ${product.barcode}` : ""}
+                    </span>
+                  </div>
+                  {renderUnitChips(product)}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </section>
 
       <div className="grocery-pos-grid">
@@ -594,24 +938,20 @@ export function GroceryPosTerminal({
           </div>
           <div className="grocery-pos-products">
             {visibleProducts.map((product) => (
-              <button
-                type="button"
-                key={product.id}
-                onClick={() => {
-                  resetCheckoutDraft();
-                  setCart((current) => addBarcodeMatchToGroceryCart(current, { product, variant: null, barcode: product.barcode ?? product.id }));
-                }}
-              >
-                <strong>{product.name}</strong>
-                <span>{money(product.basePrice, currency)}</span>
-              </button>
+              <div className="grocery-pos-product-card" key={product.id}>
+                <button type="button" onClick={() => addProduct(product, null)}>
+                  <strong>{product.name}</strong>
+                  <span>{money(resolveTierBasePrice(product, priceTier), currency)}</span>
+                </button>
+                {renderUnitChips(product)}
+              </div>
             ))}
           </div>
         </section>
 
         <aside className="grocery-pos-panel grocery-pos-cart">
           <div className="grocery-pos-panel-head">
-            <h2>ตะกร้า</h2>
+            <h2>ตะกร้า ({PRICE_TIER_LABELS[priceTier]})</h2>
             <span>{cart.items.length} รายการ</span>
           </div>
           <div className="grocery-pos-cart-list">
@@ -620,25 +960,32 @@ export function GroceryPosTerminal({
               <div className="grocery-pos-cart-item" key={item.key}>
                 <div>
                   <strong>{item.productName}</strong>
-                  <span>{item.variant?.name ?? "ชิ้น"}</span>
+                  <span>
+                    {item.unit ? `${item.unit.name} (${item.unit.quantity} ชิ้น)` : item.variant?.name ?? "ชิ้น"}
+                    {" · "}
+                    {money(item.unitPrice, currency)}/หน่วย
+                  </span>
                 </div>
                 <div className="grocery-pos-qty">
                   <button
                     type="button"
-                    onClick={() => {
-                      resetCheckoutDraft();
-                      setCart((current) => updateQuantity(current, item.key, item.quantity - 1));
-                    }}
+                    onClick={() => setLineQuantity(item.key, item.quantity - 1)}
                   >
                     -
                   </button>
-                  <b>{item.quantity}</b>
+                  <input
+                    className="grocery-pos-qty-input"
+                    inputMode="numeric"
+                    value={item.quantity}
+                    onChange={(event) => {
+                      const parsed = Number(event.target.value);
+                      if (event.target.value === "") return;
+                      setLineQuantity(item.key, parsed);
+                    }}
+                  />
                   <button
                     type="button"
-                    onClick={() => {
-                      resetCheckoutDraft();
-                      setCart((current) => updateQuantity(current, item.key, item.quantity + 1));
-                    }}
+                    onClick={() => setLineQuantity(item.key, item.quantity + 1)}
                   >
                     +
                   </button>
@@ -656,9 +1003,52 @@ export function GroceryPosTerminal({
               </div>
             ))}
           </div>
-          <footer className="grocery-pos-total">
-            <span>รวม</span>
-            <strong>{money(displayCart.total, currency)}</strong>
+
+          {canDiscount ? (
+            <div className="grocery-pos-discount-row">
+              <select
+                value={billDiscountType}
+                onChange={(event) => setBillDiscountType(event.target.value === "percentage" ? "percentage" : "amount")}
+              >
+                <option value="amount">ส่วนลด (บาท)</option>
+                <option value="percentage">ส่วนลด (%)</option>
+              </select>
+              <input
+                value={billDiscountValue}
+                onChange={(event) => setBillDiscountValue(event.target.value)}
+                placeholder="0"
+                inputMode="decimal"
+              />
+              <Button onClick={handleApplyBillDiscount}>ใช้ส่วนลด</Button>
+            </div>
+          ) : null}
+
+          <footer className="grocery-pos-summary">
+            <div>
+              <span>ยอดรวมย่อย</span>
+              <span>{money(displayCart.subtotal, currency)}</span>
+            </div>
+            {displayCart.discount > 0 ? (
+              <div>
+                <span>ส่วนลด{displayCart.discountNote ? ` (${displayCart.discountNote})` : ""}</span>
+                <span>-{money(displayCart.discount, currency)}</span>
+              </div>
+            ) : null}
+            <div className="grocery-pos-total">
+              <span>รวมสุทธิ</span>
+              <strong>{money(displayCart.total, currency)}</strong>
+            </div>
+            {receiptSettings?.showVatBreakdown && receiptSettings.vatRate > 0 ? (
+              <div className="grocery-pos-vat-hint">
+                <span>รวม VAT {receiptSettings.vatRate}% แล้ว</span>
+                <span>
+                  {money(
+                    roundMoney((displayCart.total * receiptSettings.vatRate) / (100 + receiptSettings.vatRate)),
+                    currency,
+                  )}
+                </span>
+              </div>
+            ) : null}
           </footer>
           {appliedCoupon ? (
             <p className="grocery-pos-printer">
@@ -678,8 +1068,8 @@ export function GroceryPosTerminal({
             <h2>ลูกค้า</h2>
             <span>
               {selectedCustomer
-                ? `${selectedCustomer.name} / ${formatPoints(selectedCustomer.pointsBalance)} แต้ม`
-                : "ไม่ระบุ"}
+                ? `${selectedCustomer.name} / ${PRICE_TIER_LABELS[selectedCustomer.priceTier]}`
+                : "ไม่ระบุ (ขายหน้าร้าน)"}
             </span>
           </div>
           <div className="grocery-pos-inline">
@@ -692,13 +1082,24 @@ export function GroceryPosTerminal({
               ค้นหา
             </Button>
           </div>
+          {selectedCustomer ? (
+            <div className="grocery-pos-selected-customer">
+              <span>
+                {formatPoints(selectedCustomer.pointsBalance)} แต้ม · {PRICE_TIER_LABELS[selectedCustomer.priceTier]}
+              </span>
+              <button type="button" onClick={clearCustomer}>
+                ล้างลูกค้า
+              </button>
+            </div>
+          ) : null}
           {customerResults.length > 0 ? (
             <div className="grocery-pos-customer-results">
               {customerResults.map((customer) => (
                 <button type="button" key={customer.id} onClick={() => selectCustomer(customer)}>
                   <strong>{customer.name}</strong>
                   <span>
-                    {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} / {formatPoints(customer.pointsBalance)} แต้ม
+                    {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} · {PRICE_TIER_LABELS[customer.priceTier]} ·{" "}
+                    {formatPoints(customer.pointsBalance)} แต้ม
                   </span>
                 </button>
               ))}
@@ -732,7 +1133,7 @@ export function GroceryPosTerminal({
             <span>{checkoutOrder?.orderNumber ?? "ยังไม่สร้างออร์เดอร์"}</span>
           </div>
           <Button className="grocery-pos-primary" loading={isPending} onClick={handleCreateOrder} disabled={cart.items.length === 0}>
-            สร้างออร์เดอร์
+            สร้างออร์เดอร์ {money(displayCart.total, currency)}
           </Button>
           <Button loading={isPending} onClick={handleVoidOrder} disabled={!checkoutOrder || checkoutOrder.status === "paid"}>
             ยกเลิกออร์เดอร์
@@ -748,6 +1149,9 @@ export function GroceryPosTerminal({
               รับเงินสด
             </Button>
           </div>
+          {changePreview > 0 ? (
+            <p className="grocery-pos-change">เงินทอน {money(changePreview, currency)}</p>
+          ) : null}
           <Button
             loading={isPending || isPrintingReceipt}
             onClick={() => handlePrintReceipt()}
@@ -759,6 +1163,204 @@ export function GroceryPosTerminal({
           {checkoutMessage ? <p className="grocery-pos-message">{checkoutMessage}</p> : null}
         </div>
       </section>
+
+      {historyOpen ? (
+        <div className="grocery-pos-modal-backdrop" role="dialog" aria-label="ประวัติบิล">
+          <div className="grocery-pos-modal">
+            <div className="grocery-pos-panel-head">
+              <h2>ประวัติบิล</h2>
+              <button type="button" onClick={() => setHistoryOpen(false)}>
+                ปิด
+              </button>
+            </div>
+            <div className="grocery-pos-history-filter">
+              <label>
+                จากวันที่
+                <input type="date" value={historyFromDate} onChange={(event) => setHistoryFromDate(event.target.value)} />
+              </label>
+              <label>
+                ถึงวันที่
+                <input type="date" value={historyToDate} onChange={(event) => setHistoryToDate(event.target.value)} />
+              </label>
+              <Button loading={isPending} onClick={() => loadHistory(historyFromDate, historyToDate)}>
+                ค้นหา
+              </Button>
+            </div>
+            {historyMessage ? <p className="grocery-pos-message">{historyMessage}</p> : null}
+            <div className="grocery-pos-history-list">
+              {historyOrders.map((order) => (
+                <div className="grocery-pos-history-row" key={order.id}>
+                  <div>
+                    <strong>{order.orderNumber}</strong>
+                    <span>
+                      {new Date(order.createdAt).toLocaleString("th-TH", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {" · "}
+                      {order.items.length} รายการ · {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                    </span>
+                  </div>
+                  <strong>{money(order.total, currency)}</strong>
+                  <Button
+                    loading={isPrintingReceipt}
+                    disabled={order.status !== "paid"}
+                    onClick={() => handlePrintReceipt(order)}
+                  >
+                    พิมพ์ซ้ำ
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {quickAddOpen ? (
+        <div className="grocery-pos-modal-backdrop" role="dialog" aria-label="เพิ่มสินค้าเร็ว">
+          <div className="grocery-pos-modal">
+            <div className="grocery-pos-panel-head">
+              <h2>เพิ่มสินค้าเร็ว</h2>
+              <button type="button" onClick={() => setQuickAddOpen(false)}>
+                ปิด
+              </button>
+            </div>
+            <div className="grocery-pos-quickadd-grid">
+              <label>
+                ชื่อสินค้า *
+                <input
+                  value={quickAddDraft.name}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, name: event.target.value }))}
+                  placeholder="เช่น น้ำปลาตราปู 700ml"
+                />
+              </label>
+              <label>
+                บาร์โค้ด
+                <input
+                  value={quickAddDraft.barcode}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, barcode: event.target.value }))}
+                  placeholder="ยิงบาร์โค้ดได้เลย"
+                />
+              </label>
+              <label>
+                ราคาปลีก/หน่วย *
+                <input
+                  value={quickAddDraft.basePrice}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, basePrice: event.target.value }))}
+                  inputMode="decimal"
+                  placeholder="70"
+                />
+              </label>
+              <label>
+                หน่วยนับ
+                <input
+                  value={quickAddDraft.unitLabel}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, unitLabel: event.target.value }))}
+                  placeholder="ชิ้น / ขวด / ถุง"
+                />
+              </label>
+              <label>
+                ราคาส่ง
+                <input
+                  value={quickAddDraft.priceWholesale}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, priceWholesale: event.target.value }))}
+                  inputMode="decimal"
+                  placeholder="เว้นว่าง = ใช้ราคาปลีก"
+                />
+              </label>
+              <label>
+                ราคาตัวแทน
+                <input
+                  value={quickAddDraft.priceAgent}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, priceAgent: event.target.value }))}
+                  inputMode="decimal"
+                  placeholder="เว้นว่าง = ใช้ราคาปลีก"
+                />
+              </label>
+              <label>
+                ราคาลูกค้าประจำ
+                <input
+                  value={quickAddDraft.priceRegular}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, priceRegular: event.target.value }))}
+                  inputMode="decimal"
+                  placeholder="เว้นว่าง = ใช้ราคาปลีก"
+                />
+              </label>
+              <label>
+                สต๊อกเริ่มต้น
+                <input
+                  value={quickAddDraft.initialStock}
+                  onChange={(event) => setQuickAddDraft((d) => ({ ...d, initialStock: event.target.value }))}
+                  inputMode="numeric"
+                  placeholder="เว้นว่าง = ไม่ติดตามสต๊อก"
+                />
+              </label>
+            </div>
+
+            <div className="grocery-pos-panel-head" style={{ marginTop: 12 }}>
+              <h2 style={{ fontSize: 15 }}>หน่วยแพ็ค (โหล/ลัง)</h2>
+              <button
+                type="button"
+                onClick={() =>
+                  setQuickAddDraft((d) => ({
+                    ...d,
+                    units: [...d.units, { name: "โหล", quantity: "12", price: "", priceWholesale: "", barcode: "" }],
+                  }))
+                }
+              >
+                + เพิ่มหน่วย
+              </button>
+            </div>
+            {quickAddDraft.units.map((unit, index) => (
+              <div className="grocery-pos-quickadd-unit" key={index}>
+                <input
+                  value={unit.name}
+                  onChange={(event) => updateQuickAddUnit(index, { name: event.target.value })}
+                  placeholder="ชื่อหน่วย เช่น โหล"
+                />
+                <input
+                  value={unit.quantity}
+                  onChange={(event) => updateQuickAddUnit(index, { quantity: event.target.value })}
+                  inputMode="numeric"
+                  placeholder="จำนวนชิ้น"
+                />
+                <input
+                  value={unit.price}
+                  onChange={(event) => updateQuickAddUnit(index, { price: event.target.value })}
+                  inputMode="decimal"
+                  placeholder="ราคาปลีก/หน่วย"
+                />
+                <input
+                  value={unit.priceWholesale}
+                  onChange={(event) => updateQuickAddUnit(index, { priceWholesale: event.target.value })}
+                  inputMode="decimal"
+                  placeholder="ราคาส่ง"
+                />
+                <input
+                  value={unit.barcode}
+                  onChange={(event) => updateQuickAddUnit(index, { barcode: event.target.value })}
+                  placeholder="บาร์โค้ดแพ็ค"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQuickAddDraft((d) => ({ ...d, units: d.units.filter((_, i) => i !== index) }))
+                  }
+                >
+                  ลบ
+                </button>
+              </div>
+            ))}
+
+            {quickAddMessage ? <p className="grocery-pos-message">{quickAddMessage}</p> : null}
+            <Button className="grocery-pos-primary" loading={isPending} onClick={handleQuickAddSubmit}>
+              บันทึกสินค้า
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <style jsx>{`
         .grocery-pos-shell {
@@ -833,7 +1435,9 @@ export function GroceryPosTerminal({
         .grocery-pos-sync {
           display: flex;
           justify-content: space-between;
+          align-items: center;
           gap: 12px;
+          flex-wrap: wrap;
           margin-top: 14px;
           padding: 12px 16px;
           color: var(--color-text-secondary);
@@ -849,6 +1453,22 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-sync p {
           color: var(--color-warning);
+        }
+        .grocery-pos-tier-picker {
+          font-size: 13px;
+        }
+        .grocery-pos-tier {
+          padding: 6px 10px;
+          font-size: 13px;
+        }
+        .grocery-pos-tier.active {
+          background: var(--color-brand);
+          color: var(--color-text-inverse);
+          border-color: var(--color-brand);
+        }
+        .grocery-pos-tier:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
         }
         .grocery-pos-scan label {
           display: block;
@@ -871,6 +1491,49 @@ export function GroceryPosTerminal({
           margin-top: 8px;
           color: var(--color-text-secondary);
         }
+        .grocery-pos-search-results {
+          margin-top: 10px;
+          display: grid;
+          gap: 6px;
+          max-height: 320px;
+          overflow-y: auto;
+        }
+        .grocery-pos-search-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 8px 10px;
+          cursor: pointer;
+        }
+        .grocery-pos-search-row:hover {
+          border-color: var(--color-brand);
+        }
+        .grocery-pos-search-info {
+          display: grid;
+        }
+        .grocery-pos-search-info span {
+          color: var(--color-text-secondary);
+          font-size: 13px;
+        }
+        .grocery-pos-unit-chips {
+          display: inline-flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .grocery-pos-unit-chip {
+          font-size: 12px;
+          padding: 4px 8px;
+          border-radius: 999px;
+        }
+        .grocery-pos-unit-chip.pack {
+          background: var(--color-brand);
+          color: var(--color-text-inverse);
+          border-color: var(--color-brand);
+        }
         .grocery-pos-grid {
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
@@ -890,16 +1553,21 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-products {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
           gap: 10px;
         }
-        .grocery-pos-products button {
-          min-height: 82px;
+        .grocery-pos-product-card {
+          display: grid;
+          gap: 6px;
+        }
+        .grocery-pos-product-card > button {
+          min-height: 72px;
           display: flex;
           flex-direction: column;
           align-items: flex-start;
           justify-content: space-between;
           text-align: left;
+          width: 100%;
         }
         .grocery-pos-cart-list {
           display: grid;
@@ -922,20 +1590,60 @@ export function GroceryPosTerminal({
         }
         .grocery-pos-qty {
           display: inline-grid;
-          grid-template-columns: 34px 32px 34px;
+          grid-template-columns: 32px 52px 32px;
           align-items: center;
           text-align: center;
+          gap: 2px;
         }
         .grocery-pos-qty button {
           padding: 6px;
         }
-        .grocery-pos-total {
-          display: flex;
-          justify-content: space-between;
+        .grocery-pos-qty-input {
+          min-height: 34px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          text-align: center;
+          font-weight: 700;
+          width: 100%;
+        }
+        .grocery-pos-discount-row {
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          gap: 8px;
+          margin-top: 12px;
+        }
+        .grocery-pos-discount-row select,
+        .grocery-pos-discount-row input {
+          min-height: 40px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 6px 10px;
+        }
+        .grocery-pos-summary {
           border-top: 2px solid var(--color-text-primary);
           margin-top: 14px;
-          padding-top: 12px;
+          padding-top: 10px;
+          display: grid;
+          gap: 4px;
+        }
+        .grocery-pos-summary > div {
+          display: flex;
+          justify-content: space-between;
+          color: var(--color-text-secondary);
+          font-size: 14px;
+        }
+        .grocery-pos-summary .grocery-pos-total {
+          color: var(--color-text-primary);
           font-size: 20px;
+        }
+        .grocery-pos-vat-hint {
+          font-size: 12px;
+        }
+        .grocery-pos-change {
+          margin-top: 8px;
+          color: var(--color-brand);
+          font-weight: 800;
+          font-size: 18px;
         }
         .grocery-pos-printer {
           margin-top: 10px;
@@ -970,6 +1678,15 @@ export function GroceryPosTerminal({
           width: 100%;
           margin-bottom: 10px;
         }
+        .grocery-pos-selected-customer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          margin-top: 10px;
+          color: var(--color-text-secondary);
+          font-size: 13px;
+        }
         .grocery-pos-customer-results {
           display: grid;
           gap: 8px;
@@ -980,10 +1697,91 @@ export function GroceryPosTerminal({
           justify-content: space-between;
           gap: 10px;
           text-align: left;
+          flex-wrap: wrap;
         }
         .grocery-pos-customer-results span {
           color: var(--color-text-secondary);
           font-size: 13px;
+        }
+        .grocery-pos-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          z-index: 60;
+        }
+        .grocery-pos-modal {
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-lg);
+          padding: 18px;
+          width: min(760px, 100%);
+          max-height: 88vh;
+          overflow-y: auto;
+        }
+        .grocery-pos-history-filter {
+          display: flex;
+          gap: 10px;
+          align-items: end;
+          flex-wrap: wrap;
+          margin-bottom: 12px;
+        }
+        .grocery-pos-history-filter label {
+          display: grid;
+          gap: 4px;
+          font-size: 13px;
+          color: var(--color-text-secondary);
+        }
+        .grocery-pos-history-filter input {
+          min-height: 40px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 6px 10px;
+        }
+        .grocery-pos-history-list {
+          display: grid;
+          gap: 8px;
+        }
+        .grocery-pos-history-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto auto;
+          align-items: center;
+          gap: 10px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 8px 10px;
+        }
+        .grocery-pos-history-row span {
+          color: var(--color-text-secondary);
+          font-size: 13px;
+          display: block;
+        }
+        .grocery-pos-quickadd-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .grocery-pos-quickadd-grid label {
+          display: grid;
+          gap: 4px;
+          font-size: 13px;
+          color: var(--color-text-secondary);
+        }
+        .grocery-pos-quickadd-grid input,
+        .grocery-pos-quickadd-unit input {
+          min-height: 40px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 6px 10px;
+        }
+        .grocery-pos-quickadd-unit {
+          display: grid;
+          grid-template-columns: 1.2fr 0.8fr 1fr 1fr 1.2fr auto;
+          gap: 8px;
+          margin-bottom: 8px;
         }
         @media (max-width: 860px) {
           .grocery-pos-shell {
@@ -993,7 +1791,9 @@ export function GroceryPosTerminal({
           .grocery-pos-scan-row,
           .grocery-pos-grid,
           .grocery-pos-checkout,
-          .grocery-pos-inline {
+          .grocery-pos-inline,
+          .grocery-pos-quickadd-grid,
+          .grocery-pos-quickadd-unit {
             grid-template-columns: 1fr;
           }
           .grocery-pos-header {
@@ -1001,6 +1801,9 @@ export function GroceryPosTerminal({
           }
           .grocery-pos-cart-item {
             grid-template-columns: minmax(0, 1fr) auto;
+          }
+          .grocery-pos-history-row {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

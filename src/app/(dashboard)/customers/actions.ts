@@ -7,6 +7,7 @@ import { requireFeature, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { generateMemberPortalLink } from "@/modules/customers/member-repository";
 import { deleteCustomer, saveCustomer } from "@/modules/customers/repository";
+import { normalizePriceTier } from "@/modules/pos/pricing";
 import { listProducts } from "@/modules/catalog/repository";
 import { deleteCoupon, saveCoupon } from "@/modules/promotions/repository";
 import {
@@ -83,6 +84,7 @@ export async function saveCustomerAction(formData: FormData): Promise<ActionResu
       name,
       phone,
       email,
+      priceTier: normalizePriceTier(text(formData, "priceTier")),
       isActive: formData.get("isActive") === "on",
     });
     if (result.error) return { error: result.error.userMessage };

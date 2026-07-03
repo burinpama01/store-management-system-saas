@@ -1177,6 +1177,8 @@ describe("receipt data", () => {
       autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 3,
+      showVatBreakdown: false,
+      vatRate: 7,
       updatedAt: "2026-06-20T00:00:00.000Z",
     };
 
@@ -1214,6 +1216,8 @@ describe("receipt data", () => {
       autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 1,
+      showVatBreakdown: false,
+      vatRate: 7,
       updatedAt: "2026-06-20T00:00:00.000Z",
     };
 
@@ -1254,6 +1258,8 @@ describe("receipt data", () => {
       autoPrintStationTickets: false,
       paperWidth: "80mm",
       printCopies: 1,
+      showVatBreakdown: false,
+      vatRate: 7,
       updatedAt: "2026-06-20T00:00:00.000Z",
     };
 

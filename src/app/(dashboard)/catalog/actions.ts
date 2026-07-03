@@ -31,8 +31,10 @@ import {
   getProduct,
   getModifierGroupStoreId,
   copyProductsAcrossBranches,
+  replaceProductUnits,
   type CatalogCopyDuplicateMode,
   type CatalogCopyPriceMode,
+  type ProductUnitInput,
 } from "@/modules/catalog/repository";
 import type { ModifierGroupTemplate } from "@/modules/catalog/types";
 import { getActiveLinkByStore } from "@/modules/connect/repository";
@@ -55,6 +57,62 @@ function readDeliveryPrice(formData: FormData): { value: number | null; error: s
   const n = parseFloat(raw);
   if (isNaN(n) || n < 0) return { value: null, error: "ราคาเดลิเวอรีไม่ถูกต้อง" };
   return { value: n, error: null };
+}
+
+/** อ่านราคาต่อระดับลูกค้า: ว่าง = null (ใช้ราคาปลีก) */
+function readTierPrice(formData: FormData, key: string): { value: number | null; error: string | null } {
+  const raw = (formData.get(key) as string | null)?.trim();
+  if (!raw) return { value: null, error: null };
+  const n = parseFloat(raw);
+  if (isNaN(n) || n < 0) return { value: null, error: "ราคาตามระดับลูกค้าไม่ถูกต้อง" };
+  return { value: n, error: null };
+}
+
+/** อ่านหน่วยแพ็ค (โหล/ลัง) จาก hidden JSON field ของฟอร์มสินค้า */
+function readWholesaleUnits(formData: FormData): { units: ProductUnitInput[] | null; error: string | null } {
+  const raw = (formData.get("unitsJson") as string | null)?.trim();
+  if (!raw) return { units: null, error: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { units: null, error: "ข้อมูลหน่วยขายไม่ถูกต้อง" };
+  }
+  if (!Array.isArray(parsed)) return { units: null, error: "ข้อมูลหน่วยขายไม่ถูกต้อง" };
+
+  const units: ProductUnitInput[] = [];
+  for (const item of parsed) {
+    if (typeof item !== "object" || item === null) return { units: null, error: "ข้อมูลหน่วยขายไม่ถูกต้อง" };
+    const unit = item as Record<string, unknown>;
+    const name = typeof unit.name === "string" ? unit.name.trim() : "";
+    if (!name) continue;
+    const quantity = Number(unit.quantity);
+    const price = Number(unit.price);
+    if (!Number.isInteger(quantity) || quantity < 2) {
+      return { units: null, error: `หน่วย "${name}" ต้องระบุจำนวนชิ้นต่อหน่วยตั้งแต่ 2 ขึ้นไป` };
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      return { units: null, error: `หน่วย "${name}" ราคาไม่ถูกต้อง` };
+    }
+    const tier = (key: string): number | null => {
+      const value = unit[key];
+      if (value === null || value === undefined || value === "") return null;
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+    units.push({
+      id: typeof unit.id === "string" && unit.id ? unit.id : null,
+      name,
+      quantity,
+      price,
+      priceWholesale: tier("priceWholesale"),
+      priceAgent: tier("priceAgent"),
+      priceRegular: tier("priceRegular"),
+      barcode: typeof unit.barcode === "string" ? unit.barcode : null,
+      sortOrder: units.length,
+    });
+  }
+  return { units, error: null };
 }
 
 async function getStoreContext() {
@@ -217,6 +275,14 @@ export async function createProductAction(
     }
     const deliveryPrice = readDeliveryPrice(formData);
     if (deliveryPrice.error) return { error: deliveryPrice.error };
+    const priceWholesale = readTierPrice(formData, "priceWholesale");
+    if (priceWholesale.error) return { error: priceWholesale.error };
+    const priceAgent = readTierPrice(formData, "priceAgent");
+    if (priceAgent.error) return { error: priceAgent.error };
+    const priceRegular = readTierPrice(formData, "priceRegular");
+    if (priceRegular.error) return { error: priceRegular.error };
+    const wholesaleUnits = readWholesaleUnits(formData);
+    if (wholesaleUnits.error) return { error: wholesaleUnits.error };
 
     const result = await createProduct({
       storeId: ctx.storeId,
@@ -224,8 +290,13 @@ export async function createProductAction(
       categoryId,
       name,
       description: (formData.get("description") as string | null)?.trim() || undefined,
+      barcode: (formData.get("barcode") as string | null)?.trim() || undefined,
       imageUrl: imageUrl.value,
       basePrice,
+      unitLabel: (formData.get("unitLabel") as string | null)?.trim() || null,
+      priceWholesale: priceWholesale.value,
+      priceAgent: priceAgent.value,
+      priceRegular: priceRegular.value,
       availableForPos: formData.get("availableForPos") === "on",
       availableForQr,
       availableForDelivery: formData.get("availableForDelivery") === "on",
@@ -234,6 +305,10 @@ export async function createProductAction(
       kitchenStationId: availableForQr ? kitchenStationId : null,
     });
     if (result.error) return { error: result.error.userMessage };
+    if (wholesaleUnits.units && result.data) {
+      const unitsRes = await replaceProductUnits(result.data.id, ctx.storeId, wholesaleUnits.units);
+      if (unitsRes.error) return { error: unitsRes.error.userMessage };
+    }
     revalidate();
     await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
@@ -271,13 +346,26 @@ export async function updateProductAction(
 
     const deliveryPrice = readDeliveryPrice(formData);
     if (deliveryPrice.error) return { error: deliveryPrice.error };
+    const priceWholesale = readTierPrice(formData, "priceWholesale");
+    if (priceWholesale.error) return { error: priceWholesale.error };
+    const priceAgent = readTierPrice(formData, "priceAgent");
+    if (priceAgent.error) return { error: priceAgent.error };
+    const priceRegular = readTierPrice(formData, "priceRegular");
+    if (priceRegular.error) return { error: priceRegular.error };
+    const wholesaleUnits = readWholesaleUnits(formData);
+    if (wholesaleUnits.error) return { error: wholesaleUnits.error };
 
     const result = await updateProduct(id, ctx.storeId, {
       name,
       categoryId,
       description: (formData.get("description") as string | null)?.trim() || undefined,
+      barcode: (formData.get("barcode") as string | null)?.trim() || undefined,
       imageUrl: imageUrl.value,
       basePrice,
+      unitLabel: (formData.get("unitLabel") as string | null)?.trim() || undefined,
+      priceWholesale: priceWholesale.value,
+      priceAgent: priceAgent.value,
+      priceRegular: priceRegular.value,
       availableForPos: formData.get("availableForPos") === "on",
       availableForQr,
       availableForDelivery: formData.get("availableForDelivery") === "on",
@@ -287,6 +375,10 @@ export async function updateProductAction(
       isActive: formData.get("isActive") !== "off",
     });
     if (result.error) return { error: result.error.userMessage };
+    if (wholesaleUnits.units) {
+      const unitsRes = await replaceProductUnits(id, ctx.storeId, wholesaleUnits.units);
+      if (unitsRes.error) return { error: unitsRes.error.userMessage };
+    }
     revalidate();
     await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };

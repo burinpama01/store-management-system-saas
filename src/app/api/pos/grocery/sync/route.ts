@@ -5,6 +5,7 @@ import {
   requireFeature,
 } from "@/modules/auth/guards";
 import { createTrustedGroceryOrder } from "@/modules/grocery-pos/checkout-service";
+import { normalizePriceTier } from "@/modules/pos/pricing";
 import type { GroceryOfflineOrderOperation } from "@/modules/grocery-pos/offline-sync";
 import type { Cart } from "@/modules/pos/types";
 import type { Json } from "@/server/integrations/supabase/database.types";
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
     canDiscount: resolved.can("pos.discount"),
     cart: operation.payload.cart as Cart,
     customerId: operation.payload.customerId ?? null,
+    priceTier: normalizePriceTier(operation.payload.priceTier),
     couponCode: operation.payload.couponCode ?? null,
     clientCouponDiscountAmount: operation.payload.clientCouponDiscountAmount ?? 0,
     idempotencyKey: operation.idempotencyKey,

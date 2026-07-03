@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
+import { normalizePriceTier } from "@/modules/pos/pricing";
 import type { Database } from "@/server/integrations/supabase/database.types";
 import type { CustomerProfile, CustomerSaveInput } from "./types";
 
@@ -21,6 +22,7 @@ function mapCustomer(row: CustomerRow, loyaltyAccount?: LoyaltyAccountRow): Cust
     name: row.name,
     phone: row.phone ?? undefined,
     email: row.email ?? undefined,
+    priceTier: normalizePriceTier(row.price_tier),
     loyaltyAccountId: loyaltyAccount?.id,
     pointsBalance: loyaltyAccount?.points_balance,
     isActive: row.is_active,
@@ -83,6 +85,19 @@ export async function searchCustomersForStore(storeId: string, query: string, li
   return mapCustomersWithLoyaltyAccounts(storeId, data ?? []);
 }
 
+export async function getCustomerById(storeId: string, customerId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("id", customerId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: data ? mapCustomer(data) : null, error: null };
+}
+
 export async function saveCustomer(input: CustomerSaveInput) {
   const supabase = await createSupabaseServerClient();
   const payload = {
@@ -91,6 +106,8 @@ export async function saveCustomer(input: CustomerSaveInput) {
     name: input.name.trim(),
     phone: input.phone?.trim() || null,
     email: input.email?.trim() || null,
+    // Only touch the tier when explicitly provided so older callers keep the saved tier.
+    ...(input.priceTier !== undefined ? { price_tier: normalizePriceTier(input.priceTier) } : {}),
     is_active: input.isActive ?? true,
     updated_at: new Date().toISOString(),
   };

@@ -34,6 +34,8 @@ export interface ReceiptSettings {
   autoPrintStationTickets: boolean;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
+  showVatBreakdown: boolean;
+  vatRate: number;
   updatedAt: string;
 }
 
@@ -57,6 +59,8 @@ function mapReceiptSettings(row: ReceiptSettingsRow): ReceiptSettings {
     autoPrintStationTickets: row.auto_print_station_tickets,
     paperWidth: row.paper_width,
     printCopies: row.print_copies,
+    showVatBreakdown: row.show_vat_breakdown,
+    vatRate: row.vat_rate,
     updatedAt: row.updated_at,
   };
 }
@@ -120,6 +124,8 @@ export interface ReceiptSettingsInput {
   autoPrintStationTickets?: boolean;
   paperWidth: "58mm" | "80mm";
   printCopies: number;
+  showVatBreakdown?: boolean;
+  vatRate?: number;
 }
 
 export async function upsertReceiptSettings(
@@ -147,6 +153,8 @@ export async function upsertReceiptSettings(
       auto_print_station_tickets: input.autoPrintStationTickets ?? false,
       paper_width: input.paperWidth,
       print_copies: input.printCopies,
+      show_vat_breakdown: input.showVatBreakdown ?? false,
+      vat_rate: input.vatRate ?? 7,
     },
     { onConflict: "store_id" },
   );
