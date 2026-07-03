@@ -33,6 +33,7 @@ export default async function ConnectSettingsPage() {
           externalMerchantId: l.externalMerchantId,
           status: l.status,
           autoAccept: l.autoAccept,
+          commissionRate: l.commissionRate,
           storeId: l.storeId,
         }))}
         deliveryProductCount={deliveryProducts.length}

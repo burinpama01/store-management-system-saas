@@ -21,9 +21,20 @@ export interface IngestResult {
   error?: string;
 }
 
-/** ยอดที่ร้านต้องได้รับ = merchant_total ที่ JDC ส่งมา ไม่งั้นใช้ผลรวมราคาสินค้า */
-function resolveMerchantTotal(payload: InboundOrderPayload, itemsSubtotal: number): number {
-  return typeof payload.merchant_total === "number" ? payload.merchant_total : itemsSubtotal;
+/**
+ * ยอดที่ร้านได้รับจริง (หลังหัก GP) = ยอดสินค้า − ค่าคอม
+ * - ยอดสินค้า: merchant_total ที่ JDC ส่ง ไม่งั้นผลรวมราคาสินค้า
+ * - ค่าคอม: payload.commission (บาท) ถ้าส่งมา ไม่งั้นคิดจาก %rate ต่อร้าน (commissionRate)
+ */
+function resolveShopAmount(
+  payload: InboundOrderPayload,
+  itemsSubtotal: number,
+  commissionRate: number,
+): number {
+  const gross = typeof payload.merchant_total === "number" ? payload.merchant_total : itemsSubtotal;
+  const commission =
+    typeof payload.commission === "number" ? payload.commission : gross * (commissionRate / 100);
+  return Math.max(0, Math.round((gross - commission) * 100) / 100);
 }
 
 function buildOrderNote(payload: InboundOrderPayload, unmapped: string[]): string {
@@ -94,7 +105,7 @@ export async function processInboundOrder(
   }
 
   const itemsSubtotal = mapped.reduce((s, m) => s + m.qty * m.price, 0);
-  const merchantTotal = resolveMerchantTotal(payload, itemsSubtotal);
+  const merchantTotal = resolveShopAmount(payload, itemsSubtotal, link.commissionRate);
   const now = new Date().toISOString();
   const supabase = await createSupabaseServiceClient();
 

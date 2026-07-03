@@ -2,31 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
-import { managedRealtimeSubscription } from "@/shared/realtime/realtime-client";
 import type { Printer } from "@/modules/stores/types";
-import type { Database, Json } from "@/server/integrations/supabase/database.types";
 import { printKitchenForOrder, type StationPrinter } from "./delivery/print-kitchen";
 
-type OrderInsertPayload = Pick<
-  Database["public"]["Tables"]["orders"]["Row"],
-  "id" | "order_number" | "total" | "created_at"
->;
-
 interface IncomingItem {
-  id: string;
   name: string;
   quantity: number;
   optionNames: string[];
-  note?: string;
+  note?: string | null;
 }
 
 interface IncomingDeliveryOrder {
   id: string;
+  internalOrderId: string | null;
   billNumber: string;
   shopAmount: number;
   items: IncomingItem[];
 }
+
+const POLL_MS = 12000;
 
 function playOrderSound() {
   try {
@@ -53,19 +47,11 @@ function playOrderSound() {
   }
 }
 
-function extractOptionNames(value: Json): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((m) => {
-      if (!m || typeof m !== "object") return null;
-      const option = (m as { option?: { name?: unknown } }).option;
-      return typeof option?.name === "string" ? option.name : null;
-    })
-    .filter((n): n is string => Boolean(n));
-}
-
+/**
+ * แจ้งเตือนออเดอร์เดลิเวอรีใหม่ (popup + เสียง) ทุกหน้า — ใช้ polling ผ่าน API (service client)
+ * เลี่ยงข้อจำกัด RLS ของ orders (staff อ่าน delivery ผ่าน realtime ไม่ได้)
+ */
 export function DeliveryGlobalNotifier({
-  storeId,
   canManage,
   storeName,
   stationPrinters,
@@ -83,64 +69,58 @@ export function DeliveryGlobalNotifier({
 }) {
   const router = useRouter();
   const seen = useRef(new Set<string>());
+  const baselined = useRef(false);
   const [orders, setOrders] = useState<IncomingDeliveryOrder[]>([]);
   const current = orders[0] ?? null;
 
-  const loadDetail = useCallback(async (row: OrderInsertPayload): Promise<IncomingDeliveryOrder> => {
-    const client = getSupabaseBrowserClient();
-    const { data } = await client
-      .from("order_items")
-      .select("id, product_name, modifiers, quantity, note")
-      .eq("order_id", row.id);
-    const items: IncomingItem[] = (data ?? []).map((r) => ({
-      id: r.id,
-      name: r.product_name,
-      quantity: r.quantity,
-      optionNames: extractOptionNames(r.modifiers),
-      note: r.note ?? undefined,
-    }));
-    return { id: row.id, billNumber: row.order_number, shopAmount: row.total, items };
-  }, []);
+  const poll = useCallback(async () => {
+    let list: IncomingDeliveryOrder[];
+    try {
+      const res = await fetch("/api/connect/pending", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { orders: IncomingDeliveryOrder[] };
+      list = json.orders ?? [];
+    } catch {
+      return;
+    }
+
+    const fresh: IncomingDeliveryOrder[] = [];
+    for (const o of list) {
+      if (seen.current.has(o.id)) continue;
+      seen.current.add(o.id);
+      if (baselined.current) fresh.push(o);
+    }
+    // โหลดครั้งแรก = ตั้ง baseline (ไม่เด้งของที่มีอยู่ก่อน)
+    if (!baselined.current) {
+      baselined.current = true;
+      return;
+    }
+    if (fresh.length === 0) return;
+
+    playOrderSound();
+    setOrders((prev) => [...prev, ...fresh]);
+    router.refresh(); // อัปเดตบอร์ด /delivery ถ้ากำลังเปิดอยู่
+
+    if (autoPrintOnArrival) {
+      for (const o of fresh) {
+        if (!o.internalOrderId) continue;
+        void printKitchenForOrder(o.internalOrderId, {
+          storeName,
+          stationPrinters,
+          paperWidth,
+          printers,
+          billNumber: o.billNumber,
+        }).catch(() => {});
+      }
+    }
+  }, [autoPrintOnArrival, paperWidth, printers, router, stationPrinters, storeName]);
 
   useEffect(() => {
     if (!canManage) return;
-    const client = getSupabaseBrowserClient();
-    const unsubscribe = managedRealtimeSubscription<OrderInsertPayload>({
-      client,
-      table: "orders",
-      filter: `store_id=eq.${storeId}`,
-      onEvent: (payload) => {
-        if (payload.eventType !== "INSERT") return;
-        const row = payload.new;
-        // เฉพาะออเดอร์เดลิเวอรี JDC (เลขขึ้นต้น JDC-)
-        if (!row?.order_number?.startsWith("JDC-")) return;
-        if (seen.current.has(row.id)) return;
-        seen.current.add(row.id);
-        playOrderSound();
-        void loadDetail(row).then((order) => setOrders((prev) => [...prev, order]));
-        // auto-print ตั๋วครัวตอนออเดอร์เข้า (ครอบคลุม auto-accept) — เมื่อร้านเปิดพิมพ์อัตโนมัติ
-        if (autoPrintOnArrival) {
-          void printKitchenForOrder(row.id, {
-            storeName,
-            stationPrinters,
-            paperWidth,
-            printers,
-            billNumber: row.order_number,
-          }).catch(() => {});
-        }
-      },
-    });
-    return unsubscribe;
-  }, [
-    autoPrintOnArrival,
-    canManage,
-    loadDetail,
-    paperWidth,
-    printers,
-    stationPrinters,
-    storeId,
-    storeName,
-  ]);
+    void poll();
+    const id = window.setInterval(() => void poll(), POLL_MS);
+    return () => window.clearInterval(id);
+  }, [canManage, poll]);
 
   if (!canManage || !current) return null;
 
@@ -165,8 +145,8 @@ export function DeliveryGlobalNotifier({
 
         {current.items.length > 0 && (
           <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto text-sm">
-            {current.items.map((item) => (
-              <li key={item.id} className="rounded-lg bg-gray-50 px-3 py-2">
+            {current.items.map((item, idx) => (
+              <li key={idx} className="rounded-lg bg-gray-50 px-3 py-2">
                 <span className="font-medium text-gray-800">
                   {item.quantity}× {item.name}
                 </span>

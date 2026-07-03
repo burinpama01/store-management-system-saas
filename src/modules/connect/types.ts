@@ -173,6 +173,8 @@ export interface InboundOrderPayload {
   total?: number;
   /** ยอดที่ร้านต้องได้รับ = ยอดที่คนขับต้องจ่ายร้าน (ถ้าไม่ส่งมา ใช้ผลรวมราคาสินค้า) */
   merchant_total?: number;
+  /** ค่า GP/ค่าคอมที่ JDC หัก (บาท) — ถ้าส่งมา ใช้ค่านี้ก่อน %rate ฝั่ง StoreOS */
+  commission?: number;
   paid?: boolean;
   /** epoch วินาที — รับได้ทั้ง number และ string (pg trigger ส่งเป็น text ได้) */
   ts?: number | string;
