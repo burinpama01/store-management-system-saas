@@ -2204,6 +2204,25 @@ function PaymentPanel({
 
 // ─── Receipt Panel ────────────────────────────────────────────────
 
+/**
+ * Cross-tab guard so one order's receipt isn't auto-printed twice when the POS
+ * is open in multiple tabs/windows on the same device (localStorage is shared).
+ * Returns true only for the tab that wins the claim.
+ */
+function claimReceiptAutoPrint(orderNumber: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const key = `pos-autoprint:${orderNumber}`;
+    const now = Date.now();
+    const prev = localStorage.getItem(key);
+    if (prev && now - Number(prev) < 5 * 60_000) return false;
+    localStorage.setItem(key, String(now));
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 function ReceiptPanel({
   order,
   receiptSettings,
@@ -2331,7 +2350,10 @@ function ReceiptPanel({
   useEffect(() => {
     if (receiptSettings?.autoPrintReceipt && !autoPrintedRef.current) {
       autoPrintedRef.current = true;
-      void handlePrint();
+      // Only auto-print if another tab/window on this device hasn't already.
+      // handlePrint is fire-and-forget async — its setState runs off-cycle.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (claimReceiptAutoPrint(order.orderNumber)) void handlePrint();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
