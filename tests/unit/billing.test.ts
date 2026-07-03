@@ -165,6 +165,48 @@ describe("getPlanFeatures — free degraded when blocked", () => {
   });
 });
 
+describe("getPlanFeatures — expired paid window degrades to free (public surfaces)", () => {
+  const expired = (plan: BillingState["plan"]): BillingState => ({
+    ...state(plan, "active"),
+    currentPeriodEnd: "2020-01-01T00:00:00Z",
+  });
+
+  it.each(["starter", "standard", "premium"] as const)(
+    "expired %s with active status returns free features (QR/player/API locked)",
+    (plan) => {
+      const features = getPlanFeatures(expired(plan));
+      expect(features).toEqual(getPlanFeatures(state("free", "active")));
+      expect(features.qrOrdering).toBe(false);
+      expect(features.musicRequest).toBe(false);
+      expect(features.apiIntegration).toBe(false);
+    },
+  );
+
+  it("expired business ignores the stored config", () => {
+    const features = getPlanFeatures({
+      ...expired("business"),
+      business: { seats: 9, stores: 3, features: ["qrOrdering", "musicRequest"] },
+    });
+    expect(features.qrOrdering).toBe(false);
+    expect(features.musicRequest).toBe(false);
+    expect(features.maxMembers).toBe(1);
+  });
+
+  it("enterprise has no expiry window", () => {
+    expect(getPlanFeatures(expired("enterprise")).qrOrdering).toBe(true);
+  });
+
+  it("a still-current window keeps features (explicit now)", () => {
+    const s = { ...state("premium", "active"), currentPeriodEnd: "2026-08-01T00:00:00Z" };
+    expect(getPlanFeatures(s, new Date("2026-07-03T00:00:00Z")).qrOrdering).toBe(true);
+    expect(getPlanFeatures(s, new Date("2026-08-02T00:00:00Z")).qrOrdering).toBe(false);
+  });
+
+  it("free plan is unaffected by the expiry check", () => {
+    expect(getPlanFeatures(expired("free"))).toEqual(getPlanFeatures(state("free", "active")));
+  });
+});
+
 describe("getPlanFeatures — package matrix contract", () => {
   it.each(Object.entries(EXPECTED_PLAN_FEATURES))("%s matches the package feature matrix", (plan, expected) => {
     expect(getPlanFeatures(state(plan as BillingState["plan"], "active"))).toEqual(expected);

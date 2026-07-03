@@ -250,8 +250,26 @@ export function isAccessAllowed(state: BillingState): boolean {
   }
 }
 
-export function getPlanFeatures(state: BillingState): PlanFeatures {
+/** Plans that are paid per period and lose their features when the window lapses. */
+function isExpiringPlan(plan: BillingPlan): boolean {
+  return plan === "starter" || plan === "standard" || plan === "premium" || plan === "business";
+}
+
+/** True when the paid window is still valid at `now`. Duplicated from pricing.ts
+ * (isSubscriptionCurrent) because importing it here would be a circular import. */
+function isPeriodCurrent(currentPeriodEnd: string, now: Date): boolean {
+  const exp = new Date(currentPeriodEnd);
+  return !Number.isNaN(exp.getTime()) && exp.getTime() > now.getTime();
+}
+
+export function getPlanFeatures(state: BillingState, now: Date = new Date()): PlanFeatures {
   if (!isAccessAllowed(state)) return PLAN_FEATURES.free;
+  // Expired paid plans degrade to free everywhere — including public surfaces
+  // (QR ordering, music player) and API/webhook/notification paths that are not
+  // behind the dashboard billing-redirect gate.
+  if (isExpiringPlan(state.plan) && !isPeriodCurrent(state.currentPeriodEnd, now)) {
+    return PLAN_FEATURES.free;
+  }
   if (state.plan === "business") {
     // No stored config (e.g. plan set manually without a purchase) = free features.
     return state.business ? businessConfigToPlanFeatures(state.business) : PLAN_FEATURES.free;
