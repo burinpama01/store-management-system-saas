@@ -265,12 +265,18 @@ export function clearCart(cart: Cart): Cart {
 /**
  * สร้างตะกร้าใหม่ด้วยราคาตามระดับลูกค้า (ใช้ตอนเลือก/เปลี่ยนลูกค้าใน POS ขายส่ง)
  * — รายการที่สินค้า/หน่วยหายไปจาก catalog จะถูกตัดออก, ส่วนลดเดิมถูกคงไว้
+ * — บรรทัดแลกของรางวัล (rewardVoucherCode, ราคา ฿0) คงไว้ตามเดิม ไม่ถูก reprice
  */
 export function repriceCartForTier(cart: Cart, products: Product[], tier: PriceTier): Cart {
   const productsById = new Map(products.map((product) => [product.id, product]));
   let next = emptyCart(cart.storeId);
 
   for (const item of cart.items) {
+    if (item.rewardVoucherCode) {
+      next = { ...next, items: [...next.items, { ...item }] };
+      continue;
+    }
+
     const product = productsById.get(item.productId);
     if (!product) continue;
 
@@ -321,13 +327,11 @@ export function repriceCartForTier(cart: Cart, products: Product[], tier: PriceT
     }
   }
 
-  if (cart.discountType && typeof cart.discountValue === "number") {
-    next = applyOrderDiscount(next, {
-      type: cart.discountType,
-      value: cart.discountValue,
-      note: cart.discountNote,
-    });
-  }
-
-  return next;
+  // Final pass always recalculates totals (voucher lines are appended without
+  // going through addToCart, so their amounts must be folded in here).
+  return applyOrderDiscount(next, {
+    type: cart.discountType ?? "amount",
+    value: typeof cart.discountValue === "number" ? cart.discountValue : 0,
+    note: cart.discountNote,
+  });
 }

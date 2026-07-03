@@ -187,11 +187,38 @@ function emptyQuickAddDraft(): QuickAddDraft {
   };
 }
 
-function parseOptionalPrice(value: string): number | null {
+/** ราคาไม่บังคับ: ว่าง = ใช้ราคาปลีก, กรอกแล้วต้องเป็นตัวเลข ≥ 0 เท่านั้น (กันพิมพ์ผิดแล้วราคาหายเงียบ ๆ) */
+function parsePriceInput(value: string, label: string): { value: number | null; error: string | null } {
   const trimmed = value.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return { value: null, error: null };
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  if (!Number.isFinite(parsed) || parsed < 0) return { value: null, error: `${label}ไม่ถูกต้อง` };
+  return { value: parsed, error: null };
+}
+
+/** ช่องจำนวนที่พิมพ์ทับ/ลบทั้งหมดได้ — commit เฉพาะค่าที่เป็นตัวเลข ≥ 1, เว้นว่างแล้ว blur = คืนค่าเดิม */
+function QtyInput({ quantity, onCommit }: { quantity: number; onCommit: (next: number) => void }) {
+  const [draft, setDraft] = useState(String(quantity));
+  useEffect(() => {
+    setDraft(String(quantity));
+  }, [quantity]);
+  return (
+    <input
+      className="grocery-pos-qty-input"
+      inputMode="numeric"
+      value={draft}
+      onChange={(event) => {
+        const value = event.target.value;
+        if (!/^\d*$/.test(value)) return;
+        setDraft(value);
+        const parsed = Number(value);
+        if (value !== "" && parsed >= 1) onCommit(parsed);
+      }}
+      onBlur={() => {
+        if (draft === "" || Number(draft) < 1) setDraft(String(quantity));
+      }}
+    />
+  );
 }
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
@@ -745,25 +772,47 @@ export function GroceryPosTerminal({
       setQuickAddMessage("ราคาปลีกไม่ถูกต้อง");
       return;
     }
-    const units = quickAddDraft.units
-      .filter((unit) => unit.name.trim())
-      .map((unit) => ({
-        name: unit.name,
-        quantity: Number(unit.quantity),
-        price: Number(unit.price),
-        priceWholesale: parseOptionalPrice(unit.priceWholesale),
-        barcode: unit.barcode.trim() || null,
-      }));
-    for (const unit of units) {
-      if (!Number.isInteger(unit.quantity) || unit.quantity < 2) {
-        setQuickAddMessage(`หน่วย "${unit.name}" ต้องระบุจำนวนชิ้นต่อหน่วยตั้งแต่ 2 ขึ้นไป`);
+    const units: Array<{
+      name: string;
+      quantity: number;
+      price: number;
+      priceWholesale: number | null;
+      barcode: string | null;
+    }> = [];
+    for (const draft of quickAddDraft.units) {
+      if (!draft.name.trim()) continue;
+      const quantity = Number(draft.quantity);
+      const price = Number(draft.price);
+      if (!Number.isInteger(quantity) || quantity < 2) {
+        setQuickAddMessage(`หน่วย "${draft.name}" ต้องระบุจำนวนชิ้นต่อหน่วยตั้งแต่ 2 ขึ้นไป`);
         return;
       }
-      if (!Number.isFinite(unit.price) || unit.price < 0) {
-        setQuickAddMessage(`หน่วย "${unit.name}" ราคาไม่ถูกต้อง`);
+      if (!draft.price.trim() || !Number.isFinite(price) || price < 0) {
+        setQuickAddMessage(`หน่วย "${draft.name}" ราคาไม่ถูกต้อง`);
         return;
       }
+      const unitWholesale = parsePriceInput(draft.priceWholesale, `หน่วย "${draft.name}" ราคาส่ง`);
+      if (unitWholesale.error) {
+        setQuickAddMessage(unitWholesale.error);
+        return;
+      }
+      units.push({
+        name: draft.name,
+        quantity,
+        price,
+        priceWholesale: unitWholesale.value,
+        barcode: draft.barcode.trim() || null,
+      });
     }
+    const priceWholesale = parsePriceInput(quickAddDraft.priceWholesale, "ราคาส่ง");
+    const priceAgent = parsePriceInput(quickAddDraft.priceAgent, "ราคาตัวแทน");
+    const priceRegular = parsePriceInput(quickAddDraft.priceRegular, "ราคาลูกค้าประจำ");
+    const priceError = priceWholesale.error ?? priceAgent.error ?? priceRegular.error;
+    if (priceError) {
+      setQuickAddMessage(priceError);
+      return;
+    }
+
     const initialStockValue = quickAddDraft.initialStock.trim();
     const initialStock = initialStockValue ? Number(initialStockValue) : null;
     if (initialStock !== null && (!Number.isFinite(initialStock) || initialStock < 0)) {
@@ -777,9 +826,9 @@ export function GroceryPosTerminal({
         barcode: quickAddDraft.barcode.trim() || null,
         basePrice,
         unitLabel: quickAddDraft.unitLabel.trim() || null,
-        priceWholesale: parseOptionalPrice(quickAddDraft.priceWholesale),
-        priceAgent: parseOptionalPrice(quickAddDraft.priceAgent),
-        priceRegular: parseOptionalPrice(quickAddDraft.priceRegular),
+        priceWholesale: priceWholesale.value,
+        priceAgent: priceAgent.value,
+        priceRegular: priceRegular.value,
         initialStock,
         units,
       });
@@ -973,15 +1022,9 @@ export function GroceryPosTerminal({
                   >
                     -
                   </button>
-                  <input
-                    className="grocery-pos-qty-input"
-                    inputMode="numeric"
-                    value={item.quantity}
-                    onChange={(event) => {
-                      const parsed = Number(event.target.value);
-                      if (event.target.value === "") return;
-                      setLineQuantity(item.key, parsed);
-                    }}
+                  <QtyInput
+                    quantity={item.quantity}
+                    onCommit={(next) => setLineQuantity(item.key, next)}
                   />
                   <button
                     type="button"
@@ -1598,7 +1641,8 @@ export function GroceryPosTerminal({
         .grocery-pos-qty button {
           padding: 6px;
         }
-        .grocery-pos-qty-input {
+        /* :global — element ถูก render จาก QtyInput (คนละ component จึงไม่ได้ scoped class) */
+        :global(.grocery-pos-qty-input) {
           min-height: 34px;
           border: 1px solid var(--color-border);
           border-radius: var(--radius-md);

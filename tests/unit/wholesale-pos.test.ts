@@ -119,6 +119,45 @@ describe("cart with pack units", () => {
     expect(cart.total).toBe(1380 + 180);
   });
 
+  it("keeps redeemed reward voucher lines at ฿0 when repricing for a tier", () => {
+    const p = product();
+    let cart = addToCart(emptyCart("store-1"), {
+      product: p,
+      variant: null,
+      unit: null,
+      priceTier: "retail",
+      modifiers: [],
+      quantity: 1,
+    });
+    cart = {
+      ...cart,
+      items: [
+        ...cart.items,
+        {
+          key: "reward-line",
+          productId: "p1",
+          productName: "ของรางวัล",
+          categoryId: "cat-1",
+          variant: null,
+          modifiers: [],
+          quantity: 1,
+          unitPrice: 0,
+          totalPrice: 0,
+          rewardVoucherCode: "RW-123",
+        },
+      ],
+    };
+
+    const repriced = repriceCartForTier(cart, [p], "wholesale");
+    const rewardLine = repriced.items.find((item) => item.rewardVoucherCode);
+    expect(rewardLine).toBeDefined();
+    expect(rewardLine?.unitPrice).toBe(0);
+    expect(rewardLine?.totalPrice).toBe(0);
+    expect(rewardLine?.rewardVoucherCode).toBe("RW-123");
+    // บรรทัดปกติถูก reprice เป็นราคาส่ง ส่วนบรรทัดรางวัลไม่ถูกคิดเงิน
+    expect(repriced.total).toBe(60);
+  });
+
   it("reprices the whole cart when the tier changes", () => {
     const p = product();
     let cart = addToCart(emptyCart("store-1"), {

@@ -468,10 +468,8 @@ export async function updateProduct(
       Product,
       | "name"
       | "description"
-      | "barcode"
       | "imageUrl"
       | "basePrice"
-      | "unitLabel"
       | "priceWholesale"
       | "priceAgent"
       | "priceRegular"
@@ -484,7 +482,12 @@ export async function updateProduct(
       | "sortOrder"
       | "categoryId"
     >
-  > & { kitchenStationId?: string | null },
+  > & {
+    kitchenStationId?: string | null;
+    /** null = ล้างค่าออก, undefined = ไม่แตะ */
+    barcode?: string | null;
+    unitLabel?: string | null;
+  },
 ) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase
