@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { computeNewExpiry, type BillingDuration } from "./pricing";
-import { getPremiumFreeTrialEligibility, getUpgradeQuote } from "./pricing-repository";
+import { getBusinessUpgradeQuote, getPremiumFreeTrialEligibility, getUpgradeQuote } from "./pricing-repository";
+import type { BusinessPlanConfig } from "./types";
 import { getPlatformSettings } from "./platform-settings";
 import { receiverMatches } from "./promptpay-provider";
 import { describeDiscountRejection } from "./discount-code";
@@ -39,9 +40,11 @@ export function evaluatePaymentVerification(
 
 export interface SubmitPaymentInput {
   organizationId: string;
-  plan: PaidTier;
+  plan: PaidTier | "business";
   duration: BillingDuration;
   submittedByUserId: string;
+  /** Required when plan = "business" (already normalized by the caller). */
+  businessConfig?: BusinessPlanConfig | null;
   discountCode?: string;
   slipPayload?: string;
   slipImageBase64?: string;
@@ -75,7 +78,13 @@ export async function submitPromptPayPayment(
   input: SubmitPaymentInput,
 ): Promise<SubmitPaymentResult> {
   const supabase = await createSupabaseServiceClient();
-  const quote = await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
+  const isBusiness = input.plan === "business";
+  if (isBusiness && !input.businessConfig) {
+    return { status: "rejected", reason: "กรุณาเลือกที่นั่ง/สาขา/ฟีเจอร์ของแพ็กเกจ Business", newExpiry: null };
+  }
+  const quote = isBusiness
+    ? await getBusinessUpgradeQuote(input.organizationId, input.businessConfig!, input.duration, input.discountCode)
+    : await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
   if (!quote) {
     return { status: "rejected", reason: "แพ็กเกจนี้ชำระผ่าน PromptPay ไม่ได้", newExpiry: null };
   }
@@ -117,6 +126,9 @@ export async function submitPromptPayPayment(
     submitted_by: input.submittedByUserId,
     discount_code_id: quote.discountCode?.id ?? null,
     discount_amount: quote.discount,
+    business_seats: input.businessConfig?.seats ?? null,
+    business_stores: input.businessConfig?.stores ?? null,
+    business_features: (input.businessConfig?.features ?? []) as never,
     verified_at: now.toISOString(),
   });
   if (claimErr) {
@@ -141,6 +153,10 @@ export async function submitPromptPayPayment(
       current_period_end: newExpiry,
       cancel_at_period_end: false,
       trial_end: null,
+      // Business config follows the purchased plan; cleared when moving to a fixed tier.
+      business_seats: input.businessConfig?.seats ?? null,
+      business_stores: input.businessConfig?.stores ?? null,
+      business_features: (input.businessConfig?.features ?? []) as never,
       updated_at: now.toISOString(),
     },
     { onConflict: "organization_id" },
@@ -217,6 +233,9 @@ async function recordSubmission(
     status,
     reason,
     submitted_by: input.submittedByUserId,
+    business_seats: input.businessConfig?.seats ?? null,
+    business_stores: input.businessConfig?.stores ?? null,
+    business_features: (input.businessConfig?.features ?? []) as never,
     verified_at: null,
   });
 }

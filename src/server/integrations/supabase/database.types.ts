@@ -307,7 +307,7 @@ export interface Database {
         Row: {
           id: string;
           organization_id: string;
-          plan: "starter" | "standard" | "premium";
+          plan: "starter" | "standard" | "premium" | "business";
           duration: "30d" | "1y";
           amount_expected: number;
           verified_amount: number | null;
@@ -319,13 +319,16 @@ export interface Database {
           submitted_by: string | null;
           discount_code_id: string | null;
           discount_amount: number;
+          business_seats: number | null;
+          business_stores: number | null;
+          business_features: Json;
           created_at: string;
           verified_at: string | null;
         };
         Insert: {
           id?: string;
           organization_id: string;
-          plan: "starter" | "standard" | "premium";
+          plan: "starter" | "standard" | "premium" | "business";
           duration: "30d" | "1y";
           amount_expected: number;
           verified_amount?: number | null;
@@ -337,13 +340,16 @@ export interface Database {
           submitted_by?: string | null;
           discount_code_id?: string | null;
           discount_amount?: number;
+          business_seats?: number | null;
+          business_stores?: number | null;
+          business_features?: Json;
           created_at?: string;
           verified_at?: string | null;
         };
         Update: {
           id?: string;
           organization_id?: string;
-          plan?: "starter" | "standard" | "premium";
+          plan?: "starter" | "standard" | "premium" | "business";
           duration?: "30d" | "1y";
           amount_expected?: number;
           verified_amount?: number | null;
@@ -355,6 +361,9 @@ export interface Database {
           submitted_by?: string | null;
           discount_code_id?: string | null;
           discount_amount?: number;
+          business_seats?: number | null;
+          business_stores?: number | null;
+          business_features?: Json;
           created_at?: string;
           verified_at?: string | null;
         };
@@ -368,7 +377,7 @@ export interface Database {
           description: string;
           discount_type: "percentage" | "fixed";
           discount_value: number;
-          plan: "starter" | "standard" | "premium" | null;
+          plan: "starter" | "standard" | "premium" | "business" | null;
           duration: "30d" | "1y" | null;
           min_amount: number;
           max_redemptions: number | null;
@@ -386,7 +395,7 @@ export interface Database {
           description: string;
           discount_type: "percentage" | "fixed";
           discount_value: number;
-          plan?: "starter" | "standard" | "premium" | null;
+          plan?: "starter" | "standard" | "premium" | "business" | null;
           duration?: "30d" | "1y" | null;
           min_amount?: number;
           max_redemptions?: number | null;
@@ -404,7 +413,7 @@ export interface Database {
           description?: string;
           discount_type?: "percentage" | "fixed";
           discount_value?: number;
-          plan?: "starter" | "standard" | "premium" | null;
+          plan?: "starter" | "standard" | "premium" | "business" | null;
           duration?: "30d" | "1y" | null;
           min_amount?: number;
           max_redemptions?: number | null;
@@ -516,13 +525,34 @@ export interface Database {
         };
         Relationships: [];
       };
+      business_plan_prices: {
+        Row: {
+          component: string;
+          duration: "30d" | "1y";
+          amount: number;
+          updated_at: string;
+        };
+        Insert: {
+          component: string;
+          duration: "30d" | "1y";
+          amount: number;
+          updated_at?: string;
+        };
+        Update: {
+          component?: string;
+          duration?: "30d" | "1y";
+          amount?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       billing_promotions: {
         Row: {
           id: string;
           description: string;
           percent_off: number;
           active: boolean;
-          plan: "starter" | "standard" | "premium" | null;
+          plan: "starter" | "standard" | "premium" | "business" | null;
           starts_at: string | null;
           ends_at: string | null;
           created_at: string;
@@ -532,7 +562,7 @@ export interface Database {
           description: string;
           percent_off: number;
           active?: boolean;
-          plan?: "starter" | "standard" | "premium" | null;
+          plan?: "starter" | "standard" | "premium" | "business" | null;
           starts_at?: string | null;
           ends_at?: string | null;
           created_at?: string;
@@ -542,7 +572,7 @@ export interface Database {
           description?: string;
           percent_off?: number;
           active?: boolean;
-          plan?: "starter" | "standard" | "premium" | null;
+          plan?: "starter" | "standard" | "premium" | "business" | null;
           starts_at?: string | null;
           ends_at?: string | null;
           created_at?: string;
@@ -551,7 +581,7 @@ export interface Database {
       };
       plan_settings: {
         Row: {
-          tier: "starter" | "standard" | "premium" | "enterprise";
+          tier: "starter" | "standard" | "premium" | "business" | "enterprise";
           display_name: string;
           visible_on_landing: boolean;
           highlight: boolean;
@@ -560,7 +590,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
-          tier: "starter" | "standard" | "premium" | "enterprise";
+          tier: "starter" | "standard" | "premium" | "business" | "enterprise";
           display_name: string;
           visible_on_landing?: boolean;
           highlight?: boolean;
@@ -569,7 +599,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: {
-          tier?: "starter" | "standard" | "premium" | "enterprise";
+          tier?: "starter" | "standard" | "premium" | "business" | "enterprise";
           display_name?: string;
           visible_on_landing?: boolean;
           highlight?: boolean;
@@ -616,7 +646,7 @@ export interface Database {
         Row: {
           id: string;
           organization_id: string;
-          plan: "free" | "starter" | "standard" | "premium" | "enterprise";
+          plan: "free" | "starter" | "standard" | "premium" | "business" | "enterprise";
           status: "active" | "trialing" | "past_due" | "incomplete" | "incomplete_expired" | "unpaid" | "canceled" | "paused";
           stripe_subscription_id: string | null;
           stripe_price_id: string | null;
@@ -624,13 +654,16 @@ export interface Database {
           current_period_end: string;
           cancel_at_period_end: boolean;
           trial_end: string | null;
+          business_seats: number | null;
+          business_stores: number | null;
+          business_features: Json;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           organization_id: string;
-          plan?: "free" | "starter" | "standard" | "premium" | "enterprise";
+          plan?: "free" | "starter" | "standard" | "premium" | "business" | "enterprise";
           status?: "active" | "trialing" | "past_due" | "incomplete" | "incomplete_expired" | "unpaid" | "canceled" | "paused";
           stripe_subscription_id?: string | null;
           stripe_price_id?: string | null;
@@ -638,13 +671,16 @@ export interface Database {
           current_period_end?: string;
           cancel_at_period_end?: boolean;
           trial_end?: string | null;
+          business_seats?: number | null;
+          business_stores?: number | null;
+          business_features?: Json;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           organization_id?: string;
-          plan?: "free" | "starter" | "standard" | "premium" | "enterprise";
+          plan?: "free" | "starter" | "standard" | "premium" | "business" | "enterprise";
           status?: "active" | "trialing" | "past_due" | "incomplete" | "incomplete_expired" | "unpaid" | "canceled" | "paused";
           stripe_subscription_id?: string | null;
           stripe_price_id?: string | null;
@@ -652,6 +688,9 @@ export interface Database {
           current_period_end?: string;
           cancel_at_period_end?: boolean;
           trial_end?: string | null;
+          business_seats?: number | null;
+          business_stores?: number | null;
+          business_features?: Json;
           created_at?: string;
           updated_at?: string;
         };

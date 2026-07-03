@@ -4,6 +4,7 @@ import {
   getOptionalResolvedCurrentPermissions,
 } from "@/modules/auth/guards";
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
+import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
 import { submitPromptPayPayment } from "@/modules/billing/subscription-service";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     const discountCodeRaw = form.get("discountCode");
     const discountCode = typeof discountCodeRaw === "string" ? discountCodeRaw : undefined;
 
-    if (typeof plan !== "string" || !isPaidTier(plan as PaidTier)) {
+    if (typeof plan !== "string" || (plan !== "business" && !isPaidTier(plan as PaidTier))) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
     if (duration !== "30d" && duration !== "1y") {
@@ -32,13 +33,22 @@ export async function POST(req: Request) {
     if (!(slip instanceof File) || slip.size === 0) {
       return NextResponse.json({ error: "กรุณาแนบสลิป" }, { status: 400 });
     }
+    const businessConfig =
+      plan === "business" ? parseBusinessConfigJson(form.get("businessConfig")) : null;
+    if (plan === "business" && !businessConfig) {
+      return NextResponse.json(
+        { error: "กรุณาเลือกที่นั่ง/สาขา/ฟีเจอร์ของแพ็กเกจ Business" },
+        { status: 400 },
+      );
+    }
 
     const base64 = Buffer.from(await slip.arrayBuffer()).toString("base64");
     const result = await submitPromptPayPayment({
       organizationId: perms.ctx.organizationId,
-      plan: plan as PaidTier,
+      plan: plan as PaidTier | "business",
       duration: duration as BillingDuration,
       submittedByUserId: perms.user.id,
+      businessConfig,
       discountCode,
       slipImageBase64: base64,
       slipImageContentType: slip.type || "image/jpeg",

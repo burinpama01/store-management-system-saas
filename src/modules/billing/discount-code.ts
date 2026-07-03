@@ -1,5 +1,12 @@
 import type { BillingDuration, PaidTier } from "./pricing";
 
+/** Plans purchasable at checkout that a discount code can be scoped to. */
+export type DiscountablePlan = PaidTier | "business";
+
+export function isDiscountablePlan(plan: string): plan is DiscountablePlan {
+  return plan === "starter" || plan === "standard" || plan === "premium" || plan === "business";
+}
+
 /** A super-admin-managed discount code that can be applied at billing checkout. */
 export interface BillingDiscountCode {
   id: string;
@@ -9,7 +16,7 @@ export interface BillingDiscountCode {
   discountType: "percentage" | "fixed";
   discountValue: number;
   /** null = applies to every paid plan. */
-  plan: PaidTier | null;
+  plan: DiscountablePlan | null;
   /** null = applies to every duration. */
   duration: BillingDuration | null;
   minAmount: number;
@@ -46,7 +53,7 @@ export interface DiscountEvaluation {
 
 export interface DiscountEvaluationInput {
   code: string;
-  plan: PaidTier;
+  plan: DiscountablePlan;
   duration: BillingDuration;
   /** Amount the discount applies to (the post-promotion plan price). */
   baseAmount: number;
