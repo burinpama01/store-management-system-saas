@@ -1,9 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
-import { managedRealtimeSubscription } from "@/shared/realtime/realtime-client";
+import { useState, useTransition } from "react";
 import type { Printer } from "@/modules/stores/types";
 import { updateDeliveryOrderStatusAction } from "./actions";
 import { printKitchenForOrder, type StationPrinter } from "./print-kitchen";
@@ -195,24 +193,6 @@ export function DeliveryBoard({
   printers: Printer[];
   autoPrintOnArrival: boolean;
 }) {
-  const router = useRouter();
-  // KDS แบบ live (แยกระบบจาก QR): ออเดอร์เดลิเวอรีใหม่/สถานะเปลี่ยน → รีเฟรชบอร์ดสด
-  useEffect(() => {
-    const client = getSupabaseBrowserClient();
-    return managedRealtimeSubscription<{ order_number: string | null }>({
-      client,
-      table: "orders",
-      filter: `store_id=eq.${storeId}`,
-      onEvent: (payload) => {
-        const num =
-          (payload.new as { order_number?: string | null } | null)?.order_number ??
-          (payload.old as { order_number?: string | null } | null)?.order_number ??
-          null;
-        if (num?.startsWith("JDC-")) router.refresh();
-      },
-    });
-  }, [router, storeId]);
-
   const active = orders.filter(
     (o) => o.fulfillmentStatus !== "completed" && o.fulfillmentStatus !== "cancelled",
   );

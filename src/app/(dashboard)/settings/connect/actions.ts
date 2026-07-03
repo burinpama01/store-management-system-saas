@@ -86,6 +86,26 @@ export async function updateLinkAction(
   }
 }
 
+export async function setCommissionAction(
+  _prev: ConnectActionState,
+  formData: FormData,
+): Promise<ConnectActionState> {
+  try {
+    await requirePermission("settings.manage_store");
+    const { ctx } = await getStoreContext();
+    const linkId = (formData.get("linkId") as string | null)?.trim() ?? "";
+    const rate = parseFloat((formData.get("commissionRate") as string | null)?.trim() ?? "");
+    if (!linkId) return { error: "ไม่พบ link" };
+    if (isNaN(rate) || rate < 0 || rate > 100) return { error: "%GP ต้องอยู่ระหว่าง 0–100" };
+    const res = await updateChannelLink(ctx.organizationId, linkId, { commissionRate: rate });
+    if (!res.ok) return { error: res.error ?? "บันทึกไม่สำเร็จ" };
+    revalidatePath("/settings/connect");
+    return { error: null, ok: true, message: `ตั้ง GP ${rate}% แล้ว` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
 export async function syncMenuNowAction(
   _prev: ConnectActionState,
   formData: FormData,

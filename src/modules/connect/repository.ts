@@ -20,6 +20,7 @@ export interface ChannelLink {
   status: "active" | "paused" | "disconnected";
   webhookSecret: string;
   autoAccept: boolean;
+  commissionRate: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +34,7 @@ interface ChannelLinkRow {
   status: "active" | "paused" | "disconnected";
   webhook_secret: string;
   auto_accept: boolean;
+  commission_rate: number;
   created_at: string;
   updated_at: string;
 }
@@ -47,13 +49,14 @@ function mapLink(r: ChannelLinkRow): ChannelLink {
     status: r.status,
     webhookSecret: r.webhook_secret,
     autoAccept: r.auto_accept,
+    commissionRate: r.commission_rate,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 const LINK_COLS =
-  "id, organization_id, store_id, channel, external_merchant_id, status, webhook_secret, auto_accept, created_at, updated_at";
+  "id, organization_id, store_id, channel, external_merchant_id, status, webhook_secret, auto_accept, commission_rate, created_at, updated_at";
 
 /** สร้าง webhook secret (shared กับฝั่ง JDC) */
 export function generateWebhookSecret(): string {
@@ -154,6 +157,7 @@ export async function updateChannelLink(
     status: "active" | "paused" | "disconnected";
     autoAccept: boolean;
     externalMerchantId: string;
+    commissionRate: number;
   }>,
 ): Promise<{ ok: boolean; error: string | null }> {
   const supabase = await createSupabaseServiceClient();
@@ -162,6 +166,7 @@ export async function updateChannelLink(
     .update({
       ...(patch.status !== undefined ? { status: patch.status } : {}),
       ...(patch.autoAccept !== undefined ? { auto_accept: patch.autoAccept } : {}),
+      ...(patch.commissionRate !== undefined ? { commission_rate: patch.commissionRate } : {}),
       ...(patch.externalMerchantId !== undefined
         ? { external_merchant_id: patch.externalMerchantId }
         : {}),

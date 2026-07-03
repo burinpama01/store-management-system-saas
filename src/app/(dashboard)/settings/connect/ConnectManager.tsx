@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import {
   createChannelLinkAction,
+  setCommissionAction,
   setShopStatusAction,
   syncMenuNowAction,
   updateLinkAction,
@@ -15,6 +16,7 @@ interface LinkVM {
   externalMerchantId: string;
   status: "active" | "paused" | "disconnected";
   autoAccept: boolean;
+  commissionRate: number;
   storeId: string;
 }
 
@@ -116,6 +118,36 @@ function CreateLinkForm() {
   );
 }
 
+function CommissionForm({ linkId, current }: { linkId: string; current: number }) {
+  const [state, formAction, pending] = useActionState(setCommissionAction, INITIAL);
+  return (
+    <form action={formAction} className="flex items-end gap-2">
+      <input type="hidden" name="linkId" value={linkId} />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">%GP ที่ JDC หัก (คิดยอดสุทธิที่ร้านได้รับ)</label>
+        <input
+          name="commissionRate"
+          type="number"
+          min="0"
+          max="100"
+          step="0.5"
+          defaultValue={current}
+          className="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
+        />
+      </div>
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded bg-gray-700 px-3 py-1.5 text-xs text-white hover:bg-gray-800 disabled:opacity-40"
+      >
+        {pending ? "..." : "บันทึก GP"}
+      </button>
+      {state.error && <span className="text-red-600 text-[11px]">{state.error}</span>}
+      {state.ok && state.message && <span className="text-green-700 text-[11px]">{state.message}</span>}
+    </form>
+  );
+}
+
 function LinkCard({ link, deliveryProductCount }: { link: LinkVM; deliveryProductCount: number }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
@@ -142,6 +174,10 @@ function LinkCard({ link, deliveryProductCount }: { link: LinkVM; deliveryProduc
         การเชื่อมระบบ (Webhook URL, JDC key, webhook secret) ตั้งครั้งเดียวโดยผู้ดูแลแพลตฟอร์ม —
         ร้านค้ามีหน้าที่แค่ใส่ merchant_id ของร้านในแอป JDC
       </p>
+
+      <div className="border-t border-gray-100 pt-2">
+        <CommissionForm linkId={link.id} current={link.commissionRate} />
+      </div>
 
       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
         <ActionButton

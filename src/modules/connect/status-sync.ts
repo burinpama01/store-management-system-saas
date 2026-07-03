@@ -90,6 +90,31 @@ export async function applyPosStatus(
   const jdcStatus = fulfillmentToJdcStatus(next);
   if (jdcStatus) {
     const res = await pushOrderStatus(link, connectOrder.externalOrderId, jdcStatus);
+
+    // JDC เดินสถานะไปไกลกว่าแล้ว (คนขับรับช่วง: driver_accepted/arrived_at_merchant) → 409
+    // ไม่ถือเป็น error — sync connect_order ให้ตรงกับสถานะจริงของ JDC แทน
+    if (!res.ok && res.status === 409) {
+      let current: string | null = null;
+      try {
+        current = (JSON.parse(res.body) as { current?: string }).current ?? null;
+      } catch {
+        /* body ไม่ใช่ json */
+      }
+      if (current) {
+        const jdcFulfill = jdcStatusToFulfillment(current);
+        await updateConnectOrderStatus(connectOrder.id, jdcFulfill, "jdc");
+        await syncInternalOrderStatus(connectOrder.internalOrderId, jdcFulfill);
+      }
+      await recordEvent({
+        linkId: link.id,
+        direction: "outbound",
+        topic: "order.status",
+        payload: { booking_id: connectOrder.externalOrderId, status: jdcStatus, jdc_current: current },
+        status: "sent",
+      });
+      return { ok: true };
+    }
+
     await recordEvent({
       linkId: link.id,
       direction: "outbound",

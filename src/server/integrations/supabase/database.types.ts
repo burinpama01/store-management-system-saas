@@ -53,6 +53,7 @@ export interface Database {
           webhook_secret: string;
           jdc_functions_base_url: string | null;
           auto_accept: boolean;
+          commission_rate: number;
           config: Json;
           created_at: string;
           updated_at: string;
@@ -67,6 +68,7 @@ export interface Database {
           webhook_secret: string;
           jdc_functions_base_url?: string | null;
           auto_accept?: boolean;
+          commission_rate?: number;
           config?: Json;
           created_at?: string;
           updated_at?: string;
@@ -81,6 +83,7 @@ export interface Database {
           webhook_secret?: string;
           jdc_functions_base_url?: string | null;
           auto_accept?: boolean;
+          commission_rate?: number;
           config?: Json;
           created_at?: string;
           updated_at?: string;
