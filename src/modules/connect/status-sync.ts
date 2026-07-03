@@ -91,8 +91,7 @@ export async function applyPosStatus(
   if (jdcStatus) {
     const res = await pushOrderStatus(link, connectOrder.externalOrderId, jdcStatus);
 
-    // JDC เดินสถานะไปไกลกว่าแล้ว (คนขับรับช่วง: driver_accepted/arrived_at_merchant) → 409
-    // ไม่ถือเป็น error — sync connect_order ให้ตรงกับสถานะจริงของ JDC แทน
+    // JDC ปฏิเสธ transition (409 conflict) — อ่านสถานะจริงของ JDC
     if (!res.ok && res.status === 409) {
       let current: string | null = null;
       try {
@@ -100,19 +99,29 @@ export async function applyPosStatus(
       } catch {
         /* body ไม่ใช่ json */
       }
-      if (current) {
-        const jdcFulfill = jdcStatusToFulfillment(current);
-        await updateConnectOrderStatus(connectOrder.id, jdcFulfill, "jdc");
-        await syncInternalOrderStatus(connectOrder.internalOrderId, jdcFulfill);
-      }
+      const jdcFulfill = current ? jdcStatusToFulfillment(current) : null;
       await recordEvent({
         linkId: link.id,
         direction: "outbound",
         topic: "order.status",
         payload: { booking_id: connectOrder.externalOrderId, status: jdcStatus, jdc_current: current },
-        status: "sent",
+        status: "failed",
+        lastError: `409 conflict: JDC current=${current}`,
       });
-      return { ok: true };
+
+      // JDC ไปถึงปลายทางแล้ว (คนขับรับ/ส่ง/ยกเลิก) → sync ตาม JDC จริง = สำเร็จ
+      if (jdcFulfill === "completed" || jdcFulfill === "cancelled") {
+        await updateConnectOrderStatus(connectOrder.id, jdcFulfill, "jdc");
+        await syncInternalOrderStatus(connectOrder.internalOrderId, jdcFulfill);
+        return { ok: true };
+      }
+
+      // JDC ยังอยู่สถานะคนขับ (driver_accepted/arrived) แต่ไม่รับ ready_for_pickup
+      // → คงสถานะที่ร้านกดไว้ (อาหารพร้อมจริง) + แจ้งชัดว่าต้องแก้ฝั่ง JDC
+      return {
+        ok: false,
+        error: `JDC ยังไม่รับสถานะ "${jdcStatus}" (booking อยู่ที่ ${current ?? "?"}) — ต้องแก้ connect_update_order_status ฝั่ง JDC ให้รับ transition นี้`,
+      };
     }
 
     await recordEvent({
