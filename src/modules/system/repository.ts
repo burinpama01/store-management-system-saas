@@ -536,6 +536,7 @@ export function summarizeTenants(tenants: TenantOverview[]): PlatformSummary {
     starter: 0,
     standard: 0,
     premium: 0,
+    business: 0,
     enterprise: 0,
   };
   let totalStores = 0;

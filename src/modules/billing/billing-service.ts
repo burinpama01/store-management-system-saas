@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import type { BillingState, BillingPlan, BillingStatus } from "./types";
+import { normalizeBusinessConfig } from "./business-plan";
 import { randomUUID } from "node:crypto";
 
 export async function getOrganizationBillingState(
@@ -10,17 +11,26 @@ export async function getOrganizationBillingState(
   const { data } = await supabase
     .from("subscriptions")
     .select(
-      "plan, status, current_period_end, cancel_at_period_end, trial_end",
+      "plan, status, current_period_end, cancel_at_period_end, trial_end, business_seats, business_stores, business_features",
     )
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (!data) return null;
+  const business =
+    data.plan === "business"
+      ? normalizeBusinessConfig({
+          seats: data.business_seats,
+          stores: data.business_stores,
+          features: data.business_features,
+        })
+      : null;
   return {
     plan: data.plan as BillingPlan,
     status: data.status as BillingStatus,
     currentPeriodEnd: data.current_period_end,
     cancelAtPeriodEnd: data.cancel_at_period_end,
     trialEnd: (data as Record<string, unknown>).trial_end as string | null,
+    business,
   };
 }
 

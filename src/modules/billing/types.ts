@@ -1,4 +1,4 @@
-export type BillingPlan = "free" | "starter" | "standard" | "premium" | "enterprise";
+export type BillingPlan = "free" | "starter" | "standard" | "premium" | "business" | "enterprise";
 
 export type BillingStatus =
   | "active"
@@ -16,6 +16,18 @@ export interface BillingState {
   currentPeriodEnd: string;
   cancelAtPeriodEnd: boolean;
   trialEnd: string | null;
+  /** Selected seats/stores/features when plan = "business" (build-your-own). */
+  business?: BusinessPlanConfig | null;
+}
+
+/** A tenant-selected Business plan configuration (build-your-own). */
+export interface BusinessPlanConfig {
+  /** จำนวนที่นั่ง (สมาชิก/พนักงานที่ใช้ระบบได้) */
+  seats: number;
+  /** จำนวนสาขา */
+  stores: number;
+  /** ฟีเจอร์ที่เลือกเปิดใช้ */
+  features: FeatureKey[];
 }
 
 export interface PlanFeatures {
@@ -75,10 +87,46 @@ export const PLAN_LABELS: Record<BillingPlan, string> = {
   starter: "Starter",
   standard: "Standard",
   premium: "Premium",
+  business: "Business",
   enterprise: "Enterprise",
 };
 
-const PLAN_FEATURES: Record<BillingPlan, PlanFeatures> = {
+/** Boolean features a Business tenant can toggle on individually. */
+export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "maxMembers">[] = [
+  "groceryPos",
+  "couponManagement",
+  "loyaltyPoints",
+  "buffetManagement",
+  "stockManagement",
+  "advancedPrinting",
+  "qrOrdering",
+  "customerDisplay",
+  "offlinePos",
+  "lineNotify",
+  "attendanceGps",
+  "advancedReports",
+  "advancedPermissions",
+  "multiBranchReporting",
+  "apiIntegration",
+  "musicRequest",
+];
+
+/** Builds the effective feature set for a Business config (pure). */
+export function businessConfigToPlanFeatures(config: BusinessPlanConfig): PlanFeatures {
+  const features: PlanFeatures = {
+    ...PLAN_FEATURES.free,
+    maxStores: Math.max(1, config.stores),
+    maxMembers: Math.max(1, config.seats),
+  };
+  for (const key of config.features) {
+    if ((BUSINESS_SELECTABLE_FEATURES as FeatureKey[]).includes(key)) {
+      features[key as Exclude<FeatureKey, "maxStores" | "maxMembers">] = true;
+    }
+  }
+  return features;
+}
+
+const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
   free: {
     maxStores: 1,
     maxMembers: 1,
@@ -204,6 +252,10 @@ export function isAccessAllowed(state: BillingState): boolean {
 
 export function getPlanFeatures(state: BillingState): PlanFeatures {
   if (!isAccessAllowed(state)) return PLAN_FEATURES.free;
+  if (state.plan === "business") {
+    // No stored config (e.g. plan set manually without a purchase) = free features.
+    return state.business ? businessConfigToPlanFeatures(state.business) : PLAN_FEATURES.free;
+  }
   return PLAN_FEATURES[state.plan] ?? PLAN_FEATURES.free;
 }
 

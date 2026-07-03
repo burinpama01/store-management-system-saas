@@ -5,8 +5,13 @@ import { AuthorizationError, getResolvedCurrentPermissions } from "@/modules/aut
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { resolveSubscriptionQr, type SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
-import { getPremiumFreeTrialEligibility, getUpgradeQuote } from "@/modules/billing/pricing-repository";
+import {
+  getBusinessUpgradeQuote,
+  getPremiumFreeTrialEligibility,
+  getUpgradeQuote,
+} from "@/modules/billing/pricing-repository";
 import { describeDiscountRejection } from "@/modules/billing/discount-code";
+import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
 import {
   claimPremiumFreeTrial,
   submitPromptPayPayment,
@@ -14,7 +19,8 @@ import {
   type SubmitPaymentResult,
 } from "@/modules/billing/subscription-service";
 
-function parsePlan(value: unknown): PaidTier | null {
+function parsePlan(value: unknown): PaidTier | "business" | null {
+  if (value === "business") return "business";
   return typeof value === "string" && isPaidTier(value as never) ? (value as PaidTier) : null;
 }
 function parseDuration(value: unknown): BillingDuration | null {
@@ -38,6 +44,7 @@ export async function getPaymentQrAction(
   plan: string,
   duration: string,
   discountCode?: string,
+  businessConfigJson?: string,
 ): Promise<PaymentQrResult> {
   try {
     const { ctx, user, resolved } = await getResolvedCurrentPermissions();
@@ -59,7 +66,15 @@ export async function getPaymentQrAction(
     const d = parseDuration(duration);
     if (!p || !d) return { ...base, error: "แพ็กเกจหรือระยะเวลาไม่ถูกต้อง" };
 
-    const quote = await getUpgradeQuote(ctx.organizationId, p, d, discountCode);
+    const businessConfig = p === "business" ? parseBusinessConfigJson(businessConfigJson) : null;
+    if (p === "business" && !businessConfig) {
+      return { ...base, error: "กรุณาเลือกที่นั่ง/สาขา/ฟีเจอร์ของแพ็กเกจ Business" };
+    }
+
+    const quote =
+      p === "business"
+        ? await getBusinessUpgradeQuote(ctx.organizationId, businessConfig!, d, discountCode)
+        : await getUpgradeQuote(ctx.organizationId, p, d, discountCode);
     if (!quote) return { ...base, error: "ไม่พบราคาแพ็กเกจ" };
     // A supplied code that does not apply blocks QR creation so the tenant can fix it.
     if (quote.discountRejection) {
@@ -113,6 +128,7 @@ export async function submitPaymentAction(input: {
   plan: string;
   duration: string;
   discountCode?: string;
+  businessConfigJson?: string;
   slipImageBase64?: string;
   slipPayload?: string;
 }): Promise<SubmitPaymentActionResult> {
@@ -129,12 +145,17 @@ export async function submitPaymentAction(input: {
     if (!input.slipImageBase64 && !input.slipPayload) {
       return { ok: false, status: "rejected", reason: null, newExpiry: null, error: "กรุณาแนบสลิป" };
     }
+    const businessConfig = p === "business" ? parseBusinessConfigJson(input.businessConfigJson) : null;
+    if (p === "business" && !businessConfig) {
+      return { ok: false, status: "rejected", reason: null, newExpiry: null, error: "กรุณาเลือกที่นั่ง/สาขา/ฟีเจอร์ของแพ็กเกจ Business" };
+    }
 
     const result = await submitPromptPayPayment({
       organizationId: ctx.organizationId,
       plan: p,
       duration: d,
       submittedByUserId: user.id,
+      businessConfig,
       discountCode: input.discountCode,
       slipImageBase64: input.slipImageBase64,
       slipPayload: input.slipPayload,

@@ -73,5 +73,8 @@ export function isSubscriptionCurrent(
 export function hasBillingAccess(state: BillingState, now: Date = new Date()): boolean {
   if (!isAccessAllowed(state)) return false;
   if (state.plan === "enterprise") return true;
-  return isPaidTier(state.plan) && isSubscriptionCurrent(state.currentPeriodEnd, now);
+  return (
+    (isPaidTier(state.plan) || state.plan === "business") &&
+    isSubscriptionCurrent(state.currentPeriodEnd, now)
+  );
 }

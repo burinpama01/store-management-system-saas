@@ -23,6 +23,11 @@ const PLAN_COPY: Record<string, { icon: string; intro: string; cta: string }> = 
     intro: "เหมาะสำหรับร้านที่ต้องการครบทุกเครื่องมือและระบบขั้นสูง",
     cta: "ทดลองใช้ฟรี 30 วัน",
   },
+  business: {
+    icon: "⚙",
+    intro: "ออกแบบแพ็กเกจเอง เลือกที่นั่ง สาขา และฟีเจอร์ที่ใช้จริง",
+    cta: "เลือกฟีเจอร์เอง",
+  },
   enterprise: {
     icon: "▥",
     intro: "เหมาะสำหรับธุรกิจขนาดใหญ่ ปรับแต่งระบบและดูแลพิเศษ",
@@ -64,6 +69,7 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
           const copy = PLAN_COPY[plan.tier] ?? PLAN_COPY.starter;
           const isPremium = plan.tier === "premium";
           const isEnterprise = plan.price30d == null;
+          const isConfigurable = plan.configurable;
           const activePrice = isAnnual ? plan.price1y : plan.price30d;
           const inactivePrice = isAnnual ? plan.price30d : plan.price1y;
 
@@ -82,6 +88,13 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
                   <>
                     <strong>สอบถามราคา</strong>
                     <small>ทีมงานช่วยออกแบบแพ็กเกจและเงื่อนไขรายปีให้เหมาะกับหลายสาขา</small>
+                  </>
+                ) : isConfigurable ? (
+                  <>
+                    <strong>เริ่มต้น {formatPrice(activePrice)}</strong>
+                    <span>/ {isAnnual ? "ปี" : "เดือน"}</span>
+                    <small>ราคาขึ้นกับจำนวนที่นั่ง สาขา และฟีเจอร์ที่เลือก</small>
+                    <small>ปรับแต่งและชำระได้ในหน้าตั้งค่าแพ็กเกจหลังสมัคร</small>
                   </>
                 ) : isPremium ? (
                   <>

@@ -15,10 +15,21 @@ import {
 } from "./premium-trial";
 import {
   evaluateBillingDiscount,
+  isDiscountablePlan,
   normalizeDiscountCode,
   type BillingDiscountCode,
+  type DiscountablePlan,
   type DiscountRejectionReason,
 } from "./discount-code";
+import {
+  BUSINESS_DEFAULT_PRICES,
+  computeBusinessPrice,
+  computeBusinessStartingPrice,
+  isBusinessComponent,
+  type BusinessComponent,
+  type BusinessPriceMap,
+} from "./business-plan";
+import type { BusinessPlanConfig } from "./types";
 
 export interface Promotion {
   id: string;
@@ -26,7 +37,7 @@ export interface Promotion {
   percentOff: number;
   active: boolean;
   /** null = applies to all paid plans; otherwise only this tier. */
-  plan: PaidTier | null;
+  plan: DiscountablePlan | null;
   startsAt: string | null;
   endsAt: string | null;
 }
@@ -69,7 +80,40 @@ async function getPriceMap(): Promise<PriceMap> {
   return map;
 }
 
-async function getActivePromotion(plan: PaidTier): Promise<Promotion | null> {
+/** Reads editable Business component prices, falling back to code defaults. */
+export async function getBusinessPriceMap(): Promise<BusinessPriceMap> {
+  const supabase = await createSupabaseServiceClient();
+  const map = Object.fromEntries(
+    (Object.entries(BUSINESS_DEFAULT_PRICES) as [BusinessComponent, Record<BillingDuration, number>][]).map(
+      ([component, prices]) => [component, { ...prices }],
+    ),
+  ) as BusinessPriceMap;
+  const { data } = await supabase.from("business_plan_prices").select("component, duration, amount");
+  for (const row of data ?? []) {
+    if (isBusinessComponent(row.component)) {
+      map[row.component][row.duration as BillingDuration] = Number(row.amount);
+    }
+  }
+  return map;
+}
+
+export async function updateBusinessPrice(
+  component: BusinessComponent,
+  duration: BillingDuration,
+  amount: number,
+) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("business_plan_prices")
+    .upsert(
+      { component, duration, amount, updated_at: new Date().toISOString() },
+      { onConflict: "component,duration" },
+    );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+async function getActivePromotion(plan: DiscountablePlan): Promise<Promotion | null> {
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("billing_promotions")
@@ -81,7 +125,7 @@ async function getActivePromotion(plan: PaidTier): Promise<Promotion | null> {
       description: p.description,
       percentOff: p.percent_off,
       active: p.active,
-      plan: (p.plan as PaidTier | null) ?? null,
+      plan: (p.plan as DiscountablePlan | null) ?? null,
       startsAt: p.starts_at,
       endsAt: p.ends_at,
     }))
@@ -142,7 +186,7 @@ export async function listPromotions(): Promise<Promotion[]> {
 export async function createPromotion(input: {
   description: string;
   percentOff: number;
-  plan: PaidTier | null;
+  plan: DiscountablePlan | null;
   startsAt: string | null;
   endsAt: string | null;
 }) {
@@ -205,7 +249,7 @@ function mapDiscountCode(row: {
     description: row.description,
     discountType: row.discount_type,
     discountValue: Number(row.discount_value),
-    plan: isPaidTier(row.plan ?? "") ? (row.plan as PaidTier) : null,
+    plan: isDiscountablePlan(row.plan ?? "") ? (row.plan as DiscountablePlan) : null,
     duration: row.duration === "30d" || row.duration === "1y" ? row.duration : null,
     minAmount: Number(row.min_amount ?? 0),
     maxRedemptions: row.max_redemptions,
@@ -358,6 +402,92 @@ export async function getUpgradeQuote(
   };
 }
 
+/**
+ * Final amount a tenant must pay for a Business (build-your-own) config, after
+ * an active promotion (platform-wide or Business-scoped), an optional discount
+ * code, and the pro-rated credit from the current subscription.
+ */
+export async function getBusinessUpgradeQuote(
+  organizationId: string,
+  config: BusinessPlanConfig,
+  duration: BillingDuration,
+  discountCodeInput?: string | null,
+): Promise<UpgradeQuote> {
+  const [priceMap, promo] = await Promise.all([
+    getBusinessPriceMap(),
+    getActivePromotion("business"),
+  ]);
+  const base = computeBusinessPrice(config, priceMap, duration);
+  const amount = promo ? applyPromotion(base, promo.percentOff) : base;
+
+  const supabase = await createSupabaseServiceClient();
+  const [{ data: sub }, { data: lastPaid }] = await Promise.all([
+    supabase
+      .from("subscriptions")
+      .select("current_period_start, current_period_end")
+      .eq("organization_id", organizationId)
+      .maybeSingle(),
+    supabase
+      .from("payment_submissions")
+      .select("verified_amount")
+      .eq("organization_id", organizationId)
+      .eq("status", "verified")
+      .order("verified_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const credit = computeUpgradeCredit({
+    periodStart: sub?.current_period_start ?? null,
+    periodEnd: sub?.current_period_end ?? null,
+    lastPaidAmount: Number(lastPaid?.verified_amount ?? 0),
+  });
+
+  let discount = 0;
+  let discountCode: AppliedDiscount | null = null;
+  let discountRejection: DiscountRejectionReason | null = null;
+
+  const trimmedCode = (discountCodeInput ?? "").trim();
+  if (trimmedCode) {
+    const found = await findDiscountCode(trimmedCode);
+    if (!found) {
+      discountRejection = "code_not_found";
+    } else {
+      const counts = await getDiscountRedemptionCounts(found.id, organizationId);
+      const evaluation = evaluateBillingDiscount({
+        code: trimmedCode,
+        plan: "business",
+        duration,
+        baseAmount: amount,
+        discount: found,
+        globalRedeemed: counts.globalRedeemed,
+        orgRedeemed: counts.orgRedeemed,
+      });
+      if (evaluation.ok) {
+        discount = evaluation.discount;
+        discountCode = {
+          id: evaluation.codeId!,
+          description: evaluation.description ?? found.description,
+          normalizedCode: evaluation.normalizedCode,
+        };
+      } else {
+        discountRejection = evaluation.reason ?? "invalid_discount";
+      }
+    }
+  }
+
+  return {
+    base,
+    price: amount,
+    credit,
+    finalAmount: Math.max(0, amount - discount - credit),
+    promotion: promo,
+    discount,
+    discountCode,
+    discountRejection,
+  };
+}
+
 // ── Super-admin discount-code management ──────────────────────────────
 
 export async function listDiscountCodes(): Promise<BillingDiscountCode[]> {
@@ -374,7 +504,7 @@ export async function createDiscountCode(input: {
   description: string;
   discountType: "percentage" | "fixed";
   discountValue: number;
-  plan: PaidTier | null;
+  plan: DiscountablePlan | null;
   duration: BillingDuration | null;
   minAmount: number;
   maxRedemptions: number | null;
@@ -451,7 +581,7 @@ export async function getPremiumFreeTrialEligibility(
 
 // ── Plan display config (#1) ──────────────────────────────────────────
 
-export type PlanTier = PaidTier | "enterprise";
+export type PlanTier = PaidTier | "business" | "enterprise";
 
 export interface PlanSetting {
   tier: PlanTier;
@@ -508,11 +638,17 @@ export interface PublicPlan {
   featureLines: string[];
   price30d: number | null;
   price1y: number | null;
+  /** True when prices are "starting from" (Business build-your-own). */
+  configurable: boolean;
 }
 
 /** Visible plans + prices for the public landing/pricing pages. Service-client read. */
 export async function getPublicPricing(): Promise<PublicPlan[]> {
-  const [settings, map] = await Promise.all([listPlanSettings(), getPriceMap()]);
+  const [settings, map, businessMap] = await Promise.all([
+    listPlanSettings(),
+    getPriceMap(),
+    getBusinessPriceMap(),
+  ]);
   return settings
     .filter((s) => s.visibleOnLanding)
     .map((s) => ({
@@ -520,8 +656,17 @@ export async function getPublicPricing(): Promise<PublicPlan[]> {
       displayName: s.displayName,
       highlight: s.highlight,
       featureLines: s.featureLines,
-      price30d: isPaidTier(s.tier) ? map[s.tier]["30d"] : null,
-      price1y: isPaidTier(s.tier) ? map[s.tier]["1y"] : null,
+      price30d: isPaidTier(s.tier)
+        ? map[s.tier]["30d"]
+        : s.tier === "business"
+          ? computeBusinessStartingPrice(businessMap, "30d")
+          : null,
+      price1y: isPaidTier(s.tier)
+        ? map[s.tier]["1y"]
+        : s.tier === "business"
+          ? computeBusinessStartingPrice(businessMap, "1y")
+          : null,
+      configurable: s.tier === "business",
     }));
 }
 

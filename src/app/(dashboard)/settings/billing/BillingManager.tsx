@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { BillingPlan } from "@/modules/billing/types";
-import { PLAN_LABELS } from "@/modules/billing/types";
+import type { BillingPlan, BusinessPlanConfig, FeatureKey } from "@/modules/billing/types";
+import { BUSINESS_SELECTABLE_FEATURES, FEATURE_LABELS, PLAN_LABELS } from "@/modules/billing/types";
+import {
+  BUSINESS_LIMITS,
+  computeBusinessPrice,
+  describeBusinessConfig,
+  type BusinessPriceMap,
+} from "@/modules/billing/business-plan";
 import {
   DURATION_LABELS,
   PAID_TIERS,
@@ -24,14 +30,17 @@ function formatDate(iso: string | null): string {
     : d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const TIER_DESC: Record<PaidTier, string> = {
+const TIER_DESC: Record<PaidTier | "business", string> = {
   starter: "1 สาขา / 3 สมาชิก · Basic POS, catalog, receipt",
   standard: "3 สาขา / 10 สมาชิก · + buffet, stock, advanced printing, advanced reports",
   premium: "5 สาขา / 50 สมาชิก · + QR Ordering, LINE Notify, GPS attendance, advanced permissions",
+  business: "เลือกจำนวนที่นั่ง/สาขา และเปิดเฉพาะฟีเจอร์ที่ใช้ · จ่ายตามที่เลือกจริง",
 };
 
+type SelectablePlan = PaidTier | "business";
+
 interface PaymentQuoteView {
-  plan: PaidTier;
+  plan: SelectablePlan;
   duration: BillingDuration;
   amount: number | null;
   basePrice: number | null;
@@ -55,6 +64,8 @@ export function BillingManager({
   currentPeriodEnd,
   isActive,
   prices,
+  businessPrices,
+  currentBusiness = null,
   canManage,
   paymentConfigured,
   recipientName,
@@ -68,6 +79,8 @@ export function BillingManager({
   currentPeriodEnd: string;
   isActive: boolean;
   prices: Record<PaidTier, Record<BillingDuration, number>>;
+  businessPrices: BusinessPriceMap;
+  currentBusiness?: BusinessPlanConfig | null;
   canManage: boolean;
   paymentConfigured: boolean;
   recipientName: string | null;
@@ -82,8 +95,15 @@ export function BillingManager({
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
 
-  const [selectedPlan, setSelectedPlan] = useState<PaidTier>(premiumTrialAvailable ? "premium" : "starter");
+  const [selectedPlan, setSelectedPlan] = useState<SelectablePlan>(
+    plan === "business" ? "business" : premiumTrialAvailable ? "premium" : "starter",
+  );
   const [duration, setDuration] = useState<BillingDuration>("30d");
+  const [seats, setSeats] = useState(currentBusiness?.seats ?? 3);
+  const [stores, setStores] = useState(currentBusiness?.stores ?? 1);
+  const [businessFeatures, setBusinessFeatures] = useState<FeatureKey[]>(
+    currentBusiness?.features ?? [],
+  );
   const [discountCode, setDiscountCode] = useState("");
   const [trialAvailable, setTrialAvailable] = useState(premiumTrialAvailable);
   const [qr, setQr] = useState<SubscriptionQr | null>(null);
@@ -96,9 +116,23 @@ export function BillingManager({
   const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing">("idle");
   const [uploadPercent, setUploadPercent] = useState(0);
 
-  const price = prices[selectedPlan][duration];
+  const isBusinessSelected = selectedPlan === "business";
+  const businessConfig = useMemo<BusinessPlanConfig>(
+    () => ({ seats, stores, features: businessFeatures }),
+    [seats, stores, businessFeatures],
+  );
+  const price = isBusinessSelected
+    ? computeBusinessPrice(businessConfig, businessPrices, duration)
+    : prices[selectedPlan][duration];
   const selectedPremiumTrial = selectedPlan === "premium" && duration === "30d" && trialAvailable;
   const displayAmount = selectedPremiumTrial && !paymentQuote ? 0 : paymentQuote?.amount ?? price;
+
+  function toggleBusinessFeature(key: FeatureKey) {
+    setBusinessFeatures((prev) =>
+      prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key],
+    );
+    resetGeneratedPayment();
+  }
 
   function resetGeneratedPayment() {
     setQr(null);
@@ -118,8 +152,14 @@ export function BillingManager({
     setResult(null);
     setBusy(true);
     const requestCode = discountCode.trim();
+    const requestBusinessConfig = requestPlan === "business" ? JSON.stringify(businessConfig) : undefined;
     try {
-      const res = await getPaymentQrAction(requestPlan, requestDuration, requestCode || undefined);
+      const res = await getPaymentQrAction(
+        requestPlan,
+        requestDuration,
+        requestCode || undefined,
+        requestBusinessConfig,
+      );
       if (!res.ok) {
         showError(res.error ?? "สร้าง QR ไม่สำเร็จ");
         return;
@@ -150,9 +190,11 @@ export function BillingManager({
     setUploadPercent(0);
     setUploadPhase("uploading");
     const fd = new FormData();
-    fd.set("plan", paymentQuote?.plan ?? selectedPlan);
+    const slipPlan = paymentQuote?.plan ?? selectedPlan;
+    fd.set("plan", slipPlan);
     fd.set("duration", paymentQuote?.duration ?? duration);
     if (discountCode.trim()) fd.set("discountCode", discountCode.trim());
+    if (slipPlan === "business") fd.set("businessConfig", JSON.stringify(businessConfig));
     fd.set("slip", file);
     try {
       const res = await uploadWithProgress<{
@@ -279,6 +321,9 @@ export function BillingManager({
           <InfoItem label={isEnterprise ? "สัญญา" : "แพ็กเกจ"} value={isEnterprise ? "Enterprise contract" : isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
           <InfoItem label="สถานะ" value={enterpriseActive ? "ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ" : isEnterprise ? "ต้องติดต่อผู้ดูแลแพลตฟอร์ม" : isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
           {!isEnterprise && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
+          {plan === "business" && currentBusiness && (
+            <InfoItem label="ที่เลือกไว้" value={describeBusinessConfig(currentBusiness)} />
+          )}
         </div>
       </section>
 
@@ -305,8 +350,8 @@ export function BillingManager({
         <section className="panel p-5">
           <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            {PAID_TIERS.map((t) => (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {([...PAID_TIERS, "business"] as SelectablePlan[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -321,7 +366,9 @@ export function BillingManager({
                 <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[t]}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">{TIER_DESC[t]}</p>
               <p className="mt-2 text-xs text-[var(--ink-2)]">
-                {prices[t]["30d"].toLocaleString()} / เดือน
+                {t === "business"
+                  ? `เริ่มต้น ${computeBusinessPrice({ seats: 1, stores: 1, features: [] }, businessPrices, "30d").toLocaleString()} / เดือน`
+                  : `${prices[t]["30d"].toLocaleString()} / เดือน`}
               </p>
               {t === "premium" && trialAvailable && (
                 <p className="mt-2 text-xs font-bold text-[var(--tenant-primary-strong)]">
@@ -331,6 +378,93 @@ export function BillingManager({
               </button>
             ))}
           </div>
+
+          {isBusinessSelected && (
+            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+              <p className="text-sm font-bold text-[var(--ink)]">ปรับแต่งแพ็กเกจ Business</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                ค่าระบบพื้นฐาน {businessPrices.base[duration].toLocaleString()} บาท
+                {" · "}ที่นั่งละ {businessPrices.perSeat[duration].toLocaleString()} บาท
+                {" · "}สาขาละ {businessPrices.perStore[duration].toLocaleString()} บาท
+                {" / "}{DURATION_LABELS[duration]}
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="business-seats" className="field-label">
+                    จำนวนที่นั่ง (สมาชิก/พนักงาน)
+                  </label>
+                  <input
+                    id="business-seats"
+                    type="number"
+                    min={BUSINESS_LIMITS.seats.min}
+                    max={BUSINESS_LIMITS.seats.max}
+                    value={seats}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setSeats(Number.isFinite(n) ? Math.min(BUSINESS_LIMITS.seats.max, Math.max(BUSINESS_LIMITS.seats.min, Math.round(n))) : BUSINESS_LIMITS.seats.min);
+                      resetGeneratedPayment();
+                    }}
+                    className="form-input tabular-nums"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="business-stores" className="field-label">
+                    จำนวนสาขา
+                  </label>
+                  <input
+                    id="business-stores"
+                    type="number"
+                    min={BUSINESS_LIMITS.stores.min}
+                    max={BUSINESS_LIMITS.stores.max}
+                    value={stores}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setStores(Number.isFinite(n) ? Math.min(BUSINESS_LIMITS.stores.max, Math.max(BUSINESS_LIMITS.stores.min, Math.round(n))) : BUSINESS_LIMITS.stores.min);
+                      resetGeneratedPayment();
+                    }}
+                    className="form-input tabular-nums"
+                  />
+                </div>
+              </div>
+              <p className="field-label mt-4">ฟีเจอร์เสริม (เลือกเฉพาะที่ใช้)</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {BUSINESS_SELECTABLE_FEATURES.map((key) => (
+                  <label
+                    key={key}
+                    className={`flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded-[var(--radius-md)] border px-3 py-2 text-sm ${
+                      businessFeatures.includes(key)
+                        ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)]"
+                        : "border-[var(--border)] bg-white"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={businessFeatures.includes(key)}
+                        disabled={busy}
+                        onChange={() => toggleBusinessFeature(key)}
+                      />
+                      {FEATURE_LABELS[key]}
+                    </span>
+                    <span className="text-xs tabular-nums text-[var(--muted)]">
+                      +{businessPrices[key][duration].toLocaleString()}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {stores > 1 && !businessFeatures.includes("multiBranchReporting") && (
+                <p className="mt-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  เลือกมากกว่า 1 สาขา แนะนำให้เปิดฟีเจอร์ &quot;รายงานหลายสาขา&quot; ด้วย
+                  ไม่เช่นนั้นจะเพิ่ม/จัดการสาขาใหม่จากหน้าตั้งค่าไม่ได้
+                </p>
+              )}
+              <p className="mt-3 text-right text-sm font-bold text-[var(--tenant-primary-strong)]">
+                รวม {price.toLocaleString()} บาท / {DURATION_LABELS[duration]}
+              </p>
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {(["30d", "1y"] as BillingDuration[]).map((d) => (

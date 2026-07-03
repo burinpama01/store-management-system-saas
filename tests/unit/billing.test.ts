@@ -19,7 +19,9 @@ function state(plan: BillingState["plan"], status: BillingState["status"]): Bill
   };
 }
 
-const EXPECTED_PLAN_FEATURES: Record<BillingState["plan"], PlanFeatures> = {
+// Business is excluded: its features come from the tenant-selected config
+// (covered in tests/unit/business-plan.test.ts).
+const EXPECTED_PLAN_FEATURES: Record<Exclude<BillingState["plan"], "business">, PlanFeatures> = {
   free: {
     maxStores: 1,
     maxMembers: 1,

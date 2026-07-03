@@ -91,6 +91,7 @@ const PLAN_LABELS: Record<BillingPlan, string> = {
   starter: "Starter",
   standard: "Standard",
   premium: "Premium",
+  business: "Business",
   enterprise: "Enterprise",
 };
 
