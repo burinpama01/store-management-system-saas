@@ -3519,3 +3519,95 @@ a:focus-visible {
     animation-duration: 1.2s;
   }
 }
+
+
+/* ── Landing hero 3D scene + luxe polish (#landing-luxe) ──────────────
+   Unlayered on purpose (see note above): always emitted, wins over @layer.
+   Class is .marketing-hero-3d (NOT .marketing-hero-scene — that name is taken
+   by legacy layered rules from an older landing design). */
+.marketing-hero-3d {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.marketing-hero-3d canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.reference-hero-copy,
+.reference-scroll-hint {
+  position: relative;
+  z-index: 5;
+}
+
+.reference-hero-lead {
+  background: linear-gradient(100deg, #c65d35 0%, #b8842c 52%, #3f7d8c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.reference-primary-cta {
+  box-shadow: 0 14px 34px rgb(198 97 58 / 0.32);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.reference-primary-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 46px rgb(198 97 58 / 0.42);
+}
+
+.marketing-glass-card {
+  box-shadow:
+    0 24px 48px rgb(54 45 38 / 0.16),
+    inset 0 1px 0 rgb(255 255 255 / 0.55);
+}
+
+/* Landing pricing section (data comes from plan_settings + live prices) */
+.reference-landing-pricing {
+  width: min(92rem, 100%);
+  margin: 0 auto;
+  padding: 3.5rem 1rem 1.5rem;
+}
+
+.reference-landing-pricing .reference-section-heading {
+  margin-bottom: 1.75rem;
+}
+
+.reference-landing-pricing-more {
+  margin-top: 1.6rem;
+  text-align: center;
+}
+
+.reference-landing-pricing-more a {
+  color: #c65d35;
+  font-size: 0.95rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.reference-landing-pricing-more a:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reference-hero-visual {
+    animation: marketing-hero-float 9s ease-in-out infinite;
+  }
+}
+
+@keyframes marketing-hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
