@@ -195,12 +195,17 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   lines.push({ text: div });
 
   for (const item of data.items) {
-    const displayName = item.variantName ? `${item.name} (${item.variantName})` : item.name;
+    const suffix = item.unitName ?? item.variantName;
+    const displayName = suffix ? `${item.name} (${suffix})` : item.name;
     const priceField = `x${item.quantity} ${priceStr(item.totalPrice)}`;
     const nameWidth = cols - priceField.length - 1;
     const name =
       displayName.length > nameWidth ? displayName.slice(0, nameWidth - 1) + "…" : displayName.padEnd(nameWidth);
     lines.push({ text: `${name} ${priceField}` });
+    // Department-store style: show the multiplication when the line is more than 1 unit.
+    if (item.quantity > 1) {
+      lines.push({ text: `  ${item.quantity} x ${priceStr(item.unitPrice)}` });
+    }
     if (item.modifierNames.length > 0) lines.push({ text: `  + ${item.modifierNames.join(", ")}` });
     if (item.note) lines.push({ text: `  * ${item.note}` });
     if ((item.discount ?? 0) > 0) {
@@ -210,12 +215,21 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   }
 
   lines.push({ text: div });
+  const itemCount = data.items.reduce((sum, item) => sum + item.quantity, 0);
+  lines.push({ text: padLine("จำนวนรายการ", `${data.items.length} (${itemCount} ชิ้น)`, cols) });
   lines.push({ text: padLine("ยอดรวมย่อย", priceStr(data.subtotal), cols) });
   if (data.discount > 0) {
     const label = data.discountNote ? `ส่วนลด (${data.discountNote})` : "ส่วนลด";
     lines.push({ text: padLine(label, `-${priceStr(data.discount)}`, cols) });
   }
   lines.push({ text: padLine("** รวมสุทธิ **", priceStr(data.total), cols), bold: true });
+
+  if (isFiniteNumber(data.vatRate) && data.vatRate > 0) {
+    // VAT is included in the prices: back out the pre-VAT value for display only.
+    const vatAmount = Math.round((data.total * data.vatRate / (100 + data.vatRate)) * 100) / 100;
+    lines.push({ text: padLine(`มูลค่าสินค้าก่อน VAT`, priceStr(data.total - vatAmount), cols) });
+    lines.push({ text: padLine(`VAT ${data.vatRate}% (รวมในราคา)`, priceStr(vatAmount), cols) });
+  }
 
   for (const p of data.payments) {
     const displayAmount = p.method === "cash" && p.receivedAmount !== undefined ? p.receivedAmount : p.amount;

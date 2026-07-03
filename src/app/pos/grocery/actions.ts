@@ -2,14 +2,30 @@
 
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { getResolvedCurrentPermissions, requireFeature, requirePermission } from "@/modules/auth/guards";
-import { findProductByBarcode, listProducts, type BarcodeProductMatch } from "@/modules/catalog/repository";
+import {
+  createProduct,
+  createVariant,
+  findProductByBarcode,
+  listCategories,
+  createCategory,
+  listProducts,
+  replaceProductUnits,
+  type BarcodeProductMatch,
+  type ProductUnitInput,
+} from "@/modules/catalog/repository";
+import { normalizePriceTier } from "@/modules/pos/pricing";
+import { listOrdersHistory } from "@/modules/pos/order-repository";
 import { searchCustomersForStore } from "@/modules/customers/repository";
 import type { CustomerProfile } from "@/modules/customers/types";
 import {
   closeGroceryOrderPaymentWithRewards,
   voidGroceryOrderWithRewards,
 } from "@/modules/grocery-pos/order-repository";
-import { createTrustedGroceryOrder, mapGroceryCouponError } from "@/modules/grocery-pos/checkout-service";
+import {
+  createTrustedGroceryOrder,
+  mapGroceryCouponError,
+  resolveTrustedPriceTier,
+} from "@/modules/grocery-pos/checkout-service";
 import { buildTrustedCartFromCatalog, CartValidationError } from "@/modules/pos/server-cart";
 import { getOrder, type AddPaymentInput } from "@/modules/pos/order-repository";
 import type { Order } from "@/modules/pos/types";
@@ -63,6 +79,7 @@ export async function evaluateGroceryCouponAction(
   code: string,
   cart: Cart,
   customerId?: string | null,
+  priceTier?: string | null,
 ): Promise<{
   couponId: string | null;
   discount: number;
@@ -84,9 +101,15 @@ export async function evaluateGroceryCouponAction(
       return { couponId: null, discount: 0, normalizedCode: null, error: productsRes.error?.userMessage ?? "ไม่พบข้อมูลสินค้า" };
     }
 
+    const tierRes = await resolveTrustedPriceTier(ctx.storeId, customerId, priceTier);
+    if (tierRes.error) {
+      return { couponId: null, discount: 0, normalizedCode: null, error: tierRes.error };
+    }
+
     const trustedCart = buildTrustedCartFromCatalog(cart, productsRes.data, {
       storeId: ctx.storeId,
       canDiscount: resolved.can("pos.discount"),
+      priceTier: tierRes.tier,
     });
 
     const couponRes = await findCouponPolicyByCode(ctx.storeId, code, customerId);
@@ -130,6 +153,7 @@ export async function evaluateGroceryCouponAction(
 export interface CreateGroceryOrderActionInput {
   cart: Cart;
   customerId?: string | null;
+  priceTier?: string | null;
   couponCode?: string | null;
   clientCouponDiscountAmount?: number;
   idempotencyKey: string;
@@ -168,6 +192,7 @@ export async function createGroceryOrderAction(
       canDiscount: resolved.can("pos.discount"),
       cart: input.cart,
       customerId: input.customerId,
+      priceTier: normalizePriceTier(input.priceTier),
       idempotencyKey: input.idempotencyKey,
       couponCode: input.couponCode,
       clientCouponDiscountAmount: input.clientCouponDiscountAmount,
@@ -217,6 +242,148 @@ export async function closeGroceryOrderPaymentAction(
     return { order: result.data, error: null };
   } catch (e) {
     return { order: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export interface GroceryOrdersHistoryActionInput {
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+}
+
+/** ประวัติบิลย้อนหลังสำหรับหน้า POS ขายส่ง (กรองตามวันที่ เวลาท้องถิ่นร้าน) */
+export async function listGroceryOrdersHistoryAction(
+  input: GroceryOrdersHistoryActionInput = {},
+): Promise<{ orders: Order[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    await requireFeature("groceryPos");
+    const { ctx } = await getStoreContext();
+    const result = await listOrdersHistory(ctx.storeId, ctx.storeTimezone, {
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      limit: input.limit ?? 100,
+    });
+    if (result.error) return { orders: [], error: result.error.userMessage };
+    return { orders: result.data ?? [], error: null };
+  } catch (e) {
+    return { orders: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export interface QuickAddGroceryProductInput {
+  name: string;
+  barcode?: string | null;
+  basePrice: number;
+  unitLabel?: string | null;
+  priceWholesale?: number | null;
+  priceAgent?: number | null;
+  priceRegular?: number | null;
+  /** ระบุจำนวนสต๊อกเริ่มต้น = เปิดติดตามสต๊อก (สร้าง variant "มาตรฐาน" ให้อัตโนมัติ) */
+  initialStock?: number | null;
+  units?: Array<{
+    name: string;
+    quantity: number;
+    price: number;
+    priceWholesale?: number | null;
+    priceAgent?: number | null;
+    priceRegular?: number | null;
+    barcode?: string | null;
+  }>;
+}
+
+const QUICK_ADD_DEFAULT_CATEGORY = "สินค้าทั่วไป";
+
+/** เพิ่มสินค้าเร็วจากหน้า POS ขายส่ง: ชื่อ+บาร์โค้ด+ราคา(หลายระดับ)+สต๊อก+หน่วยโหล/แพ็ค จบในคำสั่งเดียว */
+export async function quickAddGroceryProductAction(
+  input: QuickAddGroceryProductInput,
+): Promise<{ ok: boolean; error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    await requireFeature("groceryPos");
+    const { ctx } = await getStoreContext();
+
+    const name = input.name.trim();
+    if (!name) return { ok: false, error: "กรุณากรอกชื่อสินค้า" };
+    if (!Number.isFinite(input.basePrice) || input.basePrice < 0) {
+      return { ok: false, error: "ราคาสินค้าไม่ถูกต้อง" };
+    }
+    const units: ProductUnitInput[] = (input.units ?? [])
+      .filter((unit) => unit.name.trim())
+      .map((unit, index) => ({
+        name: unit.name,
+        quantity: Math.floor(unit.quantity),
+        price: unit.price,
+        priceWholesale: unit.priceWholesale ?? null,
+        priceAgent: unit.priceAgent ?? null,
+        priceRegular: unit.priceRegular ?? null,
+        barcode: unit.barcode ?? null,
+        sortOrder: index,
+      }));
+    for (const unit of units) {
+      if (!Number.isInteger(unit.quantity) || unit.quantity < 2) {
+        return { ok: false, error: "จำนวนต่อหน่วยแพ็คต้องเป็นจำนวนเต็มตั้งแต่ 2 ขึ้นไป" };
+      }
+      if (!Number.isFinite(unit.price) || unit.price < 0) {
+        return { ok: false, error: "ราคาต่อหน่วยแพ็คไม่ถูกต้อง" };
+      }
+    }
+
+    const categoriesRes = await listCategories(ctx.storeId);
+    if (categoriesRes.error) return { ok: false, error: categoriesRes.error.userMessage };
+    let categoryId = (categoriesRes.data ?? []).find(
+      (category) => category.name === QUICK_ADD_DEFAULT_CATEGORY,
+    )?.id ?? (categoriesRes.data ?? [])[0]?.id;
+    if (!categoryId) {
+      const createdCategory = await createCategory({
+        organization_id: ctx.organizationId,
+        store_id: ctx.storeId,
+        name: QUICK_ADD_DEFAULT_CATEGORY,
+      });
+      if (createdCategory.error || !createdCategory.data) {
+        return { ok: false, error: createdCategory.error?.userMessage ?? "สร้างหมวดหมู่ไม่สำเร็จ" };
+      }
+      categoryId = createdCategory.data.id;
+    }
+
+    const productRes = await createProduct({
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      categoryId,
+      name,
+      barcode: input.barcode?.trim() || undefined,
+      basePrice: input.basePrice,
+      unitLabel: input.unitLabel?.trim() || null,
+      priceWholesale: input.priceWholesale ?? null,
+      priceAgent: input.priceAgent ?? null,
+      priceRegular: input.priceRegular ?? null,
+      availableForPos: true,
+      availableForQr: false,
+    });
+    if (productRes.error || !productRes.data) {
+      return { ok: false, error: productRes.error?.userMessage ?? "สร้างสินค้าไม่สำเร็จ" };
+    }
+
+    const initialStock = input.initialStock;
+    if (typeof initialStock === "number" && Number.isFinite(initialStock)) {
+      const variantRes = await createVariant({
+        productId: productRes.data.id,
+        name: "มาตรฐาน",
+        priceAdjustment: 0,
+        trackStock: true,
+        stockQuantity: Math.max(0, Math.floor(initialStock)),
+      });
+      if (variantRes.error) return { ok: false, error: variantRes.error.userMessage };
+    }
+
+    if (units.length > 0) {
+      const unitsRes = await replaceProductUnits(productRes.data.id, ctx.storeId, units);
+      if (unitsRes.error) return { ok: false, error: unitsRes.error.userMessage };
+    }
+
+    return { ok: true, error: null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 

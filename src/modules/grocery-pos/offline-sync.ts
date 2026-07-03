@@ -10,6 +10,8 @@ export type GroceryOfflineOperationStatus = "pending" | "syncing" | "synced" | "
 export interface GroceryOfflineOrderPayload {
   cart: Cart;
   customerId?: string | null;
+  /** ระดับราคาที่แคชเชียร์เลือก (ยืนยันซ้ำฝั่ง server ตอน sync) */
+  priceTier?: string | null;
   couponCode?: string | null;
   clientCouponDiscountAmount?: number;
   note?: string;
@@ -84,10 +86,25 @@ export function resolveGroceryPosDeviceId(storeId: string): string {
 type GroceryCatalogVersionProduct = {
   id: string;
   basePrice?: number;
+  priceWholesale?: number | null;
+  priceAgent?: number | null;
+  priceRegular?: number | null;
   isActive?: boolean;
   availableForPos?: boolean;
   availableForQr?: boolean;
   updatedAt?: string;
+  units?: Array<{
+    id: string;
+    name?: string;
+    quantity?: number;
+    price?: number;
+    priceWholesale?: number | null;
+    priceAgent?: number | null;
+    priceRegular?: number | null;
+    barcode?: string;
+    isActive?: boolean;
+    sortOrder?: number;
+  }>;
   variants?: Array<{
     id: string;
     name?: string;
@@ -136,10 +153,27 @@ export function buildGroceryCatalogVersion(input: { products: GroceryCatalogVers
     .map((product) => ({
       id: product.id,
       basePrice: product.basePrice ?? 0,
+      priceWholesale: product.priceWholesale ?? null,
+      priceAgent: product.priceAgent ?? null,
+      priceRegular: product.priceRegular ?? null,
       isActive: product.isActive ?? true,
       availableForPos: product.availableForPos ?? true,
       availableForQr: product.availableForQr ?? false,
       updatedAt: product.updatedAt ?? "",
+      units: [...(product.units ?? [])]
+        .map((unit) => ({
+          id: unit.id,
+          name: unit.name ?? "",
+          quantity: unit.quantity ?? 0,
+          price: unit.price ?? 0,
+          priceWholesale: unit.priceWholesale ?? null,
+          priceAgent: unit.priceAgent ?? null,
+          priceRegular: unit.priceRegular ?? null,
+          barcode: unit.barcode ?? "",
+          isActive: unit.isActive ?? true,
+          sortOrder: unit.sortOrder ?? 0,
+        }))
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id)),
       variants: [...(product.variants ?? [])]
         .map((variant) => ({
           id: variant.id,
@@ -213,6 +247,7 @@ export function buildGroceryOfflineOrderOperation(
     payload: {
       cart: input.cart,
       customerId: input.customerId ?? null,
+      priceTier: input.priceTier ?? null,
       couponCode: input.couponCode ?? null,
       clientCouponDiscountAmount: input.clientCouponDiscountAmount ?? 0,
       note: input.note ?? "Grocery POS offline",

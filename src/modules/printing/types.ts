@@ -7,6 +7,8 @@ export type { Printer, ReceiptSettings };
 export interface ReceiptLineItem {
   name: string;
   variantName?: string;
+  /** ชื่อหน่วยขาย เช่น โหล/แพ็ค (ขายส่ง) — แสดงต่อท้ายชื่อสินค้า */
+  unitName?: string;
   modifierNames: string[];
   quantity: number;
   unitPrice: number;
@@ -40,6 +42,8 @@ export interface ReceiptData {
   total: number;
   payments: ReceiptPayment[];
   paymentStatus?: "unpaid" | "paid";
+  /** แสดงบรรทัดแยกมูลค่าสินค้า/VAT (VAT รวมในราคาแล้ว) เมื่อกำหนดอัตรา เช่น 7 */
+  vatRate?: number;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
   footerText?: string;
@@ -92,6 +96,7 @@ export function buildReceiptData(
     items: order.items.map((item) => ({
       name: item.productName,
       variantName: item.variantName,
+      unitName: item.unitName,
       modifierNames: item.modifiers.map((m) => m.option.name),
       quantity: item.quantity,
       unitPrice: item.unitPrice,
@@ -113,6 +118,7 @@ export function buildReceiptData(
       changeAmount: p.changeAmount,
     })),
     paymentStatus: "paid",
+    vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
     loyaltyPointsEarned,
     loyaltyPointsBalance: loyaltyPointsEarned !== undefined ? order.loyaltyPointsBalance : undefined,
     footerText: settings.footerText,

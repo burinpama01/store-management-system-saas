@@ -1,6 +1,7 @@
-import type { Product, ProductVariant, ModifierOption } from "@/modules/catalog/types";
+import type { Product, ProductUnit, ProductVariant, ModifierOption } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, SelectedModifier } from "./types";
 import { buildCartItemKey } from "./types";
+import { resolveTierBasePrice, resolveUnitTierPrice, type PriceTier } from "./pricing";
 
 export class CartValidationError extends Error {
   constructor(message: string) {
@@ -16,8 +17,11 @@ function assertMoney(value: number, label: string): number {
   return Math.round(value * 100) / 100;
 }
 
+// Wholesale bills routinely carry hundreds of pieces per line — cap generously.
+const MAX_LINE_QUANTITY = 9999;
+
 function validateQuantity(quantity: number): number {
-  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_LINE_QUANTITY) {
     throw new CartValidationError("จำนวนสินค้าไม่ถูกต้อง");
   }
   return quantity;
@@ -115,6 +119,7 @@ function applyTrustedItemDiscount(item: CartItem): CartItem {
     productName: item.productName,
     categoryId: item.categoryId,
     variant: item.variant,
+    unit: item.unit ?? null,
     modifiers: item.modifiers,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
@@ -157,6 +162,15 @@ function resolveVariant(
     throw new CartValidationError("ตัวเลือกสินค้าไม่พร้อมใช้งาน");
   }
   return variant;
+}
+
+function resolveUnit(product: Product, unitId: string | null | undefined): ProductUnit | null {
+  if (!unitId) return null;
+  const unit = (product.units ?? []).find((item) => item.id === unitId);
+  if (!unit || !unit.isActive) {
+    throw new CartValidationError("หน่วยขายนี้ไม่พร้อมใช้งาน");
+  }
+  return unit;
 }
 
 function addVariantStockDemand(
@@ -236,12 +250,13 @@ function resolveModifiers(product: Product, optionIds: string[]): SelectedModifi
 export function buildTrustedCartFromCatalog(
   clientCart: Cart,
   products: Product[],
-  input: { storeId: string; canDiscount: boolean },
+  input: { storeId: string; canDiscount: boolean; priceTier?: PriceTier },
 ): Cart {
   if (clientCart.storeId !== input.storeId) {
     throw new CartValidationError("ร้านค้าในตะกร้าไม่ถูกต้อง");
   }
 
+  const priceTier = input.priceTier ?? "retail";
   const productsById = new Map(products.map((product) => [product.id, product]));
   const itemMap = new Map<string, CartItem>();
   const requestedStockByVariant = new Map<string, { requested: number; available: number }>();
@@ -254,19 +269,27 @@ export function buildTrustedCartFromCatalog(
 
     const quantity = validateQuantity(clientItem.quantity);
     const variant = resolveVariant(product, clientItem.variant?.id);
-    addVariantStockDemand(requestedStockByVariant, variant, quantity);
+    const unit = resolveUnit(product, clientItem.unit?.id);
+    // Pack lines consume base-unit stock: quantity × pack size.
+    addVariantStockDemand(requestedStockByVariant, variant, quantity * (unit?.quantity ?? 1));
+    if (unit && clientItem.modifiers.length > 0) {
+      throw new CartValidationError("หน่วยขายแพ็คใช้ร่วมกับตัวเลือกเสริมไม่ได้");
+    }
     const modifierOptionIds = clientItem.modifiers.map((item) => item.option.id);
-    const modifiers = resolveModifiers(product, modifierOptionIds);
+    const modifiers = unit ? [] : resolveModifiers(product, modifierOptionIds);
     const unitPrice = assertMoney(
-      product.basePrice +
-        (variant?.priceAdjustment ?? 0) +
-        modifiers.reduce((sum, item) => sum + item.option.priceAdjustment, 0),
+      unit
+        ? resolveUnitTierPrice(unit, priceTier)
+        : resolveTierBasePrice(product, priceTier) +
+            (variant?.priceAdjustment ?? 0) +
+            modifiers.reduce((sum, item) => sum + item.option.priceAdjustment, 0),
       "ราคาสินค้า",
     );
     const note = normalizeNote(clientItem.note);
     const key = buildCartItemKey({
       productId: product.id,
       variantId: variant?.id ?? null,
+      unitId: unit?.id ?? null,
       modifierOptionIds: modifiers.map((item) => item.option.id),
       note,
     });
@@ -308,6 +331,7 @@ export function buildTrustedCartFromCatalog(
               priceAdjustment: variant.priceAdjustment,
             }
           : null,
+        unit: unit ? { id: unit.id, name: unit.name, quantity: unit.quantity } : null,
         modifiers,
         quantity,
         unitPrice,

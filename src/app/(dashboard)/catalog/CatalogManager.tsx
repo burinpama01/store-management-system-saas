@@ -347,6 +347,34 @@ function ProductForm({
   const [qrOn, setQrOn] = useState(
     canUseQrOrdering ? (product?.availableForQr ?? false) : false,
   );
+  const [wholesaleUnits, setWholesaleUnits] = useState<
+    Array<{
+      id?: string;
+      name: string;
+      quantity: string;
+      price: string;
+      priceWholesale: string;
+      priceAgent: string;
+      priceRegular: string;
+      barcode: string;
+    }>
+  >(() =>
+    (product?.units ?? []).map((unit) => ({
+      id: unit.id,
+      name: unit.name,
+      quantity: String(unit.quantity),
+      price: String(unit.price),
+      priceWholesale: unit.priceWholesale != null ? String(unit.priceWholesale) : "",
+      priceAgent: unit.priceAgent != null ? String(unit.priceAgent) : "",
+      priceRegular: unit.priceRegular != null ? String(unit.priceRegular) : "",
+      barcode: unit.barcode ?? "",
+    })),
+  );
+
+  function patchWholesaleUnit(index: number, patch: Partial<(typeof wholesaleUnits)[number]>) {
+    setWholesaleUnits((units) => units.map((unit, i) => (i === index ? { ...unit, ...patch } : unit)));
+  }
+
   return (
     <form
       action={onSubmit}
@@ -395,6 +423,125 @@ function ProductForm({
         step="1"
         required
       />
+      <details className="rounded border border-gray-200 bg-gray-50 p-2.5" open={
+        !!product?.barcode ||
+        !!product?.unitLabel ||
+        product?.priceWholesale != null ||
+        product?.priceAgent != null ||
+        product?.priceRegular != null ||
+        wholesaleUnits.length > 0
+      }>
+        <summary className="cursor-pointer text-sm font-medium text-gray-700">
+          ขายส่ง: บาร์โค้ด / ราคาหลายระดับ / หน่วยโหล-แพ็ค
+        </summary>
+        <input type="hidden" name="unitsJson" value={JSON.stringify(wholesaleUnits)} />
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <InputField
+            label="บาร์โค้ดสินค้า"
+            name="barcode"
+            defaultValue={product?.barcode ?? ""}
+            placeholder="885xxxxxxxxxx"
+          />
+          <InputField
+            label="หน่วยนับ (ชิ้น/ขวด/ถุง)"
+            name="unitLabel"
+            defaultValue={product?.unitLabel ?? ""}
+            placeholder="ชิ้น"
+          />
+          <InputField
+            label="ราคาส่ง (เว้นว่าง = ราคาปลีก)"
+            name="priceWholesale"
+            type="number"
+            defaultValue={product?.priceWholesale ?? ""}
+            min="0"
+            step="0.01"
+          />
+          <InputField
+            label="ราคาตัวแทน"
+            name="priceAgent"
+            type="number"
+            defaultValue={product?.priceAgent ?? ""}
+            min="0"
+            step="0.01"
+          />
+          <InputField
+            label="ราคาลูกค้าประจำ"
+            name="priceRegular"
+            type="number"
+            defaultValue={product?.priceRegular ?? ""}
+            min="0"
+            step="0.01"
+          />
+        </div>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">หน่วยแพ็ค (เช่น โหล = 12 ชิ้น ราคาเหมา)</span>
+            <button
+              type="button"
+              className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100"
+              onClick={() =>
+                setWholesaleUnits((units) => [
+                  ...units,
+                  { name: "โหล", quantity: "12", price: "", priceWholesale: "", priceAgent: "", priceRegular: "", barcode: "" },
+                ])
+              }
+            >
+              + เพิ่มหน่วย
+            </button>
+          </div>
+          {wholesaleUnits.map((unit, index) => (
+            <div key={unit.id ?? `new-${index}`} className="grid grid-cols-2 gap-2 rounded border border-gray-200 bg-white p-2 md:grid-cols-7">
+              <input
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                value={unit.name}
+                onChange={(e) => patchWholesaleUnit(index, { name: e.target.value })}
+                placeholder="ชื่อหน่วย"
+              />
+              <input
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                value={unit.quantity}
+                onChange={(e) => patchWholesaleUnit(index, { quantity: e.target.value })}
+                placeholder="จำนวนชิ้น"
+                inputMode="numeric"
+              />
+              <input
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                value={unit.price}
+                onChange={(e) => patchWholesaleUnit(index, { price: e.target.value })}
+                placeholder="ราคาปลีก"
+                inputMode="decimal"
+              />
+              <input
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                value={unit.priceWholesale}
+                onChange={(e) => patchWholesaleUnit(index, { priceWholesale: e.target.value })}
+                placeholder="ราคาส่ง"
+                inputMode="decimal"
+              />
+              <input
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                value={unit.priceAgent}
+                onChange={(e) => patchWholesaleUnit(index, { priceAgent: e.target.value })}
+                placeholder="ราคาตัวแทน"
+                inputMode="decimal"
+              />
+              <input
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                value={unit.barcode}
+                onChange={(e) => patchWholesaleUnit(index, { barcode: e.target.value })}
+                placeholder="บาร์โค้ดแพ็ค"
+              />
+              <button
+                type="button"
+                className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                onClick={() => setWholesaleUnits((units) => units.filter((_, i) => i !== index))}
+              >
+                ลบ
+              </button>
+            </div>
+          ))}
+        </div>
+      </details>
       <ImageUpload
         label="รูปเมนู (อัปโหลด — ระบบย่อขนาดอัตโนมัติ — หรือวาง URL)"
         name="imageUrl"

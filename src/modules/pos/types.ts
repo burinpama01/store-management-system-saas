@@ -24,12 +24,21 @@ export interface SelectedModifier {
   option: Pick<ModifierOption, "id" | "name" | "priceAdjustment">;
 }
 
+/** หน่วยขายแพ็คที่เลือกในตะกร้า (โหล/ลัง) — quantity คือตัวคูณสต๊อกต่อ 1 หน่วย */
+export interface CartItemUnit {
+  id: string;
+  name: string;
+  quantity: number;
+}
+
 export interface CartItem {
   key: string;
   productId: string;
   productName: string;
   categoryId: string;
   variant: Pick<ProductVariant, "id" | "name" | "priceAdjustment"> | null;
+  /** null/undefined = ขายหน่วยฐาน (ชิ้น) */
+  unit?: CartItemUnit | null;
   modifiers: SelectedModifier[];
   quantity: number;
   unitPrice: number;
@@ -111,6 +120,10 @@ export interface OrderItem {
   productName: string;
   variantId?: string;
   variantName?: string;
+  unitId?: string;
+  unitName?: string;
+  /** ตัวคูณสต๊อกต่อ 1 หน่วยที่ขาย (1 = หน่วยฐาน, 12 = โหล) */
+  unitQuantity?: number;
   modifiers: SelectedModifier[];
   quantity: number;
   unitPrice: number;
@@ -138,6 +151,7 @@ export interface Payment {
 export interface CartItemKey {
   productId: string;
   variantId: string | null;
+  unitId?: string | null;
   modifierOptionIds: string[];
   note?: string;
 }
@@ -145,5 +159,5 @@ export interface CartItemKey {
 export function buildCartItemKey(input: CartItemKey): string {
   const modifierPart = [...input.modifierOptionIds].sort().join(",");
   const notePart = input.note?.trim().replace(/\s+/g, " ") ?? "";
-  return [input.productId, input.variantId ?? "", modifierPart, notePart].join("|");
+  return [input.productId, input.variantId ?? "", input.unitId ?? "", modifierPart, notePart].join("|");
 }

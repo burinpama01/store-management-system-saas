@@ -5,6 +5,7 @@ import { mapError } from "@/shared/utils/error";
 import type {
   Category,
   Product,
+  ProductUnit,
   ProductVariant,
   VariantTemplate,
   ModifierGroupTemplate,
@@ -20,6 +21,7 @@ type VariantTemplateRow = Database["public"]["Tables"]["catalog_variant_template
 type ModifierGroupTemplateRow = Database["public"]["Tables"]["catalog_modifier_group_templates"]["Row"];
 type ModifierOptionTemplateRow = Database["public"]["Tables"]["catalog_modifier_option_templates"]["Row"];
 type VariantRow = Database["public"]["Tables"]["product_variants"]["Row"];
+type ProductUnitRow = Database["public"]["Tables"]["product_units"]["Row"];
 type ModGroupRow = Database["public"]["Tables"]["modifier_groups"]["Row"];
 type ModOptionRow = Database["public"]["Tables"]["modifier_options"]["Row"];
 
@@ -49,6 +51,23 @@ function mapVariant(row: VariantRow): ProductVariant {
     trackStock: row.track_stock,
     isActive: row.is_active,
     sortOrder: row.sort_order,
+  };
+}
+
+function mapProductUnit(row: ProductUnitRow): ProductUnit {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    storeId: row.store_id,
+    name: row.name,
+    quantity: row.quantity,
+    price: row.price,
+    priceWholesale: row.price_wholesale,
+    priceAgent: row.price_agent,
+    priceRegular: row.price_regular,
+    barcode: row.barcode ?? undefined,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
   };
 }
 
@@ -136,6 +155,7 @@ function mapProduct(
   variants: VariantRow[],
   modGroups: ModGroupRow[],
   modOptions: ModOptionRow[],
+  units: ProductUnitRow[] = [],
 ): Product {
   return {
     id: row.id,
@@ -149,6 +169,10 @@ function mapProduct(
     barcode: row.barcode ?? undefined,
     imageUrl: row.image_url ?? undefined,
     basePrice: row.base_price,
+    unitLabel: row.unit_label ?? undefined,
+    priceWholesale: row.price_wholesale,
+    priceAgent: row.price_agent,
+    priceRegular: row.price_regular,
     isActive: row.is_active,
     availableForPos: row.available_for_pos,
     availableForQr: row.available_for_qr,
@@ -160,6 +184,10 @@ function mapProduct(
       .filter((v) => v.product_id === row.id)
       .map(mapVariant)
       .sort((a, b) => a.sortOrder - b.sortOrder),
+    units: units
+      .filter((u) => u.product_id === row.id)
+      .map(mapProductUnit)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.quantity - b.quantity),
     modifierGroups: modGroups
       .filter((g) => g.product_id === row.id)
       .map((g) => mapModifierGroup(g, modOptions))
@@ -244,12 +272,14 @@ export async function listProducts(storeId: string, opts?: { includeInactive?: b
 
       const productIds = productRows.map((p) => p.id);
 
-      const [variantsRes, groupsRes] = await Promise.all([
+      const [variantsRes, groupsRes, unitsRes] = await Promise.all([
         supabase.from("product_variants").select("*").in("product_id", productIds).eq("is_active", true),
         supabase.from("modifier_groups").select("*").in("product_id", productIds),
+        supabase.from("product_units").select("*").in("product_id", productIds).eq("is_active", true),
       ]);
       if (variantsRes.error) return { data: null, error: variantsRes.error };
       if (groupsRes.error) return { data: null, error: groupsRes.error };
+      if (unitsRes.error) return { data: null, error: unitsRes.error };
 
       const groupIds = (groupsRes.data ?? []).map((g) => g.id);
       const optionsRes =
@@ -268,6 +298,7 @@ export async function listProducts(storeId: string, opts?: { includeInactive?: b
           variantsRes.data ?? [],
           groupsRes.data ?? [],
           optionsRes.data ?? [],
+          unitsRes.data ?? [],
         ),
       );
       return { data: products, error: null };
@@ -279,8 +310,9 @@ export async function listProducts(storeId: string, opts?: { includeInactive?: b
 export interface BarcodeProductMatch {
   product: Product;
   variant: ProductVariant | null;
+  unit?: ProductUnit | null;
   barcode: string;
-  source: "product_barcode" | "variant_barcode" | "variant_sku";
+  source: "product_barcode" | "variant_barcode" | "variant_sku" | "unit_barcode";
 }
 
 export function normalizeCatalogBarcode(input: string): string | null {
@@ -311,6 +343,13 @@ export async function findProductByBarcode(storeId: string, input: string) {
         matches.push({ product, variant, barcode, source: "variant_sku" });
       }
     }
+
+    for (const unit of product.units ?? []) {
+      if (unit.barcode?.toLowerCase() === normalized) {
+        // Pack barcodes sell through the stock-holding variant (first active) when one exists.
+        matches.push({ product, variant: product.variants[0] ?? null, unit, barcode, source: "unit_barcode" });
+      }
+    }
   }
 
   if (matches.length > 1) {
@@ -329,12 +368,14 @@ export async function getProduct(productId: string) {
       .single();
     if (productRes.error) return { data: null, error: productRes.error };
 
-    const [variantsRes, groupsRes] = await Promise.all([
+    const [variantsRes, groupsRes, unitsRes] = await Promise.all([
       supabase.from("product_variants").select("*").eq("product_id", productId),
       supabase.from("modifier_groups").select("*").eq("product_id", productId),
+      supabase.from("product_units").select("*").eq("product_id", productId),
     ]);
     if (variantsRes.error) return { data: null, error: variantsRes.error };
     if (groupsRes.error) return { data: null, error: groupsRes.error };
+    if (unitsRes.error) return { data: null, error: unitsRes.error };
 
     const groupIds = (groupsRes.data ?? []).map((g) => g.id);
     const optionsRes =
@@ -352,6 +393,7 @@ export async function getProduct(productId: string) {
         variantsRes.data ?? [],
         groupsRes.data ?? [],
         optionsRes.data ?? [],
+        unitsRes.data ?? [],
       ),
       error: null,
     };
@@ -368,6 +410,10 @@ export interface CreateProductInput {
   barcode?: string;
   imageUrl?: string;
   basePrice?: number;
+  unitLabel?: string | null;
+  priceWholesale?: number | null;
+  priceAgent?: number | null;
+  priceRegular?: number | null;
   availableForPos?: boolean;
   availableForQr?: boolean;
   availableForDelivery?: boolean;
@@ -393,6 +439,10 @@ export async function createProduct(input: CreateProductInput) {
       barcode: input.barcode ?? null,
       image_url: input.imageUrl,
       base_price: input.basePrice ?? 0,
+      unit_label: input.unitLabel ?? null,
+      price_wholesale: input.priceWholesale ?? null,
+      price_agent: input.priceAgent ?? null,
+      price_regular: input.priceRegular ?? null,
       available_for_pos: input.availableForPos ?? true,
       available_for_qr: input.availableForQr ?? false,
       available_for_delivery: input.availableForDelivery ?? false,
@@ -421,6 +471,10 @@ export async function updateProduct(
       | "barcode"
       | "imageUrl"
       | "basePrice"
+      | "unitLabel"
+      | "priceWholesale"
+      | "priceAgent"
+      | "priceRegular"
       | "isActive"
       | "availableForPos"
       | "availableForQr"
@@ -441,6 +495,10 @@ export async function updateProduct(
       barcode: input.barcode,
       image_url: input.imageUrl,
       base_price: input.basePrice,
+      unit_label: input.unitLabel,
+      price_wholesale: input.priceWholesale,
+      price_agent: input.priceAgent,
+      price_regular: input.priceRegular,
       is_active: input.isActive,
       available_for_pos: input.availableForPos,
       available_for_qr: input.availableForQr,
@@ -463,6 +521,76 @@ export async function deleteProduct(id: string, storeId: string) {
   const { error } = await supabase.from("products").delete().eq("id", id).eq("store_id", storeId);
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
+}
+
+// --- Pack units (หน่วยขายส่ง โหล/แพ็ค/ลัง) ---
+
+export interface ProductUnitInput {
+  id?: string | null;
+  name: string;
+  quantity: number;
+  price: number;
+  priceWholesale?: number | null;
+  priceAgent?: number | null;
+  priceRegular?: number | null;
+  barcode?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+/** แทนที่ชุดหน่วยขายของสินค้า: อัปเดตตาม id เดิม, เพิ่มรายการใหม่, ลบรายการที่หายไป */
+export async function replaceProductUnits(
+  productId: string,
+  storeId: string,
+  units: ProductUnitInput[],
+) {
+  const supabase = await createSupabaseServerClient();
+
+  const existingRes = await supabase
+    .from("product_units")
+    .select("id")
+    .eq("product_id", productId)
+    .eq("store_id", storeId);
+  if (existingRes.error) return { data: null, error: mapError(existingRes.error) };
+
+  const keepIds = new Set(units.map((unit) => unit.id).filter((id): id is string => !!id));
+  const removeIds = (existingRes.data ?? []).map((row) => row.id).filter((id) => !keepIds.has(id));
+  if (removeIds.length > 0) {
+    const { error } = await supabase
+      .from("product_units")
+      .delete()
+      .in("id", removeIds)
+      .eq("store_id", storeId);
+    if (error) return { data: null, error: mapError(error) };
+  }
+
+  if (units.length > 0) {
+    const rows = units.map((unit, index) => ({
+      ...(unit.id ? { id: unit.id } : {}),
+      product_id: productId,
+      name: unit.name.trim(),
+      quantity: Math.floor(unit.quantity),
+      price: unit.price,
+      price_wholesale: unit.priceWholesale ?? null,
+      price_agent: unit.priceAgent ?? null,
+      price_regular: unit.priceRegular ?? null,
+      barcode: unit.barcode?.trim() || null,
+      sort_order: unit.sortOrder ?? index,
+      is_active: unit.isActive ?? true,
+      updated_at: new Date().toISOString(),
+    }));
+    const { error } = await supabase.from("product_units").upsert(rows, { onConflict: "id" });
+    if (error) return { data: null, error: mapError(error) };
+  }
+
+  const finalRes = await supabase
+    .from("product_units")
+    .select("*")
+    .eq("product_id", productId)
+    .eq("store_id", storeId)
+    .order("sort_order");
+  if (finalRes.error) return { data: null, error: mapError(finalRes.error) };
+  return { data: (finalRes.data ?? []).map(mapProductUnit), error: null };
 }
 
 // --- Variant templates ---
@@ -700,6 +828,7 @@ export interface CreateVariantInput {
   barcode?: string;
   sku?: string;
   trackStock?: boolean;
+  stockQuantity?: number | null;
   sortOrder?: number;
 }
 
@@ -714,6 +843,7 @@ export async function createVariant(input: CreateVariantInput) {
       barcode: input.barcode ?? null,
       sku: input.sku ?? null,
       track_stock: input.trackStock ?? false,
+      stock_quantity: input.stockQuantity ?? null,
       sort_order: input.sortOrder ?? 0,
     })
     .select()

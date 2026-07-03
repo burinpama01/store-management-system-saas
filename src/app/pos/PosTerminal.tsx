@@ -2242,6 +2242,8 @@ function ReceiptPanel({
         autoPrintStationTickets: false,
         paperWidth: "80mm",
         printCopies: 1,
+        showVatBreakdown: false,
+        vatRate: 7,
         updatedAt: new Date().toISOString(),
       };
       const receiptData = {
@@ -2880,7 +2882,7 @@ export function PosTerminal({
       return;
     }
 
-    const settings = receiptSettings ?? {
+    const settings: ReceiptSettings = receiptSettings ?? {
       id: "",
       storeId: "",
       organizationId: "",
@@ -2891,6 +2893,8 @@ export function PosTerminal({
       autoPrintStationTickets: false,
       paperWidth: "80mm" as const,
       printCopies: 1,
+      showVatBreakdown: false,
+      vatRate: 7,
       updatedAt: new Date().toISOString(),
     };
     const ticketNumber = activeTicket?.ticketNumber ?? createTicketNumber();
@@ -3084,7 +3088,7 @@ export function PosTerminal({
   }
 
   async function handlePrintHistoryOrder(order: Order) {
-    const settings = receiptSettings ?? {
+    const settings: ReceiptSettings = receiptSettings ?? {
       id: "",
       storeId: "",
       organizationId: "",
@@ -3095,6 +3099,8 @@ export function PosTerminal({
       autoPrintStationTickets: false,
       paperWidth: "80mm" as const,
       printCopies: 1,
+      showVatBreakdown: false,
+      vatRate: 7,
       updatedAt: new Date().toISOString(),
     };
     const receiptData = {

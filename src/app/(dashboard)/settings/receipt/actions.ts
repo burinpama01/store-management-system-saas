@@ -52,6 +52,8 @@ export async function upsertReceiptSettingsAction(
     const autoPrintStationTickets = formData.get("autoPrintStationTickets") === "1";
     const paperWidth = formData.get("paperWidth") as "58mm" | "80mm" | null;
     const printCopiesRaw = formData.get("printCopies") as string | null;
+    const showVatBreakdown = formData.get("showVatBreakdown") === "1";
+    const vatRateRaw = (formData.get("vatRate") as string | null)?.trim() ?? "7";
 
     if (!storeName) return { error: "กรุณาระบุชื่อร้านในใบเสร็จ" };
     if (storeName.length > 100) return { error: "ชื่อร้านในใบเสร็จยาวเกิน 100 ตัวอักษร" };
@@ -71,6 +73,9 @@ export async function upsertReceiptSettingsAction(
     const printCopies = parseInt(printCopiesRaw ?? "", 10);
     if (!Number.isInteger(printCopies) || printCopies < 1 || printCopies > 5)
       return { error: "จำนวนสำเนาต้องอยู่ระหว่าง 1–5" };
+    const vatRate = Number(vatRateRaw || "7");
+    if (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100)
+      return { error: "อัตรา VAT ต้องอยู่ระหว่าง 0–100" };
 
     const result = await upsertReceiptSettings(ctx.storeId, ctx.organizationId, {
       storeName,
@@ -88,6 +93,8 @@ export async function upsertReceiptSettingsAction(
       autoPrintStationTickets,
       paperWidth,
       printCopies,
+      showVatBreakdown,
+      vatRate,
     });
 
     if (result.error) return { error: result.error.userMessage };

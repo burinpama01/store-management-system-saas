@@ -19,6 +19,7 @@ import {
 import { Button } from "@/shared/components/ui";
 import { ImageUpload } from "@/shared/components/ui/ImageUpload";
 import { toStoreDateTimeLocal } from "@/shared/utils/datetime";
+import { PRICE_TIERS, PRICE_TIER_LABELS } from "@/modules/pos/pricing";
 
 export interface RewardProductOption {
   id: string;
@@ -530,7 +531,7 @@ export function CustomerLoyaltyManager({
           <div className="space-y-4">
             <form
               action={(formData) => runFormAction(saveCustomerAction, formData)}
-              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 md:grid-cols-4"
+              className="grid gap-3 rounded-lg border border-[var(--border)] p-4 md:grid-cols-5"
             >
               <input type="hidden" name="isActive" value="on" />
               <label className="space-y-1">
@@ -545,6 +546,16 @@ export function CustomerLoyaltyManager({
                 <span className="text-xs font-semibold uppercase text-[var(--muted)]">อีเมล</span>
                 <input className="form-input" name="email" type="email" placeholder="customer@example.com" />
               </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ระดับราคา</span>
+                <select className="form-input" name="priceTier" defaultValue="retail">
+                  {PRICE_TIERS.map((tier) => (
+                    <option key={tier} value={tier}>
+                      {PRICE_TIER_LABELS[tier]}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="flex items-end">
                 <Button variant="primary" className="w-full" type="submit" loading={isPending} disabled={!canManageCustomers}>
                   เพิ่มลูกค้า
@@ -555,7 +566,7 @@ export function CustomerLoyaltyManager({
               {customers.map((customer) => (
                 <form
                   action={(formData) => runFormAction(saveCustomerAction, formData)}
-                  className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1.4fr_1fr_1fr_0.8fr_auto]"
+                  className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1.3fr_1fr_1fr_0.9fr_0.8fr_auto]"
                   key={customer.id}
                 >
                   <input type="hidden" name="id" value={customer.id} />
@@ -570,6 +581,16 @@ export function CustomerLoyaltyManager({
                   <label className="space-y-1">
                     <span className="text-xs font-semibold uppercase text-[var(--muted)]">อีเมล</span>
                     <input className="form-input" name="email" type="email" defaultValue={customer.email ?? ""} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-[var(--muted)]">ระดับราคา</span>
+                    <select className="form-input" name="priceTier" defaultValue={customer.priceTier}>
+                      {PRICE_TIERS.map((tier) => (
+                        <option key={tier} value={tier}>
+                          {PRICE_TIER_LABELS[tier]}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <div className="flex items-end justify-between gap-3">
                     <label className="flex items-center gap-2 text-sm text-[var(--muted)]">

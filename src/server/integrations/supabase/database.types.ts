@@ -1091,6 +1091,10 @@ export interface Database {
           available_for_delivery: boolean;
           delivery_price: number | null;
           delivery_out_of_stock: boolean;
+          unit_label: string | null;
+          price_wholesale: number | null;
+          price_agent: number | null;
+          price_regular: number | null;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -1113,6 +1117,10 @@ export interface Database {
           available_for_delivery?: boolean;
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
+          unit_label?: string | null;
+          price_wholesale?: number | null;
+          price_agent?: number | null;
+          price_regular?: number | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -1135,6 +1143,10 @@ export interface Database {
           available_for_delivery?: boolean;
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
+          unit_label?: string | null;
+          price_wholesale?: number | null;
+          price_agent?: number | null;
+          price_regular?: number | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -1348,6 +1360,60 @@ export interface Database {
           track_stock?: boolean;
           is_active?: boolean;
           sort_order?: number;
+        };
+        Relationships: [];
+      };
+      product_units: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string;
+          name: string;
+          quantity: number;
+          price: number;
+          price_wholesale: number | null;
+          price_agent: number | null;
+          price_regular: number | null;
+          barcode: string | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id: string;
+          name: string;
+          quantity: number;
+          price: number;
+          price_wholesale?: number | null;
+          price_agent?: number | null;
+          price_regular?: number | null;
+          barcode?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string;
+          name?: string;
+          quantity?: number;
+          price?: number;
+          price_wholesale?: number | null;
+          price_agent?: number | null;
+          price_regular?: number | null;
+          barcode?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -1611,6 +1677,7 @@ export interface Database {
           name: string;
           phone: string | null;
           email: string | null;
+          price_tier: "retail" | "wholesale" | "agent" | "regular";
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -1622,6 +1689,7 @@ export interface Database {
           name: string;
           phone?: string | null;
           email?: string | null;
+          price_tier?: "retail" | "wholesale" | "agent" | "regular";
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -1633,6 +1701,7 @@ export interface Database {
           name?: string;
           phone?: string | null;
           email?: string | null;
+          price_tier?: "retail" | "wholesale" | "agent" | "regular";
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -2216,6 +2285,9 @@ export interface Database {
           variant_name: string | null;
           kitchen_station_id: string | null;
           kitchen_station_name: string | null;
+          unit_id: string | null;
+          unit_name: string | null;
+          unit_quantity: number;
           modifiers: Json;
           quantity: number;
           unit_price: number;
@@ -2237,6 +2309,9 @@ export interface Database {
           variant_name?: string | null;
           kitchen_station_id?: string | null;
           kitchen_station_name?: string | null;
+          unit_id?: string | null;
+          unit_name?: string | null;
+          unit_quantity?: number;
           modifiers?: Json;
           quantity: number;
           unit_price: number;
@@ -2258,6 +2333,9 @@ export interface Database {
           variant_name?: string | null;
           kitchen_station_id?: string | null;
           kitchen_station_name?: string | null;
+          unit_id?: string | null;
+          unit_name?: string | null;
+          unit_quantity?: number;
           modifiers?: Json;
           quantity?: number;
           unit_price?: number;
@@ -3020,6 +3098,8 @@ export interface Database {
           auto_print_station_tickets: boolean;
           paper_width: "58mm" | "80mm";
           print_copies: number;
+          show_vat_breakdown: boolean;
+          vat_rate: number;
           updated_at: string;
         };
         Insert: {
@@ -3041,6 +3121,8 @@ export interface Database {
           auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
           print_copies?: number;
+          show_vat_breakdown?: boolean;
+          vat_rate?: number;
           updated_at?: string;
         };
         Update: {
@@ -3062,6 +3144,8 @@ export interface Database {
           auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
           print_copies?: number;
+          show_vat_breakdown?: boolean;
+          vat_rate?: number;
           updated_at?: string;
         };
         Relationships: [];

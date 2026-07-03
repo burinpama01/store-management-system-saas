@@ -1,3 +1,5 @@
+import type { PriceTier } from "@/modules/pos/pricing";
+
 export interface CustomerProfile {
   id: string;
   organizationId: string;
@@ -5,6 +7,8 @@ export interface CustomerProfile {
   name: string;
   phone?: string;
   email?: string;
+  /** ระดับราคาขายส่งของลูกค้า (ปลีก/ส่ง/ตัวแทน/ประจำ) */
+  priceTier: PriceTier;
   loyaltyAccountId?: string;
   pointsBalance?: number;
   isActive: boolean;
@@ -19,5 +23,6 @@ export interface CustomerSaveInput {
   name: string;
   phone?: string | null;
   email?: string | null;
+  priceTier?: PriceTier;
   isActive?: boolean;
 }

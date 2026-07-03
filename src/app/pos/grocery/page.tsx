@@ -50,6 +50,8 @@ export default async function GroceryPosPage() {
         printerLoadError={printersResult.error?.userMessage ?? null}
         offlineEnabled={offlineEnabled}
         offlineUnavailableMessage={offlineUnavailableMessage}
+        canManageCatalog={resolved.can("catalog.manage")}
+        canDiscount={resolved.can("pos.discount")}
       />
     </div>
   );

@@ -275,6 +275,32 @@ function ReceiptSettingsDialog({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="showVatBreakdown"
+                value="1"
+                defaultChecked={settings?.showVatBreakdown ?? false}
+                disabled={!canEdit}
+              />
+              <span className="text-sm text-gray-700">แสดงบรรทัดแยกมูลค่าสินค้า/VAT (VAT รวมในราคาแล้ว)</span>
+            </label>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">อัตรา VAT (%)</label>
+              <input
+                type="number"
+                name="vatRate"
+                min="0"
+                max="100"
+                step="0.01"
+                defaultValue={settings?.vatRate ?? 7}
+                disabled={!canEdit}
+                className={field}
+              />
+            </div>
+          </div>
+
           {state.error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
               {state.error}
