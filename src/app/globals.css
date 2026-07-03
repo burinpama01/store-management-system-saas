@@ -3521,10 +3521,11 @@ a:focus-visible {
 }
 
 
-/* ── Landing hero 3D scene + luxe polish (#landing-luxe) ──────────────
+/* ── Landing workflow 3D backdrop + luxe polish (#landing-luxe) ────────
    Unlayered on purpose (see note above): always emitted, wins over @layer.
    Class is .marketing-hero-3d (NOT .marketing-hero-scene — that name is taken
-   by legacy layered rules from an older landing design). */
+   by legacy layered rules from an older landing design). The scene lives in
+   the workflow feature panel behind .reference-feature-picture. */
 .marketing-hero-3d {
   position: absolute;
   inset: 0;
@@ -3539,17 +3540,15 @@ a:focus-visible {
   height: 100% !important;
 }
 
-.reference-hero-copy,
-.reference-scroll-hint {
-  position: relative;
-  z-index: 5;
-}
-
-.reference-hero-lead {
-  background: linear-gradient(100deg, #c65d35 0%, #b8842c 52%, #3f7d8c 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+/* Feature screenshot floats above the live 3D backdrop. */
+.reference-feature-visual .reference-feature-picture {
+  inset: 1.15rem;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow:
+    0 24px 50px rgb(54 45 38 / 0.22),
+    0 3px 12px rgb(54 45 38 / 0.12);
 }
 
 .reference-primary-cta {
@@ -3566,48 +3565,4 @@ a:focus-visible {
   box-shadow:
     0 24px 48px rgb(54 45 38 / 0.16),
     inset 0 1px 0 rgb(255 255 255 / 0.55);
-}
-
-/* Landing pricing section (data comes from plan_settings + live prices) */
-.reference-landing-pricing {
-  width: min(92rem, 100%);
-  margin: 0 auto;
-  padding: 3.5rem 1rem 1.5rem;
-}
-
-.reference-landing-pricing .reference-section-heading {
-  margin-bottom: 1.75rem;
-}
-
-.reference-landing-pricing-more {
-  margin-top: 1.6rem;
-  text-align: center;
-}
-
-.reference-landing-pricing-more a {
-  color: #c65d35;
-  font-size: 0.95rem;
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.reference-landing-pricing-more a:hover {
-  text-decoration: underline;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .reference-hero-visual {
-    animation: marketing-hero-float 9s ease-in-out infinite;
-  }
-}
-
-@keyframes marketing-hero-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-10px);
-  }
 }

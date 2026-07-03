@@ -2,6 +2,7 @@
 
 import { type CSSProperties, useState } from "react";
 import { GlassPanel } from "./MarketingShell";
+import { MarketingHeroScene } from "./MarketingHeroScene";
 
 export type LandingWorkflowStep = {
   title: string;
@@ -54,8 +55,9 @@ export function LandingWorkflow({ steps }: LandingWorkflowProps) {
             ))}
           </ul>
         </div>
-        <div key={`${activeStep.title}-image`} className="reference-feature-visual" aria-hidden="true">
-          <picture className="reference-feature-picture">
+        <div className="reference-feature-visual" aria-hidden="true">
+          <MarketingHeroScene className="reference-feature-scene" />
+          <picture key={`${activeStep.title}-image`} className="reference-feature-picture">
             <source media="(max-width: 767px)" srcSet={activeStep.image.mobile} />
             <img
               className="reference-feature-image"

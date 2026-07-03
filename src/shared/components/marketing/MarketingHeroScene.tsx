@@ -174,11 +174,11 @@ async function createHeroScene(container: HTMLDivElement): Promise<() => void> {
     });
   };
 
-  // Brand-coloured "glass cards" — kept to the hero's edges/corners so the
-  // copy zone (left-centre) stays clean; fog softens the deeper ones.
-  addFloater(cardGeometry(), cardMaterial("#d7653c", "#b34a26"), [-5.5, 2.6, -3], [0.12, 0.45, -0.06], 0.7, { x: 0.05, y: 0.16 });
-  addFloater(cardGeometry(), cardMaterial("#67a4b2", "#3f7d8c"), [2.5, 3.2, -4.5], [-0.1, -0.5, 0.08], 0.55, { x: -0.04, y: -0.12 });
-  addFloater(cardGeometry(), cardMaterial("#f6ead9", "#e4cfae"), [-6, -2.6, -2], [-0.16, 0.35, 0.1], 0.8, { x: 0.06, y: 0.1 });
+  // Brand-coloured "glass cards" — arranged as a frame around the feature
+  // screenshot (which floats above the backdrop); fog softens the deeper ones.
+  addFloater(cardGeometry(), cardMaterial("#d7653c", "#b34a26"), [-3.3, 2.1, -2.2], [0.12, 0.45, -0.06], 0.7, { x: 0.05, y: 0.16 });
+  addFloater(cardGeometry(), cardMaterial("#67a4b2", "#3f7d8c"), [3.4, 2.3, -3], [-0.1, -0.5, 0.08], 0.55, { x: -0.04, y: -0.12 });
+  addFloater(cardGeometry(), cardMaterial("#f6ead9", "#e4cfae"), [-3.3, -2.2, -1.8], [-0.16, 0.35, 0.1], 0.8, { x: 0.06, y: 0.1 });
 
   // Gold coin + glossy accents
   const gold = new THREE.MeshPhysicalMaterial({
@@ -187,13 +187,13 @@ async function createHeroScene(container: HTMLDivElement): Promise<() => void> {
     roughness: 0.16,
     clearcoat: 0.6,
   });
-  addFloater(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 48), gold, [-3.6, -3.1, -1.5], [1.25, 0, 0.4], 0.9, { x: 0.02, y: 0.5 });
+  addFloater(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 48), gold, [3.1, -2, -1.2], [1.25, 0, 0.4], 0.9, { x: 0.02, y: 0.5 });
 
   const teal = new THREE.MeshPhysicalMaterial({ color: 0x67a4b2, metalness: 0.4, roughness: 0.1, clearcoat: 1 });
-  addFloater(new THREE.SphereGeometry(0.34, 48, 32), teal, [1.4, 3.5, -3.5], [0, 0, 0], 1.1, { x: 0, y: 0 });
+  addFloater(new THREE.SphereGeometry(0.34, 48, 32), teal, [0.2, 2.7, -3.2], [0, 0, 0], 1.1, { x: 0, y: 0 });
 
   const terra = new THREE.MeshPhysicalMaterial({ color: 0xd7653c, metalness: 0.75, roughness: 0.2 });
-  addFloater(new THREE.TorusGeometry(0.5, 0.16, 24, 64), terra, [-6.5, 0.6, -3.5], [0.9, 0.2, 0], 0.65, { x: 0.1, y: 0.2 });
+  addFloater(new THREE.TorusGeometry(0.5, 0.16, 24, 64), terra, [-0.4, -2.5, -2.4], [0.9, 0.2, 0], 0.65, { x: 0.1, y: 0.2 });
 
   // ── Soft contact shadows on an invisible floor ──
   const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0.16 });

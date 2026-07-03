@@ -1,12 +1,7 @@
 import Link from "next/link";
-import { getPublicPricing } from "@/modules/billing/pricing-repository";
-import { PricingPlans } from "@/app/pricing/PricingPlans";
 import { LandingWorkflow } from "@/shared/components/marketing/LandingWorkflow";
 import { MarketingFooter, MarketingHeader } from "@/shared/components/marketing/MarketingShell";
-import { MarketingHeroScene } from "@/shared/components/marketing/MarketingHeroScene";
 import { MarketingProductShowcase } from "@/shared/components/marketing/MarketingProductShowcase";
-
-export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "StoreOS - ระบบจัดการร้านครบวงจร POS, QR Ordering, รายงาน",
@@ -80,15 +75,12 @@ const TRUST_ITEMS = [
   { title: "ทีมเห็นข้อมูลตรงกัน", detail: "เจ้าของ แอดมิน และพนักงาน" },
 ];
 
-export default async function LandingPage() {
-  const plans = await getPublicPricing();
-
+export default function LandingPage() {
   return (
     <main className="marketing-page">
       <MarketingHeader />
 
       <section className="reference-hero">
-        <MarketingHeroScene />
         <div className="reference-hero-copy">
           <h1>
             StoreOS
@@ -137,20 +129,6 @@ export default async function LandingPage() {
               <span>{item.detail}</span>
             </div>
           ))}
-        </div>
-      </section>
-
-      <section className="reference-landing-pricing" id="pricing">
-        <div className="reference-section-heading">
-          <h2>แพ็กเกจและราคา</h2>
-          <p>
-            ข้อมูลตรงกับระบบจริงเสมอ — ลูกค้าใหม่รับ Premium ฟรี 30 วัน
-            หรือเลือก Business ปรับที่นั่ง สาขา และฟีเจอร์เอง จ่ายตามที่เลือกจริง
-          </p>
-        </div>
-        <PricingPlans plans={plans} />
-        <div className="reference-landing-pricing-more">
-          <Link href="/pricing">ดูรายละเอียดแพ็กเกจทั้งหมด →</Link>
         </div>
       </section>
 
