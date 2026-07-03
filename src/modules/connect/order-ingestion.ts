@@ -11,8 +11,8 @@ import {
 } from "./repository";
 import type { InboundOrderItem, InboundOrderPayload } from "./types";
 
-/** cashier ปลอมระบบสำหรับออเดอร์ช่องทางภายนอก (orders.cashier_id not null, ไม่มี FK) */
-const CONNECT_SYSTEM_USER = "00000000-0000-0000-0000-000000000000";
+// ออเดอร์เดลิเวอรีไม่มีแคชเชียร์ — orders.cashier_id เป็น nullable + มี FK ไป auth.users
+// (migration ...000008) จึงต้องใส่ null ไม่ใช่ค่า uuid ปลอม (ไม่งั้น FK violation)
 
 export interface IngestResult {
   ok: boolean;
@@ -110,7 +110,7 @@ export async function processInboundOrder(
         store_id: link.storeId,
         order_number: `JDC-${payload.booking_id.replace(/-/g, "").slice(0, 12).toUpperCase()}`,
         status: "open",
-        cashier_id: CONNECT_SYSTEM_USER,
+        cashier_id: null,
         subtotal: merchantTotal,
         total: merchantTotal,
         note: buildOrderNote(payload, unmapped),
