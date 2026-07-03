@@ -7,7 +7,7 @@ import { normalizeNetworkPrinterEndpoint } from "@/modules/printing/network-prin
 import { validateHubBluetoothPort } from "@/modules/printing/print-hub";
 import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import { upsertReceiptSettings } from "@/modules/settings/repository";
-import { upsertHubBluetoothPrinter, upsertNetworkPrinter } from "@/modules/stores/repository";
+import { upsertHubBluetoothPrinter, upsertNetworkPrinter } from "@/modules/stores/printer-admin-repository";
 
 /** Accepts only http(s) image URLs within a sane length (Supabase public URL or pasted link). */
 function isValidImageUrl(value: string): boolean {

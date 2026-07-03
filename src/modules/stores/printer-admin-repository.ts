@@ -1,0 +1,166 @@
+import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { mapError } from "@/shared/utils/error";
+import type { Printer } from "@/modules/stores/types";
+import type { Database } from "@/server/integrations/supabase/database.types";
+
+// Privileged printer writes (service client) live outside stores/repository.ts
+// on purpose: repository functions must stay user-scoped (RLS), while these are
+// only reachable from server actions that already ran
+// requirePermission("settings.manage_printer").
+
+type PrinterRow = Database["public"]["Tables"]["printers"]["Row"];
+
+export interface NetworkPrinterInput {
+  id?: string;
+  name: string;
+  ipAddress: string;
+  port: number;
+  paperWidth: "58mm" | "80mm";
+  isDefault?: boolean;
+}
+
+export interface HubBluetoothPrinterInput {
+  id?: string;
+  name: string;
+  /** Cashier-PC Bluetooth SPP COM port, already validated (e.g. "COM5"). */
+  comPort: string;
+  paperWidth: "58mm" | "80mm";
+  isDefault?: boolean;
+}
+
+function mapPrinter(row: PrinterRow): Printer {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    organizationId: row.organization_id,
+    name: row.name,
+    type: row.type,
+    isDefault: row.is_default,
+    ipAddress: row.ip_address ?? undefined,
+    port: row.port ?? undefined,
+    usbVendorId: row.usb_vendor_id ?? undefined,
+    usbProductId: row.usb_product_id ?? undefined,
+    bluetoothDeviceId: row.bluetooth_device_id ?? undefined,
+    hubBluetoothPort: row.hub_bluetooth_port ?? undefined,
+    paperWidth: row.paper_width,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function upsertNetworkPrinter(
+  storeId: string,
+  organizationId: string,
+  input: NetworkPrinterInput,
+) {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+
+  const payload = {
+    store_id: storeId,
+    organization_id: organizationId,
+    name: input.name,
+    type: "ip" as const,
+    is_default: Boolean(input.isDefault),
+    ip_address: input.ipAddress,
+    port: input.port,
+    usb_vendor_id: null,
+    usb_product_id: null,
+    bluetooth_device_id: null,
+    paper_width: input.paperWidth,
+    updated_at: now,
+  };
+
+  const query = input.id
+    ? supabase
+      .from("printers")
+      .update(payload)
+      .eq("id", input.id)
+      .eq("store_id", storeId)
+      .eq("organization_id", organizationId)
+      .select("*")
+      .single()
+    : supabase
+      .from("printers")
+      .insert(payload)
+      .select("*")
+      .single();
+
+  const { data, error } = await query;
+  if (error) return { data: null, error: mapError(error) };
+  const savedPrinter = mapPrinter(data);
+
+  if (input.isDefault) {
+    const { error: clearError } = await supabase
+      .from("printers")
+      .update({ is_default: false, updated_at: now })
+      .eq("store_id", storeId)
+      .eq("organization_id", organizationId)
+      .neq("id", savedPrinter.id);
+    if (clearError) return { data: null, error: mapError(clearError) };
+  }
+
+  return { data: savedPrinter, error: null };
+}
+
+/**
+ * Saves a Bluetooth printer that prints through the Print Hub: it is paired to
+ * the cashier PC as a Windows Bluetooth SPP COM port. Stored as a `bluetooth`
+ * printer with `hub_bluetooth_port` set, so the enqueue endpoint can route
+ * tablet/iOS jobs to it (which cannot reach Web Bluetooth).
+ */
+export async function upsertHubBluetoothPrinter(
+  storeId: string,
+  organizationId: string,
+  input: HubBluetoothPrinterInput,
+) {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+
+  const payload = {
+    store_id: storeId,
+    organization_id: organizationId,
+    name: input.name,
+    type: "bluetooth" as const,
+    is_default: Boolean(input.isDefault),
+    ip_address: null,
+    port: null,
+    usb_vendor_id: null,
+    usb_product_id: null,
+    bluetooth_device_id: null,
+    hub_bluetooth_port: input.comPort,
+    paper_width: input.paperWidth,
+    updated_at: now,
+  };
+
+  const query = input.id
+    ? supabase
+      .from("printers")
+      .update(payload)
+      .eq("id", input.id)
+      .eq("store_id", storeId)
+      .eq("organization_id", organizationId)
+      .select("*")
+      .single()
+    : supabase
+      .from("printers")
+      .insert(payload)
+      .select("*")
+      .single();
+
+  const { data, error } = await query;
+  if (error) return { data: null, error: mapError(error) };
+  const savedPrinter = mapPrinter(data);
+
+  if (input.isDefault) {
+    const { error: clearError } = await supabase
+      .from("printers")
+      .update({ is_default: false, updated_at: now })
+      .eq("store_id", storeId)
+      .eq("organization_id", organizationId)
+      .neq("id", savedPrinter.id);
+    if (clearError) return { data: null, error: mapError(clearError) };
+  }
+
+  return { data: savedPrinter, error: null };
+}

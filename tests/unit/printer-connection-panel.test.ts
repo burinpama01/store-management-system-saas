@@ -106,7 +106,9 @@ describe("PrinterConnectionPanel network printer controls", () => {
     const posTerminal = read("src/app/pos/PosTerminal.tsx");
     const receiptTests = read("src/app/(dashboard)/settings/receipt/ReceiptTests.tsx");
     const actions = read("src/app/(dashboard)/settings/receipt/actions.ts");
-    const repository = read("src/modules/stores/repository.ts");
+    // Privileged printer upserts moved out of stores/repository.ts so that file
+    // stays free of the service client (enterprise-branch-ux invariant).
+    const printerAdminRepository = read("src/modules/stores/printer-admin-repository.ts");
 
     expect(panel).toContain("IP / WiFi");
     expect(panel).toContain("sendNetworkPrintJob");
@@ -118,11 +120,11 @@ describe("PrinterConnectionPanel network printer controls", () => {
     expect(panel).toContain("IP / WiFi ·");
     expect(actions).toContain("normalizeNetworkPrinterEndpoint");
     expect(actions).toContain("upsertNetworkPrinter");
-    expect(repository).toContain("upsertNetworkPrinter");
+    expect(printerAdminRepository).toContain("upsertNetworkPrinter");
     // Within any one upsert function, default-clearing must come AFTER the
     // upsert query (never before). Scoped to a single function body so a second
     // upsert function (e.g. Bluetooth) does not create a cross-boundary match.
-    expect(repository).not.toMatch(/if \(input\.isDefault\)(?:(?!export async function)[\s\S])*?const query = input\.id/);
+    expect(printerAdminRepository).not.toMatch(/if \(input\.isDefault\)(?:(?!export async function)[\s\S])*?const query = input\.id/);
     expect(page).toContain("listPrinters");
     expect(page).toMatch(/<PrinterConnect[\s\S]*printers={printersRes\.data}/);
     expect(page).toMatch(/<ReceiptTests[\s\S]*printers={printersRes\.data}/);
