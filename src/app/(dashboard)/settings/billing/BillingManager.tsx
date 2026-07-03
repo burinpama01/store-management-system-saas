@@ -454,6 +454,12 @@ export function BillingManager({
                   </label>
                 ))}
               </div>
+              {stores > 1 && !businessFeatures.includes("multiBranchReporting") && (
+                <p className="mt-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  เลือกมากกว่า 1 สาขา แนะนำให้เปิดฟีเจอร์ &quot;รายงานหลายสาขา&quot; ด้วย
+                  ไม่เช่นนั้นจะเพิ่ม/จัดการสาขาใหม่จากหน้าตั้งค่าไม่ได้
+                </p>
+              )}
               <p className="mt-3 text-right text-sm font-bold text-[var(--tenant-primary-strong)]">
                 รวม {price.toLocaleString()} บาท / {DURATION_LABELS[duration]}
               </p>
