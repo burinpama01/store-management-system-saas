@@ -79,6 +79,25 @@ function formatLineTestFailureFeedback(message: string) {
   return "ส่ง LINE test ไม่สำเร็จ กรุณาตรวจสอบ LINE OA และการผูกบัญชี";
 }
 
+function formatPushTestFeedback(result: NotificationDispatchResult) {
+  if (result.ok && !result.skipped) {
+    return "ส่ง Push test แล้ว — เช็คการแจ้งเตือนบนมือถือ";
+  }
+  if (result.skipped) {
+    return formatPushTestSkippedFeedback(result.message);
+  }
+  return "ส่ง Push test ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+}
+
+function formatPushTestSkippedFeedback(message: string) {
+  if (/อุปกรณ์/i.test(message)) return "ยังไม่มีอุปกรณ์ที่ลงทะเบียน — เปิดแอป StoreOS บนมือถือแล้วล็อกอินก่อน";
+  if (/package|แพ็กเกจ/i.test(message)) return "แพ็กเกจปัจจุบันยังไม่เปิดใช้การแจ้งเตือน";
+  if (/ถูกปิด/i.test(message)) return "การแจ้งเตือนทดสอบ Push ถูกปิดอยู่";
+  if (/พร้อมใช้งาน/i.test(message)) return "ช่องทาง Push ยังไม่พร้อมใช้งาน";
+  if (/ข้อมูลร้าน/i.test(message)) return "ยังไม่พบข้อมูลร้านสำหรับทดสอบ Push";
+  return "ยังไม่พร้อมสำหรับทดสอบ Push";
+}
+
 async function getStoreContext() {
   const user = await getCurrentUser();
   if (!user) throw new Error("ไม่มีสิทธิ์เข้าถึง");
@@ -221,6 +240,34 @@ export async function runLineNotificationTestAction(): Promise<{
       ok: false,
       skipped: false,
       message: error instanceof Error ? error.message : "ไม่สามารถเทส LINE notification ได้",
+    };
+  }
+}
+
+export async function runPushNotificationTestAction(): Promise<{
+  ok: boolean;
+  skipped: boolean;
+  message: string;
+}> {
+  try {
+    await requirePermission("notifications.manage");
+    await requireFeature("lineNotify");
+    const ctx = await getStoreContext();
+    const result = await dispatchNotification({
+      type: "test",
+      channel: "push",
+      destination: "owner",
+      title: "StoreOS Push test",
+      message: "[TEST] Push notification พร้อมใช้งาน",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+    });
+    return { ok: result.ok, skipped: result.skipped, message: formatPushTestFeedback(result) };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      message: error instanceof Error ? error.message : "ไม่สามารถเทส Push notification ได้",
     };
   }
 }

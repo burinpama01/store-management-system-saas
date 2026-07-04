@@ -4,11 +4,14 @@ import { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES } from "./types";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import {
+  deleteDevicePushTokens,
   getLineNotificationTarget,
   getNotificationSetting,
   getTelegramNotificationTarget,
+  listOrganizationPushTokens,
 } from "./repository";
 import { buildLinePushMessageRequest } from "./line";
+import { parseServiceAccount, sendFcmToDevice } from "./push";
 
 export interface NotificationResult {
   ok: boolean;
@@ -284,11 +287,76 @@ async function isNotificationFeatureEnabled(organizationId: string) {
   return getPlanFeatures(billingState).lineNotify;
 }
 
+async function dispatchPushNotification(input: NotificationPayload): Promise<NotificationResult> {
+  const account = parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
+  if (!account) {
+    return { ok: true, skipped: true, message: "ช่องทาง Push ยังไม่พร้อมใช้งาน" };
+  }
+  if (!input.organizationId || !input.storeId) {
+    return { ok: false, skipped: false, message: "ยังไม่พบข้อมูลร้านสำหรับส่ง Push" };
+  }
+  if (!(await isNotificationFeatureEnabled(input.organizationId))) {
+    return {
+      ok: true,
+      skipped: true,
+      message: "แพ็กเกจปัจจุบันยังไม่เปิดใช้การแจ้งเตือน",
+    };
+  }
+
+  const setting = await getNotificationSetting(
+    input.storeId,
+    input.organizationId,
+    input.type,
+    "push",
+    { useServiceRole: true },
+  );
+  if (setting.error) {
+    return { ok: true, skipped: true, message: setting.error.userMessage };
+  }
+  if (setting.data && !setting.data.enabled) {
+    return { ok: true, skipped: true, message: "การแจ้งเตือนนี้ถูกปิดอยู่" };
+  }
+
+  const tokensResult = await listOrganizationPushTokens(input.organizationId);
+  if (tokensResult.error) {
+    return { ok: true, skipped: true, message: tokensResult.error.userMessage };
+  }
+  const tokens = tokensResult.data ?? [];
+  if (tokens.length === 0) {
+    return { ok: true, skipped: true, message: "ยังไม่มีอุปกรณ์ที่ลงทะเบียนรับ Push" };
+  }
+
+  const outcomes = await Promise.all(
+    tokens.map(async (device) => ({
+      token: device.token,
+      outcome: await sendFcmToDevice(account, device.token, input),
+    })),
+  );
+
+  const unregistered = outcomes
+    .filter((o) => o.outcome === "unregistered")
+    .map((o) => o.token);
+  if (unregistered.length > 0) {
+    await deleteDevicePushTokens(unregistered);
+  }
+
+  const sentCount = outcomes.filter((o) => o.outcome === "sent").length;
+  if (sentCount === 0) {
+    return { ok: false, skipped: false, message: "ส่ง Push ไม่สำเร็จ: ไม่มีอุปกรณ์ที่ส่งถึงได้" };
+  }
+  return { ok: true, skipped: false, message: `ส่ง Push สำเร็จ ${sentCount} อุปกรณ์` };
+}
+
 export async function dispatchNotification(input: NotificationPayload): Promise<NotificationResult> {
   const validation = validateNotificationPayload(input);
   if (validation) return { ok: false, skipped: false, message: validation };
 
   const channel = input.channel ?? "line";
+
+  if (channel === "push") {
+    return dispatchPushNotification(input);
+  }
+
   const token =
     channel === "line"
       ? process.env.LINE_CHANNEL_ACCESS_TOKEN

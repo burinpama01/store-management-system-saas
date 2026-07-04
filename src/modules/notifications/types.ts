@@ -1,4 +1,4 @@
-export type NotificationChannel = "line" | "telegram";
+export type NotificationChannel = "line" | "telegram" | "push";
 
 export type NotificationType =
   | "payment"
@@ -44,4 +44,4 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "test",
 ];
 
-export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram"];
+export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram", "push"];

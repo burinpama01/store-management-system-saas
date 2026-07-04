@@ -36,4 +36,6 @@
          ระดับแอปให้อัตโนมัติเมื่อประกาศไว้ที่นี่ (ไม่งั้น WebView ปฏิเสธ GPS เงียบ ๆ) -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Push notification (Android 13+ ต้องขอ runtime ด้วย — plugin จัดการให้) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>
