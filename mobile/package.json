@@ -1,0 +1,21 @@
+{
+  "name": "storeos-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "StoreOS mobile shell (Capacitor) — wraps the production web app with native push notifications and printer support",
+  "scripts": {
+    "sync": "cap sync",
+    "open:android": "cap open android",
+    "build:android": "cd android && gradlew assembleDebug",
+    "assets": "capacitor-assets generate"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/ios": "^7.4.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.4.4"
+  }
+}

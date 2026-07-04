@@ -149,6 +149,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           )}
           <span className="badge badge-success">เชื่อมต่อปกติ</span>
         </header>
+        {stores.length > 1 && (
+          <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2 md:hidden">
+            <StoreSwitcher stores={stores} currentStoreId={storeContext.storeId} />
+          </div>
+        )}
         <main className="scroll-area">{children}</main>
         <nav className="shrink-0 overflow-x-auto border-t border-[var(--border)] bg-[var(--surface)] md:hidden">
           <SideNav items={navItems} orientation="horizontal" />
