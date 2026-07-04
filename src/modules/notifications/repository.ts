@@ -177,6 +177,73 @@ function mapLineAccountLinkTarget(row: LineAccountLinkRow): LineNotificationTarg
   };
 }
 
+export interface DevicePushToken {
+  id: string;
+  userId: string;
+  organizationId: string;
+  storeId: string | null;
+  platform: "android" | "ios";
+  token: string;
+}
+
+export async function upsertDevicePushToken(input: {
+  userId: string;
+  organizationId: string;
+  storeId: string | null;
+  platform: "android" | "ios";
+  token: string;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("device_push_tokens").upsert(
+    {
+      user_id: input.userId,
+      organization_id: input.organizationId,
+      store_id: input.storeId,
+      platform: input.platform,
+      token: input.token,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "token" },
+  );
+
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function listOrganizationPushTokens(organizationId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("device_push_tokens")
+    .select("*")
+    .eq("organization_id", organizationId);
+
+  if (error) return { data: null, error: mapError(error) };
+  return {
+    data: (data ?? []).map((row): DevicePushToken => ({
+      id: row.id,
+      userId: row.user_id,
+      organizationId: row.organization_id,
+      storeId: row.store_id,
+      platform: row.platform,
+      token: row.token,
+    })),
+    error: null,
+  };
+}
+
+/** ลบ token ที่ FCM ตอบว่า unregistered (เครื่องถอนแอป/token หมุนใหม่) */
+export async function deleteDevicePushTokens(tokens: string[]) {
+  if (tokens.length === 0) return { ok: true, error: null };
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("device_push_tokens")
+    .delete()
+    .in("token", tokens);
+
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
 export async function listNotificationSettings(storeId: string, organizationId: string) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase

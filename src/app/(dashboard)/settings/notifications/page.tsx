@@ -20,6 +20,7 @@ import {
   listNotificationSettings,
 } from "@/modules/notifications/repository";
 import { NotificationTest } from "./NotificationTest";
+import { PushNotificationTest } from "./PushNotificationTest";
 import { TelegramChatIdForm } from "./TelegramChatIdForm";
 import { NotificationSettingToggle } from "./NotificationSettingToggle";
 import { LineAccountLinkPanel } from "./LineAccountLinkPanel";
@@ -46,6 +47,7 @@ const TYPE_LABELS: Record<NotificationType, string> = {
 const CHANNEL_LABELS: Record<NotificationChannel, string> = {
   line: "LINE",
   telegram: "Telegram",
+  push: "แอปมือถือ (Push)",
 };
 
 function resolveLineAddFriendUrl() {
@@ -76,6 +78,7 @@ export default async function NotificationSettingsPage() {
       resolveLineAddFriendUrl(),
     ),
     telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN),
+    push: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT),
   } satisfies Record<NotificationChannel, boolean>;
   const lineAccountLinkResult = await getLineAccountLink(ctx.organizationId, user.id);
   const lineNotificationTargetResult = await getLineGroupNotificationTarget(ctx.organizationId);
@@ -216,6 +219,7 @@ export default async function NotificationSettingsPage() {
       </div>
 
       <NotificationTest canRun={canManageTelegramTarget && features.lineNotify && providerReady.telegram && Boolean(telegramChatId)} />
+      <PushNotificationTest canRun={canManage && features.lineNotify && providerReady.push} />
     </section>
   );
 }

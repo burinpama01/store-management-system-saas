@@ -3369,13 +3369,46 @@ export interface Database {
         };
         Relationships: [];
       };
+      device_push_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          organization_id: string;
+          store_id: string | null;
+          platform: "android" | "ios";
+          token: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          organization_id: string;
+          store_id?: string | null;
+          platform: "android" | "ios";
+          token: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          organization_id?: string;
+          store_id?: string | null;
+          platform?: "android" | "ios";
+          token?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       notification_settings: {
         Row: {
           id: string;
           organization_id: string;
           store_id: string;
           notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
-          channel: "line" | "telegram";
+          channel: "line" | "telegram" | "push";
           enabled: boolean;
           destination: "owner" | "group" | "all";
           created_at: string;
@@ -3386,7 +3419,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
-          channel: "line" | "telegram";
+          channel: "line" | "telegram" | "push";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
           created_at?: string;
@@ -3397,7 +3430,7 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           notification_type?: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
-          channel?: "line" | "telegram";
+          channel?: "line" | "telegram" | "push";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
           created_at?: string;
