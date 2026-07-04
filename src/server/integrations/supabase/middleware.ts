@@ -68,5 +68,14 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // แอปมือถือ (Capacitor ตั้ง appendUserAgent) เปิดมาที่ / เสมอ — ข้ามหน้า landing:
+  // ล็อกอินแล้วเข้าแอปทันที ยังไม่ล็อกอินไปหน้า login เลย (เว็บปกติยังเห็น landing เหมือนเดิม)
+  const isNativeApp = (request.headers.get("user-agent") ?? "").includes("StoreOSApp");
+  if (isNativeApp && request.nextUrl.pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = user ? "/app-entry" : "/login";
+    return NextResponse.redirect(url);
+  }
+
   return supabaseResponse;
 }

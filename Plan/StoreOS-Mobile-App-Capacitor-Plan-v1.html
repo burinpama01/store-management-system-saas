@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StoreOS Mobile App Plan v1 — Push Notification + iOS Printer</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --card2: #1f232d; --text: #e8eaf0;
+    --muted: #9aa3b2; --accent: #4f8cff; --green: #3ddc84; --amber: #ffb347;
+    --red: #ff6b6b; --border: #2a2f3a;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', 'Sarabun', Tahoma, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 32px 16px; line-height: 1.65; }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 1.05rem; margin: 20px 0 8px; }
+  .meta { color: var(--muted); font-size: .9rem; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  .card.good { border-left: 4px solid var(--green); }
+  .card.warn { border-left: 4px solid var(--amber); }
+  .card.bad { border-left: 4px solid var(--red); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .92rem; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--card2); }
+  code { background: var(--card2); padding: 2px 6px; border-radius: 4px; font-size: .88em; color: #ffd580; }
+  pre { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; font-size: .85rem; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .78rem; font-weight: 600; margin-right: 6px; }
+  .tag.p0 { background: #4f8cff33; color: var(--accent); }
+  .tag.rec { background: #3ddc8433; color: var(--green); }
+  .tag.risk { background: #ff6b6b33; color: var(--red); }
+  ul { margin: 8px 0; padding-left: 22px; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>📱 StoreOS Mobile App — Capacitor Plan v1</h1>
+<div class="meta">วันที่: 2026-07-04 · โปรเจกต์: Store management system saas (StoreOS) · สถานะ: <b>รออนุมัติ Phase 0</b></div>
+
+<h2>1. โจทย์และปัญหาที่ต้องแก้</h2>
+<div class="card bad">
+  <b>ทำไมเว็บอย่างเดียวไม่พอ</b>
+  <ul>
+    <li><b>เครื่องปริ้นบน iOS ต่อไม่ได้:</b> ระบบพิมพ์ปัจจุบัน (<code>print-router.ts</code>) ใช้ Web Bluetooth → Web USB → PDF ซึ่ง <b>iOS Safari ไม่รองรับ Web Bluetooth และ WebUSB เลย</b> ผู้ใช้ iPhone/iPad จึงพิมพ์ตรงไม่ได้ (ทางอ้อมเดียวคือ Print Hub agent บนเครื่อง Windows)</li>
+    <li><b>Push notification ไม่มี:</b> ปัจจุบันแจ้งเตือนผ่าน LINE/Telegram เท่านั้น (<code>notifications/dispatcher.ts</code>) ไม่มี web push/service worker; iOS web push ก็จำกัดมาก (ต้อง Add to Home Screen + iOS 16.4+ และไม่เสถียร)</li>
+  </ul>
+</div>
+
+<h2>2. ทางเลือกที่พิจารณา</h2>
+<table>
+  <tr><th>ทางเลือก</th><th>Push</th><th>ปริ้น iOS</th><th>แรงงาน</th><th>สรุป</th></tr>
+  <tr>
+    <td><b>A) Capacitor wrapper</b> <span class="tag rec">แนะนำ</span><br><span class="muted">ห่อเว็บ StoreOS เดิมใน native shell (WKWebView) + native plugin</span></td>
+    <td>✅ APNs/FCM เต็มรูปแบบ</td>
+    <td>✅ BLE native + TCP 9100</td>
+    <td>ต่ำ — โค้ดเว็บเดิมใช้ได้ ~100%</td>
+    <td>codebase เดียว, ทุกฟีเจอร์อัปเดตตามเว็บอัตโนมัติ</td>
+  </tr>
+  <tr>
+    <td><b>B) Flutter แอปแยก</b><br><span class="muted">เขียน POS ใหม่ (ทีมมีประสบการณ์จาก JDC)</span></td>
+    <td>✅</td>
+    <td>✅</td>
+    <td>สูงมาก — ต้อง rebuild POS/UI ทั้งหมด</td>
+    <td>เก็บไว้เป็น long-term option; ไม่คุ้มสำหรับโจทย์นี้</td>
+  </tr>
+  <tr>
+    <td><b>C) PWA</b><br><span class="muted">Add to Home Screen + web push</span></td>
+    <td>⚠️ จำกัด/ไม่เสถียรบน iOS</td>
+    <td>❌ ไม่มีทางต่อ BLE บน iOS</td>
+    <td>ต่ำสุด</td>
+    <td><b>ตกรอบ</b> — แก้โจทย์เครื่องปริ้นไม่ได้</td>
+  </tr>
+</table>
+
+<h2>3. สถาปัตยกรรม (ทางเลือก A)</h2>
+<div class="card">
+<pre>
+┌─ StoreOS App (iOS/Android) ─────────────────────────┐
+│  Capacitor Shell                                     │
+│  ├─ WKWebView → โหลด https://store-os-manage.vercel.app │
+│  ├─ @capacitor/push-notifications → APNs / FCM       │
+│  └─ Printer plugin (BLE ESC/POS + TCP:9100)          │
+│        ↑ window.Capacitor bridge                     │
+└──────────┼───────────────────────────────────────────┘
+           │ reuse bytes จาก buildReceiptPrinterBytes()
+           ▼
+   print-router.ts เพิ่ม channel "native"
+   (native BLE → native TCP → เดิม: BT → USB → PDF)
+</pre>
+  <ul>
+    <li><b>เว็บเดิมคือแอป:</b> shell โหลด URL production — deploy เว็บ = แอปได้ฟีเจอร์ใหม่ทันที ไม่ต้องส่ง App Store review ทุกครั้ง (Apple อนุญาตเพราะเป็น web content ไม่ใช่ native binary)</li>
+    <li><b>Push:</b> เพิ่ม channel <code>"push"</code> ใน <code>dispatcher.ts</code> (โครงสร้าง fan-out ต่อ channel รองรับอยู่แล้ว) + ตาราง <code>device_push_tokens</code> (user_id, org_id, platform, token) + ส่งผ่าน FCM HTTP v1 (FCM ครอบ APNs ให้ — จัดการ iOS/Android ที่เดียว)</li>
+    <li><b>ปริ้น:</b> ใน <code>print-router.ts</code> เช็ค <code>Capacitor.isNativePlatform()</code> → ส่ง bytes ESC/POS raster เดิม (ภาษาไทยพิมพ์ได้เพราะ render เป็นบิตแมปอยู่แล้ว) ไปยัง plugin BLE หรือ TCP 9100 — <b>ไม่ต้องแก้ logic ใบเสร็จเลย</b></li>
+    <li><b>Session/Login:</b> Supabase auth cookie ทำงานใน WKWebView ปกติ; ต้องทดสอบ persistence + deep link <code>storeos://</code></li>
+  </ul>
+</div>
+
+<h2>4. แผนงานแบ่งเฟส</h2>
+
+<h3><span class="tag p0">Phase 0</span> เตรียมความพร้อม (0.5 วัน + รอ Apple อนุมัติ 1-2 วัน)</h3>
+<div class="card">
+  <ul>
+    <li>สมัคร <b>Apple Developer Program</b> ($99/ปี) — <b>ต้องทำก่อนทุกอย่าง</b></li>
+    <li>สร้างโปรเจกต์ Firebase (ใช้ FCM อย่างเดียว ฟรี) + อัปโหลด APNs key</li>
+    <li>เลือก build pipeline สำหรับ iOS (เครื่อง dev เป็น Windows → build iOS บนเครื่องตัวเองไม่ได้): แนะนำ <b>Codemagic</b> (ฟรี 500 นาที/เดือน, รองรับ Capacitor) หรือ GitHub Actions macOS runner</li>
+  </ul>
+</div>
+
+<h3><span class="tag p0">Phase 1</span> Capacitor shell + Android ก่อน (1-2 วัน)</h3>
+<div class="card">
+  <ul>
+    <li>เพิ่ม <code>capacitor.config.ts</code> (server.url → prod) ในโฟลเดอร์แยก <code>mobile/</code> ใน repo เดิม</li>
+    <li>ไอคอน/splash จากโลโก้ StoreOS, ทดสอบ login + POS + QR flow ใน WebView บน Android จริง (ทดสอบบน Windows ได้)</li>
+    <li>จัดการ external link (สลิป, PDF ใบเสร็จ) ให้เปิดถูกที่</li>
+  </ul>
+</div>
+
+<h3><span class="tag p0">Phase 2</span> Push Notification (2-3 วัน)</h3>
+<div class="card">
+  <ul>
+    <li>Migration: ตาราง <code>device_push_tokens</code> + RLS</li>
+    <li>หน้าเว็บฝั่ง client: ถ้า <code>Capacitor.isNativePlatform()</code> → ขอ permission + ลงทะเบียน token ผูกกับ user/org</li>
+    <li>เพิ่ม channel <code>push</code> ใน <code>NOTIFICATION_CHANNELS</code> + ส่งผ่าน FCM HTTP v1 ใน dispatcher (ยิงตอน: ออเดอร์ QR ใหม่, เรียกพนักงาน, ออเดอร์ Connect เข้า, กะเงินสด ฯลฯ — ใช้จุด <code>notifyOwnerSafely</code> เดิม)</li>
+    <li>ตั้งค่าเปิด/ปิดราย notification type ใน Settings (โครง <code>notification_settings</code> เดิมรองรับ channel อยู่แล้ว)</li>
+  </ul>
+</div>
+
+<h3><span class="tag p0">Phase 3</span> Printer bridge iOS/Android (2-3 วัน + ทดสอบ HW)</h3>
+<div class="card">
+  <ul>
+    <li>ติดตั้ง plugin thermal printer (BLE) + plugin TCP socket สำหรับเครื่องพิมพ์ LAN port 9100</li>
+    <li><code>print-router.ts</code>: เพิ่ม channel <code>native-bluetooth</code> / <code>native-network</code> นำหน้า fallback เดิม</li>
+    <li>UI จับคู่เครื่องพิมพ์ในแอป (scan BLE, จำ device ต่อ store)</li>
+    <li>ทดสอบกับ PT-280 จริง (งานค้างเดิมเรื่องทดสอบ HW จะได้ปิดพร้อมกัน)</li>
+  </ul>
+</div>
+
+<h3><span class="tag p0">Phase 4</span> iOS build + TestFlight (1-2 วัน)</h3>
+<div class="card">
+  <ul>
+    <li>ตั้ง Codemagic: certificate/provisioning อัตโนมัติ → build .ipa → TestFlight</li>
+    <li>ทดสอบบน iPhone/iPad จริง: push + BLE print + POS flow</li>
+  </ul>
+</div>
+
+<h3><span class="tag p0">Phase 5</span> เผยแพร่ (1 วัน + review 1-7 วัน)</h3>
+<div class="card">
+  <ul>
+    <li>App Store + Google Play listing (ภาพหน้าจอ, privacy policy — ต้องมีหน้า privacy บนเว็บ)</li>
+    <li>เพิ่มปุ่ม "ดาวน์โหลดแอป" บน landing/แดชบอร์ด</li>
+  </ul>
+</div>
+
+<h2>5. ความเสี่ยงและการรับมือ</h2>
+<table>
+  <tr><th>ความเสี่ยง</th><th>ระดับ</th><th>การรับมือ</th></tr>
+  <tr>
+    <td><span class="tag risk">App Store Guideline 4.2</span> Apple อาจปฏิเสธแอปที่เป็น "แค่เว็บห่อ"</td>
+    <td>กลาง</td>
+    <td>แอปเรามีฟีเจอร์ native จริง (push + Bluetooth printing) ซึ่งเป็นเหตุผลหลักของแอป; ระบุใน review notes ให้ชัด; ถ้ายังติด → เพิ่ม native tab bar/offline splash</td>
+  </tr>
+  <tr>
+    <td>Build iOS บน Windows ไม่ได้</td>
+    <td>แน่นอน</td>
+    <td>ใช้ Codemagic/GitHub Actions macOS runner ตั้งแต่ Phase 0 — ไม่ต้องซื้อ Mac</td>
+  </tr>
+  <tr>
+    <td>Plugin BLE กับ PT-280 เข้ากันไม่ได้</td>
+    <td>กลาง</td>
+    <td>bytes ESC/POS raster เดิมพิสูจน์แล้วว่าใช้ได้ เหลือแค่ transport; มี fallback TCP 9100 + Print Hub เดิม</td>
+  </tr>
+  <tr>
+    <td>Session หลุดใน WKWebView</td>
+    <td>ต่ำ</td>
+    <td>Supabase ใช้ cookie/localStorage ปกติ; ทดสอบใน Phase 1 ก่อนลงทุนต่อ</td>
+  </tr>
+</table>
+
+<h2>6. ค่าใช้จ่าย</h2>
+<table>
+  <tr><th>รายการ</th><th>ค่าใช้จ่าย</th></tr>
+  <tr><td>Apple Developer Program</td><td>$99/ปี (~3,600฿)</td></tr>
+  <tr><td>Google Play Console</td><td>$25 ครั้งเดียว (~900฿)</td></tr>
+  <tr><td>Firebase FCM</td><td>ฟรี</td></tr>
+  <tr><td>Codemagic CI</td><td>ฟรี 500 นาที/เดือน (พอสำหรับ build นาน ๆ ครั้ง)</td></tr>
+</table>
+
+<h2>7. สรุปเวลารวม</h2>
+<div class="card good">
+  <b>~7-11 วันทำงาน</b> (ไม่รวมรอ Apple อนุมัติบัญชี + App review) · Android ใช้ได้จริงตั้งแต่จบ Phase 2-3 โดยไม่ต้องรอ iOS<br>
+  <b>จุดตัดสินใจที่ต้องอนุมัติ:</b> เริ่ม Phase 0 (สมัคร Apple Developer $99/ปี) และยืนยันเลือกทางเลือก A (Capacitor)
+</div>
+
+</div>
+</body>
+</html>
