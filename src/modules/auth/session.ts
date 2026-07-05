@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { cookies } from "next/headers";
@@ -57,24 +58,24 @@ export function filterAccessibleStores(
   );
 }
 
-export async function getCurrentUser() {
+// cache(): memoized per request — auth.getUser() is a network call to Supabase Auth,
+// and guards/actions resolve the same user several times within one request.
+export const getCurrentUser = cache(async () => {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   return user ?? null;
-}
+});
 
-export async function getUserStores(): Promise<{
+export const getUserStores = cache(async (): Promise<{
   userId: string | null;
   organizations: OrganizationRow[];
   stores: StoreRow[];
   memberships: MembershipRow[];
-}> {
+}> => {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   const membershipsResult = user
     ? await supabase.from("memberships").select("*").eq("user_id", user.id).not("joined_at", "is", null)
@@ -92,9 +93,17 @@ export async function getUserStores(): Promise<{
     };
   }
 
+  // Deterministic order matters: resolveCurrentStore falls back to stores[0]
+  // when no store cookie is set, and attendance/clock state is per store — an
+  // unordered query can make each device resolve a different default store.
   const [organizationsResult, storesResult] = await Promise.all([
-    supabase.from("organizations").select("*").in("id", organizationIds),
-    supabase.from("stores").select("*").eq("is_active", true).in("organization_id", organizationIds),
+    supabase.from("organizations").select("*").in("id", organizationIds).order("created_at", { ascending: true }),
+    supabase
+      .from("stores")
+      .select("*")
+      .eq("is_active", true)
+      .in("organization_id", organizationIds)
+      .order("created_at", { ascending: true }),
   ]);
   const stores = filterAccessibleStores(storesResult.data ?? [], memberships, user?.id ?? null);
 
@@ -104,7 +113,7 @@ export async function getUserStores(): Promise<{
     organizations: organizationsResult.data ?? [],
     stores,
   };
-}
+});
 
 export async function resolveCurrentStore(
   stores: StoreRow[],

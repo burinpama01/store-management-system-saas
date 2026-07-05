@@ -262,4 +262,32 @@ describe("getUserStores query boundaries", () => {
   it("returns no stores when the user has no joined memberships", () => {
     expect(filterAccessibleStores([store(STORE)], [], "current-user")).toEqual([]);
   });
+
+  it("orders organizations and stores deterministically so every device resolves the same default store", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "src/modules/auth/session.ts"),
+      "utf8",
+    );
+
+    // resolveCurrentStore falls back to stores[0] when no store cookie is set —
+    // without an explicit order, mobile and PC can land on different stores.
+    expect(source).toContain('.order("created_at", { ascending: true })');
+  });
+});
+
+describe("shouldStartAtAttendance record scope", () => {
+  it("counts a clock-in at any branch of the org, not just the device's current store", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "src/modules/auth/guards.ts"),
+      "utf8",
+    );
+    const recordQueryStart = source.indexOf('.from("attendance_records")');
+    const recordQueryEnd = source.indexOf('.from("employee_profiles")', recordQueryStart);
+    const recordQuery = source.slice(recordQueryStart, recordQueryEnd);
+
+    expect(recordQueryStart).toBeGreaterThan(-1);
+    expect(recordQueryEnd).toBeGreaterThan(recordQueryStart);
+    expect(recordQuery).toContain('.eq("organization_id", ctx.organizationId)');
+    expect(recordQuery).not.toContain('.eq("store_id"');
+  });
 });

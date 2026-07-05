@@ -15,7 +15,7 @@ import {
 } from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
 import {
-  submitOrderAction,
+  checkoutAndPayAction,
   collectPaymentAction,
   searchPosCustomersAction,
   evaluatePosCouponAction,
@@ -2414,6 +2414,14 @@ function ReceiptPanel({
             เงินทอน {priceStr(order.changeAmount)}
           </p>
         )}
+        {(order.loyaltyPointsEarned ?? 0) > 0 && (
+          <p className="text-sm text-teal-700 font-medium text-center">
+            ได้รับแต้ม +{formatPoints(order.loyaltyPointsEarned)}
+            {order.loyaltyPointsBalance !== undefined
+              ? ` · แต้มคงเหลือ ${formatPoints(order.loyaltyPointsBalance)}`
+              : ""}
+          </p>
+        )}
         {printError && (
           <p className="text-xs text-red-500 text-center">{printError}</p>
         )}
@@ -2983,8 +2991,17 @@ export function PosTerminal({
       return;
     }
     startTransition(async () => {
+      const paymentInput = {
+        method,
+        amount: displayCart.total,
+        receivedAmount: received,
+        changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
+        qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined,
+      };
       let order = pendingOrder;
+      let paidOrder: Order | null = null;
       if (!order) {
+        // Pay-now path: one server round trip creates the order and closes the bill.
         const checkoutTicketContext = {
           tableId: ticketDraft.tableId ?? activeTicket?.tableId,
           tableNumber: ticketDraft.tableNumber?.trim() || activeTicket?.tableNumber,
@@ -2992,7 +3009,7 @@ export function PosTerminal({
         };
         const checkoutIdempotencyKey = checkoutIdempotencyKeyRef.current ?? createTicketId();
         checkoutIdempotencyKeyRef.current = checkoutIdempotencyKey;
-        const orderResult = await submitOrderAction(cart, {
+        const result = await checkoutAndPayAction(cart, paymentInput, {
           tableId: checkoutTicketContext.tableId,
           tableNumber: checkoutTicketContext.tableNumber,
           note: checkoutTicketContext.note,
@@ -3000,34 +3017,36 @@ export function PosTerminal({
           couponCode: appliedCoupon?.code ?? null,
           clientCouponDiscountAmount: appliedCoupon?.discount ?? 0,
           idempotencyKey: checkoutIdempotencyKey,
+          paymentIdempotencyKey: createTicketId(),
         });
-        if (orderResult.error) {
-          setPayError(orderResult.error);
+        if (result.error) {
+          // Order persisted but payment failed — remember it so retry only pays.
+          if (result.failedStage === "payment" && result.orderId && result.orderNumber) {
+            order = { orderId: result.orderId, orderNumber: result.orderNumber };
+            setPendingOrder(order);
+          }
+          setPayError(result.error);
           return;
         }
-        if (!orderResult.orderId || !orderResult.orderNumber) {
+        if (!result.orderId || !result.orderNumber) {
           setPayError("ไม่สามารถสร้างออร์เดอร์ได้");
           return;
         }
-        order = { orderId: orderResult.orderId, orderNumber: orderResult.orderNumber };
-        setPendingOrder(order);
-      }
-      const payResult = await collectPaymentAction(order.orderId, {
-        method,
-        amount: displayCart.total,
-        receivedAmount: received,
-        changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
-        qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined,
-      }, {
-        idempotencyKey: createTicketId(),
-      });
-      if (payResult.error) {
-        setPayError(payResult.error);
-        return;
+        order = { orderId: result.orderId, orderNumber: result.orderNumber };
+        paidOrder = result.order;
+      } else {
+        // Retry path: the order already exists from a failed payment attempt.
+        const payResult = await collectPaymentAction(order.orderId, paymentInput, {
+          idempotencyKey: createTicketId(),
+        });
+        if (payResult.error) {
+          setPayError(payResult.error);
+          return;
+        }
+        paidOrder = payResult.order;
       }
       paidDisplayCartRef.current = displayCart;
       paidCustomerNameRef.current = selectedCustomer?.name;
-      const paidOrder = payResult.order;
       const paidPointsEarned = paidOrder?.loyaltyPointsEarned;
       const hasPaidPointMovement = typeof paidPointsEarned === "number" && paidPointsEarned > 0;
       paidCustomerRef.current = selectedCustomer && paidOrder
@@ -3057,17 +3076,21 @@ export function PosTerminal({
         loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned,
         loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance,
       });
-      if (activeTicketId) {
-        const deleteResult = await deleteSavedTicketAction(activeTicketId);
-        if (deleteResult.error) {
-          setTicketMessage(`ปิดการขายแล้ว แต่ลบตั๋วบน server ไม่สำเร็จ: ${deleteResult.error}`);
-        } else {
-          persistSavedTickets(savedTickets.filter((ticket) => ticket.id !== activeTicketId));
-          setActiveTicketId(null);
-        }
-      }
+      // Receipt must appear immediately after payment — ticket cleanup runs in the
+      // background and must never delay the phase switch.
       setPendingOrder(null);
       setPhase("receipt");
+      if (activeTicketId) {
+        void (async () => {
+          const deleteResult = await deleteSavedTicketAction(activeTicketId);
+          if (deleteResult.error) {
+            setTicketMessage(`ปิดการขายแล้ว แต่ลบตั๋วบน server ไม่สำเร็จ: ${deleteResult.error}`);
+          } else {
+            persistSavedTickets(savedTickets.filter((ticket) => ticket.id !== activeTicketId));
+            setActiveTicketId(null);
+          }
+        })();
+      }
     });
   }
 

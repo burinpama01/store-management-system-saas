@@ -1,12 +1,15 @@
+import { cache } from "react";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import type { BillingState, BillingPlan, BillingStatus } from "./types";
 import { normalizeBusinessConfig } from "./business-plan";
 import { randomUUID } from "node:crypto";
 
-export async function getOrganizationBillingState(
+// cache(): memoized per request — guards, feature gates, and pages all consult
+// the same organization's billing state within a single request.
+export const getOrganizationBillingState = cache(async (
   organizationId: string,
-): Promise<BillingState | null> {
+): Promise<BillingState | null> => {
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("subscriptions")
@@ -32,7 +35,7 @@ export async function getOrganizationBillingState(
     trialEnd: (data as Record<string, unknown>).trial_end as string | null,
     business,
   };
-}
+});
 
 export async function getStripeCustomerId(
   organizationId: string,

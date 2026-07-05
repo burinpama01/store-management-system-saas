@@ -93,6 +93,11 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(terminal).toContain("loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance");
     expect(terminal).toContain("publishCustomerDisplaySnapshot(displayCart, {");
     expect(terminal).toContain('status: "paid"');
+
+    // The on-screen receipt panel shows the earned points too — not only the
+    // printed receipt (this was missed when decimal points shipped).
+    expect(terminal).toContain("ได้รับแต้ม +");
+    expect(terminal).toContain("แต้มคงเหลือ");
   });
 
   it("keeps non-customer payment success when the post-payment order refresh fails", () => {

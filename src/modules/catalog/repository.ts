@@ -257,11 +257,17 @@ export async function deleteCategory(id: string, storeId: string) {
 
 // --- Products ---
 
-export async function listProducts(storeId: string, opts?: { includeInactive?: boolean }) {
+export async function listProducts(
+  storeId: string,
+  opts?: { includeInactive?: boolean; productIds?: string[] },
+) {
   return withDataClient<Product[]>(
     async (supabase) => {
       let q = supabase.from("products").select("*").eq("store_id", storeId);
       if (!opts?.includeInactive) q = q.eq("is_active", true);
+      // Hot paths (POS checkout) re-price only the products present in the cart —
+      // no need to pull the whole catalog with variants/modifiers.
+      if (opts?.productIds && opts.productIds.length > 0) q = q.in("id", opts.productIds);
       q = q.order("sort_order");
 
       const productsRes = await q;
