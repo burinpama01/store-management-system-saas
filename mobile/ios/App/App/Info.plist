@@ -47,5 +47,9 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>StoreOS ใช้ตำแหน่งของคุณเพื่อยืนยันการลงเวลาเข้า-ออกงานตามพื้นที่ร้าน</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>StoreOS ใช้ Bluetooth เพื่อเชื่อมต่อเครื่องพิมพ์ใบเสร็จ</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>StoreOS ใช้ Bluetooth เพื่อเชื่อมต่อเครื่องพิมพ์ใบเสร็จ</string>
 </dict>
 </plist>

@@ -19,6 +19,7 @@ import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
+import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
 
 const AUTO_PRINT_KEY = "qrOrderAutoPrintEnabled";
 
@@ -104,28 +105,6 @@ function getPrinterState(): PrinterState {
     return { connected: true, label: getUsbPrinterName() ?? "USB printer" };
   }
   return { connected: false, label: "ไม่ได้เชื่อมต่อเครื่องพิมพ์" };
-}
-
-function playOrderSound() {
-  try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.value = 0.12;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.2);
-    osc.onended = () => ctx.close();
-  } catch {
-    /* browser audio can be blocked before user interaction */
-  }
 }
 
 function extractModifierNames(value: Json): string[] {
@@ -216,6 +195,8 @@ export function QrOrderGlobalNotifier({
     [assignedKitchenStationIds],
   );
   const currentOrder = orders[0] ?? null;
+  // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออร์เดอร์ QR
+  useRepeatingAlert(Boolean(currentOrder), "qr");
 
   useEffect(() => {
     const preferenceTimer = window.setTimeout(() => {
@@ -288,7 +269,6 @@ export function QrOrderGlobalNotifier({
         seenOrderIds.current.add(order.id);
         void fetchVisibleOrder(order).then(async (visibleOrder) => {
           if (!visibleOrder) return;
-          playOrderSound();
           setOrders((prev) => [...prev, visibleOrder]);
 
           // Multi-printer routing: split the order into per-station tickets and
