@@ -2,6 +2,12 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected } from "@/modules/printing/bluetooth-client";
+import {
+  connectNativeBluetoothPrinter,
+  getNativeBluetoothPrinterName,
+  isNativeBluetoothConnected,
+  isNativePlatform,
+} from "@/modules/printing/native-print-client";
 import { sendNetworkPrintJob } from "@/modules/printing/network-print-client";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
@@ -102,6 +108,7 @@ export function PrinterConnectionPanel({
   const [error, setError] = useState<string | null>(null);
   const [networkMessage, setNetworkMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [nativeReady, setNativeReady] = useState(false);
   const [saveState, saveFormAction, savingNetworkPrinter] = useActionState(
     saveNetworkPrinterAction ?? (async () => ({ error: "ยังไม่พร้อมบันทึกเครื่องพิมพ์ IP/WiFi จากหน้านี้" })),
     { error: null },
@@ -118,6 +125,19 @@ export function PrinterConnectionPanel({
   );
 
   useEffect(() => {
+    if (isNativePlatform()) {
+      setNativeReady(true);
+      // เครื่องพิมพ์ BLE ที่จำไว้ในแอป (native) แสดงเป็นอุปกรณ์ที่เคยเชื่อม
+      const nativeName = getNativeBluetoothPrinterName();
+      if (nativeName) {
+        void Promise.resolve().then(() =>
+          isNativeBluetoothConnected()
+            ? setConnectedDevice({ kind: "Bluetooth (แอป)", name: nativeName })
+            : setRememberedDevice({ kind: "Bluetooth (แอป, จำไว้)", name: nativeName }),
+        );
+        return;
+      }
+    }
     const bt = getBluetoothPrinterName();
     const usb = getUsbPrinterName();
     const initial = resolvePrinterConnectionState({
@@ -156,6 +176,20 @@ export function PrinterConnectionPanel({
       setRememberedDevice(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "เชื่อมต่อ Bluetooth ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connectNativeBluetooth() {
+    setError(null);
+    setBusy(true);
+    try {
+      const name = await connectNativeBluetoothPrinter();
+      setConnectedDevice({ kind: "Bluetooth (แอป)", name });
+      setRememberedDevice(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "เชื่อมต่อเครื่องพิมพ์ในแอปไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -229,12 +263,21 @@ export function PrinterConnectionPanel({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={connectUsb} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
-            USB
-          </button>
-          <button type="button" onClick={connectBluetooth} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
-            Bluetooth
-          </button>
+          {nativeReady && (
+            <button type="button" onClick={connectNativeBluetooth} disabled={busy} className="btn-primary min-h-11 px-3 text-xs disabled:opacity-40">
+              เชื่อมเครื่องพิมพ์ Bluetooth (แอป)
+            </button>
+          )}
+          {!nativeReady && (
+            <>
+              <button type="button" onClick={connectUsb} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
+                USB
+              </button>
+              <button type="button" onClick={connectBluetooth} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
+                Bluetooth
+              </button>
+            </>
+          )}
           {networkPrinters.map((printer) => (
             <button
               key={printer.id}

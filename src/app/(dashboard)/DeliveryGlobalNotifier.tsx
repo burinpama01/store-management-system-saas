@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Printer } from "@/modules/stores/types";
 import { printKitchenForOrder, type StationPrinter } from "./delivery/print-kitchen";
+import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
 
 interface IncomingItem {
   name: string;
@@ -21,31 +22,6 @@ interface IncomingDeliveryOrder {
 }
 
 const POLL_MS = 12000;
-
-function playOrderSound() {
-  try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    // บี๊บสองครั้งให้ต่างจากเสียง QR
-    [0, 0.28].forEach((offset) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 660;
-      gain.gain.value = 0.14;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + offset);
-      osc.stop(ctx.currentTime + offset + 0.18);
-    });
-    window.setTimeout(() => ctx.close(), 800);
-  } catch {
-    /* audio may be blocked before user interaction */
-  }
-}
 
 /**
  * แจ้งเตือนออเดอร์เดลิเวอรีใหม่ (popup + เสียง) ทุกหน้า — ใช้ polling ผ่าน API (service client)
@@ -72,6 +48,8 @@ export function DeliveryGlobalNotifier({
   const baselined = useRef(false);
   const [orders, setOrders] = useState<IncomingDeliveryOrder[]>([]);
   const current = orders[0] ?? null;
+  // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออเดอร์ Connect/เดลิเวอรี
+  useRepeatingAlert(Boolean(current), "connect");
 
   const poll = useCallback(async () => {
     let list: IncomingDeliveryOrder[];
@@ -97,7 +75,6 @@ export function DeliveryGlobalNotifier({
     }
     if (fresh.length === 0) return;
 
-    playOrderSound();
     setOrders((prev) => [...prev, ...fresh]);
     router.refresh(); // อัปเดตบอร์ด /delivery ถ้ากำลังเปิดอยู่
 
