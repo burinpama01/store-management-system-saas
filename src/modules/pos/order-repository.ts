@@ -95,7 +95,11 @@ export interface CreateOrderInput {
   note?: string;
 }
 
-export async function createOrderWithItems(input: CreateOrderInput) {
+/**
+ * Creates the order and returns only its ids — the POS payment hot path renders
+ * the receipt from client-side cart data, so the follow-up order fetch is skipped.
+ */
+export async function createOrderWithItemsIds(input: CreateOrderInput) {
   const supabase = await createSupabaseServerClient();
   const orderNumber = generateOrderNumber({ timeZone: input.storeTimezone });
   const items = input.cart.items.map((item) => ({
@@ -134,7 +138,15 @@ export async function createOrderWithItems(input: CreateOrderInput) {
 
   if (orderErr || !orderId) return { data: null, error: mapError(orderErr ?? new Error("ไม่สามารถสร้างออร์เดอร์ได้")) };
 
-  return getOrder(orderId);
+  return { data: { id: orderId, orderNumber }, error: null };
+}
+
+export async function createOrderWithItems(input: CreateOrderInput) {
+  const created = await createOrderWithItemsIds(input);
+  if (created.error || !created.data) {
+    return { data: null, error: created.error ?? mapError(new Error("ไม่สามารถสร้างออร์เดอร์ได้")) };
+  }
+  return getOrder(created.data.id);
 }
 
 export interface CreatePosOrderWithCustomerRewardsInput extends CreateOrderInput {
@@ -144,7 +156,8 @@ export interface CreatePosOrderWithCustomerRewardsInput extends CreateOrderInput
   idempotencyKey?: string | null;
 }
 
-export async function createPosOrderWithCustomerRewards(input: CreatePosOrderWithCustomerRewardsInput) {
+/** Ids-only variant of createPosOrderWithCustomerRewards — see createOrderWithItemsIds. */
+export async function createPosOrderWithCustomerRewardsIds(input: CreatePosOrderWithCustomerRewardsInput) {
   const supabase = await createSupabaseServerClient();
   const idempotencyKey = input.idempotencyKey?.trim();
   if (!idempotencyKey) {
@@ -193,7 +206,15 @@ export async function createPosOrderWithCustomerRewards(input: CreatePosOrderWit
     return { data: null, error: mapError(error ?? new Error("ไม่สามารถสร้างออร์เดอร์ POS พร้อมลูกค้า/คูปองได้")) };
   }
 
-  return getOrder(orderId);
+  return { data: { id: orderId, orderNumber }, error: null };
+}
+
+export async function createPosOrderWithCustomerRewards(input: CreatePosOrderWithCustomerRewardsInput) {
+  const created = await createPosOrderWithCustomerRewardsIds(input);
+  if (created.error || !created.data) {
+    return { data: null, error: created.error ?? mapError(new Error("ไม่สามารถสร้างออร์เดอร์ POS พร้อมลูกค้า/คูปองได้")) };
+  }
+  return getOrder(created.data.id);
 }
 
 export interface AddPaymentInput {
@@ -264,21 +285,18 @@ export async function closePosOrderPaymentWithRewards(input: {
 
 export async function voidOrder(orderId: string, storeId: string, userId: string, reason: string) {
   const supabase = await createSupabaseServerClient();
-  // Atomically void — status whitelist prevents voiding already-paid or already-voided orders
-  const { data, error } = await supabase
-    .from("orders")
-    .update({
-      status: "voided",
-      voided_at: new Date().toISOString(),
-      void_reason: reason,
-      voided_by_user_id: userId,
-    })
-    .eq("id", orderId)
-    .eq("store_id", storeId)
-    .in("status", ["pending_payment", "open"])
-    .select("id")
-    .single();
-  if (error || !data) return { ok: false, error: mapError(error ?? new Error("ไม่สามารถยกเลิกออร์เดอร์นี้ได้")) };
+  // Void through the shared rewards-aware RPC: it atomically voids the order
+  // (same pending/open whitelist), voids coupon redemptions, releases product
+  // reward vouchers, and reverses loyalty ledger entries — a plain status
+  // update strands those redemptions as used.
+  const { error } = await supabase.rpc("void_grocery_pos_order_with_rewards", {
+    p_order_id: orderId,
+    p_store_id: storeId,
+    p_voided_by_user_id: userId,
+    p_reason: reason,
+    p_idempotency_key: null,
+  });
+  if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
 }
 
@@ -310,6 +328,22 @@ export async function getOrder(orderId: string) {
     }
   }
   return { data: mapOrder(orderRes.data, items, payments, loyaltyPointsBalance), error: null };
+}
+
+/**
+ * Store/customer of an order only — enough for the payment action to validate
+ * tenant scope and pick the rewards vs plain close path without hydrating the
+ * full order (items, payments, loyalty balance).
+ */
+export async function getOrderPaymentContext(orderId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .select("store_id, customer_id")
+    .eq("id", orderId)
+    .single();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: { storeId: data.store_id, customerId: data.customer_id }, error: null };
 }
 
 function normalizedHistoryDate(value: string | undefined, fallback: string) {

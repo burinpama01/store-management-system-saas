@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import type { BillingPlan, BillingStatus } from "@/modules/billing/types";
 
@@ -447,7 +448,7 @@ export async function setTenantSuspension(input: {
  * non-super_admin members. Uses the user-scoped server client (members can read
  * their own org), failing closed on error.
  */
-export async function isOrganizationSuspended(organizationId: string): Promise<boolean> {
+export const isOrganizationSuspended = cache(async (organizationId: string): Promise<boolean> => {
   const { createSupabaseServerClient } = await import(
     "@/server/integrations/supabase/server"
   );
@@ -459,7 +460,7 @@ export async function isOrganizationSuspended(organizationId: string): Promise<b
     .maybeSingle();
   if (error) return false;
   return Boolean(data?.suspended_at);
-}
+});
 
 export interface PlatformPayment {
   organizationId: string;

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { Role, PermissionKey, ResolvedPermissions } from "@/modules/tenants/types";
 import {
@@ -43,11 +44,14 @@ export async function getResolvedCurrentPermissions(): Promise<{
   return permissions;
 }
 
-export async function getOptionalResolvedCurrentPermissions(): Promise<{
+// cache(): memoized per request — POS/server actions call requirePermission,
+// requireFeature, and store-context helpers back-to-back; resolving auth,
+// memberships, overrides, and billing once per request is enough.
+export const getOptionalResolvedCurrentPermissions = cache(async (): Promise<{
   user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
   ctx: NonNullable<Awaited<ReturnType<typeof resolveCurrentStore>>>;
   resolved: ResolvedPermissions;
-} | null> {
+} | null> => {
   const user = await getCurrentUser();
   if (!user) return null;
 
@@ -103,7 +107,7 @@ export async function getOptionalResolvedCurrentPermissions(): Promise<{
     ctx,
     resolved: resolvePermissions(ctx.role, overrides, ctx.organizationId, ctx.storeId),
   };
-}
+});
 
 /**
  * Ensures the calling user holds at least `minimumRole` in their current store.
@@ -183,12 +187,14 @@ export async function shouldStartAtAttendance({
       .eq("store_id", ctx.storeId)
       .eq("date", today)
       .limit(1),
+    // Org-wide (no store filter): clocking in at one branch counts everywhere,
+    // otherwise a device that resolves a different default store (mobile vs PC)
+    // forces a second clock-in. Records themselves stay per store for payroll.
     supabase
       .from("attendance_records")
       .select("id")
       .eq("user_id", user.id)
       .eq("organization_id", ctx.organizationId)
-      .eq("store_id", ctx.storeId)
       .eq("date", today)
       .limit(1),
     supabase

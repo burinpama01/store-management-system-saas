@@ -20,11 +20,12 @@ import {
   reserveProductRewardVoucher,
 } from "@/modules/loyalty/repository";
 import {
-  createOrderWithItems,
+  createOrderWithItemsIds,
   addPaymentAndClose,
   closePosOrderPaymentWithRewards,
-  createPosOrderWithCustomerRewards,
+  createPosOrderWithCustomerRewardsIds,
   getOrder,
+  getOrderPaymentContext,
   listOrdersHistory,
   listTodayOrders,
   voidOrder,
@@ -76,7 +77,10 @@ export async function saveSavedTicketAction(ticket: SavedOrderTicket): Promise<{
     }
 
     const canDiscount = !cartRequestsDiscount(ticket.cart) || await requirePermission("pos.discount").then(() => true).catch(() => false);
-    const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
+    const productsRes = await listProducts(ctx.storeId, {
+      includeInactive: false,
+      productIds: Array.from(new Set(ticket.cart.items.map((item) => item.productId))),
+    });
     if (productsRes.error || !productsRes.data) {
       return { ticket: null, error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };
     }
@@ -117,7 +121,8 @@ export async function saveSavedTicketAction(ticket: SavedOrderTicket): Promise<{
       ticket: trustedTicket,
     });
     if (result.error) return { ticket: null, error: result.error.userMessage };
-    revalidatePath("/pos", "page");
+    // No revalidatePath: /pos renders no ticket data server-side (tickets sync via
+    // listSavedTicketsAction), and revalidating would re-render the whole catalog page.
     return { ticket: result.data, error: null };
   } catch (e) {
     return { ticket: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -132,7 +137,6 @@ export async function deleteSavedTicketAction(ticketId: string, opts?: { closeRe
       ? await deleteSavedTicketAndCloseTable(ticketId, ctx.storeId)
       : await deleteSavedTicket(ticketId, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
-    revalidatePath("/pos", "page");
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -208,7 +212,10 @@ export async function evaluatePosCouponAction(
       return { couponId: null, discount: 0, normalizedCode: null, error: "ร้านค้าในตะกร้าไม่ถูกต้อง" };
     }
 
-    const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
+    const productsRes = await listProducts(ctx.storeId, {
+      includeInactive: false,
+      productIds: Array.from(new Set(cart.items.map((item) => item.productId))),
+    });
     if (productsRes.error || !productsRes.data) {
       return { couponId: null, discount: 0, normalizedCode: null, error: productsRes.error?.userMessage ?? "ไม่พบข้อมูลสินค้า" };
     }
@@ -297,14 +304,55 @@ export async function submitOrderAction(
   },
 ): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
   try {
-    await requirePermission("pos.use");
-    const { user, ctx } = await getStoreContext();
+    // One auth/permission resolution per request — requirePermission plus a separate
+    // store-context lookup used to run the full auth chain twice.
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) {
+      return { orderId: null, orderNumber: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    }
+    const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
+    return await createPosOrderCore(user, ctx, canDiscount, cart, opts);
+  } catch (e) {
+    return { orderId: null, orderNumber: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
 
+/**
+ * Order-creation core shared by submitOrderAction and checkoutAndPayAction:
+ * validates the cart against the catalog, handles reward vouchers and
+ * coupon/customer checkout, creates the order, and fires the new-order
+ * notification. Auth/permissions must already be resolved by the caller.
+ */
+async function createPosOrderCore(
+  user: { id: string },
+  ctx: { storeId: string; organizationId: string; storeTimezone: string },
+  canDiscount: boolean,
+  cart: Cart,
+  opts?: {
+    tableId?: string;
+    tableNumber?: string;
+    note?: string;
+    customerId?: string | null;
+    couponCode?: string | null;
+    clientCouponDiscountAmount?: number;
+    idempotencyKey?: string | null;
+  },
+): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
+  // Reserved voucher ids live outside the try so the catch can release them too —
+  // a reserved-but-unreleased voucher is permanently lost to the customer.
+  const reservedRedemptionIds: string[] = [];
+  async function releaseReservedVouchers() {
+    for (const redemptionId of reservedRedemptionIds) {
+      await releaseProductRewardVoucher(ctx.storeId, redemptionId);
+    }
+  }
+  try {
     if (cart.items.length === 0) return { orderId: null, orderNumber: null, error: "ไม่มีรายการในออร์เดอร์" };
     const rewardItems = cart.items.filter((item) => item.rewardVoucherCode);
     const normalCart: Cart = { ...cart, items: cart.items.filter((item) => !item.rewardVoucherCode) };
-    const canDiscount = !cartRequestsDiscount(cart) || await requirePermission("pos.discount").then(() => true).catch(() => false);
-    const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
+    // Re-pricing needs only the products present in the cart, not the whole catalog.
+    const cartProductIds = Array.from(new Set(cart.items.map((item) => item.productId)));
+    const productsRes = await listProducts(ctx.storeId, { includeInactive: false, productIds: cartProductIds });
     if (productsRes.error || !productsRes.data) {
       return { orderId: null, orderNumber: null, error: productsRes.error?.userMessage ?? "ไม่สามารถตรวจสอบสินค้าได้" };
     }
@@ -355,21 +403,6 @@ export async function submitOrderAction(
     const finalCart: Cart =
       rewardLines.length > 0 ? { ...trustedCart, items: [...trustedCart.items, ...rewardLines] } : trustedCart;
 
-    // Reserve vouchers (atomic single-use) before creating the order; release if anything fails.
-    const reservedRedemptionIds: string[] = [];
-    async function releaseReservedVouchers() {
-      for (const redemptionId of reservedRedemptionIds) {
-        await releaseProductRewardVoucher(ctx.storeId, redemptionId);
-      }
-    }
-    for (const redemptionId of rewardRedemptionIds) {
-      const reserved = await reserveProductRewardVoucher(ctx.storeId, redemptionId);
-      if (reserved.error || !reserved.reserved) {
-        await releaseReservedVouchers();
-        return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลถูกใช้ไปแล้ว" };
-      }
-      reservedRedemptionIds.push(redemptionId);
-    }
     const tableRes = opts?.tableId ? await getTable(opts.tableId, ctx.storeId) : null;
     if (tableRes?.error) {
       return { orderId: null, orderNumber: null, error: tableRes.error.userMessage };
@@ -390,6 +423,19 @@ export async function submitOrderAction(
       return { orderId: null, orderNumber: null, error: "ต้องมี idempotency key สำหรับ POS customer/coupon checkout" };
     }
 
+    // Reserve vouchers (atomic single-use) as the LAST step before creating the
+    // order — every validation above returns without touching them, so a failed
+    // checkout can never strand a customer's voucher in the used state.
+    for (const redemptionId of rewardRedemptionIds) {
+      const reserved = await reserveProductRewardVoucher(ctx.storeId, redemptionId);
+      if (reserved.error || !reserved.reserved) {
+        await releaseReservedVouchers();
+        return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลถูกใช้ไปแล้ว" };
+      }
+      reservedRedemptionIds.push(redemptionId);
+    }
+
+    let orderCart = finalCart;
     const result = customerId || couponCode
       ? await (async () => {
           const couponRes = couponCode
@@ -411,7 +457,8 @@ export async function submitOrderAction(
             return { data: null, error: { userMessage: message } };
           }
 
-          return createPosOrderWithCustomerRewards({
+          orderCart = checkout.cart;
+          return createPosOrderWithCustomerRewardsIds({
             storeId: ctx.storeId,
             organizationId: ctx.organizationId,
             cashierId: user.id,
@@ -426,7 +473,7 @@ export async function submitOrderAction(
             idempotencyKey: opts?.idempotencyKey,
           });
         })()
-      : await createOrderWithItems({
+      : await createOrderWithItemsIds({
           storeId: ctx.storeId,
           organizationId: ctx.organizationId,
           cashierId: user.id,
@@ -460,12 +507,12 @@ export async function submitOrderAction(
         organizationId: ctx.organizationId,
         storeId: ctx.storeId,
         title: "มีออเดอร์บุฟเฟต์ใหม่",
-        message: `ออเดอร์ ${result.data.orderNumber} ยอด ${result.data.total.toFixed(2)}`,
+        message: `ออเดอร์ ${result.data.orderNumber} ยอด ${orderCart.total.toFixed(2)}`,
         metadata: {
           orderId: result.data.id,
           orderNumber: result.data.orderNumber,
           buffetSessionId,
-          total: result.data.total,
+          total: orderCart.total,
           source: "pos",
         },
       });
@@ -475,17 +522,18 @@ export async function submitOrderAction(
         organizationId: ctx.organizationId,
         storeId: ctx.storeId,
         title: "มีออเดอร์ POS ใหม่",
-        message: `ออเดอร์ ${result.data.orderNumber} ยอด ${result.data.total.toFixed(2)}`,
+        message: `ออเดอร์ ${result.data.orderNumber} ยอด ${orderCart.total.toFixed(2)}`,
         metadata: {
           orderId: result.data.id,
           orderNumber: result.data.orderNumber,
-          total: result.data.total,
+          total: orderCart.total,
           source: "pos",
         },
       });
     }
     return { orderId: result.data.id, orderNumber: result.data.orderNumber, error: null };
   } catch (e) {
+    await releaseReservedVouchers();
     return { orderId: null, orderNumber: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
@@ -496,8 +544,8 @@ export async function collectPaymentAction(
   opts?: { idempotencyKey?: string | null },
 ): Promise<{ order: Order | null; error: string | null }> {
   try {
-    await requirePermission("pos.use");
-    const { user, ctx } = await getStoreContext();
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { order: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
 
     if (payment.method === "cash") {
       const cashSession = await getOpenCashSession(ctx.storeId);
@@ -509,7 +557,9 @@ export async function collectPaymentAction(
       return { order: null, error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
     }
 
-    const orderRes = await getOrder(orderId);
+    // Slim lookup: the close RPC re-validates store/status; this only needs tenant
+    // scope plus whether the order carries a customer (rewards close path).
+    const orderRes = await getOrderPaymentContext(orderId);
     if (orderRes.error) return { order: null, error: orderRes.error.userMessage };
     if (orderRes.data?.storeId !== ctx.storeId) return { order: null, error: "ร้านค้าในออร์เดอร์ไม่ถูกต้อง" };
 
@@ -564,6 +614,121 @@ export async function collectPaymentAction(
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface CheckoutAndPayResult {
+  orderId: string | null;
+  orderNumber: string | null;
+  order: Order | null;
+  /** "order": nothing was persisted; "payment": order exists — retry payment only. */
+  failedStage: "order" | "payment" | null;
+  error: string | null;
+}
+
+/**
+ * Creates the order and collects its payment in a single request — the POS
+ * pay-now path. Splitting these into two actions doubled the network and
+ * auth/context cost on the most latency-sensitive step of the POS.
+ */
+export async function checkoutAndPayAction(
+  cart: Cart,
+  payment: AddPaymentInput,
+  opts?: {
+    tableId?: string;
+    tableNumber?: string;
+    note?: string;
+    customerId?: string | null;
+    couponCode?: string | null;
+    clientCouponDiscountAmount?: number;
+    idempotencyKey?: string | null;
+    paymentIdempotencyKey?: string | null;
+  },
+): Promise<CheckoutAndPayResult> {
+  let createdOrderId: string | null = null;
+  let createdOrderNumber: string | null = null;
+  try {
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) {
+      return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    }
+
+    if (payment.method === "cash") {
+      const cashSession = await getOpenCashSession(ctx.storeId);
+      if (cashSession.error) {
+        return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: cashSession.error.userMessage };
+      }
+      if (!cashSession.data) {
+        return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: "ต้องเปิดรอบเงินสดก่อนรับเงินสด" };
+      }
+    }
+    if (payment.method === "qr_promptpay" && payment.qrPaymentVerified !== true) {
+      return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
+    }
+
+    const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
+    const created = await createPosOrderCore(user, ctx, canDiscount, cart, opts);
+    if (created.error || !created.orderId || !created.orderNumber) {
+      return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: created.error ?? "ไม่สามารถสร้างออร์เดอร์ได้" };
+    }
+    createdOrderId = created.orderId;
+    createdOrderNumber = created.orderNumber;
+
+    const customerId = opts?.customerId?.trim() || null;
+    let paymentId: string | null = null;
+    let paidAmount = payment.amount;
+    let paidMethod = payment.method;
+    let paidOrder: Order | null = null;
+    if (customerId) {
+      const result = await closePosOrderPaymentWithRewards({
+        orderId: created.orderId,
+        storeId: ctx.storeId,
+        processedByUserId: user.id,
+        payment,
+        idempotencyKey: opts?.paymentIdempotencyKey?.trim() || randomUUID(),
+      });
+      if (result.error) {
+        return { orderId: created.orderId, orderNumber: created.orderNumber, order: null, failedStage: "payment", error: result.error.userMessage };
+      }
+      paidOrder = result.data ?? null;
+      const completedPayment = result.data?.payments.find((item) => item.status === "completed") ?? result.data?.payments[0];
+      paymentId = completedPayment?.id ?? null;
+      paidAmount = completedPayment?.amount ?? paidAmount;
+      paidMethod = completedPayment?.method ?? paidMethod;
+    } else {
+      const result = await addPaymentAndClose(created.orderId, ctx.storeId, user.id, payment);
+      if (result.error) {
+        return { orderId: created.orderId, orderNumber: created.orderNumber, order: null, failedStage: "payment", error: result.error.userMessage };
+      }
+      paymentId = result.data.id;
+      paidAmount = result.data.amount;
+      paidMethod = result.data.method;
+      // No post-payment order refresh: non-customer orders carry no loyalty
+      // movement and the receipt renders from client-side cart data.
+    }
+
+    notifyOwnerSafely({
+      type: "payment",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      title: "ชำระเงินแล้ว",
+      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${paidMethod}`,
+      metadata: {
+        orderId: created.orderId,
+        paymentId,
+        amount: paidAmount,
+        method: paidMethod,
+      },
+    });
+    return { orderId: created.orderId, orderNumber: created.orderNumber, order: paidOrder, failedStage: null, error: null };
+  } catch (e) {
+    return {
+      orderId: createdOrderId,
+      orderNumber: createdOrderNumber,
+      order: null,
+      failedStage: createdOrderId ? "payment" : "order",
+      error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
+    };
+  }
+}
 
 export interface OpenTableStatus {
   id: string;

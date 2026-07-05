@@ -176,4 +176,33 @@ describe("loyalty reward vouchers", () => {
     expect(customerActions).toContain("product.variants.length > 0");
     expect(customerActions).toContain("สินค้าของรางวัลต้องไม่มีตัวเลือก");
   });
+
+  it("reserves vouchers only after all checkout validation and releases them on any failure", () => {
+    const posActions = read("src/app/pos/actions.ts");
+
+    // Reservation must be the LAST step before order creation — every earlier
+    // validation (table lookup, feature gates, idempotency) returns before any
+    // voucher is consumed, and the outer catch releases on thrown errors.
+    const reserveIndex = posActions.indexOf("await reserveProductRewardVoucher(ctx.storeId, redemptionId)");
+    expect(reserveIndex).toBeGreaterThan(posActions.lastIndexOf("ไม่พบโต๊ะนี้ในร้านค้า"));
+    expect(reserveIndex).toBeGreaterThan(
+      posActions.indexOf("ต้องมี idempotency key สำหรับ POS customer/coupon checkout"),
+    );
+    // release on: reserve conflict, order-creation error, thrown exception
+    expect((posActions.match(/await releaseReservedVouchers\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("voiding a POS order releases coupon redemptions and product reward vouchers", () => {
+    const voidMigration = read("supabase/migrations/20260705150000_void_pos_order_releases_rewards.sql");
+    const posRepo = read("src/modules/pos/order-repository.ts");
+
+    expect(voidMigration).toContain("create or replace function void_grocery_pos_order_with_rewards");
+    expect(voidMigration).toContain("update loyalty_reward_redemptions");
+    expect(voidMigration).toContain("status = 'pending'");
+    expect(voidMigration).toContain("used_order_id = null");
+    expect(voidMigration).toContain("update coupon_redemptions");
+
+    // normal POS void goes through the rewards-aware RPC, not a plain status update
+    expect(posRepo).toContain('supabase.rpc("void_grocery_pos_order_with_rewards"');
+  });
 });
