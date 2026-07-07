@@ -22,7 +22,10 @@ let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 export function parseServiceAccount(raw: string | undefined): FirebaseServiceAccount | null {
   if (!raw) return null;
   try {
-    const json = JSON.parse(raw) as Partial<FirebaseServiceAccount>;
+    // ตัด BOM (U+FEFF) + ช่องว่างหัวท้าย: การตั้ง env ผ่าน PowerShell pipe / บาง CLI
+    // มักแทรก BOM นำหน้า ทำให้ JSON.parse พัง แล้ว push แสดง "ยังไม่พร้อมใช้งาน"
+    const cleaned = raw.trim();
+    const json = JSON.parse(cleaned) as Partial<FirebaseServiceAccount>;
     if (!json.project_id || !json.client_email || !json.private_key) return null;
     return {
       project_id: json.project_id,

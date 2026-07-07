@@ -32,6 +32,18 @@ describe("push notification channel", () => {
     expect(parseServiceAccount(JSON.stringify({ project_id: "p" }))).toBeNull();
   });
 
+  it("parseServiceAccount tolerates a leading BOM + whitespace (PowerShell/CLI env pipe)", () => {
+    const account = {
+      project_id: "storeos-test",
+      client_email: "svc@storeos-test.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n",
+    };
+    //  (BOM) นำหน้าคือสาเหตุที่ทำให้ push แสดง "ยังไม่พร้อมใช้งาน" บน prod
+    const parsed = parseServiceAccount("\uFEFF" + JSON.stringify(account) + "\n");
+    expect(parsed?.project_id).toBe("storeos-test");
+    expect(parsed?.client_email).toBe(account.client_email);
+  });
+
   it("parseServiceAccount unescapes newlines in private key", () => {
     const parsed = parseServiceAccount(
       JSON.stringify({
