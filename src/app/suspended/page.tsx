@@ -18,7 +18,7 @@ export default async function SuspendedPage() {
           กิจการของคุณถูกระงับโดยผู้ดูแลแพลตฟอร์มชั่วคราว หากคิดว่าเป็นความผิดพลาด
           กรุณาติดต่อฝ่ายสนับสนุนเพื่อกู้คืนการเข้าใช้งาน
         </p>
-        <a href="mailto:support@storeos.app" className="btn-primary inline-block">
+        <a href="mailto:support@burindev.com" className="btn-primary inline-block">
           ติดต่อฝ่ายสนับสนุน
         </a>
         <form action={signOut}>
