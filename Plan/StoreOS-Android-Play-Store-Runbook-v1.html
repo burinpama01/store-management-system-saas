@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StoreOS Android — Play Store Publishing Runbook v1</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --card2:#1f232d; --text:#e8eaf0; --muted:#9aa3b2; --accent:#4f8cff; --green:#3ddc84; --amber:#ffb347; --red:#ff6b6b; --border:#2a2f3a; }
+  * { box-sizing:border-box; }
+  body { font-family:'Segoe UI','Sarabun',Tahoma,sans-serif; background:var(--bg); color:var(--text); margin:0; padding:32px 16px; line-height:1.65; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:1.7rem; margin:0 0 4px; }
+  h2 { font-size:1.25rem; margin:36px 0 12px; color:var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
+  h3 { font-size:1.05rem; margin:18px 0 6px; }
+  .meta { color:var(--muted); font-size:.9rem; margin-bottom:24px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin:14px 0; }
+  .card.warn { border-left:4px solid var(--amber); }
+  .card.bad { border-left:4px solid var(--red); }
+  .card.good { border-left:4px solid var(--green); }
+  code { background:var(--card2); padding:2px 6px; border-radius:4px; font-size:.88em; color:#ffd580; word-break:break-all; }
+  pre { background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:12px; overflow-x:auto; font-size:.85rem; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:.92rem; }
+  th,td { border:1px solid var(--border); padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:var(--card2); }
+  ol,ul { padding-left:22px; }
+  li { margin:5px 0; }
+  .tag { display:inline-block; padding:1px 9px; border-radius:999px; font-size:.75rem; font-weight:700; }
+  .tag.you { background:#ffb34733; color:var(--amber); }
+  .tag.done { background:#3ddc8433; color:var(--green); }
+  .muted { color:var(--muted); }
+  b.k { color:#ffd580; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>📦 StoreOS Android → Google Play — Runbook v1</h1>
+<div class="meta">2026-07-07 · เป้าหมาย: อัปโหลดแอปขึ้น Play Console (Internal testing → Production) · <span class="tag you">= งานที่คุณต้องทำเองใน Console</span> <span class="tag done">= ผมเตรียมให้แล้ว</span></div>
+
+<div class="card good">
+<b>สิ่งที่ผมเตรียมให้แล้ว <span class="tag done">DONE</span></b>
+<ul>
+  <li>Signed release <b>AAB</b>: <code>mobile/android/app/build/outputs/bundle/release/app-release.aab</code></li>
+  <li>Upload keystore: <code>C:\Users\burin\Downloads\StoreOS-keys\storeos-upload.jks</code> + รหัสใน <code>PASSWORD.txt</code> โฟลเดอร์เดียวกัน</li>
+  <li>Signing config ใน <code>build.gradle</code> (อ่านจาก <code>keystore.properties</code> ที่ gitignored — secret ไม่หลุดขึ้น repo)</li>
+  <li>targetSdk 35 (ผ่านเกณฑ์ Play ที่บังคับ 34+), applicationId <code>com.storeos.app</code>, version 1.0 (versionCode 1)</li>
+  <li>Privacy policy URL: <code>https://store-os-manage.vercel.app/privacy-policy</code></li>
+</ul>
+</div>
+
+<div class="card bad">
+<b>⚠️ สำคัญมาก: สำรอง keystore ทันที</b><br>
+<code>storeos-upload.jks</code> + รหัสผ่าน คือกุญแจอัปเดตแอปในอนาคต — <b>ทำหายแล้วอัปเดตแอปตัวเดิมไม่ได้</b> (ต้องขอ reset upload key กับ Google ซึ่งใช้เวลา) คัดลอกทั้งโฟลเดอร์ <code>StoreOS-keys</code> ไปเก็บที่ปลอดภัย (password manager / cloud ส่วนตัว) เดี๋ยวนี้เลย
+</div>
+
+<h2>1. สร้างแอปใน Play Console <span class="tag you">คุณ</span></h2>
+<ol>
+  <li>เข้า <code>play.google.com/console</code> → All apps → <b>Create app</b></li>
+  <li>App name: <b>StoreOS</b> · Default language: ไทย · App or game: <b>App</b> · Free/Paid: <b>Free</b></li>
+  <li>ติ๊กยอมรับ Developer Program Policies + US export laws → Create app</li>
+</ol>
+
+<h2>2. Play App Signing (ปล่อยให้ Google ถือ signing key) <span class="tag you">คุณ</span></h2>
+<div class="card">
+เมื่ออัปโหลด AAB ครั้งแรก Play จะเปิด <b>Play App Signing</b> อัตโนมัติ: Google ถือ "app signing key" ให้ ส่วน <code>storeos-upload.jks</code> ของเราเป็น "upload key" (ใช้เซ็นตอนอัปโหลดเท่านั้น) — นี่คือค่าเริ่มต้นและปลอดภัยที่สุด ไม่ต้องตั้งอะไรเพิ่ม
+</div>
+
+<h2>3. กรอก App content (บังคับก่อน release ทุก track) <span class="tag you">คุณ</span></h2>
+<p class="muted">เมนูซ้าย → Policy → <b>App content</b> ต้องกรอกให้ครบทุกหัวข้อ ไม่งั้นปล่อย release ไม่ได้แม้แต่ internal:</p>
+<table>
+  <tr><th>หัวข้อ</th><th>กรอกอย่างไร</th></tr>
+  <tr><td>Privacy policy</td><td>วาง <code>https://store-os-manage.vercel.app/privacy-policy</code></td></tr>
+  <tr><td>Ads</td><td>แอปนี้ <b>ไม่มีโฆษณา</b> → No</td></tr>
+  <tr><td>App access</td><td>ต้องล็อกอิน → เลือก "All or some functionality is restricted" แล้วให้ <b>บัญชีทดสอบ</b> (อีเมล/รหัสร้านตัวอย่าง) เพื่อให้ทีมรีวิว Google เข้าใช้ได้ — <b>จำเป็น</b> ไม่งั้นถูกปฏิเสธ</td></tr>
+  <tr><td>Content rating</td><td>ทำแบบสอบถาม → ประเภท Business/Productivity → ได้เรต "ทุกวัย"</td></tr>
+  <tr><td>Target audience</td><td>อายุ 18+ (แอปธุรกิจ) — ไม่ใช่แอปสำหรับเด็ก</td></tr>
+  <tr><td>Data safety</td><td>ดูตาราง §4 ด้านล่าง (สำคัญ — ต้องตรงกับที่แอปเก็บจริง)</td></tr>
+  <tr><td>Government apps / Financial features</td><td>ไม่ใช่แอปรัฐ; มีรับชำระเงินร้านค้า → ตอบตามจริง (ไม่ใช่ผู้ให้บริการการเงิน)</td></tr>
+</table>
+
+<h2>4. Data safety form (ให้ตรงกับที่แอปเก็บจริง) <span class="tag you">คุณ</span></h2>
+<table>
+  <tr><th>ข้อมูล</th><th>เก็บ?</th><th>วัตถุประสงค์</th><th>แชร์ให้ภายนอก?</th></tr>
+  <tr><td>Location (โดยประมาณ/แม่นยำ)</td><td>ใช่</td><td>ยืนยันพื้นที่ลงเวลาเข้า-ออกงาน (App functionality)</td><td>ไม่</td></tr>
+  <tr><td>Personal info (อีเมล/ชื่อ)</td><td>ใช่</td><td>บัญชีผู้ใช้ + จัดการร้าน</td><td>ไม่ขาย; ส่งผู้ให้บริการ (Supabase/Vercel) เท่าที่จำเป็น</td></tr>
+  <tr><td>App activity / ออร์เดอร์</td><td>ใช่</td><td>ทำงานหลักของระบบ POS</td><td>ไม่</td></tr>
+  <tr><td>ข้อมูลการชำระเงิน</td><td>ใช่</td><td>ประมวลผลการขาย</td><td>ผู้ประมวลผลชำระเงินเท่าที่จำเป็น</td></tr>
+</table>
+<p class="muted">หมายเหตุ: Bluetooth (เครื่องพิมพ์) และ Notifications ไม่ใช่ "ข้อมูลส่วนบุคคล" — ไม่ต้องประกาศใน data safety แต่จะเห็นใน permission ของ APK; ถ้า Google ถามให้ตอบว่าใช้ต่อเครื่องพิมพ์ + แจ้งเตือนออร์เดอร์</p>
+
+<h2>5. อัปโหลด AAB เข้า Internal testing <span class="tag you">คุณ</span></h2>
+<ol>
+  <li>เมนูซ้าย → Test and release → <b>Testing → Internal testing</b> → Create new release</li>
+  <li>ลาก/อัปโหลดไฟล์ <code>app-release.aab</code> (จาก path ด้านบน)</li>
+  <li>Release name ปล่อยตามค่าเริ่มต้น (1 (1.0)); ใส่ release notes สั้น ๆ เช่น "รุ่นทดสอบภายในรุ่นแรก"</li>
+  <li>Next → Save → <b>Review release</b> → Start rollout to Internal testing</li>
+  <li>แท็บ <b>Testers</b>: สร้าง email list ใส่อีเมลผู้ทดสอบ (ของคุณ) → คัดลอก "Copy link" ให้ผู้ทดสอบเปิดในมือถือเพื่อ opt-in แล้วติดตั้งผ่าน Play</li>
+</ol>
+<div class="card warn">Internal testing เผยแพร่ทันที (ไม่ต้องรอ Google review) — ทดสอบติดตั้งจาก Play ได้เลยภายในไม่กี่นาที เหมาะยืนยันว่า AAB ทำงานก่อนส่ง production</div>
+
+<h2>6. เลื่อนขึ้น Production (ส่ง Google review) <span class="tag you">คุณ</span></h2>
+<ol>
+  <li>ต้องกรอก <b>Main store listing</b> ให้ครบก่อน: ชื่อ, คำอธิบายสั้น (80 ตัว), คำอธิบายเต็ม, ไอคอน 512×512, feature graphic 1024×500, <b>ภาพหน้าจอ</b> อย่างน้อย 2 รูป (โทรศัพท์)</li>
+  <li>Production → Create new release → เลื่อน AAB จาก internal มาใช้ (promote) หรืออัปโหลดใหม่</li>
+  <li>Start rollout → Google review ปกติ 1-7 วัน</li>
+</ol>
+
+<h2>7. ความเสี่ยงที่ควรรู้</h2>
+<table>
+  <tr><th>ประเด็น</th><th>รับมือ</th></tr>
+  <tr><td>Google อาจถามว่าแอปเป็น "web wrapper"</td><td>แอปมีฟีเจอร์ native จริง (push, Bluetooth printing, GPS) — ระบุในหมายเหตุ; ปกติผ่านสำหรับแอปธุรกิจที่มี native function</td></tr>
+  <tr><td>App access (บัญชีทดสอบ)</td><td>ต้องให้บัญชีตัวอย่างที่ล็อกอินได้ ไม่งั้นรีวิวเข้าไม่ถึงเนื้อหา = ปฏิเสธ</td></tr>
+  <tr><td>Data safety ไม่ตรงกับ permission</td><td>ประกาศ location ให้ตรง (แอปขอ ACCESS_FINE/COARSE_LOCATION)</td></tr>
+</table>
+
+<h2>8. ต่อไป: iOS</h2>
+<p class="muted">iOS build บนเครื่อง Windows ไม่ได้ — เมื่อพร้อมทำ iOS ให้ตั้ง Codemagic + Apple App Store Connect API key แล้วผมเขียน <code>codemagic.yaml</code> ให้ build .ipa → TestFlight (คนละ runbook)</p>
+
+</div>
+</body>
+</html>
