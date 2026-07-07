@@ -24,6 +24,7 @@ import { AttendanceCalendar } from "./AttendanceCalendar";
 import type { DayStatus } from "@/modules/attendance/calendar";
 import type { StoreHoliday } from "@/modules/attendance/repository";
 import type { PayrollAdjustment } from "@/modules/hr/types";
+import { getNativePosition, isNativeApp } from "@/shared/native/geolocation";
 
 interface Props {
   todayRecord: AttendanceRecord | null;
@@ -69,7 +70,13 @@ function fmtMoney(n: number) {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2 });
 }
 
-async function getGps(): Promise<{ lat?: number; lng?: number; label?: string; accuracy?: number }> {
+type GpsResult = { lat?: number; lng?: number; label?: string; accuracy?: number };
+
+function labelFor(lat: number, lng: number) {
+  return `${lat.toFixed(5)},${lng.toFixed(5)}`;
+}
+
+function getWebGps(): Promise<GpsResult> {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       resolve({});
@@ -81,7 +88,7 @@ async function getGps(): Promise<{ lat?: number; lng?: number; label?: string; a
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : undefined,
-          label: `${pos.coords.latitude.toFixed(5)},${pos.coords.longitude.toFixed(5)}`,
+          label: labelFor(pos.coords.latitude, pos.coords.longitude),
         });
       },
       () => resolve({}),
@@ -89,6 +96,23 @@ async function getGps(): Promise<{ lat?: number; lng?: number; label?: string; a
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
   });
+}
+
+async function getGps(): Promise<GpsResult> {
+  // ในแอปมือถือใช้ native Geolocation ก่อน — WebView's navigator.geolocation มัก
+  // คืนตำแหน่งเครือข่าย (coarse) ที่คลาดเคลื่อนหลักกิโล ทำให้ geofence ไม่ผ่าน
+  if (isNativeApp()) {
+    const native = await getNativePosition();
+    if (native) {
+      return {
+        lat: native.lat,
+        lng: native.lng,
+        accuracy: native.accuracy,
+        label: labelFor(native.lat, native.lng),
+      };
+    }
+  }
+  return getWebGps();
 }
 
 /** Collapsible form section so manager tools don't all take up space at once. */
