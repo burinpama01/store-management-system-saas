@@ -18,11 +18,17 @@ import {
   getLineNotificationTarget,
   getTelegramNotificationTarget,
   listNotificationSettings,
+  listNotificationTemplates,
 } from "@/modules/notifications/repository";
+import {
+  DEFAULT_NOTIFICATION_TEMPLATES,
+  NOTIFICATION_TEMPLATE_VARS,
+} from "@/modules/notifications/templates";
 import { NotificationTest } from "./NotificationTest";
 import { PushNotificationTest } from "./PushNotificationTest";
 import { TelegramChatIdForm } from "./TelegramChatIdForm";
 import { NotificationSettingToggle } from "./NotificationSettingToggle";
+import { NotificationTemplateEditor } from "./NotificationTemplateEditor";
 import { LineAccountLinkPanel } from "./LineAccountLinkPanel";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +92,10 @@ export default async function NotificationSettingsPage() {
     ? await getLineNotificationTarget(ctx.organizationId, { useServiceRole: true })
     : { data: null, error: null };
   const settingsResult = await listNotificationSettings(ctx.storeId, ctx.organizationId);
+  const templatesResult = await listNotificationTemplates(ctx.storeId, ctx.organizationId);
+  const templatesByType = new Map(
+    (templatesResult.data ?? []).map((tpl) => [tpl.type, tpl]),
+  );
   const telegramTargetResult = canManageTelegramTarget
     ? await getTelegramNotificationTarget(ctx.organizationId)
     : { data: null, error: null };
@@ -192,8 +202,17 @@ export default async function NotificationSettingsPage() {
           <tbody className="divide-y divide-[var(--color-border)]">
             {NOTIFICATION_TYPES.map((type) => (
               <tr key={type}>
-                <td className="px-4 py-3 font-semibold text-[var(--color-text-primary)]">
+                <td className="px-4 py-3 align-top font-semibold text-[var(--color-text-primary)]">
                   {TYPE_LABELS[type]}
+                  <NotificationTemplateEditor
+                    type={type}
+                    defaultTitle={DEFAULT_NOTIFICATION_TEMPLATES[type].title}
+                    defaultMessage={DEFAULT_NOTIFICATION_TEMPLATES[type].message}
+                    vars={NOTIFICATION_TEMPLATE_VARS[type]}
+                    currentTitle={templatesByType.get(type)?.title ?? null}
+                    currentMessage={templatesByType.get(type)?.message ?? null}
+                    canManage={canManage}
+                  />
                 </td>
                 {NOTIFICATION_CHANNELS.map((channel) => {
                   const setting = settingsByKey.get(`${type}:${channel}`);

@@ -434,7 +434,9 @@ describe("notification dispatcher", () => {
         message: "paid",
       });
 
-      for (let attempt = 0; attempt < 6; attempt += 1) {
+      // ปล่อย microtask ให้ครบทั้งขั้นเตรียมข้อความ (ชื่อร้าน/template) + การส่งแต่ละช่องทาง
+      // ทั้งสองช่องทางถูก fan-out พร้อมกัน LINE ที่ค้างจึงไม่บล็อก Telegram
+      for (let attempt = 0; attempt < 30; attempt += 1) {
         await Promise.resolve();
       }
 

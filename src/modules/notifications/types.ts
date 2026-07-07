@@ -27,13 +27,14 @@ export interface NotificationPayload {
   metadata?: Record<string, string | number | boolean | null>;
 }
 
+// หมายเหตุ: "kitchen_order" ยังอยู่ใน union/DB enum เพื่อความเข้ากันได้ แต่ถูกตัดออกจาก
+// รายการนี้ (ซ้ำซ้อนกับ "ออร์เดอร์ POS/QR ใหม่") จึงไม่แสดงใน Notification Matrix และไม่ถูกยิง
 export const NOTIFICATION_TYPES: NotificationType[] = [
   "payment",
   "new_table",
   "new_pos_order",
   "new_qr_order",
   "new_buffet_order",
-  "kitchen_order",
   "buffet_expiring",
   "stock_alert",
   "order_cancelled",

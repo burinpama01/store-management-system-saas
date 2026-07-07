@@ -8,6 +8,7 @@ import {
 } from "@/modules/billing/types";
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
+import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import type { SelectedModifier } from "@/modules/pos/types";
 import type { QrOrderView, ServiceRequestType } from "@/modules/qr-ordering/types";
@@ -392,6 +393,12 @@ export async function submitQrOrderAction(
       },
     });
   }
+
+  notifyLowStockAfterSaleSafely(
+    store.organization_id,
+    storeId,
+    orderLines.map((line) => ({ variantId: line.variantId, baseQuantity: line.quantity })),
+  );
 
   return { orderId, orderNumber, error: null };
 }

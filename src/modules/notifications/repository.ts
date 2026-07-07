@@ -349,6 +349,106 @@ export async function getNotificationSetting(
   return { data: data ? mapNotificationSetting(data) : null, error: null };
 }
 
+// --- Custom message templates (per store / per type) ---
+
+type NotificationTemplateRow = Database["public"]["Tables"]["notification_templates"]["Row"];
+
+export interface NotificationTemplate {
+  type: NotificationType;
+  title: string | null;
+  message: string | null;
+}
+
+function mapNotificationTemplate(row: NotificationTemplateRow): NotificationTemplate {
+  return {
+    type: row.notification_type,
+    title: row.title,
+    message: row.message,
+  };
+}
+
+export async function listNotificationTemplates(storeId: string, organizationId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("notification_templates")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId);
+
+  if (error) return { data: null, error: mapError(error) };
+  return { data: (data ?? []).map(mapNotificationTemplate), error: null };
+}
+
+export async function getNotificationTemplate(
+  storeId: string,
+  organizationId: string,
+  type: NotificationType,
+  options: NotificationRepositoryOptions = {},
+) {
+  const supabase = await getNotificationClient(options);
+  const { data, error } = await supabase
+    .from("notification_templates")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId)
+    .eq("notification_type", type)
+    .maybeSingle();
+
+  if (error) return { data: null, error: mapError(error) };
+  return { data: data ? mapNotificationTemplate(data) : null, error: null };
+}
+
+export async function upsertNotificationTemplate(
+  storeId: string,
+  organizationId: string,
+  input: { type: NotificationType; title: string | null; message: string | null },
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("notification_templates").upsert(
+    {
+      organization_id: organizationId,
+      store_id: storeId,
+      notification_type: input.type,
+      title: input.title,
+      message: input.message,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id,notification_type" },
+  );
+
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function deleteNotificationTemplate(
+  storeId: string,
+  organizationId: string,
+  type: NotificationType,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("notification_templates")
+    .delete()
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId)
+    .eq("notification_type", type);
+
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/** ชื่อร้านสำหรับใส่หัวข้อ notification (service role → ใช้ได้ทั้งใน request และ cron) */
+export async function getStoreNameForNotification(storeId: string): Promise<string | null> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("stores")
+    .select("name")
+    .eq("id", storeId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.name ?? null;
+}
+
 export async function getLineAccountLink(
   organizationId: string,
   userId: string,

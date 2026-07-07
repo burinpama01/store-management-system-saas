@@ -1536,6 +1536,7 @@ export interface Database {
           current_session_id: string | null;
           session_started_at: string | null;
           session_expires_at: string | null;
+          buffet_expiry_notified_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1552,6 +1553,7 @@ export interface Database {
           current_session_id?: string | null;
           session_started_at?: string | null;
           session_expires_at?: string | null;
+          buffet_expiry_notified_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1568,6 +1570,7 @@ export interface Database {
           current_session_id?: string | null;
           session_started_at?: string | null;
           session_expires_at?: string | null;
+          buffet_expiry_notified_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -3433,6 +3436,39 @@ export interface Database {
           channel?: "line" | "telegram" | "push";
           enabled?: boolean;
           destination?: "owner" | "group" | "all";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      notification_templates: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
+          title: string | null;
+          message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          notification_type: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
+          title?: string | null;
+          message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          notification_type?: "payment" | "new_table" | "new_pos_order" | "new_qr_order" | "new_buffet_order" | "kitchen_order" | "buffet_expiring" | "stock_alert" | "order_cancelled" | "approval" | "service_request" | "attendance_clock_in" | "attendance_clock_out" | "test";
+          title?: string | null;
+          message?: string | null;
           created_at?: string;
           updated_at?: string;
         };

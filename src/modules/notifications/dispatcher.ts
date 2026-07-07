@@ -7,9 +7,12 @@ import {
   deleteDevicePushTokens,
   getLineNotificationTarget,
   getNotificationSetting,
+  getNotificationTemplate,
+  getStoreNameForNotification,
   getTelegramNotificationTarget,
   listOrganizationPushTokens,
 } from "./repository";
+import { renderNotificationTemplate } from "./templates";
 import { buildLinePushMessageRequest } from "./line";
 import { parseServiceAccount, sendFcmToDevice } from "./push";
 
@@ -421,15 +424,77 @@ async function runOwnerNotificationDelivery(input: NotificationPayload) {
   }
 }
 
+const STORE_NAME_TTL_MS = 60_000;
+const storeNameCache = new Map<string, { name: string | null; at: number }>();
+
+async function getStoreNameCached(storeId: string): Promise<string | null> {
+  const now = Date.now();
+  const hit = storeNameCache.get(storeId);
+  if (hit && now - hit.at < STORE_NAME_TTL_MS) return hit.name;
+  const name = await getStoreNameForNotification(storeId);
+  storeNameCache.set(storeId, { name, at: now });
+  return name;
+}
+
+/**
+ * เตรียมหัวข้อ/ข้อความสุดท้ายก่อนส่ง: ใช้ template ที่ร้านตั้งเอง (ถ้ามี) แทนค่า
+ * ตัวแปรจาก metadata + {store}, แล้วเติมชื่อร้านนำหน้าหัวข้อให้เห็นทุกช่องทางเสมอ
+ */
+async function renderOwnerNotification(input: NotificationPayload): Promise<NotificationPayload> {
+  let title = input.title;
+  let message = input.message;
+  let storeName: string | null = null;
+
+  // การเตรียมข้อความ (ชื่อร้าน/template) ต้องไม่บล็อกการส่งเด็ดขาด — พังเมื่อไรใช้ค่าเดิม
+  try {
+    if (input.storeId) {
+      storeName = await getStoreNameCached(input.storeId);
+    }
+    if (input.storeId && input.organizationId) {
+      const template = await getNotificationTemplate(
+        input.storeId,
+        input.organizationId,
+        input.type,
+        { useServiceRole: true },
+      );
+      if (template.data) {
+        const vars = { store: storeName ?? "", ...(input.metadata ?? {}) };
+        if (template.data.title) {
+          const rendered = renderNotificationTemplate(template.data.title, vars);
+          if (rendered) title = rendered;
+        }
+        if (template.data.message) {
+          const rendered = renderNotificationTemplate(template.data.message, vars);
+          if (rendered) message = rendered;
+        }
+      }
+    }
+  } catch {
+    // best-effort: ใช้หัวข้อ/ข้อความที่ call site ส่งมา
+  }
+
+  if (storeName) {
+    title = title ? `${storeName} · ${title}` : storeName;
+  }
+
+  return { ...input, title, message };
+}
+
 async function runOwnerNotificationDeliveries(input: NotificationPayload) {
+  // เตรียมข้อความ (ชื่อร้าน/template) พร้อมกันกับการ fan-out ช่องทาง เพื่อไม่ให้
+  // การ resolve ข้อความไปหน่วงการส่งแบบขนานของแต่ละช่องทาง
+  const renderedPromise = renderOwnerNotification(input);
   const channels = input.channel ? [input.channel] : NOTIFICATION_CHANNELS;
 
   await Promise.allSettled(
-    channels.map((channel) => runOwnerNotificationDelivery({
-      ...input,
-      channel,
-      destination: "owner" as const,
-    })),
+    channels.map(async (channel) => {
+      const rendered = await renderedPromise;
+      return runOwnerNotificationDelivery({
+        ...rendered,
+        channel,
+        destination: "owner" as const,
+      });
+    }),
   );
 }
 
@@ -438,5 +503,14 @@ export function notifyOwnerSafely(input: NotificationPayload): void {
     after(() => runOwnerNotificationDeliveries(input));
   } catch {
     void runOwnerNotificationDeliveries(input);
+  }
+}
+
+/** เหมือน notifyOwnerSafely แต่ await ให้ส่งเสร็จ — ใช้ในงาน cron ที่ไม่มี request lifecycle */
+export async function notifyOwnerNow(input: NotificationPayload): Promise<void> {
+  try {
+    await runOwnerNotificationDeliveries(input);
+  } catch {
+    // best-effort
   }
 }

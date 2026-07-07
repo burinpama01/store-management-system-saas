@@ -10,9 +10,11 @@ import {
   type NotificationType,
 } from "@/modules/notifications/types";
 import {
+  deleteNotificationTemplate,
   unlinkLineAccount,
   unlinkLineNotificationTarget,
   upsertNotificationSetting,
+  upsertNotificationTemplate,
   upsertTelegramNotificationTarget,
 } from "@/modules/notifications/repository";
 import { dispatchNotification } from "@/modules/notifications/dispatcher";
@@ -162,6 +164,47 @@ export async function toggleNotificationSettingAction(
     };
   } catch (error) {
     return actionError(error, "บันทึกการตั้งค่าแจ้งเตือนไม่สำเร็จ");
+  }
+}
+
+export async function saveNotificationTemplateAction(
+  _prevState: ActionFeedbackState,
+  formData: FormData,
+): Promise<ActionFeedbackState> {
+  try {
+    await requirePermission("notifications.manage");
+    const ctx = await getStoreContext();
+    const type = pickNotificationType(formData.get("type"));
+    const rawTitle = formData.get("title");
+    const rawMessage = formData.get("message");
+    const title = typeof rawTitle === "string" ? rawTitle.trim().slice(0, 200) : "";
+    const message = typeof rawMessage === "string" ? rawMessage.trim().slice(0, 500) : "";
+
+    if (!title && !message) {
+      const del = await deleteNotificationTemplate(ctx.storeId, ctx.organizationId, type);
+      if (del.error) throw new Error(del.error.userMessage);
+      revalidatePath("/settings/notifications");
+      return {
+        status: "success",
+        message: "คืนค่าข้อความเริ่มต้นแล้ว",
+        submittedAt: Date.now(),
+      };
+    }
+
+    const result = await upsertNotificationTemplate(ctx.storeId, ctx.organizationId, {
+      type,
+      title: title || null,
+      message: message || null,
+    });
+    if (result.error) throw new Error(result.error.userMessage);
+    revalidatePath("/settings/notifications");
+    return {
+      status: "success",
+      message: "บันทึกข้อความแจ้งเตือนแล้ว",
+      submittedAt: Date.now(),
+    };
+  } catch (error) {
+    return actionError(error, "บันทึกข้อความแจ้งเตือนไม่สำเร็จ");
   }
 }
 

@@ -458,6 +458,17 @@ export async function selfBackdatedClockAction(formData: FormData): Promise<{ er
       adjustedByUserId: user.id,
     });
     if (result.error) return { error: result.error.userMessage };
+
+    const requesterName = (user.email ?? user.id).slice(0, 100);
+    notifyOwnerSafely({
+      type: "approval",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      title: "คำขออนุมัติใหม่",
+      message: `${requesterName} ขอลงเวลาย้อนหลังวันที่ ${date}`,
+      metadata: { employeeName: requesterName, date, kind: "backdated_clock" },
+    });
+
     revalidatePath("/attendance", "page");
     return { error: null };
   } catch (e) {

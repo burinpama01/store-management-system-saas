@@ -37,6 +37,7 @@ import { openTableSession, closeTableSession, getStore, getTable, listManagedTab
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
+import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
 import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
@@ -607,6 +608,16 @@ export async function collectPaymentAction(
         method: paidMethod,
       },
     });
+    if (paidOrder) {
+      notifyLowStockAfterSaleSafely(
+        ctx.organizationId,
+        ctx.storeId,
+        paidOrder.items.map((item) => ({
+          variantId: item.variantId,
+          baseQuantity: item.quantity * (item.unitQuantity ?? 1),
+        })),
+      );
+    }
     return { order: paidOrder, error: null };
   } catch (e) {
     return { order: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -718,6 +729,14 @@ export async function checkoutAndPayAction(
         method: paidMethod,
       },
     });
+    notifyLowStockAfterSaleSafely(
+      ctx.organizationId,
+      ctx.storeId,
+      cart.items.map((item) => ({
+        variantId: item.variant?.id,
+        baseQuantity: item.quantity * (item.unit?.quantity ?? 1),
+      })),
+    );
     return { orderId: created.orderId, orderNumber: created.orderNumber, order: paidOrder, failedStage: null, error: null };
   } catch (e) {
     return {
@@ -814,9 +833,20 @@ export async function openTableAction(
     // session token) the cashier prints and hands to the customer.
     const store = storeRes.data;
     const qrMode = store?.qrOrderingMode ?? null;
+    const tableRes = await getTable(tableId, ctx.storeId);
+    const tableLabel = tableRes.data?.label ?? tableRes.data?.number ?? "-";
+
+    notifyOwnerSafely({
+      type: "new_table",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      title: "เปิดโต๊ะใหม่",
+      message: `เปิดโต๊ะ ${tableLabel} แล้ว`,
+      metadata: { tableId, tableLabel, minutes, expiresAt: res.data },
+    });
+
     let qrUrl: string | null = null;
     if (store && qrMode === "session_printed") {
-      const tableRes = await getTable(tableId, ctx.storeId);
       const sessionId = tableRes.data?.currentSessionId ?? null;
       const h = await headers();
       const host = h.get("host") ?? "";
