@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Printer } from "@/modules/stores/types";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
@@ -17,9 +17,15 @@ vi.mock("@/modules/printing/network-print-client", () => ({
   enqueueReceiptPrintJob: vi.fn().mockResolvedValue({ hubOnline: true }),
 }));
 
+vi.mock("@/modules/printing/native-print-client", () => ({
+  isNativePlatform: vi.fn().mockReturnValue(false),
+  getNativeBluetoothPrinterName: vi.fn().mockReturnValue(null),
+}));
+
 import { printReceiptAuto } from "@/modules/printing/print-router";
 import { printService } from "@/modules/printing/print-service";
 import { enqueueReceiptPrintJob } from "@/modules/printing/network-print-client";
+import { getNativeBluetoothPrinterName, isNativePlatform } from "@/modules/printing/native-print-client";
 import {
   ReceiptPrintFallbackError,
   autoPrintReceipt,
@@ -259,6 +265,52 @@ describe("printReceiptWithFallback — Bluetooth via Hub", () => {
     expect(result.printer).toBe(btHub);
     expect(enqueueReceiptPrintJob).toHaveBeenCalledWith(btHub.id, { ...receipt, paperWidth: "80mm" });
     expect(printService.print).not.toHaveBeenCalled();
+  });
+});
+
+describe("printReceiptWithFallback — native BLE (mobile app)", () => {
+  beforeEach(() => {
+    vi.mocked(printReceiptAuto).mockClear();
+    vi.mocked(printService.print).mockClear();
+    vi.mocked(enqueueReceiptPrintJob).mockClear();
+    vi.mocked(printReceiptAuto).mockResolvedValue("native-bluetooth");
+  });
+
+  afterEach(() => {
+    vi.mocked(isNativePlatform).mockReturnValue(false);
+    vi.mocked(getNativeBluetoothPrinterName).mockReturnValue(null);
+  });
+
+  it("prints via native BLE first, skipping the configured printer, when a BLE printer is paired in the app", async () => {
+    vi.mocked(isNativePlatform).mockReturnValue(true);
+    vi.mocked(getNativeBluetoothPrinterName).mockReturnValue("PT-280");
+
+    const result = await printReceiptWithFallback({
+      printers: [printer("default-printer", true)],
+      escpos,
+      browser: receipt,
+    });
+
+    expect(result.channel).toBe("native-bluetooth");
+    expect(printReceiptAuto).toHaveBeenCalledWith(escpos, receipt);
+    // เครื่องพิมพ์หลัก (IP/Hub) ต้องไม่ถูกเรียก — ป้องกันอาการ "POS ปริ้นไม่ออก"
+    expect(printService.print).not.toHaveBeenCalled();
+    expect(enqueueReceiptPrintJob).not.toHaveBeenCalled();
+  });
+
+  it("autoPrintReceipt also prefers native BLE over the Hub printer in the app", async () => {
+    vi.mocked(isNativePlatform).mockReturnValue(true);
+    vi.mocked(getNativeBluetoothPrinterName).mockReturnValue("PT-280");
+
+    const result = await autoPrintReceipt({
+      printers: [btHubPrinter("bt-hub", true)],
+      escpos,
+      browser: receipt,
+    });
+
+    expect(result.channel).toBe("native-bluetooth");
+    expect(printReceiptAuto).toHaveBeenCalledWith(escpos, receipt);
+    expect(enqueueReceiptPrintJob).not.toHaveBeenCalled();
   });
 });
 
