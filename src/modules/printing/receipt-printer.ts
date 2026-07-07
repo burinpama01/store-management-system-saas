@@ -1,8 +1,18 @@
 import { printReceiptAuto, type PrintChannel } from "./print-router";
 import { printService } from "./print-service";
 import { enqueueReceiptPrintJob } from "./network-print-client";
+import { getNativeBluetoothPrinterName, isNativePlatform } from "./native-print-client";
 import type { EscPosReceiptInput } from "./escpos";
 import type { Printer, ReceiptData } from "./types";
+
+/**
+ * ในแอปมือถือ ถ้าผู้ใช้จับคู่เครื่องพิมพ์ BLE (แอป) ไว้ นั่นคือเครื่องพิมพ์ที่ตั้งใจใช้ —
+ * ต้องพิมพ์ผ่าน BLE ก่อนเสมอ ไม่ใช่ไปลองเครื่องพิมพ์หลัก (IP/Hub/browser) ที่มือถือ
+ * เข้าไม่ถึงและมักจะ "สำเร็จ" แบบไม่ออกกระดาษ (เช่น browser print ใน WebView)
+ */
+function shouldPreferNativeBluetooth(): boolean {
+  return isNativePlatform() && Boolean(getNativeBluetoothPrinterName());
+}
 
 function isBluetoothPrinterMismatchError(error: unknown): boolean {
   return error instanceof Error && error.name === "BluetoothPrinterMismatchError";
@@ -85,6 +95,11 @@ export async function autoPrintReceipt({
   escpos,
   browser,
 }: PrintReceiptWithFallbackInput): Promise<ReceiptPrintResult> {
+  // แอปมือถือที่จับคู่ BLE ไว้ → พิมพ์ BLE ก่อน ไม่ส่งเข้า Hub (มือถือไม่ใช่ตัว Hub)
+  if (shouldPreferNativeBluetooth()) {
+    const channel = await printReceiptAuto(escpos, browser);
+    return { channel };
+  }
   const hubPrinter = selectHubReceiptPrinter(printers, preferredPrinterId);
   if (hubPrinter) {
     const { hubOnline } = await enqueueReceiptPrintJob(hubPrinter.id, { ...browser, paperWidth: hubPrinter.paperWidth });
@@ -101,6 +116,14 @@ export async function printReceiptWithFallback({
   browser,
   onConfiguredPrinterError,
 }: PrintReceiptWithFallbackInput): Promise<ReceiptPrintResult> {
+  // แอปมือถือที่จับคู่ BLE ไว้ → พิมพ์ BLE ก่อนเครื่องพิมพ์หลัก (ที่มือถือมักเข้าไม่ถึง
+  // และจะ "สำเร็จ" แบบไม่ออกกระดาษ). ปุ่มทดสอบพิมพ์ยิงตรง BLE จึงออก แต่ POS เดิม
+  // ไปเข้าเครื่องพิมพ์หลักก่อนเลยไม่ตกมา BLE — บล็อกนี้แก้อาการนั้น
+  if (shouldPreferNativeBluetooth()) {
+    const channel = await printReceiptAuto(escpos, browser);
+    return { channel };
+  }
+
   const configuredPrinter = selectConfiguredPrinter(printers, preferredPrinterId);
   let configuredPrinterError: unknown;
 
