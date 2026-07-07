@@ -4,9 +4,11 @@ import { useActionState, useEffect, useState } from "react";
 import { connectBluetoothPrinter, getBluetoothPrinterName, isBluetoothPrinterConnected } from "@/modules/printing/bluetooth-client";
 import {
   connectNativeBluetoothPrinter,
+  ensureNativeBluetoothConnected,
   getNativeBluetoothPrinterName,
   isNativeBluetoothConnected,
   isNativePlatform,
+  printViaNativeBluetooth,
 } from "@/modules/printing/native-print-client";
 import { sendNetworkPrintJob } from "@/modules/printing/network-print-client";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
@@ -195,6 +197,23 @@ export function PrinterConnectionPanel({
     }
   }
 
+  async function testNativePrint() {
+    setError(null);
+    setNetworkMessage(null);
+    setBusy(true);
+    try {
+      const ok = await ensureNativeBluetoothConnected();
+      if (!ok) throw new Error("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ในแอป กดปุ่มเชื่อมก่อน");
+      const receipt = buildNetworkTestReceipt(storeName, paperWidth);
+      await printViaNativeBluetooth(await buildReceiptPrinterBytes(receipt, receipt));
+      setNetworkMessage("ส่งใบทดสอบไปเครื่องพิมพ์ (แอป) แล้ว");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "พิมพ์ทดสอบไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function testNetworkPrinter(printer: Printer) {
     setError(null);
     setNetworkMessage(null);
@@ -264,9 +283,14 @@ export function PrinterConnectionPanel({
 
         <div className="flex flex-wrap gap-2">
           {nativeReady && (
-            <button type="button" onClick={connectNativeBluetooth} disabled={busy} className="btn-primary min-h-11 px-3 text-xs disabled:opacity-40">
-              เชื่อมเครื่องพิมพ์ Bluetooth (แอป)
-            </button>
+            <>
+              <button type="button" onClick={connectNativeBluetooth} disabled={busy} className="btn-primary min-h-11 px-3 text-xs disabled:opacity-40">
+                เชื่อมเครื่องพิมพ์ Bluetooth (แอป)
+              </button>
+              <button type="button" onClick={testNativePrint} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
+                ทดสอบพิมพ์ (แอป)
+              </button>
+            </>
           )}
           {!nativeReady && (
             <>
