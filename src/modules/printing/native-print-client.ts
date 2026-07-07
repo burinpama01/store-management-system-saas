@@ -160,23 +160,47 @@ export async function ensureNativeBluetoothConnected(): Promise<boolean> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * เขียน ESC/POS bytes เป็น chunk เล็ก (120B) เว้นจังหวะ 12ms — เครื่องพิมพ์ราคาถูก
- * (เช่น PT-280) บัฟเฟอร์ RX เล็ก ถ้ายัดรวดเดียวจะ drop ข้อมูล พิมพ์ออกเป็นกระดาษเปล่า
+ * เขียน ESC/POS bytes เป็น chunk เล็ก เว้นจังหวะ — เครื่องพิมพ์ราคาถูก (เช่น PT-280)
+ * บัฟเฟอร์ RX เล็ก ถ้ายัดรวดเดียวจะ drop ข้อมูล พิมพ์ออกเป็นกระดาษเปล่า
+ *
+ * BLE บางรุ่นบน Android รับ write-without-response ก้อนใหญ่ไม่ได้ (จำกัดตาม MTU
+ * ~180B) — ถ้า chunk ใหญ่ล้มเหลวจะลด chunk แล้วลองใหม่ทั้งงานครั้งเดียว และสลับไป
+ * write-with-response ให้ ก่อนจะยอมแพ้ เพื่อให้พิมพ์ออกมากที่สุดเท่าที่เครื่องรองรับ
  */
-export async function printViaNativeBluetooth(bytes: Uint8Array): Promise<void> {
-  if (!connected) throw new Error("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ Bluetooth");
-  const BleClient = await loadBle();
-  const { deviceId, service, characteristic, writeWithoutResponse } = connected;
-  const CHUNK = 120;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    const slice = bytes.slice(i, i + CHUNK);
+async function writeAllChunks(
+  BleClient: Awaited<ReturnType<typeof loadBle>>,
+  conn: NativeConnection,
+  bytes: Uint8Array,
+  chunkSize: number,
+  preferWithoutResponse: boolean,
+): Promise<void> {
+  const { deviceId, service, characteristic } = conn;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.slice(i, i + chunkSize);
     const view = new DataView(slice.buffer, slice.byteOffset, slice.byteLength);
-    if (writeWithoutResponse) {
+    if (preferWithoutResponse) {
       await BleClient.writeWithoutResponse(deviceId, service, characteristic, view);
     } else {
       await BleClient.write(deviceId, service, characteristic, view);
     }
-    await sleep(12);
+    await sleep(14);
+  }
+}
+
+export async function printViaNativeBluetooth(bytes: Uint8Array): Promise<void> {
+  if (!connected) throw new Error("ยังไม่ได้เชื่อมต่อเครื่องพิมพ์ Bluetooth");
+  const BleClient = await loadBle();
+  const conn = connected;
+  try {
+    await writeAllChunks(BleClient, conn, bytes, 120, conn.writeWithoutResponse);
+  } catch (firstError) {
+    // ลองใหม่ด้วย chunk เล็กลง (ปลอดภัยกับ MTU ต่ำ) + write-with-response
+    try {
+      await writeAllChunks(BleClient, conn, bytes, 20, false);
+    } catch {
+      const detail = firstError instanceof Error ? firstError.message : String(firstError);
+      throw new Error(`ส่งข้อมูลไปเครื่องพิมพ์ไม่สำเร็จ: ${detail}`);
+    }
   }
 }
 
