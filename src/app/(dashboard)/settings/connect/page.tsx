@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
-import { listChannelLinks, getDeliveryProducts } from "@/modules/connect/repository";
+import { listChannelLinksByStore, getDeliveryProducts } from "@/modules/connect/repository";
 import { getJdcFunctionsBaseUrl, getJdcWebhookSecret } from "@/modules/billing/platform-settings";
 import { ConnectManager } from "./ConnectManager";
 
@@ -17,8 +17,9 @@ export default async function ConnectSettingsPage() {
     (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
   const featureEnabled = canUseFeature(billing, "apiIntegration");
 
+  // scope ตามสาขาที่เลือก — ไม่งั้นสาขาที่ยังไม่ผูกจะเห็นลิงก์ของสาขาอื่น (บั๊ก merchant_id ผิดสาขา)
   const [links, deliveryProducts, jdcBaseUrl, jdcSecret] = await Promise.all([
-    listChannelLinks(ctx.organizationId),
+    listChannelLinksByStore(ctx.storeId),
     getDeliveryProducts(ctx.storeId),
     getJdcFunctionsBaseUrl(),
     getJdcWebhookSecret(),

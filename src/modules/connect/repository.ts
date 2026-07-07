@@ -73,6 +73,36 @@ export async function listChannelLinks(organizationId: string): Promise<ChannelL
   return (data ?? []).map(mapLink);
 }
 
+/** ลิงก์ของสาขาเดียว (ทุกสถานะ) — หน้า /settings/connect ต้อง scope ตามสาขาที่เลือก */
+export async function listChannelLinksByStore(storeId: string): Promise<ChannelLink[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("connect_channel_links")
+    .select(LINK_COLS)
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map(mapLink);
+}
+
+/**
+ * หา link ที่ใช้ merchant_id นี้อยู่แล้ว (ทุกสถานะ/ทุกสาขา) — กันผูก merchant_id ซ้ำข้ามสาขา
+ * (ตาราง unique แค่ (store_id, channel) ไม่ได้ unique external_merchant_id) ซึ่งจะพัง
+ * inbound routing (getActiveLinkByMerchant.maybeSingle) + เมนูเขียนทับกัน
+ */
+export async function findLinkByExternalMerchant(
+  externalMerchantId: string,
+  channel: string = CONNECT_CHANNEL_JDC,
+): Promise<ChannelLink | null> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("connect_channel_links")
+    .select(LINK_COLS)
+    .eq("external_merchant_id", externalMerchantId)
+    .eq("channel", channel)
+    .limit(1);
+  return data && data[0] ? mapLink(data[0]) : null;
+}
+
 export async function getChannelLinkById(
   organizationId: string,
   id: string,

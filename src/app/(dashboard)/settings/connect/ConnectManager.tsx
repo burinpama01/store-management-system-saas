@@ -170,10 +170,6 @@ function LinkCard({ link, deliveryProductCount }: { link: LinkVM; deliveryProduc
       <div className="grid gap-2">
         <CopyField label="merchant_id (JDC) ของร้านนี้" value={link.externalMerchantId} />
       </div>
-      <p className="text-xs text-gray-400">
-        การเชื่อมระบบ (Webhook URL, JDC key, webhook secret) ตั้งครั้งเดียวโดยผู้ดูแลแพลตฟอร์ม —
-        ร้านค้ามีหน้าที่แค่ใส่ merchant_id ของร้านในแอป JDC
-      </p>
 
       <div className="border-t border-gray-100 pt-2">
         <CommissionForm linkId={link.id} current={link.commissionRate} />
