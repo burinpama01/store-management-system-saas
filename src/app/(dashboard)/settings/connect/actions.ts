@@ -5,6 +5,7 @@ import { requireFeature, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
   createChannelLink,
+  findLinkByExternalMerchant,
   getChannelLinkById,
   updateChannelLink,
 } from "@/modules/connect/repository";
@@ -37,6 +38,14 @@ export async function createChannelLinkAction(
 
     if (!externalMerchantId) return { error: "กรุณาระบุ merchant_id ของร้านฝั่ง JDC" };
     if (externalMerchantId.length > 100) return { error: "merchant_id ยาวเกินไป" };
+
+    // กันผูก merchant_id ซ้ำกับสาขาอื่น — แต่ละสาขาต้องเป็นร้านแยกในแอป JDC
+    const dup = await findLinkByExternalMerchant(externalMerchantId);
+    if (dup && dup.storeId !== ctx.storeId) {
+      return {
+        error: "merchant_id นี้ถูกผูกกับสาขาอื่นแล้ว — แต่ละสาขาต้องใช้ merchant_id (ร้านในแอป JDC) แยกกัน",
+      };
+    }
 
     const res = await createChannelLink({
       organizationId: ctx.organizationId,
