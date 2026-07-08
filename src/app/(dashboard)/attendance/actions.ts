@@ -9,7 +9,7 @@ import {
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
-  getTodayRecord,
+  getActiveRecordToday,
   clockIn,
   clockOut,
   getAttendanceSettings,
@@ -101,7 +101,9 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
     const now = new Date();
     const today = getStoreLocalDate(ctx.storeTimezone, now);
 
-    const existing = await getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today);
+    // Org-wide: already having an open record at ANY branch blocks a second clock-in
+    // (a completed earlier shift does not — allows a genuine second shift).
+    const existing = await getActiveRecordToday(user.id, ctx.organizationId, today);
     if (existing) return { error: "คุณได้ลงชื่อเข้างานแล้ว" };
 
     const gpsPolicy = await getAttendanceGpsPolicy(ctx.storeId, ctx.organizationId);
@@ -167,17 +169,21 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
 
     const now = new Date();
     const today = getStoreLocalDate(ctx.storeTimezone, now);
-    const active = await getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today);
+    // Org-wide: find the open record wherever it was created, so clocking out works even
+    // if the app now resolves a different default branch than the one clocked in at.
+    const active = await getActiveRecordToday(user.id, ctx.organizationId, today);
     if (!active) return { error: "ไม่พบรายการที่รอลงชื่อออก" };
+    // Operate on the branch the shift belongs to (not the currently-resolved store).
+    const recordStoreId = active.storeId;
 
-    // Cashier/staff must close the store's open cash session before clocking out.
+    // Cashier/staff must close that branch's open cash session before clocking out.
     if (ctx.role === "cashier" || ctx.role === "staff") {
-      const openSession = await getOpenCashSession(ctx.storeId);
+      const openSession = await getOpenCashSession(recordStoreId);
       if (openSession.error) return { error: openSession.error.userMessage };
       if (openSession.data) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
     }
 
-    const gpsPolicy = await getAttendanceGpsPolicy(ctx.storeId, ctx.organizationId);
+    const gpsPolicy = await getAttendanceGpsPolicy(recordStoreId, ctx.organizationId);
     const locationAllowed = gpsPolicy.gpsEnabled;
     const latRaw = formData.get("lat") as string | null;
     const lngRaw = formData.get("lng") as string | null;
@@ -194,7 +200,7 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     const gpsPolicyError = validateAttendanceGpsPolicy(location, gpsPolicy);
     if (gpsPolicyError) return { error: gpsPolicyError };
 
-    const result = await clockOut(active.id, ctx.storeId, user.id, {
+    const result = await clockOut(active.id, recordStoreId, user.id, {
       clockOutAt: now.toISOString(),
       lat: location.lat,
       lng: location.lng,
@@ -207,7 +213,7 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
       notifyOwnerSafely({
         type: "attendance_clock_out",
         organizationId: ctx.organizationId,
-        storeId: ctx.storeId,
+        storeId: recordStoreId,
         title: "พนักงานออกงาน",
         message: `${result.data.employeeName} ออกงาน เวลา ${formatClockNotificationTime(result.data.clockOutAt ?? now.toISOString(), ctx.storeTimezone)}`,
         metadata: {

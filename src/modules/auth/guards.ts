@@ -226,7 +226,14 @@ export async function landingPathForCurrentUser(): Promise<string> {
   if (await isSystemAdmin()) return "/system";
   const permissions = await getOptionalResolvedCurrentPermissions();
   if (!permissions) return "/login";
-  if (await shouldStartAtAttendance(permissions)) return "/attendance";
+  // พนักงานหน้างาน (ต่ำกว่า admin + มีสิทธิ์ลงเวลา): หน้าแรก = ลงเวลาเสมอ เปิดแอป/ล็อกอิน
+  // มาเข้า-ออกงานได้ทันที (ไม่ล็อกไว้ — ไปหน้าอื่นเองได้หลังเข้างาน)
+  if (
+    ROLE_RANK[permissions.ctx.role] < ROLE_RANK.admin &&
+    permissions.resolved.can("attendance.clock")
+  ) {
+    return "/attendance";
+  }
   return "/dashboard";
 }
 

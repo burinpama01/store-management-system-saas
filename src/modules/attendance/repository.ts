@@ -68,6 +68,31 @@ export async function getTodayRecord(
   return data ? mapRecord(data) : null;
 }
 
+/**
+ * Active (not-yet-clocked-out) record for the user today across ALL branches in the org.
+ * Clock-out and the attendance page use this so a staff who clocked in at one branch can
+ * still clock out even when the app resolves a different default store (cookie lost /
+ * mobile vs PC). Clock-out then closes the record using its own store_id.
+ */
+export async function getActiveRecordToday(
+  userId: string,
+  organizationId: string,
+  today: string,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("attendance_records")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("organization_id", organizationId)
+    .eq("date", today)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? mapRecord(data) : null;
+}
+
 export async function getAttendanceSettings(storeId: string, organizationId: string) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
