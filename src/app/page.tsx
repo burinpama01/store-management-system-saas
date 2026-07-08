@@ -103,8 +103,17 @@ export default function LandingPage() {
             <Link href="/pricing" className="btn-secondary reference-secondary-cta">
               ดูแพ็กเกจและราคา
             </Link>
+            <a
+              href="/download/android"
+              className="btn-secondary reference-secondary-cta"
+              rel="nofollow"
+            >
+              <span aria-hidden="true">📱</span> ดาวน์โหลดแอป (Android)
+            </a>
           </div>
-          <small className="reference-note">สำหรับลูกค้าใหม่ ใช้ได้ 1 ครั้งต่อบัญชี</small>
+          <small className="reference-note">
+            สำหรับลูกค้าใหม่ ใช้ได้ 1 ครั้งต่อบัญชี · แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์
+          </small>
         </div>
 
         <MarketingProductShowcase variant="hero" className="reference-hero-visual" />
