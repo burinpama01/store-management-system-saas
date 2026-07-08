@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { computePayrollSummaries } from "@/modules/attendance/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -62,6 +62,22 @@ describe("multi-branch clock-out fix (source assertions)", () => {
   it("staff (below admin, can clock) land on the attendance page", () => {
     expect(guards).toContain('ROLE_RANK[permissions.ctx.role] < ROLE_RANK.admin');
     expect(guards).toContain('return "/attendance"');
+  });
+
+  it("staff clock-out RLS policy has a WITH CHECK so completing an active record is allowed", () => {
+    const migrationsDir = join(root, "supabase/migrations");
+    const sql = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .map((f) => readFileSync(join(migrationsDir, f), "utf8"))
+      .find(
+        (s) =>
+          s.includes('create policy "attendance: staff can clock out own record"') &&
+          s.includes("with check"),
+      );
+    // A migration must (re)create the staff clock-out policy WITH CHECK, otherwise
+    // the active->completed update is rejected by RLS (42501).
+    expect(sql).toBeTruthy();
+    expect(sql).toContain("with check (user_id = auth.uid())");
   });
 });
 
