@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     "วิธีขอลบบัญชี StoreOS และข้อมูลที่เกี่ยวข้อง รวมถึงข้อมูลที่จะถูกลบและข้อมูลที่อาจเก็บรักษาต่อตามกฎหมาย",
 };
 
-const CONTACT_EMAIL = "support@storeos.app";
+const CONTACT_EMAIL = "support@burindev.com";
 
 const sections = [
   {
