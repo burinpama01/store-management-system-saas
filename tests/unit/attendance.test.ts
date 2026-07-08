@@ -34,6 +34,37 @@ function rec(
   };
 }
 
+const root = process.cwd();
+const readSrc = (p: string) => readFileSync(join(root, p), "utf8").replace(/\r\n/g, "\n");
+
+describe("multi-branch clock-out fix (source assertions)", () => {
+  const actions = readSrc("src/app/(dashboard)/attendance/actions.ts");
+  const page = readSrc("src/app/(dashboard)/attendance/page.tsx");
+  const guards = readSrc("src/modules/auth/guards.ts");
+
+  it("clock-out finds the open record org-wide, not by the resolved store", () => {
+    expect(actions).toContain("getActiveRecordToday(user.id, ctx.organizationId, today)");
+    // must not look up the clock-out record filtered by the currently-resolved store
+    expect(actions).not.toContain("getTodayRecord(user.id, ctx.organizationId, ctx.storeId");
+  });
+
+  it("clock-out closes cash session, geofence and record using the record's own branch", () => {
+    expect(actions).toContain("const recordStoreId = active.storeId");
+    expect(actions).toContain("getOpenCashSession(recordStoreId)");
+    expect(actions).toContain("getAttendanceGpsPolicy(recordStoreId, ctx.organizationId)");
+    expect(actions).toContain("clockOut(active.id, recordStoreId, user.id");
+  });
+
+  it("attendance page shows today's record org-wide so clock-out appears at any branch", () => {
+    expect(page).toContain("getActiveRecordToday(user.id, ctx.organizationId, today)");
+  });
+
+  it("staff (below admin, can clock) land on the attendance page", () => {
+    expect(guards).toContain('ROLE_RANK[permissions.ctx.role] < ROLE_RANK.admin');
+    expect(guards).toContain('return "/attendance"');
+  });
+});
+
 describe("computePayrollSummaries", () => {
   it("empty records → empty summaries", () => {
     const result = computePayrollSummaries([], STORE, ORG, "2026-05-01", "2026-05-31");

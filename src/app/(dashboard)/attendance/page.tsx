@@ -6,7 +6,7 @@ import {
 } from "@/modules/billing/types";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import {
-  getTodayRecord,
+  getActiveRecordToday,
   listAttendanceRecords,
   computePayrollSummaries,
   getAttendanceSettings,
@@ -44,7 +44,8 @@ export default async function AttendancePage({
   const today = getStoreLocalDate(ctx.storeTimezone);
   const monthStart = today.slice(0, 7) + "-01";
   const [todayRecord, attendanceSettingsResult, hrSettings, backdatedUsed, myRecRes] = await Promise.all([
-    getTodayRecord(user.id, ctx.organizationId, ctx.storeId, today),
+    // Org-wide active record: show the clock-out button wherever the shift was opened.
+    getActiveRecordToday(user.id, ctx.organizationId, today),
     getAttendanceSettings(ctx.storeId, ctx.organizationId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
     countSelfBackdated(user.id, ctx.storeId, monthStart, nextMonthStart(today)),

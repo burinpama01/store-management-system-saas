@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   listStoreMemberships: vi.fn(),
   addPayrollAdjustment: vi.fn(),
   addManualAttendance: vi.fn(),
-  getTodayRecord: vi.fn(),
+  getActiveRecordToday: vi.fn(),
   clockIn: vi.fn(),
   clockOut: vi.fn(),
   notifyOwnerSafely: vi.fn(),
@@ -44,7 +44,7 @@ vi.mock("@/modules/hr/repository", () => ({
 }));
 
 vi.mock("@/modules/attendance/repository", () => ({
-  getTodayRecord: mocks.getTodayRecord,
+  getActiveRecordToday: mocks.getActiveRecordToday,
   clockIn: mocks.clockIn,
   clockOut: mocks.clockOut,
   getAttendanceSettings: vi.fn(async () => ({ data: null, error: null })),
@@ -95,7 +95,7 @@ describe("attendance manager actions", () => {
     });
     mocks.addPayrollAdjustment.mockResolvedValue({ ok: true, error: null });
     mocks.addManualAttendance.mockResolvedValue({ ok: true, error: null });
-    mocks.getTodayRecord.mockResolvedValue(null);
+    mocks.getActiveRecordToday.mockResolvedValue(null);
     mocks.clockIn.mockResolvedValue({ data: null, error: null });
     mocks.clockOut.mockResolvedValue({ data: null, error: null });
   });
@@ -147,7 +147,7 @@ describe("attendance manager actions", () => {
   it("notifies owners after a successful employee clock-out", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-20T11:05:00.000Z"));
-    mocks.getTodayRecord.mockResolvedValue({
+    mocks.getActiveRecordToday.mockResolvedValue({
       id: "att-1",
       userId: MANAGER_ID,
       organizationId: "org-1",

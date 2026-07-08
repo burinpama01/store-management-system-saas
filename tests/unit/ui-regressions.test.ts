@@ -41,16 +41,16 @@ describe("UX/UI regression guards", () => {
     expect(privacy).toContain("นโยบายความเป็นส่วนตัว");
     expect(privacy).toContain("LINE Official Account");
     expect(privacy).toContain("line_user_id");
-    expect(privacy).toContain("support@storeos.app");
-    expect(privacy).toContain("ติดต่อ support@storeos.app เพื่อขอยกเลิก");
+    expect(privacy).toContain("support@burindev.com");
+    expect(privacy).toContain("ติดต่อ support@burindev.com เพื่อขอยกเลิก");
     expect(privacy).not.toContain("ยกเลิกการผูก LINE ได้จากหน้าตั้งค่าการแจ้งเตือน");
     expect(privacy).not.toContain("redirect(\"/login\")");
 
     expect(terms).toContain("ข้อกำหนดการใช้บริการ");
     expect(terms).toContain("LINE Official Account");
     expect(terms).toContain("การแจ้งเตือน");
-    expect(terms).toContain("support@storeos.app");
-    expect(terms).toContain("ติดต่อ support@storeos.app เพื่อขอยกเลิก");
+    expect(terms).toContain("support@burindev.com");
+    expect(terms).toContain("ติดต่อ support@burindev.com เพื่อขอยกเลิก");
     expect(terms).not.toContain("ยกเลิกการเชื่อมต่อ LINE จากหน้าตั้งค่าการแจ้งเตือน");
     expect(terms).not.toContain("redirect(\"/login\")");
 
