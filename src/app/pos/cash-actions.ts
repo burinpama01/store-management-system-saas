@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { openCashSession, closeCashSession } from "@/modules/cashflow/repository";
+import { getActiveRecordToday } from "@/modules/attendance/repository";
+import { getStoreLocalDate } from "@/modules/attendance/date";
 import type { CashSession } from "@/modules/cashflow/types";
 
 async function getStoreContext() {
@@ -27,7 +29,15 @@ export async function openCashSessionAction(
 ): Promise<{ error: string | null }> {
   try {
     await requirePermission("cashflow.record");
-    const { ctx } = await getStoreContext();
+    const { user, ctx } = await getStoreContext();
+
+    // พนักงานหน้าร้าน (cashier/staff) ต้องลงชื่อเข้างานก่อนเปิดรอบเงินสด
+    // (สมมาตรกับตอนออกงานที่ต้องปิดรอบก่อน) — ใช้ active record org-wide
+    if (ctx.role === "cashier" || ctx.role === "staff") {
+      const today = getStoreLocalDate(ctx.storeTimezone);
+      const active = await getActiveRecordToday(user.id, ctx.organizationId, today);
+      if (!active) return { error: "กรุณาลงชื่อเข้างานก่อนเปิดรอบเงินสด" };
+    }
 
     const amount = parseMoney(openingFloat);
     if (amount === null) return { error: "ยอดเงินเปิดร้านไม่ถูกต้อง (0 – 10,000,000)" };
