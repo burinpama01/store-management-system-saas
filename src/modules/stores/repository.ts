@@ -37,6 +37,7 @@ function mapStore(row: StoreRow): Store {
     musicLicenseApprovedAt: row.music_license_approved_at ?? undefined,
     musicLicenseNote: row.music_license_note ?? undefined,
     dineInDurationMinutes: row.dine_in_duration_minutes,
+    dineInNoExpiry: row.dine_in_no_expiry,
     themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
     themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,
     themePrimaryStrongColor: row.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,
@@ -66,7 +67,12 @@ function mapTable(row: TableRow): Table {
   };
 }
 
-export async function openTableSession(storeId: string, tableId: string, minutes: number) {
+/** minutes = null → เปิดโต๊ะแบบไม่จับเวลา (session_expires_at = null) */
+export async function openTableSession(
+  storeId: string,
+  tableId: string,
+  minutes: number | null,
+) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("open_table_session", {
     p_store_id: storeId,
@@ -74,7 +80,7 @@ export async function openTableSession(storeId: string, tableId: string, minutes
     p_minutes: minutes,
   });
   if (error) return { data: null, error: mapError(error) };
-  return { data: data as string, error: null };
+  return { data: data as string | null, error: null };
 }
 
 export async function closeTableSession(storeId: string, tableId: string) {
@@ -164,6 +170,7 @@ export interface UpdateStoreInput {
   tableOpenPolicy?: TableOpenPolicy;
   musicRequestEnabled?: boolean;
   dineInDurationMinutes?: number;
+  dineInNoExpiry?: boolean;
   themePresetId?: string;
   themePrimaryColor?: string;
   themePrimaryStrongColor?: string;
@@ -189,6 +196,7 @@ export async function updateStore(storeId: string, organizationId: string, input
       table_open_policy: input.tableOpenPolicy,
       music_request_enabled: input.musicRequestEnabled,
       dine_in_duration_minutes: input.dineInDurationMinutes,
+      dine_in_no_expiry: input.dineInNoExpiry,
       theme_preset_id: input.themePresetId,
       theme_primary_color: input.themePrimaryColor,
       theme_primary_strong_color: input.themePrimaryStrongColor,

@@ -814,6 +814,7 @@ export interface Database {
           music_license_approved_at: string | null;
           music_license_note: string | null;
           qr_service_buttons: Json;
+          dine_in_no_expiry: boolean;
           print_hub_token_hash: string | null;
           print_hub_last_seen: string | null;
           created_at: string;
@@ -846,6 +847,7 @@ export interface Database {
           music_license_approved_at?: string | null;
           music_license_note?: string | null;
           qr_service_buttons?: Json;
+          dine_in_no_expiry?: boolean;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
           created_at?: string;
@@ -878,6 +880,7 @@ export interface Database {
           music_license_approved_at?: string | null;
           music_license_note?: string | null;
           qr_service_buttons?: Json;
+          dine_in_no_expiry?: boolean;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
           created_at?: string;
@@ -3825,7 +3828,7 @@ export interface Database {
         Returns: undefined;
       };
       open_table_session: {
-        Args: { p_store_id: string; p_table_id: string; p_minutes: number };
+        Args: { p_store_id: string; p_table_id: string; p_minutes: number | null };
         Returns: string;
       };
       open_table_session_self: {

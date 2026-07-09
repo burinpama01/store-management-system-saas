@@ -79,6 +79,7 @@ function store(id: string, organizationId = ORG): StoreRow {
     music_license_approved_at: null,
     music_license_note: null,
     qr_service_buttons: [],
+    dine_in_no_expiry: false,
     print_hub_token_hash: null,
     print_hub_last_seen: null,
     created_at: "2026-06-01T00:00:00Z",

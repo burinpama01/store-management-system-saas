@@ -255,6 +255,7 @@ describe("customer member portal behavior", () => {
         musicRequestEnabled: false,
         musicLicenseStatus: "not_requested",
         dineInDurationMinutes: 90,
+        dineInNoExpiry: false,
         themePresetId: "default",
         themePrimaryColor: "#c45d32",
         themePrimaryStrongColor: "#964323",

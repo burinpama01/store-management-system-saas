@@ -60,6 +60,7 @@ export async function updateStoreAction(
     const qrOrderingMode =
       formData.get("qrOrderingMode") === "session_printed" ? "session_printed" : "table_bound";
     const musicRequestEnabled = formData.get("musicRequestEnabled") === "1";
+    const dineInNoExpiry = formData.get("dineInNoExpiry") === "1";
     const requestedSelfOpen = formData.get("tableOpenPolicy") === "customer_self";
     const dineInRaw = parseInt((formData.get("dineInDurationMinutes") as string | null) ?? "", 10);
     const dineInDurationMinutes =
@@ -125,6 +126,7 @@ export async function updateStoreAction(
       tableOpenPolicy,
       musicRequestEnabled,
       dineInDurationMinutes,
+      dineInNoExpiry,
       themePresetId: theme.theme.presetId,
       themePrimaryColor: theme.theme.primaryColor,
       themePrimaryStrongColor: theme.theme.primaryStrongColor,

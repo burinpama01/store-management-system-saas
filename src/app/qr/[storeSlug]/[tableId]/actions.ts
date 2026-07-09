@@ -90,7 +90,7 @@ export async function submitQrOrderAction(
   // Verify table — fetch number from DB, not from client
   const { data: table, error: tableErr } = await supabase
     .from("tables")
-    .select("id, store_id, number, qr_enabled, is_active, session_expires_at, current_session_id")
+    .select("id, store_id, number, qr_enabled, is_active, session_started_at, session_expires_at, current_session_id")
     .eq("id", tableId)
     .single();
   if (tableErr || !table) return { orderId: null, orderNumber: null, error: "Table not found" };
@@ -101,8 +101,12 @@ export async function submitQrOrderAction(
   // Timed session gate: orders need an active table session. For stores that let
   // customers open the table themselves (table_bound + customer_self), the first
   // order opens the session automatically; otherwise reject (staff must open it).
+  // "ไม่จับเวลา" = session_started_at ถูกเซ็ต แต่ session_expires_at เป็น null → เปิดตลอด
   const sessionExpiry = table.session_expires_at ? Date.parse(table.session_expires_at) : null;
-  const sessionActive = sessionExpiry !== null && sessionExpiry > Date.now();
+  const sessionStarted = table.session_started_at ? Date.parse(table.session_started_at) : null;
+  const sessionActive =
+    (sessionExpiry !== null && sessionExpiry > Date.now()) ||
+    (sessionStarted !== null && sessionExpiry === null);
   if (!sessionActive) {
     const canSelfOpen =
       store.qr_ordering_mode === "table_bound" && store.table_open_policy === "customer_self";
