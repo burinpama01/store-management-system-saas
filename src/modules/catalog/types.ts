@@ -34,6 +34,8 @@ export interface Product {
   availableForDelivery?: boolean;
   deliveryPrice?: number | null;
   deliveryOutOfStock?: boolean;
+  /** ของหมด (ปิดขายชั่วคราวหน้าร้าน/QR แต่ยังอยู่ในเมนู) */
+  outOfStock?: boolean;
   sortOrder: number;
   variants: ProductVariant[];
   /** หน่วยขายแพ็ค (โหล/ลัง) — undefined ในโค้ดเก่า = ไม่มีหน่วยแพ็ค */

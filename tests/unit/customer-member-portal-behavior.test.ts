@@ -251,6 +251,7 @@ describe("customer member portal behavior", () => {
         qrOrderingEnabled: true,
         qrOrderingMode: "table_bound",
         tableOpenPolicy: "staff_only",
+        serviceButtons: [],
         musicRequestEnabled: false,
         musicLicenseStatus: "not_requested",
         dineInDurationMinutes: 90,

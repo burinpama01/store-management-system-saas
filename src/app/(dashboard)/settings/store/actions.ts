@@ -8,8 +8,14 @@ import {
 } from "@/modules/billing/types";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
-import { updateStore, getStore } from "@/modules/stores/repository";
+import { updateStore, getStore, updateStoreServiceButtons } from "@/modules/stores/repository";
 import { resolveThemeSelection } from "@/modules/theme/presets";
+import {
+  DEFAULT_SERVICE_BUTTONS,
+  SERVICE_REQUEST_TYPES,
+  type ServiceButtonConfig,
+  type ServiceRequestType,
+} from "@/modules/qr-ordering/types";
 
 const ALLOWED_TIMEZONES = new Set([
   "Asia/Bangkok",
@@ -126,6 +132,45 @@ export async function updateStoreAction(
       themeAccentColor: theme.theme.accentColor,
     });
 
+    if (result.error) return { error: result.error.userMessage };
+
+    revalidatePath("/settings/store");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** บันทึกปุ่มเรียกบริการ (ข้อความ + เปิด/ปิด) จากหน้าตั้งค่าร้าน */
+export async function updateServiceButtonsAction(
+  buttons: Array<{ key: string; label: string; enabled: boolean }>,
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("settings.manage_store");
+    const { ctx } = await getStoreContext();
+
+    // Normalise against the canonical set: keep known keys, sanitise labels.
+    const byKey = new Map(buttons.map((b) => [b.key, b]));
+    const normalised: ServiceButtonConfig[] = DEFAULT_SERVICE_BUTTONS.map((def) => {
+      const incoming = byKey.get(def.key);
+      const label =
+        typeof incoming?.label === "string" && incoming.label.trim()
+          ? incoming.label.trim().slice(0, 40)
+          : def.label;
+      return {
+        key: def.key,
+        label,
+        enabled: typeof incoming?.enabled === "boolean" ? incoming.enabled : def.enabled,
+      };
+    });
+    // Guard: reject unknown keys entirely (defensive).
+    for (const b of buttons) {
+      if (!SERVICE_REQUEST_TYPES.includes(b.key as ServiceRequestType)) {
+        return { error: "ปุ่มบริการไม่ถูกต้อง" };
+      }
+    }
+
+    const result = await updateStoreServiceButtons(ctx.storeId, ctx.organizationId, normalised);
     if (result.error) return { error: result.error.userMessage };
 
     revalidatePath("/settings/store");

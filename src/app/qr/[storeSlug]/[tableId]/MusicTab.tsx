@@ -5,12 +5,14 @@ import { Button } from "@/shared/components/ui";
 import { QrCode } from "@/shared/components/ui/QrCode";
 import {
   listMusicQueueAction,
+  listPlayedHistoryAction,
   submitMusicRequestAction,
   searchMusicAction,
   previewDonationPositionAction,
   startMusicDonationAction,
   verifyMusicDonationAction,
 } from "./music-actions";
+import type { PlayedTrack } from "@/modules/music-requests/repository";
 import {
   MUSIC_REQUEST_STATUS_LABEL,
   type PublicMusicRequest,
@@ -49,6 +51,8 @@ function fmtDur(sec?: number): string {
 
 export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Props) {
   const [queue, setQueue] = useState<PublicMusicRequest[]>([]);
+  const [playedTracks, setPlayedTracks] = useState<PlayedTrack[]>([]);
+  const [canReplay, setCanReplay] = useState(false);
   const [nowPlaying, setNowPlaying] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
@@ -71,7 +75,10 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   const [donationRequestId, setDonationRequestId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await listMusicQueueAction(storeId, tableId, querySessionId);
+    const [res, history] = await Promise.all([
+      listMusicQueueAction(storeId, tableId, querySessionId),
+      listPlayedHistoryAction(storeId, tableId, querySessionId),
+    ]);
     if (!res.error) {
       setQueue(res.queue);
       setNowPlaying(res.nowPlayingTitle ?? null);
@@ -79,6 +86,10 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       // 0 is a valid price (free tier) — don't treat it as "missing".
       if (typeof res.minDonation === "number") setMinDonation(res.minDonation);
       if (typeof res.playNowPrice === "number") setPlayNowPrice(res.playNowPrice);
+    }
+    if (!history.error) {
+      setPlayedTracks(history.tracks);
+      setCanReplay(history.canRequest);
     }
   }, [storeId, tableId, querySessionId]);
 
@@ -142,6 +153,35 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       setQuery("");
       setResults([]);
       setOkMsg("ส่งคำขอเพลงแล้ว 🎵 รอเปิดในคิวนะคะ");
+      void load();
+    });
+  }
+
+  function replay(track: PlayedTrack) {
+    setErrMsg(null);
+    setOkMsg(null);
+    start(async () => {
+      const res = await submitMusicRequestAction(
+        storeId,
+        tableId,
+        querySessionId,
+        {
+          songTitle: track.songTitle,
+          artistName: track.artistName,
+          requesterLabel: requester.trim() || undefined,
+        },
+        {
+          videoId: track.youtubeVideoId,
+          title: track.youtubeTitle ?? track.songTitle,
+          thumbnailUrl: track.thumbnailUrl,
+          durationSeconds: track.durationSeconds,
+        },
+      );
+      if (res.error) {
+        setErrMsg(res.error);
+        return;
+      }
+      setOkMsg("ส่งคำขอเล่นซ้ำแล้ว 🎵 รอเปิดในคิวนะคะ");
       void load();
     });
   }
@@ -480,6 +520,38 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
           </ul>
         )}
       </div>
+
+      {playedTracks.length > 0 && (
+        <div>
+          <p className="mb-2 text-sm font-bold text-gray-900">เคยเล่นไปแล้ว</p>
+          <ul className="space-y-2">
+            {playedTracks.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2"
+              >
+                {t.thumbnailUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={t.thumbnailUrl} alt="" className="h-10 w-14 shrink-0 rounded object-cover" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900">{t.songTitle}</p>
+                  {t.artistName && <p className="truncate text-xs text-gray-400">{t.artistName}</p>}
+                </div>
+                {canReplay && (
+                  <button
+                    onClick={() => replay(t)}
+                    disabled={pending}
+                    className="shrink-0 rounded-full bg-violet-100 px-3 py-1.5 text-xs font-semibold text-violet-700 active:bg-violet-200 disabled:opacity-50"
+                  >
+                    ↻ ขอเล่นอีกครั้ง
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

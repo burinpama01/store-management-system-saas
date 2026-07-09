@@ -10,6 +10,7 @@ import {
   getNotificationTemplate,
   getStoreNameForNotification,
   getTelegramNotificationTarget,
+  insertNotificationLog,
   listOrganizationPushTokens,
 } from "./repository";
 import { renderNotificationTemplate } from "./templates";
@@ -486,8 +487,27 @@ async function runOwnerNotificationDeliveries(input: NotificationPayload) {
   const renderedPromise = renderOwnerNotification(input);
   const channels = input.channel ? [input.channel] : NOTIFICATION_CHANNELS;
 
-  await Promise.allSettled(
-    channels.map(async (channel) => {
+  // เก็บ log ในแอป (ศูนย์แจ้งเตือน) แบบ best-effort — ไม่บล็อกการส่งช่องทาง
+  const persistPromise = (async () => {
+    if (input.type === "test" || !input.organizationId) return;
+    try {
+      const rendered = await renderedPromise;
+      await insertNotificationLog({
+        organizationId: input.organizationId,
+        storeId: input.storeId ?? null,
+        type: input.type,
+        title: rendered.title ?? null,
+        message: rendered.message,
+        metadata: input.metadata ?? null,
+      });
+    } catch {
+      // best-effort — การเก็บ log พังต้องไม่กระทบการส่งแจ้งเตือน
+    }
+  })();
+
+  await Promise.allSettled([
+    persistPromise,
+    ...channels.map(async (channel) => {
       const rendered = await renderedPromise;
       return runOwnerNotificationDelivery({
         ...rendered,
@@ -495,7 +515,7 @@ async function runOwnerNotificationDeliveries(input: NotificationPayload) {
         destination: "owner" as const,
       });
     }),
-  );
+  ]);
 }
 
 export function notifyOwnerSafely(input: NotificationPayload): void {

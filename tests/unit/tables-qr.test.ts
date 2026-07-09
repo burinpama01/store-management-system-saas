@@ -40,11 +40,17 @@ describe("service request reason chooser", () => {
     expect(actions).toContain("p_note: note");
 
     const app = read("src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx");
-    expect(app).toContain("ขอเช็คบิล");
-    expect(app).toContain("เกิดปัญหา");
     expect(app).toContain("onService");
-    // customer no longer has a standalone request-bill button outside the chooser
+    // service buttons are now store-configurable (label + enable/disable)
+    expect(app).toContain("serviceButtons");
+    expect(app).toContain("enabledButtons");
     expect(app).toContain("เรียกพนักงาน");
+
+    // default button labels (incl. water / condiment) live in the shared config
+    const types = read("src/modules/qr-ordering/types.ts");
+    expect(types).toContain("ขอเช็คบิล");
+    expect(types).toContain("ขอน้ำเพิ่ม");
+    expect(types).toContain("ขอน้ำจิ้มเพิ่ม");
 
     const board = read("src/app/(dashboard)/qr-orders/QrOrdersBoard.tsx");
     expect(board).toContain("req.note");

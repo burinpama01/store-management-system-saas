@@ -34,6 +34,7 @@ import {
   deleteModifierOptionAction,
   setModifierOptionDefaultAction,
   copyProductsAcrossBranchesAction,
+  toggleProductAvailabilityAction,
 } from "./actions";
 import type { Store } from "@/modules/stores/types";
 
@@ -593,6 +594,17 @@ function ProductForm({
               className="rounded border-gray-300"
             />
             เปิดใช้งาน
+          </label>
+        )}
+        {product && (
+          <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              name="outOfStock"
+              defaultChecked={product.outOfStock ?? false}
+              className="rounded border-gray-300"
+            />
+            ของหมด (ปิดขายชั่วคราว)
           </label>
         )}
       </div>
@@ -1825,6 +1837,22 @@ export function CatalogManager({
     startDelete(() => { deleteProductAction(id); });
   }
 
+  function handleToggleActive(p: Product) {
+    if (!canManageCatalog) return;
+    startDelete(async () => {
+      const res = await toggleProductAvailabilityAction(p.id, { isActive: !p.isActive });
+      if (res.error) window.alert(res.error);
+    });
+  }
+
+  function handleToggleStock(p: Product) {
+    if (!canManageCatalog) return;
+    startDelete(async () => {
+      const res = await toggleProductAvailabilityAction(p.id, { outOfStock: !(p.outOfStock ?? false) });
+      if (res.error) window.alert(res.error);
+    });
+  }
+
   return (
     <div className="flex min-h-full flex-col">
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
@@ -1970,11 +1998,18 @@ export function CatalogManager({
                           {priceStr(p.basePrice)}
                         </p>
                       </div>
-                      <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-bold ${
-                        p.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-                      }`}>
-                        {p.isActive ? "เปิด" : "ปิด"}
-                      </span>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className={`rounded-md px-2 py-1 text-xs font-bold ${
+                          p.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        }`}>
+                          {p.isActive ? "เปิด" : "ปิด"}
+                        </span>
+                        {p.outOfStock && (
+                          <span className="rounded-md bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700">
+                            ของหมด
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5 text-xs">
                       <span className={`rounded border px-2 py-1 ${
@@ -2000,21 +2035,47 @@ export function CatalogManager({
                       </span>
                     </div>
                     {canManageCatalog ? (
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditProduct(p)}
-                          className="min-h-10 flex-1 rounded-md border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                        >
-                          แก้ไข
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteProduct(p.id)}
-                          className="min-h-10 rounded-md border border-red-200 px-3 text-sm font-bold text-red-600 hover:bg-red-50"
-                        >
-                          ลบ
-                        </button>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(p)}
+                            className={`min-h-9 flex-1 rounded-md border px-2 text-xs font-bold ${
+                              p.isActive
+                                ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            }`}
+                          >
+                            {p.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStock(p)}
+                            className={`min-h-9 flex-1 rounded-md border px-2 text-xs font-bold ${
+                              p.outOfStock
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                : "border-rose-200 text-rose-600 hover:bg-rose-50"
+                            }`}
+                          >
+                            {p.outOfStock ? "มีของแล้ว" : "ของหมด"}
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditProduct(p)}
+                            className="min-h-10 flex-1 rounded-md border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                          >
+                            แก้ไข
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProduct(p.id)}
+                            className="min-h-10 rounded-md border border-red-200 px-3 text-sm font-bold text-red-600 hover:bg-red-50"
+                          >
+                            ลบ
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">

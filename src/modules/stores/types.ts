@@ -1,3 +1,5 @@
+import type { ServiceButtonConfig } from "@/modules/qr-ordering/types";
+
 export type QrOrderingMode = "table_bound" | "session_printed";
 
 export type TableOpenPolicy = "staff_only" | "customer_self";
@@ -25,6 +27,7 @@ export interface Store {
   qrOrderingEnabled: boolean;
   qrOrderingMode: QrOrderingMode;
   tableOpenPolicy: TableOpenPolicy;
+  serviceButtons: ServiceButtonConfig[];
   musicRequestEnabled: boolean;
   musicLicenseStatus: MusicLicenseStatus;
   musicLicenseApprovedAt?: string;

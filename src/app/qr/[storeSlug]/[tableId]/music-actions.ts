@@ -16,9 +16,11 @@ import {
   verifyMusicDonation,
   listPublicMusicQueue,
   listPlayableQueue,
+  listRecentlyPlayed,
   hasRecentDuplicateRequest,
   isVideoQueued,
   getNowPlaying,
+  type PlayedTrack,
 } from "@/modules/music-requests/repository";
 import { searchYouTube, type YouTubeSearchResult } from "@/modules/music-requests/youtube";
 import { previewDonationPosition } from "@/modules/music-requests/queue-engine";
@@ -148,6 +150,28 @@ export async function listMusicQueueAction(
     minDonation,
     playNowPrice,
     error: null,
+  };
+}
+
+/** รายการเพลงที่เคยเล่นไปแล้ว (ให้ลูกค้ากด "ขอเล่นอีกครั้ง") */
+export async function listPlayedHistoryAction(
+  storeId: string,
+  tableId: string,
+  querySessionId: string | null,
+): Promise<{ tracks: PlayedTrack[]; canRequest: boolean; error: string | null }> {
+  if (!isUUID(storeId) || !isUUID(tableId)) {
+    return { tracks: [], canRequest: false, error: "Invalid request" };
+  }
+  const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
+  if (!resolved.ok) return { tracks: [], canRequest: false, error: resolved.reason };
+  if (!resolved.ctx.eligibility.canViewQueue) {
+    return { tracks: [], canRequest: false, error: null };
+  }
+  const res = await listRecentlyPlayed(storeId, 12);
+  return {
+    tracks: res.data,
+    canRequest: resolved.ctx.eligibility.canSubmitRequest,
+    error: res.error?.userMessage ?? null,
   };
 }
 

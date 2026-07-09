@@ -179,6 +179,7 @@ function mapProduct(
     availableForDelivery: row.available_for_delivery,
     deliveryPrice: row.delivery_price,
     deliveryOutOfStock: row.delivery_out_of_stock,
+    outOfStock: row.out_of_stock,
     sortOrder: row.sort_order,
     variants: variants
       .filter((v) => v.product_id === row.id)
@@ -485,6 +486,7 @@ export async function updateProduct(
       | "availableForDelivery"
       | "deliveryPrice"
       | "deliveryOutOfStock"
+      | "outOfStock"
       | "sortOrder"
       | "categoryId"
     >
@@ -514,6 +516,7 @@ export async function updateProduct(
       available_for_delivery: input.availableForDelivery,
       delivery_price: input.deliveryPrice,
       delivery_out_of_stock: input.deliveryOutOfStock,
+      out_of_stock: input.outOfStock,
       kitchen_station_id: input.kitchenStationId,
       sort_order: input.sortOrder,
       category_id: input.categoryId,

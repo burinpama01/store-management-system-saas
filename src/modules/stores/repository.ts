@@ -3,6 +3,8 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { mapError } from "@/shared/utils/error";
 import type { Store, Table, ReceiptSettings, Printer, QrOrderingMode, TableOpenPolicy } from "@/modules/stores/types";
+import { parseServiceButtons } from "@/modules/qr-ordering/types";
+import type { ServiceButtonConfig } from "@/modules/qr-ordering/types";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
 // Privileged printer upserts (service client) live in printer-admin-repository.ts
@@ -29,6 +31,7 @@ function mapStore(row: StoreRow): Store {
     qrOrderingEnabled: row.qr_ordering_enabled,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
+    serviceButtons: parseServiceButtons(row.qr_service_buttons),
     musicRequestEnabled: row.music_request_enabled,
     musicLicenseStatus: row.music_license_status,
     musicLicenseApprovedAt: row.music_license_approved_at ?? undefined,
@@ -191,6 +194,25 @@ export async function updateStore(storeId: string, organizationId: string, input
       theme_primary_strong_color: input.themePrimaryStrongColor,
       theme_primary_soft_color: input.themePrimarySoftColor,
       theme_accent_color: input.themeAccentColor,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", storeId)
+    .eq("organization_id", organizationId);
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/** อัปเดตปุ่มเรียกบริการ (ข้อความ + เปิด/ปิด) ของร้าน */
+export async function updateStoreServiceButtons(
+  storeId: string,
+  organizationId: string,
+  buttons: ServiceButtonConfig[],
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("stores")
+    .update({
+      qr_service_buttons: buttons as unknown as Database["public"]["Tables"]["stores"]["Update"]["qr_service_buttons"],
       updated_at: new Date().toISOString(),
     })
     .eq("id", storeId)
