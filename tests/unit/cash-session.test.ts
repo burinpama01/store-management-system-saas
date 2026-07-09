@@ -95,6 +95,13 @@ describe("cash session (open/close) RPC", () => {
     expect(actions).toContain("closeCashSession");
   });
 
+  it("requires cashier/staff to clock in before opening a cash session", () => {
+    const actions = read("src/app/pos/cash-actions.ts");
+    expect(actions).toContain("getActiveRecordToday");
+    expect(actions).toContain('ctx.role === "cashier" || ctx.role === "staff"');
+    expect(actions).toContain("กรุณาลงชื่อเข้างานก่อนเปิดรอบเงินสด");
+  });
+
   it("forces cashiers to open a cash session before taking cash in POS", () => {
     const terminal = read("src/app/pos/PosTerminal.tsx");
     const panel = read("src/app/pos/CashSessionPanel.tsx");
