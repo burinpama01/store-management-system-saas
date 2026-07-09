@@ -228,6 +228,56 @@ export async function listPublicMusicQueue(storeId: string, limit = 20) {
   return { data: (data ?? []).map(toPublicMusicRequest), error: null };
 }
 
+export interface PlayedTrack {
+  id: string;
+  songTitle: string;
+  artistName?: string;
+  youtubeVideoId: string;
+  youtubeTitle?: string;
+  thumbnailUrl?: string;
+  durationSeconds?: number;
+  playedAt?: string;
+}
+
+/**
+ * Recently played songs (distinct by video) for the customer "play again" list.
+ * Read via the service client since the caller is an anonymous QR visitor.
+ */
+export async function listRecentlyPlayed(storeId: string, limit = 12) {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("music_requests")
+    .select(
+      "id, song_title, artist_name, youtube_video_id, youtube_title, thumbnail_url, duration_seconds, played_at",
+    )
+    .eq("store_id", storeId)
+    .eq("status", "played")
+    .not("youtube_video_id", "is", null)
+    .order("played_at", { ascending: false })
+    .limit(60);
+  if (error) return { data: [] as PlayedTrack[], error: mapError(error) };
+
+  const seen = new Set<string>();
+  const tracks: PlayedTrack[] = [];
+  for (const r of data ?? []) {
+    const vid = r.youtube_video_id;
+    if (!vid || seen.has(vid)) continue;
+    seen.add(vid);
+    tracks.push({
+      id: r.id,
+      songTitle: r.song_title,
+      artistName: r.artist_name ?? undefined,
+      youtubeVideoId: vid,
+      youtubeTitle: r.youtube_title ?? undefined,
+      thumbnailUrl: r.thumbnail_url ?? undefined,
+      durationSeconds: r.duration_seconds ?? undefined,
+      playedAt: r.played_at ?? undefined,
+    });
+    if (tracks.length >= limit) break;
+  }
+  return { data: tracks, error: null };
+}
+
 /**
  * Detect a near-duplicate submission (same song from the same table within a
  * short window) so a customer double-tap doesn't spam the queue.

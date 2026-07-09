@@ -7,6 +7,7 @@ import {
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getStore } from "@/modules/stores/repository";
 import { StoreSettingsForm } from "./StoreSettingsForm";
+import { ServiceButtonsEditor } from "./ServiceButtonsEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +30,19 @@ export default async function StoreSettingsPage() {
   const canUseBuffet = features.buffetManagement;
 
   return (
-    <StoreSettingsForm
-      store={storeRes.data}
-      canEdit={canEdit}
-      canUseQrOrdering={canUseQrOrdering}
-      canUseBuffet={canUseBuffet}
-    />
+    <div className="space-y-5">
+      <StoreSettingsForm
+        store={storeRes.data}
+        canEdit={canEdit}
+        canUseQrOrdering={canUseQrOrdering}
+        canUseBuffet={canUseBuffet}
+      />
+      {canUseQrOrdering && (
+        <ServiceButtonsEditor
+          serviceButtons={storeRes.data.serviceButtons}
+          canEdit={canEdit}
+        />
+      )}
+    </div>
   );
 }

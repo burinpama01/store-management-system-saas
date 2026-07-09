@@ -72,7 +72,7 @@ export default async function PosPage() {
         storeId={ctx.storeId}
         storeName={ctx.storeName}
         categories={categoriesResult.data ?? []}
-        products={productsResult.data ?? []}
+        products={(productsResult.data ?? []).filter((p) => !p.outOfStock)}
         receiptSettings={receiptSettingsResult.data ?? null}
         exitHref={firstHomeRoute(resolved.can)}
         cashSession={cashSession}

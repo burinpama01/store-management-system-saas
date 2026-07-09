@@ -3,7 +3,7 @@ import {
   createSupabaseServiceClient,
 } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
-import type { Database } from "@/server/integrations/supabase/database.types";
+import type { Database, Json } from "@/server/integrations/supabase/database.types";
 import type { NotificationChannel, NotificationType } from "./types";
 
 type NotificationSettingRow = Database["public"]["Tables"]["notification_settings"]["Row"];
@@ -433,6 +433,116 @@ export async function deleteNotificationTemplate(
     .eq("organization_id", organizationId)
     .eq("notification_type", type);
 
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+// --- In-app notification log (ศูนย์แจ้งเตือน) ---
+
+type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string | null;
+  message: string;
+  metadata: Record<string, unknown>;
+  status: "new" | "acknowledged";
+  acknowledgedAt: string | null;
+  createdAt: string;
+}
+
+function mapAppNotification(row: NotificationRow): AppNotification {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    metadata: (row.metadata as Record<string, unknown> | null) ?? {},
+    status: row.status,
+    acknowledgedAt: row.acknowledged_at,
+    createdAt: row.created_at,
+  };
+}
+
+/** บันทึกอีเวนต์แจ้งเตือนลงศูนย์แจ้งเตือน (เรียกจาก dispatcher ด้วย service role) */
+export async function insertNotificationLog(input: {
+  organizationId: string;
+  storeId: string | null;
+  type: NotificationType;
+  title: string | null;
+  message: string;
+  metadata?: Record<string, string | number | boolean | null> | null;
+}) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.from("notifications").insert({
+    organization_id: input.organizationId,
+    store_id: input.storeId,
+    type: input.type,
+    title: input.title,
+    message: input.message,
+    metadata: (input.metadata ?? {}) as Json,
+  });
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function listNotifications(
+  storeId: string,
+  options: { status?: "new" | "acknowledged"; limit?: number } = {},
+) {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("notifications")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false })
+    .limit(Math.min(options.limit ?? 200, 500));
+  if (options.status) query = query.eq("status", options.status);
+
+  const { data, error } = await query;
+  if (error) return { data: null, error: mapError(error) };
+  return { data: (data ?? []).map(mapAppNotification), error: null };
+}
+
+export async function countNewNotifications(storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { count, error } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .eq("status", "new");
+  if (error) return { count: 0, error: mapError(error) };
+  return { count: count ?? 0, error: null };
+}
+
+export async function acknowledgeNotification(id: string, storeId: string, userId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("notifications")
+    .update({
+      status: "acknowledged",
+      acknowledged_by: userId,
+      acknowledged_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("store_id", storeId)
+    .eq("status", "new");
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+export async function acknowledgeAllNotifications(storeId: string, userId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("notifications")
+    .update({
+      status: "acknowledged",
+      acknowledged_by: userId,
+      acknowledged_at: new Date().toISOString(),
+    })
+    .eq("store_id", storeId)
+    .eq("status", "new");
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
 }

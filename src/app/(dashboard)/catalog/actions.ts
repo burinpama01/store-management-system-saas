@@ -372,7 +372,9 @@ export async function updateProductAction(
       deliveryPrice: deliveryPrice.value,
       deliveryOutOfStock: formData.get("deliveryOutOfStock") === "on",
       kitchenStationId: availableForQr ? kitchenStationId : null,
-      isActive: formData.get("isActive") !== "off",
+      // เช็คบ็อกซ์ที่ไม่ถูกติ๊กจะไม่ถูกส่งมา (ค่าเป็น null) — ต้องเทียบ === "on" ถึงจะปิดใช้งานได้จริง
+      isActive: formData.get("isActive") === "on",
+      outOfStock: formData.get("outOfStock") === "on",
     });
     if (result.error) return { error: result.error.userMessage };
     if (wholesaleUnits.units) {
@@ -394,6 +396,27 @@ export async function deleteProductAction(id: string): Promise<{ error: string |
     const result = await deleteProduct(id, ctx.storeId);
     if (result.error) return { error: result.error.userMessage };
     revalidate();
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** สลับสถานะเร็วบนการ์ดสินค้า: เปิด/ปิดใช้งาน หรือ ของหมด/มีของ */
+export async function toggleProductAvailabilityAction(
+  id: string,
+  patch: { isActive?: boolean; outOfStock?: boolean },
+): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("catalog.manage");
+    const ctx = await getStoreContext();
+    const result = await updateProduct(id, ctx.storeId, {
+      ...(typeof patch.isActive === "boolean" ? { isActive: patch.isActive } : {}),
+      ...(typeof patch.outOfStock === "boolean" ? { outOfStock: patch.outOfStock } : {}),
+    });
+    if (result.error) return { error: result.error.userMessage };
+    revalidate();
+    await autoSyncDeliveryMenu(ctx.storeId);
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

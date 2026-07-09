@@ -18,7 +18,13 @@ import {
   cancelQrOrderAction,
   type QrOrderItem,
 } from "./actions";
-import { PREP_STATUS_LABEL, type QrOrderView, type ServiceRequestType } from "@/modules/qr-ordering/types";
+import {
+  PREP_STATUS_LABEL,
+  SERVICE_BUTTON_EMOJI,
+  type QrOrderView,
+  type ServiceButtonConfig,
+  type ServiceRequestType,
+} from "@/modules/qr-ordering/types";
 import type { QrMusicEligibility } from "@/modules/music-requests/gates";
 import { MusicTab } from "./MusicTab";
 import { Button } from "@/shared/components/ui";
@@ -507,6 +513,7 @@ function TrackView({
   onCancel,
   serviceMsg,
   servicePending,
+  serviceButtons,
 }: {
   orders: QrOrderView[];
   currency: string;
@@ -517,7 +524,9 @@ function TrackView({
   onCancel: (orderId: string) => void;
   serviceMsg: string | null;
   servicePending: boolean;
+  serviceButtons: ServiceButtonConfig[];
 }) {
+  const enabledButtons = serviceButtons.filter((b) => b.enabled);
   const unpaidTotal = orders
     .filter((o) => o.status !== "paid" && o.status !== "voided" && o.status !== "cancelled")
     .reduce((s, o) => s + o.total, 0);
@@ -602,43 +611,41 @@ function TrackView({
           </div>
         )}
         {serviceMsg && <p className="text-xs text-green-600 text-center">{serviceMsg}</p>}
-        {menuOpen ? (
-          <div className="space-y-2">
+        {enabledButtons.length > 0 && (
+          menuOpen ? (
+            <div className="space-y-2">
+              {enabledButtons.map((btn) => (
+                <Button
+                  key={btn.key}
+                  onClick={() => {
+                    onService(btn.key, btn.label, `ส่งคำขอ “${btn.label}” แล้ว พนักงานกำลังไปหาคุณ`);
+                    setMenuOpen(false);
+                  }}
+                  loading={servicePending}
+                  className={`w-full min-h-11 py-3 rounded-xl font-semibold text-sm disabled:opacity-50 ${
+                    btn.key === "request_bill"
+                      ? "bg-purple-100 text-purple-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {SERVICE_BUTTON_EMOJI[btn.key]} {btn.label}
+                </Button>
+              ))}
+              <button onClick={() => setMenuOpen(false)} className="w-full min-h-11 py-2 text-xs text-gray-400">
+                ยกเลิก
+              </button>
+            </div>
+          ) : (
             <Button
-              onClick={() => { onService("call_staff", undefined, "เรียกพนักงานแล้ว กำลังไปหาคุณ"); setMenuOpen(false); }}
+              onClick={() => setMenuOpen(true)}
               loading={servicePending}
-              className="w-full min-h-11 py-3 rounded-xl bg-amber-100 text-amber-800 font-semibold text-sm disabled:opacity-50"
+              className="w-full min-h-11 py-3 rounded-xl bg-amber-500 text-white font-semibold text-sm disabled:opacity-50"
             >
-              🙋 เรียกพนักงานทั่วไป
+              🔔 เรียกพนักงาน
             </Button>
-            <Button
-              onClick={() => { onService("request_bill", undefined, "แจ้งขอเช็คบิลแล้ว"); setMenuOpen(false); }}
-              loading={servicePending}
-              className="w-full min-h-11 py-3 rounded-xl bg-purple-100 text-purple-800 font-semibold text-sm disabled:opacity-50"
-            >
-              🧾 ขอเช็คบิล
-            </Button>
-            <Button
-              onClick={() => { onService("call_staff", "เกิดปัญหา", "แจ้งปัญหาให้พนักงานแล้ว"); setMenuOpen(false); }}
-              loading={servicePending}
-              className="w-full min-h-11 py-3 rounded-xl bg-red-100 text-red-800 font-semibold text-sm disabled:opacity-50"
-            >
-              ⚠️ เกิดปัญหา
-            </Button>
-            <button onClick={() => setMenuOpen(false)} className="w-full min-h-11 py-2 text-xs text-gray-400">
-              ยกเลิก
-            </button>
-          </div>
-        ) : (
-          <Button
-            onClick={() => setMenuOpen(true)}
-            loading={servicePending}
-            className="w-full min-h-11 py-3 rounded-xl bg-amber-500 text-white font-semibold text-sm disabled:opacity-50"
-          >
-            🔔 เรียกพนักงาน
-          </Button>
+          )
         )}
-        <p className="text-xs text-gray-400 text-center">กดเรียกพนักงานเพื่อขอเช็คบิล แจ้งปัญหา หรือสอบถาม</p>
+        <p className="text-xs text-gray-400 text-center">กดเรียกพนักงานเพื่อขอเช็คบิล ขอน้ำ/น้ำจิ้ม หรือสอบถาม</p>
       </div>
     </div>
   );
@@ -908,6 +915,7 @@ export default function QrOrderingApp({
           onCancel={cancelOrder}
           serviceMsg={serviceMsg}
           servicePending={servicePending}
+          serviceButtons={store.serviceButtons}
         />
       ) : view === "cart" ? (
         <CartView

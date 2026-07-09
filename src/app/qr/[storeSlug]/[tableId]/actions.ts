@@ -11,7 +11,12 @@ import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import type { SelectedModifier } from "@/modules/pos/types";
-import type { QrOrderView, ServiceRequestType } from "@/modules/qr-ordering/types";
+import {
+  SERVICE_REQUEST_LABEL,
+  SERVICE_REQUEST_TYPES,
+  type QrOrderView,
+  type ServiceRequestType,
+} from "@/modules/qr-ordering/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUUID(s: string): boolean {
@@ -117,7 +122,7 @@ export async function submitQrOrderAction(
   const productIds = [...new Set(items.map((i) => i.productId))];
   const { data: productRows, error: productsErr } = await supabase
     .from("products")
-    .select("id, store_id, name, base_price, is_active, available_for_qr, kitchen_station_id")
+    .select("id, store_id, name, base_price, is_active, available_for_qr, out_of_stock, kitchen_station_id")
     .in("id", productIds);
   if (productsErr) return { orderId: null, orderNumber: null, error: "Failed to verify menu items" };
 
@@ -142,6 +147,9 @@ export async function submitQrOrderAction(
     if (!p || p.store_id !== storeId) return { orderId: null, orderNumber: null, error: "Menu item not found" };
     if (!p.is_active || !p.available_for_qr) {
       return { orderId: null, orderNumber: null, error: "Menu item is not available" };
+    }
+    if (p.out_of_stock) {
+      return { orderId: null, orderNumber: null, error: `${p.name} ของหมดแล้ว` };
     }
     if (!p.kitchen_station_id || !activeKitchenStationIds.has(p.kitchen_station_id)) {
       return {
@@ -477,7 +485,7 @@ export async function requestServiceAction(
   reason?: string,
 ): Promise<{ ok: boolean; error: string | null }> {
   if (!isUUID(storeId) || !isUUID(tableId)) return { ok: false, error: "Invalid request" };
-  if (type !== "call_staff" && type !== "request_bill") {
+  if (!SERVICE_REQUEST_TYPES.includes(type)) {
     return { ok: false, error: "Invalid request" };
   }
   const note = reason?.trim().slice(0, 100) || null;
@@ -518,12 +526,13 @@ export async function requestServiceAction(
     p_note: note,
   });
   if (error) return { ok: false, error: error.message };
+  const requestLabel = note ?? SERVICE_REQUEST_LABEL[type];
   notifyOwnerSafely({
     type: "service_request",
     organizationId: store.organization_id,
     storeId,
     title: type === "request_bill" ? "ลูกค้าขอเช็คบิล" : "ลูกค้าเรียกพนักงาน",
-    message: `โต๊ะ ${table.number} ${type === "request_bill" ? "ขอเช็คบิล" : "เรียกพนักงาน"}${note ? `: ${note}` : ""}`,
+    message: `โต๊ะ ${table.number}: ${requestLabel}`,
     metadata: {
       tableId,
       tableNumber: table.number,

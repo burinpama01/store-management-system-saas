@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { mapError } from "@/shared/utils/error";
 import type { Store, Table } from "@/modules/stores/types";
+import { parseServiceButtons } from "@/modules/qr-ordering/types";
 import type { Category, Product, ProductVariant, ModifierGroup, ModifierOption } from "@/modules/catalog/types";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
@@ -30,6 +31,7 @@ export function mapStore(row: StoreRow): Store {
     qrOrderingEnabled: row.qr_ordering_enabled,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
+    serviceButtons: parseServiceButtons(row.qr_service_buttons),
     musicRequestEnabled: row.music_request_enabled,
     musicLicenseStatus: row.music_license_status,
     musicLicenseApprovedAt: row.music_license_approved_at ?? undefined,
@@ -204,6 +206,7 @@ export async function listPublicMenu(storeId: string) {
       .eq("store_id", storeId)
       .eq("is_active", true)
       .eq("available_for_qr", true)
+      .eq("out_of_stock", false)
       .not("kitchen_station_id", "is", null)
       .order("sort_order"),
   ]);

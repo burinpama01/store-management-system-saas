@@ -813,6 +813,7 @@ export interface Database {
           music_license_status: "not_requested" | "pending" | "approved" | "rejected" | "expired";
           music_license_approved_at: string | null;
           music_license_note: string | null;
+          qr_service_buttons: Json;
           print_hub_token_hash: string | null;
           print_hub_last_seen: string | null;
           created_at: string;
@@ -844,6 +845,7 @@ export interface Database {
           music_license_status?: "not_requested" | "pending" | "approved" | "rejected" | "expired";
           music_license_approved_at?: string | null;
           music_license_note?: string | null;
+          qr_service_buttons?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
           created_at?: string;
@@ -875,6 +877,7 @@ export interface Database {
           music_license_status?: "not_requested" | "pending" | "approved" | "rejected" | "expired";
           music_license_approved_at?: string | null;
           music_license_note?: string | null;
+          qr_service_buttons?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
           created_at?: string;
@@ -1133,6 +1136,7 @@ export interface Database {
           available_for_delivery: boolean;
           delivery_price: number | null;
           delivery_out_of_stock: boolean;
+          out_of_stock: boolean;
           unit_label: string | null;
           price_wholesale: number | null;
           price_agent: number | null;
@@ -1159,6 +1163,7 @@ export interface Database {
           available_for_delivery?: boolean;
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
+          out_of_stock?: boolean;
           unit_label?: string | null;
           price_wholesale?: number | null;
           price_agent?: number | null;
@@ -1185,6 +1190,7 @@ export interface Database {
           available_for_delivery?: boolean;
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
+          out_of_stock?: boolean;
           unit_label?: string | null;
           price_wholesale?: number | null;
           price_agent?: number | null;
@@ -2597,7 +2603,7 @@ export interface Database {
           store_id: string;
           table_id: string;
           table_number: string;
-          type: "call_staff" | "request_bill";
+          type: "call_staff" | "request_water" | "request_condiment" | "request_bill";
           status: "pending" | "resolved";
           note: string | null;
           created_at: string;
@@ -2610,7 +2616,7 @@ export interface Database {
           store_id: string;
           table_id: string;
           table_number: string;
-          type: "call_staff" | "request_bill";
+          type: "call_staff" | "request_water" | "request_condiment" | "request_bill";
           status?: "pending" | "resolved";
           note?: string | null;
           created_at?: string;
@@ -2622,6 +2628,40 @@ export interface Database {
           note?: string | null;
           resolved_at?: string | null;
           resolved_by_user_id?: string | null;
+        };
+        Relationships: [];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string | null;
+          type: string;
+          title: string | null;
+          message: string;
+          metadata: Json;
+          status: "new" | "acknowledged";
+          acknowledged_by: string | null;
+          acknowledged_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id?: string | null;
+          type: string;
+          title?: string | null;
+          message: string;
+          metadata?: Json;
+          status?: "new" | "acknowledged";
+          acknowledged_by?: string | null;
+          acknowledged_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          status?: "new" | "acknowledged";
+          acknowledged_by?: string | null;
+          acknowledged_at?: string | null;
         };
         Relationships: [];
       };
