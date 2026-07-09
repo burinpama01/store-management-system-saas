@@ -73,7 +73,7 @@ async function resolveMusicContext(
 
   const { data: table, error: tableErr } = await supabase
     .from("tables")
-    .select("id, store_id, is_active, qr_enabled, current_session_id, session_expires_at")
+    .select("id, store_id, is_active, qr_enabled, current_session_id, session_started_at, session_expires_at")
     .eq("id", tableId)
     .eq("store_id", storeId)
     .single();
@@ -81,9 +81,10 @@ async function resolveMusicContext(
     return { ok: false, reason: "โต๊ะไม่ถูกต้อง" };
   }
 
+  // "ไม่จับเวลา" = session_started_at ถูกเซ็ต แต่ session_expires_at เป็น null → เปิดตลอด
   const sessionActive = table.session_expires_at
     ? Date.parse(table.session_expires_at) > nowMs()
-    : false;
+    : Boolean(table.session_started_at);
 
   const eligibility = resolveQrMusicEligibility({
     qrMode: store.qr_ordering_mode,

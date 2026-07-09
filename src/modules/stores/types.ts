@@ -33,6 +33,8 @@ export interface Store {
   musicLicenseApprovedAt?: string;
   musicLicenseNote?: string;
   dineInDurationMinutes: number;
+  /** เปิดโต๊ะแบบไม่จับเวลาโดยดีฟอลต์ */
+  dineInNoExpiry: boolean;
   themePresetId: string;
   themePrimaryColor: string;
   themePrimaryStrongColor: string;

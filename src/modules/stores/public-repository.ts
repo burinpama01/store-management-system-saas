@@ -38,6 +38,7 @@ export function mapStore(row: StoreRow): Store {
     // musicLicenseNote is an internal admin note — never expose on the public QR page.
     musicLicenseNote: undefined,
     dineInDurationMinutes: row.dine_in_duration_minutes,
+    dineInNoExpiry: row.dine_in_no_expiry,
     themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
     themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,
     themePrimaryStrongColor: row.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,

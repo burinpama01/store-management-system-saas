@@ -84,9 +84,12 @@ export default async function QrOrderPage({ params, searchParams }: QrOrderPageP
   }
 
   // Timed session gate: ordering is only allowed while the table session is active.
+  // "ไม่จับเวลา" = session_started_at ถูกเซ็ต แต่ session_expires_at เป็น null → เปิดตลอด
   const now = nowMs();
   const expiresAt = table.sessionExpiresAt ? Date.parse(table.sessionExpiresAt) : null;
-  const sessionActive = expiresAt !== null && expiresAt > now;
+  const startedAt = table.sessionStartedAt ? Date.parse(table.sessionStartedAt) : null;
+  const sessionActive =
+    (expiresAt !== null && expiresAt > now) || (startedAt !== null && expiresAt === null);
   // customer_self (table_bound): the customer may browse the menu and open the
   // table themselves by placing the first order, even without an active session.
   const canSelfOpen =

@@ -754,6 +754,8 @@ export interface OpenTableStatus {
   number: string;
   label: string | null;
   occupied: boolean;
+  /** true = โต๊ะเปิดอยู่แบบไม่จับเวลา (ไม่มี expiresAt) */
+  noExpiry: boolean;
   currentSessionId: string | null;
   expiresAt: string | null;
   /** Unpaid open QR orders still attached to this table. */
@@ -762,15 +764,20 @@ export interface OpenTableStatus {
 }
 
 /** Tables with their open-session status + unpaid-bill info, for the POS open-table picker. */
-export async function listTablesForOpenAction(): Promise<{ tables: OpenTableStatus[]; error: string | null }> {
+export async function listTablesForOpenAction(): Promise<{
+  tables: OpenTableStatus[];
+  noExpiryDefault: boolean;
+  error: string | null;
+}> {
   try {
     await requirePermission("pos.use");
     const { ctx } = await getStoreContext();
-    const [tablesRes, ordersRes] = await Promise.all([
+    const [tablesRes, ordersRes, storeRes] = await Promise.all([
       listManagedTables(ctx.storeId),
       listActiveQrOrders(ctx.storeId),
+      getStore(ctx.storeId),
     ]);
-    if (tablesRes.error) return { tables: [], error: tablesRes.error.userMessage };
+    if (tablesRes.error) return { tables: [], noExpiryDefault: false, error: tablesRes.error.userMessage };
 
     // Aggregate unpaid open QR orders by table.
     const unpaid = new Map<string, { count: number; total: number }>();
@@ -787,27 +794,33 @@ export async function listTablesForOpenAction(): Promise<{ tables: OpenTableStat
       .filter((t) => t.isActive)
       .map((t) => {
         const u = unpaid.get(t.id) ?? { count: 0, total: 0 };
+        // เปิดอยู่ = มีการเปิดโต๊ะ (session_started_at) และยังไม่หมดเวลา
+        // (ไม่มี expires = ไม่จับเวลา = ยังเปิดอยู่)
+        const occupied =
+          !!t.sessionStartedAt &&
+          (!t.sessionExpiresAt || Date.parse(t.sessionExpiresAt) > now);
         return {
           id: t.id,
           number: t.number,
           label: t.label ?? null,
-          occupied: !!t.sessionExpiresAt && Date.parse(t.sessionExpiresAt) > now,
+          occupied,
+          noExpiry: occupied && !t.sessionExpiresAt,
           currentSessionId: t.currentSessionId ?? null,
           expiresAt: t.sessionExpiresAt ?? null,
           unpaidCount: u.count,
           unpaidTotal: u.total,
         };
       });
-    return { tables, error: null };
+    return { tables, noExpiryDefault: storeRes.data?.dineInNoExpiry ?? false, error: null };
   } catch (e) {
-    return { tables: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+    return { tables: [], noExpiryDefault: false, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 
 /** Open an à la carte table session using the store's default duration. Returns the slug + expiry for the receipt. */
 export async function openTableAction(
   tableId: string,
-  minutesOverride?: number,
+  opts?: { minutes?: number; noExpiry?: boolean },
 ): Promise<{
   error: string | null;
   expiresAt: string | null;
@@ -822,9 +835,13 @@ export async function openTableAction(
     if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง", ...empty };
 
     const storeRes = await getStore(ctx.storeId);
-    const minutes = Number.isInteger(minutesOverride)
-      ? minutesOverride!
-      : storeRes.data?.dineInDurationMinutes ?? 120;
+    // noExpiry (จาก modal) มาก่อน; ถ้าไม่ได้ส่งมาให้ใช้ค่าเริ่มต้นของร้าน
+    const noExpiry = opts?.noExpiry ?? storeRes.data?.dineInNoExpiry ?? false;
+    const minutes: number | null = noExpiry
+      ? null
+      : Number.isInteger(opts?.minutes)
+        ? opts!.minutes!
+        : storeRes.data?.dineInDurationMinutes ?? 120;
 
     const res = await openTableSession(ctx.storeId, tableId, minutes);
     if (res.error) return { error: res.error.userMessage, ...empty };
@@ -841,7 +858,7 @@ export async function openTableAction(
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "เปิดโต๊ะใหม่",
-      message: `เปิดโต๊ะ ${tableLabel} แล้ว`,
+      message: minutes === null ? `เปิดโต๊ะ ${tableLabel} แล้ว (ไม่จับเวลา)` : `เปิดโต๊ะ ${tableLabel} แล้ว`,
       metadata: { tableId, tableLabel, minutes, expiresAt: res.data },
     });
 
@@ -949,6 +966,163 @@ export async function listOpenQrOrdersAction(): Promise<{ orders: QrOrderView[];
     return { orders: res.data ?? [], error: null };
   } catch (e) {
     return { orders: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+// --- Unified table bill: รวมออร์เดอร์ QR + ตั๋ว POS ที่พักไว้ ต่อโต๊ะ เป็นบิลเดียว ---
+
+export interface TableBillTicket {
+  id: string;
+  label: string;
+  total: number;
+  itemCount: number;
+}
+
+export interface TableBill {
+  tableId: string;
+  tableNumber: string;
+  qrOrders: QrOrderView[];
+  tickets: TableBillTicket[];
+  qrTotal: number;
+  ticketTotal: number;
+  grandTotal: number;
+}
+
+/** โต๊ะที่มีบิลค้าง (QR order ที่เปิดอยู่ + ตั๋ว POS ที่ผูกโต๊ะ) รวมยอดต่อโต๊ะ */
+export async function listTableBillsAction(): Promise<{ bills: TableBill[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    const [ordersRes, ticketsRes] = await Promise.all([
+      listActiveQrOrders(ctx.storeId),
+      listSavedTickets(ctx.storeId),
+    ]);
+    if (ordersRes.error) return { bills: [], error: ordersRes.error.userMessage };
+    if (ticketsRes.error) return { bills: [], error: ticketsRes.error.userMessage };
+
+    const byTable = new Map<string, TableBill>();
+    const ensure = (tableId: string, tableNumber: string): TableBill => {
+      let bill = byTable.get(tableId);
+      if (!bill) {
+        bill = { tableId, tableNumber, qrOrders: [], tickets: [], qrTotal: 0, ticketTotal: 0, grandTotal: 0 };
+        byTable.set(tableId, bill);
+      }
+      return bill;
+    };
+
+    for (const order of ordersRes.data ?? []) {
+      if (!order.tableId) continue;
+      const bill = ensure(order.tableId, order.tableNumber ?? "-");
+      bill.qrOrders.push(order);
+      bill.qrTotal += order.total;
+    }
+    for (const ticket of ticketsRes.data ?? []) {
+      if (!ticket.tableId) continue;
+      const bill = ensure(ticket.tableId, ticket.tableNumber ?? "-");
+      bill.tickets.push({
+        id: ticket.id,
+        label: ticket.label || ticket.ticketNumber,
+        total: ticket.cart.total,
+        itemCount: ticket.cart.items.length,
+      });
+      bill.ticketTotal += ticket.cart.total;
+    }
+
+    const bills = [...byTable.values()]
+      .map((b) => ({ ...b, grandTotal: b.qrTotal + b.ticketTotal }))
+      .filter((b) => b.qrOrders.length > 0 || b.tickets.length > 0)
+      .sort((a, b) => a.tableNumber.localeCompare(b.tableNumber, "th"));
+
+    return { bills, error: null };
+  } catch (e) {
+    return { bills: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * ชำระรวมทั้งโต๊ะ: เก็บเงินทุก QR order ที่เปิดอยู่ + คิดเงินตั๋ว POS ที่พักไว้ทั้งหมด
+ * ของโต๊ะนี้ ด้วยวิธีจ่ายเดียว แล้วปิดโต๊ะ (คืนโต๊ะว่าง). แต่ละบิลจะบันทึกยอดของตัวเอง
+ * ถ้ามีบิลใดชำระไม่ผ่าน จะหยุดและไม่ปิดโต๊ะ (บิลที่จ่ายไปแล้วจะไม่กลับมาอีก).
+ */
+export async function settleWholeTableAction(
+  tableId: string,
+  method: "cash" | "qr_promptpay",
+  opts?: { qrPaymentVerified?: boolean },
+): Promise<{ error: string | null; settledCount: number; total: number; closed: boolean }> {
+  const fail = (error: string, settledCount = 0, total = 0) => ({ error, settledCount, total, closed: false });
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(tableId)) return fail("โต๊ะไม่ถูกต้อง");
+    if (method !== "cash" && method !== "qr_promptpay") return fail("วิธีชำระไม่ถูกต้อง");
+    if (method === "qr_promptpay" && opts?.qrPaymentVerified !== true) {
+      return fail("กรุณายืนยันว่าได้รับเงิน QR แล้ว");
+    }
+    if (method === "cash") {
+      const cashSession = await getOpenCashSession(ctx.storeId);
+      if (cashSession.error) return fail(cashSession.error.userMessage);
+      if (!cashSession.data) return fail("ต้องเปิดรอบเงินสดก่อนรับเงินสด");
+    }
+
+    const [ordersRes, ticketsRes] = await Promise.all([
+      listActiveQrOrders(ctx.storeId),
+      listSavedTickets(ctx.storeId),
+    ]);
+    if (ordersRes.error) return fail(ordersRes.error.userMessage);
+    if (ticketsRes.error) return fail(ticketsRes.error.userMessage);
+
+    const qrOrders = (ordersRes.data ?? []).filter((o) => o.tableId === tableId);
+    const tickets = (ticketsRes.data ?? []).filter((t) => t.tableId === tableId);
+    if (qrOrders.length === 0 && tickets.length === 0) {
+      return fail("โต๊ะนี้ไม่มีบิลค้างชำระ");
+    }
+
+    let settledCount = 0;
+    let total = 0;
+
+    // 1) เก็บเงิน QR order ที่เปิดอยู่ทีละใบ
+    for (const order of qrOrders) {
+      const res = await collectPaymentAction(order.id, {
+        method,
+        amount: order.total,
+        receivedAmount: method === "cash" ? order.total : undefined,
+        changeAmount: method === "cash" ? 0 : undefined,
+        qrPaymentVerified: method === "qr_promptpay" ? true : undefined,
+      });
+      if (res.error) {
+        return { error: `บิล #${order.orderNumber}: ${res.error}`, settledCount, total, closed: false };
+      }
+      settledCount += 1;
+      total += order.total;
+    }
+
+    // 2) คิดเงินตั๋ว POS ที่พักไว้ทีละใบ แล้วลบตั๋ว
+    for (const ticket of tickets) {
+      const res = await checkoutAndPayAction(
+        ticket.cart,
+        {
+          method,
+          amount: ticket.cart.total,
+          receivedAmount: method === "cash" ? ticket.cart.total : undefined,
+          changeAmount: method === "cash" ? 0 : undefined,
+          qrPaymentVerified: method === "qr_promptpay" ? true : undefined,
+        },
+        { tableId, tableNumber: ticket.tableNumber, customerId: null },
+      );
+      if (res.error) {
+        return { error: `ตั๋ว ${ticket.label || ticket.ticketNumber}: ${res.error}`, settledCount, total, closed: false };
+      }
+      await deleteSavedTicket(ticket.id, ctx.storeId);
+      settledCount += 1;
+      total += ticket.cart.total;
+    }
+
+    // 3) ปิดโต๊ะ (คืนโต๊ะว่าง)
+    const close = await closeTableSession(ctx.storeId, tableId);
+    revalidatePath("/pos", "page");
+    return { error: null, settledCount, total, closed: !close.error };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
   }
 }
 

@@ -435,6 +435,23 @@ function StoreSettingsDialog({
           </p>
         </div>
 
+        <div className="max-w-md">
+          <label className="flex items-center gap-2 text-sm text-[var(--ink)]">
+            <input
+              type="checkbox"
+              name="dineInNoExpiry"
+              value="1"
+              defaultChecked={store.dineInNoExpiry}
+              disabled={!canEdit}
+              className="h-4 w-4 rounded border-[var(--border)]"
+            />
+            เปิดโต๊ะแบบไม่จับเวลาเป็นค่าเริ่มต้น
+          </label>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            ติ๊กไว้ = กด “เปิดโต๊ะ” ที่ POS จะไม่ตั้งเวลาหมดอายุ (โต๊ะเปิดจนกว่าจะปิด/เช็คบิลเอง) ยังติ๊ก/ยกเลิกได้ตอนเปิดแต่ละครั้ง
+          </p>
+        </div>
+
         <div className="max-w-xs">
           <label className="field-label" htmlFor="qrOrderingMode">
             รูปแบบ QR ของโต๊ะ
