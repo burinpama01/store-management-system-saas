@@ -11,6 +11,8 @@ import { Button } from "@/shared/components/ui";
 interface Props {
   onClose: () => void;
   onSelectTable?: (table: OpenTableStatus) => void;
+  /** เปิดบิลรวมของโต๊ะ (QR order + ตั๋ว POS) ใน POS */
+  onOpenBill?: (tableId: string) => void;
 }
 
 function remaining(expiresAt: string | null): string {
@@ -20,7 +22,7 @@ function remaining(expiresAt: string | null): string {
   return `เหลือ ${mins} นาที`;
 }
 
-export function TableOpenModal({ onClose, onSelectTable }: Props) {
+export function TableOpenModal({ onClose, onSelectTable, onOpenBill }: Props) {
   const [tables, setTables] = useState<OpenTableStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +135,15 @@ export function TableOpenModal({ onClose, onSelectTable }: Props) {
                         <p className="text-xs font-semibold text-red-600">
                           บิลค้าง {t.unpaidCount} รายการ · ฿{new Intl.NumberFormat("th-TH").format(t.unpaidTotal)}
                         </p>
+                      )}
+                      {onOpenBill && (
+                        <button
+                          onClick={() => onOpenBill(t.id)}
+                          disabled={isPending}
+                          className="mt-2 min-h-9 w-full rounded-md border border-teal-300 bg-teal-50 px-2 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                        >
+                          เปิดบิล / เพิ่มรายการ
+                        </button>
                       )}
                       <div className="mt-2 flex gap-1">
                         <a
