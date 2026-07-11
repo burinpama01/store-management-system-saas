@@ -35,6 +35,7 @@ import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables, listPrinters } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
+import { submitQrOrderAction, type QrOrderItem } from "@/app/qr/[storeSlug]/[tableId]/actions";
 import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
@@ -966,6 +967,30 @@ export async function listOpenQrOrdersAction(): Promise<{ orders: QrOrderView[];
     return { orders: res.data ?? [], error: null };
   } catch (e) {
     return { orders: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * พนักงานเพิ่มรายการเข้าโต๊ะที่เปิดอยู่ → ส่งเข้าครัวทันทีเป็น "ออเดอร์เปิด" ผูกโต๊ะ
+ * (ยังไม่เก็บเงิน). ใช้ไปป์ไลน์เดียวกับ QR order (create_qr_order_with_items) เพื่อให้
+ * ครัวเห็นบนบอร์ด + ตัดสต็อกตอนสั่ง + โผล่ในบิลรวมของโต๊ะ + เช็คบิลรวมได้เลย.
+ * โต๊ะที่เปิดอยู่ = session active → ผ่านด่านเช็คของ submitQrOrderAction เอง.
+ */
+export async function addItemsToTableAction(
+  tableId: string,
+  items: QrOrderItem[],
+): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(tableId)) {
+      return { orderId: null, orderNumber: null, error: "โต๊ะไม่ถูกต้อง" };
+    }
+    const res = await submitQrOrderAction(ctx.storeId, tableId, items);
+    if (!res.error) revalidatePath("/pos", "page");
+    return res;
+  } catch (e) {
+    return { orderId: null, orderNumber: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 

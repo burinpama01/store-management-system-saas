@@ -10,20 +10,24 @@ import { listTableBillsAction, settleWholeTableAction, type TableBill } from "./
 interface Props {
   currency: string;
   promptpayId?: string;
+  /** เปิดมาที่โต๊ะนี้เลย (จาก deep link /pos?tableBill=<id>) */
+  initialTableId?: string | null;
   onClose: () => void;
   onSettled: () => void;
+  /** กด "เพิ่มรายการ" ในบิลโต๊ะ → ให้ POS เข้าโหมดเพิ่มรายการผูกโต๊ะ */
+  onAddItems?: (tableId: string, tableNumber: string) => void;
 }
 
 function fmt(amount: number, currency: string): string {
   return new Intl.NumberFormat("th-TH", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 }
 
-export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Props) {
+export function TableBillModal({ currency, promptpayId, initialTableId, onClose, onSettled, onAddItems }: Props) {
   const [bills, setBills] = useState<TableBill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(initialTableId ?? null);
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState("");
   const [qrPaymentVerified, setQrPaymentVerified] = useState(false);
@@ -144,6 +148,16 @@ export function TableBillModal({ currency, promptpayId, onClose, onSettled }: Pr
                 <span>ยอดรวมทั้งโต๊ะ</span>
                 <span>{fmt(grandTotal, currency)}</span>
               </div>
+
+              {onAddItems && (
+                <button
+                  onClick={() => onAddItems(selected.tableId, selected.tableNumber)}
+                  disabled={isPending}
+                  className="w-full min-h-11 rounded-lg border border-teal-300 bg-teal-50 text-sm font-semibold text-teal-700 active:bg-teal-100 disabled:opacity-50"
+                >
+                  ➕ เพิ่มรายการเข้าโต๊ะ (ส่งเข้าครัว)
+                </button>
+              )}
 
               <div className="flex gap-2">
                 {(["cash", "qr_promptpay"] as const).map((m) => (

@@ -25,8 +25,10 @@ import {
   listOrdersHistoryAction,
   listTodayOrdersAction,
   voidOrderAction,
+  addItemsToTableAction,
   type RewardProductLine,
 } from "./actions";
+import { useSearchParams } from "next/navigation";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
@@ -2484,8 +2486,14 @@ export function PosTerminal({
   );
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
-  const [showTableBill, setShowTableBill] = useState(false);
+  // Deep link /pos?tableBill=<id> → เปิดบิลโต๊ะนั้นทันที
+  const searchParams = useSearchParams();
+  const initialTableBillId = searchParams.get("tableBill");
+  const [showTableBill, setShowTableBill] = useState(() => Boolean(initialTableBillId));
+  const [billTableId, setBillTableId] = useState<string | null>(() => initialTableBillId);
   const [showTableOpen, setShowTableOpen] = useState(false);
+  /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
+  const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
   const [printerConnectionOpen, setPrinterConnectionOpen] = useState(false);
   const [preferredPrinterId, setPreferredPrinterId] = useState<string | null>(null);
@@ -2522,12 +2530,13 @@ export function PosTerminal({
     cartRef.current = cart;
   }, [cart]);
 
-  const filteredProducts = useMemo(
-    () => selectedCategoryId
-      ? products.filter((p) => p.categoryId === selectedCategoryId && p.isActive && p.availableForPos)
-      : products.filter((p) => p.isActive && p.availableForPos),
-    [products, selectedCategoryId],
-  );
+  const filteredProducts = useMemo(() => {
+    // โหมดเพิ่มรายการเข้าโต๊ะ (ส่งครัว) ใช้ไปป์ไลน์ QR → แสดงเฉพาะเมนูที่ขายผ่าน QR ได้
+    const base = dineInTable
+      ? products.filter((p) => p.isActive && p.availableForQr)
+      : products.filter((p) => p.isActive && p.availableForPos);
+    return selectedCategoryId ? base.filter((p) => p.categoryId === selectedCategoryId) : base;
+  }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
   const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen;
@@ -2788,6 +2797,32 @@ export function PosTerminal({
     checkoutIdempotencyKeyRef.current = null;
     setAppliedCoupon(null);
     setCustomerCouponMessage("ล้างคูปองแล้ว");
+  }
+
+  /** ส่งรายการในตะกร้าเข้าครัวสำหรับโต๊ะที่กำลังเพิ่มรายการ (ออเดอร์เปิดผูกโต๊ะ ยังไม่เก็บเงิน) */
+  function handleSendToKitchen() {
+    if (!dineInTable || cart.items.length === 0) return;
+    const table = dineInTable;
+    const qrItems = cart.items.map((item) => ({
+      productId: item.productId,
+      variantId: item.variant?.id,
+      modifierOptionIds: item.modifiers.map((m) => m.option.id),
+      quantity: item.quantity,
+      note: item.note,
+    }));
+    startTransition(async () => {
+      const res = await addItemsToTableAction(table.id, qrItems);
+      if (res.error) {
+        setTicketMessage(res.error);
+        return;
+      }
+      commitCart(emptyCart(storeId), { resetItemDiscountForms: true });
+      setDineInTable(null);
+      setTicketMessage(`ส่งเข้าครัวแล้ว — โต๊ะ ${table.number}${res.orderNumber ? ` (ออเดอร์ ${res.orderNumber})` : ""}`);
+      // เปิดบิลโต๊ะกลับมาให้เห็นรายการที่เพิ่ง add
+      setBillTableId(table.id);
+      setShowTableBill(true);
+    });
   }
 
   function handleSaveTicket() {
@@ -3630,6 +3665,32 @@ export function PosTerminal({
         />
       </PosUtilitySheet>
 
+      {/* Dine-in: ส่งรายการเข้าครัวสำหรับโต๊ะที่กำลังเพิ่มรายการ */}
+      {dineInTable && (
+        <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-2 border-t border-teal-200 bg-teal-50 px-4 py-2 shadow-lg">
+          <span className="min-w-0 truncate text-sm font-semibold text-teal-800">
+            เพิ่มรายการเข้าโต๊ะ {dineInTable.number} · {cart.items.reduce((s, i) => s + i.quantity, 0)} รายการ
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => setDineInTable(null)}
+              className="min-h-10 px-3 text-xs text-gray-500 hover:text-gray-800"
+            >
+              ยกเลิก
+            </button>
+            <Button
+              onClick={handleSendToKitchen}
+              loading={isPending}
+              disabled={cart.items.length === 0}
+              className="min-h-10 rounded-lg bg-teal-600 px-4 text-sm font-bold text-white disabled:opacity-40"
+            >
+              ส่งเข้าครัว
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Picker modal */}
       {picker && (
         <ProductPickerModal
@@ -3653,6 +3714,11 @@ export function PosTerminal({
             setTicketMessage(`ผูกตั๋วกับโต๊ะ ${table.label ?? table.number} แล้ว`);
             setOrderPanelOpen(true);
           }}
+          onOpenBill={(tableId) => {
+            setBillTableId(tableId);
+            setShowTableOpen(false);
+            setShowTableBill(true);
+          }}
         />
       )}
 
@@ -3661,8 +3727,17 @@ export function PosTerminal({
         <TableBillModal
           currency={currency}
           promptpayId={receiptSettings?.promptpayId}
-          onClose={() => setShowTableBill(false)}
+          initialTableId={billTableId}
+          onClose={() => { setShowTableBill(false); setBillTableId(null); }}
           onSettled={() => {}}
+          onAddItems={(tableId, tableNumber) => {
+            setDineInTable({ id: tableId, number: tableNumber });
+            setTicketDraft((current) => ({ ...current, tableId, tableNumber }));
+            setShowTableBill(false);
+            setBillTableId(null);
+            setOrderPanelOpen(true);
+            setTicketMessage(`กำลังเพิ่มรายการเข้าโต๊ะ ${tableNumber} — เลือกเมนูแล้วกด "ส่งเข้าครัว"`);
+          }}
         />
       )}
     </div>

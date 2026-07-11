@@ -310,8 +310,11 @@ export function QrOrdersBoard({
                 เลือก All stations เพื่อเปลี่ยนสถานะทั้งออร์เดอร์
               </span>
             ) : null}
-            <Link href="/pos" className="btn-secondary min-h-11 px-3 text-xs">
-              ชำระเงิน
+            <Link
+              href={order.tableId ? `/pos?tableBill=${order.tableId}` : "/pos"}
+              className="btn-secondary min-h-11 px-3 text-xs"
+            >
+              เปิดบิลใน POS
             </Link>
           </div>
         </div>
