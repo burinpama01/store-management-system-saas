@@ -4,9 +4,8 @@ import {
   listTransactions,
   listAccountingCategories,
   getTransactionSummary,
-  getLatestCashBalance,
 } from "@/modules/accounting/repository";
-import { listCashSessions } from "@/modules/cashflow/repository";
+import { listCashSessions, getCurrentCashDrawer } from "@/modules/cashflow/repository";
 import { getStore } from "@/modules/stores/repository";
 import { AccountingManager } from "./AccountingManager";
 import { CashSessionsHistory } from "./CashSessionsHistory";
@@ -45,7 +44,7 @@ export default async function AccountingPage({
     }),
     listAccountingCategories(ctx.storeId),
     getTransactionSummary(ctx.storeId, dateFrom, dateTo),
-    getLatestCashBalance(ctx.storeId),
+    getCurrentCashDrawer(ctx.storeId),
     listCashSessions(ctx.storeId, { limit: 30 }),
     getStore(ctx.storeId),
   ]);
