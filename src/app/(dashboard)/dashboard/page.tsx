@@ -4,7 +4,7 @@ import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/module
 import type { PermissionKey } from "@/modules/tenants/types";
 import { getDashboardData } from "@/modules/reports/repository";
 import type { PaymentMethodSummary } from "@/modules/reports/types";
-import { getLatestCashBalance } from "@/modules/accounting/repository";
+import { getCurrentCashDrawer } from "@/modules/cashflow/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export default async function DashboardPage() {
 
   const [dashData, cashBalance] = await Promise.all([
     getDashboardData(ctx.storeId),
-    getLatestCashBalance(ctx.storeId),
+    getCurrentCashDrawer(ctx.storeId),
   ]);
 
   const { todaySales, pendingOrderCount, paymentMethodsToday, topProductsToday } = dashData;

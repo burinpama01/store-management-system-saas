@@ -91,6 +91,67 @@ function cashIntoDrawer(payment: { amount: number | null; received_amount: numbe
 }
 
 /**
+ * เงินสดในลิ้นชัก "ตอนนี้" แบบผูกกับรอบเงินสด (session-aware):
+ *  - มีรอบเปิดอยู่ = เงินเปิดร้าน (opening float) + เงินสดที่เคลื่อนไหวตั้งแต่เปิดรอบ
+ *    (ยอดขายเงินสด POS + รายรับ/จ่ายเงินสดที่บันทึกมือ) — คิดจากส่วนต่าง balance ใน ledger
+ *  - ไม่มีรอบเปิด = ยอดเงินนับจริงตอนปิดรอบล่าสุด (closing_count) หรือ 0
+ *
+ * ต่างจาก getLatestCashBalance (ยอดสะสมข้ามรอบใน ledger ที่ไม่รวมเงินเปิดร้าน) ซึ่งใช้
+ * ต่อยอด ledger เท่านั้น ไม่ใช่เงินในลิ้นชักจริง — เดิมทำให้ยอดติดลบเมื่อจ่ายเงินสดมากกว่า
+ * ยอดขายเงินสดที่บันทึก (เพราะเงินเปิดร้านไม่ถูกนับ).
+ */
+export async function getCurrentCashDrawer(storeId: string): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+
+  const { data: openRow } = await supabase
+    .from("cash_sessions")
+    .select("opening_float, opened_at")
+    .eq("store_id", storeId)
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (openRow) {
+    const latestBalance = await ledgerBalance(supabase, storeId, null);
+    const balanceAtOpen = await ledgerBalance(supabase, storeId, openRow.opened_at);
+    return Math.round((openRow.opening_float + (latestBalance - balanceAtOpen)) * 100) / 100;
+  }
+
+  // ไม่มีรอบเปิดอยู่ — แสดงยอดที่นับจริงตอนปิดรอบล่าสุด
+  const { data: closedRow } = await supabase
+    .from("cash_sessions")
+    .select("closing_count")
+    .eq("store_id", storeId)
+    .eq("status", "closed")
+    .order("closed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return closedRow?.closing_count ?? 0;
+}
+
+/**
+ * balance_after ของ cash_ledger ล่าสุด (before = null) หรือก่อนเวลาที่กำหนด (ใช้หา balance
+ * ณ ตอนเปิดรอบ). ledger เก็บ balance_after สะสม → ส่วนต่างจึงเท่ากับเงินสดที่เคลื่อนไหวจริง
+ * (รวมทั้ง pos_sale / income / expense / adjustment) โดยไม่ต้องเดาเครื่องหมาย.
+ */
+async function ledgerBalance(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  storeId: string,
+  before: string | null,
+): Promise<number> {
+  let query = supabase
+    .from("cash_ledger_entries")
+    .select("balance_after")
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (before) query = query.lt("created_at", before);
+  const { data } = await query.maybeSingle();
+  return data?.balance_after ?? 0;
+}
+
+/**
  * POS cash collected since a given time (net cash into drawer = received - change).
  * Used to preview the expected drawer total while a session is still open.
  */

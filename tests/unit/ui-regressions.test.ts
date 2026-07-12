@@ -564,7 +564,7 @@ describe("UX/UI regression guards", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
     expect(source).toContain("const filteredProducts = useMemo(");
-    expect(source).toContain("[products, selectedCategoryId]");
+    expect(source).toContain("[products, selectedCategoryId, dineInTable]");
     expect(source).toContain("const PosProductTile = memo(");
   });
 
@@ -740,7 +740,7 @@ describe("UX/UI regression guards", () => {
     const source = read("src/app/(dashboard)/dashboard/page.tsx");
     const guardIndex = source.indexOf("dashboard.view");
     const dashboardQueryIndex = source.indexOf("getDashboardData(ctx.storeId)");
-    const cashQueryIndex = source.indexOf("getLatestCashBalance(ctx.storeId)");
+    const cashQueryIndex = source.indexOf("getCurrentCashDrawer(ctx.storeId)");
 
     expect(source).toContain("getResolvedCurrentPermissions");
     expect(guardIndex).toBeGreaterThanOrEqual(0);
