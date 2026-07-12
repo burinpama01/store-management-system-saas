@@ -19,6 +19,8 @@ interface Props {
   preferredPrinterId: string | null;
   /** เปิดมาที่โต๊ะนี้เลย (จาก deep link /pos?tableBill=<id>) */
   initialTableId?: string | null;
+  /** เลขโต๊ะของ initialTableId (ถ้ารู้ — ใช้ตอนโต๊ะยังไม่มีบิล) */
+  initialTableNumber?: string | null;
   onClose: () => void;
   onSettled: () => void;
   /** กด "เพิ่มรายการ" ในบิลโต๊ะ → ให้ POS เข้าโหมดเพิ่มรายการผูกโต๊ะ */
@@ -111,6 +113,7 @@ export function TableBillModal({
   printers,
   preferredPrinterId,
   initialTableId,
+  initialTableNumber,
   onClose,
   onSettled,
   onAddItems,
@@ -373,6 +376,27 @@ export function TableBillModal({
             </div>
           ) : loading ? (
             <p className="py-8 text-center text-sm text-gray-400">กำลังโหลด...</p>
+          ) : selectedTableId ? (
+            /* เปิดมาที่โต๊ะที่ยังไม่มีบิล (เช่น เพิ่งเปิดโต๊ะ ลูกค้าไม่สะดวกสแกน QR) */
+            <div className="space-y-3 py-6 text-center">
+              <p className="text-sm text-gray-500">
+                โต๊ะ{initialTableNumber ? ` ${initialTableNumber}` : "นี้"}ยังไม่มีบิลค้างชำระ
+              </p>
+              {onAddItems && (
+                <button
+                  onClick={() => onAddItems(selectedTableId, initialTableNumber ?? "-")}
+                  className="mx-auto block min-h-11 w-full max-w-xs rounded-lg border border-teal-300 bg-teal-50 text-sm font-semibold text-teal-700 active:bg-teal-100"
+                >
+                  ➕ เพิ่มรายการเข้าโต๊ะ (ส่งเข้าครัว)
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedTableId(null)}
+                className="mx-auto block min-h-10 text-xs text-gray-400 hover:text-gray-600"
+              >
+                ดูบิลโต๊ะอื่น
+              </button>
+            </div>
           ) : bills.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-400">ไม่มีบิลค้างชำระ</p>
           ) : (

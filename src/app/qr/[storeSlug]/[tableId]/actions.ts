@@ -417,7 +417,11 @@ export async function submitQrOrderAction(
 
 // --- Customer order tracking + service requests ---
 
-/** Fetch the customer's own orders by id (ids are held client-side after submitting). */
+/**
+ * ออร์เดอร์ของโต๊ะสำหรับหน้าลูกค้า: ทุกออเดอร์ที่ยังเปิดอยู่ของโต๊ะ (รวมที่พนักงาน
+ * เพิ่มจาก POS — ลูกค้าต้องเห็นบิลรวมของโต๊ะ) + ออเดอร์ที่เครื่องนี้เคยสั่งตาม id
+ * (เก็บใน localStorage เพื่อให้เห็นประวัติที่จ่ายแล้วของตัวเอง)
+ */
 export async function getTableOrdersAction(
   storeId: string,
   tableId: string,
@@ -425,19 +429,34 @@ export async function getTableOrdersAction(
 ): Promise<{ orders: QrOrderView[]; error: string | null }> {
   if (!isUUID(storeId) || !isUUID(tableId)) return { orders: [], error: "Invalid request" };
   const ids = [...new Set(orderIds)].filter(isUUID).slice(0, 50);
-  if (ids.length === 0) return { orders: [], error: null };
 
   const supabase = await createSupabaseServiceClient();
-  const { data: orderRows, error } = await supabase
-    .from("orders")
-    .select("id, order_number, status, prep_status, table_id, table_number, total, note, created_at, paid_at")
-    .eq("store_id", storeId)
-    .eq("table_id", tableId)
-    .in("id", ids)
-    .order("created_at", { ascending: false });
+  const ORDER_SELECT =
+    "id, order_number, status, prep_status, table_id, table_number, total, note, created_at, paid_at";
+  const [openRes, mineRes] = await Promise.all([
+    supabase
+      .from("orders")
+      .select(ORDER_SELECT)
+      .eq("store_id", storeId)
+      .eq("table_id", tableId)
+      .eq("qr_order_source", true)
+      .in("status", ["open", "pending_payment"])
+      .order("created_at", { ascending: false }),
+    ids.length > 0
+      ? supabase
+          .from("orders")
+          .select(ORDER_SELECT)
+          .eq("store_id", storeId)
+          .eq("table_id", tableId)
+          .in("id", ids)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
-  if (error) return { orders: [], error: "ไม่สามารถโหลดออร์เดอร์ได้" };
-  const rows = orderRows ?? [];
+  if (openRes.error && mineRes.error) return { orders: [], error: "ไม่สามารถโหลดออร์เดอร์ได้" };
+  const byId = new Map<string, NonNullable<typeof openRes.data>[number]>();
+  for (const row of [...(openRes.data ?? []), ...(mineRes.data ?? [])]) byId.set(row.id, row);
+  const rows = [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
   if (rows.length === 0) return { orders: [], error: null };
 
   const { data: itemRows } = await supabase
