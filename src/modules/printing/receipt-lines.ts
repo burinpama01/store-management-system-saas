@@ -185,6 +185,11 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   if (data.showTaxId && data.taxId) lines.push({ text: `เลขผู้เสียภาษี: ${data.taxId}`, align: "center" });
   pushWrapped(lines, data.headerText, cols, { align: "center" });
   lines.push({ text: div });
+  if (data.paymentStatus === "unpaid") {
+    // ใบแจ้งยอดก่อนชำระ (pre-bill) — ระบุชัดว่ายังไม่ใช่ใบเสร็จรับเงิน
+    lines.push({ text: "ใบแจ้งยอด (ยังไม่ชำระเงิน)", align: "center", bold: true });
+    lines.push({ text: div });
+  }
   lines.push({ text: `ออร์เดอร์: ${data.orderNumber}` });
   if (data.tableNumber) lines.push({ text: `โต๊ะ: ${data.tableNumber}` });
   lines.push({

@@ -996,11 +996,24 @@ export async function addItemsToTableAction(
 
 // --- Unified table bill: รวมออร์เดอร์ QR + ตั๋ว POS ที่พักไว้ ต่อโต๊ะ เป็นบิลเดียว ---
 
+export interface TableBillTicketItem {
+  name: string;
+  variantName?: string;
+  unitName?: string;
+  modifierNames: string[];
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  note?: string;
+}
+
 export interface TableBillTicket {
   id: string;
   label: string;
   total: number;
   itemCount: number;
+  /** รายการในตั๋ว (ใช้พิมพ์ใบแจ้งยอด/ใบเสร็จรวมของโต๊ะ) */
+  items: TableBillTicketItem[];
 }
 
 export interface TableBill {
@@ -1049,6 +1062,16 @@ export async function listTableBillsAction(): Promise<{ bills: TableBill[]; erro
         label: ticket.label || ticket.ticketNumber,
         total: ticket.cart.total,
         itemCount: ticket.cart.items.length,
+        items: ticket.cart.items.map((item) => ({
+          name: item.productName,
+          variantName: item.variant?.name,
+          unitName: item.unit?.name,
+          modifierNames: item.modifiers.map((m) => m.option.name),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          note: item.note,
+        })),
       });
       bill.ticketTotal += ticket.cart.total;
     }

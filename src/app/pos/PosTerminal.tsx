@@ -97,6 +97,8 @@ interface Props {
   exitHref?: string | null;
   cashSession: CashSession | null;
   cashSalesPreview: number;
+  /** เงินสดเข้า-ออกจริงตั้งแต่เปิดรอบ (รวมรายรับ/จ่ายเงินสดมือ) — พรีวิว "เงินที่ควรมี" */
+  cashMovementPreview: number;
   currency: string;
   canDiscount: boolean;
   canRecordCashflow: boolean;
@@ -2463,6 +2465,7 @@ export function PosTerminal({
   exitHref,
   cashSession,
   cashSalesPreview,
+  cashMovementPreview,
   currency,
   canDiscount,
   canRecordCashflow,
@@ -3407,6 +3410,7 @@ export function PosTerminal({
             <CashSessionPanel
               session={cashSession}
               cashSalesPreview={cashSalesPreview}
+              cashMovementPreview={cashMovementPreview}
               currency={currency}
               forceOpenPrompt={!cashSession && canRecordCashflow}
             />
@@ -3727,6 +3731,10 @@ export function PosTerminal({
         <TableBillModal
           currency={currency}
           promptpayId={receiptSettings?.promptpayId}
+          storeName={storeName}
+          receiptSettings={receiptSettings}
+          printers={printers}
+          preferredPrinterId={preferredPrinterIdForPrint}
           initialTableId={billTableId}
           onClose={() => { setShowTableBill(false); setBillTableId(null); }}
           onSettled={() => {}}
