@@ -15,6 +15,7 @@ import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { QrOrderGlobalNotifier } from "./QrOrderGlobalNotifier";
 import { DeliveryGlobalNotifier } from "./DeliveryGlobalNotifier";
+import { NotificationGlobalNotifier } from "./NotificationGlobalNotifier";
 import { PushTokenRegistrar } from "./PushTokenRegistrar";
 import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
@@ -162,6 +163,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </nav>
       </div>
       <PushTokenRegistrar />
+      {can("reports.view") && <NotificationGlobalNotifier storeId={storeContext.storeId} />}
       <QrOrderGlobalNotifier
         storeId={storeContext.storeId}
         storeName={storeContext.storeName}

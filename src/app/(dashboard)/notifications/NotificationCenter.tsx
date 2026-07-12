@@ -34,7 +34,7 @@ const TYPE_META: Record<string, { label: string; emoji: string; tone: string }> 
   test: { label: "ทดสอบ", emoji: "🧪", tone: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
-function metaFor(type: string) {
+export function metaFor(type: string) {
   return TYPE_META[type] ?? { label: type, emoji: "🔔", tone: "bg-slate-50 text-slate-600 border-slate-200" };
 }
 
