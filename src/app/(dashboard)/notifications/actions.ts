@@ -6,6 +6,7 @@ import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/au
 import {
   acknowledgeNotification,
   acknowledgeAllNotifications,
+  listNotifications,
 } from "@/modules/notifications/repository";
 
 async function getStoreContext() {
@@ -29,6 +30,42 @@ export async function acknowledgeNotificationAction(
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export interface NewNotificationItem {
+  id: string;
+  type: string;
+  title: string | null;
+  message: string;
+  createdAt: string;
+}
+
+/**
+ * การแจ้งเตือนสถานะ "ใหม่" ล่าสุดของร้าน — ใช้เป็น polling fallback ของตัวเด้ง
+ * แจ้งเตือนกลาง (กรณี realtime ใช้ไม่ได้ เช่น เน็ตร้านบล็อก WebSocket)
+ */
+export async function listNewNotificationsAction(): Promise<{
+  notifications: NewNotificationItem[];
+  error: string | null;
+}> {
+  try {
+    await requirePermission("reports.view");
+    const { ctx } = await getStoreContext();
+    const res = await listNotifications(ctx.storeId, { status: "new", limit: 10 });
+    if (res.error) return { notifications: [], error: res.error.userMessage };
+    return {
+      notifications: (res.data ?? []).map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        createdAt: n.createdAt,
+      })),
+      error: null,
+    };
+  } catch (e) {
+    return { notifications: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 

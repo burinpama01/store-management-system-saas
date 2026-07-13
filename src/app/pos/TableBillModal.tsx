@@ -5,28 +5,125 @@ import { createPortal } from "react-dom";
 import { QrCode } from "@/shared/components/ui/QrCode";
 import { Button } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
+import { printReceiptWithFallback } from "@/modules/printing/receipt-printer";
+import type { ReceiptData } from "@/modules/printing/types";
+import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { listTableBillsAction, settleWholeTableAction, type TableBill } from "./actions";
 
 interface Props {
   currency: string;
   promptpayId?: string;
+  storeName: string;
+  receiptSettings: ReceiptSettings | null;
+  printers: Printer[];
+  preferredPrinterId: string | null;
   /** เปิดมาที่โต๊ะนี้เลย (จาก deep link /pos?tableBill=<id>) */
   initialTableId?: string | null;
+  /** เลขโต๊ะของ initialTableId (ถ้ารู้ — ใช้ตอนโต๊ะยังไม่มีบิล) */
+  initialTableNumber?: string | null;
   onClose: () => void;
   onSettled: () => void;
   /** กด "เพิ่มรายการ" ในบิลโต๊ะ → ให้ POS เข้าโหมดเพิ่มรายการผูกโต๊ะ */
   onAddItems?: (tableId: string, tableNumber: string) => void;
 }
 
+type TableBillPrintMode =
+  | { status: "unpaid" }
+  | {
+      status: "paid";
+      method: "cash" | "qr_promptpay";
+      receivedAmount?: number;
+      changeAmount?: number;
+    };
+
+/** สร้างข้อมูลใบเสร็จรวมของโต๊ะ (QR orders + ตั๋ว POS) — ใบแจ้งยอด (unpaid, มี QR ชำระ) หรือใบเสร็จรับเงิน */
+function buildTableBillReceipt(
+  bill: TableBill,
+  settings: ReceiptSettings | null,
+  storeName: string,
+  mode: TableBillPrintMode,
+): ReceiptData {
+  const items = [
+    ...bill.qrOrders.flatMap((order) =>
+      order.items
+        .filter((item) => !item.voided)
+        .map((item) => ({
+          name: item.productName,
+          variantName: item.variantName,
+          modifierNames: item.modifiers.map((m) => m.option.name),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          note: item.note,
+        })),
+    ),
+    ...bill.tickets.flatMap((ticket) => ticket.items.map((item) => ({ ...item }))),
+  ];
+  const subtotal = Math.round(items.reduce((sum, item) => sum + item.totalPrice, 0) * 100) / 100;
+  const total = bill.grandTotal;
+  const discount = Math.max(0, Math.round((subtotal - total) * 100) / 100);
+  const unpaid = mode.status === "unpaid";
+  return {
+    storeName: settings?.storeName || storeName,
+    address: settings?.address,
+    phone: settings?.phone,
+    taxId: settings?.taxId,
+    showTaxId: settings?.showTaxId ?? false,
+    orderNumber: `TABLE-${bill.tableNumber}`,
+    tableNumber: bill.tableNumber,
+    items,
+    subtotal,
+    discount,
+    total,
+    payments: unpaid
+      ? []
+      : [
+          {
+            method: mode.method,
+            amount: total,
+            receivedAmount: mode.receivedAmount,
+            changeAmount: mode.changeAmount,
+          },
+        ],
+    paymentStatus: mode.status,
+    vatRate:
+      settings && settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
+    footerText: settings?.footerText,
+    headerText: settings?.headerText,
+    logoUrl: settings?.logoUrl,
+    footerImageUrl: settings?.footerImageUrl,
+    // ใบแจ้งยอด: โชว์ QR PromptPay ล็อกยอดให้ลูกค้าสแกนจ่ายที่โต๊ะ; ใบเสร็จรับเงิน: ไม่ต้อง
+    showQrPayment: unpaid,
+    promptpayId: settings?.promptpayId,
+    paperWidth: settings?.paperWidth ?? "80mm",
+    printCopies: unpaid ? 1 : settings?.printCopies ?? 1,
+    printedAt: new Date().toISOString(),
+  };
+}
+
 function fmt(amount: number, currency: string): string {
   return new Intl.NumberFormat("th-TH", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 }
 
-export function TableBillModal({ currency, promptpayId, initialTableId, onClose, onSettled, onAddItems }: Props) {
+export function TableBillModal({
+  currency,
+  promptpayId,
+  storeName,
+  receiptSettings,
+  printers,
+  preferredPrinterId,
+  initialTableId,
+  initialTableNumber,
+  onClose,
+  onSettled,
+  onAddItems,
+}: Props) {
   const [bills, setBills] = useState<TableBill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [printMsg, setPrintMsg] = useState<string | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(initialTableId ?? null);
   const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
   const [received, setReceived] = useState("");
@@ -71,9 +168,34 @@ export function TableBillModal({ currency, promptpayId, initialTableId, onClose,
     setQrPaymentVerified(false);
   }
 
+  /** พิมพ์บิลของโต๊ะ — ใบแจ้งยอด (unpaid + QR ชำระ) หรือใบเสร็จรับเงิน (paid) */
+  async function printBill(bill: TableBill, mode: TableBillPrintMode) {
+    setPrintMsg(null);
+    setIsPrinting(true);
+    try {
+      const data = buildTableBillReceipt(bill, receiptSettings, storeName, mode);
+      await printReceiptWithFallback({
+        printers,
+        preferredPrinterId,
+        escpos: data,
+        browser: data,
+      });
+      setPrintMsg(mode.status === "unpaid" ? "พิมพ์ใบแจ้งยอดแล้ว" : "พิมพ์ใบเสร็จรับเงินแล้ว");
+    } catch (e) {
+      setPrintMsg(e instanceof Error ? `พิมพ์ไม่สำเร็จ: ${e.message}` : "พิมพ์ไม่สำเร็จ");
+    } finally {
+      setIsPrinting(false);
+    }
+  }
+
   function settleTable() {
     if (!selected) return;
+    // snapshot ก่อนยิง action — หลังชำระสำเร็จรายการจะหายจากลิสต์ แต่ต้องใช้พิมพ์ใบเสร็จ
+    const billSnapshot = selected;
     const tableLabel = selected.tableNumber;
+    const paidReceived = method === "cash" ? (receivedNum || billSnapshot.grandTotal) : undefined;
+    const paidChange =
+      method === "cash" ? Math.max(0, (receivedNum || billSnapshot.grandTotal) - billSnapshot.grandTotal) : undefined;
     setError(null);
     setNotice(null);
     startTransition(async () => {
@@ -94,6 +216,13 @@ export function TableBillModal({ currency, promptpayId, initialTableId, onClose,
         }`,
       );
       load();
+      // พิมพ์ใบเสร็จรับเงินอัตโนมัติหลังเช็คบิล (best-effort — พังแค่โชว์ข้อความ ไม่กระทบการชำระ)
+      await printBill(billSnapshot, {
+        status: "paid",
+        method,
+        receivedAmount: paidReceived,
+        changeAmount: paidChange,
+      });
     });
   }
 
@@ -112,6 +241,11 @@ export function TableBillModal({ currency, promptpayId, initialTableId, onClose,
           {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
           {notice && !selected && (
             <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>
+          )}
+          {printMsg && (
+            <p className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-700" aria-live="polite">
+              {printMsg}
+            </p>
           )}
 
           {selected ? (
@@ -148,6 +282,14 @@ export function TableBillModal({ currency, promptpayId, initialTableId, onClose,
                 <span>ยอดรวมทั้งโต๊ะ</span>
                 <span>{fmt(grandTotal, currency)}</span>
               </div>
+
+              <button
+                onClick={() => void printBill(selected, { status: "unpaid" })}
+                disabled={isPending || isPrinting}
+                className="w-full min-h-11 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 active:bg-gray-50 disabled:opacity-50"
+              >
+                {isPrinting ? "กำลังพิมพ์..." : "🖨️ พิมพ์ใบแจ้งยอด (มี QR ให้สแกนจ่าย)"}
+              </button>
 
               {onAddItems && (
                 <button
@@ -234,6 +376,27 @@ export function TableBillModal({ currency, promptpayId, initialTableId, onClose,
             </div>
           ) : loading ? (
             <p className="py-8 text-center text-sm text-gray-400">กำลังโหลด...</p>
+          ) : selectedTableId ? (
+            /* เปิดมาที่โต๊ะที่ยังไม่มีบิล (เช่น เพิ่งเปิดโต๊ะ ลูกค้าไม่สะดวกสแกน QR) */
+            <div className="space-y-3 py-6 text-center">
+              <p className="text-sm text-gray-500">
+                โต๊ะ{initialTableNumber ? ` ${initialTableNumber}` : "นี้"}ยังไม่มีบิลค้างชำระ
+              </p>
+              {onAddItems && (
+                <button
+                  onClick={() => onAddItems(selectedTableId, initialTableNumber ?? "-")}
+                  className="mx-auto block min-h-11 w-full max-w-xs rounded-lg border border-teal-300 bg-teal-50 text-sm font-semibold text-teal-700 active:bg-teal-100"
+                >
+                  ➕ เพิ่มรายการเข้าโต๊ะ (ส่งเข้าครัว)
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedTableId(null)}
+                className="mx-auto block min-h-10 text-xs text-gray-400 hover:text-gray-600"
+              >
+                ดูบิลโต๊ะอื่น
+              </button>
+            </div>
           ) : bills.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-400">ไม่มีบิลค้างชำระ</p>
           ) : (

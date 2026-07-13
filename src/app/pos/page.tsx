@@ -3,7 +3,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { listCategories, listProducts } from "@/modules/catalog/repository";
 import { getReceiptSettings, getStore, listPrinters } from "@/modules/stores/repository";
-import { getOpenCashSession, getCashSalesSince } from "@/modules/cashflow/repository";
+import { getOpenCashSession, getCashSalesSince, getCashMovementSince } from "@/modules/cashflow/repository";
 import { buildThemeStyle } from "@/modules/theme/presets";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
@@ -42,9 +42,12 @@ export default async function PosPage() {
     ]);
 
   const cashSession = cashSessionResult.data ?? null;
-  const cashSalesPreview = cashSession
-    ? await getCashSalesSince(ctx.storeId, cashSession.openedAt)
-    : 0;
+  const [cashSalesPreview, cashMovementPreview] = cashSession
+    ? await Promise.all([
+        getCashSalesSince(ctx.storeId, cashSession.openedAt),
+        getCashMovementSince(ctx.storeId, cashSession.openedAt),
+      ])
+    : [0, 0];
   const themeStyle = buildThemeStyle({
     presetId: ctx.themePresetId,
     primaryColor: ctx.themePrimaryColor,
@@ -77,6 +80,7 @@ export default async function PosPage() {
         exitHref={firstHomeRoute(resolved.can)}
         cashSession={cashSession}
         cashSalesPreview={cashSalesPreview}
+        cashMovementPreview={cashMovementPreview}
         currency={storeResult.data?.currencyCode ?? "THB"}
         canDiscount={resolved.can("pos.discount")}
         canRecordCashflow={resolved.can("cashflow.record")}

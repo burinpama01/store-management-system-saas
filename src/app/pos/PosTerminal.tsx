@@ -97,6 +97,8 @@ interface Props {
   exitHref?: string | null;
   cashSession: CashSession | null;
   cashSalesPreview: number;
+  /** เงินสดเข้า-ออกจริงตั้งแต่เปิดรอบ (รวมรายรับ/จ่ายเงินสดมือ) — พรีวิว "เงินที่ควรมี" */
+  cashMovementPreview: number;
   currency: string;
   canDiscount: boolean;
   canRecordCashflow: boolean;
@@ -2463,6 +2465,7 @@ export function PosTerminal({
   exitHref,
   cashSession,
   cashSalesPreview,
+  cashMovementPreview,
   currency,
   canDiscount,
   canRecordCashflow,
@@ -2491,6 +2494,8 @@ export function PosTerminal({
   const initialTableBillId = searchParams.get("tableBill");
   const [showTableBill, setShowTableBill] = useState(() => Boolean(initialTableBillId));
   const [billTableId, setBillTableId] = useState<string | null>(() => initialTableBillId);
+  /** เลขโต๊ะของ billTableId (รู้เมื่อมาจากหน้าเปิดโต๊ะ — deep link ไม่รู้) */
+  const [billTableNumber, setBillTableNumber] = useState<string | null>(null);
   const [showTableOpen, setShowTableOpen] = useState(false);
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
@@ -2797,6 +2802,18 @@ export function PosTerminal({
     checkoutIdempotencyKeyRef.current = null;
     setAppliedCoupon(null);
     setCustomerCouponMessage("ล้างคูปองแล้ว");
+  }
+
+  /** เข้าโหมดเพิ่มรายการเข้าโต๊ะ (ส่งครัว) — ใช้ทั้งจากบิลโต๊ะและจากหน้าเปิดโต๊ะ */
+  function startDineInAdd(tableId: string, tableNumber: string) {
+    setDineInTable({ id: tableId, number: tableNumber });
+    setTicketDraft((current) => ({ ...current, tableId, tableNumber }));
+    setShowTableBill(false);
+    setBillTableId(null);
+    setBillTableNumber(null);
+    setShowTableOpen(false);
+    setOrderPanelOpen(true);
+    setTicketMessage(`กำลังเพิ่มรายการเข้าโต๊ะ ${tableNumber} — เลือกเมนูแล้วกด "ส่งเข้าครัว"`);
   }
 
   /** ส่งรายการในตะกร้าเข้าครัวสำหรับโต๊ะที่กำลังเพิ่มรายการ (ออเดอร์เปิดผูกโต๊ะ ยังไม่เก็บเงิน) */
@@ -3407,6 +3424,7 @@ export function PosTerminal({
             <CashSessionPanel
               session={cashSession}
               cashSalesPreview={cashSalesPreview}
+              cashMovementPreview={cashMovementPreview}
               currency={currency}
               forceOpenPrompt={!cashSession && canRecordCashflow}
             />
@@ -3714,11 +3732,13 @@ export function PosTerminal({
             setTicketMessage(`ผูกตั๋วกับโต๊ะ ${table.label ?? table.number} แล้ว`);
             setOrderPanelOpen(true);
           }}
-          onOpenBill={(tableId) => {
+          onOpenBill={(tableId, tableLabel) => {
             setBillTableId(tableId);
+            setBillTableNumber(tableLabel);
             setShowTableOpen(false);
             setShowTableBill(true);
           }}
+          onAddItems={(tableId, tableLabel) => startDineInAdd(tableId, tableLabel)}
         />
       )}
 
@@ -3727,17 +3747,15 @@ export function PosTerminal({
         <TableBillModal
           currency={currency}
           promptpayId={receiptSettings?.promptpayId}
+          storeName={storeName}
+          receiptSettings={receiptSettings}
+          printers={printers}
+          preferredPrinterId={preferredPrinterIdForPrint}
           initialTableId={billTableId}
-          onClose={() => { setShowTableBill(false); setBillTableId(null); }}
+          initialTableNumber={billTableNumber}
+          onClose={() => { setShowTableBill(false); setBillTableId(null); setBillTableNumber(null); }}
           onSettled={() => {}}
-          onAddItems={(tableId, tableNumber) => {
-            setDineInTable({ id: tableId, number: tableNumber });
-            setTicketDraft((current) => ({ ...current, tableId, tableNumber }));
-            setShowTableBill(false);
-            setBillTableId(null);
-            setOrderPanelOpen(true);
-            setTicketMessage(`กำลังเพิ่มรายการเข้าโต๊ะ ${tableNumber} — เลือกเมนูแล้วกด "ส่งเข้าครัว"`);
-          }}
+          onAddItems={(tableId, tableNumber) => startDineInAdd(tableId, tableNumber)}
         />
       )}
     </div>

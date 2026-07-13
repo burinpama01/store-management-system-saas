@@ -11,6 +11,8 @@ interface Props {
   session: CashSession | null;
   /** POS cash collected since the session opened (preview of expected drawer). */
   cashSalesPreview: number;
+  /** เงินสดเข้า-ออกจริงตั้งแต่เปิดรอบ (POS + รายรับ/จ่ายเงินสดมือ) จาก cash ledger. */
+  cashMovementPreview: number;
   currency: string;
   forceOpenPrompt?: boolean;
 }
@@ -23,7 +25,7 @@ function formatMoney(amount: number, currency: string): string {
   }).format(amount);
 }
 
-export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpenPrompt = false }: Props) {
+export function CashSessionPanel({ session, cashSalesPreview, cashMovementPreview, currency, forceOpenPrompt = false }: Props) {
   const router = useRouter();
   const [modal, setModal] = useState<"open" | "close" | null>(() => forceOpenPrompt && !session ? "open" : null);
   const [floatInput, setFloatInput] = useState("");
@@ -33,7 +35,10 @@ export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpe
   const [result, setResult] = useState<CashSession | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const expectedCash = session ? session.openingFloat + cashSalesPreview : 0;
+  // เงินที่ควรมี = เงินเปิดร้าน + เงินสดเข้า-ออกจริง (รวมรายรับ/จ่ายเงินสดมือ ไม่ใช่แค่ยอดขาย POS)
+  const expectedCash = session ? session.openingFloat + cashMovementPreview : 0;
+  // ส่วนที่ไม่ใช่ยอดขาย POS (รายรับ-จ่ายเงินสดที่บันทึกมือ) — โชว์แยกบรรทัดเมื่อมีค่า
+  const otherCashMovement = Math.round((cashMovementPreview - cashSalesPreview) * 100) / 100;
   const countNum = parseFloat(countInput);
   const variancePreview = !isNaN(countNum) ? countNum - expectedCash : null;
   const forcedOpen = forceOpenPrompt && !session;
@@ -119,6 +124,14 @@ export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpe
                 <dl className="mt-4 space-y-2 text-left text-sm">
                   <Row label="เงินเปิดร้าน" value={formatMoney(result.openingFloat, currency)} />
                   <Row label="ยอดขายเงินสด (POS)" value={formatMoney(result.cashSales ?? 0, currency)} />
+                  {(() => {
+                    // ส่วนที่ไม่ใช่ยอดขาย POS = expected − เงินเปิดร้าน − ยอดขาย POS
+                    const other =
+                      Math.round(((result.expectedCash ?? 0) - result.openingFloat - (result.cashSales ?? 0)) * 100) / 100;
+                    return other !== 0 ? (
+                      <Row label="รายรับ-จ่ายเงินสดอื่น" value={formatMoney(other, currency)} />
+                    ) : null;
+                  })()}
                   <Row label="เงินที่ควรมี" value={formatMoney(result.expectedCash ?? 0, currency)} />
                   <Row label="เงินที่นับได้" value={formatMoney(result.closingCount ?? 0, currency)} />
                   <div className="my-2 border-t border-gray-100" />
@@ -189,6 +202,9 @@ export function CashSessionPanel({ session, cashSalesPreview, currency, forceOpe
                 <dl className="mt-4 space-y-2 text-sm">
                   <Row label="เงินเปิดร้าน" value={formatMoney(session?.openingFloat ?? 0, currency)} />
                   <Row label="ยอดขายเงินสด (POS)" value={formatMoney(cashSalesPreview, currency)} />
+                  {otherCashMovement !== 0 && (
+                    <Row label="รายรับ-จ่ายเงินสดอื่น" value={formatMoney(otherCashMovement, currency)} />
+                  )}
                   <Row label="เงินที่ควรมี" value={formatMoney(expectedCash, currency)} />
                 </dl>
                 <label className="mt-4 block text-sm font-medium text-gray-700">

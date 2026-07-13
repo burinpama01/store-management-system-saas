@@ -152,6 +152,18 @@ async function ledgerBalance(
 }
 
 /**
+ * เงินสดเข้า-ออกจริงตั้งแต่เวลาที่กำหนด (ยอดขาย POS + รายรับ/จ่ายเงินสดมือ) จาก
+ * ส่วนต่าง balance ใน cash ledger — ใช้พรีวิว "เงินที่ควรมี" ตอนปิดรอบ ให้ตรงกับ
+ * สูตรของ RPC close_cash_session (expected = opening_float + ledger delta).
+ */
+export async function getCashMovementSince(storeId: string, since: string): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const latest = await ledgerBalance(supabase, storeId, null);
+  const atOpen = await ledgerBalance(supabase, storeId, since);
+  return Math.round((latest - atOpen) * 100) / 100;
+}
+
+/**
  * POS cash collected since a given time (net cash into drawer = received - change).
  * Used to preview the expected drawer total while a session is still open.
  */
