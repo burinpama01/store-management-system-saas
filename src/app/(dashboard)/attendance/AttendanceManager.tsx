@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState, useTransition, type ReactNode } from "react";
+import { useActionState, useEffect, useState, useTransition, type ReactNode } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
 import { formatStoreTime, toStoreDateTimeLocal } from "@/modules/attendance/date";
 import { ModalDialog, MapPicker, Button } from "@/shared/components/ui";
@@ -188,6 +188,23 @@ export function AttendanceManager({
   const [filterBranch, setFilterBranch] = useState(branchFilter);
   const multiBranch = branchStores.length > 1;
   const branchNameById = new Map(branchStores.map((s) => [s.id, s.name]));
+
+  // อัปเดตอัตโนมัติ: ลงเวลาจากมือถือ/เครื่องอื่นด้วยบัญชีเดียวกันแล้ว จอนี้เห็นเอง
+  // ภายใน ~20 วิ โดยไม่ต้องกดรีเฟรช (หน้าเดิมโหลดครั้งเดียวแล้วค้างทั้งวัน)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 20_000);
+    // สลับกลับมาที่แท็บนี้ = รีเฟรชทันที (เช่น เพิ่งลงเวลาบนมือถือเสร็จแล้วหันมาดูคอม)
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [router]);
   const [rates, setRates] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AttendanceRecord | null>(null);
