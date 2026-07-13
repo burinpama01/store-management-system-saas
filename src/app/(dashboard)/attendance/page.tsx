@@ -16,6 +16,7 @@ import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules
 import { computeDayStatuses } from "@/modules/attendance/calendar";
 import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser, listPayrollAdjustments } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
+import { listBranchStores } from "@/modules/stores/repository";
 import { AttendanceManager } from "./AttendanceManager";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
 import type { PayrollAdjustment } from "@/modules/hr/types";
@@ -97,6 +98,8 @@ export default async function AttendancePage({
   let payrollSummaries: PayrollSummary[] | null = null;
   let members: { userId: string; name: string }[] = [];
   let leaveAdjustments: PayrollAdjustment[] = [];
+  let branchStores: { id: string; name: string }[] = [];
+  let branchFilter = ctx.storeId;
 
   if (canManage) {
     const params = await searchParams;
@@ -111,8 +114,21 @@ export default async function AttendancePage({
         .split("T")[0];
     }
 
+    // พนักงานลงเวลาที่สาขาของตัวเอง แต่คอมที่เปิดดูอาจอยู่คนละสาขา — org ที่มี
+    // หลายสาขาจึงดูแบบ "ทุกสาขา" เป็นค่าเริ่มต้น (เลือกกรองรายสาขาได้)
+    const branchesRes = await listBranchStores(ctx.organizationId);
+    branchStores = (branchesRes.data ?? []).map((s) => ({ id: s.id, name: s.name }));
+    const requestedBranch = params.branch ?? "";
+    branchFilter =
+      requestedBranch === "all" || branchStores.some((s) => s.id === requestedBranch)
+        ? (requestedBranch || (branchStores.length > 1 ? "all" : ctx.storeId))
+        : branchStores.length > 1
+          ? "all"
+          : ctx.storeId;
+    const recordStoreId = branchFilter === "all" ? null : branchFilter;
+
     const [recRes, membersRes, adjustmentsRes] = await Promise.all([
-      listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo),
+      listAttendanceRecords(ctx.organizationId, recordStoreId, dateFrom, dateTo),
       listStoreMemberships(ctx.organizationId, ctx.storeId),
       listPayrollAdjustments(ctx.storeId, dateFrom, dateTo),
     ]);
@@ -120,7 +136,7 @@ export default async function AttendancePage({
     leaveAdjustments = (adjustmentsRes.data ?? []).filter((a) => a.type === "leave");
     payrollSummaries = computePayrollSummaries(
       records,
-      ctx.storeId,
+      recordStoreId,
       ctx.organizationId,
       dateFrom,
       dateTo,
@@ -154,6 +170,8 @@ export default async function AttendancePage({
       holidayDates={holidayDates}
       canManageHolidays={canManageHolidays}
       leaveAdjustments={leaveAdjustments}
+      branchStores={branchStores}
+      branchFilter={branchFilter}
     />
   );
 }

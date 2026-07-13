@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState, useTransition, type ReactNode } from "react";
+import { useActionState, useEffect, useState, useTransition, type ReactNode } from "react";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "@/modules/attendance/types";
 import { formatStoreTime, toStoreDateTimeLocal } from "@/modules/attendance/date";
 import { ModalDialog, MapPicker, Button } from "@/shared/components/ui";
@@ -52,6 +52,10 @@ interface Props {
   holidayDates: string[];
   canManageHolidays: boolean;
   leaveAdjustments: PayrollAdjustment[];
+  /** สาขาทั้งหมดในองค์กร (จอผู้จัดการ) — ใช้กรอง/ติดป้ายรายการข้ามสาขา */
+  branchStores: { id: string; name: string }[];
+  /** "all" = ทุกสาขา หรือ store id ที่เลือกกรอง */
+  branchFilter: string;
 }
 
 function fmtDuration(inIso: string, outIso: string | null): string {
@@ -169,6 +173,8 @@ export function AttendanceManager({
   holidayDates,
   canManageHolidays,
   leaveAdjustments,
+  branchStores,
+  branchFilter,
 }: Props) {
   const router = useRouter();
   /** Clock timestamps are UTC; render them as "HH:MM" in the store's timezone. */
@@ -179,6 +185,26 @@ export function AttendanceManager({
   const [attendanceSettingsDialogOpen, setAttendanceSettingsDialogOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState(dateFrom);
   const [filterTo, setFilterTo] = useState(dateTo);
+  const [filterBranch, setFilterBranch] = useState(branchFilter);
+  const multiBranch = branchStores.length > 1;
+  const branchNameById = new Map(branchStores.map((s) => [s.id, s.name]));
+
+  // อัปเดตอัตโนมัติ: ลงเวลาจากมือถือ/เครื่องอื่นด้วยบัญชีเดียวกันแล้ว จอนี้เห็นเอง
+  // ภายใน ~20 วิ โดยไม่ต้องกดรีเฟรช (หน้าเดิมโหลดครั้งเดียวแล้วค้างทั้งวัน)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 20_000);
+    // สลับกลับมาที่แท็บนี้ = รีเฟรชทันที (เช่น เพิ่งลงเวลาบนมือถือเสร็จแล้วหันมาดูคอม)
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [router]);
   const [rates, setRates] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AttendanceRecord | null>(null);
@@ -251,7 +277,7 @@ export function AttendanceManager({
   function handleFilter() {
     setEditError(null);
     setActionNotice(`กรองช่วงวันที่ ${filterFrom} – ${filterTo} แล้ว`);
-    router.push(`/attendance?dateFrom=${filterFrom}&dateTo=${filterTo}`);
+    router.push(`/attendance?dateFrom=${filterFrom}&dateTo=${filterTo}&branch=${filterBranch}`);
   }
 
   function computePay(summary: PayrollSummary): number {
@@ -594,6 +620,21 @@ export function AttendanceManager({
               onChange={(e) => setFilterTo(e.target.value)}
               className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
+            {multiBranch && (
+              <select
+                value={filterBranch}
+                onChange={(e) => setFilterBranch(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                aria-label="กรองตามสาขา"
+              >
+                <option value="all">ทุกสาขา</option>
+                {branchStores.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={handleFilter}
               className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
@@ -705,6 +746,7 @@ export function AttendanceManager({
                     <tr>
                       <th className="px-3 py-2 text-left">วันที่</th>
                       <th className="px-3 py-2 text-left">พนักงาน</th>
+                      {multiBranch && <th className="px-3 py-2 text-left">สาขา</th>}
                       <th className="px-3 py-2 text-right">เข้า</th>
                       <th className="px-3 py-2 text-right">ออก</th>
                       <th className="px-3 py-2 text-right">ระยะเวลา</th>
@@ -718,6 +760,11 @@ export function AttendanceManager({
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.date}</td>
                         <td className="px-3 py-2 text-gray-800">{r.employeeName}</td>
+                        {multiBranch && (
+                          <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                            {branchNameById.get(r.storeId) ?? "-"}
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-right tabular-nums text-gray-700">
                           {fmtTime(r.clockInAt)}
                         </td>
