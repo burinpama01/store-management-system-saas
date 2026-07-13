@@ -200,9 +200,10 @@ export async function clockOut(id: string, storeId: string, userId: string, inpu
   return { data: mapRecord(data), error: null };
 }
 
+/** storeId = null → ทุกสาขาในองค์กร (จอผู้จัดการดูรวม เพราะพนักงานลงเวลาคนละสาขากับเครื่องที่เปิดดู) */
 export async function listAttendanceRecords(
   organizationId: string,
-  storeId: string,
+  storeId: string | null,
   dateFrom: string,
   dateTo: string,
   userId?: string,
@@ -212,11 +213,11 @@ export async function listAttendanceRecords(
     .from("attendance_records")
     .select("*")
     .eq("organization_id", organizationId)
-    .eq("store_id", storeId)
     .gte("date", dateFrom)
     .lte("date", dateTo)
     .order("date", { ascending: false })
     .order("clock_in_at", { ascending: false });
+  if (storeId) q = q.eq("store_id", storeId);
   if (userId) q = q.eq("user_id", userId);
   const { data, error } = await q;
   if (error) return { data: null, error: mapError(error) };
@@ -386,7 +387,8 @@ export async function deleteAttendanceRecord(id: string, storeId: string) {
 // Hours are computed from clock_in_at → clock_out_at; records without clock_out are excluded from hour totals.
 export function computePayrollSummaries(
   records: AttendanceRecord[],
-  storeId: string,
+  /** null = รวมทุกสาขาในองค์กร (จอผู้จัดการโหมด "ทุกสาขา") */
+  storeId: string | null,
   organizationId: string,
   periodStart: string,
   periodEnd: string,
@@ -402,7 +404,7 @@ export function computePayrollSummaries(
   for (const [userId, userRecords] of byUser) {
     // Skip records that slipped in from the wrong store/org (ATT-07 defence-in-depth).
     const safeRecords = userRecords.filter(
-      (r) => r.storeId === storeId && r.organizationId === organizationId,
+      (r) => (storeId === null || r.storeId === storeId) && r.organizationId === organizationId,
     );
     if (safeRecords.length === 0) continue;
     const employeeName = safeRecords[0].employeeName;
@@ -425,7 +427,7 @@ export function computePayrollSummaries(
 
     summaries.push({
       id: userId,
-      storeId,
+      storeId: storeId ?? safeRecords[0].storeId,
       organizationId,
       userId,
       employeeName,
