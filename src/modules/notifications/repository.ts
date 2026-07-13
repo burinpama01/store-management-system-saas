@@ -231,6 +231,44 @@ export async function listOrganizationPushTokens(organizationId: string) {
   };
 }
 
+/**
+ * Push tokens ที่ควรได้รับอีเวนต์ของสาขาหนึ่ง: อุปกรณ์ของ user ที่ membership
+ * ครอบสาขานั้น (org-wide เช่น owner/admin หรือผูกกับสาขาเดียวกัน) —
+ * กันแจ้งเตือนข้ามสาขา (เครื่องพนักงานสาขา A ต้องไม่เด้งออเดอร์ของสาขา B)
+ */
+export async function listStorePushTokens(organizationId: string, storeId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const [tokensRes, memsRes] = await Promise.all([
+    supabase.from("device_push_tokens").select("*").eq("organization_id", organizationId),
+    supabase
+      .from("memberships")
+      .select("user_id, store_id")
+      .eq("organization_id", organizationId)
+      .not("joined_at", "is", null),
+  ]);
+  if (tokensRes.error) return { data: null, error: mapError(tokensRes.error) };
+  if (memsRes.error) return { data: null, error: mapError(memsRes.error) };
+
+  const allowedUserIds = new Set(
+    (memsRes.data ?? [])
+      .filter((m) => m.store_id === null || m.store_id === storeId)
+      .map((m) => m.user_id),
+  );
+  return {
+    data: (tokensRes.data ?? [])
+      .filter((row) => allowedUserIds.has(row.user_id))
+      .map((row): DevicePushToken => ({
+        id: row.id,
+        userId: row.user_id,
+        organizationId: row.organization_id,
+        storeId: row.store_id,
+        platform: row.platform,
+        token: row.token,
+      })),
+    error: null,
+  };
+}
+
 /** ลบ token ที่ FCM ตอบว่า unregistered (เครื่องถอนแอป/token หมุนใหม่) */
 export async function deleteDevicePushTokens(tokens: string[]) {
   if (tokens.length === 0) return { ok: true, error: null };

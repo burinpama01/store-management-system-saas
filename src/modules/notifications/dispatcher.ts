@@ -11,7 +11,7 @@ import {
   getStoreNameForNotification,
   getTelegramNotificationTarget,
   insertNotificationLog,
-  listOrganizationPushTokens,
+  listStorePushTokens,
 } from "./repository";
 import { renderNotificationTemplate } from "./templates";
 import { buildLinePushMessageRequest } from "./line";
@@ -321,7 +321,9 @@ async function dispatchPushNotification(input: NotificationPayload): Promise<Not
     return { ok: true, skipped: true, message: "การแจ้งเตือนนี้ถูกปิดอยู่" };
   }
 
-  const tokensResult = await listOrganizationPushTokens(input.organizationId);
+  // ส่งเฉพาะอุปกรณ์ที่สิทธิ์ครอบสาขาของอีเวนต์นี้ (org-wide หรือผูกสาขาเดียวกัน)
+  // — เครื่องพนักงานสาขาอื่นต้องไม่เด้งออเดอร์ข้ามสาขา
+  const tokensResult = await listStorePushTokens(input.organizationId, input.storeId);
   if (tokensResult.error) {
     return { ok: true, skipped: true, message: tokensResult.error.userMessage };
   }
