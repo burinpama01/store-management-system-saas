@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brainstorming — LINE Notification Auto Save v1</title>
+  <style>
+    :root{font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;color:#15312d;background:#f4f8f7}
+    body{margin:0;padding:32px}.wrap{max-width:980px;margin:auto}.card{background:white;border:1px solid #d8e5e1;border-radius:18px;padding:24px;margin:16px 0;box-shadow:0 10px 30px #0f3d3310}
+    h1,h2{margin-top:0}.tag{display:inline-block;background:#dff7ef;color:#12634f;padding:6px 10px;border-radius:999px;font-weight:700}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.option{border:2px solid #d8e5e1;border-radius:14px;padding:16px}.recommended{border-color:#16866b;background:#f0fbf8}
+    .mock{display:flex;align-items:center;gap:14px;border:1px solid #cbded8;border-radius:12px;padding:16px}.switch{width:48px;height:28px;border-radius:99px;background:#cbd5d1;position:relative}.switch:after{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;background:white;border-radius:50%}.status{font-size:13px;color:#526b65}
+    code{background:#eef4f2;padding:2px 6px;border-radius:6px}li{margin:8px 0}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <span class="tag">Approved · 2026-08-02</span>
+  <h1>แก้ปัญหาปิด LINE แล้วระบบยังส่ง</h1>
+  <section class="card">
+    <h2>ปัญหาที่พิสูจน์แล้ว</h2>
+    <p>Checkbox เดิมเปลี่ยนเฉพาะ DOM และต้องกด “บันทึก” แยก ขณะที่ runtime ถือว่า event ที่ไม่มีแถวตั้งค่าเป็นเปิดโดยปริยาย</p>
+  </section>
+  <section class="card">
+    <h2>ทางเลือก</h2>
+    <div class="grid">
+      <article class="option recommended"><strong>1. Auto-save ทันที — เลือกใช้</strong><p>ลดความคลุมเครือที่สุด ใช้ server action เดิม เพิ่ม pending/error และ rollback เมื่อบันทึกล้มเหลว</p></article>
+      <article class="option"><strong>2. เก็บปุ่มบันทึก</strong><p>เปลี่ยนข้อความเป็น “มีการเปลี่ยนแปลงที่ยังไม่บันทึก” ความเสี่ยงผู้ใช้ลืมกดยังอยู่</p></article>
+      <article class="option"><strong>3. สวิตช์ LINE รวม</strong><p>ต้องเพิ่ม data model และ semantics ใหม่ เกินขอบเขต bugfix ครั้งนี้</p></article>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Mockup</h2>
+    <div class="mock"><div class="switch" aria-hidden="true"></div><div><strong>LINE · ชำระเงิน POS</strong><div class="status">กำลังบันทึก… → บันทึกแล้ว / แสดง error และคืนค่าเดิม</div></div></div>
+  </section>
+  <section class="card">
+    <h2>Acceptance criteria</h2>
+    <ul>
+      <li>สลับ checkbox แล้ว submit server action ทันทีโดยไม่ต้องกดปุ่มแยก</li>
+      <li>ระหว่างบันทึก control ถูก disable และมีข้อความสถานะ</li>
+      <li>เมื่อบันทึกล้มเหลว UI คืนค่าจาก server และแสดง error</li>
+      <li>เมื่อ LINE setting เป็น <code>enabled=false</code> ห้ามเรียก LINE provider</li>
+      <li>ไม่เปลี่ยน schema, provider token, account-link หรือ production environment</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

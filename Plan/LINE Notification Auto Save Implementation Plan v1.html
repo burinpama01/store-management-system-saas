@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LINE Notification Auto Save Implementation Plan v1</title>
+  <style>
+    :root{font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#f5f8f7;color:#17332e}body{margin:0;padding:32px}.wrap{max-width:1000px;margin:auto}.hero,.task{background:white;border:1px solid #d6e4df;border-radius:16px;padding:24px;margin:16px 0}.status{color:#126348;background:#dff7ed;padding:6px 10px;border-radius:99px;font-weight:700}.flow{display:flex;gap:8px;flex-wrap:wrap}.step{background:#e8f6f2;border-radius:10px;padding:10px 14px;font-weight:700}pre{white-space:pre-wrap;background:#132b27;color:#e9fff8;padding:16px;border-radius:12px;overflow:auto}li{margin:8px 0}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section class="hero"><span class="status">Completed</span><h1>LINE Notification Auto Save Implementation Plan v1</h1>
+    <p><strong>Goal:</strong> สลับ notification checkbox แล้ว persist ทันที พร้อม rollback/error และ regression coverage</p>
+    <p><strong>Architecture:</strong> ใช้ server action และ repository เดิม เปลี่ยนเฉพาะ client interaction ใน <code>NotificationSettingToggle</code>; dispatcher gate ไม่เปลี่ยน</p>
+    <p><strong>Tech stack:</strong> Next.js 16, React 19, TypeScript, Vitest, Supabase</p>
+    <div class="flow"><span class="step">RED</span><span class="step">GREEN</span><span class="step">Verify</span><span class="step">Review</span><span class="step">Document</span></div>
+  </section>
+  <section class="task"><h2>Task 1 — Regression tests</h2><ul>
+    <li>Modify <code>tests/unit/notifications.test.ts</code></li>
+    <li>เพิ่ม test source wiring ว่ามี controlled checkbox, <code>onChange</code>, <code>requestSubmit()</code>, pending state และไม่มี submit button แยก</li>
+    <li>เพิ่ม behavioral test ว่า LINE setting disabled แล้วไม่เรียก provider</li>
+    <li>รัน <code>npm test -- tests/unit/notifications.test.ts</code>; expected RED ที่ auto-save wiring</li>
+  </ul></section>
+  <section class="task"><h2>Task 2 — Minimal implementation</h2><ul>
+    <li>Modify <code>src/app/(dashboard)/settings/notifications/NotificationSettingToggle.tsx</code></li>
+    <li>เพิ่ม form ref และ controlled state; onChange เรียก requestSubmit</li>
+    <li>Disable ระหว่าง pending, inline success/pending, error dialog และ rollback เมื่อ error</li>
+    <li>รัน targeted test; expected GREEN</li>
+  </ul></section>
+  <section class="task"><h2>Task 3 — Verification and review</h2><ul>
+    <li>รัน targeted tests, <code>npm run typecheck</code>, และ lint เฉพาะไฟล์ที่แก้</li>
+    <li>ตรวจ diff และส่ง Mandatory Context Package ให้ <code>code_reviewer</code> แบบ review-only</li>
+    <li>แก้ finding ที่ยืนยันแล้วและ rerun verification</li>
+    <li>อัปเดต Obsidian log/issue/current และเปลี่ยนสถานะแผนเป็น Completed</li>
+  </ul></section>
+  <section class="task"><h2>Out of scope</h2><p>ไม่เพิ่ม master LINE switch, ไม่แก้ schema/migration/env/account link, ไม่ build/commit/deploy จึงไม่ bump version</p></section>
+</main>
+</body>
+</html>

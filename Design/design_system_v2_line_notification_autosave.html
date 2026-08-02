@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design System v2 — LINE Notification Auto Save</title>
+  <style>
+    :root{font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#f7faf9;color:#17332e;--ok:#087f5b;--muted:#64748b;--error:#b42318;--border:#d5e2de}
+    body{margin:0;padding:32px}.wrap{max-width:920px;margin:auto}.panel{background:#fff;border:1px solid var(--border);border-radius:16px;padding:24px;margin:16px 0}.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+    .state{padding:16px;border:1px solid var(--border);border-radius:12px}.pill{display:inline-block;padding:5px 9px;border-radius:99px;font-size:12px;font-weight:700}.on{background:#dff7ef;color:var(--ok)}.off{background:#edf1f0;color:#475d57}.wait{background:#fff3cd;color:#7a5b00}.error{background:#fee4e2;color:var(--error)}
+    code{background:#eef4f2;padding:2px 6px;border-radius:6px}li{margin:8px 0}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Design System v2: Notification Auto-save Control</h1>
+  <section class="panel"><h2>หลักการ</h2><p>ใช้ native checkbox เพื่อ accessibility, target อย่างน้อย 44px, ไม่ใช้สีเป็นสัญญาณเพียงอย่างเดียว และสถานะ server ต้องมีข้อความกำกับเสมอ</p></section>
+  <section class="panel"><h2>State contract</h2><div class="states">
+    <div class="state"><span class="pill on">พร้อมส่ง</span><p>Server ยืนยัน enabled และ provider พร้อม</p></div>
+    <div class="state"><span class="pill off">ปิดไว้</span><p>Server ยืนยัน enabled=false</p></div>
+    <div class="state"><span class="pill wait">กำลังบันทึก…</span><p>Disable control และตั้ง aria-busy</p></div>
+    <div class="state"><span class="pill error">บันทึกไม่สำเร็จ</span><p>Rollback ค่าและเปิด dialog error</p></div>
+  </div></section>
+  <section class="panel"><h2>Interaction rules</h2><ul>
+    <li><code>onChange</code> อัปเดตค่า optimistic แล้วเรียก <code>requestSubmit()</code></li>
+    <li>Success ใช้ inline feedback “บันทึกแล้ว” ไม่เปิด modal รบกวนทุกครั้ง</li>
+    <li>Error ใช้ dialog เดิมเพื่อให้เห็นชัดและคืน checkbox เป็นค่า server</li>
+    <li>คง token สีและ spacing ของหน้า Settings เดิม ไม่เพิ่ม dependency</li>
+  </ul></section>
+</main>
+</body>
+</html>

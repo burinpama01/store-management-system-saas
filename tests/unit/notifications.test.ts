@@ -150,6 +150,18 @@ describe("notification dispatcher", () => {
     expect(types).toContain("notification_settings:");
   });
 
+  it("auto-saves a notification setting as soon as the checkbox changes", () => {
+    const toggle = read("src/app/(dashboard)/settings/notifications/NotificationSettingToggle.tsx");
+
+    expect(toggle).toContain("useRef<HTMLFormElement>(null)");
+    expect(toggle).toContain("checked={checked}");
+    expect(toggle).toContain("onChange={(event) =>");
+    expect(toggle).toContain("formRef.current?.requestSubmit()");
+    expect(toggle).toContain("กำลังบันทึก...");
+    expect(toggle).toContain("บันทึกแล้ว");
+    expect(toggle).not.toContain('type="submit"');
+  });
+
   it("surfaces Telegram API failure as user-facing copy with a Store OS Bot setup hint", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -371,6 +383,73 @@ describe("notification dispatcher", () => {
         process.env.TELEGRAM_BOT_TOKEN = oldTelegramToken;
       }
       vi.doUnmock("next/server");
+      vi.doUnmock("@/modules/billing/billing-service");
+      vi.doUnmock("@/modules/billing/types");
+      vi.doUnmock("@/modules/notifications/repository");
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+
+  it("does not call the LINE provider when the store event setting is disabled", async () => {
+    const oldLineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+    const getNotificationSetting = vi.fn().mockResolvedValue({
+      data: { enabled: false },
+      error: null,
+    });
+    const getLineNotificationTarget = vi.fn().mockResolvedValue({
+      data: { targetId: "line-group-id", targetType: "group" },
+      error: null,
+    });
+    const fetchMock = vi.fn();
+
+    process.env.LINE_CHANNEL_ACCESS_TOKEN = "line-token";
+    vi.resetModules();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.doMock("@/modules/billing/billing-service", () => ({
+      getOrganizationBillingState: vi.fn().mockResolvedValue({ plan: "premium", status: "active" }),
+    }));
+    vi.doMock("@/modules/billing/types", () => ({
+      DEFAULT_BILLING_STATE: { plan: "premium", status: "active" },
+      getPlanFeatures: vi.fn(() => ({ lineNotify: true })),
+    }));
+    vi.doMock("@/modules/notifications/repository", () => ({
+      getLineNotificationTarget,
+      getNotificationSetting,
+    }));
+
+    try {
+      const { dispatchNotification: dispatchWithMocks } = await import(
+        "@/modules/notifications/dispatcher"
+      );
+      const result = await dispatchWithMocks({
+        type: "payment",
+        channel: "line",
+        organizationId: "org-1",
+        storeId: "store-1",
+        message: "paid",
+      });
+
+      expect(result).toEqual({
+        ok: true,
+        skipped: true,
+        message: "การแจ้งเตือนนี้ถูกปิดอยู่",
+      });
+      expect(getNotificationSetting).toHaveBeenCalledWith(
+        "store-1",
+        "org-1",
+        "payment",
+        "line",
+        { useServiceRole: true },
+      );
+      expect(getLineNotificationTarget).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (oldLineToken === undefined) {
+        delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
+      } else {
+        process.env.LINE_CHANNEL_ACCESS_TOKEN = oldLineToken;
+      }
       vi.doUnmock("@/modules/billing/billing-service");
       vi.doUnmock("@/modules/billing/types");
       vi.doUnmock("@/modules/notifications/repository");

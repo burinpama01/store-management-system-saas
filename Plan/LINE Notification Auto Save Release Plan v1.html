@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LINE Notification Auto Save Release Plan v1</title>
+  <style>
+    :root{font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#f4f8f7;color:#17332e}body{margin:0;padding:32px}.wrap{max-width:1040px;margin:auto}.hero,.gate{background:#fff;border:1px solid #d4e3de;border-radius:16px;padding:24px;margin:16px 0}.status{display:inline-block;color:#126348;background:#dff7ed;padding:6px 12px;border-radius:99px;font-weight:800}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:18px}.step{background:#e6f5f0;border-radius:12px;padding:14px;font-weight:750}.risk{border-left:5px solid #b56d00}code{background:#edf3f1;padding:2px 6px;border-radius:5px}ul{line-height:1.75}@media(max-width:640px){body{padding:16px}.hero,.gate{padding:18px}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section class="hero">
+    <span class="status">Completed</span>
+    <h1>LINE Notification Auto Save — Release Plan v1</h1>
+    <p><strong>เป้าหมาย:</strong> release bugfix ที่ทำให้สวิตช์ LINE notification บันทึกทันที และ dispatcher ไม่เรียก provider เมื่อ setting ปิด</p>
+    <p><strong>Target:</strong> Vercel project <code>store-management-system-saas</code>, production environment, branch <code>main</code></p>
+    <div class="flow"><div class="step">1. Version 0.31.1</div><div class="step">2. Verify</div><div class="step">3. Review</div><div class="step">4. Commit</div><div class="step">5. Deploy</div><div class="step">6. Smoke &amp; Document</div></div>
+  </section>
+  <section class="gate"><h2>Task 1 — Release preparation</h2><ul>
+    <li>โหลด <code>VERCEL_TOKEN</code> จาก <code>.env.local</code> เฉพาะใน environment ของ Vercel CLI โดยไม่แสดงค่า</li>
+    <li>ยืนยันว่า <code>.env.local</code> ถูก Git ignore และ linked project ถูกต้อง</li>
+    <li>bump patch version จาก <code>0.31.0</code> เป็น <code>0.31.1</code> ใน <code>package.json</code> และ <code>package-lock.json</code></li>
+  </ul></section>
+  <section class="gate"><h2>Task 2 — Verification gates</h2><ul>
+    <li>รัน <code>npm test</code>, <code>npm run typecheck</code>, <code>npm run lint</code> และ <code>npm run build</code></li>
+    <li>รัน <code>git diff --check</code> และตรวจว่าไม่มี secret หรือไฟล์นอก scope ถูก stage</li>
+    <li>ส่ง final diff ให้ <code>code_reviewer</code> แบบ review-only; blocker ต้องแก้และ verify ใหม่</li>
+  </ul></section>
+  <section class="gate"><h2>Task 3 — Commit and production deploy</h2><ul>
+    <li>stage เฉพาะ source, regression tests, version files และ HTML artifacts ของงานนี้</li>
+    <li>commit message ต้องระบุเวอร์ชัน <code>0.31.1</code></li>
+    <li>deploy ด้วย <code>vercel --prod --yes</code> โดย inject token ผ่าน process environment</li>
+    <li>เก็บ production URL และตรวจ HTTP response/smoke โดยไม่แก้ข้อมูลร้าน</li>
+  </ul></section>
+  <section class="gate risk"><h2>Safety / rollback</h2><ul>
+    <li>ไม่มี schema migration, environment write หรือ customer data mutation</li>
+    <li>ห้าม stage <code>.env.local</code>, attachment/temp/marketing/artifacts หรือไฟล์ผู้ใช้นอก scope</li>
+    <li>หาก deploy fail ให้คง commit ไว้และรายงาน URL/error; rollback production ใช้ Vercel previous deployment หลังได้รับอนุญาตเพิ่มเติม</li>
+  </ul></section>
+  <section class="gate"><h2>Completion evidence — 2026-08-02</h2><ul>
+    <li>full tests ผ่าน 105 files / 918 tests; typecheck และ production build ผ่าน</li>
+    <li>final <code>code_reviewer</code> ไม่พบ deploy blocker; full lint debt 3 จุดอยู่นอก release diff</li>
+    <li>Vercel deployment <code>dpl_7A74dVZCZb7Fq87n994Am4wKdSfX</code> สถานะ READY และ alias ไป <code>https://www.store-os.online</code></li>
+    <li>smoke test: root 200, login 200, notifications redirect ไป login และตอบ 200</li>
+  </ul></section>
+</main>
+</body>
+</html>

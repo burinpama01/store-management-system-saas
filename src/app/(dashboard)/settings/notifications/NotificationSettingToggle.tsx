@@ -1,13 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import type { NotificationChannel, NotificationType } from "@/modules/notifications/types";
 import { toggleNotificationSettingAction } from "./actions";
 import {
   INITIAL_ACTION_FEEDBACK_STATE,
 } from "./feedback";
 import { NotificationFeedbackDialog } from "./NotificationFeedbackDialog";
-import { Button } from "@/shared/components/ui";
 
 interface Props {
   type: NotificationType;
@@ -30,45 +29,64 @@ export function NotificationSettingToggle({
     toggleNotificationSettingAction,
     INITIAL_ACTION_FEEDBACK_STATE,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  const [optimisticEnabled, setOptimisticEnabled] = useState<boolean | null>(null);
   const [dismissedAt, setDismissedAt] = useState(0);
   const disabled = !canManage || settingsLoadFailed || pending;
+  const checked =
+    state.status === "error" && !pending ? configured : optimisticEnabled ?? configured;
   const dialogFeedback =
-    state.status !== "idle" && state.submittedAt !== dismissedAt ? state : null;
+    state.status === "error" && state.submittedAt !== dismissedAt ? state : null;
 
   return (
     <>
-      <form action={formAction} className="flex items-center gap-3">
+      <form
+        ref={formRef}
+        action={formAction}
+        aria-busy={pending}
+        className="flex items-center gap-3"
+      >
         <input type="hidden" name="type" value={type} />
         <input type="hidden" name="channel" value={channel} />
         <label className="flex min-h-11 items-center gap-2">
           <input
             type="checkbox"
             name="enabled"
-            defaultChecked={configured}
+            checked={checked}
+            onChange={(event) => {
+              setOptimisticEnabled(event.currentTarget.checked);
+              formRef.current?.requestSubmit();
+            }}
             disabled={disabled}
             className="h-4 w-4 accent-teal-700 disabled:cursor-not-allowed"
           />
           <span
             className={
-              enabled
+              checked && enabled
                 ? "rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"
-                : configured
+                : checked
                   ? "rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500"
                   : "rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700"
             }
           >
-            {enabled ? "พร้อมส่ง" : configured ? "ยังไม่พร้อม" : "ปิดไว้"}
+            {checked && enabled ? "พร้อมส่ง" : checked ? "ยังไม่พร้อม" : "ปิดไว้"}
           </span>
         </label>
         {canManage && !settingsLoadFailed && (
-          <Button
-            type="submit"
-            loading={pending}
-            loadingText="กำลังบันทึก..."
-            className="min-h-11 rounded-md border border-[var(--color-border)] px-3 text-xs font-bold text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] disabled:opacity-40"
+          <span
+            aria-live="polite"
+            className={`text-xs font-semibold ${
+              state.status === "error" ? "text-red-700" : "text-[var(--color-text-muted)]"
+            }`}
           >
-            บันทึก
-          </Button>
+            {pending
+              ? "กำลังบันทึก..."
+              : state.status === "success"
+                ? "บันทึกแล้ว"
+                : state.status === "error"
+                  ? "บันทึกไม่สำเร็จ"
+                  : "บันทึกอัตโนมัติ"}
+          </span>
         )}
       </form>
 
