@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design System Stock Pool v1</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--surface:#fff;--canvas:#f8fafc;--primary:#0f766e;--primary-soft:#ccfbf1;--warning:#b45309;--warning-soft:#fffbeb;--danger:#be123c;--danger-soft:#fff1f2;--success:#047857;--success-soft:#ecfdf5}
+    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}main{width:min(1080px,calc(100% - 32px));margin:32px auto 72px}header,section{margin-top:18px;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}h1,h2,h3,p{margin-top:0}h1{margin-bottom:6px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.swatch{overflow:hidden;border:1px solid var(--line);border-radius:12px}.color{height:72px}.label{padding:10px;background:white}.component{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--canvas)}button{min-height:44px;padding:10px 15px;border:0;border-radius:9px;background:var(--primary);color:white;font-weight:800}.secondary{border:1px solid var(--line);background:white;color:var(--ink)}.danger{background:var(--danger)}.field{display:block;width:100%;min-height:44px;margin-top:6px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:white}.choice-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.choice{padding:14px;border:1px solid var(--line);border-radius:12px;background:white}.selected{border:2px solid var(--primary);background:var(--primary-soft)}.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:var(--success-soft);color:var(--success);font-weight:800;font-size:12px}.help{margin-top:7px;color:var(--muted);font-size:13px}.alert{padding:12px;border-left:4px solid var(--warning);background:var(--warning-soft)}.stock-card{padding:18px;border:1px solid var(--line);border-radius:14px}.stock-head{display:flex;justify-content:space-between;gap:16px}.links{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid var(--line);text-align:left}th{background:var(--canvas)}@media(max-width:760px){.grid,.choice-row{grid-template-columns:1fr}.stock-head{display:block}}
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>Design System — Stock Pool v1</h1><p class="muted">แนวทาง visual และข้อความสำหรับหน้า Stock/Dialog โดยใช้รูปแบบเรียบง่ายต่อเนื่องกับ dashboard เดิม</p></header>
+
+  <section>
+    <h2>สีและความหมาย</h2>
+    <div class="grid">
+      <div class="swatch"><div class="color" style="background:#0f766e"></div><div class="label"><strong>Primary</strong><br>#0F766E</div></div>
+      <div class="swatch"><div class="color" style="background:#047857"></div><div class="label"><strong>Success</strong><br>#047857</div></div>
+      <div class="swatch"><div class="color" style="background:#b45309"></div><div class="label"><strong>Warning</strong><br>#B45309</div></div>
+      <div class="swatch"><div class="color" style="background:#be123c"></div><div class="label"><strong>Danger</strong><br>#BE123C</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>คำศัพท์และ Microcopy</h2>
+    <table>
+      <thead><tr><th>คำ</th><th>ข้อความช่วยอธิบาย</th><th>ห้ามใช้เดี่ยว ๆ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Variant — รูปแบบที่ขาย</strong></td><td>เช่น 1 ขวด, 3 ขวด, S, M, L</td><td>Variant โดยไม่มีคำไทยในจุดแรก</td></tr>
+        <tr><td><strong>Stock Pool — สต๊อกกลาง</strong></td><td>ยอดของจริงที่หลายสินค้าใช้ร่วมกันได้</td><td>Pool โดยไม่มีคำอธิบาย</td></tr>
+        <tr><td><strong>รับเข้า</strong></td><td>บวกเข้ายอดเดิม</td><td>เพิ่ม โดยไม่บอกผลลัพธ์</td></tr>
+        <tr><td><strong>กำหนดยอดใหม่</strong></td><td>แทนที่ยอดเดิมตามยอดที่นับจริง</td><td>ปรับยอด ซึ่งกำกวม</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Operation Selector</h2>
+    <div class="choice-row">
+      <div class="choice selected"><span class="badge">แนะนำเมื่อรับของ</span><h3>รับเข้า</h3><p>บวกจำนวนใหม่เข้ากับยอดเดิม</p><strong>30 + 12 = 42</strong></div>
+      <div class="choice"><h3>กำหนดยอดใหม่</h3><p>แทนที่ยอดเดิมหลังตรวจนับจริง</p><strong>30 → 27</strong></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Form Pattern</h2>
+    <div class="component">
+      <label><strong>Variant — รูปแบบที่ขาย</strong><input class="field" value="3 ขวด" aria-label="ชื่อ Variant"></label>
+      <p class="help">ตัวอย่าง: ปกติ, 1 ขวด, 3 ขวด, S, M หรือ L</p>
+      <label><strong>ใช้สต๊อกต่อการขาย 1 รายการ</strong><input class="field" type="number" value="3" aria-label="จำนวนหน่วยที่ใช้"></label>
+      <p class="help">ขาย Variant นี้ 1 รายการ จะตัด Stock Pool 3 ขวด</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="secondary">ยกเลิก</button><button>บันทึกและไปต่อ</button></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Stock Pool Card</h2>
+    <div class="stock-card">
+      <div class="stock-head"><div><span class="badge">ใช้งานอยู่</span><h3 style="margin:8px 0 2px">เบียร์สิงห์ขวด</h3><span class="muted">หน่วย: ขวด · เตือนเมื่อเหลือ 10</span></div><div><strong style="font-size:26px">30 ขวด</strong></div></div>
+      <div class="links">เชื่อมกับ: เบียร์สิงห์ 1 ขวด (ตัด 1) · โปรเบียร์สิงห์ 3 ขวด (ตัด 3)</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Validation และ Accessibility</h2>
+    <div class="alert"><strong>จำนวนห้ามว่าง</strong><br>กรุณากรอกจำนวนเต็มตั้งแต่ 0 ขึ้นไป ระบบจะไม่แปลงช่องว่างเป็นศูนย์</div>
+    <ul>
+      <li>ปุ่มและ field สูงอย่างน้อย 44px</li>
+      <li>Dialog trap focus, ปิดด้วย Escape ได้เมื่อไม่มีข้อมูลที่ยังไม่บันทึก และคืน focus ให้ปุ่มเดิม</li>
+      <li>ไม่ใช้สีอย่างเดียว: แสดงข้อความ “หมด”, “ใกล้หมด”, “เพียงพอ” คู่กับสี</li>
+      <li>บนมือถือ operation selector และ action button เรียงแนวตั้ง</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

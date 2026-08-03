@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Pool UX Design Spec v1</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--soft:#f7f9fc;--brand:#0f766e;--brand-soft:#ccfbf1;--danger:#b91c1c;--code:#0f172a}
+    *{box-sizing:border-box}body{margin:0;background:#edf2f7;color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}main{width:min(1120px,calc(100% - 32px));margin:32px auto 72px}header,section{margin-top:18px;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.05)}header{background:linear-gradient(135deg,#fff,#ecfeff)}h1,h2,h3,p{margin-top:0}h1{margin-bottom:6px;font-size:clamp(28px,4vw,42px)}h2{font-size:22px;border-bottom:1px solid var(--line);padding-bottom:9px}.status{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--brand);color:white;font-size:12px;font-weight:800}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.box{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.step{padding:14px;border:1px solid var(--line);border-radius:11px;background:var(--soft)}.step strong{display:block;color:var(--brand)}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--soft)}code{padding:2px 6px;border-radius:5px;background:#e2e8f0}pre{overflow:auto;padding:16px;border-radius:12px;background:var(--code);color:#e2e8f0}.callout{padding:14px;border-left:4px solid var(--brand);background:var(--brand-soft)}.danger{border-left-color:var(--danger);background:#fef2f2}ul{padding-left:20px}@media(max-width:800px){.grid,.flow{grid-template-columns:1fr}section{padding:18px}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">DESIGN APPROVED</span>
+    <h1>Stock Pool UX Design Spec v1</h1>
+    <p class="muted">โปรเจกต์ Store management system saas · วันที่ 2026-08-03 · ยังไม่ใช่ implementation</p>
+  </header>
+
+  <section>
+    <h2>1. เป้าหมายและ Success Criteria</h2>
+    <ul>
+      <li>ผู้ใช้เพิ่มสินค้าเข้า stock flow ได้จากหน้า Stock โดยไม่ต้องสลับไปหน้าเมนูสินค้า</li>
+      <li>หากสินค้าไม่มี Variant ระบบเปิด Dialog สร้าง Variant และไม่อนุญาตให้ไปต่อจนสร้างสำเร็จ</li>
+      <li>Variant จากสินค้าคนละรายการแชร์ Stock Pool เดียวกันได้</li>
+      <li>ผู้ใช้แยกความหมาย “รับเข้า” กับ “กำหนดยอดใหม่” ได้จากข้อความและตัวอย่างบนหน้าจอ</li>
+      <li>POS/QR ตัดและคืนยอดจาก Pool แบบ atomic โดยไม่ติดลบและไม่ตัดซ้ำ</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. คำศัพท์ที่ใช้ใน UI</h2>
+    <div class="grid">
+      <div class="box"><h3>สินค้า</h3><p>รายการที่ลูกค้าเห็น เช่น “เบียร์สิงห์” หรือ “โปรเบียร์สิงห์ 3 ขวด”</p></div>
+      <div class="box"><h3>Variant — รูปแบบที่ขาย</h3><p>รูปแบบขายของสินค้า เช่น 1 ขวด, 3 ขวด, S/M/L แต่ละ Variant กำหนดราคาเพิ่ม/ลดและจำนวนหน่วยจาก Stock Pool ที่ใช้ต่อการขายหนึ่งรายการ</p></div>
+      <div class="box"><h3>Stock Pool — สต๊อกกลาง</h3><p>ยอดของจริงในคลัง มีชื่อ หน่วยนับ ยอดคงเหลือ และเกณฑ์แจ้งเตือน Variant หลายตัวจากหลายสินค้าใช้ร่วมกันได้</p></div>
+      <div class="box"><h3>จำนวนที่ตัดต่อการขาย</h3><p>ตัวคูณการใช้ Pool เช่น Variant “3 ขวด” ใช้ 3 หน่วยเมื่อขายหนึ่งรายการ</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. User Flow</h2>
+    <div class="flow">
+      <div class="step"><strong>เลือกสินค้า</strong>ค้นจากเมนูสินค้า</div>
+      <div class="step"><strong>เลือก Variant</strong>หรือสร้างใน Dialog</div>
+      <div class="step"><strong>เลือก Pool</strong>สร้างใหม่/ใช้ร่วม</div>
+      <div class="step"><strong>กำหนดการใช้</strong>เช่น 1 หรือ 3 หน่วย</div>
+      <div class="step"><strong>ปรับยอด</strong>รับเข้า/กำหนดใหม่</div>
+    </div>
+    <h3>กรณีไม่มี Variant</h3>
+    <ol>
+      <li>แสดงคำอธิบายว่า Variant คือ “รูปแบบที่ขายจริง” และเสนอชื่อเริ่มต้น <code>ปกติ</code></li>
+      <li>บังคับกรอกชื่อ Variant; ราคาเพิ่ม/ลดเริ่มต้นเป็น 0</li>
+      <li>สร้างสำเร็จแล้วเลือก Variant ใหม่นั้นให้อัตโนมัติและคง Dialog เดิมไว้</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>4. วิธีปรับยอด</h2>
+    <table>
+      <thead><tr><th>โหมด</th><th>ความหมาย</th><th>ตัวอย่าง</th><th>ข้อกำหนด</th></tr></thead>
+      <tbody>
+        <tr><td><strong>รับเข้า</strong></td><td>บวกจำนวนเข้ากับยอดเดิม</td><td>30 + 12 = 42</td><td>จำนวนต้องมากกว่า 0; ระบุหมายเหตุได้</td></tr>
+        <tr><td><strong>กำหนดยอดใหม่</strong></td><td>แทนที่ยอดเดิมตามยอดที่นับจริง</td><td>30 → 27</td><td>จำนวนต้องไม่ติดลบ; บังคับระบุเหตุผลและแสดงยอดก่อน/หลัง</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>5. Data Model ที่เสนอ</h2>
+    <table>
+      <thead><tr><th>Entity</th><th>ข้อมูลหลัก</th><th>Invariant</th></tr></thead>
+      <tbody>
+        <tr><td><code>stock_pools</code></td><td>organization_id, store_id, name, unit_label, quantity, low_stock_threshold, active</td><td>Pool อยู่ในร้านเดียว; quantity เป็นจำนวนเต็มไม่ติดลบใน v1</td></tr>
+        <tr><td><code>variant_stock_links</code></td><td>variant_id, stock_pool_id, consumption_quantity</td><td>variant_id unique; consumption_quantity เป็นจำนวนเต็มมากกว่า 0</td></tr>
+        <tr><td><code>stock_movements</code></td><td>pool_id, type, delta, before_qty, after_qty, reason, reference_type/id, actor_id, created_at</td><td>append-only audit trail</td></tr>
+      </tbody>
+    </table>
+    <p class="callout">Stock Pool แชร์ข้ามสินค้าได้เฉพาะภายในร้านเดียวกันใน v1 การแชร์ข้ามสาขาและการโอนสาขาอยู่นอกขอบเขต</p>
+  </section>
+
+  <section>
+    <h2>6. Runtime/Data Flow</h2>
+    <h3>ขายสินค้า</h3>
+    <ol>
+      <li>รวมยอดการใช้ตาม Pool: <code>จำนวนขาย × consumption_quantity</code></li>
+      <li>ล็อก Pool ตามลำดับ id ด้วย <code>FOR UPDATE</code> เพื่อหลีกเลี่ยง deadlock</li>
+      <li>ตรวจยอดทุก Pool ก่อนหัก หากรายการใดไม่พอให้ rollback ทั้ง transaction</li>
+      <li>หักยอดและบันทึก movement ใน transaction เดียวกับ order/payment</li>
+    </ol>
+    <h3>ยกเลิก/void</h3>
+    <p>คืนยอดตาม link และ consumption ที่ snapshot ไว้กับ order item ตอนขาย เพื่อไม่ให้การแก้ link ภายหลังเปลี่ยนจำนวนที่ต้องคืน</p>
+    <h3>ปรับยอดด้วยมือ</h3>
+    <p>RPC ทำ atomic update และสร้าง movement; server action ตรวจ <code>stock.manage</code>, package entitlement และ store boundary ซ้ำทุกครั้ง</p>
+  </section>
+
+  <section>
+    <h2>7. Migration Strategy</h2>
+    <ol>
+      <li>สร้างตารางใหม่และ RLS โดยไม่ลบ field เดิม</li>
+      <li>Variant ที่ <code>track_stock=true</code> แต่ละตัวได้รับ dedicated Pool ยอดเท่ากับ <code>stock_quantity</code> และ consumption = 1</li>
+      <li>เปลี่ยน POS/QR/Stock page มาอ่าน Pool หลัง backfill verification ผ่าน</li>
+      <li>คง field เดิมในช่วง compatibility window; การลบ field เดิมเป็น migration ภายหลังและต้องอนุมัติแยก</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>8. Error Handling</h2>
+    <ul>
+      <li>Variant ถูกผูกกับ Pool อื่นแล้ว: แสดง Pool ปัจจุบันและต้องยืนยันการย้าย โดยห้ามย้ายระหว่าง checkout ที่กำลังทำงาน</li>
+      <li>Pool คนละร้าน: ปฏิเสธที่ DB/RLS และ server boundary</li>
+      <li>สต๊อกไม่พอ: แสดง Pool, ยอดคงเหลือ และยอดที่ต้องใช้</li>
+      <li>กรอกจำนวนว่าง: ไม่แปลงเป็น 0; แสดง validation error</li>
+      <li>การสร้าง Variant/Pool ล้มเหลว: Dialog คงข้อมูลเดิมและให้ลองใหม่ ไม่เปลี่ยนหน้า</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>9. Testing</h2>
+    <ul>
+      <li>Unit/UI: คำอธิบาย Variant, Dialog บังคับสร้าง Variant, receive/set-balance validation, package gate</li>
+      <li>Repository/RPC: หลาย Variant ใช้ Pool เดียว, multiplier, insufficient stock, atomic rollback</li>
+      <li>POS/QR: ไม่ตัดซ้ำ, cancel/item void คืนตาม snapshot, concurrent checkout ไม่ติดลบ</li>
+      <li>Migration: backfill quantity เท่าของเดิมทุก Variant และ tenant/store isolation</li>
+      <li>Manual responsive QA: desktop/mobile, keyboard focus, dialog nested state และข้อความผิดพลาด</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>10. Out of Scope v1</h2>
+    <ul>
+      <li>หนึ่ง Variant ตัดหลาย Pool หรือสูตรวัตถุดิบ/BOM</li>
+      <li>แชร์ Pool ข้ามสาขา, โอนสต๊อก และ purchase order</li>
+      <li>สต๊อกทศนิยม/น้ำหนัก</li>
+      <li>การลบ field stock เดิมทันที</li>
+    </ul>
+    <p class="callout danger"><strong>Deployment gate:</strong> ต้อง dry-run/backfill verify, backup, code review และอนุมัติ production migration แยกก่อน deploy</p>
+  </section>
+</main>
+</body>
+</html>
