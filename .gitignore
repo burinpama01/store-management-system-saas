@@ -61,3 +61,6 @@ artifacts/qa/
 *.swo
 .env*
 .gstack/
+
+# Isolated feature worktrees
+.worktrees/
