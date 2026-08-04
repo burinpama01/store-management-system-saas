@@ -180,13 +180,18 @@ export async function deleteTransactionAction(id: string): Promise<{ error: stri
     // MN-01: Block deletion of POS-linked transactions
     if (tx.orderId) return { error: "รายการที่เชื่อมกับออร์เดอร์ไม่สามารถลบได้" };
 
+    // ต้องลบรายการให้สำเร็จก่อนแล้วค่อยกลับรายการเงินสด — ถ้าเขียน ledger ก่อนแล้วลบไม่ผ่าน
+    // (เช่น RLS ปฏิเสธ) ยอดเงินสดในลิ้นชักจะถูกหักทิ้งทั้งที่รายการยังอยู่
+    const result = await deleteTransaction(id, ctx.storeId);
+    if (result.error) return { error: result.error.userMessage };
+
     // CR-02: Reverse the cash ledger entry to maintain balance integrity — only for cash
     // transactions (transfers never touched the drawer, so there is nothing to reverse).
     if (tx.paymentMethod === "cash") {
       const originalDelta = tx.type === "expense" ? -tx.amount : tx.amount;
       const reversalDelta = -originalDelta;
       const prevBalance = await getLatestCashBalance(ctx.storeId);
-      await addCashLedgerEntry({
+      const ledgerRes = await addCashLedgerEntry({
         storeId: ctx.storeId,
         organizationId: ctx.organizationId,
         type: "adjustment",
@@ -195,10 +200,13 @@ export async function deleteTransactionAction(id: string): Promise<{ error: stri
         note: `ยกเลิก: ${tx.categoryName}`,
         createdByUserId: user.id,
       });
+      // ลบรายการไปแล้วแต่กลับรายการเงินสดไม่สำเร็จ — ต้องบอกให้รู้ ไม่ปล่อยให้ลิ้นชักเพี้ยนเงียบ ๆ
+      if (ledgerRes.error) {
+        revalidate();
+        return { error: "ลบรายการแล้ว แต่ปรับยอดเงินสดในลิ้นชักไม่สำเร็จ กรุณาปรับเงินสดด้วยตนเอง" };
+      }
     }
 
-    const result = await deleteTransaction(id, ctx.storeId);
-    if (result.error) return { error: result.error.userMessage };
     revalidate();
     return { error: null };
   } catch (e) {

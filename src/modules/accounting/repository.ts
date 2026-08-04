@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
-import { mapError } from "@/shared/utils/error";
+import { mapError, type AppError } from "@/shared/utils/error";
 import type {
   AccountingCategory,
   Transaction,
@@ -191,12 +191,23 @@ export async function getTransaction(id: string, storeId: string) {
 
 export async function deleteTransaction(id: string, storeId: string) {
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
     .delete()
     .eq("id", id)
-    .eq("store_id", storeId);
+    .eq("store_id", storeId)
+    .select("id");
   if (error) return { ok: false, error: mapError(error) };
+  // RLS ปฏิเสธการลบแบบเงียบ ๆ — ไม่คืน error แต่ลบได้ 0 แถว ต้องเช็คจำนวนแถวเอง ไม่งั้นแอปจะรายงาน
+  // ว่าสำเร็จทั้งที่รายการยังอยู่
+  if (!data || data.length === 0) {
+    const notDeleted: AppError = {
+      code: "42501",
+      message: "delete transactions affected 0 rows",
+      userMessage: "ลบรายการไม่สำเร็จ (ไม่มีสิทธิ์ หรือรายการถูกลบไปแล้ว)",
+    };
+    return { ok: false, error: notDeleted };
+  }
   return { ok: true, error: null };
 }
 
