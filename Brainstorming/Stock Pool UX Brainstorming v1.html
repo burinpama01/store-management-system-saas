@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Pool UX Brainstorming v1</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#64748b; --line:#dbe3ee; --soft:#f5f7fb; --brand:#0f766e; --brand-soft:#ccfbf1; --warn:#b45309; --warn-soft:#fffbeb; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--ink); background:#eef2f7; line-height:1.55; }
+    main { width:min(1120px,calc(100% - 32px)); margin:32px auto 72px; }
+    header,.panel { background:white; border:1px solid var(--line); border-radius:18px; box-shadow:0 10px 30px rgba(15,23,42,.06); }
+    header { padding:28px; background:linear-gradient(135deg,#ffffff 20%,#ecfeff); }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { margin-bottom:8px; font-size:clamp(26px,4vw,42px); }
+    h2 { font-size:22px; }
+    h3 { font-size:17px; margin-bottom:8px; }
+    .status { display:inline-flex; padding:5px 10px; border-radius:999px; background:var(--warn-soft); color:var(--warn); font-size:13px; font-weight:700; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:20px; }
+    .panel { padding:22px; margin-top:18px; }
+    .option { padding:18px; border:1px solid var(--line); border-radius:14px; background:white; }
+    .option.recommended { border:2px solid var(--brand); background:var(--brand-soft); }
+    .tag { display:inline-block; margin-bottom:10px; padding:4px 9px; border-radius:999px; background:var(--brand); color:white; font-size:12px; font-weight:700; }
+    ul { padding-left:20px; }
+    .flow { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .step { position:relative; padding:16px; border-radius:12px; background:var(--soft); border:1px solid var(--line); }
+    .step strong { display:block; margin-bottom:5px; color:var(--brand); }
+    .mock { display:grid; grid-template-columns:280px 1fr; min-height:460px; overflow:hidden; border:1px solid #cbd5e1; border-radius:16px; background:white; }
+    .sidebar { padding:20px; background:#0f172a; color:white; }
+    .sidebar div { padding:10px 12px; margin-bottom:6px; border-radius:9px; color:#cbd5e1; }
+    .sidebar .active { background:#134e4a; color:white; font-weight:700; }
+    .screen { padding:22px; background:#f8fafc; }
+    .toolbar,.stock-card,.dialog { background:white; border:1px solid var(--line); border-radius:12px; }
+    .toolbar { display:flex; justify-content:space-between; align-items:center; padding:14px; }
+    button { border:0; border-radius:9px; padding:10px 14px; background:var(--brand); color:white; font-weight:700; }
+    .stock-card { margin-top:14px; padding:16px; }
+    .pool-head { display:flex; justify-content:space-between; gap:16px; }
+    .links { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+    .dialog { margin-top:16px; padding:18px; border:2px solid #94a3b8; }
+    .choice-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .choice { padding:12px; border:1px solid var(--line); border-radius:10px; }
+    .choice.selected { border:2px solid var(--brand); background:#f0fdfa; }
+    .example { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; align-items:center; gap:10px; }
+    .box { padding:16px; border-radius:12px; border:1px solid var(--line); background:var(--soft); text-align:center; }
+    .arrow { color:var(--brand); font-size:24px; font-weight:800; }
+    .note { padding:14px; border-left:4px solid var(--warn); background:var(--warn-soft); }
+    @media (max-width:800px) { .grid,.flow { grid-template-columns:1fr; } .mock { grid-template-columns:1fr; } .sidebar { display:none; } .example { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); text-align:center; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="status">ข้อเสนอ — รอผู้ใช้อนุมัติ</span>
+      <h1>Stock Pool UX Brainstorming v1</h1>
+      <p class="muted">ลดการสลับหน้าและรองรับสินค้าหลายรายการที่ใช้สต๊อกก้อนเดียวกัน</p>
+    </header>
+
+    <section class="panel">
+      <h2>ปัญหาปัจจุบัน</h2>
+      <div class="flow">
+        <div class="step"><strong>1. สร้างสินค้า</strong>ยังใส่สต๊อกไม่ได้</div>
+        <div class="step"><strong>2. สร้างคลัง Variant</strong>ต้องออกไปอีกเครื่องมือ</div>
+        <div class="step"><strong>3. ผูก Variant</strong>กลับมาแก้สินค้าอีกครั้ง</div>
+        <div class="step"><strong>4. ปรับสต๊อก</strong>เปลี่ยนไปหน้าสต๊อก</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>แนวทางที่พิจารณา</h2>
+      <div class="grid">
+        <article class="option recommended">
+          <span class="tag">แนะนำ</span>
+          <h3>A. Stock Pool กลาง</h3>
+          <p>สร้างยอดกลางแยกจากสินค้า แต่ละ Variant ผูกได้หนึ่ง Pool และกำหนดจำนวนที่ตัดต่อการขาย</p>
+          <ul><li>แชร์ข้ามสินค้าได้จริง</li><li>ตัด/คืนสต๊อกแม่นยำ</li><li>ขยายเป็น audit ledger ได้</li></ul>
+        </article>
+        <article class="option">
+          <h3>B. ใช้ Variant หนึ่งตัวเป็นแม่</h3>
+          <p>ให้ Variant อื่นอ้างยอดจาก Variant หลัก</p>
+          <ul><li>แก้ฐานข้อมูลน้อยกว่า</li><li>ชื่อและ ownership สับสน</li><li>ลบตัวแม่แล้วความสัมพันธ์เปราะ</li></ul>
+        </article>
+        <article class="option">
+          <h3>C. Sync ยอดระหว่าง Variant</h3>
+          <p>คัดลอกยอดไปยังทุกรายการที่ใช้ร่วมกัน</p>
+          <ul><li>ทำ UI ได้เร็ว</li><li>เสี่ยงยอดไม่ตรงเมื่อขายพร้อมกัน</li><li>ไม่เหมาะกับ production</li></ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Stock Pool คืออะไร</h2>
+      <p>Stock Pool คือยอดวัตถุดิบหรือหน่วยสินค้าจริงที่เก็บอยู่ เช่น <strong>เบียร์สิงห์ขวด</strong> มี 30 ขวด สินค้าหน้าร้านหลายรายการสามารถอ้างยอดนี้ได้ แต่แต่ละ Variant ผูกกับ Pool ได้เพียงหนึ่งรายการ</p>
+      <div class="example">
+        <div class="box"><strong>เบียร์สิงห์ 1 ขวด</strong><br>ขาย 1 → ใช้ 1 ขวด</div>
+        <div class="arrow">→</div>
+        <div class="box"><strong>Stock Pool</strong><br>เบียร์สิงห์ขวด<br>คงเหลือ 30</div>
+        <div class="arrow">←</div>
+        <div class="box"><strong>โปรเบียร์สิงห์ 3 ขวด</strong><br>ขาย 1 → ใช้ 3 ขวด</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Mockup: หน้า Stock ใหม่</h2>
+      <div class="mock">
+        <aside class="sidebar">
+          <div>ภาพรวม</div><div>เมนูสินค้า</div><div class="active">สต๊อก</div><div>รายงาน</div>
+        </aside>
+        <div class="screen">
+          <div class="toolbar"><div><strong>สต๊อกสินค้า</strong><br><span class="muted">จัดการยอดกลางและสินค้าที่ใช้ร่วมกัน</span></div><button>+ เพิ่มสต๊อกสินค้า</button></div>
+          <div class="stock-card">
+            <div class="pool-head"><div><strong>เบียร์สิงห์ขวด</strong><br><span class="muted">หน่วย: ขวด · แจ้งเตือนเมื่อเหลือ 10</span></div><div><strong>30 ขวด</strong></div></div>
+            <div class="links">ใช้งานโดย: เบียร์สิงห์ 1 ขวด (ตัด 1) · โปรเบียร์สิงห์ 3 ขวด (ตัด 3)</div>
+          </div>
+          <div class="dialog">
+            <h3>เพิ่มสต๊อกสินค้า</h3>
+            <p><strong>1.</strong> ค้นหาและเลือกสินค้าจากเมนูสินค้า</p>
+            <p><strong>2.</strong> หากไม่มี Variant ระบบเปิดส่วน “สร้าง Variant” ใน Dialog นี้ทันทีและบังคับสร้างก่อนดำเนินการต่อ</p>
+            <p><strong>3.</strong> เลือก “สร้าง Stock Pool ใหม่” หรือ “ใช้ Stock Pool ร่วมที่มีอยู่” แล้วกำหนดจำนวนที่ตัดต่อการขาย</p>
+            <div class="choice-row">
+              <div class="choice selected"><strong>รับเข้า</strong><br><span class="muted">บวกเข้ายอดเดิม เช่น 30 + 12 = 42</span></div>
+              <div class="choice"><strong>กำหนดยอดใหม่</strong><br><span class="muted">แทนที่ยอดเดิมหลังตรวจนับ เช่น 30 → 27</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>กติกาหลักที่เสนอ</h2>
+      <ul>
+        <li>Variant หนึ่งตัวผูกกับ Stock Pool ได้สูงสุดหนึ่ง Pool</li>
+        <li>Pool เดียวถูกใช้โดย Variant จากสินค้าคนละรายการได้</li>
+        <li>ยอดที่ตัด = จำนวนที่ขาย × จำนวนหน่วยที่ Variant ใช้</li>
+        <li>ยกเลิกหรือ void คืนยอดเข้าที่ Pool เดิมด้วยจำนวนเดียวกัน</li>
+        <li>หากสต๊อกไม่พอ ระบบไม่อนุญาตให้ขายจนยอดติดลบ</li>
+        <li>“รับเข้า” เพิ่มยอด ส่วน “กำหนดยอดใหม่” แทนที่ยอดและควรบังคับระบุเหตุผล</li>
+      </ul>
+      <div class="note"><strong>ขอบเขต v1:</strong> หนึ่ง Variant ใช้หนึ่ง Pool ไม่รองรับสูตรที่ตัดหลายวัตถุดิบต่อหนึ่งรายการขาย</div>
+    </section>
+  </main>
+</body>
+</html>

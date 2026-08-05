@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Pool Implementation Plan v1</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--soft:#f7f9fc;--brand:#0f766e;--brand-soft:#ccfbf1;--blue:#1d4ed8;--blue-soft:#dbeafe;--warn:#b45309;--warn-soft:#fffbeb;--code:#0f172a}
+    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:var(--ink);font:15px/1.62 system-ui,-apple-system,"Segoe UI",sans-serif}main{width:min(1180px,calc(100% - 32px));margin:32px auto 80px}header,section{margin-top:18px;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.05)}header{background:linear-gradient(135deg,#fff,#ecfeff)}h1,h2,h3,h4,p{margin-top:0}h1{margin-bottom:7px;font-size:clamp(28px,4vw,42px)}h2{padding-bottom:9px;border-bottom:1px solid var(--line);font-size:23px}h3{font-size:19px}.status{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--blue-soft);color:var(--blue);font-size:12px;font-weight:800}.required{padding:14px;border-left:4px solid var(--brand);background:var(--brand-soft)}.muted{color:var(--muted)}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.box{padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--soft)}.map{width:100%;border-collapse:collapse}.map th,.map td{padding:9px;border:1px solid var(--line);text-align:left;vertical-align:top}.map th{background:var(--soft)}.task{border-left:6px solid var(--brand)}.task-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.version{white-space:nowrap;padding:5px 9px;border-radius:999px;background:var(--brand-soft);color:var(--brand);font-weight:800}.checklist{list-style:none;padding-left:0}.checklist li{position:relative;margin:8px 0;padding-left:28px}.checklist li::before{content:"☐";position:absolute;left:0;color:var(--brand);font-size:18px}.files{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}pre{overflow:auto;padding:16px;border-radius:12px;background:var(--code);color:#e2e8f0;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.command{border-left:4px solid var(--blue)}.expected{color:#bbf7d0}.warning{padding:14px;border-left:4px solid var(--warn);background:var(--warn-soft)}.flow{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}.flow div{padding:12px 8px;border:1px solid var(--line);border-radius:10px;background:var(--soft);text-align:center;font-size:13px}.flow strong{display:block;color:var(--brand)}@media(max-width:850px){.meta,.flow{grid-template-columns:1fr}.task-head{display:block}.version{display:inline-block;margin-bottom:8px}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">READY FOR EXECUTION CHOICE</span>
+    <h1>Stock Pool Implementation Plan</h1>
+    <p class="required"><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use <code>superpowers:subagent-driven-development</code> (recommended) or <code>superpowers:executing-plans</code> to implement this plan task-by-task. Steps use checkbox syntax for tracking.</p>
+    <div class="meta">
+      <div class="box"><strong>Goal</strong><br>สร้าง Stock Pool กลางที่แชร์ข้ามสินค้าได้ พร้อม Dialog สร้าง Variant และปรับยอดโดยไม่เปลี่ยนหน้า</div>
+      <div class="box"><strong>Architecture</strong><br>แยกยอดสต๊อกจาก Variant เป็น Pool ระดับร้าน ใช้ link หนึ่ง Pool ต่อ Variant และตัด/คืนผ่าน PostgreSQL RPC แบบ atomic</div>
+      <div class="box"><strong>Tech Stack</strong><br>Next.js, React Server Actions, TypeScript, Supabase/PostgreSQL, Vitest, Tailwind CSS, Vercel</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>ลำดับการส่งมอบ</h2>
+    <div class="flow"><div><strong>T1</strong>Domain math</div><div><strong>T2</strong>Schema/RLS</div><div><strong>T3</strong>Adjustment</div><div><strong>T4</strong>Stock UI</div><div><strong>T5</strong>POS/QR</div><div><strong>T6</strong>Notify/API</div><div><strong>T7</strong>Integration QA</div><div><strong>T8</strong>Release gate</div></div>
+    <p class="warning"><strong>Scope check:</strong> งานแตะ UI, database และ POS/QR แต่เป็น subsystem เดียวที่ต้องเปลี่ยน atomically จึงใช้แผนเดียวแบบ phase-gated ไม่แยก spec เพิ่ม</p>
+  </section>
+
+  <section>
+    <h2>File Map</h2>
+    <table class="map">
+      <thead><tr><th>ประเภท</th><th>ไฟล์</th><th>หน้าที่</th></tr></thead>
+      <tbody>
+        <tr><td>Create</td><td><code>src/modules/stock/pool-types.ts</code><br><code>src/modules/stock/pool-math.ts</code><br><code>src/modules/stock/pool-repository.ts</code></td><td>ชนิดข้อมูล, pure calculation และ persistence boundary ของ Stock Pool</td></tr>
+        <tr><td>Create</td><td><code>src/app/(dashboard)/stock/AddStockProductDialog.tsx</code><br><code>StockPoolCard.tsx</code><br><code>StockAdjustmentForm.tsx</code></td><td>แยก Dialog, card และ form ออกจาก StockManager เดิม</td></tr>
+        <tr><td>Create</td><td><code>supabase/migrations/20260803000001_stock_pools.sql</code><br><code>20260803000002_stock_pool_adjustment_rpc.sql</code><br><code>20260803000003_stock_pool_order_rpcs.sql</code><br><code>20260803000004_api_key_inventory_scope.sql</code></td><td>schema/backfill/RLS, manual adjustment, POS/QR deduction/restore และ legacy API scope rollout</td></tr>
+        <tr><td>Modify</td><td><code>src/app/(dashboard)/stock/{page,actions,StockManager}.tsx</code><br><code>src/modules/stock/{repository,types,notify}.ts</code></td><td>อ่าน Pool, action boundary, UI orchestration และแจ้งเตือน</td></tr>
+        <tr><td>Modify</td><td><code>src/app/pos/actions.ts</code><br><code>src/app/pos/grocery/actions.ts</code><br><code>src/app/qr/[storeSlug]/[tableId]/actions.ts</code></td><td>ส่งผล RPC และ movement identity ไป notification โดยไม่ตัดซ้ำ</td></tr>
+        <tr><td>Modify</td><td><code>src/app/api/v1/inventory/route.ts</code><br><code>src/modules/api-keys/auth.ts</code><br><code>src/server/integrations/supabase/database.types.ts</code></td><td>Inventory API แบบ Pool, enforce scope และ types</td></tr>
+        <tr><td>Test</td><td><code>tests/unit/stock-pool-*.test.ts</code><br>ชุด POS/QR/stock เดิม</td><td>RED/GREEN, migration contract, UI contract, atomic order flows และ regression</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 1: Stock Pool Domain และ Pure Math</h2><p>ล็อก type/สูตรให้ UI และ RPC ใช้ความหมายเดียวกัน</p></div><span class="version">v0.32.0</span></div>
+    <p class="files"><strong>Files:</strong> Create <code>src/modules/stock/pool-types.ts</code>, <code>src/modules/stock/pool-math.ts</code>, <code>tests/unit/stock-pool-math.test.ts</code>; Modify <code>package.json</code>, <code>package-lock.json</code></p>
+    <ol class="checklist">
+      <li><strong>เขียน failing tests</strong> ให้ครอบคลุม multiplier, aggregate Pool ซ้ำ, รับเข้า, กำหนดยอดใหม่, ช่องว่างและค่าติดลบ</li>
+    </ol>
+<pre><code>import { describe, expect, it } from "vitest";
+import { aggregatePoolDemand, nextStockQuantity } from "@/modules/stock/pool-math";
+
+it("รวม Variant ต่างสินค้าที่ใช้ Pool เดียวกัน", () =&gt; {
+  expect(aggregatePoolDemand([
+    { poolId: "singha", orderQuantity: 2, unitsPerItem: 1 },
+    { poolId: "singha", orderQuantity: 1, unitsPerItem: 3 },
+  ])).toEqual(new Map([["singha", 5]]));
+});
+
+it("แยกรับเข้ากับกำหนดยอดใหม่", () =&gt; {
+  expect(nextStockQuantity(30, { mode: "receive", quantity: 12 })).toBe(42);
+  expect(nextStockQuantity(30, { mode: "set_balance", quantity: 27 })).toBe(27);
+});</code></pre>
+    <ol class="checklist" start="2">
+      <li><strong>รัน RED:</strong> <code>npm test -- tests/unit/stock-pool-math.test.ts</code> → expected FAIL เพราะ module ยังไม่มี</li>
+      <li><strong>สร้าง type และ implementation ขั้นต่ำ</strong></li>
+    </ol>
+<pre><code>export type StockAdjustment =
+  | { mode: "receive"; quantity: number; reason?: string }
+  | { mode: "set_balance"; quantity: number; reason: string };
+
+export function nextStockQuantity(current: number, input: StockAdjustment) {
+  if (!Number.isInteger(input.quantity) || input.quantity &lt; 0) throw new Error("จำนวนไม่ถูกต้อง");
+  if (input.mode === "receive" &amp;&amp; input.quantity === 0) throw new Error("จำนวนรับเข้าต้องมากกว่า 0");
+  if (input.mode === "set_balance" &amp;&amp; !input.reason.trim()) throw new Error("กรุณาระบุเหตุผล");
+  return input.mode === "receive" ? current + input.quantity : input.quantity;
+}</code></pre>
+    <ol class="checklist" start="4">
+      <li><strong>รัน GREEN:</strong> targeted test ต้องผ่านทุก case และ <code>npm run typecheck</code> ผ่าน</li>
+      <li><strong>Bump/commit:</strong> เปลี่ยน version เป็น <code>0.32.0</code>; commit <code>feat: add stock pool domain v0.32.0</code></li>
+    </ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 2: Schema, RLS, Backfill และ Snapshot</h2><p>สร้าง data model โดยไม่ลบ field เดิม</p></div><span class="version">v0.32.1</span></div>
+    <p class="files"><strong>Files:</strong> Create <code>supabase/migrations/20260803000001_stock_pools.sql</code>, <code>tests/unit/stock-pool-migration.test.ts</code>; Modify <code>src/server/integrations/supabase/database.types.ts</code>, package version files</p>
+    <ol class="checklist"><li><strong>เขียน migration contract test</strong> ตรวจ table, unique variant link, positive consumption, order snapshot, RLS และ backfill</li><li><strong>รัน RED</strong> และยืนยันว่า fail เพราะ migration ยังไม่มี</li><li><strong>สร้าง migration</strong> ตาม contract นี้</li></ol>
+<pre><code>create table public.stock_pools (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id),
+  store_id uuid not null references public.stores(id),
+  name text not null check (btrim(name) &lt;&gt; ''),
+  unit_label text not null check (btrim(unit_label) &lt;&gt; ''),
+  quantity integer not null default 0 check (quantity &gt;= 0),
+  low_stock_threshold integer not null default 5 check (low_stock_threshold &gt;= 0),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create table public.variant_stock_links (
+  variant_id uuid primary key references public.product_variants(id) on delete cascade,
+  stock_pool_id uuid not null references public.stock_pools(id),
+  consumption_quantity integer not null check (consumption_quantity &gt; 0),
+  created_at timestamptz not null default now()
+);
+create table public.stock_movements (
+  id uuid primary key default gen_random_uuid(), stock_pool_id uuid not null references public.stock_pools(id),
+  movement_type text not null check (movement_type in ('receive','set_balance','sale','cancel_restore','item_void_restore','migration')),
+  quantity_delta integer not null, before_quantity integer not null, after_quantity integer not null,
+  reason text, reference_type text, reference_id uuid, actor_id uuid, created_at timestamptz not null default now()
+);
+alter table public.order_items add column stock_pool_id uuid references public.stock_pools(id);
+alter table public.order_items add column stock_units_per_item integer check (stock_units_per_item &gt; 0);
+alter table public.stock_pools enable row level security;
+alter table public.variant_stock_links enable row level security;
+alter table public.stock_movements enable row level security;
+create policy stock_pools_select on public.stock_pools for select
+using (public.auth_user_role_in_store(organization_id, store_id, 'staff'));
+create policy stock_pools_manage on public.stock_pools for all
+using (public.auth_user_role_in_store(organization_id, store_id, 'manager'))
+with check (public.auth_user_role_in_store(organization_id, store_id, 'manager'));
+create policy variant_stock_links_select on public.variant_stock_links for select using (
+  exists (select 1 from public.stock_pools sp where sp.id = stock_pool_id
+    and public.auth_user_role_in_store(sp.organization_id, sp.store_id, 'staff'))
+);
+create policy variant_stock_links_manage on public.variant_stock_links for all using (
+  exists (select 1 from public.stock_pools sp where sp.id = stock_pool_id
+    and public.auth_user_role_in_store(sp.organization_id, sp.store_id, 'manager'))
+) with check (
+  exists (select 1 from public.stock_pools sp where sp.id = stock_pool_id
+    and public.auth_user_role_in_store(sp.organization_id, sp.store_id, 'manager'))
+);
+create policy stock_movements_select on public.stock_movements for select using (
+  exists (select 1 from public.stock_pools sp where sp.id = stock_pool_id
+    and public.auth_user_role_in_store(sp.organization_id, sp.store_id, 'staff'))
+);
+create policy stock_movements_insert on public.stock_movements for insert with check (
+  exists (select 1 from public.stock_pools sp where sp.id = stock_pool_id
+    and public.auth_user_role_in_store(sp.organization_id, sp.store_id, 'manager'))
+);
+
+create function public.enforce_stock_pool_tenant() returns trigger language plpgsql as $$
+declare v_store_org uuid;
+begin
+  select organization_id into v_store_org from public.stores where id = new.store_id;
+  if v_store_org is null or v_store_org &lt;&gt; new.organization_id then
+    raise exception 'Stock Pool organization และ store ไม่ตรงกัน';
+  end if;
+  return new;
+end $$;
+create trigger stock_pool_same_tenant before insert or update on public.stock_pools
+for each row execute function public.enforce_stock_pool_tenant();
+
+create function public.enforce_variant_stock_link_store() returns trigger language plpgsql as $$
+declare v_variant_store uuid; v_pool_store uuid;
+begin
+  select p.store_id into v_variant_store from public.product_variants v
+  join public.products p on p.id = v.product_id where v.id = new.variant_id;
+  select store_id into v_pool_store from public.stock_pools where id = new.stock_pool_id;
+  if v_variant_store is null or v_pool_store is null or v_variant_store &lt;&gt; v_pool_store then
+    raise exception 'Variant และ Stock Pool ต้องอยู่ร้านเดียวกัน';
+  end if;
+  return new;
+end $$;
+create trigger variant_stock_link_same_store before insert or update on public.variant_stock_links
+for each row execute function public.enforce_variant_stock_link_store();</code></pre>
+    <ol class="checklist" start="4"><li><strong>Backfill</strong> สร้าง dedicated Pool สำหรับ tracked Variant ทุกตัว, quantity เดิม, consumption = 1 และ movement type <code>migration</code></li></ol>
+<pre><code>do $$
+declare r record; v_pool_id uuid;
+begin
+  for r in
+    select v.id variant_id, v.name variant_name, coalesce(v.stock_quantity,0) qty,
+           p.name product_name, p.organization_id, p.store_id,
+           coalesce(nullif(p.unit_label,''),'ชิ้น') unit_label
+    from public.product_variants v join public.products p on p.id = v.product_id
+    where v.track_stock = true
+  loop
+    insert into public.stock_pools(organization_id,store_id,name,unit_label,quantity)
+    values(r.organization_id,r.store_id,r.product_name || ' · ' || r.variant_name,r.unit_label,r.qty)
+    returning id into v_pool_id;
+    insert into public.variant_stock_links(variant_id,stock_pool_id,consumption_quantity)
+    values(r.variant_id,v_pool_id,1);
+    insert into public.stock_movements(stock_pool_id,movement_type,quantity_delta,before_quantity,after_quantity,reason)
+    values(v_pool_id,'migration',r.qty,0,r.qty,'Backfill from product_variants.stock_quantity');
+  end loop;
+end $$;</code></pre>
+    <ol class="checklist" start="5"><li><strong>อัปเดต generated database types</strong> ให้ตรง schema</li><li><strong>รัน GREEN</strong>, <code>npm run typecheck</code>, และ local <code>supabase db reset</code>; ถ้า Docker/Qdrant/Supabase local ไม่พร้อมให้หยุดและรายงาน blocker ห้าม apply remote</li><li><strong>Bump/commit:</strong> <code>0.32.1</code>; commit <code>feat: add stock pool schema v0.32.1</code></li></ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 3: Atomic Adjustment, Repository และ Action Boundary</h2><p>แก้ช่องว่างกลายเป็น 0 และ package-gate bypass ไปพร้อมกัน</p></div><span class="version">v0.32.2</span></div>
+    <p class="files"><strong>Files:</strong> Create <code>supabase/migrations/20260803000002_stock_pool_adjustment_rpc.sql</code>, <code>src/modules/stock/pool-repository.ts</code>, <code>tests/unit/stock-pool-actions.test.ts</code>; Modify <code>src/app/(dashboard)/stock/actions.ts</code>, stock types/repository, version files</p>
+    <ol class="checklist"><li><strong>เขียน RED tests</strong> สำหรับ raw quantity ว่าง, permission, <code>requireFeature("stockManagement")</code>, store boundary, receive/set balance และ reason</li><li><strong>สร้าง RPC</strong> ที่ lock Pool, คำนวณยอดและเขียน movement ใน transaction เดียว</li></ol>
+<pre><code>create or replace function public.adjust_stock_pool(
+  p_pool_id uuid, p_mode text, p_quantity integer, p_reason text default null
+) returns public.stock_pools language plpgsql security invoker as $$
+declare v_pool public.stock_pools; v_before integer; v_after integer;
+begin
+  select * into v_pool from public.stock_pools where id = p_pool_id for update;
+  if v_pool.id is null or not public.auth_user_role_in_store(v_pool.organization_id, v_pool.store_id, 'manager') then
+    raise exception 'ไม่มีสิทธิ์จัดการ Stock Pool';
+  end if;
+  v_before := v_pool.quantity;
+  if p_quantity is null or p_quantity &lt; 0 then raise exception 'จำนวนไม่ถูกต้อง'; end if;
+  if p_mode = 'receive' then
+    if p_quantity = 0 then raise exception 'จำนวนรับเข้าต้องมากกว่า 0'; end if;
+    v_after := v_pool.quantity + p_quantity;
+  elsif p_mode = 'set_balance' then
+    if nullif(btrim(p_reason), '') is null then raise exception 'กรุณาระบุเหตุผล'; end if;
+    v_after := p_quantity;
+  else raise exception 'โหมดปรับสต๊อกไม่ถูกต้อง'; end if;
+  update public.stock_pools set quantity = v_after, updated_at = now() where id = p_pool_id returning * into v_pool;
+  insert into public.stock_movements(stock_pool_id,movement_type,quantity_delta,before_quantity,after_quantity,reason,actor_id)
+  values(p_pool_id,p_mode,v_after-v_before,v_before,v_after,p_reason,auth.uid());
+  return v_pool;
+end $$;</code></pre>
+<pre><code>const raw = formData.get("quantity");
+if (typeof raw !== "string" || raw.trim() === "" || !/^\d+$/.test(raw)) {
+  return { ok: false, error: "กรุณากรอกจำนวนเต็มตั้งแต่ 0 ขึ้นไป" };
+}
+await requirePermission("stock.manage");
+await requireFeature("stockManagement");</code></pre>
+    <ol class="checklist" start="3"><li><strong>รัน GREEN</strong> targeted action/RPC contract tests และ typecheck</li><li><strong>Bump/commit:</strong> <code>0.32.2</code>; commit <code>fix: harden stock pool adjustments v0.32.2</code></li></ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 4: หน้า Stock ใหม่และ Inline Variant Dialog</h2><p>เลือกสินค้าจากเมนูและสร้าง Variant โดยไม่เปลี่ยนหน้า</p></div><span class="version">v0.32.3</span></div>
+    <p class="files"><strong>Files:</strong> Create three Stock UI components and <code>tests/unit/stock-pool-ui.test.ts</code>; Modify stock page/actions/StockManager and version files</p>
+    <ol class="checklist"><li><strong>เขียน RED UI contract tests</strong> ตรวจข้อความ Variant, Stock Pool, receive/set balance, product search, no-variant gate และ permission state</li><li><strong>เปลี่ยน page loader</strong> ให้โหลด active products พร้อม variants และ stock pools/links แยกกัน</li><li><strong>สร้าง Dialog state machine</strong></li></ol>
+<pre><code>type AddStockStep = "choose_product" | "ensure_variant" | "choose_pool" | "adjust";
+
+function nextStep(product: Product, variantId?: string, poolId?: string): AddStockStep {
+  if (!variantId &amp;&amp; product.variants.length === 0) return "ensure_variant";
+  if (!variantId) return "ensure_variant";
+  if (!poolId) return "choose_pool";
+  return "adjust";
+}</code></pre>
+    <ol class="checklist" start="4"><li><strong>Inline Variant action</strong> ตรวจทั้ง <code>stock.manage</code>, <code>catalog.manage</code>, feature gate และ product.storeId; ผู้ไม่มี catalog permission เห็นคำอธิบายและไปต่อไม่ได้</li></ol>
+<pre><code>export async function createVariantFromStockAction(formData: FormData) {
+  const resolved = await getResolvedCurrentPermissions();
+  if (!resolved.can("stock.manage") || !resolved.can("catalog.manage")) {
+    return { ok: false as const, error: "ต้องมีสิทธิ์จัดการเมนูสินค้าและสต๊อก" };
+  }
+  await requireFeature("stockManagement");
+  const ctx = await getStoreContext();
+  const productId = String(formData.get("productId") ?? "");
+  const name = String(formData.get("variantName") ?? "").trim();
+  const priceAdjustment = Number(formData.get("priceAdjustment") ?? 0);
+  if (!name || !Number.isFinite(priceAdjustment)) return { ok: false as const, error: "ข้อมูล Variant ไม่ถูกต้อง" };
+  const product = await getProduct(productId);
+  if (!product.data || product.data.storeId !== ctx.storeId) return { ok: false as const, error: "ไม่มีสิทธิ์" };
+  const created = await createVariant({ productId, name, priceAdjustment });
+  if (created.error) return { ok: false as const, error: created.error.userMessage };
+  revalidatePath("/stock");
+  return { ok: true as const, variant: created.data };
+}</code></pre>
+    <ol class="checklist" start="5"><li><strong>Pool selection</strong> มี “สร้างสต๊อกกลางใหม่” และ “ใช้สต๊อกกลางที่มีอยู่”; แสดง unit/ยอด/รายการที่เชื่อมก่อนยืนยัน</li><li><strong>ปรับยอด</strong> แสดงสมการ preview และ reason เฉพาะ set balance; disable submit ระหว่าง pending และ rollback state เมื่อ action fail</li><li><strong>Responsive/accessibility QA</strong> focus trap, Escape, focus return, 44px targets, mobile single column</li><li><strong>รัน GREEN</strong> UI tests, stock regression tests, typecheck และ changed-file ESLint</li><li><strong>Bump/commit:</strong> <code>0.32.3</code>; commit <code>feat: add inline stock pool workflow v0.32.3</code></li></ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 5: POS/QR Atomic Deduction และ Restore Snapshot</h2><p>เปลี่ยนยอดจริงไปที่ Pool โดยไม่ทำ regression double-deduction</p></div><span class="version">v0.32.4</span></div>
+    <p class="files"><strong>Files:</strong> Create <code>supabase/migrations/20260803000003_stock_pool_order_rpcs.sql</code>, <code>tests/unit/stock-pool-orders.test.ts</code>; Modify POS/QR regression tests, version files</p>
+    <ol class="checklist"><li><strong>เขียน RED tests</strong> สำหรับ cross-product shared Pool, multiplier, aggregate, insufficient stock rollback, QR paid dedup, cancel และ item void restore</li><li><strong>Replace RPC definitions ใน migration ใหม่เท่านั้น</strong>: <code>create_qr_order_with_items</code>, <code>close_pos_order_payment</code>, <code>cancel_qr_order_by_customer</code>, <code>void_qr_order_item</code></li><li><strong>ใช้ algorithm เดียวกันใน POS/QR</strong></li></ol>
+<pre><code>-- helper ถูกเรียกหลัง order_items ถูก insert แล้ว
+update public.order_items oi set
+  stock_pool_id = l.stock_pool_id,
+  stock_units_per_item = l.consumption_quantity
+from public.variant_stock_links l where oi.variant_id = l.variant_id and oi.order_id = v_order_id;
+
+for v_demand in
+  select oi.stock_pool_id, sum(oi.qty * oi.stock_units_per_item)::integer required_qty
+  from public.order_items oi where oi.order_id = v_order_id and oi.stock_pool_id is not null
+  group by oi.stock_pool_id order by oi.stock_pool_id
+loop
+  select * into v_pool from public.stock_pools where id = v_demand.stock_pool_id for update;
+  if v_pool.store_id &lt;&gt; v_order.store_id or v_pool.quantity &lt; v_demand.required_qty then
+    raise exception 'สต๊อกไม่เพียงพอ';
+  end if;
+  update public.stock_pools set quantity = quantity - v_demand.required_qty, updated_at = now()
+  where id = v_pool.id;
+  insert into public.stock_movements(stock_pool_id,movement_type,quantity_delta,before_quantity,after_quantity,reference_type,reference_id)
+  values(v_pool.id,'sale',-v_demand.required_qty,v_pool.quantity,v_pool.quantity-v_demand.required_qty,'order',v_order_id);
+end loop;</code></pre>
+    <ol class="checklist" start="4"><li><strong>Idempotency</strong> เพิ่ม unique index บน <code>(stock_pool_id,movement_type,reference_type,reference_id)</code> เมื่อ reference ไม่ว่าง; ห้ามใช้ <code>ON CONFLICT DO NOTHING</code> หลังหักยอด เพราะจะตัดซ้ำ—unique violation ต้อง rollback transaction ทั้งก้อน; QR order ตัดตอน create, POS ไม่ตัด QR ซ้ำตอน payment</li><li><strong>Cancel/void restore</strong> aggregate จาก <code>order_items.stock_pool_id</code> และ <code>stock_units_per_item</code> snapshot, lock Pool, บวกคืนและเขียน movement; item void ใช้ reference order_item, full cancel ใช้ order</li><li><strong>รัน GREEN</strong> ชุดใหม่และ <code>pos-stock-dedup</code>, <code>pos-order-rpc</code>, <code>qr-order-rpc*</code>, <code>qr-void-item</code></li><li><strong>Bump/commit:</strong> <code>0.32.4</code>; commit <code>feat: use stock pools in POS and QR v0.32.4</code></li></ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 6: Low-stock Notification และ Inventory API Scope</h2><p>แจ้งเตือนจาก Pool และปิด issue API key scopes</p></div><span class="version">v0.32.5</span></div>
+    <p class="files"><strong>Files:</strong> Create <code>supabase/migrations/20260803000004_api_key_inventory_scope.sql</code>, <code>tests/unit/inventory-api-scope.test.ts</code>; Modify <code>src/modules/stock/notify.ts</code>, inventory route, API auth, stock/API tests, version files</p>
+    <ol class="checklist"><li><strong>เขียน RED tests</strong> ให้ notifier ใช้ movement ที่ข้าม threshold ครั้งเดียว และ Inventory API ต้องมี <code>inventory.read</code></li><li><strong>เปลี่ยน auth contract</strong></li></ol>
+<pre><code>export type ApiScope = "products.read" | "inventory.read" | "orders.read";
+export async function authenticateApiKey(req: Request, requiredScope?: ApiScope) {
+  const plaintext = readKey(req);
+  if (!plaintext) return { ok: false as const, status: 401 as const, error: "Missing API key" };
+  const supabase = await createSupabaseServiceClient();
+  const { data: row } = await supabase.from("api_keys")
+    .select("id, organization_id, revoked_at, scopes")
+    .eq("key_hash", hashApiKey(plaintext)).maybeSingle();
+  if (!row || row.revoked_at) return { ok: false as const, status: 401 as const, error: "Invalid API key" };
+  const scopes = row.scopes ?? [];
+  if (requiredScope &amp;&amp; !scopes.includes(requiredScope)) {
+    return { ok: false as const, status: 403 as const, error: "API key ไม่มี scope ที่จำเป็น" };
+  }
+  return { ok: true as const, organizationId: row.organization_id, apiKeyId: row.id, scopes };
+}</code></pre>
+    <ol class="checklist" start="3"><li><strong>Legacy scope migration</strong> เติม <code>products.read</code>, <code>inventory.read</code>, <code>orders.read</code> เฉพาะ key เดิมที่ scopes ว่างเพื่อรักษาพฤติกรรมเดิม; key ที่มี scopes อยู่แล้วห้ามขยายสิทธิ์</li><li><strong>Inventory route</strong> เรียก <code>authenticateApiKey(req, "inventory.read")</code> และคืน Pool พร้อม linked products/variants โดย scope organization/store ตาม contract</li><li><strong>Notifier</strong> ใช้ movement id เป็น dedupe key; แจ้ง Pool name, after quantity, unit และ linked selling items; manual set/receive ไม่ส่ง sale alert</li><li><strong>รัน GREEN</strong> stock alerts, API scope tests, typecheck และ changed-file ESLint</li><li><strong>Bump/commit:</strong> <code>0.32.5</code>; commit <code>feat: expose scoped stock pools v0.32.5</code></li></ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 7: Integration, Migration Dry-run และ UX Verification</h2><p>พิสูจน์ schema/backfill/runtime ก่อน production</p></div><span class="version">v0.32.6</span></div>
+    <p class="files"><strong>Files:</strong> Modify tests/fixes ที่พบ, Plan status, Obsidian log/issue/current; version files</p>
+    <ol class="checklist"><li><strong>Local migration:</strong> backup local DB แล้วรัน <code>supabase db reset</code>; query ยืนยัน tracked Variant ทุกตัวมี link, quantity รวมเท่าก่อนย้าย, ไม่มี cross-store link และไม่มี negative Pool</li><li><strong>Integration concurrency:</strong> ส่ง checkout พร้อมกันสองคำขอที่ใช้ Pool เดียว ยืนยันหนึ่งคำขอ rollback เมื่อยอดไม่พอและยอดไม่ติดลบ</li><li><strong>Browser QA:</strong> desktop/mobile: product search → forced Variant → create/select Pool → receive → set balance → sale → cancel/void; ตรวจ console error และ focus</li><li><strong>Full verification</strong></li></ol>
+<pre class="command"><code>npm test
+npm run typecheck
+npm run lint
+npm run build
+git diff --check
+
+Expected: tests/typecheck/build/diff exit 0.
+Lint: หากยังเจอ ISSUE-20260802-002 นอก diff ให้บันทึกแยก; changed files ต้อง 0 errors.</code></pre>
+    <ol class="checklist" start="5"><li><strong>Code review:</strong> spawn role <code>code_reviewer</code> พร้อม Mandatory Context Package เน้น transaction, RLS, idempotency, migration/backfill, package/API scope และ data loss</li><li><strong>Fix/re-review loop</strong> ทุก Critical/Major; บันทึก finding ใน Obsidian ก่อนแก้</li><li><strong>Bump/commit:</strong> <code>0.32.6</code>; commit <code>test: verify stock pool integration v0.32.6</code></li></ol>
+  </section>
+
+  <section class="task">
+    <div class="task-head"><div><h2>Task 8: Documentation, Release และ Production Gate</h2><p>ปิด issue เฉพาะเมื่อ evidence ครบ และไม่ apply production โดยไม่มีอนุมัติใหม่</p></div><span class="version">v0.32.7</span></div>
+    <p class="files"><strong>Files:</strong> Update Design/Plan status, Obsidian <code>log.md</code>, <code>issue.md</code>, indexes, <code>current.md</code>, <code>decisions.md</code>, <code>deployment.md</code>; version files</p>
+    <ol class="checklist"><li><strong>อัปเดต issue</strong> `ISSUE-20260803-001` และ `002` เป็น resolved เมื่อ regression tests ผ่าน; `003` resolved เมื่อ scope test ผ่าน; ห้ามปิดจาก source inspection อย่างเดียว</li><li><strong>เขียน rollback runbook</strong> เก็บ compatibility columns, ปิด UI feature flag/route และ revert application ก่อน DB cleanup; ห้าม drop tables ใน release นี้</li><li><strong>ขออนุมัติ production migration แยก</strong> พร้อม environment, backup, impact, migration list และ rollback; ถ้าไม่ได้อนุมัติให้หยุดที่ release candidate</li><li><strong>หลังอนุมัติ:</strong> apply migrations ตามลำดับ, run invariant queries, deploy Vercel ด้วย token จาก <code>.env.local</code> โดยไม่แสดง secret, smoke Stock/POS/QR/API</li><li><strong>Final review/evidence:</strong> code reviewer ผ่าน, deployment READY, smoke และ DB invariants ผ่าน</li><li><strong>Bump/commit:</strong> <code>0.32.7</code>; commit <code>chore: release stock pools v0.32.7</code>; push/PR หรือ merge ตามคำสั่งผู้ใช้</li></ol>
+  </section>
+
+  <section>
+    <h2>Definition of Done</h2>
+    <ul class="checklist"><li>ผู้ใช้เพิ่ม Stock จากสินค้าและสร้าง Variant ใน Dialog เดิมได้</li><li>คำว่า Variant, Stock Pool, รับเข้า และกำหนดยอดใหม่มีคำอธิบายและตัวอย่าง</li><li>Pool แชร์ข้ามสินค้าได้ แต่ Variant ผูกได้ Pool เดียว</li><li>POS/QR concurrent deduction และ cancel/void restore ผ่าน integration test</li><li>Backfill/RLS/API scope/package gate ผ่าน verification</li><li>Code reviewer ไม่เหลือ Critical/Major</li><li>Obsidian และ issue status ตรงกับ evidence</li><li>Production migration/deploy เกิดขึ้นเฉพาะหลังอนุมัติใหม่</li></ul>
+  </section>
+</main>
+</body>
+</html>
