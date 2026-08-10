@@ -96,22 +96,47 @@ function weekdayOf(date: string): number {
   return new Date(`${date}T12:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
 }
 
-function periodDayCount(from: string, to: string): number {
-  return eachDate(from, to).length;
+/**
+ * Scheduled working days inside the pay period — the divisor for pro-rating a monthly salary.
+ * The period is whatever range payroll is run for, not a calendar month: a store paying from the
+ * 6th runs 6 ม.ค.–5 ก.พ., then 6 ก.พ.–5 มี.ค., and each window is its own full month of salary.
+ */
+function scheduledDaysInPeriod(periodStart: string, periodEnd: string, workingDays: number[]): number {
+  let count = 0;
+  for (const date of eachDate(periodStart, periodEnd)) {
+    if (workingDays.includes(weekdayOf(date))) count += 1;
+  }
+  return count;
 }
 
-function autoAbsentPenaltyPerDay(
+/**
+ * What a single absent day costs.
+ * The employee's own "ค่าปรับขาดงาน/วัน" wins when set; otherwise monthly staff are pro-rated
+ * from their salary (เงินเดือน ÷ วันทำงานในงวด) so pay drops only by the days they did not
+ * work — store holidays and approved leave never reach here. Other pay types fall back to the
+ * store-wide rate.
+ */
+function absentPenaltyPerDay(
   profile: EmployeeProfile,
   settings: StoreHrSettings,
-  periodStart: string,
-  periodEnd: string,
+  scheduledDays: number,
 ): number {
-  if (settings.absentPenaltyPerDay <= 0) return 0;
+  if (profile.absentPenaltyAmount > 0) return profile.absentPenaltyAmount;
   if (profile.payType === "monthly" && profile.monthlySalary > 0) {
-    const days = periodDayCount(periodStart, periodEnd);
-    return days > 0 ? profile.monthlySalary / days : 0;
+    return scheduledDays > 0 ? profile.monthlySalary / scheduledDays : 0;
   }
   return settings.absentPenaltyPerDay;
+}
+
+/** What one late day costs: the employee's flat per-day fine, else the store's per-minute rate. */
+function latePenaltyForMinutes(
+  profile: EmployeeProfile,
+  settings: StoreHrSettings,
+  lateMinutes: number,
+): number {
+  if (profile.latePenaltyAmount > 0) return profile.latePenaltyAmount;
+  const raw = lateMinutes * settings.latePenaltyPerMinute;
+  return settings.latePenaltyMaxPerDay > 0 ? Math.min(raw, settings.latePenaltyMaxPerDay) : raw;
 }
 
 export interface PayrollComputeInput {
@@ -185,23 +210,25 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     let latePenalty = 0;
     if (profile) {
       const hoursByDay = new Map<string, number>();
+      const firstClockInByDay = new Map<string, string>();
       const startMin = profile.expectedStartTime ? expectedStartMinutes(profile.expectedStartTime) : null;
-      const seenLateDays = new Set<string>();
       for (const r of userRecords) {
         if (r.clockOutAt) {
           const ms = new Date(r.clockOutAt).getTime() - new Date(r.clockInAt).getTime();
           if (ms > 0) hoursByDay.set(r.date, (hoursByDay.get(r.date) ?? 0) + ms / 3_600_000);
         }
-        // Late penalty: once per day, based on first clock-in vs expected start + grace.
-        if (startMin !== null && settings.latePenaltyPerMinute > 0 && !seenLateDays.has(r.date)) {
-          const inMin = localMinutesOfDay(r.clockInAt, timezone);
-          const lateBy = inMin - (startMin + profile.lateGraceMinutes);
-          if (lateBy > 0) {
-            const raw = lateBy * settings.latePenaltyPerMinute;
-            const capped = settings.latePenaltyMaxPerDay > 0 ? Math.min(raw, settings.latePenaltyMaxPerDay) : raw;
-            latePenalty += capped;
-            seenLateDays.add(r.date);
-          }
+        // Records arrive newest-first, so keep the earliest punch explicitly: a split shift must
+        // be judged by the morning clock-in, not by the one after the lunch break.
+        const seen = firstClockInByDay.get(r.date);
+        if (!seen || Date.parse(r.clockInAt) < Date.parse(seen)) {
+          firstClockInByDay.set(r.date, r.clockInAt);
+        }
+      }
+      // Late penalty: once per day, first clock-in vs expected start + grace.
+      if (startMin !== null && (settings.latePenaltyPerMinute > 0 || profile.latePenaltyAmount > 0)) {
+        for (const clockInAt of firstClockInByDay.values()) {
+          const lateBy = localMinutesOfDay(clockInAt, timezone) - (startMin + profile.lateGraceMinutes);
+          if (lateBy > 0) latePenalty += latePenaltyForMinutes(profile, settings, lateBy);
         }
       }
       if (profile.otEligible && settings.otDailyCapHours > 0) {
@@ -218,14 +245,23 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
 
     // --- Auto absent: scheduled working days (per profile) with no record, up to today ---
     let absentDays = 0;
-    const absentPenaltyPerDay = profile ? autoAbsentPenaltyPerDay(profile, settings, periodStart, periodEnd) : 0;
-    if (profile && absentPenaltyPerDay > 0 && profile.workingDays.length > 0 && periodStart <= absentScanEnd) {
-      const datesWithRecord = new Set(userRecords.map((r) => r.date));
+    let perAbsentDay = 0;
+    if (profile && profile.workingDays.length > 0 && periodStart <= absentScanEnd) {
+      // Divisor spans the whole period even though absences are only scanned up to today —
+      // a mid-period payroll preview must not inflate what each missed day costs.
+      const scheduledDays = scheduledDaysInPeriod(periodStart, periodEnd, profile.workingDays);
+      perAbsentDay = absentPenaltyPerDay(profile, settings, scheduledDays);
+      // A shift counts as worked only once it is closed. Clocking in and never clocking out
+      // breaks the rule the employee is responsible for, so payroll scores it as absence —
+      // except for today, where the shift may still legitimately be open.
+      const attendedDates = new Set(
+        userRecords.filter((r) => r.clockOutAt || r.date === today).map((r) => r.date),
+      );
       const leaveDates = new Set(userAdj.filter((a) => a.type === "leave").map((a) => a.date));
       for (const date of eachDate(periodStart, absentScanEnd)) {
         if (
           profile.workingDays.includes(weekdayOf(date)) &&
-          !datesWithRecord.has(date) &&
+          !attendedDates.has(date) &&
           !leaveDates.has(date) &&
           !holidayDateSet.has(date)
         ) {
@@ -233,7 +269,7 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
         }
       }
     }
-    const absentPenalty = round2(absentDays * absentPenaltyPerDay);
+    const absentPenalty = round2(absentDays * perAbsentDay);
 
     // --- Manual adjustments ---
     let bonusTotal = 0;

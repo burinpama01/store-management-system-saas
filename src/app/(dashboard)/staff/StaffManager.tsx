@@ -84,6 +84,8 @@ export function StaffManager({
     router.push(`/staff?${sp.toString()}`);
   }
 
+  const payslipQuery = `dateFrom=${dateFrom}&dateTo=${dateTo}`;
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -248,9 +250,15 @@ export function StaffManager({
                         </label>
                         <div className="text-xs font-medium text-gray-600 lg:col-span-2">
                           วันทำงาน
+                          <span className="ml-1 font-normal text-gray-400">
+                            (วันที่ไม่ติ๊ก = วันหยุดประจำของพนักงานคนนี้ ไม่ถูกนับเป็นขาดงาน)
+                          </span>
                           <div className="mt-1 flex flex-wrap gap-1">
                             {WEEKDAY_LABELS.map((lbl, idx) => {
-                              const checked = (profile?.workingDays ?? [1, 2, 3, 4, 5]).includes(idx);
+                              // ร้านที่เปิดทุกวันตั้งวันหยุดประจำรายคนได้ — ค่าเริ่มต้นจึงยึดวันเปิดร้าน
+                              // ไม่ใช่ จ-ศ แล้วให้ผู้จัดการติ๊กวันหยุดของพนักงานคนนั้นออกเอง
+                              const fallback = hrSettings.workingDays?.length ? hrSettings.workingDays : [1, 2, 3, 4, 5];
+                              const checked = (profile?.workingDays?.length ? profile.workingDays : fallback).includes(idx);
                               return (
                                 <label key={idx} className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2 py-1.5">
                                   <input type="checkbox" name="workingDays" value={idx} defaultChecked={checked} className="accent-orange-500" />
@@ -298,7 +306,7 @@ export function StaffManager({
             </label>
             <button type="submit" className="btn-secondary min-h-11 px-4 text-sm">คำนวณ</button>
             <a
-              href={`/payslip?mode=summary&dateFrom=${dateFrom}&dateTo=${dateTo}`}
+              href={`/payslip?mode=summary&${payslipQuery}`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-secondary min-h-11 px-4 text-sm"
@@ -350,7 +358,7 @@ export function StaffManager({
                       <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(l.netPay, currency)}</td>
                       <td className="px-3 py-2 text-right">
                         <a
-                          href={`/payslip?userId=${l.userId}&dateFrom=${dateFrom}&dateTo=${dateTo}`}
+                          href={`/payslip?userId=${l.userId}&${payslipQuery}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-orange-600 hover:underline"

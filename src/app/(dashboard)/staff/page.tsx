@@ -2,7 +2,11 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
-import { listAttendanceRecords, computePayrollSummaries, listStoreHolidays } from "@/modules/attendance/repository";
+import {
+  listAttendanceRecords,
+  computePayrollSummaries,
+  listStoreHolidays,
+} from "@/modules/attendance/repository";
 import { computePayrollLines } from "@/modules/hr/payroll";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -30,15 +34,20 @@ export default async function StaffPage({
   const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
-    listAttendanceRecords(ctx.organizationId, ctx.storeId, dateFrom, dateTo),
+    // Attendance is read org-wide (null) and then narrowed to this store's roster below: a shift
+    // covered at another branch still belongs to the employee, and to the payroll of the branch
+    // that pays them. Filtering by punch location instead would score it as absence.
+    listAttendanceRecords(ctx.organizationId, null, dateFrom, dateTo),
     listPayrollAdjustments(ctx.storeId, dateFrom, dateTo),
     listStoreHolidays(ctx.storeId, dateFrom, dateTo),
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
   ]);
 
-  const records = recordsRes.data ?? [];
-  const summaries = computePayrollSummaries(records, ctx.storeId, ctx.organizationId, dateFrom, dateTo);
+  const members = membersRes.data ?? [];
+  const roster = new Set(members.filter((m) => m.role !== "super_admin").map((m) => m.userId));
+  const records = (recordsRes.data ?? []).filter((r) => roster.has(r.userId));
+  const summaries = computePayrollSummaries(records, null, ctx.organizationId, dateFrom, dateTo);
   const profiles = profilesRes.data ?? [];
   const adjustments = adjustmentsRes.data ?? [];
   const payrollLines = computePayrollLines({
@@ -56,7 +65,7 @@ export default async function StaffPage({
 
   return (
     <StaffManager
-      members={membersRes.data ?? []}
+      members={members}
       profiles={profiles}
       payrollLines={payrollLines}
       adjustments={adjustments}
