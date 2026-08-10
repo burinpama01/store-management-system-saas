@@ -135,7 +135,8 @@ describe("computePayrollLines", () => {
   it("treats late/leave/absent manual adjustments as deductions", () => {
     const result = lines({
       summaries: [summary()],
-      profiles: [profile({ payType: "monthly", monthlySalary: 10000 })],
+      // No fixed schedule → auto-absence is off, so this stays a test of manual adjustments only.
+      profiles: [profile({ payType: "monthly", monthlySalary: 10000, workingDays: [] })],
       adjustments: [adj({ type: "late", amount: 50 }), adj({ id: "a2", type: "leave", amount: 100 }), adj({ id: "a3", type: "absent", amount: 500 })],
     });
     expect(result[0].deductionTotal).toBe(650);
@@ -181,7 +182,7 @@ describe("computePayrollLines", () => {
     expect(result[0].netPay).toBe(-1500);
   });
 
-  it("uses monthly salary divided by period days for absent penalty and skips leave/holiday days", () => {
+  it("pro-rates a monthly salary by the absent day and skips leave/holiday days", () => {
     const workedDates = [
       "2026-07-01",
       "2026-07-02",
@@ -217,9 +218,141 @@ describe("computePayrollLines", () => {
       today: "2026-07-15",
     });
 
+    // Only 2026-07-15 is unaccounted for; July 2026 has 23 Mon–Fri days → ฿31,000 ÷ 23.
+    expect(result[0].absentDays).toBe(1);
+    expect(result[0].absentPenalty).toBe(1347.83);
+    expect(result[0].netPay).toBe(29652.17);
+  });
+
+  it("counts a clock-in with no clock-out as absence, but leaves today's open shift alone", () => {
+    const rec = (id: string, date: string, clockOutAt: string | null): AttendanceRecord => ({
+      id, storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice",
+      date, clockInAt: `${date}T01:00:00Z`, clockOutAt,
+      status: clockOutAt ? "completed" : "active", createdAt: "", updatedAt: "",
+    });
+    const result = lines({
+      records: [
+        rec("r1", "2026-01-06", "2026-01-06T10:00:00Z"), // closed properly
+        rec("r2", "2026-01-07", null), // forgot to clock out → absence
+        rec("r3", "2026-01-08", null), // today, still on shift → not absence
+      ],
+      profiles: [profile({ payType: "monthly", monthlySalary: 23000, workingDays: [1, 2, 3, 4, 5] })],
+      periodStart: "2026-01-06",
+      periodEnd: "2026-02-05",
+      today: "2026-01-08",
+    });
     expect(result[0].absentDays).toBe(1);
     expect(result[0].absentPenalty).toBe(1000);
-    expect(result[0].netPay).toBe(30000);
+  });
+
+  it("pro-rates over the pay period, not the calendar month", () => {
+    // Staff hired on the 6th → payroll runs 6 ม.ค. – 5 ก.พ., which holds 23 Mon–Fri days.
+    // Each missed day costs ฿23,000 ÷ 23, regardless of where the month boundary falls.
+    const result = lines({
+      profiles: [profile({ payType: "monthly", monthlySalary: 23000, workingDays: [1, 2, 3, 4, 5] })],
+      settings: settings({ absentPenaltyPerDay: 0 }),
+      periodStart: "2026-01-06",
+      periodEnd: "2026-02-05",
+      today: "2026-01-08", // Tue 1/6, Wed 1/7, Thu 1/8 all missed
+    });
+    expect(result[0].absentDays).toBe(3);
+    expect(result[0].absentPenalty).toBe(3000);
+    expect(result[0].netPay).toBe(20000);
+  });
+
+  it("pro-rates a monthly salary even when the store sets no flat absent rate", () => {
+    const result = lines({
+      profiles: [profile({ payType: "monthly", monthlySalary: 23000, workingDays: [1, 2, 3, 4, 5] })],
+      settings: settings({ absentPenaltyPerDay: 0 }),
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-31",
+      today: "2026-07-02", // Wed 7/1 + Thu 7/2, no records at all
+    });
+    expect(result[0].absentDays).toBe(2);
+    expect(result[0].absentPenalty).toBe(2000); // 23000 ÷ 23 × 2
+    expect(result[0].netPay).toBe(21000);
+  });
+
+  it("never charges a holiday or a scheduled day off as absence", () => {
+    const result = lines({
+      profiles: [profile({ payType: "monthly", monthlySalary: 23000, workingDays: [1, 2, 3, 4, 5] })],
+      holidayDates: ["2026-07-01", "2026-07-02", "2026-07-03"],
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-31",
+      today: "2026-07-05", // 7/1–7/3 declared holidays, 7/4–7/5 Sat–Sun off the schedule
+    });
+    expect(result[0].absentDays).toBe(0);
+    expect(result[0].absentPenalty).toBe(0);
+    expect(result[0].netPay).toBe(23000);
+  });
+
+  it("prefers the employee's own absent rate over the pro-rated salary", () => {
+    const result = lines({
+      profiles: [
+        profile({ payType: "monthly", monthlySalary: 23000, absentPenaltyAmount: 400, workingDays: [1, 2, 3, 4, 5] }),
+      ],
+      settings: settings({ absentPenaltyPerDay: 999 }),
+      periodStart: "2026-07-01",
+      periodEnd: "2026-07-31",
+      today: "2026-07-02",
+    });
+    expect(result[0].absentPenalty).toBe(800);
+  });
+
+  it("judges lateness by the first punch of the day, whatever order records arrive in", () => {
+    const rec = (id: string, clockInAt: string, clockOutAt: string): AttendanceRecord => ({
+      id, storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice",
+      date: "2026-06-02", clockInAt, clockOutAt, status: "completed", createdAt: "", updatedAt: "",
+    });
+    // Split shift in Asia/Bangkok: in 08:00, out 12:00, back 13:00, out 17:00 — on time.
+    // Records come back newest-first, exactly as the repository orders them.
+    const result = lines({
+      records: [
+        rec("r2", "2026-06-02T06:00:00Z", "2026-06-02T10:00:00Z"),
+        rec("r1", "2026-06-02T01:00:00Z", "2026-06-02T05:00:00Z"),
+      ],
+      profiles: [profile({ payType: "daily", expectedStartTime: "08:00", lateGraceMinutes: 5 })],
+      settings: settings({ latePenaltyPerMinute: 2 }),
+      periodStart: "2026-06-02",
+      periodEnd: "2026-06-02",
+      today: "2026-06-02",
+    });
+    expect(result[0].latePenalty).toBe(0);
+  });
+
+  it("charges a late day once, capped by the store maximum", () => {
+    const rec: AttendanceRecord = {
+      id: "r1", storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice",
+      date: "2026-06-02", clockInAt: "2026-06-02T02:00:00Z", clockOutAt: "2026-06-02T10:00:00Z",
+      status: "completed", createdAt: "", updatedAt: "",
+    };
+    // 09:00 local vs 08:00 expected = 60 min late × ฿2 = ฿120, capped at ฿100.
+    const result = lines({
+      records: [rec],
+      profiles: [profile({ payType: "daily", expectedStartTime: "08:00" })],
+      settings: settings({ latePenaltyPerMinute: 2, latePenaltyMaxPerDay: 100 }),
+      periodStart: "2026-06-02",
+      periodEnd: "2026-06-02",
+      today: "2026-06-02",
+    });
+    expect(result[0].latePenalty).toBe(100);
+  });
+
+  it("prefers the employee's flat late fine over the per-minute rate", () => {
+    const rec: AttendanceRecord = {
+      id: "r1", storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice",
+      date: "2026-06-02", clockInAt: "2026-06-02T02:00:00Z", clockOutAt: "2026-06-02T10:00:00Z",
+      status: "completed", createdAt: "", updatedAt: "",
+    };
+    const result = lines({
+      records: [rec],
+      profiles: [profile({ payType: "daily", expectedStartTime: "08:00", latePenaltyAmount: 50 })],
+      settings: settings({ latePenaltyPerMinute: 0 }),
+      periodStart: "2026-06-02",
+      periodEnd: "2026-06-02",
+      today: "2026-06-02",
+    });
+    expect(result[0].latePenalty).toBe(50);
   });
 });
 
@@ -290,6 +423,21 @@ describe("HR payroll migration + repository wiring", () => {
     for (const source of [staffPage, payslipPage]) {
       expect(source).toContain("listStoreHolidays(ctx.storeId, dateFrom, dateTo)");
       expect(source).toContain("holidayDates: (holidaysRes.data ?? []).map((h) => h.date)");
+    }
+  });
+
+  it("matches attendance by employee, not by the branch they punched at", () => {
+    const staffPage = read("src/app/(dashboard)/staff/page.tsx");
+    const payslipPage = read("src/app/payslip/page.tsx");
+
+    for (const source of [staffPage, payslipPage]) {
+      // null store id = read every branch (RLS still scopes it), then keep this store's roster.
+      expect(source).toContain("listAttendanceRecords(ctx.organizationId, null, dateFrom, dateTo)");
+      expect(source).toContain("listStoreMemberships(ctx.organizationId, ctx.storeId)");
+      expect(source).toContain("roster.has(r.userId)");
+      // Wages, adjustments and holidays stay on the store the manager is signed into.
+      expect(source).toContain("listEmployeeProfiles(ctx.storeId)");
+      expect(source).toContain("listPayrollAdjustments(ctx.storeId, dateFrom, dateTo)");
     }
   });
 });
