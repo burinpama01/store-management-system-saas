@@ -93,17 +93,21 @@ export function AccountingManager({
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // ยืนยันการลบด้วย ModalDialog ในแอป ไม่ใช่ window.confirm — บน WebView ของแอปมือถือและใน iframe
+  // กล่อง confirm ของเบราว์เซอร์อาจไม่เด้งและคืนค่า false ทันที ทำให้กดปุ่มลบแล้วเงียบไปเฉย ๆ
+  const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
 
-  async function handleDelete(id: string) {
-    if (!confirm("ลบรายการนี้? ระบบจะสร้างรายการยกเลิกในบัญชีเงินสด")) return;
-    setDeletingId(id);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
     setDeleteError(null);
-    const result = await deleteTransactionAction(id);
+    const result = await deleteTransactionAction(deleteTarget.id);
     setDeletingId(null);
     if (result.error) {
       setDeleteError(result.error);
       return;
     }
+    setDeleteTarget(null);
     router.refresh();
   }
 
@@ -309,7 +313,10 @@ export function AccountingManager({
                       {canManage && (
                         <td className="px-3 py-2 text-right">
                           <button
-                            onClick={() => handleDelete(tx.id)}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteTarget(tx);
+                            }}
                             disabled={deletingId === tx.id}
                             className="text-xs text-gray-400 hover:text-red-600 disabled:opacity-40 transition-colors"
                           >
@@ -350,6 +357,78 @@ export function AccountingManager({
           )}
         </div>
       </div>
+
+      {deleteTarget && (
+        <ModalDialog
+          open
+          title="ยืนยันการลบรายการ"
+          size="sm"
+          onClose={() => {
+            if (!deletingId) setDeleteTarget(null);
+          }}
+        >
+          <div className="space-y-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">วันที่</span>
+              <span className="text-gray-900">{deleteTarget.date}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">ประเภท</span>
+              <span className="text-gray-900">
+                {TYPE_LABEL[deleteTarget.type]} · {deleteTarget.categoryName}
+              </span>
+            </div>
+            {deleteTarget.note && (
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">หมายเหตุ</span>
+                <span className="text-right text-gray-900">{deleteTarget.note}</span>
+              </div>
+            )}
+            <div className="flex justify-between gap-3">
+              <span className="text-gray-500">จำนวน</span>
+              <span
+                className={`font-medium tabular-nums ${
+                  deleteTarget.type === "income" ? "text-green-700" : "text-red-700"
+                }`}
+              >
+                {deleteTarget.type === "income" ? "+" : "-"}
+                {fmt(deleteTarget.amount)} ({deleteTarget.paymentMethod === "transfer" ? "โอน" : "เงินสด"})
+              </span>
+            </div>
+          </div>
+
+          {/* ข้อความต้องตรงตามชนิดรายการ — โอนไม่เคยแตะลิ้นชัก จึงไม่มีรายการยกเลิกให้สร้าง */}
+          <p className="text-sm text-gray-600">
+            {deleteTarget.paymentMethod === "transfer"
+              ? "รายการนี้เป็นการโอน ไม่กระทบยอดเงินสดในลิ้นชัก"
+              : "รายการนี้เป็นเงินสด ระบบจะสร้างรายการยกเลิกในบัญชีเงินสดให้อัตโนมัติ"}
+          </p>
+
+          {deleteError && (
+            <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+              {deleteError}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteTarget(null)}
+              disabled={!!deletingId}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmDelete}
+              loading={!!deletingId}
+              loadingText="กำลังลบ..."
+            >
+              ลบรายการ
+            </Button>
+          </div>
+        </ModalDialog>
+      )}
     </div>
   );
 }

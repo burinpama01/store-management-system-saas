@@ -31,6 +31,18 @@ describe("deleting a cashflow transaction actually deletes it", () => {
     expect(deleteFn).toContain("ok: false");
   });
 
+  it("confirms deletion with an in-app dialog, not window.confirm", () => {
+    const ui = read("src/app/(dashboard)/accounting/AccountingManager.tsx");
+
+    // window.confirm never opens inside the mobile app WebView / cross-origin iframes:
+    // it returns false straight away and the delete silently does nothing.
+    expect(ui).not.toMatch(/(?<!\w)confirm\(/);
+    expect(ui).toContain("deleteTarget");
+    expect(ui).toContain("ยืนยันการลบรายการ");
+    // the warning must match the payment method — transfers never touch the drawer
+    expect(ui).toContain("ไม่กระทบยอดเงินสดในลิ้นชัก");
+  });
+
   it("action deletes first and only then reverses the cash ledger", () => {
     const actions = read("src/app/(dashboard)/accounting/actions.ts");
     const deleteAction = actions.slice(actions.indexOf("export async function deleteTransactionAction"));
