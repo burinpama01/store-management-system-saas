@@ -11,7 +11,7 @@ import type {
 } from "@/modules/catalog/types";
 import type { BillingPlan } from "@/modules/billing/types";
 import type { Role } from "@/modules/tenants/types";
-import { ModalDialog, ImageUpload, LocalizedLoading, Button } from "@/shared/components/ui";
+import { ModalDialog, ImageUpload, LocalizedLoading, Button, useConfirm } from "@/shared/components/ui";
 import {
   createCategoryAction,
   updateCategoryAction,
@@ -1775,6 +1775,8 @@ export function CatalogManager({
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedCategoryForPanel, setSelectedCategoryForPanel] = useState<Category | null>(null);
   const [, startDelete] = useTransition();
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
   const filteredProducts = selectedCategoryId
     ? products.filter((p) => p.categoryId === selectedCategoryId)
@@ -1825,15 +1827,27 @@ export function CatalogManager({
     setSelectedCategoryForPanel(null);
   }
 
-  function handleDeleteCategory(id: string) {
+  async function handleDeleteCategory(id: string) {
     if (!canManageCatalog) return;
-    if (!confirm("ลบหมวดหมู่นี้? สินค้าในหมวดจะต้องย้ายหมวดก่อน")) return;
+    const ok = await confirm({
+      title: "ลบหมวดหมู่",
+      message: "ลบหมวดหมู่นี้? สินค้าในหมวดจะต้องย้ายหมวดก่อน",
+      confirmLabel: "ลบหมวดหมู่",
+      danger: true,
+    });
+    if (!ok) return;
     startDelete(() => { deleteCategoryAction(id); });
   }
 
-  function handleDeleteProduct(id: string) {
+  async function handleDeleteProduct(id: string) {
     if (!canManageCatalog) return;
-    if (!confirm("ลบสินค้านี้?")) return;
+    const ok = await confirm({
+      title: "ลบสินค้า",
+      message: "ลบสินค้านี้?",
+      confirmLabel: "ลบสินค้า",
+      danger: true,
+    });
+    if (!ok) return;
     startDelete(() => { deleteProductAction(id); });
   }
 
@@ -1841,7 +1855,7 @@ export function CatalogManager({
     if (!canManageCatalog) return;
     startDelete(async () => {
       const res = await toggleProductAvailabilityAction(p.id, { isActive: !p.isActive });
-      if (res.error) window.alert(res.error);
+      if (res.error) setToggleError(res.error);
     });
   }
 
@@ -1849,7 +1863,7 @@ export function CatalogManager({
     if (!canManageCatalog) return;
     startDelete(async () => {
       const res = await toggleProductAvailabilityAction(p.id, { outOfStock: !(p.outOfStock ?? false) });
-      if (res.error) window.alert(res.error);
+      if (res.error) setToggleError(res.error);
     });
   }
 
@@ -2103,6 +2117,25 @@ export function CatalogManager({
         organizationId={organizationId}
         onClose={closePanel}
       />
+
+      {/* เดิมใช้ window.alert ซึ่งไม่เด้งบน WebView ของแอปมือถือ = ผู้ใช้ไม่เห็น error เลย */}
+      {toggleError && (
+        <div className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg">
+          <div className="flex items-start justify-between gap-3">
+            <span>{toggleError}</span>
+            <button
+              type="button"
+              onClick={() => setToggleError(null)}
+              className="text-red-400 transition-colors hover:text-red-700"
+              aria-label="ปิดข้อความ"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmDialog}
     </div>
   );
 }

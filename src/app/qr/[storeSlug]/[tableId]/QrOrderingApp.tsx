@@ -27,7 +27,7 @@ import {
 } from "@/modules/qr-ordering/types";
 import type { QrMusicEligibility } from "@/modules/music-requests/gates";
 import { MusicTab } from "./MusicTab";
-import { Button } from "@/shared/components/ui";
+import { Button, useConfirm } from "@/shared/components/ui";
 
 interface Props {
   store: Store;
@@ -531,6 +531,7 @@ function TrackView({
     .filter((o) => o.status !== "paid" && o.status !== "voided" && o.status !== "cancelled")
     .reduce((s, o) => s + o.total, 0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
 
   return (
     <div className="flex flex-col h-full">
@@ -589,8 +590,15 @@ function TrackView({
                 order.status !== "cancelled" &&
                 order.status !== "voided" && (
                   <button
-                    onClick={() => {
-                      if (window.confirm(`ยกเลิกออเดอร์ #${order.orderNumber}?`)) onCancel(order.id);
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "ยกเลิกออเดอร์",
+                        message: `ยกเลิกออเดอร์ #${order.orderNumber}?`,
+                        confirmLabel: "ยกเลิกออเดอร์",
+                        cancelLabel: "ไม่ยกเลิก",
+                        danger: true,
+                      });
+                      if (ok) onCancel(order.id);
                     }}
                     disabled={servicePending}
                     className="mt-2 w-full min-h-11 rounded-lg border border-red-200 text-red-600 text-xs font-semibold disabled:opacity-50"
@@ -647,6 +655,8 @@ function TrackView({
         )}
         <p className="text-xs text-gray-400 text-center">กดเรียกพนักงานเพื่อขอเช็คบิล ขอน้ำ/น้ำจิ้ม หรือสอบถาม</p>
       </div>
+
+      {confirmDialog}
     </div>
   );
 }

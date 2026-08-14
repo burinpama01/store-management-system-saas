@@ -37,7 +37,7 @@ import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers"
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
 import { QrCode } from "@/shared/components/ui/QrCode";
-import { LocalizedLoading, Button, SubmitButton, ModalDialog } from "@/shared/components/ui";
+import { LocalizedLoading, Button, SubmitButton, ModalDialog, useConfirm } from "@/shared/components/ui";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { formatPoints } from "@/shared/utils/points";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
@@ -2508,6 +2508,7 @@ export function PosTerminal({
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
   const [printStatusMessage, setPrintStatusMessage] = useState<string | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerProfile[]>([]);
@@ -2925,7 +2926,7 @@ export function PosTerminal({
     return true;
   }
 
-  function handleDeleteTicket(ticketId: string) {
+  async function handleDeleteTicket(ticketId: string) {
     const ticket = savedTickets.find((item) => item.id === ticketId);
     if (ticket?.syncState === "sync_failed" || ticket?.syncState === "local") {
       const next = savedTickets.filter((item) => item.id !== ticketId);
@@ -2938,9 +2939,15 @@ export function PosTerminal({
       }
       return;
     }
-    const closeRelatedTableSession = !!ticket?.tableId && window.confirm(
-      `ลบตั๋วและเคลียร์โต๊ะ ${ticket.tableNumber ?? ""}?`,
-    );
+    const closeRelatedTableSession =
+      !!ticket?.tableId &&
+      (await confirm({
+        title: "ลบตั๋ว",
+        message: `ลบตั๋วและเคลียร์โต๊ะ ${ticket.tableNumber ?? ""}?`,
+        confirmLabel: "ลบและเคลียร์โต๊ะ",
+        cancelLabel: "ลบตั๋วอย่างเดียว",
+        danger: true,
+      }));
     startTicketTransition(async () => {
       const result = await deleteSavedTicketAction(ticketId, { closeRelatedTableSession });
       if (result.error) {
@@ -3255,8 +3262,14 @@ export function PosTerminal({
     }
   }
 
-  function handleVoidHistoryOrder(order: Order) {
-    const ok = window.confirm(`ยกเลิกบิล ${order.orderNumber}?`);
+  async function handleVoidHistoryOrder(order: Order) {
+    const ok = await confirm({
+      title: "ยกเลิกบิล",
+      message: `ยกเลิกบิล ${order.orderNumber}?`,
+      confirmLabel: "ยกเลิกบิล",
+      cancelLabel: "ไม่ยกเลิก",
+      danger: true,
+    });
     if (!ok) return;
     startTransition(async () => {
       const result = await voidOrderAction(order.id, "ยกเลิกจาก POS bill history");
@@ -3758,6 +3771,8 @@ export function PosTerminal({
           onAddItems={(tableId, tableNumber) => startDineInAdd(tableId, tableNumber)}
         />
       )}
+
+      {confirmDialog}
     </div>
   );
 }
