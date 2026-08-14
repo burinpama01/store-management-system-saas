@@ -13,7 +13,7 @@ import {
   type ServiceRequest,
 } from "@/modules/qr-ordering/types";
 import { updatePrepStatusAction, resolveServiceRequestAction, voidQrOrderItemAction } from "./actions";
-import { Button } from "@/shared/components/ui";
+import { Button, useConfirm } from "@/shared/components/ui";
 
 interface Props {
   storeId: string;
@@ -104,6 +104,7 @@ export function QrOrdersBoard({
   const [live, setLive] = useState(true);
   const [selectedStation, setSelectedStation] = useState("all");
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
   const stationOptions = useMemo(() => {
     const options = new Map<string, string>();
@@ -204,8 +205,14 @@ export function QrOrdersBoard({
     });
   }
 
-  function voidItem(order: QrOrderView, itemId: string, name: string) {
-    if (!window.confirm(`ปฏิเสธ "${name}" (ของหมด)? ระบบจะคืนสต็อกและหักออกจากยอด`)) return;
+  async function voidItem(order: QrOrderView, itemId: string, name: string) {
+    const ok = await confirm({
+      title: "ปฏิเสธรายการนี้",
+      message: `ปฏิเสธ "${name}" (ของหมด)? ระบบจะคืนสต็อกและหักออกจากยอด`,
+      confirmLabel: "ปฏิเสธรายการ",
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     startTransition(async () => {
       const res = await voidQrOrderItemAction(order.id, itemId, "ของหมด");
@@ -486,6 +493,8 @@ export function QrOrdersBoard({
           </div>
         )}
       </section>
+
+      {confirmDialog}
     </div>
   );
 }

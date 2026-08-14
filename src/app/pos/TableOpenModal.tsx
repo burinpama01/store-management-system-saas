@@ -6,7 +6,7 @@ import { getTableQrSlipAction, listTablesForOpenAction, openTableAction, closeTa
 import { selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
 import { enqueueReceiptPrintJob } from "@/modules/printing/network-print-client";
 import { buildTableQrReceiptData } from "@/modules/printing/table-qr-slip";
-import { Button } from "@/shared/components/ui";
+import { Button, useConfirm } from "@/shared/components/ui";
 
 interface Props {
   onClose: () => void;
@@ -28,6 +28,7 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems 
   const [tables, setTables] = useState<OpenTableStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
   const [notice, setNotice] = useState<string | null>(null);
   const [noExpiry, setNoExpiry] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -84,12 +85,15 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems 
     });
   }
 
-  function close(t: OpenTableStatus) {
+  async function close(t: OpenTableStatus) {
     setError(null);
     if (t.unpaidCount > 0) {
-      const ok = window.confirm(
-        `โต๊ะ ${t.label ?? t.number} ยังมีบิลค้าง ${t.unpaidCount} รายการ รวม ${new Intl.NumberFormat("th-TH").format(t.unpaidTotal)} บาท\n\nปิดโต๊ะโดยยังไม่เก็บเงิน? (ออร์เดอร์ยังเช็คบิลได้ภายหลังที่ "เช็คบิลโต๊ะ")`,
-      );
+      const ok = await confirm({
+        title: `ปิดโต๊ะ ${t.label ?? t.number} ทั้งที่มีบิลค้าง`,
+        message: `ยังมีบิลค้าง ${t.unpaidCount} รายการ รวม ${new Intl.NumberFormat("th-TH").format(t.unpaidTotal)} บาท — ปิดโต๊ะโดยยังไม่เก็บเงิน? (ออร์เดอร์ยังเช็คบิลได้ภายหลังที่ "เช็คบิลโต๊ะ")`,
+        confirmLabel: "ปิดโต๊ะ",
+        danger: true,
+      });
       if (!ok) return;
     }
     startTransition(async () => {
@@ -195,6 +199,8 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems 
           )}
         </div>
       </div>
+
+      {confirmDialog}
     </div>,
     document.body,
   );

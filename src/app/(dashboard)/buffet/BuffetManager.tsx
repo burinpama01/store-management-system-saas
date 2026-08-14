@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 import type { BuffetSession } from "@/modules/buffet/types";
 import type { StoreTable } from "@/modules/buffet/repository";
-import { ModalDialog, Button } from "@/shared/components/ui";
+import { ModalDialog, Button, useConfirm } from "@/shared/components/ui";
 import { formatStoreTime } from "@/shared/utils/datetime";
 import { createSessionAction, updateGuestCountAction, closeSessionAction } from "./actions";
 
@@ -34,9 +34,16 @@ export function BuffetManager({ openSessions, closedToday, tables, canManage, st
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [closingId, setClosingId] = useState<string | null>(null);
+  const { confirm, confirmDialog } = useConfirm();
 
   async function handleClose(id: string) {
-    if (!confirm("ปิดเซสชันบุฟเฟต์นี้?")) return;
+    const ok = await confirm({
+      title: "ปิดเซสชันบุฟเฟต์",
+      message: "ปิดเซสชันบุฟเฟต์นี้?",
+      confirmLabel: "ปิดเซสชัน",
+      danger: true,
+    });
+    if (!ok) return;
     setClosingId(id);
     setActionError(null);
     const result = await closeSessionAction(id);
@@ -157,6 +164,8 @@ export function BuffetManager({ openSessions, closedToday, tables, canManage, st
           )}
         </div>
       </div>
+
+      {confirmDialog}
     </div>
   );
 }

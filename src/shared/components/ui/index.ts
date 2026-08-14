@@ -4,6 +4,7 @@ export { EmptyState, LoadingState, ErrorState } from "./EmptyState";
 export { StatStrip } from "./StatStrip";
 export { Table } from "./Table";
 export { ConfirmDialog } from "./ConfirmDialog";
+export { useConfirm, type ConfirmOptions } from "./useConfirm";
 export { ModalDialog } from "./ModalDialog";
 export { Badge } from "./Badge";
 export { ProgressBar } from "./ProgressBar";
