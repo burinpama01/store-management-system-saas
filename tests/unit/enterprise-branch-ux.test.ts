@@ -149,7 +149,8 @@ describe("enterprise branch UX contract", () => {
     expect(billingManager).toContain("const isEnterprise = plan === \"enterprise\"");
     expect(billingManager).toContain("Enterprise contract");
     expect(billingManager).toContain("ไม่มีกำหนดหมดอายุ");
-    expect(billingManager).toContain("!isEnterprise &&");
+    // สัญญา Enterprise ซ่อน UI ต่ออายุ ส่วนสิทธิ์ทดลองฟรี (trialing) ยังเลือกซื้อแพ็กเกจต่อได้
+    expect(billingManager).toContain("!isEnterpriseContract &&");
     expect(tenantPage).toContain("formatSubscriptionEnd");
   });
 
@@ -286,7 +287,7 @@ describe("enterprise branch UX contract", () => {
         paymentConfigured: true,
         recipientName: "StoreOS",
         slipVerificationReady: true,
-        premiumTrialAvailable: false,
+        freeTrialAvailable: false,
       }),
     );
 

@@ -21,7 +21,7 @@ const PLAN_COPY: Record<string, { icon: string; intro: string; cta: string }> = 
   premium: {
     icon: "♕",
     intro: "เหมาะสำหรับร้านที่ต้องการครบทุกเครื่องมือและระบบขั้นสูง",
-    cta: "ทดลองใช้ฟรี 30 วัน",
+    cta: "เริ่มใช้งาน",
   },
   business: {
     icon: "⚙",
@@ -39,7 +39,10 @@ function formatPrice(amount: number | null) {
   return amount == null ? "สอบถามราคา" : `฿ ${amount.toLocaleString("th-TH")}`;
 }
 
-export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
+export function PricingPlans({
+  plans,
+  freeTrialOpen = false,
+}: Readonly<{ plans: PublicPlan[]; freeTrialOpen?: boolean }>) {
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("30d");
   const isAnnual = billingPeriod === "1y";
 
@@ -69,6 +72,8 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
           const copy = PLAN_COPY[plan.tier] ?? PLAN_COPY.starter;
           const isPremium = plan.tier === "premium";
           const isEnterprise = plan.price30d == null;
+          // โปรจำกัดเวลา: ทดลอง Enterprise ฟรี 30 วัน (ครบทุกฟีเจอร์)
+          const enterpriseTrial = isEnterprise && freeTrialOpen;
           const isConfigurable = plan.configurable;
           const activePrice = isAnnual ? plan.price1y : plan.price30d;
           const inactivePrice = isAnnual ? plan.price30d : plan.price1y;
@@ -76,15 +81,26 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
           return (
             <GlassPanel
               key={plan.tier}
-              className={`reference-plan-card${plan.highlight || isPremium ? " is-highlight" : ""}`}
+              className={`reference-plan-card${plan.highlight || isPremium || enterpriseTrial ? " is-highlight" : ""}`}
             >
-              {isPremium && <span className="reference-plan-ribbon">แนะนำ</span>}
+              {enterpriseTrial ? (
+                <span className="reference-plan-ribbon">ทดลองฟรี 30 วัน</span>
+              ) : (
+                isPremium && <span className="reference-plan-ribbon">แนะนำ</span>
+              )}
               <span className="reference-plan-icon">{copy.icon}</span>
               <h2>{plan.displayName}</h2>
               <p>{copy.intro}</p>
 
               <div className="reference-plan-price">
-                {isEnterprise ? (
+                {enterpriseTrial ? (
+                  <>
+                    <strong className="reference-trial-price">0 บาท</strong>
+                    <span className="reference-trial-period">/ 30 วันแรก</span>
+                    <small>โปรจำกัดเวลา: ใช้ครบทุกฟีเจอร์ระดับ Enterprise ฟรี 30 วัน</small>
+                    <small>ใช้ได้ 1 ครั้งต่อบัญชี · หลังหมดทดลองเลือกแพ็กเกจที่ใช่ หรือคุยกับทีมขายต่อ</small>
+                  </>
+                ) : isEnterprise ? (
                   <>
                     <strong>สอบถามราคา</strong>
                     <small>ทีมงานช่วยออกแบบแพ็กเกจและเงื่อนไขรายปีให้เหมาะกับหลายสาขา</small>
@@ -95,15 +111,6 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
                     <span>/ {isAnnual ? "ปี" : "เดือน"}</span>
                     <small>ราคาขึ้นกับจำนวนที่นั่ง สาขา และฟีเจอร์ที่เลือก</small>
                     <small>ปรับแต่งและชำระได้ในหน้าตั้งค่าแพ็กเกจหลังสมัคร</small>
-                  </>
-                ) : isPremium ? (
-                  <>
-                    <strong className="reference-trial-price">0 บาท</strong>
-                    <span className="reference-trial-period">/ 30 วันแรก</span>
-                    <small>
-                      หลังจากนั้น {formatPrice(activePrice)} / {isAnnual ? "ปี" : "เดือน"}
-                    </small>
-                    <small>โปร Premium ฟรี 30 วันใช้ได้ 1 ครั้งต่อบัญชี</small>
                   </>
                 ) : (
                   <>
@@ -118,10 +125,10 @@ export function PricingPlans({ plans }: Readonly<{ plans: PublicPlan[] }>) {
               </div>
 
               <Link
-                href={isEnterprise ? "/enterprise" : `/register?plan=${plan.tier}`}
-                className={isPremium ? "btn-primary reference-plan-action" : "btn-secondary reference-plan-action"}
+                href={enterpriseTrial ? "/register" : isEnterprise ? "/enterprise" : `/register?plan=${plan.tier}`}
+                className={isPremium || enterpriseTrial ? "btn-primary reference-plan-action" : "btn-secondary reference-plan-action"}
               >
-                {copy.cta}
+                {enterpriseTrial ? "ทดลองใช้ฟรี 30 วัน" : copy.cta}
               </Link>
 
               <ul>

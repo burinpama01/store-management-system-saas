@@ -6,18 +6,20 @@ import {
   listPlanSettings,
   listDiscountCodes,
 } from "@/modules/billing/pricing-repository";
+import { getFreeTrialCampaign } from "@/modules/billing/platform-settings";
 import { PricingManager } from "./PricingManager";
 
 export const dynamic = "force-dynamic";
 
 export default async function SystemPricingPage() {
   await requireSystemAccess();
-  const [prices, businessPrices, promotions, planSettings, discountCodes] = await Promise.all([
+  const [prices, businessPrices, promotions, planSettings, discountCodes, freeTrial] = await Promise.all([
     listBillingPrices(),
     getBusinessPriceMap(),
     listPromotions(),
     listPlanSettings(),
     listDiscountCodes(),
+    getFreeTrialCampaign(),
   ]);
   return (
     <PricingManager
@@ -26,6 +28,7 @@ export default async function SystemPricingPage() {
       promotions={promotions}
       planSettings={planSettings}
       discountCodes={discountCodes}
+      freeTrial={freeTrial}
     />
   );
 }

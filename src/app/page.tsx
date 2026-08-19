@@ -2,6 +2,11 @@ import Link from "next/link";
 import { LandingWorkflow } from "@/shared/components/marketing/LandingWorkflow";
 import { MarketingFooter, MarketingHeader } from "@/shared/components/marketing/MarketingShell";
 import { MarketingProductShowcase } from "@/shared/components/marketing/MarketingProductShowcase";
+import { getFreeTrialCampaign } from "@/modules/billing/platform-settings";
+import { isFreeTrialCampaignOpen } from "@/modules/billing/free-trial";
+
+// อ่านสถานะแคมเปญทดลองฟรีจาก platform_settings ทุกครั้ง เพื่อให้ CTA ตรงกับที่ super-admin ตั้งไว้
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "StoreOS - ระบบจัดการร้านครบวงจร POS, QR Ordering, รายงาน",
@@ -75,7 +80,9 @@ const TRUST_ITEMS = [
   { title: "ทีมเห็นข้อมูลตรงกัน", detail: "เจ้าของ แอดมิน และพนักงาน" },
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const freeTrialOpen = isFreeTrialCampaignOpen(await getFreeTrialCampaign());
+
   return (
     <main className="marketing-page">
       <MarketingHeader />
@@ -97,7 +104,7 @@ export default function LandingPage() {
           </p>
           <div className="reference-actions">
             <Link href="/register" className="btn-primary reference-primary-cta">
-              ทดลอง Premium ฟรี 30 วัน
+              {freeTrialOpen ? "ทดลอง Enterprise ฟรี 30 วัน" : "เริ่มใช้งาน StoreOS"}
               <span aria-hidden="true">→</span>
             </Link>
             <Link href="/pricing" className="btn-secondary reference-secondary-cta">
@@ -112,7 +119,9 @@ export default function LandingPage() {
             </a>
           </div>
           <small className="reference-note">
-            สำหรับลูกค้าใหม่ ใช้ได้ 1 ครั้งต่อบัญชี · แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์
+            {freeTrialOpen
+              ? "โปรจำกัดเวลา ครบทุกฟีเจอร์ ใช้ได้ 1 ครั้งต่อบัญชี · แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์"
+              : "แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์"}
           </small>
         </div>
 

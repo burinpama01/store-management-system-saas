@@ -72,7 +72,10 @@ export function isSubscriptionCurrent(
 /** True when the tenant should be allowed into the app billing gate. */
 export function hasBillingAccess(state: BillingState, now: Date = new Date()): boolean {
   if (!isAccessAllowed(state)) return false;
-  if (state.plan === "enterprise") return true;
+  if (state.plan === "enterprise") {
+    // สัญญา Enterprise ไม่มีกำหนดหมดอายุ แต่สิทธิ์ทดลองฟรี 30 วัน (status='trialing') หมดได้
+    return state.status !== "trialing" || isSubscriptionCurrent(state.currentPeriodEnd, now);
+  }
   return (
     (isPaidTier(state.plan) || state.plan === "business") &&
     isSubscriptionCurrent(state.currentPeriodEnd, now)

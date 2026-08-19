@@ -255,6 +255,15 @@ function isExpiringPlan(plan: BillingPlan): boolean {
   return plan === "starter" || plan === "standard" || plan === "premium" || plan === "business";
 }
 
+/**
+ * Enterprise ปกติเป็นสัญญาที่ไม่มีวันหมด แต่สิทธิ์ "ทดลอง Enterprise ฟรี 30 วัน"
+ * ถูกบันทึกเป็น status='trialing' และต้องหมดอายุจริงเมื่อพ้น current_period_end.
+ */
+export function isExpiringState(state: BillingState): boolean {
+  if (state.plan === "enterprise") return state.status === "trialing";
+  return isExpiringPlan(state.plan);
+}
+
 /** True when the paid window is still valid at `now`. Duplicated from pricing.ts
  * (isSubscriptionCurrent) because importing it here would be a circular import. */
 function isPeriodCurrent(currentPeriodEnd: string, now: Date): boolean {
@@ -267,7 +276,7 @@ export function getPlanFeatures(state: BillingState, now: Date = new Date()): Pl
   // Expired paid plans degrade to free everywhere — including public surfaces
   // (QR ordering, music player) and API/webhook/notification paths that are not
   // behind the dashboard billing-redirect gate.
-  if (isExpiringPlan(state.plan) && !isPeriodCurrent(state.currentPeriodEnd, now)) {
+  if (isExpiringState(state) && !isPeriodCurrent(state.currentPeriodEnd, now)) {
     return PLAN_FEATURES.free;
   }
   if (state.plan === "business") {

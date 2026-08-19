@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getPublicPricing } from "@/modules/billing/pricing-repository";
+import { getFreeTrialCampaign } from "@/modules/billing/platform-settings";
+import { isFreeTrialCampaignOpen } from "@/modules/billing/free-trial";
 import { GlassPanel, MarketingFooter, MarketingHeader } from "@/shared/components/marketing/MarketingShell";
 import { PricingPlans } from "./PricingPlans";
 
@@ -11,7 +13,8 @@ export const metadata = {
 };
 
 export default async function PricingPage() {
-  const plans = await getPublicPricing();
+  const [plans, campaign] = await Promise.all([getPublicPricing(), getFreeTrialCampaign()]);
+  const freeTrialOpen = isFreeTrialCampaignOpen(campaign);
 
   return (
     <main className="marketing-page">
@@ -20,11 +23,15 @@ export default async function PricingPage() {
       <section className="reference-pricing-hero">
         <div className="reference-section-heading">
           <h1>เลือกแพ็กเกจที่ใช่ สำหรับร้านของคุณ</h1>
-          <p>ลูกค้าใหม่รับ Premium ฟรี 30 วันได้ 1 ครั้งต่อบัญชี แล้วเลือกอัปเกรดหรือยกเลิกได้</p>
+          <p>
+            {freeTrialOpen
+              ? "โปรโมชั่นจำกัดเวลา: สมัครวันนี้ทดลองใช้ Enterprise ครบทุกฟีเจอร์ฟรี 30 วัน (1 ครั้งต่อบัญชี) แล้วค่อยเลือกแพ็กเกจที่ใช่"
+              : "เลือกแพ็กเกจที่เหมาะกับร้าน อัปเกรดหรือเปลี่ยนแพ็กเกจได้ทุกเมื่อ"}
+          </p>
         </div>
       </section>
 
-      <PricingPlans plans={plans} />
+      <PricingPlans plans={plans} freeTrialOpen={freeTrialOpen} />
 
       <GlassPanel id="enterprise-contact" className="reference-enterprise-contact">
         <div>

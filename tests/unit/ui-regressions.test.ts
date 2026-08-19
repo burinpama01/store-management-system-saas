@@ -938,7 +938,7 @@ describe("UX/UI regression guards", () => {
     }
   });
 
-  it("pricing keeps the one-time Premium free trial copy after visual redesign", () => {
+  it("pricing keeps the one-time Enterprise free trial copy after visual redesign", () => {
     const pricing = read("src/app/pricing/page.tsx");
     const pricingPlans = read("src/app/pricing/PricingPlans.tsx");
     const shell = read("src/shared/components/marketing/MarketingShell.tsx");
@@ -946,9 +946,11 @@ describe("UX/UI regression guards", () => {
 
     expect(pricingSurface).toContain("0 บาท");
     expect(pricingSurface).toContain("/ 30 วันแรก");
-    expect(pricingSurface).toContain("หลังจากนั้น");
-    expect(pricingSurface).toContain("โปร Premium ฟรี 30 วันใช้ได้ 1 ครั้งต่อบัญชี");
-    expect(pricing).toContain("ลูกค้าใหม่รับ Premium ฟรี 30 วันได้ 1 ครั้งต่อบัญชี");
+    // การ์ดโปรขึ้นเฉพาะตอนแคมเปญเปิด (super-admin คุมที่ /system/pricing)
+    expect(pricingSurface).toContain("enterpriseTrial");
+    expect(pricingSurface).toContain("isFreeTrialCampaignOpen");
+    expect(pricingSurface).toContain("โปรจำกัดเวลา: ใช้ครบทุกฟีเจอร์ระดับ Enterprise ฟรี 30 วัน");
+    expect(pricing).toContain("ทดลองใช้ Enterprise ครบทุกฟีเจอร์ฟรี 30 วัน");
     expect(pricingSurface).toContain("ใช้ได้ 1 ครั้งต่อบัญชี");
     expect(pricing).not.toContain("reference-promo-strip");
     expect(pricing).not.toContain("7,415 บาท");

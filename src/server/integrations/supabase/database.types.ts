@@ -231,6 +231,9 @@ export interface Database {
           jdc_functions_base_url: string | null;
           jdc_api_key: string | null;
           jdc_webhook_secret: string | null;
+          free_trial_enabled: boolean;
+          free_trial_starts_at: string | null;
+          free_trial_ends_at: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -245,6 +248,9 @@ export interface Database {
           jdc_functions_base_url?: string | null;
           jdc_api_key?: string | null;
           jdc_webhook_secret?: string | null;
+          free_trial_enabled?: boolean;
+          free_trial_starts_at?: string | null;
+          free_trial_ends_at?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -259,6 +265,9 @@ export interface Database {
           jdc_functions_base_url?: string | null;
           jdc_api_key?: string | null;
           jdc_webhook_secret?: string | null;
+          free_trial_enabled?: boolean;
+          free_trial_starts_at?: string | null;
+          free_trial_ends_at?: string | null;
           updated_by?: string | null;
           updated_at?: string;
         };
@@ -435,7 +444,7 @@ export interface Database {
           organization_id: string;
           user_id: string;
           promotion_code: string;
-          plan: "premium";
+          plan: "premium" | "enterprise";
           duration: "30d";
           amount_expected: number;
           amount_charged: 0;
@@ -447,7 +456,7 @@ export interface Database {
           organization_id: string;
           user_id: string;
           promotion_code?: string;
-          plan: "premium";
+          plan: "premium" | "enterprise";
           duration: "30d";
           amount_expected: number;
           amount_charged?: 0;
@@ -459,7 +468,7 @@ export interface Database {
           organization_id?: string;
           user_id?: string;
           promotion_code?: string;
-          plan?: "premium";
+          plan?: "premium" | "enterprise";
           duration?: "30d";
           amount_expected?: number;
           amount_charged?: 0;
@@ -3842,6 +3851,17 @@ export interface Database {
       delete_pos_saved_ticket_and_close_table: {
         Args: { p_ticket_id: string; p_store_id: string };
         Returns: undefined;
+      };
+      claim_free_trial: {
+        Args: {
+          p_organization_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          ok: boolean;
+          code: string;
+          new_expiry: string | null;
+        }[];
       };
       claim_premium_free_trial: {
         Args: {
