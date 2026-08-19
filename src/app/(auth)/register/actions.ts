@@ -9,7 +9,7 @@ import {
   buildUniqueSlug,
   validateRegistrationInput,
 } from "@/modules/auth/registration";
-import { PREMIUM_FREE_TRIAL_DAYS } from "@/modules/billing/premium-trial";
+import { FREE_TRIAL_DAYS } from "@/modules/billing/free-trial";
 
 export interface RegisterState {
   error: string | null;
@@ -126,19 +126,17 @@ export async function registerOwner(
     return { error: "ตั้งค่าสิทธิ์เจ้าของไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
   }
 
-  // Premium ฟรี 30 วัน: consume the one-time promo during signup so the same ID
-  // cannot claim another 0-baht Premium period from the billing page later.
-  const { data: trialRows, error: trialErr } = await svc.rpc("claim_premium_free_trial", {
+  // แคมเปญทดลอง Enterprise ฟรี 30 วัน: กดรับให้อัตโนมัติตอนสมัคร และตัดสิทธิ์
+  // ครั้งเดียวทันที กันไปกดซ้ำที่หน้า Billing ทีหลัง
+  // แคมเปญปิดอยู่/ถูกใช้สิทธิ์ไปแล้ว ไม่ถือเป็นความผิดพลาดของการสมัคร —
+  // ปล่อยให้สมัครสำเร็จแล้วไปเลือกซื้อแพ็กเกจที่หน้า Billing แทน
+  const { data: trialRows, error: trialErr } = await svc.rpc("claim_free_trial", {
     p_organization_id: org.id,
     p_user_id: user.id,
   });
-  const trial = trialRows?.[0] ?? null;
-  if (trialErr || !trial?.ok) {
-    logRegisterError("claim Premium free trial", trialErr);
-    await svc.from("stores").delete().eq("id", store.id);
-    await svc.from("organizations").delete().eq("id", org.id);
-    await rollback();
-    return { error: "เปิดใช้งาน Premium ฟรี 30 วันไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", notice: null };
+  const trialClaimed = Boolean(trialRows?.[0]?.ok);
+  if (trialErr) {
+    logRegisterError("claim free trial", trialErr);
   }
 
   if (data.session) {
@@ -147,6 +145,8 @@ export async function registerOwner(
 
   return {
     error: null,
-    notice: `สร้างบัญชีสำเร็จ รับ Premium ฟรี ${PREMIUM_FREE_TRIAL_DAYS} วันแล้ว กรุณายืนยันอีเมลของคุณ แล้วเข้าสู่ระบบ`,
+    notice: trialClaimed
+      ? `สร้างบัญชีสำเร็จ รับสิทธิ์ทดลอง Enterprise ฟรี ${FREE_TRIAL_DAYS} วันแล้ว กรุณายืนยันอีเมลของคุณ แล้วเข้าสู่ระบบ`
+      : "สร้างบัญชีสำเร็จ กรุณายืนยันอีเมลของคุณ แล้วเข้าสู่ระบบ",
   };
 }

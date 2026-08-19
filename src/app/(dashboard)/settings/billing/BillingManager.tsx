@@ -20,7 +20,7 @@ import {
 import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { ModalDialog, ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
-import { claimPremiumTrialAction, getPaymentQrAction } from "./actions";
+import { claimFreeTrialAction, getPaymentQrAction } from "./actions";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -48,7 +48,6 @@ interface PaymentQuoteView {
   promotionLabel: string | null;
   discount: number;
   discountLabel: string | null;
-  freeTrialAvailable: boolean;
 }
 
 function daysLeft(iso: string): number {
@@ -70,7 +69,8 @@ export function BillingManager({
   paymentConfigured,
   recipientName,
   slipVerificationReady,
-  premiumTrialAvailable,
+  freeTrialAvailable,
+  freeTrialEndsAt = null,
   enterpriseRequest = null,
 }: {
   orgName: string;
@@ -85,18 +85,23 @@ export function BillingManager({
   paymentConfigured: boolean;
   recipientName: string | null;
   slipVerificationReady: boolean;
-  premiumTrialAvailable: boolean;
+  freeTrialAvailable: boolean;
+  freeTrialEndsAt?: string | null;
   enterpriseRequest?: { status: "new" | "contacted" | "closed"; createdAt: string } | null;
 }) {
   const isEnterprise = plan === "enterprise";
-  const enterpriseActive = isEnterprise && isActive;
+  // Enterprise มี 2 แบบ: สัญญา (ไม่มีวันหมด) กับสิทธิ์ทดลองฟรี 30 วัน (status='trialing')
+  // ผู้ที่กำลังทดลองต้องเลือกซื้อแพ็กเกจต่อได้ จึงไม่ถูกซ่อน UI เหมือนลูกค้าสัญญา
+  const isEnterpriseTrial = isEnterprise && status === "trialing";
+  const isEnterpriseContract = isEnterprise && !isEnterpriseTrial;
+  const enterpriseActive = isEnterpriseContract && isActive;
   const isTrial = status === "trialing" && isActive;
   const router = useRouter();
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
 
   const [selectedPlan, setSelectedPlan] = useState<SelectablePlan>(
-    plan === "business" ? "business" : premiumTrialAvailable ? "premium" : "starter",
+    plan === "business" ? "business" : "starter",
   );
   const [duration, setDuration] = useState<BillingDuration>("30d");
   const [seats, setSeats] = useState(currentBusiness?.seats ?? 3);
@@ -105,7 +110,7 @@ export function BillingManager({
     currentBusiness?.features ?? [],
   );
   const [discountCode, setDiscountCode] = useState("");
-  const [trialAvailable, setTrialAvailable] = useState(premiumTrialAvailable);
+  const [trialAvailable, setTrialAvailable] = useState(freeTrialAvailable);
   const [qr, setQr] = useState<SubscriptionQr | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [paymentQuote, setPaymentQuote] = useState<PaymentQuoteView | null>(null);
@@ -124,8 +129,7 @@ export function BillingManager({
   const price = isBusinessSelected
     ? computeBusinessPrice(businessConfig, businessPrices, duration)
     : prices[selectedPlan][duration];
-  const selectedPremiumTrial = selectedPlan === "premium" && duration === "30d" && trialAvailable;
-  const displayAmount = selectedPremiumTrial && !paymentQuote ? 0 : paymentQuote?.amount ?? price;
+  const displayAmount = paymentQuote?.amount ?? price;
 
   function toggleBusinessFeature(key: FeatureKey) {
     setBusinessFeatures((prev) =>
@@ -174,7 +178,6 @@ export function BillingManager({
         promotionLabel: res.promotionLabel,
         discount: res.discount,
         discountLabel: res.discountLabel,
-        freeTrialAvailable: res.freeTrialAvailable,
       });
       setQr(res.qr);
     } catch {
@@ -242,27 +245,27 @@ export function BillingManager({
     }
   }
 
-  async function handlePremiumTrial() {
+  async function handleFreeTrial() {
     setError(null);
     setResult(null);
     setBusy(true);
     try {
-      const res = await claimPremiumTrialAction();
+      const res = await claimFreeTrialAction();
       if (!res.ok) {
-        showError(res.error ?? res.reason ?? "ใช้สิทธิ์ Premium ฟรีไม่สำเร็จ");
+        showError(res.error ?? res.reason ?? "ใช้สิทธิ์ทดลองฟรีไม่สำเร็จ");
         return;
       }
       setResult({ status: "claimed", reason: null, newExpiry: res.newExpiry });
       setTrialAvailable(false);
       resetGeneratedPayment();
       setFeedbackDialog({
-        title: "เปิดใช้งาน Premium ฟรีสำเร็จ",
-        message: `ใช้งาน Premium ฟรี 30 วัน ได้ถึง ${formatDate(res.newExpiry)}`,
+        title: "เปิดใช้งานทดลองฟรีสำเร็จ",
+        message: `ใช้งาน Enterprise ฟรี 30 วัน ได้ถึง ${formatDate(res.newExpiry)}`,
         tone: "success",
       });
       router.refresh();
     } catch {
-      showError("ใช้สิทธิ์ Premium ฟรีไม่สำเร็จ");
+      showError("ใช้สิทธิ์ทดลองฟรีไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -278,7 +281,7 @@ export function BillingManager({
         <span className={`badge ${enterpriseActive ? "badge-brand" : isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
           {enterpriseActive
             ? "Enterprise contract"
-            : isEnterprise
+            : isEnterpriseContract
               ? "ติดต่อผู้ดูแลแพลตฟอร์ม"
               : isTrial
                 ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน`
@@ -293,17 +296,17 @@ export function BillingManager({
           องค์กรนี้ถูกตั้งค่าเป็น Enterprise โดยผู้ดูแลแพลตฟอร์ม: ไม่มีกำหนดหมดอายุ ไม่ต้องต่ออายุแพ็กเกจ และเปิดใช้หลายสาขาได้ตามสัญญา
         </p>
       )}
-      {isEnterprise && !isActive && (
+      {isEnterpriseContract && !isActive && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           บัญชี Enterprise นี้ยังไม่เปิดใช้งาน กรุณาติดต่อผู้ดูแลแพลตฟอร์มเพื่อเปิดสิทธิ์ใช้งาน
         </p>
       )}
-      {!isEnterprise && isTrial && (
+      {!isEnterpriseContract && isTrial && (
         <p className="rounded-[var(--radius-md)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] px-3 py-2 text-sm text-[var(--tenant-primary-strong)]">
-          คุณกำลังทดลองใช้ฟรี (สิทธิ์ระดับ Premium) เหลืออีก {daysLeft(currentPeriodEnd)} วัน · เลือกแพ็กเกจด้านล่างเพื่อใช้งานต่อหลังหมดทดลอง
+          คุณกำลังทดลองใช้ฟรี (สิทธิ์ระดับ Enterprise — ทุกฟีเจอร์) เหลืออีก {daysLeft(currentPeriodEnd)} วัน · เลือกแพ็กเกจด้านล่างเพื่อใช้งานต่อหลังหมดทดลอง
         </p>
       )}
-      {!isEnterprise && expired && !isActive && (
+      {!isEnterpriseContract && expired && !isActive && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           แพ็กเกจหมดอายุหรือยังไม่ได้ชำระเงิน กรุณาชำระเพื่อใช้งานระบบต่อ
         </p>
@@ -318,9 +321,9 @@ export function BillingManager({
       <section className="panel max-w-3xl p-5">
         <h2 className="panel-title mb-3">แพ็กเกจปัจจุบัน</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoItem label={isEnterprise ? "สัญญา" : "แพ็กเกจ"} value={isEnterprise ? "Enterprise contract" : isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
-          <InfoItem label="สถานะ" value={enterpriseActive ? "ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ" : isEnterprise ? "ต้องติดต่อผู้ดูแลแพลตฟอร์ม" : isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
-          {!isEnterprise && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
+          <InfoItem label={isEnterpriseContract ? "สัญญา" : "แพ็กเกจ"} value={isEnterpriseContract ? "Enterprise contract" : isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
+          <InfoItem label="สถานะ" value={enterpriseActive ? "ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ" : isEnterpriseContract ? "ต้องติดต่อผู้ดูแลแพลตฟอร์ม" : isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
+          {!isEnterpriseContract && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
           {plan === "business" && currentBusiness && (
             <InfoItem label="ที่เลือกไว้" value={describeBusinessConfig(currentBusiness)} />
           )}
@@ -331,7 +334,7 @@ export function BillingManager({
 
       {(result?.status === "verified" || result?.status === "claimed") && (
         <p className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          {result.status === "claimed" ? "เปิดใช้งาน Premium ฟรีสำเร็จ" : "ยืนยันการชำระเงินสำเร็จ"}! ใช้งานได้ถึง {formatDate(result.newExpiry)}
+          {result.status === "claimed" ? "เปิดใช้งานทดลอง Enterprise ฟรีสำเร็จ" : "ยืนยันการชำระเงินสำเร็จ"}! ใช้งานได้ถึง {formatDate(result.newExpiry)}
         </p>
       )}
       {result && result.status !== "verified" && result.status !== "claimed" && (
@@ -340,13 +343,37 @@ export function BillingManager({
         </p>
       )}
 
-      {!isEnterprise && canManage && !paymentConfigured && !trialAvailable && (
+      {!isEnterpriseContract && canManage && trialAvailable && (
+        <section className="panel border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-5">
+          <h2 className="panel-title mb-1 text-[var(--tenant-primary-strong)]">
+            🎁 โปรโมชั่น: ทดลอง Enterprise ฟรี 30 วัน
+          </h2>
+          <p className="text-sm text-[var(--ink-2)]">
+            เปิดใช้ทุกฟีเจอร์ระดับ Enterprise (ไม่จำกัดสาขา/สมาชิก) ราคา 0 บาท ไม่ต้องอัปโหลดสลิป ·
+            ใช้ได้ 1 ครั้งต่อบัญชีและต่อกิจการ
+            {freeTrialEndsAt ? ` · รับสิทธิ์ได้ถึง ${formatDate(freeTrialEndsAt)}` : ""}
+          </p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            ครบ 30 วันแล้วระบบจะกลับไปเป็นแพ็กเกจฟรี เลือกซื้อแพ็กเกจด้านล่างเพื่อใช้งานต่อได้ตลอด
+          </p>
+          <button
+            type="button"
+            onClick={handleFreeTrial}
+            disabled={busy}
+            className="btn-primary mt-4 disabled:opacity-40"
+          >
+            {busy ? "กำลังเปิดใช้งาน..." : "รับสิทธิ์ทดลองฟรี 30 วัน"}
+          </button>
+        </section>
+      )}
+
+      {!isEnterpriseContract && canManage && !paymentConfigured && !trialAvailable && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่าช่องทางรับชำระเงิน (PromptPay) กรุณาติดต่อผู้ดูแล
         </p>
       )}
 
-      {!isEnterprise && canManage && (paymentConfigured || trialAvailable) && (
+      {!isEnterpriseContract && canManage && (paymentConfigured || trialAvailable) && (
         <section className="panel p-5">
           <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
 
@@ -370,11 +397,6 @@ export function BillingManager({
                   ? `เริ่มต้น ${computeBusinessPrice({ seats: 1, stores: 1, features: [] }, businessPrices, "30d").toLocaleString()} / เดือน`
                   : `${prices[t]["30d"].toLocaleString()} / เดือน`}
               </p>
-              {t === "premium" && trialAvailable && (
-                <p className="mt-2 text-xs font-bold text-[var(--tenant-primary-strong)]">
-                  ลูกค้าใหม่ใช้ฟรี 30 วัน ราคา 0 บาท
-                </p>
-              )}
               </button>
             ))}
           </div>
@@ -490,26 +512,24 @@ export function BillingManager({
             </div>
           </div>
 
-          {!selectedPremiumTrial && (
-            <div className="mt-4">
-              <label htmlFor="billing-discount-code" className="field-label">
-                โค้ดส่วนลด (ถ้ามี)
-              </label>
-              <input
-                id="billing-discount-code"
-                type="text"
-                value={discountCode}
-                onChange={(e) => { setDiscountCode(e.target.value.toUpperCase()); resetGeneratedPayment(); }}
-                disabled={busy}
-                placeholder="กรอกโค้ดส่วนลด แล้วกดสร้าง QR เพื่อตรวจสอบ"
-                maxLength={40}
-                className="form-input uppercase tracking-wide disabled:opacity-50"
-              />
-              <p className="mt-1 text-[11px] text-[var(--muted)]">
-                ส่วนลดจะถูกตรวจสอบและหักออกจากยอดเมื่อกดสร้าง QR
-              </p>
-            </div>
-          )}
+          <div className="mt-4">
+            <label htmlFor="billing-discount-code" className="field-label">
+              โค้ดส่วนลด (ถ้ามี)
+            </label>
+            <input
+              id="billing-discount-code"
+              type="text"
+              value={discountCode}
+              onChange={(e) => { setDiscountCode(e.target.value.toUpperCase()); resetGeneratedPayment(); }}
+              disabled={busy}
+              placeholder="กรอกโค้ดส่วนลด แล้วกดสร้าง QR เพื่อตรวจสอบ"
+              maxLength={40}
+              className="form-input uppercase tracking-wide disabled:opacity-50"
+            />
+            <p className="mt-1 text-[11px] text-[var(--muted)]">
+              ส่วนลดจะถูกตรวจสอบและหักออกจากยอดเมื่อกดสร้าง QR
+            </p>
+          </div>
 
           {paymentQuote && (
             <div className="mt-3 rounded-md border border-[var(--border)] bg-white p-3 text-sm">
@@ -544,55 +564,20 @@ export function BillingManager({
               </dl>
             </div>
           )}
-
-          {selectedPremiumTrial && (
-            <div className="mt-3 rounded-md border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-3 text-sm">
-              <p className="font-bold text-[var(--tenant-primary-strong)]">ใช้ Premium ฟรี 30 วัน</p>
-              <p className="mt-1 text-[var(--ink-2)]">
-                โปรลูกค้าใหม่ ราคา 0 บาท ใช้ได้ 1 ครั้งต่อบัญชีและ tenant นี้ ไม่ต้องอัปโหลดสลิป
-              </p>
-              <dl className="mt-2 grid gap-2 text-xs text-[var(--muted)] sm:grid-cols-2">
-                <div className="flex justify-between gap-3">
-                  <dt>ราคาแพ็กเกจ</dt>
-                  <dd className="font-bold text-[var(--ink)]">{price.toLocaleString()} บาท</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt>โปรลูกค้าใหม่</dt>
-                  <dd className="font-bold text-[var(--tenant-primary-strong)]">-{price.toLocaleString()} บาท</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt>ยอดที่ต้องชำระ</dt>
-                  <dd className="font-bold text-[var(--tenant-primary-strong)]">0 บาท</dd>
-                </div>
-              </dl>
-            </div>
-          )}
-
-          {!paymentConfigured && !selectedPremiumTrial && (
+          {!paymentConfigured && (
             <p className="mt-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               ผู้ดูแลแพลตฟอร์มยังไม่ได้ตั้งค่าช่องทางรับชำระเงิน (PromptPay) กรุณาติดต่อผู้ดูแล
             </p>
           )}
 
-          {selectedPremiumTrial ? (
-            <button
-              type="button"
-              onClick={handlePremiumTrial}
-              disabled={busy}
-              className="btn-primary mt-4 disabled:opacity-40"
-            >
-              {busy ? "กำลังเปิดใช้งาน..." : "ใช้ Premium ฟรี 30 วัน"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={generateQr}
-              disabled={busy || !paymentConfigured}
-              className="btn-primary mt-4 disabled:opacity-40"
-            >
-              {busy ? "กำลังสร้าง..." : "สร้าง QR ชำระเงิน"}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={generateQr}
+            disabled={busy || !paymentConfigured}
+            className="btn-primary mt-4 disabled:opacity-40"
+          >
+            {busy ? "กำลังสร้าง..." : "สร้าง QR ชำระเงิน"}
+          </button>
 
           {qr && (
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">

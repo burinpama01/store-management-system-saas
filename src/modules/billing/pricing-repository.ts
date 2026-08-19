@@ -7,12 +7,8 @@ import {
   type BillingDuration,
   type PaidTier,
 } from "./pricing";
-import {
-  buildPremiumFreeTrialOffer,
-  isPremiumFreeTrialSelection,
-  PREMIUM_FREE_TRIAL_PROMO_CODE,
-  type PremiumFreeTrialOffer,
-} from "./premium-trial";
+import { buildFreeTrialOffer, type FreeTrialOffer } from "./free-trial";
+import { getFreeTrialCampaign } from "./platform-settings";
 import {
   evaluateBillingDiscount,
   isDiscountablePlan,
@@ -543,24 +539,21 @@ export async function setDiscountCodeActive(id: string, active: boolean) {
   return { ok: true as const, error: null };
 }
 
-export async function getPremiumFreeTrialEligibility(
+/**
+ * สิทธิ์ทดลอง Enterprise ฟรี 30 วันของกิจการ/ผู้ใช้นี้ — ใช้ได้เมื่อแคมเปญเปิด,
+ * ยังไม่เคยกดรับ (นับรวมโปร Premium ฟรีชุดเดิม) และยังไม่มีแพ็กเกจที่ใช้งานอยู่
+ */
+export async function getFreeTrialEligibility(
   organizationId: string,
   userId: string,
-  plan: string,
-  duration: BillingDuration,
-): Promise<PremiumFreeTrialOffer> {
-  const eff = await getEffectivePrice(plan, duration);
-  const basePrice = eff?.amount ?? 0;
-  if (!isPremiumFreeTrialSelection(plan, duration)) {
-    return buildPremiumFreeTrialOffer({ plan, duration, basePrice, alreadyRedeemed: false });
-  }
-
+): Promise<FreeTrialOffer> {
+  const campaign = await getFreeTrialCampaign();
   const supabase = await createSupabaseServiceClient();
   const [{ data, error }, { data: sub, error: subError }] = await Promise.all([
+    // ไม่กรอง promotion_code: เคยกดโปรฟรีตัวไหนไปแล้วก็ถือว่าใช้สิทธิ์ไปแล้ว
     supabase
       .from("billing_premium_trial_redemptions")
       .select("id")
-      .eq("promotion_code", PREMIUM_FREE_TRIAL_PROMO_CODE)
       .or(`user_id.eq.${userId},organization_id.eq.${organizationId}`)
       .limit(1),
     supabase
@@ -570,10 +563,8 @@ export async function getPremiumFreeTrialEligibility(
       .maybeSingle(),
   ]);
 
-  return buildPremiumFreeTrialOffer({
-    plan,
-    duration,
-    basePrice,
+  return buildFreeTrialOffer({
+    campaign,
     alreadyRedeemed: Boolean(error) || Boolean(data?.length),
     activeSubscription: Boolean(subError) || isSubscriptionCurrent(sub?.current_period_end ?? null),
   });

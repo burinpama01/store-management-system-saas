@@ -1,6 +1,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
+import type { FreeTrialCampaign } from "./free-trial";
 
 export interface PlatformPromptPaySettings {
   billingProvider: "promptpay" | "stripe";
@@ -18,6 +19,12 @@ export interface PlatformPromptPaySettings {
   jdcApiKey: string | null;
   /** StoreOS Connect: shared HMAC secret ทั้งขาเข้า/ออก — JDC ออกให้ชุดเดียวทั้งระบบ. */
   jdcWebhookSecret: string | null;
+  /** แคมเปญทดลอง Enterprise ฟรี 30 วัน: เปิดรับอยู่ไหม. */
+  freeTrialEnabled: boolean;
+  /** null = เริ่มรับทันที. */
+  freeTrialStartsAt: string | null;
+  /** null = ไม่มีกำหนดปิด (ปิดด้วยสวิตช์เอง). */
+  freeTrialEndsAt: string | null;
 }
 
 const DEFAULTS: PlatformPromptPaySettings = {
@@ -30,6 +37,9 @@ const DEFAULTS: PlatformPromptPaySettings = {
   jdcFunctionsBaseUrl: null,
   jdcApiKey: null,
   jdcWebhookSecret: null,
+  freeTrialEnabled: true,
+  freeTrialStartsAt: null,
+  freeTrialEndsAt: null,
 };
 
 /** Reads the singleton platform settings row. Service-client only. */
@@ -37,7 +47,7 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("platform_settings")
-    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url, jdc_functions_base_url, jdc_api_key, jdc_webhook_secret")
+    .select("billing_provider, promptpay_id, promptpay_name, promptpay_static_payload, enterprise_from_email, logo_url, jdc_functions_base_url, jdc_api_key, jdc_webhook_secret, free_trial_enabled, free_trial_starts_at, free_trial_ends_at")
     .eq("id", "singleton")
     .maybeSingle();
   if (!data) return DEFAULTS;
@@ -51,7 +61,42 @@ export async function getPlatformSettings(): Promise<PlatformPromptPaySettings> 
     jdcFunctionsBaseUrl: data.jdc_functions_base_url ?? null,
     jdcApiKey: data.jdc_api_key ?? null,
     jdcWebhookSecret: data.jdc_webhook_secret ?? null,
+    freeTrialEnabled: data.free_trial_enabled ?? true,
+    freeTrialStartsAt: data.free_trial_starts_at ?? null,
+    freeTrialEndsAt: data.free_trial_ends_at ?? null,
   };
+}
+
+/** ช่วงเวลาแคมเปญทดลอง Enterprise ฟรี 30 วัน (super-admin ตั้งที่ /system/pricing). */
+export async function getFreeTrialCampaign(): Promise<FreeTrialCampaign> {
+  noStore();
+  const s = await getPlatformSettings();
+  return {
+    enabled: s.freeTrialEnabled,
+    startsAt: s.freeTrialStartsAt,
+    endsAt: s.freeTrialEndsAt,
+  };
+}
+
+/** อัปเดตเฉพาะแคมเปญทดลองฟรี (ไม่แตะ PromptPay/Connect). */
+export async function updateFreeTrialCampaign(
+  input: { enabled: boolean; startsAt: string | null; endsAt: string | null },
+  actorUserId: string,
+) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.from("platform_settings").upsert(
+    {
+      id: "singleton",
+      free_trial_enabled: input.enabled,
+      free_trial_starts_at: input.startsAt,
+      free_trial_ends_at: input.endsAt,
+      updated_by: actorUserId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
 }
 
 /** StoreOS Connect: base URL ของ JDC Edge Functions (super-admin ตั้ง). null = ยังไม่ตั้ง */

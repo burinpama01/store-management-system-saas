@@ -7,15 +7,14 @@ import { resolveSubscriptionQr, type SubscriptionQr } from "@/modules/billing/pr
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
 import {
   getBusinessUpgradeQuote,
-  getPremiumFreeTrialEligibility,
   getUpgradeQuote,
 } from "@/modules/billing/pricing-repository";
 import { describeDiscountRejection } from "@/modules/billing/discount-code";
 import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
 import {
-  claimPremiumFreeTrial,
+  claimFreeTrial,
   submitPromptPayPayment,
-  type ClaimPremiumFreeTrialResult,
+  type ClaimFreeTrialResult,
   type SubmitPaymentResult,
 } from "@/modules/billing/subscription-service";
 
@@ -36,7 +35,6 @@ export interface PaymentQrResult {
   discount: number;
   discountLabel: string | null;
   qr: SubscriptionQr | null;
-  freeTrialAvailable: boolean;
   error: string | null;
 }
 
@@ -47,7 +45,7 @@ export async function getPaymentQrAction(
   businessConfigJson?: string,
 ): Promise<PaymentQrResult> {
   try {
-    const { ctx, user, resolved } = await getResolvedCurrentPermissions();
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
     const base = {
       ok: false as const,
       amount: null,
@@ -57,7 +55,6 @@ export async function getPaymentQrAction(
       discount: 0,
       discountLabel: null,
       qr: null,
-      freeTrialAvailable: false,
     };
     if (!resolved.can("billing.manage")) {
       return { ...base, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
@@ -80,22 +77,6 @@ export async function getPaymentQrAction(
     if (quote.discountRejection) {
       return { ...base, error: describeDiscountRejection(quote.discountRejection) };
     }
-    const freeTrial = await getPremiumFreeTrialEligibility(ctx.organizationId, user.id, p, d);
-    if (freeTrial.available) {
-      return {
-        ok: true,
-        amount: freeTrial.finalAmount,
-        basePrice: freeTrial.basePrice,
-        credit: freeTrial.credit,
-        promotionLabel: freeTrial.promotionLabel,
-        discount: 0,
-        discountLabel: null,
-        qr: null,
-        freeTrialAvailable: true,
-        error: null,
-      };
-    }
-
     const settings = await getPlatformSettings();
     return {
       ok: true,
@@ -108,12 +89,11 @@ export async function getPaymentQrAction(
         ? `${quote.discountCode.description} (${quote.discountCode.normalizedCode})`
         : null,
       qr: resolveSubscriptionQr(settings, quote.finalAmount),
-      freeTrialAvailable: false,
       error: null,
     };
   } catch (e) {
     if (e instanceof AuthorizationError) {
-      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, discount: 0, discountLabel: null, qr: null, freeTrialAvailable: false, error: "ไม่มีสิทธิ์" };
+      return { ok: false, amount: null, basePrice: null, credit: 0, promotionLabel: null, discount: 0, discountLabel: null, qr: null, error: "ไม่มีสิทธิ์" };
     }
     throw e;
   }
@@ -171,19 +151,20 @@ export async function submitPaymentAction(input: {
   }
 }
 
-export interface ClaimPremiumTrialActionResult extends ClaimPremiumFreeTrialResult {
+export interface ClaimFreeTrialActionResult extends ClaimFreeTrialResult {
   ok: boolean;
   error: string | null;
 }
 
-export async function claimPremiumTrialAction(): Promise<ClaimPremiumTrialActionResult> {
+/** กดรับสิทธิ์ทดลอง Enterprise ฟรี 30 วัน (0 บาท ไม่ต้องแนบสลิป). */
+export async function claimFreeTrialAction(): Promise<ClaimFreeTrialActionResult> {
   try {
     const { ctx, user, resolved } = await getResolvedCurrentPermissions();
     if (!resolved.can("billing.manage")) {
       return { ok: false, status: "unavailable", reason: null, newExpiry: null, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
     }
 
-    const result = await claimPremiumFreeTrial({
+    const result = await claimFreeTrial({
       organizationId: ctx.organizationId,
       submittedByUserId: user.id,
     });

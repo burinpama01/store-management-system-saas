@@ -12,6 +12,7 @@ import {
 } from "@/modules/billing/business-plan";
 import type { Promotion, PlanSetting } from "@/modules/billing/pricing-repository";
 import type { BillingDiscountCode, DiscountablePlan } from "@/modules/billing/discount-code";
+import { FREE_TRIAL_DAYS, type FreeTrialCampaign } from "@/modules/billing/free-trial";
 import {
   updatePriceAction,
   updateBusinessPriceAction,
@@ -20,6 +21,7 @@ import {
   updatePlanSettingsAction,
   createDiscountCodeAction,
   toggleDiscountCodeAction,
+  updateFreeTrialCampaignAction,
   type PricingState,
 } from "./actions";
 
@@ -33,12 +35,14 @@ export function PricingManager({
   promotions,
   planSettings,
   discountCodes,
+  freeTrial,
 }: {
   prices: Record<PaidTier, Record<BillingDuration, number>>;
   businessPrices: BusinessPriceMap;
   promotions: Promotion[];
   planSettings: PlanSetting[];
   discountCodes: BillingDiscountCode[];
+  freeTrial: FreeTrialCampaign;
 }) {
   return (
     <div className="space-y-5">
@@ -48,6 +52,15 @@ export function PricingManager({
           <p className="page-kicker">ตั้งราคา ชื่อแพ็กเกจ การแสดงบน landing และโปรโมชั่น</p>
         </div>
       </div>
+
+      <section className="panel p-5">
+        <h2 className="panel-title mb-1">โปรโมชั่นทดลอง Enterprise ฟรี {FREE_TRIAL_DAYS} วัน</h2>
+        <p className="page-kicker mb-3">
+          เปิดไว้ = ผู้สมัครใหม่ได้สิทธิ์อัตโนมัติ และลูกค้าเดิมที่ยังไม่เคยใช้กดรับได้ที่หน้าแพ็กเกจ ·
+          ใช้ได้ 1 ครั้งต่อบัญชี/กิจการ · เว้นว่างวันที่ = ไม่กำหนดขอบเขตนั้น
+        </p>
+        <FreeTrialCampaignForm campaign={freeTrial} />
+      </section>
 
       <section className="panel p-5">
         <h2 className="panel-title mb-3">ราคาแพ็กเกจ (บาท)</h2>
@@ -201,6 +214,54 @@ function fmt(iso: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+}
+
+/** input[type=datetime-local] ต้องการ "YYYY-MM-DDTHH:mm" ตามเวลาเครื่อง */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function FreeTrialCampaignForm({ campaign }: { campaign: FreeTrialCampaign }) {
+  const [state, action, pending] = useActionState(updateFreeTrialCampaignAction, INITIAL);
+  return (
+    <form action={action} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <label className="flex items-center gap-2 text-sm font-bold text-[var(--ink)]">
+        <input type="checkbox" name="enabled" value="1" defaultChecked={campaign.enabled} />
+        เปิดรับสิทธิ์
+      </label>
+      <div>
+        <label className="field-label" htmlFor="free-trial-starts">เริ่มแคมเปญ</label>
+        <input
+          id="free-trial-starts"
+          name="startsAt"
+          type="datetime-local"
+          defaultValue={toLocalInput(campaign.startsAt)}
+          className="form-input"
+        />
+      </div>
+      <div>
+        <label className="field-label" htmlFor="free-trial-ends">สิ้นสุดแคมเปญ</label>
+        <input
+          id="free-trial-ends"
+          name="endsAt"
+          type="datetime-local"
+          defaultValue={toLocalInput(campaign.endsAt)}
+          className="form-input"
+        />
+      </div>
+      <div className="flex items-end">
+        <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="disabled:opacity-40">
+          บันทึกแคมเปญ
+        </Button>
+      </div>
+      {state.error && <p className="alert-danger sm:col-span-2 xl:col-span-4">{state.error}</p>}
+      {state.ok && <p className="text-xs text-emerald-700 sm:col-span-2 xl:col-span-4">บันทึกแล้ว</p>}
+    </form>
+  );
 }
 
 function PriceCell({ tier, duration, amount }: { tier: PaidTier; duration: BillingDuration; amount: number }) {

@@ -14,6 +14,7 @@ import {
   type PlanTier,
 } from "@/modules/billing/pricing-repository";
 import { isBusinessComponent } from "@/modules/billing/business-plan";
+import { updateFreeTrialCampaign } from "@/modules/billing/platform-settings";
 import { isDiscountablePlan, normalizeDiscountCode } from "@/modules/billing/discount-code";
 
 const VALID_TIERS: PlanTier[] = ["starter", "standard", "premium", "business", "enterprise"];
@@ -200,4 +201,40 @@ export async function toggleDiscountCodeAction(fd: FormData): Promise<void> {
   if (!id) return;
   await setDiscountCodeActive(id, active);
   revalidatePath("/system/pricing");
+}
+
+/** แคมเปญทดลอง Enterprise ฟรี 30 วัน: เปิด/ปิด + ช่วงเวลารับสิทธิ์ */
+export async function updateFreeTrialCampaignAction(
+  _prev: PricingState,
+  fd: FormData,
+): Promise<PricingState> {
+  const g = await guard();
+  if (g) return { ok: false, error: g.error };
+
+  const user = await requireSystemAccess();
+  const enabled = fd.get("enabled") === "1";
+  const startsRaw = ((fd.get("startsAt") as string | null) ?? "").trim();
+  const endsRaw = ((fd.get("endsAt") as string | null) ?? "").trim();
+
+  const startsAt = startsRaw ? new Date(startsRaw) : null;
+  const endsAt = endsRaw ? new Date(endsRaw) : null;
+  if (startsAt && Number.isNaN(startsAt.getTime())) return { ok: false, error: "วันเริ่มไม่ถูกต้อง" };
+  if (endsAt && Number.isNaN(endsAt.getTime())) return { ok: false, error: "วันสิ้นสุดไม่ถูกต้อง" };
+  if (startsAt && endsAt && endsAt.getTime() <= startsAt.getTime()) {
+    return { ok: false, error: "วันสิ้นสุดต้องหลังวันเริ่ม" };
+  }
+
+  const res = await updateFreeTrialCampaign(
+    {
+      enabled,
+      startsAt: startsAt ? startsAt.toISOString() : null,
+      endsAt: endsAt ? endsAt.toISOString() : null,
+    },
+    user.id,
+  );
+  if (!res.ok) return { ok: false, error: res.error?.userMessage ?? "บันทึกไม่สำเร็จ" };
+  revalidatePath("/system/pricing");
+  revalidatePath("/pricing");
+  revalidatePath("/");
+  return { ok: true, error: null };
 }
