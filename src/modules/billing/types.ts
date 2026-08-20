@@ -24,6 +24,11 @@ export interface BillingState {
    * อย่างเดียวเชื่อไม่ได้ เพราะมีข้อมูลเก่าที่เป็น enterprise/trialing อยู่ก่อนแล้ว
    */
   promoTrial?: boolean;
+  /**
+   * true = Enterprise แบบจำกัดเวลา (แอดมินตั้งวันหมดอายุไว้) — หมดแล้วตกเป็น free
+   * false/undefined = สัญญาไม่มีวันหมดอายุ (ค่าเริ่มต้นของทุกแถวเดิม)
+   */
+  enterpriseLimited?: boolean;
 }
 
 /** A tenant-selected Business plan configuration (build-your-own). */
@@ -262,11 +267,14 @@ function isExpiringPlan(plan: BillingPlan): boolean {
 }
 
 /**
- * Enterprise ปกติเป็นสัญญาที่ไม่มีวันหมด แต่สิทธิ์ "ทดลอง Enterprise ฟรี 30 วัน"
- * ต้องหมดอายุจริงเมื่อพ้น current_period_end — แยกกันด้วย promoTrial เท่านั้น.
+ * Enterprise หมดอายุได้เฉพาะเมื่อถูกทำเครื่องหมายไว้ชัดเจนเท่านั้น —
+ * แอดมินตั้งเป็นแบบจำกัดเวลา (enterpriseLimited) หรือมาจากโปรทดลองฟรี (promoTrial).
+ * แถวที่ไม่มีเครื่องหมายทั้งคู่ = สัญญาไม่มีวันหมดอายุ (พฤติกรรมเดิมของข้อมูลเก่า).
  */
 export function isExpiringState(state: BillingState): boolean {
-  if (state.plan === "enterprise") return state.promoTrial === true;
+  if (state.plan === "enterprise") {
+    return state.enterpriseLimited === true || state.promoTrial === true;
+  }
   return isExpiringPlan(state.plan);
 }
 

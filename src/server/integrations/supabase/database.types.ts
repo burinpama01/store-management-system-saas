@@ -667,6 +667,7 @@ export interface Database {
           cancel_at_period_end: boolean;
           trial_end: string | null;
           promo_trial_code: string | null;
+          enterprise_limited: boolean;
           business_seats: number | null;
           business_stores: number | null;
           business_features: Json;
@@ -685,6 +686,7 @@ export interface Database {
           cancel_at_period_end?: boolean;
           trial_end?: string | null;
           promo_trial_code?: string | null;
+          enterprise_limited?: boolean;
           business_seats?: number | null;
           business_stores?: number | null;
           business_features?: Json;
@@ -703,6 +705,7 @@ export interface Database {
           cancel_at_period_end?: boolean;
           trial_end?: string | null;
           promo_trial_code?: string | null;
+          enterprise_limited?: boolean;
           business_seats?: number | null;
           business_stores?: number | null;
           business_features?: Json;

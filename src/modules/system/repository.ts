@@ -93,6 +93,8 @@ export interface TenantSubscription {
   plan: BillingPlan;
   status: BillingStatus;
   currentPeriodEnd: string | null;
+  /** Enterprise แบบจำกัดเวลา (หมดอายุจริงตาม currentPeriodEnd) */
+  enterpriseLimited: boolean;
   cancelAtPeriodEnd: boolean;
   trialEnd: string | null;
 }
@@ -150,10 +152,21 @@ export async function setTenantPlan(input: {
   organizationId: string;
   plan: BillingPlan;
   actorUserId: string;
+  /** Enterprise เท่านั้น: true = จำกัดเวลาถึง enterpriseEndsAt, false/undefined = ไม่มีวันหมดอายุ */
+  enterpriseLimited?: boolean;
+  /** วันหมดอายุเมื่อเลือกแบบจำกัดเวลา (ISO) */
+  enterpriseEndsAt?: string | null;
 }): Promise<{ ok: boolean; error: string | null }> {
   const supabase = await createSupabaseServiceClient();
   const now = new Date().toISOString();
-  const enterprisePeriodEnd = input.plan === "enterprise" ? ENTERPRISE_PERIOD_END : null;
+  const isEnterprise = input.plan === "enterprise";
+  const limitedEnterprise = isEnterprise && input.enterpriseLimited === true;
+  if (limitedEnterprise && !input.enterpriseEndsAt) {
+    return { ok: false, error: "กรุณาระบุวันหมดอายุของสัญญาแบบจำกัดเวลา" };
+  }
+  const enterprisePeriodEnd = isEnterprise
+    ? (limitedEnterprise ? input.enterpriseEndsAt! : ENTERPRISE_PERIOD_END)
+    : null;
   const nextPeriodEnd = enterprisePeriodEnd ?? new Date(Date.now() + 30 * 86_400_000).toISOString();
 
   const { data: existing } = await supabase
@@ -173,6 +186,7 @@ export async function setTenantPlan(input: {
         current_period_end: nextPeriodEnd,
         // platform override ไม่ใช่สิทธิ์โปรทดลอง
         promo_trial_code: null,
+        enterprise_limited: limitedEnterprise,
         updated_at: now,
       })
       .eq("organization_id", input.organizationId);
@@ -187,6 +201,7 @@ export async function setTenantPlan(input: {
         current_period_end: nextPeriodEnd,
         cancel_at_period_end: false,
         promo_trial_code: null,
+        enterprise_limited: limitedEnterprise,
         updated_at: now,
       },
       { onConflict: "organization_id" },
@@ -200,7 +215,9 @@ export async function setTenantPlan(input: {
     actor_user_id: input.actorUserId,
     target_user_id: null,
     action: "tenant.plan_change",
-    reason: `plan → ${input.plan} (platform override)`,
+    reason: isEnterprise
+      ? `plan → enterprise ${limitedEnterprise ? `จำกัดเวลาถึง ${nextPeriodEnd}` : "ไม่มีวันหมดอายุ"} (platform override)`
+      : `plan → ${input.plan} (platform override)`,
   });
 
   return { ok: true, error: null };
@@ -234,7 +251,7 @@ export async function getTenantDetail(organizationId: string): Promise<TenantDet
   const [subRes, storesRes, membersRes] = await Promise.all([
     supabase
       .from("subscriptions")
-      .select("plan, status, current_period_end, cancel_at_period_end, trial_end")
+      .select("plan, status, current_period_end, cancel_at_period_end, trial_end, enterprise_limited")
       .eq("organization_id", organizationId)
       .maybeSingle(),
     supabase
@@ -282,6 +299,7 @@ export async function getTenantDetail(organizationId: string): Promise<TenantDet
           plan: subRes.data.plan as BillingPlan,
           status: subRes.data.status as BillingStatus,
           currentPeriodEnd: subRes.data.current_period_end,
+          enterpriseLimited: Boolean(subRes.data.enterprise_limited),
           cancelAtPeriodEnd: subRes.data.cancel_at_period_end,
           trialEnd: subRes.data.trial_end,
         }

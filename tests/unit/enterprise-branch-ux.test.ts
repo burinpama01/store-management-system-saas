@@ -324,7 +324,7 @@ describe("enterprise branch UX contract", () => {
       organization_id: "org-1",
       actor_user_id: "admin-1",
       action: "tenant.plan_change",
-      reason: "plan → enterprise (platform override)",
+      reason: "plan → enterprise ไม่มีวันหมดอายุ (platform override)",
     });
   });
 
@@ -393,7 +393,7 @@ describe("enterprise branch UX contract", () => {
       organization_id: "org-1",
       actor_user_id: "admin-1",
       action: "tenant.plan_change",
-      reason: "plan → enterprise (platform override)",
+      reason: "plan → enterprise ไม่มีวันหมดอายุ (platform override)",
     });
   });
 });

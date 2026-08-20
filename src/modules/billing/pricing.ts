@@ -1,4 +1,4 @@
-import { isAccessAllowed, type BillingPlan, type BillingState } from "./types";
+import { isAccessAllowed, isExpiringState, type BillingPlan, type BillingState } from "./types";
 
 export type BillingDuration = "30d" | "1y";
 
@@ -73,8 +73,8 @@ export function isSubscriptionCurrent(
 export function hasBillingAccess(state: BillingState, now: Date = new Date()): boolean {
   if (!isAccessAllowed(state)) return false;
   if (state.plan === "enterprise") {
-    // สัญญา Enterprise ไม่มีกำหนดหมดอายุ แต่สิทธิ์ทดลองฟรี 30 วัน (promoTrial) หมดได้
-    return !state.promoTrial || isSubscriptionCurrent(state.currentPeriodEnd, now);
+    // สัญญาแบบไม่จำกัดเวลาไม่มีวันหมด ส่วนแบบจำกัดเวลา/สิทธิ์ทดลองต้องยังไม่หมดอายุ
+    return !isExpiringState(state) || isSubscriptionCurrent(state.currentPeriodEnd, now);
   }
   return (
     (isPaidTier(state.plan) || state.plan === "business") &&

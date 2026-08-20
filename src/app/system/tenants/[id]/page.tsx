@@ -28,8 +28,13 @@ function formatDate(iso: string | null): string {
     : d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function formatSubscriptionEnd(plan: BillingPlan | null, iso: string | null): string {
-  if (plan === "enterprise") return "ไม่มีกำหนดหมดอายุ";
+function formatSubscriptionEnd(
+  plan: BillingPlan | null,
+  iso: string | null,
+  enterpriseLimited = false,
+): string {
+  // Enterprise แบบจำกัดเวลามีวันหมดอายุจริง ต้องแสดงวันที่ ไม่ใช่ "ไม่มีกำหนด"
+  if (plan === "enterprise" && !enterpriseLimited) return "ไม่มีกำหนดหมดอายุ";
   return formatDate(iso);
 }
 
@@ -77,7 +82,11 @@ export default async function TenantDetailPage({
           <InfoItem
             label="รอบบิลถัดไป"
             value={tenant.subscription
-              ? formatSubscriptionEnd(tenant.subscription.plan, tenant.subscription.currentPeriodEnd)
+              ? formatSubscriptionEnd(
+                  tenant.subscription.plan,
+                  tenant.subscription.currentPeriodEnd,
+                  tenant.subscription.enterpriseLimited,
+                )
               : "—"}
           />
         </div>
@@ -85,6 +94,8 @@ export default async function TenantDetailPage({
           <TenantPlanControl
             organizationId={tenant.organizationId}
             currentPlan={(tenant.subscription?.plan ?? "free") as BillingPlan}
+            currentEnterpriseLimited={tenant.subscription?.enterpriseLimited ?? false}
+            currentPeriodEnd={tenant.subscription?.currentPeriodEnd ?? null}
           />
         </div>
       </section>

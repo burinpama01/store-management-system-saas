@@ -58,10 +58,24 @@ export async function setTenantPlanAction(
   if (!organizationId) return { error: "ไม่พบ organization" };
   if (!VALID_PLANS.includes(plan as BillingPlan)) return { error: "แพ็กเกจไม่ถูกต้อง" };
 
+  // Enterprise: แอดมินเลือกได้ว่าเป็นสัญญาไม่มีวันหมดอายุ หรือจำกัดเวลาถึงวันที่กำหนด
+  const enterpriseLimited = formData.get("enterpriseLimited") === "1";
+  const endsRaw = ((formData.get("enterpriseEndsAt") as string | null) ?? "").trim();
+  let enterpriseEndsAt: string | null = null;
+  if (plan === "enterprise" && enterpriseLimited) {
+    if (!endsRaw) return { error: "กรุณาระบุวันหมดอายุของสัญญาแบบจำกัดเวลา" };
+    const parsed = new Date(endsRaw);
+    if (Number.isNaN(parsed.getTime())) return { error: "วันหมดอายุไม่ถูกต้อง" };
+    if (parsed.getTime() <= Date.now()) return { error: "วันหมดอายุต้องเป็นวันในอนาคต" };
+    enterpriseEndsAt = parsed.toISOString();
+  }
+
   const res = await setTenantPlan({
     organizationId,
     plan: plan as BillingPlan,
     actorUserId: user.id,
+    enterpriseLimited,
+    enterpriseEndsAt,
   });
   if (!res.ok) return { error: res.error ?? "เปลี่ยนแพ็กเกจไม่สำเร็จ" };
 

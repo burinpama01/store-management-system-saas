@@ -138,6 +138,56 @@ describe("promo Enterprise trial expires; every other Enterprise row does not", 
   });
 });
 
+describe("แอดมินเลือกได้ว่า Enterprise ของแต่ละร้านจำกัดเวลาหรือไม่", () => {
+  const now = new Date("2026-08-20T00:00:00.000Z");
+
+  it("แบบไม่จำกัดเวลา: ไม่หมดอายุแม้ current_period_end จะผ่านมาแล้ว", () => {
+    const state = {
+      plan: "enterprise" as const,
+      status: "active" as const,
+      currentPeriodEnd: "2026-07-21T00:00:00.000Z",
+      cancelAtPeriodEnd: false,
+      trialEnd: null,
+      enterpriseLimited: false,
+    };
+    expect(hasBillingAccess(state, now)).toBe(true);
+    expect(getPlanFeatures(state, now).apiIntegration).toBe(true);
+  });
+
+  it("แบบจำกัดเวลา: ยังไม่ถึงกำหนด = ใช้ได้เต็ม, เลยกำหนด = ตกเป็นฟรี", () => {
+    const live = {
+      plan: "enterprise" as const,
+      status: "active" as const,
+      currentPeriodEnd: "2026-12-31T23:59:59.000Z",
+      cancelAtPeriodEnd: false,
+      trialEnd: null,
+      enterpriseLimited: true,
+    };
+    expect(hasBillingAccess(live, now)).toBe(true);
+    expect(getPlanFeatures(live, now).multiBranchReporting).toBe(true);
+
+    const lapsed = { ...live, currentPeriodEnd: "2026-08-01T00:00:00.000Z" };
+    expect(hasBillingAccess(lapsed, now)).toBe(false);
+    expect(getPlanFeatures(lapsed, now).multiBranchReporting).toBe(false);
+  });
+
+  it("บันทึกโหมดและวันหมดอายุผ่าน setTenantPlan + UI แอดมิน", () => {
+    const repo = read("src/modules/system/repository.ts");
+    const actions = read("src/app/system/tenants/[id]/actions.ts");
+    const ui = read("src/app/system/tenants/[id]/TenantPlanControl.tsx");
+
+    expect(repo).toContain("enterpriseLimited?: boolean");
+    expect(repo).toContain("limitedEnterprise ? input.enterpriseEndsAt! : ENTERPRISE_PERIOD_END");
+    expect(repo).toContain("enterprise_limited: limitedEnterprise");
+    expect(actions).toContain("วันหมดอายุต้องเป็นวันในอนาคต");
+    expect(ui).toContain("ไม่มีวันหมดอายุ");
+    expect(ui).toContain("จำกัดเวลา");
+    // แถวเดิมที่ไม่ได้ทำเครื่องหมาย = ไม่จำกัด (กัน regression แบบ Each Other ซ้ำ)
+    expect(read("src/modules/billing/types.ts"))
+      .toContain("state.enterpriseLimited === true || state.promoTrial === true");
+  });
+});
+
 describe("billing gate never traps a user in a redirect loop", () => {
   it("shows a locked notice instead of bouncing staff back to /dashboard", () => {
     const page = read("src/app/(dashboard)/settings/billing/page.tsx");
@@ -191,7 +241,7 @@ describe("free trial wiring", () => {
     expect(read("src/modules/billing/subscription-service.ts")).toContain("promo_trial_code: null");
     expect(read("src/modules/system/repository.ts")).toContain("promo_trial_code: null");
     // ห้ามกลับไปตัดสินด้วย status เปล่า ๆ
-    expect(read("src/modules/billing/types.ts")).toContain('return state.promoTrial === true;');
+    expect(read("src/modules/billing/types.ts")).toContain("state.promoTrial === true");
   });
 
   it("exposes a no-slip claim action and a standalone promo panel in Billing", () => {
