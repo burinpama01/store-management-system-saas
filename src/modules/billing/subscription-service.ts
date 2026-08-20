@@ -154,6 +154,8 @@ export async function submitPromptPayPayment(
       current_period_end: newExpiry,
       cancel_at_period_end: false,
       trial_end: null,
+      // ซื้อจริงแล้วไม่ใช่สิทธิ์โปรทดลองอีกต่อไป
+      promo_trial_code: null,
       // Business config follows the purchased plan; cleared when moving to a fixed tier.
       business_seats: input.businessConfig?.seats ?? null,
       business_stores: input.businessConfig?.stores ?? null,

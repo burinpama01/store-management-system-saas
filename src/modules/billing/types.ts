@@ -18,6 +18,12 @@ export interface BillingState {
   trialEnd: string | null;
   /** Selected seats/stores/features when plan = "business" (build-your-own). */
   business?: BusinessPlanConfig | null;
+  /**
+   * ตั้งค่าเมื่อ subscription นี้มาจากโปรทดลองฟรี (subscriptions.promo_trial_code).
+   * เป็นตัวชี้เดียวที่บอกว่า Enterprise ชุดนี้หมดอายุได้ — status='trialing'
+   * อย่างเดียวเชื่อไม่ได้ เพราะมีข้อมูลเก่าที่เป็น enterprise/trialing อยู่ก่อนแล้ว
+   */
+  promoTrial?: boolean;
 }
 
 /** A tenant-selected Business plan configuration (build-your-own). */
@@ -257,10 +263,10 @@ function isExpiringPlan(plan: BillingPlan): boolean {
 
 /**
  * Enterprise ปกติเป็นสัญญาที่ไม่มีวันหมด แต่สิทธิ์ "ทดลอง Enterprise ฟรี 30 วัน"
- * ถูกบันทึกเป็น status='trialing' และต้องหมดอายุจริงเมื่อพ้น current_period_end.
+ * ต้องหมดอายุจริงเมื่อพ้น current_period_end — แยกกันด้วย promoTrial เท่านั้น.
  */
 export function isExpiringState(state: BillingState): boolean {
-  if (state.plan === "enterprise") return state.status === "trialing";
+  if (state.plan === "enterprise") return state.promoTrial === true;
   return isExpiringPlan(state.plan);
 }
 

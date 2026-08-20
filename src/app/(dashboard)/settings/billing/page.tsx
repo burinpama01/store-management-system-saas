@@ -13,7 +13,13 @@ export const dynamic = "force-dynamic";
 
 export default async function BillingSettingsPage() {
   const { ctx, user, resolved } = await getResolvedCurrentPermissions();
-  if (!resolved.can("settings.view")) redirect("/dashboard");
+  if (!resolved.can("settings.view")) {
+    // ห้าม redirect ไป /dashboard: ด่านบิลใน guards จะเด้งกลับมาที่นี่ทันที
+    // กลายเป็นวนไม่จบ = จอขาวสำหรับพนักงานทุกครั้งที่แพ็กเกจหมดอายุ
+    const state = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    if (hasBillingAccess(state)) redirect("/dashboard");
+    return <BillingLockedNotice orgName={ctx.orgName} />;
+  }
 
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
@@ -48,5 +54,27 @@ export default async function BillingSettingsPage() {
           : null
       }
     />
+  );
+}
+
+/** พนักงานที่ไม่มีสิทธิ์ดูการเรียกเก็บเงิน แต่แพ็กเกจหมดอายุ — บอกให้ไปตามเจ้าของร้าน */
+function BillingLockedNotice({ orgName }: Readonly<{ orgName: string }>) {
+  return (
+    <div className="page-shell">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">แพ็กเกจหมดอายุ</h1>
+          <p className="page-kicker">{orgName}</p>
+        </div>
+      </div>
+      <section className="panel max-w-xl p-5">
+        <p className="text-sm text-[var(--ink-2)]">
+          แพ็กเกจของร้านหมดอายุหรือยังไม่ได้ชำระเงิน จึงใช้งานระบบต่อไม่ได้ชั่วคราว
+        </p>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          บัญชีของคุณไม่มีสิทธิ์จัดการการชำระเงิน กรุณาแจ้งเจ้าของร้านหรือผู้จัดการให้ต่ออายุแพ็กเกจ
+        </p>
+      </section>
+    </div>
   );
 }

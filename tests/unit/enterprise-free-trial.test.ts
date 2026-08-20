@@ -78,29 +78,31 @@ describe("free trial offer", () => {
   });
 });
 
-describe("trialing Enterprise expires; contract Enterprise does not", () => {
+describe("promo Enterprise trial expires; every other Enterprise row does not", () => {
   const now = new Date("2026-08-19T00:00:00.000Z");
 
-  it("keeps every feature while the 30-day trial window is still open", () => {
+  it("keeps every feature while the 30-day promo window is still open", () => {
     const state = {
       plan: "enterprise" as const,
       status: "trialing" as const,
       currentPeriodEnd: "2026-09-10T00:00:00.000Z",
       cancelAtPeriodEnd: false,
       trialEnd: "2026-09-10T00:00:00.000Z",
+      promoTrial: true,
     };
     expect(getPlanFeatures(state, now).qrOrdering).toBe(true);
     expect(getPlanFeatures(state, now).apiIntegration).toBe(true);
     expect(hasBillingAccess(state, now)).toBe(true);
   });
 
-  it("degrades to free features and blocks access once the trial lapses", () => {
+  it("degrades to free features and blocks access once the promo trial lapses", () => {
     const state = {
       plan: "enterprise" as const,
       status: "trialing" as const,
       currentPeriodEnd: "2026-08-01T00:00:00.000Z",
       cancelAtPeriodEnd: false,
       trialEnd: "2026-08-01T00:00:00.000Z",
+      promoTrial: true,
     };
     expect(getPlanFeatures(state, now).qrOrdering).toBe(false);
     expect(getPlanFeatures(state, now).multiBranchReporting).toBe(false);
@@ -117,6 +119,36 @@ describe("trialing Enterprise expires; contract Enterprise does not", () => {
     };
     expect(getPlanFeatures(state, now).apiIntegration).toBe(true);
     expect(hasBillingAccess(state, now)).toBe(true);
+  });
+
+  // Regression 2026-08-20: prod มีแถวเก่า plan=enterprise + status=trialing +
+  // period_end หมดไปแล้ว (ตั้งไว้ตอนที่ enterprise ผ่านด่านบิลตลอด) การใช้ status
+  // ตัดสินว่าเป็นสิทธิ์ทดลอง ทำให้ทั้งองค์กรถูกตัดสิทธิ์ทันทีตอน deploy
+  it("does NOT expire a legacy enterprise/trialing row that has no promo marker", () => {
+    const legacy = {
+      plan: "enterprise" as const,
+      status: "trialing" as const,
+      currentPeriodEnd: "2026-07-21T05:32:21.088866+00:00",
+      cancelAtPeriodEnd: false,
+      trialEnd: "2026-07-21T05:32:21.088866+00:00",
+    };
+    expect(hasBillingAccess(legacy, now)).toBe(true);
+    expect(getPlanFeatures(legacy, now).apiIntegration).toBe(true);
+    expect(getPlanFeatures(legacy, now).multiBranchReporting).toBe(true);
+  });
+});
+
+describe("billing gate never traps a user in a redirect loop", () => {
+  it("shows a locked notice instead of bouncing staff back to /dashboard", () => {
+    const page = read("src/app/(dashboard)/settings/billing/page.tsx");
+    const guards = read("src/modules/auth/guards.ts");
+
+    // guards เด้งคนที่แพ็กเกจหมดอายุมาที่ /settings/billing
+    expect(guards).toContain('redirect("/settings/billing?expired=1")');
+    // หน้านี้จึงห้ามเด้งกลับ /dashboard แบบไม่มีเงื่อนไข ไม่งั้นวนไม่จบ = จอขาว
+    expect(page).toContain("BillingLockedNotice");
+    expect(page).toContain('if (hasBillingAccess(state)) redirect("/dashboard")');
+    expect(page).toContain("ไม่มีสิทธิ์จัดการการชำระเงิน");
   });
 });
 
@@ -144,6 +176,22 @@ describe("free trial wiring", () => {
     expect(migration).toContain("insert into audit_logs");
     expect(service).toContain('supabase.rpc("claim_free_trial"');
     expect(service).not.toContain('.from("billing_premium_trial_redemptions").insert');
+  });
+
+  it("marks the promo subscription and clears the marker on purchase or override", () => {
+    const marker = readdirSync(join(root, "supabase/migrations"))
+      .filter((n) => n.endsWith(".sql"))
+      .map((n) => read(`supabase/migrations/${n}`))
+      .find((src) => src.includes("add column if not exists promo_trial_code")) ?? "";
+
+    expect(marker).toContain("promo_trial_code");
+    expect(marker).toContain("'enterprise_free_30d_once',");
+    // อ่านค่ามาใช้จริง และล้างเมื่อจ่ายเงิน/super-admin ตั้งแพ็กเกจ
+    expect(read("src/modules/billing/billing-service.ts")).toContain("promoTrial: Boolean(");
+    expect(read("src/modules/billing/subscription-service.ts")).toContain("promo_trial_code: null");
+    expect(read("src/modules/system/repository.ts")).toContain("promo_trial_code: null");
+    // ห้ามกลับไปตัดสินด้วย status เปล่า ๆ
+    expect(read("src/modules/billing/types.ts")).toContain('return state.promoTrial === true;');
   });
 
   it("exposes a no-slip claim action and a standalone promo panel in Billing", () => {

@@ -73,8 +73,8 @@ export function isSubscriptionCurrent(
 export function hasBillingAccess(state: BillingState, now: Date = new Date()): boolean {
   if (!isAccessAllowed(state)) return false;
   if (state.plan === "enterprise") {
-    // สัญญา Enterprise ไม่มีกำหนดหมดอายุ แต่สิทธิ์ทดลองฟรี 30 วัน (status='trialing') หมดได้
-    return state.status !== "trialing" || isSubscriptionCurrent(state.currentPeriodEnd, now);
+    // สัญญา Enterprise ไม่มีกำหนดหมดอายุ แต่สิทธิ์ทดลองฟรี 30 วัน (promoTrial) หมดได้
+    return !state.promoTrial || isSubscriptionCurrent(state.currentPeriodEnd, now);
   }
   return (
     (isPaidTier(state.plan) || state.plan === "business") &&

@@ -14,7 +14,7 @@ export const getOrganizationBillingState = cache(async (
   const { data } = await supabase
     .from("subscriptions")
     .select(
-      "plan, status, current_period_end, cancel_at_period_end, trial_end, business_seats, business_stores, business_features",
+      "plan, status, current_period_end, cancel_at_period_end, trial_end, promo_trial_code, business_seats, business_stores, business_features",
     )
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -33,6 +33,7 @@ export const getOrganizationBillingState = cache(async (
     currentPeriodEnd: data.current_period_end,
     cancelAtPeriodEnd: data.cancel_at_period_end,
     trialEnd: (data as Record<string, unknown>).trial_end as string | null,
+    promoTrial: Boolean((data as Record<string, unknown>).promo_trial_code),
     business,
   };
 });

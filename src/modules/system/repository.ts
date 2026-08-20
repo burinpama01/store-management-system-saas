@@ -171,6 +171,8 @@ export async function setTenantPlan(input: {
         cancel_at_period_end: false,
         current_period_start: now,
         current_period_end: nextPeriodEnd,
+        // platform override ไม่ใช่สิทธิ์โปรทดลอง
+        promo_trial_code: null,
         updated_at: now,
       })
       .eq("organization_id", input.organizationId);
@@ -184,6 +186,7 @@ export async function setTenantPlan(input: {
         current_period_start: now,
         current_period_end: nextPeriodEnd,
         cancel_at_period_end: false,
+        promo_trial_code: null,
         updated_at: now,
       },
       { onConflict: "organization_id" },

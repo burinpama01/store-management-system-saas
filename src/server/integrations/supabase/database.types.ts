@@ -666,6 +666,7 @@ export interface Database {
           current_period_end: string;
           cancel_at_period_end: boolean;
           trial_end: string | null;
+          promo_trial_code: string | null;
           business_seats: number | null;
           business_stores: number | null;
           business_features: Json;
@@ -683,6 +684,7 @@ export interface Database {
           current_period_end?: string;
           cancel_at_period_end?: boolean;
           trial_end?: string | null;
+          promo_trial_code?: string | null;
           business_seats?: number | null;
           business_stores?: number | null;
           business_features?: Json;
@@ -700,6 +702,7 @@ export interface Database {
           current_period_end?: string;
           cancel_at_period_end?: boolean;
           trial_end?: string | null;
+          promo_trial_code?: string | null;
           business_seats?: number | null;
           business_stores?: number | null;
           business_features?: Json;
