@@ -959,6 +959,18 @@ describe("UX/UI regression guards", () => {
     expect(pricingSurface).not.toContain("ทดลองใช้ฟรี 30 วัน ไม่ต้องใช้บัตรเครดิต");
   });
 
+  it("keeps a reachable sign-out control on mobile where the sidebar is hidden", () => {
+    const layout = read("src/app/(dashboard)/layout.tsx");
+
+    // แถบข้าง (ที่มีปุ่มออกจากระบบเดิม) ถูกซ่อนบนมือถือ
+    expect(layout).toContain('className="storeos-sidebar hidden md:flex"');
+    // แถบล่างบนมือถือมีแต่รายการเมนู ไม่มีทางออกจากระบบ
+    expect(layout).toContain('<SideNav items={navItems} orientation="horizontal" />');
+    // จึงต้องมีปุ่มออกจากระบบเฉพาะมือถือบนแถบบน
+    expect(layout).toContain('<form action={signOut} className="md:hidden">');
+    expect(layout.match(/ออกจากระบบ/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
   it("staff HR policy save gives visible feedback and explains monthly absent penalty", () => {
     const staff = read("src/app/(dashboard)/staff/StaffManager.tsx");
 

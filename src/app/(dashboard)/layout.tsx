@@ -146,11 +146,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
           <div className="flex-1" />
           {storeContext && (
-            <span className="badge badge-brand">
+            <span className="badge badge-brand hidden sm:inline-flex">
               {storeContext.orgName}
             </span>
           )}
-          <span className="badge badge-success">เชื่อมต่อปกติ</span>
+          <span className="badge badge-success hidden sm:inline-flex">เชื่อมต่อปกติ</span>
+          {/* บนมือถือแถบข้างถูกซ่อน (hidden md:flex) ปุ่มออกจากระบบที่อยู่ในนั้นจึง
+              เข้าไม่ถึงเลย — แถบล่างมีแต่รายการเมนู จึงต้องมีทางออกตรงนี้ */}
+          <form action={signOut} className="md:hidden">
+            <SubmitButton variant="secondary" className="whitespace-nowrap text-xs">
+              ออกจากระบบ
+            </SubmitButton>
+          </form>
         </header>
         {stores.length > 1 && (
           <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2 md:hidden">
