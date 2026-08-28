@@ -60,6 +60,9 @@ export interface PlanFeatures {
   multiBranchReporting: boolean;
   apiIntegration: boolean;
   musicRequest: boolean;
+  aiAssistant: boolean;
+  aiVision: boolean;
+  aiForecast: boolean;
 }
 
 export type FeatureKey = keyof PlanFeatures;
@@ -91,6 +94,9 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   multiBranchReporting: "รายงานหลายสาขา",
   apiIntegration: "API Integration",
   musicRequest: "ขอเพลง",
+  aiAssistant: "ผู้ช่วย AI",
+  aiVision: "AI อ่านภาพ",
+  aiForecast: "AI พยากรณ์",
 };
 
 export const PLAN_LABELS: Record<BillingPlan, string> = {
@@ -120,6 +126,9 @@ export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "ma
   "multiBranchReporting",
   "apiIntegration",
   "musicRequest",
+  "aiAssistant",
+  "aiVision",
+  "aiForecast",
 ];
 
 /** Builds the effective feature set for a Business config (pure). */
@@ -157,6 +166,9 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     multiBranchReporting: false,
     apiIntegration: false,
     musicRequest: false,
+    aiAssistant: false,
+    aiVision: false,
+    aiForecast: false,
   },
   starter: {
     maxStores: 1,
@@ -177,6 +189,9 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     multiBranchReporting: false,
     apiIntegration: false,
     musicRequest: false,
+    aiAssistant: false,
+    aiVision: false,
+    aiForecast: false,
   },
   standard: {
     maxStores: 3,
@@ -197,6 +212,9 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     multiBranchReporting: false,
     apiIntegration: false,
     musicRequest: false,
+    aiAssistant: false,
+    aiVision: false,
+    aiForecast: false,
   },
   premium: {
     maxStores: 5,
@@ -217,6 +235,9 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     multiBranchReporting: false,
     apiIntegration: false,
     musicRequest: false,
+    aiAssistant: false,
+    aiVision: false,
+    aiForecast: false,
   },
   enterprise: {
     maxStores: Infinity,
@@ -237,6 +258,9 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     multiBranchReporting: true,
     apiIntegration: true,
     musicRequest: true,
+    aiAssistant: true,
+    aiVision: true,
+    aiForecast: true,
   },
 };
 

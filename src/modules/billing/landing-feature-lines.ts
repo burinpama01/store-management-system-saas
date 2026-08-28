@@ -41,6 +41,7 @@ export const LANDING_FEATURE_LINES: Record<string, string[]> = {
     "ขอเพลง + เครื่องเล่นเพลงอัตโนมัติ",
     "รายงานหลายสาขา",
     "เชื่อมต่อ API",
+    "ผู้ช่วย AI ตอบคำถามและช่วยตั้งค่า",
     "ซัพพอร์ตพิเศษ",
   ],
 };
@@ -62,6 +63,7 @@ export const FEATURE_LINE_KEYWORDS: ReadonlyArray<{ keyword: string; feature: Fe
   { keyword: "รายงานขั้นสูง", feature: "advancedReports" },
   { keyword: "รองรับ POS ออฟไลน์", feature: "offlinePos" },
   { keyword: "แจ้งเตือนผ่าน LINE", feature: "lineNotify" },
+  { keyword: "ผู้ช่วย AI", feature: "aiAssistant" },
   { keyword: "ลงเวลาด้วย GPS", feature: "attendanceGps" },
   { keyword: "กำหนดสิทธิ์ขั้นสูง", feature: "advancedPermissions" },
   { keyword: "รายงานหลายสาขา", feature: "multiBranchReporting" },

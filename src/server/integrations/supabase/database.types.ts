@@ -2,7 +2,107 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export interface Database {
   public: {
+
     Tables: {
+        ai_quota_reservations: {
+          Row: {
+            id: string;
+            organization_id: string;
+            request_id: string;
+            feature: string;
+            tokens_reserved: number;
+            status: "reserved" | "settled" | "reconcile";
+            created_at: string;
+          };
+          Insert: {
+            id?: string;
+            organization_id: string;
+            request_id: string;
+            feature: string;
+            tokens_reserved: number;
+            status?: "reserved" | "settled" | "reconcile";
+            created_at?: string;
+          };
+          Update: {
+            id?: string;
+            organization_id?: string;
+            request_id?: string;
+            feature?: string;
+            tokens_reserved?: number;
+            status?: "reserved" | "settled" | "reconcile";
+            created_at?: string;
+          };
+        Relationships: [];
+        };
+        ai_usage_logs: {
+          Row: {
+            id: string;
+            organization_id: string;
+            store_id: string | null;
+            user_id: string | null;
+            feature: string;
+            model: string;
+            tokens: number;
+            cost_thb: number;
+            status: "ok" | "error" | "timeout" | "denied";
+            request_hash: string;
+            created_at: string;
+          };
+          Insert: {
+            id?: string;
+            organization_id: string;
+            store_id?: string | null;
+            user_id?: string | null;
+            feature: string;
+            model: string;
+            tokens?: number;
+            cost_thb?: number;
+            status: "ok" | "error" | "timeout" | "denied";
+            request_hash: string;
+            created_at?: string;
+          };
+          Update: {
+            id?: string;
+            organization_id?: string;
+            store_id?: string | null;
+            user_id?: string | null;
+            feature?: string;
+            model?: string;
+            tokens?: number;
+            cost_thb?: number;
+            status?: "ok" | "error" | "timeout" | "denied";
+            request_hash?: string;
+            created_at?: string;
+          };
+        Relationships: [];
+        };
+        device_profiles: {
+          Row: {
+            id: string;
+            platform: "windows" | "android" | "ios" | "other";
+            printer_model: string;
+            channel: string;
+            success_count: number;
+            updated_at: string;
+          };
+          Insert: {
+            id?: string;
+            platform: "windows" | "android" | "ios" | "other";
+            printer_model: string;
+            channel: string;
+            success_count?: number;
+            updated_at?: string;
+          };
+          Update: {
+            id?: string;
+            platform?: "windows" | "android" | "ios" | "other";
+            printer_model?: string;
+            channel?: string;
+            success_count?: number;
+            updated_at?: string;
+          };
+        Relationships: [];
+        };
       api_keys: {
         Row: {
           id: string;
@@ -3592,6 +3692,16 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      reserve_ai_quota: {
+        Args: {
+          p_organization_id: string;
+          p_request_id: string;
+          p_feature: string;
+          p_max_tokens: number;
+          p_monthly_budget: number;
+        };
+        Returns: Json;
+      };
       adjust_customer_loyalty_points: {
         Args: {
           p_organization_id: string;

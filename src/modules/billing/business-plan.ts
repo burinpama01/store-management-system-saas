@@ -61,6 +61,9 @@ function buildDefaultPrices(): BusinessPriceMap {
     multiBranchReporting: 200,
     apiIntegration: 300,
     musicRequest: 200,
+    aiAssistant: 200,
+    aiVision: 150,
+    aiForecast: 150,
   };
   return Object.fromEntries(
     (Object.entries(monthly) as [BusinessComponent, number][]).map(([key, amount]) => [

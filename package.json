@@ -1,6 +1,6 @@
 {
   "name": "store-management-saas",
-  "version": "0.33.7",
+  "version": "0.34.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,11 +16,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.50",
     "@capacitor-community/bluetooth-le": "^7.3.2",
     "@capacitor/core": "^7.6.7",
     "@capacitor/geolocation": "^7.1.8",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
+    "ai": "^7.0.83",
     "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
     "next": "16.2.6",
@@ -28,7 +30,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "stripe": "^22.1.1",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
