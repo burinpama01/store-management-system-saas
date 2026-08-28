@@ -306,7 +306,7 @@ export async function upsertNotificationSetting(
     {
       organization_id: organizationId,
       store_id: storeId,
-      notification_type: input.type,
+      notification_type: input.type as Database["public"]["Tables"]["notification_settings"]["Insert"]["notification_type"],
       channel: input.channel,
       enabled: input.enabled,
       destination: input.destination ?? "owner",
@@ -379,7 +379,7 @@ export async function getNotificationSetting(
     .select("*")
     .eq("store_id", storeId)
     .eq("organization_id", organizationId)
-    .eq("notification_type", type)
+    .eq("notification_type", type as Database["public"]["Tables"]["notification_settings"]["Row"]["notification_type"])
     .eq("channel", channel)
     .maybeSingle();
 
@@ -429,7 +429,7 @@ export async function getNotificationTemplate(
     .select("*")
     .eq("store_id", storeId)
     .eq("organization_id", organizationId)
-    .eq("notification_type", type)
+    .eq("notification_type", type as Database["public"]["Tables"]["notification_templates"]["Row"]["notification_type"])
     .maybeSingle();
 
   if (error) return { data: null, error: mapError(error) };
@@ -446,7 +446,7 @@ export async function upsertNotificationTemplate(
     {
       organization_id: organizationId,
       store_id: storeId,
-      notification_type: input.type,
+      notification_type: input.type as Database["public"]["Tables"]["notification_templates"]["Insert"]["notification_type"],
       title: input.title,
       message: input.message,
       updated_at: new Date().toISOString(),
@@ -469,7 +469,7 @@ export async function deleteNotificationTemplate(
     .delete()
     .eq("store_id", storeId)
     .eq("organization_id", organizationId)
-    .eq("notification_type", type);
+    .eq("notification_type", type as Database["public"]["Tables"]["notification_templates"]["Row"]["notification_type"]);
 
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };

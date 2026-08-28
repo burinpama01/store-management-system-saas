@@ -20,6 +20,8 @@ import { NotificationGlobalNotifier } from "./NotificationGlobalNotifier";
 import { PushTokenRegistrar } from "./PushTokenRegistrar";
 import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
+import { CommandPalette } from "@/shared/components/CommandPalette";
+import type { CommandItem } from "@/modules/assistant/command-index";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +97,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ),
     ...(can("settings.view") ? [{ href: "/settings", label: "ตั้งค่า" }] : []),
     ...(can("system.manage") ? [{ href: "/system", label: "ระบบ (Platform)" }] : []),
+  ];
+  // Task 12/E: Ctrl+K palette — ชั้น 1 deterministic fuzzy search (no AI).
+  const commandItems: CommandItem[] = [
+    ...navItems.map((item) => ({ id: item.href, label: item.label, href: item.href, permission: "nav", formFactors: ["mobile", "tablet", "desktop"] as const })),
+    ...(can("settings.manage_printer") ? ([{ id: "/settings/receipt", label: "เครื่องพิมพ์", href: "/settings/receipt", permission: "settings.manage_printer", formFactors: ["desktop"] as const }, { id: "/settings/print-hub", label: "Print Hub", href: "/settings/print-hub", permission: "settings.manage_printer", formFactors: ["desktop"] as const }, { id: "/settings/devices", label: "อุปกรณ์นี้", href: "/settings/devices", permission: "settings.manage_printer", formFactors: ["desktop"] as const }]) : []),
+    ...(can("settings.manage_store") ? [{ id: "/onboarding", label: "ตั้งค่าเริ่มต้น", href: "/onboarding", permission: "settings.manage_store", formFactors: ["mobile", "tablet", "desktop"] as const }] : []),
   ];
   const themeStyle = buildThemeStyle({
     presetId: storeContext.themePresetId,
@@ -185,6 +193,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <SideNav items={navItems} orientation="horizontal" />
         </nav>
       </div>
+      <CommandPalette commands={commandItems} />
       <PushTokenRegistrar />
       {can("reports.view") && <NotificationGlobalNotifier storeId={storeContext.storeId} />}
       <QrOrderGlobalNotifier

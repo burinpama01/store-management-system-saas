@@ -33,6 +33,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
     message: "{employeeName} ขอลงเวลาย้อนหลังวันที่ {date}",
   },
   service_request: { title: "ลูกค้าเรียกพนักงาน", message: "โต๊ะ {tableLabel}: {reason}" },
+  activation_nudge: { title: "ขั้นตอนตั้งค่าร้านถัดไป", message: "ทำตามขั้นตอนใน StoreOS เพื่อเริ่มขายจริง ({step})" },
   test: { title: "ข้อความทดสอบ", message: "[TEST] notification พร้อมใช้งาน" },
 };
 
@@ -54,6 +55,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   attendance_clock_out: ["store", "employeeName"],
   approval: ["store", "employeeName", "date"],
   service_request: ["store", "tableLabel", "reason"],
+  activation_nudge: ["store", "step"],
   test: ["store"],
 };
 

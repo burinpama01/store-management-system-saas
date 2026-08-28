@@ -3692,6 +3692,15 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+
+      record_device_profile_success: {
+        Args: {
+          p_platform: string;
+          p_printer_model: string;
+          p_channel: string;
+        };
+        Returns: undefined;
+      };
       reserve_ai_quota: {
         Args: {
           p_organization_id: string;

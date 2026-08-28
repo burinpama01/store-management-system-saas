@@ -14,7 +14,8 @@ export type NotificationType =
   | "attendance_clock_out"
   | "approval"
   | "service_request"
-  | "test";
+  | "test"
+  | "activation_nudge";
 
 export interface NotificationPayload {
   type: NotificationType;
@@ -43,6 +44,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "approval",
   "service_request",
   "test",
+  "activation_nudge",
 ];
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram", "push"];

@@ -47,6 +47,7 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   attendance_clock_out: "พนักงานออกงาน",
   approval: "การอนุมัติ",
   service_request: "เรียกพนักงาน/ขอความช่วยเหลือ",
+  activation_nudge: "ตั้งค่าร้าน (nudge)",
   test: "ข้อความทดสอบ",
 };
 
