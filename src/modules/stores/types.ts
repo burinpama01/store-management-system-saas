@@ -1,3 +1,4 @@
+import type { StoreSetupProfile } from "@/modules/onboarding/setup-profile";
 import type { ServiceButtonConfig } from "@/modules/qr-ordering/types";
 
 export type QrOrderingMode = "table_bound" | "session_printed";
@@ -40,6 +41,8 @@ export interface Store {
   themePrimaryStrongColor: string;
   themePrimarySoftColor: string;
   themeAccentColor: string;
+  /** F1: โปรไฟล์ตอบ 3 คำถาม setup — null = legacy (ยังไม่ตอบ) ห้ามตีความเป็น false */
+  setupProfile?: StoreSetupProfile | null;
   createdAt: string;
   updatedAt: string;
 }

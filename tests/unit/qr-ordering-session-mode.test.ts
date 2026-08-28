@@ -8,6 +8,7 @@ function row(overrides: Partial<StoreRow> = {}): StoreRow {
   return {
     id: "s1",
     organization_id: "o1",
+    setup_profile: {},
     name: "ร้านทดสอบ",
     slug: "raan",
     address: null,

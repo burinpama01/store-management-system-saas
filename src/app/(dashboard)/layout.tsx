@@ -10,6 +10,7 @@ import {
   listKitchenStations,
 } from "@/modules/qr-ordering/kitchen-stations";
 import { getReceiptSettings } from "@/modules/settings/repository";
+import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
 import { listPrinters } from "@/modules/stores/repository";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
@@ -40,9 +41,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         qr_ordering_enabled?: boolean;
         music_request_enabled?: boolean;
         music_license_status?: string;
+        setup_profile?: unknown;
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
+  // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
+  // permission checks still gate every route, hiding is presentation only.
+  const setupProfile = parseSetupProfileOrNull(currentStoreRow?.setup_profile);
+  const qrOrdersVisible = canManageQr && setupProfile?.usesTables !== false;
   const musicRequestsVisible =
     canManageQr &&
     Boolean(currentStoreRow?.music_request_enabled) &&
@@ -74,7 +80,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
     ...(can("catalog.manage") ? [{ href: "/customers", label: "ลูกค้า" }] : []),
-    ...(canManageQr ? [{ href: "/qr-orders", label: "QR Order" }] : []),
+    ...(qrOrdersVisible ? [{ href: "/qr-orders", label: "QR Order" }] : []),
     ...(canManageQr ? [{ href: "/delivery", label: "เดลิเวอรี" }] : []),
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),

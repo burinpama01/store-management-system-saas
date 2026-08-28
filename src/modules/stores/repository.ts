@@ -6,6 +6,7 @@ import type { Store, Table, ReceiptSettings, Printer, QrOrderingMode, TableOpenP
 import { parseServiceButtons } from "@/modules/qr-ordering/types";
 import type { ServiceButtonConfig } from "@/modules/qr-ordering/types";
 import type { Database } from "@/server/integrations/supabase/database.types";
+import { parseSetupProfileOrNull, type StoreSetupProfile } from "@/modules/onboarding/setup-profile";
 
 // Privileged printer upserts (service client) live in printer-admin-repository.ts
 // so this repository stays user-scoped (RLS) end to end.
@@ -20,6 +21,7 @@ function mapStore(row: StoreRow): Store {
     organizationId: row.organization_id,
     name: row.name,
     slug: row.slug,
+    setupProfile: parseSetupProfileOrNull(row.setup_profile),
     address: row.address ?? undefined,
     phone: row.phone ?? undefined,
     logoUrl: row.logo_url ?? undefined,
@@ -178,6 +180,23 @@ export interface UpdateStoreInput {
   themeAccentColor?: string;
 }
 
+export async function updateStoreSetupProfile(
+  storeId: string,
+  organizationId: string,
+  profile: StoreSetupProfile,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("stores")
+    .update({
+      setup_profile: profile,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", storeId)
+    .eq("organization_id", organizationId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, error: null };
+}
 export async function updateStore(storeId: string, organizationId: string, input: UpdateStoreInput) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase

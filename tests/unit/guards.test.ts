@@ -55,6 +55,7 @@ function store(id: string, organizationId = ORG): StoreRow {
   return {
     id,
     organization_id: organizationId,
+    setup_profile: {},
     name: id,
     is_active: true,
     slug: id,
