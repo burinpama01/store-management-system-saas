@@ -71,6 +71,27 @@ describe("UX/UI regression guards", () => {
     expect(source).toContain("hidden md:flex");
   });
 
+  it("dashboard shell switches to a 64px icon rail on tablet and keeps 256px on desktop", () => {
+    const shell = read("src/app/(dashboard)/layout.tsx");
+    const sidenav = read("src/shared/components/SideNav.tsx");
+    const css = read("src/app/globals.css");
+
+    // Breakpoint contract เดียวทั้งระบบ: tablet 768–1279 = icon rail 64px, desktop ≥1280 = sidebar 256px
+    expect(css).toContain("@media (min-width: 768px) and (max-width: 1279px)");
+    expect(css).toContain("grid-template-columns: 64px minmax(0, 1fr)");
+    expect(css).toContain("@media (min-width: 1280px)");
+    expect(css).toContain("grid-template-columns: 256px minmax(0, 1fr)");
+
+    // ป้ายชื่อถูกซ่อนด้วย CSS บน tablet แต่ข้อความยังอยู่ใน DOM เพื่อ accessible name
+    expect(shell).toContain("storeos-sidebar-label");
+    expect(sidenav).toContain("storeos-sidebar-label");
+
+    // icon-only บน tablet ต้องมี tooltip + aria-label (Design System v1 §5)
+    expect(shell).toContain('aria-label="ออกจากระบบ"');
+    expect(shell).toContain('title="ออกจากระบบ"');
+    expect(sidenav).toContain("title={item.label}");
+  });
+
   it("POS shell stacks cart and catalog on narrow screens", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 

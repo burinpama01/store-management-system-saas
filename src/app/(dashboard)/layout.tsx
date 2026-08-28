@@ -121,14 +121,24 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--tenant-primary-soft)] text-sm font-extrabold text-[var(--tenant-primary-strong)]">
               {user.email?.slice(0, 1).toUpperCase() ?? "U"}
             </span>
-            <div className="min-w-0">
+            {/* tablet rail ซ่อนข้อความนี้ด้วย CSS (sr-only) — อีเมล/role ยังอ่านได้โดย screen reader */}
+            <div className="storeos-sidebar-label min-w-0">
               <p className="truncate text-sm font-bold text-[var(--ink)]">{user.email}</p>
               <p className="text-xs capitalize text-[var(--muted)]">{storeContext?.role ?? "user"}</p>
             </div>
           </div>
           <form action={signOut}>
-            <SubmitButton variant="secondary" className="w-full text-xs">
-              ออกจากระบบ
+            {/* tablet rail: ปุ่ม icon-only ต้องมี aria-label + tooltip (Design System v1 §5) */}
+            <SubmitButton
+              variant="secondary"
+              className="w-full text-xs"
+              aria-label="ออกจากระบบ"
+              title="ออกจากระบบ"
+            >
+              <span aria-hidden="true" className="storeos-sidebar-signout-icon">
+                ⏻
+              </span>
+              <span className="storeos-sidebar-label">ออกจากระบบ</span>
             </SubmitButton>
           </form>
         </div>

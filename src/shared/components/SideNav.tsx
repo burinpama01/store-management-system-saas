@@ -46,6 +46,8 @@ export function SideNav({ items, orientation = "vertical" }: Props) {
           <Link
             key={item.href}
             href={item.href}
+            /* tablet icon rail ซ่อนข้อความด้วย CSS — title คือ tooltip และช่วย screen reader/long-press */
+            title={item.label}
             className={`group flex items-center gap-2 rounded-md text-sm transition-colors ${
               orientation === "horizontal"
                 ? "min-h-11 shrink-0 whitespace-nowrap px-4 py-2.5"
@@ -64,7 +66,7 @@ export function SideNav({ items, orientation = "vertical" }: Props) {
             >
               {iconMap[item.label] ?? item.label.slice(0, 1)}
             </span>
-            {item.label}
+            <span className="storeos-sidebar-label">{item.label}</span>
           </Link>
         );
       })}
