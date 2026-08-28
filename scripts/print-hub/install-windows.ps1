@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Installs the StoreOS Print Hub as an auto-start background task on a Windows
   cashier PC / mini-PC. The Hub long-polls StoreOS for print jobs from tablet/iPad
@@ -142,6 +142,11 @@ else {
   throw "ไม่พบค่าตั้งค่า — ดาวน์โหลด print-hub.config.json จากหน้า StoreOS > ตั้งค่า > Print Hub มาวางไว้ในโฟลเดอร์นี้ก่อน (หรือส่ง -ServerUrl -StoreId -HubToken)"
 }
 
+# The config file contains the hub token secret — restrict it to the current
+# user only (plan F2/Task 8: config secret ตั้ง ACL เฉพาะ user).
+icacls $ConfigPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+Write-Host "ตั้งสิทธิ์ไฟล์ config (icacls) ให้เข้าถึงได้เฉพาะผู้ใช้นี้แล้ว" -ForegroundColor Green
+
 # (Re)register the scheduled task.
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
@@ -163,4 +168,21 @@ Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger `
 Write-Host "ลงทะเบียน Scheduled Task '$TaskName' (เปิดเองตอน logon) แล้ว" -ForegroundColor Green
 
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "เริ่ม StoreOS Print Hub แล้ว — ลองสั่งพิมพ์ทดสอบจากหน้า Settings ได้เลย" -ForegroundColor Cyan
+# Local health check: prove the task actually launched (Running). The REAL
+# success signal is the cloud heartbeat — the StoreOS Print Hub page flipping
+# to "Hub ออนไลน์" — which the installer deliberately does not fake.
+$deadline = (Get-Date).AddSeconds(30)
+$state = $null
+do {
+  Start-Sleep -Milliseconds 800
+  $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  $state = if ($task) { $task.State } else { $null }
+} while ($state -ne "Running" -and (Get-Date) -lt $deadline)
+$info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($state -eq "Running") {
+  $lastRun = if ($info) { ", last run $($info.LastRunTime)" } else { "" }
+  Write-Host "Health check: task '$TaskName' กำลังทำงาน (Running)$lastRun" -ForegroundColor Green
+  Write-Host "ขั้นสุดท้าย: กลับไปที่หน้า StoreOS > ตั้งค่า > Print Hub แล้วรอสถานะเปลี่ยนเป็น 'Hub ออนไลน์' (heartbeat ฝั่งคลาวด์) จึงถือว่าติดตั้งสำเร็จสมบูรณ์" -ForegroundColor Cyan
+} else {
+  Write-Warning "Health check: task '$TaskName' ยังไม่ขึ้น Running ภายใน 30 วินาที (state=$state) — เปิด Task Scheduler ดู task '$TaskName' หรือรันติดตั้งใหม่"
+}

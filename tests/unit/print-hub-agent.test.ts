@@ -155,3 +155,57 @@ describe("print hub agent — packaging", () => {
     expect(existsSync(join(root, "scripts", "print-hub.mjs"))).toBe(true);
   });
 });
+
+describe("print hub installer contract (Task 8/F2 source guards)", () => {
+  const root = process.cwd();
+  const read = (rel: string) => readFileSync(join(root, rel), "utf8");
+  const installer = read("scripts/print-hub/install-windows.ps1");
+  const uninstaller = read("scripts/print-hub/uninstall-windows.ps1");
+  const cmd = read("scripts/print-hub/install.cmd");
+  const agent = read("scripts/print-hub.mjs");
+  const zipBuilder = read("scripts/build-print-hub-zip.mjs");
+
+  it("registers the scheduled task as the CURRENT USER with RunLevel Limited (autostart without admin rights)", () => {
+    expect(installer).toContain("New-ScheduledTaskPrincipal");
+    expect(installer).toContain("-UserId $env:USERNAME");
+    expect(installer).toContain("-RunLevel Limited");
+    expect(installer).toContain("-AtLogOn");
+  });
+
+  it("runs a local health check after starting the task and reports the state honestly", () => {
+    expect(installer).toContain("Get-ScheduledTaskInfo");
+    expect(installer).toMatch(/State/);
+    expect(installer).toContain("Health check");
+  });
+
+  it("restricts the config secret (hub token) to the current user via ACL", () => {
+    expect(installer).toContain("icacls");
+    expect(installer).toContain("$ConfigPath");
+  });
+
+  it("never echoes the hub token in installer or agent console output", () => {
+    const installerEchoes = installer.split("\n").filter((line) => /Write-Host|Write-Warning|Write-Output/.test(line) && /\$HubToken/.test(line));
+    expect(installerEchoes).toEqual([]);
+    const agentLogs = agent.split("\n").filter(
+      (line) => /console\.(log|error|warn|info)/.test(line) && /\$\{?[a-zA-Z.]*hubToken/i.test(line),
+    );
+    expect(agentLogs).toEqual([]);
+  });
+
+  it("ships an uninstaller that removes the scheduled task, plus the double-click cmd", () => {
+    expect(uninstaller).toContain("Unregister-ScheduledTask");
+    expect(cmd).toContain("install-windows.ps1");
+  });
+
+  it("packages the complete one-click kit into the downloadable zip", () => {
+    for (const part of ["install.cmd", "uninstall-windows.ps1", "install-windows.ps1", "README-TH.txt", "print-hub.mjs"]) {
+      expect(zipBuilder).toContain(part);
+    }
+  });
+
+  it("README states the real success signal: the Hub page heartbeat turning online", () => {
+    const readme = read("scripts/print-hub/README-TH.txt");
+    expect(readme).toContain("ออนไลน์");
+    expect(readme).toContain("Print Hub");
+  });
+});
