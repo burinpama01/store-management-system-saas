@@ -237,6 +237,51 @@ export async function landingPathForCurrentUser(): Promise<string> {
   return "/dashboard";
 }
 
+export type EntryFormFactor = "mobile" | "tablet" | "desktop";
+
+/**
+ * เลือกเส้นทางจาก map ที่ server คำนวณตามสิทธิ์แล้ว — client ห้ามส่ง path ขึ้นไปเอง
+ * (server คืน allowlisted targets ตาม permission ก่อน แล้ว client เลือกด้วย form factor)
+ */
+export function selectLandingPath(
+  paths: Readonly<Record<EntryFormFactor, string>>,
+  form: EntryFormFactor,
+): string {
+  return paths[form];
+}
+
+/**
+ * Device-aware entry (F0 · Task 4): map ของหน้าแรกต่ออุปกรณ์ คำนวณฝั่ง server
+ * จากสิทธิ์เดิมทั้งหมด — ห้ามเดา viewport บน server และห้ามรับ redirect URL จาก client
+ *
+ * - super_admin → /system ทุกอุปกรณ์ (platform console ไม่มี store dashboard)
+ * - พนักงานลงเวลา (ต่ำกว่า admin + attendance.clock) → /attendance ทุกอุปกรณ์ (พฤติกรรมเดิม)
+ * - ผู้ใช้ที่มี pos.use → มือถือ/แท็บเล็ตเข้า /pos ก่อน, เดสก์ท็อปคง /dashboard
+ * - นอกเหนือจากนี้ → landing path เดิมทุกอุปกรณ์ (รวม /login เมื่อไม่มี session)
+ */
+export async function landingPathsForCurrentUser(): Promise<
+  Readonly<Record<EntryFormFactor, string>>
+> {
+  const fallback = await landingPathForCurrentUser();
+  if (fallback === "/system" || fallback === "/login") {
+    return { mobile: fallback, tablet: fallback, desktop: fallback };
+  }
+  const permissions = await getOptionalResolvedCurrentPermissions();
+  if (!permissions) {
+    return { mobile: "/login", tablet: "/login", desktop: "/login" };
+  }
+  if (
+    ROLE_RANK[permissions.ctx.role] < ROLE_RANK.admin &&
+    permissions.resolved.can("attendance.clock")
+  ) {
+    return { mobile: "/attendance", tablet: "/attendance", desktop: "/attendance" };
+  }
+  if (permissions.resolved.can("pos.use")) {
+    return { mobile: "/pos", tablet: "/pos", desktop: "/dashboard" };
+  }
+  return { mobile: fallback, tablet: fallback, desktop: fallback };
+}
+
 /**
  * Guards platform console routes (/system). Redirects to /login if unauthenticated,
  * throws AuthorizationError if the user is not a super_admin.
