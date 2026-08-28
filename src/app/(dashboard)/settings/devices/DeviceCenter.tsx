@@ -7,6 +7,73 @@ import { recommendPrintChannels, type DeviceRecommendation } from "@/modules/dev
 import type { DeviceCapabilities } from "@/modules/devices/capability";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 
+/** Task 10/D (v0.34.1) — D1: ask the governed AI to explain a printer error. */
+function AiDiagnosisCard({ platform, channel }: { platform: string; channel: string }) {
+  const [errorCode, setErrorCode] = useState("timeout");
+  const [model, setModel] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; advice?: { summary: string; steps: string[] }; manualPath?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function ask() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/ai/device-diagnosis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ errorCode, platform, channel, printerModel: model || undefined, requestId: crypto.randomUUID() }),
+      });
+      const data = (await res.json()) as { ok?: boolean; advice?: { summary: string; steps: string[] }; manualPath?: string };
+      setResult({ ok: Boolean(data.ok), advice: data.advice, manualPath: data.manualPath });
+    } catch {
+      setResult({ ok: false, manualPath: "เชื่อมต่อไม่สำเร็จ — ทำตามขั้นตอนแนะนำในหน้านี้ก่อน" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-5">
+      <h3 className="panel-title">ผู้ช่วย AI วินิจฉัยปัญหาเครื่องพิมพ์</h3>
+      <p className="label-muted mt-1">AI ให้คำแนะนำเท่านั้น (ต้องกดยืนยันก่อนทำตามทุกขั้น) — ส่งเฉพาะรุ่นเครื่อง/รหัสปัญหา ไม่มีข้อมูลร้านหรือข้อมูลส่วนตัว</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <label className="text-xs font-semibold text-[var(--ink-2)]">
+          อาการ
+          <select value={errorCode} onChange={(e) => setErrorCode(e.target.value)} className="form-input mt-1 w-full">
+            <option value="timeout">พิมพ์แล้วค้าง/หมดเวลา</option>
+            <option value="disconnected">หลุดการเชื่อมต่อ</option>
+            <option value="unknown">อื่น ๆ / ไม่แน่ใจ</option>
+          </select>
+        </label>
+        <label className="text-xs font-semibold text-[var(--ink-2)]">
+          รุ่นเครื่องพิมพ์ (ถ้ารู้)
+          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="เช่น EPSON TM-T82III" maxLength={40} className="form-input mt-1 w-full" />
+        </label>
+      </div>
+      <button type="button" onClick={ask} disabled={busy} className="btn-primary mt-3 min-h-11 w-full disabled:opacity-40">
+        {busy ? "กำลังขอคำแนะนำ..." : "ขอคำแนะนำจาก AI"}
+      </button>
+      {result ? (
+        result.ok && result.advice ? (
+          <div className="mt-3 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
+            <p className="font-bold">{result.advice.summary}</p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              {result.advice.steps.map((step, i) => (
+                <li key={i}>{step}</li>
+              ))}
+            </ol>
+            <p className="mt-2 text-xs font-semibold">ทุกขั้นตอนต้องกดยืนยันก่อนทำ — AI ไม่ทำการเปลี่ยนแปลงเอง</p>
+          </div>
+        ) : (
+          <p className="mt-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
+            {result.manualPath}
+          </p>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 export function DeviceCenter({ hasNetworkPrinter }: { hasNetworkPrinter: boolean }) {
   const [caps, setCaps] = useState<DeviceCapabilities | null>(null);
   const [recommendation, setRecommendation] = useState<DeviceRecommendation | null>(null);
@@ -119,6 +186,8 @@ export function DeviceCenter({ hasNetworkPrinter }: { hasNetworkPrinter: boolean
         </div>
       ) : null}
 
+
+      {caps ? <AiDiagnosisCard platform={caps.os} channel={caps.recommendedPrint} /> : null}
       <div>
         <h3 className="mb-2 text-sm font-extrabold text-[var(--ink)]">เชื่อมต่อ/ทดสอบพิมพ์เลย</h3>
         <PrinterConnectionPanel capabilityHints={channelHints} />

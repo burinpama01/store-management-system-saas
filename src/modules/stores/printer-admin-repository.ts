@@ -164,3 +164,19 @@ export async function upsertHubBluetoothPrinter(
 
   return { data: savedPrinter, error: null };
 }
+
+/**
+ * Task 10/D (v0.34.1) — Atomic success recording for shared device profiles.
+ * Call ONLY from the server after a cloud-verified test print bound to the AI
+ * request; never trust a client boolean.
+ */
+export async function recordDeviceProfileSuccess(platform: string, printerModel: string, channel: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase.rpc("record_device_profile_success", {
+    p_platform: platform,
+    p_printer_model: printerModel,
+    p_channel: channel,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, error: null };
+}
