@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>StoreOS — Implementation Plan v2 · POS ออฟไลน์</title>
+<style>
+:root{--ink:#172033;--muted:#536176;--bg:#eef3f6;--paper:#fff;--line:#d6e1e7;--teal:#0f766e;--soft:#e5f6f2;--amber:#854d0e;--warn:#fff5d6;--red:#9f1239;--risk:#fff1f2;--radius:18px}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.75 system-ui,"Noto Sans Thai",sans-serif}main{max-width:1160px;margin:auto;padding:28px}header,section{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:26px;margin-bottom:20px}header{background:linear-gradient(125deg,#fff,var(--soft))}h1{font-size:clamp(28px,5vw,46px);line-height:1.25;margin:16px 0}h2{font-size:25px;line-height:1.4;margin-top:0}h3{font-size:19px;margin-bottom:8px}p{margin:8px 0 14px}a{color:var(--teal);overflow-wrap:anywhere}a:focus-visible,summary:focus-visible{outline:3px solid #2563eb;outline-offset:4px}.badge{display:inline-block;background:var(--teal);color:white;padding:5px 12px;border-radius:20px;font-weight:700;font-size:13px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.tile{padding:18px;border:1px solid var(--line);border-radius:12px}.tile.selected{border:2px solid var(--teal);background:var(--soft)}.callout{padding:16px;border-left:4px solid var(--teal);background:var(--soft);margin:16px 0;border-radius:0 12px 12px 0}.warn{border-color:var(--amber);background:var(--warn)}.risk{border-color:var(--red);background:var(--risk)}table{width:100%;border-collapse:collapse;table-layout:fixed}td,th{padding:12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{background:#f5f8fa}code{font-size:.86em;background:#eaf0f5;border-radius:4px;padding:2px 4px;overflow-wrap:anywhere}pre{padding:18px;background:#142237;color:#edf5ff;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}ul,ol{padding-left:24px}.task{border-left:5px solid var(--teal)}.flow{display:flex;flex-wrap:wrap;gap:10px}.flow span{flex:1;min-width:145px;background:var(--soft);padding:14px;border-radius:10px}.small{font-size:14px}.files{overflow-wrap:anywhere}.task li{margin:10px 0}.state{font-weight:700;color:var(--teal)}@media(max-width:767px){main{padding:12px}header,section{padding:18px}.grid{grid-template-columns:1fr}table{font-size:13px}td,th{padding:8px}.flow{flex-direction:column}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body><main>
+<header>
+<span class="badge">แผน v2 · เพิ่ม POS ออฟไลน์ · 28 สิงหาคม 2026</span>
+<h1>เน็ตหลุด<br>ยังรับเงินสดและเก็บบิลได้</h1>
+<p>ข้อเสนอเพิ่มเติมจากแผน AI Onboarding &amp; Device Copilot: แยก “รับเงินแล้วในเครื่อง” ออกจาก “ซิงก์เข้าส่วนกลางแล้ว” พร้อมกู้คืนบิลและป้องกันการรับเงินซ้ำ</p>
+<p class="muted">สถานะ: เพิ่มแผนตามคำขอแล้ว · ยังไม่เริ่มแก้ระบบ · เงินสดเป็นขอบเขตเริ่มต้นที่เสนอให้อนุมัติ</p>
+<p><strong>Goal:</strong> POS ปกติที่เปิดและเตรียมพร้อมขณะออนไลน์แล้ว สามารถขายบิลใหม่แบบเงินสดต่อระหว่างเน็ตหลุด และนำ order/payment/stock/cash ledger กลับเข้าส่วนกลางโดยไม่ซ้ำ</p>
+<p><strong>Architecture:</strong> local journal + outbox ใน IndexedDB, snapshot ที่ server รับรอง, รหัสธุรกรรมเดียวตลอด online/offline/retry, server reconciliation และการยืนยันผลแบบ atomic</p>
+<p><strong>Tech Stack:</strong> Next.js/React/TypeScript, IndexedDB, Vitest, Supabase/PostgreSQL และ printing adapters เดิม ไม่ใช้ AI ตัดสินยอดเงินหรือสถานะชำระเงิน</p>
+<p class="small">สำหรับผู้ลงมือ: ใช้ <code>superpowers:executing-plans</code> หลังผู้ใช้อนุมัติขอบเขต; ทุกงาน payment/security/schema ต้องผ่าน approval และ <code>code_reviewer</code> ก่อนสรุปผล</p>
+</header>
+
+<section id="delta"><h2>สิ่งที่เปลี่ยนจาก v1</h2>
+<p>ฉบับนี้เป็น <strong>ส่วนเพิ่มเติมของแผนเดิม</strong> ไม่แทนที่รายละเอียด Task 1–13 และไม่แก้ไขไฟล์ที่เสร็จแล้ว ให้อ่านร่วมกับ <a href="AI%20Onboarding%20and%20Device%20Copilot%20Implementation%20Plan%20v1.html">Implementation Plan v1</a> และ <a href="../Design/POS%20Offline%20Checkout%20Design%20System%20v1.html">Design System ออฟไลน์</a></p>
+<div class="flow"><span>F0<br>หน้าจอหลายอุปกรณ์</span><span>O1–O4<br>เงินสด + journal + replay</span><span>O5–O8<br>UI + ใบเสร็จ + ทดสอบ</span><span>F1/F2 → AI<br>เดินต่อได้แยกกัน</span></div>
+<ul><li>เพิ่มสายงาน O1–O8 หลังฐาน F0 หรือแยกทำก่อน AI; ไม่ต้องรอโมเดล/งบ AI</li><li>F1 readiness ต้องแสดง “พร้อมออฟไลน์” จาก snapshot/สิทธิ์/พื้นที่เก็บ/กะที่ยังเปิด ไม่ใช่แค่ browser รองรับ IndexedDB</li><li>F2 Device Center ต้องแยก “พิมพ์ออนไลน์” กับ “พิมพ์ตอน WAN หลุด” โดยเฉพาะ Print Hub ที่ยัง polling cloud</li><li>Release gate เดิมเพิ่ม loss/reconnect/replay/crash/storage tests และการกระทบยอดเงินสด</li></ul>
+</section>
+
+<section id="evidence"><h2>ฐานเดิมที่ตรวจจริง และช่องว่าง</h2>
+<p class="small muted">Source วันที่ 2026-08-28: HEAD <code>38d1e49</code>, package <code>0.31.3</code>; Graphify 2026-08-22 ตรง commit แต่มีสำเนา temp ปะปน จึงยืนยันด้วย canonical source ต่อ ไม่มีการยืนยันสถานะ production รอบนี้</p>
+<table><thead><tr><th>มีอยู่แล้ว</th><th>ยังไม่ใช่หลักฐานว่าปิดบิลออฟไลน์ครบ</th></tr></thead><tbody>
+<tr><td><code>src/modules/grocery-pos/offline-sync.ts</code> มี IndexedDB และ operation ID</td><td>payload เป็น create_order/cart ไม่มี payment method/received/change/cash session; ห้ามแปลงบิล legacy เป็น paid อัตโนมัติ</td></tr>
+<tr><td><code>src/app/api/pos/grocery/sync/route.ts</code> ตรวจ permission/store/package และ replay ผ่าน service</td><td>เป็น Grocery flow; POS ปกติยังไม่มี offline payment replay แบบเดียวกัน ห้าม route ข้ามประเภท POS</td></tr>
+<tr><td><code>src/app/pos/PosTerminal.tsx</code> มี checkoutAndPayAction และ collectPaymentAction</td><td>ต้องเรียก server; order key อยู่ใน ref และ payment key สร้างแต่ละครั้ง ต้องทำ stable key ที่เก็บถาวรทั้งสอง stage ก่อนส่ง</td></tr>
+<tr><td><code>src/app/pos/page.tsx</code> และ Grocery page โหลด catalog/permission จาก server</td><td>เป็น force-dynamic; warm offline ไม่เท่ากับเปิดเครื่องหรือ reload แบบไม่มีเน็ตได้</td></tr>
+<tr><td>feature key <code>offlinePos</code> มีอยู่แล้ว</td><td>ต้องผูก POS ปกติด้วย gate เดิม ไม่เปิดให้ทุกแพ็กเกจเอง; กรณีสิทธิ์เปลี่ยนระหว่าง outage ต้องมี recovery policy</td></tr>
+<tr><td><code>scripts/print-hub.mjs</code> polling/ack ผ่าน cloud</td><td>WAN หลุดแล้วไม่สามารถรับงาน cloud ใหม่ได้ แม้ iPad และ Hub อยู่ Wi-Fi เดียวกัน</td></tr>
+</tbody></table>
+<p>แผนเก่าที่เชื่อมต่อ: <a href="Offline%20Support%20Scope%20Decision%20v1.html">Offline Support Scope Decision v1</a> และ <a href="POS%20Grocery%20Loyalty%20Offline%20Enterprise%20Roadmap%20v1.html">Grocery / Offline Roadmap</a>; รักษา dedup และ RLS ที่เคยแก้ไว้ ไม่ย้อนกลับไปเปิด client write</p>
+</section>
+
+<section id="scope"><h2>เลือกขอบเขตให้ตรงคำว่า “เน็ตหลุด”</h2>
+<div class="grid"><div class="tile selected"><h3>A · Warm cash checkout</h3><p><strong>แนะนำเป็นระยะแรก</strong></p><p>เปิด POS/เข้าใช้/เปิดกะ/เตรียมข้อมูลขณะออนไลน์ก่อน แล้วขายเงินสดต่อเมื่อเน็ตหลุด ใช้ฐานเดิมได้มากและจำกัดความเสี่ยง</p></div><div class="tile"><h3>B · เปิดใหม่ออฟไลน์</h3><p>เพิ่ม dedicated offline shell, asset cache, snapshot และ local unlock สำหรับ reload/cold start หลังเคยเตรียมเครื่องไว้</p><p>ต้องมีแผนย่อยและ security review แยก ไม่อ้างว่ามีแล้วเพียงเพราะใช้ IndexedDB</p></div><div class="tile"><h3>C · Local server ในร้าน</h3><p>หลายเครื่องใช้ LAN coordinator และ local print spooler แม้ WAN ขาด</p><p>ต้องดูแลติดตั้ง/สิทธิ์/อัปเดต/backup เพิ่ม เป็นงานแยก ไม่เปิด public gateway</p></div></div>
+<div class="callout warn">ขอบเขตเสนอ A: รับเฉพาะเงินสดเต็มยอดสำหรับบิลใหม่แบบ walk-in ไม่มี customer/coupon/reward/credit/split payment และต้องมีกะที่เปิดไว้ก่อน ไม่ครอบคลุมบิลโต๊ะ/บิลค้างที่อาจแก้จากเครื่องอื่น การขยายขอบเขตต้องอนุมัติ ไม่แปลงบิลที่ถูกบล็อกเป็นเงินสดเงียบ ๆ</div>
+<table><thead><tr><th>ทำได้ใน A</th><th>ต้องรอออนไลน์หรือแผนเพิ่ม</th></tr></thead><tbody>
+<tr><td>สินค้า/variant/modifier/หน่วยขายที่อยู่ใน snapshot ที่รับรองแล้ว; เงินทอน; ใบรับเงินออฟไลน์</td><td>ค้นสินค้าที่ไม่เคยโหลด, สร้างสินค้า, เปลี่ยนราคา, ส่วนลดใหม่, เปลี่ยนสาขา/ผู้ใช้, เปิดกะใหม่</td></tr>
+<tr><td>ดูยอดเงินสดในเครื่องและบิลรอซิงก์; ลองซิงก์ด้วย operation เดิม</td><td>คูปอง/แต้ม/สมาชิก/วงเงินเครดิต/คืนเงิน/ยกเลิกบิลที่รับเงินแล้ว และปิดกะส่วนกลางก่อนกระทบยอดครบ</td></tr>
+<tr><td>แจ้งว่า QR/โอนต้องรอตรวจสอบ</td><td>ห้ามตั้ง qrPaymentVerified หรือ paid จากรูปสลิป/คำบอกเล่า/การกดซ้ำ; external terminal ไม่ได้รองรับ offline authorization โดยอัตโนมัติ</td></tr>
+</tbody></table>
+</section>
+
+<section id="flow"><h2>Flow และเงื่อนไขที่ห้ามข้าม</h2>
+<ol><li><strong>เตรียมเครื่องออนไลน์:</strong> server ยืนยัน org/store/user/device, pos.use, offlinePos, กะที่เปิด และออก snapshot/version/ช่วงใช้ได้พร้อม offline allowance</li>
+<li><strong>ก่อนรับเงิน:</strong> ตรวจ scope, snapshot ยังใช้ได้, พื้นที่เก็บและ queue limit; freeze cart/ยอดเป็นหน่วยสตางค์ สร้าง saleId/orderKey/paymentKey เพียงครั้งเดียว แล้วบันทึก prepared journal</li>
+<li><strong>แคชเชียร์รับเงิน:</strong> ใส่เงินที่รับและยืนยันได้รับเงินจริง; เขียน payment evidence + outbox ใน transaction เดียว รอ transaction complete ก่อนล้าง cart/พิมพ์/ขึ้นข้อความสำเร็จ</li>
+<li><strong>เน็ตหลุดกลาง request:</strong> เก็บสถานะ unknown; ห้ามสร้าง sale ใหม่หรือรับเงินอีก ส่งซ้ำหรือ query ผลด้วยรหัสเดิมเมื่อกลับมา การ offline fallback ต้องอ้าง sale เดิมที่บันทึกก่อน request</li>
+<li><strong>เน็ตกลับ:</strong> online event เป็นเพียงสัญญาณ → ตรวจ endpoint จริง → re-auth หากจำเป็น → replay แบบ single writer พร้อม backoff/jitter และ bounded timeout</li>
+<li><strong>server รับ:</strong> ตรวจ identity และ signed snapshot/allowance → dedup โดย immutable payload hash → ยืนยัน order/payment/stock/cash journal + mapping ผลสำเร็จ atomically หรือเข้าคิว reconcile ที่ตรวจสอบย้อนหลังได้</li>
+<li><strong>ยืนยันกลับเครื่อง:</strong> บันทึก server IDs/receipt mapping จน transaction complete จึงนับซิงก์ครบ; ไม่ลบ unsynced operations ด้วยอายุ/clear cache/การอัปเดตแอป</li></ol>
+<div class="callout risk">ถ้ารับเงินสดจริงแล้วแต่บันทึกเครื่องล้มเหลว ต้องแสดง “รับเงินแล้วแต่บันทึกไม่สำเร็จ — ห้ามรับเงินซ้ำ” คง cart และ saleId, ให้จดหลักฐานฉุกเฉิน/หยุดรับบิลใหม่ ไม่แสดงว่าเงินยังไม่ถูกจ่ายและไม่ส่งบิลใหม่โดยอัตโนมัติ หากแอปดับระหว่างยืนยัน เงินสดจริงต้องให้แคชเชียร์ตรวจ prepared journal ก่อนดำเนินต่อ</div>
+<table><thead><tr><th>สถานะ</th><th>ความหมาย / สิ่งที่ทำต่อได้</th></tr></thead><tbody>
+<tr><td>prepared</td><td>สร้าง intent แล้ว แต่ยังไม่ถือว่าได้รับเงิน; กู้คืนให้แคชเชียร์ตรวจว่ารับเงินจริงหรือยัง</td></tr>
+<tr><td>cash_recorded / pending_sync</td><td>รับเงินแล้วในเครื่อง; พิมพ์หลักฐานได้; ห้ามรับเงินอีกหรือแก้ยอดทับ</td></tr>
+<tr><td>syncing / unknown</td><td>อาจมี commit บน server แล้ว; retry ด้วย IDs เดิม ไม่เปลี่ยน payment status เป็น unpaid</td></tr>
+<tr><td>synced</td><td>server ยืนยันผลและ local mapping บันทึกแล้ว; พิมพ์ซ้ำเป็น “สำเนา”</td></tr>
+<tr><td>needs_review / auth_required</td><td>เงินยังถือว่ารับแล้ว แต่ accounting ยังไม่ reconcile; แสดงเหตุผลและผู้รับผิดชอบ ไม่ retry 409/403 วนไม่สิ้นสุด</td></tr>
+</tbody></table>
+</section>
+
+<section id="contract"><h2>ข้อมูลที่ต้องเก็บและความถูกต้องของยอด</h2>
+<p>แยก <strong>สถานะเงิน</strong> จาก <strong>สถานะซิงก์</strong> เสมอ อย่าใช้ failed เพียงค่าเดียวแทนทั้งสองเรื่อง</p>
+<pre>OfflineCashSaleV1
+  schemaVersion: 1
+  saleId, orderKey, paymentKey, deviceId, deviceSequence
+  organizationId, storeId, actorId, cashSessionId
+  snapshotId, snapshotSignature, allowanceId, policyVersion
+  occurredAtClient, serverTimeAnchor, recordedAtDevice
+  lines: productId, variantId, modifierIds, unitId, quantityScaled,
+         unitScale, unitPriceMinor, taxSnapshot, lineTotalMinor
+  subtotalMinor, discountMinor, taxMinor, totalMinor
+  payment: cash, tenderedMinor, changeMinor, cashConfirmedAt
+  payloadHash, localReceiptRef
+  paymentState: awaiting_cash | cash_recorded
+  syncState: prepared | pending_sync | syncing | unknown |
+             synced | needs_review | auth_required
+  attempts, nextAttemptAt, lastErrorCode, serverOrderId, serverPaymentId</pre>
+<ul><li>จำนวนเงินเป็น integer สตางค์; quantity มี scale ชัดเจน ใช้กติกาปัดเศษเดียวกับ server ไม่ใช้ floating-point รวมยอดสองวิธี</li><li>saleId เป็น UUID ที่ไม่พึ่งเวลาล้วน; localReceiptRef เป็นเลขอ้างอิงเครื่อง ไม่สวมเป็นเลขใบเสร็จ server; เวลาเครื่องใช้แสดงเหตุการณ์ ไม่ใช่หลักฐานอนุญาตสิทธิ์</li><li>server เก็บ snapshot/allowance เพื่อพิสูจน์ราคาที่อนุญาตขาย ไม่เชื่อ client total หรือ signature ที่ client สร้างเอง; snapshot หมดอายุ/ถูกดัดแปลงต้องเข้าสู่ review</li><li>ยอดบิลที่รับเงินจริงแล้วต้องไม่ silent reprice ตอน sync; การแก้ต้องเป็น adjustment ที่มีเหตุผล/ผู้อนุมัติ/ประวัติเดิม ไม่ overwrite เงินที่รับ</li><li>server dedup scope org+store+saleId; orderKey และ paymentKey คงเดิมทุก retry; key เดิม payload ต่าง = conflict ไม่คืนสำเร็จหรือสร้างใหม่</li><li>ห้ามเก็บ password, access/refresh token, service key, รูปสลิป หรือ PII สมาชิกเพิ่มใน offline journal; device local storage ไม่ใช่ secure vault โดยตัวมันเอง</li></ul>
+</section>
+
+<section id="conflicts"><h2>Conflict, หลายเครื่อง และปิดกะ</h2>
+<table><thead><tr><th>เหตุการณ์</th><th>นโยบายที่เสนอ</th></tr></thead><tbody>
+<tr><td>ราคา/ภาษีเปลี่ยนหลังเตรียม snapshot</td><td>รับตาม snapshot ที่ server อนุญาตและยังอยู่ใน policy; ถ้าพิสูจน์ไม่ได้ เก็บเงินที่รับเป็นข้อเท็จจริงใน review queue ห้ามเรียกเก็บเพิ่มอัตโนมัติ</td></tr>
+<tr><td>stock ไม่พอ / ขายจากหลายเครื่อง</td><td>Phase A แนะนำเครื่องออฟไลน์หลักหนึ่งเครื่องต่อร้านเพื่อลดความเสี่ยง แต่ยังกันการขายจากช่องทางอื่นไม่ได้; ห้ามอ้าง global stock reservation หากยังไม่มี allowance ต่อ SKU; policy ขายเกิน/ขาด stock ต้องให้เจ้าของอนุมัติก่อนเปิดใช้</td></tr>
+<tr><td>กะถูกปิดจากอีกเครื่อง</td><td>ไม่เปิดกะใหม่แทนและไม่โยกเงินเข้ากะปัจจุบัน; ผูก original cashSessionId ส่งให้หัวหน้ากระทบยอด; cash reconciliation แสดงยอด pending แยก confirmed</td></tr>
+<tr><td>สิทธิ์/package ถูกถอนระหว่าง outage</td><td>หยุดบิลใหม่เมื่อทราบ; เก็บ journal เดิมไว้; replay ปกติยัง revalidate สิทธิ์ ส่วนบิลที่รับเงินจริงแล้วส่ง recovery workflow ของ owner ที่ตรวจ offline allowance และเก็บ actor เดิม ห้าม bypass 403</td></tr>
+<tr><td>หลายแท็บ / app ถูกเปิดซ้ำ</td><td>durable lease ต่อ scope มี owner/expiry/fencing token; BroadcastChannel ใช้แจ้ง UI ไม่ใช่ mutex; server uniqueness ยังเป็นด่านสุดท้าย; crash แล้ว lease หมดอายุต้อง reclaim ได้</td></tr>
+<tr><td>auth หมดอายุ</td><td>เก็บบิลไว้และหยุด sync; login ใหม่แล้วตรวจ org/store เดิมก่อนดำเนินต่อ; ห้ามซิงก์ไป tenant ที่เพิ่งสลับเข้า</td></tr>
+<tr><td>ปิดกะ / logout / เปลี่ยนร้าน / อัปเดตแอป</td><td>แจ้งจำนวนและยอดค้าง; logout ต้องล็อกข้อมูลและไม่ลบ journal; ปิดกะการเงินต้องเคลียร์หรือมี owner-approved reconciliation ไม่ยอมให้คำเตือนถูกใช้เป็นทางลัดลบทิ้ง</td></tr>
+</tbody></table>
+<p>ค่าที่ต้องเลือกก่อนเขียน runtime: offline duration, snapshot TTL, ยอดต่อบิล/ยอดสะสม/จำนวนบิลสูงสุด, เครื่องที่อนุญาต และการเก็บบิล synced; ระหว่างรอใช้สถานะ feature disabled ไม่เดาตัวเลขเป็นนโยบายธุรกิจ</p>
+</section>
+
+<section id="printing"><h2>ใบเสร็จออฟไลน์ และอุปกรณ์</h2>
+<ul><li>หลักฐานแสดง “รับเงินสดแล้ว · บันทึกในเครื่อง · รอซิงก์” พร้อม localReceiptRef, วันที่, เครื่อง/แคชเชียร์, ยอด, เงินรับ/ทอน ไม่มี QR ชวนชำระซ้ำ</li><li>หลังซิงก์ map ไปเลขอ้างอิงส่วนกลาง; reprint ใช้ sale เดิมและระบุสำเนา ไม่ส่ง print job ใหม่อัตโนมัติทุกครั้งที่ retry</li><li>Windows WebUSB / Android native BLE หรือ browser ที่รองรับ: ใช้เฉพาะ adapter ที่ทดสอบว่าทำงานโดยไม่เรียก cloud และเก็บ receipt assets ไว้ครบ</li><li>iPad Safari: cloud Print Hub ใช้รับงานใหม่ไม่ได้ระหว่าง WAN หลุด; เสนอเก็บงานพิมพ์ไว้และแสดง “รอพิมพ์” หรือใช้ browser/system print เมื่อพิสูจน์บนอุปกรณ์แล้วเท่านั้น</li><li>ถ้าต้องการ iPad พิมพ์ต่อทันทีตอน WAN ขาด ให้แยก Local Print Hub/LAN transport เป็น scope C พร้อม pairing/authentication/network policy; ไม่ถือว่าอยู่ใน A โดยปริยาย</li><li>print failure ไม่ย้อนเงินเป็น unpaid และไม่คืน stock; sale สำเร็จในเครื่องแยกจาก print status</li></ul>
+<p class="small muted">เอกสารนี้กำหนดข้อมูล UI/หลักฐาน ไม่รับรองรูปแบบเอกสารภาษีหรือ e-tax; รูปแบบที่ต้องออกตามกฎหมายให้ตรวจแยกก่อนเปิดใช้</p>
+</section>
+
+<section id="tasks"><h2>งานเพิ่ม O1–O8 · ขอบเขตและหลักฐานรับงาน</h2>
+<p>เป็นแผนเพิ่มเติมระดับ subsystem; หลังอนุมัติแบบ A และ policy ให้แตกแต่ละงานเป็น HTML execution plan พร้อม patch/test ที่ตรง source ล่าสุด ไม่ใช้ตัวอย่าง contract แทน implementation ที่ผ่านทดสอบแล้ว</p>
+<article class="task"><h3>O1 · ปิดขอบเขตและ offline policy</h3><p class="files">สร้าง <code>src/modules/pos-offline/types.ts</code>, <code>src/modules/pos-offline/policy.ts</code>, <code>tests/unit/pos-offline-policy.test.ts</code></p><ol><li>RED: cash/new walk-in ผ่าน; QR, coupon, customer, existing order, wrong store, expired allowance, insufficient tender, queue full ถูกบล็อกพร้อมเหตุผล</li><li>GREEN: pure policy และ money invariants ไม่เรียก server/browser</li><li>ตรวจ unit test exit 0 แล้ว review; ห้ามแก้ billing entitlement/package price ในงานนี้</li></ol></article>
+<article class="task"><h3>O2 · Snapshot และเตรียมพร้อมใช้งาน</h3><p class="files">สร้าง <code>src/modules/pos-offline/snapshot.ts</code>, <code>src/app/api/pos/offline/bootstrap/route.ts</code>, <code>tests/unit/pos-offline-snapshot.test.ts</code>; แก้ <code>src/app/pos/page.tsx</code> หลังอนุมัติ auth/data scope</p><ol><li>RED: snapshot ข้ามร้าน/เก่า/ถูกแก้ไข/กะปิด/feature ปิดต้องไม่แสดง ready</li><li>GREEN: server-issued snapshot+allowance, persist/readback probe, readiness UI และ policy version; ไม่ cache authenticated HTML ทั้งหน้า</li><li>ตรวจ permission/tenant/snapshot fixtures; signed snapshot ไม่แทน server authorization ตอน replay</li></ol></article>
+<article class="task"><h3>O3 · Journal + payment evidence + outbox</h3><p class="files">สร้าง <code>src/modules/pos-offline/journal.ts</code>, <code>src/modules/pos-offline/lease.ts</code>, <code>tests/unit/pos-offline-journal.test.ts</code>; อ่าน <code>src/modules/grocery-pos/offline-sync.ts</code> เป็นฐานศึกษา ไม่ refactor รวมสอง POS ในงานนี้</p><ol><li>RED: request success แล้ว transaction abort ต้องไม่ resolve สำเร็จ; duplicate sale ปฏิเสธ; crash recover; schema upgrade ไม่ลบ pending; quota failure ไม่ล้าง cart</li><li>GREEN: resolve หลัง transaction complete, reject abort/error; prepared/payment/outbox transaction ที่เหมาะสม; immutable payload และ lease ที่กู้คืนได้</li><li>ไม่แปลง legacy Grocery create_order ให้เป็น paid; ทดสอบ browser IndexedDB จริงเพิ่มจาก mock</li></ol></article>
+<article class="task"><h3>O4 · Replay และกระทบยอดบน server</h3><p class="files">สร้าง <code>src/modules/pos-offline/replay-service.ts</code>, <code>src/app/api/pos/offline/sync/route.ts</code>, <code>tests/unit/pos-offline-replay.test.ts</code>, <code>supabase/migrations/20260828000001_pos_offline_cash_journal.sql</code> (ชื่อเสนอ ตรวจชนก่อนสร้าง); ตรวจ <code>src/modules/pos/order-repository.ts</code>, <code>src/modules/cashflow/repository.ts</code>, <code>src/server/integrations/supabase/database.types.ts</code></p><ol><li>RED: request ซ้ำ/response หาย/concurrent retry จบ order 1, payment 1, stock effect 1, cash movement 1; key เดิม payload ใหม่ conflict; wrong tenant/device ต้อง reject</li><li>GREEN: transaction/RPC ด้าน server กับ unique constraints และ immutable result; recovery ของ partial order/payment ใช้ stage/result เดิม ไม่สร้าง receipt ใหม่</li><li>legacy Grocery queue/RLS/dedup ต้องผ่าน regression; preview DB ตรวจ rollback/permission จริงก่อน production gate ไม่ใช้ static test อ้าง atomicity</li></ol></article>
+<article class="task"><h3>O5 · เชื่อม POS ปกติและ sync monitor</h3><p class="files">สร้าง <code>src/modules/pos-offline/sync-runner.ts</code>, <code>src/app/pos/OfflineSyncPanel.tsx</code>, <code>tests/unit/pos-offline-sync.test.ts</code>; แก้ <code>src/app/pos/PosTerminal.tsx</code>, <code>src/app/pos/actions.ts</code></p><ol><li>RED: online timeout ต้อง reuse sale/order/payment IDs; 401 pause, 403 review, 409 review, 429/5xx retry bounded; business decline ไม่ถูกแปลงเป็น offline sale</li><li>GREEN: journal-before-send ทั้ง online/offline cash; serialized replay, pending counter/amount, unknown result recovery และ operator action ที่ไม่สร้าง payment ซ้ำ</li><li>ตรวจ main cash/QR online regression; coupon/โต๊ะ/สมาชิกที่อยู่นอก A ยังทำงานออนไลน์เดิม</li></ol></article>
+<article class="task"><h3>O6 · ใบเสร็จและการพิมพ์</h3><p class="files">สร้าง <code>src/modules/pos-offline/receipt.ts</code>, <code>tests/unit/pos-offline-receipt.test.ts</code>; ตรวจ <code>src/modules/printing/receipt-printer.ts</code>, <code>src/modules/printing/network-print-client.ts</code>, <code>src/modules/printing/native-print-client.ts</code></p><ol><li>RED: offline receipt ไม่มี payment QR; retry/reprint ไม่เพิ่ม sale; cloud-only printer แสดง deferred ไม่ขึ้น printed</li><li>GREEN: local receipt mapping, print status แยก sale, manual retry/reprint และคำว่า “สำเนา”</li><li>Hardware proof: ถอด WAN จริงบน Windows/Android/iPad; unit test ไม่แทนการพิมพ์ใบจริง</li></ol></article>
+<article class="task"><h3>O7 · Recovery, เจ้าของร้าน และกะเงินสด</h3><p class="files">สร้าง <code>src/app/pos/OfflineRecoveryPanel.tsx</code>, <code>src/modules/pos-offline/reconciliation.ts</code>, <code>tests/unit/pos-offline-reconciliation.test.ts</code>; ตรวจ <code>src/modules/cashflow/repository.ts</code> และ close-session call sites ก่อนแก้</p><ol><li>RED: closed shift, revoked entitlement, restored backup, changed account และ prepared-but-cash-uncertain ต้องไม่หายหรือย้ายกะเอง</li><li>GREEN: owner recovery ที่ใช้สิทธิ์ปัจจุบัน, แสดง actor/กะเดิม, audit adjustment; pending+confirmed totals แยกกันและกัน double count</li><li>กำหนด emergency export ที่มีข้อมูลขั้นต่ำ/การป้องกัน/ผู้เข้าถึงก่อนเปิด; import dedup ด้วย IDs เดิม ไม่ใส่ token ในไฟล์</li></ol></article>
+<article class="task"><h3>O8 · Fault injection, pilot และ release gate</h3><p class="files">สร้าง <code>tests/e2e/pos-offline-cash.spec.ts</code> ตาม browser harness ที่ยืนยันแล้ว หรือสร้าง harness แยกหลังอนุมัติ dependency; หลักฐานใน <code>output/qa/pos-offline-cash/</code>; checklist ใหม่ <code>Plan/POS Offline Cash Release Gate v1.html</code></p><ol><li>ทดสอบตาราง acceptance ด้านล่าง; ไม่เพิ่ม framework แบบเงียบ ๆ หาก runner ไม่พร้อม</li><li>ส่ง code_reviewer ตาม Mandatory Context Package; แก้ finding แล้วตรวจซ้ำ; version bump ก่อน build/commit เมื่อได้รับอนุมัติเลขจริง</li><li>preview migration → permission/atomicity tests → pilot → อนุมัติ production migration/deploy แยก; ปิด feature หยุดบิลใหม่แต่คง replay/recovery ของบิลเดิม</li></ol></article>
+</section>
+
+<section id="acceptance"><h2>Acceptance tests ที่ต้องผ่านก่อนใช้เงินจริง</h2>
+<table><thead><tr><th>เหตุการณ์ทดสอบ</th><th>ผลที่ต้องเห็น</th></tr></thead><tbody>
+<tr><td>โหลด POS ออนไลน์ → ถอด WAN → ขายเงินสด 3 บิล</td><td>3 cash_recorded, ยอด/เงินทอนถูก, cart ล้างเฉพาะหลัง commit; pending amount รวมตรง ไม่มีคำว่า synced</td></tr>
+<tr><td>WAN กลับและกดซิงก์ซ้ำ 10 รอบ / เปิด 2 แท็บ</td><td>order/payment/stock/cash effect ไม่เกิน 1 ต่อ sale; mapping receipt คงเดิม</td></tr>
+<tr><td>server commit สำเร็จแต่ response ถูกตัด / reload หลังตอบ</td><td>unknown → query/replay key เดิม → synced โดยไม่รับเงินหรือพิมพ์ซ้ำอัตโนมัติ</td></tr>
+<tr><td>crash ก่อน/หลังรับเงิน/ก่อน local commit/หลัง local commit</td><td>prepared ที่กำกวมให้คนยืนยัน; committed sale กู้คืนได้; ไม่แสดงสำเร็จจาก request success ที่ transaction abort</td></tr>
+<tr><td>storage เต็ม, private mode, persistence ไม่ได้รับ, browser eviction</td><td>แสดงระดับความเสี่ยง/ไม่พร้อม; storage failure หยุดบิลใหม่และไม่ล้างบิลเก่า ห้ามรับรองไม่สูญหายแม้ผู้ใช้ล้าง site data</td></tr>
+<tr><td>เน็ตดูเหมือน online แต่ backend timeout/5xx/captive portal</td><td>ตรวจ endpoint จริง; business 4xx ไม่จัดเป็น offline success; timeout คง unknown และ operation เดิม</td></tr>
+<tr><td>ราคาเปลี่ยน, stock ขาด, กะปิด, สิทธิ์ถอน, auth หมดอายุ</td><td>policy/review ที่เจาะจง เงินรับแล้วไม่ถูกลบหรือ reprice เงียบ ๆ; tenant isolation ผ่าน</td></tr>
+<tr><td>USB/BLE/Hub/เครื่องพิมพ์ขัดข้อง</td><td>print state แยกจาก paid; iPad cloud Hub แสดงรอพิมพ์ตอน WAN หลุด</td></tr>
+<tr><td>cold start/reload ขณะไม่มีเน็ต</td><td>A ไม่รับรองเปิดขายใหม่ได้; journal ที่ commit แล้วยังต้องไม่ถูกลบทิ้ง เมื่อกลับออนไลน์กู้คืนได้; B ต้องผ่านแผนเพิ่มก่อนอ้างว่ารองรับ</td></tr>
+<tr><td>online regression</td><td>cash, QR, discount, coupons, table tickets, grocery offline เดิม และ cash closing ไม่ถอย</td></tr>
+</tbody></table>
+<pre>หลังสร้าง test files แล้วเท่านั้น:
+npm test -- tests/unit/pos-offline-policy.test.ts tests/unit/pos-offline-snapshot.test.ts tests/unit/pos-offline-journal.test.ts
+npm test -- tests/unit/pos-offline-replay.test.ts tests/unit/pos-offline-sync.test.ts tests/unit/pos-offline-receipt.test.ts tests/unit/pos-offline-reconciliation.test.ts
+npm test -- tests/unit/grocery-pos-offline.test.ts tests/unit/grocery-pos-phase3.test.ts tests/unit/pos-order-rpc.test.ts tests/unit/pos-server-cart.test.ts tests/unit/pos-stock-dedup.test.ts
+npm run typecheck
+git diff --check
+คาดหวัง: exit 0, ไม่มี skipped สำหรับ critical cash/replay cases
+จากนั้น full test + lint + build หลัง version approval/bump
+DB และ hardware tests ต้องมีหลักฐานเพิ่ม ไม่รวมอยู่ใน unit test pass</pre>
+</section>
+
+<section id="gates"><h2>Approval และสิ่งที่ยังไม่รับรอง</h2>
+<ul><li>คำขอครั้งนี้อนุมัติให้เพิ่มแผน ไม่ใช่อนุมัติแก้ payment/auth/data หรือ production</li><li>รอยืนยัน A เงินสด/warm offline, outage limits และ stock/cash reconciliation policy ก่อน implementation; B/C ทำแยกตามความจำเป็น</li><li>feature flag เริ่มปิด; rollback ปิด new offline sale แต่ไม่ลบ queue/schema และไม่ปิด recovery ของเงินที่รับแล้ว</li><li>ไม่แก้ entitlement ของแพ็กเกจโดยปริยาย ไม่กำหนดว่า offline ฟรีทุกแผน และไม่ใช้สิทธิ์ client แทน server</li><li>ไม่รับรอง browser storage ทนการล้างข้อมูล/เครื่องเสีย/ไฟดับทุกกรณี; persistence เป็นการลดความเสี่ยง ไม่ใช่ backup สำรองแยกเครื่อง</li></ul>
+<h3>เอกสารอ้างอิงที่ตรวจ</h3><ul><li><a href="https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/complete_event">MDN: transaction complete</a> — ยืนยัน commit ก่อนแจ้งสำเร็จ</li><li><a href="https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria">MDN: storage quotas / eviction</a> — ต้องมี storage-failure และ recovery policy</li><li><a href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator/onLine">MDN: navigator.onLine</a> — เป็นสัญญาณ ไม่ใช่หลักฐานเข้าถึง backend</li></ul>
+<p class="small muted">ตรวจเอกสาร: scope/flow/contracts/tasks/acceptance ครบสำหรับข้อเสนอเพิ่มเติมนี้; ยังไม่มี runtime implementation, automated feature tests, DB migration หรือ real-device validation ในรอบจัดทำแผน</p>
+</section>
+</main></body></html>

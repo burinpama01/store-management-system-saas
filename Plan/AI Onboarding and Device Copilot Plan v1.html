@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Onboarding &amp; Device Copilot Plan v1 — StoreOS</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--soft:#f6f8fb;--brand:#0f766e;--brand-soft:#ccfbf1;--blue:#1d4ed8;--blue-soft:#dbeafe;--amber:#b45309;--rose:#be123c}
+    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{width:min(1140px,calc(100% - 32px));margin:32px auto 72px}
+    .card,header{margin-top:18px;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.06)}
+    header{background:linear-gradient(135deg,#fff,#ecfeff)}
+    h1,h2,h3,h4,p{margin-top:0}h1{margin-bottom:6px;font-size:clamp(28px,4vw,42px)}h2{font-size:22px}h3{font-size:17px}h4{font-size:15px;color:var(--brand)}
+    .status{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--blue);color:#fff;font-size:13px;font-weight:800}
+    .muted{color:var(--muted)}
+    table{width:100%;border-collapse:collapse;font-size:14.5px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{background:var(--soft);font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .item{padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+    .item.hot{border:2px solid var(--brand);background:var(--brand-soft)}
+    .item.no{border:2px solid var(--rose);background:#fff1f2}
+    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#fff;border:1px solid var(--line);margin-right:4px}
+    .warning{padding:14px;border-left:4px solid var(--amber);background:#fffbeb;border-radius:0 10px 10px 0}
+    .ok{padding:14px;border-left:4px solid var(--brand);background:#ecfdf5;border-radius:0 10px 10px 0}
+    .bad{padding:14px;border-left:4px solid var(--rose);background:#fff1f2;border-radius:0 10px 10px 0}
+    code{background:#eef2f7;padding:1px 6px;border-radius:6px;font-size:13.5px}
+    pre{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:12px;overflow-x:auto;font-size:13.5px;line-height:1.55}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+    .step{padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:14px}
+    .step strong{display:block;color:var(--brand)}
+    .ba{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:12px}
+    .ba>div{padding:16px}
+    .ba .before{background:#fff1f2;border-right:1px solid var(--line)}
+    .ba .after{background:#ecfdf5}
+    .ba h4{margin-bottom:6px}
+    ul{padding-left:20px}li{margin-bottom:5px}
+    ol{padding-left:20px}
+    @media(max-width:860px){.grid2,.grid3,.flow,.ba{grid-template-columns:1fr}.ba .before{border-right:0;border-bottom:1px solid var(--line)}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">PLAN v1 — 2026-08-27 — อนุมัติแล้ว 2026-08-28 · กำลัง execute Release A</span>
+    <h1>AI สำหรับลดแรงเสียดทาน + ผู้ช่วยเชื่อมต่ออุปกรณ์</h1>
+    <p class="muted">ทิศทางที่เลือก: <strong>ผู้ใช้ใหม่เริ่มใช้ได้ง่าย · ระบบไม่ซับซ้อน · มีฟีเจอร์กระตุ้นให้ใช้ต่อ · AI ช่วยเชื่อมต่ออุปกรณ์</strong><br>สืบเนื่องจาก <code>Brainstorming/AI Integration Brainstorming v1.html</code></p>
+  </header>
+
+  <section class="card">
+    <h2>0. ข้อเท็จจริงที่ต้องยอมรับก่อนวางแผน</h2>
+    <p class="bad"><strong>AI ไม่ได้แก้ปัญหา “ใช้งานยาก” โดยตัวมันเอง</strong> — จากการอ่านโค้ดจริง ปัญหาแรงเสียดทานของ StoreOS ส่วนใหญ่เป็น <strong>ปัญหา UX ที่แก้ได้ด้วยตรรกะธรรมดา</strong> ถ้าเอา AI ไปแปะทับ UX ที่ยังสับสน จะได้แค่แชทที่ผู้ใช้ไม่กล้าเชื่อ และค่าโมเดลที่จ่ายฟรี</p>
+    <p style="margin-top:12px">แผนนี้จึงแบ่งงานเป็น 2 ชั้นเสมอ และ <strong>ชั้นที่ 1 ต้องเสร็จก่อนชั้นที่ 2 ทุกครั้ง</strong>:</p>
+    <div class="grid2">
+      <div class="item"><h3>ชั้นที่ 1 — Deterministic (ไม่ใช้ AI)</h3><p>ตรวจสถานะจริง, ตัดตัวเลือกที่ใช้ไม่ได้ทิ้ง, เขียนข้อความ error ให้เป็นภาษาคน, ให้ปุ่มลัดที่แก้ปัญหาได้เลย<br><strong>แก้แรงเสียดทานได้ราว 60–70% ด้วยต้นทุน 0 บาท/ครั้ง และไม่มีทางตอบมั่ว</strong></p></div>
+      <div class="item"><h3>ชั้นที่ 2 — AI</h3><p>รับเฉพาะเคสที่ตรรกะตายตัวเอาไม่อยู่: อ่านรูปเมนู, เดารุ่นเครื่องพิมพ์จากรูป, วินิจฉัยอาการแปลก ๆ, เข้าใจคำถามภาษาคน<br><strong>ตรงนี้ AI คุ้มจริงเพราะทำแทนไม่ได้</strong></p></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>1. จุดเจ็บจริงที่พบในโค้ดปัจจุบัน</h2>
+    <table>
+      <thead><tr><th>จุด</th><th>สภาพตอนนี้</th><th>ผลต่อผู้ใช้ใหม่</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>src/app/onboarding/page.tsx</code></td>
+          <td>เป็นลิงก์ 4 อันแบบ <strong>static</strong> — ไม่รู้เลยว่าผู้ใช้ทำขั้นไหนไปแล้ว ไม่มี progress กดออกไปแล้วกลับมาไม่ได้</td>
+          <td>ไม่รู้ว่าเหลืออะไร ไม่รู้ว่า “พร้อมขายหรือยัง” → หลุดตั้งแต่วันแรก</td>
+        </tr>
+        <tr>
+          <td>การเพิ่มเมนู (<code>/catalog</code>)</td>
+          <td>คีย์มือทีละรายการ: หมวด → สินค้า → variant → modifier</td>
+          <td>ร้าน 150 เมนู = หลายชั่วโมง → สาเหตุอันดับ 1 ที่ทดลองแล้วไม่ไปต่อ</td>
+        </tr>
+        <tr>
+          <td>เชื่อมเครื่องพิมพ์</td>
+          <td>ตาราง <code>printers</code> มี 5 type (<code>browser/usb/bluetooth/ip/escpos</code>) + Print Hub + native BLE รวมเป็น <strong>อย่างน้อย 6 เส้นทาง</strong> ให้ผู้ใช้เลือกเอง</td>
+          <td>ผู้ใช้ไม่มีทางรู้ว่าเครื่องตัวเองใช้ทางไหน → ลองผิดลองถูกจนเลิก</td>
+        </tr>
+        <tr>
+          <td>ข้อความ error ของอุปกรณ์</td>
+          <td>“ไม่พบช่องเขียนข้อมูลของเครื่องพิมพ์ (characteristic)”, “เบราว์เซอร์นี้ไม่รองรับ WebUSB (ใช้ Chrome/Edge เดสก์ท็อป)”</td>
+          <td>ถูกต้องทางเทคนิค แต่<strong>ไม่บอกว่าต้องทำอะไรต่อ</strong> → โทรหาซัพพอร์ต</td>
+        </tr>
+        <tr>
+          <td>iPad / มือถือ</td>
+          <td>WebView ไม่มี Web Bluetooth/WebUSB → ต้องใช้แอป StoreOS หรือ Print Hub เท่านั้น (โค้ดรู้ผ่าน <code>isNativePlatform()</code>)</td>
+          <td>ระบบ<strong>รู้อยู่แล้ว</strong>ว่าทางนั้นใช้ไม่ได้ แต่ยังปล่อยให้ผู้ใช้กดแล้วเจอ error</td>
+        </tr>
+        <tr>
+          <td>เมนูระบบ</td>
+          <td>30 โมดูล, <code>/settings</code> มี 14 หน้าย่อย</td>
+          <td>หาไม่เจอว่าตั้งค่าที่ไหน</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>2. ภาพรวม 5 ฟีเจอร์ที่เสนอ</h2>
+    <div class="grid3">
+      <div class="item hot"><h3>F1 · Setup Copilot</h3><p>หน้า onboarding ที่รู้สถานะจริง มี progress และปุ่ม “ให้ AI ทำให้”</p><p><span class="tag">Deterministic เป็นหลัก</span></p></div>
+      <div class="item hot"><h3>F2 · Device Copilot</h3><p>ศูนย์อุปกรณ์หน้าเดียว ตรวจเองว่าทางไหนใช้ได้ + AI วินิจฉัยเมื่อพัง</p><p><span class="tag">2 ชั้น</span></p></div>
+      <div class="item hot"><h3>F3 · Menu Scan</h3><p>ถ่ายรูปเมนู → สร้าง catalog ให้ กดยืนยันทีละหมวด</p><p><span class="tag">AI เป็นหลัก</span></p></div>
+      <div class="item"><h3>F4 · ผู้ช่วยในแอป</h3><p>กด <code>Ctrl/Cmd + K</code> ถามภาษาคน → พาไปหน้าที่ใช่ หรือเสนอทำให้</p><p><span class="tag">2 ชั้น</span></p></div>
+      <div class="item"><h3>F5 · Activation Nudge</h3><p>เตือน/ฉลองตามความคืบหน้าจริง ผ่าน notification ที่มีอยู่</p><p><span class="tag">Deterministic เป็นหลัก</span></p></div>
+      <div class="item no"><h3>✗ ไม่ทำในรอบนี้</h3><p>แชทบอทลอย ๆ กลางแดชบอร์ด, ผู้ช่วยเสียง, Chat BI — เก็บไว้รอบหน้า เพราะไม่ตอบโจทย์ “ลดแรงเสียดทาน”</p></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3. F1 — Setup Copilot (เปลี่ยน onboarding ให้มีชีวิต)</h2>
+
+    <div class="ba">
+      <div class="before"><h4>ตอนนี้</h4><p>“ทำตามขั้นตอนด้านล่าง” + ลิงก์ 4 อันที่ไม่เคยเปลี่ยนสถานะ ต่อให้ทำครบแล้วก็ยังหน้าตาเดิม</p></div>
+      <div class="after"><h4>หลังทำ</h4><p>“ร้านคุณพร้อมขายแล้ว 60% — เหลืออีก 2 ขั้น” พร้อมสถานะจริงต่อขั้น และปุ่มลัดที่ทำให้เสร็จได้ในหน้าเดียว</p></div>
+    </div>
+
+    <h3>3.1 คำนวณความพร้อมจากข้อมูลจริง (ไม่ใช้ AI)</h3>
+    <p>ฟังก์ชันใหม่ <code>getStoreReadiness(storeId)</code> อ่านของที่มีอยู่แล้วทั้งหมด ไม่ต้องเพิ่มตาราง:</p>
+    <table>
+      <thead><tr><th>ขั้น</th><th>เช็คจาก</th><th>ถือว่าเสร็จเมื่อ</th></tr></thead>
+      <tbody>
+        <tr><td>ข้อมูลร้าน</td><td><code>stores</code></td><td>มีชื่อ + timezone + ที่อยู่หรือเบอร์โทร</td></tr>
+        <tr><td>เมนูสินค้า</td><td><code>products</code>, <code>categories</code></td><td>มีสินค้า active ≥ 5 รายการ</td></tr>
+        <tr><td>ช่องทางขาย</td><td><code>tables</code> / โหมดร้าน</td><td>มีโต๊ะ ≥ 1 (ถ้าเป็นร้านนั่งทาน) หรือข้ามได้ถ้าเป็นขายส่ง/หน้าร้าน</td></tr>
+        <tr><td>อุปกรณ์</td><td><code>printers</code>, <code>print_jobs</code></td><td>มีเครื่องพิมพ์ที่<strong>ทดสอบพิมพ์ผ่านแล้ว</strong> (ไม่ใช่แค่บันทึกค่า)</td></tr>
+        <tr><td>ทีมงาน</td><td><code>memberships</code></td><td>มีสมาชิก ≥ 2 หรือกดข้าม (ร้านเจ้าของคนเดียว)</td></tr>
+        <tr><td>ขายจริง</td><td><code>orders</code></td><td>มีบิลแรกแล้ว ← <strong>เป้าหมาย activation ที่แท้จริง</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="ok" style="margin-top:12px"><strong>นิยาม activation ของโปรเจกต์นี้:</strong> ร้านใหม่ปิดบิลจริงบิลแรกภายใน 7 วันหลังสมัคร — ทุกอย่างในแผนนี้วัดผลด้วยตัวเลขนี้ตัวเดียว</p>
+
+    <h3 style="margin-top:20px">3.2 ถาม 3 คำถาม แล้วตั้งค่าให้</h3>
+    <p>ตอนเข้าครั้งแรก ถามสั้น ๆ: <strong>ขายอะไร</strong> (ร้านอาหาร / คาเฟ่ / บุฟเฟต์ / ขายส่ง / มินิมาร์ท) · <strong>ลูกค้าสั่งยังไง</strong> (พนักงานคีย์ / ลูกค้าสแกน QR / เดลิเวอรี) · <strong>กี่สาขา</strong></p>
+    <ul>
+      <li>คำตอบ → เก็บลง <code>stores.setup_profile</code> (jsonb, migration เล็ก) → ใช้<strong>ซ่อนเมนูที่ร้านนี้ไม่ใช้</strong> ในแถบข้าง (แก้ “ระบบใช้งานยาก” ได้ตรงที่สุด)</li>
+      <li>เตรียม preset ตายตัวต่อประเภทร้าน (หมวดหมู่เริ่มต้น, จำนวนโต๊ะ, เปิด/ปิดโมดูล) — <strong>เขียนเป็นค่าคงที่ ไม่ต้องใช้ AI</strong></li>
+      <li>ชั้น AI (ทีหลัง): ผู้ใช้พิมพ์อธิบายร้านตัวเองอิสระ → เสนอ preset ที่เหมาะกว่า preset สำเร็จรูป</li>
+    </ul>
+
+    <h3 style="margin-top:20px">3.3 ปุ่ม “ให้ AI ทำให้”</h3>
+    <p>ทุกขั้นที่ยังไม่เสร็จ มีทางลัดในหน้าเดียว ไม่ต้องเด้งไปหน้าอื่น: สร้างหมวดหมู่เริ่มต้น · สร้างโต๊ะ 1–10 · ตั้งเวลาเปิด-ปิดร้าน · เชิญทีมด้วยลิงก์เดียว</p>
+    <p class="warning"><strong>กติกา:</strong> ทุกปุ่มแสดง preview สิ่งที่จะถูกสร้างก่อนเสมอ และ<strong>ต้องมีปุ่มเลิกทำ (undo) ภายใน session นั้น</strong> ผู้ใช้ใหม่จะกล้ากดก็ต่อเมื่อรู้ว่ากดผิดแล้วย้อนได้</p>
+  </section>
+
+  <section class="card">
+    <h2>4. F2 — Device Copilot (หัวใจของรอบนี้)</h2>
+    <p>ทำเป็นหน้าใหม่ <code>/settings/devices</code> ที่รวมอุปกรณ์ทุกชนิดไว้ที่เดียว แล้วให้ <code>/settings/receipt</code> · <code>/settings/kitchen</code> · <code>/settings/print-hub</code> ลิงก์เข้ามา</p>
+
+    <h3>4.1 ชั้นที่ 1 — ตรวจสภาพแวดล้อมแล้ว “ตัดตัวเลือกที่ใช้ไม่ได้ทิ้ง”</h3>
+    <p>แทนที่จะให้ผู้ใช้เลือกจาก 6 เส้นทาง ระบบตรวจเองก่อนว่าเครื่องที่กำลังใช้อยู่ทำอะไรได้:</p>
+    <pre>// modules/devices/capability.ts  (ไม่มี AI, เทสต์ได้ 100%)
+detectCapabilities() -> {
+  platform:      "native-app" | "desktop-browser" | "mobile-browser" | "ipad-safari",
+  webBluetooth:  boolean,   // navigator.bluetooth + secure context
+  webUsb:        boolean,   // navigator.usb (เดสก์ท็อป Chrome/Edge เท่านั้น)
+  nativeBle:     boolean,   // isNativePlatform() จาก native-print-client
+  printHub:      "online" | "offline" | "not-installed",
+  lan:           boolean,
+}</pre>
+    <p>แล้วแสดงผลแบบนี้ — <strong>เหลือทางเลือกที่ใช้ได้จริงแค่ 1–2 ทาง พร้อมเหตุผล:</strong></p>
+    <div class="ba">
+      <div class="before"><h4>ตอนนี้ (iPad)</h4><p>ผู้ใช้เห็นปุ่ม “เชื่อมต่อ Bluetooth” → กด → <em>“เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth (ใช้ Chrome/Edge)”</em> → จบ ไม่รู้ต้องทำอะไรต่อ</p></div>
+      <div class="after"><h4>หลังทำ (iPad)</h4><p><strong>“iPad เชื่อมเครื่องพิมพ์บลูทูธตรง ๆ ไม่ได้ (ข้อจำกัดของ Safari) — คุณมี 2 ทาง”</strong><br>① ติดตั้งแอป StoreOS แล้วเชื่อมผ่านแอป [ดาวน์โหลด]<br>② ใช้ Print Hub บนคอมที่เปิดค้างไว้ [ติดตั้ง Print Hub]<br><span class="muted">แนะนำ ② เพราะร้านคุณมี 3 จุดพิมพ์</span></p></div>
+    </div>
+    <p class="ok"><strong>ข้อนี้สำคัญที่สุดในเอกสาร:</strong> แก้ปัญหาเชื่อมอุปกรณ์ได้มากที่สุดในบรรดาทั้งแผน แต่ <strong>ไม่ใช้ AI เลยสักบรรทัด</strong> — เป็นตรรกะตายตัวที่เขียน unit test ได้ครบ และไม่มีวันตอบมั่ว</p>
+
+    <h3 style="margin-top:22px">4.2 ชั้นที่ 2 — AI เข้ามาตรงไหน</h3>
+    <div class="grid2">
+      <article class="item">
+        <h3>D1. แปล error เป็นวิธีแก้ทีละขั้น</h3>
+        <p>ส่งบริบทที่มีจริง (error code, ช่องทาง, platform, ยี่ห้อ/รุ่นถ้ารู้, ผลลัพธ์ที่พยายามมาแล้ว) → ได้คำตอบภาษาไทยที่ทำตามได้ + <strong>ปุ่มลัดจริง</strong> (ลองใหม่ / สลับช่องทาง / เปิดหน้าติดตั้ง Hub)</p>
+        <p class="muted">ต่อกับ error ที่มีอยู่แล้วใน <code>bluetooth-client.ts</code>, <code>usb-client.ts</code>, <code>network-print-client.ts</code></p>
+      </article>
+      <article class="item">
+        <h3>D2. ถ่ายรูปเครื่องพิมพ์ / ฉลากใต้เครื่อง → รู้รุ่น</h3>
+        <p>Vision อ่านยี่ห้อ-รุ่น → เติมให้อัตโนมัติ: <code>paper_width</code> (58/80mm), ประเภทการเชื่อม, ชื่อ BLE ที่คาดว่าจะเจอ, ค่า <code>usb_vendor_id</code> ที่พบบ่อย → ผู้ใช้แค่กดยืนยัน</p>
+        <p class="muted">ครอบคลุมกรณีที่ผู้ใช้ตอบไม่ได้ว่า “เครื่องพิมพ์รุ่นอะไร”</p>
+      </article>
+      <article class="item">
+        <h3>D3. สแกนสติกเกอร์ IP / QR ของเครื่องพิมพ์เครือข่าย</h3>
+        <p>ถ่ายรูปหน้าจอ self-test ที่เครื่องพิมพ์ปริ้นออกมา → ดึง IP/port/MAC ไปเติมฟอร์ม แทนการให้ผู้ใช้พิมพ์เลข IP เอง</p>
+      </article>
+      <article class="item">
+        <h3>D4. วินิจฉัยจาก “ผลพิมพ์จริง”</h3>
+        <p>หลังพิมพ์ทดสอบ ถาม 4 ตัวเลือก: ออกปกติ / <strong>กระดาษว่าง</strong> / <strong>ภาษาไทยเป็นตัวขยะ</strong> / <strong>ตัวหนังสือล้นขอบ</strong> → แต่ละอาการ map ไปสาเหตุที่ระบบรู้อยู่แล้ว (raster fallback, code page, <code>paper_width</code> ผิด) แล้ว<strong>แก้ให้อัตโนมัติ</strong>แล้วพิมพ์ซ้ำ</p>
+        <p class="muted">ระบบมี <code>escpos-raster.ts</code> อยู่แล้ว = แก้อาการภาษาไทยเพี้ยนได้จริง</p>
+      </article>
+    </div>
+
+    <h3 style="margin-top:22px">4.3 ตัวคูณระยะยาว — คลังความรู้อุปกรณ์</h3>
+    <p>ทุกครั้งที่มีร้าน<strong>เชื่อมสำเร็จ</strong> บันทึกสูตรที่ใช้ได้ลงตารางกลางระดับแพลตฟอร์ม:</p>
+    <pre>device_profiles
+  brand, model            -- เช่น 'Xprinter', 'XP-58IIH'
+  platform                -- native-app / desktop-chrome / print-hub
+  channel                 -- native-bluetooth / bluetooth / usb / ip
+  settings   jsonb        -- paper_width, service uuid, chunk size, ฯลฯ
+  success_count, fail_count
+  verified_by_admin  bool</pre>
+    <div class="grid2">
+      <div class="item"><h3>ผลลัพธ์</h3><p>ร้านถัดไปที่ใช้เครื่องรุ่นเดียวกัน จะได้ <strong>“เครื่องนี้เคยตั้งสำเร็จมาแล้ว 34 ร้าน — ตั้งค่าให้เลยไหม”</strong> แล้วจบใน 1 คลิก โดยไม่ต้องเรียกโมเดลเลย</p></div>
+      <div class="item"><h3>ทำไมถึงคุ้ม</h3><p>ยิ่งมีร้านใช้มาก ระบบยิ่งเชื่อมอุปกรณ์เก่ง <strong>และค่า AI ยิ่งถูกลง</strong> (เพราะเคสส่วนใหญ่ตกลงมาที่ cache) — เป็นคูเมืองที่คู่แข่งลอกไม่ได้เพราะไม่มีข้อมูล</p></div>
+    </div>
+
+    <h3 style="margin-top:22px">4.4 ขยายไปอุปกรณ์อื่นในหน้าเดียวกัน</h3>
+    <table>
+      <thead><tr><th>อุปกรณ์</th><th>ทำอะไร</th><th>ของที่มีอยู่แล้ว</th></tr></thead>
+      <tbody>
+        <tr><td>เครื่องพิมพ์ใบเสร็จ/ครัว</td><td>ตรวจ + ทดสอบ + วินิจฉัย + ผูกกับ kitchen station</td><td><code>printers</code>, <code>kitchen_stations</code>, <code>station-routing.ts</code></td></tr>
+        <tr><td>ลิ้นชักเก็บเงิน</td><td>ปุ่ม “ทดสอบเปิดลิ้นชัก” + บอกว่าต้องเสียบสาย RJ11 เข้าเครื่องพิมพ์ ไม่ใช่คอม</td><td>ESC/POS kick — ต้องเพิ่ม</td></tr>
+        <tr><td>เครื่องอ่านบาร์โค้ด</td><td>ช่องทดสอบ “ยิงบาร์โค้ดใส่ช่องนี้” → ยืนยันว่าอ่านได้ + ตั้ง suffix ให้ถูก</td><td><code>catalog_barcodes</code>, <code>jsqr</code></td></tr>
+        <tr><td>จอลูกค้า</td><td>ทดสอบเปิดจอที่สอง + คิวอาร์จับคู่</td><td><code>customer_display_settings</code></td></tr>
+        <tr><td>Print Hub</td><td>ตรวจว่า agent ออนไลน์ไหม + คิวค้างกี่งาน + ดาวน์โหลดตัวติดตั้ง</td><td><code>print_hub.ts</code>, <code>build-print-hub-zip.mjs</code></td></tr>
+        <tr><td>มือถือพนักงาน</td><td>ตรวจว่า push token ลงทะเบียนแล้วหรือยัง + ปุ่มส่งทดสอบ</td><td><code>device_push_tokens</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>5. F3 — Menu Scan → Catalog</h2>
+    <div class="flow">
+      <div class="step"><strong>1. อัปโหลด</strong>รูปเมนู/ป้ายราคา/PDF (หลายไฟล์)</div>
+      <div class="step"><strong>2. AI แตกโครง</strong>หมวด → สินค้า → ราคา → ตัวเลือก</div>
+      <div class="step"><strong>3. ผู้ใช้ตรวจ</strong>ตารางแก้ไขได้ ทีละหมวด กันซ้ำกับของเดิม</div>
+      <div class="step"><strong>4. ยืนยัน</strong>สร้างผ่าน catalog action เดิม + undo ทั้งชุดได้</div>
+    </div>
+    <ul style="margin-top:14px">
+      <li>ปล่อยให้ใช้ <strong>ฟรีตอน onboarding (เช่น 5 หน้าแรก)</strong> ทุกแพ็กเกจ — นี่คือค่าใช้จ่ายทางการตลาด ไม่ใช่ต้นทุนฟีเจอร์</li>
+      <li>ต้องไม่บังคับให้ถูก 100% — ตั้งเป้า “ถูก 80% แล้วผู้ใช้แก้ 20%” ก็ยังชนะการคีย์มือ 150 รายการอย่างขาดลอย</li>
+      <li>ราคาที่อ่านไม่ชัดให้ทำเป็นสีเหลืองบังคับให้ผู้ใช้ยืนยัน — <strong>ห้ามเดาราคาเงียบ ๆ</strong></li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>6. F4 — ผู้ช่วยในแอป &amp; F5 — Activation Nudge</h2>
+    <div class="grid2">
+      <article class="item">
+        <h3>F4 · แถบคำสั่ง <code>Ctrl/Cmd + K</code></h3>
+        <p>ชั้นที่ 1: ค้นหาหน้า/สินค้า/พนักงานแบบ fuzzy ธรรมดา (แก้ปัญหา “หาเมนูไม่เจอ” ได้ทันที ไม่ต้องมี AI)</p>
+        <p>ชั้นที่ 2: พิมพ์เป็นประโยค “จะเปลี่ยนราคาข้าวผัดยังไง” / “เพิ่มโต๊ะอีก 5 โต๊ะ” → ตอบสั้น + พาไปหน้าที่ใช่ + เสนอ action ให้กดยืนยัน</p>
+        <p class="muted">ใช้ tool registry ชุดเดียวกับ Device Copilot</p>
+      </article>
+      <article class="item">
+        <h3>F5 · กระตุ้นตามความคืบหน้าจริง</h3>
+        <ul>
+          <li>วันที่ 1–14: ถ้ายังไม่ครบ → เตือนในแอป/LINE “เหลืออีก 2 ขั้นก็เปิดขายได้”</li>
+          <li>ฉลอง: บิลแรก · 100 บิลแรก · สรุปสัปดาห์แรก</li>
+          <li>ถ้าตั้งค่าอุปกรณ์ค้างเกิน 2 วัน → เสนอ Device Copilot ตรง ๆ</li>
+        </ul>
+        <p class="warning" style="font-size:14px">Vercel เป็น <strong>Hobby plan</strong> → cron ถี่ใช้ไม่ได้ (เคยทำ deploy ล้มมาแล้ว) ต้องเป็น cron วันละครั้ง</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>7. สถาปัตยกรรมและไฟล์ที่เกี่ยวข้อง</h2>
+    <pre>src/modules/ai/
+  gateway.ts              // Vercel AI Gateway, เลือกโมเดลตามงาน, timeout, fallback
+  tools/                  // ห่อ repository เดิม — ห้าม LLM แตะ DB ตรง
+  prompts/                // system prompt ภาษาไทย แยกต่อฟีเจอร์
+  usage.ts                // metering + quota ต่อ org (ตัดวงจรเมื่อเกินเพดาน)
+
+src/modules/devices/
+  capability.ts           // ★ ชั้นที่ 1 ไม่มี AI — ตรวจว่าเครื่องนี้เชื่อมทางไหนได้
+  recommend.ts            // เลือกเส้นทางที่ควรใช้ + เหตุผลภาษาไทย
+  profiles-repository.ts  // อ่าน/เขียน device_profiles
+  diagnose.ts             // map อาการ → สาเหตุ → การแก้อัตโนมัติ
+
+src/modules/onboarding/
+  readiness.ts            // ★ คำนวณความพร้อมจากข้อมูลจริง
+  presets.ts              // preset ตายตัวต่อประเภทร้าน
+
+src/app/(dashboard)/settings/devices/   // หน้าใหม่ รวมอุปกรณ์ทุกชนิด
+src/app/onboarding/                      // เขียนใหม่ให้รู้สถานะจริง</pre>
+    <h3 style="margin-top:18px">Migration ที่ต้องมี</h3>
+    <ul>
+      <li><code>stores.setup_profile jsonb</code> — ประเภทร้าน/ช่องทางขาย (ใช้ซ่อนเมนูที่ไม่ใช้)</li>
+      <li><code>device_profiles</code> — คลังความรู้อุปกรณ์ระดับแพลตฟอร์ม (ไม่ผูก org)</li>
+      <li><code>ai_usage_logs</code> — org_id, feature, model, tokens, cost, created_at</li>
+      <li>เพิ่ม <code>printers.last_test_ok_at</code>, <code>printers.brand</code>, <code>printers.model</code></li>
+    </ul>
+    <p class="warning" style="margin-top:12px"><strong>บทเรียนจาก incident 2026-08-20:</strong> คอลัมน์ใหม่ทุกตัวต้องมี default ที่ทำให้<strong>แถวเดิมพฤติกรรมไม่เปลี่ยน</strong> และห้ามใช้ค่าที่ตีความได้สองแบบมาเป็นตัวชี้สิทธิ์ — เคยทำทั้งองค์กรหลุดสิทธิ์มาแล้ว</p>
+  </section>
+
+  <section class="card">
+    <h2>8. ลำดับการทำและการวัดผล</h2>
+    <table>
+      <thead><tr><th>เฟส</th><th>งาน</th><th>ใช้ AI?</th><th>แรง</th><th>วัดผลด้วย</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1</strong></td><td>F1 readiness + progress + preset ประเภทร้าน + ซ่อนเมนูที่ไม่ใช้</td><td>ไม่</td><td>3–4 วัน</td><td>% ร้านใหม่ที่ตั้งค่าครบใน 3 วัน</td></tr>
+        <tr><td><strong>2</strong></td><td>F2 ชั้นที่ 1: <code>capability.ts</code> + หน้า <code>/settings/devices</code> + ข้อความแนะทางที่ใช้ได้จริง</td><td>ไม่</td><td>4–5 วัน</td><td>% ร้านที่พิมพ์ทดสอบผ่านในครั้งแรก</td></tr>
+        <tr><td><strong>3</strong></td><td>ฐาน <code>modules/ai</code> + <code>ai_usage_logs</code> + quota</td><td>ฐาน</td><td>1–2 วัน</td><td>ต้นทุนต่อร้านต่อเดือนมองเห็นได้</td></tr>
+        <tr><td><strong>4</strong></td><td>F2 ชั้นที่ 2: D1 แปล error, D4 วินิจฉัยผลพิมพ์, <code>device_profiles</code></td><td>ใช่</td><td>4–5 วัน</td><td>จำนวนเคสซัพพอร์ตเรื่องเครื่องพิมพ์</td></tr>
+        <tr><td><strong>5</strong></td><td>F3 Menu Scan</td><td>ใช่</td><td>5–6 วัน</td><td>เวลาเฉลี่ยจนมีสินค้า 20 รายการแรก</td></tr>
+        <tr><td><strong>6</strong></td><td>F2 D2/D3 (สแกนรุ่น/IP) + F5 nudge</td><td>ใช่</td><td>3–4 วัน</td><td>อัตราปิดบิลแรกใน 7 วัน</td></tr>
+        <tr><td><strong>7</strong></td><td>F4 ผู้ช่วย Ctrl+K</td><td>2 ชั้น</td><td>4–5 วัน</td><td>สัดส่วนการใช้ซ้ำ</td></tr>
+      </tbody>
+    </table>
+    <p class="ok" style="margin-top:14px"><strong>สังเกต:</strong> เฟส 1–2 คือของที่แก้ปัญหาผู้ใช้ใหม่ได้มากที่สุด และ <strong>ไม่ต้องใช้ AI เลย</strong> — ถ้าเวลาจำกัด ทำแค่ 2 เฟสนี้ก็เปลี่ยนประสบการณ์ผู้ใช้ใหม่ไปแล้ว ส่วน AI ค่อยตามมาเสริมจุดที่ตรรกะตายตัวเอาไม่อยู่</p>
+  </section>
+
+  <section class="card">
+    <h2>9. กฎเหล็กของรอบนี้</h2>
+    <ol>
+      <li><strong>AI เสนอ ผู้ใช้ยืนยัน</strong> — ทุกอย่างที่เขียนข้อมูลต้องมี preview และย้อนกลับได้</li>
+      <li><strong>ห้าม LLM แตะ DB ตรง</strong> — ผ่าน tool ที่ห่อ repository เดิมเท่านั้น RLS + สิทธิ์ 6 role ต้องยังทำงาน</li>
+      <li><strong>ตรรกะตายตัวมาก่อน AI เสมอ</strong> — ถ้าเขียน if/else ตอบได้ ห้ามเรียกโมเดล</li>
+      <li><strong>AI ต้องไม่บล็อกทางเดิน</strong> — โมเดลล่ม/quota หมด ผู้ใช้ต้องยังทำเองได้ทุกขั้นตามปกติ</li>
+      <li><strong>มีเพดานค่าใช้จ่ายต่อ org ตั้งแต่วันแรก</strong></li>
+      <li><strong>ไม่ส่งข้อมูลลูกค้าเข้าโมเดลในฟีเจอร์ชุดนี้</strong> — งานทั้งหมดในแผนนี้เป็นเรื่องตั้งค่าและอุปกรณ์ ไม่ต้องใช้ PII เลย ทำให้ความเสี่ยง PDPA เป็นศูนย์</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>10. ต้องตัดสินใจก่อนเริ่ม</h2>
+    <ol>
+      <li>เริ่มที่ <strong>เฟส 1 (onboarding)</strong> หรือ <strong>เฟส 2 (อุปกรณ์)</strong> ก่อน? — อุปกรณ์เจ็บกว่า แต่ onboarding เห็นผลกว้างกว่า</li>
+      <li>ฟีเจอร์ชุดนี้ <strong>ให้ทุกแพ็กเกจใช้ฟรี</strong> (เพราะเป้าหมายคือลดคนหลุด) หรือกันบางส่วนไว้ขาย?</li>
+      <li>เพดานค่าโมเดลต่อร้านต่อเดือนที่รับได้</li>
+      <li>ทำ pilot ที่ร้านตัวเอง (Each Other, 2 สาขา + เครื่องพิมพ์ PT-280) ก่อนปล่อยจริงหรือไม่</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

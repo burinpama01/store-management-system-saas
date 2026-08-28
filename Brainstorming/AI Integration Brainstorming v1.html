@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Integration Brainstorming v1 — StoreOS</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--soft:#f6f8fb;--brand:#0f766e;--brand-soft:#ccfbf1;--blue:#1d4ed8;--blue-soft:#dbeafe;--amber:#b45309;--rose:#be123c}
+    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{width:min(1120px,calc(100% - 32px));margin:32px auto 72px}
+    .card,header{margin-top:18px;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.06)}
+    header{background:linear-gradient(135deg,#fff,#ecfeff)}
+    h1,h2,h3,h4,p{margin-top:0}h1{margin-bottom:6px;font-size:clamp(28px,4vw,42px)}h2{font-size:22px}h3{font-size:17px}
+    .status{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--brand);color:#fff;font-size:13px;font-weight:800}
+    .muted{color:var(--muted)}
+    table{width:100%;border-collapse:collapse;font-size:14.5px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{background:var(--soft);font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .item{padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+    .item.hot{border:2px solid var(--brand);background:var(--brand-soft)}
+    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#fff;border:1px solid var(--line);margin-right:4px}
+    .tag.s{color:var(--brand)}.tag.m{color:var(--blue)}.tag.l{color:var(--rose)}
+    .warning{padding:14px;border-left:4px solid var(--amber);background:#fffbeb;border-radius:0 10px 10px 0}
+    .ok{padding:14px;border-left:4px solid var(--brand);background:#ecfdf5;border-radius:0 10px 10px 0}
+    code{background:#eef2f7;padding:1px 6px;border-radius:6px;font-size:13.5px}
+    pre{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:12px;overflow-x:auto;font-size:13.5px;line-height:1.5}
+    .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}
+    .step{padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:14px}
+    .step strong{display:block;color:var(--brand)}
+    ul{padding-left:20px}li{margin-bottom:5px}
+    @media(max-width:860px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">BRAINSTORM — 2026-08-27</span>
+    <h1>นำ AI มาใช้กับ StoreOS ได้อย่างไรบ้าง</h1>
+    <p class="muted">สำรวจโอกาสใช้ AI บนฐานระบบจริง (POS / QR Ordering / สต๊อก / บัญชี / HR / Loyalty / Delivery Connect) พร้อมสถาปัตยกรรม ต้นทุน และลำดับการทำ — ยังไม่ได้อนุมัติ ใช้เพื่อเลือกชุดงาน</p>
+  </header>
+
+  <section class="card">
+    <h2>1. จุดแข็งของระบบที่ทำให้ AI มีค่าจริง</h2>
+    <p>StoreOS มีสิ่งที่คู่แข่งส่วนใหญ่ไม่มี: <strong>ข้อมูลครบวงจรในฐานเดียว</strong> (~80 ตาราง) ที่ผูก org/store ผ่าน RLS อยู่แล้ว AI จึงไม่ต้องสร้าง data pipeline ใหม่ แค่ต่อเข้ากับ repository เดิม</p>
+    <div class="grid3">
+      <div class="item"><h3>ข้อมูลขาย</h3><p><code>orders</code>, <code>order_items</code>, <code>payments</code>, <code>pos_saved_tickets</code>, <code>connect_orders</code> — ละเอียดถึงระดับรายการ + ช่องทาง (POS/QR/เดลิเวอรี)</p></div>
+      <div class="item"><h3>ข้อมูลต้นทุน/ของ</h3><p><code>products</code>, <code>product_variants</code>, <code>stock</code>, <code>transactions</code>, <code>cash_ledger_entries</code>, <code>cash_sessions</code> — คำนวณกำไรและความผิดปกติได้</p></div>
+      <div class="item"><h3>ข้อมูลคน</h3><p><code>customers</code>, <code>loyalty_accounts</code>/<code>loyalty_ledger</code>, <code>attendance_records</code>, <code>employee_profiles</code>, <code>audit_logs</code></p></div>
+    </div>
+    <p class="ok" style="margin-top:14px"><strong>สรุป:</strong> คุณค่าของ AI ที่นี่ไม่ใช่ “แชทบอทสวย ๆ” แต่คือ <strong>ลดเวลาคีย์ข้อมูล</strong> (onboarding + รับของ) และ <strong>เปลี่ยนข้อมูลดิบเป็นการตัดสินใจ</strong> (สั่งของ/จัดเวร/จับทุจริต)</p>
+  </section>
+
+  <section class="card">
+    <h2>2. กลุ่ม A — ลดงานคีย์ข้อมูล (ROI สูงสุด, เป็นจุดขายตอนปิดการขาย)</h2>
+    <div class="grid2">
+      <article class="item hot">
+        <h3>A1. ถ่ายรูปเมนู/ป้ายราคา → สร้าง Catalog อัตโนมัติ</h3>
+        <p><span class="tag s">Effort M</span><span class="tag m">Impact สูงมาก</span></p>
+        <p>อุปสรรคอันดับ 1 ของร้านที่ย้ายมาใช้ POS คือ “ต้องคีย์เมนู 150 รายการ” ให้ถ่ายรูปเมนูกระดาษ/ไฟล์ PDF แล้ว Vision model แตกเป็น หมวด → สินค้า → ราคา → ตัวเลือก (variant/modifier) ให้ผู้ใช้กดยืนยันทีละหมวด</p>
+        <p class="muted">ต่อกับ: <code>modules/catalog</code>, <code>categories</code>, <code>products</code>, <code>product_variants</code>, <code>modifier_groups</code></p>
+      </article>
+      <article class="item hot">
+        <h3>A2. สแกนบิลซัพพลายเออร์ → รายจ่าย + รับสต๊อก</h3>
+        <p><span class="tag s">Effort M</span><span class="tag m">Impact สูง</span></p>
+        <p>ถ่ายบิลรับของ → แตกเป็นรายการ + ราคาต่อหน่วย → เสนอบันทึกลง <code>transactions</code> (หมวดค่าใช้จ่าย) และ <strong>รับเข้าสต๊อก</strong> พร้อมอัปเดตต้นทุนเฉลี่ย ทำให้รายงาน “กำไรจริง” แม่นขึ้นโดยเจ้าของร้านไม่ต้องทำบัญชีเอง</p>
+        <p class="muted">ต่อกับ: <code>modules/stock</code>, <code>modules/cashflow</code>, <code>modules/accounting</code></p>
+      </article>
+      <article class="item">
+        <h3>A3. เขียนคำโปรย/แปลภาษาเมนู + สร้างรูปสินค้า</h3>
+        <p><span class="tag s">Effort S</span><span class="tag m">Impact กลาง</span></p>
+        <p>ในหน้าแก้ไขสินค้า: ปุ่ม “ให้ AI เขียนคำอธิบาย” + แปล EN/CN สำหรับเมนู QR (ร้านที่มีลูกค้าต่างชาติ) + generate รูปเมนูสำหรับร้านที่ไม่มีรูป (มี pipeline รูปอยู่แล้วผ่าน <code>uploadStoreImageAction</code>)</p>
+      </article>
+      <article class="item">
+        <h3>A4. Onboarding Copilot</h3>
+        <p><span class="tag s">Effort M</span><span class="tag m">Impact กลาง</span></p>
+        <p>ผู้ช่วยพาตั้งค่าร้านใหม่: ประเภทร้าน → เปิดโมดูลที่ควรใช้ (บุฟเฟต์/QR/ขายส่ง) → ตั้งโต๊ะ → ตั้งเครื่องพิมพ์ → ตั้งสิทธิ์พนักงาน ลดการเปิด ticket ซัพพอร์ต</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3. กลุ่ม B — เปลี่ยนข้อมูลเป็นการตัดสินใจ (จุดขายของแพ็กเกจแพง)</h2>
+    <div class="grid2">
+      <article class="item hot">
+        <h3>B1. ถาม-ตอบยอดขายด้วยภาษาคน (Chat BI)</h3>
+        <p><span class="tag s">Effort M</span><span class="tag m">Impact สูง</span></p>
+        <p>“เมื่อวานขายเท่าไหร่”, “เมนูไหนกำไรน้อยสุด”, “สาขาไหนยอดตกกว่าสัปดาห์ก่อน” — <strong>ไม่ใช้ text-to-SQL</strong> แต่ใช้ tool calling เรียกฟังก์ชันใน <code>modules/reports/repository.ts</code> ที่มีอยู่ ทำให้ RLS + สิทธิ์ <code>reports.view</code> เดิมยังบังคับใช้ 100%</p>
+      </article>
+      <article class="item hot">
+        <h3>B2. สรุปปิดร้านรายวัน / รายสัปดาห์</h3>
+        <p><span class="tag s">Effort S</span><span class="tag m">Impact สูง</span></p>
+        <p>Cron ตอนปิดร้าน → สรุปเป็นข้อความไทยสั้น ๆ ส่งเข้า <code>notifications</code> + LINE: ยอดขาย เทียบเมื่อวาน/สัปดาห์ก่อน, ส่วนต่างเงินสด (variance), ของใกล้หมด, พนักงานสาย/ขาด, เมนูที่หายไปจากท็อป งานนี้ต่อยอด <code>notification_templates</code> + cron ที่มีอยู่ได้ทันที</p>
+        <p class="warning" style="font-size:14px">ข้อควรจำ: account Vercel เป็น Hobby → cron ถี่ ๆ ใช้ไม่ได้ ต้องใช้ cron วันละครั้ง หรือ external scheduler</p>
+      </article>
+      <article class="item">
+        <h3>B3. พยากรณ์ยอดขาย → เสนอรายการสั่งของ</h3>
+        <p><span class="tag m">Effort L</span><span class="tag m">Impact สูง</span></p>
+        <p>สถิติทำงานหลัก (moving average + วันในสัปดาห์ + วันหยุด จาก <code>store_holidays</code>) ส่วน LLM ทำหน้าที่ “อธิบายเป็นภาษาคน + ร่างใบสั่งซื้อ” → ลดของขาด/ของเน่า ซึ่งเป็นต้นทุนจริงของร้านอาหาร</p>
+      </article>
+      <article class="item">
+        <h3>B4. จับความผิดปกติ / ป้องกันรั่วไหล</h3>
+        <p><span class="tag m">Effort M</span><span class="tag l">ต้องระวังเรื่องกล่าวหาผิด</span></p>
+        <p>ตรวจ pattern: ยกเลิกบิล/ยกเลิกรายการถี่ผิดปกติของพนักงานคนเดียว, ส่วนลดมือเยอะผิดปกติ, เงินสดขาดซ้ำในกะเดิม, กดลงเวลาแทนกัน (GPS ซ้ำ) — ใช้ <code>audit_logs</code> + <code>cash_ledger_entries</code> + <code>attendance_records</code> แจ้งเป็น “เรื่องที่ควรดู” ไม่ใช่คำตัดสิน</p>
+      </article>
+      <article class="item">
+        <h3>B5. จัดตารางเวรอัตโนมัติ</h3>
+        <p><span class="tag m">Effort L</span><span class="tag m">Impact กลาง</span></p>
+        <p>รวมยอดขายรายชั่วโมง + วันหยุดรายคน + ชั่วโมง OT → เสนอกะที่คุมค่าแรงต่อยอดขาย ต่อกับ <code>hr</code> + payroll ที่เพิ่งแก้ไปเมื่อ 2026-08-10</p>
+      </article>
+      <article class="item">
+        <h3>B6. Insight สำหรับ Super Admin (แพลตฟอร์ม)</h3>
+        <p><span class="tag s">Effort S</span><span class="tag m">Impact กลาง</span></p>
+        <p>ที่ <code>/system</code>: ร้านไหนเสี่ยงเลิกใช้ (ยอดใช้งานตก, ไม่เปิดกะ, ใกล้หมดอายุแพ็กเกจ), สรุปคำขอ Enterprise, สรุปรายได้ SaaS — ช่วยงานขายของคุณเองโดยตรง</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4. กลุ่ม C — หน้าร้าน/ลูกค้า (เพิ่มยอดต่อบิล)</h2>
+    <div class="grid3">
+      <article class="item hot">
+        <h3>C1. AI Upsell ในหน้า QR Ordering</h3>
+        <p><span class="tag s">Effort S–M</span><span class="tag m">วัดผลเป็นเงินได้</span></p>
+        <p>“สั่งคู่กับ...” จาก market-basket ของ <code>order_items</code> จริงของร้านนั้น (ไม่ต้องใช้ LLM ตอน runtime = เร็ว/ฟรี) แล้วให้ LLM ช่วยเขียนข้อความชวนซื้อ วัด A/B ได้จากยอดเฉลี่ยต่อบิล</p>
+      </article>
+      <article class="item">
+        <h3>C2. ผู้ช่วยตอบลูกค้าบนหน้า QR / LINE</h3>
+        <p><span class="tag m">Effort M</span></p>
+        <p>“มีอะไรไม่เผ็ดบ้าง” “แพ้กุ้งกินอะไรได้” “ที่จอดรถ” ตอบจากเมนูจริง + ข้อมูลร้าน ลดการกดเรียกพนักงาน (มี <code>service_requests</code> อยู่แล้วใช้วัดผลได้)</p>
+      </article>
+      <article class="item">
+        <h3>C3. สรุปเสียงลูกค้า</h3>
+        <p><span class="tag s">Effort S</span></p>
+        <p>รวม <code>service_requests</code> (เหตุผลเรียกพนักงาน), รายการที่ถูกยกเลิก/ของหมดบ่อย, คำขอเพลง → สรุปรายสัปดาห์ว่า “ลูกค้าบ่นเรื่องอะไรมากที่สุด”</p>
+      </article>
+      <article class="item">
+        <h3>C4. ผู้ช่วยการตลาด</h3>
+        <p><span class="tag s">Effort S</span></p>
+        <p>สร้างแคปชั่น + รูปโปรโมชั่นจากสินค้าขายดี/ของใกล้หมดอายุ ต่อกับ <code>promotions</code> และ <code>coupons</code> — กดสร้างคูปองจากไอเดียได้เลย</p>
+      </article>
+      <article class="item">
+        <h3>C5. Loyalty อัจฉริยะ</h3>
+        <p><span class="tag m">Effort M</span></p>
+        <p>แบ่งกลุ่มลูกค้า (RFM) จาก <code>loyalty_ledger</code> → เสนอแคมเปญดึงลูกค้าหาย “ไม่มา 45 วัน” พร้อมคูปองอัตโนมัติ</p>
+      </article>
+      <article class="item">
+        <h3>C6. ผู้ช่วยเสียงสำหรับครัว/พนักงาน</h3>
+        <p><span class="tag l">Effort L</span><span class="tag l">คุ้มค่าต่ำ</span></p>
+        <p>สั่งงานด้วยเสียงในครัว/รับออเดอร์โต๊ะด้วยเสียง — เท่ แต่ในร้านเสียงดังมักใช้ไม่ได้จริง <strong>แนะนำยังไม่ทำ</strong></p>
+      </article>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>5. สถาปัตยกรรมที่แนะนำ</h2>
+    <div class="flow">
+      <div class="step"><strong>1. UI</strong>ปุ่ม/แชทในหน้าเดิม (streaming)</div>
+      <div class="step"><strong>2. Server Action / Route</strong>ตรวจ auth + permission + plan feature</div>
+      <div class="step"><strong>3. modules/ai</strong>prompt + tool registry + guardrail</div>
+      <div class="step"><strong>4. Tools</strong>เรียก repository เดิม (RLS ทำงานตามปกติ)</div>
+      <div class="step"><strong>5. Metering</strong>บันทึก token/ต้นทุนลง <code>ai_usage_logs</code></div>
+    </div>
+
+    <h3 style="margin-top:20px">หลักการตายตัว</h3>
+    <ul>
+      <li><strong>ห้าม LLM แตะ DB ตรง / ห้าม text-to-SQL แบบเปิด</strong> — ให้เรียกผ่าน tool ที่ห่อ repository เดิมเท่านั้น เพื่อให้ RLS + สิทธิ์ 6 role เดิมยังคุมได้ และไม่มีทางหลุดข้าม org</li>
+      <li><strong>AI เสนอ ผู้ใช้ยืนยัน</strong> — ทุกอย่างที่เขียนข้อมูล (สร้างเมนู, รับสต๊อก, บันทึกรายจ่าย, สร้างคูปอง) ต้องผ่านหน้าจอ preview ให้กดยืนยัน ห้าม auto-commit</li>
+      <li><strong>ใช้ Vercel AI Gateway + AI SDK</strong> — ไม่ผูก provider เดียว, มี fallback, ดู cost ต่อฟีเจอร์ได้, ZDR; deploy อยู่บน Vercel อยู่แล้ว (region hnd1)</li>
+      <li><strong>เลือกโมเดลตามงาน</strong>: งานถี่/ถูก (upsell copy, สรุปสั้น) ใช้โมเดลเล็ก; งานคิดหนัก (วิเคราะห์ยอด, สแกนเมนูทั้งเล่ม) ใช้โมเดลใหญ่</li>
+      <li><strong>PDPA</strong> — mask ชื่อ/เบอร์ลูกค้าและพนักงานก่อนส่งเข้าโมเดล ยกเว้นกรณีที่จำเป็นจริงและแจ้งผู้ใช้แล้ว</li>
+      <li><strong>คุมต้นทุน</strong> — quota ต่อ org ต่อเดือน + cache คำถามซ้ำ + ตัดวงจรเมื่อเกินเพดาน (กัน bill ระเบิดจากร้านเดียว)</li>
+    </ul>
+
+    <h3 style="margin-top:20px">โครงไฟล์ที่เสนอ</h3>
+    <pre>src/modules/ai/
+  gateway.ts        // client + เลือกโมเดลตาม task
+  tools/            // sales.ts, stock.ts, catalog.ts, hr.ts (ห่อ repository เดิม)
+  prompts/          // system prompt ภาษาไทยต่อฟีเจอร์
+  usage.ts          // metering + quota ต่อ org
+  types.ts
+src/app/api/ai/     // route สำหรับ streaming chat
+supabase/migrations/2026xxxx_ai_usage.sql   // ai_usage_logs + ai_settings ต่อร้าน</pre>
+  </section>
+
+  <section class="card">
+    <h2>6. ขายอย่างไร (ต่อยอดระบบแพ็กเกจที่มีอยู่)</h2>
+    <p>ระบบมี <code>PlanFeatures</code> + Business plan แบบเลือกฟีเจอร์ (<code>/system/pricing</code>) อยู่แล้ว จึงเพิ่ม feature key ใหม่ได้ทันที</p>
+    <table>
+      <thead><tr><th>Feature key</th><th>ครอบคลุม</th><th>แพ็กเกจที่แนะนำ</th></tr></thead>
+      <tbody>
+        <tr><td><code>aiAssistant</code></td><td>Chat BI, สรุปปิดร้าน, ผู้ช่วยการตลาด</td><td>Premium ขึ้นไป / ซื้อเสริมใน Business</td></tr>
+        <tr><td><code>aiVision</code></td><td>สแกนเมนู, สแกนบิลซัพพลายเออร์</td><td>ให้ทุกแพ็กเกจใช้ตอน onboarding แบบจำกัดครั้ง (เป็นตัวปิดการขาย) แล้วเก็บเงินส่วนที่ใช้ต่อเนื่อง</td></tr>
+        <tr><td><code>aiForecast</code></td><td>พยากรณ์/สั่งของ/จัดเวร/จับความผิดปกติ</td><td>Business + Enterprise</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:10px">โมเดลราคาที่ปลอดภัย: รวมโควตาพื้นฐานในแพ็กเกจ (เช่น 300 คำถาม/เดือน, สแกน 50 หน้า/เดือน) แล้วขายเครดิตเพิ่มเป็นก้อน — กันขาดทุนจากร้านที่ใช้หนัก</p>
+  </section>
+
+  <section class="card">
+    <h2>7. ลำดับที่แนะนำ</h2>
+    <table>
+      <thead><tr><th>เฟส</th><th>ทำอะไร</th><th>เหตุผล</th><th>ประเมินแรง</th></tr></thead>
+      <tbody>
+        <tr><td><strong>0</strong></td><td>วาง <code>modules/ai</code> + AI Gateway + <code>ai_usage_logs</code> + feature flag</td><td>ฐานร่วมของทุกฟีเจอร์ ไม่ต้องรื้อทีหลัง</td><td>1–2 วัน</td></tr>
+        <tr><td><strong>1</strong></td><td><strong>B2 สรุปปิดร้านรายวัน</strong></td><td>เสี่ยงต่ำสุด (อ่านอย่างเดียว) ต่อยอด notification เดิม เห็นค่าทุกวัน</td><td>2–3 วัน</td></tr>
+        <tr><td><strong>2</strong></td><td><strong>A1 สแกนเมนู → catalog</strong></td><td>ROI สูงสุด ใช้ปิดการขายร้านใหม่ได้จริง</td><td>4–6 วัน</td></tr>
+        <tr><td><strong>3</strong></td><td><strong>B1 Chat BI</strong> (tool calling บน reports)</td><td>เป็นหน้าตาของ “แพ็กเกจ AI” ที่ลูกค้าเข้าใจทันที</td><td>4–6 วัน</td></tr>
+        <tr><td><strong>4</strong></td><td><strong>C1 Upsell QR</strong> + <strong>A2 สแกนบิลรับของ</strong></td><td>เพิ่มยอดต่อบิล + ทำให้กำไรจริงแม่นขึ้น</td><td>อย่างละ 3–5 วัน</td></tr>
+        <tr><td><strong>5</strong></td><td>B3 พยากรณ์สั่งของ, B4 จับความผิดปกติ, B5 จัดเวร</td><td>ของแพงสำหรับ Enterprise เมื่อฐานข้อมูลนิ่งแล้ว</td><td>ยาว</td></tr>
+      </tbody>
+    </table>
+    <p class="ok" style="margin-top:14px"><strong>ถ้าเลือกได้แค่ 3 อย่าง:</strong> B2 (สรุปปิดร้าน) → A1 (สแกนเมนู) → B1 (Chat BI) ครบทั้ง “เห็นค่าทุกวัน”, “ปิดการขายร้านใหม่”, และ “มีของขายในแพ็กเกจแพง”</p>
+  </section>
+
+  <section class="card">
+    <h2>8. ความเสี่ยงที่ต้องตัดสินใจก่อนเริ่ม</h2>
+    <ul>
+      <li><strong>ต้นทุนต่อเดือน</strong> — ต้องมีเพดานต่อ org ตั้งแต่วันแรก ไม่งั้นร้านเดียวใช้หนักกินกำไรทั้งแพ็กเกจ</li>
+      <li><strong>ความถูกต้องของตัวเลข</strong> — Chat BI ต้องแสดง “ตัวเลขจริงจาก tool” เป็นตาราง ไม่ให้โมเดลคำนวณเลขเอง (โมเดลบวกเลขผิดได้) และต้องมีลิงก์ไปหน้ารายงานจริงเสมอ</li>
+      <li><strong>PDPA / ข้อมูลลูกค้า</strong> — ประกาศในนโยบายความเป็นส่วนตัวว่ามีการประมวลผลด้วย AI และเลือกผู้ให้บริการที่ไม่เก็บข้อมูลไปเทรน</li>
+      <li><strong>Hobby plan ของ Vercel</strong> — cron ถี่ใช้ไม่ได้ (เคยทำ deploy ล้มมาแล้ว) งานสรุปประจำวันต้องออกแบบให้ทำงานวันละครั้ง หรืออัป plan</li>
+      <li><strong>ความคาดหวังผู้ใช้</strong> — ถ้า AI ตอบผิดเรื่องเงิน ความน่าเชื่อถือของทั้งระบบเสียหาย ทุกคำตอบที่เกี่ยวกับเงินต้องอ้างอิงตัวเลขที่ตรวจสอบย้อนได้</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>9. คำถามที่ต้องการคำตอบก่อนทำแผนจริง</h2>
+    <ol>
+      <li>เป้าหมายหลักคือ <strong>ขายแพ็กเกจแพงขึ้น</strong> หรือ <strong>ลดแรงเสียดทานตอนร้านใหม่สมัคร</strong>? (คำตอบเปลี่ยนลำดับเฟส)</li>
+      <li>ยอมรับต้นทุนโมเดลได้ประมาณเท่าไรต่อร้านต่อเดือน?</li>
+      <li>จะรวมใน Premium/Enterprise เดิม หรือแยกเป็น add-on ที่คิดเงินต่างหาก?</li>
+      <li>เริ่มจากร้านตัวเอง (Each Other) เป็น pilot ก่อนหรือไม่?</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

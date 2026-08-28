@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Onboarding &amp; Device Copilot Plan v2 — Multi-Device — StoreOS</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--soft:#f6f8fb;--brand:#0f766e;--brand-soft:#ccfbf1;--blue:#1d4ed8;--blue-soft:#dbeafe;--amber:#b45309;--rose:#be123c}
+    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{width:min(1180px,calc(100% - 32px));margin:32px auto 72px}
+    .card,header{margin-top:18px;padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.06)}
+    header{background:linear-gradient(135deg,#fff,#ecfeff)}
+    h1,h2,h3,h4,p{margin-top:0}h1{margin-bottom:6px;font-size:clamp(28px,4vw,42px)}h2{font-size:22px}h3{font-size:17px}h4{font-size:15px;color:var(--brand)}
+    .status{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--blue);color:#fff;font-size:13px;font-weight:800}
+    .muted{color:var(--muted)}
+    table{width:100%;border-collapse:collapse;font-size:14.5px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{background:var(--soft);font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+    td.y{color:var(--brand);font-weight:800}td.n{color:var(--rose);font-weight:800}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .item{padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+    .item.hot{border:2px solid var(--brand);background:var(--brand-soft)}
+    .item.no{border:2px solid var(--rose);background:#fff1f2}
+    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#fff;border:1px solid var(--line);margin-right:4px}
+    .warning{padding:14px;border-left:4px solid var(--amber);background:#fffbeb;border-radius:0 10px 10px 0}
+    .ok{padding:14px;border-left:4px solid var(--brand);background:#ecfdf5;border-radius:0 10px 10px 0}
+    .bad{padding:14px;border-left:4px solid var(--rose);background:#fff1f2;border-radius:0 10px 10px 0}
+    code{background:#eef2f7;padding:1px 6px;border-radius:6px;font-size:13.5px}
+    pre{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:12px;overflow-x:auto;font-size:13.5px;line-height:1.55}
+    ul{padding-left:20px}li{margin-bottom:5px}ol{padding-left:20px}
+    .ba{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:12px}
+    .ba>div{padding:16px}.ba .before{background:#fff1f2;border-right:1px solid var(--line)}.ba .after{background:#ecfdf5}
+    .diff{font-size:13px;color:var(--muted);margin-top:4px}
+    @media(max-width:900px){.grid2,.grid3,.ba{grid-template-columns:1fr}.ba .before{border-right:0;border-bottom:1px solid var(--line)}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">PLAN v2 — 2026-08-27 — เพิ่มมิติหลายอุปกรณ์</span>
+    <h1>AI ลดแรงเสียดทาน + ผู้ช่วยอุปกรณ์ <span style="font-size:.6em">(ฉบับหลายแพลตฟอร์ม)</span></h1>
+    <p class="muted">ต่อจาก v1 — เพิ่มโจทย์ <strong>ผู้ใช้อยู่บนมือถือ / แท็บเล็ต Android / iPad / Windows</strong><br>v1 ยังใช้ได้ทั้งหมด เอกสารนี้เพิ่ม F0 ไว้ข้างหน้า และแก้ F2 ให้รู้จักแพลตฟอร์มจริง</p>
+  </header>
+
+  <section class="card">
+    <h2>1. สิ่งที่ตรวจพบจากโค้ดจริง (ต้องอ่านก่อนตัดสินใจ)</h2>
+
+    <h3>1.1 ⚠️ iPad / iPhone <u>ไม่มีแอป</u> — และนั่นตัดทางเลือกอุปกรณ์ทิ้งไปหมด</h3>
+    <p><code>mobile/README.md</code> ระบุชัด: <em>“Build iOS ทำบนเครื่องนี้ไม่ได้ (Windows) — ใช้ Codemagic build → TestFlight (Phase 4)”</em> และในโค้ดมีแค่ route <code>/download/android</code> ไม่มีของ iOS</p>
+    <p class="bad">ผลที่ตามมา: iPad ใช้ Safari → <strong>ไม่มี Web Bluetooth, ไม่มี WebUSB, และไม่มีแอปให้ใช้ native BLE</strong> → เหลือทางพิมพ์ทางเดียวคือ <strong>Print Hub</strong> หรือเครื่องพิมพ์ IP<br>แปลว่า <strong>Print Hub คือเส้นเลือดใหญ่ของผู้ใช้ iPad ทั้งหมด</strong> ไม่ใช่ทางเลือกเสริม</p>
+
+    <h3 style="margin-top:20px">1.2 หน้าแอปมีจุดตัดหน้าจอ “จุดเดียว” ที่ 768px — ไม่มีโหมดแท็บเล็ต</h3>
+    <ul>
+      <li><code>.storeos-app</code> เป็น <code>grid 256px + 1fr</code> และมี override เป็น <code>flex</code> ที่ <code>max-width:767px</code> เท่านั้น</li>
+      <li>media query ช่วง <code>768–1100px</code> ที่มีอยู่ใน <code>globals.css</code> <strong>เป็นของ <code>.marketing-*</code> / <code>.reference-*</code> ทั้งหมด</strong> (หน้า landing กับหน้า login) — ไม่แตะหน้าแอปเลย</li>
+    </ul>
+
+    <h3 style="margin-top:20px">1.3 POS ใช้จุดตัดคนละตัว (1024px) กับแดชบอร์ด (768px)</h3>
+    <p><code>PosTerminal.tsx:3405</code> → <code>storeos-pos flex h-screen flex-col ... lg:flex-row</code></p>
+    <div class="ba">
+      <div class="before"><h4>iPad แนวตั้ง (820px) วันนี้</h4>
+        <p><strong>แดชบอร์ด</strong> = โหมดเดสก์ท็อป → sidebar 256px กินไป เหลือพื้นที่เนื้อหา ~564px แน่นมาก</p>
+        <p><strong>POS</strong> = โหมดมือถือ → ตะกร้าอยู่ล่างสุด ต้องเลื่อนขึ้นลงตลอดเวลาที่ขาย</p>
+        <p class="diff">หน้าเดียวกัน เครื่องเดียวกัน แต่ตัดสินใจคนละแบบ</p>
+      </div>
+      <div class="after"><h4>หมุนเป็นแนวนอน (1180px)</h4>
+        <p>POS เปลี่ยนโครงทั้งหมดเป็น 2 คอลัมน์ทันที ผู้ใช้ต้องเรียนรู้ layout ใหม่กลางกะขาย</p>
+        <p class="diff">iPad Mini แนวตั้ง (744px) ยิ่งหนักกว่า — ตกไปโหมดมือถือทั้งระบบ ได้เมนูล่างบนจอ 8 นิ้ว</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px">1.4 เมนูล่างบนมือถือเป็นแถบเลื่อนแนวนอน</h3>
+    <p><code>layout.tsx:168</code> → <code>&lt;nav class="overflow-x-auto ... md:hidden"&gt;</code> กับระบบที่มี 30 โมดูล → ผู้ใช้ต้องเลื่อนหาเมนูไปเรื่อย ๆ (สอดคล้องกับบั๊กล่าสุด <code>a1bc0d7</code> ที่ปุ่มออกจากระบบหายไปทั้งตัวบนมือถือ)</p>
+  </section>
+
+  <section class="card">
+    <h2>2. ตารางความสามารถจริงต่อแพลตฟอร์ม</h2>
+    <p class="muted">อ้างอิงจาก <code>bluetooth-client.ts</code>, <code>usb-client.ts</code>, <code>native-print-client.ts</code>, <code>network-print-client.ts</code> — นี่คือข้อมูลที่ <code>detectCapabilities()</code> ต้องคืนให้ถูก</p>
+    <table>
+      <thead><tr><th>แพลตฟอร์ม</th><th>Web BT</th><th>WebUSB</th><th>BLE ในแอป</th><th>Print Hub</th><th>เครื่องพิมพ์ IP</th><th>ทางที่ควรแนะนำ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Windows + Chrome/Edge</strong></td><td class="y">✓</td><td class="y">✓</td><td>–</td><td class="y">✓</td><td class="y">✓</td><td>USB (นิ่งสุดสำหรับแคชเชียร์ประจำที่)</td></tr>
+        <tr><td>Windows + Firefox</td><td class="n">✗</td><td class="n">✗</td><td>–</td><td class="y">✓</td><td class="y">✓</td><td>บอกให้เปลี่ยนเป็น Chrome/Edge หรือใช้ Hub</td></tr>
+        <tr><td><strong>Android + แอป StoreOS</strong></td><td>–</td><td class="n">✗</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td>BLE ในแอป (พกพา)</td></tr>
+        <tr><td>Android + Chrome (ไม่ลงแอป)</td><td class="y">✓</td><td class="n">✗</td><td class="n">✗</td><td class="y">✓</td><td class="y">✓</td><td>Web BT ได้ แต่เชียร์ให้ลงแอปเพื่อ push</td></tr>
+        <tr><td><strong>iPad / iPhone Safari</strong></td><td class="n">✗</td><td class="n">✗</td><td class="n">✗ ไม่มีแอป</td><td class="y">✓</td><td class="y">✓</td><td><strong>Print Hub หรือเครื่องพิมพ์ IP เท่านั้น</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="ok" style="margin-top:14px"><strong>นี่คือเหตุผลว่าทำไม “ตัดตัวเลือกที่ใช้ไม่ได้ทิ้ง” ถึงสำคัญกว่า AI:</strong> ตารางนี้เป็นความจริงตายตัว เขียนเป็น <code>if/else</code> ได้ทั้งหมด และมันแก้ปัญหาผู้ใช้ iPad ที่กดปุ่มบลูทูธแล้วเจอ error วนไปเรื่อย ๆ ได้ทันทีโดยไม่ต้องเรียกโมเดลสักครั้ง</p>
+  </section>
+
+  <section class="card">
+    <h2>3. ใครใช้อุปกรณ์อะไร (persona × device)</h2>
+    <table>
+      <thead><tr><th>บทบาท</th><th>อุปกรณ์หลัก</th><th>ทำอะไรจริง ๆ</th><th>ต้องการจากหน้าจอ</th></tr></thead>
+      <tbody>
+        <tr><td>เจ้าของ / ผู้จัดการ</td><td>มือถือ (นอกร้าน) + Windows (ในออฟฟิศ)</td><td>ดูยอด อนุมัติ ตอบแจ้งเตือน / ทำรายงาน เงินเดือน ตั้งค่า</td><td>มือถือ = อ่านอย่างเดียว เร็ว ๆ · Windows = ตารางใหญ่ ฟอร์มยาว</td></tr>
+        <tr><td>แคชเชียร์</td><td>Windows ประจำเคาน์เตอร์ หรือแท็บเล็ต</td><td>ขายอย่างเดียว ทั้งวัน ต่อเนื่อง</td><td>ปุ่มใหญ่ ไม่ต้องเลื่อน ตะกร้าเห็นตลอด</td></tr>
+        <tr><td>พนักงานเสิร์ฟ</td><td>มือถือ</td><td>ลงเวลา รับออเดอร์ เรียกครัว เช็คโต๊ะ</td><td>งานเดียวต่อหน้าจอ นิ้วโป้งเอื้อมถึง</td></tr>
+        <tr><td>ครัว / บาร์</td><td>แท็บเล็ตติดผนัง (มักเป็น iPad เก่า)</td><td>ดูคิว กดรับ/เสร็จ ปฏิเสธของหมด</td><td>ตัวใหญ่ อ่านจากระยะ 1–2 เมตร ไม่ต้องล็อกอินซ้ำ</td></tr>
+        <tr><td>ลูกค้า</td><td>มือถือตัวเอง</td><td>สแกน QR สั่ง ขอเพลง เรียกพนักงาน</td><td class="muted">ส่วนนี้ทำมาดีแล้ว (mobile-first อยู่แล้ว)</td></tr>
+      </tbody>
+    </table>
+    <p class="warning" style="margin-top:14px"><strong>ข้อสรุปที่เปลี่ยนวิธีคิด:</strong> “ผู้ใช้” ไม่ใช่คนเดียวกัน การพยายามให้ทุกหน้าทำงานดีเท่ากันบนทุกอุปกรณ์ คือรากของความซับซ้อนที่ทำให้ระบบใช้งานยาก<br>ทางที่ถูกคือ <strong>ประกาศให้ชัดว่าหน้าไหนออกแบบเพื่ออุปกรณ์ไหน</strong> แล้วให้ระบบพาผู้ใช้ไปหน้าที่เหมาะกับเครื่องที่ถืออยู่ — ไม่ใช่ยัดทุกอย่างลงทุกจอ</p>
+  </section>
+
+  <section class="card">
+    <h2>4. F0 (ใหม่) — Device-aware shell <span class="tag">ต้องทำก่อน F1/F2</span></h2>
+
+    <h3>4.1 รวมจุดตัดหน้าจอให้เหลือชุดเดียวทั้งระบบ</h3>
+    <pre>mobile   &lt; 768px    โทรศัพท์ / iPad Mini แนวตั้ง   → งานเดียวต่อหน้าจอ, เมนูล่าง
+tablet   768–1279px  iPad / แท็บเล็ต Android        → sidebar แบบไอคอน, POS 2 คอลัมน์
+desktop  ≥ 1280px    Windows                        → sidebar เต็ม, ตารางเต็ม</pre>
+    <ul>
+      <li><strong>แก้ POS ให้ 2 คอลัมน์ตั้งแต่ 768px</strong> (จากเดิม 1024px) — iPad แนวตั้งจะได้ตะกร้าค้างข้างจอทันที ไม่ต้องเลื่อน<br><span class="muted">ปัจจุบัน <code>lg:flex-row</code> → เปลี่ยนเป็น <code>md:flex-row</code> พร้อมปรับความกว้างคอลัมน์ตะกร้า</span></li>
+      <li><strong>เพิ่มโหมด tablet ให้ shell</strong> — sidebar ย่อเป็นแถบไอคอน ~64px แทนที่จะกิน 256px หรือหายไปทั้งแถบ</li>
+      <li>ให้จุดตัดของ Tailwind, ของ <code>globals.css</code> และของ POS <strong>ตรงกันทั้งหมด</strong> (ตอนนี้มี 768 / 1024 / 760 / 1100 / 1180 ปนกัน)</li>
+    </ul>
+
+    <h3 style="margin-top:20px">4.2 หน้าแรกต่างกันตามอุปกรณ์ + บทบาท</h3>
+    <p>ระบบมี <code>landingPathForCurrentUser()</code> อยู่แล้ว (<code>app-entry/page.tsx</code>) — ขยายให้ดูขนาดจอด้วย:</p>
+    <table>
+      <thead><tr><th>บทบาท</th><th>บนมือถือ</th><th>บนแท็บเล็ต</th><th>บน Windows</th></tr></thead>
+      <tbody>
+        <tr><td>แคชเชียร์</td><td>POS (โหมดเร็ว)</td><td>POS</td><td>POS</td></tr>
+        <tr><td>พนักงานเสิร์ฟ</td><td>ลงเวลา / โต๊ะ</td><td>โต๊ะ</td><td>โต๊ะ</td></tr>
+        <tr><td>ครัว</td><td>คิวออเดอร์</td><td><strong>คิวออเดอร์เต็มจอ</strong></td><td>คิวออเดอร์</td></tr>
+        <tr><td>ผู้จัดการ/เจ้าของ</td><td>สรุปยอดวันนี้</td><td>แดชบอร์ด</td><td>แดชบอร์ด</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:20px">4.3 ซ่อนสิ่งที่เครื่องนี้ทำไม่ได้</h3>
+    <ul>
+      <li>บนมือถือ: ไม่ต้องโชว์เมนูที่ทำงานจริงไม่ได้บนจอเล็ก (ตั้งค่าภาษี/สร้าง payroll/แก้ผังโต๊ะ) — แสดงเป็น “เปิดบนคอมพิวเตอร์” พร้อมปุ่มส่งลิงก์ไปเมล แทนที่จะให้เข้าไปแล้วใช้ไม่ได้</li>
+      <li>บนแท็บเล็ตครัว: โหมดเต็มจอ ไม่มี sidebar ตัวใหญ่ ไม่หลุดล็อกอิน</li>
+      <li>รวมกับ <code>stores.setup_profile</code> จาก v1 (ซ่อนโมดูลที่ร้านนี้ไม่ใช้) → เมนูล่างบนมือถือจะสั้นลงจริง ไม่ต้องเลื่อนหา</li>
+    </ul>
+    <p class="ok"><strong>F0 ทั้งหมดนี้ไม่ใช้ AI เลย</strong> — เป็นงาน UX/CSS/routing ล้วน ๆ แต่เป็นตัวที่แก้ “ระบบใช้งานยากบนหลายอุปกรณ์” ได้ตรงที่สุด และถ้าไม่ทำก่อน ฟีเจอร์ AI ทุกตัวจะไปนั่งอยู่บนหน้าจอที่ยังใช้ลำบากอยู่ดี</p>
+  </section>
+
+  <section class="card">
+    <h2>5. F2 Device Copilot — ฉบับรู้จักแพลตฟอร์ม</h2>
+    <pre>// modules/devices/capability.ts
+detectCapabilities() -> {
+  formFactor:  "mobile" | "tablet" | "desktop",
+  os:          "windows" | "android" | "ios" | "macos" | "other",
+  runtime:     "storeos-app" | "browser",     // จาก isNativePlatform() + userAgent "StoreOSApp"
+  browser:     "chrome" | "edge" | "safari" | "firefox" | "other",
+  webBluetooth, webUsb, nativeBle: boolean,
+  printHub:    "online" | "offline" | "not-installed",
+  appAvailable: "android" | "none",           // ★ iOS = none จนกว่าจะ ship
+}</pre>
+    <p class="muted">มี marker พร้อมใช้อยู่แล้ว: <code>appendUserAgent: "StoreOSApp"</code> ใน <code>capacitor.config.ts</code> และ <code>isNativePlatform()</code> ใน <code>native-print-client.ts</code></p>
+
+    <h3 style="margin-top:18px">ตัวอย่างข้อความจริงที่ผู้ใช้จะเห็น</h3>
+    <div class="grid3">
+      <div class="item"><h4>iPad</h4><p><strong>“iPad ต่อเครื่องพิมพ์บลูทูธตรง ๆ ไม่ได้”</strong><br>Safari ไม่รองรับ และ StoreOS ยังไม่มีแอปสำหรับ iPad<br>→ ใช้ <strong>Print Hub</strong> บนคอมที่เปิดค้างในร้าน [ติดตั้ง Print Hub]<br>→ หรือเครื่องพิมพ์ที่ต่อสาย LAN [ตั้งค่า IP]</p></div>
+      <div class="item"><h4>Android ในเบราว์เซอร์</h4><p><strong>“ต่อบลูทูธได้เลย”</strong> [เชื่อมต่อ]<br><span class="muted">แนะนำติดตั้งแอป StoreOS เพื่อให้แจ้งเตือนเด้งตอนปิดจอด้วย</span> [ดาวน์โหลด APK]</p></div>
+      <div class="item"><h4>Windows + Firefox</h4><p><strong>“Firefox ต่อเครื่องพิมพ์ตรง ๆ ไม่ได้”</strong><br>→ เปิดหน้านี้ด้วย Chrome หรือ Edge [คัดลอกลิงก์]<br>→ หรือใช้ Print Hub บนเครื่องนี้ [ติดตั้ง]</p></div>
+    </div>
+
+    <h3 style="margin-top:20px">คลังความรู้อุปกรณ์ต้องแยกตามแพลตฟอร์ม</h3>
+    <p>ตาราง <code>device_profiles</code> จาก v1 ต้องมี <code>platform</code> เป็นส่วนหนึ่งของคีย์ — เพราะเครื่องพิมพ์รุ่นเดียวกันตั้งค่าคนละแบบเมื่อผ่าน Web BT / native BLE / Print Hub (chunk size, service UUID, จังหวะการส่ง ต่างกันจริงตามที่เห็นใน <code>bluetooth-client.ts</code> ที่ต้องส่งทีละ 120 ไบต์ทุก 12ms)</p>
+  </section>
+
+  <section class="card">
+    <h2>6. เรื่อง iOS ต้องตัดสินใจแยก (ไม่ใช่งาน AI)</h2>
+    <div class="grid2">
+      <article class="item hot">
+        <h3>ทาง A — ทำ Print Hub ให้ติดตั้งง่ายที่สุด <span class="tag">แนะนำทำก่อน</span></h3>
+        <p>ยอมรับว่า iPad = Print Hub แล้วลงแรงกับ Hub ให้เต็มที่: ตัวติดตั้งคลิกเดียว, ค้นหา Hub ในวงแลนอัตโนมัติ, แสดงสถานะออนไลน์/คิวค้างในหน้า <code>/settings/devices</code>, auto-start ตอนเปิดเครื่อง</p>
+        <p class="muted">ของมีอยู่แล้ว: <code>print-hub.ts</code>, <code>scripts/print-hub.mjs</code>, <code>build-print-hub-zip.mjs</code> — เหลืองาน UX เป็นหลัก</p>
+      </article>
+      <article class="item">
+        <h3>ทาง B — ปล่อยแอป iOS จริง</h3>
+        <p>ปลดล็อก BLE + push บน iPad/iPhone ครบเหมือน Android<br>ต้องใช้ Codemagic (build บน Windows ไม่ได้) + Apple Developer 99 USD/ปี + รอบรีวิว App Store</p>
+        <p class="muted">คุ้มถ้าลูกค้าใช้ iPad เป็นสัดส่วนมาก — แต่เป็นงาน infra ยาว ควรวางแผนแยกไม่ปนกับรอบนี้</p>
+      </article>
+    </div>
+    <p class="warning" style="margin-top:12px"><strong>คำถามที่ต้องรู้ก่อน:</strong> ลูกค้าจริงตอนนี้ใช้ iPad กี่ร้าน? ถ้ายังน้อย ทาง A พอ ถ้าเยอะ ทาง B คือของที่เลี่ยงไม่ได้ — ข้อมูลนี้ดูได้จาก user agent ใน log หรือถามฝ่ายขายโดยตรง</p>
+  </section>
+
+  <section class="card">
+    <h2>7. ลำดับใหม่ (แทนที่ลำดับใน v1)</h2>
+    <table>
+      <thead><tr><th>เฟส</th><th>งาน</th><th>AI?</th><th>แรง</th><th>แก้ปัญหาให้ใคร</th></tr></thead>
+      <tbody>
+        <tr><td><strong>0.1</strong></td><td>รวมจุดตัดหน้าจอ + POS 2 คอลัมน์ตั้งแต่ 768px + โหมด tablet ของ shell</td><td>ไม่</td><td>3–4 วัน</td><td><strong>ผู้ใช้แท็บเล็ต/iPad ทุกคน ทันที</strong></td></tr>
+        <tr><td><strong>0.2</strong></td><td>หน้าแรกตามอุปกรณ์+บทบาท, ซ่อนเมนูที่เครื่องนี้ทำไม่ได้</td><td>ไม่</td><td>2–3 วัน</td><td>พนักงานมือถือ, ครัว</td></tr>
+        <tr><td><strong>1</strong></td><td>F1 readiness + setup_profile (จาก v1)</td><td>ไม่</td><td>3–4 วัน</td><td>ร้านใหม่</td></tr>
+        <tr><td><strong>2</strong></td><td>F2 ชั้น 1: <code>capability.ts</code> ตามตารางข้อ 2 + หน้า <code>/settings/devices</code></td><td>ไม่</td><td>4–5 วัน</td><td><strong>ผู้ใช้ iPad/Firefox ที่วันนี้ตันสนิท</strong></td></tr>
+        <tr><td><strong>2.5</strong></td><td>Print Hub ติดตั้งง่าย + ค้นหาในวงแลน (ทาง A ข้อ 6)</td><td>ไม่</td><td>3–4 วัน</td><td>iPad ทั้งหมด</td></tr>
+        <tr><td><strong>3</strong></td><td>ฐาน <code>modules/ai</code> + quota</td><td>ฐาน</td><td>1–2 วัน</td><td>—</td></tr>
+        <tr><td><strong>4</strong></td><td>F2 ชั้น 2 (แปล error, วินิจฉัยผลพิมพ์) + <code>device_profiles</code></td><td>ใช่</td><td>4–5 วัน</td><td>เคสที่ตรรกะเอาไม่อยู่</td></tr>
+        <tr><td><strong>5+</strong></td><td>F3 Menu Scan → F5 nudge → F4 Ctrl+K (ตาม v1)</td><td>ใช่</td><td>—</td><td>ร้านใหม่</td></tr>
+      </tbody>
+    </table>
+    <p class="ok" style="margin-top:14px"><strong>สังเกตให้ดี:</strong> เฟส 0.1 ถึง 2.5 รวม ~16–20 วัน <strong>ไม่มีบรรทัดไหนใช้ AI เลย</strong> แต่เป็นส่วนที่แก้ปัญหา “ผู้ใช้หลายอุปกรณ์ + ระบบใช้งานยาก” ได้เกือบทั้งหมด<br>AI ในเฟส 4 ขึ้นไปคือส่วนที่มาเก็บเคสที่เหลือ ไม่ใช่พระเอกของรอบนี้ — และนั่นคือคำตอบที่ตรงกับโจทย์ที่สุด</p>
+  </section>
+
+  <section class="card">
+    <h2>8. ต้องตัดสินใจ</h2>
+    <ol>
+      <li><strong>ลูกค้าจริงใช้ iPad กี่ร้าน?</strong> — ตัวชี้ว่าจะลงแรงกับ Print Hub (ทาง A) หรือต้องปล่อยแอป iOS (ทาง B)</li>
+      <li>เริ่มที่ <strong>เฟส 0.1 (จอแท็บเล็ต/POS)</strong> หรือ <strong>เฟส 2 (Device Copilot)</strong> ก่อน — ข้อแรกกระทบผู้ใช้ปัจจุบันทุกวัน ข้อหลังกระทบตอนติดตั้งครั้งแรก</li>
+      <li>ยอมเปลี่ยนจุดตัด POS จาก 1024 → 768 ไหม (ต้องทดสอบกับ iPad จริงก่อน deploy)</li>
+      <li>เพดานค่าโมเดลต่อร้านต่อเดือน (ค้างจาก v1)</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

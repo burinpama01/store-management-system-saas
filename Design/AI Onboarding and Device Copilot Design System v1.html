@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <title>Design System v1 — AI Onboarding &amp; Device Copilot — StoreOS</title>
+  <style>
+    :root{--ink:#172033;--muted:#64748b;--line:#dbe3ee;--surface:#fff;--canvas:#eef2f7;--teal:#0f766e;--teal2:#14b8a6;--tealSoft:#ccfbf1;--blue:#1d4ed8;--blueSoft:#dbeafe;--amber:#b45309;--amberSoft:#fef3c7;--rose:#be123c;--roseSoft:#ffe4e6;--green:#15803d;--greenSoft:#dcfce7;--shadow:0 12px 36px rgba(15,23,42,.08);--r:18px}
+    *{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;line-height:1.65}main{max-width:1180px;margin:auto;padding:28px}header,.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:24px;margin-bottom:18px}header{background:linear-gradient(135deg,#fff,#ecfeff)}h1,h2,h3,p{margin-top:0}h1{font-size:clamp(28px,4vw,44px);margin-bottom:6px}h2{font-size:22px}h3{font-size:16px}.muted{color:var(--muted)}.status,.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 10px;font-size:13px;font-weight:800}.status{background:var(--teal);color:#fff}.pill.ok{background:var(--greenSoft);color:var(--green)}.pill.warn{background:var(--amberSoft);color:var(--amber)}.pill.block{background:var(--roseSoft);color:var(--rose)}.pill.info{background:var(--blueSoft);color:var(--blue)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.swatch{min-height:104px;padding:14px;border-radius:14px;border:1px solid var(--line)}.sample-shell{display:grid;grid-template-columns:64px 1fr;min-height:280px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#f8fafc}.rail{background:#0f172a;color:#fff;padding:10px 8px;display:flex;flex-direction:column;gap:8px}.rail span{display:grid;place-items:center;min-height:44px;border-radius:10px;background:#1e293b}.workspace{padding:16px}.step{display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff;margin-bottom:10px}.num{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--tealSoft);color:var(--teal);font-weight:900}.device-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.device{padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff}.action{display:inline-flex;min-height:44px;align-items:center;justify-content:center;padding:0 16px;border-radius:12px;border:0;background:var(--teal);color:#fff;font-weight:800;cursor:pointer}.action.secondary{background:#fff;color:var(--teal);border:1px solid var(--teal)}.action:focus-visible{outline:3px solid var(--blue);outline-offset:3px}code{background:#f1f5f9;padding:2px 6px;border-radius:6px;overflow-wrap:anywhere}td{overflow-wrap:anywhere;word-break:break-word}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#f8fafc}.rule{border-left:4px solid var(--teal);padding:10px 14px;background:#f0fdfa;border-radius:0 12px 12px 0}.bad{border-left-color:var(--rose);background:#fff1f2}@media(max-width:900px){.grid,.device-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){main{padding:14px}.grid,.device-grid{grid-template-columns:1fr}.sample-shell{grid-template-columns:1fr}.rail{display:none}.step{grid-template-columns:36px 1fr}.step .pill{grid-column:2}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">DESIGN SYSTEM v1 · 2026-08-27</span>
+    <h1>AI Onboarding &amp; Device Copilot</h1>
+    <p class="muted">ภาษาภาพและ interaction contract สำหรับ F0–F5 โดยยึดหลัก “ตรรกะตายตัวก่อน AI · AI เสนอ ผู้ใช้ยืนยัน · ใช้งานหลักได้แม้ AI ล่ม”</p>
+  </header>
+
+  <section class="card">
+    <h2>1. Breakpoint contract เดียวทั้งระบบ</h2>
+    <table>
+      <thead><tr><th>โหมด</th><th>ช่วง</th><th>Shell</th><th>POS</th><th>งานที่ควรทำ</th></tr></thead>
+      <tbody>
+        <tr><td>Mobile</td><td><code>&lt; 768px</code></td><td>งานเดียว + เมนูย่อ</td><td>stack โดยตะกร้าเปิดเป็น sheet</td><td>รับออร์เดอร์, แจ้งเตือน, งานด่วน</td></tr>
+        <tr><td>Tablet</td><td><code>768–1279px</code></td><td>icon rail 64px</td><td>catalog + cart สองคอลัมน์</td><td>POS, QR board, device setup</td></tr>
+        <tr><td>Desktop</td><td><code>≥ 1280px</code></td><td>sidebar 256px</td><td>สองคอลัมน์เต็ม</td><td>ตั้งค่า, รายงาน, payroll, ผังโต๊ะ</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>2. สีและความหมาย</h2>
+    <div class="grid">
+      <div class="swatch" style="background:var(--tealSoft)"><strong>Teal · พร้อมทำ</strong><br><span class="muted">ขั้นตอนหลักและ CTA ที่ปลอดภัย</span></div>
+      <div class="swatch" style="background:var(--blueSoft)"><strong>Blue · คำแนะนำ</strong><br><span class="muted">AI suggestion หรือข้อมูลประกอบ</span></div>
+      <div class="swatch" style="background:var(--amberSoft)"><strong>Amber · ต้องยืนยัน</strong><br><span class="muted">ค่าที่อ่านไม่ชัดหรือมีผลต่อข้อมูล</span></div>
+      <div class="swatch" style="background:var(--greenSoft)"><strong>Green · สำเร็จจริง</strong><br><span class="muted">ผ่าน health/test หรือบันทึกแล้ว</span></div>
+      <div class="swatch" style="background:var(--roseSoft)"><strong>Rose · ใช้ไม่ได้/หยุด</strong><br><span class="muted">capability ไม่มี, permission ไม่พอ, gate ไม่ผ่าน</span></div>
+      <div class="swatch"><strong>Slate · ทางเลือกสำรอง</strong><br><span class="muted">manual path ที่ต้องอยู่เสมอเมื่อ AI ล่ม</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3. Component contracts</h2>
+    <div class="step"><span class="num">1</span><div><strong>Readiness step</strong><br><span class="muted">สถานะจริง + เหตุผล + deep link เดียว</span></div><span class="pill ok">พร้อม</span></div>
+    <div class="step"><span class="num">2</span><div><strong>Capability card</strong><br><span class="muted">แสดงเฉพาะช่องทางที่อุปกรณ์นี้ทำได้จริง</span></div><span class="pill info">แนะนำ USB</span></div>
+    <div class="step"><span class="num">3</span><div><strong>AI preview</strong><br><span class="muted">diff ก่อน/หลัง, confidence, ฟิลด์ที่ต้องยืนยัน และปุ่มยกเลิก</span></div><span class="pill warn">รอยืนยัน</span></div>
+    <div class="step"><span class="num">4</span><div><strong>Blocked state</strong><br><span class="muted">บอกสาเหตุภาษาคน + ทางออกที่ทำได้บนอุปกรณ์ปัจจุบัน</span></div><span class="pill block">WebUSB ไม่มี</span></div>
+    <p><button class="action">ทำขั้นตอนนี้</button> <button class="action secondary">ทำเองโดยไม่ใช้ AI</button></p>
+  </section>
+
+  <section class="card">
+    <h2>4. Tablet shell mockup</h2>
+    <div class="sample-shell">
+      <nav class="rail" aria-label="ตัวอย่างเมนูแท็บเล็ต">
+        <span aria-label="หน้าแรก"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>
+        <span aria-label="จุดขาย"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 5h16v14H4zm3 3v8h10V8z"/></svg></span>
+        <span aria-label="รายการ"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M5 5h3v3H5zm5 0h9v3h-9zM5 10.5h3v3H5zm5 0h9v3h-9zM5 16h3v3H5zm5 0h9v3h-9z"/></svg></span>
+        <span aria-label="ตั้งค่า"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m9 4-2.1-1.2.1-2.4-2.4-2.4-2.4.1L12 3 10.8 5.1 8.4 5 6 7.4l.1 2.4L4 11v2l2.1 1.2L6 16.6 8.4 19l2.4-.1L12 21l1.2-2.1 2.4.1 2.4-2.4-.1-2.4L21 13z"/></svg></span>
+      </nav>
+      <div class="workspace">
+        <span class="pill info">iPad · Print Hub</span>
+        <h3 style="margin-top:14px">ตั้งค่าร้านให้พร้อมขาย</h3>
+        <div class="step"><span class="num">1</span><div><strong>เพิ่มสินค้า</strong><br><span class="muted">มีแล้ว 18 รายการ</span></div><span class="pill ok">เสร็จแล้ว</span></div>
+        <div class="step"><span class="num">2</span><div><strong>เชื่อมเครื่องพิมพ์</strong><br><span class="muted">Safari ใช้ Bluetooth/USB ไม่ได้ — ใช้ Hub หรือ IP</span></div><span class="pill warn">ต้องทำ</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>5. Accessibility และข้อความ</h2>
+    <ul>
+      <li>เป้าสัมผัสขั้นต่ำ 44×44px, focus ring มองเห็น, icon-only ต้องมี <code>aria-label</code> และ tooltip</li>
+      <li>ห้ามใช้สีเพียงอย่างเดียวบอกสถานะ; ต้องมีข้อความ/ไอคอนคู่กัน</li>
+      <li>ห้ามแสดงเปอร์เซ็นต์ progress ถ้าวัดไม่ได้; ใช้ “กำลังตรวจสอบ” แทน</li>
+      <li>error ต้องมีรูปแบบ “เกิดอะไรขึ้น → เพราะอะไร → ทำอะไรต่อได้” และไม่แสดง stack/provider message ตรงแก่ลูกค้า</li>
+      <li>AI confidence ต่ำห้าม auto-apply; ราคา, ภาษี, จำนวนสต๊อก และอุปกรณ์ต้องยืนยันทุกครั้ง</li>
+    </ul>
+    <div class="rule">ดี: “Safari บน iPad เชื่อม USB โดยตรงไม่ได้ ให้เปิด Print Hub บนคอมพิวเตอร์ร้าน หรือใช้เครื่องพิมพ์ IP”</div>
+    <div class="rule bad" style="margin-top:10px">ห้าม: “WebUSB unsupported” โดยไม่มีทางออก</div>
+  </section>
+</main>
+</body>
+</html>
