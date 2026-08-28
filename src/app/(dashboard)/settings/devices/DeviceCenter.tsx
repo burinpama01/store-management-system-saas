@@ -1,0 +1,138 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { readDeviceCapabilities } from "@/modules/devices/browser-capability";
+import { recommendPrintChannels, type DeviceRecommendation } from "@/modules/devices/device-recommendation";
+import type { DeviceCapabilities } from "@/modules/devices/capability";
+import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
+
+export function DeviceCenter({ hasNetworkPrinter }: { hasNetworkPrinter: boolean }) {
+  const [caps, setCaps] = useState<DeviceCapabilities | null>(null);
+  const [recommendation, setRecommendation] = useState<DeviceRecommendation | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const detect = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    readDeviceCapabilities()
+      .then((next) => {
+        setCaps(next);
+        setRecommendation(recommendPrintChannels(next, { hasNetworkPrinter }));
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "ตรวจอุปกรณ์ไม่สำเร็จ"))
+      .finally(() => setLoading(false));
+  }, [hasNetworkPrinter]);
+
+  useEffect(() => {
+    detect();
+  }, [detect]);
+
+  const channelHints = caps
+    ? {
+        usb: caps.webUsb ? null : "อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ WebUSB",
+        bluetooth: caps.webBluetooth ? null : "อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth",
+      }
+    : null;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="panel-title">อุปกรณ์เครื่องนี้เชื่อมอะไรได้บ้าง</h2>
+          <p className="label-muted">
+            {caps
+              ? `ระบบตรวจจริงแล้ว: ${caps.os} · ${caps.formFactor} · ${caps.runtime === "storeos-app" ? "แอป StoreOS" : "เบราว์เซอร์"}`
+              : "กำลังตรวจอุปกรณ์..."}
+          </p>
+        </div>
+        <button type="button" onClick={detect} disabled={loading} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
+          {loading ? "กำลังตรวจ..." : "ตรวจใหม่"}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
+          ตรวจอุปกรณ์ไม่สำเร็จ ({error}) — ลองรีเฟรชหน้านี้
+        </p>
+      ) : null}
+
+      {recommendation?.primary ? (
+        <div className="rounded-[var(--radius-lg)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-5">
+          <span className="badge badge-brand mb-2">ช่องทางที่แนะนำสำหรับเครื่องนี้</span>
+          <h3 className="text-lg font-extrabold text-[var(--ink)]">{recommendation.primary.title}</h3>
+          <p className="mt-1 text-sm text-[var(--ink-2)]">{recommendation.primary.reason}</p>
+          {recommendation.primary.href ? (
+            <Link href={recommendation.primary.href} className="btn-primary mt-3 inline-flex min-h-11 items-center px-4 text-sm">
+              ไปตั้งค่าช่องทางนี้
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {recommendation && recommendation.unknown.length > 0 ? (
+        <div className="rounded-[var(--radius-lg)] border border-amber-200 bg-amber-50 p-4">
+          <h3 className="text-sm font-extrabold text-amber-900">ยังตรวจไม่ได้</h3>
+          <ul className="mt-1 space-y-1 text-sm text-amber-800">
+            {recommendation.unknown.map((opt) => (
+              <li key={opt.id}>
+                <strong>{opt.title}</strong> — {opt.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {recommendation && recommendation.fallbacks.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-extrabold text-[var(--ink)]">ช่องทางสำรองที่ทำได้จริง</h3>
+          <div className="space-y-2">
+            {recommendation.fallbacks.map((opt) => (
+              <div key={opt.id} className="flex items-start justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-[var(--ink)]">{opt.title}</p>
+                  <p className="text-xs text-[var(--muted)]">{opt.reason}</p>
+                </div>
+                {opt.href ? (
+                  <Link href={opt.href} className="btn-secondary shrink-0 px-3 py-2 text-xs">
+                    เปิด
+                  </Link>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {recommendation && recommendation.unavailable.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-sm font-extrabold text-[var(--ink)]">ช่องทางที่เครื่องนี้ใช้ไม่ได้ (พร้อมเหตุผล)</h3>
+          <div className="space-y-2">
+            {recommendation.unavailable.map((opt) => (
+              <div key={opt.id} className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] p-3 opacity-80">
+                <p className="text-sm font-bold text-[var(--ink-2)]">{opt.title}</p>
+                <p className="text-xs text-[var(--muted)]">{opt.reason}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div>
+        <h3 className="mb-2 text-sm font-extrabold text-[var(--ink)]">เชื่อมต่อ/ทดสอบพิมพ์เลย</h3>
+        <PrinterConnectionPanel capabilityHints={channelHints} />
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          ตั้งค่า Print Hub (token/ตัวติดตั้ง) ที่{" "}
+          <Link href="/settings/print-hub" className="font-bold underline">
+            หน้า Print Hub
+          </Link>{" "}
+          · จัดการเครื่องพิมพ์ที่บันทึกไว้ที่{" "}
+          <Link href="/settings/receipt" className="font-bold underline">
+            หน้าเครื่องพิมพ์
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}

@@ -34,6 +34,8 @@ interface PrinterConnectionPanelProps {
   saveNetworkPrinterAction?: SaveNetworkPrinterAction;
   saveHubBluetoothPrinterAction?: SaveNetworkPrinterAction;
   onNetworkPrinterSelect?: (printerId: string) => void;
+  /** F1/F2 (v0.33.6): เหตุผลที่ช่องทางนี้ใช้ไม่ได้บนอุปกรณ์นี้ — ให้เหตุผล = ปุ่มถูก disable พร้อมข้อความ */
+  capabilityHints?: Readonly<{ usb?: string | null; bluetooth?: string | null }> | null;
 }
 
 type PrinterDevice = { kind: string; name: string };
@@ -104,6 +106,7 @@ export function PrinterConnectionPanel({
   saveNetworkPrinterAction,
   saveHubBluetoothPrinterAction,
   onNetworkPrinterSelect,
+  capabilityHints = null,
 }: PrinterConnectionPanelProps) {
   const [rememberedDevice, setRememberedDevice] = useState<PrinterDevice | null>(null);
   const [connectedDevice, setConnectedDevice] = useState<PrinterDevice | null>(null);
@@ -294,12 +297,15 @@ export function PrinterConnectionPanel({
           )}
           {!nativeReady && (
             <>
-              <button type="button" onClick={connectUsb} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
+              <button type="button" onClick={connectUsb} disabled={busy || Boolean(capabilityHints?.usb)} title={capabilityHints?.usb ?? undefined} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
                 USB
               </button>
-              <button type="button" onClick={connectBluetooth} disabled={busy} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
+              <button type="button" onClick={connectBluetooth} disabled={busy || Boolean(capabilityHints?.bluetooth)} title={capabilityHints?.bluetooth ?? undefined} className="btn-secondary min-h-11 px-3 text-xs disabled:opacity-40">
                 Bluetooth
               </button>
+              {(capabilityHints?.usb || capabilityHints?.bluetooth) && (
+                <span className="w-full text-[11px] text-[var(--muted)]">{capabilityHints.usb ?? capabilityHints.bluetooth} — ใช้ Print Hub หรือ IP ผ่าน Hub แทน</span>
+              )}
             </>
           )}
           {networkPrinters.map((printer) => (
