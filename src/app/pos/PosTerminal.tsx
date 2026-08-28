@@ -3402,7 +3402,7 @@ export function PosTerminal({
   }
 
   return (
-    <div className="storeos-pos flex h-screen flex-col overflow-hidden bg-[var(--canvas)] lg:flex-row">
+    <div className="storeos-pos flex h-screen flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Store header */}
@@ -3538,7 +3538,7 @@ export function PosTerminal({
       <button
         type="button"
         onClick={() => setOrderPanelOpen(true)}
-        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
+        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg md:hidden ${
           orderPanelOpen ? "hidden" : "flex"
         }`}
       >
@@ -3558,7 +3558,7 @@ export function PosTerminal({
         onKeyDown={(event) => {
           if (event.key === "Escape") setOrderPanelOpen(false);
         }}
-        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 lg:hidden ${
+        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 md:hidden ${
           orderPanelOpen ? "translate-y-0" : "pointer-events-none translate-y-full"
         }`}
       >
@@ -3646,7 +3646,7 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden border-l border-gray-200 bg-white lg:flex lg:h-auto lg:w-80 lg:shrink-0 lg:flex-col">
+      <aside className="hidden border-l border-gray-200 bg-white md:flex md:h-auto md:w-80 md:shrink-0 md:flex-col">
         {renderOrderPanelContent()}
       </aside>
 

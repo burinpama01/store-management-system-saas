@@ -95,8 +95,11 @@ describe("UX/UI regression guards", () => {
   it("POS shell stacks cart and catalog on narrow screens", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
-    expect(source).toContain("lg:flex-row");
-    expect(source).toContain("lg:w-80");
+    // Breakpoint contract เดียว: POS สองคอลัมน์ตั้งแต่ 768px (tablet) — ไม่รอ lg:1024 เดิม
+    expect(source).toContain("md:flex-row");
+    expect(source).toContain("md:w-80");
+    expect(source).not.toContain("lg:flex-row");
+    expect(source).toContain('role="dialog"');
   });
 
   it("QR ordering keeps primary touch controls at least 44px high", () => {

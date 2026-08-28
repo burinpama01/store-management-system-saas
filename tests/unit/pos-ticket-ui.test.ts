@@ -53,8 +53,8 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain('role="dialog"');
     expect(source).toContain("aria-hidden={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
     expect(source).toContain("inert={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
-    expect(source).toContain("hidden border-l border-gray-200 bg-white lg:flex");
-    expect(source).toContain("lg:w-80");
+    expect(source).toContain("hidden border-l border-gray-200 bg-white md:flex");
+    expect(source).toContain("md:w-80");
   });
 
   it("keeps ticket tools and bill history behind dedicated pop-up sheets", () => {
