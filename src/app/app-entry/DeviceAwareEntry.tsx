@@ -2,8 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { selectLandingPath, type EntryFormFactor } from "@/modules/auth/guards";
 
+/**
+ * F0 · Task 4 — Device-aware entry (client side)
+ *
+ * server (`landingPathsForCurrentUser` ใน guards.ts) คำนวณ map ของหน้าแรก
+ * ตามสิทธิ์มาให้แล้ว — client จำแนกอุปกรณ์ครั้งเดียวด้วย matchMedia แล้ว replace
+ * ไปตาม map เท่านั้น ห้ามรับ/ส่ง redirect URL ที่ client สร้างเอง
+ *
+ * หมายเหตุ boundary: type/lookup ด้านล่างเทียบเท่า `selectLandingPath` + `EntryFormFactor`
+ * ใน `src/modules/auth/guards.ts` แต่ต้องประกาศซ้ำที่นี่เพราะ guards.ts เป็น server module
+ * (นำเข้า next/headers + Supabase server client) — ห้าม import เข้า client bundle
+ */
+type EntryFormFactor = "mobile" | "tablet" | "desktop";
 type LandingPaths = Readonly<Record<EntryFormFactor, string>>;
 
 /**
@@ -16,13 +27,7 @@ function pickFormFactor(match: (query: string) => boolean): EntryFormFactor {
   return "mobile";
 }
 
-/**
- * Device-aware entry (F0 · Task 4): server ส่ง map ของหน้าแรกตามสิทธิ์มาให้แล้ว
- * (`landingPathsForCurrentUser`) — client แค่จำแนกอุปกรณ์ครั้งเดียวแล้ว replace
- * ไปตาม map ห้ามรับ/ส่ง redirect URL ที่ client สร้างเอง
- *
- * no-JS/redirect fail: แสดงลิงก์ fallback (= หน้าแรกแบบเดิมจาก server) เสมอ
- */
+/** no-JS/redirect fail: แสดงลิงก์ fallback (= หน้าแรกแบบเดิมจาก server) เสมอ */
 export function DeviceAwareEntry({ paths, fallback }: { paths: LandingPaths; fallback: string }) {
   const router = useRouter();
   const [replaced, setReplaced] = useState(false);
@@ -33,7 +38,7 @@ export function DeviceAwareEntry({ paths, fallback }: { paths: LandingPaths; fal
     startedRef.current = true;
     const media = (query: string) => window.matchMedia(query).matches;
     const form = pickFormFactor(media);
-    router.replace(selectLandingPath(paths, form));
+    router.replace(paths[form]);
     setReplaced(true);
   }, [paths, router]);
 

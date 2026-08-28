@@ -44,10 +44,11 @@ describe("device-aware entry (F0 · Task 4)", () => {
 
     expect(component).toContain('"use client"');
     expect(component).toContain("window.matchMedia");
-    expect(component).toContain("router.replace(");
-    expect(component).toContain("selectLandingPath(paths, form)");
+    expect(component).toContain("router.replace(paths[form])");
     // no-JS/timeout fallback ต้องใช้ server default ไม่เดาเอง
     expect(component).toContain("fallback");
+    // client boundary: ห้าม import server module (guards.ts ใช้ next/headers + Supabase)
+    expect(component).not.toContain("@/modules/auth/guards");
     expect(page).toContain("landingPathsForCurrentUser()");
     expect(page).toContain("<DeviceAwareEntry paths={paths} fallback={paths.desktop} />");
     expect(page).not.toContain("redirect(await landingPathForCurrentUser())");
