@@ -11,6 +11,7 @@ import {
 import { listBranchStores } from "@/modules/stores/repository";
 import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { CatalogManager } from "./CatalogManager";
+import { MenuScanWizard } from "./MenuScanWizard";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,8 @@ export default async function CatalogPage() {
 
   return (
     <div className="min-h-full">
-      <CatalogManager
+      <MenuScanWizard />
+    <CatalogManager
         categories={categories}
         products={products}
         branchStores={branchStores}
