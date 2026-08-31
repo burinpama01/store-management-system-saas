@@ -204,6 +204,12 @@ export const UNIFIED_POS_ERROR_CODES = Object.freeze({
   stock_insufficient: "up_stock_insufficient",
   /** store flag ที่เกี่ยวข้องถูกปิด (แผน: U2 store flags) */
   store_flag_disabled: "up_store_flag_disabled",
+  /**
+   * โต๊ะไม่มี session ที่ใช้สั่งได้ (หมดอายุ/ยังไม่เปิด) และกฎของร้านไม่อนุญาตให้เปิดเอง
+   * (แผน U4 RED: auto-open failure — ร้านที่ไม่ใช่ table_bound+customer_self ต้องแจ้งพนักงาน)
+   * เพิ่มใน U4 (v0.35.4) ตาม brief ให้เลือก/เพิ่ม code เมื่อไม่มีตัวไหนตรง
+   */
+  session_not_active: "up_session_not_active",
 } as const);
 
 /** Union ของ error code ทั้งหมด (ดึงจากค่าใน UNIFIED_POS_ERROR_CODES) */

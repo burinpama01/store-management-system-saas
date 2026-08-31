@@ -40,7 +40,10 @@ describe("generateOrderNumber", () => {
 
     expect(posAction).toContain("storeTimezone: ctx.storeTimezone");
     expect(posRepository).toContain("generateOrderNumber({ timeZone: input.storeTimezone })");
-    expect(qrAction).toContain(".select(\"id, organization_id, qr_ordering_enabled, is_active, timezone, qr_ordering_mode, table_open_policy\")");
+    expect(qrAction).toContain(".select(\"id, organization_id, qr_ordering_enabled, is_active, timezone, qr_ordering_mode, table_open_policy, unified_pos_enabled\")");
+    // U4: flag-routed v2/v1 — QR action ต้องเดิน v2 เมื่อ flag เปิดและคง v1 ไว้ตอนปิด
+    expect(qrAction).toContain("create_qr_order_with_items_v2");
+    expect(qrAction).toContain("unified_pos_enabled");
     expect(qrAction).toContain("generateOrderNumber({ timeZone: store.timezone })");
   });
 });

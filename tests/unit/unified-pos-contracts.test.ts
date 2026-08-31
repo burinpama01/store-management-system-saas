@@ -220,6 +220,7 @@ describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' สำหร�
         "cancel_not_allowed",
         "stock_insufficient",
         "store_flag_disabled",
+        "session_not_active",
       ].sort()
     );
   });
@@ -229,6 +230,8 @@ describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' สำหร�
       expect(value).toMatch(/^up_[a-z_]+$/);
     }
     expect(UNIFIED_POS_ERROR_CODES.stale_version).toBe("up_stale_version");
+    // U4 (v0.35.4): เพิ่มสำหรับ auto-open failure (session หมดอายุ + กฎห้ามเปิดเอง)
+    expect(UNIFIED_POS_ERROR_CODES.session_not_active).toBe("up_session_not_active");
   });
 
   it("Object.freeze แล้ว + พยายาม mutate แล้วค่าไม่เปลี่ยน", () => {

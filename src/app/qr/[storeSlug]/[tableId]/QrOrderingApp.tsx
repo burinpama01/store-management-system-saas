@@ -830,10 +830,17 @@ export default function QrOrderingApp({
     }));
 
     startTransition(async () => {
+      // U4: key ต่อ 1 ครั้งการกดส่ง — browser/framework retry ของ request เดียวกัน
+      // จะใช้ key นี้ซ้ำและได้ replay แทนการสร้าง order ซ้ำ (idempotency)
+      const operationKey =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `qr-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
       const result = await submitQrOrderAction(
         store.id,
         table.id,
         qrItems,
+        operationKey,
       );
       if (result.error) {
         setSubmitError(result.error);

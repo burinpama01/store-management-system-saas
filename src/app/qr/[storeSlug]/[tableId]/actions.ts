@@ -9,6 +9,13 @@ import {
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
+import { getCurrentUser } from "@/modules/auth/session";
+import {
+  computeRequestHash,
+  createOperationKey,
+  isValidOperationKey,
+  type UnifiedPosTableOrderRpcOutcome,
+} from "@/modules/unified-pos/envelope";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import type { SelectedModifier } from "@/modules/pos/types";
 import {
@@ -31,10 +38,34 @@ export interface QrOrderItem {
   note?: string;
 }
 
+/**
+ * Server action สำหรับลูกค้าส่งออร์เดอร์ QR (U4):
+ *   - operationKey: key ของ request (client สร้างต่อ 1 ครั้งการกดส่งและ reuse เมื่อ retry
+ *     ของ request เดียวกัน — ถ้าไม่ส่งมา server จะสร้างให้ต่อ request lifecycle)
+ *   - internalStaffContext: ใช้เฉพาะโดย addItemsToTableAction (POS) เพื่อสลับไปเส้นทาง
+ *     staff add-items (qr_order_source=false) — actor ต้องเป็น session user คนเดียวกัน
+ *     เสมอ (กันการปลอม actor จากการเรียก action ตรง ๆ) และสิทธิ์ pos.use ถูก enforce
+ *     ซ้ำที่ชั้น RPC add_items_to_table_v2
+ */
 export async function submitQrOrderAction(
   storeId: string,
   tableId: string,
   items: QrOrderItem[],
+  operationKey?: string,
+  internalStaffContext?: { actorUserId: string },
+): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
+  return submitTableOrder(storeId, tableId, items, {
+    operationKey,
+    staffActorUserId: internalStaffContext?.actorUserId ?? null,
+  });
+}
+
+/** Core ร่วมของ QR submit + staff add-items (ไม่ export — เรียกผ่าน server action ข้างบน) */
+async function submitTableOrder(
+  storeId: string,
+  tableId: string,
+  items: QrOrderItem[],
+  opts: { operationKey?: string; staffActorUserId: string | null },
 ): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
   // --- Input validation ---
   if (!isUUID(storeId) || !isUUID(tableId)) {
@@ -64,10 +95,20 @@ export async function submitQrOrderAction(
 
   const supabase = await createSupabaseServiceClient();
 
+  // staff path (add-items จาก POS): actor ต้องเป็น session user คนเดียวกันเสมอ —
+  // ป้องกันการปลอม uuid ของพนักงานคนอื่นผ่านการเรียก server action ตรง ๆ
+  // (สิทธิ์ pos.use ถูก enforce อีกชั้นที่ RPC add_items_to_table_v2)
+  if (opts.staffActorUserId) {
+    const sessionUser = await getCurrentUser();
+    if (!sessionUser || sessionUser.id !== opts.staffActorUserId) {
+      return { orderId: null, orderNumber: null, error: "Invalid request" };
+    }
+  }
+
   // Verify store
   const { data: store, error: storeErr } = await supabase
     .from("stores")
-    .select("id, organization_id, qr_ordering_enabled, is_active, timezone, qr_ordering_mode, table_open_policy")
+    .select("id, organization_id, qr_ordering_enabled, is_active, timezone, qr_ordering_mode, table_open_policy, unified_pos_enabled")
     .eq("id", storeId)
     .single();
   if (storeErr || !store) return { orderId: null, orderNumber: null, error: "Store not found" };
@@ -113,12 +154,16 @@ export async function submitQrOrderAction(
     if (!canSelfOpen) {
       return { orderId: null, orderNumber: null, error: "หมดเวลาสั่งอาหารของโต๊ะนี้แล้ว กรุณาแจ้งพนักงาน" };
     }
-    const { error: openErr } = await supabase.rpc("open_table_session_self", {
-      p_store_id: storeId,
-      p_table_id: tableId,
-    });
-    if (openErr) {
-      return { orderId: null, orderNumber: null, error: "ไม่สามารถเปิดโต๊ะได้ กรุณาแจ้งพนักงาน" };
+    if (!store.unified_pos_enabled) {
+      // เส้นทางเดิม (v1): เปิด session แยกก่อนสร้าง order — เส้นทาง v2 จะ auto-open
+      // ใน RPC เองแบบ atomic (lock table row + เปิด session + สร้าง order ใน transaction เดียว)
+      const { error: openErr } = await supabase.rpc("open_table_session_self", {
+        p_store_id: storeId,
+        p_table_id: tableId,
+      });
+      if (openErr) {
+        return { orderId: null, orderNumber: null, error: "ไม่สามารถเปิดโต๊ะได้ กรุณาแจ้งพนักงาน" };
+      }
     }
   }
 
@@ -359,6 +404,116 @@ export async function submitQrOrderAction(
     note: line.note,
   })) as unknown as Json;
 
+  const notifyNewOrder = (createdOrderId: string, createdOrderNumber: string) => {
+    if (table.current_session_id) {
+      notifyOwnerSafely({
+        type: "new_buffet_order",
+        organizationId: store.organization_id,
+        storeId,
+        title: "มีออเดอร์บุฟเฟต์ใหม่",
+        message: `โต๊ะ ${table.number} ส่งออเดอร์ ${createdOrderNumber} ยอด ${subtotal.toFixed(2)}`,
+        metadata: {
+          orderId: createdOrderId,
+          orderNumber: createdOrderNumber,
+          tableId,
+          tableNumber: table.number,
+          total: subtotal,
+          source: "qr",
+        },
+      });
+    } else {
+      notifyOwnerSafely({
+        type: "new_qr_order",
+        organizationId: store.organization_id,
+        storeId,
+        title: "มีออเดอร์ QR ใหม่",
+        message: `โต๊ะ ${table.number} ส่งออเดอร์ ${createdOrderNumber} ยอด ${subtotal.toFixed(2)}`,
+        metadata: {
+          orderId: createdOrderId,
+          orderNumber: createdOrderNumber,
+          tableId,
+          tableNumber: table.number,
+          total: subtotal,
+          source: "qr",
+        },
+      });
+    }
+  };
+
+  // --- เส้นทาง v2 (U4): atomic + idempotent — เปิดใช้เมื่อร้านเปิด flag unified_pos_enabled ---
+  if (store.unified_pos_enabled) {
+    const isStaff = opts.staffActorUserId !== null;
+    // key ต่อ 1 ครั้งการส่ง — client ส่งมา (reuse ตอน retry ของ request เดียวกัน) จะใช้ค่านั้น
+    const key =
+      opts.operationKey && isValidOperationKey(opts.operationKey)
+        ? opts.operationKey
+        : createOperationKey();
+    // hash เฉพาะ semantic ของคำขอ — ห้ามรวม orderNumber (ที่ regenerate ตอน retry)
+    // มิฉะนั้น retry ที่ถือ key เดิมจะโดน hash_conflict ทั้งที่เป็นคำขอเดียวกัน
+    const requestHash = computeRequestHash({ storeId, tableId, subtotal, items });
+
+    const rpcName = isStaff ? "add_items_to_table_v2" : "create_qr_order_with_items_v2";
+    const rpcArgs = {
+      p_organization_id: store.organization_id,
+      p_store_id: storeId,
+      p_table_id: tableId,
+      p_order_number: orderNumber,
+      p_operation_key: key,
+      p_request_hash: requestHash,
+      p_subtotal: subtotal,
+      p_items: rpcItems,
+    };
+
+    // เรียก RPC ด้วยชื่อ literal ต่อเส้นทาง (typed client ตรวจชื่อ/args ระดับ type)
+    const { data: outcome, error: rpcErr } = opts.staffActorUserId
+      ? await supabase.rpc("add_items_to_table_v2", {
+          ...rpcArgs,
+          p_actor_user_id: opts.staffActorUserId,
+        })
+      : await supabase.rpc("create_qr_order_with_items_v2", rpcArgs);
+    if (rpcErr) {
+      return { orderId: null, orderNumber: null, error: rpcErr.message ?? "Failed to create order" };
+    }
+    const parsed = outcome as UnifiedPosTableOrderRpcOutcome | null;
+    if (!parsed) {
+      return { orderId: null, orderNumber: null, error: "Failed to create order" };
+    }
+    if (parsed.status === "error") {
+      return { orderId: null, orderNumber: null, error: parsed.message };
+    }
+    if (parsed.status === "hash_conflict") {
+      return {
+        orderId: null,
+        orderNumber: null,
+        error: "คำขอนี้เคยใช้ไปกับรายการที่ต่างกัน กรุณาตรวจรถเข็นและสั่งใหม่อีกครั้ง",
+      };
+    }
+    if (!parsed.result) {
+      // replayed แต่ result หมดอายุถูก purge (retention 30 วัน) — tombstone ยังกัน execute ซ้ำ
+      return {
+        orderId: null,
+        orderNumber: null,
+        error: "ไม่พบผลลัพธ์เดิมของคำขอนี้ กรุณาสั่งใหม่อีกครั้ง",
+      };
+    }
+
+    if (parsed.status === "executed") {
+      // แจ้งเตือนเฉพาะ executed — replay ต้องไม่แจ้งซ้ำ
+      notifyNewOrder(parsed.result.order_id, parsed.result.order_number);
+      // low-stock alert ผูกกับ "การหักสต๊อกจริง": QR หักตอนสร้าง (convention 20260607000006)
+      // ส่วน staff (qr_order_source=false) หักตอนชำระ จึงไม่เรียกที่นี่
+      if (!isStaff) {
+        notifyLowStockAfterSaleSafely(
+          store.organization_id,
+          storeId,
+          orderLines.map((line) => ({ variantId: line.variantId, baseQuantity: line.quantity })),
+        );
+      }
+    }
+    return { orderId: parsed.result.order_id, orderNumber: parsed.result.order_number, error: null };
+  }
+
+  // --- เส้นทางเดิม (unified_pos_enabled=false): RPC v1 ตามพฤติกรรมเดิมทุกอย่าง ---
   const { data: orderId, error: orderErr } = await supabase.rpc("create_qr_order_with_items", {
     p_organization_id: store.organization_id,
     p_store_id: storeId,
@@ -372,39 +527,7 @@ export async function submitQrOrderAction(
     return { orderId: null, orderNumber: null, error: orderErr?.message ?? "Failed to create order" };
   }
 
-  if (table.current_session_id) {
-    notifyOwnerSafely({
-      type: "new_buffet_order",
-      organizationId: store.organization_id,
-      storeId,
-      title: "มีออเดอร์บุฟเฟต์ใหม่",
-      message: `โต๊ะ ${table.number} ส่งออเดอร์ ${orderNumber} ยอด ${subtotal.toFixed(2)}`,
-      metadata: {
-        orderId,
-        orderNumber,
-        tableId,
-        tableNumber: table.number,
-        total: subtotal,
-        source: "qr",
-      },
-    });
-  } else {
-    notifyOwnerSafely({
-      type: "new_qr_order",
-      organizationId: store.organization_id,
-      storeId,
-      title: "มีออเดอร์ QR ใหม่",
-      message: `โต๊ะ ${table.number} ส่งออเดอร์ ${orderNumber} ยอด ${subtotal.toFixed(2)}`,
-      metadata: {
-        orderId,
-        orderNumber,
-        tableId,
-        tableNumber: table.number,
-        total: subtotal,
-        source: "qr",
-      },
-    });
-  }
+  notifyNewOrder(orderId, orderNumber);
 
   notifyLowStockAfterSaleSafely(
     store.organization_id,

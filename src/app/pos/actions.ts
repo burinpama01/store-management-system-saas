@@ -972,13 +972,21 @@ export async function listOpenQrOrdersAction(): Promise<{ orders: QrOrderView[];
 
 /**
  * พนักงานเพิ่มรายการเข้าโต๊ะที่เปิดอยู่ → ส่งเข้าครัวทันทีเป็น "ออเดอร์เปิด" ผูกโต๊ะ
- * (ยังไม่เก็บเงิน). ใช้ไปป์ไลน์เดียวกับ QR order (create_qr_order_with_items) เพื่อให้
- * ครัวเห็นบนบอร์ด + ตัดสต็อกตอนสั่ง + โผล่ในบิลรวมของโต๊ะ + เช็คบิลรวมได้เลย.
- * โต๊ะที่เปิดอยู่ = session active → ผ่านด่านเช็คของ submitQrOrderAction เอง.
+ * (ยังไม่เก็บเงิน). ใช้ไปป์ไลน์เดียวกับ QR order เพื่อให้ครัวเห็นบนบอร์ด + โผล่ใน
+ * บิลรวมของโต๊ะ + เช็คบิลรวมได้เลย.
+ *
+ * U4 (v0.35.4):
+ *   - operationKey: key ของ request (reuse เมื่อ retry ของ request เดียวกัน)
+ *   - ร้านที่เปิด flag unified_pos_enabled → add_items_to_table_v2 (atomic + idempotent,
+ *     qr_order_source=false — สต๊อกถูกตัดตอนชำระตาม convention 20260607000006)
+ *   - ร้านที่ยังไม่เปิด flag → เส้นทางเดิม (submitQrOrderAction เหมือนเดิมทุกอย่าง)
+ *   - actor = session user เสมอ; สิทธิ์ pos.use ถูก enforce ที่ชั้น action (requirePermission)
+ *     และชั้น RPC (user_has_permission_in_store)
  */
 export async function addItemsToTableAction(
   tableId: string,
   items: QrOrderItem[],
+  operationKey?: string,
 ): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
   try {
     await requirePermission("pos.use");
@@ -986,7 +994,9 @@ export async function addItemsToTableAction(
     if (!UUID_RE.test(tableId)) {
       return { orderId: null, orderNumber: null, error: "โต๊ะไม่ถูกต้อง" };
     }
-    const res = await submitQrOrderAction(ctx.storeId, tableId, items);
+    const res = await submitQrOrderAction(ctx.storeId, tableId, items, operationKey, {
+      actorUserId: ctx.userId,
+    });
     if (!res.error) revalidatePath("/pos", "page");
     return res;
   } catch (e) {

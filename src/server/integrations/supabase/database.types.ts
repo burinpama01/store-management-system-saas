@@ -4030,6 +4030,33 @@ export interface Database {
         };
         Returns: string;
       };
+      create_qr_order_with_items_v2: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_table_id: string;
+          p_order_number: string;
+          p_operation_key: string;
+          p_request_hash: string;
+          p_subtotal: number;
+          p_items?: Json;
+        };
+        Returns: Json;
+      };
+      add_items_to_table_v2: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_table_id: string;
+          p_actor_user_id: string;
+          p_order_number: string;
+          p_operation_key: string;
+          p_request_hash: string;
+          p_subtotal: number;
+          p_items?: Json;
+        };
+        Returns: Json;
+      };
       cancel_qr_order_by_customer: {
         Args: { p_store_id: string; p_table_id: string; p_order_id: string };
         Returns: undefined;
