@@ -916,6 +916,9 @@ export interface Database {
           is_active: boolean;
           buffet_enabled: boolean;
           qr_ordering_enabled: boolean;
+          unified_pos_enabled: boolean;
+          kitchen_queue_enabled: boolean;
+          voice_command_enabled: boolean;
           dine_in_duration_minutes: number;
           theme_preset_id: string;
           theme_primary_color: string;
@@ -950,6 +953,9 @@ export interface Database {
           is_active?: boolean;
           buffet_enabled?: boolean;
           qr_ordering_enabled?: boolean;
+          unified_pos_enabled?: boolean;
+          kitchen_queue_enabled?: boolean;
+          voice_command_enabled?: boolean;
           dine_in_duration_minutes?: number;
           theme_preset_id?: string;
           theme_primary_color?: string;
@@ -984,6 +990,9 @@ export interface Database {
           is_active?: boolean;
           buffet_enabled?: boolean;
           qr_ordering_enabled?: boolean;
+          unified_pos_enabled?: boolean;
+          kitchen_queue_enabled?: boolean;
+          voice_command_enabled?: boolean;
           dine_in_duration_minutes?: number;
           theme_preset_id?: string;
           theme_primary_color?: string;
@@ -2378,6 +2387,7 @@ export interface Database {
           note: string | null;
           qr_order_source: boolean;
           prep_status: "new" | "preparing" | "served" | "done";
+          revision: number;
           created_at: string;
           updated_at: string;
           paid_at: string | null;
@@ -2408,6 +2418,7 @@ export interface Database {
           note?: string | null;
           qr_order_source?: boolean;
           prep_status?: "new" | "preparing" | "served" | "done";
+          revision?: number;
           created_at?: string;
           updated_at?: string;
           paid_at?: string | null;
@@ -2438,6 +2449,7 @@ export interface Database {
           note?: string | null;
           qr_order_source?: boolean;
           prep_status?: "new" | "preparing" | "served" | "done";
+          revision?: number;
           created_at?: string;
           updated_at?: string;
           paid_at?: string | null;
@@ -2471,6 +2483,8 @@ export interface Database {
           note: string | null;
           voided: boolean;
           voided_reason: string | null;
+          fulfillment_status: "new" | "preparing" | "ready" | "served";
+          fulfillment_version: number;
         };
         Insert: {
           id?: string;
@@ -2495,6 +2509,8 @@ export interface Database {
           note?: string | null;
           voided?: boolean;
           voided_reason?: string | null;
+          fulfillment_status?: "new" | "preparing" | "ready" | "served";
+          fulfillment_version?: number;
         };
         Update: {
           id?: string;
@@ -2519,6 +2535,8 @@ export interface Database {
           note?: string | null;
           voided?: boolean;
           voided_reason?: string | null;
+          fulfillment_status?: "new" | "preparing" | "ready" | "served";
+          fulfillment_version?: number;
         };
         Relationships: [];
       };
@@ -3690,6 +3708,90 @@ export interface Database {
         Relationships: [];
       };
     };
+      unified_pos_operation_receipts: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          operation_type: string;
+          operation_key: string;
+          request_hash: string;
+          result: Json | null;
+          targets: Json | null;
+          payload: Json | null;
+          payload_expires_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          operation_type: string;
+          operation_key: string;
+          request_hash: string;
+          result?: Json | null;
+          targets?: Json | null;
+          payload?: Json | null;
+          payload_expires_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          operation_type?: string;
+          operation_key?: string;
+          request_hash?: string;
+          result?: Json | null;
+          targets?: Json | null;
+          payload?: Json | null;
+          payload_expires_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      voice_aliases: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          alias_text: string;
+          intent_type: string;
+          slots: Json | null;
+          is_active: boolean;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          alias_text: string;
+          intent_type: string;
+          slots?: Json | null;
+          is_active?: boolean;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          alias_text?: string;
+          intent_type?: string;
+          slots?: Json | null;
+          is_active?: boolean;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     Views: Record<string, never>;
     Functions: {
 
@@ -4031,6 +4133,10 @@ export interface Database {
           order_count: number;
           revenue: number;
         }[];
+      };
+      purge_expired_unified_pos_receipt_payloads: {
+        Args: Record<string, never>;
+        Returns: number;
       };
     };
     Enums: Record<string, never>;

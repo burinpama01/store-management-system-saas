@@ -26,6 +26,10 @@ export interface Store {
   isActive: boolean;
   buffetEnabled: boolean;
   qrOrderingEnabled: boolean;
+  /** U2: Unified POS flags — optional เพื่อ backward compat กับ Store literal เดิม (DB มี DEFAULT false) */
+  unifiedPosEnabled?: boolean;
+  kitchenQueueEnabled?: boolean;
+  voiceCommandEnabled?: boolean;
   qrOrderingMode: QrOrderingMode;
   tableOpenPolicy: TableOpenPolicy;
   serviceButtons: ServiceButtonConfig[];
