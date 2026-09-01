@@ -1,0 +1,83 @@
+{
+  "schema": "storeos.u0-baseline/v2",
+  "captured_at_local": "2026-08-31T19:35+07:00",
+  "task": "U0 freeze baseline + migration drift spike (QR Order Voice Unified POS Implementation Plan v2)",
+  "baseline_version_note": "Plan v2 expected 0.34.5 as baseline; actual was 0.34.4. User ratified 0.34.4 on 2026-08-30 (option 2). Recommended: commit the seed repair as v0.34.5 so the original plan version map becomes true again; U0.5 then bumps to 0.35.0 as planned.",
+  "repo": {
+    "path": "D:/Store management system saas",
+    "branch": "main",
+    "commit_at_u0_start": "9886cbd (v0.34.4)", "commit_final": "ef24996 (v0.34.5)",
+    "tracked_files_clean_at_start": true,
+    "modified_now": [],
+    "untracked_notes": [".openclaw-u0-reset.log at repo root is agent scratch from 2026-08-30 (delete pending approval)"]
+  },
+  "tools": {
+    "supabase_cli": "2.75.0 (v2.116.0 available; NOT upgraded per plan rule)",
+    "docker": "29.7.2",
+    "node": "v22.22.0",
+    "postgres_image": "public.ecr.aws/supabase/postgres:17.6.1.075 (healthy)"
+  },
+  "migrations": {
+    "count": 113,
+    "first": "20260518000001_initial_schema.sql",
+    "last": "20260827000004_activation_nudges.sql",
+    "local_reset_result": "PASS - 113/113 applied with NOTICE-level messages only, seed applied, supabase start exit 0, stack healthy on 127.0.0.1:54321/54322"
+  },
+  "seed_repair": {
+    "note": "seed.sql had never survived a full local reset; 5 latent bug classes found and fixed (each was masked by CLI pipelined-batch nondeterministic error ordering)",
+    "bugs_fixed": [
+      "B1: 29 distinct invalid UUID literals with non-hex middle segments (cat0/prod/var0/grp0/opt0) -> replaced middle segment with 0000 preserving entity prefixes (11111111/22222222/33333333/44444444/55555555); uniqueness verified (0 invalid, no artificial collisions vs git HEAD)",
+      "B2: memberships INSERT had 7 target columns but 6 expressions (role value missing) -> added 'owner'",
+      "B3: subscriptions current_period_start/end passed NOW()::date::text into timestamptz -> now() expressions",
+      "B4: memberships invited_at/joined_at passed NOW()::text into timestamptz -> NOW()",
+      "B5: seed depended on a manually-created auth user (organizations_owner_id_auth_users_fk violation on fresh DB) -> added self-sufficient INSERT into auth.users + auth.identities (owner@demo.local / demo1234, local-only)", "B6: GoTrue password sign-in failed scanning NULL token columns -> seed inserts empty strings for phone/confirmation/recovery/email_change/phone_change/reauthentication tokens; live row patched via psql"
+    ],
+    "final_seed_row_counts_via_rest_service_key": {
+      "organizations": 1, "subscriptions": 1, "memberships": 1, "stores": 1, "tables": 3,
+      "accounting_categories": 7, "categories": 3, "products": 6, "product_variants": 4,
+      "modifier_groups": 4, "modifier_options": 12
+    }
+  },
+  "linked_project": {
+    "project_ref": "lcsxeekebdtpxakvjkfe",
+    "region_endpoint": "aws-1-ap-northeast-1.pooler.supabase.com:5432",
+    "management_api_link": "BLOCKED - SUPABASE_ACCESS_TOKEN lacks privileges ('Your account does not have the necessary privileges'); user accepted DB-URL evidence path on 2026-08-31",
+    "migration_list": "BLOCKED (needs management API); DB-URL path used instead"
+  },
+  "linked_drift": {
+    "db_diff": {
+      "command": "supabase db diff --db-url <SUPABASE_DATABASE_URL, not logged> --schema public",
+      "result": "non-empty: exactly 37 objects, all CREATE OR REPLACE FUNCTION; zero tables/columns/policies/indexes/triggers/types/views; raw log artifacts/unified-pos/u0-linked-drift-20260830.log",
+      "body_classification": "all 37 diff bodies are identical to the latest migration definitions (one apparent difference, sync_store_barcode_registry, was an artifact of CLI update-notice text interleaved into the captured log)"
+    },
+    "remote_dump_verification": {
+      "command": "supabase db dump --db-url <SUPABASE_DATABASE_URL, not logged> --schema public --file artifacts/unified-pos/u0-remote-schema-dump-20260831.sql",
+      "remote_public_functions": 56,
+      "remote_bodies_identical_to_latest_migrations": "56/56",
+      "tables_columns_policies_indexes_drift": 0,
+      "channel_split_report_live": true,
+      "security_definer_functions": 43,
+      "search_path_clause_count_in_remote_dump": 0,
+      "interpretation": "REMOTE IS BEHAVIORALLY IN SYNC WITH MIGRATIONS at the logic level. The 37-function db diff delta is definition-metadata level (e.g. function-header attributes such as proconfig/search_path rendering and argument-default casts tracked by the CLI differ), not logic. Earlier hypothesis that remote was missing the channel-split report is REFUTED (qr_revenue present in remote dump)."
+    },
+    "residual_risk": "43 SECURITY DEFINER functions exist on remote; whether any lack pinned search_path on remote could not be conclusively separated from pg_dump rendering in this pass - flagged for the B0 reviewer as a low-priority verification item, not a blocker"
+  },
+  "perf_baseline": {
+    "status": "PENDING (only remaining U0 sub-item)",
+    "reason": "requires a measurement script + workload definition; seed dataset is tiny so numbers define the repeatable floor rather than production representativeness",
+    "targets": "p50/p95 of QR submit, active orders, kitchen fetch, bill, 20-way reads (plan U0 check 6 / gate B12)",
+    "proposal": "standalone Node script via local REST (service key) with N>=30 iterations per shape against the seed dataset; bind results to commit + dataset + tool versions in this JSON"
+  },
+  "stop_conditions_hit_and_cleared": {
+    "reset_fail": "CLEARED - reset green after seed repair",
+    "auth_missing": "WORKED AROUND - management API still blocked; DB-URL read-only path ratified by user for B0 evidence"
+  },
+  "perf_results": {"method": "scripts/u0-perf-baseline.mjs (30 iterations/shape, 3 warmup, client-observed ms, local stack, seed dataset; qr_submit via service_role like production server path; reads via seeded owner auth)", "qr_submit": {"p50_ms": 15.3, "p95_ms": 73.7}, "active_orders": {"p50_ms": 13.5, "p95_ms": 20.7}, "kitchen_fetch": {"p50_ms": 16.6, "p95_ms": 22.0}, "bill_fetch": {"p50_ms": 8.4, "p95_ms": 13.7}, "reads_20way": {"p50_ms": 22.3, "p95_ms": 27.5}, "detail_file": "artifacts/unified-pos/u0-perf-baseline.json"}, "u0_status": "PASS - complete",
+  "evidence_files": [
+    "artifacts/unified-pos/u0-baseline-20260830.json (this file, v2)",
+    "artifacts/unified-pos/u0-linked-drift-20260830.log (raw db diff, 213728 bytes)",
+    "artifacts/unified-pos/u0-remote-schema-dump-20260831.sql (remote schema dump, 383100 bytes)",
+    "artifacts/unified-pos/drift-body-get_report_sales_summary.sql",
+    "artifacts/unified-pos/drift-body-sync_store_barcode_registry.sql"
+  ]
+}

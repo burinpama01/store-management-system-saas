@@ -337,7 +337,7 @@ describe.skipIf(!envReady)("unified-pos-reject integration (U6, local supabase)"
     const orderId = await submitQrOrder(`U6-${runId}-STATES`, 4);
     expect(await fetchStock(VARIANT_1)).toBe(stockBefore - 4);
 
-    let items = await fetchItems(orderId);
+    const items = await fetchItems(orderId);
     expect(items).toHaveLength(4);
     const firstId = items[0]!.id;
     const secondId = items[1]!.id;

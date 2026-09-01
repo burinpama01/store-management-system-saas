@@ -1,15 +1,15 @@
-﻿/**
- * Task U1 โ€” unified POS compatibility contracts (TDD, table-driven)
+/**
+ * Task U1 — unified POS compatibility contracts (TDD, table-driven)
  *
- * เนเธเธเธญเนเธฒเธเธญเธดเธ: Plan/QR Order Voice Unified POS Implementation Plan v2.html
- *   - Section "Contracts เธ—เธตเนเธซเนเธฒเธกเน€เธเธฅเธตเนเธขเธเธเธงเธฒเธกเธซเธกเธฒเธข" โ’ Canonical void / Order prep derive
- *   - Task "U1 ยท Compatibility contracts เนเธฅเธฐ state map"
+ * แผนอ้างอิง: Plan/QR Order Voice Unified POS Implementation Plan v2.html
+ *   - Section "Contracts ที่ห้ามเปลี่ยนความหมาย" → Canonical void / Order prep derive
+ *   - Task "U1 · Compatibility contracts และ state map"
  *
- * เธเนเธญเน€เธ—เนเธเธเธฃเธดเธ DB เธ“ commit 16af52b (v0.35.0):
+ * ข้อเท็จจริง DB ณ commit 16af52b (v0.35.0):
  *   - orders.status CHECK: draft | open | pending_payment | paid | refunded | voided | cancelled
- *   - orders.prep_status CHECK: new | preparing | served | done (เธขเธฑเธเนเธกเนเธกเธต 'ready')
- *   - order_items เธขเธฑเธเนเธกเนเธกเธต fulfillment_status (U2 เธเธฐเน€เธเธดเนเธก) เนเธ•เนเธกเธต voided boolean + voided_reason เธญเธขเธนเนเนเธฅเนเธง
- *     โ’ voided boolean เธเธทเธญ canonical, เธซเนเธฒเธกเธชเธฃเนเธฒเธ fulfillment_status='voided'
+ *   - orders.prep_status CHECK: new | preparing | served | done (ยังไม่มี 'ready')
+ *   - order_items ยังไม่มี fulfillment_status (U2 จะเพิ่ม) แต่มี voided boolean + voided_reason อยู่แล้ว
+ *     → voided boolean คือ canonical, ห้ามสร้าง fulfillment_status='voided'
  */
 
 import { describe, it, expect } from "vitest";
@@ -29,7 +29,7 @@ import {
   type UnifiedPosOperationRequest,
 } from "@/modules/unified-pos/contracts";
 
-/** เธเธขเธฒเธขเธฒเธก mutate property เธเธญเธ object เธ—เธตเนเธเธงเธฃเธ–เธนเธ freeze โ€” strict mode เธเธฐ throw, เนเธกเนเธเธฑเนเธเน€เธเนเธ no-op */
+/** พยายาม mutate property ของ object ที่ควรถูก freeze — strict mode จะ throw, ไม่งั้นเป็น no-op */
 function attemptMutate(target: object, key: string, value: unknown): "threw" | "noop" {
   try {
     (target as Record<string, unknown>)[key] = value;
@@ -39,7 +39,7 @@ function attemptMutate(target: object, key: string, value: unknown): "threw" | "
   }
 }
 
-/** order_item stub เธชเธณเธซเธฃเธฑเธ test (voided default = false) */
+/** order_item stub สำหรับ test (voided default = false) */
 const item = (fulfillmentStatus: FulfillmentStatus, voided = false) => ({ voided, fulfillmentStatus });
 
 type DeriveInput = {
@@ -54,17 +54,17 @@ type CancelInput = {
   items: ItemFulfillmentInput[];
 };
 
-describe("FULFILLMENT_STATUSES enum (เนเธเธ: Canonical void โ€” fulfillment_status: new|preparing|ready|served)", () => {
-  it("เน€เธฃเธตเธขเธเธ•เธฃเธ target enum ['new','preparing','ready','served']", () => {
+describe("FULFILLMENT_STATUSES enum (แผน: Canonical void — fulfillment_status: new|preparing|ready|served)", () => {
+  it("เรียงตรง target enum ['new','preparing','ready','served']", () => {
     expect([...FULFILLMENT_STATUSES]).toEqual(["new", "preparing", "ready", "served"]);
   });
 
-  it("เธซเนเธฒเธกเธกเธต 'voided' เนเธ enum (assert เน€เธเธดเธเธ•เธฑเธงเธญเธฑเธเธฉเธฃ โ€” เธเธฑเธ dual truth เธเธฑเธ voided boolean)", () => {
+  it("ห้ามมี 'voided' ใน enum (assert เชิงตัวอักษร — กัน dual truth กับ voided boolean)", () => {
     expect(FULFILLMENT_STATUSES).not.toContain("voided");
     expect(JSON.stringify(FULFILLMENT_STATUSES)).not.toContain("voided");
   });
 
-  it("freeze เนเธฅเนเธง + mutate เนเธฅเนเธงเธเนเธฒเนเธกเนเน€เธเธฅเธตเนเธขเธ", () => {
+  it("freeze แล้ว + mutate แล้วค่าไม่เปลี่ยน", () => {
     expect(Object.isFrozen(FULFILLMENT_STATUSES)).toBe(true);
     attemptMutate(FULFILLMENT_STATUSES, "0", "voided");
     attemptMutate(FULFILLMENT_STATUSES, "push", () => "voided");
@@ -72,67 +72,67 @@ describe("FULFILLMENT_STATUSES enum (เนเธเธ: Canonical void �
   });
 });
 
-describe("ORDER_PREP_STATUSES enum (target prep_status: เน€เธ”เธดเธก new|preparing|served|done + เน€เธเธดเนเธก 'ready')", () => {
-  it("เน€เธฃเธตเธขเธเธ•เธฃเธ target enum ['new','preparing','ready','served','done']", () => {
+describe("ORDER_PREP_STATUSES enum (target prep_status: เดิม new|preparing|served|done + เพิ่ม 'ready')", () => {
+  it("เรียงตรง target enum ['new','preparing','ready','served','done']", () => {
     expect([...ORDER_PREP_STATUSES]).toEqual(["new", "preparing", "ready", "served", "done"]);
   });
 
-  it("เธ•เนเธญเธเธฃเธงเธก 'ready' (U2/U5 เธเธฐ extend CHECK) เนเธฅเธฐเธซเนเธฒเธกเธ—เธดเนเธ 'done'", () => {
+  it("ต้องรวม 'ready' (U2/U5 จะ extend CHECK) และห้ามทิ้ง 'done'", () => {
     expect(ORDER_PREP_STATUSES).toContain("ready");
     expect(ORDER_PREP_STATUSES).toContain("done");
   });
 
-  it("freeze เนเธฅเนเธง + mutate เนเธฅเนเธงเธเนเธฒเนเธกเนเน€เธเธฅเธตเนเธขเธ", () => {
+  it("freeze แล้ว + mutate แล้วค่าไม่เปลี่ยน", () => {
     expect(Object.isFrozen(ORDER_PREP_STATUSES)).toBe(true);
     attemptMutate(ORDER_PREP_STATUSES, "0", "cancelled");
     expect([...ORDER_PREP_STATUSES]).toEqual(["new", "preparing", "ready", "served", "done"]);
   });
 });
 
-describe("effectiveItemState (เนเธเธ: Canonical void โ€” voided boolean เธเธเธฐ fulfillment status เน€เธชเธกเธญ)", () => {
+describe("effectiveItemState (แผน: Canonical void — voided boolean ชนะ fulfillment status เสมอ)", () => {
   const matrix = [
     ...FULFILLMENT_STATUSES.map((status) => ({ status, voided: false, expected: status })),
     ...FULFILLMENT_STATUSES.map((status) => ({ status, voided: true, expected: "voided" as const })),
   ];
 
-  it.each(matrix)("fulfillmentStatus=$status + voided=$voided โ’ $expected", ({ status, voided, expected }) => {
+  it.each(matrix)("fulfillmentStatus=$status + voided=$voided → $expected", ({ status, voided, expected }) => {
     expect(effectiveItemState({ voided, fulfillmentStatus: status })).toBe(expected);
   });
 });
 
-describe("deriveOrderPrepStatus (เนเธเธ: Order prep derive)", () => {
+describe("deriveOrderPrepStatus (แผน: Order prep derive)", () => {
   const allNew: DeriveInput["items"] = [item("new"), item("new")];
   const paidAt = "2026-08-31T10:00:00.000Z";
 
   const deriveCases: Array<{ name: string; input: DeriveInput; expected: OrderPrepStatus }> = [
-    // order เธเธดเธ”เนเธฅเนเธง (terminal status) โ’ done
-    { name: "status cancelled โ’ done", input: { orderStatus: "cancelled", paidAt: null, items: allNew }, expected: "done" },
-    { name: "status voided โ’ done", input: { orderStatus: "voided", paidAt: null, items: allNew }, expected: "done" },
-    { name: "status refunded โ’ done", input: { orderStatus: "refunded", paidAt: null, items: allNew }, expected: "done" },
-    { name: "status paid โ’ done", input: { orderStatus: "paid", paidAt: null, items: allNew }, expected: "done" },
-    // paidAt เนเธกเน null โ’ done เนเธกเน status เธขเธฑเธ open
-    { name: "open เนเธ•เน paidAt เนเธกเน null โ’ done", input: { orderStatus: "open", paidAt, items: allNew }, expected: "done" },
-    // เนเธกเนเธกเธต active item โ’ done
-    { name: "items เธงเนเธฒเธ โ’ done", input: { orderStatus: "open", paidAt: null, items: [] }, expected: "done" },
-    { name: "เธ—เธธเธ item voided โ’ done", input: { orderStatus: "open", paidAt: null, items: [item("new", true), item("preparing", true), item("ready", true), item("served", true)] }, expected: "done" },
-    // active เธ—เธฑเนเธเธซเธกเธ” new โ’ new (เธขเธฑเธเนเธกเนเธเธดเธ” order)
-    { name: "open + paidAt null + active เธ—เธฑเนเธเธซเธกเธ” new โ’ new", input: { orderStatus: "open", paidAt: null, items: allNew }, expected: "new" },
-    { name: "draft + paidAt เนเธกเนเธฃเธฐเธเธธ (undefined) + active เธ—เธฑเนเธเธซเธกเธ” new โ’ new", input: { orderStatus: "draft", items: allNew }, expected: "new" },
-    { name: "pending_payment + active เธ—เธฑเนเธเธซเธกเธ” new โ’ new", input: { orderStatus: "pending_payment", paidAt: null, items: allNew }, expected: "new" },
-    { name: "เธเธชเธก active + voided (active เน€เธซเธฅเธทเธญ new เธฅเนเธงเธ) โ’ new", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("preparing", true)] }, expected: "new" },
-    // เธเธชเธกเธซเธฅเธฒเธขเธชเธ–เธฒเธเธฐ โ’ preparing
-    { name: "active เธ—เธฑเนเธเธซเธกเธ” preparing โ’ preparing", input: { orderStatus: "open", paidAt: null, items: [item("preparing"), item("preparing")] }, expected: "preparing" },
-    { name: "เธเธชเธก new + preparing โ’ preparing", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("preparing")] }, expected: "preparing" },
-    { name: "เธเธชเธก new + ready โ’ preparing", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("ready")] }, expected: "preparing" },
-    { name: "เธเธชเธก new + preparing + ready + served โ’ preparing", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("preparing"), item("ready"), item("served")] }, expected: "preparing" },
-    // ready/served เธฅเนเธงเธ + เธกเธตเธญเธขเนเธฒเธเธเนเธญเธข 1 ready โ’ ready
-    { name: "active เธ—เธฑเนเธเธซเธกเธ” ready โ’ ready", input: { orderStatus: "open", paidAt: null, items: [item("ready"), item("ready")] }, expected: "ready" },
-    { name: "เธเธชเธก ready + served โ’ ready", input: { orderStatus: "open", paidAt: null, items: [item("ready"), item("served")] }, expected: "ready" },
-    // served เธฅเนเธงเธ โ’ served
-    { name: "active เธ—เธฑเนเธเธซเธกเธ” served โ’ served", input: { orderStatus: "open", paidAt: null, items: [item("served"), item("served")] }, expected: "served" },
-    { name: "open + paidAt undefined + ready/served โ’ ready", input: { orderStatus: "open", items: [item("ready"), item("served")] }, expected: "ready" },
-    // voided เนเธกเนเธกเธตเธเธฅเธ•เนเธญเธเธฅเธธเนเธก ready/served เธฅเนเธงเธ
-    { name: "ready/served เธฅเนเธงเธ + item voided เธเธ โ’ ready", input: { orderStatus: "open", paidAt: null, items: [item("ready"), item("served"), item("new", true)] }, expected: "ready" },
+    // order ปิดแล้ว (terminal status) → done
+    { name: "status cancelled → done", input: { orderStatus: "cancelled", paidAt: null, items: allNew }, expected: "done" },
+    { name: "status voided → done", input: { orderStatus: "voided", paidAt: null, items: allNew }, expected: "done" },
+    { name: "status refunded → done", input: { orderStatus: "refunded", paidAt: null, items: allNew }, expected: "done" },
+    { name: "status paid → done", input: { orderStatus: "paid", paidAt: null, items: allNew }, expected: "done" },
+    // paidAt ไม่ null → done แม้ status ยัง open
+    { name: "open แต่ paidAt ไม่ null → done", input: { orderStatus: "open", paidAt, items: allNew }, expected: "done" },
+    // ไม่มี active item → done
+    { name: "items ว่าง → done", input: { orderStatus: "open", paidAt: null, items: [] }, expected: "done" },
+    { name: "ทุก item voided → done", input: { orderStatus: "open", paidAt: null, items: [item("new", true), item("preparing", true), item("ready", true), item("served", true)] }, expected: "done" },
+    // active ทั้งหมด new → new (ยังไม่ปิด order)
+    { name: "open + paidAt null + active ทั้งหมด new → new", input: { orderStatus: "open", paidAt: null, items: allNew }, expected: "new" },
+    { name: "draft + paidAt ไม่ระบุ (undefined) + active ทั้งหมด new → new", input: { orderStatus: "draft", items: allNew }, expected: "new" },
+    { name: "pending_payment + active ทั้งหมด new → new", input: { orderStatus: "pending_payment", paidAt: null, items: allNew }, expected: "new" },
+    { name: "ผสม active + voided (active เหลือ new ล้วน) → new", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("preparing", true)] }, expected: "new" },
+    // ผสมหลายสถานะ → preparing
+    { name: "active ทั้งหมด preparing → preparing", input: { orderStatus: "open", paidAt: null, items: [item("preparing"), item("preparing")] }, expected: "preparing" },
+    { name: "ผสม new + preparing → preparing", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("preparing")] }, expected: "preparing" },
+    { name: "ผสม new + ready → preparing", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("ready")] }, expected: "preparing" },
+    { name: "ผสม new + preparing + ready + served → preparing", input: { orderStatus: "open", paidAt: null, items: [item("new"), item("preparing"), item("ready"), item("served")] }, expected: "preparing" },
+    // ready/served ล้วน + มีอย่างน้อย 1 ready → ready
+    { name: "active ทั้งหมด ready → ready", input: { orderStatus: "open", paidAt: null, items: [item("ready"), item("ready")] }, expected: "ready" },
+    { name: "ผสม ready + served → ready", input: { orderStatus: "open", paidAt: null, items: [item("ready"), item("served")] }, expected: "ready" },
+    // served ล้วน → served
+    { name: "active ทั้งหมด served → served", input: { orderStatus: "open", paidAt: null, items: [item("served"), item("served")] }, expected: "served" },
+    { name: "open + paidAt undefined + ready/served → ready", input: { orderStatus: "open", items: [item("ready"), item("served")] }, expected: "ready" },
+    // voided ไม่มีผลต่อกลุ่ม ready/served ล้วน
+    { name: "ready/served ล้วน + item voided ปน → ready", input: { orderStatus: "open", paidAt: null, items: [item("ready"), item("served"), item("new", true)] }, expected: "ready" },
   ];
 
   it.each(deriveCases)("$name", ({ input, expected }) => {
@@ -140,66 +140,66 @@ describe("deriveOrderPrepStatus (เนเธเธ: Order prep derive)", 
   });
 });
 
-describe("canTransitionItemFulfillment (เน€เธ”เธดเธเธซเธเนเธฒเธ—เธตเธฅเธฐเธเธฑเนเธ: newโ’preparingโ’readyโ’served)", () => {
+describe("canTransitionItemFulfillment (เดินหน้าทีละขั้น: new→preparing→ready→served)", () => {
   const forwardPairs: Array<[FulfillmentStatus, FulfillmentStatus]> = [
     ["new", "preparing"],
     ["preparing", "ready"],
     ["ready", "served"],
   ];
 
-  it.each(forwardPairs)("เธเธฑเนเธเธ–เธฑเธ”เนเธ %s โ’ %s เธ•เนเธญเธ true", (from, to) => {
+  it.each(forwardPairs)("ขั้นถัดไป %s → %s ต้อง true", (from, to) => {
     expect(canTransitionItemFulfillment(from, to)).toBe(true);
   });
 
   const invalidPairs: Array<[FulfillmentStatus, FulfillmentStatus]> = [
-    // เธ–เธญเธขเธซเธฅเธฑเธ (เธซเนเธฒเธก)
+    // ถอยหลัง (ห้าม)
     ["preparing", "new"],
     ["ready", "preparing"],
     ["ready", "new"],
     ["served", "ready"],
     ["served", "preparing"],
     ["served", "new"],
-    // เธเนเธฒเธกเธเธฑเนเธ (เธซเนเธฒเธก)
+    // ข้ามขั้น (ห้าม)
     ["new", "ready"],
     ["new", "served"],
     ["preparing", "served"],
-    // เธชเธ–เธฒเธเธฐเน€เธ”เธตเธขเธงเธเธฑเธ (เธซเนเธฒเธก)
+    // สถานะเดียวกัน (ห้าม)
     ["new", "new"],
     ["preparing", "preparing"],
     ["ready", "ready"],
     ["served", "served"],
   ];
 
-  it.each(invalidPairs)("เนเธกเนเนเธเนเธเธฑเนเธเธ–เธฑเธ”เนเธ %s โ’ %s เธ•เนเธญเธ false", (from, to) => {
+  it.each(invalidPairs)("ไม่ใช่ขั้นถัดไป %s → %s ต้อง false", (from, to) => {
     expect(canTransitionItemFulfillment(from, to)).toBe(false);
   });
 });
 
-describe("canCustomerCancelOrder (เธเธเน€เธ”เธดเธก QR: status open + unpaid + เธเนเธญเธเธเธฃเธฑเธงเธฃเธฑเธเธเธฒเธ)", () => {
+describe("canCustomerCancelOrder (กฎเดิม QR: status open + unpaid + ก่อนครัวรับงาน)", () => {
   const allNew: CancelInput["items"] = [item("new"), item("new")];
   const paidAt = "2026-08-31T10:00:00.000Z";
 
   const cancelCases: Array<{ name: string; input: CancelInput; expected: boolean }> = [
-    // เธเนเธฒเธ
-    { name: "open + unpaid + active เธ—เธฑเนเธเธซเธกเธ” new โ’ true", input: { status: "open", paidAt: null, items: allNew }, expected: true },
-    { name: "open + unpaid + active new เธเธดเนเธเน€เธ”เธตเธขเธง โ’ true", input: { status: "open", paidAt: null, items: [item("new")] }, expected: true },
-    { name: "open + paidAt undefined (optional) + active เธ—เธฑเนเธเธซเธกเธ” new โ’ true", input: { status: "open", items: allNew }, expected: true },
-    { name: "active new + item voided เธ—เธตเนเน€เธเธข preparing เธเธ โ’ true (canonical void เนเธกเน block cancel)", input: { status: "open", paidAt: null, items: [item("new"), item("preparing", true)] }, expected: true },
-    // เนเธกเนเธเนเธฒเธ: active item เน€เธฅเธขเธเธฑเนเธ new
-    { name: "เธกเธต active preparing โ’ false", input: { status: "open", paidAt: null, items: [item("new"), item("preparing")] }, expected: false },
-    { name: "เธกเธต active ready โ’ false", input: { status: "open", paidAt: null, items: [item("ready")] }, expected: false },
-    { name: "เธกเธต active served โ’ false", input: { status: "open", paidAt: null, items: [item("served")] }, expected: false },
-    // เนเธกเนเธเนเธฒเธ: เธเนเธฒเธขเนเธฅเนเธง / status เธญเธทเนเธ
-    { name: "open เนเธ•เน paidAt เนเธกเน null (เธเนเธฒเธขเนเธฅเนเธง) โ’ false", input: { status: "open", paidAt, items: allNew }, expected: false },
-    { name: "status paid โ’ false", input: { status: "paid", paidAt: null, items: allNew }, expected: false },
-    { name: "status pending_payment โ’ false", input: { status: "pending_payment", paidAt: null, items: allNew }, expected: false },
-    { name: "status draft โ’ false", input: { status: "draft", paidAt: null, items: allNew }, expected: false },
-    { name: "status cancelled โ’ false", input: { status: "cancelled", paidAt: null, items: allNew }, expected: false },
-    { name: "status refunded โ’ false", input: { status: "refunded", paidAt: null, items: allNew }, expected: false },
-    { name: "status voided โ’ false", input: { status: "voided", paidAt: null, items: allNew }, expected: false },
-    // เนเธกเนเธเนเธฒเธ: เนเธกเนเธกเธต active item
-    { name: "items เธงเนเธฒเธ โ’ false", input: { status: "open", paidAt: null, items: [] }, expected: false },
-    { name: "เธ—เธธเธ item voided โ’ false", input: { status: "open", paidAt: null, items: [item("new", true), item("preparing", true)] }, expected: false },
+    // ผ่าน
+    { name: "open + unpaid + active ทั้งหมด new → true", input: { status: "open", paidAt: null, items: allNew }, expected: true },
+    { name: "open + unpaid + active new ชิ้นเดียว → true", input: { status: "open", paidAt: null, items: [item("new")] }, expected: true },
+    { name: "open + paidAt undefined (optional) + active ทั้งหมด new → true", input: { status: "open", items: allNew }, expected: true },
+    { name: "active new + item voided ที่เคย preparing ปน → true (canonical void ไม่ block cancel)", input: { status: "open", paidAt: null, items: [item("new"), item("preparing", true)] }, expected: true },
+    // ไม่ผ่าน: active item เลยขั้น new
+    { name: "มี active preparing → false", input: { status: "open", paidAt: null, items: [item("new"), item("preparing")] }, expected: false },
+    { name: "มี active ready → false", input: { status: "open", paidAt: null, items: [item("ready")] }, expected: false },
+    { name: "มี active served → false", input: { status: "open", paidAt: null, items: [item("served")] }, expected: false },
+    // ไม่ผ่าน: จ่ายแล้ว / status อื่น
+    { name: "open แต่ paidAt ไม่ null (จ่ายแล้ว) → false", input: { status: "open", paidAt, items: allNew }, expected: false },
+    { name: "status paid → false", input: { status: "paid", paidAt: null, items: allNew }, expected: false },
+    { name: "status pending_payment → false", input: { status: "pending_payment", paidAt: null, items: allNew }, expected: false },
+    { name: "status draft → false", input: { status: "draft", paidAt: null, items: allNew }, expected: false },
+    { name: "status cancelled → false", input: { status: "cancelled", paidAt: null, items: allNew }, expected: false },
+    { name: "status refunded → false", input: { status: "refunded", paidAt: null, items: allNew }, expected: false },
+    { name: "status voided → false", input: { status: "voided", paidAt: null, items: allNew }, expected: false },
+    // ไม่ผ่าน: ไม่มี active item
+    { name: "items ว่าง → false", input: { status: "open", paidAt: null, items: [] }, expected: false },
+    { name: "ทุก item voided → false", input: { status: "open", paidAt: null, items: [item("new", true), item("preparing", true)] }, expected: false },
   ];
 
   it.each(cancelCases)("$name", ({ input, expected }) => {
@@ -207,8 +207,8 @@ describe("canCustomerCancelOrder (เธเธเน€เธ”เธดเ
   });
 });
 
-describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' เธชเธณเธซเธฃเธฑเธ RPC U5-U7)", () => {
-  it("เธเธฃเธเธ—เธธเธ key เธ•เธฒเธกเนเธเธ", () => {
+describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' สำหรับ RPC U5-U7)", () => {
+  it("ครบทุก key ตามแผน", () => {
     expect(Object.keys(UNIFIED_POS_ERROR_CODES).sort()).toEqual(
       [
         "stale_version",
@@ -226,16 +226,16 @@ describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' เธชเ�
     );
   });
 
-  it("เธ—เธธเธเธเนเธฒเน€เธเนเธ string เธเธถเนเธเธ•เนเธเธ”เนเธงเธข 'up_'", () => {
+  it("ทุกค่าเป็น string ขึ้นต้นด้วย 'up_'", () => {
     for (const value of Object.values(UNIFIED_POS_ERROR_CODES)) {
       expect(value).toMatch(/^up_[a-z_]+$/);
     }
     expect(UNIFIED_POS_ERROR_CODES.stale_version).toBe("up_stale_version");
-    // U4 (v0.35.4): เน€เธเธดเนเธกเธชเธณเธซเธฃเธฑเธ auto-open failure (session เธซเธกเธ”เธญเธฒเธขเธธ + เธเธเธซเนเธฒเธกเน€เธเธดเธ”เน€เธญเธ)
+    // U4 (v0.35.4): เพิ่มสำหรับ auto-open failure (session หมดอายุ + กฎห้ามเปิดเอง)
     expect(UNIFIED_POS_ERROR_CODES.session_not_active).toBe("up_session_not_active");
   });
 
-  it("Object.freeze เนเธฅเนเธง + เธเธขเธฒเธขเธฒเธก mutate เนเธฅเนเธงเธเนเธฒเนเธกเนเน€เธเธฅเธตเนเธขเธ", () => {
+  it("Object.freeze แล้ว + พยายาม mutate แล้วค่าไม่เปลี่ยน", () => {
     expect(Object.isFrozen(UNIFIED_POS_ERROR_CODES)).toBe(true);
     const before = { ...UNIFIED_POS_ERROR_CODES };
     attemptMutate(UNIFIED_POS_ERROR_CODES, "stale_version", "up_hacked");
@@ -245,24 +245,24 @@ describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' เธชเ�
   });
 });
 
-describe("type-level guard (compile-time โ€” เธเธฑเธ dual truth เธฃเธญเธเธชเธญเธ)", () => {
-  it("'done' (OrderPrepStatus) เนเธฅเธฐ 'voided' เธ•เนเธญเธเนเธกเนเนเธเน FulfillmentStatus", () => {
+describe("type-level guard (compile-time — กัน dual truth รอบสอง)", () => {
+  it("'done' (OrderPrepStatus) และ 'voided' ต้องไม่ใช่ FulfillmentStatus", () => {
     const acceptFulfillment = (_status: FulfillmentStatus): undefined => undefined;
 
-    // @ts-expect-error 'done' เธญเธขเธนเนเนเธ OrderPrepStatus เนเธ•เนเธซเนเธฒเธกเธญเธขเธนเนเนเธ FulfillmentStatus
+    // @ts-expect-error 'done' อยู่ใน OrderPrepStatus แต่ห้ามอยู่ใน FulfillmentStatus
     expect(acceptFulfillment("done" as OrderPrepStatus)).toBeUndefined();
-    // @ts-expect-error 'voided' เธซเนเธฒเธกเธญเธขเธนเนเนเธ FulfillmentStatus (voided boolean เธเธทเธญ canonical)
+    // @ts-expect-error 'voided' ห้ามอยู่ใน FulfillmentStatus (voided boolean คือ canonical)
     expect(acceptFulfillment("voided")).toBeUndefined();
   });
 });
 
-describe("operation envelope/result (เนเธเธ: Idempotency retention โ€” เนเธเนเธ•เนเธญเนเธ U4-U7)", () => {
-  it("UnifiedPosOperationRequest เธกเธต operationKey + requestHash เน€เธ—เนเธฒเธเธฑเนเธ", () => {
+describe("operation envelope/result (แผน: Idempotency retention — ใช้ต่อใน U4-U7)", () => {
+  it("UnifiedPosOperationRequest มี operationKey + requestHash เท่านั้น", () => {
     const request: UnifiedPosOperationRequest = { operationKey: "op_1", requestHash: "sha256:abc123" };
     expect(Object.keys(request).sort()).toEqual(["operationKey", "requestHash"].sort());
   });
 
-  it("UnifiedPosOperationOutcome เนเธเน discriminant 'status' เนเธขเธ executed/replayed/hash_conflict เนเธ”เน", () => {
+  it("UnifiedPosOperationOutcome ใช้ discriminant 'status' แยก executed/replayed/hash_conflict ได้", () => {
     const summarize = (outcome: UnifiedPosOperationOutcome<number>): string => {
       switch (outcome.status) {
         case "executed":

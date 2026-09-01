@@ -1,0 +1,52 @@
+{
+  "schema": "storeos.u0-perf-baseline/v1",
+  "captured_at_local": "2026-08-31T12:21:06.922Z",
+  "version": "0.34.5",
+  "commit": "ef24996",
+  "dataset": "supabase/seed.sql (demo dataset)",
+  "iterations": 30,
+  "warmup": 3,
+  "units": "milliseconds (client-observed, local stack)",
+  "results": {
+    "qr_submit": {
+      "n": 30,
+      "p50": 15.303,
+      "p95": 73.748,
+      "min": 11.162,
+      "max": 74.286,
+      "mean": 24.693
+    },
+    "active_orders": {
+      "n": 30,
+      "p50": 13.469,
+      "p95": 20.671,
+      "min": 11.157,
+      "max": 22.023,
+      "mean": 14.846
+    },
+    "kitchen_fetch": {
+      "n": 30,
+      "p50": 16.559,
+      "p95": 22.04,
+      "min": 11.567,
+      "max": 22.743,
+      "mean": 16.84
+    },
+    "bill_fetch": {
+      "n": 30,
+      "p50": 8.363,
+      "p95": 13.72,
+      "min": 5.368,
+      "max": 18.534,
+      "mean": 8.795
+    },
+    "reads_20way": {
+      "n": 30,
+      "p50": 22.285,
+      "p95": 27.506,
+      "min": 17.615,
+      "max": 48.009,
+      "mean": 22.835
+    }
+  }
+}

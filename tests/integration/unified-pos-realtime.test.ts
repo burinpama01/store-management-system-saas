@@ -38,6 +38,13 @@ const OWNER_PASSWORD = "demo1234";
 const SUBSCRIBE_TIMEOUT_MS = 10_000;
 const EVENT_TIMEOUT_MS = 10_000;
 const ISOLATION_PROBE_MS = 4_000;
+// [U8 1.6] งบรอของ waitForEventResilient (ใช้กับ INSERT wait ของเคสแรก): รอบแรก 10s เท่าเดิม
+// ถ้า timeout → teardown + resubscribe แล้วรอใหม่ 40s/รอบ สูงสุด 3 รอบ
+// (worst-case ~10s + 3×(40s + overhead subscribe ≤10s) ≈ 2.5-3 นาที ตาม brief — ครอบ cold-start แย่สุดที่วัดได้จริง
+//  2026-09-01: tenant init ของ realtime หลัง reset/idle ต้องการ ~135s 2 ครั้ง — งบ 30s×3=100s เคยไม่พอทั้ง 2 ครั้ง)
+const RESILIENT_INSERT_TIMEOUT_MS = 10_000;
+const RESILIENT_RETRY_TIMEOUT_MS = 40_000;
+const RESILIENT_MAX_RETRIES = 3;
 
 /** buffer ของ event ที่ propagate ผ่าน tracker แล้ว — รอ event ตาม predicate พร้อม timeout (ไม่ใช้ sleep ตายตัว) */
 class EventBuffer {
@@ -133,9 +140,13 @@ describe.skipIf(!envReady)("unified-pos-realtime integration (U3, local supabase
     }
   });
 
-  /** subscribe channel postgres_changes ของ public.order_items ฝั่ง owner ผ่าน parser + tracker (pattern เดียวกับ R2 client) */
-  async function subscribeOwnerToItemEvents(channelName: string, filter?: string) {
-    const buffer = new EventBuffer();
+  /**
+   * subscribe channel postgres_changes ของ public.order_items ฝั่ง owner ผ่าน parser + tracker (pattern เดียวกับ R2 client)
+   * [U8 1.6] reuseBuffer — ใช้ตอน resubscribe ใน waitForEventResilient เพื่อคง EventBuffer เดิม
+   * (event ที่วิ่งเข้ามาค้างก่อน teardown ไม่หาย และ assertion ท้ายเคส `buffer.all` ยังมองเห็นทุก event ของรอบทดสอบเดียวกัน)
+   */
+  async function subscribeOwnerToItemEvents(channelName: string, filter?: string, reuseBuffer?: EventBuffer) {
+    const buffer = reuseBuffer ?? new EventBuffer();
     const tracker = createUnifiedPosItemTracker({ onItemEvent: (event) => buffer.push(event) });
     trackers.push(tracker);
     const channel = owner.channel(channelName);
@@ -171,6 +182,69 @@ describe.skipIf(!envReady)("unified-pos-realtime integration (U3, local supabase
     return { channel, buffer, tracker };
   }
 
+  /**
+   * [U8 1.6] รอ realtime event แบบทนทานต่อ "realtime warm-up" ช่วงหลัง `supabase db reset --local`
+   * (ใช้เฉพาะกับ INSERT wait ของเคสแรก — wait อื่นคง `buffer.waitFor` ตรง ๆ เพราะ event แรกมาถึง = replication อุ่นแล้ว)
+   *
+   * ทำไมต้องมี (หลักฐานที่พบจริง 2026-09-01):
+   *   - gate ของ orchestrator (`npm run test:unified-pos:backend`): step (a) reset ติดกับ step (c) integration
+   *     → เคสนี้ timeout รอ INSERT event 10s ทั้งที่ client ขึ้น SUBSCRIBED แล้ว แล้วผ่านเองตอนรันซ้ำใน step (d)
+   *       หลัง reset ผ่านไป ~2-4 นาที
+   *   - repro ของ U8 part 1.5 (ทดลอง 4 รอบ): ยืนยันว่าเป็น warm-up หลัง restart container (replication slot/WAL
+   *     ของ realtime ยังไม่พร้อม) ไม่ใช่ test interference — ผ่านเมื่อรันหลัง reset ≥13 นาที
+   * กลยุทธ์: รอบแรกใช้งบ 10s เดิม (เมื่อระบบปกติจะไม่ช้าลงและไม่มี resubscribe เกิดขึ้นเลย)
+   *   ถ้า timeout → teardown (removeChannel + dispose tracker — tracker ใหม่ไม่มี state seen ค้าง)
+   *   → subscribe ใหม่เข้า EventBuffer เดิม → รอใหม่ 40s/รอบ สูงสุด 3 รอบ (worst-case ~2.5-3 นาทีตาม brief)
+   *   (เหตุผลที่ 40s ไม่ใช่ 30s: วัดจริง 2026-09-01 — tenant init หลัง reset/idle ใช้ ~135s 2 ครั้ง, งบ 100s ไม่พอทั้งคู่)
+   * ขอบเขตสำคัญ: helper นี้เปลี่ยน "แค่งบรอ" เท่านั้น — ห้ามใช้ลดหรือเปลี่ยน assertion
+   * (event ยังต้องมาเป็น INSERT(v1) → UPDATE(v2) → UPDATE-voided(v3) ตามลำดับ และถูกตรวจเนื้อหาเหมือนเดิมทุกจุด)
+   */
+  async function waitForEventResilient(
+    subscription: { channel: RealtimeChannel; buffer: EventBuffer; tracker: { dispose(): void } },
+    resubscribe: () => Promise<{ channel: RealtimeChannel; buffer: EventBuffer; tracker: { dispose(): void } }>,
+    predicate: (event: UnifiedPosItemEvent) => boolean,
+    label: string,
+  ): Promise<UnifiedPosItemEvent> {
+    let lastError: Error | undefined;
+    try {
+      return await subscription.buffer.waitFor(predicate, label, RESILIENT_INSERT_TIMEOUT_MS);
+    } catch (error) {
+      lastError = error as Error;
+    }
+    for (let attempt = 1; attempt <= RESILIENT_MAX_RETRIES; attempt++) {
+      // teardown ก่อน resubscribe เสมอ: ถอด channel เก่าออกจาก client + dispose tracker เก่า (dispose idempotent)
+      await owner.removeChannel(subscription.channel);
+      subscription.tracker.dispose();
+      let next: Awaited<ReturnType<typeof resubscribe>>;
+      try {
+        next = await resubscribe();
+      } catch (error) {
+        // ช่วง warm-up เดียวกัน subscribe ตัวใหม่อาจล้มชั่วคราว (CHANNEL_ERROR/TIMED_OUT) — จด error แล้วใช้งบรอบถัดไป
+        // (ยัง fail-loud ด้วย error สรุปด้านล่างเมื่องบหมด — จำนวนรอบจำกัด ไม่มี infinite retry)
+        lastError = error as Error;
+        continue;
+      }
+      // การ์ด: resubscribe ต้อง reuse EventBuffer เดิมเสมอ — ถ้าได้ buffer ใหม่ helper จะรอบน buffer เก่าโดย event ไหลเข้า buffer ใหม่
+      if (next.buffer !== subscription.buffer) {
+        throw new Error("waitForEventResilient: resubscribe ต้อง reuse EventBuffer เดิม (ส่ง reuseBuffer ตอน subscribe ใหม่) แต่ได้ buffer ใหม่กลับมา");
+      }
+      subscription.channel = next.channel;
+      subscription.tracker = next.tracker;
+      try {
+        // waitFor ของ EventBuffer เดิมจะเช็ค event ที่ buffer ค้างไว้ก่อน → event ที่วิ่งมาช้าระหว่าง teardown ไม่หาย
+        return await subscription.buffer.waitFor(predicate, label, RESILIENT_RETRY_TIMEOUT_MS);
+      } catch (error) {
+        lastError = error as Error;
+      }
+    }
+    throw new Error(
+      `waitForEventResilient: ไม่ได้รับ event "${label}" ภายในงบทั้งหมด ` +
+        `(รอบแรก ${RESILIENT_INSERT_TIMEOUT_MS}ms + resubscribe ${RESILIENT_MAX_RETRIES} รอบ × ${RESILIENT_RETRY_TIMEOUT_MS}ms) — ` +
+        `ทุกรอบ subscribe ขึ้น SUBSCRIBED สำเร็จแต่ไม่มี event ไหล สอดคล้องอาการ realtime warm-up หลัง db reset ` +
+        `(ความผิดพลาดล่าสุด: ${lastError?.message}; ถ้าเจอซ้ำใน gate ให้ดู step (b2) realtime readiness probe ของ verifier — helper นี้เป็น defense-in-depth ไม่ใช่กลไกหลัก)`,
+    );
+  }
+
   async function insertOrder(input: {
     organizationId: string;
     storeId: string;
@@ -200,11 +274,16 @@ describe.skipIf(!envReady)("unified-pos-realtime integration (U3, local supabase
     return { id: data!.id };
   }
 
-  it("owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)", { timeout: 60_000 }, async () => {
+  // [U8 1.6] timeout ของเคส 60s → 300s เพื่อครอบงบรอของ helper (worst-case ~2.5-3 นาที) + v2/v3 waits + setup
+  // (assertion ของเคสไม่เปลี่ยน — เพิ่มแค่งบรอของ event INSERT ที่อาจเจอ realtime warm-up หลัง db reset)
+  it("owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)", { timeout: 300_000 }, async () => {
     const order = await insertOrder({ organizationId: ORG_A, storeId: STORE_A, orderNumber: `U3-${runId}-A`, tableId: TABLE_1 });
 
     // subscribe ก่อนเขียนข้อมูลเสมอ (กันพลาด event)
-    const { buffer } = await subscribeOwnerToItemEvents(`up3-items-main-${runId}`, `order_id=eq.${order.id}`);
+    const mainChannelName = `up3-items-main-${runId}`;
+    const mainFilter = `order_id=eq.${order.id}`;
+    const main = await subscribeOwnerToItemEvents(mainChannelName, mainFilter);
+    const { buffer } = main;
 
     const { data: item, error: itemError } = await service
       .from("order_items")
@@ -221,10 +300,12 @@ describe.skipIf(!envReady)("unified-pos-realtime integration (U3, local supabase
     expect(itemError, `insert order_item ต้องสำเร็จ: ${itemError?.message}`).toBeNull();
     expect(item!.fulfillment_version).toBe(1); // truth ฝั่ง DB (trigger U2)
 
-    const insertEvent = await buffer.waitFor(
+    // [U8 1.6] INSERT wait ใช้ waitForEventResilient — predicate/งบรอบแรกเท่าเดิม (10s), เพิ่มเพียง retry หลัง resubscribe
+    const insertEvent = await waitForEventResilient(
+      main,
+      () => subscribeOwnerToItemEvents(mainChannelName, mainFilter, main.buffer),
       (e) => e.eventType === "INSERT" && e.itemId === item!.id,
       `INSERT ของ item ${item!.id}`,
-      EVENT_TIMEOUT_MS,
     );
     expect(insertEvent).toEqual({
       storeId: STORE_A,

@@ -1,0 +1,922 @@
+{
+  "schema": "storeos.r1-backend-gate/v1",
+  "gate": "U8 · R1 backend qualification checkpoint",
+  "plan_ref": "Plan/QR Order Voice Unified POS Implementation Plan v2.html (U8)",
+  "mode": "full",
+  "verdict": "BACKEND_GATE_PASS",
+  "exit_code": 0,
+  "generated_at_local": "1/9/2569 23:28:59",
+  "generated_at_iso": "2026-09-01T16:28:59.475Z",
+  "duration_ms": 350641,
+  "package": {
+    "name": "store-management-saas",
+    "version": "0.36.0"
+  },
+  "commit": {
+    "sha": "db4d1fb629275068d25fb3d21c3351bed20c3d62",
+    "short_sha": "db4d1fb",
+    "branch": "main",
+    "subject": "feat: settle dine-in orders idempotently v0.35.7"
+  },
+  "tools": {
+    "node": "v22.22.0",
+    "npm": "10.9.4",
+    "supabase": "2.75.0",
+    "postgres": "17.6"
+  },
+  "docker": {
+    "daemon_ok": true,
+    "supabase_containers": [
+      {
+        "name": "supabase_db_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/postgres:17.6.1.075"
+      },
+      {
+        "name": "supabase_studio_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/studio:2026.01.27-sha-2a37755"
+      },
+      {
+        "name": "supabase_pg_meta_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/postgres-meta:v0.95.2"
+      },
+      {
+        "name": "supabase_edge_runtime_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/edge-runtime:v1.70.0"
+      },
+      {
+        "name": "supabase_storage_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/storage-api:v1.35.3"
+      },
+      {
+        "name": "supabase_rest_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/postgrest:v14.3"
+      },
+      {
+        "name": "supabase_realtime_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/realtime:v2.73.2"
+      },
+      {
+        "name": "supabase_inbucket_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/mailpit:v1.22.3"
+      },
+      {
+        "name": "supabase_auth_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/gotrue:v2.186.0"
+      },
+      {
+        "name": "supabase_kong_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/kong:2.8.1"
+      },
+      {
+        "name": "supabase_vector_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/vector:0.28.1-alpine"
+      },
+      {
+        "name": "supabase_analytics_Store_management_system_saas",
+        "image": "public.ecr.aws/supabase/logflare:1.30.5"
+      }
+    ],
+    "db_container": "supabase_db_Store_management_system_saas"
+  },
+  "local_supabase": {
+    "url": "http://127.0.0.1:54321",
+    "api_port": 54321,
+    "keys_obtained": [
+      "publishable",
+      "service"
+    ],
+    "publishable_source": "PUBLISHABLE_KEY",
+    "service_source": "SERVICE_ROLE_KEY",
+    "key_source": "supabase status -o env (runtime, never hardcoded)",
+    "keys_in_evidence": false
+  },
+  "preflight": {
+    "ok": true,
+    "checks": [
+      {
+        "id": "git-repo",
+        "label": "git repository present",
+        "ok": true,
+        "detail": "worktree ตรวจพบ"
+      },
+      {
+        "id": "docker-daemon",
+        "label": "docker daemon reachable + supabase stack containers",
+        "ok": true,
+        "detail": "supabase containers: 12, db: supabase_db_Store_management_system_saas"
+      },
+      {
+        "id": "supabase-cli",
+        "label": "supabase CLI available",
+        "ok": true,
+        "detail": "v2.75.0"
+      },
+      {
+        "id": "node-npm",
+        "label": "node/npm runtime",
+        "ok": true,
+        "detail": "node v22.22.0 / npm 10.9.4"
+      },
+      {
+        "id": "local-supabase-env",
+        "label": "local supabase env (loopback-only, runtime)",
+        "ok": true,
+        "detail": "http://127.0.0.1:54321 — publishable=PUBLISHABLE_KEY, service=SERVICE_ROLE_KEY"
+      },
+      {
+        "id": "local-stack-http",
+        "label": "local stack reachable @ 127.0.0.1:54321",
+        "ok": true,
+        "detail": "GET http://127.0.0.1:54321/rest/v1/ → HTTP 200"
+      },
+      {
+        "id": "worktree-clean",
+        "label": "working tree — dirty limited to U8 scope (noise excluded)",
+        "ok": true,
+        "detail": "ไม่มี change นอก U8 scope (noise=15, in-scope=14, unexpected=0)"
+      },
+      {
+        "id": "vitest-cli",
+        "label": "vitest CLI installed (local)",
+        "ok": true,
+        "detail": "node_modules\\vitest\\vitest.mjs"
+      },
+      {
+        "id": "integration-files",
+        "label": "unified-pos integration test files",
+        "ok": true,
+        "detail": "5 ไฟล์: unified-pos-fulfillment.test.ts, unified-pos-realtime.test.ts, unified-pos-reject.test.ts, unified-pos-rpc.test.ts, unified-pos-settlement.test.ts"
+      },
+      {
+        "id": "postgres-version",
+        "label": "postgres version (docker exec)",
+        "ok": true,
+        "detail": "PostgreSQL 17.6"
+      }
+    ],
+    "failed_checks": [],
+    "dirty_worktree": {
+      "policy": "git status --porcelain ทั้งหมด → ตัด noise → ต้องอยู่ใน U8 scope (fail-closed)",
+      "noise_prefixes": [
+        ".codex-temp/",
+        ".codex-remote-attachments/",
+        "artifacts/",
+        "output/",
+        "test-results/",
+        "Marketing/",
+        "Design/",
+        "Plan/",
+        ".openclaw",
+        ".playwright-cli/",
+        "probe-types.ts",
+        "public/logo.png.png"
+      ],
+      "allowlist_exact": [
+        "scripts/verify-unified-pos-backend.mjs",
+        "vitest.config.ts",
+        "package.json",
+        "package-lock.json",
+        "src/modules/qr-ordering/repository.ts",
+        "eslint.config.mjs"
+      ],
+      "summary": "noise=15, in-scope=14, unexpected=0",
+      "ok": true,
+      "raw": [
+        " M eslint.config.mjs",
+        " M package-lock.json",
+        " M package.json",
+        " M src/modules/qr-ordering/repository.ts",
+        " M supabase/migrations/20260901000002_unified_pos_rpc.sql",
+        " M supabase/migrations/20260901000003_unified_pos_fulfillment.sql",
+        " M supabase/migrations/20260901000004_unified_pos_reject.sql",
+        " M supabase/migrations/20260901000005_unified_pos_settlement.sql",
+        " M tests/integration/unified-pos-realtime.test.ts",
+        " M tests/integration/unified-pos-reject.test.ts",
+        " M tests/integration/unified-pos-settlement.test.ts",
+        " M tests/unit/unified-pos-contracts.test.ts",
+        " M vitest.config.ts",
+        "?? .codex-remote-attachments/",
+        "?? .codex-temp/",
+        "?? .openclaw-realtime-last.log",
+        "?? .openclaw-u0-reset.log",
+        "?? \"Design/QR Order Unified POS Design Spec v1.html\"",
+        "?? Design/design_system_v3_qr_order_unified_pos.html",
+        "?? Marketing/",
+        "?? \"Plan/QR Order Voice Unified POS Implementation Plan v1.html\"",
+        "?? \"Plan/QR Order Voice Unified POS Implementation Plan v2.html\"",
+        "?? \"Plan/Voice Command POS Implementation Plan v1.html\"",
+        "?? artifacts/",
+        "?? output/",
+        "?? probe-types.ts",
+        "?? public/logo.png.png",
+        "?? scripts/verify-unified-pos-backend.mjs",
+        "?? test-results/"
+      ],
+      "noise_excluded": [
+        "?? .codex-remote-attachments/",
+        "?? .codex-temp/",
+        "?? .openclaw-realtime-last.log",
+        "?? .openclaw-u0-reset.log",
+        "?? \"Design/QR Order Unified POS Design Spec v1.html\"",
+        "?? Design/design_system_v3_qr_order_unified_pos.html",
+        "?? Marketing/",
+        "?? \"Plan/QR Order Voice Unified POS Implementation Plan v1.html\"",
+        "?? \"Plan/QR Order Voice Unified POS Implementation Plan v2.html\"",
+        "?? \"Plan/Voice Command POS Implementation Plan v1.html\"",
+        "?? artifacts/",
+        "?? output/",
+        "?? probe-types.ts",
+        "?? public/logo.png.png",
+        "?? test-results/"
+      ],
+      "in_scope": [
+        " M eslint.config.mjs",
+        " M package-lock.json",
+        " M package.json",
+        " M src/modules/qr-ordering/repository.ts",
+        " M supabase/migrations/20260901000002_unified_pos_rpc.sql",
+        " M supabase/migrations/20260901000003_unified_pos_fulfillment.sql",
+        " M supabase/migrations/20260901000004_unified_pos_reject.sql",
+        " M supabase/migrations/20260901000005_unified_pos_settlement.sql",
+        " M tests/integration/unified-pos-realtime.test.ts",
+        " M tests/integration/unified-pos-reject.test.ts",
+        " M tests/integration/unified-pos-settlement.test.ts",
+        " M tests/unit/unified-pos-contracts.test.ts",
+        " M vitest.config.ts",
+        "?? scripts/verify-unified-pos-backend.mjs"
+      ],
+      "unexpected": []
+    }
+  },
+  "discovery": {
+    "command": "node node_modules\\vitest\\vitest.mjs list --filesOnly",
+    "runnable": true,
+    "ok": true,
+    "file_count": 130,
+    "named_forbidden_dirs": [
+      ".codex-temp",
+      ".worktrees",
+      ".codex",
+      ".codex-remote-attachments"
+    ],
+    "offenders": [],
+    "named_hits": [],
+    "detail": "vitest list --filesOnly exit 0"
+  },
+  "steps": [
+    {
+      "id": "a",
+      "name": "Reset local database (migrations + seed)",
+      "command": "supabase db reset --local",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:23:11.726Z",
+      "ended_at": "2026-09-01T16:23:50.006Z",
+      "duration_ms": 38280,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": null,
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 202,
+      "output_lines": [
+        "Resetting local database...",
+        "Recreating database...",
+        "Initialising schema...",
+        "Seeding globals from roles.sql...",
+        "Applying migration 20260518000001_initial_schema.sql...",
+        "NOTICE (42710): extension \"uuid-ossp\" already exists, skipping",
+        "NOTICE (42710): extension \"pgcrypto\" already exists, skipping",
+        "Applying migration 20260518000002_rls_policies.sql...",
+        "Applying migration 20260518000003_storage_buckets.sql...",
+        "Applying migration 20260518000004_attendance_fixes.sql...",
+        "Applying migration 20260518000005_billing.sql...",
+        "Applying migration 20260519000001_super_admin_role.sql...",
+        "… 142 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …",
+        "Applying migration 20260630130000_storeos_connect.sql...",
+        "Applying migration 20260630140000_connect_platform_jdc_url.sql...",
+        "Applying migration 20260630150000_connect_platform_jdc_credentials.sql...",
+        "Applying migration 20260701000000_fix_qr_order_rpc.sql...",
+        "Applying migration 20260701000001_cancel_qr_order.sql...",
+        "Applying migration 20260701000002_void_qr_order_item.sql...",
+        "Applying migration 20260701120000_delivery_out_of_stock.sql...",
+        "Applying migration 20260702000000_music_play_now_price.sql...",
+        "Applying migration 20260702120000_report_channel_split.sql...",
+        "Applying migration 20260703000000_wholesale_pos.sql...",
+        "NOTICE (00000): constraint \"customers_price_tier_check\" of relation \"customers\" does not exist, skipping",
+        "NOTICE (00000): trigger \"product_units_set_scope\" for relation \"product_units\" does not exist, skipping",
+        "NOTICE (00000): policy \"product_units: store member can read\" for relation \"product_units\" does not exist, skipping",
+        "NOTICE (00000): policy \"product_units: manager+ can write\" for relation \"product_units\" does not exist, skipping",
+        "NOTICE (00000): constraint \"order_items_unit_quantity_check\" of relation \"order_items\" does not exist, skipping",
+        "Applying migration 20260703130000_business_plan.sql...",
+        "Applying migration 20260703170000_connect_commission_rate.sql...",
+        "Applying migration 20260705000000_device_push_tokens.sql...",
+        "Applying migration 20260705150000_void_pos_order_releases_rewards.sql...",
+        "Applying migration 20260707000000_notification_templates_and_buffet_expiry.sql...",
+        "Applying migration 20260708000000_fix_staff_clockout_rls.sql...",
+        "Applying migration 20260709000000_notifications_service_buttons_stock.sql...",
+        "Applying migration 20260710000000_table_no_expiry.sql...",
+        "Applying migration 20260712000000_cash_session_variance_ledger.sql...",
+        "Applying migration 20260804000000_transactions_delete_policy.sql...",
+        "NOTICE (00000): policy \"transactions: cashflow.manage can delete\" for relation \"transactions\" does not exist, skipping",
+        "Applying migration 20260819000000_enterprise_free_trial.sql...",
+        "Applying migration 20260820000000_enterprise_trial_marker.sql...",
+        "Applying migration 20260820100000_enterprise_limited_flag.sql...",
+        "Applying migration 20260827000001_store_setup_profile.sql...",
+        "Applying migration 20260827000002_ai_device_foundation.sql...",
+        "Applying migration 20260827000003_device_profile_success_rpc.sql...",
+        "Applying migration 20260827000004_activation_nudges.sql...",
+        "Applying migration 20260831000001_unified_pos_foundation.sql...",
+        "NOTICE (00000): trigger \"unified_pos_orders_revision_bu\" for relation \"public.orders\" does not exist, skipping",
+        "NOTICE (00000): trigger \"unified_pos_items_version_bu\" for relation \"public.order_items\" does not exist, skipping",
+        "NOTICE (00000): trigger \"unified_pos_items_parent_bump\" for relation \"public.order_items\" does not exist, skipping",
+        "Applying migration 20260901000001_unified_pos_realtime.sql...",
+        "Applying migration 20260901000002_unified_pos_rpc.sql...",
+        "Applying migration 20260901000003_unified_pos_fulfillment.sql...",
+        "NOTICE (00000): trigger \"unified_pos_items_prep_derive\" for relation \"public.order_items\" does not exist, skipping",
+        "Applying migration 20260901000004_unified_pos_reject.sql...",
+        "Applying migration 20260901000005_unified_pos_settlement.sql...",
+        "Seeding data from supabase/seed.sql...",
+        "Restarting containers...",
+        "Finished supabase db reset on branch main.",
+        "A new version of Supabase CLI is available: v2.116.0 (currently installed v2.75.0)",
+        "We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli"
+      ]
+    },
+    {
+      "id": "b",
+      "name": "pgTAP suite (supabase test db --local)",
+      "command": "supabase test db --local",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:23:50.006Z",
+      "ended_at": "2026-09-01T16:23:52.279Z",
+      "duration_ms": 2273,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": {
+        "summary_found": true,
+        "result": "PASS",
+        "files": 7,
+        "tests": 310,
+        "failed_subtests": 0,
+        "failed_programs": 0,
+        "dubious": 0,
+        "per_file": [
+          {
+            "file": "/Store management system saas/supabase/tests/000_smoke.sql",
+            "status": "ok",
+            "ok": true
+          },
+          {
+            "file": "/Store management system saas/supabase/tests/001_unified_pos_foundation.sql",
+            "status": "ok",
+            "ok": true
+          },
+          {
+            "file": "/Store management system saas/supabase/tests/002_unified_pos_realtime.sql",
+            "status": "ok",
+            "ok": true
+          },
+          {
+            "file": "/Store management system saas/supabase/tests/003_unified_pos_rpc.sql",
+            "status": "ok",
+            "ok": true
+          },
+          {
+            "file": "/Store management system saas/supabase/tests/004_unified_pos_fulfillment.sql",
+            "status": "ok",
+            "ok": true
+          },
+          {
+            "file": "/Store management system saas/supabase/tests/005_unified_pos_reject.sql",
+            "status": "ok",
+            "ok": true
+          },
+          {
+            "file": "/Store management system saas/supabase/tests/006_unified_pos_settlement.sql",
+            "status": "ok",
+            "ok": true
+          }
+        ],
+        "all_ok": true,
+        "bail_out": null,
+        "files_on_disk": 7,
+        "file_count_ok": true,
+        "file_count_detail": "TAP Files=7 vs *.sql บนดิสก์=7"
+      },
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 13,
+      "output_lines": [
+        "Connecting to local database...",
+        "/Store management system saas/supabase/tests/000_smoke.sql .................... ok",
+        "/Store management system saas/supabase/tests/001_unified_pos_foundation.sql ... ok",
+        "/Store management system saas/supabase/tests/002_unified_pos_realtime.sql ..... ok",
+        "/Store management system saas/supabase/tests/003_unified_pos_rpc.sql .......... ok",
+        "/Store management system saas/supabase/tests/004_unified_pos_fulfillment.sql .. ok",
+        "/Store management system saas/supabase/tests/005_unified_pos_reject.sql ....... ok",
+        "/Store management system saas/supabase/tests/006_unified_pos_settlement.sql ... ok",
+        "All tests successful.",
+        "Files=7, Tests=310,  0 wallclock secs ( 0.06 usr  0.03 sys +  0.06 cusr  0.06 csys =  0.21 CPU)",
+        "Result: PASS",
+        "A new version of Supabase CLI is available: v2.116.0 (currently installed v2.75.0)",
+        "We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli"
+      ]
+    },
+    {
+      "id": "b2",
+      "name": "realtime readiness probe (U3 เดี่ยว, ซ้ำ ≤6 attempt ห่าง 60s)",
+      "command": "npx vitest run tests/integration/unified-pos-realtime.test.ts",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:23:52.281Z",
+      "ended_at": "2026-09-01T16:27:17.513Z",
+      "duration_ms": 205233,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": {
+        "summary_found": true,
+        "test_files": {
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0,
+          "total": 1
+        },
+        "tests": {
+          "passed": 2,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0,
+          "total": 2
+        },
+        "raw_summary_lines": [
+          "Test Files  1 passed (1)",
+          "Tests  2 passed (2)"
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 1,
+          "started_at": "2026-09-01T16:23:52.281Z",
+          "ended_at": "2026-09-01T16:26:09.604Z",
+          "duration_ms": 137323,
+          "exit_code": 1,
+          "timed_out": false,
+          "spawn_error": null,
+          "ok": false,
+          "fail_reasons": [
+            "exit=1",
+            "tests failed=1",
+            "test files failed=1"
+          ],
+          "parsed": {
+            "summary_found": true,
+            "test_files": {
+              "passed": 0,
+              "failed": 1,
+              "skipped": 0,
+              "todo": 0,
+              "total": 1
+            },
+            "tests": {
+              "passed": 1,
+              "failed": 1,
+              "skipped": 0,
+              "todo": 0,
+              "total": 2
+            },
+            "raw_summary_lines": [
+              "Test Files  1 failed (1)",
+              "Tests  1 failed | 1 passed (2)"
+            ]
+          },
+          "output_lines": [
+            "RUN  v3.2.4 D:/Store management system saas",
+            "❯ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests | 1 failed) 134470ms",
+            "× unified-pos-realtime integration (U3, local supabase) > owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3) 130139ms",
+            "→ waitForEventResilient: ไม่ได้รับ event \"INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3\" ภายในงบทั้งหมด (รอบแรก 10000ms + resubscribe 3 รอบ × 40000ms) — ทุกรอบ subscribe ขึ้น SUBSCRIBED สำเร็จแต่ไม่มี event ไหล สอดคล้องอาการ realtime warm-up หลัง db reset (ความผิดพลาดล่าสุด: timeout 40000ms รอ realtime event: INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3; ถ้าเจอซ้ำใน gate ให้ดู step (b2) realtime readiness probe ของ verifier — helper นี้เป็น defense-in-depth ไม่ใช่กลไกหลัก)",
+            "✓ unified-pos-realtime integration (U3, local supabase) > cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4127ms",
+            "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯",
+            "FAIL  |integration| tests/integration/unified-pos-realtime.test.ts > unified-pos-realtime integration (U3, local supabase) > owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)",
+            "Error: waitForEventResilient: ไม่ได้รับ event \"INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3\" ภายในงบทั้งหมด (รอบแรก 10000ms + resubscribe 3 รอบ × 40000ms) — ทุกรอบ subscribe ขึ้น SUBSCRIBED สำเร็จแต่ไม่มี event ไหล สอดคล้องอาการ realtime warm-up หลัง db reset (ความผิดพลาดล่าสุด: timeout 40000ms รอ realtime event: INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3; ถ้าเจอซ้ำใน gate ให้ดู step (b2) realtime readiness probe ของ verifier — helper นี้เป็น defense-in-depth ไม่ใช่กลไกหลัก)",
+            "❯ waitForEventResilient tests/integration/unified-pos-realtime.test.ts:240:11",
+            "238|       }",
+            "239|     }",
+            "240|     throw new Error(",
+            "|           ^",
+            "241|       `waitForEventResilient: ไม่ได้รับ event \"${label}\" ภายในงบทั้งหม…",
+            "242|         `(รอบแรก ${RESILIENT_INSERT_TIMEOUT_MS}ms + resubscribe ${RESI…",
+            "❯ tests/integration/unified-pos-realtime.test.ts:304:25",
+            "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+            "Test Files  1 failed (1)",
+            "Tests  1 failed | 1 passed (2)",
+            "Start at  23:23:53",
+            "Duration  135.54s (transform 75ms, setup 0ms, collect 129ms, tests 134.47s, environment 0ms, prepare 137ms)"
+          ],
+          "output_total_lines": 21,
+          "wait_before_next_ms": 60000
+        },
+        {
+          "attempt": 2,
+          "started_at": "2026-09-01T16:27:09.610Z",
+          "ended_at": "2026-09-01T16:27:17.513Z",
+          "duration_ms": 7903,
+          "exit_code": 0,
+          "timed_out": false,
+          "spawn_error": null,
+          "ok": true,
+          "fail_reasons": [],
+          "parsed": {
+            "summary_found": true,
+            "test_files": {
+              "passed": 1,
+              "failed": 0,
+              "skipped": 0,
+              "todo": 0,
+              "total": 1
+            },
+            "tests": {
+              "passed": 2,
+              "failed": 0,
+              "skipped": 0,
+              "todo": 0,
+              "total": 2
+            },
+            "raw_summary_lines": [
+              "Test Files  1 passed (1)",
+              "Tests  2 passed (2)"
+            ]
+          },
+          "output_lines": [
+            "RUN  v3.2.4 D:/Store management system saas",
+            "✓ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests) 4652ms",
+            "✓ unified-pos-realtime integration (U3, local supabase) > owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)  368ms",
+            "✓ unified-pos-realtime integration (U3, local supabase) > cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4094ms",
+            "Test Files  1 passed (1)",
+            "Tests  2 passed (2)",
+            "Start at  23:27:12",
+            "Duration  5.28s (transform 82ms, setup 0ms, collect 138ms, tests 4.65s, environment 0ms, prepare 190ms)"
+          ],
+          "output_total_lines": 8,
+          "wait_before_next_ms": null
+        }
+      ],
+      "passed_on_attempt": 2,
+      "output_total_lines": 29,
+      "output_lines": []
+    },
+    {
+      "id": "c",
+      "name": "unified-pos integration tests (env injected, zero-skip)",
+      "command": "npx vitest run tests/integration/unified-pos-fulfillment.test.ts tests/integration/unified-pos-realtime.test.ts tests/integration/unified-pos-reject.test.ts tests/integration/unified-pos-rpc.test.ts tests/integration/unified-pos-settlement.test.ts",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:27:17.514Z",
+      "ended_at": "2026-09-01T16:27:30.144Z",
+      "duration_ms": 12630,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": {
+        "summary_found": true,
+        "test_files": {
+          "passed": 5,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0,
+          "total": 5
+        },
+        "tests": {
+          "passed": 47,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0,
+          "total": 47
+        },
+        "raw_summary_lines": [
+          "Test Files  5 passed (5)",
+          "Tests  47 passed (47)"
+        ]
+      },
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 12,
+      "output_lines": [
+        "RUN  v3.2.4 D:/Store management system saas",
+        "✓ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests) 4691ms",
+        "✓ unified-pos-realtime integration (U3, local supabase) > owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)  353ms",
+        "✓ unified-pos-realtime integration (U3, local supabase) > cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4133ms",
+        "✓ |integration| tests/integration/unified-pos-settlement.test.ts (17 tests) 1902ms",
+        "✓ |integration| tests/integration/unified-pos-reject.test.ts (11 tests) 1481ms",
+        "✓ |integration| tests/integration/unified-pos-fulfillment.test.ts (10 tests) 805ms",
+        "✓ |integration| tests/integration/unified-pos-rpc.test.ts (7 tests) 803ms",
+        "Test Files  5 passed (5)",
+        "Tests  47 passed (47)",
+        "Start at  23:27:19",
+        "Duration  10.64s (transform 226ms, setup 0ms, collect 431ms, tests 9.68s, environment 0ms, prepare 84ms)"
+      ]
+    },
+    {
+      "id": "d",
+      "name": "full canonical vitest suite (env injected, zero-skip)",
+      "command": "npx vitest run",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:27:30.144Z",
+      "ended_at": "2026-09-01T16:27:54.685Z",
+      "duration_ms": 24541,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": {
+        "summary_found": true,
+        "test_files": {
+          "passed": 130,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0,
+          "total": 130
+        },
+        "tests": {
+          "passed": 1277,
+          "failed": 0,
+          "skipped": 0,
+          "todo": 0,
+          "total": 1277
+        },
+        "raw_summary_lines": [
+          "Test Files  130 passed (130)",
+          "Tests  1277 passed (1277)"
+        ]
+      },
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 151,
+      "output_lines": [
+        "RUN  v3.2.4 D:/Store management system saas",
+        "✓ |unit| tests/unit/no-native-dialogs.test.ts (3 tests) 303ms",
+        "✓ |unit| tests/unit/receipt-settings.test.ts (5 tests) 524ms",
+        "✓ receipt settings > accepts long receipt header and footer copy  515ms",
+        "✓ |unit| tests/unit/risk-readiness.test.ts (4 tests) 707ms",
+        "✓ |unit| tests/unit/attendance-actions.test.ts (5 tests) 897ms",
+        "✓ attendance manager actions > notifies owners after a successful employee clock-in  883ms",
+        "✓ |unit| tests/unit/customer-member-portal-behavior.test.ts (6 tests) 1023ms",
+        "✓ customer member portal behavior > opens a valid permanent QR without a staff session  591ms",
+        "✓ customer member portal behavior > hides unexpected repository errors from public OTP actions  315ms",
+        "✓ |unit| tests/unit/catalog-variant-templates.test.ts (16 tests) 1013ms",
+        "✓ catalog variant templates > rejects applying a template from another store before creating a variant  934ms",
+        "… 91 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …",
+        "✓ |unit| tests/unit/store-setup-profile-migration.test.ts (15 tests) 9ms",
+        "✓ |unit| tests/unit/transaction-payment-method.test.ts (3 tests) 8ms",
+        "✓ |unit| tests/unit/music-youtube.test.ts (6 tests) 8ms",
+        "✓ |unit| tests/unit/system-summary.test.ts (6 tests) 7ms",
+        "✓ |unit| tests/unit/setup-profile.test.ts (6 tests) 9ms",
+        "✓ |unit| tests/unit/data-client.test.ts (4 tests) 8ms",
+        "✓ |unit| tests/unit/table-status.test.ts (4 tests) 8ms",
+        "✓ |unit| tests/unit/station-routing.test.ts (4 tests) 7ms",
+        "✓ |unit| tests/unit/plan-copy-feature-sync.test.ts (5 tests) 7ms",
+        "✓ |unit| tests/unit/table-sessions.test.ts (4 tests) 8ms",
+        "✓ |unit| tests/unit/qr-self-open-table.test.ts (5 tests) 8ms",
+        "✓ |unit| tests/unit/pos-order-rpc.test.ts (2 tests) 8ms",
+        "✓ |unit| tests/unit/qr-music-free-tier.test.ts (4 tests) 8ms",
+        "✓ |unit| tests/unit/enterprise-request.test.ts (6 tests) 7ms",
+        "✓ |unit| tests/unit/device-aware-entry.test.ts (4 tests) 6ms",
+        "✓ |unit| tests/unit/qr-music-eligibility.test.ts (9 tests) 8ms",
+        "✓ |unit| tests/unit/storage-policies.test.ts (3 tests) 7ms",
+        "✓ |unit| tests/unit/grocery-pos-cart.test.ts (3 tests) 7ms",
+        "✓ |unit| tests/unit/cart.test.ts (5 tests) 7ms",
+        "✓ |unit| tests/unit/transaction-delete-rls.test.ts (4 tests) 7ms",
+        "✓ |unit| tests/unit/native-print-client.test.ts (4 tests) 5ms",
+        "✓ |unit| tests/unit/grocery-pos-migration.test.ts (1 test) 6ms",
+        "✓ |unit| tests/unit/pos-discount-policy.test.ts (4 tests) 6ms",
+        "✓ |unit| tests/unit/enterprise-email.test.ts (4 tests) 6ms",
+        "✓ |unit| tests/unit/auth-users-fk.test.ts (1 test) 6ms",
+        "✓ |unit| tests/unit/printed-qr-url.test.ts (4 tests) 5ms",
+        "✓ |unit| tests/unit/image.test.ts (3 tests) 5ms",
+        "✓ |unit| tests/unit/qr-ordering-session-mode.test.ts (3 tests) 5ms",
+        "✓ |unit| tests/unit/cashflow-record-rls.test.ts (1 test) 5ms",
+        "✓ |unit| tests/unit/grocery-pos-scanner.test.ts (3 tests) 6ms",
+        "✓ |unit| tests/unit/qr-order-rpc-fix.test.ts (3 tests) 5ms",
+        "✓ |unit| tests/unit/incentives.test.ts (2 tests) 6ms",
+        "✓ |unit| tests/unit/image-upload-server-action.test.ts (2 tests) 6ms",
+        "✓ |unit| tests/unit/pos-stock-dedup.test.ts (2 tests) 5ms",
+        "✓ |unit| tests/unit/bill-history-detail.test.ts (1 test) 4ms",
+        "✓ |unit| tests/unit/upload.test.ts (2 tests) 5ms",
+        "✓ |unit| tests/unit/react-setup-jsdom.test.tsx (2 tests) 27ms",
+        "✓ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests) 4761ms",
+        "✓ unified-pos-realtime integration (U3, local supabase) > owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)  422ms",
+        "✓ unified-pos-realtime integration (U3, local supabase) > cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4132ms",
+        "✓ |integration| tests/integration/unified-pos-settlement.test.ts (17 tests) 1995ms",
+        "✓ |integration| tests/integration/unified-pos-reject.test.ts (11 tests) 1526ms",
+        "✓ |integration| tests/integration/unified-pos-fulfillment.test.ts (10 tests) 903ms",
+        "✓ |integration| tests/integration/unified-pos-rpc.test.ts (7 tests) 706ms",
+        "Test Files  130 passed (130)",
+        "Tests  1277 passed (1277)",
+        "Start at  23:27:31",
+        "Duration  22.55s (transform 10.38s, setup 0ms, collect 19.28s, tests 26.23s, environment 1.60s, prepare 26.99s)"
+      ]
+    },
+    {
+      "id": "e",
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:27:54.686Z",
+      "ended_at": "2026-09-01T16:28:01.537Z",
+      "duration_ms": 6851,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": null,
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 2,
+      "output_lines": [
+        "> store-management-saas@0.36.0 typecheck",
+        "> tsc --noEmit"
+      ]
+    },
+    {
+      "id": "f",
+      "name": "lint",
+      "command": "npm run lint",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:28:01.538Z",
+      "ended_at": "2026-09-01T16:28:24.989Z",
+      "duration_ms": 23451,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": null,
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 61,
+      "output_lines": [
+        "> store-management-saas@0.36.0 lint",
+        "> eslint",
+        "D:\\Store management system saas\\mobile\\android\\app\\build\\intermediates\\assets\\debug\\mergeDebugAssets\\native-bridge.js",
+        "5:5   warning  'nativeBridge' is assigned a value but never used                                         @typescript-eslint/no-unused-vars",
+        "36:5   warning  Unused eslint-disable directive (no problems were reported)",
+        "96:24  warning  'ignored' is defined but never used                                                       @typescript-eslint/no-unused-vars",
+        "190:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "208:29  warning  Unused eslint-disable directive (no problems were reported from 'no-prototype-builtins')",
+        "296:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "302:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "306:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "310:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "… 1 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …",
+        "846:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "859:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "916:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "920:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "977:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "984:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "D:\\Store management system saas\\mobile\\android\\app\\build\\intermediates\\assets\\release\\mergeReleaseAssets\\native-bridge.js",
+        "5:5   warning  'nativeBridge' is assigned a value but never used                                         @typescript-eslint/no-unused-vars",
+        "36:5   warning  Unused eslint-disable directive (no problems were reported)",
+        "96:24  warning  'ignored' is defined but never used                                                       @typescript-eslint/no-unused-vars",
+        "190:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "208:29  warning  Unused eslint-disable directive (no problems were reported from 'no-prototype-builtins')",
+        "296:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "302:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "306:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "310:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "365:24  warning  'e' is defined but never used                                                             @typescript-eslint/no-unused-vars",
+        "846:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "859:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "916:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "920:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "977:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "984:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions",
+        "D:\\Store management system saas\\src\\app\\(dashboard)\\catalog\\MenuScanWizard.tsx",
+        "37:12  warning  'formAction' is assigned a value but never used                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars",
+        "169:15  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element",
+        "D:\\Store management system saas\\src\\app\\(dashboard)\\delivery\\DeliveryBoard.tsx",
+        "180:3  warning  'storeId' is defined but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\src\\app\\qr\\[storeSlug]\\[tableId]\\actions.ts",
+        "456:11  warning  'rpcName' is assigned a value but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\src\\app\\system\\settings\\actions.ts",
+        "125:3  warning  '_prev' is defined but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\src\\modules\\ai\\menu-scan.ts",
+        "53:3  warning  Unused eslint-disable directive (no problems were reported from 'no-control-regex')",
+        "D:\\Store management system saas\\src\\modules\\connect\\order-ingestion.ts",
+        "109:9  warning  'now' is assigned a value but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\tests\\integration\\unified-pos-reject.test.ts",
+        "127:19  warning  'product2' is assigned a value but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\tests\\integration\\unified-pos-rpc.test.ts",
+        "6:8  warning  'UnifiedPosOperationOutcome' is defined but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\tests\\unit\\ai-boundary.test.ts",
+        "1:36  warning  'beforeEach' is defined but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\tests\\unit\\device-diagnosis.test.ts",
+        "4:10  warning  'diagnoseDeviceError' is defined but never used  @typescript-eslint/no-unused-vars",
+        "D:\\Store management system saas\\tests\\unit\\unified-pos-contracts.test.ts",
+        "250:32  warning  '_status' is defined but never used  @typescript-eslint/no-unused-vars",
+        "✖ 44 problems (0 errors, 44 warnings)",
+        "0 errors and 5 warnings potentially fixable with the `--fix` option."
+      ]
+    },
+    {
+      "id": "g",
+      "name": "build",
+      "command": "npm run build",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:28:24.989Z",
+      "ended_at": "2026-09-01T16:28:59.307Z",
+      "duration_ms": 34318,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": null,
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 108,
+      "output_lines": [
+        "> store-management-saas@0.36.0 build",
+        "> next build",
+        "▲ Next.js 16.2.6 (Turbopack)",
+        "- Environments: .env.local, .env",
+        "Creating an optimized production build ...",
+        "✓ Compiled successfully in 9.4s",
+        "Running TypeScript ...",
+        "Finished TypeScript in 19.8s ...",
+        "Collecting page data using 11 workers ...",
+        "Generating static pages using 11 workers (0/19) ...",
+        "Generating static pages using 11 workers (4/19)",
+        "Generating static pages using 11 workers (9/19)",
+        "… 48 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …",
+        "├ ƒ /onboarding",
+        "├ ƒ /payslip",
+        "├ ƒ /player/[storeSlug]",
+        "├ ƒ /pos",
+        "├ ƒ /pos/display",
+        "├ ƒ /pos/grocery",
+        "├ ƒ /pos/grocery/display",
+        "├ ƒ /pricing",
+        "├ ƒ /privacy-policy",
+        "├ ƒ /qr-orders",
+        "├ ƒ /qr/[storeSlug]/[tableId]",
+        "├ ƒ /qr/[storeSlug]/tables",
+        "├ ƒ /register",
+        "├ ƒ /reports",
+        "├ ƒ /reset-password",
+        "├ ƒ /settings",
+        "├ ƒ /settings/billing",
+        "├ ƒ /settings/branches",
+        "├ ƒ /settings/buffet",
+        "├ ƒ /settings/connect",
+        "├ ƒ /settings/customer-display",
+        "├ ƒ /settings/devices",
+        "├ ƒ /settings/diagnostics",
+        "├ ƒ /settings/integrations",
+        "├ ƒ /settings/kitchen",
+        "├ ƒ /settings/music-player",
+        "├ ƒ /settings/notifications",
+        "├ ƒ /settings/print-hub",
+        "├ ƒ /settings/receipt",
+        "├ ƒ /settings/store",
+        "├ ƒ /settings/tables",
+        "├ ƒ /settings/team",
+        "├ ƒ /staff",
+        "├ ƒ /stock",
+        "├ ƒ /suspended",
+        "├ ƒ /system",
+        "├ ƒ /system/audit",
+        "├ ƒ /system/enterprise",
+        "├ ƒ /system/music-licenses",
+        "├ ƒ /system/pricing",
+        "├ ƒ /system/settings",
+        "├ ƒ /system/tenants",
+        "├ ƒ /system/tenants/[id]",
+        "├ ƒ /table-receipt",
+        "├ ƒ /terms-of-service",
+        "└ ƒ /update-password",
+        "ƒ Proxy (Middleware)",
+        "ƒ  (Dynamic)  server-rendered on demand"
+      ]
+    },
+    {
+      "id": "h",
+      "name": "git diff --check",
+      "command": "git diff --check",
+      "status": "passed",
+      "reason": null,
+      "started_at": "2026-09-01T16:28:59.307Z",
+      "ended_at": "2026-09-01T16:28:59.474Z",
+      "duration_ms": 167,
+      "exit_code": 0,
+      "timed_out": false,
+      "parsed": null,
+      "attempts": null,
+      "passed_on_attempt": null,
+      "output_total_lines": 1,
+      "output_lines": [
+        "warning: in the working copy of 'src/modules/qr-ordering/repository.ts', CRLF will be replaced by LF the next time Git touches it"
+      ]
+    }
+  ],
+  "failed_steps": [],
+  "blocked_steps": [],
+  "unexpected_skips": 0,
+  "skip_policy": "zero-skip (allowlist ว่าง — ถ้าจะอนุญาตให้ข้ามจริง ต้องมีหลักฐานผู้ใช้)",
+  "secrets_scanned": true
+}

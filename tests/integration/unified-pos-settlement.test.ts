@@ -356,7 +356,7 @@ describe.skipIf(!envReady)("unified-pos-settlement integration (U7, local supaba
   }): Promise<SettleOutcome> {
     let orderIds = [...(input.orderIds ?? [])];
     let amount = input.amount ?? 0;
-    let tableId = input.tableId ?? null;
+    const tableId = input.tableId ?? null;
 
     if (input.mode === "whole_table") {
       const rows = await deriveTableOrders(tableId!);

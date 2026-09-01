@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>U8 · R1 backend qualification checkpoint — BACKEND_GATE_PASS</title>
+<style>
+  :root { --ok:#0e7a3d; --bad:#b3261e; --warn:#9a6700; --ink:#1f2328; --muted:#57606a; --line:#d0d7de; --bg:#f6f8fa; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); background: #fff; margin: 0; padding: 24px; line-height: 1.5; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 28px 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; } h3 { font-size: 15px; margin: 0 0 8px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .badge { display:inline-block; padding: 8px 16px; border-radius: 8px; color:#fff; font-weight: 700; font-family: ui-monospace, Consolas, monospace; }
+  .badge.pass { background: var(--ok); } .badge.fail { background: var(--bad); } .badge.skipped { background: var(--warn); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--bg); font-weight: 600; }
+  tr.passed td:last-child { color: var(--ok); font-weight: 600; }
+  tr.failed td:last-child { color: var(--bad); font-weight: 600; }
+  .mono { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; }
+  .small { font-size: 12px; color: var(--muted); }
+  pre { background: #0d1117; color: #e6edf3; padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  pre.parsed { background: #f6f8fa; color: #1f2328; border: 1px solid var(--line); }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 12px 0; }
+  .reason { color: var(--bad); font-size: 12.5px; margin-top: 4px; }
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+  .meta-cell { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+  .meta-cell b { display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>U8 · R1 backend qualification checkpoint</h1>
+  <p class="small">Plan/QR Order Voice Unified POS Implementation Plan v2.html (U8) · evidence schema storeos.r1-backend-gate/v1 · mode full</p>
+  <p><span class="badge pass">BACKEND_GATE_PASS</span></p>
+
+  <h2>สรุป / Summary</h2>
+  <div class="meta-grid">
+    <div class="meta-cell"><b>Verdict</b><span class="mono">BACKEND_GATE_PASS</span></div>
+    <div class="meta-cell"><b>Package</b><span class="mono">store-management-saas@0.36.0</span></div>
+    <div class="meta-cell"><b>Commit</b><span class="mono">db4d1fb629275068d25fb3d21c3351bed20c3d62 (main)</span></div>
+    <div class="meta-cell"><b>Generated</b>1/9/2569 23:28:59<br><span class="small">2026-09-01T16:28:59.475Z · 350.6s</span></div>
+    <div class="meta-cell"><b>Unexpected skips</b><span class="mono">0</span><br><span class="small">zero-skip (allowlist ว่าง — ถ้าจะอนุญาตให้ข้ามจริง ต้องมีหลักฐานผู้ใช้)</span></div>
+    <div class="meta-cell"><b>Failed steps</b><span class="mono">—</span></div>
+  </div>
+
+  <h2>เครื่องมือ / Tool versions</h2>
+  <table>
+    <tr><th>Tool</th><th>Version</th><th>หมายเหตุ</th></tr>
+    <tr><td>node</td><td class="mono">v22.22.0</td><td>process.version</td></tr>
+    <tr><td>npm</td><td class="mono">10.9.4</td><td>npm --version</td></tr>
+    <tr><td>supabase CLI</td><td class="mono">2.75.0</td><td>supabase --version</td></tr>
+    <tr><td>PostgreSQL</td><td class="mono">17.6</td><td>docker exec (db container)</td></tr>
+  </table>
+
+  <h2>Docker (supabase containers) / Local Supabase</h2>
+  <table>
+    <tr><th>Container</th><th>Image</th></tr>
+    <tr><td class="mono">supabase_db_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/postgres:17.6.1.075</td></tr>
+<tr><td class="mono">supabase_studio_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/studio:2026.01.27-sha-2a37755</td></tr>
+<tr><td class="mono">supabase_pg_meta_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/postgres-meta:v0.95.2</td></tr>
+<tr><td class="mono">supabase_edge_runtime_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/edge-runtime:v1.70.0</td></tr>
+<tr><td class="mono">supabase_storage_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/storage-api:v1.35.3</td></tr>
+<tr><td class="mono">supabase_rest_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/postgrest:v14.3</td></tr>
+<tr><td class="mono">supabase_realtime_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/realtime:v2.73.2</td></tr>
+<tr><td class="mono">supabase_inbucket_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/mailpit:v1.22.3</td></tr>
+<tr><td class="mono">supabase_auth_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/gotrue:v2.186.0</td></tr>
+<tr><td class="mono">supabase_kong_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/kong:2.8.1</td></tr>
+<tr><td class="mono">supabase_vector_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/vector:0.28.1-alpine</td></tr>
+<tr><td class="mono">supabase_analytics_Store_management_system_saas</td><td class="mono">public.ecr.aws/supabase/logflare:1.30.5</td></tr>
+  </table>
+  <p class="small">Local URL: <span class="mono">http://127.0.0.1:54321</span> · keys จาก <span class="mono">supabase status -o env (runtime, never hardcoded)</span> (PUBLISHABLE_KEY/SERVICE_ROLE_KEY) · keys_in_evidence: false</p>
+
+  <h2>Preflight</h2>
+  <table>
+    <tr><th>ID</th><th>Check</th><th>ผล</th><th>รายละเอียด</th></tr>
+    <tr class="passed"><td class="mono">git-repo</td><td>git repository present</td><td class="mono">OK</td><td>worktree ตรวจพบ</td></tr>
+<tr class="passed"><td class="mono">docker-daemon</td><td>docker daemon reachable + supabase stack containers</td><td class="mono">OK</td><td>supabase containers: 12, db: supabase_db_Store_management_system_saas</td></tr>
+<tr class="passed"><td class="mono">supabase-cli</td><td>supabase CLI available</td><td class="mono">OK</td><td>v2.75.0</td></tr>
+<tr class="passed"><td class="mono">node-npm</td><td>node/npm runtime</td><td class="mono">OK</td><td>node v22.22.0 / npm 10.9.4</td></tr>
+<tr class="passed"><td class="mono">local-supabase-env</td><td>local supabase env (loopback-only, runtime)</td><td class="mono">OK</td><td>http://127.0.0.1:54321 — publishable=PUBLISHABLE_KEY, service=SERVICE_ROLE_KEY</td></tr>
+<tr class="passed"><td class="mono">local-stack-http</td><td>local stack reachable @ 127.0.0.1:54321</td><td class="mono">OK</td><td>GET http://127.0.0.1:54321/rest/v1/ → HTTP 200</td></tr>
+<tr class="passed"><td class="mono">worktree-clean</td><td>working tree — dirty limited to U8 scope (noise excluded)</td><td class="mono">OK</td><td>ไม่มี change นอก U8 scope (noise=15, in-scope=14, unexpected=0)</td></tr>
+<tr class="passed"><td class="mono">vitest-cli</td><td>vitest CLI installed (local)</td><td class="mono">OK</td><td>node_modules\vitest\vitest.mjs</td></tr>
+<tr class="passed"><td class="mono">integration-files</td><td>unified-pos integration test files</td><td class="mono">OK</td><td>5 ไฟล์: unified-pos-fulfillment.test.ts, unified-pos-realtime.test.ts, unified-pos-reject.test.ts, unified-pos-rpc.test.ts, unified-pos-settlement.test.ts</td></tr>
+<tr class="passed"><td class="mono">postgres-version</td><td>postgres version (docker exec)</td><td class="mono">OK</td><td>PostgreSQL 17.6</td></tr>
+  </table>
+  
+  <h3>รายการ dirty ของ worktree (29 รายการ — noise=15, in-scope=14, unexpected=0)</h3>
+  <p class="small">git status --porcelain ทั้งหมด → ตัด noise → ต้องอยู่ใน U8 scope (fail-closed) · allowlist: scripts/verify-unified-pos-backend.mjs, vitest.config.ts, package.json, package-lock.json, src/modules/qr-ordering/repository.ts, eslint.config.mjs</p>
+  <table>
+    <tr><th>git status --porcelain</th><th>ประเภท</th></tr>
+    <tr class="passed"><td class="mono"> M eslint.config.mjs</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M package-lock.json</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M package.json</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M src/modules/qr-ordering/repository.ts</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M supabase/migrations/20260901000002_unified_pos_rpc.sql</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M supabase/migrations/20260901000003_unified_pos_fulfillment.sql</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M supabase/migrations/20260901000004_unified_pos_reject.sql</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M supabase/migrations/20260901000005_unified_pos_settlement.sql</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M tests/integration/unified-pos-realtime.test.ts</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M tests/integration/unified-pos-reject.test.ts</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M tests/integration/unified-pos-settlement.test.ts</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M tests/unit/unified-pos-contracts.test.ts</td><td>in-scope</td></tr>
+<tr class="passed"><td class="mono"> M vitest.config.ts</td><td>in-scope</td></tr>
+<tr class="small"><td class="mono">?? .codex-remote-attachments/</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? .codex-temp/</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? .openclaw-realtime-last.log</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? .openclaw-u0-reset.log</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? &quot;Design/QR Order Unified POS Design Spec v1.html&quot;</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? Design/design_system_v3_qr_order_unified_pos.html</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? Marketing/</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? &quot;Plan/QR Order Voice Unified POS Implementation Plan v1.html&quot;</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? &quot;Plan/QR Order Voice Unified POS Implementation Plan v2.html&quot;</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? &quot;Plan/Voice Command POS Implementation Plan v1.html&quot;</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? artifacts/</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? output/</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? probe-types.ts</td><td>noise</td></tr>
+<tr class="small"><td class="mono">?? public/logo.png.png</td><td>noise</td></tr>
+<tr class="passed"><td class="mono">?? scripts/verify-unified-pos-backend.mjs</td><td>in-scope</td></tr>
+<tr class="small"><td class="mono">?? test-results/</td><td>noise</td></tr>
+  </table>
+
+  <h2>Test discovery hygiene (vitest list --filesOnly)</h2>
+  
+  <table>
+    <tr><th>ไฟล์ที่ค้นพบ</th><th>ผล</th><th>Offenders (dot-workspaces)</th></tr>
+    <tr class="passed"><td class="mono">130</td><td>OK</td><td>—</td></tr>
+  </table>
+  <p class="small">ห้ามมี path ใต้: .codex-temp, .worktrees, .codex, .codex-remote-attachments หรือ dot-prefixed workspace dir ใดๆ · vitest list --filesOnly exit 0</p>
+
+  <h2>Steps (9)</h2>
+  <table>
+    <tr><th>ID</th><th>Step</th><th>Command</th><th>Exit</th><th>Duration</th><th>Status</th></tr>
+    <tr class="passed">
+        <td class="mono">a</td>
+        <td>Reset local database (migrations + seed)</td>
+        <td class="mono">supabase db reset --local</td>
+        <td class="mono">0</td>
+        <td class="mono">38.3s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">b</td>
+        <td>pgTAP suite (supabase test db --local)</td>
+        <td class="mono">supabase test db --local</td>
+        <td class="mono">0</td>
+        <td class="mono">2.3s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">b2</td>
+        <td>realtime readiness probe (U3 เดี่ยว, ซ้ำ ≤6 attempt ห่าง 60s)</td>
+        <td class="mono">npx vitest run tests/integration/unified-pos-realtime.test.ts</td>
+        <td class="mono">0</td>
+        <td class="mono">205.2s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">c</td>
+        <td>unified-pos integration tests (env injected, zero-skip)</td>
+        <td class="mono">npx vitest run tests/integration/unified-pos-fulfillment.test.ts tests/integration/unified-pos-realtime.test.ts tests/integration/unified-pos-reject.test.ts tests/integration/unified-pos-rpc.test.ts tests/integration/unified-pos-settlement.test.ts</td>
+        <td class="mono">0</td>
+        <td class="mono">12.6s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">d</td>
+        <td>full canonical vitest suite (env injected, zero-skip)</td>
+        <td class="mono">npx vitest run</td>
+        <td class="mono">0</td>
+        <td class="mono">24.5s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">e</td>
+        <td>typecheck</td>
+        <td class="mono">npm run typecheck</td>
+        <td class="mono">0</td>
+        <td class="mono">6.9s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">f</td>
+        <td>lint</td>
+        <td class="mono">npm run lint</td>
+        <td class="mono">0</td>
+        <td class="mono">23.5s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">g</td>
+        <td>build</td>
+        <td class="mono">npm run build</td>
+        <td class="mono">0</td>
+        <td class="mono">34.3s</td>
+        <td>passed</td>
+      </tr>
+<tr class="passed">
+        <td class="mono">h</td>
+        <td>git diff --check</td>
+        <td class="mono">git diff --check</td>
+        <td class="mono">0</td>
+        <td class="mono">167ms</td>
+        <td>passed</td>
+      </tr>
+  </table>
+
+  <h2>รายละเอียดแต่ละ step / Step details</h2>
+  <div class="card">
+        <h3><span class="mono">a</span> · Reset local database (migrations + seed) — <span class="passed">passed</span></h3>
+        <p class="mono small">supabase db reset --local · exit 0 · 38.3s · start 2026-09-01T16:23:11.726Z · end 2026-09-01T16:23:50.006Z</p>
+        
+        
+        
+        <p class="small">output (head/tail, 202 บรรทัดทั้งหมด):</p><pre>Resetting local database...
+Recreating database...
+Initialising schema...
+Seeding globals from roles.sql...
+Applying migration 20260518000001_initial_schema.sql...
+NOTICE (42710): extension &quot;uuid-ossp&quot; already exists, skipping
+NOTICE (42710): extension &quot;pgcrypto&quot; already exists, skipping
+Applying migration 20260518000002_rls_policies.sql...
+Applying migration 20260518000003_storage_buckets.sql...
+Applying migration 20260518000004_attendance_fixes.sql...
+Applying migration 20260518000005_billing.sql...
+Applying migration 20260519000001_super_admin_role.sql...
+… 142 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …
+Applying migration 20260630130000_storeos_connect.sql...
+Applying migration 20260630140000_connect_platform_jdc_url.sql...
+Applying migration 20260630150000_connect_platform_jdc_credentials.sql...
+Applying migration 20260701000000_fix_qr_order_rpc.sql...
+Applying migration 20260701000001_cancel_qr_order.sql...
+Applying migration 20260701000002_void_qr_order_item.sql...
+Applying migration 20260701120000_delivery_out_of_stock.sql...
+Applying migration 20260702000000_music_play_now_price.sql...
+Applying migration 20260702120000_report_channel_split.sql...
+Applying migration 20260703000000_wholesale_pos.sql...
+NOTICE (00000): constraint &quot;customers_price_tier_check&quot; of relation &quot;customers&quot; does not exist, skipping
+NOTICE (00000): trigger &quot;product_units_set_scope&quot; for relation &quot;product_units&quot; does not exist, skipping
+NOTICE (00000): policy &quot;product_units: store member can read&quot; for relation &quot;product_units&quot; does not exist, skipping
+NOTICE (00000): policy &quot;product_units: manager+ can write&quot; for relation &quot;product_units&quot; does not exist, skipping
+NOTICE (00000): constraint &quot;order_items_unit_quantity_check&quot; of relation &quot;order_items&quot; does not exist, skipping
+Applying migration 20260703130000_business_plan.sql...
+Applying migration 20260703170000_connect_commission_rate.sql...
+Applying migration 20260705000000_device_push_tokens.sql...
+Applying migration 20260705150000_void_pos_order_releases_rewards.sql...
+Applying migration 20260707000000_notification_templates_and_buffet_expiry.sql...
+Applying migration 20260708000000_fix_staff_clockout_rls.sql...
+Applying migration 20260709000000_notifications_service_buttons_stock.sql...
+Applying migration 20260710000000_table_no_expiry.sql...
+Applying migration 20260712000000_cash_session_variance_ledger.sql...
+Applying migration 20260804000000_transactions_delete_policy.sql...
+NOTICE (00000): policy &quot;transactions: cashflow.manage can delete&quot; for relation &quot;transactions&quot; does not exist, skipping
+Applying migration 20260819000000_enterprise_free_trial.sql...
+Applying migration 20260820000000_enterprise_trial_marker.sql...
+Applying migration 20260820100000_enterprise_limited_flag.sql...
+Applying migration 20260827000001_store_setup_profile.sql...
+Applying migration 20260827000002_ai_device_foundation.sql...
+Applying migration 20260827000003_device_profile_success_rpc.sql...
+Applying migration 20260827000004_activation_nudges.sql...
+Applying migration 20260831000001_unified_pos_foundation.sql...
+NOTICE (00000): trigger &quot;unified_pos_orders_revision_bu&quot; for relation &quot;public.orders&quot; does not exist, skipping
+NOTICE (00000): trigger &quot;unified_pos_items_version_bu&quot; for relation &quot;public.order_items&quot; does not exist, skipping
+NOTICE (00000): trigger &quot;unified_pos_items_parent_bump&quot; for relation &quot;public.order_items&quot; does not exist, skipping
+Applying migration 20260901000001_unified_pos_realtime.sql...
+Applying migration 20260901000002_unified_pos_rpc.sql...
+Applying migration 20260901000003_unified_pos_fulfillment.sql...
+NOTICE (00000): trigger &quot;unified_pos_items_prep_derive&quot; for relation &quot;public.order_items&quot; does not exist, skipping
+Applying migration 20260901000004_unified_pos_reject.sql...
+Applying migration 20260901000005_unified_pos_settlement.sql...
+Seeding data from supabase/seed.sql...
+Restarting containers...
+Finished supabase db reset on branch main.
+A new version of Supabase CLI is available: v2.116.0 (currently installed v2.75.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">b</span> · pgTAP suite (supabase test db --local) — <span class="passed">passed</span></h3>
+        <p class="mono small">supabase test db --local · exit 0 · 2.3s · start 2026-09-01T16:23:50.006Z · end 2026-09-01T16:23:52.279Z</p>
+        
+        <pre class="parsed">{
+  &quot;summary_found&quot;: true,
+  &quot;result&quot;: &quot;PASS&quot;,
+  &quot;files&quot;: 7,
+  &quot;tests&quot;: 310,
+  &quot;failed_subtests&quot;: 0,
+  &quot;failed_programs&quot;: 0,
+  &quot;dubious&quot;: 0,
+  &quot;per_file&quot;: [
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/000_smoke.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/001_unified_pos_foundation.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/002_unified_pos_realtime.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/003_unified_pos_rpc.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/004_unified_pos_fulfillment.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/005_unified_pos_reject.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;file&quot;: &quot;/Store management system saas/supabase/tests/006_unified_pos_settlement.sql&quot;,
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;ok&quot;: true
+    }
+  ],
+  &quot;all_ok&quot;: true,
+  &quot;bail_out&quot;: null,
+  &quot;files_on_disk&quot;: 7,
+  &quot;file_count_ok&quot;: true,
+  &quot;file_count_detail&quot;: &quot;TAP Files=7 vs *.sql บนดิสก์=7&quot;
+}</pre>
+        
+        <p class="small">output (head/tail, 13 บรรทัดทั้งหมด):</p><pre>Connecting to local database...
+/Store management system saas/supabase/tests/000_smoke.sql .................... ok
+/Store management system saas/supabase/tests/001_unified_pos_foundation.sql ... ok
+/Store management system saas/supabase/tests/002_unified_pos_realtime.sql ..... ok
+/Store management system saas/supabase/tests/003_unified_pos_rpc.sql .......... ok
+/Store management system saas/supabase/tests/004_unified_pos_fulfillment.sql .. ok
+/Store management system saas/supabase/tests/005_unified_pos_reject.sql ....... ok
+/Store management system saas/supabase/tests/006_unified_pos_settlement.sql ... ok
+All tests successful.
+Files=7, Tests=310,  0 wallclock secs ( 0.06 usr  0.03 sys +  0.06 cusr  0.06 csys =  0.21 CPU)
+Result: PASS
+A new version of Supabase CLI is available: v2.116.0 (currently installed v2.75.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">b2</span> · realtime readiness probe (U3 เดี่ยว, ซ้ำ ≤6 attempt ห่าง 60s) — <span class="passed">passed</span></h3>
+        <p class="mono small">npx vitest run tests/integration/unified-pos-realtime.test.ts · exit 0 · 205.2s · start 2026-09-01T16:23:52.281Z · end 2026-09-01T16:27:17.513Z</p>
+        
+        <pre class="parsed">{
+  &quot;summary_found&quot;: true,
+  &quot;test_files&quot;: {
+    &quot;passed&quot;: 1,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;todo&quot;: 0,
+    &quot;total&quot;: 1
+  },
+  &quot;tests&quot;: {
+    &quot;passed&quot;: 2,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;todo&quot;: 0,
+    &quot;total&quot;: 2
+  },
+  &quot;raw_summary_lines&quot;: [
+    &quot;Test Files  1 passed (1)&quot;,
+    &quot;Tests  2 passed (2)&quot;
+  ]
+}</pre>
+        <p class="small">readiness attempts (2) — ผ่านที่ attempt <span class="mono">2</span>:</p>
+        <table>
+          <tr><th>#</th><th>Start</th><th>End</th><th>Duration</th><th>Exit</th><th>ผล</th></tr>
+          <tr class="failed">
+            <td class="mono">#1</td>
+            <td class="mono small">2026-09-01T16:23:52.281Z</td>
+            <td class="mono small">2026-09-01T16:26:09.604Z</td>
+            <td class="mono">137.3s</td>
+            <td class="mono">1</td>
+            <td>ยังไม่พร้อม<div class="reason">exit=1; tests failed=1; test files failed=1</div><div class="small">รอ 60.0s ก่อน attempt ถัดไป</div></td>
+          </tr>
+<tr class="passed">
+            <td class="mono">#2</td>
+            <td class="mono small">2026-09-01T16:27:09.610Z</td>
+            <td class="mono small">2026-09-01T16:27:17.513Z</td>
+            <td class="mono">7.9s</td>
+            <td class="mono">0</td>
+            <td>READY (probe ผ่าน)</td>
+          </tr>
+        </table>
+        <p class="small mono">attempt #1 — output (head/tail, 21 บรรทัดทั้งหมด):</p><pre>RUN  v3.2.4 D:/Store management system saas
+❯ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests | 1 failed) 134470ms
+× unified-pos-realtime integration (U3, local supabase) &gt; owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3) 130139ms
+→ waitForEventResilient: ไม่ได้รับ event &quot;INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3&quot; ภายในงบทั้งหมด (รอบแรก 10000ms + resubscribe 3 รอบ × 40000ms) — ทุกรอบ subscribe ขึ้น SUBSCRIBED สำเร็จแต่ไม่มี event ไหล สอดคล้องอาการ realtime warm-up หลัง db reset (ความผิดพลาดล่าสุด: timeout 40000ms รอ realtime event: INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3; ถ้าเจอซ้ำใน gate ให้ดู step (b2) realtime readiness probe ของ verifier — helper นี้เป็น defense-in-depth ไม่ใช่กลไกหลัก)
+✓ unified-pos-realtime integration (U3, local supabase) &gt; cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4127ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+FAIL  |integration| tests/integration/unified-pos-realtime.test.ts &gt; unified-pos-realtime integration (U3, local supabase) &gt; owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)
+Error: waitForEventResilient: ไม่ได้รับ event &quot;INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3&quot; ภายในงบทั้งหมด (รอบแรก 10000ms + resubscribe 3 รอบ × 40000ms) — ทุกรอบ subscribe ขึ้น SUBSCRIBED สำเร็จแต่ไม่มี event ไหล สอดคล้องอาการ realtime warm-up หลัง db reset (ความผิดพลาดล่าสุด: timeout 40000ms รอ realtime event: INSERT ของ item 689364f6-9427-48bf-a087-47fa2ab934f3; ถ้าเจอซ้ำใน gate ให้ดู step (b2) realtime readiness probe ของ verifier — helper นี้เป็น defense-in-depth ไม่ใช่กลไกหลัก)
+❯ waitForEventResilient tests/integration/unified-pos-realtime.test.ts:240:11
+238|       }
+239|     }
+240|     throw new Error(
+|           ^
+241|       `waitForEventResilient: ไม่ได้รับ event &quot;${label}&quot; ภายในงบทั้งหม…
+242|         `(รอบแรก ${RESILIENT_INSERT_TIMEOUT_MS}ms + resubscribe ${RESI…
+❯ tests/integration/unified-pos-realtime.test.ts:304:25
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+Test Files  1 failed (1)
+Tests  1 failed | 1 passed (2)
+Start at  23:23:53
+Duration  135.54s (transform 75ms, setup 0ms, collect 129ms, tests 134.47s, environment 0ms, prepare 137ms)</pre>
+<p class="small mono">attempt #2 — output (head/tail, 8 บรรทัดทั้งหมด):</p><pre>RUN  v3.2.4 D:/Store management system saas
+✓ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests) 4652ms
+✓ unified-pos-realtime integration (U3, local supabase) &gt; owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)  368ms
+✓ unified-pos-realtime integration (U3, local supabase) &gt; cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4094ms
+Test Files  1 passed (1)
+Tests  2 passed (2)
+Start at  23:27:12
+Duration  5.28s (transform 82ms, setup 0ms, collect 138ms, tests 4.65s, environment 0ms, prepare 190ms)</pre>
+        
+      </div>
+<div class="card">
+        <h3><span class="mono">c</span> · unified-pos integration tests (env injected, zero-skip) — <span class="passed">passed</span></h3>
+        <p class="mono small">npx vitest run tests/integration/unified-pos-fulfillment.test.ts tests/integration/unified-pos-realtime.test.ts tests/integration/unified-pos-reject.test.ts tests/integration/unified-pos-rpc.test.ts tests/integration/unified-pos-settlement.test.ts · exit 0 · 12.6s · start 2026-09-01T16:27:17.514Z · end 2026-09-01T16:27:30.144Z</p>
+        
+        <pre class="parsed">{
+  &quot;summary_found&quot;: true,
+  &quot;test_files&quot;: {
+    &quot;passed&quot;: 5,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;todo&quot;: 0,
+    &quot;total&quot;: 5
+  },
+  &quot;tests&quot;: {
+    &quot;passed&quot;: 47,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;todo&quot;: 0,
+    &quot;total&quot;: 47
+  },
+  &quot;raw_summary_lines&quot;: [
+    &quot;Test Files  5 passed (5)&quot;,
+    &quot;Tests  47 passed (47)&quot;
+  ]
+}</pre>
+        
+        <p class="small">output (head/tail, 12 บรรทัดทั้งหมด):</p><pre>RUN  v3.2.4 D:/Store management system saas
+✓ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests) 4691ms
+✓ unified-pos-realtime integration (U3, local supabase) &gt; owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)  353ms
+✓ unified-pos-realtime integration (U3, local supabase) &gt; cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4133ms
+✓ |integration| tests/integration/unified-pos-settlement.test.ts (17 tests) 1902ms
+✓ |integration| tests/integration/unified-pos-reject.test.ts (11 tests) 1481ms
+✓ |integration| tests/integration/unified-pos-fulfillment.test.ts (10 tests) 805ms
+✓ |integration| tests/integration/unified-pos-rpc.test.ts (7 tests) 803ms
+Test Files  5 passed (5)
+Tests  47 passed (47)
+Start at  23:27:19
+Duration  10.64s (transform 226ms, setup 0ms, collect 431ms, tests 9.68s, environment 0ms, prepare 84ms)</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">d</span> · full canonical vitest suite (env injected, zero-skip) — <span class="passed">passed</span></h3>
+        <p class="mono small">npx vitest run · exit 0 · 24.5s · start 2026-09-01T16:27:30.144Z · end 2026-09-01T16:27:54.685Z</p>
+        
+        <pre class="parsed">{
+  &quot;summary_found&quot;: true,
+  &quot;test_files&quot;: {
+    &quot;passed&quot;: 130,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;todo&quot;: 0,
+    &quot;total&quot;: 130
+  },
+  &quot;tests&quot;: {
+    &quot;passed&quot;: 1277,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;todo&quot;: 0,
+    &quot;total&quot;: 1277
+  },
+  &quot;raw_summary_lines&quot;: [
+    &quot;Test Files  130 passed (130)&quot;,
+    &quot;Tests  1277 passed (1277)&quot;
+  ]
+}</pre>
+        
+        <p class="small">output (head/tail, 151 บรรทัดทั้งหมด):</p><pre>RUN  v3.2.4 D:/Store management system saas
+✓ |unit| tests/unit/no-native-dialogs.test.ts (3 tests) 303ms
+✓ |unit| tests/unit/receipt-settings.test.ts (5 tests) 524ms
+✓ receipt settings &gt; accepts long receipt header and footer copy  515ms
+✓ |unit| tests/unit/risk-readiness.test.ts (4 tests) 707ms
+✓ |unit| tests/unit/attendance-actions.test.ts (5 tests) 897ms
+✓ attendance manager actions &gt; notifies owners after a successful employee clock-in  883ms
+✓ |unit| tests/unit/customer-member-portal-behavior.test.ts (6 tests) 1023ms
+✓ customer member portal behavior &gt; opens a valid permanent QR without a staff session  591ms
+✓ customer member portal behavior &gt; hides unexpected repository errors from public OTP actions  315ms
+✓ |unit| tests/unit/catalog-variant-templates.test.ts (16 tests) 1013ms
+✓ catalog variant templates &gt; rejects applying a template from another store before creating a variant  934ms
+… 91 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …
+✓ |unit| tests/unit/store-setup-profile-migration.test.ts (15 tests) 9ms
+✓ |unit| tests/unit/transaction-payment-method.test.ts (3 tests) 8ms
+✓ |unit| tests/unit/music-youtube.test.ts (6 tests) 8ms
+✓ |unit| tests/unit/system-summary.test.ts (6 tests) 7ms
+✓ |unit| tests/unit/setup-profile.test.ts (6 tests) 9ms
+✓ |unit| tests/unit/data-client.test.ts (4 tests) 8ms
+✓ |unit| tests/unit/table-status.test.ts (4 tests) 8ms
+✓ |unit| tests/unit/station-routing.test.ts (4 tests) 7ms
+✓ |unit| tests/unit/plan-copy-feature-sync.test.ts (5 tests) 7ms
+✓ |unit| tests/unit/table-sessions.test.ts (4 tests) 8ms
+✓ |unit| tests/unit/qr-self-open-table.test.ts (5 tests) 8ms
+✓ |unit| tests/unit/pos-order-rpc.test.ts (2 tests) 8ms
+✓ |unit| tests/unit/qr-music-free-tier.test.ts (4 tests) 8ms
+✓ |unit| tests/unit/enterprise-request.test.ts (6 tests) 7ms
+✓ |unit| tests/unit/device-aware-entry.test.ts (4 tests) 6ms
+✓ |unit| tests/unit/qr-music-eligibility.test.ts (9 tests) 8ms
+✓ |unit| tests/unit/storage-policies.test.ts (3 tests) 7ms
+✓ |unit| tests/unit/grocery-pos-cart.test.ts (3 tests) 7ms
+✓ |unit| tests/unit/cart.test.ts (5 tests) 7ms
+✓ |unit| tests/unit/transaction-delete-rls.test.ts (4 tests) 7ms
+✓ |unit| tests/unit/native-print-client.test.ts (4 tests) 5ms
+✓ |unit| tests/unit/grocery-pos-migration.test.ts (1 test) 6ms
+✓ |unit| tests/unit/pos-discount-policy.test.ts (4 tests) 6ms
+✓ |unit| tests/unit/enterprise-email.test.ts (4 tests) 6ms
+✓ |unit| tests/unit/auth-users-fk.test.ts (1 test) 6ms
+✓ |unit| tests/unit/printed-qr-url.test.ts (4 tests) 5ms
+✓ |unit| tests/unit/image.test.ts (3 tests) 5ms
+✓ |unit| tests/unit/qr-ordering-session-mode.test.ts (3 tests) 5ms
+✓ |unit| tests/unit/cashflow-record-rls.test.ts (1 test) 5ms
+✓ |unit| tests/unit/grocery-pos-scanner.test.ts (3 tests) 6ms
+✓ |unit| tests/unit/qr-order-rpc-fix.test.ts (3 tests) 5ms
+✓ |unit| tests/unit/incentives.test.ts (2 tests) 6ms
+✓ |unit| tests/unit/image-upload-server-action.test.ts (2 tests) 6ms
+✓ |unit| tests/unit/pos-stock-dedup.test.ts (2 tests) 5ms
+✓ |unit| tests/unit/bill-history-detail.test.ts (1 test) 4ms
+✓ |unit| tests/unit/upload.test.ts (2 tests) 5ms
+✓ |unit| tests/unit/react-setup-jsdom.test.tsx (2 tests) 27ms
+✓ |integration| tests/integration/unified-pos-realtime.test.ts (2 tests) 4761ms
+✓ unified-pos-realtime integration (U3, local supabase) &gt; owner ได้รับ INSERT/UPDATE/UPDATE-voided ของ order_items ตามลำดับ (version 1/2/3)  422ms
+✓ unified-pos-realtime integration (U3, local supabase) &gt; cross-store isolation: owner ของ org A ต้องไม่ได้รับ event ของ org/store B (RLS)  4132ms
+✓ |integration| tests/integration/unified-pos-settlement.test.ts (17 tests) 1995ms
+✓ |integration| tests/integration/unified-pos-reject.test.ts (11 tests) 1526ms
+✓ |integration| tests/integration/unified-pos-fulfillment.test.ts (10 tests) 903ms
+✓ |integration| tests/integration/unified-pos-rpc.test.ts (7 tests) 706ms
+Test Files  130 passed (130)
+Tests  1277 passed (1277)
+Start at  23:27:31
+Duration  22.55s (transform 10.38s, setup 0ms, collect 19.28s, tests 26.23s, environment 1.60s, prepare 26.99s)</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">e</span> · typecheck — <span class="passed">passed</span></h3>
+        <p class="mono small">npm run typecheck · exit 0 · 6.9s · start 2026-09-01T16:27:54.686Z · end 2026-09-01T16:28:01.537Z</p>
+        
+        
+        
+        <p class="small">output (head/tail, 2 บรรทัดทั้งหมด):</p><pre>&gt; store-management-saas@0.36.0 typecheck
+&gt; tsc --noEmit</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">f</span> · lint — <span class="passed">passed</span></h3>
+        <p class="mono small">npm run lint · exit 0 · 23.5s · start 2026-09-01T16:28:01.538Z · end 2026-09-01T16:28:24.989Z</p>
+        
+        
+        
+        <p class="small">output (head/tail, 61 บรรทัดทั้งหมด):</p><pre>&gt; store-management-saas@0.36.0 lint
+&gt; eslint
+D:\Store management system saas\mobile\android\app\build\intermediates\assets\debug\mergeDebugAssets\native-bridge.js
+5:5   warning  &#39;nativeBridge&#39; is assigned a value but never used                                         @typescript-eslint/no-unused-vars
+36:5   warning  Unused eslint-disable directive (no problems were reported)
+96:24  warning  &#39;ignored&#39; is defined but never used                                                       @typescript-eslint/no-unused-vars
+190:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+208:29  warning  Unused eslint-disable directive (no problems were reported from &#39;no-prototype-builtins&#39;)
+296:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+302:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+306:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+310:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+… 1 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …
+846:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+859:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+916:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+920:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+977:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+984:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+D:\Store management system saas\mobile\android\app\build\intermediates\assets\release\mergeReleaseAssets\native-bridge.js
+5:5   warning  &#39;nativeBridge&#39; is assigned a value but never used                                         @typescript-eslint/no-unused-vars
+36:5   warning  Unused eslint-disable directive (no problems were reported)
+96:24  warning  &#39;ignored&#39; is defined but never used                                                       @typescript-eslint/no-unused-vars
+190:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+208:29  warning  Unused eslint-disable directive (no problems were reported from &#39;no-prototype-builtins&#39;)
+296:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+302:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+306:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+310:17  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+365:24  warning  &#39;e&#39; is defined but never used                                                             @typescript-eslint/no-unused-vars
+846:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+859:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+916:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+920:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+977:25  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+984:21  warning  Expected an assignment or function call and instead saw an expression                     @typescript-eslint/no-unused-expressions
+D:\Store management system saas\src\app\(dashboard)\catalog\MenuScanWizard.tsx
+37:12  warning  &#39;formAction&#39; is assigned a value but never used                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+169:15  warning  Using `&lt;img&gt;` could result in slower LCP and higher bandwidth. Consider using `&lt;Image /&gt;` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+D:\Store management system saas\src\app\(dashboard)\delivery\DeliveryBoard.tsx
+180:3  warning  &#39;storeId&#39; is defined but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\src\app\qr\[storeSlug]\[tableId]\actions.ts
+456:11  warning  &#39;rpcName&#39; is assigned a value but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\src\app\system\settings\actions.ts
+125:3  warning  &#39;_prev&#39; is defined but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\src\modules\ai\menu-scan.ts
+53:3  warning  Unused eslint-disable directive (no problems were reported from &#39;no-control-regex&#39;)
+D:\Store management system saas\src\modules\connect\order-ingestion.ts
+109:9  warning  &#39;now&#39; is assigned a value but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\tests\integration\unified-pos-reject.test.ts
+127:19  warning  &#39;product2&#39; is assigned a value but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\tests\integration\unified-pos-rpc.test.ts
+6:8  warning  &#39;UnifiedPosOperationOutcome&#39; is defined but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\tests\unit\ai-boundary.test.ts
+1:36  warning  &#39;beforeEach&#39; is defined but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\tests\unit\device-diagnosis.test.ts
+4:10  warning  &#39;diagnoseDeviceError&#39; is defined but never used  @typescript-eslint/no-unused-vars
+D:\Store management system saas\tests\unit\unified-pos-contracts.test.ts
+250:32  warning  &#39;_status&#39; is defined but never used  @typescript-eslint/no-unused-vars
+✖ 44 problems (0 errors, 44 warnings)
+0 errors and 5 warnings potentially fixable with the `--fix` option.</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">g</span> · build — <span class="passed">passed</span></h3>
+        <p class="mono small">npm run build · exit 0 · 34.3s · start 2026-09-01T16:28:24.989Z · end 2026-09-01T16:28:59.307Z</p>
+        
+        
+        
+        <p class="small">output (head/tail, 108 บรรทัดทั้งหมด):</p><pre>&gt; store-management-saas@0.36.0 build
+&gt; next build
+▲ Next.js 16.2.6 (Turbopack)
+- Environments: .env.local, .env
+Creating an optimized production build ...
+✓ Compiled successfully in 9.4s
+Running TypeScript ...
+Finished TypeScript in 19.8s ...
+Collecting page data using 11 workers ...
+Generating static pages using 11 workers (0/19) ...
+Generating static pages using 11 workers (4/19)
+Generating static pages using 11 workers (9/19)
+… 48 บรรทัดถูกละไว้ (เก็บเฉพาะ head/tail) …
+├ ƒ /onboarding
+├ ƒ /payslip
+├ ƒ /player/[storeSlug]
+├ ƒ /pos
+├ ƒ /pos/display
+├ ƒ /pos/grocery
+├ ƒ /pos/grocery/display
+├ ƒ /pricing
+├ ƒ /privacy-policy
+├ ƒ /qr-orders
+├ ƒ /qr/[storeSlug]/[tableId]
+├ ƒ /qr/[storeSlug]/tables
+├ ƒ /register
+├ ƒ /reports
+├ ƒ /reset-password
+├ ƒ /settings
+├ ƒ /settings/billing
+├ ƒ /settings/branches
+├ ƒ /settings/buffet
+├ ƒ /settings/connect
+├ ƒ /settings/customer-display
+├ ƒ /settings/devices
+├ ƒ /settings/diagnostics
+├ ƒ /settings/integrations
+├ ƒ /settings/kitchen
+├ ƒ /settings/music-player
+├ ƒ /settings/notifications
+├ ƒ /settings/print-hub
+├ ƒ /settings/receipt
+├ ƒ /settings/store
+├ ƒ /settings/tables
+├ ƒ /settings/team
+├ ƒ /staff
+├ ƒ /stock
+├ ƒ /suspended
+├ ƒ /system
+├ ƒ /system/audit
+├ ƒ /system/enterprise
+├ ƒ /system/music-licenses
+├ ƒ /system/pricing
+├ ƒ /system/settings
+├ ƒ /system/tenants
+├ ƒ /system/tenants/[id]
+├ ƒ /table-receipt
+├ ƒ /terms-of-service
+└ ƒ /update-password
+ƒ Proxy (Middleware)
+ƒ  (Dynamic)  server-rendered on demand</pre>
+      </div>
+<div class="card">
+        <h3><span class="mono">h</span> · git diff --check — <span class="passed">passed</span></h3>
+        <p class="mono small">git diff --check · exit 0 · 167ms · start 2026-09-01T16:28:59.307Z · end 2026-09-01T16:28:59.474Z</p>
+        
+        
+        
+        <p class="small">output (head/tail, 1 บรรทัดทั้งหมด):</p><pre>warning: in the working copy of &#39;src/modules/qr-ordering/repository.ts&#39;, CRLF will be replaced by LF the next time Git touches it</pre>
+      </div>
+
+  <p class="small">Evidence ถูก sanitize — ไม่มี secret/API key ปรากฏในไฟล์นี้ · schema storeos.r1-backend-gate/v1</p>
+</div>
+</body>
+</html>

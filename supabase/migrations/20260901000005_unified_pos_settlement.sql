@@ -627,15 +627,12 @@ begin
     );
   exception
     when unique_violation then
-      select *
-        into v_receipt
-        from public.unified_pos_operation_receipts
-       where store_id = p_store_id
-         and operation_key = p_operation_key;
-      if found and v_receipt.request_hash = p_request_hash then
-        return jsonb_build_object('status','replayed','result', v_receipt.result);
-      end if;
-      return jsonb_build_object('status','hash_conflict');
+      -- [U8 review fix] backstop นี้ต้อง abort ทั้ง transaction เสมอ: writer ทุกตัวของ
+      -- receipts ต้องถือ pg_advisory_xact_lock((store,key)) ก่อน จึงแทบไม่มีทางชนกัน
+      -- แต่ถ้าเกิดจริง (writer ใหม่ลืม lock) mutation ที่ทำไว้ก่อน block นี้ต้อง rollback
+      -- ทั้งหมด (payment/rewards/stock) — การ return ปกติจะ commit mutation เหล่านั้น
+      -- พร้อมตอบ replayed/conflict ลวง
+      raise;
   end;
 
   -- ---------- 12) Audit ----------

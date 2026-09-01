@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import type { SelectedModifier } from "@/modules/pos/types";
 import type {
@@ -214,11 +214,17 @@ async function updateOrderPrepStatusGoverned(
     (itemRows ?? []).map((row) => [row.id, row.fulfillment_version] as const),
   );
 
+  // [U8 review fix] RPC unified_pos_update_item_fulfillment grant ให้ service_role เท่านั้น
+  // (20260901000003_unified_pos_fulfillment.sql — revoke authenticated แล้ว) จึงต้องเรียก
+  // ผ่าน service client เหมือนเส้นทาง governed อื่น (submit/cancel/settle); actor ส่ง
+  // ชัดเจนและ RPC ตรวจสิทธิ์เองด้วย user_has_permission_in_store
+  const serviceClient = await createSupabaseServiceClient();
+
   for (const move of plan.moves) {
     const expectedVersion = versionByItem.get(move.itemId);
     if (expectedVersion === undefined) continue;
 
-    const { data, error } = await supabase.rpc("unified_pos_update_item_fulfillment", {
+    const { data, error } = await serviceClient.rpc("unified_pos_update_item_fulfillment", {
       p_organization_id: organizationId,
       p_store_id: storeId,
       p_order_id: orderId,

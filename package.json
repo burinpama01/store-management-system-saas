@@ -1,6 +1,6 @@
 {
   "name": "store-management-saas",
-  "version": "0.35.7",
+  "version": "0.36.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:unified-pos:backend": "node scripts/verify-unified-pos-backend.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
