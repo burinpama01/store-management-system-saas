@@ -7,7 +7,8 @@ import { updateOrderPrepStatus, resolveServiceRequest, voidQrOrderItem } from "@
 import type { PrepStatus } from "@/modules/qr-ordering/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PREP_STATUSES: PrepStatus[] = ["new", "preparing", "served", "done"];
+// U5: เพิ่ม 'ready' — เส้นทาง governed จะแปลงเป็น item-level moves ให้เอง
+const PREP_STATUSES: PrepStatus[] = ["new", "preparing", "ready", "served", "done"];
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -24,14 +25,14 @@ export async function updatePrepStatusAction(
 ): Promise<{ error: string | null }> {
   try {
     await requirePermission("orders.manage_qr");
-    const { ctx } = await getStoreContext();
+    const { user, ctx } = await getStoreContext();
     if (!UUID_RE.test(orderId)) return { error: "ออร์เดอร์ไม่ถูกต้อง" };
     if (!PREP_STATUSES.includes(prepStatus)) return { error: "สถานะไม่ถูกต้อง" };
     if (ctx.role === "staff") {
       return { error: "พนักงานครัวไม่สามารถเปลี่ยนสถานะทั้งออร์เดอร์" };
     }
 
-    const result = await updateOrderPrepStatus(orderId, ctx.storeId, prepStatus);
+    const result = await updateOrderPrepStatus(orderId, ctx.storeId, prepStatus, user.id);
     if (result.error) return { error: result.error.userMessage };
     revalidatePath("/qr-orders", "page");
     return { error: null };

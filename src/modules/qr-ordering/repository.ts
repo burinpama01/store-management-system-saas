@@ -7,6 +7,14 @@ import type {
   PrepStatus,
   ServiceRequest,
 } from "./types";
+import { UNIFIED_POS_ERROR_CODES } from "@/modules/unified-pos/contracts";
+import { planOrderPrepAdvance } from "@/modules/unified-pos/prep-advance";
+import {
+  computeRequestHash,
+  createOperationKey,
+  type UnifiedPosItemFulfillmentOutcome,
+} from "@/modules/unified-pos/envelope";
+import type { AppError } from "@/shared/utils/error";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
@@ -147,12 +155,135 @@ export async function listPendingServiceRequests(storeId: string) {
   return { data: (data ?? []).map(mapServiceRequest), error: null };
 }
 
+function appError(code: string, message: string): AppError {
+  return { code, message, userMessage: message };
+}
+
+/**
+ * U5 (v0.35.5): เส้นทาง governed — แปลงปุ่มระดับ order (legacy) ให้เป็น item-level
+ * moves ผ่าน unified_pos_update_item_fulfillment (หนึ่ง RPC ต่อหนึ่ง move)
+ * - ร้านที่เปิด unified_pos_enabled เท่านั้น (ตรวจใน updateOrderPrepStatus)
+ * - target 'done'/'new' ถูกปฏิเสธโดย planOrderPrepAdvance
+ * - item ที่ actor อื่นขยับก่อน (stale/transition ไม่ผ่าน) ถูกข้าม — ลำดับที่เหลือไปต่อ
+ */
+async function updateOrderPrepStatusGoverned(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  input: {
+    orderId: string;
+    storeId: string;
+    organizationId: string;
+    prepStatus: PrepStatus;
+    actorUserId?: string;
+  },
+): Promise<{ ok: boolean; error: AppError | null }> {
+  const { orderId, storeId, organizationId, prepStatus, actorUserId } = input;
+  if (!actorUserId) {
+    return { ok: false, error: appError(UNIFIED_POS_ERROR_CODES.forbidden, "ไม่มีสิทธิ์เปลี่ยนสถานะรายการ") };
+  }
+
+  // scope เดียวกับ legacy: order ที่สั่งผ่าน QR ในร้านนี้
+  const { data: order } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("id", orderId)
+    .eq("store_id", storeId)
+    .eq("qr_order_source", true)
+    .maybeSingle();
+  if (!order) return { ok: false, error: appError(UNIFIED_POS_ERROR_CODES.not_found, "ไม่พบออเดอร์") };
+
+  const { data: itemRows, error: itemsErr } = await supabase
+    .from("order_items")
+    .select("id, voided, fulfillment_status, fulfillment_version")
+    .eq("order_id", orderId);
+  if (itemsErr) return { ok: false, error: mapError(itemsErr) };
+
+  const plan = planOrderPrepAdvance(
+    (itemRows ?? []).map((row) => ({
+      id: row.id,
+      voided: row.voided,
+      fulfillmentStatus: row.fulfillment_status,
+    })),
+    prepStatus,
+  );
+  if (plan.kind === "rejected") {
+    return { ok: false, error: appError(plan.code, plan.message) };
+  }
+  if (plan.kind === "noop") return { ok: true, error: null };
+
+  const versionByItem = new Map(
+    (itemRows ?? []).map((row) => [row.id, row.fulfillment_version] as const),
+  );
+
+  for (const move of plan.moves) {
+    const expectedVersion = versionByItem.get(move.itemId);
+    if (expectedVersion === undefined) continue;
+
+    const { data, error } = await supabase.rpc("unified_pos_update_item_fulfillment", {
+      p_organization_id: organizationId,
+      p_store_id: storeId,
+      p_order_id: orderId,
+      p_item_id: move.itemId,
+      p_expected_fulfillment_version: expectedVersion,
+      p_target_fulfillment_status: move.to,
+      p_operation_key: createOperationKey(),
+      p_request_hash: computeRequestHash({
+        storeId,
+        orderId,
+        itemId: move.itemId,
+        target: move.to,
+        expectedVersion,
+      }),
+      p_actor_user_id: actorUserId,
+    });
+    if (error) return { ok: false, error: mapError(error) };
+
+    const outcome = data as UnifiedPosItemFulfillmentOutcome | null;
+    if (!outcome) {
+      return { ok: false, error: appError("up_unexpected", "เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่") };
+    }
+    if (outcome.status === "error") {
+      // actor อื่นขยับ item นี้ไปก่อน → ข้าม แล้วดำเนินการ item ที่เหลือ
+      if (
+        outcome.code === UNIFIED_POS_ERROR_CODES.stale_version ||
+        outcome.code === UNIFIED_POS_ERROR_CODES.invalid_state_transition
+      ) {
+        continue;
+      }
+      return { ok: false, error: appError(outcome.code, outcome.message) };
+    }
+  }
+
+  return { ok: true, error: null };
+}
+
+/**
+ * เปลี่ยนสถานะเตรียมอาหารระดับ order (kitchen board)
+ * - ร้านที่เปิด unified_pos_enabled → route ผ่าน governed item fulfillment (U5)
+ * - ร้านที่ปิด flag → เขียนตรง orders.prep_status ตามพฤติกรรม legacy เดิมทุกอย่าง
+ */
 export async function updateOrderPrepStatus(
   orderId: string,
   storeId: string,
   prepStatus: PrepStatus,
+  actorUserId?: string,
 ) {
   const supabase = await createSupabaseServerClient();
+
+  const { data: store } = await supabase
+    .from("stores")
+    .select("organization_id, unified_pos_enabled")
+    .eq("id", storeId)
+    .maybeSingle();
+  if (store?.unified_pos_enabled) {
+    return updateOrderPrepStatusGoverned(supabase, {
+      orderId,
+      storeId,
+      organizationId: store.organization_id,
+      prepStatus,
+      actorUserId,
+    });
+  }
+
   const { error } = await supabase
     .from("orders")
     .update({ prep_status: prepStatus, updated_at: new Date().toISOString() })

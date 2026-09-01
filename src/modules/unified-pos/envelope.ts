@@ -92,3 +92,37 @@ export type UnifiedPosTableOrderRpcOutcome =
   | { status: "replayed"; result: UnifiedPosTableOrderResult | null }
   | { status: "hash_conflict" }
   | { status: "error"; code: string; message: string };
+
+/**
+ * result ของ unified_pos_update_item_fulfillment (Task U5) — fulfillment ระดับ item
+ * โดย order_prep_status เป็นค่าที่ derive แล้วตาม deriveOrderPrepStatus (ไม่ใช่ target)
+ */
+export interface UnifiedPosItemFulfillmentResult {
+  order_id: string;
+  item_id: string;
+  fulfillment_status: string;
+  fulfillment_version: number;
+  order_prep_status: string;
+  order_revision: number;
+}
+
+/** result ของ unified_pos_cancel_table_order (Task U5) — customer cancel */
+export interface UnifiedPosCancelOrderResult {
+  order_id: string;
+  order_number: string;
+  status: "cancelled";
+  order_prep_status: string;
+}
+
+/**
+ * jsonb ที่ RPC U5 (fulfillment / customer cancel) คืน — โครงเดียวกับ outcome ของ U4:
+ *   executed/replayed/hash_conflict/error
+ */
+export type UnifiedPosGovernedOutcome<T> =
+  | { status: "executed"; result: T }
+  | { status: "replayed"; result: T | null }
+  | { status: "hash_conflict" }
+  | { status: "error"; code: string; message: string };
+
+export type UnifiedPosItemFulfillmentOutcome = UnifiedPosGovernedOutcome<UnifiedPosItemFulfillmentResult>;
+export type UnifiedPosCancelOrderOutcome = UnifiedPosGovernedOutcome<UnifiedPosCancelOrderResult>;

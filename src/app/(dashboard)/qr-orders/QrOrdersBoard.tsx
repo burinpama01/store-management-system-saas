@@ -41,9 +41,13 @@ function timeAgo(iso: string): string {
   return `${hrs} ชม. ${mins % 60} นาทีที่แล้ว`;
 }
 
+// U5: ลำดับระดับ order เดินตาม derive (new→preparing→ready→served)
+// 'done' ระบบ derive จากการชำระ/ยกเลิก — ร้านที่เปิด unified_pos_enabled ปุ่มนี้
+// จะได้ข้อความอธิบายจาก governed backend (ร้านปิด flag คงเขียนตรงตาม legacy)
 const PREP_FLOW: Record<PrepStatus, { next: PrepStatus; label: string } | null> = {
   new: { next: "preparing", label: "เริ่มเตรียม" },
-  preparing: { next: "served", label: "เสิร์ฟแล้ว" },
+  preparing: { next: "ready", label: "พร้อมเสิร์ฟ" },
+  ready: { next: "served", label: "เสิร์ฟแล้ว" },
   served: { next: "done", label: "เสร็จสิ้น" },
   done: null,
 };
@@ -51,6 +55,7 @@ const PREP_FLOW: Record<PrepStatus, { next: PrepStatus; label: string } | null> 
 const PREP_BADGE: Record<PrepStatus, string> = {
   new: "bg-orange-100 text-orange-700",
   preparing: "bg-blue-100 text-blue-700",
+  ready: "bg-emerald-100 text-emerald-700",
   served: "bg-green-100 text-green-700",
   done: "bg-gray-100 text-gray-500",
 };

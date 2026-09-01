@@ -1,6 +1,7 @@
 import type { SelectedModifier } from "@/modules/pos/types";
 
-export type PrepStatus = "new" | "preparing" | "served" | "done";
+/** U5: เพิ่ม 'ready' ให้ตรงกับ ORDER_PREP_STATUSES (derive ระดับ order จาก items) */
+export type PrepStatus = "new" | "preparing" | "ready" | "served" | "done";
 export type ServiceRequestType =
   | "call_staff"
   | "request_water"
@@ -102,6 +103,7 @@ export interface ServiceRequest {
 export const PREP_STATUS_LABEL: Record<PrepStatus, string> = {
   new: "ออร์เดอร์ใหม่",
   preparing: "กำลังเตรียม",
+  ready: "พร้อมเสิร์ฟ",
   served: "เสิร์ฟแล้ว",
   done: "เสร็จสิ้น",
 };

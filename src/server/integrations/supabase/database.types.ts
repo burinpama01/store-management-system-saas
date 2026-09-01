@@ -2386,7 +2386,7 @@ export interface Database {
           total: number;
           note: string | null;
           qr_order_source: boolean;
-          prep_status: "new" | "preparing" | "served" | "done";
+          prep_status: "new" | "preparing" | "ready" | "served" | "done";
           revision: number;
           created_at: string;
           updated_at: string;
@@ -2417,7 +2417,7 @@ export interface Database {
           total?: number;
           note?: string | null;
           qr_order_source?: boolean;
-          prep_status?: "new" | "preparing" | "served" | "done";
+          prep_status?: "new" | "preparing" | "ready" | "served" | "done";
           revision?: number;
           created_at?: string;
           updated_at?: string;
@@ -2448,7 +2448,7 @@ export interface Database {
           total?: number;
           note?: string | null;
           qr_order_source?: boolean;
-          prep_status?: "new" | "preparing" | "served" | "done";
+          prep_status?: "new" | "preparing" | "ready" | "served" | "done";
           revision?: number;
           created_at?: string;
           updated_at?: string;
@@ -4040,6 +4040,31 @@ export interface Database {
           p_request_hash: string;
           p_subtotal: number;
           p_items?: Json;
+        };
+        Returns: Json;
+      };
+      unified_pos_update_item_fulfillment: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_order_id: string;
+          p_item_id: string;
+          p_expected_fulfillment_version: number;
+          p_target_fulfillment_status: string;
+          p_operation_key: string;
+          p_request_hash: string;
+          p_actor_user_id: string;
+        };
+        Returns: Json;
+      };
+      unified_pos_cancel_table_order: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_table_id: string;
+          p_order_id: string;
+          p_operation_key: string;
+          p_request_hash: string;
         };
         Returns: Json;
       };

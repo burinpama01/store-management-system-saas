@@ -14,6 +14,7 @@ import {
   computeRequestHash,
   createOperationKey,
   isValidOperationKey,
+  type UnifiedPosCancelOrderOutcome,
   type UnifiedPosTableOrderRpcOutcome,
 } from "@/modules/unified-pos/envelope";
 import type { Json } from "@/server/integrations/supabase/database.types";
@@ -713,7 +714,11 @@ export async function requestServiceAction(
 
 /**
  * Lets a customer cancel their own QR order — but only while the kitchen has not
- * accepted it yet (prep_status = 'new'). Restores the stock deducted at creation.
+ * accepted it yet (ทุก active item ยัง 'new' ตาม canCustomerCancelOrder). Restores
+ * the stock deducted at creation.
+ *
+ * U5: ร้านที่เปิด flag unified_pos_enabled → governed RPC unified_pos_cancel_table_order
+ * (receipt idempotency + audit + prep derive → 'done'); ร้านปิด flag → legacy RPC เดิม
  */
 export async function cancelQrOrderAction(
   storeId: string,
@@ -728,7 +733,7 @@ export async function cancelQrOrderAction(
 
   const { data: store, error: storeErr } = await supabase
     .from("stores")
-    .select("id, is_active, qr_ordering_enabled")
+    .select("id, organization_id, is_active, qr_ordering_enabled, unified_pos_enabled")
     .eq("id", storeId)
     .single();
   if (storeErr || !store) return { ok: false, error: "ไม่พบร้าน" };
@@ -736,6 +741,30 @@ export async function cancelQrOrderAction(
     return { ok: false, error: "ร้านไม่พร้อมรับ QR order" };
   }
 
+  // --- เส้นทาง v2 (U5): governed cancel — idempotent + audit + prep derive ---
+  if (store.unified_pos_enabled) {
+    const { data: outcome, error: rpcErr } = await supabase.rpc("unified_pos_cancel_table_order", {
+      p_organization_id: store.organization_id,
+      p_store_id: storeId,
+      p_table_id: tableId,
+      p_order_id: orderId,
+      p_operation_key: createOperationKey(),
+      p_request_hash: computeRequestHash({ storeId, tableId, orderId }),
+    });
+    if (rpcErr) return { ok: false, error: rpcErr.message };
+    const parsed = outcome as UnifiedPosCancelOrderOutcome | null;
+    if (!parsed) return { ok: false, error: "ยกเลิกออเดอร์ไม่สำเร็จ กรุณาลองใหม่" };
+    if (parsed.status === "error") return { ok: false, error: parsed.message };
+    if (parsed.status === "hash_conflict") {
+      return { ok: false, error: "คำขอยกเลิกนี้ไม่ตรงกับที่ส่งไปก่อนหน้า กรุณาลองใหม่" };
+    }
+    if (!parsed.result) {
+      return { ok: false, error: "ไม่พบผลลัพธ์เดิมของคำขอนี้ กรุณาลองใหม่" };
+    }
+    return { ok: true, error: null };
+  }
+
+  // --- เส้นทางเดิม (unified_pos_enabled=false): legacy cancel RPC ---
   const { error } = await supabase.rpc("cancel_qr_order_by_customer", {
     p_store_id: storeId,
     p_table_id: tableId,
