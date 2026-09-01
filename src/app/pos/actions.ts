@@ -37,6 +37,7 @@ import { openTableSession, closeTableSession, getStore, getTable, listManagedTab
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { submitQrOrderAction, type QrOrderItem } from "@/app/qr/[storeSlug]/[tableId]/actions";
 import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
+import { getUnifiedPosStoreFlag, settleOrdersGoverned } from "@/modules/unified-pos/settlement";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
@@ -565,11 +566,42 @@ export async function collectPaymentAction(
     if (orderRes.error) return { order: null, error: orderRes.error.userMessage };
     if (orderRes.data?.storeId !== ctx.storeId) return { order: null, error: "ร้านค้าในออร์เดอร์ไม่ถูกต้อง" };
 
+    // U7: flags-gated — ร้านเปิด unified_pos_enabled → เส้นทาง governed ด้านล่าง
+    const unifiedFlag = await getUnifiedPosStoreFlag(ctx.storeId);
+
     let paymentId: string | null = null;
     let paidAmount = payment.amount;
     let paidMethod = payment.method;
     let paidOrder: Order | null = null;
-    if (orderRes.data?.customerId) {
+    if (unifiedFlag.enabled && unifiedFlag.organizationId) {
+      // U7: ร้านที่เปิด flag → ชำระผ่าน governed RPC (idempotent + rewards exactly-once +
+      // ยอดฝั่ง server); retry ของ request เดิม reuse idempotencyKey → replay
+      if (orderRes.data?.customerId) {
+        await requireFeature("loyaltyPoints");
+      }
+      const settled = await settleOrdersGoverned({
+        organizationId: unifiedFlag.organizationId,
+        storeId: ctx.storeId,
+        mode: "partial",
+        orderIds: [orderId],
+        method: payment.method,
+        amount: payment.amount,
+        receivedAmount: payment.receivedAmount ?? null,
+        changeAmount: payment.changeAmount ?? null,
+        reference: payment.reference ?? null,
+        actorUserId: user.id,
+        idempotencyKey: opts?.idempotencyKey ?? null,
+      });
+      if (!settled.ok) return { order: null, error: settled.error.userMessage };
+      const completedPayment = settled.result.payments[0];
+      paymentId = completedPayment?.payment_id ?? null;
+      paidAmount = completedPayment?.amount ?? paidAmount;
+      paidMethod = payment.method;
+      const paidOrderRes = await getOrder(orderId);
+      if (!paidOrderRes.error) {
+        paidOrder = paidOrderRes.data ?? null;
+      }
+    } else if (orderRes.data?.customerId) {
       await requireFeature("loyaltyPoints");
       const result = await closePosOrderPaymentWithRewards({
         orderId,
@@ -689,7 +721,41 @@ export async function checkoutAndPayAction(
     let paidAmount = payment.amount;
     let paidMethod = payment.method;
     let paidOrder: Order | null = null;
-    if (customerId) {
+    const unifiedFlag = await getUnifiedPosStoreFlag(ctx.storeId);
+    if (unifiedFlag.enabled && unifiedFlag.organizationId) {
+      // U7: ขั้นชำระผ่าน governed RPC — ออเดอร์ถูกสร้างแล้ว (legacy create RPC) จึงชำระ
+      // แบบ partial ให้ RPC ตรวจ revision/ยอดรวม server + rewards exactly-once เอง
+      if (customerId) {
+        await requireFeature("loyaltyPoints");
+      }
+      const settled = await settleOrdersGoverned({
+        organizationId: unifiedFlag.organizationId,
+        storeId: ctx.storeId,
+        mode: "partial",
+        orderIds: [created.orderId],
+        method: payment.method,
+        amount: payment.amount,
+        receivedAmount: payment.receivedAmount ?? null,
+        changeAmount: payment.changeAmount ?? null,
+        reference: payment.reference ?? null,
+        actorUserId: user.id,
+        idempotencyKey: opts?.paymentIdempotencyKey?.trim() || null,
+      });
+      if (!settled.ok) {
+        return { orderId: created.orderId, orderNumber: created.orderNumber, order: null, failedStage: "payment", error: settled.error.userMessage };
+      }
+      const completedPayment = settled.result.payments[0];
+      paymentId = completedPayment?.payment_id ?? null;
+      paidAmount = completedPayment?.amount ?? paidAmount;
+      paidMethod = payment.method;
+      if (customerId) {
+        // เฉพาะออเดอร์ลูกค้าต้อง refresh (แต้ม) — walk-in พิมพ์จากข้อมูล cart ฝั่ง client เหมือนเดิม
+        const paidOrderRes = await getOrder(created.orderId);
+        if (!paidOrderRes.error) {
+          paidOrder = paidOrderRes.data ?? null;
+        }
+      }
+    } else if (customerId) {
       const result = await closePosOrderPaymentWithRewards({
         orderId: created.orderId,
         storeId: ctx.storeId,
@@ -1101,6 +1167,12 @@ export async function listTableBillsAction(): Promise<{ bills: TableBill[]; erro
  * ชำระรวมทั้งโต๊ะ: เก็บเงินทุก QR order ที่เปิดอยู่ + คิดเงินตั๋ว POS ที่พักไว้ทั้งหมด
  * ของโต๊ะนี้ ด้วยวิธีจ่ายเดียว แล้วปิดโต๊ะ (คืนโต๊ะว่าง). แต่ละบิลจะบันทึกยอดของตัวเอง
  * ถ้ามีบิลใดชำระไม่ผ่าน จะหยุดและไม่ปิดโต๊ะ (บิลที่จ่ายไปแล้วจะไม่กลับมาอีก).
+ *
+ * U7 (v0.35.7): ร้านที่เปิด flag unified_pos_enabled → เส้นทาง governed:
+ *   ตั๋ว POS ก่อน (checkoutAndPayAction — ขั้นชำระ routing governed เอง) แล้วชำระ
+ *   ทุกบิล QR ของโต๊ะ + ปิด session ใน RPC เดียว (unified_pos_settle_table_order,
+ *   mode whole_table) แบบ atomic + idempotent + rewards exactly-once โดยยอดรวม
+ *   อ่านจาก DB ฝั่ง server; ร้านที่ยังไม่เปิด flag ใช้เส้นทางเดิมทุกอย่าง
  */
 export async function settleWholeTableAction(
   tableId: string,
@@ -1133,6 +1205,58 @@ export async function settleWholeTableAction(
     const tickets = (ticketsRes.data ?? []).filter((t) => t.tableId === tableId);
     if (qrOrders.length === 0 && tickets.length === 0) {
       return fail("โต๊ะนี้ไม่มีบิลค้างชำระ");
+    }
+
+    // U7: flags-gated whole-table — ตั๋ว POS ก่อน (ขั้นชำระของ checkoutAndPayAction
+    // routing governed เองเมื่อ flag on) เพื่อให้ความล้มเหลวของตั๋วไม่ทิ้งบิล QR ที่
+    // ชำระไปแล้ว แล้วปิดทุกบิล QR ของโต๊ะ + ปิด session ใน RPC เดียวแบบ atomic
+    // (ยอดรวมทั้งโต๊ะอ่านฝั่ง server ใน RPC — ไม่เชื่อยอด client)
+    const unifiedFlag = await getUnifiedPosStoreFlag(ctx.storeId);
+    if (unifiedFlag.enabled && unifiedFlag.organizationId) {
+      let settledCount = 0;
+      let total = 0;
+
+      for (const ticket of tickets) {
+        const res = await checkoutAndPayAction(
+          ticket.cart,
+          {
+            method,
+            amount: ticket.cart.total,
+            receivedAmount: method === "cash" ? ticket.cart.total : undefined,
+            changeAmount: method === "cash" ? 0 : undefined,
+            qrPaymentVerified: method === "qr_promptpay" ? true : undefined,
+          },
+          { tableId, tableNumber: ticket.tableNumber, customerId: null },
+        );
+        if (res.error) {
+          return { error: `ตั๋ว ${ticket.label || ticket.ticketNumber}: ${res.error}`, settledCount, total, closed: false };
+        }
+        await deleteSavedTicket(ticket.id, ctx.storeId);
+        settledCount += 1;
+        total += ticket.cart.total;
+      }
+
+      const settled = await settleOrdersGoverned({
+        organizationId: unifiedFlag.organizationId,
+        storeId: ctx.storeId,
+        mode: "whole_table",
+        tableId,
+        method,
+        actorUserId: ctx.userId,
+      });
+      if (!settled.ok) {
+        if (settled.error.code === "up_not_found") {
+          // โต๊ะไม่มีบิล QR เปิดอยู่ (มีแต่ตั๋ว) → ปิด session ตามพฤติกรรม legacy
+          const close = await closeTableSession(ctx.storeId, tableId);
+          revalidatePath("/pos", "page");
+          return { error: null, settledCount, total, closed: !close.error };
+        }
+        return { error: settled.error.userMessage, settledCount, total, closed: false };
+      }
+      settledCount += settled.result.order_ids.length;
+      total += settled.result.grand_total;
+      revalidatePath("/pos", "page");
+      return { error: null, settledCount, total, closed: settled.result.table_closed };
     }
 
     let settledCount = 0;

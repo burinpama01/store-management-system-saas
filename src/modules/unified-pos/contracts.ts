@@ -205,6 +205,12 @@ export const UNIFIED_POS_ERROR_CODES = Object.freeze({
   /** store flag ที่เกี่ยวข้องถูกปิด (แผน: U2 store flags) */
   store_flag_disabled: "up_store_flag_disabled",
   /**
+   * payload การชำระเงินไม่ถูกต้อง (เพิ่มใน U7 ตามหลัก U4 — เลือก code ใหม่เมื่อ
+   * ไม่มีตัวไหนตรง): วิธีชำระ/ยอดชำระ/เงินสดที่รับ-เงินทอน ไม่ผ่าน validation
+   * เช่น ยอดชำระไม่ตรงกับยอดรวม server (never client totals)
+   */
+  invalid_payment: "up_invalid_payment",
+  /**
    * โต๊ะไม่มี session ที่ใช้สั่งได้ (หมดอายุ/ยังไม่เปิด) และกฎของร้านไม่อนุญาตให้เปิดเอง
    * (แผน U4 RED: auto-open failure — ร้านที่ไม่ใช่ table_bound+customer_self ต้องแจ้งพนักงาน)
    * เพิ่มใน U4 (v0.35.4) ตาม brief ให้เลือก/เพิ่ม code เมื่อไม่มีตัวไหนตรง

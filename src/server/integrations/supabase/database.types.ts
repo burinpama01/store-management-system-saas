@@ -3719,6 +3719,7 @@ export interface Database {
           result: Json | null;
           targets: Json | null;
           payload: Json | null;
+          is_financial: boolean;
           payload_expires_at: string;
           created_at: string;
           updated_at: string;
@@ -3733,6 +3734,7 @@ export interface Database {
           result?: Json | null;
           targets?: Json | null;
           payload?: Json | null;
+          is_financial?: boolean;
           payload_expires_at?: string;
           created_at?: string;
           updated_at?: string;
@@ -3747,6 +3749,7 @@ export interface Database {
           result?: Json | null;
           targets?: Json | null;
           payload?: Json | null;
+          is_financial?: boolean;
           payload_expires_at?: string;
           created_at?: string;
           updated_at?: string;
@@ -4078,6 +4081,25 @@ export interface Database {
           p_request_hash: string;
           p_actor_user_id: string;
           p_reason?: string | null;
+        };
+        Returns: Json;
+      };
+      unified_pos_settle_table_order: {
+        Args: {
+          p_organization_id: string;
+          p_store_id: string;
+          p_table_id: string | null;
+          p_mode: string;
+          p_order_ids: Json | null;
+          p_expected_revisions: Json;
+          p_operation_key: string;
+          p_request_hash: string;
+          p_actor_user_id: string;
+          p_method: string;
+          p_amount: number;
+          p_received_amount?: number | null;
+          p_change_amount?: number | null;
+          p_reference?: string | null;
         };
         Returns: Json;
       };
