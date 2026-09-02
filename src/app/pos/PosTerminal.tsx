@@ -43,6 +43,7 @@ import { formatPoints } from "@/shared/utils/points";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
+import { useRegisterVoiceCart, type VoiceCartApi } from "./unified/voice-cart-bridge";
 import {
   publishCustomerDisplaySnapshot,
   resolveCustomerDisplayPublishCart,
@@ -2565,6 +2566,19 @@ export function PosTerminal({
       setDiscountFormOpen(false);
     }
   }, []);
+
+  // U15 — ลงทะเบียนตะกร้าให้ปุ่มเสียงของ shell ใช้ (ไม่มี provider = no-op ในเส้นทาง legacy)
+  // เสียงอ่าน snapshot ล่าสุดผ่าน ref และเขียนผ่าน commitCart เดิมเท่านั้น
+  const voiceCartSnapshotRef = useRef({ cart, products, locked: cartLocked });
+  voiceCartSnapshotRef.current = { cart, products, locked: cartLocked };
+  const voiceCartApi = useMemo<VoiceCartApi>(
+    () => ({
+      getSnapshot: () => voiceCartSnapshotRef.current,
+      commit: (nextCart: Cart) => commitCart(nextCart),
+    }),
+    [commitCart],
+  );
+  useRegisterVoiceCart(voiceCartApi);
 
   function updateDiscountDraft(patch: Partial<DiscountDraft>) {
     setDiscountDraft((current) => ({ ...current, ...patch }));

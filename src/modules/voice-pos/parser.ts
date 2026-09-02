@@ -35,7 +35,8 @@ const FORBIDDEN_PHRASES: readonly string[] = [
   "payment",
   "pay",
   "ยกเลิก",
-  "ลบ",
+  // U15 — "ลบ" ย้ายออกจาก denylist: ลบรายการในตะกร้าเป็น local + ย้อนกลับได้ด้วย Undo 6 วินาที
+  // (ล้างตะกร้าทั้งใบยังห้าม เพราะย้อนกลับทีละรายการไม่ได้และเสี่ยงกว่ามาก)
   "ล้างตะกร้า",
   "เคลียร์",
   "clear",
@@ -227,6 +228,63 @@ export function parseVoiceCommand(
   // Tier D — คำสั่งต้องห้าม ตัดจบก่อนเสมอ
   if (FORBIDDEN_PHRASES.some((phrase) => text.includes(phrase))) {
     return result(UNKNOWN, "D", "block", 1 * engine, "forbidden_command");
+  }
+
+  // Tier B (U15) — "ล้างการค้นหา" (ไม่ใช่ล้างตะกร้า ซึ่งยังต้องห้าม)
+  if (/^(?:ล้าง|ลบ)\s*(?:การค้นหา|คำค้นหา|คำค้น|ค้นหา)$/.test(text)) {
+    return result({ type: "pos.clear_search" }, "B", "execute", 0.95 * engine, "matched");
+  }
+
+  // Tier B (U15) — "เพิ่มอีก <จำนวน> <สินค้า>" / "<สินค้า> อีก <จำนวน>"
+  const increase =
+    /^(?:เพิ่มอีก|อีก)\s*(\d+)?\s*(.+)$/.exec(text) ?? /^(.+?)\s*อีก\s*(\d+)?$/.exec(text);
+  if (increase && /อีก/.test(text)) {
+    const isPrefixForm = /^(?:เพิ่มอีก|อีก)/.test(text);
+    const rawPhrase = isPrefixForm ? increase[2] : increase[1];
+    const rawDelta = isPrefixForm ? increase[1] : increase[2];
+    const productPhrase = stripTrailingUnit((rawPhrase ?? "").trim());
+    const parsedDelta = parseQuantity(rawDelta);
+    if (!productPhrase) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
+    if (rawDelta !== undefined && (parsedDelta === null || !isQuantityInRange(parsedDelta))) {
+      return result(UNKNOWN, "C", "preview", 0.9 * engine, "invalid_quantity");
+    }
+    return result(
+      { type: "pos.increase_item", productPhrase, delta: parsedDelta ?? 1 },
+      "B",
+      "execute",
+      0.9 * engine,
+      "matched",
+    );
+  }
+
+  // Tier B (U15) — "ลด <สินค้า> [จำนวน]"
+  const decrease = /^(?:ลด|ลดจำนวน|เอาออก)\s*(.+)$/.exec(text);
+  if (decrease) {
+    const rest = decrease[1].trim();
+    const tail = /^(.*?)\s*(\d+)\s*([^\d\s]{1,8})?$/.exec(rest);
+    const productPhrase = stripTrailingUnit(tail ? tail[1] : rest);
+    const parsedDelta = tail ? parseQuantity(tail[2]) : null;
+    if (!productPhrase) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
+    if (tail && (parsedDelta === null || !isQuantityInRange(parsedDelta))) {
+      return result(UNKNOWN, "C", "preview", 0.9 * engine, "invalid_quantity");
+    }
+    return result(
+      { type: "pos.decrease_item", productPhrase, delta: parsedDelta ?? 1 },
+      "B",
+      "execute",
+      0.9 * engine,
+      "matched",
+    );
+  }
+
+  // Tier B (U15) — "ลบ <สินค้า>" / "เอา <สินค้า> ออก"
+  const removeSuffix = /^(?:เอา|เอารายการ)\s*(.+?)\s*ออก$/.exec(text);
+  const removePrefix = /^(?:ลบ|ลบรายการ|ตัด)\s*(.+)$/.exec(text);
+  const removeMatch = removeSuffix ?? removePrefix;
+  if (removeMatch) {
+    const productPhrase = stripTrailingUnit(removeMatch[1].trim());
+    if (!productPhrase) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
+    return result({ type: "pos.remove_item", productPhrase }, "B", "execute", 0.9 * engine, "matched");
   }
 
   // Tier B — "ตั้งจำนวน <สินค้า> เป็น <จำนวน>"

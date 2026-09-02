@@ -10,6 +10,7 @@ import { TablesPanel } from "./TablesPanel";
 import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { BillsPanel } from "./BillsPanel";
 import { VoicePosController } from "./VoicePosController";
+import { VoiceCartBridgeProvider } from "./voice-cart-bridge";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
 
 type TabId = "sell" | "tables" | "kitchen" | "bills";
@@ -76,6 +77,7 @@ export function UnifiedPosWorkspace({
   }, []);
 
   return (
+    <VoiceCartBridgeProvider>
     <section aria-label={`POS รวม — ${storeName}`} className="unified-pos-workspace min-w-0">
       <header className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
         <h1 className="min-w-0 truncate text-sm font-semibold text-gray-700">
@@ -198,5 +200,6 @@ export function UnifiedPosWorkspace({
         <BillsPanel selectedTable={selectedTable} />
       </div>
     </section>
+    </VoiceCartBridgeProvider>
   );
 }

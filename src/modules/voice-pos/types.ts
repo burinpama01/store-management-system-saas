@@ -40,7 +40,15 @@ export type VoiceDecision = "execute" | "preview" | "block";
 export type VoiceConfidenceBucket = "low" | "medium" | "high";
 
 /** intent ที่อนุญาต (allowlist) — นอกเหนือจากนี้คือ "unknown" เสมอ */
-export type VoiceIntentType = "navigate" | "pos.add_item" | "pos.set_quantity" | "unknown";
+export type VoiceIntentType =
+  | "navigate"
+  | "pos.add_item"
+  | "pos.set_quantity"
+  | "pos.increase_item"
+  | "pos.decrease_item"
+  | "pos.remove_item"
+  | "pos.clear_search"
+  | "unknown";
 
 /** เหตุผลของผลลัพธ์ — ใช้เลือกข้อความ UI และเป็นค่าเดียวที่ log ได้ */
 export type VoiceResultCode =
@@ -69,6 +77,30 @@ export interface VoiceSetQuantityIntent {
   readonly quantity: number;
 }
 
+/** U15 — เพิ่ม/ลดจำนวนจากของเดิมในตะกร้า (ย้อนกลับได้ด้วย Undo 6 วินาที) */
+export interface VoiceIncreaseItemIntent {
+  readonly type: "pos.increase_item";
+  readonly productPhrase: string;
+  readonly delta: number;
+}
+
+export interface VoiceDecreaseItemIntent {
+  readonly type: "pos.decrease_item";
+  readonly productPhrase: string;
+  readonly delta: number;
+}
+
+/** U15 — เอารายการออกจากตะกร้า (local เท่านั้น ยังไม่แตะ order/สต๊อก) */
+export interface VoiceRemoveItemIntent {
+  readonly type: "pos.remove_item";
+  readonly productPhrase: string;
+}
+
+/** U15 — ล้างคำค้นหาในหน้าขาย (ไม่ใช่ล้างตะกร้า ซึ่งยังต้องห้าม) */
+export interface VoiceClearSearchIntent {
+  readonly type: "pos.clear_search";
+}
+
 export interface VoiceUnknownIntent {
   readonly type: "unknown";
 }
@@ -77,6 +109,10 @@ export type VoiceIntent =
   | VoiceNavigateIntent
   | VoiceAddItemIntent
   | VoiceSetQuantityIntent
+  | VoiceIncreaseItemIntent
+  | VoiceDecreaseItemIntent
+  | VoiceRemoveItemIntent
+  | VoiceClearSearchIntent
   | VoiceUnknownIntent;
 
 /** ผลของ parser — pure ทั้งหมด ไม่มี side effect และไม่แนบ transcript กลับมา */

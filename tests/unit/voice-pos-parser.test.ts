@@ -156,3 +156,57 @@ describe("buildVoiceTelemetry — privacy contract", () => {
     expect(event.at).toBe("2026-09-03T00:00:00.000Z");
   });
 });
+
+// U15 — คำสั่งตะกร้าเพิ่มเติม (เพิ่มอีก/ลด/ลบ/ล้างการค้นหา)
+describe("parseVoiceCommand — คำสั่งตะกร้า U15", () => {
+  it("เพิ่มอีก N <สินค้า> และ <สินค้า> อีก N", () => {
+    expect(parseVoiceCommand("เพิ่มอีก 2 ลาเต้").intent).toEqual({
+      type: "pos.increase_item",
+      productPhrase: "ลาเต้",
+      delta: 2,
+    });
+    expect(parseVoiceCommand("ลาเต้อีก 1").intent).toEqual({
+      type: "pos.increase_item",
+      productPhrase: "ลาเต้",
+      delta: 1,
+    });
+  });
+
+  it("ลด <สินค้า> [จำนวน] — ไม่ระบุ = 1", () => {
+    expect(parseVoiceCommand("ลดลาเต้ 2").intent).toEqual({
+      type: "pos.decrease_item",
+      productPhrase: "ลาเต้",
+      delta: 2,
+    });
+    expect(parseVoiceCommand("ลดลาเต้").intent).toEqual({
+      type: "pos.decrease_item",
+      productPhrase: "ลาเต้",
+      delta: 1,
+    });
+  });
+
+  it("ลบ/เอาออก เป็น Tier B แล้ว (ย้อนกลับได้) ไม่ใช่คำต้องห้าม", () => {
+    const removed = parseVoiceCommand("ลบลาเต้");
+    expect(removed.intent).toEqual({ type: "pos.remove_item", productPhrase: "ลาเต้" });
+    expect(removed.tier).toBe("B");
+    expect(parseVoiceCommand("เอาลาเต้ออก").intent).toEqual({
+      type: "pos.remove_item",
+      productPhrase: "ลาเต้",
+    });
+  });
+
+  it("ล้างการค้นหาได้ แต่ล้างตะกร้ายังต้องห้าม", () => {
+    expect(parseVoiceCommand("ล้างการค้นหา").intent).toEqual({ type: "pos.clear_search" });
+    const clearCart = parseVoiceCommand("ล้างตะกร้า");
+    expect(clearCart.intent.type).toBe("unknown");
+    expect(clearCart.resultCode).toBe("forbidden_command");
+  });
+
+  it("คำสั่งการเงินยังต้องห้ามทั้งหมดหลังเพิ่ม intent ใหม่", () => {
+    for (const phrase of ["ชำระเงิน", "เช็คบิลโต๊ะ 5", "คืนเงิน", "ให้ส่วนลด 50 บาท", "ยกเลิกรายการนี้"]) {
+      const result = parseVoiceCommand(phrase);
+      expect(result.decision, phrase).toBe("block");
+      expect(result.intent.type, phrase).toBe("unknown");
+    }
+  });
+});

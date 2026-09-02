@@ -1471,3 +1471,130 @@ test.describe("voice navigation U14 (สั่งงานด้วยเสี�
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U15 — Voice Tier B: แก้ตะกร้าด้วยเสียง + Undo 6 วินาที + คำสั่งการเงินยังต้องห้าม
+// ใช้ engine ปลอมชุดเดียวกับ U14 (ฉีดผ่าน addInitScript — ไม่มี backdoor ใน production)
+test.describe("voice cart U15 (ตะกร้าด้วยเสียง + undo + blocked payment)", () => {
+  let originalVoiceFlag: boolean | null = null;
+
+  test.beforeAll(async () => {
+    const { data, error } = await service
+      .from("stores")
+      .select("voice_command_enabled")
+      .eq("id", SEED_STORE_ID)
+      .single();
+    if (error || !data) {
+      throw new Error(`อ่าน stores.voice_command_enabled (local) ไม่สำเร็จ: ${error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalVoiceFlag = data.voice_command_enabled;
+    await setUnifiedPosFlag(true);
+    const { error: updateError } = await service
+      .from("stores")
+      .update({ voice_command_enabled: true, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (updateError) {
+      throw new Error(`ตั้ง stores.voice_command_enabled = true (local) ไม่สำเร็จ: ${updateError.message}`);
+    }
+  });
+
+  test.afterAll(async () => {
+    if (originalVoiceFlag === null) return;
+    const { error } = await service
+      .from("stores")
+      .update({ voice_command_enabled: originalVoiceFlag, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (error) throw new Error(`คืน stores.voice_command_enabled เดิม (local) ไม่สำเร็จ: ${error.message}`);
+  });
+
+  async function installFakeSpeechEngine(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+      class FakeSpeechRecognition {
+        lang = "";
+        continuous = true;
+        interimResults = false;
+        maxAlternatives = 0;
+        onstart: ((event: unknown) => void) | null = null;
+        onresult: ((event: unknown) => void) | null = null;
+        onerror: ((event: unknown) => void) | null = null;
+        onend: ((event: unknown) => void) | null = null;
+
+        start(): void {
+          this.onstart?.({});
+          const transcript = (window as unknown as { __voiceTranscript?: string }).__voiceTranscript ?? "";
+          setTimeout(() => {
+            this.onresult?.({
+              resultIndex: 0,
+              results: { length: 1, 0: { isFinal: true, length: 1, 0: { transcript, confidence: 0.95 } } },
+            });
+            this.onend?.({});
+          }, 10);
+        }
+
+        stop(): void {}
+        abort(): void {}
+      }
+      (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = FakeSpeechRecognition;
+    });
+  }
+
+  async function speak(page: Page, phrase: string): Promise<void> {
+    await page.evaluate((text) => {
+      (window as unknown as { __voiceTranscript?: string }).__voiceTranscript = text;
+    }, phrase);
+    await page.getByRole("button", { name: "สั่งงานด้วยเสียง" }).click();
+  }
+
+  /** หน้าขายเรนเดอร์ตะกร้าไว้ 2 ชุด (มือถือ/เดสก์ท็อป) — assert เฉพาะชุดที่มองเห็นจริง */
+  function visibleInSell(page: Page, text: string) {
+    return page.getByRole("tabpanel", { name: "ขาย" }).getByText(text).filter({ visible: true });
+  }
+
+  test("voice cart: พูดเพิ่มสินค้า → ตะกร้าเปลี่ยนจริง และมีปุ่มย้อนกลับ 6 วินาที", async ({ page }) => {
+    await installFakeSpeechEngine(page);
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    const emptyCart = visibleInSell(page, "ยังไม่มีรายการ");
+    await expect(emptyCart).toBeVisible();
+
+    await speak(page, "เพิ่มผัดกะเพราหมูสับ 2");
+
+    await expect(visibleInSell(page, "ผัดกะเพราหมูสับ").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /ย้อนกลับ/ })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "ย้อนกลับได้ใน 6 วินาที" })).toBeVisible();
+  });
+
+  test("undo: กดย้อนกลับแล้วตะกร้ากลับเป็นใบเดิม", async ({ page }) => {
+    await installFakeSpeechEngine(page);
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    await speak(page, "เพิ่มวาฟเฟิลราดน้ำผึ้ง");
+    await expect(visibleInSell(page, "วาฟเฟิลราดน้ำผึ้ง").first()).toBeVisible();
+
+    await page.getByRole("button", { name: /ย้อนกลับ/ }).click();
+
+    await expect(visibleInSell(page, "ยังไม่มีรายการ")).toBeVisible();
+    await expect(page.getByRole("button", { name: /ย้อนกลับ/ })).toHaveCount(0);
+  });
+
+  test("blocked payment: คำสั่งการเงินและสินค้าที่ต้องเลือกตัวเลือก ต้องไม่แตะตะกร้า", async ({ page }) => {
+    await installFakeSpeechEngine(page);
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    for (const phrase of ["ชำระเงิน", "เช็คบิล", "ล้างตะกร้า"]) {
+      await speak(page, phrase);
+      await expect(page.getByRole("status").filter({ hasText: "ต้องทำบนหน้าจอ" })).toBeVisible();
+      await expect(visibleInSell(page, "ยังไม่มีรายการ")).toBeVisible();
+      await expect(page.getByRole("button", { name: /ย้อนกลับ/ })).toHaveCount(0);
+    }
+
+    // ชาเย็นมีตัวเลือกความหวานแบบบังคับ → ต้องเลือกบนจอ ไม่ใช่เพิ่มให้เอง
+    await speak(page, "เพิ่มชาเย็น");
+    await expect(page.getByRole("status").filter({ hasText: "ต้องเลือกตัวเลือกก่อน" })).toBeVisible();
+    await expect(visibleInSell(page, "ยังไม่มีรายการ")).toBeVisible();
+    await expect(page).toHaveURL(/\/pos$/);
+  });
+});

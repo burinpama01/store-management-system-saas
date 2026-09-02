@@ -1,13 +1,13 @@
 "use client";
 
-// U14 — Voice Tier A navigation (R2) · ตัวเชื่อมเดียวระหว่างปุ่มเสียงกับ shell
-// หน้าที่: รับผล parse → ถาม resolveVoiceNavigation (pure) → ลงมือทำเฉพาะปลายทางที่อนุญาต
-// ห้ามมี logic ตัดสินใจอยู่ในไฟล์นี้ — ตัดสินใจทั้งหมดอยู่ใน src/modules/voice-pos/navigation.ts
+// U14/U15 — Voice Tier A + B (R2) · ตัวเชื่อมเดียวระหว่างปุ่มเสียงกับ shell
+// หน้าที่: รับผล parse → ถามตัวตัดสิน pure (navigation.ts / cart.ts) → ลงมือทำเฉพาะที่อนุญาต
+// ห้ามมี logic ตัดสินใจอยู่ในไฟล์นี้ และห้ามแตะ server action/DB โดยตรง
 //
 // หมายเหตุ: component นี้ mount เฉพาะเมื่อ stores.voice_command_enabled = true เท่านั้น
 // (useRouter จึงไม่ถูกเรียกในเส้นทาง legacy/flag ปิด)
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { VoiceCommandButton } from "@/shared/components/VoiceCommandButton";
 import { DASHBOARD_COMMANDS, type CommandItem } from "@/modules/assistant/command-index";
@@ -16,13 +16,24 @@ import {
   type VoicePosFocusAction,
   type VoicePosTabId,
 } from "@/modules/voice-pos/navigation";
+import { applyVoiceCartIntent, isVoiceCartIntent } from "@/modules/voice-pos/cart";
+import {
+  consumeVoiceUndoToken,
+  createVoiceUndoToken,
+  isVoiceUndoTokenValid,
+  VOICE_UNDO_WINDOW_MS,
+  type VoiceUndoToken,
+} from "@/modules/voice-pos/undo";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
+import { useVoiceCartApi } from "./voice-cart-bridge";
 
 const FOCUS_UNAVAILABLE: Record<VoicePosFocusAction, string> = {
   search: "หน้านี้ยังไม่มีช่องค้นหา — เลือกจากแท็บบนหน้าจอได้",
   cart: "ยังไม่พบตะกร้าบนหน้านี้ — เลือกจากแท็บบนหน้าจอได้",
 };
+
+const CART_UNAVAILABLE = "หน้าขายยังไม่พร้อม — ลองใหม่อีกครั้ง";
 
 export interface VoicePosControllerProps {
   readonly voiceEnabled: boolean;
@@ -32,6 +43,8 @@ export interface VoicePosControllerProps {
   /** ฉีด adapter สำหรับทดสอบ — ปกติปุ่มจะใช้ Web Speech ของเบราว์เซอร์เอง */
   readonly adapter?: VoiceSpeechAdapter;
   readonly className?: string;
+  /** ฉีดนาฬิกาสำหรับทดสอบ Undo */
+  readonly now?: () => number;
 }
 
 export function VoicePosController({
@@ -40,11 +53,86 @@ export function VoicePosController({
   onSelectTab,
   adapter,
   className,
+  now,
 }: VoicePosControllerProps) {
   const router = useRouter();
+  const getCartApi = useVoiceCartApi();
+  const [undoToken, setUndoToken] = useState<VoiceUndoToken | null>(null);
+  const [undoNotice, setUndoNotice] = useState("");
+  const undoSeqRef = useRef(0);
+  const clock = useMemo(() => now ?? (() => Date.now()), [now]);
+
+  // token หมดอายุเองเมื่อพ้นหน้าต่าง 6 วินาที (การเปลี่ยนแปลงใหม่จะแทนที่ token เดิมทันที)
+  useEffect(() => {
+    if (!undoToken) return;
+    const remaining = Math.max(0, undoToken.expiresAt - clock());
+    const timer = setTimeout(() => {
+      setUndoToken((current) => (current && current.id === undoToken.id ? null : current));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [clock, undoToken]);
+
+  const handleUndo = useCallback(() => {
+    const outcome = consumeVoiceUndoToken(undoToken, clock());
+    setUndoToken(null);
+    if (outcome.status === "expired") {
+      setUndoNotice(outcome.announcement);
+      return;
+    }
+    const api = getCartApi();
+    if (!api) {
+      setUndoNotice(CART_UNAVAILABLE);
+      return;
+    }
+    api.commit(outcome.cart);
+    setUndoNotice(outcome.announcement);
+  }, [clock, getCartApi, undoToken]);
 
   const handleResult = useCallback(
     (result: VoiceParseResult): string => {
+      setUndoNotice("");
+
+      // ── Tier B — ตะกร้าในเครื่อง (ย้อนกลับได้ 6 วินาที) ───────────────────────
+      if (isVoiceCartIntent(result.intent)) {
+        if (!voiceEnabled) return "ร้านนี้ยังไม่เปิดสั่งงานด้วยเสียง";
+        if (result.decision !== "execute") {
+          return result.resultCode === "invalid_quantity"
+            ? "จำนวนไม่ถูกต้อง — ระบุจำนวนระหว่าง 1 ถึง 99"
+            : "ฟังไม่ชัด — ยังไม่แก้ตะกร้าให้อัตโนมัติ ลองพูดใหม่อีกครั้ง";
+        }
+        const api = getCartApi();
+        if (!api) return CART_UNAVAILABLE;
+        const snapshot = api.getSnapshot();
+        const resolution = applyVoiceCartIntent(result.intent, {
+          cart: snapshot.cart,
+          products: snapshot.products,
+          locked: snapshot.locked,
+        });
+        if (resolution.status === "blocked") return resolution.announcement;
+
+        // การเปลี่ยนแปลงใหม่ทำให้ token เดิมใช้ไม่ได้ (แทนที่ทั้งใบ)
+        undoSeqRef.current += 1;
+        setUndoToken(
+          createVoiceUndoToken({
+            id: `voice-undo-${undoSeqRef.current}`,
+            previousCart: snapshot.cart,
+            label: resolution.announcement,
+            now: clock(),
+          }),
+        );
+        api.commit(resolution.cart);
+        onSelectTab("sell");
+        return `${resolution.announcement} — ย้อนกลับได้ใน 6 วินาที`;
+      }
+
+      if (result.intent.type === "pos.clear_search") {
+        const api = getCartApi();
+        if (!api?.clearSearch) return FOCUS_UNAVAILABLE.search;
+        api.clearSearch();
+        return "ล้างคำค้นหาแล้ว";
+      }
+
+      // ── Tier A — นำทาง ────────────────────────────────────────────────────────
       const outcome = resolveVoiceNavigation(result, {
         voiceEnabled,
         allowedCommands,
@@ -70,10 +158,29 @@ export function VoicePosController({
       router.push(target.href);
       return outcome.announcement;
     },
-    [allowedCommands, onSelectTab, router, voiceEnabled],
+    [allowedCommands, clock, getCartApi, onSelectTab, router, voiceEnabled],
   );
 
   if (!voiceEnabled) return null;
 
-  return <VoiceCommandButton adapter={adapter} onResult={handleResult} className={className} />;
+  const undoVisible = isVoiceUndoTokenValid(undoToken, clock());
+
+  return (
+    <div className={`flex flex-wrap items-start gap-2 ${className ?? ""}`.trim()}>
+      <VoiceCommandButton adapter={adapter} onResult={handleResult} />
+      {undoVisible && undoToken ? (
+        <button
+          type="button"
+          onClick={handleUndo}
+          aria-label={`ย้อนกลับ: ${undoToken.label}`}
+          className="min-h-11 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+        >
+          ↩︎ ย้อนกลับ ({VOICE_UNDO_WINDOW_MS / 1000} วินาที)
+        </button>
+      ) : null}
+      <p role="status" aria-live="polite" className="min-h-5 text-xs text-gray-600">
+        {undoNotice}
+      </p>
+    </div>
+  );
 }
