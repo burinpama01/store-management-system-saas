@@ -111,11 +111,15 @@ describe("VoiceCommandButton", () => {
   it("final transcript → ส่งผล parse ให้ผู้เรียก และล้างข้อความชั่วคราวทันที", () => {
     const fake = createFakeAdapter();
     const results: VoiceParseResult[] = [];
-    render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => results.push(r)} />);
+    render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => {
+          results.push(r);
+        }} />);
 
     fireEvent.click(screen.getByRole("button"));
     act(() => fake.emitInterim("เพิ่มลา"));
-    expect(screen.getByRole("status")).toHaveTextContent("เพิ่มลา");
+    // U14 — คำพูดชั่วคราวแสดงบนจอ แต่ไม่อยู่ใน live region (screen reader ไม่อ่าน)
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("เพิ่มลา");
+    expect(screen.getByRole("status")).not.toHaveTextContent("เพิ่มลา");
 
     act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
 
@@ -123,14 +127,42 @@ describe("VoiceCommandButton", () => {
     expect(results[0].intent).toEqual({ type: "pos.add_item", productPhrase: "ลาเต้", quantity: 2 });
     expect(results[0].decision).toBe("execute");
     // transcript ต้องไม่ค้างบนหน้าจอหลัง parse
+    expect(screen.queryByTestId("voice-transcript")).toBeNull();
     expect(screen.getByRole("status")).not.toHaveTextContent("ลาเต้");
     expect(screen.getByRole("status")).toHaveTextContent("รับคำสั่งแล้ว");
+  });
+
+  it("final ซ้ำจาก engine ในการกดเดียว → ส่งผลให้ผู้เรียกครั้งเดียว (U14 dedupe)", () => {
+    const fake = createFakeAdapter();
+    const results: VoiceParseResult[] = [];
+    render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => {
+          results.push(r);
+        }} />);
+
+    fireEvent.click(screen.getByRole("button"));
+    act(() => fake.emitFinal("เปิดครัว", 0.95));
+    act(() => fake.emitFinal("เปิดครัว", 0.95));
+
+    expect(results).toHaveLength(1);
+  });
+
+  it("ข้อความที่ผู้เรียกคืนมา ถูกประกาศแทนข้อความมาตรฐาน (live region เดียว)", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "เปิดแท็บครัวแล้ว"} />);
+
+    fireEvent.click(screen.getByRole("button"));
+    act(() => fake.emitFinal("เปิดครัว", 0.95));
+
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("เปิดแท็บครัวแล้ว");
   });
 
   it("คำสั่งต้องห้าม → แจ้งว่าต้องทำบนหน้าจอ และ decision ไม่ใช่ execute", () => {
     const fake = createFakeAdapter();
     const results: VoiceParseResult[] = [];
-    render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => results.push(r)} />);
+    render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => {
+          results.push(r);
+        }} />);
 
     fireEvent.click(screen.getByRole("button"));
     act(() => fake.emitFinal("ชำระเงิน", 0.95));

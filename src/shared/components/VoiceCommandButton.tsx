@@ -56,13 +56,22 @@ const STATE_LABEL: Record<VoiceRecognitionState, string> = {
 export interface VoiceCommandButtonProps {
   /** ฉีด adapter ได้ (ทดสอบ/สลับ engine); ไม่ส่งมาจะใช้ Web Speech ของเบราว์เซอร์ */
   readonly adapter?: VoiceSpeechAdapter;
-  /** ผลของ parser — ผู้เรียกเป็นคนตัดสินใจทำต่อตาม decision เท่านั้น */
-  readonly onResult?: (result: VoiceParseResult) => void;
+  /**
+   * ผลของ parser — ผู้เรียกเป็นคนตัดสินใจทำต่อตาม decision เท่านั้น
+   * คืน string ได้เพื่อให้ปุ่มประกาศข้อความของผู้เรียกแทนข้อความมาตรฐาน
+   * (U14: ใช้ประกาศผลการนำทาง โดยยังมี live region เดียวไม่ให้ screen reader อ่านซ้ำ)
+   */
+  readonly onResult?: (result: VoiceParseResult) => string | void;
   /** เหตุการณ์ที่บันทึกได้ (ไม่มี transcript) — U16 จะต่อปลายทางจริง */
   readonly onTelemetry?: (event: VoiceTelemetryEvent) => void;
   readonly locale?: string;
   readonly disabled?: boolean;
   readonly className?: string;
+  /**
+   * ค่าเริ่มต้น false — screen reader จะได้ยินเฉพาะ "สถานะ" ไม่ใช่คำพูดของผู้ใช้
+   * (คำพูดยังแสดงบนจอระหว่างฟัง แต่ถูกตัดออกจาก accessibility tree)
+   */
+  readonly announceTranscript?: boolean;
 }
 
 export function VoiceCommandButton({
@@ -72,6 +81,7 @@ export function VoiceCommandButton({
   locale = "th-TH",
   disabled = false,
   className,
+  announceTranscript = false,
 }: VoiceCommandButtonProps) {
   const speech = useMemo(
     () => adapter ?? createBrowserSpeechAdapter({ locale }),
@@ -84,6 +94,8 @@ export function VoiceCommandButton({
   const [interim, setInterim] = useState("");
   const [message, setMessage] = useState("");
   const sessionRef = useRef<VoiceSpeechSession | null>(null);
+  // U14 — กัน final ซ้ำจาก engine: 1 การกด = ส่งผลให้ผู้เรียกได้ครั้งเดียว
+  const settledRef = useRef(false);
 
   // unmount = ยกเลิก session ที่ค้าง และล้าง transcript ออกจากหน่วยความจำ
   useEffect(() => {
@@ -107,6 +119,7 @@ export function VoiceCommandButton({
 
     setMessage("");
     setInterim("");
+    settledRef.current = false;
 
     sessionRef.current = speech.start({
       onState: (next) => {
@@ -120,14 +133,19 @@ export function VoiceCommandButton({
         setInterim(text);
       },
       onFinal: (transcript, confidence) => {
+        // final ซ้ำของการกดเดียวกันต้องถูกทิ้ง (ไม่สั่งงานสองครั้ง)
+        if (settledRef.current) return;
+        settledRef.current = true;
         const result = parseVoiceCommand(transcript, { recognitionConfidence: confidence });
         // ล้าง transcript ทันทีหลัง parse — ห้ามค้างใน state หรือ ref
         setInterim("");
-        setMessage(RESULT_MESSAGE[result.resultCode]);
         onTelemetry?.(buildVoiceTelemetry(result, locale));
-        onResult?.(result);
+        const announcement = onResult?.(result);
+        setMessage(typeof announcement === "string" && announcement ? announcement : RESULT_MESSAGE[result.resultCode]);
       },
       onError: (code) => {
+        if (settledRef.current) return;
+        settledRef.current = true;
         setInterim("");
         setMessage(ERROR_MESSAGE[code]);
       },
@@ -164,10 +182,21 @@ export function VoiceCommandButton({
         <span>{STATE_LABEL[state]}</span>
       </button>
 
-      {/* live region: สถานะ/ผลลัพธ์ + คำพูดชั่วคราว (ล้างทันทีเมื่อจบรอบ) */}
+      {/* live region: ประกาศ "สถานะ" เท่านั้น — ไม่มีคำพูดของผู้ใช้ (ค่าเริ่มต้น) */}
       <p role="status" aria-live="polite" className="mt-1 min-h-5 text-xs text-gray-600">
-        {interim ? interim : message}
+        {announceTranscript && interim ? interim : message}
       </p>
+
+      {/* คำพูดชั่วคราว: เห็นบนจอระหว่างฟัง แต่ถูกตัดออกจาก a11y tree เมื่อไม่ได้เปิด announceTranscript */}
+      {interim && !announceTranscript ? (
+        <p
+          data-testid="voice-transcript"
+          aria-hidden="true"
+          className="min-h-5 text-xs italic text-gray-500"
+        >
+          {interim}
+        </p>
+      ) : null}
 
       {!supported ? (
         <p className="text-xs text-gray-500">{ERROR_MESSAGE.unsupported_browser}</p>

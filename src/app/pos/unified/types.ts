@@ -1,4 +1,6 @@
 import type { Store, Table } from "@/modules/stores/types";
+import type { CommandItem } from "@/modules/assistant/command-index";
+import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { UnifiedKitchenItem } from "./kitchen-types";
 
 // U9 — Store-gated unified POS shell (R2)
@@ -54,4 +56,13 @@ export interface UnifiedPosWorkspaceProps {
    * อัปเดตเองผ่าน U3 realtime/polling และ refetch ผ่าน server action จาก server truth
    */
   readonly kitchenInitialItems: readonly UnifiedKitchenItem[];
+  /**
+   * U14 — stores.voice_command_enabled (default false = ไม่มีปุ่มเสียงเลย)
+   * flag นี้อ่านจาก server เท่านั้น ห้าม client เปิดเอง
+   */
+  readonly voiceEnabled?: boolean;
+  /** command ที่ผู้ใช้คนนี้เข้าถึงได้ (server กรองสิทธิ์แล้ว) — เสียงนำทางได้เฉพาะรายการนี้ */
+  readonly voiceCommands?: readonly CommandItem[];
+  /** ฉีด speech adapter สำหรับทดสอบเท่านั้น (ปกติ undefined = ใช้ของเบราว์เซอร์) */
+  readonly voiceAdapter?: VoiceSpeechAdapter;
 }

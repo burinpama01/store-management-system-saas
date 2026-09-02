@@ -1329,3 +1329,145 @@ test.describe("legacy order U12 (ออเดอร์รูปแบบเด�
     await expect(card).toHaveCount(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U14 — Voice Tier A navigation: สั่งงานด้วยเสียงเปิดแท็บของ POS รวม
+//
+// เบราว์เซอร์ทดสอบไม่มีบริการรู้จำเสียงจริง จึงฉีด SpeechRecognition ปลอมผ่าน
+// addInitScript (adapter ของแอปอ่าน window.SpeechRecognition ตอน runtime อยู่แล้ว
+// — ไม่มี backdoor ใน production code) แล้วกำหนดข้อความที่ "ได้ยิน" ต่อเคส
+// fixture: เปิด stores.voice_command_enabled ชั่วคราวและคืนค่าเดิมเสมอ (fail-loud)
+test.describe("voice navigation U14 (สั่งงานด้วยเสียง Tier A)", () => {
+  let originalVoiceFlag: boolean | null = null;
+
+  test.beforeAll(async () => {
+    const { data, error } = await service
+      .from("stores")
+      .select("voice_command_enabled")
+      .eq("id", SEED_STORE_ID)
+      .single();
+    if (error || !data) {
+      throw new Error(`อ่าน stores.voice_command_enabled (local) ไม่สำเร็จ: ${error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalVoiceFlag = data.voice_command_enabled;
+    await setUnifiedPosFlag(true);
+    const { error: updateError } = await service
+      .from("stores")
+      .update({ voice_command_enabled: true, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (updateError) {
+      throw new Error(`ตั้ง stores.voice_command_enabled = true (local) ไม่สำเร็จ: ${updateError.message}`);
+    }
+  });
+
+  test.afterAll(async () => {
+    if (originalVoiceFlag === null) return;
+    const { error } = await service
+      .from("stores")
+      .update({ voice_command_enabled: originalVoiceFlag, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (error) throw new Error(`คืน stores.voice_command_enabled เดิม (local) ไม่สำเร็จ: ${error.message}`);
+  });
+
+  /** ฉีด engine ปลอม: start() → ส่ง final transcript ตามค่าที่เทสต์ตั้งไว้ */
+  async function installFakeSpeechEngine(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+      class FakeSpeechRecognition {
+        lang = "";
+        continuous = true;
+        interimResults = false;
+        maxAlternatives = 0;
+        onstart: ((event: unknown) => void) | null = null;
+        onresult: ((event: unknown) => void) | null = null;
+        onerror: ((event: unknown) => void) | null = null;
+        onend: ((event: unknown) => void) | null = null;
+
+        start(): void {
+          this.onstart?.({});
+          const transcript = (window as unknown as { __voiceTranscript?: string }).__voiceTranscript ?? "";
+          setTimeout(() => {
+            this.onresult?.({
+              resultIndex: 0,
+              results: { length: 1, 0: { isFinal: true, length: 1, 0: { transcript, confidence: 0.95 } } },
+            });
+            this.onend?.({});
+          }, 10);
+        }
+
+        stop(): void {}
+        abort(): void {}
+      }
+      (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = FakeSpeechRecognition;
+    });
+  }
+
+  async function speak(page: Page, phrase: string): Promise<void> {
+    await page.evaluate((text) => {
+      (window as unknown as { __voiceTranscript?: string }).__voiceTranscript = text;
+    }, phrase);
+    await page.getByRole("button", { name: "สั่งงานด้วยเสียง" }).click();
+  }
+
+  test("voice navigation: พูด 'เปิดครัว' แล้วแท็บครัวถูกเลือก และประกาศสถานะโดยไม่อ่านคำพูดผู้ใช้", async ({ page }) => {
+    await installFakeSpeechEngine(page);
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    const voiceButton = page.getByRole("button", { name: "สั่งงานด้วยเสียง" });
+    await expect(voiceButton).toBeVisible();
+    await expect(page.getByRole("tab", { name: "ขาย" })).toHaveAttribute("aria-selected", "true");
+
+    await speak(page, "เปิดครัว");
+
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+    const status = page.getByRole("status").filter({ hasText: "แท็บครัว" });
+    await expect(status).toHaveText("เปิดแท็บครัวแล้ว");
+    // ประกาศต้องไม่มีคำพูดของผู้ใช้อยู่ในนั้น
+    await expect(status).not.toHaveText(/เปิดครัว$/);
+
+    // และสั่งกลับไปแท็บบิลได้
+    await speak(page, "ไปที่แท็บบิล");
+    await expect(page.getByRole("tab", { name: "บิล" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("voice navigation: คำสั่งต้องห้ามและคำที่ไม่รู้จัก ต้องไม่เปลี่ยนหน้าจอ", async ({ page }) => {
+    await installFakeSpeechEngine(page);
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    await speak(page, "เปิดครัว");
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+
+    await speak(page, "ชำระเงิน");
+    await expect(page.getByRole("status").filter({ hasText: "ต้องทำบนหน้าจอ" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/pos$/);
+
+    await speak(page, "เปิดยานอวกาศ");
+    await expect(page.getByRole("status").filter({ hasText: "ยังไม่รองรับคำสั่งนี้" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/pos$/);
+  });
+
+  test("voice navigation: flag เสียงปิด = ไม่มีปุ่มเสียงบนหน้าจอ", async ({ page }) => {
+    const { error } = await service
+      .from("stores")
+      .update({ voice_command_enabled: false, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (error) throw new Error(`ปิด stores.voice_command_enabled ชั่วคราวไม่สำเร็จ: ${error.message}`);
+    try {
+      await installFakeSpeechEngine(page);
+      await loginOwner(page);
+      await page.goto("/pos");
+
+      await expect(page.getByRole("tablist", { name: "ส่วนของ POS รวม" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "สั่งงานด้วยเสียง" })).toHaveCount(0);
+    } finally {
+      const { error: restoreError } = await service
+        .from("stores")
+        .update({ voice_command_enabled: true, updated_at: new Date().toISOString() })
+        .eq("id", SEED_STORE_ID);
+      if (restoreError) throw new Error(`เปิด flag เสียงคืนไม่สำเร็จ: ${restoreError.message}`);
+    }
+  });
+});

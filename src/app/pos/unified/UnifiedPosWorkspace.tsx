@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from "react";
 import { TablesPanel } from "./TablesPanel";
 import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { BillsPanel } from "./BillsPanel";
+import { VoicePosController } from "./VoicePosController";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
 
 type TabId = "sell" | "tables" | "kitchen" | "bills";
@@ -23,7 +24,16 @@ const TABS: ReadonlyArray<{ readonly id: TabId; readonly label: string }> = [
 const TAB_ORDER: ReadonlyArray<TabId> = TABS.map((t) => t.id);
 
 // storeId ใช้ตั้งแต่ U10 (คิวครัว: realtime scope + server action) — แท็บอื่นจะใช้ต่อใน U11+
-export function UnifiedPosWorkspace({ storeId, storeName, tables, sell, kitchenInitialItems }: UnifiedPosWorkspaceProps) {
+export function UnifiedPosWorkspace({
+  storeId,
+  storeName,
+  tables,
+  sell,
+  kitchenInitialItems,
+  voiceEnabled = false,
+  voiceCommands = [],
+  voiceAdapter,
+}: UnifiedPosWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<TabId>("sell");
   /** บริบทร่วมของทุกแท็บ — โต๊ะที่เลือกจากแท็บโต๊ะ (ขยายเป็น order context ใน U10+) */
   const [selectedTable, setSelectedTable] = useState<UnifiedTableSummary | null>(null);
@@ -74,6 +84,16 @@ export function UnifiedPosWorkspace({ storeId, storeName, tables, sell, kitchenI
             POS รวม
           </span>
         </h1>
+        {/* U14 — ปุ่มสั่งงานด้วยเสียง (Tier A): mount เฉพาะเมื่อ stores.voice_command_enabled = true
+            (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม) */}
+        {voiceEnabled ? (
+          <VoicePosController
+            voiceEnabled
+            allowedCommands={voiceCommands}
+            onSelectTab={selectTab}
+            adapter={voiceAdapter}
+          />
+        ) : null}
       </header>
 
       <div
@@ -115,6 +135,8 @@ export function UnifiedPosWorkspace({ storeId, storeName, tables, sell, kitchenI
         id="unified-panel-sell"
         aria-labelledby="unified-tab-sell"
         hidden={activeTab !== "sell"}
+        tabIndex={-1}
+        data-voice-focus="cart"
         className="min-w-0 pt-3"
       >
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">

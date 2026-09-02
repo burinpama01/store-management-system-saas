@@ -59,7 +59,8 @@ export function matchCommandFromText(
   const rules: KeywordRule[] = [
     { keywords: ["ขอเพลง", "เพลง", "music"], commandId: "/music-requests" },
     { keywords: ["พิมพ์", "ปริ้น", "ใบเสร็จ", "printer", "print"], commandId: "/settings/receipt" },
-    { keywords: ["สต็อก", "ของ", "stock"], commandId: "/stock" },
+    // U14 — เพิ่ม alias สะกดอีกแบบที่ speech engine คืนมาบ่อย (allowlist เดิม ไม่เพิ่มปลายทางใหม่)
+    { keywords: ["สต็อก", "สต๊อก", "ของ", "stock"], commandId: "/stock" },
     { keywords: ["โต๊ะ", "qr order", "qr ordering", "qr"], commandId: "/qr-orders" },
     { keywords: ["บัญชี", "รายรับ", "รายจ่าย", "กระแสเงินสด"], commandId: "/accounting" },
     { keywords: ["รายงาน", "ยอดขาย"], commandId: "/reports" },

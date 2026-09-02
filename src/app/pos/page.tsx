@@ -11,6 +11,7 @@ import { PosTerminal } from "./PosTerminal";
 import { resolveUnifiedPosSurface, toUnifiedTableSummaries } from "./unified/types";
 import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
 import { listUnifiedPosKitchenQueue } from "@/modules/unified-pos/kitchen-repository";
+import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,10 @@ export default async function PosPage() {
         tables={toUnifiedTableSummaries(tablesResult.data ?? [])}
         sell={terminal}
         kitchenInitialItems={kitchenQueueResult.data ?? []}
+        voiceEnabled={storeResult.data?.voiceCommandEnabled ?? false}
+        voiceCommands={DASHBOARD_COMMANDS.filter((command) =>
+          resolved.can(command.permission as PermissionKey),
+        )}
       />
     </div>
   );
