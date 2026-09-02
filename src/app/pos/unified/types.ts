@@ -1,4 +1,5 @@
 import type { Store, Table } from "@/modules/stores/types";
+import type { UnifiedKitchenItem } from "./kitchen-types";
 
 // U9 — Store-gated unified POS shell (R2)
 // types/gating ฝั่ง server + client ใช้ร่วมกัน ห้ามพึ่ง server-only module
@@ -48,4 +49,9 @@ export interface UnifiedPosWorkspaceProps {
    * U9 ยัง embed ตรง ๆ ในแท็บ "ขาย", U10+ จะแทนที่ด้วย sell workspace ใหม่
    */
   readonly sell: React.ReactNode;
+  /**
+   * U10 — snapshot คิวครัวตอนโหลดหน้า (server compose) — หลังจากนี้คิวครัว
+   * อัปเดตเองผ่าน U3 realtime/polling และ refetch ผ่าน server action จาก server truth
+   */
+  readonly kitchenInitialItems: readonly UnifiedKitchenItem[];
 }

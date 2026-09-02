@@ -8,6 +8,7 @@
 import { useCallback, useRef, useState } from "react";
 import { TablesPanel } from "./TablesPanel";
 import { PlaceholderPanel } from "./PlaceholderPanel";
+import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
 
 type TabId = "sell" | "tables" | "kitchen" | "bills";
@@ -21,8 +22,8 @@ const TABS: ReadonlyArray<{ readonly id: TabId; readonly label: string }> = [
 
 const TAB_ORDER: ReadonlyArray<TabId> = TABS.map((t) => t.id);
 
-// storeId ยังไม่ถูกใช้ใน U9 (realtime/polling ของ U10 จะใช้) — คงไว้ใน contract เท่านั้น
-export function UnifiedPosWorkspace({ storeName, tables, sell }: UnifiedPosWorkspaceProps) {
+// storeId ใช้ตั้งแต่ U10 (คิวครัว: realtime scope + server action) — แท็บอื่นจะใช้ต่อใน U11+
+export function UnifiedPosWorkspace({ storeId, storeName, tables, sell, kitchenInitialItems }: UnifiedPosWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<TabId>("sell");
   /** บริบทร่วมของทุกแท็บ — โต๊ะที่เลือกจากแท็บโต๊ะ (ขยายเป็น order context ใน U10+) */
   const [selectedTable, setSelectedTable] = useState<UnifiedTableSummary | null>(null);
@@ -160,13 +161,8 @@ export function UnifiedPosWorkspace({ storeName, tables, sell }: UnifiedPosWorks
         hidden={activeTab !== "kitchen"}
         className="min-w-0 pt-3"
       >
-        <PlaceholderPanel
-          titleId="unified-placeholder-kitchen"
-          title="คิวครัว"
-          upcomingLabel="เปิดใช้ในรอบถัดไป"
-          description="เห็นรายการที่ส่งครัวแบบเรียลไทม์ พร้อมสถานะต่อรายการ (รับ/กำลังทำ/พร้อมเสิร์ฟ) และปุ่มปฏิเสธพร้อมเหตุผล — กำลังพัฒนา"
-          affordances={["รับรายการ", "ทำเสร็จ", "ปฏิเสธ"]}
-        />
+        {/* U10 — คิวครัวจริง: state ของแท็บนี้อยู่ใน KitchenQueuePanel (คง mounted ตามกติกา shell) */}
+        <KitchenQueuePanel storeId={storeId} initialItems={kitchenInitialItems} />
       </div>
 
       <div

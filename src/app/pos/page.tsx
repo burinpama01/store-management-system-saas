@@ -10,6 +10,7 @@ import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modu
 import { PosTerminal } from "./PosTerminal";
 import { resolveUnifiedPosSurface, toUnifiedTableSummaries } from "./unified/types";
 import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
+import { listUnifiedPosKitchenQueue } from "@/modules/unified-pos/kitchen-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -107,8 +108,10 @@ export default async function PosPage() {
     );
   }
 
-  // โต๊ะเป็นข้อมูลเฉพาะของ shell — โหลดเฉพาะเมื่อ flag เปิด (legacy path ไม่เพิ่ม query)
+  // โต๊ะ + คิวครัวเป็นข้อมูลเฉพาะของ shell — โหลดเฉพาะเมื่อ flag เปิด (legacy path ไม่เพิ่ม query)
   const tablesResult = await listStoreTables(ctx.storeId);
+  // U10 — snapshot คิวครัวตอนโหลดหน้า (หลังจากนี้แท็บครัวอัปเดตเองผ่าน realtime/polling)
+  const kitchenQueueResult = await listUnifiedPosKitchenQueue(ctx.storeId);
   return (
     <div style={themeStyle}>
       <UnifiedPosWorkspace
@@ -116,6 +119,7 @@ export default async function PosPage() {
         storeName={ctx.storeName}
         tables={toUnifiedTableSummaries(tablesResult.data ?? [])}
         sell={terminal}
+        kitchenInitialItems={kitchenQueueResult.data ?? []}
       />
     </div>
   );

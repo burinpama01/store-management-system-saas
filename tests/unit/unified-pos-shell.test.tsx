@@ -2,7 +2,7 @@
 // U9 — unified POS shell: server gate + workspace tabs (ทำงานบน jsdom ตาม pattern U0.5)
 // ⚠️ ต้องมี header jsdom ทุกครั้ง — static-import @testing-library/* บน node env คือ hang จน timeout
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "../setup/react";
 import type { Table } from "@/modules/stores/types";
 import {
@@ -12,6 +12,31 @@ import {
   type UnifiedTableSummary,
 } from "@/app/pos/unified/types";
 import { UnifiedPosWorkspace } from "@/app/pos/unified/UnifiedPosWorkspace";
+
+// U10 — แท็บครัวเป็น KitchenQueuePanel จริง (มี realtime wiring) — stub browser client
+// เพื่อไม่ให้ unit test สร้าง supabase client จริง (env ไม่มีใน jsdom)
+vi.mock("@/server/integrations/supabase/client", () => ({
+  getSupabaseBrowserClient: () => {
+    // channel stub แบบ chain — subscribe ขึ้น SUBSCRIBED ทันที (unit test ไม่ทดสอบ realtime จริง)
+    const makeChannel = (): {
+      on: () => typeof channel;
+      subscribe: (callback: (status: string) => void) => { unsubscribe: () => void };
+    } => {
+      const channel = {
+        on: () => channel,
+        subscribe: (callback: (status: string) => void) => {
+          callback("SUBSCRIBED");
+          return { unsubscribe: () => {} };
+        },
+      };
+      return channel;
+    };
+    return {
+      channel: () => makeChannel(),
+      removeChannel: async () => ({}),
+    };
+  },
+}));
 
 function makeTable(overrides: Partial<Table> = {}): Table {
   return {
@@ -39,6 +64,7 @@ function makeProps(overrides: Partial<UnifiedPosWorkspaceProps> = {}): UnifiedPo
       makeTable({ id: "eeeeeeee-0000-0000-0000-000000000002", number: "2", label: "Center", status: "occupied" }),
     ]),
     sell: <div data-testid="legacy-sell-surface">legacy sell surface (stub)</div>,
+    kitchenInitialItems: [],
     ...overrides,
   };
 }
@@ -106,18 +132,18 @@ describe("UnifiedPosWorkspace (flag true surface)", () => {
     expect(screen.getByTestId("legacy-sell-surface")).toBeVisible();
   });
 
-  it("แท็บครัว/บิล เป็น placeholder ตรงไปตรงมา — ปุ่ม disabled พร้อมเหตุผลภาษาไทย", () => {
+  it("แท็บครัวเป็นคิวครัวจริง (U10) — หัวข้อ + สถานะการเชื่อมต่อ และคิวว่างมี empty state / แท็บบิลยังเป็น placeholder", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
     activateTab("ครัว");
     expect(screen.getByRole("heading", { name: "คิวครัว" })).toBeVisible();
-    for (const name of ["รับรายการ", "ทำเสร็จ", "ปฏิเสธ"]) {
-      const button = screen.getByRole("button", { name });
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("title", "ยังไม่เปิดใช้งาน — จะเปิดในเวอร์ชันถัดไป");
-    }
+    expect(screen.getByText(/ยังไม่มีรายการในคิวครัว/)).toBeVisible();
+    expect(screen.getByText("เรียลไทม์")).toBeVisible();
+
     activateTab("บิล");
     expect(screen.getByRole("heading", { name: "บิลและการพิมพ์" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "พิมพ์ใบเสร็จ" })).toBeDisabled();
+    const printButton = screen.getByRole("button", { name: "พิมพ์ใบเสร็จ" });
+    expect(printButton).toBeDisabled();
+    expect(printButton).toHaveAttribute("title", "ยังไม่เปิดใช้งาน — จะเปิดในเวอร์ชันถัดไป");
   });
 
   it("สลับแท็บแล้วโฟกัสกลับที่ tab trigger (ArrowRight/Home/End) และ panel แสดงตามแท็บ", () => {
