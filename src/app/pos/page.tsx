@@ -2,12 +2,14 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { listCategories, listProducts } from "@/modules/catalog/repository";
-import { getReceiptSettings, getStore, listPrinters } from "@/modules/stores/repository";
+import { getReceiptSettings, getStore, listPrinters, listStoreTables } from "@/modules/stores/repository";
 import { getOpenCashSession, getCashSalesSince, getCashMovementSince } from "@/modules/cashflow/repository";
 import { buildThemeStyle } from "@/modules/theme/presets";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
 import { PosTerminal } from "./PosTerminal";
+import { resolveUnifiedPosSurface, toUnifiedTableSummaries } from "./unified/types";
+import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -69,30 +71,51 @@ export default async function PosPage() {
     ? null
     : explainFeatureLock(resolvedBillingState, "customerDisplay") ?? "แพ็กเกจนี้ยังไม่รองรับจอลูกค้า";
 
+  // U9 — gate เดียวจาก stores.unified_pos_enabled (default false = พฤติกรรมเดิมทุกอย่าง)
+  const surface = resolveUnifiedPosSurface(storeResult.data);
+  const terminal = (
+    <PosTerminal
+      storeId={ctx.storeId}
+      storeName={ctx.storeName}
+      categories={categoriesResult.data ?? []}
+      products={(productsResult.data ?? []).filter((p) => !p.outOfStock)}
+      receiptSettings={receiptSettingsResult.data ?? null}
+      exitHref={firstHomeRoute(resolved.can)}
+      cashSession={cashSession}
+      cashSalesPreview={cashSalesPreview}
+      cashMovementPreview={cashMovementPreview}
+      currency={storeResult.data?.currencyCode ?? "THB"}
+      canDiscount={resolved.can("pos.discount")}
+      canRecordCashflow={resolved.can("cashflow.record")}
+      storeTimezone={ctx.storeTimezone}
+      printers={printersResult.data ?? []}
+      printerLoadError={printersResult.error?.userMessage ?? null}
+      couponEnabled={couponEnabled}
+      couponUnavailableMessage={couponUnavailableMessage}
+      loyaltyEnabled={loyaltyEnabled}
+      loyaltyUnavailableMessage={loyaltyUnavailableMessage}
+      customerDisplayEnabled={customerDisplayEnabled}
+      customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
+    />
+  );
+
+  if (surface === "legacy") {
+    return (
+      <div style={themeStyle}>
+        {terminal}
+      </div>
+    );
+  }
+
+  // โต๊ะเป็นข้อมูลเฉพาะของ shell — โหลดเฉพาะเมื่อ flag เปิด (legacy path ไม่เพิ่ม query)
+  const tablesResult = await listStoreTables(ctx.storeId);
   return (
     <div style={themeStyle}>
-      <PosTerminal
+      <UnifiedPosWorkspace
         storeId={ctx.storeId}
         storeName={ctx.storeName}
-        categories={categoriesResult.data ?? []}
-        products={(productsResult.data ?? []).filter((p) => !p.outOfStock)}
-        receiptSettings={receiptSettingsResult.data ?? null}
-        exitHref={firstHomeRoute(resolved.can)}
-        cashSession={cashSession}
-        cashSalesPreview={cashSalesPreview}
-        cashMovementPreview={cashMovementPreview}
-        currency={storeResult.data?.currencyCode ?? "THB"}
-        canDiscount={resolved.can("pos.discount")}
-        canRecordCashflow={resolved.can("cashflow.record")}
-        storeTimezone={ctx.storeTimezone}
-        printers={printersResult.data ?? []}
-        printerLoadError={printersResult.error?.userMessage ?? null}
-        couponEnabled={couponEnabled}
-        couponUnavailableMessage={couponUnavailableMessage}
-        loyaltyEnabled={loyaltyEnabled}
-        loyaltyUnavailableMessage={loyaltyUnavailableMessage}
-        customerDisplayEnabled={customerDisplayEnabled}
-        customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
+        tables={toUnifiedTableSummaries(tablesResult.data ?? [])}
+        sell={terminal}
       />
     </div>
   );
