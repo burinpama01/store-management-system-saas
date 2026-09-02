@@ -169,8 +169,9 @@ export function VoiceCommandButton({
             : "เบราว์เซอร์นี้ยังสั่งงานด้วยเสียงไม่ได้ — ใช้ Ctrl+K แทน"
         }
         className={[
-          // touch target ขั้นต่ำ 44px ตามเกณฑ์ของแผน
+          // touch target ขั้นต่ำ 44px ตามเกณฑ์ของแผน + เคารพ prefers-reduced-motion
           "inline-flex min-h-11 min-w-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium",
+          "transition-colors motion-reduce:transition-none",
           unavailable
             ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400"
             : listening
@@ -201,7 +202,13 @@ export function VoiceCommandButton({
       {!supported ? (
         <p className="text-xs text-gray-500">{ERROR_MESSAGE.unsupported_browser}</p>
       ) : (
-        <p className="text-xs text-gray-500">ใช้ Ctrl+K พิมพ์คำสั่งได้เสมอ</p>
+        <>
+          {/* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง */}
+          <p className="text-xs text-gray-500">
+            ระบบไม่บันทึกเสียงหรือข้อความที่พูด แต่เบราว์เซอร์อาจส่งเสียงไปประมวลผลบนบริการของผู้ผลิตเบราว์เซอร์
+          </p>
+          <p className="text-xs text-gray-500">พิมพ์คำสั่งแทนได้เสมอ (Ctrl+K ในหน้าอื่น) หรือใช้ปุ่มบนหน้าจอ</p>
+        </>
       )}
     </div>
   );

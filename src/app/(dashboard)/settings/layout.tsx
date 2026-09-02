@@ -22,6 +22,7 @@ export function buildSettingsTabs(resolved: ResolvedPermissions, billingState: B
     tabs.push(
       { href: "/settings/tables", label: "โต๊ะ & QR" },
       { href: "/settings/kitchen", label: "Kitchen" },
+      { href: "/settings/voice", label: "สั่งงานด้วยเสียง" },
       { href: "/settings/buffet", label: "บุฟเฟต์" },
       { href: "/settings/customer-display", label: "จอลูกค้า", featureKey: "customerDisplay" },
       { href: "/settings/music-player", label: "เครื่องเล่นเพลง", featureKey: "musicRequest" },

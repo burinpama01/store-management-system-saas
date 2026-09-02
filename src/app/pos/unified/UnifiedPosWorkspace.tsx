@@ -33,6 +33,7 @@ export function UnifiedPosWorkspace({
   kitchenInitialItems,
   voiceEnabled = false,
   voiceCommands = [],
+  voiceAliases = [],
   voiceAdapter,
 }: UnifiedPosWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<TabId>("sell");
@@ -92,6 +93,7 @@ export function UnifiedPosWorkspace({
           <VoicePosController
             voiceEnabled
             allowedCommands={voiceCommands}
+            aliases={voiceAliases}
             onSelectTab={selectTab}
             adapter={voiceAdapter}
           />

@@ -12,6 +12,7 @@ import { resolveUnifiedPosSurface, toUnifiedTableSummaries } from "./unified/typ
 import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
 import { listUnifiedPosKitchenQueue } from "@/modules/unified-pos/kitchen-repository";
 import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
+import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,11 @@ export default async function PosPage() {
   const tablesResult = await listStoreTables(ctx.storeId);
   // U10 — snapshot คิวครัวตอนโหลดหน้า (หลังจากนี้แท็บครัวอัปเดตเองผ่าน realtime/polling)
   const kitchenQueueResult = await listUnifiedPosKitchenQueue(ctx.storeId);
+  // U16 — คำเรียกที่ร้านสร้างเอง โหลดเฉพาะเมื่อเปิดใช้งานเสียง (flag ปิด = ไม่ query เพิ่ม)
+  const voiceEnabled = storeResult.data?.voiceCommandEnabled ?? false;
+  const voiceAliasesResult = voiceEnabled
+    ? await listVoiceAliases(ctx.storeId)
+    : { data: [], error: null };
   return (
     <div style={themeStyle}>
       <UnifiedPosWorkspace
@@ -121,7 +127,10 @@ export default async function PosPage() {
         tables={toUnifiedTableSummaries(tablesResult.data ?? [])}
         sell={terminal}
         kitchenInitialItems={kitchenQueueResult.data ?? []}
-        voiceEnabled={storeResult.data?.voiceCommandEnabled ?? false}
+        voiceEnabled={voiceEnabled}
+        voiceAliases={(voiceAliasesResult.data ?? [])
+          .filter((alias) => alias.isActive && typeof alias.slots.query === "string")
+          .map((alias) => ({ aliasText: alias.aliasText, query: alias.slots.query as string }))}
         voiceCommands={DASHBOARD_COMMANDS.filter((command) =>
           resolved.can(command.permission as PermissionKey),
         )}

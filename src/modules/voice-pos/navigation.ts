@@ -32,6 +32,12 @@ export type VoiceNavigationOutcome =
   | { readonly status: "navigate"; readonly target: VoiceNavigationTarget; readonly announcement: string }
   | { readonly status: "blocked"; readonly reason: VoiceNavigationBlockedReason; readonly announcement: string };
 
+/** alias ที่ร้านพิมพ์เอง (U16) — ใช้แทนคำเรียกก่อนเข้าสู่ allowlist ปกติ */
+export interface VoiceNavigationAlias {
+  readonly aliasText: string;
+  readonly query: string;
+}
+
 export interface VoiceNavigationContext {
   /** stores.voice_command_enabled — ปิด = ไม่ทำอะไรเลย */
   readonly voiceEnabled: boolean;
@@ -39,6 +45,11 @@ export interface VoiceNavigationContext {
   readonly allowedCommands: readonly CommandItem[];
   /** รายการทั้งหมดไว้แยกแยะ "ไม่มีสิทธิ์" ออกจาก "ไม่รู้จักคำสั่ง" */
   readonly allCommands: readonly CommandItem[];
+  /**
+   * คำเรียกที่ร้านสร้างเอง (owner-authored) — ต้องเป็นรายการที่เปิดใช้งานอยู่เท่านั้น
+   * alias เปลี่ยนได้แค่ "คำค้น" ไม่ได้เพิ่มปลายทางใหม่ ปลายทางยังต้องผ่าน allowlist เดิม
+   */
+  readonly aliases?: readonly VoiceNavigationAlias[];
 }
 
 /** ชื่อแท็บที่พูดได้ — ต้องตรงทั้งคำ (กัน "รายงานยอดขาย" ไปโดนแท็บ "ขาย") */
@@ -114,7 +125,14 @@ export function resolveVoiceNavigation(
     return blocked("not_executable", "ฟังไม่ชัด — ยังไม่เปิดหน้าให้อัตโนมัติ ลองพูดใหม่อีกครั้ง");
   }
 
-  const query = stripNavigationPrefixes(result.intent.query);
+  const spoken = stripNavigationPrefixes(result.intent.query);
+  if (!spoken) return blocked("no_match", "ยังไม่รองรับคำสั่งนี้ — เลือกจากแท็บบนหน้าจอได้");
+
+  // alias ของร้าน: แทนที่คำค้นก่อน แล้วเดินเส้นทาง allowlist เดิมทุกประการ
+  const alias = (context.aliases ?? []).find(
+    (item) => item.aliasText.trim().toLowerCase() === spoken.toLowerCase(),
+  );
+  const query = alias ? stripNavigationPrefixes(alias.query.trim().toLowerCase()) : spoken;
   if (!query) return blocked("no_match", "ยังไม่รองรับคำสั่งนี้ — เลือกจากแท็บบนหน้าจอได้");
 
   for (const [tabId, aliases] of TAB_ALIASES) {

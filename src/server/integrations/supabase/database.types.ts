@@ -3715,7 +3715,6 @@ export interface Database {
         };
         Relationships: [];
       };
-    };
       unified_pos_operation_receipts: {
         Row: {
           id: string;
@@ -3803,6 +3802,7 @@ export interface Database {
         };
         Relationships: [];
       };
+    };
     Views: Record<string, never>;
     Functions: {
 

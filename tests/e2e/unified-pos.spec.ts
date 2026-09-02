@@ -1598,3 +1598,150 @@ test.describe("voice cart U15 (ตะกร้าด้วยเสียง + u
     await expect(page).toHaveURL(/\/pos$/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U16 — Voice privacy / unsupported browser / microphone permission
+// ทั้งสามเคสต้อง "ไม่พัง และกลับไปทำงานบนหน้าจอได้เสมอ"
+test.describe("voice privacy U16 (privacy / unsupported / permission)", () => {
+  let originalVoiceFlag: boolean | null = null;
+
+  test.beforeAll(async () => {
+    const { data, error } = await service
+      .from("stores")
+      .select("voice_command_enabled")
+      .eq("id", SEED_STORE_ID)
+      .single();
+    if (error || !data) {
+      throw new Error(`อ่าน stores.voice_command_enabled (local) ไม่สำเร็จ: ${error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalVoiceFlag = data.voice_command_enabled;
+    await setUnifiedPosFlag(true);
+    const { error: updateError } = await service
+      .from("stores")
+      .update({ voice_command_enabled: true, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (updateError) {
+      throw new Error(`ตั้ง stores.voice_command_enabled = true (local) ไม่สำเร็จ: ${updateError.message}`);
+    }
+  });
+
+  test.afterAll(async () => {
+    if (originalVoiceFlag === null) return;
+    const { error } = await service
+      .from("stores")
+      .update({ voice_command_enabled: originalVoiceFlag, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (error) throw new Error(`คืน stores.voice_command_enabled เดิม (local) ไม่สำเร็จ: ${error.message}`);
+  });
+
+  test("voice privacy: หน้าจอแจ้งเรื่องความเป็นส่วนตัว และไม่มีคำพูดถูกเก็บไว้ที่เครื่อง", async ({ page }) => {
+    // engine ปลอมที่ส่ง final ทันที — ใช้ตรวจว่าไม่มีอะไรถูกเขียนลง storage
+    await page.addInitScript(() => {
+      class FakeSpeechRecognition {
+        lang = "";
+        continuous = true;
+        interimResults = false;
+        maxAlternatives = 0;
+        onstart: ((event: unknown) => void) | null = null;
+        onresult: ((event: unknown) => void) | null = null;
+        onerror: ((event: unknown) => void) | null = null;
+        onend: ((event: unknown) => void) | null = null;
+        start(): void {
+          this.onstart?.({});
+          setTimeout(() => {
+            this.onresult?.({
+              resultIndex: 0,
+              results: {
+                length: 1,
+                0: { isFinal: true, length: 1, 0: { transcript: "เปิดครัว", confidence: 0.95 } },
+              },
+            });
+            this.onend?.({});
+          }, 10);
+        }
+        stop(): void {}
+        abort(): void {}
+      }
+      (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = FakeSpeechRecognition;
+    });
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    await expect(page.getByText(/ระบบไม่บันทึกเสียงหรือข้อความที่พูด/)).toBeVisible();
+
+    await page.getByRole("button", { name: "สั่งงานด้วยเสียง" }).click();
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+
+    // ไม่มีคำพูดค้างใน localStorage/sessionStorage ของหน้านี้
+    const stored = await page.evaluate(() => {
+      const dump: string[] = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key) dump.push(`${key}=${localStorage.getItem(key) ?? ""}`);
+      }
+      for (let i = 0; i < sessionStorage.length; i += 1) {
+        const key = sessionStorage.key(i);
+        if (key) dump.push(`${key}=${sessionStorage.getItem(key) ?? ""}`);
+      }
+      return dump.join("\n");
+    });
+    expect(stored).not.toContain("เปิดครัว");
+  });
+
+  test("unsupported: เบราว์เซอร์ไม่มี SpeechRecognition → ปุ่มถูกปิดพร้อมเหตุผล ไม่พัง", async ({ page }) => {
+    await page.addInitScript(() => {
+      const win = window as unknown as Record<string, unknown>;
+      delete win.SpeechRecognition;
+      delete win.webkitSpeechRecognition;
+    });
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    const button = page.getByRole("button", { name: "สั่งงานด้วยเสียง" });
+    await expect(button).toBeVisible();
+    await expect(button).toBeDisabled();
+    await expect(page.getByText(/เบราว์เซอร์นี้ยังสั่งงานด้วยเสียงไม่ได้/)).toBeVisible();
+
+    // หน้าจอยังใช้งานได้ตามปกติ
+    await page.getByRole("tab", { name: "ครัว" }).click();
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("permission: ผู้ใช้ไม่อนุญาตไมโครโฟน → ข้อความกู้คืนได้ และกดใหม่ได้", async ({ page }) => {
+    await page.addInitScript(() => {
+      class DeniedRecognition {
+        lang = "";
+        continuous = true;
+        interimResults = false;
+        maxAlternatives = 0;
+        onstart: ((event: unknown) => void) | null = null;
+        onresult: ((event: unknown) => void) | null = null;
+        onerror: ((event: { error?: string }) => void) | null = null;
+        onend: ((event: unknown) => void) | null = null;
+        start(): void {
+          this.onstart?.({});
+          setTimeout(() => {
+            this.onerror?.({ error: "not-allowed" });
+            this.onend?.({});
+          }, 10);
+        }
+        stop(): void {}
+        abort(): void {}
+      }
+      (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = DeniedRecognition;
+    });
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    const button = page.getByRole("button", { name: "สั่งงานด้วยเสียง" });
+    await button.click();
+
+    await expect(page.getByRole("status").filter({ hasText: "ยังไม่ได้อนุญาตให้ใช้ไมโครโฟน" })).toBeVisible();
+    await expect(button).toBeEnabled();
+
+    // กดซ้ำได้ ไม่ค้างอยู่ในสถานะกำลังฟัง
+    await button.click();
+    await expect(page.getByRole("status").filter({ hasText: "ยังไม่ได้อนุญาตให้ใช้ไมโครโฟน" })).toBeVisible();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+  });
+});

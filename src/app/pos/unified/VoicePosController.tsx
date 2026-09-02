@@ -13,6 +13,7 @@ import { VoiceCommandButton } from "@/shared/components/VoiceCommandButton";
 import { DASHBOARD_COMMANDS, type CommandItem } from "@/modules/assistant/command-index";
 import {
   resolveVoiceNavigation,
+  type VoiceNavigationAlias,
   type VoicePosFocusAction,
   type VoicePosTabId,
 } from "@/modules/voice-pos/navigation";
@@ -24,6 +25,7 @@ import {
   VOICE_UNDO_WINDOW_MS,
   type VoiceUndoToken,
 } from "@/modules/voice-pos/undo";
+import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
 import { useVoiceCartApi } from "./voice-cart-bridge";
@@ -40,6 +42,8 @@ export interface VoicePosControllerProps {
   /** command ที่ผู้ใช้คนนี้เข้าถึงได้ (server กรองสิทธิ์มาแล้ว) */
   readonly allowedCommands: readonly CommandItem[];
   readonly onSelectTab: (tabId: VoicePosTabId) => void;
+  /** คำเรียกที่ร้านสร้างเอง (เฉพาะที่เปิดใช้งาน) — U16 */
+  readonly aliases?: readonly VoiceNavigationAlias[];
   /** ฉีด adapter สำหรับทดสอบ — ปกติปุ่มจะใช้ Web Speech ของเบราว์เซอร์เอง */
   readonly adapter?: VoiceSpeechAdapter;
   readonly className?: string;
@@ -51,6 +55,7 @@ export function VoicePosController({
   voiceEnabled,
   allowedCommands,
   onSelectTab,
+  aliases,
   adapter,
   className,
   now,
@@ -60,6 +65,8 @@ export function VoicePosController({
   const [undoToken, setUndoToken] = useState<VoiceUndoToken | null>(null);
   const [undoNotice, setUndoNotice] = useState("");
   const undoSeqRef = useRef(0);
+  // U16 — telemetry อยู่ในหน่วยความจำของ session นี้เท่านั้น (ไม่มี transcript, purge 30 วัน)
+  const telemetry = useMemo(() => createInMemoryVoiceTelemetrySink(), []);
   const clock = useMemo(() => now ?? (() => Date.now()), [now]);
 
   // token หมดอายุเองเมื่อพ้นหน้าต่าง 6 วินาที (การเปลี่ยนแปลงใหม่จะแทนที่ token เดิมทันที)
@@ -137,6 +144,7 @@ export function VoicePosController({
         voiceEnabled,
         allowedCommands,
         allCommands: DASHBOARD_COMMANDS,
+        aliases,
       });
       if (outcome.status === "blocked") return outcome.announcement;
 
@@ -158,7 +166,7 @@ export function VoicePosController({
       router.push(target.href);
       return outcome.announcement;
     },
-    [allowedCommands, clock, getCartApi, onSelectTab, router, voiceEnabled],
+    [aliases, allowedCommands, clock, getCartApi, onSelectTab, router, voiceEnabled],
   );
 
   if (!voiceEnabled) return null;
@@ -167,7 +175,11 @@ export function VoicePosController({
 
   return (
     <div className={`flex flex-wrap items-start gap-2 ${className ?? ""}`.trim()}>
-      <VoiceCommandButton adapter={adapter} onResult={handleResult} />
+      <VoiceCommandButton
+        adapter={adapter}
+        onResult={handleResult}
+        onTelemetry={(event) => telemetry.record(event)}
+      />
       {undoVisible && undoToken ? (
         <button
           type="button"
