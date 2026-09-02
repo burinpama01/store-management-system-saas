@@ -1032,6 +1032,10 @@ export interface Database {
           claimed_at: string | null;
           printed_at: string | null;
           created_at: string;
+          /** U11 — unique source key ของ print intent (NULL = legacy job จาก client enqueue) */
+          source_key: string | null;
+          /** U11 — ชนิดงานของ intent (NULL = อื่น ๆ / legacy) */
+          job_kind: "receipt" | "station_ticket" | null;
         };
         Insert: {
           id?: string;
@@ -1049,6 +1053,8 @@ export interface Database {
           claimed_at?: string | null;
           printed_at?: string | null;
           created_at?: string;
+          source_key?: string | null;
+          job_kind?: "receipt" | "station_ticket" | null;
         };
         Update: {
           id?: string;
@@ -1066,6 +1072,8 @@ export interface Database {
           claimed_at?: string | null;
           printed_at?: string | null;
           created_at?: string;
+          source_key?: string | null;
+          job_kind?: "receipt" | "station_ticket" | null;
         };
         Relationships: [];
       };

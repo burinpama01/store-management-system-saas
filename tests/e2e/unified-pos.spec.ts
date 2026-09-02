@@ -185,7 +185,8 @@ test.describe("flag เปิด (unified shell)", () => {
     await expect(kitchenPanel.getByLabel("โต๊ะ")).toBeVisible();
     await page.getByRole("tab", { name: "บิล" }).click();
     await expect(page.getByRole("tabpanel", { name: "บิล" }).getByRole("heading", { name: "บิลและการพิมพ์" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "พิมพ์ใบเสร็จ" })).toBeDisabled();
+    // U11 — แท็บบิลจริงแล้ว: โต๊ะถูกเลือกไว้ (จากการคลิกแท็บโต๊ะด้านบน) และ seed ยังไม่มีบิลค้าง
+    await expect(page.getByRole("tabpanel", { name: "บิล" }).getByText(/โต๊ะนี้ไม่มีบิลค้างชำระ/)).toBeVisible();
 
     // แท็บขาย: bridge หน้าขายเดิม + ชิปบริบทโต๊ะที่เพิ่งเลือก
     await page.getByRole("tab", { name: "ขาย" }).click();
@@ -499,5 +500,367 @@ test.describe("คิวครัว U10 (unified kitchen queue)", () => {
     await expect(card).toHaveAttribute("data-kitchen-state", "preparing", { timeout: 20_000 });
     await expect(card.getByText("v2")).toBeVisible();
     await expect(card.getByRole("button", { name: "พร้อมเสิร์ฟ" })).toBeVisible();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U11 — แท็บบิล + settlement→print replay contract (v0.37.2)
+//
+// fixture ของชุดนี้ (อ่านค่าเดิมก่อนแล้วคืนใน afterAll ของ describe — fail-loud
+// เหมือนชุดอื่น): เปิด QR submit policy + session โต๊ะ 1 + product ผูก station
+// (เหมือน U10) และตั้ง receipt_settings.auto_print_receipt = true ชั่วคราว
+// (ถ้าเป็น false ไม่มีงานพิมพ์อัตโนมัติให้ assert) — ออเดอร์ งานพิมพ์ และ audit
+// ที่ชุดนี้สร้าง ถูกลบทิ้งใน afterAll
+//
+// หมายเหตุ permission/cash: settle ผ่าน UI ใช้วิธี qr_promptpay (cash session ที่
+// เปิดไว้ระดับไฟล์ไม่เกี่ยวข้อง) — เหตุผลคือทดสอบ replay/print contract ไม่ใช่เงินสด
+test.describe("บิลและการพิมพ์ U11 (bill + payment replay + print)", () => {
+  const PRODUCT_1 = "22222222-0000-0000-0000-000000000001"; // กาแฟดำ (seed.sql)
+  const VARIANT_1 = "33333333-0000-0000-0000-000000000001"; // เล็ก (S)
+  const TABLE_1 = "eeeeeeee-0000-0000-0000-000000000001";
+  let runId: string;
+  const createdOrderIds: string[] = [];
+  /** opkey ของ settle ที่ผ่าน UI (cleanup receipts + settle audit + print jobs) */
+  const settledReferences: string[] = [];
+  let originalStoreQr: {
+    qr_ordering_enabled: boolean;
+    table_open_policy: "staff_only" | "customer_self";
+  } | null = null;
+  let originalTableSession: {
+    qr_enabled: boolean;
+    session_started_at: string | null;
+    session_expires_at: string | null;
+  } | null = null;
+  let originalProductQr: { available_for_qr: boolean; kitchen_station_id: string | null } | null = null;
+  let originalReceiptSettings: {
+    auto_print_receipt: boolean;
+    auto_print_station_tickets: boolean;
+    paper_width: string;
+    print_copies: number;
+  } | null = null;
+  let stationId: string | null = null;
+  let printerId: string | null = null;
+
+  test.beforeAll(async () => {
+    runId = randomUUID().slice(0, 8);
+    await setUnifiedPosFlag(true);
+
+    const storeRow = await service.from("stores").select("qr_ordering_enabled, table_open_policy").eq("id", SEED_STORE_ID).single();
+    if (storeRow.error || !storeRow.data) throw new Error(`อ่าน stores (local) ไม่สำเร็จ: ${storeRow.error?.message}`);
+    originalStoreQr = storeRow.data;
+
+    const tableRow = await service.from("tables").select("qr_enabled, session_started_at, session_expires_at").eq("id", TABLE_1).single();
+    if (tableRow.error || !tableRow.data) throw new Error(`อ่าน tables (local) ไม่สำเร็จ: ${tableRow.error?.message}`);
+    originalTableSession = tableRow.data;
+
+    const productRow = await service.from("products").select("available_for_qr, kitchen_station_id").eq("id", PRODUCT_1).single();
+    if (productRow.error || !productRow.data) throw new Error(`อ่าน products (local) ไม่สำเร็จ: ${productRow.error?.message}`);
+    originalProductQr = productRow.data;
+
+    const settingsRow = await service
+      .from("receipt_settings")
+      .select("auto_print_receipt, auto_print_station_tickets, paper_width, print_copies")
+      .eq("store_id", SEED_STORE_ID)
+      .maybeSingle();
+    if (settingsRow.error || !settingsRow.data) {
+      throw new Error(`อ่าน receipt_settings (local) ไม่สำเร็จ: ${settingsRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalReceiptSettings = settingsRow.data;
+
+    const insertedStation = await service
+      .from("kitchen_stations")
+      .insert({ organization_id: orgId, store_id: SEED_STORE_ID, name: `U11 Bill E2E ${runId}` })
+      .select("id")
+      .single();
+    if (insertedStation.error || !insertedStation.data) {
+      throw new Error(`สร้าง kitchen station ชั่วคราว (local) ไม่สำเร็จ: ${insertedStation.error?.message}`);
+    }
+    stationId = insertedStation.data.id;
+
+    // เครื่องพิมพ์ default ผ่าน Print Hub ได้ (IP LAN เอกชน) — print intent ต้องมี
+    // target ถึงจะสร้างงานพิมพ์ใบเสร็จ; ลบทิ้งใน afterAll (kitchen_stations.printer_id
+    // เป็น on delete set null จึงปลอดภัยกับ station fixture)
+    const insertedPrinter = await service
+      .from("printers")
+      .insert({
+        organization_id: orgId,
+        store_id: SEED_STORE_ID,
+        name: `U11 Bill E2E Printer ${runId}`,
+        type: "ip",
+        is_default: true,
+        ip_address: "192.168.1.250",
+        port: 9100,
+        paper_width: "80mm",
+      })
+      .select("id")
+      .single();
+    if (insertedPrinter.error || !insertedPrinter.data) {
+      throw new Error(`สร้าง printer ชั่วคราว (local) ไม่สำเร็จ: ${insertedPrinter.error?.message}`);
+    }
+    printerId = insertedPrinter.data.id;
+
+    await setStoreField({ qr_ordering_enabled: true, table_open_policy: "customer_self" }, "เปิด QR policy ชั่วคราว");
+    const { error: tableErr } = await service.from("tables").update({
+      qr_enabled: true,
+      session_started_at: new Date().toISOString(),
+      session_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }).eq("id", TABLE_1);
+    if (tableErr) throw new Error(`เปิด session โต๊ะ 1 ชั่วคราว (local) ไม่สำเร็จ: ${tableErr.message}`);
+    const { error: productErr } = await service.from("products").update({ available_for_qr: true, kitchen_station_id: stationId }).eq("id", PRODUCT_1);
+    if (productErr) throw new Error(`เปิด available_for_qr ชั่วคราว (local) ไม่สำเร็จ: ${productErr.message}`);
+    // auto receipt ON (station tickets OFF — ชุดนี้ assert งานใบเสร็จอย่างเดียว)
+    const { error: settingsErr } = await service.from("receipt_settings").update({ auto_print_receipt: true, auto_print_station_tickets: false }).eq("store_id", SEED_STORE_ID);
+    if (settingsErr) throw new Error(`ตั้ง auto_print_receipt ชั่วคราว (local) ไม่สำเร็จ: ${settingsErr.message}`);
+  });
+
+  async function setStoreField(patch: Record<string, unknown>, label: string): Promise<void> {
+    const { error } = await service.from("stores").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", SEED_STORE_ID);
+    if (error) throw new Error(`ตั้งค่า ${label} (local) ไม่สำเร็จ: ${error.message}`);
+  }
+
+  test.afterAll(async () => {
+    const failures: string[] = [];
+    if (service) {
+      if (createdOrderIds.length > 0) {
+        await service.from("transactions").delete().in("order_id", createdOrderIds);
+        await service.from("cash_ledger_entries").delete().in("order_id", createdOrderIds);
+        const { error } = await service.from("orders").delete().in("id", createdOrderIds);
+        if (error) failures.push(`orders: ${error.message}`);
+      }
+      for (const reference of settledReferences) {
+        const opKey = reference.replace("unified_pos_settlement:", "");
+        const { data: jobs } = await service
+          .from("print_jobs")
+          .select("id")
+          .eq("store_id", SEED_STORE_ID)
+          .like("source_key", `${reference}%`);
+        for (const job of jobs ?? []) {
+          const { error } = await service.from("print_jobs").delete().eq("id", (job as { id: string }).id);
+          if (error) failures.push(`print_jobs: ${error.message}`);
+        }
+        // audit: settle (request_id = opkey) + reprint (request_id = คีย์ reprint ที่ต่อท้าย reference)
+        const { error: auditSettleErr } = await service.from("audit_logs").delete().eq("store_id", SEED_STORE_ID).eq("request_id", opKey);
+        if (auditSettleErr) failures.push(`audit(settle): ${auditSettleErr.message}`);
+        const { error: auditReprintErr } = await service
+          .from("audit_logs")
+          .delete()
+          .eq("store_id", SEED_STORE_ID)
+          .like("request_id", `${reference}:receipt:reprint:%`);
+        if (auditReprintErr) failures.push(`audit(reprint): ${auditReprintErr.message}`);
+        const { error: receiptErr } = await service.from("unified_pos_operation_receipts").delete().eq("store_id", SEED_STORE_ID).eq("operation_key", opKey);
+        if (receiptErr) failures.push(`receipts: ${receiptErr.message}`);
+      }
+      if (originalStoreQr) {
+        const { error } = await service.from("stores").update(originalStoreQr).eq("id", SEED_STORE_ID);
+        if (error) failures.push(`stores (qr/policy): ${error.message}`);
+      }
+      if (originalTableSession) {
+        const { error } = await service.from("tables").update(originalTableSession).eq("id", TABLE_1);
+        if (error) failures.push(`tables: ${error.message}`);
+      }
+      if (originalProductQr) {
+        const { error } = await service.from("products").update(originalProductQr).eq("id", PRODUCT_1);
+        if (error) failures.push(`products: ${error.message}`);
+      }
+      if (originalReceiptSettings) {
+        const { error } = await service.from("receipt_settings").update(originalReceiptSettings).eq("store_id", SEED_STORE_ID);
+        if (error) failures.push(`receipt_settings: ${error.message}`);
+      }
+      if (stationId) {
+        const { error } = await service.from("kitchen_stations").delete().eq("id", stationId);
+        if (error) failures.push(`kitchen_stations: ${error.message}`);
+      }
+      if (printerId) {
+        const { error } = await service.from("printers").delete().eq("id", printerId);
+        if (error) failures.push(`printers: ${error.message}`);
+      }
+      // หมายเหตุ: ไม่ force flag ที่นี่ — top-level afterAll เป็นคนคืน unified_pos_enabled
+      // ตามค่าเดิมที่อ่านไว้ก่อนรันทั้งไฟล์ (fixture ระดับไฟล์)
+    }
+    if (failures.length > 0) {
+      throw new Error(`คืนค่า fixture บิล U11 (local) ไม่ครบ: ${failures.join(" | ")}`);
+    }
+  });
+
+  /** seed QR order 1 บิล (RPC v2 จริง) — orderNumber prefix U11B- */
+  async function submitQrOrder(): Promise<string> {
+    // isolation ระหว่างเทสใน describe: เก็บกวาดออเดอร์ของเทสก่อนหน้าก่อนเสมอ
+    // (บิลโต๊ะ 1 ต้องมีบิลเดียวต่อเทส — ไม่งั้น partial จะ settle บิลค้างของเทสก่อนหน้า)
+    if (createdOrderIds.length > 0) {
+      const staleIds = [...createdOrderIds];
+      createdOrderIds.length = 0;
+      await service.from("transactions").delete().in("order_id", staleIds);
+      await service.from("cash_ledger_entries").delete().in("order_id", staleIds);
+      const { error: sweepErr } = await service.from("orders").delete().in("id", staleIds);
+      if (sweepErr) throw new Error(`เก็บกวาดออเดอร์เทสก่อนหน้า (local) ไม่สำเร็จ: ${sweepErr.message}`);
+    }
+    const line = {
+      product_id: PRODUCT_1,
+      product_name: "กาแฟดำ",
+      variant_id: VARIANT_1,
+      variant_name: "เล็ก (S)",
+      modifiers: [{ option: { id: "55555555-0000-0000-0000-000000000001", name: "ไม่หวาน", priceAdjustment: 0 } }],
+      quantity: 1,
+      unit_price: 45,
+      total_price: 45,
+      note: `U11B-bill-e2e-${runId}`,
+    };
+    const { data, error } = await service.rpc("create_qr_order_with_items_v2", {
+      p_organization_id: orgId,
+      p_store_id: SEED_STORE_ID,
+      p_table_id: TABLE_1,
+      p_order_number: `U11B-${runId}-${createdOrderIds.length + 1}`,
+      p_operation_key: createOperationKey(),
+      p_request_hash: computeRequestHash({ storeId: SEED_STORE_ID, tableId: TABLE_1, subtotal: 45, items: [line] }),
+      p_subtotal: 45,
+      p_items: [line],
+    });
+    if (error) throw new Error(`submit QR order (local) ไม่สำเร็จ: ${error.message}`);
+    const outcome = data as { status: string; result?: { order_id: string } } | null;
+    if (!outcome || outcome.status !== "executed" || !outcome.result?.order_id) {
+      throw new Error(`submit QR order (local) คืนสถานะไม่คาดคิด: ${JSON.stringify(outcome)}`);
+    }
+    createdOrderIds.push(outcome.result.order_id);
+    return outcome.result.order_id;
+  }
+
+  /** เปิดหน้าบิลของโต๊ะ 1 (เลือกโต๊ะจากแท็บโต๊ะ แล้วไปแท็บบิล) */
+  async function openTableOneBill(page: Page): Promise<void> {
+    await page.goto("/pos");
+    await page.getByRole("tab", { name: "โต๊ะ" }).click();
+    const tablesPanel = page.getByRole("tabpanel", { name: "โต๊ะ" });
+    await expect(tablesPanel.getByText("โต๊ะ 1")).toBeVisible();
+    await tablesPanel.getByRole("button", { name: "เลือกโต๊ะ" }).first().click();
+    await page.getByRole("tab", { name: "บิล" }).click();
+    await expect(page.getByRole("tabpanel", { name: "บิล" }).getByTestId("unified-bill-view")).toBeVisible();
+  }
+
+  /**
+   * settle ผ่าน UI (qr_promptpay) — mode:
+   *   - "partial"  = กดปุ่ม "ชำระบิลนี้" ของบิลแรก (replay ได้ deterministic: retry ใช้
+   *                  key+hash เดิม เพราะ facade อ่าน order by ids โดยไม่กรองสถานะ)
+   *   - "whole_table" = กด "ชำระทั้งโต๊ะ" (server derive ชุดบิลเอง)
+   */
+  async function settleViaUiOnce(page: Page, opts?: { dblclick?: boolean; mode?: "partial" | "whole_table" }): Promise<void> {
+    const billPanel = page.getByRole("tabpanel", { name: "บิล" });
+    await billPanel.getByRole("checkbox").check();
+    const settleButton =
+      opts?.mode === "whole_table"
+        ? billPanel.getByTestId("settle-whole-table")
+        : billPanel.getByTestId("settle-order").first();
+    if (opts?.dblclick) {
+      await settleButton.dblclick();
+    } else {
+      await settleButton.click();
+    }
+    await expect(billPanel.getByTestId("settle-result")).toBeVisible({ timeout: 20_000 });
+  }
+
+  test("bill: แท็บบิลแสดงบิลจาก server (รายการ non-voided + ยอดรวม) สำหรับโต๊ะที่เลือก", async ({ page }) => {
+    await submitQrOrder();
+    await loginOwner(page);
+    await openTableOneBill(page);
+    const billPanel = page.getByRole("tabpanel", { name: "บิล" });
+
+    // ข้อมูลมาจาก server action (บิลของโต๊ะ 1) — รายการ + ยอดต่อบิล + ยอดรวมทั้งโต๊ะ
+    await expect(billPanel.locator("[data-bill-order]")).toHaveCount(1);
+    await expect(billPanel.getByText(/x1 กาแฟดำ \(เล็ก \(S\)\) · ไม่หวาน/)).toBeVisible();
+    await expect(billPanel.getByText("ยอดชำระ: 45.00 บาท")).toBeVisible();
+    await expect(billPanel.getByText("ยอดรวมทั้งโต๊ะ: 45.00 บาท")).toBeVisible();
+    const billOrder = billPanel.locator("[data-bill-order]").first();
+    await expect(billOrder).toHaveAttribute("data-bill-total", "45");
+  });
+
+  test("payment replay: ส่งคำขอชำระซ้ำ (key เดิม) → ผลเดิม + งานพิมพ์เดิม ไม่มีใบเสร็จซ้ำ และไม่ auto-print จาก browser", async ({ page }) => {
+    const orderId = await submitQrOrder();
+    const enqueueRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/api/print/enqueue")) enqueueRequests.push(request.url());
+    });
+    await loginOwner(page);
+    await openTableOneBill(page);
+    // partial settle (ชำระบิลนี้) — dblclick = retry คำขอเดิม (key+hash เดิม) →
+    // คำขอที่สอง replay ด้วยผลลัพธ์เดิม deterministic ไม่ว่าจะจบ timing แบบไหน
+    await settleViaUiOnce(page, { dblclick: true, mode: "partial" });
+
+    const billPanel = page.getByRole("tabpanel", { name: "บิล" });
+    const result = billPanel.getByTestId("settle-result");
+    // double-submit = retry ของคำขอเดิม → คำขอที่สองถูก replay (ผลสุดท้าย = replay)
+    await expect(result).toHaveAttribute("data-replayed", "true", { timeout: 20_000 });
+    const reference = await result.getAttribute("data-receipt-reference");
+    expect(reference).toBeTruthy();
+    settledReferences.push(reference!);
+
+    // ผ่าน service client: จ่ายแค่ครั้งเดียว (1 payment) และงานพิมพ์ใบเสร็จ 1 งาน (replay ไม่สร้างซ้ำ)
+    const { count: paymentCount } = await service.from("payments").select("id", { count: "exact", head: true }).eq("order_id", orderId);
+    expect(paymentCount).toBe(1);
+    const { data: jobs } = await service
+      .from("print_jobs")
+      .select("id, job_kind, status, source_key")
+      .eq("store_id", SEED_STORE_ID)
+      .like("source_key", `${reference!}%`);
+    expect(jobs ?? []).toHaveLength(1);
+    expect((jobs![0] as { job_kind: string }).job_kind).toBe("receipt");
+    expect((jobs![0] as { status: string }).status).toBe("pending");
+    expect((jobs![0] as { source_key: string }).source_key).toBe(`${reference!}:receipt`);
+
+    // client ไม่เคย browser-auto-print (ไม่มีการเรียก /api/print/enqueue)
+    expect(enqueueRequests).toHaveLength(0);
+  });
+
+  test("print: settle สร้างงานพิมพ์เดียว (assert ผ่าน service client) + พิมพ์ซ้ำแบบ explicit ทำงานครั้งเดียว + มี audit", async ({ page }) => {
+    const orderId = await submitQrOrder();
+    await loginOwner(page);
+    await openTableOneBill(page);
+    // partial settle ครั้งเดียว — ยอด 45 (บิลเดียวของโต๊ะ)
+    await settleViaUiOnce(page, { mode: "partial" });
+
+    const billPanel = page.getByRole("tabpanel", { name: "บิล" });
+    const result = billPanel.getByTestId("settle-result");
+    await expect(result).toHaveAttribute("data-replayed", "false");
+    const reference = await result.getAttribute("data-receipt-reference");
+    expect(reference).toBeTruthy();
+    settledReferences.push(reference!);
+    const receiptJobId = await result.getAttribute("data-receipt-job-id");
+    expect(receiptJobId).toBeTruthy();
+
+    // print intent สร้างงานพิมพ์เดียวพอดี (receipt 1 งาน — station tickets ปิดใน fixture)
+    const { data: jobs } = await service
+      .from("print_jobs")
+      .select("id, job_kind, source_key")
+      .eq("store_id", SEED_STORE_ID)
+      .like("source_key", `${reference!}%`);
+    expect(jobs ?? []).toHaveLength(1);
+    expect((jobs![0] as { id: string }).id).toBe(receiptJobId);
+
+    // reprint: กดครั้งเดียว → 1 งานใหม่ + audit 1 แถว
+    await billPanel.getByTestId("reprint-receipt").click();
+    await expect(billPanel.getByTestId("reprint-done")).toBeVisible();
+    const { data: reprints } = await service
+      .from("print_jobs")
+      .select("id, source_key")
+      .eq("store_id", SEED_STORE_ID)
+      .like("source_key", `${reference!}:receipt:reprint:%`);
+    expect(reprints ?? []).toHaveLength(1);
+    expect((reprints![0] as { source_key: string }).source_key).toBe(`${reference!}:receipt:reprint:1`);
+
+    const { data: audits } = await service
+      .from("audit_logs")
+      .select("action, request_id, after")
+      .eq("store_id", SEED_STORE_ID)
+      .eq("action", "unified_pos.reprint_receipt")
+      .like("request_id", `${reference!}:receipt:reprint:%`);
+    expect(audits ?? []).toHaveLength(1);
+    const auditAfter = audits![0] as { after: { reprint_job_id?: string } | null };
+    expect(auditAfter.after?.reprint_job_id ?? "").toBe((reprints![0] as { id: string }).id);
+
+    // หลังชำระทั้งโต๊ะ: บิลหลุดจากมุมมอง (ไม่มีบิลค้าง) — ตรวจผ่าน service client ด้วย
+    const { count: openCount } = await service
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", SEED_STORE_ID)
+      .eq("id", orderId)
+      .eq("status", "open");
+    expect(openCount).toBe(0);
   });
 });

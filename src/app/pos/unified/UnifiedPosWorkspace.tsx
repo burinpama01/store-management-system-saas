@@ -7,8 +7,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import { TablesPanel } from "./TablesPanel";
-import { PlaceholderPanel } from "./PlaceholderPanel";
 import { KitchenQueuePanel } from "./KitchenQueuePanel";
+import { BillsPanel } from "./BillsPanel";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
 
 type TabId = "sell" | "tables" | "kitchen" | "bills";
@@ -172,13 +172,8 @@ export function UnifiedPosWorkspace({ storeId, storeName, tables, sell, kitchenI
         hidden={activeTab !== "bills"}
         className="min-w-0 pt-3"
       >
-        <PlaceholderPanel
-          titleId="unified-placeholder-bills"
-          title="บิลและการพิมพ์"
-          upcomingLabel="เปิดใช้ในรอบถัดไป"
-          description="สรุปบิลต่อโต๊ะ พิมพ์ใบเสร็จ/ตั๋วครัวด้วย job key ที่เล่นซ้ำได้อย่างปลอดภัย — กำลังพัฒนา (ระหว่างนี้ใช้เปิดโต๊ะ/เช็คบิลจากหน้าขายเดิมได้)"
-          affordances={["เปิดบิลโต๊ะ", "พิมพ์ใบเสร็จ", "ประวัติบิล"]}
-        />
+        {/* U11 — แท็บบิลจริง: บิลจาก server + settlement→print intent (replay-safe) */}
+        <BillsPanel selectedTable={selectedTable} />
       </div>
     </section>
   );

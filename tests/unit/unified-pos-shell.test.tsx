@@ -38,6 +38,17 @@ vi.mock("@/server/integrations/supabase/client", () => ({
   },
 }));
 
+// U11 — แท็บบิลเป็น BillsPanel จริง (server actions) — mock actions กัน import โมดูล
+// server (auth/session/supabase service) เข้ามาใน jsdom; พฤติกรรมแท็บบิลทดสอบเต็มใน
+// unified-pos-bill.test.tsx
+vi.mock("@/app/pos/unified/actions", () => ({
+  fetchKitchenQueueAction: vi.fn(),
+  advanceKitchenItemAction: vi.fn(),
+  fetchUnifiedPosTableBillAction: vi.fn().mockResolvedValue({ bill: null, error: null }),
+  settleUnifiedPosBillAction: vi.fn(),
+  reprintUnifiedPosReceiptAction: vi.fn(),
+}));
+
 function makeTable(overrides: Partial<Table> = {}): Table {
   return {
     id: "eeeeeeee-0000-0000-0000-000000000001",
@@ -132,7 +143,7 @@ describe("UnifiedPosWorkspace (flag true surface)", () => {
     expect(screen.getByTestId("legacy-sell-surface")).toBeVisible();
   });
 
-  it("แท็บครัวเป็นคิวครัวจริง (U10) — หัวข้อ + สถานะการเชื่อมต่อ และคิวว่างมี empty state / แท็บบิลยังเป็น placeholder", () => {
+  it("แท็บครัวเป็นคิวครัวจริง (U10) — หัวข้อ + สถานะการเชื่อมต่อ และคิวว่างมี empty state / แท็บบิลเป็นบิลจริง (U11 — ยังไม่เลือกโต๊ะ)", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
     activateTab("ครัว");
     expect(screen.getByRole("heading", { name: "คิวครัว" })).toBeVisible();
@@ -141,9 +152,8 @@ describe("UnifiedPosWorkspace (flag true surface)", () => {
 
     activateTab("บิล");
     expect(screen.getByRole("heading", { name: "บิลและการพิมพ์" })).toBeVisible();
-    const printButton = screen.getByRole("button", { name: "พิมพ์ใบเสร็จ" });
-    expect(printButton).toBeDisabled();
-    expect(printButton).toHaveAttribute("title", "ยังไม่เปิดใช้งาน — จะเปิดในเวอร์ชันถัดไป");
+    // U11 — empty state เมื่อยังไม่เลือกโต๊ะ (บิลแสดงจาก server เมื่อเลือกโต๊ะแล้ว)
+    expect(screen.getByText(/เลือกโต๊ะจากแท็บโต๊ะเพื่อดูบิล/)).toBeVisible();
   });
 
   it("สลับแท็บแล้วโฟกัสกลับที่ tab trigger (ArrowRight/Home/End) และ panel แสดงตามแท็บ", () => {

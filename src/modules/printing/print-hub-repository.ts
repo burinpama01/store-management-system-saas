@@ -25,7 +25,16 @@ export interface HubStatus {
 
 type Result<T> = Promise<{ data: T | null; error: AppError | null }>;
 
-/** Adds a print job to the queue for the store's Print Hub to claim. */
+/** U11 — ชนิดงานของ print intent (ใบเสร็จ / ตั๋วครัว); job แบบ legacy ไม่ระบุ */
+export type PrintJobKind = "receipt" | "station_ticket";
+
+/**
+ * Adds a print job to the queue for the store's Print Hub to claim.
+ * U11 — เมื่อระบุ sourceKey (คีย์กำกับต้นทางของ intent เช่น
+ * "unified_pos_settlement:<operation_key>:receipt") การ enqueue เป็น idempotent:
+ * ถ้ามี job ของคีย์นี้อยู่แล้ว (replay ของ operation เดิม) จะคืน id เดิมโดยไม่สร้างแถวใหม่
+ * (dedupe ระดับ schema ด้วย unique index print_jobs_source_key_uq)
+ */
 export async function enqueuePrintJob(input: {
   organizationId: string;
   storeId: string;
@@ -36,8 +45,17 @@ export async function enqueuePrintJob(input: {
   port?: number;
   device?: string | null;
   payloadB64: string;
-}): Result<{ id: string }> {
+  /** U11 — unique source key (replay ของ intent เดิมคืน job id เดิม) */
+  sourceKey?: string | null;
+  /** U11 — ชนิดงาน (receipt / station_ticket) */
+  jobKind?: PrintJobKind | null;
+}): Result<{ id: string; deduped?: boolean }> {
   const supabase = await createSupabaseServiceClient();
+  if (input.sourceKey) {
+    // replay path: คีย์เดิม → คืน job เดิม (ไม่ duplicate ใบเสร็จ/ตั๋ว)
+    const existing = await findPrintJobIdBySourceKey(input.storeId, input.sourceKey);
+    if (existing) return { data: { id: existing, deduped: true }, error: null };
+  }
   const { data, error } = await supabase
     .from("print_jobs")
     .insert({
@@ -50,11 +68,46 @@ export async function enqueuePrintJob(input: {
       target_device: input.device ?? null,
       payload_b64: input.payloadB64,
       status: "pending",
+      source_key: input.sourceKey ?? null,
+      job_kind: input.jobKind ?? null,
     })
     .select("id")
     .single();
-  if (error) return { data: null, error: mapError(error) };
+  if (error) {
+    // race กับ enqueue คีย์เดิมพร้อมกัน → unique violation → อ่าน id ของผู้ชนะ
+    if (input.sourceKey && (error as { code?: string }).code === "23505") {
+      const existing = await findPrintJobIdBySourceKey(input.storeId, input.sourceKey);
+      if (existing) return { data: { id: existing, deduped: true }, error: null };
+    }
+    return { data: null, error: mapError(error) };
+  }
   return { data: { id: data.id }, error: null };
+}
+
+/** U11 — หา id ของ job ที่มี source key นี้ในร้าน (null ถ้าไม่มี) */
+export async function findPrintJobIdBySourceKey(storeId: string, sourceKey: string): Promise<string | null> {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("print_jobs")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("source_key", sourceKey)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+/** U11 — นับจำนวน reprint job ที่มีอยู่ของ receipt job (source_key ขึ้นต้นด้วย prefix)
+ * ใช้ range (gte/lt) แทน LIKE — คีย์จาก client อาจมี % หรือ _ จึงไม่ตีความเป็น wildcard */
+export async function countPrintJobsBySourceKeyPrefix(storeId: string, sourceKeyPrefix: string): Promise<number> {
+  const supabase = await createSupabaseServiceClient();
+  // ขอบบน: ต่อท้ายด้วย U+FFFF (สูงกว่าอักขระ BMP ทั้งหมด) → ครอบทุกคีย์ที่ขึ้นต้นด้วย prefix
+  const { count } = await supabase
+    .from("print_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .gte("source_key", sourceKeyPrefix)
+    .lt("source_key", `${sourceKeyPrefix}\uffff`);
+  return count ?? 0;
 }
 
 /** Returns the store's organization + hashed Hub token for auth checks. */
