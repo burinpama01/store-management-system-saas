@@ -19,12 +19,15 @@ import {
   type QrOrderItem,
 } from "./actions";
 import {
-  PREP_STATUS_LABEL,
   SERVICE_BUTTON_EMOJI,
-  type QrOrderView,
   type ServiceButtonConfig,
   type ServiceRequestType,
 } from "@/modules/qr-ordering/types";
+import {
+  CUSTOMER_STAGE_LABEL,
+  type CustomerOrderView,
+  type CustomerStage,
+} from "@/modules/qr-ordering/timeline";
 import type { QrMusicEligibility } from "@/modules/music-requests/gates";
 import { MusicTab } from "./MusicTab";
 import { Button, useConfirm } from "@/shared/components/ui";
@@ -496,12 +499,13 @@ function SuccessScreen({
   );
 }
 
-const PREP_BADGE_STYLE: Record<string, string> = {
-  new: "bg-orange-100 text-orange-700",
+// U12: สี badge ตาม stage ที่ลูกค้าเห็น (ค่าสีเดิมคงเดิม — เปลี่ยน key ให้ตรง timeline)
+const STAGE_BADGE_STYLE: Record<CustomerStage, string> = {
+  received: "bg-orange-100 text-orange-700",
   preparing: "bg-blue-100 text-blue-700",
   ready: "bg-emerald-100 text-emerald-700",
   served: "bg-green-100 text-green-700",
-  done: "bg-gray-100 text-gray-500",
+  closed: "bg-gray-100 text-gray-500",
 };
 
 function TrackView({
@@ -516,7 +520,7 @@ function TrackView({
   servicePending,
   serviceButtons,
 }: {
-  orders: QrOrderView[];
+  orders: readonly CustomerOrderView[];
   currency: string;
   loading: boolean;
   onRefresh: () => void;
@@ -557,14 +561,16 @@ function TrackView({
           </p>
         ) : (
           orders.map((order) => (
-            <div key={order.id} className="rounded-xl border border-gray-100 bg-white p-3">
+            // U12: data-qr-order-card ให้ E2E อ้างการ์ดของออเดอร์นั้น ๆ ได้ตรงไปตรงมา
+            <div key={order.id} data-qr-order-card={order.id} className="rounded-xl border border-gray-100 bg-white p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-bold text-gray-900">#{order.orderNumber}</p>
                 {order.status === "paid" ? (
                   <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-green-100 text-green-700">ชำระแล้ว</span>
                 ) : (
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${PREP_BADGE_STYLE[order.prepStatus] ?? "bg-gray-100 text-gray-600"}`}>
-                    {PREP_STATUS_LABEL[order.prepStatus]}
+                  // U12: badge จาก stage ที่ derive ฝั่ง server (timeline) — ไม่เห็น version/key/actor
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STAGE_BADGE_STYLE[order.stage]}`}>
+                    {CUSTOMER_STAGE_LABEL[order.stage]}
                   </span>
                 )}
               </div>
@@ -586,11 +592,9 @@ function TrackView({
                 <span>รวม</span>
                 <span>{formatPrice(order.total, currency)}</span>
               </div>
-              {order.prepStatus === "new" &&
-                order.status !== "paid" &&
-                order.status !== "cancelled" &&
-                order.status !== "voided" && (
-                  <button
+              {/* U12: ปุ่มยกเลิก server ตัดสินให้แล้ว (canCancel = ก่อนครัวรับ ทั้งรูปแบบเก่า/ใหม่) */}
+              {order.canCancel && (
+                <button
                     onClick={async () => {
                       const ok = await confirm({
                         title: "ยกเลิกออเดอร์",
@@ -694,7 +698,7 @@ export default function QrOrderingApp({
   // --- Order tracking + service requests ---
   const storageKey = `qr-orders:${store.id}:${table.id}`;
   const [myOrderIds, setMyOrderIds] = useState<string[]>([]);
-  const [trackedOrders, setTrackedOrders] = useState<QrOrderView[]>([]);
+  const [trackedOrders, setTrackedOrders] = useState<CustomerOrderView[]>([]);
   const [trackLoading, setTrackLoading] = useState(false);
   const [serviceMsg, setServiceMsg] = useState<string | null>(null);
   const [servicePending, startServiceTransition] = useTransition();
@@ -757,8 +761,15 @@ export default function QrOrderingApp({
     setServiceMsg(null);
     startServiceTransition(async () => {
       const res = await cancelQrOrderAction(store.id, table.id, orderId);
+      // U12: cancel แพ้ race → server คืนสถานะปัจจุบันมาด้วย ให้ merge ทันที
+      // เพื่อให้การ์ดออเดอร์สะท้อนความจริงล่าสุด (ไม่รอ refresh รอบหน้า)
+      const current = res.currentOrder;
+      if (current) {
+        setTrackedOrders((prev) => prev.map((o) => (o.id === current.id ? current : o)));
+      }
       if (res.error) {
         setServiceMsg(res.error);
+        refreshTracked(myOrderIds);
         return;
       }
       setServiceMsg("ยกเลิกออเดอร์แล้ว");

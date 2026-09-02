@@ -10,6 +10,15 @@ import {
   planOrderPrepAdvance,
   type PrepAdvanceItemInput,
 } from "@/modules/unified-pos/prep-advance";
+import {
+  composeStaleCancelMessage,
+  CUSTOMER_STAGES,
+  CUSTOMER_STAGE_LABEL,
+  isCancelRejectionMessage,
+  mapOrderToCustomerTimeline,
+  type CustomerTimelineItemInput,
+  type CustomerTimelineOrderInput,
+} from "@/modules/qr-ordering/timeline";
 
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -209,5 +218,204 @@ describe("U5 governed fulfillment backend wiring", () => {
 
     const board = read("src/app/(dashboard)/qr-orders/QrOrdersBoard.tsx");
     expect(board).toContain('ready:');
+  });
+});
+
+// ============================================================
+// U12 (v0.37.3) — Customer QR fulfillment timeline mapping
+// (Task U12 จาก Plan v2: timeline maps received/preparing/ready/served/voided
+//  + legacy rows map ปลอดภัย + cancel เฉพาะก่อนครัวรับ)
+// ============================================================
+
+describe("U12 customer timeline mapping (mapOrderToCustomerTimeline)", () => {
+  const item = (
+    overrides: Partial<CustomerTimelineItemInput> & { voided?: boolean } = {},
+  ): CustomerTimelineItemInput => ({
+    voided: false,
+    ...overrides,
+  });
+
+  /** ค่าเริ่มต้น: ออเดอร์ open ยังไม่จ่าย prep 'new' รายการ new 1 ชิ้น (รูปแบบใหม่) */
+  const order = (
+    overrides: Partial<CustomerTimelineOrderInput> = {},
+  ): CustomerTimelineOrderInput => ({
+    status: "open",
+    paidAt: null,
+    prepStatus: "new",
+    items: [item({ fulfillmentStatus: "new" })],
+    ...overrides,
+  });
+
+  it("รูปแบบใหม่: item fulfillment ล้วนสถานะเดียว → stage ตรงตาม mapping received/preparing/ready/served", () => {
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "new" })] })).stage).toBe("received");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "preparing" })] })).stage).toBe("preparing");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "ready" })] })).stage).toBe("ready");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "served" })] })).stage).toBe("served");
+  });
+
+  it("รูปแบบใหม่: item stage เรียงตาม index (รับ/เตรียม/พร้อม/เสิร์ฟ) และ voided มีเหตุผล", () => {
+    const t = mapOrderToCustomerTimeline(
+      order({
+        items: [
+          item({ fulfillmentStatus: "preparing" }),
+          item({ voided: true, voidedReason: "ของหมด" }),
+          item({ fulfillmentStatus: "ready" }),
+        ],
+      }),
+    );
+    // stage ระดับ order: ผสม preparing+ready (มี preparing) → preparing (mirror derive)
+    expect(t.stage).toBe("preparing");
+    expect(t.items).toEqual([
+      { voided: false, stage: "preparing" },
+      { voided: true, reason: "ของหมด" },
+      { voided: false, stage: "ready" },
+    ]);
+  });
+
+  it("รูปแบบใหม่: ผสมหลายสถานะ mirror deriveOrderPrepStatus (new+preparing→preparing, ready+served→ready, served ล้วน→served)", () => {
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "new" }), item({ fulfillmentStatus: "preparing" })] })).stage).toBe("preparing");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "ready" }), item({ fulfillmentStatus: "served" })] })).stage).toBe("ready");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "served" }), item({ fulfillmentStatus: "served" })] })).stage).toBe("served");
+  });
+
+  it("รูปแบบเดิม (legacy): items ไม่มี fulfillment_status → stage ตาม orders.prep_status รูปแบบเก่า", () => {
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: undefined })], prepStatus: "new" })).stage).toBe("received");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: null })], prepStatus: "preparing" })).stage).toBe("preparing");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: undefined })], prepStatus: "served" })).stage).toBe("served");
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: undefined })], prepStatus: "done" })).stage).toBe("closed");
+  });
+
+  it("รูปแบบเดิม: item ที่ไม่รู้สถานะแสดง stage เท่ากับระดับ order (fallback)", () => {
+    const t = mapOrderToCustomerTimeline(
+      order({ items: [item({ fulfillmentStatus: undefined })], prepStatus: "preparing" }),
+    );
+    expect(t.items).toEqual([{ voided: false, stage: "preparing" }]);
+  });
+
+  it("ช่วงผสม (migration): items นิ่งที่ default 'new' แต่ prep_status เดินหน้าแล้ว → ใช้สถานะที่ก้าวหน้าที่สุด", () => {
+    // ครัว legacy เดินหน้า orders.prep_status โดย item ยังเป็นค่า default → ต้องเห็น preparing
+    const legacyAdvanced = mapOrderToCustomerTimeline(
+      order({ items: [item({ fulfillmentStatus: "new" })], prepStatus: "preparing" }),
+    );
+    expect(legacyAdvanced.stage).toBe("preparing");
+    // กลับกัน: item เดินหน้าผ่าน governed RPC แต่ prep_status ยังใหม่ (trigger ยังไม่ทัน/ปิด flag)
+    const itemAdvanced = mapOrderToCustomerTimeline(
+      order({ items: [item({ fulfillmentStatus: "preparing" })], prepStatus: "new" }),
+    );
+    expect(itemAdvanced.stage).toBe("preparing");
+  });
+
+  it("order ปิด (paid/cancelled/paidAt/refunded/voided) → closed + cannot cancel", () => {
+    for (const status of ["paid", "refunded", "voided", "cancelled"] as const) {
+      const t = mapOrderToCustomerTimeline(order({ status }));
+      expect(t.stage).toBe("closed");
+      expect(t.canCancel).toBe(false);
+    }
+    const byPaidAt = mapOrderToCustomerTimeline(order({ status: "open", paidAt: new Date().toISOString() }));
+    expect(byPaidAt.stage).toBe("closed");
+    expect(byPaidAt.canCancel).toBe(false);
+  });
+
+  it("voided item: แสดงด้วยเหตุผลที่ให้ไว้ (และไม่มีเหตุผล → undefined) และไม่กระทบ stage ของออเดอร์", () => {
+    const withReason = mapOrderToCustomerTimeline(
+      order({ items: [item({ voided: true, voidedReason: "ลูกค้ายกเลิกเอง" })] }),
+    );
+    expect(withReason.items).toEqual([{ voided: true, reason: "ลูกค้ายกเลิกเอง" }]);
+
+    const noReason = mapOrderToCustomerTimeline(
+      order({ items: [item({ voided: true, voidedReason: null })] }),
+    );
+    expect(noReason.items).toEqual([{ voided: true, reason: undefined }]);
+
+    // active 1 ชิ้น new + voided 1 ชิ้น → order ยัง received (voided ไม่นับเป็นสถานะเดินหน้า)
+    const mixed = mapOrderToCustomerTimeline(
+      order({
+        items: [
+          item({ fulfillmentStatus: "new" }),
+          item({ voided: true, voidedReason: "ของหมด" }),
+        ],
+      }),
+    );
+    expect(mixed.stage).toBe("received");
+  });
+
+  it("canCancel gating: อนุญาตเฉพาะ open + ยังไม่จ่าย + active ล้วน new + prep ยังไม่เดินหน้า (ก่อนครัวรับ)", () => {
+    // ผ่านครบเงื่อนไข
+    expect(mapOrderToCustomerTimeline(order()).canCancel).toBe(true);
+    // สถานะไม่ใช่ open
+    expect(mapOrderToCustomerTimeline(order({ status: "pending_payment" })).canCancel).toBe(false);
+    // จ่ายแล้ว
+    expect(mapOrderToCustomerTimeline(order({ paidAt: new Date().toISOString() })).canCancel).toBe(false);
+    // ไม่มี active item
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ voided: true, voidedReason: "ของหมด" })] })).canCancel).toBe(false);
+    // รูปแบบใหม่: มี item ที่ครัวรับแล้ว
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "preparing" })] })).canCancel).toBe(false);
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "ready" }), item({ fulfillmentStatus: "new" })] })).canCancel).toBe(false);
+    // รูปแบบเดิม: items ล้วน default แต่ prep_status เดินหน้า → ยกเลิกไม่ได้ (ตรง legacy RPC)
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: "new" })], prepStatus: "preparing" })).canCancel).toBe(false);
+    // รูปแบบเดิม: prep ยัง new → ยกเลิกได้
+    expect(mapOrderToCustomerTimeline(order({ items: [item({ fulfillmentStatus: undefined })], prepStatus: "new" })).canCancel).toBe(true);
+  });
+
+  it("ค่าที่ไม่รู้จัก (defensive): prep_status/fulfillment_status นอก enum ไม่พัง — fallback ปลอดภัย", () => {
+    // open + ค่าทุกแหล่งไม่รู้จัก → received (การอ้างขั้นต่ำสุดที่ปลอดภัย)
+    const unknown = mapOrderToCustomerTimeline(
+      order({ items: [item({ fulfillmentStatus: "mystery" })], prepStatus: "mystery" }),
+    );
+    expect(unknown.stage).toBe("received");
+    expect(unknown.items).toEqual([{ voided: false, stage: "received" }]);
+    expect(unknown.canCancel).toBe(true);
+  });
+
+  it("ผลลัพธ์ leak-proof: timeline มีเฉพาะ stage/canCancel/items — ไม่มี version/operation key/actor id", () => {
+    const t = mapOrderToCustomerTimeline(
+      order({
+        items: [
+          item({ fulfillmentStatus: "preparing" }),
+          item({ voided: true, voidedReason: "ของหมด" }),
+        ],
+      }),
+    );
+    const json = JSON.stringify(t);
+    expect(json).not.toMatch(/fulfillment_version|operation|actor/i);
+    expect(Object.keys(t).sort()).toEqual(["canCancel", "items", "stage"]);
+    // type ของ stage items ไม่มี key ภายในหลุดออกมา
+    for (const it of t.items) {
+      if (it.voided) {
+        expect(Object.keys(it).sort()).toEqual(["reason", "voided"]);
+      } else {
+        expect(Object.keys(it).sort()).toEqual(["stage", "voided"]);
+      }
+    }
+  });
+
+  it("stage label ภาษาไทยครบทุก stage ที่กำหนด (received→preparing→ready→served+closed)", () => {
+    expect(CUSTOMER_STAGES).toEqual(["received", "preparing", "ready", "served", "closed"]);
+    expect(CUSTOMER_STAGE_LABEL).toMatchObject({
+      received: "ได้รับออเดอร์แล้ว",
+      preparing: "กำลังเตรียม",
+      ready: "พร้อมเสิร์ฟ",
+      served: "เสิร์ฟแล้ว",
+      closed: "เสร็จสิ้น",
+    });
+  });
+});
+
+describe("U12 stale-cancel messaging helpers", () => {
+  it("isCancelRejectionMessage จำแนนเฉพาะข้อความปฏิเสธของ legacy cancel RPC", () => {
+    expect(isCancelRejectionMessage("ครัวรับออเดอร์แล้ว ยกเลิกไม่ได้")).toBe(true);
+    expect(isCancelRejectionMessage("ออเดอร์นี้ยกเลิกไม่ได้")).toBe(true);
+    expect(isCancelRejectionMessage("ออเดอร์ชำระเงินแล้ว ยกเลิกไม่ได้")).toBe(true);
+    // ข้อความอื่น (ไม่พบออเดอร์/ไม่ใช่ QR/network) ต้องไม่เข้าเงื่อนไข
+    expect(isCancelRejectionMessage("ไม่พบออเดอร์")).toBe(false);
+    expect(isCancelRejectionMessage("ยกเลิกได้เฉพาะออเดอร์ที่สั่งผ่าน QR")).toBe(false);
+    expect(isCancelRejectionMessage("network error")).toBe(false);
+    expect(isCancelRejectionMessage("")).toBe(false);
+  });
+
+  it("composeStaleCancelMessage ระบุสถานะปัจจุบันในข้อความไทย", () => {
+    expect(composeStaleCancelMessage("ครัวรับออเดอร์แล้ว ยกเลิกไม่ได้", CUSTOMER_STAGE_LABEL.preparing)).toBe(
+      "ครัวรับออเดอร์แล้ว ยกเลิกไม่ได้ (สถานะปัจจุบัน: กำลังเตรียม)",
+    );
   });
 });

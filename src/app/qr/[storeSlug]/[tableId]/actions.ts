@@ -22,9 +22,18 @@ import type { SelectedModifier } from "@/modules/pos/types";
 import {
   SERVICE_REQUEST_LABEL,
   SERVICE_REQUEST_TYPES,
+  type QrOrderLine,
   type QrOrderView,
   type ServiceRequestType,
 } from "@/modules/qr-ordering/types";
+import { UNIFIED_POS_ERROR_CODES } from "@/modules/unified-pos/contracts";
+import {
+  composeStaleCancelMessage,
+  CUSTOMER_STAGE_LABEL,
+  isCancelRejectionMessage,
+  mapOrderToCustomerTimeline,
+  type CustomerOrderView,
+} from "@/modules/qr-ordering/timeline";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUUID(s: string): boolean {
@@ -541,6 +550,132 @@ async function submitTableOrder(
 
 // --- Customer order tracking + service requests ---
 
+const ORDER_SELECT =
+  "id, order_number, status, prep_status, table_id, table_number, total, note, created_at, paid_at";
+/** U12: เพิ่ม fulfillment_status (รูปแบบใหม่) — แถวก่อน migration จะได้ default 'new' */
+const ITEM_SELECT =
+  "id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note, voided, voided_reason, fulfillment_status";
+
+/** แถว orders ที่ action อ่าน (โครงตรงกับ ORDER_SELECT) */
+interface QrOrderRow {
+  id: string;
+  order_number: string;
+  status: QrOrderView["status"];
+  prep_status: string | null;
+  table_id: string | null;
+  table_number: string | null;
+  total: number;
+  note: string | null;
+  created_at: string;
+  paid_at: string | null;
+}
+
+/** แถว order_items ที่ action อ่าน (โครงตรงกับ ITEM_SELECT) */
+interface QrOrderItemRow {
+  id: string;
+  order_id: string;
+  product_name: string;
+  variant_name: string | null;
+  kitchen_station_id: string | null;
+  kitchen_station_name: string | null;
+  modifiers: unknown;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  note: string | null;
+  voided: boolean;
+  voided_reason: string | null;
+  fulfillment_status: string | null;
+}
+
+function toLine(it: QrOrderItemRow): QrOrderLine {
+  return {
+    id: it.id,
+    productName: it.product_name,
+    variantName: it.variant_name ?? undefined,
+    kitchenStationId: it.kitchen_station_id ?? undefined,
+    kitchenStationName: it.kitchen_station_name ?? undefined,
+    modifiers: (it.modifiers as unknown as SelectedModifier[]) ?? [],
+    quantity: it.quantity,
+    unitPrice: it.unit_price,
+    totalPrice: it.total_price,
+    note: it.note ?? undefined,
+    voided: it.voided,
+    voidedReason: it.voided_reason ?? undefined,
+  };
+}
+
+/**
+ * U12: ออเดอร์ 1 แถว → มุมมองลูกค้า (timeline) — stage/canCancel มาจาก
+ * mapOrderToCustomerTimeline (mapping ตัวเดียวของระบบ) ไม่มี version/key/actor หลุดออกไป
+ * (items ส่งเข้า mapping และ lines เรนเดอร์ ใช้อาร์เรย์เดียวกันตามลำดับ index)
+ */
+function buildCustomerOrderView(row: QrOrderRow, itemRows: QrOrderItemRow[]): CustomerOrderView {
+  const timeline = mapOrderToCustomerTimeline({
+    status: row.status,
+    paidAt: row.paid_at,
+    prepStatus: row.prep_status,
+    items: itemRows.map((it) => ({
+      voided: it.voided,
+      voidedReason: it.voided_reason,
+      fulfillmentStatus: it.fulfillment_status,
+    })),
+  });
+  const items = itemRows.map((it, index) => {
+    const line = toLine(it);
+    const stageItem = timeline.items[index];
+    return stageItem && !stageItem.voided && !line.voided ? { ...line, stage: stageItem.stage } : line;
+  });
+  return {
+    id: row.id,
+    orderNumber: row.order_number,
+    status: row.status,
+    prepStatus: row.prep_status as QrOrderView["prepStatus"],
+    tableId: row.table_id ?? undefined,
+    tableNumber: row.table_number ?? undefined,
+    total: row.total,
+    note: row.note ?? undefined,
+    createdAt: row.created_at,
+    paidAt: row.paid_at ?? undefined,
+    stage: timeline.stage,
+    canCancel: timeline.canCancel,
+    items,
+  };
+}
+
+function groupItemsByOrder(itemRows: QrOrderItemRow[]): Map<string, QrOrderItemRow[]> {
+  const byOrder = new Map<string, QrOrderItemRow[]>();
+  for (const it of itemRows) {
+    const next = byOrder.get(it.order_id) ?? [];
+    next.push(it);
+    byOrder.set(it.order_id, next);
+  }
+  return byOrder;
+}
+
+/**
+ * U12: อ่านออเดอร์ล่าสุดของลูกค้า 1 ออเดอร์ (ใช้ตอน cancel แพ้ race — คืนสถานะ
+ * ปัจจุบันให้ UI converge แทน error ทั่วไป)
+ */
+async function fetchCurrentCustomerOrder(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  storeId: string,
+  orderId: string,
+): Promise<CustomerOrderView | null> {
+  const { data: row } = await supabase
+    .from("orders")
+    .select(ORDER_SELECT)
+    .eq("store_id", storeId)
+    .eq("id", orderId)
+    .maybeSingle();
+  if (!row) return null;
+  const { data: itemRows } = await supabase
+    .from("order_items")
+    .select(ITEM_SELECT)
+    .eq("order_id", row.id);
+  return buildCustomerOrderView(row as QrOrderRow, (itemRows ?? []) as QrOrderItemRow[]);
+}
+
 /**
  * ออร์เดอร์ของโต๊ะสำหรับหน้าลูกค้า: ทุกออเดอร์ที่ยังเปิดอยู่ของโต๊ะ (รวมที่พนักงาน
  * เพิ่มจาก POS — ลูกค้าต้องเห็นบิลรวมของโต๊ะ) + ออเดอร์ที่เครื่องนี้เคยสั่งตาม id
@@ -548,12 +683,15 @@ async function submitTableOrder(
  *
  * ทุกอย่างถูกจำกัดอยู่ใน "รอบเปิดโต๊ะปัจจุบัน" (created_at >= session_started_at):
  * เปิดโต๊ะรอบใหม่แล้ว ลูกค้าต้องไม่เห็นรายการรอบก่อนที่ชำระ/ค้างไว้
+ *
+ * U12: คืน CustomerOrderView — stage/canCancel derive ฝั่ง server แล้ว
+ * (ลูกค้าไม่เห็น version/operation key/actor id ตาม contract ของ timeline)
  */
 export async function getTableOrdersAction(
   storeId: string,
   tableId: string,
   orderIds: string[],
-): Promise<{ orders: QrOrderView[]; error: string | null }> {
+): Promise<{ orders: CustomerOrderView[]; error: string | null }> {
   if (!isUUID(storeId) || !isUUID(tableId)) return { orders: [], error: "Invalid request" };
   const ids = [...new Set(orderIds)].filter(isUUID).slice(0, 50);
 
@@ -569,8 +707,6 @@ export async function getTableOrdersAction(
     .maybeSingle();
   const sessionStartedAt = tableRow?.session_started_at ?? null;
 
-  const ORDER_SELECT =
-    "id, order_number, status, prep_status, table_id, table_number, total, note, created_at, paid_at";
   const buildMineQuery = () => {
     let q = supabase
       .from("orders")
@@ -599,49 +735,20 @@ export async function getTableOrdersAction(
   ]);
 
   if (openRes.error && mineRes.error) return { orders: [], error: "ไม่สามารถโหลดออร์เดอร์ได้" };
-  const byId = new Map<string, NonNullable<typeof openRes.data>[number]>();
-  for (const row of [...(openRes.data ?? []), ...(mineRes.data ?? [])]) byId.set(row.id, row);
+  const byId = new Map<string, QrOrderRow>();
+  for (const row of [...(openRes.data ?? []), ...(mineRes.data ?? [])]) {
+    byId.set(row.id, row as QrOrderRow);
+  }
   const rows = [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
   if (rows.length === 0) return { orders: [], error: null };
 
   const { data: itemRows } = await supabase
     .from("order_items")
-    .select("id, order_id, product_name, variant_name, kitchen_station_id, kitchen_station_name, modifiers, quantity, unit_price, total_price, note, voided, voided_reason")
+    .select(ITEM_SELECT)
     .in("order_id", rows.map((r) => r.id));
 
-  const itemsByOrder = new Map<string, QrOrderView["items"]>();
-  for (const it of itemRows ?? []) {
-    const next = itemsByOrder.get(it.order_id) ?? [];
-    next.push({
-      id: it.id,
-      productName: it.product_name,
-      variantName: it.variant_name ?? undefined,
-      kitchenStationId: it.kitchen_station_id ?? undefined,
-      kitchenStationName: it.kitchen_station_name ?? undefined,
-      modifiers: (it.modifiers as unknown as SelectedModifier[]) ?? [],
-      quantity: it.quantity,
-      unitPrice: it.unit_price,
-      totalPrice: it.total_price,
-      note: it.note ?? undefined,
-      voided: it.voided,
-      voidedReason: it.voided_reason ?? undefined,
-    });
-    itemsByOrder.set(it.order_id, next);
-  }
-
-  const orders: QrOrderView[] = rows.map((row) => ({
-    id: row.id,
-    orderNumber: row.order_number,
-    status: row.status,
-    prepStatus: row.prep_status,
-    tableId: row.table_id ?? undefined,
-    tableNumber: row.table_number ?? undefined,
-    total: row.total,
-    note: row.note ?? undefined,
-    createdAt: row.created_at,
-    paidAt: row.paid_at ?? undefined,
-    items: itemsByOrder.get(row.id) ?? [],
-  }));
+  const itemsByOrder = groupItemsByOrder((itemRows ?? []) as QrOrderItemRow[]);
+  const orders = rows.map((row) => buildCustomerOrderView(row, itemsByOrder.get(row.id) ?? []));
 
   return { orders, error: null };
 }
@@ -719,12 +826,36 @@ export async function requestServiceAction(
  *
  * U5: ร้านที่เปิด flag unified_pos_enabled → governed RPC unified_pos_cancel_table_order
  * (receipt idempotency + audit + prep derive → 'done'); ร้านปิด flag → legacy RPC เดิม
+ *
+ * U12: cancel ที่แพ้ race (ครัวรับ/ปิดออเดอร์ก่อนหน้า — snapshot ของลูกค้า stale)
+ * ต้องไม่ตอบ error ทั่วไป: คืนสถานะปัจจุบันล่าสุดของออเดอร์ (currentOrder) พร้อม
+ * ข้อความไทยที่ระบุสถานะที่ลูกค้าเห็น เพื่อให้หน้าติดตาม converge กับ server ทันที
  */
+export interface CancelQrOrderResult {
+  ok: boolean;
+  error: string | null;
+  /** U12: คืนคู่กับ error เมื่อ cancel ถูกปฏิเสธตามกฎ — สถานะล่าสุดของออเดอร์จาก server */
+  currentOrder?: CustomerOrderView;
+}
+
+/** ประกอบผลลัพธ์ stale cancel — ถ้าอ่านสถานะปัจจุบันไม่ได้ ยังคงตอบข้อความจาก server */
+function staleCancelResult(
+  rpcMessage: string,
+  currentOrder: CustomerOrderView | null,
+): CancelQrOrderResult {
+  if (!currentOrder) return { ok: false, error: rpcMessage };
+  return {
+    ok: false,
+    error: composeStaleCancelMessage(rpcMessage, CUSTOMER_STAGE_LABEL[currentOrder.stage]),
+    currentOrder,
+  };
+}
+
 export async function cancelQrOrderAction(
   storeId: string,
   tableId: string,
   orderId: string,
-): Promise<{ ok: boolean; error: string | null }> {
+): Promise<CancelQrOrderResult> {
   if (!isUUID(storeId) || !isUUID(tableId) || !isUUID(orderId)) {
     return { ok: false, error: "คำขอไม่ถูกต้อง" };
   }
@@ -754,7 +885,16 @@ export async function cancelQrOrderAction(
     if (rpcErr) return { ok: false, error: rpcErr.message };
     const parsed = outcome as UnifiedPosCancelOrderOutcome | null;
     if (!parsed) return { ok: false, error: "ยกเลิกออเดอร์ไม่สำเร็จ กรุณาลองใหม่" };
-    if (parsed.status === "error") return { ok: false, error: parsed.message };
+    if (parsed.status === "error") {
+      // U12: แพ้ race / ถูกปฏิเสธตามกฎ → คืนสถานะปัจจุบัน + ข้อความที่ระบุสถานะชัดเจน
+      if (parsed.code === UNIFIED_POS_ERROR_CODES.cancel_not_allowed) {
+        return staleCancelResult(
+          parsed.message,
+          await fetchCurrentCustomerOrder(supabase, storeId, orderId),
+        );
+      }
+      return { ok: false, error: parsed.message };
+    }
     if (parsed.status === "hash_conflict") {
       return { ok: false, error: "คำขอยกเลิกนี้ไม่ตรงกับที่ส่งไปก่อนหน้า กรุณาลองใหม่" };
     }
@@ -770,6 +910,16 @@ export async function cancelQrOrderAction(
     p_table_id: tableId,
     p_order_id: orderId,
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // U12: legacy RPC ปฏิเสธตามกฎ (ครัวรับแล้ว/ออเดอร์ปิดแล้ว) → เหมือน governed:
+    // คืนสถานะปัจจุบัน + ข้อความที่ระบุสถานะ ไม่ใช่ error ทั่วไป
+    if (isCancelRejectionMessage(error.message)) {
+      return staleCancelResult(
+        error.message,
+        await fetchCurrentCustomerOrder(supabase, storeId, orderId),
+      );
+    }
+    return { ok: false, error: error.message };
+  }
   return { ok: true, error: null };
 }

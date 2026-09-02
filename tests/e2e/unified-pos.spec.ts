@@ -864,3 +864,468 @@ test.describe("บิลและการพิมพ์ U11 (bill + payment re
     expect(openCount).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U12 — ลูกค้า QR: fulfillment timeline + cancel (v0.37.3)
+//
+// ชุด "customer QR" (flag on): seed ออเดอร์ผ่าน RPC v2 (fixture เดียวกับคิวครัว U10)
+// แล้วเปิดหน้าลูกค้า /qr/{slug}/{tableId} ตรวจ timeline + ยกเลิก
+//   - ยกเลิกก่อนครัวรับ → สำเร็จ (governed unified_pos_cancel_table_order)
+//   - stale cancel (ครัวรับก่อนผ่าน service client แล้ว UI ยังแสดงปุ่ม) → ปฏิเสธ
+//     และ UI ต้องแสดงสถานะปัจจุบัน (ข้อความ + การ์ด converge ทันที)
+// ชุด "legacy order" (flag off): seed ผ่าน RPC v1 + ขยับ orders.prep_status ตรง
+// (พฤติกรรมครัว legacy — items คง default 'new') → timeline ต้อง fallback ตาม
+// prep_status และยกเลิกก่อนครัวรับผ่าน legacy RPC ได้
+//
+// หมายเหตุ: แถว legacy "แท้" (ไม่มีคอลัมน์ fulfillment_status) แทรกผ่าน schema
+// ปัจจุบันไม่ได้ เพราะ U2 เพิ่มคอลัมน์แบบ NOT NULL DEFAULT 'new' — รูปแบบเดิมจึง
+// จำลองด้วยค่า default + prep_status เดินหน้า (ตรงกับแถวจริงหลัง migration แล้ว)
+// ส่วนเคส "ก่อนมีคอลัมน์" ครอบด้วย mapping unit test (qr-order-fulfillment.test.ts)
+test.describe("customer QR U12 (ลูกค้า QR: timeline + cancel)", () => {
+  const PRODUCT_1 = "22222222-0000-0000-0000-000000000001"; // กาแฟดำ (seed.sql)
+  const VARIANT_1 = "33333333-0000-0000-0000-000000000001"; // เล็ก (S)
+  const TABLE_1 = "eeeeeeee-0000-0000-0000-000000000001";
+  let runId: string;
+  const createdOrderIds: string[] = [];
+  let storeSlug: string | null = null;
+  let originalStoreQr: {
+    qr_ordering_enabled: boolean;
+    table_open_policy: "staff_only" | "customer_self";
+  } | null = null;
+  let originalTableSession: {
+    qr_enabled: boolean;
+    session_started_at: string | null;
+    session_expires_at: string | null;
+  } | null = null;
+  let originalProductQr: { available_for_qr: boolean; kitchen_station_id: string | null } | null = null;
+  let stationId: string | null = null;
+
+  test.beforeAll(async () => {
+    runId = randomUUID().slice(0, 8);
+    await setUnifiedPosFlag(true);
+
+    const storeRow = await service
+      .from("stores")
+      .select("slug, qr_ordering_enabled, table_open_policy")
+      .eq("id", SEED_STORE_ID)
+      .single();
+    if (storeRow.error || !storeRow.data) {
+      throw new Error(`อ่าน stores (local) ไม่สำเร็จ: ${storeRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    storeSlug = String(storeRow.data.slug);
+    originalStoreQr = {
+      qr_ordering_enabled: storeRow.data.qr_ordering_enabled,
+      table_open_policy: storeRow.data.table_open_policy,
+    };
+
+    const tableRow = await service
+      .from("tables")
+      .select("qr_enabled, session_started_at, session_expires_at")
+      .eq("id", TABLE_1)
+      .single();
+    if (tableRow.error || !tableRow.data) {
+      throw new Error(`อ่าน tables (local) ไม่สำเร็จ: ${tableRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalTableSession = tableRow.data;
+
+    const productRow = await service
+      .from("products")
+      .select("available_for_qr, kitchen_station_id")
+      .eq("id", PRODUCT_1)
+      .single();
+    if (productRow.error || !productRow.data) {
+      throw new Error(`อ่าน products (local) ไม่สำเร็จ: ${productRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalProductQr = {
+      available_for_qr: productRow.data.available_for_qr,
+      kitchen_station_id: productRow.data.kitchen_station_id,
+    };
+
+    // fixture เดียวกับคิวครัว U10: station ชั่วคราว + เปิด QR policy/session/product
+    const insertedStation = await service
+      .from("kitchen_stations")
+      .insert({ organization_id: orgId, store_id: SEED_STORE_ID, name: `U12 Customer E2E ${runId}` })
+      .select("id")
+      .single();
+    if (insertedStation.error || !insertedStation.data) {
+      throw new Error(`สร้าง kitchen station ชั่วคราว (local) ไม่สำเร็จ: ${insertedStation.error?.message ?? "ไม่ได้แถวที่ insert"}`);
+    }
+    stationId = insertedStation.data.id;
+
+    const { error: storeErr } = await service
+      .from("stores")
+      .update({ qr_ordering_enabled: true, table_open_policy: "customer_self" })
+      .eq("id", SEED_STORE_ID);
+    if (storeErr) throw new Error(`เปิด QR policy ชั่วคราว (local) ไม่สำเร็จ: ${storeErr.message}`);
+    const { error: tableErr } = await service
+      .from("tables")
+      .update({
+        qr_enabled: true,
+        session_started_at: new Date().toISOString(),
+        session_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", TABLE_1);
+    if (tableErr) throw new Error(`เปิด session โต๊ะ 1 ชั่วคราว (local) ไม่สำเร็จ: ${tableErr.message}`);
+    const { error: productErr } = await service
+      .from("products")
+      .update({ available_for_qr: true, kitchen_station_id: stationId })
+      .eq("id", PRODUCT_1);
+    if (productErr) throw new Error(`เปิด available_for_qr ชั่วคราว (local) ไม่สำเร็จ: ${productErr.message}`);
+  });
+
+  test.afterAll(async () => {
+    const failures: string[] = [];
+    if (service && createdOrderIds.length > 0) {
+      const { error } = await service.from("orders").delete().in("id", createdOrderIds);
+      if (error) failures.push(`orders: ${error.message}`);
+    }
+    if (service && originalStoreQr) {
+      const { error } = await service.from("stores").update(originalStoreQr).eq("id", SEED_STORE_ID);
+      if (error) failures.push(`stores (qr/policy): ${error.message}`);
+    }
+    if (service && originalTableSession) {
+      const { error } = await service.from("tables").update(originalTableSession).eq("id", TABLE_1);
+      if (error) failures.push(`tables: ${error.message}`);
+    }
+    if (service && originalProductQr) {
+      const { error } = await service.from("products").update(originalProductQr).eq("id", PRODUCT_1);
+      if (error) failures.push(`products: ${error.message}`);
+    }
+    if (service && stationId) {
+      const { error } = await service.from("kitchen_stations").delete().eq("id", stationId);
+      if (error) failures.push(`kitchen_stations: ${error.message}`);
+    }
+    if (failures.length > 0) {
+      throw new Error(`คืนค่า fixture customer QR U12 (local) ไม่ครบ: ${failures.join(" | ")}`);
+    }
+  });
+
+  /** seed ออเดอร์ QR ผ่าน RPC v2 (service client) — คืน order/item/orderNumber */
+  async function submitQrOrder(): Promise<{ orderId: string; itemId: string; orderNumber: string }> {
+    const line = {
+      product_id: PRODUCT_1,
+      product_name: "กาแฟดำ",
+      variant_id: VARIANT_1,
+      variant_name: "เล็ก (S)",
+      modifiers: [{ option: { id: "55555555-0000-0000-0000-000000000001", name: "ไม่หวาน", priceAdjustment: 0 } }],
+      quantity: 1,
+      unit_price: 45,
+      total_price: 45,
+      note: `U12-customer-e2e-${runId}`,
+    };
+    const orderNumber = `U12A-${runId}-${createdOrderIds.length + 1}`;
+    const { data, error } = await service.rpc("create_qr_order_with_items_v2", {
+      p_organization_id: orgId,
+      p_store_id: SEED_STORE_ID,
+      p_table_id: TABLE_1,
+      p_order_number: orderNumber,
+      p_operation_key: createOperationKey(),
+      p_request_hash: computeRequestHash({ storeId: SEED_STORE_ID, tableId: TABLE_1, subtotal: 45, items: [line] }),
+      p_subtotal: 45,
+      p_items: [line],
+    });
+    if (error) throw new Error(`submit QR order (local) ไม่สำเร็จ: ${error.message}`);
+    const outcome = data as { status: string; result?: { order_id: string } } | null;
+    if (!outcome || outcome.status !== "executed" || !outcome.result?.order_id) {
+      throw new Error(`submit QR order (local) คืนสถานะไม่คาดคิด: ${JSON.stringify(outcome)}`);
+    }
+    const orderId = outcome.result.order_id;
+    createdOrderIds.push(orderId);
+    const itemRow = await service.from("order_items").select("id").eq("order_id", orderId).limit(1).single();
+    if (itemRow.error || !itemRow.data) {
+      throw new Error(`อ่าน order_items ของออเดอร์ seed (local) ไม่สำเร็จ: ${itemRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    return { orderId, itemId: (itemRow.data as { id: string }).id, orderNumber };
+  }
+
+  /** เครื่องครัว (service client) ขยับ item — ใช้จำลอง "ครัวรับก่อน" ที่ UI ยังไม่เห็น */
+  async function advanceItemDirect(
+    orderId: string,
+    itemId: string,
+    expectedVersion: number,
+    target: string,
+  ): Promise<void> {
+    const { data, error } = await service.rpc("unified_pos_update_item_fulfillment", {
+      p_organization_id: orgId,
+      p_store_id: SEED_STORE_ID,
+      p_order_id: orderId,
+      p_item_id: itemId,
+      p_expected_fulfillment_version: expectedVersion,
+      p_target_fulfillment_status: target,
+      p_operation_key: createOperationKey(),
+      p_request_hash: computeRequestHash({
+        storeId: SEED_STORE_ID,
+        orderId,
+        itemId,
+        target,
+        expectedVersion,
+      }),
+      p_actor_user_id: OWNER_AUTH_USER_ID,
+    });
+    if (error) throw new Error(`advance item ผ่าน service client (local) ไม่สำเร็จ: ${error.message}`);
+    const outcome = data as { status: string } | null;
+    if (!outcome || (outcome.status !== "executed" && outcome.status !== "replayed")) {
+      throw new Error(`advance item (local) คืนสถานะไม่คาดคิด: ${JSON.stringify(outcome)}`);
+    }
+  }
+
+  async function openCustomerTrack(page: Page): Promise<void> {
+    await page.goto(`/qr/${storeSlug}/${TABLE_1}`);
+    await page.getByRole("button", { name: "ออร์เดอร์โต๊ะนี้" }).click();
+  }
+
+  async function assertOrderStatus(orderId: string, expected: string): Promise<void> {
+    const row = await service.from("orders").select("status").eq("id", orderId).single();
+    if (row.error || !row.data) {
+      throw new Error(`อ่านสถานะออเดอร์ (local) ไม่สำเร็จ: ${row.error?.message ?? "ไม่พบแถว"}`);
+    }
+    expect((row.data as { status: string }).status).toBe(expected);
+  }
+
+  test("customer QR: หน้าติดตามแสดงสถานะ timeline และยกเลิกได้ก่อนครัวรับ", async ({ page }) => {
+    const seeded = await submitQrOrder();
+    await openCustomerTrack(page);
+
+    const card = page.locator(`[data-qr-order-card="${seeded.orderId}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.getByText("ได้รับออเดอร์แล้ว")).toBeVisible();
+    await expect(card.getByText(`#${seeded.orderNumber}`)).toBeVisible();
+    await expect(card.getByText(/กาแฟดำ/)).toBeVisible();
+
+    // ยกเลิกก่อนครัวรับ → governed cancel สำเร็จ (มี confirm dialog กันกดพลาด)
+    await card.getByRole("button", { name: "ยกเลิกออเดอร์" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "ยกเลิกออเดอร์" }).click();
+    await expect(page.getByText("ยกเลิกออเดอร์แล้ว")).toBeVisible();
+
+    // ออเดอร์ถูกยกเลิกจริงใน DB + หลุดจากลิสต์ออเดอร์เปิดของโต๊ะ
+    await assertOrderStatus(seeded.orderId, "cancelled");
+    await expect(card).toHaveCount(0);
+  });
+
+  test("cancel: ครัวรับออเดอร์ก่อน (stale) → ปฏิเสธและแสดงสถานะปัจจุบัน", async ({ page }) => {
+    const seeded = await submitQrOrder();
+    await openCustomerTrack(page);
+
+    const card = page.locator(`[data-qr-order-card="${seeded.orderId}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.getByText("ได้รับออเดอร์แล้ว")).toBeVisible();
+    await expect(card.getByRole("button", { name: "ยกเลิกออเดอร์" })).toBeVisible();
+
+    // ครัวรับรายการ (service client) ขณะ UI ของลูกค้ายังแสดง snapshot เดิม
+    await advanceItemDirect(seeded.orderId, seeded.itemId, 1, "preparing");
+
+    // ลูกค้ากดยกเลิกจาก snapshot stale → server ปฏิเสธ + คืนสถานะปัจจุบัน
+    await card.getByRole("button", { name: "ยกเลิกออเดอร์" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "ยกเลิกออเดอร์" }).click();
+
+    // ข้อความไทยที่ระบุสถานะปัจจุบัน (ไม่ใช่ error ทั่วไป)
+    await expect(page.getByText(/ครัวรับออเดอร์แล้ว ยกเลิกไม่ได้ \(สถานะปัจจุบัน: กำลังเตรียม\)/)).toBeVisible();
+    // การ์ด converge กับ server ทันที (stage จาก currentOrder ที่ action คืน)
+    await expect(card.getByText("กำลังเตรียม")).toBeVisible();
+    await expect(card.getByRole("button", { name: "ยกเลิกออเดอร์" })).toHaveCount(0);
+
+    // ออเดอร์ยังเปิดอยู่ (ไม่ถูกยกเลิก)
+    await assertOrderStatus(seeded.orderId, "open");
+  });
+});
+
+test.describe("legacy order U12 (ออเดอร์รูปแบบเดิม flag ปิด)", () => {
+  const PRODUCT_1 = "22222222-0000-0000-0000-000000000001"; // กาแฟดำ (seed.sql)
+  const VARIANT_1 = "33333333-0000-0000-0000-000000000001"; // เล็ก (S)
+  const TABLE_1 = "eeeeeeee-0000-0000-0000-000000000001";
+  let runId: string;
+  const createdOrderIds: string[] = [];
+  let storeSlug: string | null = null;
+  let originalStoreQr: {
+    qr_ordering_enabled: boolean;
+    table_open_policy: "staff_only" | "customer_self";
+  } | null = null;
+  let originalTableSession: {
+    qr_enabled: boolean;
+    session_started_at: string | null;
+    session_expires_at: string | null;
+  } | null = null;
+  let originalProductQr: { available_for_qr: boolean; kitchen_station_id: string | null } | null = null;
+  let stationId: string | null = null;
+
+  test.beforeAll(async () => {
+    runId = randomUUID().slice(0, 8);
+    await setUnifiedPosFlag(false); // legacy path จนกว่า final cutover
+
+    const storeRow = await service
+      .from("stores")
+      .select("slug, qr_ordering_enabled, table_open_policy")
+      .eq("id", SEED_STORE_ID)
+      .single();
+    if (storeRow.error || !storeRow.data) {
+      throw new Error(`อ่าน stores (local) ไม่สำเร็จ: ${storeRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    storeSlug = String(storeRow.data.slug);
+    originalStoreQr = {
+      qr_ordering_enabled: storeRow.data.qr_ordering_enabled,
+      table_open_policy: storeRow.data.table_open_policy,
+    };
+
+    const tableRow = await service
+      .from("tables")
+      .select("qr_enabled, session_started_at, session_expires_at")
+      .eq("id", TABLE_1)
+      .single();
+    if (tableRow.error || !tableRow.data) {
+      throw new Error(`อ่าน tables (local) ไม่สำเร็จ: ${tableRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalTableSession = tableRow.data;
+
+    const productRow = await service
+      .from("products")
+      .select("available_for_qr, kitchen_station_id")
+      .eq("id", PRODUCT_1)
+      .single();
+    if (productRow.error || !productRow.data) {
+      throw new Error(`อ่าน products (local) ไม่สำเร็จ: ${productRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalProductQr = {
+      available_for_qr: productRow.data.available_for_qr,
+      kitchen_station_id: productRow.data.kitchen_station_id,
+    };
+
+    const insertedStation = await service
+      .from("kitchen_stations")
+      .insert({ organization_id: orgId, store_id: SEED_STORE_ID, name: `U12 Legacy E2E ${runId}` })
+      .select("id")
+      .single();
+    if (insertedStation.error || !insertedStation.data) {
+      throw new Error(`สร้าง kitchen station ชั่วคราว (local) ไม่สำเร็จ: ${insertedStation.error?.message ?? "ไม่ได้แถวที่ insert"}`);
+    }
+    stationId = insertedStation.data.id;
+
+    const { error: storeErr } = await service
+      .from("stores")
+      .update({ qr_ordering_enabled: true, table_open_policy: "customer_self" })
+      .eq("id", SEED_STORE_ID);
+    if (storeErr) throw new Error(`เปิด QR policy ชั่วคราว (local) ไม่สำเร็จ: ${storeErr.message}`);
+    const { error: tableErr } = await service
+      .from("tables")
+      .update({
+        qr_enabled: true,
+        session_started_at: new Date().toISOString(),
+        session_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", TABLE_1);
+    if (tableErr) throw new Error(`เปิด session โต๊ะ 1 ชั่วคราว (local) ไม่สำเร็จ: ${tableErr.message}`);
+    const { error: productErr } = await service
+      .from("products")
+      .update({ available_for_qr: true, kitchen_station_id: stationId })
+      .eq("id", PRODUCT_1);
+    if (productErr) throw new Error(`เปิด available_for_qr ชั่วคราว (local) ไม่สำเร็จ: ${productErr.message}`);
+  });
+
+  test.afterAll(async () => {
+    // flag ไม่ force ที่นี่ — top-level afterAll เป็นคนคืน unified_pos_enabled
+    const failures: string[] = [];
+    if (service && createdOrderIds.length > 0) {
+      const { error } = await service.from("orders").delete().in("id", createdOrderIds);
+      if (error) failures.push(`orders: ${error.message}`);
+    }
+    if (service && originalStoreQr) {
+      const { error } = await service.from("stores").update(originalStoreQr).eq("id", SEED_STORE_ID);
+      if (error) failures.push(`stores (qr/policy): ${error.message}`);
+    }
+    if (service && originalTableSession) {
+      const { error } = await service.from("tables").update(originalTableSession).eq("id", TABLE_1);
+      if (error) failures.push(`tables: ${error.message}`);
+    }
+    if (service && originalProductQr) {
+      const { error } = await service.from("products").update(originalProductQr).eq("id", PRODUCT_1);
+      if (error) failures.push(`products: ${error.message}`);
+    }
+    if (service && stationId) {
+      const { error } = await service.from("kitchen_stations").delete().eq("id", stationId);
+      if (error) failures.push(`kitchen_stations: ${error.message}`);
+    }
+    if (failures.length > 0) {
+      throw new Error(`คืนค่า fixture legacy order U12 (local) ไม่ครบ: ${failures.join(" | ")}`);
+    }
+  });
+
+  /** seed ออเดอร์แบบ legacy ผ่าน RPC v1 (พฤติกรรมก่อน U4 — ไม่มี envelope) */
+  async function submitLegacyOrder(): Promise<{ orderId: string; orderNumber: string }> {
+    const line = {
+      product_id: PRODUCT_1,
+      product_name: "กาแฟดำ",
+      variant_id: VARIANT_1,
+      variant_name: "เล็ก (S)",
+      modifiers: [{ option: { id: "55555555-0000-0000-0000-000000000001", name: "ไม่หวาน", priceAdjustment: 0 } }],
+      quantity: 1,
+      unit_price: 45,
+      total_price: 45,
+      note: `U12-legacy-e2e-${runId}`,
+    };
+    const orderNumber = `U12L-${runId}-${createdOrderIds.length + 1}`;
+    const { data, error } = await service.rpc("create_qr_order_with_items", {
+      p_organization_id: orgId,
+      p_store_id: SEED_STORE_ID,
+      p_table_id: TABLE_1,
+      p_order_number: orderNumber,
+      p_subtotal: 45,
+      p_items: [line],
+    });
+    if (error) throw new Error(`submit legacy QR order (local) ไม่สำเร็จ: ${error.message}`);
+    const orderId = data as string | null;
+    if (!orderId) throw new Error("submit legacy QR order (local) ไม่ได้ order id กลับมา");
+    createdOrderIds.push(orderId);
+    return { orderId, orderNumber };
+  }
+
+  async function openCustomerTrack(page: Page): Promise<void> {
+    await page.goto(`/qr/${storeSlug}/${TABLE_1}`);
+    await page.getByRole("button", { name: "ออร์เดอร์โต๊ะนี้" }).click();
+  }
+
+  async function assertOrderStatus(orderId: string, expected: string): Promise<void> {
+    const row = await service.from("orders").select("status").eq("id", orderId).single();
+    if (row.error || !row.data) {
+      throw new Error(`อ่านสถานะออเดอร์ (local) ไม่สำเร็จ: ${row.error?.message ?? "ไม่พบแถว"}`);
+    }
+    expect((row.data as { status: string }).status).toBe(expected);
+  }
+
+  test("legacy order: เรนเดอร์ timeline จาก prep_status รูปแบบเดิมได้ไม่พัง (ครัวรับแล้วจึงไม่มีปุ่มยกเลิก)", async ({ page }) => {
+    const seeded = await submitLegacyOrder();
+    // ครัว legacy เดินหน้า orders.prep_status ตรง (items คง default 'new' — รูปแบบเดิม)
+    const { error } = await service
+      .from("orders")
+      .update({ prep_status: "preparing" })
+      .eq("id", seeded.orderId);
+    if (error) throw new Error(`ตั้ง prep_status รูปแบบเดิม (local) ไม่สำเร็จ: ${error.message}`);
+
+    await openCustomerTrack(page);
+
+    const card = page.locator(`[data-qr-order-card="${seeded.orderId}"]`);
+    await expect(card).toBeVisible();
+    // timeline ต้อง fallback ตาม prep_status (items ไม่มีการเดินหน้าของตัวเอง)
+    await expect(card.getByText("กำลังเตรียม")).toBeVisible();
+    await expect(card.getByText(`#${seeded.orderNumber}`)).toBeVisible();
+    await expect(card.getByText(/กาแฟดำ/)).toBeVisible();
+    // ครัวรับแล้ว → ไม่มีปุ่มยกเลิก (server ตัดสิน canCancel)
+    await expect(card.getByRole("button", { name: "ยกเลิกออเดอร์" })).toHaveCount(0);
+    await assertOrderStatus(seeded.orderId, "open");
+  });
+
+  test("legacy order: ยกเลิกก่อนครัวรับผ่าน legacy cancel path", async ({ page }) => {
+    const seeded = await submitLegacyOrder();
+    await openCustomerTrack(page);
+
+    const card = page.locator(`[data-qr-order-card="${seeded.orderId}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.getByText("ได้รับออเดอร์แล้ว")).toBeVisible();
+    await expect(card.getByRole("button", { name: "ยกเลิกออเดอร์" })).toBeVisible();
+
+    await card.getByRole("button", { name: "ยกเลิกออเดอร์" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "ยกเลิกออเดอร์" }).click();
+    await expect(page.getByText("ยกเลิกออเดอร์แล้ว")).toBeVisible();
+
+    await assertOrderStatus(seeded.orderId, "cancelled");
+    await expect(card).toHaveCount(0);
+  });
+});
