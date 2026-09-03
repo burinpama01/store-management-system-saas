@@ -35,9 +35,11 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(terminal).toContain('className="shrink-0 flex gap-2 overflow-x-auto border-b');
   });
 
-  it("shell รวมเป็นคอลัมน์เต็มความสูง แถวแท็บคงที่", () => {
+  it("shell เป็นคอลัมน์เต็มความสูง แถบหัวแถวเดียวคงที่", () => {
     expect(workspace).toContain('className="unified-pos-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden"');
-    expect(workspace).toContain('className="flex shrink-0 items-center gap-2 border-b border-gray-200 pr-2"');
+    expect(workspace).toContain(
+      'className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 px-2 py-1 sm:flex-nowrap"',
+    );
   });
 
   it("ไม่มีหัวข้อสองชั้น — ชื่อร้านโชว์ที่แถบหัวของ PosTerminal ที่เดียว", () => {
@@ -49,19 +51,21 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(workspace).toContain("<VoicePosController");
   });
 
-  it("แท็บที่เปิดอยู่กินที่เหลือทั้งหมด แท็บที่ปิดถูกซ่อนด้วยคลาส hidden", () => {
-    // [hidden] มี specificity เท่ากับ .flex — พึ่งแอตทริบิวต์อย่างเดียวไม่พอ
-    // ต้องสลับคลาส display ตามสถานะ ไม่งั้นแท็บที่ปิดจะโผล่ทับกัน
-    for (const tab of ["sell", "tables", "kitchen", "bills"]) {
-      expect(workspace).toContain(`activeTab === "${tab}" ?`);
-      expect(workspace).toContain(`activeTab !== "${tab}"`);
-    }
-    expect(workspace).toContain('flex-1 flex-col overflow-hidden pt-2');
-    expect(workspace).toContain('flex-1 overflow-y-auto pt-3');
+  it("หน้าขายกินพื้นที่ที่เหลือทั้งหมด — ไม่ต้องสลับแท็บก่อนถึงจะขายได้", () => {
+    expect(workspace).toContain('className="flex min-w-0 flex-1 flex-col overflow-hidden pt-1"');
+    // min-h-0 จำเป็นทุกชั้น ไม่งั้นตัวเลื่อนข้างในดันความสูงจนล้นจอ
+    expect(workspace).toContain('<div className="min-h-0 flex-1">{sell}</div>');
   });
 
-  it("แผง POS ในแท็บขายได้รับ min-h-0 (ไม่งั้นตัวเลื่อนข้างในจะดันความสูงจนล้นจอ)", () => {
-    expect(workspace).toContain('<div className="min-h-0 flex-1">{sell}</div>');
+  it("โต๊ะ/ครัว/บิล อยู่หลังปุ่มเดียวใน dialog และคง mounted ไว้ (realtime ไม่ขาดช่วง)", () => {
+    // [hidden] มี specificity เท่ากับ .flex — พึ่งแอตทริบิวต์อย่างเดียวไม่พอ
+    expect(workspace).toContain('${openSection ? "flex" : "hidden"}');
+    expect(workspace).toContain('hidden={openSection === null}');
+    for (const section of ["tables", "kitchen", "bills"]) {
+      expect(workspace).toContain(`hidden={openSection !== "${section}"}`);
+    }
+    expect(workspace).toContain("<KitchenQueuePanel");
+    expect(workspace).toContain("<BillsPanel");
   });
 
   it("ลูกค้า/คูปอง/จอลูกค้า พับเป็นปุ่ม ไม่กินความสูงของช่องรายการในออร์เดอร์", () => {
@@ -88,7 +92,7 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(terminal).toContain("|| discountFormOpen || tableMenuOpen;");
   });
 
-  it("แถบด้านบนเหลือแถวเดียว — ปุ่มของหน้าขายไปอยู่แถวเดียวกับแท็บ", () => {
+  it("แถบด้านบนเหลือแถวเดียว — ปุ่มของหน้าขายไปอยู่แถวเดียวกับปุ่มโต๊ะ", () => {
     // เดิมแถบแท็บกับแถบหัวของ POS เป็นสองแถวซ้อนกัน
     expect(workspace).toContain("POS_TOPBAR_ACTIONS_ID");
     expect(terminal).toContain("createPortal(posActionButtons, topbarHost)");
@@ -102,14 +106,33 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(workspace).toContain("<VoicePosController");
   });
 
-  it("ปุ่มโต๊ะเหลือปุ่มเดียว เปิดเมนูเลือกเปิดโต๊ะ/เช็คบิลโต๊ะ", () => {
-    expect(terminal).toContain("tableMenuOpen");
-    expect(terminal).toContain('title="โต๊ะ"');
-    expect(terminal).toContain("setShowTableOpen(true)");
-    expect(terminal).toContain("setShowTableBill(true)");
-    // สองปุ่มเดิมบนแถบหัวต้องไม่กลับมา
+  it("ปุ่มเดียวคุมทั้งโต๊ะ/ครัว/บิล — ไม่มีแท็บบนแถบหัวแล้ว", () => {
+    expect(workspace).toContain("โต๊ะ / ครัว / บิล");
+    expect(workspace).not.toContain('aria-label="ส่วนของ POS รวม"');
+    // สองปุ่มเดิมบนแถบหัวของ POS ต้องไม่กลับมา
     expect(terminal).not.toContain('aria-label="เปิดโต๊ะ"');
     expect(terminal).not.toContain('aria-label="เช็คบิลโต๊ะ"');
+    // เปิดโต๊ะ/เช็คบิลโต๊ะ สั่งจาก dialog ของ shell ผ่าน section-bus
+    expect(workspace).toContain('emitPosCommand("open-table")');
+    expect(workspace).toContain('emitPosCommand("settle-table")');
+    expect(terminal).toContain("onPosCommand");
+    // POS เดี่ยว (ไม่มี shell) ยังมีปุ่มโต๊ะของตัวเองให้กด
+    expect(terminal).toContain("{topbarHost ? null : (");
+  });
+
+  it("จอมือถือ: ปุ่มสั่งงานด้วยเสียงใหญ่กดง่าย ปุ่มหน้าขายเลื่อนแนวนอนแทนการดันหลุดขอบ", () => {
+    const voice = read("src/shared/components/VoiceCommandButton.tsx");
+    expect(voice).toContain("min-h-14 min-w-14");
+    expect(voice).toContain("sm:min-h-11 sm:min-w-11");
+    // justify-end + overflow-x-auto ดันส่วนที่ล้นไปทางซ้ายซึ่งเลื่อนไปหาไม่ได้
+    expect(workspace).toContain(
+      'className="flex w-full min-w-0 items-center gap-2 overflow-x-auto sm:ml-auto sm:w-auto sm:flex-1 sm:basis-0 sm:justify-end"',
+    );
+  });
+
+  it("แถบบริบทโชว์เฉพาะตอนเลือกโต๊ะ — ไม่กินแถวเพื่อบอกว่าไม่มีอะไรพิเศษ", () => {
+    expect(workspace).toContain("{selectedTable && (");
+    expect(workspace).not.toContain("ยังไม่เลือกโต๊ะ — ขายหน้าร้าน");
   });
 
   it("รายการในออร์เดอร์เป็นตัวเลื่อนเดียว — aside ไม่เลื่อนซ้อน", () => {

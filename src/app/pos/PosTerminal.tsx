@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNo
 import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
+import { onPosCommand } from "@/modules/pos/section-bus";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
 import {
@@ -2563,6 +2564,13 @@ export function PosTerminal({
   useEffect(() => {
     setTopbarHost(document.getElementById(POS_TOPBAR_ACTIONS_ID));
   }, []);
+
+  // เปิดโต๊ะ/เช็คบิลโต๊ะ ถูกยุบไปอยู่ใน dialog "โต๊ะ / ครัว / บิล" ของ shell รวม
+  // ซึ่งอยู่คนละต้นไม้กับ PosTerminal — คำสั่งจึงวิ่งมาทาง section-bus
+  useEffect(() => onPosCommand((command) => {
+    if (command === "open-table") setShowTableOpen(true);
+    if (command === "settle-table") setShowTableBill(true);
+  }), []);
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
@@ -3600,8 +3608,12 @@ export function PosTerminal({
   // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
   const posActionButtons = (
     <>
-      <ConnectionBadge className="hidden sm:inline-flex" />
-      <div className="relative shrink-0">
+      {/* โชว์ทุกขนาดจอ — คลาส hidden ใช้กับ .badge ไม่ได้ผล (component layer ทับ utility)
+          และสถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
+      <ConnectionBadge />
+      {/* ใน POS รวม ปุ่มโต๊ะอยู่บนแถบหัวของ shell แล้ว (คุมทั้งผังโต๊ะ/ครัว/บิล)
+          ที่นี่จึงแสดงเฉพาะตอนเปิด POS เดี่ยวที่ไม่มี shell */}
+      {topbarHost ? null : (
         <button
           type="button"
           onClick={() => setTableMenuOpen((open) => !open)}
@@ -3611,7 +3623,7 @@ export function PosTerminal({
         >
           🍽️ <span className="hidden sm:inline">โต๊ะ</span>
         </button>
-      </div>
+      )}
       <CashSessionPanel
         session={cashSession}
         cashSalesPreview={cashSalesPreview}

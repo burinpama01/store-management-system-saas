@@ -246,8 +246,10 @@ export function VoiceCommandButton({
               : "กำลังตรวจสอบว่าเบราว์เซอร์นี้สั่งงานด้วยเสียงได้หรือไม่"
         }
         className={[
-          // touch target ขั้นต่ำ 44px ตามเกณฑ์ของแผน + เคารพ prefers-reduced-motion
-          "inline-flex min-h-11 min-w-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium",
+          // มือถือทำให้ใหญ่กดง่าย (แคชเชียร์ถือเครื่องมือข้างเดียว กดพลาดแล้วเสียจังหวะ)
+          // เดสก์ท็อปกลับมาขนาดปกติเพราะมีเมาส์และที่บนแถบหัวมีจำกัด
+          "inline-flex min-h-14 min-w-14 items-center gap-2 rounded-xl border px-4 py-2 text-base font-semibold",
+          "sm:min-h-11 sm:min-w-11 sm:rounded-lg sm:px-3 sm:text-sm sm:font-medium",
           "transition-colors motion-reduce:transition-none",
           unavailable
             ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400"
@@ -257,7 +259,8 @@ export function VoiceCommandButton({
         ].join(" ")}
       >
         <span aria-hidden="true">{listening ? "🔴" : "🎤"}</span>
-        <span>{STATE_LABEL[state]}</span>
+        {/* ไม่มีแถวแท็บมาแย่งที่แล้ว ป้ายจึงโชว์ได้ทั้งบนมือถือและเดสก์ท็อป */}
+        <span className="whitespace-nowrap">{STATE_LABEL[state]}</span>
       </button>
 
       {/* U23 — เปิด/ปิดเสียงตอบรับต่อเครื่อง (ครัวอาจปิด แคชเชียร์อาจเปิด) */}
@@ -272,14 +275,16 @@ export function VoiceCommandButton({
           aria-pressed={soundEnabled}
           aria-label={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
           title={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
-          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-sm text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          className="inline-flex min-h-14 min-w-14 shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white text-base text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none sm:min-h-11 sm:min-w-11 sm:rounded-lg sm:text-sm"
         >
           <span aria-hidden="true">{soundEnabled ? "🔊" : "🔇"}</span>
         </button>
       ) : null}
 
       {/* live region: ประกาศ "สถานะ" เท่านั้น — ไม่มีคำพูดของผู้ใช้ (ค่าเริ่มต้น) */}
-      <p role="status" aria-live="polite" className="min-w-0 max-w-[14rem] truncate text-xs text-gray-600">
+      <p role="status" aria-live="polite" /* จอเล็กซ่อนด้วย sr-only ไม่ใช่ hidden — live region ต้องอยู่ใน a11y tree
+             ไม่งั้น screen reader ไม่ประกาศสถานะบนมือถือ */
+        className="sr-only max-w-[14rem] truncate text-xs text-gray-600 sm:not-sr-only sm:block sm:min-w-0">
         {announceTranscript && interim ? interim : message}
       </p>
 
@@ -288,7 +293,7 @@ export function VoiceCommandButton({
         <p
           data-testid="voice-transcript"
           aria-hidden="true"
-          className="min-w-0 max-w-[14rem] truncate text-xs italic text-gray-500"
+          className="hidden min-w-0 max-w-[14rem] truncate text-xs italic text-gray-500 sm:block"
         >
           {interim}
         </p>
@@ -301,7 +306,10 @@ export function VoiceCommandButton({
            ข้อความยังอยู่บนหน้าและอ่านได้ก่อนกดขอไมค์ แต่พับเป็นบรรทัดเดียว —
            สองบรรทัดเต็มกินความสูงหน้า POS ที่ต้องพอดีจอ */
         <details className="shrink-0 text-xs text-gray-500">
-          <summary className="cursor-pointer select-none">ความเป็นส่วนตัว / วิธีใช้</summary>
+          <summary className="cursor-pointer select-none whitespace-nowrap">
+            <span className="sm:hidden" aria-hidden="true">ⓘ</span>
+            <span className="sr-only sm:not-sr-only">ความเป็นส่วนตัว / วิธีใช้</span>
+          </summary>
           <p className="mt-1">
             ระบบไม่บันทึกเสียงหรือข้อความที่พูด แต่เบราว์เซอร์อาจส่งเสียงไปประมวลผลบนบริการของผู้ผลิตเบราว์เซอร์
           </p>
