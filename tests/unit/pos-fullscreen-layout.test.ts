@@ -55,4 +55,23 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
   it("แผง POS ในแท็บขายได้รับ min-h-0 (ไม่งั้นตัวเลื่อนข้างในจะดันความสูงจนล้นจอ)", () => {
     expect(workspace).toContain('<div className="min-h-0 flex-1">{sell}</div>');
   });
+
+  it("ลูกค้า/คูปอง/จอลูกค้า พับเป็นปุ่ม ไม่กินความสูงของช่องรายการในออร์เดอร์", () => {
+    // แผงเต็มแบบเดิมกินท้ายแผงออร์เดอร์จนช่องรายการเหลือแค่ไม่กี่บรรทัด
+    expect(terminal).not.toContain("checkoutTools");
+    expect(terminal).toContain("onOpenCustomerTools");
+    expect(terminal).toContain('title="ลูกค้า / คูปอง / จอลูกค้า"');
+    // ต้องนับเป็น utility sheet ด้วย ไม่งั้น drawer ออร์เดอร์บนมือถือจะยังกินโฟกัสทับ
+    expect(terminal).toContain("ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen");
+  });
+
+  it("ปุ่มที่พับยังโชว์ลูกค้า/คูปองที่เลือกไว้ (ข้อมูลต้องไม่หายไปกับการพับ)", () => {
+    expect(terminal).toContain("selectedCustomerName={selectedCustomer?.name ?? null}");
+    expect(terminal).toContain("selectedCustomerName || appliedCoupon");
+  });
+
+  it("รายการในออร์เดอร์เป็นตัวเลื่อนเดียว — aside ไม่เลื่อนซ้อน", () => {
+    expect(terminal).toMatch(/<aside className="hidden [^"]*min-h-0 overflow-hidden/);
+    expect(terminal).toContain('<div className="flex-1 overflow-y-auto">');
+  });
 });

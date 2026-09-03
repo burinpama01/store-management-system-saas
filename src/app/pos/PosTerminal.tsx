@@ -643,7 +643,8 @@ function CartPanel({
   cart,
   displayCart,
   appliedCoupon,
-  checkoutTools,
+  selectedCustomerName,
+  onOpenCustomerTools,
   onUpdateQty,
   onRemove,
   onCheckout,
@@ -674,7 +675,9 @@ function CartPanel({
   cart: Cart;
   displayCart?: Cart;
   appliedCoupon?: AppliedCoupon | null;
-  checkoutTools?: ReactNode;
+  /** ชื่อลูกค้าที่ผูกกับบิลนี้ — โชว์บนปุ่มเพื่อไม่ให้ข้อมูลหายไปกับการพับ */
+  selectedCustomerName?: string | null;
+  onOpenCustomerTools: () => void;
   onUpdateQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
@@ -831,7 +834,28 @@ function CartPanel({
       </div>
 
       <div className="border-t border-gray-100 px-4 py-3 space-y-2">
-        {checkoutTools}
+        {/* ลูกค้า/คูปอง/จอลูกค้า พับเป็นปุ่มเดียว — แผงเต็มกินความสูงจนช่องรายการ
+            ในออร์เดอร์แคบเกินใช้งาน (ปกติแคชเชียร์แตะไม่บ่อย เพราะลูกค้ารับแต้ม
+            เองผ่าน QR ท้ายใบเสร็จอยู่แล้ว) สถานะที่เลือกไว้ยังโชว์บนปุ่ม */}
+        <button
+          type="button"
+          onClick={onOpenCustomerTools}
+          className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-left transition-colors hover:bg-slate-100 motion-reduce:transition-none"
+        >
+          <span className="min-w-0">
+            <span className="block text-[11px] font-semibold text-slate-600">ลูกค้า / คูปอง / จอลูกค้า</span>
+            <span className="block truncate text-[11px] text-slate-500">
+              {selectedCustomerName || appliedCoupon
+                ? [selectedCustomerName, appliedCoupon ? `คูปอง ${appliedCoupon.code}` : null]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "แตะเพื่อผูกลูกค้า ใช้คูปอง หรือเปิดจอลูกค้า"}
+            </span>
+          </span>
+          <span aria-hidden="true" className="shrink-0 text-xs text-slate-400">
+            ›
+          </span>
+        </button>
         {canDiscount && (
           <div className="space-y-2 rounded-lg border border-teal-100 bg-teal-50/50 p-2">
             <div className="flex items-start justify-between gap-2">
@@ -2520,6 +2544,7 @@ export function PosTerminal({
   const [preferredPrinterId, setPreferredPrinterId] = useState<string | null>(null);
   const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
   const [billHistoryPanelOpen, setBillHistoryPanelOpen] = useState(false);
+  const [customerToolsOpen, setCustomerToolsOpen] = useState(false);
   const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
@@ -2561,7 +2586,7 @@ export function PosTerminal({
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
-  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen;
+  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen;
   const displayCart = useMemo(
     () => buildCouponPreviewCart(cart, appliedCoupon?.discount ?? 0),
     [cart, appliedCoupon?.discount],
@@ -3476,7 +3501,8 @@ export function PosTerminal({
             cart={cart}
             displayCart={displayCart}
             appliedCoupon={appliedCoupon}
-            checkoutTools={customerCouponTools}
+            selectedCustomerName={selectedCustomer?.name ?? null}
+            onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
@@ -3726,7 +3752,8 @@ export function PosTerminal({
             cart={cart}
             displayCart={displayCart}
             appliedCoupon={appliedCoupon}
-            checkoutTools={customerCouponTools}
+            selectedCustomerName={selectedCustomer?.name ?? null}
+            onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
@@ -3796,9 +3823,17 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden min-h-0 overflow-y-auto border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
+      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
         {renderOrderPanelContent()}
       </aside>
+
+      <PosUtilitySheet
+        open={customerToolsOpen}
+        title="ลูกค้า / คูปอง / จอลูกค้า"
+        onClose={() => setCustomerToolsOpen(false)}
+      >
+        {customerCouponTools}
+      </PosUtilitySheet>
 
       <PosUtilitySheet
         open={ticketPanelOpen}
