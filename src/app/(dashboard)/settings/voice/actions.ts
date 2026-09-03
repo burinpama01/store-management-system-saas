@@ -64,10 +64,10 @@ export async function setVoiceAliasActiveAction(
   isActive: boolean,
 ): Promise<{ error: string | null }> {
   await requirePermission("settings.manage_store");
-  await getStoreContext();
+  const { ctx } = await getStoreContext();
   if (!UUID_RE.test(aliasId)) return { error: "รหัสคำเรียกไม่ถูกต้อง" };
 
-  const { error } = await setVoiceAliasActive(aliasId, isActive);
+  const { error } = await setVoiceAliasActive(aliasId, ctx.storeId, isActive);
   if (error) return { error: error.userMessage };
 
   revalidatePath("/settings/voice", "page");

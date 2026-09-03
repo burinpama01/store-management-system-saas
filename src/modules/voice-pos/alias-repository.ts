@@ -136,15 +136,21 @@ export async function createVoiceAlias(
   };
 }
 
-/** เปิด/ปิดใช้งาน alias (ไม่ลบทิ้ง เพื่อคงร่องรอยการตรวจสอบ) */
+/**
+ * เปิด/ปิดใช้งาน alias (ไม่ลบทิ้ง เพื่อคงร่องรอยการตรวจสอบ)
+ * ผูก store_id ไว้ด้วยเสมอ — RLS กันข้ามร้านอยู่แล้ว แต่กันซ้ำอีกชั้นที่ query
+ * เพื่อไม่ให้ id ที่หลุดมาจากที่อื่นถูกนำมาใช้แก้แถวของร้านอื่นได้เลย
+ */
 export async function setVoiceAliasActive(
   aliasId: string,
+  storeId: string,
   isActive: boolean,
 ): Promise<{ error: AppError | null }> {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase
     .from("voice_aliases")
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
-    .eq("id", aliasId);
+    .eq("id", aliasId)
+    .eq("store_id", storeId);
   return { error: error ? mapError(error) : null };
 }

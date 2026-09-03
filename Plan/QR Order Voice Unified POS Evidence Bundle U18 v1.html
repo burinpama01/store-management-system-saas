@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Evidence Bundle U18 — QR Order + Voice Unified POS v0.39.1</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --line: #e3e1dc;
+    --text: #1c1b19;
+    --muted: #6b6862;
+    --ok: #14713d;
+    --warn: #8a5a00;
+    --risk: #9a2c2c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 "Sarabun", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 72px; }
+  header.doc { border-bottom: 2px solid var(--text); padding-bottom: 16px; margin-bottom: 28px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 19px; margin: 34px 0 10px; }
+  h3 { font-size: 16px; margin: 22px 0 8px; }
+  p, li { margin: 6px 0; }
+  .sub { color: var(--muted); font-size: 14px; }
+  section.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 700; background: #f2f1ee; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+  .tag { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 700; }
+  .tag.ok { background: #e2f3e8; color: var(--ok); }
+  .tag.warn { background: #fbf0dc; color: var(--warn); }
+  .tag.risk { background: #fbe4e4; color: var(--risk); }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .kv { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fff; }
+  .kv b { display: block; font-size: 12px; color: var(--muted); font-weight: 700; }
+  .scroll { overflow-x: auto; }
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header class="doc">
+    <h1>Evidence Bundle U18 — QR Order + Voice Unified POS</h1>
+    <p class="sub">
+      Release candidate v0.39.1 · แผนอ้างอิง <span class="mono">Plan/QR Order Voice Unified POS Implementation Plan v2.html</span> · จัดทำ 2026-09-03
+    </p>
+    <p class="sub">ขอบเขตเอกสารนี้: หลักฐานคุณภาพของ R1+R2 ก่อนเข้า U19 (staging RC) — <b>ยังไม่ push และยังไม่ deploy production</b></p>
+  </header>
+
+  <section class="panel">
+    <h2 style="margin-top:0">สรุปสถานะ</h2>
+    <div class="grid">
+      <div class="kv"><b>Backend Gate (B0–B12)</b><span class="tag ok">PASS</span> — ทุก step, zero unexpected skip</div>
+      <div class="kv"><b>Canonical unit suite</b>1384 passed / 54 skipped (142 ไฟล์)</div>
+      <div class="kv"><b>Playwright ทั้งหมด</b>26 passed (unified-pos 25 + infrastructure smoke 1)</div>
+      <div class="kv"><b>typecheck / lint / build</b>ผ่านทั้งหมด (lint 0 error, 45 warning เดิม)</div>
+    </div>
+    <p class="sub">
+      หลักฐานดิบ: <span class="mono">artifacts/unified-pos/r1-backend-gate.json</span> (บันทึก commit sha + verdict ของการรันจริง),
+      <span class="mono">artifacts/unified-pos/u18-e2e-all.log</span>, <span class="mono">u18-build2.log</span>
+    </p>
+  </section>
+
+  <h2>1. Backend Gate — รันจาก clean reset</h2>
+  <section class="panel">
+    <p><span class="mono">npm run test:unified-pos:backend</span> รีเซ็ตฐานข้อมูล local (migrations + seed) ใหม่ทุกครั้งก่อนวัดผล</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Step</th><th>สิ่งที่ตรวจ</th><th>ผล</th></tr></thead>
+        <tbody>
+          <tr><td>a</td><td>supabase db reset --local (migrations + seed)</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>b</td><td>pgTAP suite</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>b2</td><td>realtime readiness probe (warm-up หลัง reset)</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>c</td><td>integration tests ของ unified POS (zero-skip)</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>d</td><td>canonical vitest suite (env injected, zero-skip)</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>e</td><td>typecheck</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>f</td><td>lint</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>g</td><td>build</td><td><span class="tag ok">passed</span></td></tr>
+          <tr><td>h</td><td>git diff --check</td><td><span class="tag ok">passed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>สิ่งที่ต้องแก้เพื่อให้ gate ผ่านจาก clean reset (พบใน U18 เอง)</h3>
+    <ul>
+      <li><b>seed.sql ไม่มีแถว <span class="mono">receipt_settings</span></b> ของร้าน seed → หลัง reset fixture ของ
+        <span class="mono">tests/integration/unified-pos-printing.test.ts</span> ล้มทั้งไฟล์ (7 skipped) — แก้โดยเพิ่มแถวใน seed
+        (ร้านจริงมีแถวนี้เสมอ) ไม่ใช่ปล่อยให้เทส upsert ทับค่าจริง</li>
+      <li><b>lint error 2 จุดจากโค้ดรอบนี้</b>: เขียน ref ตอน render ใน <span class="mono">PosTerminal</span> และ setState ใน effect ของ
+        <span class="mono">VoiceCommandButton</span> → ย้ายไป <span class="mono">useEffect</span> และ <span class="mono">useSyncExternalStore</span> ตามลำดับ</li>
+    </ul>
+  </section>
+
+  <h2>2. ความครอบคลุมของเทส (R2)</h2>
+  <section class="panel">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Task</th><th>เทสที่คุม</th><th>จำนวน</th></tr></thead>
+        <tbody>
+          <tr><td>U9 shell + legacy fallback</td><td><span class="mono">unified-pos-shell.test.tsx</span>, e2e flag on/off + responsive</td><td>9 unit + 3 e2e</td></tr>
+          <tr><td>U10 คิวครัว</td><td><span class="mono">unified-pos-kitchen.test.tsx</span>, e2e realtime/conflict/reconnect</td><td>unit + 3 e2e</td></tr>
+          <tr><td>U11 บิล + พิมพ์</td><td><span class="mono">unified-pos-bill.test.tsx</span>, integration printing, e2e bill/replay/print</td><td>7 integration + 3 e2e</td></tr>
+          <tr><td>U12 ลูกค้า QR</td><td><span class="mono">qr-order-cancel/fulfillment</span>, e2e customer/legacy</td><td>39 unit + 4 e2e</td></tr>
+          <tr><td>U13 voice foundation</td><td><span class="mono">voice-pos-parser</span> (19), <span class="mono">voice-pos-speech-adapter</span> (17), <span class="mono">voice-command-button</span> (13)</td><td>49 unit</td></tr>
+          <tr><td>U14 voice navigation</td><td><span class="mono">voice-pos-navigation</span> (15) + e2e voice navigation</td><td>15 unit + 3 e2e</td></tr>
+          <tr><td>U15 voice cart + undo</td><td><span class="mono">voice-pos-cart</span> (19), <span class="mono">voice-pos-undo</span> (10) + e2e cart/undo/blocked</td><td>29 unit + 3 e2e</td></tr>
+          <tr><td>U16 privacy/fallback</td><td><span class="mono">voice-pos-privacy</span> (10) + e2e privacy/unsupported/permission</td><td>10 unit + 3 e2e</td></tr>
+          <tr><td>U17 integrated</td><td>e2e ครบสาย + keyboard/responsive/console + flag matrix</td><td>3 e2e</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>3. Security review (ทำในรอบนี้)</h2>
+  <section class="panel">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>หัวข้อ</th><th>สิ่งที่ตรวจ</th><th>ผล / การจัดการ</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>RLS ของผิวใหม่</td>
+            <td><span class="mono">voice_aliases</span>: อ่าน = สมาชิกร้าน, เขียน/ลบ = manager+ ; server action ทั้งสองตัวผ่าน
+              <span class="mono">requirePermission("settings.manage_store")</span> และใช้ user client (ไม่ใช่ service client)</td>
+            <td><span class="tag ok">ผ่าน</span> — แก้เพิ่ม: <b>toggle alias ผูก <span class="mono">store_id</span> ของ context ด้วย</b>
+              (เดิมอ้าง id อย่างเดียว พึ่ง RLS ชั้นเดียว)</td>
+          </tr>
+          <tr>
+            <td>เงิน/พิมพ์ซ้ำ</td>
+            <td>settlement ใช้ operation key + request hash (replay คืนผลเดิม), print job unique ต่อ source key,
+              client ไม่ auto-print ตอน replay</td>
+            <td><span class="tag ok">ผ่าน</span> — คุมด้วย integration 7 เคส + e2e replay/print</td>
+          </tr>
+          <tr>
+            <td>เสียงแตะเงินไม่ได้</td>
+            <td>parser block Tier D (ชำระ/เช็คบิล/ส่วนลด/คืนเงิน/ยกเลิก/ล้างตะกร้า) ก่อนทุก pattern;
+              executor ตะกร้าเป็น local ล้วน ไม่มี server action; ตะกร้าล็อกหลังสร้างออร์เดอร์</td>
+            <td><span class="tag ok">ผ่าน</span> — คุมด้วย matrix 30 วลี + e2e blocked payment</td>
+          </tr>
+          <tr>
+            <td>Voice privacy</td>
+            <td>สแกน migration + source จริง: ไม่มีคอลัมน์เก็บเสียง/คำพูด, ไม่มี localStorage/console/network
+              ในเส้นทางเสียง, telemetry ประกอบใหม่จาก allowlist + purge 30 วัน</td>
+            <td><span class="tag ok">ผ่าน</span> — <span class="mono">voice-pos-privacy.test.ts</span> 10 เคส</td>
+          </tr>
+          <tr>
+            <td>ความลับใน log</td>
+            <td>gate มี secret scan ของ evidence (ผลลัพธ์ <span class="mono">clean</span>); โค้ดรอบนี้ไม่ log token/คีย์/transcript</td>
+            <td><span class="tag ok">ผ่าน</span></td>
+          </tr>
+          <tr>
+            <td>alias ไม่เรียนรู้เอง</td>
+            <td>ไม่มีเส้นทางใดเขียน alias จากคำพูด — repository รับเฉพาะข้อความจากฟอร์ม, มี <span class="mono">created_by</span> +
+              <span class="mono">is_active</span> ไว้ตรวจย้อนหลัง</td>
+            <td><span class="tag ok">ผ่าน</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>4. บั๊กที่พบและแก้ระหว่างการตรวจ (ไม่ใช่ของที่วางแผนไว้)</h2>
+  <section class="panel">
+    <ol>
+      <li><b>hydration mismatch (React #418) ที่ปุ่มเสียง</b> — ตัดสิน <span class="mono">isSupported()</span> ตอน render แรก
+        ทำให้ server (ไม่มี window) กับ client ได้ข้อความคนละแบบ พบจากเกณฑ์ "console zero errors" ของ U17 →
+        แก้เป็น <span class="mono">useSyncExternalStore</span> (server snapshot = null, ปุ่มปิดไว้ก่อน)</li>
+      <li><b><span class="mono">database.types.ts</span> ปิดบล็อก <span class="mono">Tables</span> เร็วเกินไป</b> —
+        <span class="mono">unified_pos_operation_receipts</span> และ <span class="mono">voice_aliases</span> หลุดออกจาก type map
+        (query แล้วได้ <span class="mono">never</span>) → ย้ายวงเล็บปิดไปท้ายรายการตาราง</li>
+      <li><b>seed ขาด <span class="mono">receipt_settings</span></b> ทำให้ integration printing ล้มหลัง reset (รายละเอียดในหัวข้อ 1)</li>
+      <li><b>lint: ref ตอน render / setState ใน effect</b> (รายละเอียดในหัวข้อ 1)</li>
+    </ol>
+  </section>
+
+  <h2>5. ข้อจำกัดที่รับไว้อย่างรู้ตัว (accepted risk)</h2>
+  <section class="panel">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>เรื่อง</th><th>สถานะ</th><th>เจ้าของ / เส้นตาย</th><th>ทางถอย</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="mono">/pos</span> ไม่มี Ctrl+K palette (อยู่นอก layout <span class="mono">(dashboard)</span>)
+              — ข้อความ fallback ในหน้า POS จึงชี้ไปที่แท็บบนหน้าจอแทน</td>
+            <td><span class="tag warn">รับไว้</span></td>
+            <td>เจ้าของผลิตภัณฑ์ · ทบทวนใน U19</td>
+            <td>ไม่กระทบการทำงาน — ผู้ใช้ยังกดปุ่ม/แท็บได้ทุกกรณี</td>
+          </tr>
+          <tr>
+            <td>คำสั่งเสียง "ค้นหา" จะโฟกัสได้เมื่อหน้ามี <span class="mono">[data-voice-focus="search"]</span> เท่านั้น
+              (หน้าขายปัจจุบันมีแต่ <span class="mono">cart</span>)</td>
+            <td><span class="tag warn">รับไว้</span></td>
+            <td>เจ้าของผลิตภัณฑ์ · เมื่อหน้าขายใหม่มีช่องค้นหา</td>
+            <td>ระบบตอบว่า "หน้านี้ยังไม่มีช่องค้นหา" ไม่มี error</td>
+          </tr>
+          <tr>
+            <td>ตารางเบราว์เซอร์ (Safari/Firefox/มือถือจริง) ยังไม่ได้ทดสอบด้วยมือ</td>
+            <td><span class="tag risk">ค้าง</span></td>
+            <td>ผู้ทดสอบ · ต้องเสร็จใน U19</td>
+            <td><span class="mono">docs/deployment/voice-browser-matrix.md</span> — ปิด flag เสียงต่อร้านได้ทันที</td>
+          </tr>
+          <tr>
+            <td>telemetry เสียงยังอยู่ในหน่วยความจำของ session (ยังไม่ส่งขึ้น server)</td>
+            <td><span class="tag warn">ตั้งใจ</span></td>
+            <td>—</td>
+            <td>ถ้าจะส่งขึ้น server ต้องผ่าน <span class="mono">sanitizeVoiceTelemetry</span> เท่านั้น</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>6. ต่อจากนี้</h2>
+  <section class="panel">
+    <ul>
+      <li><b>U19 · Staging RC (0.39.2)</b> — ต้องขออนุมัติแยกสำหรับ apply migration บน staging และ deploy; ปิด store flags ทั้งหมด
+        แล้วเปิดเฉพาะร้านนำร่องที่ระบุชื่อ</li>
+      <li><b>U20 · Production 1.0.0</b> — หลัง staging ผ่านและมีหลักฐานสด</li>
+      <li>ยังไม่มีการ push/deploy ใด ๆ จากงานชุดนี้ — ทุก commit อยู่บน <span class="mono">main</span> ในเครื่องเท่านั้น</li>
+    </ul>
+  </section>
+
+  <footer>
+    StoreOS · Evidence Bundle U18 v1 · เอกสารนี้สรุปผลจากการรันจริงในเครื่องพัฒนา ไม่ใช่คำรับรองผล staging/production
+  </footer>
+</main>
+</body>
+</html>
