@@ -1,10 +1,12 @@
 "use server";
 
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { logActionError } from "@/modules/system/event-log";
 import { landingPathForCurrentUser } from "@/modules/auth/guards";
 import { redirect } from "next/navigation";
 
 function logSignInError(error: { code?: string; message: string }) {
+  logActionError({ source: "auth.login", action: "signIn", error });
   if (process.env.NODE_ENV === "production") {
     console.error("[signIn] Supabase error:", error.code ?? "unknown");
     return;

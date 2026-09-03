@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { logActionError } from "@/modules/system/event-log";
 import {
   createSupabaseServerClient,
   createSupabaseServiceClient,
@@ -18,6 +19,7 @@ export interface RegisterState {
 
 function logRegisterError(scope: string, error: { message?: string } | null) {
   if (process.env.NODE_ENV === "production") {
+    logActionError({ source: "auth.register", action: scope, error: error ?? new Error(scope) });
     console.error(`[register] ${scope} failed`);
     return;
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logActionError } from "@/modules/system/event-log";
 import { AuthorizationError, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
     if (e instanceof AuthorizationError) {
       return NextResponse.json({ error: "Missing billing permission" }, { status: 403 });
     }
+    logActionError({ source: "billing.stripe", action: "checkout", error: e });
     console.error("[stripe/checkout]", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

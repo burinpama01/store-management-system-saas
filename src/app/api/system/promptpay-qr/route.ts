@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logActionError } from "@/modules/system/event-log";
 import { getCurrentUser } from "@/modules/auth/session";
 import { isSystemAdmin } from "@/modules/auth/guards";
 import { decodeQrPayloadFromImage } from "@/modules/billing/qr-decode";
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, payload: decoded });
   } catch (e) {
+    logActionError({ source: "system.promptpay-qr", action: "GET", error: e });
     console.error("[system/promptpay-qr]", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

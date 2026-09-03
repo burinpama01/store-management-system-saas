@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { logActionError } from "@/modules/system/event-log";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import {
@@ -76,6 +77,12 @@ export async function createBranchAction(
     revalidatePath("/dashboard");
     return { error: null, ok: true };
   } catch (e) {
+    logActionError({
+      source: "settings.branches",
+      action: "createBranchAction",
+      error: e,
+      organizationId: ctx.organizationId,
+    });
     console.error("[branches] create branch failed", e);
     return { error: "เพิ่มสาขาไม่สำเร็จ กรุณาลองอีกครั้ง" };
   }

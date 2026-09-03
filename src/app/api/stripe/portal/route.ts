@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logActionError } from "@/modules/system/event-log";
 import { AuthorizationError, requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { getStripeCustomerId } from "@/modules/billing/billing-service";
@@ -38,6 +39,7 @@ export async function POST() {
     if (e instanceof AuthorizationError) {
       return NextResponse.json({ error: "Missing billing permission" }, { status: 403 });
     }
+    logActionError({ source: "billing.stripe", action: "portal", error: e });
     console.error("[stripe/portal]", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logActionError } from "@/modules/system/event-log";
 import {
   AuthorizationError,
   getOptionalResolvedCurrentPermissions,
@@ -59,6 +60,7 @@ export async function POST(req: Request) {
     if (e instanceof AuthorizationError) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    logActionError({ source: "billing.verify-slip", action: "POST", error: e });
     console.error("[billing/verify-slip]", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

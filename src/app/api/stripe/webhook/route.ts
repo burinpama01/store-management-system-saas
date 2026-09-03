@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logActionError } from "@/modules/system/event-log";
 import {
   constructWebhookEvent,
   mapStripePlan,
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
   try {
     event = constructWebhookEvent(rawBody, sig);
   } catch (e) {
+    logActionError({ source: "billing.stripe.webhook", action: "verifySignature", error: e });
     console.error("[stripe/webhook] signature verification failed", e);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
@@ -62,6 +64,12 @@ export async function POST(req: Request) {
         console.error(`[stripe/webhook] failed to mark ${event.type} failed`, markError);
       });
     }
+    logActionError({
+      source: "billing.stripe.webhook",
+      action: "handleEvent",
+      error: e,
+      context: { eventType: event.type, eventId: event.id },
+    });
     console.error(`[stripe/webhook] failed to handle ${event.type}`, e);
     return NextResponse.json({ error: "Handler failed" }, { status: 500 });
   }

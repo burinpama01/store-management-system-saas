@@ -10,6 +10,7 @@ const TABS = [
   { href: "/system/enterprise", label: "คำขอ Enterprise", exact: false },
   { href: "/system/music-licenses", label: "ใบอนุญาตขอเพลง", exact: false },
   { href: "/system/audit", label: "Audit", exact: false },
+  { href: "/system/logs", label: "บันทึกระบบ", exact: false },
   { href: "/system/settings", label: "ตั้งค่า", exact: false },
 ];
 

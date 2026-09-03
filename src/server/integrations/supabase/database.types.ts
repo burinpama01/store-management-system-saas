@@ -3802,6 +3802,61 @@ export interface Database {
         };
         Relationships: [];
       };
+      system_event_logs: {
+        Row: {
+          id: string;
+          occurred_at: string;
+          occurred_on: string;
+          level: "error" | "warn" | "info";
+          source: string;
+          action: string;
+          message: string;
+          error_code: string | null;
+          organization_id: string | null;
+          store_id: string | null;
+          actor_user_id: string | null;
+          request_id: string | null;
+          duration_ms: number | null;
+          context: Json | null;
+          fingerprint: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          occurred_at?: string;
+          level: "error" | "warn" | "info";
+          source: string;
+          action: string;
+          message: string;
+          error_code?: string | null;
+          organization_id?: string | null;
+          store_id?: string | null;
+          actor_user_id?: string | null;
+          request_id?: string | null;
+          duration_ms?: number | null;
+          context?: Json | null;
+          fingerprint: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          occurred_at?: string;
+          level?: "error" | "warn" | "info";
+          source?: string;
+          action?: string;
+          message?: string;
+          error_code?: string | null;
+          organization_id?: string | null;
+          store_id?: string | null;
+          actor_user_id?: string | null;
+          request_id?: string | null;
+          duration_ms?: number | null;
+          context?: Json | null;
+          fingerprint?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       voice_aliases: {
         Row: {
           id: string;
@@ -4282,6 +4337,14 @@ export interface Database {
           p_customer_id: string;
         };
         Returns: Json;
+      };
+      get_system_log_day_summary: {
+        Args: { p_day: string };
+        Returns: Json;
+      };
+      purge_old_system_event_logs: {
+        Args: { p_keep_days?: number };
+        Returns: number;
       };
       purge_expired_unified_pos_receipt_payloads: {
         Args: Record<string, never>;
