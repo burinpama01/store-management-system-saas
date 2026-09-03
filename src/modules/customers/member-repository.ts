@@ -9,6 +9,7 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
 import { escapeLikePattern } from "@/shared/utils/like-pattern";
+import { normalizeCustomerPhone } from "@/shared/utils/customer-phone";
 
 type PortalLinkRow = Database["public"]["Tables"]["customer_member_portal_links"]["Row"];
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
@@ -75,9 +76,8 @@ function normalizeEmail(value: string | null | undefined) {
   return email && email.includes("@") ? email : "";
 }
 
-function normalizePhone(value: string | null | undefined) {
-  return (value ?? "").trim().replace(/[\s()-]/g, "");
-}
+/** ใช้กฎเดียวกับฝั่งแดชบอร์ด (shared/utils/customer-phone.ts) — ห้ามแยกกฎกันอีก */
+const normalizePhone = normalizeCustomerPhone;
 
 function normalizeIdentifier(value: string | null | undefined) {
   const trimmed = (value ?? "").trim();
@@ -405,7 +405,21 @@ export async function createOrFindMemberCustomer(input: {
     .select("id")
     .single();
 
-  if (created.error) return { data: null, error: mapError(created.error).userMessage };
+  if (created.error) {
+    // ชนกับ unique (store_id, phone) = มีคนสมัครเบอร์นี้แทรกเข้ามาระหว่างทาง
+    // → หยิบแถวที่มีอยู่แทน ไม่ใช่โยน error ให้ลูกค้าเห็น (audit ข้อ 3)
+    if (created.error.code === "23505" && phone) {
+      const raced = await supabase
+        .from("customers")
+        .select("id")
+        .eq("store_id", input.storeId)
+        .eq("phone", phone)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!raced.error && raced.data) return { data: raced.data.id, error: null };
+    }
+    return { data: null, error: mapError(created.error).userMessage };
+  }
 
   await supabase.from("loyalty_accounts").upsert(
     {

@@ -3,6 +3,7 @@ import { mapError } from "@/shared/utils/error";
 import { normalizePriceTier } from "@/modules/pos/pricing";
 import type { Database } from "@/server/integrations/supabase/database.types";
 import type { CustomerProfile, CustomerSaveInput } from "./types";
+import { normalizeCustomerPhoneOrNull } from "@/shared/utils/customer-phone";
 
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
 type LoyaltyAccountRow = Pick<
@@ -104,7 +105,8 @@ export async function saveCustomer(input: CustomerSaveInput) {
     organization_id: input.organizationId,
     store_id: input.storeId,
     name: input.name.trim(),
-    phone: input.phone?.trim() || null,
+    // normalize ให้เป็นรูปแบบเดียวกับที่ member portal ใช้ค้นหา (audit ข้อ 2)
+    phone: normalizeCustomerPhoneOrNull(input.phone),
     email: input.email?.trim() || null,
     // Only touch the tier when explicitly provided so older callers keep the saved tier.
     ...(input.priceTier !== undefined ? { price_tier: normalizePriceTier(input.priceTier) } : {}),
@@ -126,7 +128,20 @@ export async function saveCustomer(input: CustomerSaveInput) {
         .select("*")
         .single();
 
-  if (result.error) return { data: null, error: mapError(result.error) };
+  if (result.error) {
+    // unique (store_id, phone) — บอกให้ชัดว่าเบอร์ซ้ำ ไม่ใช่ข้อความ generic
+    if (result.error.code === "23505") {
+      return {
+        data: null,
+        error: {
+          code: "customer_phone_taken",
+          message: "duplicate customer phone",
+          userMessage: "เบอร์นี้มีลูกค้าอยู่แล้วในร้าน — ค้นหาชื่อเดิมแล้วแก้ไขแทนการสร้างใหม่",
+        },
+      };
+    }
+    return { data: null, error: mapError(result.error) };
+  }
 
   return { data: mapCustomer(result.data), error: null };
 }

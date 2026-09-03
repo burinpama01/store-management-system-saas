@@ -5,6 +5,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_POINTS_ADJUSTMENT, parsePointsDeltaInput } from "@/modules/loyalty/points-input";
 import { escapeLikePattern } from "@/shared/utils/like-pattern";
+import {
+  normalizeCustomerPhone,
+  normalizeCustomerPhoneOrNull,
+} from "@/shared/utils/customer-phone";
 
 const read = (relative: string) => readFileSync(join(process.cwd(), relative), "utf8");
 
@@ -98,5 +102,64 @@ describe("ข้อ 1 (เพิ่มเติม) — ปัดค่าลบ
     expect(parsePointsDeltaInput("-0.014")).toBe(-0.01);
     expect(parsePointsDeltaInput("-2.345")).toBe(-2.35);
     expect(parsePointsDeltaInput("2.345")).toBe(2.35);
+  });
+});
+
+describe("ข้อ 2 — เบอร์ลูกค้าใช้กฎเดียวกันทั้งระบบ", () => {
+  it("normalize ตัดช่องว่าง วงเล็บ ขีด (คงตัวเลขเดิม)", () => {
+    expect(normalizeCustomerPhone("081-234-5678")).toBe("0812345678");
+    expect(normalizeCustomerPhone(" (081) 234 5678 ")).toBe("0812345678");
+    expect(normalizeCustomerPhone("0812345678")).toBe("0812345678");
+    expect(normalizeCustomerPhone("+66 81 234 5678")).toBe("+66812345678");
+  });
+
+  it("ไม่มีเบอร์ = null (คอลัมน์ nullable)", () => {
+    expect(normalizeCustomerPhoneOrNull("")).toBeNull();
+    expect(normalizeCustomerPhoneOrNull("   ")).toBeNull();
+    expect(normalizeCustomerPhoneOrNull(null)).toBeNull();
+    expect(normalizeCustomerPhoneOrNull("081-234-5678")).toBe("0812345678");
+  });
+
+  it("แดชบอร์ดและ member portal ใช้ helper ตัวเดียวกัน (ห้ามแยกกฎ)", () => {
+    const dashboard = read("src/modules/customers/repository.ts");
+    const member = read("src/modules/customers/member-repository.ts");
+    expect(dashboard).toContain("normalizeCustomerPhoneOrNull(input.phone)");
+    expect(dashboard).not.toContain("phone: input.phone?.trim() || null");
+    expect(member).toContain("normalizeCustomerPhone");
+    expect(member).not.toMatch(/function normalizePhone\(/);
+  });
+});
+
+describe("ข้อ 3 — เบอร์ซ้ำต่อร้านต้องเป็นไปไม่ได้", () => {
+  const migration = read("supabase/migrations/20260903000001_customers_phone_unique.sql");
+
+  it("migration normalize ก่อน แล้วจึงสร้าง unique index เฉพาะแถวที่มีเบอร์", () => {
+    expect(migration).toContain("update public.customers");
+    expect(migration).toContain("create unique index if not exists customers_store_phone_unique");
+    expect(migration).toContain("where phone is not null and phone <> ''");
+    // ต้อง normalize ก่อนสร้าง index เสมอ
+    expect(migration.indexOf("update public.customers")).toBeLessThan(
+      migration.indexOf("create unique index"),
+    );
+  });
+
+  it("ถ้ามีเบอร์ซ้ำ migration ต้องหยุดพร้อมบอกที่ซ้ำ ไม่รวม/ลบข้อมูลเอง", () => {
+    expect(migration).toContain("raise exception");
+    expect(migration).toContain("พบเบอร์ลูกค้าซ้ำ");
+    expect(migration).not.toMatch(/delete\s+from\s+public\.customers/i);
+  });
+
+  it("สมัครชนกันพร้อมกัน → หยิบแถวที่มีอยู่ ไม่โยน error ให้ลูกค้า", () => {
+    const member = read("src/modules/customers/member-repository.ts");
+    const start = member.indexOf("export async function createOrFindMemberCustomer");
+    const nextExport = member.indexOf("\nexport ", start + 10);
+    const body = member.slice(start, nextExport > 0 ? nextExport : member.length);
+    expect(body).toContain('created.error.code === "23505"');
+    expect(body).toContain("raced.data.id");
+  });
+
+  it("พนักงานกรอกเบอร์ซ้ำ → ข้อความบอกชัดว่าซ้ำ", () => {
+    const dashboard = read("src/modules/customers/repository.ts");
+    expect(dashboard).toContain("เบอร์นี้มีลูกค้าอยู่แล้วในร้าน");
   });
 });
