@@ -37,7 +37,7 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
 
   it("shell รวมเป็นคอลัมน์เต็มความสูง แถวแท็บคงที่", () => {
     expect(workspace).toContain('className="unified-pos-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden"');
-    expect(workspace).toContain('className="flex shrink-0 items-center gap-2 border-b border-gray-200"');
+    expect(workspace).toContain('className="flex shrink-0 items-center gap-2 border-b border-gray-200 pr-2"');
   });
 
   it("ไม่มีหัวข้อสองชั้น — ชื่อร้านโชว์ที่แถบหัวของ PosTerminal ที่เดียว", () => {
@@ -85,7 +85,31 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(terminal).toContain('title="ส่วนลดท้ายบิล"');
     expect(terminal).toContain("<BillDiscountPanel");
     // sheet ของส่วนลดต้องนับเป็น utility sheet ด้วย ไม่งั้น drawer มือถือกินโฟกัสทับ
-    expect(terminal).toContain("|| discountFormOpen;");
+    expect(terminal).toContain("|| discountFormOpen || tableMenuOpen;");
+  });
+
+  it("แถบด้านบนเหลือแถวเดียว — ปุ่มของหน้าขายไปอยู่แถวเดียวกับแท็บ", () => {
+    // เดิมแถบแท็บกับแถบหัวของ POS เป็นสองแถวซ้อนกัน
+    expect(workspace).toContain("POS_TOPBAR_ACTIONS_ID");
+    expect(terminal).toContain("createPortal(posActionButtons, topbarHost)");
+    // ไม่มี shell รวม (เปิด POS เดี่ยว) ต้องยังมีแถบหัวของตัวเองให้กดปุ่มได้
+    expect(terminal).toContain('<header className="topbar');
+  });
+
+  it("แถบหัวไม่มีโลโก้/ชื่อร้าน — ที่ตรงนั้นเป็นปุ่มสั่งงานด้วยเสียงแทน", () => {
+    expect(terminal).not.toContain('className="store-dot shrink-0"');
+    expect(terminal).not.toContain("ขายหน้าร้าน · POS");
+    expect(workspace).toContain("<VoicePosController");
+  });
+
+  it("ปุ่มโต๊ะเหลือปุ่มเดียว เปิดเมนูเลือกเปิดโต๊ะ/เช็คบิลโต๊ะ", () => {
+    expect(terminal).toContain("tableMenuOpen");
+    expect(terminal).toContain('title="โต๊ะ"');
+    expect(terminal).toContain("setShowTableOpen(true)");
+    expect(terminal).toContain("setShowTableBill(true)");
+    // สองปุ่มเดิมบนแถบหัวต้องไม่กลับมา
+    expect(terminal).not.toContain('aria-label="เปิดโต๊ะ"');
+    expect(terminal).not.toContain('aria-label="เช็คบิลโต๊ะ"');
   });
 
   it("รายการในออร์เดอร์เป็นตัวเลื่อนเดียว — aside ไม่เลื่อนซ้อน", () => {

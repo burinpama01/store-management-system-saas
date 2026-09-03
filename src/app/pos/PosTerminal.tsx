@@ -1,6 +1,9 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
+import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
 import {
@@ -2549,6 +2552,17 @@ export function PosTerminal({
   /** เลขโต๊ะของ billTableId (รู้เมื่อมาจากหน้าเปิดโต๊ะ — deep link ไม่รู้) */
   const [billTableNumber, setBillTableNumber] = useState<string | null>(null);
   const [showTableOpen, setShowTableOpen] = useState(false);
+  /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
+  const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  /** ที่วางปุ่มบนแถบหัวของ shell รวม — null = หน้า POS เดี่ยว (ใช้แถบหัวของตัวเอง) */
+  const [topbarHost, setTopbarHost] = useState<HTMLElement | null>(null);
+
+  // shell รวมเตรียมที่ว่างไว้บนแถบแท็บให้ปุ่มของหน้าขายไปอยู่แถวเดียวกัน — เดิมแถบหัว
+  // ของ POS เป็นแถวที่สองซ้อนใต้แถบแท็บ เสียความสูงไปเปล่า ๆ ถ้าไม่มีที่วาง (เปิด POS
+  // เดี่ยวแบบเดิม) ก็ยังวาดแถบหัวของตัวเองเหมือนเดิม
+  useEffect(() => {
+    setTopbarHost(document.getElementById(POS_TOPBAR_ACTIONS_ID));
+  }, []);
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
@@ -2598,7 +2612,8 @@ export function PosTerminal({
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
-  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen || discountFormOpen;
+  const utilitySheetOpen =
+    ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen || discountFormOpen || tableMenuOpen;
   const displayCart = useMemo(
     () => buildCouponPreviewCart(cart, appliedCoupon?.discount ?? 0),
     [cart, appliedCoupon?.discount],
@@ -3582,73 +3597,69 @@ export function PosTerminal({
   // เต็มความสูงของกล่องแม่ (h-full) ไม่ใช่ 100vh ตายตัว — เมื่อ POS ถูกวางใน shell รวม
   // ที่มีหัวข้อ/แท็บอยู่ด้านบน ความสูง 100vh จะดันให้ทั้งหน้าเลื่อน ผู้ใช้ต้องการให้เลื่อน
   // ได้เฉพาะรายการเมนูเท่านั้น
+  // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
+  const posActionButtons = (
+    <>
+      <ConnectionBadge className="hidden sm:inline-flex" />
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setTableMenuOpen((open) => !open)}
+          aria-haspopup="dialog"
+          aria-expanded={tableMenuOpen}
+          className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+        >
+          🍽️ <span className="hidden sm:inline">โต๊ะ</span>
+        </button>
+      </div>
+      <CashSessionPanel
+        session={cashSession}
+        cashSalesPreview={cashSalesPreview}
+        cashMovementPreview={cashMovementPreview}
+        currency={currency}
+        forceOpenPrompt={!cashSession && canRecordCashflow}
+      />
+      <button
+        type="button"
+        onClick={() => setPrinterConnectionOpen((open) => !open)}
+        className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+        aria-expanded={printerConnectionOpen}
+        aria-controls="pos-printer-connection"
+      >
+        <span className="sm:hidden">ปริ้น</span>
+        <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
+      </button>
+      {exitHref ? (
+        <a href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
+          ←<span className="hidden sm:inline"> กลับ</span>
+        </a>
+      ) : (
+        <form action={signOut} className="shrink-0">
+          <SubmitButton variant="secondary" className="min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
+            <span className="sm:hidden">⎋</span>
+            <span className="hidden sm:inline">ออกจากระบบ</span>
+          </SubmitButton>
+        </form>
+      )}
+    </>
+  );
+
+  // อยู่ใน shell รวม = ยิงปุ่มขึ้นไปแถวแท็บ (แถวเดียว) / อยู่เดี่ยว = แถบหัวของตัวเอง
+  const posActions = topbarHost
+    ? createPortal(posActionButtons, topbarHost)
+    : (
+      <header className="topbar h-auto min-h-16 flex-nowrap justify-end overflow-x-auto">
+        {posActionButtons}
+      </header>
+    );
+
   return (
     <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Store header */}
-        {/* flex-nowrap ทับกฎ .topbar ที่ตั้ง flex-wrap:wrap ไว้บนจอแคบ — พอปุ่มตัดบรรทัด
-            แต่ความสูงถูกล็อกไว้ แถวที่สองจะโดนตัดจนชื่อร้านทับป้ายสถานะ. แถวปุ่มตั้งใจให้
-            เลื่อนแนวนอนบนจอแคบอยู่แล้ว และ min-h แทน h เผื่อความสูงสกรอลบาร์ */}
-        <header className="topbar h-auto min-h-16 flex-nowrap overflow-x-auto">
-          <span className="store-dot shrink-0">S</span>
-          <div className="min-w-0 shrink">
-            <span className="block truncate text-sm font-extrabold text-[var(--ink)]">{storeName}</span>
-            <span className="text-xs text-[var(--muted)]">ขายหน้าร้าน · POS</span>
-          </div>
-          {/* Action group: stays together, pushed right, never shrinks (scrolls on small screens).
-              On mobile the buttons collapse to icon-only to fit narrow widths. */}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden sm:block">
-              <span className="badge badge-success">เชื่อมต่อปกติ</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowTableOpen(true)}
-              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
-              aria-label="เปิดโต๊ะ"
-            >
-              🍽️ <span className="hidden sm:inline">เปิดโต๊ะ</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowTableBill(true)}
-              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
-              aria-label="เช็คบิลโต๊ะ"
-            >
-              🧾 <span className="hidden sm:inline">เช็คบิลโต๊ะ</span>
-            </button>
-            <CashSessionPanel
-              session={cashSession}
-              cashSalesPreview={cashSalesPreview}
-              cashMovementPreview={cashMovementPreview}
-              currency={currency}
-              forceOpenPrompt={!cashSession && canRecordCashflow}
-            />
-            <button
-              type="button"
-              onClick={() => setPrinterConnectionOpen((open) => !open)}
-              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
-              aria-expanded={printerConnectionOpen}
-              aria-controls="pos-printer-connection"
-            >
-              <span className="sm:hidden">ปริ้น</span>
-              <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
-            </button>
-            {exitHref ? (
-              <a href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
-                ←<span className="hidden sm:inline"> กลับ</span>
-              </a>
-            ) : (
-              <form action={signOut} className="shrink-0">
-                <SubmitButton variant="secondary" className="min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
-                  <span className="sm:hidden">⎋</span>
-                  <span className="hidden sm:inline">ออกจากระบบ</span>
-                </SubmitButton>
-              </form>
-            )}
-          </div>
-        </header>
+        {/* ปุ่มบนแถบหัว: ไม่มีโลโก้/ชื่อร้านแล้ว (หน้า POS ไม่ต้องบอกว่าอยู่ร้านไหน
+            ทุกวินาที และที่ตรงนั้นมีค่ากว่าถ้าให้ปุ่มสั่งงานด้วยเสียงอยู่แทน) */}
+        {posActions}
 
         {printerLoadError && (
           <div role="status" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
@@ -3827,6 +3838,45 @@ export function PosTerminal({
       <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
         {renderOrderPanelContent()}
       </aside>
+
+      {/* เมนูโต๊ะ — ยุบสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เหลือปุ่มเดียว
+          งานโต๊ะไม่ได้ทำทุกบิล การให้กินที่แถบหัวสองช่องจึงไม่คุ้ม */}
+      <PosUtilitySheet
+        open={tableMenuOpen}
+        title="โต๊ะ"
+        onClose={() => setTableMenuOpen(false)}
+      >
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setTableMenuOpen(false);
+              setShowTableOpen(true);
+            }}
+            className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          >
+            <span aria-hidden="true" className="text-xl">🍽️</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900">เปิดโต๊ะ</span>
+              <span className="block text-xs text-gray-500">เริ่มรอบโต๊ะใหม่ พิมพ์ QR ให้ลูกค้าสั่งเอง</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTableMenuOpen(false);
+              setShowTableBill(true);
+            }}
+            className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          >
+            <span aria-hidden="true" className="text-xl">🧾</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900">เช็คบิลโต๊ะ</span>
+              <span className="block text-xs text-gray-500">รวมบิลทั้งโต๊ะแล้วรับเงิน</span>
+            </span>
+          </button>
+        </div>
+      </PosUtilitySheet>
 
       <PosUtilitySheet
         open={discountFormOpen && canDiscount}

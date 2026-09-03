@@ -429,7 +429,11 @@ describe("POS ticket UX guards", () => {
     const mobileDrawerEnd = source.indexOf("<aside className");
     const mobileDrawerSource = source.slice(mobileDrawerStart, mobileDrawerEnd);
 
-    expect(source).toContain("const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen");
+    // sheet ทุกตัวต้องนับรวม ไม่งั้น drawer ออร์เดอร์บนมือถือกินโฟกัสทับ
+    expect(source).toContain("const utilitySheetOpen =");
+    for (const flag of ["ticketPanelOpen", "billHistoryPanelOpen", "customerToolsOpen", "discountFormOpen", "tableMenuOpen"]) {
+      expect(source).toContain(flag);
+    }
     expect(mobileDrawerSource).toContain('aria-modal={orderPanelOpen && !utilitySheetOpen ? "true" : undefined}');
     expect(mobileDrawerSource).toContain("aria-hidden={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
     expect(mobileDrawerSource).toContain("inert={!orderPanelOpen || utilitySheetOpen ? true : undefined}");

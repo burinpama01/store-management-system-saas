@@ -233,7 +233,7 @@ export function VoicePosController({
   const undoVisible = isVoiceUndoTokenValid(undoToken, clock());
 
   return (
-    <div className={`flex flex-wrap items-start gap-2 ${className ?? ""}`.trim()}>
+    <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`.trim()}>
       <VoiceCommandButton
         adapter={adapter}
         onResult={handleResult}

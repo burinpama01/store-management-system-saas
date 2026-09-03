@@ -9,6 +9,7 @@
 //   - ห้าม console.log / ส่ง transcript ออกนอกคอมโพเนนต์ (ผู้เรียกได้เฉพาะ intent + result code)
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import {
   createBrowserSpeechAdapter,
@@ -136,6 +137,10 @@ export function VoiceCommandButton({
   }, []);
 
   const listening = state === "requesting" || state === "listening";
+  // U24 — ระหว่างฟัง/แปลคำสั่ง แสดงผลเต็มจอให้เห็นจากอีกฝั่งเคาน์เตอร์ได้
+  // overlay ไม่รับคลิก (pointer-events-none) แอปข้างหลังจึงยังกดได้ตามปกติ
+  // = "ทำงานอยู่พื้นหลัง" ไม่ใช่ modal ที่บล็อกการขาย
+  const overlayVisible = listening || state === "resolving";
 
   const handleClick = useCallback(() => {
     if (disabled) return;
@@ -193,8 +198,38 @@ export function VoiceCommandButton({
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;
 
+  const overlay =
+    overlayVisible && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            data-testid="voice-overlay"
+            aria-hidden="true"
+            className="pointer-events-none fixed inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-black/45 px-6 text-center backdrop-blur-[2px]"
+          >
+            <span
+              className={`flex h-24 w-24 items-center justify-center rounded-full text-4xl ${
+                state === "resolving" ? "bg-white/90" : "animate-pulse bg-red-500/90"
+              }`}
+            >
+              {state === "resolving" ? "⏳" : "🎙️"}
+            </span>
+            <p className="text-2xl font-bold text-white drop-shadow">{STATE_LABEL[state]}</p>
+            {interim ? (
+              <p className="max-w-3xl text-3xl font-semibold italic text-white/95 drop-shadow">{interim}</p>
+            ) : (
+              <p className="text-base text-white/80">พูดคำสั่งได้เลย — กดปุ่มซ้ำเพื่อจบการฟัง</p>
+            )}
+            <p className="text-sm text-white/70">หน้าจอยังใช้งานได้ตามปกติระหว่างฟัง</p>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div className={className}>
+    // แถวเดียวแนวนอน — ปุ่มนี้อยู่บนแถบหัวของ POS ที่ความสูงมีค่า สถานะระหว่างฟัง
+    // ไปแสดงบน overlay เต็มจอแทน ที่นี่จึงเหลือแค่บรรทัดสั้น ๆ
+    <div className={`flex items-center gap-2 ${className ?? ""}`.trim()}>
+      {overlay}
       <button
         type="button"
         data-testid="voice-mic"
@@ -237,14 +272,14 @@ export function VoiceCommandButton({
           aria-pressed={soundEnabled}
           aria-label={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
           title={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
-          className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-sm text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-sm text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
         >
           <span aria-hidden="true">{soundEnabled ? "🔊" : "🔇"}</span>
         </button>
       ) : null}
 
       {/* live region: ประกาศ "สถานะ" เท่านั้น — ไม่มีคำพูดของผู้ใช้ (ค่าเริ่มต้น) */}
-      <p role="status" aria-live="polite" className="mt-1 min-h-5 text-xs text-gray-600">
+      <p role="status" aria-live="polite" className="min-w-0 max-w-[14rem] truncate text-xs text-gray-600">
         {announceTranscript && interim ? interim : message}
       </p>
 
@@ -253,19 +288,19 @@ export function VoiceCommandButton({
         <p
           data-testid="voice-transcript"
           aria-hidden="true"
-          className="min-h-5 text-xs italic text-gray-500"
+          className="min-w-0 max-w-[14rem] truncate text-xs italic text-gray-500"
         >
           {interim}
         </p>
       ) : null}
 
       {supported === false ? (
-        <p className="text-xs text-gray-500">{ERROR_MESSAGE.unsupported_browser}</p>
+        <p className="max-w-[16rem] truncate text-xs text-gray-500" title={ERROR_MESSAGE.unsupported_browser}>{ERROR_MESSAGE.unsupported_browser}</p>
       ) : supported === null ? null : (
         /* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง.
            ข้อความยังอยู่บนหน้าและอ่านได้ก่อนกดขอไมค์ แต่พับเป็นบรรทัดเดียว —
            สองบรรทัดเต็มกินความสูงหน้า POS ที่ต้องพอดีจอ */
-        <details className="text-xs text-gray-500">
+        <details className="shrink-0 text-xs text-gray-500">
           <summary className="cursor-pointer select-none">ความเป็นส่วนตัว / วิธีใช้</summary>
           <p className="mt-1">
             ระบบไม่บันทึกเสียงหรือข้อความที่พูด แต่เบราว์เซอร์อาจส่งเสียงไปประมวลผลบนบริการของผู้ผลิตเบราว์เซอร์

@@ -11,6 +11,7 @@ import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { BillsPanel } from "./BillsPanel";
 import { VoicePosController } from "./VoicePosController";
 import { VoiceCartBridgeProvider } from "./voice-cart-bridge";
+import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
 
 type TabId = "sell" | "tables" | "kitchen" | "bills";
@@ -93,12 +94,28 @@ export function UnifiedPosWorkspace({
         {storeName} — POS รวม
       </h1>
 
-      <div className="flex shrink-0 items-center gap-2 border-b border-gray-200">
+      <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 pr-2">
+        {/* U14 — ปุ่มสั่งงานด้วยเสียง (Tier A): mount เฉพาะเมื่อ stores.voice_command_enabled = true
+            (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม)
+            วางไว้หัวแถวแทนที่โลโก้+ชื่อร้านเดิม — หน้า POS ไม่ต้องย้ำว่าอยู่ร้านไหน
+            แต่ต้องกดสั่งงานด้วยเสียงได้ทันทีจากทุกแท็บ */}
+        {voiceEnabled ? (
+          <VoicePosController
+            className="shrink-0 pl-2"
+            voiceEnabled
+            allowedCommands={voiceCommands}
+            aliases={voiceAliases}
+            productAliases={voiceProductAliases}
+            onSelectTab={selectTab}
+            adapter={voiceAdapter}
+          />
+        ) : null}
+
         <div
           role="tablist"
           aria-label="ส่วนของ POS รวม"
           onKeyDown={onTablistKeyDown}
-          className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+          className="flex min-w-0 shrink-0 gap-1 overflow-x-auto"
         >
         {TABS.map((tab) => {
           const isActive = tab.id === activeTab;
@@ -126,19 +143,12 @@ export function UnifiedPosWorkspace({
           );
         })}
         </div>
-        {/* U14 — ปุ่มสั่งงานด้วยเสียง (Tier A): mount เฉพาะเมื่อ stores.voice_command_enabled = true
-            (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม) */}
-        {voiceEnabled ? (
-          <VoicePosController
-            className="shrink-0 pb-1 pr-1"
-            voiceEnabled
-            allowedCommands={voiceCommands}
-            aliases={voiceAliases}
-            productAliases={voiceProductAliases}
-            onSelectTab={selectTab}
-            adapter={voiceAdapter}
-          />
-        ) : null}
+        {/* ที่วางปุ่มของหน้าขาย — PosTerminal ยิงปุ่มมาลงที่นี่ด้วย portal ให้แท็บกับ
+            ปุ่มอยู่แถวเดียวกัน (เดิมแถบหัวของ POS เป็นแถวที่สองซ้อนใต้แท็บ) */}
+        <div
+          id={POS_TOPBAR_ACTIONS_ID}
+          className="ml-auto flex min-w-0 shrink items-center gap-2 overflow-x-auto"
+        />
       </div>
 
       {/* ทุก panel คง mounted — hidden ตัดออกจาก a11y tree/tab order โดย state ไม่หาย */}

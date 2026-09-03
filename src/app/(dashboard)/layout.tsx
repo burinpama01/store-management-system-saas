@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import type { PermissionKey } from "@/modules/tenants/types";
@@ -174,7 +175,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               {storeContext.orgName}
             </span>
           )}
-          <span className="badge badge-success hidden sm:inline-flex">เชื่อมต่อปกติ</span>
+          <ConnectionBadge className="hidden sm:inline-flex" />
           {/* บนมือถือแถบข้างถูกซ่อน (hidden md:flex) ปุ่มออกจากระบบที่อยู่ในนั้นจึง
               เข้าไม่ถึงเลย — แถบล่างมีแต่รายการเมนู จึงต้องมีทางออกตรงนี้ */}
           <form action={signOut} className="md:hidden">

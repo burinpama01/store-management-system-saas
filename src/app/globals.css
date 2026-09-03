@@ -1150,6 +1150,12 @@ a:focus-visible {
     color: var(--color-warning);
   }
 
+  .badge-danger {
+    border-color: transparent;
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+
   .badge-brand {
     border-color: transparent;
     background: var(--tenant-primary-soft);

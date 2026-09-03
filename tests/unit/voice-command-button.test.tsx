@@ -96,6 +96,33 @@ describe("VoiceCommandButton", () => {
     expect(button).toHaveTextContent("กำลังฟัง");
   });
 
+  it("ระหว่างฟังมี overlay เต็มจอ ที่ไม่บล็อกการใช้งานหน้าจอข้างหลัง", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} />);
+
+    expect(screen.queryByTestId("voice-overlay")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+
+    const overlay = screen.getByTestId("voice-overlay");
+    expect(overlay).toHaveTextContent("กำลังฟัง");
+    // แคชเชียร์ต้องกดปุ่มอื่นต่อได้ระหว่างสั่งงานด้วยเสียง — overlay เป็นภาพอย่างเดียว
+    expect(overlay.className).toContain("pointer-events-none");
+    expect(overlay).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("overlay โชว์คำพูดชั่วคราวตัวใหญ่ แล้วหายเมื่อจบการฟัง", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitInterim("เพิ่มลาเต้"));
+    expect(screen.getByTestId("voice-overlay")).toHaveTextContent("เพิ่มลาเต้");
+
+    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
+    expect(screen.queryByTestId("voice-overlay")).toBeNull();
+  });
+
   it("กดซ้ำระหว่างฟัง = ขอให้สรุปผล ไม่เปิด session ใหม่", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
