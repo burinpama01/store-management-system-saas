@@ -80,7 +80,7 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter(false);
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
-    expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.getByTestId("voice-mic")).toBeDisabled();
     expect(screen.getByText(/Ctrl\+K/)).toBeInTheDocument();
   });
 
@@ -88,10 +88,10 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
 
     expect(fake.starts).toBe(1);
-    const button = screen.getByRole("button");
+    const button = screen.getByTestId("voice-mic");
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(button).toHaveTextContent("กำลังฟัง");
   });
@@ -99,7 +99,7 @@ describe("VoiceCommandButton", () => {
   it("กดซ้ำระหว่างฟัง = ขอให้สรุปผล ไม่เปิด session ใหม่", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
-    const button = screen.getByRole("button");
+    const button = screen.getByTestId("voice-mic");
 
     fireEvent.click(button);
     fireEvent.click(button);
@@ -115,7 +115,7 @@ describe("VoiceCommandButton", () => {
           results.push(r);
         }} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitInterim("เพิ่มลา"));
     // U14 — คำพูดชั่วคราวแสดงบนจอ แต่ไม่อยู่ใน live region (screen reader ไม่อ่าน)
     expect(screen.getByTestId("voice-transcript")).toHaveTextContent("เพิ่มลา");
@@ -139,7 +139,7 @@ describe("VoiceCommandButton", () => {
           results.push(r);
         }} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitFinal("เปิดครัว", 0.95));
     act(() => fake.emitFinal("เปิดครัว", 0.95));
 
@@ -150,7 +150,7 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "เปิดแท็บครัวแล้ว"} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitFinal("เปิดครัว", 0.95));
 
     expect(screen.getAllByRole("status")).toHaveLength(1);
@@ -164,7 +164,7 @@ describe("VoiceCommandButton", () => {
           results.push(r);
         }} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitFinal("ชำระเงิน", 0.95));
 
     expect(results[0].decision).toBe("block");
@@ -175,11 +175,11 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitError("permission_denied"));
 
     expect(screen.getByRole("status")).toHaveTextContent("ไมโครโฟน");
-    const button = screen.getByRole("button");
+    const button = screen.getByTestId("voice-mic");
     expect(button).not.toBeDisabled();
     fireEvent.click(button);
     expect(fake.starts).toBe(2);
@@ -190,7 +190,7 @@ describe("VoiceCommandButton", () => {
     const events: VoiceTelemetryEvent[] = [];
     render(<VoiceCommandButton adapter={fake.adapter} onTelemetry={(e) => events.push(e)} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
 
     expect(events).toHaveLength(1);
@@ -202,7 +202,7 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter();
     const { unmount } = render(<VoiceCommandButton adapter={fake.adapter} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitInterim("เพิ่มลา"));
     unmount();
 
@@ -213,7 +213,7 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} disabled />);
 
-    const button = screen.getByRole("button");
+    const button = screen.getByTestId("voice-mic");
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(fake.starts).toBe(0);
@@ -222,7 +222,7 @@ describe("VoiceCommandButton", () => {
   it("ปุ่มมี touch target อย่างน้อย 44px ตามเกณฑ์เข้าถึงได้", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
-    const button = screen.getByRole("button");
+    const button = screen.getByTestId("voice-mic");
     expect(button.className).toContain("min-h-11");
     expect(button.className).toContain("min-w-11");
   });
@@ -233,12 +233,103 @@ describe("VoiceCommandButton", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
 
     expect(spy).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
     spy.mockRestore();
     errorSpy.mockRestore();
+  });
+});
+
+// U23 — เสียงตอบรับของระบบ
+describe("VoiceCommandButton — เสียงตอบรับ", () => {
+  function createFakeFeedback() {
+    const cues: string[] = [];
+    const said: string[] = [];
+    return {
+      cues,
+      said,
+      feedback: {
+        cue: (kind: string) => cues.push(kind),
+        speak: (text: string) => said.push(text),
+        stop: () => {},
+      },
+    };
+  }
+
+  it("กดปุ่ม → มีเสียงเตือนว่ากำลังฟัง", () => {
+    const fake = createFakeAdapter();
+    const audio = createFakeFeedback();
+    render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+
+    expect(audio.cues).toEqual(["listening"]);
+  });
+
+  it("สั่งสำเร็จ → เสียงสำเร็จ + อ่านผลลัพธ์ที่ผู้เรียกคืนมา", () => {
+    const fake = createFakeAdapter();
+    const audio = createFakeFeedback();
+    render(
+      <VoiceCommandButton
+        adapter={fake.adapter}
+        feedback={audio.feedback}
+        onResult={() => "เพิ่ม ลาเต้ 2 รายการแล้ว"}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.95));
+
+    expect(audio.cues).toEqual(["listening", "success"]);
+    expect(audio.said).toEqual(["เพิ่ม ลาเต้ 2 รายการแล้ว"]);
+  });
+
+  it("คำสั่งต้องห้าม → เสียงผิดพลาด และอ่านเหตุผล", () => {
+    const fake = createFakeAdapter();
+    const audio = createFakeFeedback();
+    render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitFinal("ชำระเงิน", 0.95));
+
+    expect(audio.cues).toEqual(["listening", "error"]);
+    expect(audio.said).toEqual(["คำสั่งนี้ต้องทำบนหน้าจอ"]);
+  });
+
+  it("ไมโครโฟนถูกปฏิเสธ → เสียงผิดพลาด + อ่านวิธีแก้", () => {
+    const fake = createFakeAdapter();
+    const audio = createFakeFeedback();
+    render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitError("permission_denied"));
+
+    expect(audio.cues).toEqual(["listening", "error"]);
+    expect(audio.said[0]).toContain("ไมโครโฟน");
+  });
+
+  it("ไม่อ่านคำพูดดิบของผู้ใช้ออกเสียง (อ่านเฉพาะข้อความของระบบ)", () => {
+    const fake = createFakeAdapter();
+    const audio = createFakeFeedback();
+    render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitInterim("เพิ่มลาเต้สองแก้วครับ"));
+    act(() => fake.emitFinal("เพิ่มลาเต้สองแก้วครับ", 0.95));
+
+    expect(audio.said.join(" ")).not.toContain("ครับ");
+  });
+
+  it("มีปุ่มเปิด/ปิดเสียงตอบรับ และกดสลับได้", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} />);
+
+    const toggle = screen.getByRole("button", { name: /เสียงตอบรับ/ });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: /เสียงตอบรับ/ })).toHaveAttribute("aria-pressed", "false");
   });
 });

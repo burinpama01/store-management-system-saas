@@ -15,6 +15,12 @@ import {
   type VoiceSpeechAdapter,
   type VoiceSpeechSession,
 } from "@/modules/voice-pos/speech-adapter";
+import { createBrowserVoiceFeedback, type VoiceFeedback } from "@/modules/voice-pos/feedback";
+import {
+  readVoiceFeedbackPreference,
+  subscribeVoiceFeedbackPreference,
+  writeVoiceFeedbackPreference,
+} from "@/modules/voice-pos/feedback-preference";
 import {
   buildVoiceTelemetry,
   type VoiceErrorCode,
@@ -72,6 +78,8 @@ export interface VoiceCommandButtonProps {
    * (คำพูดยังแสดงบนจอระหว่างฟัง แต่ถูกตัดออกจาก accessibility tree)
    */
   readonly announceTranscript?: boolean;
+  /** ฉีดตัวเล่นเสียงตอบรับได้ (ทดสอบ/ปิดเสียง) — ไม่ส่งมาจะใช้ของเบราว์เซอร์ */
+  readonly feedback?: VoiceFeedback;
 }
 
 export function VoiceCommandButton({
@@ -82,6 +90,7 @@ export function VoiceCommandButton({
   disabled = false,
   className,
   announceTranscript = false,
+  feedback,
 }: VoiceCommandButtonProps) {
   const speech = useMemo(
     () => adapter ?? createBrowserSpeechAdapter({ locale }),
@@ -95,6 +104,18 @@ export function VoiceCommandButton({
     useCallback(() => () => {}, []),
     useCallback(() => speech.isSupported(), [speech]),
     useCallback(() => null, []),
+  );
+
+  // U23 — เสียงตอบรับ: อ่านค่าของเครื่องหลัง hydrate (server snapshot = null กัน hydration mismatch)
+  const soundOn = useSyncExternalStore<boolean | null>(
+    subscribeVoiceFeedbackPreference,
+    readVoiceFeedbackPreference,
+    () => null,
+  );
+  const soundEnabled = soundOn ?? false;
+  const player = useMemo<VoiceFeedback>(
+    () => feedback ?? createBrowserVoiceFeedback({ locale, muted: !soundEnabled }),
+    [feedback, locale, soundEnabled],
   );
 
   const [state, setState] = useState<VoiceRecognitionState>("idle");
@@ -128,6 +149,8 @@ export function VoiceCommandButton({
     setMessage("");
     setInterim("");
     settledRef.current = false;
+    player.stop();
+    player.cue("listening");
 
     sessionRef.current = speech.start({
       onState: (next) => {
@@ -149,16 +172,23 @@ export function VoiceCommandButton({
         setInterim("");
         onTelemetry?.(buildVoiceTelemetry(result, locale));
         const announcement = onResult?.(result);
-        setMessage(typeof announcement === "string" && announcement ? announcement : RESULT_MESSAGE[result.resultCode]);
+        const spoken =
+          typeof announcement === "string" && announcement ? announcement : RESULT_MESSAGE[result.resultCode];
+        setMessage(spoken);
+        // อ่านเฉพาะ "ข้อความของระบบ" — ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น
+        player.cue(result.decision === "execute" ? "success" : "error");
+        player.speak(spoken);
       },
       onError: (code) => {
         if (settledRef.current) return;
         settledRef.current = true;
         setInterim("");
         setMessage(ERROR_MESSAGE[code]);
+        player.cue("error");
+        player.speak(ERROR_MESSAGE[code]);
       },
     });
-  }, [disabled, locale, onResult, onTelemetry, speech]);
+  }, [disabled, locale, onResult, onTelemetry, player, speech]);
 
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;
@@ -167,6 +197,7 @@ export function VoiceCommandButton({
     <div className={className}>
       <button
         type="button"
+        data-testid="voice-mic"
         onClick={handleClick}
         disabled={unavailable}
         aria-disabled={unavailable}
@@ -193,6 +224,24 @@ export function VoiceCommandButton({
         <span aria-hidden="true">{listening ? "🔴" : "🎤"}</span>
         <span>{STATE_LABEL[state]}</span>
       </button>
+
+      {/* U23 — เปิด/ปิดเสียงตอบรับต่อเครื่อง (ครัวอาจปิด แคชเชียร์อาจเปิด) */}
+      {soundOn !== null ? (
+        <button
+          type="button"
+          onClick={() => {
+            const next = !soundEnabled;
+            writeVoiceFeedbackPreference(next);
+            if (!next) player.stop();
+          }}
+          aria-pressed={soundEnabled}
+          aria-label={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
+          title={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
+          className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-sm text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+        >
+          <span aria-hidden="true">{soundEnabled ? "🔊" : "🔇"}</span>
+        </button>
+      ) : null}
 
       {/* live region: ประกาศ "สถานะ" เท่านั้น — ไม่มีคำพูดของผู้ใช้ (ค่าเริ่มต้น) */}
       <p role="status" aria-live="polite" className="mt-1 min-h-5 text-xs text-gray-600">

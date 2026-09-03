@@ -59,12 +59,26 @@ describe("privacy scan — source", () => {
     join(ROOT, "src", "app", "pos", "unified", "VoicePosController.tsx"),
   ].map((path) => ({ path, source: readFileSync(path, "utf8") }));
 
-  it("โมดูลเสียงไม่เขียนอะไรลงที่เก็บถาวรเลย", () => {
+  it("เส้นทางเสียงเก็บลงเครื่องได้เฉพาะค่าเปิด/ปิดเสียงตอบรับ (ไม่มีเสียง/คำพูด)", () => {
     const persistence = /(localStorage|sessionStorage|indexedDB|document\.cookie)/;
-    const offenders = [...voiceModule, ...voiceUi].filter((file) =>
-      persistence.test(stripComments(file.source, "ts")),
+    const offenders = [...voiceModule, ...voiceUi].filter(
+      (file) =>
+        !file.path.endsWith("feedback-preference.ts") && persistence.test(stripComments(file.source, "ts")),
     );
     expect(offenders.map((f) => f.path)).toEqual([]);
+  });
+
+  it("ไฟล์เดียวที่เขียนลงเครื่องได้ ต้องเก็บแค่ '1'/'0' ในคีย์เดียว", () => {
+    const source = stripComments(
+      readFileSync(join(ROOT, "src", "modules", "voice-pos", "feedback-preference.ts"), "utf8"),
+      "ts",
+    );
+    // เขียนได้คีย์เดียว และค่าที่เขียนเป็นธงเปิด/ปิดเท่านั้น
+    const setItemCalls = source.match(/setItem\([^)]*\)/g) ?? [];
+    expect(setItemCalls).toHaveLength(1);
+    expect(setItemCalls[0]).toContain("VOICE_FEEDBACK_STORAGE_KEY");
+    expect(setItemCalls[0]).toMatch(/enabled \? "1" : "0"/);
+    expect(source).not.toMatch(/transcript|phrase|audio/i);
   });
 
   it("ไม่มี console.* ในเส้นทางเสียง (กัน transcript หลุดลง log)", () => {

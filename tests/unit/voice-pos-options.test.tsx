@@ -182,7 +182,7 @@ function renderVoicePos() {
     </VoiceCartBridgeProvider>,
   );
   const speak = (phrase: string) => {
-    fireEvent.click(screen.getByRole("button", { name: "สั่งงานด้วยเสียง" }));
+    fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitFinal(phrase));
   };
   return { speak, selectTab };
