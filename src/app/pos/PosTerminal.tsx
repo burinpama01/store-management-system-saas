@@ -3582,7 +3582,10 @@ export function PosTerminal({
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Store header */}
-        <header className="topbar h-16 overflow-x-auto">
+        {/* flex-nowrap ทับกฎ .topbar ที่ตั้ง flex-wrap:wrap ไว้บนจอแคบ — พอปุ่มตัดบรรทัด
+            แต่ความสูงถูกล็อกไว้ แถวที่สองจะโดนตัดจนชื่อร้านทับป้ายสถานะ. แถวปุ่มตั้งใจให้
+            เลื่อนแนวนอนบนจอแคบอยู่แล้ว และ min-h แทน h เผื่อความสูงสกรอลบาร์ */}
+        <header className="topbar h-auto min-h-16 flex-nowrap overflow-x-auto">
           <span className="store-dot shrink-0">S</span>
           <div className="min-w-0 shrink">
             <span className="block truncate text-sm font-extrabold text-[var(--ink)]">{storeName}</span>
