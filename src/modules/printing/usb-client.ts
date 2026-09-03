@@ -34,6 +34,35 @@ interface USBNavigator {
 
 const NAME_KEY = "usb_printer_name";
 
+/**
+ * ข้อความที่ผู้ใช้ทำอะไรต่อได้จริง เมื่อ WebUSB เปิดอุปกรณ์ไม่ได้
+ *
+ * บน Windows ไดรเวอร์ usbprint.sys จะยึดเครื่องพิมพ์ไว้ทันทีที่ระบบรู้จักมัน
+ * เบราว์เซอร์จึงเปิดไม่ได้เลย ("Access denied") ไม่ว่าจะกดกี่ครั้ง — ไม่ใช่อาการชั่วคราว
+ * ที่ลองใหม่แล้วหาย ทางแก้จริงคือพิมพ์ผ่าน Print Hub ซึ่งส่งงานเข้า Windows spooler
+ */
+export const USB_ACCESS_DENIED_MESSAGE =
+  "Windows จองเครื่องพิมพ์ตัวนี้ไว้ให้ระบบพิมพ์ของตัวเอง เบราว์เซอร์จึงต่อตรงไม่ได้ (กดซ้ำก็ไม่หาย) — " +
+  "ให้ตั้งค่าเป็นเครื่องพิมพ์ USB ผ่าน Print Hub ที่หน้า ตั้งค่า → Print Hub แทน แล้วพิมพ์ได้ทั้งจากคอมและแท็บเล็ต";
+
+export function isUsbAccessDeniedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "SecurityError" ||
+    error.name === "NotAllowedError" ||
+    /access denied|permission denied/i.test(error.message)
+  );
+}
+
+/** แปลง error ดิบของ WebUSB เป็นข้อความไทยที่บอกทางแก้ */
+export function describeUsbError(error: unknown): string {
+  if (isUsbAccessDeniedError(error)) return USB_ACCESS_DENIED_MESSAGE;
+  if (error instanceof Error && error.name === "NotFoundError") {
+    return "ยังไม่ได้เลือกเครื่องพิมพ์ — กดใหม่แล้วเลือกจากรายการอุปกรณ์";
+  }
+  return error instanceof Error && error.message ? error.message : "เชื่อมต่อ USB ไม่สำเร็จ";
+}
+
 let conn: { device: USBDeviceX; endpoint: number } | null = null;
 let lastDevice: USBDeviceX | null = null;
 
@@ -68,7 +97,14 @@ export async function connectUsbPrinter(): Promise<string> {
   if (!nav.usb) throw new Error("เบราว์เซอร์นี้ไม่รองรับ WebUSB (ใช้ Chrome/Edge เดสก์ท็อป)");
 
   const device = await nav.usb.requestDevice({ filters: [] });
-  const opened = await openDevice(device);
+  let opened: { device: USBDeviceX; endpoint: number } | null;
+  try {
+    opened = await openDevice(device);
+  } catch (error) {
+    // ข้อความดิบของเบราว์เซอร์ ("Failed to execute 'open' on 'USBDevice': Access denied.")
+    // ไม่บอกสาเหตุและไม่บอกทางแก้ — แคชเชียร์ได้แต่กดซ้ำ
+    throw new Error(describeUsbError(error));
+  }
   if (!opened) throw new Error("ไม่พบ endpoint สำหรับส่งข้อมูลไปเครื่องพิมพ์");
 
   conn = opened;

@@ -13,7 +13,13 @@ import {
 import { sendNetworkPrintJob } from "@/modules/printing/network-print-client";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
-import { connectUsbPrinter, getUsbPrinterName, isUsbPrinterConnected } from "@/modules/printing/usb-client";
+import {
+  connectUsbPrinter,
+  describeUsbError,
+  getUsbPrinterName,
+  isUsbPrinterConnected,
+  isUsbAccessDeniedError,
+} from "@/modules/printing/usb-client";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
 import { Button } from "@/shared/components/ui";
@@ -113,6 +119,8 @@ export function PrinterConnectionPanel({
   const [error, setError] = useState<string | null>(null);
   const [networkMessage, setNetworkMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** true = เจอกรณีที่ต่อตรงไม่ได้ถาวร ต้องพาไปตั้งค่า Print Hub */
+  const [showHubHint, setShowHubHint] = useState(false);
   const [nativeReady, setNativeReady] = useState(false);
   const [saveState, saveFormAction, savingNetworkPrinter] = useActionState(
     saveNetworkPrinterAction ?? (async () => ({ error: "ยังไม่พร้อมบันทึกเครื่องพิมพ์ IP/WiFi จากหน้านี้" })),
@@ -166,7 +174,9 @@ export function PrinterConnectionPanel({
       setConnectedDevice({ kind: "USB", name });
       setRememberedDevice(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "เชื่อมต่อ USB ไม่สำเร็จ");
+      setError(describeUsbError(e));
+      // Windows ยึดอุปกรณ์ไว้ = กดซ้ำไม่มีวันติด ต้องชี้ไปทางที่ใช้ได้จริง
+      setShowHubHint(isUsbAccessDeniedError(e));
     } finally {
       setBusy(false);
     }
@@ -519,6 +529,20 @@ export function PrinterConnectionPanel({
         <p className={variant === "compact" ? "mt-2 text-[11px] font-medium text-red-600" : "mt-3 rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"}>
           {error}
         </p>
+      )}
+
+      {/* ต่อตรงไม่ได้ถาวร — ให้ทางไปต่อ ไม่ใช่ปล่อยให้กดซ้ำไปเรื่อย ๆ */}
+      {showHubHint && (
+        <a
+          href="/settings/print-hub"
+          className={
+            variant === "compact"
+              ? "mt-1 inline-flex min-h-11 items-center rounded-lg border border-[var(--border)] bg-white px-3 text-[11px] font-semibold text-[var(--ink)]"
+              : "mt-2 inline-flex min-h-11 items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-white px-3 text-sm font-semibold text-[var(--ink)]"
+          }
+        >
+          ไปตั้งค่าเครื่องพิมพ์ USB ผ่าน Print Hub →
+        </a>
       )}
     </section>
   );
