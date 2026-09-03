@@ -159,10 +159,17 @@ export function VoicePosController({
                 // (เกิดเมื่อพูดคำเกินมาแต่สินค้านั้นไม่มีตัวเลือก) — บอกตามจริง ไม่อ้างว่าต้องเลือก
                 return `เพิ่ม ${resolution.candidates[0].name} แล้ว — ส่วนที่พูดเพิ่มไม่ตรงตัวเลือกใด ตรวจบนหน้าจออีกครั้ง`;
               }
-              const list = picker.choices.slice(0, 6).join(" / ");
+              // บอกเฉพาะสิ่งที่ยังขาดจริง — กลุ่มที่มีค่าเริ่มต้นอยู่แล้ว (เช่น ความหวาน
+              // 100%) ไม่ต้องสั่งให้เลือกซ้ำ ไม่งั้นพนักงานไม่รู้ว่าจริง ๆ ขาดอะไร
+              const missing = picker.missingRequiredGroups.join(" / ");
+              const list = picker.pendingChoices.slice(0, 6).join(" / ");
+              if (!missing && !picker.needsVariant) {
+                return `${picker.productName} เปิดหน้าต่างตัวเลือกให้แล้ว — กดเพิ่มในออร์เดอร์ได้เลย`;
+              }
+              const what = missing || "ตัวเลือก";
               return list
-                ? `${resolution.candidates[0].name} ต้องเลือกก่อน — พูด "เลือก…" ได้เลย (${list})`
-                : `${resolution.candidates[0].name} ต้องเลือกตัวเลือกก่อน — เลือกบนหน้าจอได้เลย`;
+                ? `${picker.productName} ยังต้องเลือก ${what} — พูด "เลือก…" ได้เลย (${list})`
+                : `${picker.productName} ยังต้องเลือก ${what} — เลือกบนหน้าจอได้เลย`;
             }
           }
           return resolution.announcement;

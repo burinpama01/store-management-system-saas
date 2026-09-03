@@ -12,7 +12,10 @@ export function ConnectionBadge({ className = "" }: { className?: string }) {
     <span
       role="status"
       aria-live="polite"
-      className={`badge ${online ? "badge-success" : "badge-danger"} ${className}`.trim()}
+      /* className ของผู้เรียกมักซ่อนป้ายบนจอเล็ก (hidden sm:inline-flex) ซึ่งโอเค
+         ตอนออนไลน์ แต่ตอนออฟไลน์ต้องเห็นเสมอ — ไม่งั้นแคชเชียร์บนมือถือกดขายต่อ
+         ทั้งที่บันทึกไม่ได้ */
+      className={`badge ${online ? `badge-success ${className}` : "badge-danger"}`.trim()}
     >
       {online ? "เชื่อมต่อปกติ" : "ออฟไลน์ — บันทึกไม่ได้"}
     </span>

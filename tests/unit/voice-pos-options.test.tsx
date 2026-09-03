@@ -133,6 +133,8 @@ function FakeSellSurface() {
               needsVariant: false,
               missingRequiredGroups: chosenRef.current ? [] : ["ความหวาน"],
               choices: ["หวานน้อย", "หวานปกติ"],
+              // เลือกแล้ว = ไม่มีอะไรค้าง เสียงจึงต้องไม่สั่งให้เลือกซ้ำ
+              pendingChoices: chosenRef.current ? [] : ["หวานน้อย", "หวานปกติ"],
             }
           : null,
       selectPickerChoice: (phrase: string) => {
@@ -213,6 +215,20 @@ describe("U21 — สินค้าที่ต้องเลือกตั�
     expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
     expect(selectTab).toHaveBeenCalledWith("sell");
     expect(statusText()).toContain("หวานน้อย");
+  });
+
+  it("บอกเฉพาะกลุ่มที่ยังขาดจริง — ไม่สั่งให้เลือกสิ่งที่มีค่าเริ่มต้นอยู่แล้ว", () => {
+    const { speak } = renderVoicePos();
+
+    speak("เพิ่มชาเย็นลงออเดอร์");
+    // ยังไม่ได้เลือก → บอกชื่อกลุ่มที่ขาดพร้อมตัวเลือกของกลุ่มนั้น
+    expect(statusText()).toContain("ยังต้องเลือก ความหวาน");
+    expect(statusText()).toContain("หวานน้อย");
+
+    // เลือกแล้ว → ไม่มีอะไรค้าง เสียงต้องไม่สั่งให้เลือกซ้ำ
+    speak("เลือกหวานน้อย");
+    speak("เพิ่มชาเย็นลงออเดอร์");
+    expect(statusText()).not.toContain("ยังต้องเลือก");
   });
 
   it('เลือกตัวเลือกด้วยเสียง แล้ว "ยืนยัน" เพื่อเพิ่มลงตะกร้า', () => {

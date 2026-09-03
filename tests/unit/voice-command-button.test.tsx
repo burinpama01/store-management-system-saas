@@ -96,6 +96,25 @@ describe("VoiceCommandButton", () => {
     expect(button).toHaveTextContent("กำลังฟัง");
   });
 
+  it("ข้อความสถานะหายเองหลังผ่านไปพักหนึ่ง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด", () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeAdapter();
+      render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "ยังต้องเลือก ระดับการคั่ว"} />);
+
+      fireEvent.click(screen.getByTestId("voice-mic"));
+      act(() => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
+      expect(screen.getByRole("status")).toHaveTextContent("ยังต้องเลือก ระดับการคั่ว");
+
+      act(() => {
+        vi.advanceTimersByTime(8000);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ระหว่างฟังมี overlay เต็มจอ ที่ไม่บล็อกการใช้งานหน้าจอข้างหลัง", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);

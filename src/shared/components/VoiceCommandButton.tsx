@@ -51,6 +51,9 @@ const RESULT_MESSAGE: Record<VoiceParseResult["resultCode"], string> = {
   low_confidence: "ฟังไม่ชัด — ยังไม่ทำให้อัตโนมัติ ลองพูดใหม่หรือใช้ Ctrl+K",
 };
 
+/** ข้อความสถานะอยู่บนแถบหัวนานเท่านี้แล้วหายเอง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด */
+const MESSAGE_VISIBLE_MS = 8000;
+
 const STATE_LABEL: Record<VoiceRecognitionState, string> = {
   idle: "สั่งงานด้วยเสียง",
   requesting: "กำลังขอไมโครโฟน…",
@@ -123,6 +126,7 @@ export function VoiceCommandButton({
   // transcript ชั่วคราวสำหรับแสดงผลระหว่างฟังเท่านั้น — ล้างทุกครั้งที่จบรอบ
   const [interim, setInterim] = useState("");
   const [message, setMessage] = useState("");
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef = useRef<VoiceSpeechSession | null>(null);
   // U14 — กัน final ซ้ำจาก engine: 1 การกด = ส่งผลให้ผู้เรียกได้ครั้งเดียว
   const settledRef = useRef(false);
@@ -133,7 +137,23 @@ export function VoiceCommandButton({
       sessionRef.current?.cancel();
       sessionRef.current = null;
       setInterim("");
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     };
+  }, []);
+
+  /**
+   * ข้อความสถานะเป็นคำแนะนำ "ณ ตอนนั้น" (เช่น ให้พูดว่า "เลือก…") ถ้าค้างบนแถบหัว
+   * ต่อไปเรื่อย ๆ มันจะสั่งงานที่จบไปแล้ว และกินความกว้างของแถบหัวถาวร จึงล้างเองหลัง
+   * ผู้ใช้มีเวลาอ่าน/ฟังจบ (เสียงพูดที่ยาวสุดของระบบสั้นกว่านี้มาก)
+   */
+  const showMessage = useCallback((text: string) => {
+    if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    setMessage(text);
+    if (!text) return;
+    messageTimerRef.current = setTimeout(() => {
+      setMessage("");
+      messageTimerRef.current = null;
+    }, MESSAGE_VISIBLE_MS);
   }, []);
 
   const listening = state === "requesting" || state === "listening";
@@ -151,7 +171,7 @@ export function VoiceCommandButton({
       return;
     }
 
-    setMessage("");
+    showMessage("");
     setInterim("");
     settledRef.current = false;
     player.stop();
@@ -179,7 +199,7 @@ export function VoiceCommandButton({
         const announcement = onResult?.(result);
         const spoken =
           typeof announcement === "string" && announcement ? announcement : RESULT_MESSAGE[result.resultCode];
-        setMessage(spoken);
+        showMessage(spoken);
         // อ่านเฉพาะ "ข้อความของระบบ" — ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น
         player.cue(result.decision === "execute" ? "success" : "error");
         player.speak(spoken);
@@ -188,7 +208,7 @@ export function VoiceCommandButton({
         if (settledRef.current) return;
         settledRef.current = true;
         setInterim("");
-        setMessage(ERROR_MESSAGE[code]);
+        showMessage(ERROR_MESSAGE[code]);
         player.cue("error");
         player.speak(ERROR_MESSAGE[code]);
       },
@@ -284,7 +304,9 @@ export function VoiceCommandButton({
       {/* live region: ประกาศ "สถานะ" เท่านั้น — ไม่มีคำพูดของผู้ใช้ (ค่าเริ่มต้น) */}
       <p role="status" aria-live="polite" /* จอเล็กซ่อนด้วย sr-only ไม่ใช่ hidden — live region ต้องอยู่ใน a11y tree
              ไม่งั้น screen reader ไม่ประกาศสถานะบนมือถือ */
-        className="sr-only max-w-[14rem] truncate text-xs text-gray-600 sm:not-sr-only sm:block sm:min-w-0">
+        /* not-sr-only ตั้ง white-space: normal ทับ truncate — ต้องบังคับ nowrap ซ้ำ
+           ไม่งั้นข้อความยาวตัดเป็นสองบรรทัดแล้วดันความสูงแถบหัว */
+        className="sr-only max-w-[14rem] truncate text-xs text-gray-600 sm:not-sr-only sm:block sm:min-w-0 sm:whitespace-nowrap">
         {announceTranscript && interim ? interim : message}
       </p>
 

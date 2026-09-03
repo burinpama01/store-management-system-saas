@@ -2828,19 +2828,24 @@ export function PosTerminal({
       getPicker: () => {
         const current = voicePickerRef.current;
         if (!current) return null;
+        const needsVariant = current.product.variants.length > 0 && !current.selectedVariant;
+        const missingGroups = current.product.modifierGroups.filter(
+          (group) =>
+            group.isRequired &&
+            (current.selectedModifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
+        );
         return {
           productName: current.product.name,
-          needsVariant: current.product.variants.length > 0 && !current.selectedVariant,
-          missingRequiredGroups: current.product.modifierGroups
-            .filter(
-              (group) =>
-                group.isRequired &&
-                (current.selectedModifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
-            )
-            .map((group) => group.name),
+          needsVariant,
+          missingRequiredGroups: missingGroups.map((group) => group.name),
           choices: [
             ...current.product.variants.map((variant) => variant.name),
             ...current.product.modifierGroups.flatMap((group) => group.options.map((option) => option.name)),
+          ],
+          // เฉพาะสิ่งที่ยังขาดจริง — กลุ่มที่ระบบเลือกค่าเริ่มต้นให้แล้วไม่ต้องถามซ้ำ
+          pendingChoices: [
+            ...(needsVariant ? current.product.variants.map((variant) => variant.name) : []),
+            ...missingGroups.flatMap((group) => group.options.map((option) => option.name)),
           ],
         };
       },
@@ -3608,8 +3613,7 @@ export function PosTerminal({
   // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
   const posActionButtons = (
     <>
-      {/* โชว์ทุกขนาดจอ — คลาส hidden ใช้กับ .badge ไม่ได้ผล (component layer ทับ utility)
-          และสถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
+      {/* โชว์ทุกขนาดจอ — สถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
       <ConnectionBadge />
       {/* ใน POS รวม ปุ่มโต๊ะอยู่บนแถบหัวของ shell แล้ว (คุมทั้งผังโต๊ะ/ครัว/บิล)
           ที่นี่จึงแสดงเฉพาะตอนเปิด POS เดี่ยวที่ไม่มี shell */}
