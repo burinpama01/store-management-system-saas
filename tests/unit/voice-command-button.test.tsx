@@ -96,6 +96,96 @@ describe("VoiceCommandButton", () => {
     expect(button).toHaveTextContent("กำลังฟัง");
   });
 
+  it("ข้อความสถานะหายเองหลังผ่านไปพักหนึ่ง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด", () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeAdapter();
+      render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "ยังต้องเลือก ระดับการคั่ว"} />);
+
+      fireEvent.click(screen.getByTestId("voice-mic"));
+      act(() => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
+      expect(screen.getByRole("status")).toHaveTextContent("ยังต้องเลือก ระดับการคั่ว");
+
+      act(() => {
+        vi.advanceTimersByTime(8000);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("onResult ขอ listenAgain → เปิดไมค์ต่อเองหลังระบบพูดจบ โดยข้อความไม่ถูกล้าง", () => {
+    const fake = createFakeAdapter();
+    render(
+      <VoiceCommandButton
+        adapter={fake.adapter}
+        onResult={() => ({ message: "ยังต้องเลือก ระดับการคั่ว", listenAgain: true })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    expect(fake.starts).toBe(1);
+
+    act(() => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
+
+    // jsdom ไม่มี speechSynthesis → ถือว่าพูดจบทันที แล้วเปิดไมค์รอบใหม่ให้เลย
+    expect(fake.starts).toBe(2);
+    // ข้อความที่เพิ่งบอกต้องยังอยู่ ผู้ใช้กำลังจะทำตามมัน
+    expect(screen.getByRole("status")).toHaveTextContent("ยังต้องเลือก ระดับการคั่ว");
+  });
+
+  it("ไม่วนเปิดไมค์ไม่รู้จบ — มีเพดานของการต่อเนื่องอัตโนมัติ", () => {
+    const fake = createFakeAdapter();
+    render(
+      <VoiceCommandButton adapter={fake.adapter} onResult={() => ({ message: "ยังต้องเลือก", listenAgain: true })} />,
+    );
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    for (let i = 0; i < 6; i += 1) {
+      act(() => fake.emitFinal("พูดอะไรสักอย่าง", 0.9));
+    }
+    // กด 1 ครั้ง + ต่อให้เองไม่เกินเพดาน
+    expect(fake.starts).toBeLessThanOrEqual(4);
+  });
+
+  it("ผลลัพธ์ที่ไม่ได้ขอ listenAgain ต้องไม่เปิดไมค์ต่อ", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "เพิ่มลงตะกร้าแล้ว"} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitFinal("เพิ่มลาเต้", 0.9));
+
+    expect(fake.starts).toBe(1);
+  });
+
+  it("ระหว่างฟังมี overlay เต็มจอ ที่ไม่บล็อกการใช้งานหน้าจอข้างหลัง", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} />);
+
+    expect(screen.queryByTestId("voice-overlay")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+
+    const overlay = screen.getByTestId("voice-overlay");
+    expect(overlay).toHaveTextContent("กำลังฟัง");
+    // แคชเชียร์ต้องกดปุ่มอื่นต่อได้ระหว่างสั่งงานด้วยเสียง — overlay เป็นภาพอย่างเดียว
+    expect(overlay.className).toContain("pointer-events-none");
+    expect(overlay).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("overlay โชว์คำพูดชั่วคราวตัวใหญ่ แล้วหายเมื่อจบการฟัง", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitInterim("เพิ่มลาเต้"));
+    expect(screen.getByTestId("voice-overlay")).toHaveTextContent("เพิ่มลาเต้");
+
+    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
+    expect(screen.queryByTestId("voice-overlay")).toBeNull();
+  });
+
   it("กดซ้ำระหว่างฟัง = ขอให้สรุปผล ไม่เปิด session ใหม่", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);

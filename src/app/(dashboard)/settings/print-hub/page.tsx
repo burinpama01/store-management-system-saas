@@ -4,7 +4,11 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { summarizeHubStatus } from "@/modules/printing/print-hub";
 import { getHubStatus, getStoreHubAuth } from "@/modules/printing/print-hub-repository";
 import { listPrinters } from "@/modules/stores/repository";
-import { saveHubBluetoothPrinterAction, saveNetworkPrinterAction } from "../receipt/actions";
+import {
+  saveHubBluetoothPrinterAction,
+  saveHubUsbPrinterAction,
+  saveNetworkPrinterAction,
+} from "../receipt/actions";
 import { PrintHubManager } from "./PrintHubManager";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +33,13 @@ export default async function PrintHubSettingsPage() {
 
   const summary = summarizeHubStatus(statusRes.data?.lastSeen ?? null);
   const printers = printersRes.data ?? [];
-  // Any printer the Hub can print to: LAN (IP/escpos) or Bluetooth-via-Hub.
+  // Any printer the Hub can print to: LAN (IP/escpos), Bluetooth-via-Hub, or a
+  // USB printer cabled to the cashier PC (printed through the Windows spooler).
   const printablePrinters = printers.filter(
     (printer) =>
       ((printer.type === "ip" || printer.type === "escpos") && printer.ipAddress) ||
-      (printer.type === "bluetooth" && printer.hubBluetoothPort),
+      (printer.type === "bluetooth" && printer.hubBluetoothPort) ||
+      (printer.type === "usb" && printer.hubUsbEnabled),
   );
   const defaultPrinter = printablePrinters.find((p) => p.isDefault) ?? printablePrinters[0] ?? null;
   const paperWidth = (defaultPrinter?.paperWidth ?? "80mm") as "58mm" | "80mm";
@@ -52,10 +58,12 @@ export default async function PrintHubSettingsPage() {
         online: summary.online,
         secondsAgo: summary.secondsAgo,
         pendingJobs: statusRes.data?.pendingJobs ?? 0,
+        devices: statusRes.data?.devices ?? [],
       }}
       loadError={statusRes.error?.userMessage ?? null}
       saveNetworkPrinterAction={saveNetworkPrinterAction}
       saveHubBluetoothPrinterAction={saveHubBluetoothPrinterAction}
+      saveHubUsbPrinterAction={saveHubUsbPrinterAction}
     />
   );
 }

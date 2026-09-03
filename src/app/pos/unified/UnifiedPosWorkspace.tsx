@@ -1,30 +1,40 @@
 "use client";
 
 // U9 — Unified POS workspace shell (R2)
-// แท็บ ขาย/โต๊ะ/ครัว/บิล แชร์ "บริบทที่เลือก" (โต๊ะ/ออร์เดอร์) แต่ state ของแต่ละแท็บ
-// (รวมถึง dialog) เป็นของใครของมัน — panel ทุกแท็บคง mounted ไว้ด้วย hidden เพื่อให้
-// draft/dialog ไม่หายตอนสลับแท็บ และจัดโฟกัสกลับที่ tab trigger เสมอ
+//
+// หน้า /pos คือ "หน้าขาย" อยู่แล้ว การมีแท็บ ขาย/โต๊ะ/ครัว/บิล อยู่บนแถบหัวตลอดเวลา
+// จึงกินความสูงไปกับสิ่งที่แคชเชียร์ไม่ได้แตะทุกบิล — หน้าขายแสดงเต็มพื้นที่เสมอ
+// ส่วนโต๊ะ/ครัว/บิลยุบไปอยู่หลังปุ่ม "โต๊ะ" ปุ่มเดียว กดแล้วเปิดเป็น dialog
+//
+// panel ทั้งสามยังคง mounted ตลอดแม้ dialog ปิดอยู่ (ซ่อนด้วย hidden) เพราะ
+// KitchenQueuePanel ถือ subscription realtime และ BillsPanel ถือผลที่โหลดมาแล้ว
+// ถ้า unmount ทุกครั้งที่ปิด dialog คิวครัวจะขาดช่วงและต้องโหลดใหม่ทุกครั้ง
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TablesPanel } from "./TablesPanel";
 import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { BillsPanel } from "./BillsPanel";
 import { VoicePosController } from "./VoicePosController";
 import { VoiceCartBridgeProvider } from "./voice-cart-bridge";
+import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
+import { emitPosCommand } from "@/modules/pos/section-bus";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
 
+/** ยังรับชื่อแท็บชุดเดิมจากคำสั่งเสียง — "sell" = ปิด dialog กลับหน้าขาย */
 type TabId = "sell" | "tables" | "kitchen" | "bills";
 
-const TABS: ReadonlyArray<{ readonly id: TabId; readonly label: string }> = [
-  { id: "sell", label: "ขาย" },
+/** ส่วนที่อยู่ใน dialog หลังปุ่มโต๊ะ */
+type SectionId = "tables" | "kitchen" | "bills";
+
+const SECTIONS: ReadonlyArray<{ readonly id: SectionId; readonly label: string }> = [
   { id: "tables", label: "โต๊ะ" },
   { id: "kitchen", label: "ครัว" },
   { id: "bills", label: "บิล" },
 ];
 
-const TAB_ORDER: ReadonlyArray<TabId> = TABS.map((t) => t.id);
+const SECTION_ORDER: ReadonlyArray<SectionId> = SECTIONS.map((s) => s.id);
 
-// storeId ใช้ตั้งแต่ U10 (คิวครัว: realtime scope + server action) — แท็บอื่นจะใช้ต่อใน U11+
+// storeId ใช้ตั้งแต่ U10 (คิวครัว: realtime scope + server action)
 export function UnifiedPosWorkspace({
   storeId,
   storeName,
@@ -37,42 +47,72 @@ export function UnifiedPosWorkspace({
   voiceProductAliases = [],
   voiceAdapter,
 }: UnifiedPosWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("sell");
-  /** บริบทร่วมของทุกแท็บ — โต๊ะที่เลือกจากแท็บโต๊ะ (ขยายเป็น order context ใน U10+) */
+  /** null = ปิด dialog (เห็นหน้าขายเต็มจอ) */
+  const [openSection, setOpenSection] = useState<SectionId | null>(null);
+  /** บริบทร่วม — โต๊ะที่เลือกจากส่วนโต๊ะ ใช้ต่อในบิล/หน้าขาย */
   const [selectedTable, setSelectedTable] = useState<UnifiedTableSummary | null>(null);
-  const triggerRefs = useRef(new Map<TabId, HTMLButtonElement | null>());
+  const triggerRefs = useRef(new Map<SectionId, HTMLButtonElement | null>());
+  const openerRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  const selectTab = useCallback((id: TabId) => {
-    setActiveTab(id);
-    // โฟกัสกลับที่ tab trigger เสมอ — click/Enter อยู่แล้ว แต่ปุ่มลูกศร/Home/End ต้องย้ายโฟกัสตาม
+  const selectSection = useCallback((id: SectionId) => {
+    setOpenSection(id);
     triggerRefs.current.get(id)?.focus();
   }, []);
 
-  const onTablistKeyDown = useCallback(
+  /** คำสั่งเสียงยังพูดชื่อแท็บเดิมได้ — "ขาย" = ปิด dialog */
+  const selectTab = useCallback((id: TabId) => {
+    if (id === "sell") {
+      setOpenSection(null);
+      return;
+    }
+    setOpenSection(id);
+  }, []);
+
+  const closeSection = useCallback(() => {
+    setOpenSection(null);
+    openerRef.current?.focus();
+  }, []);
+
+  // Escape ปิด dialog ได้จากทุกที่ในนั้น + ลูกศรสลับส่วนแบบเดียวกับแท็บเดิม
+  const onDialogKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      const currentIndex = TAB_ORDER.indexOf(activeTab);
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeSection();
+        return;
+      }
+      if (!openSection) return;
+      const currentIndex = SECTION_ORDER.indexOf(openSection);
       let nextIndex: number | null = null;
       switch (event.key) {
         case "ArrowRight":
-          nextIndex = (currentIndex + 1) % TAB_ORDER.length;
+          nextIndex = (currentIndex + 1) % SECTION_ORDER.length;
           break;
         case "ArrowLeft":
-          nextIndex = (currentIndex - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+          nextIndex = (currentIndex - 1 + SECTION_ORDER.length) % SECTION_ORDER.length;
           break;
         case "Home":
           nextIndex = 0;
           break;
         case "End":
-          nextIndex = TAB_ORDER.length - 1;
+          nextIndex = SECTION_ORDER.length - 1;
           break;
         default:
           return;
       }
       event.preventDefault();
-      selectTab(TAB_ORDER[nextIndex]);
+      selectSection(SECTION_ORDER[nextIndex]);
     },
-    [activeTab, selectTab],
+    [closeSection, openSection, selectSection],
   );
+
+  // เปิด dialog แล้วโฟกัสไปที่ปุ่มส่วนที่เลือก (คำสั่งเสียงก็เปิดทางนี้)
+  useEffect(() => {
+    if (!openSection) return;
+    const frame = requestAnimationFrame(() => triggerRefs.current.get(openSection)?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [openSection]);
 
   const handleSelectTable = useCallback((table: UnifiedTableSummary) => {
     setSelectedTable((current) => (current?.id === table.id ? current : table));
@@ -80,75 +120,73 @@ export function UnifiedPosWorkspace({
 
   return (
     <VoiceCartBridgeProvider>
-    <section aria-label={`POS รวม — ${storeName}`} className="unified-pos-workspace min-w-0">
-      <header className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
-        <h1 className="min-w-0 truncate text-sm font-semibold text-gray-700">
-          {storeName}
-          <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
-            POS รวม
-          </span>
-        </h1>
-        {/* U14 — ปุ่มสั่งงานด้วยเสียง (Tier A): mount เฉพาะเมื่อ stores.voice_command_enabled = true
-            (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม) */}
-        {voiceEnabled ? (
-          <VoicePosController
-            voiceEnabled
-            allowedCommands={voiceCommands}
-            aliases={voiceAliases}
-            productAliases={voiceProductAliases}
-            onSelectTab={selectTab}
-            adapter={voiceAdapter}
+      {/* เต็มจอพอดี: แถบหัวคงที่ ส่วนหน้าขายกินที่เหลือทั้งหมด
+          การเลื่อนเกิดขึ้นภายในหน้าขายเท่านั้น (รายการเมนู/ออร์เดอร์) ไม่ใช่ทั้งหน้า */}
+      <section
+        aria-label={`POS — ${storeName}`}
+        className="unified-pos-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      >
+        {/* ชื่อร้านไม่โชว์ซ้ำบนจอ — หน้า POS ไม่ต้องย้ำว่าอยู่ร้านไหนทุกวินาที
+            แต่ยังต้องมีหัวข้อให้ screen reader รู้ว่ากำลังอยู่ที่ไหน */}
+        <h1 className="sr-only">{storeName} — POS</h1>
+
+        {/* มือถือ: ปุ่มเสียง (ตัวใหญ่กดง่าย) + ปุ่มโต๊ะ อยู่แถวบน ปุ่มที่เหลือได้บรรทัด
+            เต็มของตัวเอง — ถ้าอัดแถวเดียวช่องที่เหลือจะแคบราว 40px จนกดไม่ได้จริง
+            เดสก์ท็อปมีที่พอ จึงรวมเป็นแถวเดียว */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 px-2 py-1 sm:flex-nowrap">
+          {/* U14 — ปุ่มสั่งงานด้วยเสียง: mount เฉพาะเมื่อ stores.voice_command_enabled = true
+              (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม)
+              อยู่หัวแถวแทนที่โลโก้+ชื่อร้านเดิม และบนมือถือทำให้ใหญ่กดง่าย */}
+          {voiceEnabled ? (
+            <VoicePosController
+              className="shrink-0"
+              voiceEnabled
+              allowedCommands={voiceCommands}
+              aliases={voiceAliases}
+              productAliases={voiceProductAliases}
+              onSelectTab={selectTab}
+              adapter={voiceAdapter}
+            />
+          ) : null}
+
+          {/* ปุ่มเดียวคุมทุกอย่างที่ไม่ใช่การขาย: ผังโต๊ะ / คิวครัว / บิล */}
+          <button
+            ref={openerRef}
+            type="button"
+            onClick={() => selectSection("tables")}
+            aria-haspopup="dialog"
+            aria-expanded={openSection !== null}
+            className="min-h-11 shrink-0 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          >
+            🍽️ <span className="hidden sm:inline">โต๊ะ / ครัว / บิล</span>
+            <span className="sm:hidden">โต๊ะ</span>
+            {selectedTable ? (
+              <span className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-800">
+                {selectedTable.number}
+              </span>
+            ) : null}
+          </button>
+
+          {/* ที่วางปุ่มของหน้าขาย — PosTerminal ยิงปุ่มมาลงที่นี่ด้วย portal
+              ทำให้แถบหัวเหลือแถวเดียวแทนที่จะเป็นสองแถวซ้อนกัน */}
+          <div
+            id={POS_TOPBAR_ACTIONS_ID}
+            /* justify-end + overflow-x-auto จะดันส่วนที่ล้นไปทางซ้ายซึ่งเลื่อนไปหาไม่ได้
+               จึงชิดขวาเฉพาะจอที่กว้างพอ (ไม่ล้น) ส่วนจอเล็กเรียงจากซ้ายแล้วเลื่อนได้ */
+            className="flex w-full min-w-0 items-center gap-2 overflow-x-auto sm:ml-auto sm:w-auto sm:flex-1 sm:basis-0 sm:justify-end"
           />
-        ) : null}
-      </header>
+        </div>
 
-      <div
-        role="tablist"
-        aria-label="ส่วนของ POS รวม"
-        onKeyDown={onTablistKeyDown}
-        className="flex gap-1 overflow-x-auto border-b border-gray-200"
-      >
-        {TABS.map((tab) => {
-          const isActive = tab.id === activeTab;
-          return (
-            <button
-              key={tab.id}
-              ref={(node) => {
-                triggerRefs.current.set(tab.id, node);
-              }}
-              type="button"
-              role="tab"
-              id={`unified-tab-${tab.id}`}
-              aria-selected={isActive}
-              aria-controls={`unified-panel-${tab.id}`}
-              tabIndex={isActive ? 0 : -1}
-              onClick={() => selectTab(tab.id)}
-              className={`min-h-11 shrink-0 rounded-t-lg px-4 py-2 text-sm font-semibold transition-colors motion-reduce:transition-none ${
-                isActive
-                  ? "border-b-2 border-orange-500 text-orange-700"
-                  : "border-b-2 border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ทุก panel คง mounted — hidden ตัดออกจาก a11y tree/tab order โดย state ไม่หาย */}
-      <div
-        role="tabpanel"
-        id="unified-panel-sell"
-        aria-labelledby="unified-tab-sell"
-        hidden={activeTab !== "sell"}
-        tabIndex={-1}
-        data-voice-focus="cart"
-        className="min-w-0 pt-3"
-      >
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
-          <span className="font-medium">บริบท:</span>
-          {selectedTable ? (
-            <>
+        {/* หน้าขายแสดงเต็มพื้นที่ที่เหลือเสมอ ไม่ต้องสลับแท็บ */}
+        <div
+          data-voice-focus="cart"
+          className="flex min-w-0 flex-1 flex-col overflow-hidden pt-1"
+        >
+          {/* โชว์เฉพาะตอนที่เลือกโต๊ะไว้จริง — "ยังไม่เลือกโต๊ะ" คือค่าปกติของการขาย
+              หน้าร้าน การกินไปหนึ่งแถวเพื่อบอกว่าไม่มีอะไรพิเศษไม่คุ้มความสูง */}
+          {selectedTable && (
+            <div className="mb-1 flex shrink-0 flex-wrap items-center gap-2 px-2 text-xs text-gray-600">
+              <span className="font-medium">บริบท:</span>
               <span>
                 โต๊ะที่เลือก: <strong>{selectedTable.number}</strong>
                 {selectedTable.label ? ` (${selectedTable.label})` : ""}
@@ -156,54 +194,135 @@ export function UnifiedPosWorkspace({
               <button
                 type="button"
                 onClick={() => setSelectedTable(null)}
-                className="min-h-8 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 transition-colors motion-reduce:transition-none"
+                className="min-h-8 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
               >
                 ล้างโต๊ะที่เลือก
               </button>
-            </>
-          ) : (
-            <span className="text-gray-500">ยังไม่เลือกโต๊ะ — ขายหน้าร้าน/เลือกได้ที่แท็บโต๊ะ</span>
+            </div>
           )}
+          {/* min-h-0 จำเป็นกับ flex child ทุกชั้น ไม่งั้นลูกที่ scroll ได้จะดันความสูงจนล้นจอ */}
+          <div className="min-h-0 flex-1">{sell}</div>
         </div>
-        {sell}
-      </div>
 
-      <div
-        role="tabpanel"
-        id="unified-panel-tables"
-        aria-labelledby="unified-tab-tables"
-        hidden={activeTab !== "tables"}
-        className="min-w-0 pt-3"
-      >
-        <TablesPanel
-          tables={tables}
-          selectedTableId={selectedTable?.id ?? null}
-          onSelectTable={handleSelectTable}
-        />
-      </div>
+        {/* dialog โต๊ะ/ครัว/บิล — คง mounted เสมอเพื่อไม่ให้ realtime ของคิวครัวขาดช่วง
+            ซ่อนด้วย hidden จึงหลุดออกจาก a11y tree และ tab order ตอนปิด */}
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="โต๊ะ ครัว และบิล"
+          hidden={openSection === null}
+          onKeyDown={onDialogKeyDown}
+          className={`fixed inset-0 z-[80] flex-col bg-black/40 ${openSection ? "flex" : "hidden"}`}
+        >
+          {/* คลิกพื้นหลังเพื่อปิด — ปุ่มเปล่าที่ screen reader ข้าม (มีปุ่ม "ปิด" จริงด้านบน) */}
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            onClick={closeSection}
+            className="absolute inset-0 h-full w-full cursor-default"
+          />
+          <div className="relative mt-auto flex h-[92dvh] min-h-0 flex-col rounded-t-2xl bg-white shadow-2xl sm:mx-auto sm:my-auto sm:h-[85dvh] sm:w-[min(56rem,94vw)] sm:rounded-2xl">
+            <div className="flex shrink-0 items-center gap-1 border-b border-gray-200 px-2 py-1">
+              <div role="tablist" aria-label="ส่วนของ POS" className="flex min-w-0 gap-1 overflow-x-auto">
+                {SECTIONS.map((section) => {
+                  const isActive = section.id === openSection;
+                  return (
+                    <button
+                      key={section.id}
+                      ref={(node) => {
+                        triggerRefs.current.set(section.id, node);
+                      }}
+                      type="button"
+                      role="tab"
+                      id={`unified-tab-${section.id}`}
+                      aria-selected={isActive}
+                      aria-controls={`unified-panel-${section.id}`}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => selectSection(section.id)}
+                      className={`min-h-11 shrink-0 rounded-t-lg px-4 py-2 text-sm font-semibold transition-colors motion-reduce:transition-none ${
+                        isActive
+                          ? "border-b-2 border-orange-500 text-orange-700"
+                          : "border-b-2 border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      }`}
+                    >
+                      {section.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={closeSection}
+                className="ml-auto min-h-11 shrink-0 rounded-lg px-3 text-xs font-semibold text-gray-500 hover:text-gray-800"
+              >
+                ปิด
+              </button>
+            </div>
 
-      <div
-        role="tabpanel"
-        id="unified-panel-kitchen"
-        aria-labelledby="unified-tab-kitchen"
-        hidden={activeTab !== "kitchen"}
-        className="min-w-0 pt-3"
-      >
-        {/* U10 — คิวครัวจริง: state ของแท็บนี้อยู่ใน KitchenQueuePanel (คง mounted ตามกติกา shell) */}
-        <KitchenQueuePanel storeId={storeId} initialItems={kitchenInitialItems} />
-      </div>
+            {/* งานโต๊ะที่เดิมเป็นปุ่มแยกบนแถบหัว — ย้ายมาอยู่ในที่เดียวกับผังโต๊ะ
+                (คำสั่งวิ่งไป PosTerminal ผ่าน section-bus เพราะ modal เป็น state ของมัน) */}
+            <div className="flex shrink-0 flex-wrap gap-2 border-b border-gray-100 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => {
+                  closeSection();
+                  emitPosCommand("open-table");
+                }}
+                className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                🍽️ เปิดโต๊ะ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closeSection();
+                  emitPosCommand("settle-table");
+                }}
+                className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                🧾 เช็คบิลโต๊ะ
+              </button>
+            </div>
 
-      <div
-        role="tabpanel"
-        id="unified-panel-bills"
-        aria-labelledby="unified-tab-bills"
-        hidden={activeTab !== "bills"}
-        className="min-w-0 pt-3"
-      >
-        {/* U11 — แท็บบิลจริง: บิลจาก server + settlement→print intent (replay-safe) */}
-        <BillsPanel selectedTable={selectedTable} />
-      </div>
-    </section>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <div
+                role="tabpanel"
+                id="unified-panel-tables"
+                aria-labelledby="unified-tab-tables"
+                hidden={openSection !== "tables"}
+              >
+                <TablesPanel
+                  tables={tables}
+                  selectedTableId={selectedTable?.id ?? null}
+                  onSelectTable={handleSelectTable}
+                />
+              </div>
+
+              <div
+                role="tabpanel"
+                id="unified-panel-kitchen"
+                aria-labelledby="unified-tab-kitchen"
+                hidden={openSection !== "kitchen"}
+              >
+                {/* U10 — คิวครัวจริง: คง mounted ไว้เสมอเพื่อไม่ให้ realtime ขาดช่วง */}
+                <KitchenQueuePanel storeId={storeId} initialItems={kitchenInitialItems} />
+              </div>
+
+              <div
+                role="tabpanel"
+                id="unified-panel-bills"
+                aria-labelledby="unified-tab-bills"
+                hidden={openSection !== "bills"}
+              >
+                {/* U11 — บิลจริงจาก server + settlement→print intent (replay-safe) */}
+                <BillsPanel selectedTable={selectedTable} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </VoiceCartBridgeProvider>
   );
 }

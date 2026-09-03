@@ -91,10 +91,6 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function activateTab(name: string) {
-  fireEvent.click(screen.getByRole("tab", { name }));
-}
-
 describe("resolveUnifiedPosSurface (server gate ของ /pos)", () => {
   it("flag false / ไม่มี store row / flag ขาด → legacy เสมอ (fail closed ไปพฤติกรรมเดิม)", () => {
     expect(resolveUnifiedPosSurface({ unifiedPosEnabled: false })).toBe("legacy");
@@ -126,87 +122,136 @@ describe("toUnifiedTableSummaries", () => {
 });
 
 describe("UnifiedPosWorkspace (flag true surface)", () => {
-  it("render shell ครบ 4 แท็บ ขาย/โต๊ะ/ครัว/บิล พร้อม aria wiring ของ tab/tabpanel", () => {
+  /** dialog ที่ปิดอยู่ถูกตั้ง hidden จึงหลุดจาก a11y tree — ตรวจสถานะจาก DOM ตรง ๆ */
+  function sectionDialog(): HTMLElement {
+    const node = document.querySelector<HTMLElement>('[aria-label="โต๊ะ ครัว และบิล"]');
+    if (!node) throw new Error("ไม่พบ dialog โต๊ะ/ครัว/บิล");
+    return node;
+  }
+
+  /** เปิด dialog "โต๊ะ / ครัว / บิล" แล้วเลือกส่วนที่ต้องการ */
+  function openSection(name: string) {
+    fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
+    fireEvent.click(screen.getByRole("tab", { name }));
+  }
+
+  it("หน้าขายแสดงเต็มพื้นที่เสมอ — โต๊ะ/ครัว/บิล อยู่หลังปุ่มเดียว ไม่ใช่แท็บบนแถบหัว", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
-    const tablist = screen.getByRole("tablist", { name: "ส่วนของ POS รวม" });
-    expect(tablist).toBeInTheDocument();
-    for (const label of ["ขาย", "โต๊ะ", "ครัว", "บิล"]) {
-      expect(screen.getByRole("tab", { name: label })).toBeInTheDocument();
-    }
-    for (const panelId of ["unified-panel-sell", "unified-panel-tables", "unified-panel-kitchen", "unified-panel-bills"]) {
-      const panel = document.getElementById(panelId);
-      expect(panel).not.toBeNull();
-      expect(panel).toHaveAttribute("role", "tabpanel");
-    }
-    // แท็บขายถูกเลือกเป็นค่าเริ่มต้น และแสดง sell surface ที่ server compose ให้
-    expect(screen.getByRole("tab", { name: "ขาย" })).toHaveAttribute("aria-selected", "true");
+
+    // หน้าขายไม่ใช่แท็บอีกต่อไป จึงไม่ต้องกดอะไรก่อนถึงจะขายได้
     expect(screen.getByTestId("legacy-sell-surface")).toBeVisible();
+    expect(screen.queryByRole("tab", { name: "ขาย" })).not.toBeInTheDocument();
+
+    // ปุ่มเดียวคุมทั้งสามส่วน และ dialog ยังปิดอยู่ตอนเริ่ม
+    const opener = screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ });
+    expect(opener).toHaveAttribute("aria-haspopup", "dialog");
+    expect(opener).toHaveAttribute("aria-expanded", "false");
+    expect(sectionDialog().hidden).toBe(true);
   });
 
-  it("แท็บครัวเป็นคิวครัวจริง (U10) — หัวข้อ + สถานะการเชื่อมต่อ และคิวว่างมี empty state / แท็บบิลเป็นบิลจริง (U11 — ยังไม่เลือกโต๊ะ)", () => {
+  it("กดปุ่มโต๊ะ → dialog เปิดที่ส่วนโต๊ะ พร้อมทางลัดเปิดโต๊ะ/เช็คบิลโต๊ะ", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
-    activateTab("ครัว");
+    fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
+
+    expect(screen.getByRole("dialog", { name: "โต๊ะ ครัว และบิล" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "โต๊ะ" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("โต๊ะ 1")).toBeVisible();
+    // งานโต๊ะที่เดิมเป็นปุ่มแยกบนแถบหัว ย้ายมาอยู่ที่เดียวกับผังโต๊ะ
+    expect(screen.getByRole("button", { name: /เปิดโต๊ะ/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /เช็คบิลโต๊ะ/ })).toBeVisible();
+  });
+
+  it("ทางลัดเปิดโต๊ะ/เช็คบิลโต๊ะ ยิงคำสั่งไป PosTerminal แล้วปิด dialog", () => {
+    const commands: string[] = [];
+    const listener = (event: Event) => commands.push((event as CustomEvent<string>).detail);
+    window.addEventListener("storeos:pos-command", listener);
+    try {
+      render(<UnifiedPosWorkspace {...makeProps()} />);
+      fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
+      fireEvent.click(screen.getByRole("button", { name: /เปิดโต๊ะ/ }));
+      expect(commands).toEqual(["open-table"]);
+      expect(sectionDialog().hidden).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
+      fireEvent.click(screen.getByRole("button", { name: /เช็คบิลโต๊ะ/ }));
+      expect(commands).toEqual(["open-table", "settle-table"]);
+    } finally {
+      window.removeEventListener("storeos:pos-command", listener);
+    }
+  });
+
+  it("ส่วนครัวเป็นคิวครัวจริง (U10) และส่วนบิลเป็นบิลจริง (U11)", () => {
+    render(<UnifiedPosWorkspace {...makeProps()} />);
+    openSection("ครัว");
     expect(screen.getByRole("heading", { name: "คิวครัว" })).toBeVisible();
     expect(screen.getByText(/ยังไม่มีรายการในคิวครัว/)).toBeVisible();
     expect(screen.getByText("เรียลไทม์")).toBeVisible();
 
-    activateTab("บิล");
+    openSection("บิล");
     expect(screen.getByRole("heading", { name: "บิลและการพิมพ์" })).toBeVisible();
-    // U11 — empty state เมื่อยังไม่เลือกโต๊ะ (บิลแสดงจาก server เมื่อเลือกโต๊ะแล้ว)
     expect(screen.getByText(/เลือกโต๊ะจากแท็บโต๊ะเพื่อดูบิล/)).toBeVisible();
   });
 
-  it("สลับแท็บแล้วโฟกัสกลับที่ tab trigger (ArrowRight/Home/End) และ panel แสดงตามแท็บ", () => {
+  it("ลูกศร/Home/End สลับส่วนใน dialog และโฟกัสตามไปที่ tab trigger", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
-    const sellTab = screen.getByRole("tab", { name: "ขาย" });
-    sellTab.focus();
-    const tablist = screen.getByRole("tablist", { name: "ส่วนของ POS รวม" });
+    fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
+    const dialog = screen.getByRole("dialog", { name: "โต๊ะ ครัว และบิล" });
 
-    fireEvent.keyDown(tablist, { key: "ArrowRight" });
-    const tablesTab = screen.getByRole("tab", { name: "โต๊ะ" });
-    expect(tablesTab).toHaveAttribute("aria-selected", "true");
-    expect(document.activeElement).toBe(tablesTab);
-    expect(screen.getByRole("tabpanel", { name: "โต๊ะ" })).toBeVisible();
-    expect(screen.getByTestId("legacy-sell-surface")).not.toBeVisible();
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    const kitchenTab = screen.getByRole("tab", { name: "ครัว" });
+    expect(kitchenTab).toHaveAttribute("aria-selected", "true");
+    expect(document.activeElement).toBe(kitchenTab);
 
-    fireEvent.keyDown(tablist, { key: "End" });
+    fireEvent.keyDown(dialog, { key: "End" });
     expect(screen.getByRole("tab", { name: "บิล" })).toHaveAttribute("aria-selected", "true");
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "บิล" }));
 
-    fireEvent.keyDown(tablist, { key: "Home" });
-    expect(document.activeElement).toBe(sellTab);
+    fireEvent.keyDown(dialog, { key: "Home" });
+    expect(screen.getByRole("tab", { name: "โต๊ะ" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("บริบทโต๊ะแชร์ข้ามแท็บ: เลือกโต๊ะที่แท็บโต๊ะ → ชิปในแท็บขายตามทันที และล้างได้", () => {
+  it("Escape ปิด dialog แล้วโฟกัสกลับที่ปุ่มที่เปิดมัน", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
-    activateTab("โต๊ะ");
-    expect(screen.getByText("โต๊ะ 1")).toBeVisible();
-    expect(screen.getByText("โต๊ะ 2")).toBeVisible();
+    const opener = screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ });
+    fireEvent.click(opener);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "โต๊ะ ครัว และบิล" }), { key: "Escape" });
 
+    expect(sectionDialog().hidden).toBe(true);
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("เลือกโต๊ะแล้วบริบทตามไปหน้าขาย และเลขโต๊ะขึ้นบนปุ่ม", () => {
+    render(<UnifiedPosWorkspace {...makeProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
     fireEvent.click(screen.getAllByRole("button", { name: "เลือกโต๊ะ" })[0]);
-    activateTab("ขาย");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "โต๊ะ ครัว และบิล" }), { key: "Escape" });
+
     expect(screen.getByText(/โต๊ะที่เลือก:/)).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "ล้างโต๊ะที่เลือก" }));
-    expect(screen.getByText("ยังไม่เลือกโต๊ะ — ขายหน้าร้าน/เลือกได้ที่แท็บโต๊ะ")).toBeVisible();
+    // ไม่เลือกโต๊ะ = ขายหน้าร้าน ซึ่งเป็นค่าปกติ จึงไม่กินแถวไปบอกว่าไม่มีอะไรพิเศษ
+    expect(screen.queryByText(/โต๊ะที่เลือก:/)).not.toBeInTheDocument();
   });
 
-  it("dialog เป็นของแท็บโต๊ะเท่านั้น (isolated per tab) — สลับแท็บไม่หายและไม่ปนไปแท็บอื่น", () => {
+  it("คิวครัวคง mounted แม้ปิด dialog — realtime จึงไม่ขาดช่วง", () => {
     render(<UnifiedPosWorkspace {...makeProps()} />);
-    activateTab("โต๊ะ");
-    fireEvent.click(screen.getAllByRole("button", { name: "รายละเอียด" })[0]);
-    const dialog = screen.getByRole("dialog", { name: "รายละเอียดโต๊ะ 1" });
-    expect(dialog).toBeVisible();
+    openSection("ครัว");
+    expect(screen.getByRole("heading", { name: "คิวครัว" })).toBeVisible();
 
-    // สลับไปแท็บขาย — dialog อยู่ใน panel ที่ถูก hidden จึงไม่แสดงแต่ state คงอยู่
-    activateTab("ขาย");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "โต๊ะ ครัว และบิล" }), { key: "Escape" });
+    expect(screen.getByRole("heading", { name: "คิวครัว", hidden: true })).toBeInTheDocument();
+  });
+
+  it("dialog รายละเอียดโต๊ะเป็นของส่วนโต๊ะ — ปิด dialog หลักแล้ว state ไม่หาย", () => {
+    render(<UnifiedPosWorkspace {...makeProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: "รายละเอียด" })[0]);
+    expect(screen.getByRole("dialog", { name: "รายละเอียดโต๊ะ 1" })).toBeVisible();
+
+    openSection("ครัว");
     expect(screen.getByRole("dialog", { name: "รายละเอียดโต๊ะ 1", hidden: true })).not.toBeVisible();
 
-    // กลับมาแท็บโต๊ะ — dialog ยังเปิดเหมือนเดิม และปิดได้ด้วย Escape
-    activateTab("โต๊ะ");
+    openSection("โต๊ะ");
     expect(screen.getByRole("dialog", { name: "รายละเอียดโต๊ะ 1" })).toBeVisible();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "รายละเอียดโต๊ะ 1", hidden: true })).not.toBeInTheDocument();
   });
 
   it("typed immutable props guard: deep-freeze props แล้ว render ได้ และ mutate ไม่เปลี่ยนค่า", () => {
@@ -215,7 +260,7 @@ describe("UnifiedPosWorkspace (flag true surface)", () => {
     ]);
     const props: UnifiedPosWorkspaceProps = deepFreeze(makeProps({ tables }));
     render(<UnifiedPosWorkspace {...props} />);
-    activateTab("โต๊ะ");
+    fireEvent.click(screen.getByRole("button", { name: /โต๊ะ \/ ครัว \/ บิล/ }));
     expect(screen.getByText("โต๊ะ 1")).toBeVisible();
 
     const summary = tables[0] as unknown as { number: string };

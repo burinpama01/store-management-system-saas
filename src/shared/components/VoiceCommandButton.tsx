@@ -9,6 +9,7 @@
 //   - ห้าม console.log / ส่ง transcript ออกนอกคอมโพเนนต์ (ผู้เรียกได้เฉพาะ intent + result code)
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import {
   createBrowserSpeechAdapter,
@@ -50,6 +51,21 @@ const RESULT_MESSAGE: Record<VoiceParseResult["resultCode"], string> = {
   low_confidence: "ฟังไม่ชัด — ยังไม่ทำให้อัตโนมัติ ลองพูดใหม่หรือใช้ Ctrl+K",
 };
 
+/** ข้อความสถานะอยู่บนแถบหัวนานเท่านี้แล้วหายเอง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด */
+const MESSAGE_VISIBLE_MS = 8000;
+
+/** คำตอบจาก onResult ที่ขอให้ฟังต่อได้ */
+export interface VoiceResultResponse {
+  readonly message: string;
+  readonly listenAgain?: boolean;
+}
+
+/**
+ * กันวนไม่รู้จบ: ถ้าไม่มีใครพูดจริง session จะจบด้วย timeout ซึ่งไม่ต่อให้อยู่แล้ว
+ * แต่ยังตั้งเพดานไว้เผื่อกรณีที่ผู้เรียกขอ listenAgain ทุกครั้ง
+ */
+const MAX_AUTO_LISTEN_CHAIN = 3;
+
 const STATE_LABEL: Record<VoiceRecognitionState, string> = {
   idle: "สั่งงานด้วยเสียง",
   requesting: "กำลังขอไมโครโฟน…",
@@ -67,7 +83,21 @@ export interface VoiceCommandButtonProps {
    * คืน string ได้เพื่อให้ปุ่มประกาศข้อความของผู้เรียกแทนข้อความมาตรฐาน
    * (U14: ใช้ประกาศผลการนำทาง โดยยังมี live region เดียวไม่ให้ screen reader อ่านซ้ำ)
    */
-  readonly onResult?: (result: VoiceParseResult) => string | void;
+  /**
+   * คืนข้อความที่จะแสดง/อ่านออกเสียง คืนเป็น object ได้เมื่ออยากให้เปิดไมค์ต่อทันที
+   * หลังพูดจบ (listenAgain) — ใช้ตอนระบบเพิ่งบอกว่า "ยังต้องเลือก …" ซึ่งขั้นถัดไป
+   * คือคำสั่งเสียงอีกคำเสมอ การให้แคชเชียร์ต้องกดปุ่มซ้ำทั้งที่มือถือถาดอยู่คือแรงเสียดทาน
+   */
+  readonly onResult?: (
+    result: VoiceParseResult,
+    /**
+     * คำพูดดิบของรอบนี้ — ส่งต่อให้ผู้เรียกใช้ "ภายในรอบเดียว" เท่านั้น
+     * (ตัวเดียวกับที่ parser รับอยู่แล้ว) ห้ามเก็บลง state/ref/telemetry
+     * ใช้ตอนที่บริบทบนหน้าจอบอกความหมายได้ เช่น หน้าต่างตัวเลือกเปิดอยู่แล้วผู้ใช้
+     * พูดแค่ชื่อตัวเลือกโดยไม่มีคำว่า "เลือก" นำหน้า
+     */
+    transcript: string,
+  ) => string | VoiceResultResponse | void;
   /** เหตุการณ์ที่บันทึกได้ (ไม่มี transcript) — U16 จะต่อปลายทางจริง */
   readonly onTelemetry?: (event: VoiceTelemetryEvent) => void;
   readonly locale?: string;
@@ -122,6 +152,10 @@ export function VoiceCommandButton({
   // transcript ชั่วคราวสำหรับแสดงผลระหว่างฟังเท่านั้น — ล้างทุกครั้งที่จบรอบ
   const [interim, setInterim] = useState("");
   const [message, setMessage] = useState("");
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** นับจำนวนครั้งที่ระบบเปิดไมค์ต่อให้เอง (รีเซ็ตเมื่อผู้ใช้กดปุ่มเอง) */
+  const autoListenCountRef = useRef(0);
+  const startListeningRef = useRef<((options?: { keepMessage?: boolean }) => void) | null>(null);
   const sessionRef = useRef<VoiceSpeechSession | null>(null);
   // U14 — กัน final ซ้ำจาก engine: 1 การกด = ส่งผลให้ผู้เรียกได้ครั้งเดียว
   const settledRef = useRef(false);
@@ -132,21 +166,35 @@ export function VoiceCommandButton({
       sessionRef.current?.cancel();
       sessionRef.current = null;
       setInterim("");
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     };
   }, []);
 
+  /**
+   * ข้อความสถานะเป็นคำแนะนำ "ณ ตอนนั้น" (เช่น ให้พูดว่า "เลือก…") ถ้าค้างบนแถบหัว
+   * ต่อไปเรื่อย ๆ มันจะสั่งงานที่จบไปแล้ว และกินความกว้างของแถบหัวถาวร จึงล้างเองหลัง
+   * ผู้ใช้มีเวลาอ่าน/ฟังจบ (เสียงพูดที่ยาวสุดของระบบสั้นกว่านี้มาก)
+   */
+  const showMessage = useCallback((text: string) => {
+    if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    setMessage(text);
+    if (!text) return;
+    messageTimerRef.current = setTimeout(() => {
+      setMessage("");
+      messageTimerRef.current = null;
+    }, MESSAGE_VISIBLE_MS);
+  }, []);
+
   const listening = state === "requesting" || state === "listening";
+  // U24 — ระหว่างฟัง/แปลคำสั่ง แสดงผลเต็มจอให้เห็นจากอีกฝั่งเคาน์เตอร์ได้
+  // overlay ไม่รับคลิก (pointer-events-none) แอปข้างหลังจึงยังกดได้ตามปกติ
+  // = "ทำงานอยู่พื้นหลัง" ไม่ใช่ modal ที่บล็อกการขาย
+  const overlayVisible = listening || state === "resolving";
 
-  const handleClick = useCallback(() => {
-    if (disabled) return;
-
-    // กดซ้ำระหว่างฟัง = ขอให้สรุปผล (push-to-talk แบบ toggle บนจอสัมผัส)
-    if (sessionRef.current?.isActive()) {
-      sessionRef.current.stop();
-      return;
-    }
-
-    setMessage("");
+  const startListening = useCallback((options?: { keepMessage?: boolean }) => {
+    // เปิดไมค์ต่อเองต้องไม่ลบข้อความที่เพิ่งบอกไป — มันคือคำสั่งที่ผู้ใช้กำลังจะทำตาม
+    // (เช่น "ยังต้องเลือก ระดับการคั่ว") ส่วนการกดปุ่มเองคือเริ่มคำสั่งใหม่ จึงล้างได้
+    if (!options?.keepMessage) showMessage("");
     setInterim("");
     settledRef.current = false;
     player.stop();
@@ -171,30 +219,89 @@ export function VoiceCommandButton({
         // ล้าง transcript ทันทีหลัง parse — ห้ามค้างใน state หรือ ref
         setInterim("");
         onTelemetry?.(buildVoiceTelemetry(result, locale));
-        const announcement = onResult?.(result);
-        const spoken =
-          typeof announcement === "string" && announcement ? announcement : RESULT_MESSAGE[result.resultCode];
-        setMessage(spoken);
+        const announcement = onResult?.(result, transcript);
+        const response =
+          typeof announcement === "string" || announcement === undefined || announcement === null
+            ? { message: typeof announcement === "string" ? announcement : "" }
+            : announcement;
+        const spoken = response.message || RESULT_MESSAGE[result.resultCode];
+        showMessage(spoken);
         // อ่านเฉพาะ "ข้อความของระบบ" — ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น
         player.cue(result.decision === "execute" ? "success" : "error");
-        player.speak(spoken);
+        // เปิดไมค์ต่อ "หลังระบบพูดจบ" เท่านั้น ไม่งั้นไมค์จะอัดเสียงที่ระบบกำลังพูดเอง
+        const shouldListenAgain =
+          response.listenAgain === true && autoListenCountRef.current < MAX_AUTO_LISTEN_CHAIN;
+        player.speak(spoken, shouldListenAgain
+          ? () => {
+            autoListenCountRef.current += 1;
+            startListeningRef.current?.({ keepMessage: true });
+          }
+          : undefined);
       },
       onError: (code) => {
         if (settledRef.current) return;
         settledRef.current = true;
         setInterim("");
-        setMessage(ERROR_MESSAGE[code]);
+        showMessage(ERROR_MESSAGE[code]);
         player.cue("error");
         player.speak(ERROR_MESSAGE[code]);
       },
     });
-  }, [disabled, locale, onResult, onTelemetry, player, speech]);
+  }, [locale, onResult, onTelemetry, player, showMessage, speech]);
+
+  // startListening เรียกตัวเองผ่าน ref — ประกาศตรง ๆ จะเป็น use-before-define
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
+
+  const handleClick = useCallback(() => {
+    if (disabled) return;
+
+    // กดซ้ำระหว่างฟัง = ขอให้สรุปผล (push-to-talk แบบ toggle บนจอสัมผัส)
+    if (sessionRef.current?.isActive()) {
+      sessionRef.current.stop();
+      return;
+    }
+    // กดเอง = เริ่มนับสายการฟังต่อเนื่องใหม่
+    autoListenCountRef.current = 0;
+    startListening();
+  }, [disabled, startListening]);
 
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;
 
+  const overlay =
+    overlayVisible && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            data-testid="voice-overlay"
+            aria-hidden="true"
+            className="pointer-events-none fixed inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-black/45 px-6 text-center backdrop-blur-[2px]"
+          >
+            <span
+              className={`flex h-24 w-24 items-center justify-center rounded-full text-4xl ${
+                state === "resolving" ? "bg-white/90" : "animate-pulse bg-red-500/90"
+              }`}
+            >
+              {state === "resolving" ? "⏳" : "🎙️"}
+            </span>
+            <p className="text-2xl font-bold text-white drop-shadow">{STATE_LABEL[state]}</p>
+            {interim ? (
+              <p className="max-w-3xl text-3xl font-semibold italic text-white/95 drop-shadow">{interim}</p>
+            ) : (
+              <p className="text-base text-white/80">พูดคำสั่งได้เลย — กดปุ่มซ้ำเพื่อจบการฟัง</p>
+            )}
+            <p className="text-sm text-white/70">หน้าจอยังใช้งานได้ตามปกติระหว่างฟัง</p>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div className={className}>
+    // แถวเดียวแนวนอน — ปุ่มนี้อยู่บนแถบหัวของ POS ที่ความสูงมีค่า สถานะระหว่างฟัง
+    // ไปแสดงบน overlay เต็มจอแทน ที่นี่จึงเหลือแค่บรรทัดสั้น ๆ
+    <div className={`flex items-center gap-2 ${className ?? ""}`.trim()}>
+      {overlay}
       <button
         type="button"
         data-testid="voice-mic"
@@ -211,8 +318,10 @@ export function VoiceCommandButton({
               : "กำลังตรวจสอบว่าเบราว์เซอร์นี้สั่งงานด้วยเสียงได้หรือไม่"
         }
         className={[
-          // touch target ขั้นต่ำ 44px ตามเกณฑ์ของแผน + เคารพ prefers-reduced-motion
-          "inline-flex min-h-11 min-w-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium",
+          // มือถือทำให้ใหญ่กดง่าย (แคชเชียร์ถือเครื่องมือข้างเดียว กดพลาดแล้วเสียจังหวะ)
+          // เดสก์ท็อปกลับมาขนาดปกติเพราะมีเมาส์และที่บนแถบหัวมีจำกัด
+          "inline-flex min-h-14 min-w-14 items-center gap-2 rounded-xl border px-4 py-2 text-base font-semibold",
+          "sm:min-h-11 sm:min-w-11 sm:rounded-lg sm:px-3 sm:text-sm sm:font-medium",
           "transition-colors motion-reduce:transition-none",
           unavailable
             ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400"
@@ -222,7 +331,8 @@ export function VoiceCommandButton({
         ].join(" ")}
       >
         <span aria-hidden="true">{listening ? "🔴" : "🎤"}</span>
-        <span>{STATE_LABEL[state]}</span>
+        {/* ไม่มีแถวแท็บมาแย่งที่แล้ว ป้ายจึงโชว์ได้ทั้งบนมือถือและเดสก์ท็อป */}
+        <span className="whitespace-nowrap">{STATE_LABEL[state]}</span>
       </button>
 
       {/* U23 — เปิด/ปิดเสียงตอบรับต่อเครื่อง (ครัวอาจปิด แคชเชียร์อาจเปิด) */}
@@ -237,14 +347,18 @@ export function VoiceCommandButton({
           aria-pressed={soundEnabled}
           aria-label={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
           title={soundEnabled ? "ปิดเสียงตอบรับ" : "เปิดเสียงตอบรับ"}
-          className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-sm text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          className="inline-flex min-h-14 min-w-14 shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white text-base text-gray-700 transition-colors hover:bg-gray-50 motion-reduce:transition-none sm:min-h-11 sm:min-w-11 sm:rounded-lg sm:text-sm"
         >
           <span aria-hidden="true">{soundEnabled ? "🔊" : "🔇"}</span>
         </button>
       ) : null}
 
       {/* live region: ประกาศ "สถานะ" เท่านั้น — ไม่มีคำพูดของผู้ใช้ (ค่าเริ่มต้น) */}
-      <p role="status" aria-live="polite" className="mt-1 min-h-5 text-xs text-gray-600">
+      <p role="status" aria-live="polite" /* จอเล็กซ่อนด้วย sr-only ไม่ใช่ hidden — live region ต้องอยู่ใน a11y tree
+             ไม่งั้น screen reader ไม่ประกาศสถานะบนมือถือ */
+        /* not-sr-only ตั้ง white-space: normal ทับ truncate — ต้องบังคับ nowrap ซ้ำ
+           ไม่งั้นข้อความยาวตัดเป็นสองบรรทัดแล้วดันความสูงแถบหัว */
+        className="sr-only max-w-[14rem] truncate text-xs text-gray-600 sm:not-sr-only sm:block sm:min-w-0 sm:whitespace-nowrap">
         {announceTranscript && interim ? interim : message}
       </p>
 
@@ -253,22 +367,28 @@ export function VoiceCommandButton({
         <p
           data-testid="voice-transcript"
           aria-hidden="true"
-          className="min-h-5 text-xs italic text-gray-500"
+          className="hidden min-w-0 max-w-[14rem] truncate text-xs italic text-gray-500 sm:block"
         >
           {interim}
         </p>
       ) : null}
 
       {supported === false ? (
-        <p className="text-xs text-gray-500">{ERROR_MESSAGE.unsupported_browser}</p>
+        <p className="max-w-[16rem] truncate text-xs text-gray-500" title={ERROR_MESSAGE.unsupported_browser}>{ERROR_MESSAGE.unsupported_browser}</p>
       ) : supported === null ? null : (
-        <>
-          {/* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง */}
-          <p className="text-xs text-gray-500">
+        /* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง.
+           ข้อความยังอยู่บนหน้าและอ่านได้ก่อนกดขอไมค์ แต่พับเป็นบรรทัดเดียว —
+           สองบรรทัดเต็มกินความสูงหน้า POS ที่ต้องพอดีจอ */
+        <details className="shrink-0 text-xs text-gray-500">
+          <summary className="cursor-pointer select-none whitespace-nowrap">
+            <span className="sm:hidden" aria-hidden="true">ⓘ</span>
+            <span className="sr-only sm:not-sr-only">ความเป็นส่วนตัว / วิธีใช้</span>
+          </summary>
+          <p className="mt-1">
             ระบบไม่บันทึกเสียงหรือข้อความที่พูด แต่เบราว์เซอร์อาจส่งเสียงไปประมวลผลบนบริการของผู้ผลิตเบราว์เซอร์
           </p>
-          <p className="text-xs text-gray-500">พิมพ์คำสั่งแทนได้เสมอ (Ctrl+K ในหน้าอื่น) หรือใช้ปุ่มบนหน้าจอ</p>
-        </>
+          <p className="mt-1">พิมพ์คำสั่งแทนได้เสมอ (Ctrl+K ในหน้าอื่น) หรือใช้ปุ่มบนหน้าจอ</p>
+        </details>
       )}
     </div>
   );

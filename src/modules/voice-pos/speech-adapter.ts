@@ -82,7 +82,12 @@ export interface BrowserSpeechAdapterOptions {
 }
 
 export const VOICE_DEFAULT_LOCALE = "th-TH";
-export const VOICE_DEFAULT_TIMEOUT_MS = 8000;
+/**
+ * 8 วินาทีสั้นเกินสำหรับคำสั่งจริงหน้าร้าน — พูดชื่อสินค้า + ตัวเลือก + จำนวน
+ * (เช่น "เพิ่มอเมริกาโน่ เย็น คั่วเข้ม สองแก้ว") ระหว่างที่ลูกค้ายังพูดแทรก
+ * มักเกิน 8 วินาทีแล้วโดนตัดกลางประโยค
+ */
+export const VOICE_DEFAULT_TIMEOUT_MS = 15000;
 
 /** map error string ของ Web Speech → enum ของเรา (ค่าที่ไม่รู้จัก = service_error) */
 export function mapSpeechErrorCode(raw: string | undefined): VoiceErrorCode {

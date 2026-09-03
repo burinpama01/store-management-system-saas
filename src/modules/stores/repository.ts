@@ -125,6 +125,8 @@ function mapPrinter(row: PrinterRow): Printer {
     usbProductId: row.usb_product_id ?? undefined,
     bluetoothDeviceId: row.bluetooth_device_id ?? undefined,
     hubBluetoothPort: row.hub_bluetooth_port ?? undefined,
+    hubUsbEnabled: row.hub_usb_enabled ?? false,
+    hubUsbName: row.hub_usb_name ?? undefined,
     paperWidth: row.paper_width,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

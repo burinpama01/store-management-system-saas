@@ -111,6 +111,16 @@ export interface Printer {
   bluetoothDeviceId?: string;
   /** Cashier-PC Bluetooth SPP COM port (e.g. "COM5") for Hub-routed BT printing. */
   hubBluetoothPort?: string;
+  /**
+   * true = เครื่องพิมพ์ USB ตัวนี้เสียบกับพีซีแคชเชียร์และพิมพ์ผ่าน Print Hub
+   * (false = ของเดิมที่พิมพ์ตรงด้วย WebUSB จากเบราว์เซอร์เครื่องนั้น)
+   */
+  hubUsbEnabled?: boolean;
+  /**
+   * ชื่อเครื่องพิมพ์ของ Windows บนพีซีแคชเชียร์ สำหรับเครื่องพิมพ์ USB ที่พิมพ์ผ่าน Hub
+   * (undefined = ให้ Hub ตรวจจับเครื่องพิมพ์ USB ที่เสียบอยู่เอง)
+   */
+  hubUsbName?: string;
   paperWidth: "58mm" | "80mm";
   createdAt: string;
   updatedAt: string;

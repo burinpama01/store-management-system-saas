@@ -147,6 +147,52 @@ a:focus-visible {
   background: var(--color-brand-soft);
 }
 
+/* คลาสที่ "หน้าตาเป็นคอมโพเนนต์" ต้องอยู่ layer ต่ำกว่า utilities ไม่งั้นคลาสอย่าง
+   hidden / sm:inline-flex ที่เขียนกำกับไว้ใน JSX จะแพ้ (อยู่ layer เดียวกันแล้วแพ้
+   ลำดับซอร์ส) — อาการที่เจอจริง: <span className="badge ... hidden sm:inline-flex">
+   ไม่ยอมซ่อนบนมือถือ เพราะ .badge ตั้ง display: inline-flex ทับไว้ */
+@layer components {
+  .badge {
+    display: inline-flex;
+    height: 1.5rem;
+    align-items: center;
+    gap: 0.3125rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-muted);
+    color: var(--ink-2);
+    padding: 0 0.5625rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .badge-success {
+    border-color: transparent;
+    background: var(--color-success-soft);
+    color: var(--color-success);
+  }
+
+  .badge-warning {
+    border-color: transparent;
+    background: var(--color-warning-soft);
+    color: var(--color-warning);
+  }
+
+  .badge-danger {
+    border-color: transparent;
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+
+  .badge-brand {
+    border-color: transparent;
+    background: var(--tenant-primary-soft);
+    color: var(--tenant-primary-strong);
+  }
+
+}
+
 @layer utilities {
   .marketing-page {
     position: relative;
@@ -1121,39 +1167,6 @@ a:focus-visible {
     background-color: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-  }
-
-  .badge {
-    display: inline-flex;
-    height: 1.5rem;
-    align-items: center;
-    gap: 0.3125rem;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface-muted);
-    color: var(--ink-2);
-    padding: 0 0.5625rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .badge-success {
-    border-color: transparent;
-    background: var(--color-success-soft);
-    color: var(--color-success);
-  }
-
-  .badge-warning {
-    border-color: transparent;
-    background: var(--color-warning-soft);
-    color: var(--color-warning);
-  }
-
-  .badge-brand {
-    border-color: transparent;
-    background: var(--tenant-primary-soft);
-    color: var(--tenant-primary-strong);
   }
 
   .nav-group-label {

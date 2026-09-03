@@ -25,6 +25,12 @@ export interface VoicePickerSnapshot {
   readonly needsVariant: boolean;
   readonly missingRequiredGroups: readonly string[];
   readonly choices: readonly string[];
+  /**
+   * ตัวเลือกของเฉพาะ "สิ่งที่ยังต้องเลือกจริง" — กลุ่มที่มีค่าเริ่มต้นให้แล้ว
+   * (เช่น ความหวาน 100%) ต้องไม่ถูกอ่านออกมา ไม่งั้นเสียงจะสั่งให้เลือกสิ่งที่
+   * เลือกไว้อยู่แล้ว ทำให้พนักงานสับสนว่ายังขาดอะไรกันแน่
+   */
+  readonly pendingChoices: readonly string[];
 }
 
 export interface VoiceCartApi {

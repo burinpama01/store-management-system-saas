@@ -30,6 +30,7 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 import { CMD, buildEscPosReceipt, type EscPosReceiptInput } from "@/modules/printing/escpos";
 import {
   validateHubBluetoothPort,
+  validateHubUsbPrinterName,
   validatePrintPayloadBase64,
   validatePrintTarget,
 } from "@/modules/printing/print-hub";
@@ -101,7 +102,7 @@ export interface SettlementPrintIntentInput {
 
 export interface ResolvedHubTarget {
   printerId: string;
-  kind: "ip" | "bt";
+  kind: "ip" | "bt" | "usb";
   host?: string;
   port?: number;
   device?: string;
@@ -115,13 +116,19 @@ export function toHubRoutableTarget(printer: PrinterRow): ResolvedHubTarget | nu
     if (btCheck.error || !btCheck.device) return null;
     return { printerId: printer.id, kind: "bt", device: btCheck.device };
   }
+  if (printer.type === "usb" && printer.hub_usb_enabled) {
+    // USB ผ่าน Hub: device = ชื่อเครื่องพิมพ์ Windows, undefined = ให้ Hub ตรวจจับเอง
+    const usbCheck = validateHubUsbPrinterName(printer.hub_usb_name);
+    if (usbCheck.error) return null;
+    return { printerId: printer.id, kind: "usb", device: usbCheck.device ?? undefined };
+  }
   if (printer.type === "ip" || printer.type === "escpos") {
     if (!printer.ip_address) return null;
     const targetCheck = validatePrintTarget({ host: printer.ip_address, port: printer.port });
     if (targetCheck.error || !targetCheck.target) return null;
     return { printerId: printer.id, kind: "ip", host: targetCheck.target.host, port: targetCheck.target.port };
   }
-  // browser/usb — พิมพ์ตรงจากเครื่องนั้น (เส้นทาง client เดิม) — server เลือก target ไม่ได้
+  // browser — พิมพ์ตรงจากเครื่องนั้น (เส้นทาง client เดิม) — server เลือก target ไม่ได้
   return null;
 }
 

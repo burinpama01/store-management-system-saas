@@ -1,6 +1,13 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
+import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
+import { onPosCommand } from "@/modules/pos/section-bus";
+// การจับคู่คำพูดกับชื่อตัวเลือกอยู่ในโมดูล voice-pos (ทดสอบแยกได้ และ normalize
+// ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
+import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
 import {
@@ -494,15 +501,6 @@ function ModifierOptionButton({
 // ─── Product Picker Modal ─────────────────────────────────────────
 
 /** U21 — จับคู่ชื่อตัวเลือกจากคำพูด: ตัดช่องว่าง/วงเล็บ/ตัวพิมพ์ ไม่มี fuzzy ที่เดาผิดได้ */
-function normalizeVoiceChoice(value: string): string {
-  return value.trim().toLowerCase().replace(/[()\s]/g, "");
-}
-
-function matchesVoiceChoice(optionName: string, target: string): boolean {
-  const name = normalizeVoiceChoice(optionName);
-  return name === target || name.startsWith(target) || name.includes(target);
-}
-
 function ProductPickerModal({
   picker,
   onAdd,
@@ -643,23 +641,17 @@ function CartPanel({
   cart,
   displayCart,
   appliedCoupon,
-  checkoutTools,
+  selectedCustomerName,
+  onOpenCustomerTools,
   onUpdateQty,
   onRemove,
   onCheckout,
   onClear,
-  onApplyDiscount,
   onApplyItemDiscount,
   onClearItemDiscount,
   itemDiscountResetKey,
   canDiscount,
-  discountMode,
-  discountAmount,
-  discountPercentage,
-  discountNote,
-  onDiscountDraftChange,
-  discountFormOpen,
-  onDiscountFormOpenChange,
+  onOpenDiscountTools,
   activeTicket,
   isTicketSyncPending,
   savedTicketCount,
@@ -674,23 +666,18 @@ function CartPanel({
   cart: Cart;
   displayCart?: Cart;
   appliedCoupon?: AppliedCoupon | null;
-  checkoutTools?: ReactNode;
+  /** ชื่อลูกค้าที่ผูกกับบิลนี้ — โชว์บนปุ่มเพื่อไม่ให้ข้อมูลหายไปกับการพับ */
+  selectedCustomerName?: string | null;
+  onOpenCustomerTools: () => void;
   onUpdateQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
   onCheckout: () => void;
   onClear: () => void;
-  onApplyDiscount: (type: DiscountType, value: number, note?: string) => void;
   onApplyItemDiscount: (key: string, type: DiscountType, value: number, note?: string) => void;
   onClearItemDiscount: (key: string) => void;
   itemDiscountResetKey: number;
   canDiscount: boolean;
-  discountMode: DiscountType;
-  discountAmount: string;
-  discountPercentage: string;
-  discountNote: string;
-  onDiscountDraftChange: (patch: Partial<DiscountDraft>) => void;
-  discountFormOpen: boolean;
-  onDiscountFormOpenChange: (open: boolean) => void;
+  onOpenDiscountTools: () => void;
   activeTicket: SavedOrderTicket | null;
   isTicketSyncPending: boolean;
   savedTicketCount: number;
@@ -703,95 +690,72 @@ function CartPanel({
   onClose?: () => void;
 }) {
   const summaryCart = displayCart ?? cart;
-  const discountInputValue = discountMode === "percentage" ? discountPercentage : discountAmount;
-  const parsedDiscountValue = Number(discountInputValue);
-  const percentagePreview =
-    discountMode === "percentage" && Number.isFinite(parsedDiscountValue)
-      ? Math.min(cart.subtotal, Math.max(0, cart.subtotal * (parsedDiscountValue / 100)))
-      : 0;
-  const discountFormVisible = discountFormOpen && cart.items.length > 0;
-  const canApplyDiscount =
-    canDiscount &&
-    cart.items.length > 0 &&
-    discountInputValue.trim() !== "" &&
-    Number.isFinite(parsedDiscountValue) &&
-    parsedDiscountValue > 0 &&
-    (discountMode === "amount" || parsedDiscountValue <= 100);
-
-  function handleApplyDiscount() {
-    if (!canApplyDiscount) return;
-    onApplyDiscount(discountMode, parsedDiscountValue, discountNote.trim() || undefined);
-    onDiscountFormOpenChange(false);
-  }
-
-  function handleClearDiscount() {
-    onApplyDiscount("amount", 0);
-    onDiscountFormOpenChange(false);
-  }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="space-y-3 border-b border-gray-100 px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span className="text-sm font-semibold text-gray-800">ออร์เดอร์</span>
+      {/* หัวแผงเป็นแถวเดียว — เดิมซ้อนสามแถว (ชื่อ / ปุ่มนับ 2 ปุ่ม / ปุ่มบันทึกตั๋ว)
+          กินความสูงพอ ๆ กับช่องรายการเอง ปุ่มยังครบเท่าเดิม แค่เรียงในแถวเดียวกัน */}
+      <div className="space-y-2 border-b border-gray-100 px-3 py-2">
+        <div className="flex items-center gap-1">
+          <span className="shrink-0 text-sm font-semibold text-gray-800">ออร์เดอร์</span>
           {activeTicket && (
-            <p className="truncate text-[11px] text-amber-600">
-              กำลังแก้ {activeTicket.ticketNumber}
-            </p>
+            <span className="min-w-0 truncate text-[11px] text-amber-600">
+              · แก้ {activeTicket.ticketNumber}
+            </span>
           )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {cart.items.length > 0 && (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={onClear}
-              className="min-h-11 px-3 text-xs text-red-400 hover:text-red-600"
+              onClick={onOpenTickets}
+              title="ตั๋วที่เปิดค้างไว้"
+              className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-semibold text-amber-800"
             >
-              ล้าง
+              ตั๋ว
+              <span className="ml-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-amber-700">
+                {savedTicketCount}
+              </span>
             </button>
-          )}
-          {onClose && (
             <button
               type="button"
-              onClick={onClose}
-              className="min-h-11 px-3 text-xs text-gray-500 hover:text-gray-800 lg:hidden"
+              onClick={onOpenBillHistory}
+              title="ประวัติบิล"
+              className="min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-semibold text-gray-700"
             >
-              ปิด
+              บิล
+              <span className="ml-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-500">
+                {billHistoryCount}
+              </span>
             </button>
-          )}
-        </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={onOpenTickets}
-            className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800"
-          >
-            เปิดตั๋ว
-            <span className="ml-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-amber-700">
-              {savedTicketCount}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenBillHistory}
-            className="min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-700"
-          >
-            ประวัติบิล
-            <span className="ml-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-500">
-              {billHistoryCount}
-            </span>
-          </button>
-          <Button
-            loading={isTicketSyncPending}
-            loadingText="กำลังบันทึก..."
-            disabled={cart.items.length === 0}
-            onClick={onSaveTicket}
-            className="col-span-2 min-h-11 rounded-lg border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
-          </Button>
+            <Button
+              loading={isTicketSyncPending}
+              loadingText="..."
+              disabled={cart.items.length === 0}
+              onClick={onSaveTicket}
+              title={activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
+              className="min-h-11 rounded-lg border border-amber-300 bg-amber-100 px-2 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {activeTicket ? "เก็บตั๋ว" : "เก็บตั๋ว"}
+            </Button>
+            {cart.items.length > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                title="ล้างออร์เดอร์"
+                className="min-h-11 px-2 text-xs text-red-400 hover:text-red-600"
+              >
+                ล้าง
+              </button>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-h-11 px-2 text-xs text-gray-500 hover:text-gray-800 lg:hidden"
+              >
+                ปิด
+              </button>
+            )}
+          </div>
         </div>
         {(ticketMessage || printStatusMessage) && (
           <div className="space-y-1">
@@ -831,131 +795,49 @@ function CartPanel({
       </div>
 
       <div className="border-t border-gray-100 px-4 py-3 space-y-2">
-        {checkoutTools}
+        {/* ลูกค้า/คูปอง/จอลูกค้า พับเป็นปุ่มเดียว — แผงเต็มกินความสูงจนช่องรายการ
+            ในออร์เดอร์แคบเกินใช้งาน (ปกติแคชเชียร์แตะไม่บ่อย เพราะลูกค้ารับแต้ม
+            เองผ่าน QR ท้ายใบเสร็จอยู่แล้ว) สถานะที่เลือกไว้ยังโชว์บนปุ่ม */}
+        <button
+          type="button"
+          onClick={onOpenCustomerTools}
+          className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-left transition-colors hover:bg-slate-100 motion-reduce:transition-none"
+        >
+          <span className="min-w-0">
+            <span className="block text-[11px] font-semibold text-slate-600">ลูกค้า / คูปอง / จอลูกค้า</span>
+            <span className="block truncate text-[11px] text-slate-500">
+              {selectedCustomerName || appliedCoupon
+                ? [selectedCustomerName, appliedCoupon ? `คูปอง ${appliedCoupon.code}` : null]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "แตะเพื่อผูกลูกค้า ใช้คูปอง หรือเปิดจอลูกค้า"}
+            </span>
+          </span>
+          <span aria-hidden="true" className="shrink-0 text-xs text-slate-400">
+            ›
+          </span>
+        </button>
         {canDiscount && (
-          <div className="space-y-2 rounded-lg border border-teal-100 bg-teal-50/50 p-2">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 text-xs text-teal-900">
-                <div className="flex items-center gap-2 font-semibold">
-                  <span>ส่วนลดท้ายบิล</span>
-                  {cart.discount > 0 && <span className="tabular-nums">-{priceStr(cart.discount)}</span>}
-                </div>
-                <p className="mt-0.5 truncate text-[11px] text-teal-700">
-                  {cart.discount > 0
-                    ? cart.discountNote
-                      ? `เหตุผล: ${cart.discountNote}`
-                      : "มีส่วนลดท้ายบิลในออร์เดอร์นี้"
-                    : "ลดจากยอดรวมทั้งออร์เดอร์"}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {cart.discount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearDiscount}
-                    className="min-h-9 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
-                  >
-                    ล้างส่วนลดท้ายบิล
-                  </button>
-                )}
-                <button
-                  type="button"
-                  aria-expanded={discountFormVisible}
-                  disabled={cart.items.length === 0}
-                  onClick={() => onDiscountFormOpenChange(!discountFormVisible)}
-                  className="min-h-9 rounded-lg border border-teal-200 bg-white px-2 text-[11px] font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {discountFormVisible ? "ปิด" : cart.discount > 0 ? "แก้ส่วนลดท้ายบิล" : "เรียกส่วนลดท้ายบิล"}
-                </button>
-              </div>
-            </div>
-            {discountFormVisible && (
-              <div className="space-y-2">
-                <div
-                  role="group"
-                  aria-label="ประเภทส่วนลด"
-                  className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
-                >
-                  <button
-                    type="button"
-                    aria-pressed={discountMode === "amount"}
-                    onClick={() => onDiscountDraftChange({ mode: "amount" })}
-                    className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
-                      discountMode === "amount"
-                        ? "bg-teal-700 text-white"
-                        : "text-teal-800 hover:bg-teal-50"
-                    }`}
-                  >
-                    บาท
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={discountMode === "percentage"}
-                    onClick={() => onDiscountDraftChange({ mode: "percentage" })}
-                    className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
-                      discountMode === "percentage"
-                        ? "bg-teal-700 text-white"
-                        : "text-teal-800 hover:bg-teal-50"
-                    }`}
-                  >
-                    %
-                  </button>
-                </div>
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                  {discountMode === "amount" ? (
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max={cart.subtotal}
-                      step="0.01"
-                      value={discountAmount}
-                      onChange={(event) => onDiscountDraftChange({ amount: event.target.value })}
-                      placeholder="0"
-                      aria-label="จำนวนส่วนลด"
-                      disabled={cart.items.length === 0}
-                      className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-                    />
-                  ) : (
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      value={discountPercentage}
-                      onChange={(event) => onDiscountDraftChange({ percentage: event.target.value })}
-                      placeholder="0"
-                      aria-label="เปอร์เซ็นต์ส่วนลด"
-                      disabled={cart.items.length === 0}
-                      className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    disabled={!canApplyDiscount}
-                    onClick={handleApplyDiscount}
-                    className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ใช้ส่วนลด
-                  </button>
-                </div>
-                {discountMode === "percentage" && percentagePreview > 0 && parsedDiscountValue <= 100 && (
-                  <p className="text-[11px] text-teal-700">
-                    ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(percentagePreview)}</span>
-                  </p>
-                )}
-                <input
-                  value={discountNote}
-                  onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
-                  placeholder="เหตุผล/โปรโมชัน"
-                  aria-label="เหตุผลส่วนลด"
-                  disabled={cart.items.length === 0}
-                  className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-                />
-              </div>
-            )}
-          </div>
+          /* ส่วนลดท้ายบิลพับเป็นปุ่มเช่นกัน — ฟอร์มเต็ม (บาท/% + เหตุผล) ย้ายไป sheet
+             ปุ่มยังโชว์ยอดที่ลดไว้แล้ว จึงไม่ต้องเปิดดูเพื่อรู้ว่ามีส่วนลดอยู่ */
+          <button
+            type="button"
+            onClick={onOpenDiscountTools}
+            disabled={cart.items.length === 0 && cart.discount === 0}
+            className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2 text-left transition-colors hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+          >
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold text-teal-900">ส่วนลดท้ายบิล</span>
+              <span className="block truncate text-[11px] text-teal-700">
+                {cart.discount > 0
+                  ? `-${priceStr(cart.discount)}${cart.discountNote ? ` · ${cart.discountNote}` : ""}`
+                  : "ลดจากยอดรวมทั้งออร์เดอร์"}
+              </span>
+            </span>
+            <span aria-hidden="true" className="shrink-0 text-xs text-teal-400">
+              ›
+            </span>
+          </button>
         )}
         <div className="flex justify-between text-xs text-gray-500">
           <span>ยอดรวม</span>
@@ -985,6 +867,158 @@ function CartPanel({
         >
           ชำระเงิน
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ฟอร์มส่วนลดท้ายบิล — อยู่ใน sheet ไม่ใช่ท้ายแผงออร์เดอร์ เพราะฟอร์มเต็ม
+ * (เลือกบาท/% + ช่องกรอก + เหตุผล) กินความสูงจนช่องรายการเหลือไม่กี่บรรทัด
+ */
+function BillDiscountPanel({
+  cart,
+  discountMode,
+  discountAmount,
+  discountPercentage,
+  discountNote,
+  onDiscountDraftChange,
+  onApplyDiscount,
+  onClose,
+}: {
+  cart: Cart;
+  discountMode: DiscountType;
+  discountAmount: string;
+  discountPercentage: string;
+  discountNote: string;
+  onDiscountDraftChange: (patch: Partial<DiscountDraft>) => void;
+  onApplyDiscount: (type: DiscountType, value: number, note?: string) => void;
+  onClose: () => void;
+}) {
+  const discountInputValue = discountMode === "percentage" ? discountPercentage : discountAmount;
+  const parsedDiscountValue = Number(discountInputValue);
+  const percentagePreview =
+    discountMode === "percentage" && Number.isFinite(parsedDiscountValue)
+      ? Math.min(cart.subtotal, Math.max(0, cart.subtotal * (parsedDiscountValue / 100)))
+      : 0;
+  const canApplyDiscount =
+    cart.items.length > 0 &&
+    discountInputValue.trim() !== "" &&
+    Number.isFinite(parsedDiscountValue) &&
+    parsedDiscountValue > 0 &&
+    (discountMode === "amount" || parsedDiscountValue <= 100);
+
+  function handleApplyDiscount() {
+    if (!canApplyDiscount) return;
+    onApplyDiscount(discountMode, parsedDiscountValue, discountNote.trim() || undefined);
+    onClose();
+  }
+
+  function handleClearDiscount() {
+    onApplyDiscount("amount", 0);
+    onClose();
+  }
+
+  return (
+    <div className="space-y-2">
+      {cart.discount > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-teal-50 px-3 py-2 text-xs text-teal-900">
+          <span className="min-w-0 truncate">
+            ลดอยู่ <span className="font-semibold tabular-nums">-{priceStr(cart.discount)}</span>
+            {cart.discountNote ? ` · ${cart.discountNote}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={handleClearDiscount}
+            className="min-h-9 shrink-0 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
+          >
+            ล้างส่วนลด
+          </button>
+        </div>
+      )}
+<div className="space-y-2">
+        <div
+          role="group"
+          aria-label="ประเภทส่วนลด"
+          className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
+        >
+          <button
+            type="button"
+            aria-pressed={discountMode === "amount"}
+            onClick={() => onDiscountDraftChange({ mode: "amount" })}
+            className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+              discountMode === "amount"
+                ? "bg-teal-700 text-white"
+                : "text-teal-800 hover:bg-teal-50"
+            }`}
+          >
+            บาท
+          </button>
+          <button
+            type="button"
+            aria-pressed={discountMode === "percentage"}
+            onClick={() => onDiscountDraftChange({ mode: "percentage" })}
+            className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+              discountMode === "percentage"
+                ? "bg-teal-700 text-white"
+                : "text-teal-800 hover:bg-teal-50"
+            }`}
+          >
+            %
+          </button>
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          {discountMode === "amount" ? (
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              max={cart.subtotal}
+              step="0.01"
+              value={discountAmount}
+              onChange={(event) => onDiscountDraftChange({ amount: event.target.value })}
+              placeholder="0"
+              aria-label="จำนวนส่วนลด"
+              disabled={cart.items.length === 0}
+              className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+            />
+          ) : (
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              max="100"
+              step="0.01"
+              value={discountPercentage}
+              onChange={(event) => onDiscountDraftChange({ percentage: event.target.value })}
+              placeholder="0"
+              aria-label="เปอร์เซ็นต์ส่วนลด"
+              disabled={cart.items.length === 0}
+              className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+            />
+          )}
+          <button
+            type="button"
+            disabled={!canApplyDiscount}
+            onClick={handleApplyDiscount}
+            className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ใช้ส่วนลด
+          </button>
+        </div>
+        {discountMode === "percentage" && percentagePreview > 0 && parsedDiscountValue <= 100 && (
+          <p className="text-[11px] text-teal-700">
+            ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(percentagePreview)}</span>
+          </p>
+        )}
+        <input
+          value={discountNote}
+          onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
+          placeholder="เหตุผล/โปรโมชัน"
+          aria-label="เหตุผลส่วนลด"
+          disabled={cart.items.length === 0}
+          className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+        />
       </div>
     </div>
   );
@@ -2513,6 +2547,24 @@ export function PosTerminal({
   /** เลขโต๊ะของ billTableId (รู้เมื่อมาจากหน้าเปิดโต๊ะ — deep link ไม่รู้) */
   const [billTableNumber, setBillTableNumber] = useState<string | null>(null);
   const [showTableOpen, setShowTableOpen] = useState(false);
+  /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
+  const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  /** ที่วางปุ่มบนแถบหัวของ shell รวม — null = หน้า POS เดี่ยว (ใช้แถบหัวของตัวเอง) */
+  const [topbarHost, setTopbarHost] = useState<HTMLElement | null>(null);
+
+  // shell รวมเตรียมที่ว่างไว้บนแถบแท็บให้ปุ่มของหน้าขายไปอยู่แถวเดียวกัน — เดิมแถบหัว
+  // ของ POS เป็นแถวที่สองซ้อนใต้แถบแท็บ เสียความสูงไปเปล่า ๆ ถ้าไม่มีที่วาง (เปิด POS
+  // เดี่ยวแบบเดิม) ก็ยังวาดแถบหัวของตัวเองเหมือนเดิม
+  useEffect(() => {
+    setTopbarHost(document.getElementById(POS_TOPBAR_ACTIONS_ID));
+  }, []);
+
+  // เปิดโต๊ะ/เช็คบิลโต๊ะ ถูกยุบไปอยู่ใน dialog "โต๊ะ / ครัว / บิล" ของ shell รวม
+  // ซึ่งอยู่คนละต้นไม้กับ PosTerminal — คำสั่งจึงวิ่งมาทาง section-bus
+  useEffect(() => onPosCommand((command) => {
+    if (command === "open-table") setShowTableOpen(true);
+    if (command === "settle-table") setShowTableBill(true);
+  }), []);
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
@@ -2520,6 +2572,7 @@ export function PosTerminal({
   const [preferredPrinterId, setPreferredPrinterId] = useState<string | null>(null);
   const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
   const [billHistoryPanelOpen, setBillHistoryPanelOpen] = useState(false);
+  const [customerToolsOpen, setCustomerToolsOpen] = useState(false);
   const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
@@ -2561,7 +2614,8 @@ export function PosTerminal({
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
-  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen;
+  const utilitySheetOpen =
+    ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen || discountFormOpen || tableMenuOpen;
   const displayCart = useMemo(
     () => buildCouponPreviewCart(cart, appliedCoupon?.discount ?? 0),
     [cart, appliedCoupon?.discount],
@@ -2768,29 +2822,34 @@ export function PosTerminal({
       getPicker: () => {
         const current = voicePickerRef.current;
         if (!current) return null;
+        const needsVariant = current.product.variants.length > 0 && !current.selectedVariant;
+        const missingGroups = current.product.modifierGroups.filter(
+          (group) =>
+            group.isRequired &&
+            (current.selectedModifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
+        );
         return {
           productName: current.product.name,
-          needsVariant: current.product.variants.length > 0 && !current.selectedVariant,
-          missingRequiredGroups: current.product.modifierGroups
-            .filter(
-              (group) =>
-                group.isRequired &&
-                (current.selectedModifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
-            )
-            .map((group) => group.name),
+          needsVariant,
+          missingRequiredGroups: missingGroups.map((group) => group.name),
           choices: [
             ...current.product.variants.map((variant) => variant.name),
             ...current.product.modifierGroups.flatMap((group) => group.options.map((option) => option.name)),
+          ],
+          // เฉพาะสิ่งที่ยังขาดจริง — กลุ่มที่ระบบเลือกค่าเริ่มต้นให้แล้วไม่ต้องถามซ้ำ
+          pendingChoices: [
+            ...(needsVariant ? current.product.variants.map((variant) => variant.name) : []),
+            ...missingGroups.flatMap((group) => group.options.map((option) => option.name)),
           ],
         };
       },
       selectPickerChoice: (phrase: string) => {
         const current = voicePickerRef.current;
         if (!current) return null;
-        const target = normalizeVoiceChoice(phrase);
+        const target = normalizeVoiceChoicePhrase(phrase);
         if (!target) return null;
 
-        const variant = current.product.variants.find((item) => matchesVoiceChoice(item.name, target));
+        const variant = current.product.variants.find((item) => matchesVoiceChoicePhrase(item.name, target));
         if (variant) {
           const nextPicker = { ...current, selectedVariant: variant };
           // อัปเดต ref ทันที — ผู้เรียกอ่านสถานะต่อในจังหวะเดียวกัน (setPicker ยังไม่ทัน re-render)
@@ -2799,7 +2858,7 @@ export function PosTerminal({
           return variant.name;
         }
         for (const group of current.product.modifierGroups) {
-          const option = group.options.find((item) => matchesVoiceChoice(item.name, target));
+          const option = group.options.find((item) => matchesVoiceChoicePhrase(item.name, target));
           if (!option) continue;
           const next =
             group.selectionType === "single"
@@ -3476,7 +3535,8 @@ export function PosTerminal({
             cart={cart}
             displayCart={displayCart}
             appliedCoupon={appliedCoupon}
-            checkoutTools={customerCouponTools}
+            selectedCustomerName={selectedCustomer?.name ?? null}
+            onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
@@ -3484,18 +3544,11 @@ export function PosTerminal({
               setOrderPanelOpen(true);
             }}
             onClear={() => clearCurrentOrder()}
-            onApplyDiscount={handleApplyDiscount}
             onApplyItemDiscount={handleApplyItemDiscount}
             onClearItemDiscount={handleClearItemDiscount}
             itemDiscountResetKey={itemDiscountResetKey}
             canDiscount={canDiscount}
-            discountMode={discountDraft.mode}
-            discountAmount={discountDraft.amount}
-            discountPercentage={discountDraft.percentage}
-            discountNote={discountDraft.note}
-            onDiscountDraftChange={updateDiscountDraft}
-            discountFormOpen={discountFormOpen}
-            onDiscountFormOpenChange={setDiscountFormOpen}
+            onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
             savedTicketCount={savedTickets.length}
@@ -3548,70 +3601,75 @@ export function PosTerminal({
     );
   }
 
+  // เต็มความสูงของกล่องแม่ (h-full) ไม่ใช่ 100vh ตายตัว — เมื่อ POS ถูกวางใน shell รวม
+  // ที่มีหัวข้อ/แท็บอยู่ด้านบน ความสูง 100vh จะดันให้ทั้งหน้าเลื่อน ผู้ใช้ต้องการให้เลื่อน
+  // ได้เฉพาะรายการเมนูเท่านั้น
+  // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
+  const posActionButtons = (
+    <>
+      {/* โชว์ทุกขนาดจอ — สถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
+      <ConnectionBadge />
+      {/* ใน POS รวม ปุ่มโต๊ะอยู่บนแถบหัวของ shell แล้ว (คุมทั้งผังโต๊ะ/ครัว/บิล)
+          ที่นี่จึงแสดงเฉพาะตอนเปิด POS เดี่ยวที่ไม่มี shell */}
+      {topbarHost ? null : (
+        <button
+          type="button"
+          onClick={() => setTableMenuOpen((open) => !open)}
+          aria-haspopup="dialog"
+          aria-expanded={tableMenuOpen}
+          className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+        >
+          🍽️ <span className="hidden sm:inline">โต๊ะ</span>
+        </button>
+      )}
+      <CashSessionPanel
+        session={cashSession}
+        cashSalesPreview={cashSalesPreview}
+        cashMovementPreview={cashMovementPreview}
+        currency={currency}
+        forceOpenPrompt={!cashSession && canRecordCashflow}
+      />
+      <button
+        type="button"
+        onClick={() => setPrinterConnectionOpen((open) => !open)}
+        className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
+        aria-expanded={printerConnectionOpen}
+        aria-controls="pos-printer-connection"
+      >
+        <span className="sm:hidden">ปริ้น</span>
+        <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
+      </button>
+      {exitHref ? (
+        <a href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
+          ←<span className="hidden sm:inline"> กลับ</span>
+        </a>
+      ) : (
+        <form action={signOut} className="shrink-0">
+          <SubmitButton variant="secondary" className="min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
+            <span className="sm:hidden">⎋</span>
+            <span className="hidden sm:inline">ออกจากระบบ</span>
+          </SubmitButton>
+        </form>
+      )}
+    </>
+  );
+
+  // อยู่ใน shell รวม = ยิงปุ่มขึ้นไปแถวแท็บ (แถวเดียว) / อยู่เดี่ยว = แถบหัวของตัวเอง
+  const posActions = topbarHost
+    ? createPortal(posActionButtons, topbarHost)
+    : (
+      <header className="topbar h-auto min-h-16 flex-nowrap justify-end overflow-x-auto">
+        {posActionButtons}
+      </header>
+    );
+
   return (
-    <div className="storeos-pos flex h-screen flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
+    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Store header */}
-        <header className="topbar h-16 overflow-x-auto">
-          <span className="store-dot shrink-0">S</span>
-          <div className="min-w-0 shrink">
-            <span className="block truncate text-sm font-extrabold text-[var(--ink)]">{storeName}</span>
-            <span className="text-xs text-[var(--muted)]">ขายหน้าร้าน · POS</span>
-          </div>
-          {/* Action group: stays together, pushed right, never shrinks (scrolls on small screens).
-              On mobile the buttons collapse to icon-only to fit narrow widths. */}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden sm:block">
-              <span className="badge badge-success">เชื่อมต่อปกติ</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowTableOpen(true)}
-              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
-              aria-label="เปิดโต๊ะ"
-            >
-              🍽️ <span className="hidden sm:inline">เปิดโต๊ะ</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowTableBill(true)}
-              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
-              aria-label="เช็คบิลโต๊ะ"
-            >
-              🧾 <span className="hidden sm:inline">เช็คบิลโต๊ะ</span>
-            </button>
-            <CashSessionPanel
-              session={cashSession}
-              cashSalesPreview={cashSalesPreview}
-              cashMovementPreview={cashMovementPreview}
-              currency={currency}
-              forceOpenPrompt={!cashSession && canRecordCashflow}
-            />
-            <button
-              type="button"
-              onClick={() => setPrinterConnectionOpen((open) => !open)}
-              className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
-              aria-expanded={printerConnectionOpen}
-              aria-controls="pos-printer-connection"
-            >
-              <span className="sm:hidden">ปริ้น</span>
-              <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
-            </button>
-            {exitHref ? (
-              <a href={exitHref} className="btn-secondary min-h-11 shrink-0 px-3 text-xs" aria-label="กลับ">
-                ←<span className="hidden sm:inline"> กลับ</span>
-              </a>
-            ) : (
-              <form action={signOut} className="shrink-0">
-                <SubmitButton variant="secondary" className="min-h-11 px-3 text-xs" aria-label="ออกจากระบบ">
-                  <span className="sm:hidden">⎋</span>
-                  <span className="hidden sm:inline">ออกจากระบบ</span>
-                </SubmitButton>
-              </form>
-            )}
-          </div>
-        </header>
+        {/* ปุ่มบนแถบหัว: ไม่มีโลโก้/ชื่อร้านแล้ว (หน้า POS ไม่ต้องบอกว่าอยู่ร้านไหน
+            ทุกวินาที และที่ตรงนั้นมีค่ากว่าถ้าให้ปุ่มสั่งงานด้วยเสียงอยู่แทน) */}
+        {posActions}
 
         {printerLoadError && (
           <div role="status" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
@@ -3723,7 +3781,8 @@ export function PosTerminal({
             cart={cart}
             displayCart={displayCart}
             appliedCoupon={appliedCoupon}
-            checkoutTools={customerCouponTools}
+            selectedCustomerName={selectedCustomer?.name ?? null}
+            onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
             onCheckout={() => {
@@ -3731,18 +3790,11 @@ export function PosTerminal({
               setOrderPanelOpen(true);
             }}
             onClear={() => clearCurrentOrder()}
-            onApplyDiscount={handleApplyDiscount}
             onApplyItemDiscount={handleApplyItemDiscount}
             onClearItemDiscount={handleClearItemDiscount}
             itemDiscountResetKey={itemDiscountResetKey}
             canDiscount={canDiscount}
-            discountMode={discountDraft.mode}
-            discountAmount={discountDraft.amount}
-            discountPercentage={discountDraft.percentage}
-            discountNote={discountDraft.note}
-            onDiscountDraftChange={updateDiscountDraft}
-            discountFormOpen={discountFormOpen}
-            onDiscountFormOpenChange={setDiscountFormOpen}
+            onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
             savedTicketCount={savedTickets.length}
@@ -3793,9 +3845,73 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden border-l border-gray-200 bg-white md:flex md:h-auto md:w-80 md:shrink-0 md:flex-col">
+      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
         {renderOrderPanelContent()}
       </aside>
+
+      {/* เมนูโต๊ะ — ยุบสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เหลือปุ่มเดียว
+          งานโต๊ะไม่ได้ทำทุกบิล การให้กินที่แถบหัวสองช่องจึงไม่คุ้ม */}
+      <PosUtilitySheet
+        open={tableMenuOpen}
+        title="โต๊ะ"
+        onClose={() => setTableMenuOpen(false)}
+      >
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setTableMenuOpen(false);
+              setShowTableOpen(true);
+            }}
+            className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          >
+            <span aria-hidden="true" className="text-xl">🍽️</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900">เปิดโต๊ะ</span>
+              <span className="block text-xs text-gray-500">เริ่มรอบโต๊ะใหม่ พิมพ์ QR ให้ลูกค้าสั่งเอง</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTableMenuOpen(false);
+              setShowTableBill(true);
+            }}
+            className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:bg-gray-50 motion-reduce:transition-none"
+          >
+            <span aria-hidden="true" className="text-xl">🧾</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-gray-900">เช็คบิลโต๊ะ</span>
+              <span className="block text-xs text-gray-500">รวมบิลทั้งโต๊ะแล้วรับเงิน</span>
+            </span>
+          </button>
+        </div>
+      </PosUtilitySheet>
+
+      <PosUtilitySheet
+        open={discountFormOpen && canDiscount}
+        title="ส่วนลดท้ายบิล"
+        onClose={() => setDiscountFormOpen(false)}
+      >
+        <BillDiscountPanel
+          cart={cart}
+          discountMode={discountDraft.mode}
+          discountAmount={discountDraft.amount}
+          discountPercentage={discountDraft.percentage}
+          discountNote={discountDraft.note}
+          onDiscountDraftChange={updateDiscountDraft}
+          onApplyDiscount={handleApplyDiscount}
+          onClose={() => setDiscountFormOpen(false)}
+        />
+      </PosUtilitySheet>
+
+      <PosUtilitySheet
+        open={customerToolsOpen}
+        title="ลูกค้า / คูปอง / จอลูกค้า"
+        onClose={() => setCustomerToolsOpen(false)}
+      >
+        {customerCouponTools}
+      </PosUtilitySheet>
 
       <PosUtilitySheet
         open={ticketPanelOpen}

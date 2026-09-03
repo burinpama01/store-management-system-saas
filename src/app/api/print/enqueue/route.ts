@@ -3,6 +3,7 @@ import { AuthorizationError, getOptionalResolvedCurrentPermissions } from "@/mod
 import {
   summarizeHubStatus,
   validateHubBluetoothPort,
+  validateHubUsbPrinterName,
   validatePrintPayloadBase64,
   validatePrintTarget,
 } from "@/modules/printing/print-hub";
@@ -87,6 +88,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: enqueuedBt.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
     }
     return NextResponse.json({ ok: true, jobId: enqueuedBt.data.id, hubOnline: await isHubOnline(ctx.storeId) });
+  }
+
+  // เครื่องพิมพ์ USB ที่เสียบกับพีซีแคชเชียร์: พิมพ์ผ่าน Hub เข้า Windows spooler
+  // (WebUSB ใช้ไม่ได้บน Windows เมื่อไดรเวอร์ usbprint.sys ยึดอุปกรณ์ไว้) — และเส้นทางนี้
+  // ทำให้แท็บเล็ต/iPad ในร้านสั่งพิมพ์เข้าเครื่องพิมพ์ตัวเดียวกันได้ด้วย
+  if (printer.type === "usb" && printer.hubUsbEnabled) {
+    const usbCheck = validateHubUsbPrinterName(printer.hubUsbName ?? null);
+    if (usbCheck.error) {
+      return NextResponse.json({ error: usbCheck.error }, { status: 400 });
+    }
+    const enqueuedUsb = await enqueuePrintJob({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      printerId,
+      kind: "usb",
+      // null = ให้ Hub ตรวจจับเครื่องพิมพ์ USB ที่เสียบอยู่เอง
+      device: usbCheck.device ?? null,
+      payloadB64: payloadCheck.payload,
+    });
+    if (enqueuedUsb.error || !enqueuedUsb.data) {
+      return NextResponse.json({ error: enqueuedUsb.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, jobId: enqueuedUsb.data.id, hubOnline: await isHubOnline(ctx.storeId) });
   }
 
   if (printer.type !== "ip" && printer.type !== "escpos") {

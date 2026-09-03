@@ -1,8 +1,10 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import type { Json } from "@/server/integrations/supabase/database.types";
 import { mapError, type AppError } from "@/shared/utils/error";
 import { generateHubToken, hashHubToken } from "@/modules/printing/print-hub";
 
-export type PrintTargetKind = "ip" | "bt";
+/** "usb" prints through the Windows spooler on the cashier PC running the Hub. */
+export type PrintTargetKind = "ip" | "bt" | "usb";
 
 export interface ClaimedPrintJob {
   id: string;
@@ -21,9 +23,28 @@ export interface StoreHubAuth {
 export interface HubStatus {
   lastSeen: string | null;
   pendingJobs: number;
+  /** เครื่องพิมพ์ที่ Hub agent สแกนเจอบนพีซีแคชเชียร์ (ผลล่าสุด) */
+  devices: HubDevice[];
+  devicesAt: string | null;
+}
+
+/** เครื่องพิมพ์หนึ่งตัวที่ Hub agent มองเห็นบนพีซีแคชเชียร์ */
+export interface HubDevice {
+  /** ชื่อเครื่องพิมพ์ของ Windows (ใช้เป็น target ของงานพิมพ์ USB) */
+  name: string;
+  /** พอร์ตของ Windows เช่น USB001, COM5, IP_192.168.1.59 */
+  port: string;
+  /** เป็นเครื่องพิมพ์ default ของ Windows หรือไม่ */
+  isDefault: boolean;
+  /** true = เสียบผ่าน USB (พิจารณาจากชื่อพอร์ต) */
+  isUsb: boolean;
+  offline: boolean;
 }
 
 type Result<T> = Promise<{ data: T | null; error: AppError | null }>;
+
+/** เพดานจำนวนเครื่องพิมพ์ที่รับจาก agent (กันแถวบวมโดยไม่ตั้งใจ) */
+export const MAX_HUB_DEVICES = 30;
 
 /** U11 — ชนิดงานของ print intent (ใบเสร็จ / ตั๋วครัว); job แบบ legacy ไม่ระบุ */
 export type PrintJobKind = "receipt" | "station_ticket";
@@ -163,7 +184,7 @@ export async function claimPendingPrintJobs(storeId: string, limit = 5): Result<
 
   const jobs = (claimed ?? []).map((row) => ({
     id: row.id,
-    targetKind: (row.target_kind === "bt" ? "bt" : "ip") as PrintTargetKind,
+    targetKind: (row.target_kind === "bt" || row.target_kind === "usb" ? row.target_kind : "ip") as PrintTargetKind,
     targetHost: row.target_host,
     targetPort: row.target_port,
     targetDevice: row.target_device,
@@ -196,7 +217,7 @@ export async function getHubStatus(storeId: string): Result<HubStatus> {
   const supabase = await createSupabaseServiceClient();
   const { data: store, error: storeError } = await supabase
     .from("stores")
-    .select("print_hub_last_seen")
+    .select("print_hub_last_seen, print_hub_devices, print_hub_devices_at")
     .eq("id", storeId)
     .single();
   if (storeError) return { data: null, error: mapError(storeError) };
@@ -209,9 +230,53 @@ export async function getHubStatus(storeId: string): Result<HubStatus> {
   if (countError) return { data: null, error: mapError(countError) };
 
   return {
-    data: { lastSeen: store.print_hub_last_seen, pendingJobs: count ?? 0 },
+    data: {
+      lastSeen: store.print_hub_last_seen,
+      pendingJobs: count ?? 0,
+      devices: parseHubDevices(store.print_hub_devices),
+      devicesAt: store.print_hub_devices_at ?? null,
+    },
     error: null,
   };
+}
+
+/** Row จาก DB เขียนโดย agent — ตรวจรูปทรงก่อนใช้เสมอ (เนื้อหาไม่ใช่คำสั่ง) */
+export function parseHubDevices(value: unknown): HubDevice[] {
+  if (!Array.isArray(value)) return [];
+  const devices: HubDevice[] = [];
+  for (const raw of value.slice(0, MAX_HUB_DEVICES)) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name.trim().slice(0, 128) : "";
+    if (!name) continue;
+    const port = typeof row.port === "string" ? row.port.trim().slice(0, 64) : "";
+    devices.push({
+      name,
+      port,
+      isDefault: row.isDefault === true,
+      isUsb: row.isUsb === true,
+      offline: row.offline === true,
+    });
+  }
+  return devices;
+}
+
+/**
+ * บันทึกผลสแกนเครื่องพิมพ์ที่ Hub agent ส่งมาพร้อม poll — หน้า Settings ใช้แสดง
+ * รายการให้ร้านกดเลือกเครื่องพิมพ์ USB ได้ในคลิกเดียว (ไม่ต้องพิมพ์ชื่อเอง)
+ */
+export async function saveHubDevices(storeId: string, devices: unknown): Promise<{ error: AppError | null }> {
+  const parsed = parseHubDevices(devices);
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("stores")
+    // HubDevice[] เป็นข้อมูลธรรมดา (string/boolean ล้วน) — cast เพื่อลงคอลัมน์ jsonb
+    .update({
+      print_hub_devices: parsed as unknown as Json,
+      print_hub_devices_at: new Date().toISOString(),
+    })
+    .eq("id", storeId);
+  return { error: error ? mapError(error) : null };
 }
 
 /** Generates a fresh Hub token, stores its hash, and returns the plaintext once. */

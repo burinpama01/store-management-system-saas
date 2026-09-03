@@ -104,7 +104,8 @@ export default async function PosPage() {
 
   if (surface === "legacy") {
     return (
-      <div style={themeStyle}>
+      // POS กินเต็มจอพอดี — ไม่มีการเลื่อนทั้งหน้า (เลื่อนได้เฉพาะรายการเมนู/ออร์เดอร์ข้างใน)
+      <div style={themeStyle} className="h-dvh overflow-hidden">
         {terminal}
       </div>
     );
@@ -120,7 +121,7 @@ export default async function PosPage() {
     ? await listVoiceAliases(ctx.storeId)
     : { data: [], error: null };
   return (
-    <div style={themeStyle}>
+    <div style={themeStyle} className="h-dvh overflow-hidden">
       <UnifiedPosWorkspace
         storeId={ctx.storeId}
         storeName={ctx.storeName}

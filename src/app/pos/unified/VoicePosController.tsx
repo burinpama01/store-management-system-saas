@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { VoiceCommandButton } from "@/shared/components/VoiceCommandButton";
+import { VoiceCommandButton, type VoiceResultResponse } from "@/shared/components/VoiceCommandButton";
 import { DASHBOARD_COMMANDS, type CommandItem } from "@/modules/assistant/command-index";
 import {
   resolveVoiceNavigation,
@@ -28,7 +28,7 @@ import {
 import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
-import { useVoiceCartApi } from "./voice-cart-bridge";
+import { useVoiceCartApi, type VoiceCartApi } from "./voice-cart-bridge";
 
 const FOCUS_UNAVAILABLE: Record<VoicePosFocusAction, string> = {
   search: "หน้านี้ยังไม่มีช่องค้นหา — เลือกจากแท็บบนหน้าจอได้",
@@ -51,6 +51,24 @@ export interface VoicePosControllerProps {
   readonly className?: string;
   /** ฉีดนาฬิกาสำหรับทดสอบ Undo */
   readonly now?: () => number;
+}
+
+/**
+ * ข้อความหลังเลือกตัวเลือกได้หนึ่งค่า — ใช้ร่วมกันทั้งเส้นทาง "เลือก…" และเส้นทาง
+ * พูดชื่อตัวเลือกลอย ๆ ยังอยู่กลางลำดับ "เลือก → ยืนยัน" จึงเปิดไมค์ต่อทุกครั้ง
+ */
+function describeChoice(api: VoiceCartApi, chosen: string): VoiceResultResponse {
+  const after = api.getPicker?.() ?? null;
+  const remaining = after
+    ? [...(after.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...after.missingRequiredGroups]
+    : [];
+  return {
+    message:
+      remaining.length > 0
+        ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
+        : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`,
+    listenAgain: true,
+  };
 }
 
 export function VoicePosController({
@@ -99,8 +117,20 @@ export function VoicePosController({
   }, [clock, getCartApi, undoToken]);
 
   const handleResult = useCallback(
-    (result: VoiceParseResult): string => {
+    (result: VoiceParseResult, transcript = ""): string | VoiceResultResponse => {
       setUndoNotice("");
+
+      // ระบบเพิ่งเปิดไมค์ต่อเพื่อรอ "ตัวเลือก" — คนจริงมักพูดแค่ค่าที่ต้องการ
+      // ("คั่วเข้ม" / "หวาน 0%") ไม่ใส่คำว่า "เลือก" นำหน้า parser จึงตอบว่าไม่รองรับ
+      // ทั้งที่บริบทบนหน้าจอบอกความหมายชัด: หน้าต่างตัวเลือกเปิดค้างอยู่
+      if (result.intent.type === "unknown" && result.resultCode === "no_match" && transcript.trim()) {
+        const api = getCartApi();
+        const picker = api?.getPicker?.() ?? null;
+        if (api && picker) {
+          const chosen = api.selectPickerChoice?.(transcript) ?? null;
+          if (chosen) return describeChoice(api, chosen);
+        }
+      }
 
       // ── U21 — dialog ตัวเลือกของสินค้าเปิดอยู่: เลือก/ยืนยันด้วยเสียง ──────────
       if (result.intent.type === "pos.choose_option") {
@@ -110,16 +140,16 @@ export function VoicePosController({
         if (result.decision !== "execute") return "ฟังไม่ชัด — ลองพูดชื่อตัวเลือกอีกครั้ง";
         const chosen = api.selectPickerChoice?.(result.intent.optionPhrase) ?? null;
         if (!chosen) {
-          const list = picker.choices.slice(0, 6).join(" / ");
-          return list ? `ไม่พบตัวเลือกที่พูด — มีให้เลือก: ${list}` : "ไม่พบตัวเลือกที่พูด";
+          // บอกเฉพาะตัวเลือกที่ยังขาด ไม่ใช่ทุกกลุ่มของสินค้า
+          const list = (picker.pendingChoices.length > 0 ? picker.pendingChoices : picker.choices)
+            .slice(0, 6)
+            .join(" / ");
+          return {
+            message: list ? `ไม่พบตัวเลือกที่พูด — มีให้เลือก: ${list}` : "ไม่พบตัวเลือกที่พูด",
+            listenAgain: true,
+          };
         }
-        const after = api.getPicker?.() ?? null;
-        const remaining = after
-          ? [...(after.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...after.missingRequiredGroups]
-          : [];
-        return remaining.length > 0
-          ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
-          : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`;
+        return describeChoice(api, chosen);
       }
 
       if (result.intent.type === "pos.confirm_selection") {
@@ -159,10 +189,22 @@ export function VoicePosController({
                 // (เกิดเมื่อพูดคำเกินมาแต่สินค้านั้นไม่มีตัวเลือก) — บอกตามจริง ไม่อ้างว่าต้องเลือก
                 return `เพิ่ม ${resolution.candidates[0].name} แล้ว — ส่วนที่พูดเพิ่มไม่ตรงตัวเลือกใด ตรวจบนหน้าจออีกครั้ง`;
               }
-              const list = picker.choices.slice(0, 6).join(" / ");
-              return list
-                ? `${resolution.candidates[0].name} ต้องเลือกก่อน — พูด "เลือก…" ได้เลย (${list})`
-                : `${resolution.candidates[0].name} ต้องเลือกตัวเลือกก่อน — เลือกบนหน้าจอได้เลย`;
+              // บอกเฉพาะสิ่งที่ยังขาดจริง — กลุ่มที่มีค่าเริ่มต้นอยู่แล้ว (เช่น ความหวาน
+              // 100%) ไม่ต้องสั่งให้เลือกซ้ำ ไม่งั้นพนักงานไม่รู้ว่าจริง ๆ ขาดอะไร
+              const missing = picker.missingRequiredGroups.join(" / ");
+              const list = picker.pendingChoices.slice(0, 6).join(" / ");
+              if (!missing && !picker.needsVariant) {
+                return `${picker.productName} เปิดหน้าต่างตัวเลือกให้แล้ว — กดเพิ่มในออร์เดอร์ได้เลย`;
+              }
+              const what = missing || "ตัวเลือก";
+              // ขั้นถัดไปคือคำสั่งเสียงอีกคำเสมอ ("เลือก…") จึงเปิดไมค์ต่อให้เลย
+              // แคชเชียร์มักถือถาด/แก้วอยู่ การให้กดปุ่มซ้ำคือแรงเสียดทานที่ตัดออกได้
+              return {
+                message: list
+                  ? `${picker.productName} ยังต้องเลือก ${what} — พูด "เลือก…" ได้เลย (${list})`
+                  : `${picker.productName} ยังต้องเลือก ${what} — เลือกบนหน้าจอได้เลย`,
+                listenAgain: true,
+              };
             }
           }
           return resolution.announcement;
@@ -233,7 +275,7 @@ export function VoicePosController({
   const undoVisible = isVoiceUndoTokenValid(undoToken, clock());
 
   return (
-    <div className={`flex flex-wrap items-start gap-2 ${className ?? ""}`.trim()}>
+    <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`.trim()}>
       <VoiceCommandButton
         adapter={adapter}
         onResult={handleResult}

@@ -33,5 +33,7 @@ export async function GET() {
     lastSeen: summary.lastSeen,
     secondsAgo: summary.secondsAgo,
     pendingJobs: status.data.pendingJobs,
+    devices: status.data.devices,
+    devicesAt: status.data.devicesAt,
   });
 }

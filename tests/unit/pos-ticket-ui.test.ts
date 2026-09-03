@@ -53,7 +53,9 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain('role="dialog"');
     expect(source).toContain("aria-hidden={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
     expect(source).toContain("inert={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
-    expect(source).toContain("hidden border-l border-gray-200 bg-white md:flex");
+    // aside ต้องซ่อนบนจอเล็ก และเป็นคอลัมน์ที่เลื่อนในตัวเองบนเดสก์ท็อป (ไม่ดันให้ทั้งหน้าเลื่อน)
+    expect(source).toContain("border-l border-gray-200 bg-white md:flex");
+    expect(source).toMatch(/<aside className="hidden [^"]*min-h-0 overflow-hidden/);
     expect(source).toContain("md:w-80");
   });
 
@@ -67,8 +69,8 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("billHistoryPanelOpen");
     expect(source).toContain("utilitySheetOpen");
     expect(source).toContain("PosUtilitySheet");
-    expect(source).toContain("เปิดตั๋ว");
-    expect(source).toContain("ประวัติบิล");
+    expect(source).toContain('title="ตั๋วที่เปิดค้างไว้"');
+    expect(source).toContain('title="ประวัติบิล"');
     expect(source).toContain("TicketPanel");
     expect(source).toContain("<BillHistoryPanel");
     expect(source).toContain("sheetRef");
@@ -195,7 +197,8 @@ describe("POS ticket UX guards", () => {
   it("lets cashier apply and clear discounts directly from the order drawer", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
     const cartPanelStart = source.indexOf("function CartPanel(");
-    const cartPanelEnd = source.indexOf("function PosUtilitySheet(");
+    // ตัดถึง BillDiscountPanel พอดี — ฟอร์มส่วนลดย้ายออกจาก CartPanel ไปอยู่ที่นั่นแล้ว
+    const cartPanelEnd = source.indexOf("function BillDiscountPanel(");
     const cartPanelSource = source.slice(cartPanelStart, cartPanelEnd);
 
     expect(source).toContain("applyDiscount");
@@ -205,24 +208,28 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("discountMode");
     expect(source).toContain("discountNote");
     expect(source).toContain("onApplyDiscount");
+    // ฟอร์มส่วนลดอยู่ใน sheet (BillDiscountPanel) — ท้ายแผงออร์เดอร์เหลือปุ่มสรุป
+    // ที่ยังบอกยอดที่ลดไว้ เพื่อคืนความสูงให้ช่องรายการ
+    const discountPanelStart = source.indexOf("function BillDiscountPanel(");
+    const discountPanelSource = source.slice(discountPanelStart, source.indexOf("function CustomerCouponPanel("));
+
     expect(cartPanelSource).toContain("ส่วนลดท้ายบิล");
-    expect(cartPanelSource).toContain("discountFormOpen");
-    expect(cartPanelSource).toContain("const discountFormVisible = discountFormOpen && cart.items.length > 0");
-    expect(cartPanelSource).toContain("onDiscountFormOpenChange(!discountFormVisible)");
-    expect(cartPanelSource).toContain("aria-expanded={discountFormVisible}");
-    expect(cartPanelSource).toContain("เรียกส่วนลดท้ายบิล");
-    expect(cartPanelSource).toContain("discountFormVisible &&");
-    expect(cartPanelSource).toContain('inputMode="decimal"');
-    expect(cartPanelSource).toContain('aria-label="จำนวนส่วนลด"');
-    expect(cartPanelSource).toContain('aria-label="เปอร์เซ็นต์ส่วนลด"');
-    expect(cartPanelSource).toContain('aria-label="เหตุผลส่วนลด"');
-    expect(cartPanelSource).toContain("discountMode === \"amount\"");
-    expect(cartPanelSource).toContain("discountMode === \"percentage\"");
-    expect(cartPanelSource).toContain("max=\"100\"");
-    expect(cartPanelSource).toContain("ใช้ส่วนลด");
-    expect(cartPanelSource).toContain("ล้างส่วนลด");
-    expect(cartPanelSource).toContain("max={cart.subtotal}");
+    expect(cartPanelSource).toContain("onOpenDiscountTools");
     expect(cartPanelSource).toContain("cart.discount > 0");
+    expect(cartPanelSource).not.toContain('aria-label="จำนวนส่วนลด"');
+
+    expect(discountPanelSource).toContain('inputMode="decimal"');
+    expect(discountPanelSource).toContain('aria-label="จำนวนส่วนลด"');
+    expect(discountPanelSource).toContain('aria-label="เปอร์เซ็นต์ส่วนลด"');
+    expect(discountPanelSource).toContain('aria-label="เหตุผลส่วนลด"');
+    expect(discountPanelSource).toContain("discountMode === \"amount\"");
+    expect(discountPanelSource).toContain("discountMode === \"percentage\"");
+    expect(discountPanelSource).toContain("max=\"100\"");
+    expect(discountPanelSource).toContain("ใช้ส่วนลด");
+    expect(discountPanelSource).toContain("ล้างส่วนลด");
+    expect(discountPanelSource).toContain("max={cart.subtotal}");
+    // ใช้/ล้างส่วนลดแล้วต้องปิด sheet เอง ไม่ค้างทับหน้าจอ
+    expect(discountPanelSource).toContain("onClose();");
   });
 
   it("keeps item discount forms behind per-row disclosure controls", () => {
@@ -332,8 +339,7 @@ describe("POS ticket UX guards", () => {
     const clearOrderSource = source.slice(clearOrderStart, applyDiscountStart);
 
     expect(terminalSource).toContain("const [discountFormOpen, setDiscountFormOpen] = useState(false)");
-    expect(cartPanelSource).toContain("discountFormOpen: boolean");
-    expect(cartPanelSource).toContain("onDiscountFormOpenChange: (open: boolean) => void");
+    expect(cartPanelSource).toContain("onOpenDiscountTools: () => void");
     expect(cartPanelSource).not.toContain("const [discountFormOpen, setDiscountFormOpen] = useState(false)");
     expect(source).toContain("if (nextCart.items.length === 0) {");
     expect(source).toContain("setDiscountFormOpen(false)");
@@ -423,7 +429,11 @@ describe("POS ticket UX guards", () => {
     const mobileDrawerEnd = source.indexOf("<aside className");
     const mobileDrawerSource = source.slice(mobileDrawerStart, mobileDrawerEnd);
 
-    expect(source).toContain("const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen");
+    // sheet ทุกตัวต้องนับรวม ไม่งั้น drawer ออร์เดอร์บนมือถือกินโฟกัสทับ
+    expect(source).toContain("const utilitySheetOpen =");
+    for (const flag of ["ticketPanelOpen", "billHistoryPanelOpen", "customerToolsOpen", "discountFormOpen", "tableMenuOpen"]) {
+      expect(source).toContain(flag);
+    }
     expect(mobileDrawerSource).toContain('aria-modal={orderPanelOpen && !utilitySheetOpen ? "true" : undefined}');
     expect(mobileDrawerSource).toContain("aria-hidden={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
     expect(mobileDrawerSource).toContain("inert={!orderPanelOpen || utilitySheetOpen ? true : undefined}");

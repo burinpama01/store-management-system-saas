@@ -2,12 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
+import { logSystemEvent } from "@/modules/system/event-log";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { normalizeNetworkPrinterEndpoint } from "@/modules/printing/network-printer";
-import { validateHubBluetoothPort } from "@/modules/printing/print-hub";
+import { validateHubBluetoothPort, validateHubUsbPrinterName } from "@/modules/printing/print-hub";
 import { RECEIPT_MESSAGE_MAX_LENGTH } from "@/modules/settings/receipt-limits";
 import { upsertReceiptSettings } from "@/modules/settings/repository";
-import { upsertHubBluetoothPrinter, upsertNetworkPrinter } from "@/modules/stores/printer-admin-repository";
+import {
+  upsertHubBluetoothPrinter,
+  upsertHubUsbPrinter,
+  upsertNetworkPrinter,
+} from "@/modules/stores/printer-admin-repository";
 
 /** Accepts only http(s) image URLs within a sane length (Supabase public URL or pasted link). */
 function isValidImageUrl(value: string): boolean {
@@ -145,6 +150,78 @@ export async function saveNetworkPrinterAction(
     if (result.error) return { error: result.error.userMessage };
 
     revalidatePath("/settings/receipt");
+    return { error: null, saved: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * บันทึกเครื่องพิมพ์ USB ที่เสียบกับพีซีแคชเชียร์และพิมพ์ผ่าน Print Hub.
+ * ช่อง windowsPrinterName ว่าง = ให้ Hub ตรวจจับเครื่องพิมพ์ USB ที่เสียบอยู่เองทุกครั้ง
+ * (ย้ายพอร์ต/เปลี่ยนสายแล้วไม่ต้องมาตั้งค่าใหม่ — โจทย์หลักของฟีเจอร์นี้)
+ */
+export async function saveHubUsbPrinterAction(
+  _prev: { error: string | null; saved?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; saved?: boolean }> {
+  try {
+    await requirePermission("settings.manage_printer");
+    const { ctx } = await getStoreContext();
+
+    const id = (formData.get("printerId") as string | null)?.trim() || undefined;
+    const name = (formData.get("name") as string | null)?.trim() ?? "";
+    const windowsPrinterNameRaw = (formData.get("windowsPrinterName") as string | null)?.trim() ?? "";
+    const paperWidthRaw = (formData.get("paperWidth") as string | null)?.trim() ?? "";
+    const isDefault = formData.get("isDefault") === "on";
+
+    if (!name) return { error: "กรุณาระบุชื่อเครื่องพิมพ์" };
+    if (paperWidthRaw !== "58mm" && paperWidthRaw !== "80mm") return { error: "ขนาดกระดาษไม่ถูกต้อง" };
+
+    const usbCheck = validateHubUsbPrinterName(windowsPrinterNameRaw);
+    if (usbCheck.error) return { error: usbCheck.error };
+
+    const result = await upsertHubUsbPrinter(ctx.storeId, ctx.organizationId, {
+      id,
+      name,
+      windowsPrinterName: usbCheck.device ?? null,
+      paperWidth: paperWidthRaw,
+      isDefault,
+    });
+    if (result.error) {
+      await logSystemEvent({
+        level: "error",
+        source: "printing.hub-usb",
+        action: "saveHubUsbPrinterAction",
+        message: "บันทึกเครื่องพิมพ์ USB ผ่าน Print Hub ไม่สำเร็จ",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        context: { printerName: name, autoDetect: !usbCheck.device },
+      });
+      return { error: result.error.userMessage };
+    }
+
+    // เส้นทางสำเร็จก็ต้องมี log (กฎ: ฟีเจอร์ใหม่ต้องบันทึกทั้งสำเร็จและล้มเหลว)
+    await logSystemEvent({
+      level: "info",
+      source: "printing.hub-usb",
+      action: "saveHubUsbPrinterAction",
+      message: usbCheck.device
+        ? "ตั้งค่าเครื่องพิมพ์ USB ผ่าน Print Hub (ระบุชื่อเครื่องพิมพ์)"
+        : "ตั้งค่าเครื่องพิมพ์ USB ผ่าน Print Hub (โหมดตรวจจับอัตโนมัติ)",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      context: {
+        printerId: result.data?.id ?? null,
+        printerName: name,
+        windowsPrinterName: usbCheck.device,
+        autoDetect: !usbCheck.device,
+        isDefault,
+      },
+    });
+
+    revalidatePath("/settings/receipt");
+    revalidatePath("/settings/print-hub");
     return { error: null, saved: true };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
