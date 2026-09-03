@@ -158,7 +158,10 @@ export async function sendTestEnterpriseEmailAction(
     return { error: "ยังส่งไม่ได้: ยังไม่ได้ตั้งค่าผู้ส่ง (RESEND_API_KEY และอีเมลผู้ส่ง)", notice: null };
   }
   if (!result.ok) {
-    return { error: `ส่งไม่สำเร็จ: ${result.message}`, notice: null };
+    // ผู้ดูแลแพลตฟอร์มคือคนที่แก้เรื่องโดเมน/คีย์ได้ จึงควรเห็นสาเหตุจริงจากผู้ให้บริการ
+    // (เช่น โดเมนยังไม่ verified / ผู้ส่งไม่ตรงโดเมน) ไม่ใช่แค่รหัสสถานะ
+    const detail = result.detail ? ` — ${result.detail}` : "";
+    return { error: `ส่งไม่สำเร็จ: ${result.message}${detail}`, notice: null };
   }
   return { error: null, notice: `ส่งอีเมลทดสอบไปที่ ${to} แล้ว — ตรวจกล่องจดหมาย (รวม Spam)` };
 }
