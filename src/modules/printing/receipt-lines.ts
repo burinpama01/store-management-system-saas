@@ -275,6 +275,21 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     });
   }
 
+  // QR รับแต้ม — เฉพาะบิลที่ยังไม่ผูกลูกค้า (บิลที่ผูกแล้วได้แต้มไปตั้งแต่จ่ายเงิน)
+  if (data.loyaltyClaim) {
+    const claimExpiry = new Date(data.loyaltyClaim.expiresAt).toLocaleDateString("th-TH", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+    lines.push({ text: div });
+    lines.push({ text: "สแกนรับแต้มสะสม", align: "center", bold: true });
+    lines.push({ text: `รับ ${pointsStr(data.loyaltyClaim.points)} แต้ม`, align: "center", bold: true });
+    lines.push({ text: "", align: "center", qrPayload: data.loyaltyClaim.url });
+    lines.push({ text: `รหัส ${data.loyaltyClaim.code}`, align: "center" });
+    lines.push({ text: `รับได้ถึง ${claimExpiry} (1 บิลรับได้ครั้งเดียว)`, align: "center" });
+  }
+
   if (data.footerText) {
     lines.push({ text: div });
     pushWrapped(lines, data.footerText, cols, { align: "center" });

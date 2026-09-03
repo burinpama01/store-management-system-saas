@@ -3763,6 +3763,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      loyalty_claim_codes: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          order_id: string;
+          code: string;
+          points: number;
+          expires_at: string;
+          claimed_at: string | null;
+          claimed_by_customer_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          order_id: string;
+          code: string;
+          points: number;
+          expires_at: string;
+          claimed_at?: string | null;
+          claimed_by_customer_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          order_id?: string;
+          code?: string;
+          points?: number;
+          expires_at?: string;
+          claimed_at?: string | null;
+          claimed_by_customer_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       voice_aliases: {
         Row: {
           id: string;
@@ -4228,6 +4267,21 @@ export interface Database {
           order_count: number;
           revenue: number;
         }[];
+      };
+      create_loyalty_claim_code: {
+        Args: {
+          p_store_id: string;
+          p_order_id: string;
+        };
+        Returns: Json;
+      };
+      claim_loyalty_points: {
+        Args: {
+          p_store_id: string;
+          p_code: string;
+          p_customer_id: string;
+        };
+        Returns: Json;
       };
       purge_expired_unified_pos_receipt_payloads: {
         Args: Record<string, never>;

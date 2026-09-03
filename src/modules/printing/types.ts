@@ -61,6 +61,18 @@ export interface ReceiptData {
   tableQrPayload?: string;
   /** table_qr slip: ISO time the table session is valid until (shown on the slip). */
   tableValidUntil?: string;
+  /**
+   * QR รับแต้มท้ายใบเสร็จ (บิลที่ยังไม่ผูกลูกค้า) — ลูกค้าสแกนแล้วกดรับแต้มเอง
+   * ไม่ใส่ = ไม่พิมพ์ส่วนนี้ (บิลที่ผูกลูกค้าแล้วได้แต้มไปตั้งแต่จ่ายเงิน)
+   */
+  loyaltyClaim?: {
+    /** URL ที่ฝังใน QR (พาไปหน้าสมาชิกของร้านพร้อมรหัส) */
+    url: string;
+    /** รหัสสั้นไว้พิมพ์เองถ้าสแกนไม่ได้ */
+    code: string;
+    points: number;
+    expiresAt: string;
+  };
   paperWidth: "58mm" | "80mm";
   printCopies?: number;
   printedAt: string;

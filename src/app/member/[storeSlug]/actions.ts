@@ -8,6 +8,7 @@ import {
 } from "@/modules/customers/member-repository";
 import { redeemRewardForCurrentCustomer } from "@/modules/loyalty/repository";
 import { sendSmskubOtp } from "@/modules/notifications/smskub";
+import { claimLoyaltyPointsWithCode } from "@/modules/loyalty/claim-repository";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -167,5 +168,51 @@ export async function redeemMemberRewardAction(formData: FormData): Promise<Rede
   } catch (e) {
     logPublicMemberActionError("redeemMemberReward", e);
     return { error: "แลกของรางวัลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า" };
+  }
+}
+
+/**
+ * ลูกค้ากดรับแต้มจาก QR ท้ายใบเสร็จ
+ * ต้องล็อกอินสมาชิกก่อน (RPC ตรวจซ้ำอีกชั้นว่าลูกค้าอยู่ร้านนี้จริง)
+ */
+export async function claimReceiptPointsAction(formData: FormData): Promise<{
+  error: string | null;
+  claimed: { points: number; balance: number; orderNumber: string } | null;
+}> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const claimCode = text(formData, "claimCode").trim().toUpperCase();
+    if (!/^[0-9A-F]{8}$/.test(claimCode)) return { error: "รหัสรับแต้มไม่ถูกต้อง", claimed: null };
+
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน"), claimed: null };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนรับแต้ม", claimed: null };
+
+    const result = await claimLoyaltyPointsWithCode({
+      storeId: portalData.store.id,
+      code: claimCode,
+      customerId: portalData.customer.id,
+    });
+    if (result.error) {
+      return { error: publicMemberError(result.error.userMessage, "รับแต้มไม่สำเร็จ"), claimed: null };
+    }
+    if (!result.data) return { error: "รับแต้มไม่สำเร็จ", claimed: null };
+    if (result.data.status !== "claimed") return { error: result.data.message, claimed: null };
+
+    revalidateMemberPortal(storeSlug);
+    return {
+      error: null,
+      claimed: {
+        points: result.data.points,
+        balance: result.data.balance,
+        orderNumber: result.data.orderNumber,
+      },
+    };
+  } catch (e) {
+    logPublicMemberActionError("claimReceiptPoints", e);
+    return { error: "รับแต้มไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า", claimed: null };
   }
 }

@@ -22,6 +22,7 @@ import {
   listSavedTicketsAction,
   saveSavedTicketAction,
   deleteSavedTicketAction,
+  getReceiptLoyaltyClaimAction,
   listOrdersHistoryAction,
   listTodayOrdersAction,
   voidOrderAction,
@@ -71,6 +72,8 @@ type ReceiptOrder = {
   changeAmount?: number;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** QR รับแต้มท้ายใบเสร็จ (เฉพาะบิลที่ยังไม่ผูกลูกค้า) — ดึงหลังจ่ายเงินสำเร็จ */
+  loyaltyClaim?: { url: string; code: string; points: number; expiresAt: string };
 };
 
 const EMPTY_TICKET_DRAFT: TicketDraft = {
@@ -2313,6 +2316,8 @@ function ReceiptPanel({
         paymentStatus: "paid" as const,
         loyaltyPointsEarned: order.loyaltyPointsEarned,
         loyaltyPointsBalance: order.loyaltyPointsBalance,
+        // QR รับแต้ม — มีเฉพาะบิลที่ยังไม่ผูกลูกค้า
+        loyaltyClaim: order.loyaltyClaim,
         footerText: settings.footerText,
         headerText: settings.headerText,
         showQrPayment: false,
@@ -3265,6 +3270,22 @@ export function PosTerminal({
       // background and must never delay the phase switch.
       setPendingOrder(null);
       setPhase("receipt");
+
+      // QR รับแต้ม: เฉพาะบิลที่ยังไม่ผูกลูกค้า (บิลที่ผูกแล้วได้แต้มไปตั้งแต่จ่ายเงิน)
+      // ขอแบบไม่บล็อก — ถ้าช้า/ล้มเหลว ใบเสร็จยังพิมพ์ได้ตามปกติ เพียงแต่ไม่มี QR
+      if (!selectedCustomer && paidOrder?.id) {
+        const claimOrderId = paidOrder.id;
+        void (async () => {
+          const claimResult = await getReceiptLoyaltyClaimAction(claimOrderId);
+          if (claimResult.claim) {
+            setReceipt((current) =>
+              current && current.orderNumber === order.orderNumber
+                ? { ...current, loyaltyClaim: claimResult.claim ?? undefined }
+                : current,
+            );
+          }
+        })();
+      }
       if (activeTicketId) {
         void (async () => {
           const deleteResult = await deleteSavedTicketAction(activeTicketId);

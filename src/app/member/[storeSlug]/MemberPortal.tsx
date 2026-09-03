@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import type { CustomerPortalData, CustomerRewardRedemption } from "@/modules/customers/member-repository";
 import type { LoyaltyReward } from "@/modules/loyalty/repository";
 import {
+  claimReceiptPointsAction,
   redeemMemberRewardAction,
   requestMemberOtpAction,
   verifyMemberOtpAction,
@@ -13,6 +14,8 @@ import { Button } from "@/shared/components/ui";
 interface Props {
   storeSlug: string;
   portalCode: string;
+  /** รหัสรับแต้มจาก QR ท้ายใบเสร็จ (?claim=) — null = เข้ามาปกติ */
+  claimCode: string | null;
   data: CustomerPortalData;
 }
 
@@ -73,7 +76,7 @@ function StatusMessage({ message }: { message: string | null }) {
   );
 }
 
-export function MemberPortal({ storeSlug, portalCode, data }: Props) {
+export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) {
   const [mode, setMode] = useState<"register" | "login">("register");
   const [otpId, setOtpId] = useState<string | null>(null);
   const [maskedPhone, setMaskedPhone] = useState<string | null>(null);
@@ -81,11 +84,31 @@ export function MemberPortal({ storeSlug, portalCode, data }: Props) {
   const [isPending, startTransition] = useTransition();
   const [tab, setTab] = useState<"redeem" | "history">("redeem");
   const [voucher, setVoucher] = useState<RedeemedVoucher | null>(null);
+  // รับแต้มจากใบเสร็จ: null = ยังไม่ได้กด, ที่เหลือคือผลลัพธ์ที่แสดงค้างไว้
+  const [claimResult, setClaimResult] = useState<{ points: number; orderNumber: string } | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [detail, setDetail] = useState<CustomerRewardRedemption | null>(null);
   const sortedRewards = useMemo(
     () => [...data.rewards].sort((a, b) => a.pointsCost - b.pointsCost),
     [data.rewards],
   );
+
+  function claimReceiptPoints() {
+    if (!claimCode) return;
+    const formData = new FormData();
+    formData.set("storeSlug", storeSlug);
+    formData.set("portalCode", portalCode);
+    formData.set("claimCode", claimCode);
+    startTransition(async () => {
+      const result = await claimReceiptPointsAction(formData);
+      if (result.error || !result.claimed) {
+        setClaimError(result.error ?? "รับแต้มไม่สำเร็จ");
+        return;
+      }
+      setClaimError(null);
+      setClaimResult({ points: result.claimed.points, orderNumber: result.claimed.orderNumber });
+    });
+  }
 
   function requestOtp(formData: FormData) {
     startTransition(async () => {
@@ -224,6 +247,36 @@ export function MemberPortal({ storeSlug, portalCode, data }: Props) {
           </section>
         ) : (
           <>
+            {claimCode ? (
+              <section className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 shadow-sm">
+                {claimResult ? (
+                  <>
+                    <p className="text-sm font-bold text-emerald-900">รับแต้มเรียบร้อย</p>
+                    <p className="mt-1 text-2xl font-black text-emerald-800">
+                      +{formatPoints(claimResult.points)} แต้ม
+                    </p>
+                    <p className="mt-1 text-xs text-emerald-800">จากบิล {claimResult.orderNumber}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-emerald-900">มีแต้มรอรับจากใบเสร็จ</p>
+                    <p className="mt-1 text-xs text-emerald-800">รหัส {claimCode} · 1 บิลรับได้ครั้งเดียว</p>
+                    {claimError ? (
+                      <p className="mt-2 text-xs font-semibold text-red-700">{claimError}</p>
+                    ) : null}
+                    <Button
+                      variant="primary"
+                      className="mt-3 w-full"
+                      onClick={claimReceiptPoints}
+                      loading={isPending}
+                    >
+                      รับแต้มจากบิลนี้
+                    </Button>
+                  </>
+                )}
+              </section>
+            ) : null}
+
             <section className="rounded-lg border border-[var(--border)] bg-white p-5 shadow-sm">
               <p className="text-sm text-[var(--muted)]">{data.customer.name}</p>
               <h2 className="mt-1 text-xl font-bold text-[var(--foreground)]">แต้มของฉัน</h2>

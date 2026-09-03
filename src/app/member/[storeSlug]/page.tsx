@@ -9,10 +9,10 @@ export default async function CustomerMemberPage({
   searchParams,
 }: {
   params: Promise<{ storeSlug: string }>;
-  searchParams: Promise<{ code?: string }>;
+  searchParams: Promise<{ code?: string; claim?: string }>;
 }) {
   const { storeSlug } = await params;
-  const { code } = await searchParams;
+  const { code, claim } = await searchParams;
   const portalCode = String(code ?? "");
 
   if (storeSlug.length > 100) notFound();
@@ -23,6 +23,7 @@ export default async function CustomerMemberPage({
     <MemberPortal
       storeSlug={storeSlug}
       portalCode={portalCode}
+      claimCode={typeof claim === "string" ? claim.trim().toUpperCase() : null}
       data={portalData}
     />
   );

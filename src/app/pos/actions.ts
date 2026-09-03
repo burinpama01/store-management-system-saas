@@ -45,6 +45,8 @@ import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import type { Printer, QrOrderingMode } from "@/modules/stores/types";
+import { buildLoyaltyClaimUrl, ensureLoyaltyClaimCode } from "@/modules/loyalty/claim-repository";
+import { generateMemberPortalLink } from "@/modules/customers/member-repository";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -1332,5 +1334,60 @@ export async function voidOrderAction(
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * QR รับแต้มท้ายใบเสร็จ — เรียกตอนจะพิมพ์/แสดงใบเสร็จของบิลที่เพิ่งจ่าย
+ *
+ * คืน null เมื่อบิลนั้นไม่ควรมี QR (ผูกลูกค้าไว้แล้ว = ได้แต้มไปตั้งแต่จ่ายเงิน,
+ * ร้านปิดสะสมแต้ม, หรือคำนวณแล้วได้ 0 แต้ม) — เรียกซ้ำได้รหัสเดิมเสมอ
+ */
+export async function getReceiptLoyaltyClaimAction(orderId: string): Promise<{
+  error: string | null;
+  claim: { url: string; code: string; points: number; expiresAt: string } | null;
+}> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    if (!UUID_RE.test(orderId)) return { error: "ออร์เดอร์ไม่ถูกต้อง", claim: null };
+
+    const codeRes = await ensureLoyaltyClaimCode(ctx.storeId, orderId);
+    if (codeRes.error) return { error: codeRes.error.userMessage, claim: null };
+    if (!codeRes.data || codeRes.data.claimed) return { error: null, claim: null };
+
+    const storeRes = await getStore(ctx.storeId);
+    const slug = storeRes.data?.slug;
+    if (!slug) return { error: null, claim: null };
+
+    // ลิงก์สมาชิกของร้าน (get-or-create) — QR ต้องพาลูกค้าเข้าหน้าร้านที่ถูกต้อง
+    const portal = await generateMemberPortalLink({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+    });
+    if (portal.error || !portal.data?.token) return { error: null, claim: null };
+
+    const h = await headers();
+    const host = h.get("host") ?? "";
+    const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+    const baseUrl = host ? `${proto}://${host}` : "";
+    if (!baseUrl) return { error: null, claim: null };
+
+    return {
+      error: null,
+      claim: {
+        url: buildLoyaltyClaimUrl({
+          baseUrl,
+          storeSlug: slug,
+          portalToken: portal.data.token,
+          code: codeRes.data.code,
+        }),
+        code: codeRes.data.code,
+        points: codeRes.data.points,
+        expiresAt: codeRes.data.expiresAt,
+      },
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", claim: null };
   }
 }
