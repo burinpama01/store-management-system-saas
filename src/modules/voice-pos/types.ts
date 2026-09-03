@@ -48,6 +48,8 @@ export type VoiceIntentType =
   | "pos.decrease_item"
   | "pos.remove_item"
   | "pos.clear_search"
+  | "pos.choose_option"
+  | "pos.confirm_selection"
   | "unknown";
 
 /** เหตุผลของผลลัพธ์ — ใช้เลือกข้อความ UI และเป็นค่าเดียวที่ log ได้ */
@@ -101,6 +103,20 @@ export interface VoiceClearSearchIntent {
   readonly type: "pos.clear_search";
 }
 
+/**
+ * U21 — เลือกตัวเลือกของสินค้าด้วยเสียง (ตอน dialog ตัวเลือกเปิดอยู่)
+ * เช่น "เลือกเล็ก" / "เอาหวานน้อย" — ผู้เรียกเป็นคนจับคู่กับตัวเลือกจริงบนจอ
+ */
+export interface VoiceChooseOptionIntent {
+  readonly type: "pos.choose_option";
+  readonly optionPhrase: string;
+}
+
+/** U21 — ยืนยันเพิ่มลงตะกร้าหลังเลือกตัวเลือกครบ ("ยืนยัน" / "ตกลง") */
+export interface VoiceConfirmSelectionIntent {
+  readonly type: "pos.confirm_selection";
+}
+
 export interface VoiceUnknownIntent {
   readonly type: "unknown";
 }
@@ -113,6 +129,8 @@ export type VoiceIntent =
   | VoiceDecreaseItemIntent
   | VoiceRemoveItemIntent
   | VoiceClearSearchIntent
+  | VoiceChooseOptionIntent
+  | VoiceConfirmSelectionIntent
   | VoiceUnknownIntent;
 
 /** ผลของ parser — pure ทั้งหมด ไม่มี side effect และไม่แนบ transcript กลับมา */

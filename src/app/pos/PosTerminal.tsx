@@ -490,6 +490,16 @@ function ModifierOptionButton({
 
 // ─── Product Picker Modal ─────────────────────────────────────────
 
+/** U21 — จับคู่ชื่อตัวเลือกจากคำพูด: ตัดช่องว่าง/วงเล็บ/ตัวพิมพ์ ไม่มี fuzzy ที่เดาผิดได้ */
+function normalizeVoiceChoice(value: string): string {
+  return value.trim().toLowerCase().replace(/[()\s]/g, "");
+}
+
+function matchesVoiceChoice(optionName: string, target: string): boolean {
+  const name = normalizeVoiceChoice(optionName);
+  return name === target || name.startsWith(target) || name.includes(target);
+}
+
 function ProductPickerModal({
   picker,
   onAdd,
@@ -2567,21 +2577,6 @@ export function PosTerminal({
     }
   }, []);
 
-  // U15 — ลงทะเบียนตะกร้าให้ปุ่มเสียงของ shell ใช้ (ไม่มี provider = no-op ในเส้นทาง legacy)
-  // เสียงอ่าน snapshot ล่าสุดผ่าน ref และเขียนผ่าน commitCart เดิมเท่านั้น
-  const voiceCartSnapshotRef = useRef({ cart, products, locked: cartLocked });
-  useEffect(() => {
-    voiceCartSnapshotRef.current = { cart, products, locked: cartLocked };
-  }, [cart, products, cartLocked]);
-  const voiceCartApi = useMemo<VoiceCartApi>(
-    () => ({
-      getSnapshot: () => voiceCartSnapshotRef.current,
-      commit: (nextCart: Cart) => commitCart(nextCart),
-    }),
-    [commitCart],
-  );
-  useRegisterVoiceCart(voiceCartApi);
-
   function updateDiscountDraft(patch: Partial<DiscountDraft>) {
     setDiscountDraft((current) => ({ ...current, ...patch }));
   }
@@ -2731,6 +2726,121 @@ export function PosTerminal({
   const handleAddFromPicker = useCallback((input: AddToCartInput) => {
     commitCart(addToCart(cartRef.current, input));
   }, [commitCart]);
+
+  // ── U15/U21 — สะพานให้ปุ่มเสียงของ shell ใช้ (ไม่มี provider = no-op ในเส้นทาง legacy) ──
+  // เสียงอ่านสถานะล่าสุดผ่าน ref และ "เขียน" ผ่านฟังก์ชันเดิมของหน้าขายเท่านั้น
+  // (commitCart / handleProductClick / handleAddFromPicker) — ไม่มี logic ตะกร้าซ้ำ
+  const voiceCartSnapshotRef = useRef({ cart, products, locked: cartLocked });
+  useEffect(() => {
+    voiceCartSnapshotRef.current = { cart, products, locked: cartLocked };
+  }, [cart, products, cartLocked]);
+  const voicePickerRef = useRef<PickerState | null>(picker);
+  useEffect(() => {
+    voicePickerRef.current = picker;
+  }, [picker]);
+
+  const voiceCartApi = useMemo<VoiceCartApi>(
+    () => ({
+      getSnapshot: () => voiceCartSnapshotRef.current,
+      commit: (nextCart: Cart) => commitCart(nextCart),
+      // เปิดแผงตะกร้า/ออเดอร์ — ปุ่มเดียวกับที่พนักงานกดบนมือถือ (ไม่แตะเงิน)
+      openOrderPanel: () => setOrderPanelOpen(true),
+      // เปิด dialog ของสินค้า (สินค้าที่มีตัวเลือกบังคับจะเด้งหน้าต่างให้เลือก)
+      openProduct: (productId: string) => {
+        const product = voiceCartSnapshotRef.current.products.find((item) => item.id === productId);
+        if (!product) return false;
+        handleProductClick(product);
+        // เปิด dialog เมื่อสินค้ามีตัวเลือก — sync ref ทันทีให้ผู้เรียกอ่านต่อได้ในจังหวะเดียวกัน
+        if (product.variants.length > 0 || product.modifierGroups.length > 0) {
+          voicePickerRef.current = {
+            product,
+            selectedVariant: null,
+            selectedModifiers: buildDefaultModifierSelections(product.modifierGroups),
+          };
+        }
+        return true;
+      },
+      getPicker: () => {
+        const current = voicePickerRef.current;
+        if (!current) return null;
+        return {
+          productName: current.product.name,
+          needsVariant: current.product.variants.length > 0 && !current.selectedVariant,
+          missingRequiredGroups: current.product.modifierGroups
+            .filter(
+              (group) =>
+                group.isRequired &&
+                (current.selectedModifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
+            )
+            .map((group) => group.name),
+          choices: [
+            ...current.product.variants.map((variant) => variant.name),
+            ...current.product.modifierGroups.flatMap((group) => group.options.map((option) => option.name)),
+          ],
+        };
+      },
+      selectPickerChoice: (phrase: string) => {
+        const current = voicePickerRef.current;
+        if (!current) return null;
+        const target = normalizeVoiceChoice(phrase);
+        if (!target) return null;
+
+        const variant = current.product.variants.find((item) => matchesVoiceChoice(item.name, target));
+        if (variant) {
+          const nextPicker = { ...current, selectedVariant: variant };
+          // อัปเดต ref ทันที — ผู้เรียกอ่านสถานะต่อในจังหวะเดียวกัน (setPicker ยังไม่ทัน re-render)
+          voicePickerRef.current = nextPicker;
+          setPicker(nextPicker);
+          return variant.name;
+        }
+        for (const group of current.product.modifierGroups) {
+          const option = group.options.find((item) => matchesVoiceChoice(item.name, target));
+          if (!option) continue;
+          const next =
+            group.selectionType === "single"
+              ? [option]
+              : [...(current.selectedModifiers[group.id] ?? []).filter((o) => o.id !== option.id), option];
+          const nextPicker = {
+            ...current,
+            selectedModifiers: { ...current.selectedModifiers, [group.id]: next },
+          };
+          voicePickerRef.current = nextPicker;
+          setPicker(nextPicker);
+          return option.name;
+        }
+        return null;
+      },
+      confirmPicker: () => {
+        const current = voicePickerRef.current;
+        if (!current) return { ok: false, message: "ยังไม่มีหน้าต่างตัวเลือกเปิดอยู่" };
+        if (current.product.variants.length > 0 && !current.selectedVariant) {
+          return { ok: false, message: `ยังไม่ได้เลือกตัวเลือกของ ${current.product.name}` };
+        }
+        const missing = current.product.modifierGroups.filter(
+          (group) =>
+            group.isRequired &&
+            (current.selectedModifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
+        );
+        if (missing.length > 0) {
+          return { ok: false, message: `ยังต้องเลือก ${missing.map((group) => group.name).join(" และ ")}` };
+        }
+        handleAddFromPicker({
+          product: current.product,
+          variant: current.selectedVariant,
+          modifiers: Object.entries(current.selectedModifiers).flatMap(([groupId, options]) => {
+            const group = current.product.modifierGroups.find((item) => item.id === groupId);
+            if (!group) return [];
+            return options.map((option) => ({ groupId, groupName: group.name, option }));
+          }),
+        });
+        voicePickerRef.current = null;
+        setPicker(null);
+        return { ok: true, message: `เพิ่ม ${current.product.name} ลงตะกร้าแล้ว` };
+      },
+    }),
+    [commitCart, handleAddFromPicker, handleProductClick],
+  );
+  useRegisterVoiceCart(voiceCartApi);
 
   function handleCustomerQueryChange(value: string) {
     setCustomerQuery(value);
@@ -3741,6 +3851,13 @@ export function PosTerminal({
       {/* Picker modal */}
       {picker && (
         <ProductPickerModal
+          /* U21 — remount เมื่อ "เสียง" เปลี่ยนตัวเลือก เพื่อให้หน้าต่างแสดงตามที่พูด
+             (การกดเลือกด้วยมือไม่แตะ state ตัวนี้ จึงไม่ทำให้ remount ระหว่างพิมพ์/กด) */
+          key={`${picker.product.id}|${picker.selectedVariant?.id ?? ""}|${Object.values(picker.selectedModifiers)
+            .flat()
+            .map((option) => option.id)
+            .sort()
+            .join(",")}`}
           picker={picker}
           onAdd={handleAddFromPicker}
           onClose={() => setPicker(null)}

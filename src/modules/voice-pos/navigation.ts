@@ -70,7 +70,8 @@ const TAB_LABEL: Record<VoicePosTabId, string> = {
 /** โฟกัสภายในหน้า — ผู้เรียกเป็นคนหา element จริง (ไม่มี DOM ในไฟล์นี้) */
 const FOCUS_ALIASES: ReadonlyArray<readonly [VoicePosFocusAction, readonly string[]]> = [
   ["search", ["ค้นหา", "ช่องค้นหา", "หาสินค้า", "search"]],
-  ["cart", ["ตะกร้า", "ช่องตะกร้า", "รายการขาย", "cart"]],
+  // U21 — บางร้านเรียก "ตะกร้า" บางร้านเรียก "ออเดอร์/ออร์เดอร์" = สิ่งเดียวกัน
+  ["cart", ["ตะกร้า", "ช่องตะกร้า", "ตะกร้าสินค้า", "รายการขาย", "ออเดอร์", "ออร์เดอร์", "แผงออเดอร์", "บิลปัจจุบัน", "cart", "order"]],
 ];
 
 const FOCUS_LABEL: Record<VoicePosFocusAction, string> = {

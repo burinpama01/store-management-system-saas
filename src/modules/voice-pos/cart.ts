@@ -8,9 +8,10 @@
 //   - transcript ไม่เข้ามาถึงไฟล์นี้ — รับเฉพาะ intent ที่ parse แล้ว
 
 import { addToCart, removeFromCart, updateQuantity } from "@/modules/pos/cart";
+import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers";
 import type { Cart } from "@/modules/pos/types";
 import type { PriceTier } from "@/modules/pos/pricing";
-import type { Product } from "@/modules/catalog/types";
+import type { ModifierOption, Product, ProductVariant } from "@/modules/catalog/types";
 import { VOICE_MAX_QUANTITY, VOICE_MIN_QUANTITY } from "./parser";
 import type {
   VoiceAddItemIntent,
@@ -85,6 +86,17 @@ function normalizeName(value: string): string {
 }
 
 /**
+ * U21 — ตัดวรรณยุกต์/ทัณฑฆาตออก เพื่อให้เสียงที่ถอดมาสะกดต่างเล็กน้อยยังจับคู่ได้
+ * (เช่น "ลาเต้" กับ "ลาเต", "อเมริกาโน่" กับ "อเมริกาโน") — ยังเป็นการเทียบตรงตัว ไม่ใช่การเดา
+ */
+function looseName(value: string): string {
+  return normalizeName(value).replace(/[่-๋์]/g, "");
+}
+
+/** คำเชื่อมเล็ก ๆ ที่พูดคั่นตัวเลือกได้ โดยไม่ถือว่าเป็น "ตัวเลือกที่ไม่รู้จัก" */
+const OPTION_CONNECTORS: readonly string[] = ["แบบ", "เอา", "ขอ", "และ", "กับ", "ใส่", "เป็น"];
+
+/**
  * หา "สินค้าเดียว" ที่ตรงกับคำพูด
  * ลำดับ: ตรงทั้งชื่อ → ขึ้นต้นด้วย → มีคำนั้นอยู่ ; เจอหลายตัวในชั้นเดียวกัน = คลุมเครือ
  */
@@ -92,7 +104,7 @@ export function matchVoiceProduct(
   phrase: string,
   products: readonly Product[],
 ): { readonly product: Product } | { readonly candidates: readonly Product[] } | null {
-  const target = normalizeName(phrase);
+  const target = looseName(phrase);
   if (!target) return null;
   const sellable = products.filter((p) => p.isActive && p.availableForPos);
 
@@ -102,16 +114,148 @@ export function matchVoiceProduct(
     (name) => name.includes(target),
   ];
   for (const test of layers) {
-    const hits = sellable.filter((p) => test(normalizeName(p.name)));
+    const hits = sellable.filter((p) => test(looseName(p.name)));
     if (hits.length === 1) return { product: hits[0] };
     if (hits.length > 1) return { candidates: hits };
   }
   return null;
 }
 
-function requiresSelection(product: Product): boolean {
-  if (product.variants.length > 0) return true;
-  return product.modifierGroups.some((group) => group.isRequired);
+/** ตัวเลือกที่ "พูดมาพร้อมชื่อสินค้า" ถูกแปลงเป็นสิ่งที่ตะกร้าใช้ได้แล้ว */
+export interface VoiceProductSelection {
+  readonly product: Product;
+  readonly variant: ProductVariant | null;
+  /** ค่าเริ่มต้นของสินค้า + ตัวเลือกที่พูดทับลงไป */
+  readonly modifiers: Record<string, ModifierOption[]>;
+  /** ชื่อตัวเลือกที่จับได้จากคำพูด (ไว้บอกผู้ใช้) */
+  readonly spokenOptionNames: readonly string[];
+  /** ส่วนที่พูดมาแต่ไม่ตรงตัวเลือกใดเลย — ไม่ว่างเมื่อไรห้ามเดา ต้องให้เลือกบนจอ */
+  readonly unknownPhrase: string;
+  readonly missingRequiredGroups: readonly string[];
+  readonly needsVariant: boolean;
+}
+
+export type VoiceProductResolution =
+  | { readonly status: "matched"; readonly selection: VoiceProductSelection }
+  | { readonly status: "ambiguous"; readonly candidates: readonly Product[] }
+  | { readonly status: "not_found" };
+
+/**
+ * U21 — รองรับคำสั่งยาว: "อเมริกาโน่คั่วเข้ม", "ลาเต้หวาน 0% นมโอ๊ต คั่วกลาง", "อเมริกาโน่ร้อน"
+ *
+ * วิธี: หา "ชื่อสินค้าที่ยาวที่สุดซึ่งเป็นคำขึ้นต้นของสิ่งที่พูด" แล้วถือว่าส่วนที่เหลือคือตัวเลือก
+ * จากนั้นเริ่มจาก "ค่าเริ่มต้นของสินค้า" แล้วเอาตัวเลือกที่พูดทับลงไปทีละกลุ่ม
+ * (ดังนั้น "อเมริกาโน่ร้อน" จะแทนที่ค่าเริ่มต้น "เย็น" และราคาคิดตามที่พูดจริง)
+ */
+export function resolveVoiceProductPhrase(
+  phrase: string,
+  products: readonly Product[],
+): VoiceProductResolution {
+  const spoken = looseName(phrase);
+  if (!spoken) return { status: "not_found" };
+  const sellable = products.filter((p) => p.isActive && p.availableForPos);
+
+  // 1) ชื่อสินค้าที่เป็นคำขึ้นต้น — ยาวที่สุดชนะ ("อเมริกาโน่น้ำส้ม" ชนะ "อเมริกาโน่")
+  let best: { product: Product; rest: string; length: number } | null = null;
+  let tied: Product[] = [];
+  for (const product of sellable) {
+    const name = looseName(product.name);
+    if (!name || !spoken.startsWith(name)) continue;
+    if (!best || name.length > best.length) {
+      best = { product, rest: spoken.slice(name.length), length: name.length };
+      tied = [product];
+    } else if (name.length === best.length) {
+      tied.push(product);
+    }
+  }
+  if (best && tied.length > 1) return { status: "ambiguous", candidates: tied };
+
+  // 2) ไม่มีคำขึ้นต้นตรง → กลับไปใช้การจับคู่ทั้งประโยคแบบเดิม (ไม่มีตัวเลือกต่อท้าย)
+  if (!best) {
+    const fallback = matchVoiceProduct(phrase, products);
+    if (!fallback) return { status: "not_found" };
+    if ("candidates" in fallback) return { status: "ambiguous", candidates: fallback.candidates };
+    best = { product: fallback.product, rest: "", length: 0 };
+  }
+
+  return { status: "matched", selection: applySpokenOptions(best.product, best.rest) };
+}
+
+type OptionCandidate =
+  | { readonly kind: "variant"; readonly name: string; readonly variant: ProductVariant }
+  | {
+      readonly kind: "option";
+      readonly name: string;
+      readonly groupId: string;
+      readonly single: boolean;
+      readonly option: ModifierOption;
+    };
+
+/** เอาคำที่เหลือหลังชื่อสินค้ามาจับกับตัวเลือกจริงของสินค้านั้น (ยาวก่อนสั้น กันชื่อซ้อนกัน) */
+function applySpokenOptions(product: Product, restRaw: string): VoiceProductSelection {
+  const modifiers: Record<string, ModifierOption[]> = {
+    ...buildDefaultModifierSelections(product.modifierGroups),
+  };
+  const spokenOptionNames: string[] = [];
+  let variant: ProductVariant | null = null;
+  let remaining = restRaw;
+
+  const candidates: OptionCandidate[] = [
+    ...product.variants
+      .filter((item) => item.isActive)
+      .map((item) => ({ kind: "variant" as const, name: looseName(item.name), variant: item })),
+    ...product.modifierGroups.flatMap((group) =>
+      group.options
+        .filter((option) => option.isActive)
+        .map((option) => ({
+          kind: "option" as const,
+          name: looseName(option.name),
+          groupId: group.id,
+          single: group.selectionType === "single",
+          option,
+        })),
+    ),
+  ]
+    .filter((item) => item.name.length > 0)
+    .sort((a, b) => b.name.length - a.name.length);
+
+  for (const candidate of candidates) {
+    const index = remaining.indexOf(candidate.name);
+    if (index < 0) continue;
+    remaining = remaining.slice(0, index) + remaining.slice(index + candidate.name.length);
+    if (candidate.kind === "variant") {
+      if (!variant) {
+        variant = candidate.variant;
+        spokenOptionNames.push(candidate.variant.name);
+      }
+      continue;
+    }
+    const current = modifiers[candidate.groupId] ?? [];
+    modifiers[candidate.groupId] = candidate.single
+      ? [candidate.option]
+      : [...current.filter((item) => item.id !== candidate.option.id), candidate.option];
+    spokenOptionNames.push(candidate.option.name);
+  }
+
+  for (const connector of OPTION_CONNECTORS) {
+    remaining = remaining.split(looseName(connector)).join("");
+  }
+
+  const missingRequiredGroups = product.modifierGroups
+    .filter(
+      (group) => group.isRequired && (modifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
+    )
+    .map((group) => group.name);
+
+  return {
+    product,
+    variant,
+    modifiers,
+    spokenOptionNames,
+    unknownPhrase: remaining.trim(),
+    missingRequiredGroups,
+    needsVariant: product.variants.length > 0 && !variant,
+  };
 }
 
 function candidatesOf(products: readonly Product[]): readonly VoiceCartCandidate[] {
@@ -126,19 +270,20 @@ function findSingleCartLine(cart: Cart, productId: string) {
   return { ambiguous: true as const };
 }
 
-function resolveProduct(phrase: string, context: VoiceCartContext) {
-  const match = matchVoiceProduct(phrase, context.products);
-  if (!match) {
+/** แปลงผลจับคู่เป็น selection หรือ blocked ที่พร้อมส่งกลับ */
+function resolveSelection(phrase: string, context: VoiceCartContext) {
+  const resolution = resolveVoiceProductPhrase(phrase, context.products);
+  if (resolution.status === "not_found") {
     return blocked("product_not_found", "ไม่พบสินค้าที่พูด — เลือกจากเมนูบนหน้าจอได้");
   }
-  if ("candidates" in match) {
+  if (resolution.status === "ambiguous") {
     return blocked(
       "ambiguous_product",
       "มีสินค้าชื่อคล้ายกันหลายรายการ — เลือกจากหน้าจอ",
-      candidatesOf(match.candidates),
+      candidatesOf(resolution.candidates),
     );
   }
-  return match.product;
+  return resolution.selection;
 }
 
 /**
@@ -154,41 +299,64 @@ export function applyVoiceCartIntent(intent: VoiceIntent, context: VoiceCartCont
   }
 
   if (intent.type === "pos.add_item") {
-    const resolved = resolveProduct(intent.productPhrase, context);
+    const resolved = resolveSelection(intent.productPhrase, context);
     if ("status" in resolved) return resolved;
-    if (resolved.outOfStock) {
-      return blocked("product_unavailable", `${resolved.name} ของหมด — เลือกจากหน้าจอได้`);
-    }
-    if (requiresSelection(resolved)) {
-      return blocked(
-        "needs_selection",
-        `${resolved.name} ต้องเลือกตัวเลือกก่อน — เลือกบนหน้าจอ`,
-        candidatesOf([resolved]),
-      );
+    const { product, variant, modifiers, spokenOptionNames, unknownPhrase, missingRequiredGroups, needsVariant } =
+      resolved;
+
+    if (product.outOfStock) {
+      return blocked("product_unavailable", `${product.name} ของหมด — เลือกจากหน้าจอได้`);
     }
     if (intent.quantity < VOICE_MIN_QUANTITY || intent.quantity > VOICE_MAX_QUANTITY) {
       return blocked("invalid_quantity", "จำนวนไม่ถูกต้อง — ระบุจำนวนระหว่าง 1 ถึง 99");
     }
+    // พูดตัวเลือกมาแต่จับไม่ได้ → ห้ามเดา ให้เลือกบนจอ (เปิด dialog ที่ชั้น UI)
+    if (unknownPhrase.length > 1) {
+      return blocked(
+        "needs_selection",
+        `${product.name}: ยังไม่รู้จักตัวเลือกที่พูด — เลือกบนหน้าจอ`,
+        candidatesOf([product]),
+      );
+    }
+    if (needsVariant || missingRequiredGroups.length > 0) {
+      const missing = [...(needsVariant ? ["ตัวเลือกสินค้า"] : []), ...missingRequiredGroups];
+      return blocked(
+        "needs_selection",
+        `${product.name} ต้องเลือก ${missing.join(" และ ")} ก่อน`,
+        candidatesOf([product]),
+      );
+    }
+
     const cart = addToCart(context.cart, {
-      product: resolved,
-      variant: null,
-      modifiers: [],
+      product,
+      variant,
+      modifiers: Object.entries(modifiers).flatMap(([groupId, options]) => {
+        const group = product.modifierGroups.find((item) => item.id === groupId);
+        if (!group) return [];
+        return options.map((option) => ({ groupId, groupName: group.name, option }));
+      }),
       quantity: intent.quantity,
       priceTier: context.priceTier,
     });
-    return { status: "applied", cart, announcement: `เพิ่ม ${resolved.name} ${intent.quantity} รายการแล้ว` };
+    const optionSuffix = spokenOptionNames.length > 0 ? ` (${spokenOptionNames.join(", ")})` : "";
+    return {
+      status: "applied",
+      cart,
+      announcement: `เพิ่ม ${product.name}${optionSuffix} ${intent.quantity} รายการแล้ว`,
+    };
   }
 
-  // ที่เหลือทำงานกับ "บรรทัดที่มีอยู่แล้ว" ในตะกร้า
-  const resolved = resolveProduct(intent.productPhrase, context);
+  // ที่เหลือทำงานกับ "บรรทัดที่มีอยู่แล้ว" ในตะกร้า — ตัวเลือกที่พูดต่อท้ายไม่มีผลตรงนี้
+  const resolved = resolveSelection(intent.productPhrase, context);
   if ("status" in resolved) return resolved;
+  const product = resolved.product;
 
-  const found = findSingleCartLine(context.cart, resolved.id);
+  const found = findSingleCartLine(context.cart, product.id);
   if ("missing" in found) {
-    return blocked("item_not_in_cart", `ยังไม่มี ${resolved.name} ในตะกร้า`);
+    return blocked("item_not_in_cart", `ยังไม่มี ${product.name} ในตะกร้า`);
   }
   if ("ambiguous" in found) {
-    return blocked("needs_selection", `${resolved.name} มีหลายตัวเลือกในตะกร้า — แก้บนหน้าจอ`);
+    return blocked("needs_selection", `${product.name} มีหลายตัวเลือกในตะกร้า — แก้บนหน้าจอ`);
   }
   const line = found.line;
 
@@ -196,7 +364,7 @@ export function applyVoiceCartIntent(intent: VoiceIntent, context: VoiceCartCont
     return {
       status: "applied",
       cart: removeFromCart(context.cart, line.key),
-      announcement: `เอา ${resolved.name} ออกจากตะกร้าแล้ว`,
+      announcement: `เอา ${product.name} ออกจากตะกร้าแล้ว`,
     };
   }
 
@@ -217,12 +385,12 @@ export function applyVoiceCartIntent(intent: VoiceIntent, context: VoiceCartCont
     return {
       status: "applied",
       cart: removeFromCart(context.cart, line.key),
-      announcement: `เอา ${resolved.name} ออกจากตะกร้าแล้ว`,
+      announcement: `เอา ${product.name} ออกจากตะกร้าแล้ว`,
     };
   }
   return {
     status: "applied",
     cart: updateQuantity(context.cart, line.key, nextQuantity),
-    announcement: `ตั้ง ${resolved.name} เป็น ${nextQuantity} รายการแล้ว`,
+    announcement: `ตั้ง ${product.name} เป็น ${nextQuantity} รายการแล้ว`,
   };
 }

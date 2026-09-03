@@ -210,3 +210,61 @@ describe("parseVoiceCommand — คำสั่งตะกร้า U15", () =>
     }
   });
 });
+
+// U21 — คำศัพท์ที่แต่ละร้านเรียกไม่เหมือนกัน (ตะกร้า = ออเดอร์) + เลือกตัวเลือกด้วยเสียง
+describe("parseVoiceCommand — คำศัพท์ร้าน U21", () => {
+  it('"ลงตะกร้า" กับ "ลงออเดอร์" ให้ผลเหมือนกันทุกประการ', () => {
+    const basket = parseVoiceCommand("เพิ่มลาเต้ลงตะกร้า");
+    const order = parseVoiceCommand("เพิ่มลาเต้ลงออเดอร์");
+    expect(basket.intent).toEqual({ type: "pos.add_item", productPhrase: "ลาเต้", quantity: 1 });
+    expect(order.intent).toEqual(basket.intent);
+    expect(parseVoiceCommand("เพิ่มลาเต้ลงออร์เดอร์").intent).toEqual(basket.intent);
+  });
+
+  it('ตัดคำว่า "เมนู" นำหน้าชื่อสินค้าออก', () => {
+    expect(parseVoiceCommand("เพิ่มเมนูลาเต้ลงตะกร้า").intent).toEqual({
+      type: "pos.add_item",
+      productPhrase: "ลาเต้",
+      quantity: 1,
+    });
+    expect(parseVoiceCommand("เพิ่มเมนูลาเต้ 2 แก้ว").intent).toEqual({
+      type: "pos.add_item",
+      productPhrase: "ลาเต้",
+      quantity: 2,
+    });
+  });
+
+  it("คำเติมท้ายอยู่หลังหน่วยนับก็ยังตัดออกได้", () => {
+    expect(parseVoiceCommand("เพิ่มลาเต้ 2 แก้วลงออเดอร์").intent).toEqual({
+      type: "pos.add_item",
+      productPhrase: "ลาเต้",
+      quantity: 2,
+    });
+  });
+
+  it('"เลือก…" เป็น intent เลือกตัวเลือก แต่ "เอา…ออก" ยังเป็นลบรายการ', () => {
+    expect(parseVoiceCommand("เลือกเล็ก").intent).toEqual({ type: "pos.choose_option", optionPhrase: "เล็ก" });
+    expect(parseVoiceCommand("ขอหวานน้อย").intent).toEqual({
+      type: "pos.choose_option",
+      optionPhrase: "หวานน้อย",
+    });
+    expect(parseVoiceCommand("เอาลาเต้ออก").intent).toEqual({
+      type: "pos.remove_item",
+      productPhrase: "ลาเต้",
+    });
+  });
+
+  it('"ยืนยัน/ตกลง" เป็น intent ยืนยันตัวเลือก', () => {
+    for (const phrase of ["ยืนยัน", "ตกลง", "โอเค"]) {
+      expect(parseVoiceCommand(phrase).intent, phrase).toEqual({ type: "pos.confirm_selection" });
+    }
+  });
+
+  it("คำสั่งการเงินยังต้องห้ามเหมือนเดิมหลังเพิ่มคำศัพท์", () => {
+    for (const phrase of ["ชำระเงิน", "เช็คบิล", "ล้างตะกร้า", "คืนเงิน", "ยกเลิกออเดอร์"]) {
+      const result = parseVoiceCommand(phrase);
+      expect(result.decision, phrase).toBe("block");
+      expect(result.intent.type, phrase).toBe("unknown");
+    }
+  });
+});

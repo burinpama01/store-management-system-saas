@@ -18,12 +18,31 @@ export interface VoiceCartSnapshot {
   readonly locked: boolean;
 }
 
+/** ตัวเลือกที่ dialog ของสินค้ากำลังรออยู่ (U21) */
+export interface VoicePickerSnapshot {
+  readonly productName: string;
+  /** ยังต้องเลือกอะไรอีกไหมถึงจะกดเพิ่มได้ */
+  readonly needsVariant: boolean;
+  readonly missingRequiredGroups: readonly string[];
+  readonly choices: readonly string[];
+}
+
 export interface VoiceCartApi {
   readonly getSnapshot: () => VoiceCartSnapshot;
   /** ใช้สัญญาเดิมของหน้าขาย (commitCart) — เสียงไม่ตั้ง state เอง */
   readonly commit: (cart: Cart) => void;
   /** ล้างคำค้นหาในหน้าขาย ถ้าหน้านั้นมีช่องค้นหา */
   readonly clearSearch?: () => void;
+  /** U21 — เปิดแผงตะกร้า/ออเดอร์ (ปุ่มเดียวกับที่พนักงานกดบนมือถือ) */
+  readonly openOrderPanel?: () => void;
+  /** U21 — เปิด dialog ของสินค้า (ใช้เมื่อสินค้ามีตัวเลือกบังคับ) */
+  readonly openProduct?: (productId: string) => boolean;
+  /** U21 — สถานะ dialog ตัวเลือกที่เปิดอยู่ (null = ไม่มี) */
+  readonly getPicker?: () => VoicePickerSnapshot | null;
+  /** U21 — เลือกตัวเลือกจากคำพูด คืนชื่อที่เลือกได้ (null = ไม่ตรงอะไรเลย) */
+  readonly selectPickerChoice?: (phrase: string) => string | null;
+  /** U21 — ยืนยันเพิ่มลงตะกร้าตามตัวเลือกที่เลือกไว้ */
+  readonly confirmPicker?: () => { readonly ok: boolean; readonly message: string };
 }
 
 interface VoiceCartBridgeValue {

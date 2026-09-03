@@ -99,6 +99,34 @@ export function VoicePosController({
     (result: VoiceParseResult): string => {
       setUndoNotice("");
 
+      // ── U21 — dialog ตัวเลือกของสินค้าเปิดอยู่: เลือก/ยืนยันด้วยเสียง ──────────
+      if (result.intent.type === "pos.choose_option") {
+        const api = getCartApi();
+        const picker = api?.getPicker?.() ?? null;
+        if (!api || !picker) return "ยังไม่มีหน้าต่างตัวเลือกเปิดอยู่ — พูดชื่อสินค้าก่อนได้เลย";
+        if (result.decision !== "execute") return "ฟังไม่ชัด — ลองพูดชื่อตัวเลือกอีกครั้ง";
+        const chosen = api.selectPickerChoice?.(result.intent.optionPhrase) ?? null;
+        if (!chosen) {
+          const list = picker.choices.slice(0, 6).join(" / ");
+          return list ? `ไม่พบตัวเลือกที่พูด — มีให้เลือก: ${list}` : "ไม่พบตัวเลือกที่พูด";
+        }
+        const after = api.getPicker?.() ?? null;
+        const remaining = after
+          ? [...(after.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...after.missingRequiredGroups]
+          : [];
+        return remaining.length > 0
+          ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
+          : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`;
+      }
+
+      if (result.intent.type === "pos.confirm_selection") {
+        const api = getCartApi();
+        if (!api?.confirmPicker) return "ยังไม่มีหน้าต่างตัวเลือกเปิดอยู่";
+        const outcome = api.confirmPicker();
+        if (outcome.ok) onSelectTab("sell");
+        return outcome.message;
+      }
+
       // ── Tier B — ตะกร้าในเครื่อง (ย้อนกลับได้ 6 วินาที) ───────────────────────
       if (isVoiceCartIntent(result.intent)) {
         if (!voiceEnabled) return "ร้านนี้ยังไม่เปิดสั่งงานด้วยเสียง";
@@ -115,7 +143,21 @@ export function VoicePosController({
           products: snapshot.products,
           locked: snapshot.locked,
         });
-        if (resolution.status === "blocked") return resolution.announcement;
+        if (resolution.status === "blocked") {
+          // U21 — สินค้าต้องเลือกตัวเลือก: เด้ง dialog ให้เลย แล้วรอคำสั่งเสียงเลือกต่อ
+          if (resolution.reason === "needs_selection" && resolution.candidates?.length === 1) {
+            const opened = api.openProduct?.(resolution.candidates[0].id) ?? false;
+            if (opened) {
+              onSelectTab("sell");
+              const picker = api.getPicker?.() ?? null;
+              const list = picker?.choices.slice(0, 6).join(" / ") ?? "";
+              return list
+                ? `${resolution.candidates[0].name} ต้องเลือกก่อน — พูด "เลือก…" ได้เลย (${list})`
+                : `${resolution.candidates[0].name} ต้องเลือกตัวเลือกก่อน — เลือกบนหน้าจอได้เลย`;
+            }
+          }
+          return resolution.announcement;
+        }
 
         // การเปลี่ยนแปลงใหม่ทำให้ token เดิมใช้ไม่ได้ (แทนที่ทั้งใบ)
         undoSeqRef.current += 1;
@@ -155,7 +197,15 @@ export function VoicePosController({
       }
       if (target.kind === "focus") {
         // ตะกร้าอยู่ในแท็บขายเสมอ — สลับแท็บก่อนแล้วค่อยโฟกัส
-        if (target.action === "cart") onSelectTab("sell");
+        if (target.action === "cart") {
+          onSelectTab("sell");
+          // U21 — "เปิดตะกร้า/เปิดออเดอร์" = กดปุ่มเปิดแผงออเดอร์เดียวกับที่พนักงานกด (ไม่แตะเงิน)
+          const api = getCartApi();
+          if (api?.openOrderPanel) {
+            api.openOrderPanel();
+            return "เปิดออเดอร์แล้ว";
+          }
+        }
         const element = document.querySelector<HTMLElement>(`[data-voice-focus="${target.action}"]`);
         if (!element) return FOCUS_UNAVAILABLE[target.action];
         element.scrollIntoView({ block: "nearest" });
@@ -190,9 +240,11 @@ export function VoicePosController({
           ↩︎ ย้อนกลับ ({VOICE_UNDO_WINDOW_MS / 1000} วินาที)
         </button>
       ) : null}
-      <p role="status" aria-live="polite" className="min-h-5 text-xs text-gray-600">
-        {undoNotice}
-      </p>
+      {undoNotice ? (
+        <p role="status" aria-live="polite" className="min-h-5 text-xs text-gray-600">
+          {undoNotice}
+        </p>
+      ) : null}
     </div>
   );
 }

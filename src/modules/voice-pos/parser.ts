@@ -91,6 +91,31 @@ const THAI_NUMBER_WORDS: ReadonlyArray<readonly [string, number]> = [
 /** คำลงท้ายสุภาพที่ตัดได้อย่างปลอดภัย (ตัดเฉพาะท้ายประโยค) */
 const TRAILING_POLITENESS: readonly string[] = ["นะครับ", "นะคะ", "ครับผม", "ครับ", "ค่ะ", "คะ", "จ้า", "นะ"];
 
+/**
+ * U21 — คำเติมรอบชื่อสินค้าที่ตัดทิ้งได้ (แต่ละร้านพูดไม่เหมือนกัน)
+ *   นำหน้า: "เพิ่ม[เมนู]ลาเต้"
+ *   ต่อท้าย: "เพิ่มลาเต้[ลงตะกร้า|ลงออเดอร์|เข้าบิล]"
+ * "ตะกร้า" กับ "ออเดอร์/ออร์เดอร์" ถือเป็นคำเดียวกันทั้งระบบ
+ */
+const PRODUCT_LEAD_FILLERS: readonly string[] = ["เมนู", "รายการ", "สินค้า"];
+
+const PRODUCT_TAIL_FILLERS: readonly string[] = [
+  "ลงตะกร้า",
+  "ใส่ตะกร้า",
+  "เข้าตะกร้า",
+  "ในตะกร้า",
+  "ลงออเดอร์",
+  "ลงออร์เดอร์",
+  "ใส่ออเดอร์",
+  "ใส่ออร์เดอร์",
+  "เข้าออเดอร์",
+  "เข้าออร์เดอร์",
+  "ในออเดอร์",
+  "ในออร์เดอร์",
+  "ลงบิล",
+  "เข้าบิล",
+];
+
 /** หน่วยนับที่ตัดออกได้ท้ายคำสั่ง (ไม่เปลี่ยนความหมาย) */
 const TRAILING_UNITS: readonly string[] = ["ชิ้น", "อัน", "แก้ว", "จาน", "ที่", "ขวด", "ถ้วย", "กล่อง"];
 
@@ -181,15 +206,40 @@ function result(
   return { intent, tier, decision, confidence: bounded, confidenceBucket: bucket, resultCode };
 }
 
-function stripTrailingUnit(phrase: string): string {
+/**
+ * ตัดคำเติมรอบชื่อสินค้าออก — วนซ้ำจนไม่เหลือ (deterministic ไม่เดา)
+ * ทำก่อนตัดหน่วยนับเสมอ เพราะ "ลงตะกร้า" อาจตามหลังหน่วยนับ ("2 แก้วลงตะกร้า")
+ */
+export function stripProductFillers(phrase: string): string {
   let out = phrase.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const lead of PRODUCT_LEAD_FILLERS) {
+      if (out.startsWith(lead) && out.length > lead.length) {
+        out = out.slice(lead.length).trim();
+        changed = true;
+      }
+    }
+    for (const tail of PRODUCT_TAIL_FILLERS) {
+      if (out.endsWith(tail) && out.length > tail.length) {
+        out = out.slice(0, -tail.length).trim();
+        changed = true;
+      }
+    }
+  }
+  return out;
+}
+
+function stripTrailingUnit(phrase: string): string {
+  let out = stripProductFillers(phrase);
   for (const unit of TRAILING_UNITS) {
     if (out.endsWith(unit)) {
       out = out.slice(0, -unit.length).trim();
       break;
     }
   }
-  return out;
+  return stripProductFillers(out);
 }
 
 function parseQuantity(raw: string | undefined): number | null {
@@ -230,6 +280,21 @@ export function parseVoiceCommand(
     return result(UNKNOWN, "D", "block", 1 * engine, "forbidden_command");
   }
 
+  // Tier B (U21) — ยืนยันตัวเลือกที่เลือกไว้ใน dialog ("ยืนยัน"/"ตกลง")
+  if (/^(?:ยืนยัน|ตกลง|โอเค|ok|เพิ่มเลย|ใช่)$/.test(text)) {
+    return result({ type: "pos.confirm_selection" }, "B", "execute", 0.95 * engine, "matched");
+  }
+
+  // Tier B (U21) — เลือกตัวเลือกของสินค้า ("เลือกเล็ก" / "ขอหวานน้อย")
+  // ต้องมาก่อน "เอา...ออก" ไม่ได้ เพราะ remove ใช้รูป "เอา X ออก" — จึงกันด้วยการเช็ค "ออก" ท้ายประโยค
+  const chooseOption = /^(?:เลือก|ขอ|เอา)\s*(.+)$/.exec(text);
+  if (chooseOption && !/ออก$/.test(text)) {
+    const optionPhrase = stripProductFillers(chooseOption[1]);
+    if (optionPhrase) {
+      return result({ type: "pos.choose_option", optionPhrase }, "B", "execute", 0.9 * engine, "matched");
+    }
+  }
+
   // Tier B (U15) — "ล้างการค้นหา" (ไม่ใช่ล้างตะกร้า ซึ่งยังต้องห้าม)
   if (/^(?:ล้าง|ลบ)\s*(?:การค้นหา|คำค้นหา|คำค้น|ค้นหา)$/.test(text)) {
     return result({ type: "pos.clear_search" }, "B", "execute", 0.95 * engine, "matched");
@@ -260,8 +325,8 @@ export function parseVoiceCommand(
   // Tier B (U15) — "ลด <สินค้า> [จำนวน]"
   const decrease = /^(?:ลด|ลดจำนวน|เอาออก)\s*(.+)$/.exec(text);
   if (decrease) {
-    const rest = decrease[1].trim();
-    const tail = /^(.*?)\s*(\d+)\s*([^\d\s]{1,8})?$/.exec(rest);
+    const rest = stripProductFillers(decrease[1]);
+    const tail = /^(.*?)\s*(\d+)\s*([^\d\s%]{1,8})?$/.exec(rest);
     const productPhrase = stripTrailingUnit(tail ? tail[1] : rest);
     const parsedDelta = tail ? parseQuantity(tail[2]) : null;
     if (!productPhrase) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
@@ -302,12 +367,14 @@ export function parseVoiceCommand(
   // Tier B — "เพิ่ม <สินค้า> [จำนวน] [หน่วยนับ]" (ไม่ระบุจำนวน = 1)
   const addItem = /^(?:เพิ่ม|ใส่|สั่ง)\s*(.+)$/.exec(text);
   if (addItem) {
-    const rest = addItem[1].trim();
+    // ตัดคำเติม ("เมนู…", "…ลงออเดอร์") ออกก่อนแยกจำนวน ไม่งั้นคำต่อท้ายจะบังตัวเลข
+    const rest = stripProductFillers(addItem[1]);
     if (!rest) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
 
     // แยก "จำนวน + หน่วยนับ" ที่ท้ายประโยคออกจากชื่อสินค้า
+    // U21: กันเลขที่เป็นส่วนหนึ่งของ "ชื่อตัวเลือก" เช่น "หวาน 0%" ไม่ให้ถูกอ่านเป็นจำนวน
     // หน่วยนับรับได้ทั้งที่อยู่ใน allowlist และคำสั้นทั่วไป (เช่น "กระป๋อง") — ตัดทิ้งเหมือนกัน
-    const tail = /^(.*?)\s*(\d+)\s*([^\d\s]{1,8})?$/.exec(rest);
+    const tail = /^(.*?)\s*(\d+)\s*([^\d\s%]{1,8})?$/.exec(rest);
     const productPhrase = stripTrailingUnit(tail ? tail[1] : rest);
     const parsed = tail ? parseQuantity(tail[2]) : null;
     if (!productPhrase) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
