@@ -245,7 +245,12 @@ describe("createBrowserSpeechAdapter — สถานะที่กู้คื
     const c = collector();
     const session = adapter.start(c.handlers);
 
-    vi.advanceTimersByTime(VOICE_DEFAULT_TIMEOUT_MS + 1);
+    // 8 วินาทีสั้นเกินสำหรับคำสั่งจริง (ชื่อสินค้า + ตัวเลือก + จำนวน) จึงยืดเป็น 15
+    expect(VOICE_DEFAULT_TIMEOUT_MS).toBe(15000);
+    vi.advanceTimersByTime(VOICE_DEFAULT_TIMEOUT_MS - 1);
+    expect(c.errors).toEqual([]);
+
+    vi.advanceTimersByTime(2);
 
     expect(FakeRecognition.instances[0].aborted).toBe(1);
     expect(c.errors).toEqual(["timeout"]);

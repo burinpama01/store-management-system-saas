@@ -54,6 +54,18 @@ const RESULT_MESSAGE: Record<VoiceParseResult["resultCode"], string> = {
 /** ข้อความสถานะอยู่บนแถบหัวนานเท่านี้แล้วหายเอง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด */
 const MESSAGE_VISIBLE_MS = 8000;
 
+/** คำตอบจาก onResult ที่ขอให้ฟังต่อได้ */
+export interface VoiceResultResponse {
+  readonly message: string;
+  readonly listenAgain?: boolean;
+}
+
+/**
+ * กันวนไม่รู้จบ: ถ้าไม่มีใครพูดจริง session จะจบด้วย timeout ซึ่งไม่ต่อให้อยู่แล้ว
+ * แต่ยังตั้งเพดานไว้เผื่อกรณีที่ผู้เรียกขอ listenAgain ทุกครั้ง
+ */
+const MAX_AUTO_LISTEN_CHAIN = 3;
+
 const STATE_LABEL: Record<VoiceRecognitionState, string> = {
   idle: "สั่งงานด้วยเสียง",
   requesting: "กำลังขอไมโครโฟน…",
@@ -71,7 +83,12 @@ export interface VoiceCommandButtonProps {
    * คืน string ได้เพื่อให้ปุ่มประกาศข้อความของผู้เรียกแทนข้อความมาตรฐาน
    * (U14: ใช้ประกาศผลการนำทาง โดยยังมี live region เดียวไม่ให้ screen reader อ่านซ้ำ)
    */
-  readonly onResult?: (result: VoiceParseResult) => string | void;
+  /**
+   * คืนข้อความที่จะแสดง/อ่านออกเสียง คืนเป็น object ได้เมื่ออยากให้เปิดไมค์ต่อทันที
+   * หลังพูดจบ (listenAgain) — ใช้ตอนระบบเพิ่งบอกว่า "ยังต้องเลือก …" ซึ่งขั้นถัดไป
+   * คือคำสั่งเสียงอีกคำเสมอ การให้แคชเชียร์ต้องกดปุ่มซ้ำทั้งที่มือถือถาดอยู่คือแรงเสียดทาน
+   */
+  readonly onResult?: (result: VoiceParseResult) => string | VoiceResultResponse | void;
   /** เหตุการณ์ที่บันทึกได้ (ไม่มี transcript) — U16 จะต่อปลายทางจริง */
   readonly onTelemetry?: (event: VoiceTelemetryEvent) => void;
   readonly locale?: string;
@@ -127,6 +144,9 @@ export function VoiceCommandButton({
   const [interim, setInterim] = useState("");
   const [message, setMessage] = useState("");
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** นับจำนวนครั้งที่ระบบเปิดไมค์ต่อให้เอง (รีเซ็ตเมื่อผู้ใช้กดปุ่มเอง) */
+  const autoListenCountRef = useRef(0);
+  const startListeningRef = useRef<((options?: { keepMessage?: boolean }) => void) | null>(null);
   const sessionRef = useRef<VoiceSpeechSession | null>(null);
   // U14 — กัน final ซ้ำจาก engine: 1 การกด = ส่งผลให้ผู้เรียกได้ครั้งเดียว
   const settledRef = useRef(false);
@@ -162,16 +182,10 @@ export function VoiceCommandButton({
   // = "ทำงานอยู่พื้นหลัง" ไม่ใช่ modal ที่บล็อกการขาย
   const overlayVisible = listening || state === "resolving";
 
-  const handleClick = useCallback(() => {
-    if (disabled) return;
-
-    // กดซ้ำระหว่างฟัง = ขอให้สรุปผล (push-to-talk แบบ toggle บนจอสัมผัส)
-    if (sessionRef.current?.isActive()) {
-      sessionRef.current.stop();
-      return;
-    }
-
-    showMessage("");
+  const startListening = useCallback((options?: { keepMessage?: boolean }) => {
+    // เปิดไมค์ต่อเองต้องไม่ลบข้อความที่เพิ่งบอกไป — มันคือคำสั่งที่ผู้ใช้กำลังจะทำตาม
+    // (เช่น "ยังต้องเลือก ระดับการคั่ว") ส่วนการกดปุ่มเองคือเริ่มคำสั่งใหม่ จึงล้างได้
+    if (!options?.keepMessage) showMessage("");
     setInterim("");
     settledRef.current = false;
     player.stop();
@@ -197,12 +211,23 @@ export function VoiceCommandButton({
         setInterim("");
         onTelemetry?.(buildVoiceTelemetry(result, locale));
         const announcement = onResult?.(result);
-        const spoken =
-          typeof announcement === "string" && announcement ? announcement : RESULT_MESSAGE[result.resultCode];
+        const response =
+          typeof announcement === "string" || announcement === undefined || announcement === null
+            ? { message: typeof announcement === "string" ? announcement : "" }
+            : announcement;
+        const spoken = response.message || RESULT_MESSAGE[result.resultCode];
         showMessage(spoken);
         // อ่านเฉพาะ "ข้อความของระบบ" — ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น
         player.cue(result.decision === "execute" ? "success" : "error");
-        player.speak(spoken);
+        // เปิดไมค์ต่อ "หลังระบบพูดจบ" เท่านั้น ไม่งั้นไมค์จะอัดเสียงที่ระบบกำลังพูดเอง
+        const shouldListenAgain =
+          response.listenAgain === true && autoListenCountRef.current < MAX_AUTO_LISTEN_CHAIN;
+        player.speak(spoken, shouldListenAgain
+          ? () => {
+            autoListenCountRef.current += 1;
+            startListeningRef.current?.({ keepMessage: true });
+          }
+          : undefined);
       },
       onError: (code) => {
         if (settledRef.current) return;
@@ -213,7 +238,25 @@ export function VoiceCommandButton({
         player.speak(ERROR_MESSAGE[code]);
       },
     });
-  }, [disabled, locale, onResult, onTelemetry, player, speech]);
+  }, [locale, onResult, onTelemetry, player, showMessage, speech]);
+
+  // startListening เรียกตัวเองผ่าน ref — ประกาศตรง ๆ จะเป็น use-before-define
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
+
+  const handleClick = useCallback(() => {
+    if (disabled) return;
+
+    // กดซ้ำระหว่างฟัง = ขอให้สรุปผล (push-to-talk แบบ toggle บนจอสัมผัส)
+    if (sessionRef.current?.isActive()) {
+      sessionRef.current.stop();
+      return;
+    }
+    // กดเอง = เริ่มนับสายการฟังต่อเนื่องใหม่
+    autoListenCountRef.current = 0;
+    startListening();
+  }, [disabled, startListening]);
 
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;

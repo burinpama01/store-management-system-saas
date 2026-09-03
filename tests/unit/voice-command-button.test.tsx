@@ -115,6 +115,50 @@ describe("VoiceCommandButton", () => {
     }
   });
 
+  it("onResult ขอ listenAgain → เปิดไมค์ต่อเองหลังระบบพูดจบ โดยข้อความไม่ถูกล้าง", () => {
+    const fake = createFakeAdapter();
+    render(
+      <VoiceCommandButton
+        adapter={fake.adapter}
+        onResult={() => ({ message: "ยังต้องเลือก ระดับการคั่ว", listenAgain: true })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    expect(fake.starts).toBe(1);
+
+    act(() => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
+
+    // jsdom ไม่มี speechSynthesis → ถือว่าพูดจบทันที แล้วเปิดไมค์รอบใหม่ให้เลย
+    expect(fake.starts).toBe(2);
+    // ข้อความที่เพิ่งบอกต้องยังอยู่ ผู้ใช้กำลังจะทำตามมัน
+    expect(screen.getByRole("status")).toHaveTextContent("ยังต้องเลือก ระดับการคั่ว");
+  });
+
+  it("ไม่วนเปิดไมค์ไม่รู้จบ — มีเพดานของการต่อเนื่องอัตโนมัติ", () => {
+    const fake = createFakeAdapter();
+    render(
+      <VoiceCommandButton adapter={fake.adapter} onResult={() => ({ message: "ยังต้องเลือก", listenAgain: true })} />,
+    );
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    for (let i = 0; i < 6; i += 1) {
+      act(() => fake.emitFinal("พูดอะไรสักอย่าง", 0.9));
+    }
+    // กด 1 ครั้ง + ต่อให้เองไม่เกินเพดาน
+    expect(fake.starts).toBeLessThanOrEqual(4);
+  });
+
+  it("ผลลัพธ์ที่ไม่ได้ขอ listenAgain ต้องไม่เปิดไมค์ต่อ", () => {
+    const fake = createFakeAdapter();
+    render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "เพิ่มลงตะกร้าแล้ว"} />);
+
+    fireEvent.click(screen.getByTestId("voice-mic"));
+    act(() => fake.emitFinal("เพิ่มลาเต้", 0.9));
+
+    expect(fake.starts).toBe(1);
+  });
+
   it("ระหว่างฟังมี overlay เต็มจอ ที่ไม่บล็อกการใช้งานหน้าจอข้างหลัง", () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);

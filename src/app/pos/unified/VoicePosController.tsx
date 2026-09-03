@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { VoiceCommandButton } from "@/shared/components/VoiceCommandButton";
+import { VoiceCommandButton, type VoiceResultResponse } from "@/shared/components/VoiceCommandButton";
 import { DASHBOARD_COMMANDS, type CommandItem } from "@/modules/assistant/command-index";
 import {
   resolveVoiceNavigation,
@@ -99,7 +99,7 @@ export function VoicePosController({
   }, [clock, getCartApi, undoToken]);
 
   const handleResult = useCallback(
-    (result: VoiceParseResult): string => {
+    (result: VoiceParseResult): string | VoiceResultResponse => {
       setUndoNotice("");
 
       // ── U21 — dialog ตัวเลือกของสินค้าเปิดอยู่: เลือก/ยืนยันด้วยเสียง ──────────
@@ -110,16 +110,27 @@ export function VoicePosController({
         if (result.decision !== "execute") return "ฟังไม่ชัด — ลองพูดชื่อตัวเลือกอีกครั้ง";
         const chosen = api.selectPickerChoice?.(result.intent.optionPhrase) ?? null;
         if (!chosen) {
-          const list = picker.choices.slice(0, 6).join(" / ");
-          return list ? `ไม่พบตัวเลือกที่พูด — มีให้เลือก: ${list}` : "ไม่พบตัวเลือกที่พูด";
+          // บอกเฉพาะตัวเลือกที่ยังขาด ไม่ใช่ทุกกลุ่มของสินค้า
+          const list = (picker.pendingChoices.length > 0 ? picker.pendingChoices : picker.choices)
+            .slice(0, 6)
+            .join(" / ");
+          return {
+            message: list ? `ไม่พบตัวเลือกที่พูด — มีให้เลือก: ${list}` : "ไม่พบตัวเลือกที่พูด",
+            listenAgain: true,
+          };
         }
         const after = api.getPicker?.() ?? null;
         const remaining = after
           ? [...(after.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...after.missingRequiredGroups]
           : [];
-        return remaining.length > 0
-          ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
-          : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`;
+        // ยังอยู่กลางลำดับ "เลือก → ยืนยัน" จึงเปิดไมค์ต่อจนกว่าจะจบรายการ
+        return {
+          message:
+            remaining.length > 0
+              ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
+              : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`,
+          listenAgain: true,
+        };
       }
 
       if (result.intent.type === "pos.confirm_selection") {
@@ -167,9 +178,14 @@ export function VoicePosController({
                 return `${picker.productName} เปิดหน้าต่างตัวเลือกให้แล้ว — กดเพิ่มในออร์เดอร์ได้เลย`;
               }
               const what = missing || "ตัวเลือก";
-              return list
-                ? `${picker.productName} ยังต้องเลือก ${what} — พูด "เลือก…" ได้เลย (${list})`
-                : `${picker.productName} ยังต้องเลือก ${what} — เลือกบนหน้าจอได้เลย`;
+              // ขั้นถัดไปคือคำสั่งเสียงอีกคำเสมอ ("เลือก…") จึงเปิดไมค์ต่อให้เลย
+              // แคชเชียร์มักถือถาด/แก้วอยู่ การให้กดปุ่มซ้ำคือแรงเสียดทานที่ตัดออกได้
+              return {
+                message: list
+                  ? `${picker.productName} ยังต้องเลือก ${what} — พูด "เลือก…" ได้เลย (${list})`
+                  : `${picker.productName} ยังต้องเลือก ${what} — เลือกบนหน้าจอได้เลย`,
+                listenAgain: true,
+              };
             }
           }
           return resolution.announcement;

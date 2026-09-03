@@ -13,8 +13,12 @@ export type VoiceCueKind = "listening" | "success" | "error";
 export interface VoiceFeedback {
   /** เสียงเตือนสั้น — คืนทันที ไม่รอเสียงจบ */
   cue: (kind: VoiceCueKind) => void;
-  /** อ่านข้อความผลลัพธ์ (ข้อความของระบบเท่านั้น) */
-  speak: (text: string) => void;
+  /**
+   * อ่านข้อความผลลัพธ์ (ข้อความของระบบเท่านั้น)
+   * onEnd ถูกเรียกเมื่ออ่านจบ — และเรียกทันทีเมื่ออ่านไม่ได้/ปิดเสียงไว้ ผู้เรียก
+   * จึงวางลำดับงานต่อจากเสียงได้โดยไม่ต้องเดาเวลา (ใช้เปิดไมค์ต่อโดยไม่อัดเสียงตัวเอง)
+   */
+  speak: (text: string, onEnd?: () => void) => void;
   /** หยุดเสียงที่ค้างอยู่ (ใช้ตอนเริ่มคำสั่งใหม่/unmount) */
   stop: () => void;
 }
@@ -30,6 +34,8 @@ export interface SpeechUtteranceLike {
   lang: string;
   rate: number;
   volume: number;
+  onend?: (() => void) | null;
+  onerror?: (() => void) | null;
 }
 
 export interface VoiceFeedbackWindowLike {
@@ -76,7 +82,12 @@ export interface VoiceFeedbackOptions {
   readonly rate?: number;
 }
 
-const NOOP_FEEDBACK: VoiceFeedback = { cue: () => {}, speak: () => {}, stop: () => {} };
+const NOOP_FEEDBACK: VoiceFeedback = {
+  cue: () => {},
+  // ปิดเสียงไว้ = ถือว่า "พูดจบ" ทันที ไม่งั้นงานที่รอเสียงจบจะไม่เกิดเลย
+  speak: (_text, onEnd) => onEnd?.(),
+  stop: () => {},
+};
 
 function resolveWindow(options: VoiceFeedbackOptions): VoiceFeedbackWindowLike | null {
   if (options.window !== undefined) return options.window;
@@ -127,21 +138,37 @@ export function createBrowserVoiceFeedback(options: VoiceFeedbackOptions = {}): 
         // เสียงเตือนเล่นไม่ได้ = ไม่เป็นไร คำสั่งยังทำงานปกติ
       }
     },
-    speak: (text) => {
+    speak: (text, onEnd) => {
+      // เรียก onEnd ได้ครั้งเดียวเสมอ — onend กับ onerror อาจยิงทั้งคู่ในบางเบราว์เซอร์
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        onEnd?.();
+      };
       const synth = win.speechSynthesis;
       const Utterance = win.SpeechSynthesisUtterance;
-      if (!synth || typeof Utterance !== "function") return;
+      if (!synth || typeof Utterance !== "function") {
+        finish();
+        return;
+      }
       const message = text.trim();
-      if (!message) return;
+      if (!message) {
+        finish();
+        return;
+      }
       try {
         synth.cancel();
         const utterance = new Utterance(message);
         utterance.lang = locale;
         utterance.rate = rate;
         utterance.volume = 1;
+        utterance.onend = finish;
+        utterance.onerror = finish;
         synth.speak(utterance);
       } catch {
         // อ่านออกเสียงไม่ได้ = ผู้ใช้ยังเห็นข้อความบนจออยู่แล้ว
+        finish();
       }
     },
     stop: () => {
