@@ -66,14 +66,17 @@ export function selectConfiguredPrinter(printers: Printer[], preferredPrinterId?
 }
 
 /**
- * A printer the Print Hub can print to: a LAN printer (ip/escpos with an IP) or
- * a Bluetooth printer paired to the cashier PC (bluetooth with a hub COM port).
- * These route through the server queue, so they work on iPad/tablet POS.
+ * A printer the Print Hub can print to: a LAN printer (ip/escpos with an IP), a
+ * Bluetooth printer paired to the cashier PC (bluetooth with a hub COM port), or
+ * a USB printer plugged into the cashier PC (the Hub prints it through the
+ * Windows spooler; a blank hubUsbName means "ตรวจจับเครื่องที่เสียบอยู่เอง").
+ * These route through the server queue, so they work on iPad/tablet POS too.
  */
 export function isHubReceiptPrinter(printer: Printer): boolean {
   return (
     ((printer.type === "ip" || printer.type === "escpos") && Boolean(printer.ipAddress)) ||
-    (printer.type === "bluetooth" && Boolean(printer.hubBluetoothPort))
+    (printer.type === "bluetooth" && Boolean(printer.hubBluetoothPort)) ||
+    (printer.type === "usb" && printer.hubUsbEnabled === true)
   );
 }
 
@@ -129,9 +132,14 @@ export async function printReceiptWithFallback({
 
   if (configuredPrinter) {
     try {
-      if (configuredPrinter.type === "bluetooth" && configuredPrinter.hubBluetoothPort) {
+      if (
+        (configuredPrinter.type === "bluetooth" && configuredPrinter.hubBluetoothPort) ||
+        (configuredPrinter.type === "usb" && configuredPrinter.hubUsbEnabled === true)
+      ) {
         // Bluetooth-via-Hub prints through the server queue — Web Bluetooth is
         // unavailable on iPad; the Hub agent writes to the paired COM port.
+        // USB ก็ผ่านคิวเดียวกัน: บน Windows ไดรเวอร์ usbprint.sys ยึดอุปกรณ์ไว้ WebUSB
+        // จึง claim ไม่ได้ ต้องให้ Hub ส่ง raw ผ่าน spooler แทน
         const { hubOnline } = await enqueueReceiptPrintJob(configuredPrinter.id, {
           ...browser,
           paperWidth: configuredPrinter.paperWidth,

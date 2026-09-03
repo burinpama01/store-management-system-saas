@@ -53,7 +53,9 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain('role="dialog"');
     expect(source).toContain("aria-hidden={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
     expect(source).toContain("inert={!orderPanelOpen || utilitySheetOpen ? true : undefined}");
-    expect(source).toContain("hidden border-l border-gray-200 bg-white md:flex");
+    // aside ต้องซ่อนบนจอเล็ก และเป็นคอลัมน์ที่เลื่อนในตัวเองบนเดสก์ท็อป (ไม่ดันให้ทั้งหน้าเลื่อน)
+    expect(source).toContain("border-l border-gray-200 bg-white md:flex");
+    expect(source).toMatch(/<aside className="hidden [^"]*min-h-0 overflow-y-auto/);
     expect(source).toContain("md:w-80");
   });
 

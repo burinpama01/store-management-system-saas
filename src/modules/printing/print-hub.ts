@@ -89,6 +89,32 @@ export function validateHubBluetoothPort(value: unknown): { device?: string; err
   return { device: raw };
 }
 
+/**
+ * Windows printer names are free text, but the Hub agent interpolates the name
+ * into a PowerShell script, so only a conservative set of characters is
+ * accepted: Thai/Latin letters, digits, spaces and the punctuation vendors
+ * actually use in printer names. Quotes, backticks, `$` and `;` are rejected
+ * outright rather than escaped, so no injection can reach the cashier PC.
+ */
+const USB_PRINTER_NAME_RE = /^[\p{L}\p{M}\p{N} _.\-()#+\/&,:]{1,128}$/u;
+
+/**
+ * Validates a cashier-PC Windows printer name for a Hub-routed USB print job.
+ * An empty value is valid and means "ให้ Hub ตรวจจับเครื่องพิมพ์เอง" — the agent
+ * then picks the USB printer it finds, so moving the cable to another port (or
+ * to another PC) needs no reconfiguration.
+ */
+export function validateHubUsbPrinterName(value: unknown): { device?: string | null; error?: string } {
+  if (value === null || value === undefined) return { device: null };
+  if (typeof value !== "string") return { error: "ชื่อเครื่องพิมพ์ไม่ถูกต้อง" };
+  const raw = value.trim();
+  if (!raw) return { device: null };
+  if (!USB_PRINTER_NAME_RE.test(raw)) {
+    return { error: "ชื่อเครื่องพิมพ์ไม่ถูกต้อง (ห้ามมีเครื่องหมายคำพูดหรืออักขระพิเศษ และยาวไม่เกิน 128 ตัวอักษร)" };
+  }
+  return { device: raw };
+}
+
 /** Ensures a base64 print payload is well-formed and within size limits. */
 export function validatePrintPayloadBase64(value: unknown): { payload?: string; error?: string } {
   if (typeof value !== "string" || value.length === 0) {

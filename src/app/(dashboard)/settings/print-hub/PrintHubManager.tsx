@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useActionState, useCallback, useEffect, useState } from "react";
 import { rotateHubTokenAction } from "./actions";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
@@ -12,6 +12,17 @@ interface HubStatus {
   online: boolean;
   secondsAgo: number | null;
   pendingJobs: number;
+  /** เครื่องพิมพ์ที่ Hub agent สแกนเจอบนพีซีแคชเชียร์ (อัปเดตทุก 10 วินาที) */
+  devices: HubDevice[];
+}
+
+/** เครื่องพิมพ์หนึ่งตัวที่ Windows บนพีซีแคชเชียร์มองเห็น */
+export interface HubDevice {
+  name: string;
+  port: string;
+  isDefault: boolean;
+  isUsb: boolean;
+  offline: boolean;
 }
 
 interface TestPrinter {
@@ -36,6 +47,7 @@ interface PrintHubManagerProps {
   loadError: string | null;
   saveNetworkPrinterAction: SavePrinterAction;
   saveHubBluetoothPrinterAction: SavePrinterAction;
+  saveHubUsbPrinterAction: SavePrinterAction;
 }
 
 /** Mirrors the real POS receipt so the test exercises the same raster path. */
@@ -70,7 +82,7 @@ function HubFlowDiagram() {
     { icon: "📱", t1: "iPad / POS", t2: "กดสั่งพิมพ์" },
     { icon: "☁️", t1: "เซิร์ฟเวอร์", t2: "คิวงานพิมพ์" },
     { icon: "💻", t1: "พีซีแคชเชียร์", t2: "Print Hub" },
-    { icon: "🖨️", t1: "เครื่องพิมพ์", t2: "WiFi / Bluetooth" },
+    { icon: "🖨️", t1: "เครื่องพิมพ์", t2: "USB / WiFi / BT" },
   ];
   const W = 128;
   const GAP = 32;
@@ -94,6 +106,132 @@ function HubFlowDiagram() {
         );
       })}
     </svg>
+  );
+}
+
+/**
+ * เครื่องพิมพ์ USB ที่เสียบกับพีซีแคชเชียร์.
+ *
+ * Hub agent สแกนเครื่องพิมพ์ที่ Windows มองเห็นแล้วรายงานกลับมาทุกรอบ poll (~2.5 วินาที)
+ * ร้านจึงแค่เสียบสาย USB → ชื่อเครื่องพิมพ์โผล่ที่นี่ → กด "ใช้เครื่องนี้" จบ ไม่ต้องตั้งค่า
+ * WiFi ของเครื่องพิมพ์ และไม่ต้องพิมพ์ชื่อ/พอร์ตเอง.
+ *
+ * โหมด "ตรวจจับอัตโนมัติ" ไม่ผูกชื่อเครื่องพิมพ์ไว้เลย — ย้ายพอร์ต USB, เปลี่ยนสาย หรือ
+ * เปลี่ยนเครื่องพิมพ์รุ่นใหม่ ก็ยังพิมพ์ได้โดยไม่ต้องกลับมาแก้ค่าอีก.
+ */
+function DetectedUsbPrinters({
+  devices,
+  hubOnline,
+  paperWidth,
+  existingPrinter,
+  saveAction,
+  onRefresh,
+}: {
+  devices: HubDevice[];
+  hubOnline: boolean;
+  paperWidth: "58mm" | "80mm";
+  existingPrinter: Printer | null;
+  saveAction: SavePrinterAction;
+  onRefresh: () => void;
+}) {
+  const [state, formAction, saving] = useActionState(saveAction, { error: null });
+  // USB ขึ้นก่อนเสมอ — เป็นสิ่งที่ผู้ใช้กำลังมองหา ส่วนที่เหลือเป็นตัวเลือกสำรอง
+  const sorted = [...devices].sort((a, b) => Number(b.isUsb) - Number(a.isUsb));
+  const usbCount = devices.filter((d) => d.isUsb).length;
+
+  return (
+    <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-[var(--ink)]">
+          🔌 เครื่องพิมพ์ USB ที่เสียบกับเครื่องแคชเชียร์
+        </p>
+        <button type="button" onClick={onRefresh} className="btn-secondary min-h-9 px-2 text-[11px]">
+          สแกนใหม่
+        </button>
+      </div>
+
+      {existingPrinter && (
+        <p className="mb-2 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          ใช้อยู่: <b>{existingPrinter.name}</b>{" "}
+          {existingPrinter.hubUsbName
+            ? `(ผูกกับ "${existingPrinter.hubUsbName}")`
+            : "(ตรวจจับอัตโนมัติ — ย้ายพอร์ต USB ได้โดยไม่ต้องตั้งค่าใหม่)"}
+        </p>
+      )}
+
+      {!hubOnline ? (
+        <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Hub ยังออฟไลน์ — ติดตั้ง Print Hub บนเครื่องแคชเชียร์ในขั้นตอนที่ 1 ก่อน แล้วรายชื่อเครื่องพิมพ์จะขึ้นเองภายในไม่กี่วินาที
+        </p>
+      ) : devices.length === 0 ? (
+        <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          ยังไม่พบเครื่องพิมพ์บนเครื่องแคชเชียร์ — เสียบสาย USB แล้วรอ Windows ติดตั้งไดรเวอร์สักครู่ จากนั้นกด “สแกนใหม่”
+        </p>
+      ) : (
+        <>
+          {usbCount === 0 && (
+            <p className="mb-2 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ยังไม่พบเครื่องพิมพ์ที่ต่อผ่าน USB — ตรวจสายและรอ Windows ติดตั้งไดรเวอร์ (รายการด้านล่างเป็นเครื่องพิมพ์อื่นบนพีซีเครื่องนั้น)
+            </p>
+          )}
+          <ul className="space-y-2">
+            {sorted.map((device) => (
+              <li
+                key={`${device.name}|${device.port}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">{device.name}</p>
+                  <p className="text-[11px] text-[var(--muted)]">
+                    พอร์ต {device.port || "ไม่ทราบ"}
+                    {device.isUsb ? " · USB" : ""}
+                    {device.isDefault ? " · ค่าเริ่มต้นของ Windows" : ""}
+                    {device.offline ? " · ปิดอยู่/ออฟไลน์" : ""}
+                  </p>
+                </div>
+                <form action={formAction} className="shrink-0">
+                  <input type="hidden" name="printerId" value={existingPrinter?.id ?? ""} />
+                  <input type="hidden" name="name" value={device.name} />
+                  <input type="hidden" name="windowsPrinterName" value={device.name} />
+                  <input type="hidden" name="paperWidth" value={paperWidth} />
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="btn-secondary min-h-9 px-3 text-xs disabled:opacity-40"
+                  >
+                    ใช้เครื่องนี้
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <form action={formAction} className="mt-3">
+        <input type="hidden" name="printerId" value={existingPrinter?.id ?? ""} />
+        <input type="hidden" name="name" value="เครื่องพิมพ์ USB (ตรวจจับอัตโนมัติ)" />
+        <input type="hidden" name="windowsPrinterName" value="" />
+        <input type="hidden" name="paperWidth" value={paperWidth} />
+        <button type="submit" disabled={saving} className="btn-primary min-h-11 px-4 text-sm font-semibold disabled:opacity-40">
+          {saving ? "กำลังบันทึก..." : "ใช้โหมดตรวจจับอัตโนมัติ (แนะนำ)"}
+        </button>
+        <p className="mt-1 text-[11px] text-[var(--muted)]">
+          ไม่ผูกชื่อเครื่องพิมพ์ไว้ — Hub จะเลือกเครื่องพิมพ์ USB ที่เสียบอยู่ให้เองทุกครั้งที่พิมพ์
+        </p>
+      </form>
+
+      {state.error && (
+        <p className="mt-2 rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {state.error}
+        </p>
+      )}
+      {state.saved && !state.error && (
+        <p className="mt-2 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          บันทึกเครื่องพิมพ์ USB แล้ว — ทดสอบพิมพ์ได้ในขั้นตอนที่ 3
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -140,6 +278,7 @@ export function PrintHubManager({
   loadError,
   saveNetworkPrinterAction,
   saveHubBluetoothPrinterAction,
+  saveHubUsbPrinterAction,
 }: PrintHubManagerProps) {
   const [status, setStatus] = useState<HubStatus>(initialStatus);
   const [token, setToken] = useState<string | null>(null);
@@ -151,18 +290,28 @@ export function PrintHubManager({
   const [tested, setTested] = useState(false);
 
   const hasPrinter = printers.some(
-    (p) => ((p.type === "ip" || p.type === "escpos") && p.ipAddress) || (p.type === "bluetooth" && p.hubBluetoothPort),
+    (p) =>
+      ((p.type === "ip" || p.type === "escpos") && p.ipAddress) ||
+      (p.type === "bluetooth" && p.hubBluetoothPort) ||
+      (p.type === "usb" && p.hubUsbEnabled),
   );
+  const usbHubPrinter = printers.find((p) => p.type === "usb" && p.hubUsbEnabled) ?? null;
 
   const refreshStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/print/hub/status", { cache: "no-store" });
       if (!res.ok) return;
-      const data = (await res.json()) as { online?: boolean; secondsAgo?: number | null; pendingJobs?: number };
+      const data = (await res.json()) as {
+        online?: boolean;
+        secondsAgo?: number | null;
+        pendingJobs?: number;
+        devices?: HubDevice[];
+      };
       setStatus({
         online: Boolean(data.online),
         secondsAgo: data.secondsAgo ?? null,
         pendingJobs: data.pendingJobs ?? 0,
+        devices: Array.isArray(data.devices) ? data.devices : [],
       });
     } catch {
       // Keep the last known status on transient errors.
@@ -389,11 +538,20 @@ export function PrintHubManager({
         </details>
       </StepCard>
 
-      {/* Step 2 — add a printer (WiFi or Bluetooth, unified) */}
-      <StepCard index={2} title="เพิ่มเครื่องพิมพ์ (WiFi หรือ Bluetooth)" done={hasPrinter}>
+      {/* Step 2 — add a printer (USB, WiFi or Bluetooth, unified) */}
+      <StepCard index={2} title="เพิ่มเครื่องพิมพ์ (USB, WiFi หรือ Bluetooth)" done={hasPrinter}>
         <p className="label-muted mb-2">
-          เพิ่มเครื่องพิมพ์ที่อยู่ในร้าน — เลือกได้ทั้งแบบ <b>IP / WiFi</b> หรือ <b>Bluetooth ผ่าน Hub</b>
+          เพิ่มเครื่องพิมพ์ที่อยู่ในร้าน — เลือกได้ทั้งแบบ <b>USB ต่อตรงกับเครื่องแคชเชียร์</b>, <b>IP / WiFi</b> หรือ{" "}
+          <b>Bluetooth ผ่าน Hub</b>
         </p>
+        <DetectedUsbPrinters
+          devices={status.devices}
+          hubOnline={status.online}
+          paperWidth={paperWidth}
+          existingPrinter={usbHubPrinter}
+          saveAction={saveHubUsbPrinterAction}
+          onRefresh={refreshStatus}
+        />
         <p className="mb-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--muted)]">
           🔵 เครื่องพิมพ์ Bluetooth: จับคู่กับเครื่องแคชเชียร์ก่อน แล้วดับเบิลคลิก <code>find-bluetooth-ports.cmd</code> (อยู่ในตัวติดตั้ง) เพื่อดูเลขพอร์ต COM
           มากรอกในช่อง “พอร์ต COM”

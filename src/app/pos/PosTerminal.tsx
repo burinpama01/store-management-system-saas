@@ -3548,8 +3548,11 @@ export function PosTerminal({
     );
   }
 
+  // เต็มความสูงของกล่องแม่ (h-full) ไม่ใช่ 100vh ตายตัว — เมื่อ POS ถูกวางใน shell รวม
+  // ที่มีหัวข้อ/แท็บอยู่ด้านบน ความสูง 100vh จะดันให้ทั้งหน้าเลื่อน ผู้ใช้ต้องการให้เลื่อน
+  // ได้เฉพาะรายการเมนูเท่านั้น
   return (
-    <div className="storeos-pos flex h-screen flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
+    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Store header */}
@@ -3793,7 +3796,7 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden border-l border-gray-200 bg-white md:flex md:h-auto md:w-80 md:shrink-0 md:flex-col">
+      <aside className="hidden min-h-0 overflow-y-auto border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
         {renderOrderPanelContent()}
       </aside>
 

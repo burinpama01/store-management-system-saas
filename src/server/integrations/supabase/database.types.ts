@@ -936,6 +936,8 @@ export interface Database {
           setup_profile: Json;
           print_hub_token_hash: string | null;
           print_hub_last_seen: string | null;
+          print_hub_devices: Json | null;
+          print_hub_devices_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -973,6 +975,8 @@ export interface Database {
           setup_profile?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
+          print_hub_devices?: Json | null;
+          print_hub_devices_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1010,6 +1014,8 @@ export interface Database {
           setup_profile?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
+          print_hub_devices?: Json | null;
+          print_hub_devices_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1021,7 +1027,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           printer_id: string | null;
-          target_kind: "ip" | "bt";
+          target_kind: "ip" | "bt" | "usb";
           target_host: string | null;
           target_device: string | null;
           target_port: number;
@@ -1042,7 +1048,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           printer_id?: string | null;
-          target_kind?: "ip" | "bt";
+          target_kind?: "ip" | "bt" | "usb";
           target_host?: string | null;
           target_device?: string | null;
           target_port?: number;
@@ -1061,7 +1067,7 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           printer_id?: string | null;
-          target_kind?: "ip" | "bt";
+          target_kind?: "ip" | "bt" | "usb";
           target_host?: string | null;
           target_device?: string | null;
           target_port?: number;
@@ -3675,6 +3681,8 @@ export interface Database {
           usb_product_id: string | null;
           bluetooth_device_id: string | null;
           hub_bluetooth_port: string | null;
+          hub_usb_enabled: boolean;
+          hub_usb_name: string | null;
           paper_width: "58mm" | "80mm";
           created_at: string;
           updated_at: string;
@@ -3692,6 +3700,8 @@ export interface Database {
           usb_product_id?: string | null;
           bluetooth_device_id?: string | null;
           hub_bluetooth_port?: string | null;
+          hub_usb_enabled?: boolean;
+          hub_usb_name?: string | null;
           paper_width?: "58mm" | "80mm";
           created_at?: string;
           updated_at?: string;
@@ -3709,6 +3719,8 @@ export interface Database {
           usb_product_id?: string | null;
           bluetooth_device_id?: string | null;
           hub_bluetooth_port?: string | null;
+          hub_usb_enabled?: boolean;
+          hub_usb_name?: string | null;
           paper_width?: "58mm" | "80mm";
           created_at?: string;
           updated_at?: string;

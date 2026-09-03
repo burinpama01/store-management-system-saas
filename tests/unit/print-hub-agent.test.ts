@@ -5,6 +5,9 @@ import { runPollCycle, isAllowedNetworkPrinterHost, decodePrintJobBase64, normal
 
 const config = { serverUrl: "https://hub.example", storeId: "store-1", hubToken: "secret" };
 
+/** สแกนเครื่องพิมพ์ถูก stub ไว้ในเทสต์ — ไม่ให้ไป spawn PowerShell จริง */
+const noDevices = async () => [];
+
 function jsonResponse(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
@@ -18,7 +21,7 @@ describe("print hub agent — runPollCycle", () => {
       .mockResolvedValueOnce(jsonResponse(200, { ok: true })); // ack
     const printJob = vi.fn().mockResolvedValue(undefined);
 
-    const result = await runPollCycle({ config, fetchImpl, printJob });
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(result).toEqual({ ok: true, processed: 1 });
     expect(printJob).toHaveBeenCalledWith({ kind: "ip", host: "192.168.1.50", port: 9100 }, expect.any(Buffer));
@@ -34,7 +37,7 @@ describe("print hub agent — runPollCycle", () => {
       .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
     const printJob = vi.fn().mockResolvedValue(undefined);
 
-    const result = await runPollCycle({ config, fetchImpl, printJob });
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(result).toEqual({ ok: true, processed: 1 });
     expect(printJob).toHaveBeenCalledWith({ kind: "bt", device: "COM5" }, expect.any(Buffer));
@@ -50,7 +53,7 @@ describe("print hub agent — runPollCycle", () => {
       .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
     const printJob = vi.fn();
 
-    await runPollCycle({ config, fetchImpl, printJob });
+    await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(printJob).not.toHaveBeenCalled();
     const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
@@ -66,7 +69,7 @@ describe("print hub agent — runPollCycle", () => {
       .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
     const printJob = vi.fn().mockRejectedValue(new Error("Connection timed out"));
 
-    const result = await runPollCycle({ config, fetchImpl, printJob });
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(result.processed).toBe(1);
     const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
@@ -82,7 +85,7 @@ describe("print hub agent — runPollCycle", () => {
       .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
     const printJob = vi.fn();
 
-    await runPollCycle({ config, fetchImpl, printJob });
+    await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(printJob).not.toHaveBeenCalled();
     const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
@@ -94,7 +97,7 @@ describe("print hub agent — runPollCycle", () => {
     const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(401, { error: "Invalid Hub credentials" }));
     const printJob = vi.fn();
 
-    const result = await runPollCycle({ config, fetchImpl, printJob });
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(result).toEqual({ ok: false, authFailed: true, processed: 0 });
     expect(printJob).not.toHaveBeenCalled();
@@ -104,7 +107,7 @@ describe("print hub agent — runPollCycle", () => {
     const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(200, { ok: true, jobs: [] }));
     const printJob = vi.fn();
 
-    const result = await runPollCycle({ config, fetchImpl, printJob });
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
     expect(result).toEqual({ ok: true, processed: 0 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);

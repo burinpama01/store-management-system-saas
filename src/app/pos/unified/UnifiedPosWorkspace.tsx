@@ -80,8 +80,13 @@ export function UnifiedPosWorkspace({
 
   return (
     <VoiceCartBridgeProvider>
-    <section aria-label={`POS รวม — ${storeName}`} className="unified-pos-workspace min-w-0">
-      <header className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
+    {/* เต็มจอพอดี: หัวข้อ + แท็บคงที่ ส่วน panel ที่เปิดอยู่กินที่เหลือทั้งหมด
+        การเลื่อนเกิดขึ้นภายใน panel เท่านั้น (รายการเมนู/คิว/บิล) ไม่ใช่ทั้งหน้า */}
+    <section
+      aria-label={`POS รวม — ${storeName}`}
+      className="unified-pos-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+    >
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-1 pb-2">
         <h1 className="min-w-0 truncate text-sm font-semibold text-gray-700">
           {storeName}
           <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
@@ -106,7 +111,7 @@ export function UnifiedPosWorkspace({
         role="tablist"
         aria-label="ส่วนของ POS รวม"
         onKeyDown={onTablistKeyDown}
-        className="flex gap-1 overflow-x-auto border-b border-gray-200"
+        className="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200"
       >
         {TABS.map((tab) => {
           const isActive = tab.id === activeTab;
@@ -143,9 +148,9 @@ export function UnifiedPosWorkspace({
         hidden={activeTab !== "sell"}
         tabIndex={-1}
         data-voice-focus="cart"
-        className="min-w-0 pt-3"
+        className={`min-w-0 flex-1 flex-col overflow-hidden pt-3 ${activeTab === "sell" ? "flex" : "hidden"}`}
       >
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
+        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
           <span className="font-medium">บริบท:</span>
           {selectedTable ? (
             <>
@@ -165,7 +170,8 @@ export function UnifiedPosWorkspace({
             <span className="text-gray-500">ยังไม่เลือกโต๊ะ — ขายหน้าร้าน/เลือกได้ที่แท็บโต๊ะ</span>
           )}
         </div>
-        {sell}
+        {/* min-h-0 จำเป็นกับ flex child ทุกชั้น ไม่งั้นลูกที่ scroll ได้จะดันความสูงจนล้นจอ */}
+        <div className="min-h-0 flex-1">{sell}</div>
       </div>
 
       <div
@@ -173,7 +179,7 @@ export function UnifiedPosWorkspace({
         id="unified-panel-tables"
         aria-labelledby="unified-tab-tables"
         hidden={activeTab !== "tables"}
-        className="min-w-0 pt-3"
+        className={`min-w-0 flex-1 overflow-y-auto pt-3 ${activeTab === "tables" ? "block" : "hidden"}`}
       >
         <TablesPanel
           tables={tables}
@@ -187,7 +193,7 @@ export function UnifiedPosWorkspace({
         id="unified-panel-kitchen"
         aria-labelledby="unified-tab-kitchen"
         hidden={activeTab !== "kitchen"}
-        className="min-w-0 pt-3"
+        className={`min-w-0 flex-1 overflow-y-auto pt-3 ${activeTab === "kitchen" ? "block" : "hidden"}`}
       >
         {/* U10 — คิวครัวจริง: state ของแท็บนี้อยู่ใน KitchenQueuePanel (คง mounted ตามกติกา shell) */}
         <KitchenQueuePanel storeId={storeId} initialItems={kitchenInitialItems} />
@@ -198,7 +204,7 @@ export function UnifiedPosWorkspace({
         id="unified-panel-bills"
         aria-labelledby="unified-tab-bills"
         hidden={activeTab !== "bills"}
-        className="min-w-0 pt-3"
+        className={`min-w-0 flex-1 overflow-y-auto pt-3 ${activeTab === "bills" ? "block" : "hidden"}`}
       >
         {/* U11 — แท็บบิลจริง: บิลจาก server + settlement→print intent (replay-safe) */}
         <BillsPanel selectedTable={selectedTable} />

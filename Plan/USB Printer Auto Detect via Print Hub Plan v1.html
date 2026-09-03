@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แผนงาน: เชื่อมต่อเครื่องพิมพ์ USB อัตโนมัติผ่าน Print Hub v1</title>
+<style>
+  :root { --bg:#f7f7f5; --fg:#1c1c1a; --muted:#6b6b64; --line:#e0dfd8; --card:#fff; --accent:#8a5a2b; --ok:#2f7d4f; --warn:#a8721c; --bad:#a33a2c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.7 "Segoe UI","Sarabun",system-ui,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:26px; margin:0 0 6px; letter-spacing:-.01em; }
+  h2 { font-size:19px; margin:36px 0 12px; padding-bottom:7px; border-bottom:2px solid var(--line); }
+  h3 { font-size:16px; margin:22px 0 8px; }
+  .sub { color:var(--muted); margin:0 0 28px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin:14px 0; }
+  code { background:#efeee8; padding:1px 5px; border-radius:4px; font-family:Consolas,monospace; font-size:13px; }
+  pre { background:#25241f; color:#e8e6dd; padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:13px; line-height:1.55; }
+  pre code { background:none; color:inherit; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#efeee8; font-weight:600; }
+  ul,ol { padding-left:22px; }
+  li { margin:5px 0; }
+  .tag { display:inline-block; font-size:12px; padding:2px 9px; border-radius:99px; border:1px solid var(--line); background:#efeee8; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:14px 0; }
+  .flow div { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:13px; }
+  .flow span { color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>แผนงาน: ตรวจจับ + เชื่อมต่อเครื่องพิมพ์ USB อัตโนมัติผ่าน Print Hub</h1>
+<p class="sub">เวอร์ชัน 1 · 2026-09-03 · StoreOS (Store management system SaaS)</p>
+
+<h2>1. โจทย์</h2>
+<div class="card">
+<p>เจ้าของร้านมีเครื่องพิมพ์ความร้อนแบบ WiFi (บอร์ด <em>WIFI Printer V1.0.08_2.0.6R</em>, โหมด APSTA, IP 192.168.1.59) แต่เวลาไปใช้งานหน้าร้านอยากใช้ <strong>สาย USB ต่อตรงเข้าเครื่องคอม/โน้ตบุ๊ก Windows</strong> โดย <strong>ไม่ต้องตั้งค่า WiFi ใหม่ทุกครั้ง</strong> ที่ย้ายร้าน/เปลี่ยนเราเตอร์ และอยากให้ระบบ <strong>ตรวจจับเครื่องพิมพ์เองแล้วเชื่อมต่ออัตโนมัติ</strong></p>
+<p><strong>อุปกรณ์หน้าเคาน์เตอร์:</strong> คอม/โน้ตบุ๊ก Windows · <strong>แนวทางที่เลือก:</strong> Print Hub + USB auto-detect</p>
+</div>
+
+<h2>2. สถานะระบบปัจจุบัน (ตรวจจากโค้ดจริง)</h2>
+<table>
+<tr><th>ช่องทาง</th><th>ไฟล์</th><th>สถานะ</th></tr>
+<tr><td>WebUSB (พิมพ์ตรงจากเบราว์เซอร์)</td><td><code>src/modules/printing/usb-client.ts</code></td><td class="warn">มี แต่ต้องกดเลือกจาก picker ทุกครั้งที่ต่อไม่ติด</td></tr>
+<tr><td>Web Bluetooth / native BLE</td><td><code>bluetooth-client.ts</code>, <code>native-print-client.ts</code></td><td class="ok">ใช้งานได้</td></tr>
+<tr><td>Print Hub → IP:9100</td><td><code>scripts/print-hub.mjs</code></td><td class="ok">ใช้งานได้</td></tr>
+<tr><td>Print Hub → Bluetooth COM port</td><td><code>scripts/print-hub.mjs</code></td><td class="ok">ใช้งานได้ (migration 20260630120000)</td></tr>
+<tr><td><strong>Print Hub → USB</strong></td><td>—</td><td class="bad">ยังไม่มี ← งานนี้</td></tr>
+</table>
+
+<h3>ช่องว่าง/บั๊กที่พบระหว่างสำรวจ</h3>
+<ol>
+<li><code>ensureUsbConnected()</code> (<code>usb-client.ts:86</code>) คืน <code>false</code> ทันทีถ้าไม่มีชื่อที่จำไว้ และจับคู่อุปกรณ์ด้วย <code>productName</code> — เครื่องพิมพ์ราคาถูกหลายรุ่นคืนชื่อว่าง/ซ้ำ → รีเฟรชหน้าแล้วต่อไม่ติด ตกไป PDF เงียบ ๆ</li>
+<li>ไม่มี listener <code>navigator.usb "connect"/"disconnect"</code> → เสียบสายหลังเปิดหน้าแล้วระบบไม่รู้</li>
+<li><span class="bad">ข้อจำกัดหลักของ WebUSB บน Windows</span>: ถ้าเครื่องพิมพ์ถูกติดตั้งเป็น printer ของ Windows ไดรเวอร์ <code>usbprint.sys</code> จะยึดอุปกรณ์ → <code>claimInterface</code> ขึ้น “Access denied” แก้ได้เฉพาะทาง Print Hub หรือเปลี่ยนไดรเวอร์ด้วย Zadig (ไม่เหมาะกับร้านค้า)</li>
+</ol>
+<p>→ <strong>ข้อ 3 คือเหตุผลที่เลือกเส้นทาง Print Hub</strong> เพราะพิมพ์ผ่าน Windows Spooler แบบ RAW ได้เลย ไม่ต้องยุ่งกับไดรเวอร์ และแท็บเล็ต/iPad ในร้านก็ยิงงานเข้าเครื่องพิมพ์ตัวเดียวกันได้ด้วย</p>
+
+<h2>3. สถาปัตยกรรมเป้าหมาย</h2>
+<div class="flow">
+  <div>POS (คอม/แท็บเล็ต/iPad)</div><span>→</span>
+  <div>คิวงานพิมพ์ (<code>print_jobs</code>)</div><span>→</span>
+  <div>Print Hub agent (พีซีแคชเชียร์)</div><span>→</span>
+  <div>Windows Spooler (RAW)</div><span>→</span>
+  <div>🖨️ เครื่องพิมพ์ USB</div>
+</div>
+<p>Agent เดิม long-poll อยู่แล้ว เพิ่มแค่ <code>target_kind = 'usb'</code> อีกชนิด และเพิ่มความสามารถ “สแกนเครื่องพิมพ์ที่เสียบอยู่แล้วรายงานกลับเซิร์ฟเวอร์”</p>
+
+<h3>ทำไมต้อง Windows Spooler RAW (winspool P/Invoke)</h3>
+<ul>
+<li><code>copy /b file \\.\USB001</code> — ไม่เสถียร ต้องแชร์เครื่องพิมพ์ก่อน</li>
+<li><code>Out-Printer</code> — เป็น text/GDI ไม่ใช่ raw ESC/POS → ภาษาไทย + raster เพี้ยน</li>
+<li><span class="ok"><code>OpenPrinter</code> → <code>StartDocPrinter(datatype "RAW")</code> → <code>WritePrinter</code></span> — ส่งไบต์ ESC/POS ดิบตรงถึงเครื่องพิมพ์ ผ่าน PowerShell <code>Add-Type</code> ใช้ได้กับทุกเครื่องพิมพ์ที่ Windows มองเห็น (USB / แชร์ / IP) ไม่ต้องเปลี่ยนไดรเวอร์ ← <strong>เลือกทางนี้</strong></li>
+</ul>
+<p>ระบบ render ใบเสร็จเป็น raster bitmap อยู่แล้ว (<code>escpos-raster.ts</code>, <code>GS v 0</code>) ภาษาไทยจึงออกเหมือนกันทุกช่องทางโดยไม่ต้องแตะ code page</p>
+
+<h3>อัลกอริทึมตรวจจับอัตโนมัติ</h3>
+<pre><code>Get-CimInstance Win32_Printer → { Name, PortName, Default, WorkOffline }
+เรียงลำดับความน่าจะเป็น:
+  1. ชื่อที่ร้านตั้งค่าไว้ (hub_usb_name) ถ้ายังเสียบอยู่          → ใช้ตัวนั้น
+  2. PortName ขึ้นต้น USB* + ชื่อเข้าข่ายเครื่องพิมพ์ใบเสร็จ
+     (POS / Thermal / Receipt / 58 / 80 / XP- / TM- / EPSON / RP / PT-)
+  3. PortName ขึ้นต้น USB* ตัวใดก็ได้
+  4. เครื่องพิมพ์ default ของ Windows
+  ไม่พบเลย → job ล้มเหลวพร้อมข้อความไทยที่บอกวิธีแก้</code></pre>
+<p>ผลการสแกนถูกส่งกลับพร้อมทุก poll → เก็บที่ <code>stores.print_hub_devices</code> → หน้า <code>/settings/print-hub</code> แสดงรายการให้กดเลือก “ใช้เครื่องนี้” ได้ในคลิกเดียว</p>
+
+<h2>4. ขอบเขตงาน</h2>
+
+<h3>Phase 1 — ฐานข้อมูล</h3>
+<p><span class="tag">migration ใหม่</span> <code>supabase/migrations/20260904100000_print_hub_usb.sql</code></p>
+<ul>
+<li><code>print_jobs.target_kind</code> — ขยาย check เป็น <code>('ip','bt','usb')</code></li>
+<li><code>printers.hub_usb_name text</code> — ชื่อเครื่องพิมพ์ Windows (ว่าง = ให้ตรวจจับเอง)</li>
+<li><code>stores.print_hub_devices jsonb</code> + <code>print_hub_devices_at timestamptz</code> — ผลสแกนล่าสุดจาก agent</li>
+</ul>
+
+<h3>Phase 2 — เซิร์ฟเวอร์</h3>
+<table>
+<tr><th>ไฟล์</th><th>สิ่งที่แก้</th></tr>
+<tr><td><code>modules/printing/print-hub.ts</code></td><td>เพิ่ม <code>validateHubUsbPrinterName()</code> — กันอักขระอันตราย (quote/backtick/$/control char) ก่อนส่งเข้า PowerShell, ยาวไม่เกิน 128</td></tr>
+<tr><td><code>print-hub-repository.ts</code></td><td><code>PrintTargetKind</code> += <code>"usb"</code>; เพิ่ม <code>saveHubDevices()</code> / <code>getHubDevices()</code></td></tr>
+<tr><td><code>api/print/enqueue/route.ts</code></td><td>สาขาใหม่ <code>printer.type === "usb"</code> → enqueue kind <code>usb</code>, device = ชื่อที่ตั้งไว้ หรือ <code>null</code> = auto</td></tr>
+<tr><td><code>api/print/hub/poll/route.ts</code></td><td>รับ <code>devices[]</code> จาก agent → บันทึกลง store</td></tr>
+<tr><td><code>api/print/hub/status/route.ts</code></td><td>คืน <code>devices</code> ให้หน้า settings แสดงผลแบบ live</td></tr>
+<tr><td><code>unified-pos/print-intent.ts</code></td><td><code>toHubRoutableTarget()</code> รองรับ printer type <code>usb</code> (auto-print หลังชำระเงินใช้เส้นทางนี้)</td></tr>
+<tr><td><code>stores/types.ts</code> + <code>repository.ts</code> + <code>database.types.ts</code></td><td>ฟิลด์ <code>hubUsbName</code></td></tr>
+</table>
+
+<h3>Phase 3 — Agent (<code>scripts/print-hub.mjs</code>)</h3>
+<ul>
+<li><code>listWindowsPrinters()</code> — PowerShell + <code>ConvertTo-Json</code>, cache 30 วินาที</li>
+<li><code>pickUsbPrinter(printers, requestedName)</code> — อัลกอริทึมข้อ 3 (ฟังก์ชันบริสุทธิ์ → unit test ได้)</li>
+<li><code>sendToWindowsPrinter(name, bytes)</code> — <code>Add-Type</code> winspool P/Invoke ส่ง RAW</li>
+<li><code>runPollCycle()</code> — รองรับ <code>job.kind === "usb"</code> + แนบ <code>devices</code> ไปกับ poll ทุกครั้ง</li>
+<li>อัปเดต <code>scripts/build-print-hub-zip.mjs</code> / <code>print-hub.cmd</code> ถ้าจำเป็น</li>
+</ul>
+
+<h3>Phase 4 — เส้นทางพิมพ์ฝั่ง client</h3>
+<ul>
+<li><code>receipt-printer.ts</code> → <code>isHubReceiptPrinter()</code> รวมเครื่องพิมพ์ type <code>usb</code> ที่ผูก Hub ไว้</li>
+<li><code>printReceiptWithFallback()</code> — เครื่องพิมพ์ USB-ผ่าน-Hub ส่งเข้าคิวแทนการเรียก WebUSB adapter (ซึ่งจะพังบน Windows ที่ไดรเวอร์ยึดอุปกรณ์)</li>
+<li>ลำดับ fallback เดิม (BLE → Web Bluetooth → WebUSB → PDF) คงไว้ครบสำหรับร้านที่ไม่ได้ลง Hub</li>
+</ul>
+
+<h3>Phase 5 — UI</h3>
+<ul>
+<li><code>/settings/print-hub</code> — การ์ดใหม่ “เครื่องพิมพ์ที่ตรวจพบบนพีซีแคชเชียร์” แสดงชื่อ + พอร์ต + สถานะออนไลน์ พร้อมปุ่ม <em>ใช้เครื่องนี้</em> (บันทึกเป็น printer type <code>usb</code>) และ <em>ทดสอบพิมพ์</em></li>
+<li>ตัวเลือก “ตรวจจับอัตโนมัติ (แนะนำ)” — ไม่ผูกชื่อ ย้ายเครื่อง/เปลี่ยนพอร์ตแล้วยังพิมพ์ได้</li>
+<li>อัปเดตไดอะแกรมเส้นทางงานพิมพ์ให้มี USB</li>
+</ul>
+
+<h3>Phase 6 — Logging (กฎ AGENTS.md: ทุกฟีเจอร์ใหม่ต้องมี log)</h3>
+<ul>
+<li>บันทึก <code>system_event_logs</code> ทั้งเส้นทางสำเร็จและล้มเหลว: ตรวจพบเครื่องพิมพ์ใหม่, เลือก target อัตโนมัติได้ตัวไหน, พิมพ์สำเร็จ/ล้มเหลวพร้อมเหตุผล, Hub ไม่พบเครื่องพิมพ์ USB เลย</li>
+</ul>
+
+<h2>5. ความเสี่ยง / ข้อควรระวัง</h2>
+<table>
+<tr><th>ความเสี่ยง</th><th>การรับมือ</th></tr>
+<tr><td>Command injection ผ่านชื่อเครื่องพิมพ์ (ส่งเข้า PowerShell)</td><td>validate ฝั่ง server + normalize ซ้ำฝั่ง agent + escape <code>'</code> → <code>''</code> เหมือนที่ทำกับ COM port</td></tr>
+<tr><td>ผู้ใช้ยังไม่ได้ติดตั้งไดรเวอร์เครื่องพิมพ์บน Windows → ไม่ขึ้นใน <code>Win32_Printer</code></td><td>UI บอกวิธี: เสียบ USB → Windows ติดตั้ง “USB Printing Support”/ไดรเวอร์ผู้ผลิต → กดสแกนใหม่ (ปุ่ม refresh)</td></tr>
+<tr><td>เครื่องพิมพ์ WiFi ตัวนี้อาจ enumerate เป็น USB-serial (CH340) แทน printer class</td><td>รายการที่ agent ส่งกลับจะรวม COM port ด้วย → ผู้ใช้เลือกเป็น target แบบ COM ได้ (เส้นทาง <code>bt</code> เดิมรองรับอยู่แล้ว)</td></tr>
+<tr><td>เครื่องพิมพ์ raster ใหญ่ค้างที่ spooler</td><td>ยังคง cap <code>MAX_PRINT_JOB_BYTES</code> 256 KB และ ack ผลจริงกลับ (สำเร็จ/พัง) ไม่รายงานสำเร็จหลอก</td></tr>
+<tr><td>Hub ออฟไลน์ → งานค้างคิวเงียบ</td><td>ใช้กลไก <code>hubOnline</code> เดิมที่แจ้งเตือนผู้ใช้อยู่แล้ว</td></tr>
+</table>
+
+<h2>6. เกณฑ์ตรวจรับ</h2>
+<ol>
+<li>เสียบสาย USB เครื่องพิมพ์เข้าพีซีแคชเชียร์ที่มี Print Hub → หน้า <code>/settings/print-hub</code> แสดงชื่อเครื่องพิมพ์ภายใน ~3 วินาที โดยไม่ต้องตั้งค่าอะไร</li>
+<li>กด “ใช้เครื่องนี้” + ทดสอบพิมพ์ → ใบเสร็จภาษาไทยออกถูกต้อง</li>
+<li>ชำระเงินที่ POS → ใบเสร็จออกอัตโนมัติโดยไม่มี dialog ใด ๆ</li>
+<li>ถอดสาย → เสียบใหม่ (คนละพอร์ต USB) → ยังพิมพ์ได้โดยไม่ต้องตั้งค่าซ้ำ</li>
+<li>สั่งพิมพ์จากแท็บเล็ต/iPad ในร้าน → ออกที่เครื่องพิมพ์ USB ตัวเดียวกัน</li>
+<li><code>npm test</code> + <code>npm run typecheck</code> ผ่านทั้งหมด (รวม unit test ใหม่ของ <code>pickUsbPrinter</code> และ validator)</li>
+</ol>
+
+<h2>7. สิ่งที่ยัง “ต้องทดสอบด้วยฮาร์ดแวร์จริง”</h2>
+<p class="warn">การส่ง RAW ผ่าน winspool และการ enumerate เครื่องพิมพ์ ทดสอบอัตโนมัติได้เฉพาะระดับ unit (ฟังก์ชันบริสุทธิ์ + mock runner) ส่วน <strong>การพิมพ์ออกกระดาษจริง</strong> ต้องทดสอบที่หน้าร้านกับเครื่องพิมพ์ตัวจริง — จะระบุไว้ในรายงานปิดงานอย่างชัดเจน ไม่รายงานว่าผ่านถ้ายังไม่ได้ยิงจริง</p>
+
+</div>
+</body>
+</html>

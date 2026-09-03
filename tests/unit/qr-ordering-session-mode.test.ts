@@ -39,6 +39,8 @@ function row(overrides: Partial<StoreRow> = {}): StoreRow {
     dine_in_no_expiry: false,
     print_hub_token_hash: null,
     print_hub_last_seen: null,
+    print_hub_devices: null,
+    print_hub_devices_at: null,
     created_at: "2026-06-01T00:00:00Z",
     updated_at: "2026-06-01T00:00:00Z",
     ...overrides,
