@@ -1591,9 +1591,10 @@ test.describe("voice cart U15 (ตะกร้าด้วยเสียง + u
       await expect(page.getByRole("button", { name: /ย้อนกลับ/ })).toHaveCount(0);
     }
 
-    // ชาเย็นมีตัวเลือกความหวานแบบบังคับ → ต้องเลือกบนจอ ไม่ใช่เพิ่มให้เอง
-    await speak(page, "เพิ่มชาเย็น");
-    await expect(page.getByRole("status").filter({ hasText: "ต้องเลือกตัวเลือกก่อน" })).toBeVisible();
+    // กาแฟดำมีตัวเลือกขนาด (เล็ก/ใหญ่) ที่ไม่ได้ตั้งค่าเริ่มต้นไว้ → ต้องเด้งให้เลือกก่อน
+    // (ต่างจากตัวเลือกบังคับที่ "มีค่าเริ่มต้น" ซึ่งระบบเพิ่มให้เลยตามที่หน้าร้านกำหนด)
+    await speak(page, "เพิ่มกาแฟดำ");
+    await expect(page.getByRole("status").filter({ hasText: "ต้องเลือก" })).toBeVisible();
     await expect(visibleInSell(page, "ยังไม่มีรายการ")).toBeVisible();
     await expect(page).toHaveURL(/\/pos$/);
   });
@@ -2119,5 +2120,113 @@ test.describe("integrated R2 U17 (ครบสาย + a11y + flag matrix)", () 
       .update({ voice_command_enabled: true, updated_at: new Date().toISOString() })
       .eq("id", SEED_STORE_ID);
     if (voiceOnErr) throw new Error(`เปิด flag เสียงคืนไม่สำเร็จ: ${voiceOnErr.message}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U22 — คำเรียกเมนูอัตโนมัติ: ระบบวิเคราะห์ชื่อเมนู → คนตรวจ → บันทึก → เสียงใช้ได้
+//
+// seed สินค้าชื่ออังกฤษชั่วคราว (เมนู seed เป็นไทยล้วนจึงไม่มีอะไรให้เสนอ) แล้วลบทิ้งใน afterAll
+test.describe("voice alias U22 (เสนอคำเรียกเมนูอัตโนมัติ)", () => {
+  let runId: string;
+  let productId: string | null = null;
+  const createdAliasIds: string[] = [];
+
+  test.beforeAll(async () => {
+    runId = randomUUID().slice(0, 8);
+    void runId;
+    const category = await service
+      .from("categories")
+      .select("id")
+      .eq("store_id", SEED_STORE_ID)
+      .limit(1)
+      .single();
+    if (category.error || !category.data) {
+      throw new Error(`อ่านหมวดสินค้า (local) ไม่สำเร็จ: ${category.error?.message ?? "ไม่พบแถว"}`);
+    }
+    const inserted = await service
+      .from("products")
+      .insert({
+        organization_id: orgId,
+        store_id: SEED_STORE_ID,
+        category_id: category.data.id,
+        // ชื่อเมนูต้องเป็นคำที่พจนานุกรมรู้จักล้วน ๆ — ต่อท้ายด้วยรหัสสุ่มจะทำให้ระบบไม่เดา (ตามดีไซน์)
+        name: "Espresso",
+        base_price: 55,
+        is_active: true,
+        available_for_pos: true,
+        available_for_qr: false,
+        sort_order: 99,
+      })
+      .select("id")
+      .single();
+    if (inserted.error || !inserted.data) {
+      throw new Error(`สร้างสินค้าชั่วคราว (local) ไม่สำเร็จ: ${inserted.error?.message}`);
+    }
+    productId = inserted.data.id;
+  });
+
+  test.afterAll(async () => {
+    const failures: string[] = [];
+    if (createdAliasIds.length > 0) {
+      const { error } = await service.from("voice_aliases").delete().in("id", createdAliasIds);
+      if (error) failures.push(`voice_aliases: ${error.message}`);
+    }
+    if (productId) {
+      const { error } = await service.from("products").delete().eq("id", productId);
+      if (error) failures.push(`products: ${error.message}`);
+    }
+    if (failures.length > 0) throw new Error(`คืนค่า fixture U22 (local) ไม่ครบ: ${failures.join(" | ")}`);
+  });
+
+  test("voice alias: หน้าตั้งค่าเสนอคำเรียกจากชื่อเมนู แล้วบันทึกตามที่ติ๊กได้", async ({ page }) => {
+    await loginOwner(page);
+    await page.goto("/settings/voice");
+
+    // ระบบต้องเสนอคำไทยของเมนูชื่ออังกฤษให้เอง โดยยังไม่บันทึกจนกว่าจะกด
+    const suggestionRow = page.locator("tr", { hasText: "Espresso" }).first();
+    await expect(suggestionRow).toBeVisible();
+    await expect(suggestionRow.getByRole("textbox")).toHaveValue("เอสเพรสโซ");
+    await expect(suggestionRow.getByText("แปลจากชื่ออังกฤษ")).toBeVisible();
+
+    const before = await service
+      .from("voice_aliases")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", SEED_STORE_ID);
+    expect(before.count ?? 0).toBe(0);
+
+    // ติ๊กไว้ให้แล้วเป็นค่าเริ่มต้น และแก้ข้อความได้ก่อนบันทึก
+    await expect(suggestionRow.getByRole("checkbox")).toBeChecked();
+    const aliasInput = suggestionRow.getByRole("textbox");
+    await expect(aliasInput).toHaveValue("เอสเพรสโซ");
+    await aliasInput.fill("เอสเพรสโซ่");
+    await expect(suggestionRow.getByText(/คืนค่าที่ระบบเสนอ/)).toBeVisible();
+    await suggestionRow.getByText(/คืนค่าที่ระบบเสนอ/).click();
+    await expect(aliasInput).toHaveValue("เอสเพรสโซ");
+
+    await page.getByRole("button", { name: /บันทึกที่เลือก/ }).click();
+    await expect(page.getByText(/บันทึกคำเรียกเมนูแล้ว/)).toBeVisible({ timeout: 20_000 });
+
+    const saved = await service
+      .from("voice_aliases")
+      .select("id, alias_text, intent_type, slots, is_active")
+      .eq("store_id", SEED_STORE_ID);
+    expect(saved.error, saved.error?.message).toBeNull();
+    const rows = saved.data ?? [];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) createdAliasIds.push((row as { id: string }).id);
+
+    const espresso = rows.find((row) => (row as { alias_text: string }).alias_text === "เอสเพรสโซ") as
+      | { intent_type: string; slots: { product_id?: string }; is_active: boolean }
+      | undefined;
+    expect(espresso, "ต้องบันทึกคำเรียก 'เอสเพรสโซ' ไว้").toBeTruthy();
+    expect(espresso?.intent_type).toBe("product");
+    expect(espresso?.slots?.product_id).toBe(productId);
+    expect(espresso?.is_active).toBe(true);
+
+    // บันทึกแล้วต้องไม่ถูกเสนอซ้ำ และย้ายไปอยู่รายการ "บันทึกไว้แล้ว"
+    await page.reload();
+    await expect(page.getByText(/คำเรียกเมนูที่บันทึกไว้แล้ว/)).toBeVisible();
+    await expect(page.locator("tr", { hasText: "Espresso" })).toHaveCount(0);
   });
 });

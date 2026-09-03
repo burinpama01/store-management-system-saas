@@ -179,13 +179,23 @@ export async function createVoiceAliases(
     .filter((row): row is NonNullable<typeof row> => row !== null);
   if (rows.length === 0) return { saved: 0, error: null };
 
+  // หมายเหตุ: unique index ของตารางนี้เป็น expression index (store_id, lower(alias_text))
+  // จึงใช้ upsert/ON CONFLICT กับคู่คอลัมน์ตรง ๆ ไม่ได้ — insert แล้วข้ามเฉพาะแถวที่ซ้ำแทน
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("voice_aliases")
-    .upsert(rows, { onConflict: "store_id,alias_text", ignoreDuplicates: true })
-    .select("id");
-  if (error) return { saved: 0, error: mapError(error) };
-  return { saved: data?.length ?? 0, error: null };
+  const bulk = await supabase.from("voice_aliases").insert(rows).select("id");
+  if (!bulk.error) return { saved: bulk.data?.length ?? 0, error: null };
+  if (bulk.error.code !== "23505") return { saved: 0, error: mapError(bulk.error) };
+
+  let saved = 0;
+  for (const row of rows) {
+    const single = await supabase.from("voice_aliases").insert(row).select("id").maybeSingle();
+    if (!single.error) {
+      saved += 1;
+      continue;
+    }
+    if (single.error.code !== "23505") return { saved, error: mapError(single.error) };
+  }
+  return { saved, error: null };
 }
 
 /**

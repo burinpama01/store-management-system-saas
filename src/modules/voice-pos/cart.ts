@@ -137,6 +137,8 @@ export interface VoiceProductSelection {
   readonly modifiers: Record<string, ModifierOption[]>;
   /** ชื่อตัวเลือกที่จับได้จากคำพูด (ไว้บอกผู้ใช้) */
   readonly spokenOptionNames: readonly string[];
+  /** กลุ่มตัวเลือกที่ "ผู้ใช้พูดมาเอง" (ค่าเริ่มต้นไม่นับ) */
+  readonly spokenGroupIds: readonly string[];
   /** ส่วนที่พูดมาแต่ไม่ตรงตัวเลือกใดเลย — ไม่ว่างเมื่อไรห้ามเดา ต้องให้เลือกบนจอ */
   readonly unknownPhrase: string;
   readonly missingRequiredGroups: readonly string[];
@@ -217,6 +219,7 @@ function applySpokenOptions(product: Product, restRaw: string): VoiceProductSele
     ...buildDefaultModifierSelections(product.modifierGroups),
   };
   const spokenOptionNames: string[] = [];
+  const spokenGroupIds = new Set<string>();
   let variant: ProductVariant | null = null;
   let remaining = restRaw;
 
@@ -254,6 +257,7 @@ function applySpokenOptions(product: Product, restRaw: string): VoiceProductSele
     modifiers[candidate.groupId] = candidate.single
       ? [candidate.option]
       : [...current.filter((item) => item.id !== candidate.option.id), candidate.option];
+    spokenGroupIds.add(candidate.groupId);
     spokenOptionNames.push(candidate.option.name);
   }
 
@@ -261,6 +265,8 @@ function applySpokenOptions(product: Product, restRaw: string): VoiceProductSele
     remaining = remaining.split(looseName(connector)).join("");
   }
 
+  // กฎที่หน้าร้านกำหนด: "มีค่าเริ่มต้นอยู่แล้ว = เพิ่มได้เลย ไม่ต้องเด้งหน้าต่าง"
+  // จะเด้งเฉพาะตัวเลือกบังคับที่ยังไม่มีค่าเริ่มต้นและผู้ใช้ยังไม่ได้พูดมา
   const missingRequiredGroups = product.modifierGroups
     .filter(
       (group) => group.isRequired && (modifiers[group.id]?.length ?? 0) < Math.max(1, group.minSelections),
@@ -272,6 +278,7 @@ function applySpokenOptions(product: Product, restRaw: string): VoiceProductSele
     variant,
     modifiers,
     spokenOptionNames,
+    spokenGroupIds: [...spokenGroupIds],
     unknownPhrase: remaining.trim(),
     missingRequiredGroups,
     needsVariant: product.variants.length > 0 && !variant,

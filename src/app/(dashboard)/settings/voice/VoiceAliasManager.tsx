@@ -33,11 +33,19 @@ export function VoiceAliasManager({
   const [message, setMessage] = useState<string | null>(loadError ?? null);
   // ค่าเริ่มต้น: ติ๊กไว้ให้หมด (ผู้ใช้แค่เอาที่ไม่เอาออก) — ลดขั้นตอนตามที่หน้าร้านขอ
   const [picked, setPicked] = useState<Record<string, boolean>>({});
+  // ข้อความที่ผู้ใช้แก้เองก่อนบันทึก (ว่าง = ใช้ตามที่ระบบเสนอ)
+  const [edited, setEdited] = useState<Record<string, string>>({});
   const suggestionKey = (item: VoiceAliasSuggestion) => `${item.productId}|${item.aliasText}`;
   const isPicked = (item: VoiceAliasSuggestion) => picked[suggestionKey(item)] ?? true;
+  const textOf = (item: VoiceAliasSuggestion) => edited[suggestionKey(item)] ?? item.aliasText;
   const pickedCount = useMemo(
-    () => suggestions.filter((item) => picked[`${item.productId}|${item.aliasText}`] ?? true).length,
-    [suggestions, picked],
+    () =>
+      suggestions.filter((item) => {
+        const key = `${item.productId}|${item.aliasText}`;
+        const text = (edited[key] ?? item.aliasText).trim();
+        return (picked[key] ?? true) && text.length >= 2;
+      }).length,
+    [suggestions, picked, edited],
   );
 
   const productAliases = aliases.filter((alias) => alias.intentType === "product");
@@ -45,8 +53,8 @@ export function VoiceAliasManager({
 
   function onSaveSuggestions() {
     const selected = suggestions
-      .filter((item) => isPicked(item))
-      .map((item) => ({ aliasText: item.aliasText, productId: item.productId }));
+      .filter((item) => isPicked(item) && textOf(item).trim().length >= 2)
+      .map((item) => ({ aliasText: textOf(item).trim(), productId: item.productId }));
     startTransition(async () => {
       const result = await saveProductAliasesAction(selected);
       setMessage(result.error ?? `บันทึกคำเรียกเมนูแล้ว ${result.saved} คำ`);
@@ -136,8 +144,8 @@ export function VoiceAliasManager({
           <div>
             <h3 className="text-sm font-bold text-[var(--color-text-primary)]">คำเรียกเมนู (วิเคราะห์อัตโนมัติ)</h3>
             <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-              ระบบอ่านชื่อเมนูของร้านแล้วเสนอคำที่พนักงานน่าจะพูด — ตรวจแล้วติ๊กบันทึกได้เลย
-              (เมนูที่เพิ่มใหม่หรือมาจาก AI สแกน จะขึ้นที่นี่เองในครั้งถัดไป)
+              ระบบอ่านชื่อเมนูของร้านแล้วเสนอคำที่พนักงานน่าจะพูด — <b>แก้ข้อความได้ก่อนบันทึก</b>
+              แล้วติ๊กเลือกเฉพาะคำที่ต้องการ (เมนูที่เพิ่มใหม่หรือมาจาก AI สแกน จะขึ้นที่นี่เองในครั้งถัดไป)
             </p>
           </div>
           {suggestions.length > 0 ? (
@@ -176,7 +184,33 @@ export function VoiceAliasManager({
                         className="size-5"
                       />
                     </td>
-                    <td className="py-2 font-semibold">{item.aliasText}</td>
+                    <td className="py-2">
+                      <input
+                        type="text"
+                        value={textOf(item)}
+                        maxLength={60}
+                        aria-label={`แก้ไขคำเรียกของ ${item.productName}`}
+                        onChange={(event) =>
+                          setEdited((current) => ({ ...current, [suggestionKey(item)]: event.target.value }))
+                        }
+                        className="min-h-10 w-full min-w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm font-semibold"
+                      />
+                      {textOf(item).trim() !== item.aliasText ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEdited((current) => {
+                              const next = { ...current };
+                              delete next[suggestionKey(item)];
+                              return next;
+                            })
+                          }
+                          className="mt-1 text-[11px] text-[var(--color-text-secondary)] underline"
+                        >
+                          คืนค่าที่ระบบเสนอ ({item.aliasText})
+                        </button>
+                      ) : null}
+                    </td>
                     <td className="py-2">{item.productName}</td>
                     <td className="py-2 text-xs text-[var(--color-text-secondary)]">{item.reason}</td>
                   </tr>
