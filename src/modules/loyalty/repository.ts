@@ -4,17 +4,8 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
 import { roundPoints } from "@/shared/utils/points";
 
-type LoyaltyAccountRow = Database["public"]["Tables"]["loyalty_accounts"]["Row"];
 type LoyaltySettingsRow = Database["public"]["Tables"]["loyalty_settings"]["Row"];
 type LoyaltyRewardRow = Database["public"]["Tables"]["loyalty_rewards"]["Row"];
-
-export interface LoyaltyAccountSummary {
-  id: string;
-  organizationId: string;
-  storeId: string;
-  customerId: string;
-  pointsBalance: number;
-}
 
 export interface LoyaltySettingsSummary {
   id?: string;
@@ -69,15 +60,6 @@ export interface LoyaltyRewardSaveInput {
   isActive?: boolean;
 }
 
-function mapLoyaltyAccount(row: LoyaltyAccountRow): LoyaltyAccountSummary {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    storeId: row.store_id,
-    customerId: row.customer_id,
-    pointsBalance: row.points_balance,
-  };
-}
 
 function mapLoyaltySettings(row: LoyaltySettingsRow): LoyaltySettingsSummary {
   return {
@@ -114,40 +96,50 @@ function mapLoyaltyReward(row: LoyaltyRewardRow): LoyaltyReward {
   };
 }
 
-export async function getLoyaltyAccountForCustomer(
+/**
+ * ประวัติแต้มของลูกค้าหนึ่งราย (audit trail)
+ *
+ * เดิมระบบเขียน loyalty_ledger ทุกครั้งที่ได้/ใช้/ปรับแต้ม แต่ไม่มีที่ให้อ่านเลยสักที่
+ * (audit ข้อ 7) เวลาลูกค้าทักว่า "แต้มหาย" พนักงานจึงตอบไม่ได้ว่าหายตอนไหน
+ *
+ * อ่านผ่าน user-scoped client — RLS "store member can read" คุมให้เห็นเฉพาะร้านตัวเอง
+ */
+export async function listLoyaltyLedgerForCustomer(
   storeId: string,
-  organizationId: string,
   customerId: string,
-  options: { createIfMissing?: boolean } = {},
+  options: { limit?: number } = {},
 ) {
   const supabase = await createSupabaseServerClient();
-  const existing = await supabase
-    .from("loyalty_accounts")
-    .select("*")
+  const safeLimit = Math.min(Math.max(Math.floor(options.limit ?? 50), 1), 200);
+  const { data, error } = await supabase
+    .from("loyalty_ledger")
+    .select("id, type, points_delta, reason, order_id, created_at")
     .eq("store_id", storeId)
-    .eq("organization_id", organizationId)
     .eq("customer_id", customerId)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
 
-  if (existing.error) return { data: null, error: mapError(existing.error) };
-  if (existing.data) return { data: mapLoyaltyAccount(existing.data), error: null };
-  if (!options.createIfMissing) return { data: null, error: null };
+  if (error) return { data: null, error: mapError(error) };
+  return {
+    data: (data ?? []).map((row) => ({
+      id: row.id,
+      type: row.type,
+      pointsDelta: row.points_delta,
+      reason: row.reason,
+      orderId: row.order_id,
+      createdAt: row.created_at,
+    })),
+    error: null,
+  };
+}
 
-  const created = await supabase
-    .from("loyalty_accounts")
-    .upsert(
-      {
-        organization_id: organizationId,
-        store_id: storeId,
-        customer_id: customerId,
-      },
-      { onConflict: "store_id,customer_id" },
-    )
-    .select("*")
-    .single();
-
-  if (created.error) return { data: null, error: mapError(created.error) };
-  return { data: mapLoyaltyAccount(created.data), error: null };
+export interface LoyaltyLedgerEntry {
+  id: string;
+  type: "earn" | "redeem" | "reversal" | "adjustment";
+  pointsDelta: number;
+  reason: string | null;
+  orderId: string | null;
+  createdAt: string;
 }
 
 export async function getLoyaltySettingsForStore(storeId: string, organizationId: string) {

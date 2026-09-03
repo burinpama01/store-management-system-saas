@@ -203,3 +203,24 @@ export function logActionError(input: {
     context: input.context,
   });
 }
+
+/**
+ * ล้างบันทึกที่เก่ากว่าที่กำหนด — เรียกจากงานประจำวัน
+ *
+ * ตารางนี้โตทุกวันและไม่มีใครลบ ถ้าปล่อยไว้จะกินพื้นที่ฐานข้อมูลจริงของร้าน
+ * (Vercel Hobby ต่อ cron เพิ่มไม่ได้ จึงพ่วงไปกับงานประจำวันที่มีอยู่แล้ว)
+ */
+export async function purgeOldSystemEventLogs(keepDays = 30): Promise<number> {
+  try {
+    const supabase = await createSupabaseServiceClient();
+    const { data, error } = await supabase.rpc("purge_old_system_event_logs", { p_keep_days: keepDays });
+    if (error) {
+      console.warn("[system-log] ล้างบันทึกเก่าไม่สำเร็จ", error.message);
+      return 0;
+    }
+    return typeof data === "number" ? data : 0;
+  } catch (e) {
+    console.warn("[system-log] ล้างบันทึกเก่าไม่สำเร็จ", e instanceof Error ? e.message : String(e));
+    return 0;
+  }
+}

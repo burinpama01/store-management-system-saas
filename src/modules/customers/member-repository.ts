@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { logActionError } from "@/modules/system/event-log";
 import { cookies } from "next/headers";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
@@ -390,7 +391,36 @@ export async function createOrFindMemberCustomer(input: {
         .maybeSingle()
     : { data: null, error: null };
   if (existingByPhone.error) return { data: null, error: mapError(existingByPhone.error).userMessage };
-  if (existingByPhone.data) return { data: existingByPhone.data.id, error: null };
+  if (existingByPhone.data) {
+    // เบอร์นี้เป็นสมาชิกอยู่แล้ว — เดิมคืน id เดิมแล้วทิ้งชื่อ/อีเมลที่กรอกใหม่เงียบ ๆ
+    // ลูกค้าจึงงงว่าทำไมกรอกอีเมลไปแล้วไม่ขึ้น (audit ข้อ 10)
+    //
+    // ฟังก์ชันนี้ถูกเรียกหลังยืนยัน OTP สำเร็จเท่านั้น = พิสูจน์แล้วว่าเป็นเจ้าของเบอร์
+    // จึง "เติมช่องที่ว่าง" ได้อย่างปลอดภัย แต่ยังไม่เขียนทับค่าที่มีอยู่ เพราะการสมัคร
+    // ซ้ำด้วยชื่อที่พิมพ์ผิดไม่ควรไปลบชื่อเดิมของสมาชิก — ค่าที่ขัดกันจะถูกรายงานกลับแทน
+    const existing = existingByPhone.data;
+    const submittedName = input.name.trim();
+    const existingEmail = normalizeEmail(existing.email);
+
+    const fill: { name?: string; email?: string } = {};
+    if (!existing.name?.trim() && submittedName) fill.name = submittedName;
+    if (!existingEmail && email) fill.email = email;
+
+    if (Object.keys(fill).length > 0) {
+      await supabase
+        .from("customers")
+        .update({ ...fill, updated_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .eq("store_id", input.storeId);
+    }
+
+    const ignoredFields = [
+      submittedName && existing.name?.trim() && submittedName !== existing.name ? "ชื่อ" : null,
+      email && existingEmail && email !== existingEmail ? "อีเมล" : null,
+    ].filter((field): field is string => Boolean(field));
+
+    return { data: existing.id, error: null, matchedExisting: true, ignoredFields };
+  }
 
   const created = await supabase
     .from("customers")
@@ -416,9 +446,11 @@ export async function createOrFindMemberCustomer(input: {
         .eq("phone", phone)
         .eq("is_active", true)
         .maybeSingle();
-      if (!raced.error && raced.data) return { data: raced.data.id, error: null };
+      if (!raced.error && raced.data) {
+        return { data: raced.data.id, error: null, matchedExisting: true, ignoredFields: [] };
+      }
     }
-    return { data: null, error: mapError(created.error).userMessage };
+    return { data: null, error: mapError(created.error).userMessage, matchedExisting: false, ignoredFields: [] };
   }
 
   await supabase.from("loyalty_accounts").upsert(
@@ -429,7 +461,7 @@ export async function createOrFindMemberCustomer(input: {
     },
     { onConflict: "store_id,customer_id" },
   );
-  return { data: created.data.id, error: null };
+  return { data: created.data.id, error: null, matchedExisting: false, ignoredFields: [] };
 }
 
 export async function requestMemberOtp(
@@ -508,6 +540,26 @@ export async function requestMemberOtp(
     await sendOtp(phone, code);
   } catch (error) {
     const cleanup = await supabase.from("customer_member_otps").delete().eq("id", otp.data.id);
+    // OTP ล้มเหลว = สมาชิกเข้าระบบไม่ได้ทั้งร้าน แต่ลูกค้าเห็นแค่ข้อความกลาง ๆ
+    // ต้องบันทึกสาเหตุจริงไว้ให้ตามได้ (audit ข้อ 12) — โดยเฉพาะกรณี SMSKUB_API_KEY หาย
+    const sendMessage = error instanceof Error ? error.message : String(error);
+    logActionError({
+      source: "member.otp",
+      action: "sendOtp",
+      error,
+      storeId: portal.store.id,
+      organizationId: portal.store.organizationId,
+      context: {
+        mode: input.mode,
+        maskedPhone: maskPhone(phone),
+        // ชี้สาเหตุที่พบบ่อยที่สุดให้ชัด แทนที่จะให้ไปเดาเอง
+        likelyCause: sendMessage.includes("Missing SMSKUB_API_KEY")
+          ? "ยังไม่ได้ตั้งค่า SMSKUB_API_KEY ในสภาพแวดล้อมนี้"
+          : sendMessage.includes("SMSKUB send failed")
+            ? "ผู้ให้บริการ SMS ปฏิเสธคำขอ (ตรวจเครดิต/ชื่อผู้ส่ง/รูปแบบเบอร์)"
+            : null,
+      },
+    });
     console.warn("[member-portal] otp send failed", {
       storeSlug: input.storeSlug,
       storeId: portal.store.id,
@@ -543,6 +595,47 @@ async function createMemberSession(store: Store, customerId: string) {
     secure: process.env.NODE_ENV === "production",
     path: `/member/${store.slug}`,
     expires: expiresAt,
+  });
+  return { error: null };
+}
+
+/**
+ * ออกจากระบบสมาชิก (audit ข้อ 14)
+ *
+ * สำคัญกว่าที่คิด: session อยู่ 30 วันบนเครื่องที่ลูกค้าสแกน ซึ่งมักเป็นมือถือส่วนตัว
+ * แต่ก็อาจเป็นเครื่องที่ร้านวางไว้ให้ลูกค้าใช้ร่วมกัน — ไม่มีปุ่มออกแปลว่าคนถัดไป
+ * เห็นแต้มและข้อมูลของคนก่อนหน้าได้
+ *
+ * ลบทั้งแถวใน DB และ cookie เพื่อไม่ให้ token ที่หลุดไปแล้วยังใช้ได้
+ */
+export async function signOutMemberSession(storeSlug: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { data: store } = await supabase
+    .from("stores")
+    .select("id, slug")
+    .eq("slug", storeSlug)
+    .maybeSingle();
+  if (!store) return { error: null };
+
+  const cookieName = getMemberSessionCookieName(store.id);
+  const cookieStore = await cookies();
+  const token = cookieStore.get(cookieName)?.value;
+
+  if (token) {
+    // ลบที่ต้นทางก่อน — ถ้าลบแค่ cookie token เดิมยังใช้ได้จนกว่าจะหมดอายุ 30 วัน
+    await supabase
+      .from("customer_member_sessions")
+      .delete()
+      .eq("store_id", store.id)
+      .eq("session_token_hash", hashValue(token));
+  }
+
+  cookieStore.set(cookieName, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: `/member/${store.slug}`,
+    maxAge: 0,
   });
   return { error: null };
 }
@@ -603,7 +696,16 @@ export async function verifyMemberOtp(input: {
   const session = await createMemberSession(portal.store, customerId.data);
   if (session.error) return { data: null, error: session.error };
 
-  return { data: { customerId: customerId.data }, error: null };
+  // ส่งกลับว่าเข้าบัญชีเดิมและมีค่าไหนที่ไม่ได้ถูกใช้ เพื่อให้หน้าจอบอกลูกค้าได้ตามจริง
+  const ignoredFields = "ignoredFields" in customerId ? customerId.ignoredFields : [];
+  return {
+    data: {
+      customerId: customerId.data,
+      matchedExisting: "matchedExisting" in customerId ? customerId.matchedExisting : false,
+      ignoredFields,
+    },
+    error: null,
+  };
 }
 
 export async function getActiveMemberPortalLinkForStore(storeId: string) {

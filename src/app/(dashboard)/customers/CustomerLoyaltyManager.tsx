@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CustomerLedgerPanel } from "./CustomerLedgerPanel";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { LoyaltyReward, LoyaltySettingsSummary } from "@/modules/loyalty/repository";
 import type { CouponPolicy } from "@/modules/promotions/types";
@@ -47,6 +49,12 @@ interface Props {
   errors: string[];
   /** IANA timezone of the store; coupon expiry is stored UTC and shown/edited in this zone. */
   storeTimezone: string;
+  /** คำค้นปัจจุบัน (ค้นฝั่งเซิร์ฟเวอร์ทั้งฐาน ไม่ใช่กรองเฉพาะที่โหลดมา) */
+  customerSearch: string;
+  /** จำนวนลูกค้าทั้งหมดที่ตรงเงื่อนไข — อาจมากกว่าที่แสดง */
+  customerTotal: number;
+  /** true = ยังมีลูกค้าที่ไม่ได้แสดง ต้องใช้ช่องค้นหา */
+  customersTruncated: boolean;
 }
 
 type SectionKey = "rewards" | "customers" | "points" | "coupons";
@@ -310,6 +318,9 @@ function RewardForm({
 
 export function CustomerLoyaltyManager({
   customers,
+  customerSearch,
+  customerTotal,
+  customersTruncated,
   coupons,
   loyaltySettings,
   rewards,
@@ -521,7 +532,11 @@ export function CustomerLoyaltyManager({
         sectionKey="customers"
         title="ลูกค้า"
         description="เพิ่ม แก้ไข หรือปิดใช้งานลูกค้าที่ใช้กับ POS"
-        summary={`มีลูกค้าใช้งาน ${activeCustomers.length} ราย กดเปิดฟอร์มเพื่อเพิ่มหรือแก้ไข`}
+        summary={
+          customerSearch
+            ? `ผลค้นหา "${customerSearch}" ${customerTotal} ราย`
+            : `มีลูกค้าใช้งาน ${activeCustomers.length} ราย${customersTruncated ? ` จากทั้งหมด ${customerTotal} ราย` : ""} กดเปิดฟอร์มเพื่อเพิ่มหรือแก้ไข`
+        }
         isOpen={openSections.customers}
         onToggle={toggleSection}
       >
@@ -562,12 +577,48 @@ export function CustomerLoyaltyManager({
                 </Button>
               </div>
             </form>
+            {/* ค้นหาฝั่งเซิร์ฟเวอร์: form GET ธรรมดา ทำงานได้แม้ JS ยังไม่โหลด
+                และค้นทั้งฐาน ไม่ใช่กรองเฉพาะรายชื่อที่ส่งมาแล้ว (audit ข้อ 6) */}
+            <form method="get" action="/customers" className="flex flex-wrap items-end gap-2">
+              <label className="min-w-[200px] flex-1 space-y-1">
+                <span className="text-xs font-semibold uppercase text-[var(--muted)]">ค้นหาลูกค้า</span>
+                <input
+                  className="form-input"
+                  name="q"
+                  defaultValue={customerSearch}
+                  maxLength={80}
+                  placeholder="ชื่อ เบอร์โทร หรืออีเมล"
+                />
+              </label>
+              <Button variant="secondary" type="submit">
+                ค้นหา
+              </Button>
+              {customerSearch ? (
+                <Link href="/customers" className="btn btn-secondary">
+                  ล้างคำค้น
+                </Link>
+              ) : null}
+            </form>
+
+            {customersTruncated && !customerSearch ? (
+              <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                ร้านนี้มีลูกค้า {customerTotal} ราย แต่แสดงได้ครั้งละ {customers.length} ราย (เรียงตามที่แก้ไขล่าสุด) —
+                ใช้ช่องค้นหาด้านบนเพื่อหาคนที่ต้องการ
+              </p>
+            ) : null}
+
+            {customerSearch && customers.length === 0 ? (
+              <p className="rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm text-[var(--muted)]">
+                ไม่พบลูกค้าที่ตรงกับ &quot;{customerSearch}&quot;
+              </p>
+            ) : null}
+
             <div className="grid gap-3">
               {customers.map((customer) => (
+                <div key={customer.id} className="space-y-2 rounded-lg border border-[var(--border)] p-4">
                 <form
                   action={(formData) => runFormAction(saveCustomerAction, formData)}
-                  className="grid gap-3 rounded-lg border border-[var(--border)] p-4 lg:grid-cols-[1.3fr_1fr_1fr_0.9fr_0.8fr_auto]"
-                  key={customer.id}
+                  className="grid gap-3 lg:grid-cols-[1.3fr_1fr_1fr_0.9fr_0.8fr_auto]"
                 >
                   <input type="hidden" name="id" value={customer.id} />
                   <label className="space-y-1">
@@ -615,6 +666,8 @@ export function CustomerLoyaltyManager({
                     </button>
                   </div>
                 </form>
+                <CustomerLedgerPanel customerId={customer.id} storeTimezone={storeTimezone} />
+                </div>
               ))}
             </div>
           </div>

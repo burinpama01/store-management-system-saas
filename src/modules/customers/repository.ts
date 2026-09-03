@@ -4,6 +4,7 @@ import { normalizePriceTier } from "@/modules/pos/pricing";
 import type { Database } from "@/server/integrations/supabase/database.types";
 import type { CustomerProfile, CustomerSaveInput } from "./types";
 import { normalizeCustomerPhoneOrNull } from "@/shared/utils/customer-phone";
+import { escapeLikePattern } from "@/shared/utils/like-pattern";
 
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
 type LoyaltyAccountRow = Pick<
@@ -49,21 +50,40 @@ async function mapCustomersWithLoyaltyAccounts(storeId: string, customers: Custo
   return { data: customers.map((customer) => mapCustomer(customer, accountsByCustomer.get(customer.id))), error: null };
 }
 
-export async function listCustomersForStore(storeId: string, options: { includeInactive?: boolean; limit?: number } = {}) {
+/**
+ * รายชื่อลูกค้าของร้าน — รองรับค้นหาฝั่งเซิร์ฟเวอร์และบอกจำนวนทั้งหมด
+ *
+ * เดิมคืนแค่ 100 รายแรกโดยไม่บอกว่าถูกตัด (audit ข้อ 6) ร้านที่มีลูกค้าเกิน 100
+ * จึงหาคนที่ 101 ไม่เจอเลยและไม่รู้ตัวด้วย — ตอนนี้ค้นได้ทั้งฐานและเห็น total เสมอ
+ */
+export async function listCustomersForStore(
+  storeId: string,
+  options: { includeInactive?: boolean; limit?: number; search?: string } = {},
+) {
   const supabase = await createSupabaseServerClient();
   const safeLimit = Math.min(Math.max(Math.floor(options.limit ?? 100), 1), 250);
+  const search = normalizeCustomerQuery(options.search ?? "");
+
   let query = supabase
     .from("customers")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("store_id", storeId)
     .order("updated_at", { ascending: false })
     .limit(safeLimit);
 
   if (!options.includeInactive) query = query.eq("is_active", true);
+  if (search) {
+    // ค้นทั้งฐาน ไม่ใช่กรองเฉพาะ 100 แถวที่โหลดมา — escape กัน _ และ % กลายเป็น wildcard
+    const pattern = escapeLikePattern(search);
+    query = query.or(`name.ilike.%${pattern}%,phone.ilike.%${pattern}%,email.ilike.%${pattern}%`);
+  }
 
-  const { data, error } = await query;
-  if (error) return { data: null, error: mapError(error) };
-  return mapCustomersWithLoyaltyAccounts(storeId, data ?? []);
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: mapError(error), total: 0, truncated: false };
+
+  const mapped = await mapCustomersWithLoyaltyAccounts(storeId, data ?? []);
+  const total = count ?? mapped.data?.length ?? 0;
+  return { ...mapped, total, truncated: total > (data?.length ?? 0) };
 }
 
 export async function searchCustomersForStore(storeId: string, query: string, limit = 10) {
@@ -72,7 +92,8 @@ export async function searchCustomersForStore(storeId: string, query: string, li
 
   const supabase = await createSupabaseServerClient();
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 25);
-  const escaped = normalized.replace(/\*/g, "");
+  // escape ให้ครบ: เดิมตัดแค่ * ทำให้ _ และ % ในคำค้นกลายเป็น wildcard จับคนผิด (audit ข้อ 9)
+  const escaped = escapeLikePattern(normalized.replace(/\*/g, ""));
   const { data, error } = await supabase
     .from("customers")
     .select("*")

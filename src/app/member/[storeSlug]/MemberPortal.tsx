@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { CustomerPortalData, CustomerRewardRedemption } from "@/modules/customers/member-repository";
 import type { LoyaltyReward } from "@/modules/loyalty/repository";
 import {
   claimReceiptPointsAction,
   redeemMemberRewardAction,
+  signOutMemberAction,
   requestMemberOtpAction,
   verifyMemberOtpAction,
 } from "./actions";
@@ -77,6 +79,7 @@ function StatusMessage({ message }: { message: string | null }) {
 }
 
 export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) {
+  const router = useRouter();
   const [mode, setMode] = useState<"register" | "login">("register");
   const [otpId, setOtpId] = useState<string | null>(null);
   const [maskedPhone, setMaskedPhone] = useState<string | null>(null);
@@ -92,6 +95,14 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
     () => [...data.rewards].sort((a, b) => a.pointsCost - b.pointsCost),
     [data.rewards],
   );
+
+  function signOut(formData: FormData) {
+    startTransition(async () => {
+      await signOutMemberAction(formData);
+      // เซิร์ฟเวอร์ revalidate แล้ว แต่คอมโพเนนต์นี้ถือ data เป็น prop จึงต้องสั่งโหลดใหม่
+      router.refresh();
+    });
+  }
 
   function claimReceiptPoints() {
     if (!claimCode) return;
@@ -124,9 +135,14 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
   function verifyOtp(formData: FormData) {
     startTransition(async () => {
       const result = await verifyMemberOtpAction(formData);
-      setMessage(result.error ?? "เข้าสู่ระบบสมาชิกแล้ว");
+      setMessage(result.error ?? result.notice ?? "เข้าสู่ระบบสมาชิกแล้ว");
       if (!result.error) {
         setOtpId(null);
+        // มีข้อความต้องอ่าน (เช่น เข้าบัญชีเดิม) — อย่ารีโหลดทับจนอ่านไม่ทัน
+        if (result.notice) {
+          router.refresh();
+          return;
+        }
         window.location.reload();
       }
     });
@@ -278,8 +294,19 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
             ) : null}
 
             <section className="rounded-lg border border-[var(--border)] bg-white p-5 shadow-sm">
-              <p className="text-sm text-[var(--muted)]">{data.customer.name}</p>
-              <h2 className="mt-1 text-xl font-bold text-[var(--foreground)]">แต้มของฉัน</h2>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-[var(--muted)]">{data.customer.name}</p>
+                  <h2 className="mt-1 text-xl font-bold text-[var(--foreground)]">แต้มของฉัน</h2>
+                </div>
+                {/* จำเป็นเมื่อลูกค้าสแกนจากเครื่องที่ร้านวางไว้ให้ใช้ร่วมกัน (audit ข้อ 14) */}
+                <form action={signOut}>
+                  <input type="hidden" name="storeSlug" value={storeSlug} />
+                  <button className="btn-secondary text-xs" type="submit">
+                    ออกจากระบบ
+                  </button>
+                </form>
+              </div>
               <p className="mt-3 text-4xl font-black text-[var(--foreground)]">
                 {formatPoints(data.customer.pointsBalance)} แต้ม
               </p>

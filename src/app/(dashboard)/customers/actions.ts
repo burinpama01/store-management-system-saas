@@ -20,6 +20,8 @@ import type { CouponDiscountType } from "@/modules/promotions/types";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { storeDateTimeToUtc } from "@/shared/utils/datetime";
 import { parsePointsDeltaInput } from "@/modules/loyalty/points-input";
+import { listLoyaltyLedgerForCustomer, type LoyaltyLedgerEntry } from "@/modules/loyalty/repository";
+import { logActionError } from "@/modules/system/event-log";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -229,11 +231,54 @@ export async function adjustCustomerPointsAction(formData: FormData): Promise<Ac
       pointsDelta,
       reason,
     });
-    if (result.error) return { error: result.error.userMessage };
+    if (result.error) {
+      logActionError({
+        source: "loyalty.points",
+        action: "adjustCustomerPointsAction",
+        error: result.error,
+        storeId: ctx.storeId,
+        organizationId: ctx.organizationId,
+        context: { customerId, pointsDelta },
+      });
+      return { error: result.error.userMessage };
+    }
     revalidateCustomers();
     return { error: null };
   } catch (e) {
+    logActionError({ source: "loyalty.points", action: "adjustCustomerPointsAction", error: e });
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * ประวัติแต้มของลูกค้าหนึ่งราย — ให้พนักงานตอบได้ว่าแต้มมาจากไหน/หายตอนไหน (audit ข้อ 7)
+ * ดึงตามต้องการ ไม่โหลดมาพร้อมหน้าเพราะร้านที่ลูกค้าเยอะจะหนักโดยเปล่าประโยชน์
+ */
+export async function loadCustomerLedgerAction(
+  customerId: string,
+): Promise<{ error: string | null; entries: LoyaltyLedgerEntry[] }> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("loyaltyPoints");
+    const ctx = await getStoreContext();
+    if (!UUID_RE.test(customerId)) return { error: "ข้อมูลลูกค้าไม่ถูกต้อง", entries: [] };
+
+    const result = await listLoyaltyLedgerForCustomer(ctx.storeId, customerId, { limit: 100 });
+    if (result.error) {
+      logActionError({
+        source: "loyalty.ledger",
+        action: "loadCustomerLedgerAction",
+        error: result.error,
+        storeId: ctx.storeId,
+        organizationId: ctx.organizationId,
+        context: { customerId },
+      });
+      return { error: result.error.userMessage, entries: [] };
+    }
+    return { error: null, entries: result.data ?? [] };
+  } catch (e) {
+    logActionError({ source: "loyalty.ledger", action: "loadCustomerLedgerAction", error: e });
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", entries: [] };
   }
 }
 

@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import {
   getCustomerPortalData,
   requestMemberOtp,
+  signOutMemberSession,
   verifyMemberOtp,
 } from "@/modules/customers/member-repository";
 import { redeemRewardForCurrentCustomer } from "@/modules/loyalty/repository";
 import { sendSmskubOtp } from "@/modules/notifications/smskub";
 import { claimLoyaltyPointsWithCode } from "@/modules/loyalty/claim-repository";
+import { logActionError } from "@/modules/system/event-log";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,6 +18,8 @@ type MemberActionResult = {
   error: string | null;
   otpId?: string;
   maskedPhone?: string;
+  /** ข้อความบอกสถานะที่ไม่ใช่ข้อผิดพลาด เช่น เข้าบัญชีเดิมที่มีอยู่แล้ว */
+  notice?: string | null;
 };
 
 type RedeemRewardActionResult = MemberActionResult & {
@@ -121,10 +125,37 @@ export async function verifyMemberOtpAction(formData: FormData): Promise<MemberA
     });
     if (result.error) return { error: publicMemberError(result.error, "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า") };
     revalidateMemberPortal(storeSlug);
-    return { error: null };
+
+    // เบอร์นี้เป็นสมาชิกอยู่แล้วและมีค่าที่กรอกใหม่ขัดกับของเดิม — บอกตามตรง
+    // ดีกว่าทิ้งเงียบแล้วให้ลูกค้าสงสัยว่าทำไมข้อมูลไม่เปลี่ยน (audit ข้อ 10)
+    const ignored = result.data?.ignoredFields ?? [];
+    if (result.data?.matchedExisting && ignored.length > 0) {
+      return {
+        error: null,
+        notice: `เบอร์นี้เป็นสมาชิกอยู่แล้ว จึงเข้าสู่ระบบบัญชีเดิม — ${ignored.join("และ")}ที่กรอกใหม่ไม่ถูกบันทึกทับ หากต้องการแก้ไขกรุณาแจ้งร้าน`,
+      };
+    }
+    return { error: null, notice: null };
   } catch (e) {
     logPublicMemberActionError("verifyMemberOtp", e);
     return { error: "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า" };
+  }
+}
+
+/**
+ * ออกจากระบบสมาชิก (audit ข้อ 14) — ลบ session ที่ต้นทางไม่ใช่แค่ลืม cookie
+ * ไม่ต้องมีสิทธิ์อะไร ใครถือ session อยู่ก็ออกจากระบบตัวเองได้
+ */
+export async function signOutMemberAction(formData: FormData): Promise<MemberActionResult> {
+  const storeSlug = String(formData.get("storeSlug") ?? "").trim();
+  if (!storeSlug) return { error: "ออกจากระบบไม่สำเร็จ" };
+  try {
+    await signOutMemberSession(storeSlug);
+    revalidatePath(`/member/${storeSlug}`);
+    return { error: null };
+  } catch (e) {
+    logActionError({ source: "member.portal", action: "signOutMemberAction", error: e });
+    return { error: "ออกจากระบบไม่สำเร็จ" };
   }
 }
 

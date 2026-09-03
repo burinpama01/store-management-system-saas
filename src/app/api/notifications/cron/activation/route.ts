@@ -11,7 +11,7 @@ import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
 import { bangkokDateIso, pickActivationNudge } from "@/modules/onboarding/nudges";
 import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { runSubscriptionWatch } from "@/modules/billing/subscription-watch-runner";
-import { logActionError, logSystemEvent } from "@/modules/system/event-log";
+import { logActionError, logSystemEvent, purgeOldSystemEventLogs } from "@/modules/system/event-log";
 
 export const dynamic = "force-dynamic";
 
@@ -133,12 +133,15 @@ export async function GET(req: Request): Promise<Response> {
     logActionError({ source: "cron.daily", action: "runSubscriptionWatch", error });
   }
 
+  // งานที่ 3: ล้างบันทึกระบบที่เก่ากว่า 30 วัน ไม่ให้ตารางโตไม่หยุด
+  const purgedLogs = await purgeOldSystemEventLogs(30);
+
   void logSystemEvent({
     level: "info",
     source: "cron.daily",
     action: "GET",
     message: `งานประจำวันเสร็จ · nudge ${claimed.length} ร้าน · เตือนแพ็กเกจ ${subscriptionWatch?.alerted ?? 0} ร้าน`,
-    context: { day: today, subscriptionWatch },
+    context: { day: today, subscriptionWatch, purgedLogs },
   });
 
   return new Response(
@@ -150,6 +153,7 @@ export async function GET(req: Request): Promise<Response> {
       claimed,
       skipped,
       subscriptionWatch,
+      purgedLogs,
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );

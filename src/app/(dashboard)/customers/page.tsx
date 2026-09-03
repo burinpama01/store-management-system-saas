@@ -14,7 +14,13 @@ import { CustomerLoyaltyManager } from "./CustomerLoyaltyManager";
 
 export const dynamic = "force-dynamic";
 
-export default async function CustomersPage() {
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
+  const customerSearch = (q ?? "").trim().slice(0, 80);
   const { ctx, resolved } = await getResolvedCurrentPermissions();
   // Customer/loyalty management is a manager+ surface; cashiers still use customers at POS checkout.
   if (!resolved.can("catalog.manage")) redirect("/dashboard");
@@ -30,8 +36,13 @@ export default async function CustomersPage() {
   const [customersRes, couponsRes, loyaltySettingsRes, rewardsRes, portalLinkRes, productsRes, storeRes] =
     await Promise.all([
       features.loyaltyPoints
-        ? listCustomersForStore(ctx.storeId, { includeInactive: true })
-        : Promise.resolve({ data: [], error: null }),
+        ? listCustomersForStore(ctx.storeId, {
+            includeInactive: true,
+            search: customerSearch,
+            // ค้นหาแล้วเจาะจงกว่า จึงคืนได้มากขึ้นโดยไม่ทำให้หน้าหนัก
+            limit: customerSearch ? 250 : 100,
+          })
+        : Promise.resolve({ data: [], error: null, total: 0, truncated: false }),
       features.couponManagement
         ? listCouponsForStore(ctx.storeId, { includeInactive: true })
         : Promise.resolve({ data: [], error: null }),
@@ -69,6 +80,9 @@ export default async function CustomersPage() {
   return (
     <CustomerLoyaltyManager
       customers={customersRes.data ?? []}
+      customerSearch={customerSearch}
+      customerTotal={customersRes.total}
+      customersTruncated={customersRes.truncated}
       coupons={couponsRes.data ?? []}
       loyaltySettings={loyaltySettingsRes.data ?? null}
       rewards={rewardsRes.data ?? []}
