@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Release Gate v2 — QR Order + Voice Unified POS (staging RC 0.39.2)</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --line: #e3e1dc;
+    --text: #1c1b19;
+    --muted: #6b6862;
+    --ok: #14713d;
+    --warn: #8a5a00;
+    --risk: #9a2c2c;
+    --stop: #7a1f1f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 "Sarabun", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 72px; }
+  header.doc { border-bottom: 2px solid var(--text); padding-bottom: 16px; margin-bottom: 24px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 19px; margin: 32px 0 10px; }
+  h3 { font-size: 16px; margin: 20px 0 8px; }
+  p, li { margin: 6px 0; }
+  .sub { color: var(--muted); font-size: 14px; }
+  section.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  .stopbox {
+    border: 2px solid var(--stop);
+    background: #fdf2f2;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 18px 0;
+  }
+  .stopbox h2 { margin-top: 0; color: var(--stop); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 700; background: #f2f1ee; }
+  code, .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+  .tag { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 700; }
+  .tag.ok { background: #e2f3e8; color: var(--ok); }
+  .tag.warn { background: #fbf0dc; color: var(--warn); }
+  .tag.risk { background: #fbe4e4; color: var(--risk); }
+  .tag.todo { background: #ecebe8; color: var(--muted); }
+  ol.checklist { padding-left: 20px; }
+  ol.checklist li { margin: 8px 0; }
+  .scroll { overflow-x: auto; }
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header class="doc">
+    <h1>Release Gate v2 — QR Order + Voice Unified POS</h1>
+    <p class="sub">
+      Staging release candidate <b>v0.39.2</b> · แผนอ้างอิง <span class="mono">Plan/QR Order Voice Unified POS Implementation Plan v2.html</span> (U19)
+      · หลักฐานคุณภาพ: <span class="mono">Plan/QR Order Voice Unified POS Evidence Bundle U18 v1.html</span>
+    </p>
+    <p class="sub">จัดทำ 2026-09-03 · สถานะ: <b>รอการอนุมัติแยกก่อนแตะ staging</b></p>
+  </header>
+
+  <div class="stopbox">
+    <h2>STOP — สิ่งที่ยังทำไม่ได้ถ้าไม่มีอนุมัติเป็นรายข้อ</h2>
+    <ol>
+      <li><b>Apply migration บน staging DB</b> (7 ไฟล์ ดูหัวข้อ 3) — ต้องระบุ backup, เจ้าของ, หน้าต่างเวลา และทางถอย</li>
+      <li><b>push ขึ้น origin</b> — repo นี้ Vercel auto-deploy จาก <span class="mono">main</span> การ push = การ deploy</li>
+      <li><b>เปิด store flag ให้ร้านนำร่อง</b> — ต้องระบุชื่อร้านชัดเจน ห้ามเปิดแบบ env-global</li>
+      <li><b>ปล่อย production 1.0.0 (U20)</b> — ต้องมีหลักฐาน staging สดก่อน</li>
+    </ol>
+    <p class="sub">ทุก commit ของงานชุดนี้อยู่บน <span class="mono">main</span> ในเครื่องเท่านั้น ยังไม่ push และยังไม่ deploy</p>
+  </div>
+
+  <h2>1. หลักฐานคุณภาพที่ผ่านแล้ว (local, RC commit)</h2>
+  <section class="panel">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>เกณฑ์</th><th>คำสั่ง</th><th>ผล</th></tr></thead>
+        <tbody>
+          <tr><td>Backend gate B0–B12 จาก clean reset</td><td class="mono">npm run test:unified-pos:backend</td><td><span class="tag ok">PASS</span> zero unexpected skip</td></tr>
+          <tr><td>Canonical unit suite</td><td class="mono">npm test</td><td><span class="tag ok">1384 passed</span> / 54 skipped</td></tr>
+          <tr><td>E2E ทั้งหมด</td><td class="mono">npx playwright test</td><td><span class="tag ok">26 passed</span></td></tr>
+          <tr><td>typecheck / lint / build</td><td class="mono">npm run typecheck &amp;&amp; npm run lint &amp;&amp; npm run build</td><td><span class="tag ok">ผ่าน</span> lint 0 error</td></tr>
+          <tr><td>whitespace/diff</td><td class="mono">git diff --check</td><td><span class="tag ok">สะอาด</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>2. Version surfaces ที่ตรวจแล้ว</h2>
+  <section class="panel">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>จุด</th><th>ค่า ณ RC นี้</th><th>ต้องทำอะไรก่อนปล่อย</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mono">package.json</span> (เว็บ)</td><td>0.39.2</td><td>ขึ้น 1.0.0 เฉพาะตอน U20 หลัง staging ผ่าน</td></tr>
+          <tr><td><span class="mono">mobile/package.json</span></td><td>0.1.0</td><td><span class="tag warn">ไม่ผูกกับเว็บ</span> — รอบนี้ไม่แตะแอป จึงไม่ต้องขึ้นเวอร์ชัน</td></tr>
+          <tr><td>Android <span class="mono">versionCode/versionName</span></td><td>1 / "1.0"</td><td>ไม่แตะ — ฟีเจอร์รอบนี้เป็นเว็บล้วน (ไม่มี native API ใหม่)</td></tr>
+          <tr><td>iOS <span class="mono">MARKETING_VERSION</span></td><td>1.0</td><td>ไม่แตะ — iOS ยังไม่ปล่อย (ค้างที่ TestFlight)</td></tr>
+          <tr><td>หน้า pricing / marketing</td><td>ไม่มีคำโฆษณาเรื่องสั่งงานด้วยเสียง</td><td><span class="tag ok">ไม่ต้องแก้</span> — ห้ามขยับราคาเพราะเลข major</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">แอปมือถือใช้เว็บเดียวกันผ่าน Capacitor — เมื่อเว็บขึ้น staging แอปจะเห็นการเปลี่ยนแปลงทันทีโดยไม่ต้องอัปเดตแอป
+      ยกเว้นหน้าที่ต้องใช้ Web Speech ซึ่ง WebView ของ Android อาจไม่รองรับ (ปุ่มจะปิดตัวเองพร้อมเหตุผล)</p>
+  </section>
+
+  <h2>3. Migration ที่จะถูก apply บน staging (ต้องอนุมัติก่อน)</h2>
+  <section class="panel">
+    <ol class="checklist">
+      <li><span class="mono">20260831000001_unified_pos_foundation.sql</span> — flags 3 ตัวบน stores, สถานะ/เวอร์ชันของ item, receipts, <span class="mono">voice_aliases</span></li>
+      <li><span class="mono">20260901000001_unified_pos_realtime.sql</span></li>
+      <li><span class="mono">20260901000002_unified_pos_rpc.sql</span></li>
+      <li><span class="mono">20260901000003_unified_pos_fulfillment.sql</span></li>
+      <li><span class="mono">20260901000004_unified_pos_reject.sql</span></li>
+      <li><span class="mono">20260901000005_unified_pos_settlement.sql</span></li>
+      <li><span class="mono">20260902000001_unified_pos_print_intent.sql</span></li>
+    </ol>
+    <p><b>ก่อน apply ต้องยืนยัน:</b> รายการ drift จริงของ staging (<span class="mono">supabase migration list</span>),
+      backup ล่าสุด, เจ้าของหน้าต่างเวลา และคำสั่งถอย</p>
+    <p><b>คุณสมบัติที่ทำให้ถอยได้ปลอดภัย:</b> ทุก flag บน <span class="mono">stores</span> default <b>false</b> —
+      schema ขึ้นก่อนได้โดยพฤติกรรมเดิมไม่เปลี่ยน และ "ปิดฟีเจอร์" ทำได้ทันทีโดยไม่ต้องถอย migration</p>
+  </section>
+
+  <h2>4. ลำดับเปิดใช้งานบน staging (หลังได้อนุมัติ)</h2>
+  <section class="panel">
+    <ol class="checklist">
+      <li>apply migration ทั้ง 7 ไฟล์ → ตรวจ schema invariants (flags default false, unique index ของ operation key/print job, RLS ของ <span class="mono">voice_aliases</span>)</li>
+      <li>deploy เว็บขึ้น staging (ยัง <b>ไม่</b> เปิด flag ใด ๆ) → smoke: <span class="mono">/login</span>, <span class="mono">/pos</span> ต้องเป็น legacy เหมือนเดิมทุกประการ</li>
+      <li>เปิด <span class="mono">unified_pos_enabled</span> เฉพาะร้านนำร่องที่ระบุชื่อ → UAT ด้วยบัญชีจริง: QR → ครัว → บิล → ชำระ → พิมพ์</li>
+      <li>เปิด <span class="mono">kitchen_queue_enabled</span> แล้ววัด convergence ของบอร์ด (เกณฑ์ ≤2s) และ QR submit (≤1.5s)</li>
+      <li>เปิด <span class="mono">voice_command_enabled</span> เป็นตัวสุดท้าย → เดินตาราง <span class="mono">docs/deployment/voice-browser-matrix.md</span> ให้ครบ</li>
+      <li>ตรวจ multi-store isolation: ร้านที่ไม่ได้เปิด flag ต้องไม่เห็นอะไรเปลี่ยน และไม่มี event ข้ามร้าน</li>
+      <li>soak ตามหน้าต่างที่เจ้าของอนุมัติ → เจอ Critical/Major = ปิด flag ทันที (ไม่ต้องถอย deploy)</li>
+    </ol>
+  </section>
+
+  <h2>5. ทางถอย (rollback)</h2>
+  <section class="panel">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>ปัญหา</th><th>ทางถอยลำดับแรก</th><th>ทางถอยลำดับถัดไป</th></tr></thead>
+        <tbody>
+          <tr><td>ฟีเจอร์ใดฟีเจอร์หนึ่งมีปัญหา</td><td>ปิด store flag ของฟีเจอร์นั้น (มีผลทันที ไม่ต้อง deploy)</td><td>ปิดทั้ง 3 flag → กลับพฤติกรรมเดิม 100%</td></tr>
+          <tr><td>เว็บพัง/regression กว้าง</td><td><span class="mono">vercel rollback [deployment-url]</span> ไปยัง deployment ก่อนหน้า</td><td>revert commit แล้ว deploy ใหม่</td></tr>
+          <tr><td>ข้อมูลผิดจาก RPC</td><td>ปิด flag + หยุดร้านนำร่อง แล้วตรวจ receipts/audit</td><td>ถอย migration เฉพาะกรณีจำเป็น (ต้องอนุมัติแยก + มี backup)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <h2>6. รายการที่ยังค้างก่อนเข้า U20</h2>
+  <section class="panel">
+    <ul>
+      <li><span class="tag todo">ค้าง</span> ทดสอบเบราว์เซอร์ด้วยมือตาม <span class="mono">docs/deployment/voice-browser-matrix.md</span> (Safari/Firefox/มือถือจริง/screen reader)</li>
+      <li><span class="tag todo">ค้าง</span> วัด performance p95 บน staging (เกณฑ์ regression ≤20%, QR submit ≤1.5s, board ≤2s)</li>
+      <li><span class="tag todo">ค้าง</span> UAT ด้วยบัญชีจริงบน staging + ตรวจ multi-store isolation</li>
+      <li><span class="tag todo">ค้าง</span> soak window และการอนุมัติของเจ้าของ</li>
+    </ul>
+  </section>
+
+  <footer>
+    StoreOS · Release Gate v2 · เอกสารนี้เป็นเงื่อนไขก่อนปล่อย ไม่ใช่ใบอนุมัติ — การ apply migration, push และ deploy ต้องขออนุมัติเป็นรายข้อ
+  </footer>
+</main>
+</body>
+</html>
