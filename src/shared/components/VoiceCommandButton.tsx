@@ -87,7 +87,13 @@ export function VoiceCommandButton({
     () => adapter ?? createBrowserSpeechAdapter({ locale }),
     [adapter, locale],
   );
-  const supported = useMemo(() => speech.isSupported(), [speech]);
+  // U17 — ห้ามตัดสิน "รองรับไหม" ตอน render แรก: server ไม่มี window เลยได้ false เสมอ
+  // ส่วน client ได้ true → ข้อความไม่ตรงกัน = hydration mismatch (React #418)
+  // จึงเริ่มที่ null (ยังไม่รู้ = ปุ่มปิดไว้ก่อน) แล้วเช็ค capability จริงหลัง mount
+  const [supported, setSupported] = useState<boolean | null>(null);
+  useEffect(() => {
+    setSupported(speech.isSupported());
+  }, [speech]);
 
   const [state, setState] = useState<VoiceRecognitionState>("idle");
   // transcript ชั่วคราวสำหรับแสดงผลระหว่างฟังเท่านั้น — ล้างทุกครั้งที่จบรอบ
@@ -152,7 +158,8 @@ export function VoiceCommandButton({
     });
   }, [disabled, locale, onResult, onTelemetry, speech]);
 
-  const unavailable = disabled || !supported;
+  // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
+  const unavailable = disabled || supported !== true;
 
   return (
     <div className={className}>
@@ -164,9 +171,11 @@ export function VoiceCommandButton({
         aria-pressed={listening}
         aria-label={STATE_LABEL[state]}
         title={
-          supported
+          supported === true
             ? "กดเพื่อพูดคำสั่ง (หรือกด Ctrl+K พิมพ์คำสั่ง)"
-            : "เบราว์เซอร์นี้ยังสั่งงานด้วยเสียงไม่ได้ — ใช้ Ctrl+K แทน"
+            : supported === false
+              ? "เบราว์เซอร์นี้ยังสั่งงานด้วยเสียงไม่ได้ — ใช้ Ctrl+K แทน"
+              : "กำลังตรวจสอบว่าเบราว์เซอร์นี้สั่งงานด้วยเสียงได้หรือไม่"
         }
         className={[
           // touch target ขั้นต่ำ 44px ตามเกณฑ์ของแผน + เคารพ prefers-reduced-motion
@@ -199,9 +208,9 @@ export function VoiceCommandButton({
         </p>
       ) : null}
 
-      {!supported ? (
+      {supported === false ? (
         <p className="text-xs text-gray-500">{ERROR_MESSAGE.unsupported_browser}</p>
-      ) : (
+      ) : supported === null ? null : (
         <>
           {/* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง */}
           <p className="text-xs text-gray-500">

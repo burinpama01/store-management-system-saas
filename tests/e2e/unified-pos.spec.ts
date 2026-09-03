@@ -1745,3 +1745,379 @@ test.describe("voice privacy U16 (privacy / unsupported / permission)", () => {
     await expect(button).toHaveAttribute("aria-pressed", "false");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U17 — R2 integrated E2E: เดินครบสายในรอบเดียว + a11y/console/flag matrix
+//
+// สายที่ตรวจ: ลูกค้า QR ส่งออเดอร์ (RPC v2 ตัวเดียวกับที่แอปลูกค้าเรียก) → คิวครัวรับ/พร้อมเสิร์ฟ
+//            → แท็บบิลเห็นบิล → ชำระผ่าน UI → งานพิมพ์ใบเสร็จ "ใบเดียว"
+// fixture: ชุดเดียวกับ U11 (QR policy / session โต๊ะ 1 / station / printer / auto print) และ
+//          เปิด flag เสียงด้วย เพื่อตรวจว่าเสียงอยู่ร่วมกับสายงานหลักได้โดยไม่รบกวนกัน
+test.describe("integrated R2 U17 (ครบสาย + a11y + flag matrix)", () => {
+  const PRODUCT_1 = "22222222-0000-0000-0000-000000000001"; // กาแฟดำ (seed.sql)
+  const VARIANT_1 = "33333333-0000-0000-0000-000000000001"; // เล็ก (S)
+  const TABLE_1 = "eeeeeeee-0000-0000-0000-000000000001";
+  let runId: string;
+  const createdOrderIds: string[] = [];
+  const settledReferences: string[] = [];
+  let originalStoreFlags: {
+    qr_ordering_enabled: boolean;
+    table_open_policy: "staff_only" | "customer_self";
+    voice_command_enabled: boolean;
+  } | null = null;
+  let originalTableSession: {
+    qr_enabled: boolean;
+    session_started_at: string | null;
+    session_expires_at: string | null;
+  } | null = null;
+  let originalProductQr: { available_for_qr: boolean; kitchen_station_id: string | null } | null = null;
+  let originalReceiptSettings: {
+    auto_print_receipt: boolean;
+    auto_print_station_tickets: boolean;
+  } | null = null;
+  let stationId: string | null = null;
+  let printerId: string | null = null;
+
+  test.beforeAll(async () => {
+    runId = randomUUID().slice(0, 8);
+    await setUnifiedPosFlag(true);
+
+    const storeRow = await service
+      .from("stores")
+      .select("qr_ordering_enabled, table_open_policy, voice_command_enabled")
+      .eq("id", SEED_STORE_ID)
+      .single();
+    if (storeRow.error || !storeRow.data) throw new Error(`อ่าน stores (local) ไม่สำเร็จ: ${storeRow.error?.message}`);
+    originalStoreFlags = storeRow.data;
+
+    const tableRow = await service
+      .from("tables")
+      .select("qr_enabled, session_started_at, session_expires_at")
+      .eq("id", TABLE_1)
+      .single();
+    if (tableRow.error || !tableRow.data) throw new Error(`อ่าน tables (local) ไม่สำเร็จ: ${tableRow.error?.message}`);
+    originalTableSession = tableRow.data;
+
+    const productRow = await service
+      .from("products")
+      .select("available_for_qr, kitchen_station_id")
+      .eq("id", PRODUCT_1)
+      .single();
+    if (productRow.error || !productRow.data) throw new Error(`อ่าน products (local) ไม่สำเร็จ: ${productRow.error?.message}`);
+    originalProductQr = productRow.data;
+
+    const settingsRow = await service
+      .from("receipt_settings")
+      .select("auto_print_receipt, auto_print_station_tickets")
+      .eq("store_id", SEED_STORE_ID)
+      .maybeSingle();
+    if (settingsRow.error || !settingsRow.data) {
+      throw new Error(`อ่าน receipt_settings (local) ไม่สำเร็จ: ${settingsRow.error?.message ?? "ไม่พบแถว"}`);
+    }
+    originalReceiptSettings = settingsRow.data;
+
+    const insertedStation = await service
+      .from("kitchen_stations")
+      .insert({ organization_id: orgId, store_id: SEED_STORE_ID, name: `U17 Integrated ${runId}` })
+      .select("id")
+      .single();
+    if (insertedStation.error || !insertedStation.data) {
+      throw new Error(`สร้าง kitchen station ชั่วคราว (local) ไม่สำเร็จ: ${insertedStation.error?.message}`);
+    }
+    stationId = insertedStation.data.id;
+
+    const insertedPrinter = await service
+      .from("printers")
+      .insert({
+        organization_id: orgId,
+        store_id: SEED_STORE_ID,
+        name: `U17 Integrated Printer ${runId}`,
+        type: "ip",
+        is_default: true,
+        ip_address: "192.168.1.251",
+        port: 9100,
+        paper_width: "80mm",
+      })
+      .select("id")
+      .single();
+    if (insertedPrinter.error || !insertedPrinter.data) {
+      throw new Error(`สร้าง printer ชั่วคราว (local) ไม่สำเร็จ: ${insertedPrinter.error?.message}`);
+    }
+    printerId = insertedPrinter.data.id;
+
+    const { error: storeErr } = await service
+      .from("stores")
+      .update({
+        qr_ordering_enabled: true,
+        table_open_policy: "customer_self",
+        voice_command_enabled: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", SEED_STORE_ID);
+    if (storeErr) throw new Error(`เปิด flag ชั่วคราว (local) ไม่สำเร็จ: ${storeErr.message}`);
+
+    const { error: tableErr } = await service
+      .from("tables")
+      .update({
+        qr_enabled: true,
+        session_started_at: new Date().toISOString(),
+        session_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", TABLE_1);
+    if (tableErr) throw new Error(`เปิด session โต๊ะ 1 ชั่วคราว (local) ไม่สำเร็จ: ${tableErr.message}`);
+
+    const { error: productErr } = await service
+      .from("products")
+      .update({ available_for_qr: true, kitchen_station_id: stationId })
+      .eq("id", PRODUCT_1);
+    if (productErr) throw new Error(`เปิด available_for_qr ชั่วคราว (local) ไม่สำเร็จ: ${productErr.message}`);
+
+    const { error: settingsErr } = await service
+      .from("receipt_settings")
+      .update({ auto_print_receipt: true, auto_print_station_tickets: false })
+      .eq("store_id", SEED_STORE_ID);
+    if (settingsErr) throw new Error(`ตั้ง auto_print_receipt ชั่วคราว (local) ไม่สำเร็จ: ${settingsErr.message}`);
+  });
+
+  test.afterAll(async () => {
+    const failures: string[] = [];
+    if (createdOrderIds.length > 0) {
+      await service.from("transactions").delete().in("order_id", createdOrderIds);
+      await service.from("cash_ledger_entries").delete().in("order_id", createdOrderIds);
+      const { error } = await service.from("orders").delete().in("id", createdOrderIds);
+      if (error) failures.push(`orders: ${error.message}`);
+    }
+    for (const reference of settledReferences) {
+      const opKey = reference.replace("unified_pos_settlement:", "");
+      const { data: jobs } = await service
+        .from("print_jobs")
+        .select("id")
+        .eq("store_id", SEED_STORE_ID)
+        .like("source_key", `${reference}%`);
+      for (const job of jobs ?? []) {
+        const { error } = await service.from("print_jobs").delete().eq("id", (job as { id: string }).id);
+        if (error) failures.push(`print_jobs: ${error.message}`);
+      }
+      const { error: auditErr } = await service
+        .from("audit_logs")
+        .delete()
+        .eq("store_id", SEED_STORE_ID)
+        .eq("request_id", opKey);
+      if (auditErr) failures.push(`audit: ${auditErr.message}`);
+      const { error: receiptErr } = await service
+        .from("unified_pos_operation_receipts")
+        .delete()
+        .eq("store_id", SEED_STORE_ID)
+        .eq("operation_key", opKey);
+      if (receiptErr) failures.push(`receipts: ${receiptErr.message}`);
+    }
+    if (originalStoreFlags) {
+      const { error } = await service.from("stores").update(originalStoreFlags).eq("id", SEED_STORE_ID);
+      if (error) failures.push(`stores: ${error.message}`);
+    }
+    if (originalTableSession) {
+      const { error } = await service.from("tables").update(originalTableSession).eq("id", TABLE_1);
+      if (error) failures.push(`tables: ${error.message}`);
+    }
+    if (originalProductQr) {
+      const { error } = await service.from("products").update(originalProductQr).eq("id", PRODUCT_1);
+      if (error) failures.push(`products: ${error.message}`);
+    }
+    if (originalReceiptSettings) {
+      const { error } = await service
+        .from("receipt_settings")
+        .update(originalReceiptSettings)
+        .eq("store_id", SEED_STORE_ID);
+      if (error) failures.push(`receipt_settings: ${error.message}`);
+    }
+    if (stationId) {
+      const { error } = await service.from("kitchen_stations").delete().eq("id", stationId);
+      if (error) failures.push(`kitchen_stations: ${error.message}`);
+    }
+    if (printerId) {
+      const { error } = await service.from("printers").delete().eq("id", printerId);
+      if (error) failures.push(`printers: ${error.message}`);
+    }
+    if (failures.length > 0) {
+      throw new Error(`คืนค่า fixture U17 (local) ไม่ครบ: ${failures.join(" | ")}`);
+    }
+  });
+
+  /** ลูกค้าส่งออเดอร์ผ่าน RPC v2 ตัวเดียวกับที่หน้า QR ของลูกค้าเรียก (atomic) */
+  async function submitCustomerOrder(): Promise<{ orderId: string; itemId: string }> {
+    if (createdOrderIds.length > 0) {
+      const staleIds = [...createdOrderIds];
+      createdOrderIds.length = 0;
+      await service.from("transactions").delete().in("order_id", staleIds);
+      await service.from("cash_ledger_entries").delete().in("order_id", staleIds);
+      const { error: sweepErr } = await service.from("orders").delete().in("id", staleIds);
+      if (sweepErr) throw new Error(`เก็บกวาดออเดอร์เทสก่อนหน้า (local) ไม่สำเร็จ: ${sweepErr.message}`);
+    }
+    const line = {
+      product_id: PRODUCT_1,
+      product_name: "กาแฟดำ",
+      variant_id: VARIANT_1,
+      variant_name: "เล็ก (S)",
+      modifiers: [{ option: { id: "55555555-0000-0000-0000-000000000001", name: "ไม่หวาน", priceAdjustment: 0 } }],
+      quantity: 1,
+      unit_price: 45,
+      total_price: 45,
+      note: `U17-integrated-${runId}`,
+    };
+    const { data, error } = await service.rpc("create_qr_order_with_items_v2", {
+      p_organization_id: orgId,
+      p_store_id: SEED_STORE_ID,
+      p_table_id: TABLE_1,
+      p_order_number: `U17-${runId}-${createdOrderIds.length + 1}`,
+      p_operation_key: createOperationKey(),
+      p_request_hash: computeRequestHash({ storeId: SEED_STORE_ID, tableId: TABLE_1, subtotal: 45, items: [line] }),
+      p_subtotal: 45,
+      p_items: [line],
+    });
+    if (error) throw new Error(`submit QR order (local) ไม่สำเร็จ: ${error.message}`);
+    const outcome = data as { status: string; result?: { order_id: string } } | null;
+    if (!outcome || outcome.status !== "executed" || !outcome.result?.order_id) {
+      throw new Error(`submit QR order (local) คืนสถานะไม่คาดคิด: ${JSON.stringify(outcome)}`);
+    }
+    const orderId = outcome.result.order_id;
+    createdOrderIds.push(orderId);
+
+    const items = await service.from("order_items").select("id").eq("order_id", orderId).limit(1);
+    if (items.error || !items.data?.[0]) {
+      throw new Error(`อ่าน order_items ของออเดอร์ที่เพิ่งสร้างไม่สำเร็จ: ${items.error?.message ?? "ไม่พบแถว"}`);
+    }
+    return { orderId, itemId: items.data[0].id };
+  }
+
+  /** เก็บ console error/pageerror ของหน้าไว้ตรวจตอนจบเทส */
+  function collectConsoleErrors(page: Page): string[] {
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+    return errors;
+  }
+
+  test("integrated: ลูกค้า QR to ครัว to บิล to ชำระ to งานพิมพ์ใบเดียว (console ไม่มี error)", async ({ page }) => {
+    const consoleErrors = collectConsoleErrors(page);
+    const seeded = await submitCustomerOrder();
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    // ครัว: เห็นรายการที่ลูกค้าส่ง แล้วเดินสถานะจนพร้อมเสิร์ฟ
+    await page.getByRole("tab", { name: "ครัว" }).click();
+    const card = page.locator(`[data-kitchen-item="${seeded.itemId}"]`);
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute("data-kitchen-state", "new");
+    await card.getByRole("button", { name: "รับรายการ" }).click();
+    await expect(card).toHaveAttribute("data-kitchen-state", "preparing");
+    await card.getByRole("button", { name: "พร้อมเสิร์ฟ" }).click();
+    await expect(card).toHaveAttribute("data-kitchen-state", "ready");
+
+    // บิล: เลือกโต๊ะ 1 แล้วต้องเห็นบิลของออเดอร์นี้
+    await page.getByRole("tab", { name: "โต๊ะ" }).click();
+    const tablesPanel = page.getByRole("tabpanel", { name: "โต๊ะ" });
+    await expect(tablesPanel.getByText("โต๊ะ 1")).toBeVisible();
+    await tablesPanel.getByRole("button", { name: "เลือกโต๊ะ" }).first().click();
+    await page.getByRole("tab", { name: "บิล" }).click();
+    const billPanel = page.getByRole("tabpanel", { name: "บิล" });
+    await expect(billPanel.getByTestId("unified-bill-view")).toBeVisible();
+    await expect(billPanel.getByText("กาแฟดำ (เล็ก (S))")).toBeVisible();
+
+    // ชำระผ่าน UI ครั้งเดียว
+    await billPanel.getByRole("checkbox").check();
+    await billPanel.getByTestId("settle-order").first().click();
+    await expect(billPanel.getByTestId("settle-result")).toBeVisible({ timeout: 20_000 });
+
+    // ตรวจจาก server: ออเดอร์ปิด + งานพิมพ์ใบเสร็จใบเดียว
+    const order = await service.from("orders").select("status").eq("id", seeded.orderId).single();
+    expect(order.error, order.error?.message).toBeNull();
+    expect(order.data?.status).toBe("paid");
+
+    // reference ของ settlement มาจาก UI (data-receipt-reference) — ตรงกับที่ผู้ใช้เพิ่งทำจริง
+    const settleResult = billPanel.getByTestId("settle-result");
+    await expect(settleResult).toHaveAttribute("data-replayed", "false");
+    const reference = await settleResult.getAttribute("data-receipt-reference");
+    expect(reference, "settlement ต้องคืน reference ของใบเสร็จ").toBeTruthy();
+    settledReferences.push(reference!);
+
+    const jobs = await service
+      .from("print_jobs")
+      .select("id, source_key")
+      .eq("store_id", SEED_STORE_ID)
+      .like("source_key", `${reference!}%`);
+    expect(jobs.error, jobs.error?.message).toBeNull();
+    expect(jobs.data ?? []).toHaveLength(1);
+
+    expect(consoleErrors, `console error ที่เจอ: ${consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("integrated: ใช้แป้นพิมพ์อย่างเดียวเปลี่ยนแท็บได้ และ 390/768/1440 ไม่มี overflow", async ({ page }) => {
+    const consoleErrors = collectConsoleErrors(page);
+    await loginOwner(page);
+    await page.goto("/pos");
+
+    // keyboard-only: โฟกัสแท็บแรกแล้วเดินด้วยลูกศร/Home/End (ARIA tablist pattern)
+    const sellTab = page.getByRole("tab", { name: "ขาย" });
+    await sellTab.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "โต๊ะ" })).toBeFocused();
+    await expect(page.getByRole("tab", { name: "โต๊ะ" })).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("End");
+    await expect(page.getByRole("tab", { name: "บิล" })).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(sellTab).toBeFocused();
+    await expect(sellTab).toHaveAttribute("aria-selected", "true");
+
+    // ปุ่มเสียงต้องเข้าถึงด้วยแป้นพิมพ์ได้ (มีชื่อ accessible และโฟกัสได้)
+    // ปุ่มเริ่มที่ disabled จนกว่าจะตรวจ capability ของเบราว์เซอร์เสร็จหลัง mount (กัน hydration mismatch)
+    const voiceButton = page.getByRole("button", { name: "สั่งงานด้วยเสียง" });
+    await expect(voiceButton).toBeEnabled();
+    await voiceButton.focus();
+    await expect(voiceButton).toBeFocused();
+
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/pos");
+      await expect(page.getByRole("tablist", { name: "ส่วนของ POS รวม" })).toBeVisible();
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, `ความกว้าง ${width}px ต้องไม่มี horizontal overflow`).toBeLessThanOrEqual(1);
+    }
+
+    expect(consoleErrors, `console error ที่เจอ: ${consoleErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("integrated: flag matrix — เสียงปิด = shell ปกติแต่ไม่มีปุ่มเสียง, unified ปิด = legacy ล้วน", async ({ page }) => {
+    // 1) unified เปิด + เสียงปิด
+    const { error: voiceOffErr } = await service
+      .from("stores")
+      .update({ voice_command_enabled: false, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (voiceOffErr) throw new Error(`ปิด flag เสียงชั่วคราวไม่สำเร็จ: ${voiceOffErr.message}`);
+
+    await loginOwner(page);
+    await page.goto("/pos");
+    await expect(page.getByRole("tablist", { name: "ส่วนของ POS รวม" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "สั่งงานด้วยเสียง" })).toHaveCount(0);
+    await page.getByRole("tab", { name: "ครัว" }).click();
+    await expect(page.getByRole("tab", { name: "ครัว" })).toHaveAttribute("aria-selected", "true");
+
+    // 2) unified ปิด = หน้าขายเดิมล้วน (ไม่มีทั้ง shell และเสียง)
+    await setUnifiedPosFlag(false);
+    await page.goto("/pos");
+    await expect(page.getByText("ขายหน้าร้าน · POS")).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "ส่วนของ POS รวม" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "สั่งงานด้วยเสียง" })).toHaveCount(0);
+
+    // คืนสถานะให้ describe นี้ (afterAll คืนค่าเดิมของทั้งไฟล์อีกชั้น)
+    await setUnifiedPosFlag(true);
+    const { error: voiceOnErr } = await service
+      .from("stores")
+      .update({ voice_command_enabled: true, updated_at: new Date().toISOString() })
+      .eq("id", SEED_STORE_ID);
+    if (voiceOnErr) throw new Error(`เปิด flag เสียงคืนไม่สำเร็จ: ${voiceOnErr.message}`);
+  });
+});
