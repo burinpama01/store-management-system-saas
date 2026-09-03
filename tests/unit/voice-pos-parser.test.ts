@@ -5,6 +5,8 @@ import {
   normalizeThaiTranscript,
   parseVoiceCommand,
   VOICE_MAX_QUANTITY,
+  matchesVoiceChoicePhrase,
+  normalizeVoiceChoicePhrase,
 } from "@/modules/voice-pos/parser";
 import { buildVoiceTelemetry, type VoiceIntentType } from "@/modules/voice-pos/types";
 
@@ -266,5 +268,63 @@ describe("parseVoiceCommand — คำศัพท์ร้าน U21", () => {
       expect(result.decision, phrase).toBe("block");
       expect(result.intent.type, phrase).toBe("unknown");
     }
+  });
+});
+
+describe("จับคู่คำพูดกับชื่อตัวเลือก (เปลี่ยนทับค่าเริ่มต้นด้วยเสียง)", () => {
+  it("พูดเปอร์เซ็นต์เป็นคำ → ตรงกับชื่อตัวเลือกที่เป็นสัญลักษณ์ %", () => {
+    // ค่าเริ่มต้นความหวานคือ 100% แคชเชียร์ต้องพูดทับเป็น 0% ได้
+    expect(matchesVoiceChoicePhrase("0%", "ศูนย์เปอร์เซ็นต์")).toBe(true);
+    expect(matchesVoiceChoicePhrase("0%", "0 เปอร์เซ็นต์")).toBe(true);
+    expect(matchesVoiceChoicePhrase("0%", "๐%")).toBe(true);
+    expect(matchesVoiceChoicePhrase("25%", "ยี่สิบห้าเปอร์เซ็นต์")).toBe(true);
+    expect(matchesVoiceChoicePhrase("100%", "หนึ่งร้อยเปอร์เซ็นต์")).toBe(true);
+    expect(matchesVoiceChoicePhrase("150%", "ร้อยห้าสิบเปอร์เซ็นต์")).toBe(true);
+  });
+
+  it("เลขไทยแบบประกอบคำต้องได้ค่าที่ถูก ไม่ใช่ต่อเลขกันดื้อ ๆ", () => {
+    // แทนที่ทีละคำจะได้ "205" จาก "ยี่สิบห้า" แล้วพาไปเลือกตัวเลือกผิดเงียบ ๆ
+    expect(normalizeVoiceChoicePhrase("ยี่สิบห้า")).toBe("25");
+    expect(normalizeVoiceChoicePhrase("สิบห้า")).toBe("15");
+    expect(normalizeVoiceChoicePhrase("เจ็ดสิบห้า")).toBe("75");
+    expect(normalizeVoiceChoicePhrase("หนึ่งร้อย")).toBe("100");
+    expect(normalizeVoiceChoicePhrase("ร้อยห้าสิบ")).toBe("150");
+    expect(normalizeVoiceChoicePhrase("ศูนย์")).toBe("0");
+  });
+
+  it("พูดชื่อกลุ่มนำหน้าค่าได้ — \"เลือกหวาน 0%\" ต้องเลือก 0% ไม่ใช่ไม่ตรงเลย", () => {
+    expect(matchesVoiceChoicePhrase("0%", "หวานศูนย์เปอร์เซ็นต์")).toBe(true);
+    expect(matchesVoiceChoicePhrase("0%", "ความหวาน 0%")).toBe(true);
+    expect(matchesVoiceChoicePhrase("25%", "หวานยี่สิบห้าเปอร์เซ็นต์")).toBe(true);
+    // ตัวเลขติดกันไม่นับเป็นชื่อกลุ่มนำหน้า
+    expect(matchesVoiceChoicePhrase("50%", "150%")).toBe(false);
+  });
+
+  it("ตัวเลือกที่เป็นตัวเลขล้วนต้องตรงเป๊ะ — 0% ห้ามไปตรงกับ 100%", () => {
+    // "100%".includes("0%") เป็นจริง ถ้าปล่อยให้จับคู่บางส่วน พูดว่าไม่หวานจะได้หวานสุด
+    expect(matchesVoiceChoicePhrase("100%", "0%")).toBe(false);
+    expect(matchesVoiceChoicePhrase("150%", "50%")).toBe(false);
+    expect(matchesVoiceChoicePhrase("25%", "5%")).toBe(false);
+  });
+
+  it("ไม่จับคู่ข้ามค่า — 0% ต้องไม่ตรงกับ 100%", () => {
+    expect(matchesVoiceChoicePhrase("100%", "ศูนย์เปอร์เซ็นต์")).toBe(false);
+    expect(matchesVoiceChoicePhrase("0%", "ห้าสิบเปอร์เซ็นต์")).toBe(false);
+  });
+
+  it("ชื่อที่มีวงเล็บ/ช่องว่างกำกับยังจับคู่ได้", () => {
+    expect(matchesVoiceChoicePhrase("คั่วเข้ม (+0)", "คั่วเข้ม")).toBe(true);
+    expect(matchesVoiceChoicePhrase("เย็น +5", "เย็น")).toBe(true);
+  });
+
+  it("คำว่างไม่จับคู่กับอะไรเลย (กันเลือกมั่วเมื่อฟังไม่ได้ความ)", () => {
+    expect(matchesVoiceChoicePhrase("ร้อน", "")).toBe(false);
+    expect(matchesVoiceChoicePhrase("ร้อน", "   ")).toBe(false);
+  });
+
+  it("normalize แล้วนำไป normalize ซ้ำได้ผลเดิม (ผู้เรียกส่งค่าที่แปลงแล้วมาได้)", () => {
+    const once = normalizeVoiceChoicePhrase("ศูนย์เปอร์เซ็นต์");
+    expect(once).toBe("0%");
+    expect(normalizeVoiceChoicePhrase(once)).toBe(once);
   });
 });

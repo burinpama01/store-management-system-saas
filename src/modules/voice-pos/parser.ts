@@ -395,3 +395,133 @@ export function parseVoiceCommand(
 
   return result(UNKNOWN, "C", "block", 0, "no_match");
 }
+
+/** หลักหน่วยของเลขไทย (ใช้ประกอบเลขหลักสิบ/ร้อย) */
+const THAI_UNIT_DIGITS: ReadonlyArray<readonly [string, number]> = [
+  ["ศูนย์", 0],
+  ["เอ็ด", 1],
+  ["หนึ่ง", 1],
+  ["สอง", 2],
+  ["ยี่", 2],
+  ["สาม", 3],
+  ["สี่", 4],
+  ["ห้า", 5],
+  ["หก", 6],
+  ["เจ็ด", 7],
+  ["แปด", 8],
+  ["เก้า", 9],
+];
+
+function readThaiUnit(text: string): { value: number; rest: string } | null {
+  for (const [word, value] of THAI_UNIT_DIGITS) {
+    if (text.startsWith(word)) return { value, rest: text.slice(word.length) };
+  }
+  return null;
+}
+
+/**
+ * อ่านเลขไทยแบบประกอบคำ 0–999 จาก "ต้นข้อความ" คืนค่าและส่วนที่เหลือ
+ *
+ * ต้องประกอบจริง ไม่ใช่แทนที่คำทีละคำ — วิธีแทนที่ทีละคำทำให้ "ยี่สิบห้า" กลายเป็น
+ * "205" (แทน "ยี่สิบ"→20 แล้ว "ห้า"→5 ต่อท้าย) ซึ่งพาไปเลือกตัวเลือกผิดเงียบ ๆ
+ */
+function readThaiNumber(text: string): { value: number; rest: string } | null {
+  let rest = text;
+  let total = 0;
+  let matched = false;
+
+  const hundredIndex = rest.indexOf("ร้อย");
+  if (hundredIndex >= 0 && hundredIndex <= 6) {
+    const head = rest.slice(0, hundredIndex);
+    const digit = head ? readThaiUnit(head) : null;
+    // "ร้อย" ลอย ๆ = 100 ("หนึ่งร้อย" ก็ได้เหมือนกัน)
+    if (!head || (digit && digit.rest === "")) {
+      total += (digit?.value ?? 1) * 100;
+      rest = rest.slice(hundredIndex + "ร้อย".length);
+      matched = true;
+    }
+  }
+
+  const tenIndex = rest.indexOf("สิบ");
+  if (tenIndex >= 0 && tenIndex <= 4) {
+    const head = rest.slice(0, tenIndex);
+    const digit = head ? readThaiUnit(head) : null;
+    if (!head || (digit && digit.rest === "")) {
+      total += (digit?.value ?? 1) * 10;
+      rest = rest.slice(tenIndex + "สิบ".length);
+      matched = true;
+    }
+  }
+
+  const unit = readThaiUnit(rest);
+  if (unit) {
+    total += unit.value;
+    rest = unit.rest;
+    matched = true;
+  }
+
+  return matched ? { value: total, rest } : null;
+}
+
+/** แปลงคำจำนวนไทยที่ประกอบกันเป็นตัวเลขทั้งข้อความ (ใช้กับวลีสั้น ๆ ของตัวเลือกเท่านั้น) */
+function convertThaiNumbersInPhrase(text: string): string {
+  let out = "";
+  let rest = text;
+  while (rest.length > 0) {
+    const read = readThaiNumber(rest);
+    if (read && read.rest !== rest) {
+      out += String(read.value);
+      rest = read.rest;
+      continue;
+    }
+    out += rest[0];
+    rest = rest.slice(1);
+  }
+  return out;
+}
+
+/**
+ * ทำให้ชื่อตัวเลือกกับคำที่พูด "เทียบกันได้" — ใช้ทั้งสองฝั่งของการจับคู่
+ *
+ * เจตนา: แคชเชียร์ต้องเปลี่ยนทับค่าเริ่มต้นด้วยเสียงได้ เช่น ความหวานตั้งไว้ 100%
+ * แล้วพูด "เลือกศูนย์เปอร์เซ็นต์" ต้องได้ 0% — เดิมเทียบสตริงตรง ๆ จึงไม่ตรงเลย
+ * เพราะเสียงให้คำว่า "เปอร์เซ็นต์" ส่วนชื่อตัวเลือกเป็นสัญลักษณ์ "%"
+ *
+ * แปลง: เลขไทย → อารบิก, คำจำนวนไทยแบบประกอบ → ตัวเลข, คำว่าเปอร์เซ็นต์ทุกแบบ → "%"
+ * แล้วตัดช่องว่าง/วงเล็บทิ้ง (ตัวเลือกที่มีวงเล็บกำกับราคาไม่ควรทำให้จับคู่พลาด)
+ */
+export function normalizeVoiceChoicePhrase(value: string): string {
+  let text = value.trim().toLowerCase();
+  text = text.replace(/[๐-๙]/g, (ch) => String(THAI_DIGITS.indexOf(ch)));
+  text = text.replace(/เปอร์เซ็นต์|เปอร์เซ็น|เปอร์เซนต์|เปอร์เซน|percent|pct/g, "%");
+  text = convertThaiNumbersInPhrase(text);
+  return text.replace(/[()\s]/g, "");
+}
+
+/** วลีที่เป็น "ตัวเลขล้วน" (มี % ต่อท้ายได้) — ตัวเลือกพวกนี้ห้ามจับคู่แบบบางส่วน */
+const NUMERIC_CHOICE_RE = /^\d+%?$/;
+
+/**
+ * ชื่อตัวเลือกนี้ตรงกับคำที่พูดไหม (เทียบหลัง normalize ทั้งสองฝั่ง)
+ *
+ * ยอมให้ตรงแบบขึ้นต้น/มีอยู่ในชื่อ เพราะเสียงมักได้คำสั้นกว่าชื่อเต็ม เช่น พูด
+ * "คั่วเข้ม" กับตัวเลือกชื่อ "คั่วเข้ม (+0)" — ยกเว้นตัวเลือกที่เป็นตัวเลขล้วน
+ * ซึ่งต้องตรงเป๊ะ ไม่งั้น "100%" จะถูกจับคู่กับคำพูด "0%" เพราะเป็นสตริงย่อย
+ * (พูดว่าไม่หวานแล้วได้หวานสุด = ผิดแบบที่ลูกค้าเห็นตอนได้แก้วแล้วเท่านั้น)
+ */
+export function matchesVoiceChoicePhrase(optionName: string, spokenTarget: string): boolean {
+  const name = normalizeVoiceChoicePhrase(optionName);
+  const target = normalizeVoiceChoicePhrase(spokenTarget);
+  if (!target) return false;
+  if (NUMERIC_CHOICE_RE.test(name) || NUMERIC_CHOICE_RE.test(target)) {
+    if (name === target) return true;
+    // แคชเชียร์มักพูดชื่อกลุ่มนำหน้าค่า เช่น "หวาน 0%" / "ความหวาน 25%" — รับได้เมื่อ
+    // ค่าที่ตามมาตรงเป๊ะและตัวอักษรก่อนหน้าไม่ใช่ตัวเลข (กัน "150%" ไปตรงกับ "50%")
+    if (NUMERIC_CHOICE_RE.test(name) && target.endsWith(name)) {
+      const before = target.slice(0, target.length - name.length);
+      return before.length > 0 && !/\d$/.test(before);
+    }
+    return false;
+  }
+  return name === target || name.startsWith(target) || name.includes(target);
+}

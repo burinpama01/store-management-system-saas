@@ -5,6 +5,9 @@ import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import { onPosCommand } from "@/modules/pos/section-bus";
+// การจับคู่คำพูดกับชื่อตัวเลือกอยู่ในโมดูล voice-pos (ทดสอบแยกได้ และ normalize
+// ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
+import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
 import {
@@ -498,15 +501,6 @@ function ModifierOptionButton({
 // ─── Product Picker Modal ─────────────────────────────────────────
 
 /** U21 — จับคู่ชื่อตัวเลือกจากคำพูด: ตัดช่องว่าง/วงเล็บ/ตัวพิมพ์ ไม่มี fuzzy ที่เดาผิดได้ */
-function normalizeVoiceChoice(value: string): string {
-  return value.trim().toLowerCase().replace(/[()\s]/g, "");
-}
-
-function matchesVoiceChoice(optionName: string, target: string): boolean {
-  const name = normalizeVoiceChoice(optionName);
-  return name === target || name.startsWith(target) || name.includes(target);
-}
-
 function ProductPickerModal({
   picker,
   onAdd,
@@ -2852,10 +2846,10 @@ export function PosTerminal({
       selectPickerChoice: (phrase: string) => {
         const current = voicePickerRef.current;
         if (!current) return null;
-        const target = normalizeVoiceChoice(phrase);
+        const target = normalizeVoiceChoicePhrase(phrase);
         if (!target) return null;
 
-        const variant = current.product.variants.find((item) => matchesVoiceChoice(item.name, target));
+        const variant = current.product.variants.find((item) => matchesVoiceChoicePhrase(item.name, target));
         if (variant) {
           const nextPicker = { ...current, selectedVariant: variant };
           // อัปเดต ref ทันที — ผู้เรียกอ่านสถานะต่อในจังหวะเดียวกัน (setPicker ยังไม่ทัน re-render)
@@ -2864,7 +2858,7 @@ export function PosTerminal({
           return variant.name;
         }
         for (const group of current.product.modifierGroups) {
-          const option = group.options.find((item) => matchesVoiceChoice(item.name, target));
+          const option = group.options.find((item) => matchesVoiceChoicePhrase(item.name, target));
           if (!option) continue;
           const next =
             group.selectionType === "single"
