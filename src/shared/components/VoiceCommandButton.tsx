@@ -88,7 +88,16 @@ export interface VoiceCommandButtonProps {
    * หลังพูดจบ (listenAgain) — ใช้ตอนระบบเพิ่งบอกว่า "ยังต้องเลือก …" ซึ่งขั้นถัดไป
    * คือคำสั่งเสียงอีกคำเสมอ การให้แคชเชียร์ต้องกดปุ่มซ้ำทั้งที่มือถือถาดอยู่คือแรงเสียดทาน
    */
-  readonly onResult?: (result: VoiceParseResult) => string | VoiceResultResponse | void;
+  readonly onResult?: (
+    result: VoiceParseResult,
+    /**
+     * คำพูดดิบของรอบนี้ — ส่งต่อให้ผู้เรียกใช้ "ภายในรอบเดียว" เท่านั้น
+     * (ตัวเดียวกับที่ parser รับอยู่แล้ว) ห้ามเก็บลง state/ref/telemetry
+     * ใช้ตอนที่บริบทบนหน้าจอบอกความหมายได้ เช่น หน้าต่างตัวเลือกเปิดอยู่แล้วผู้ใช้
+     * พูดแค่ชื่อตัวเลือกโดยไม่มีคำว่า "เลือก" นำหน้า
+     */
+    transcript: string,
+  ) => string | VoiceResultResponse | void;
   /** เหตุการณ์ที่บันทึกได้ (ไม่มี transcript) — U16 จะต่อปลายทางจริง */
   readonly onTelemetry?: (event: VoiceTelemetryEvent) => void;
   readonly locale?: string;
@@ -210,7 +219,7 @@ export function VoiceCommandButton({
         // ล้าง transcript ทันทีหลัง parse — ห้ามค้างใน state หรือ ref
         setInterim("");
         onTelemetry?.(buildVoiceTelemetry(result, locale));
-        const announcement = onResult?.(result);
+        const announcement = onResult?.(result, transcript);
         const response =
           typeof announcement === "string" || announcement === undefined || announcement === null
             ? { message: typeof announcement === "string" ? announcement : "" }

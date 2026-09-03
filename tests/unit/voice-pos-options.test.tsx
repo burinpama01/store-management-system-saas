@@ -231,6 +231,27 @@ describe("U21 — สินค้าที่ต้องเลือกตั�
     expect(statusText()).not.toContain("ยังต้องเลือก");
   });
 
+  it('พูดชื่อตัวเลือกลอย ๆ ตอนหน้าต่างเปิดอยู่ (ไม่มีคำว่า "เลือก") ก็ต้องเลือกให้', () => {
+    // หลังระบบเปิดไมค์ต่อเพื่อรอตัวเลือก คนจริงมักพูดแค่ค่าที่ต้องการ
+    const { speak } = renderVoicePos();
+
+    speak("เพิ่มชาเย็น");
+    speak("หวานน้อย");
+
+    expect(screen.getByTestId("chosen")).toHaveTextContent("หวานน้อย");
+    expect(statusText()).not.toContain("ยังไม่รองรับ");
+    expect(statusText()).toContain("ยืนยัน");
+  });
+
+  it("พูดลอย ๆ ตอนไม่มีหน้าต่างตัวเลือกเปิด ยังต้องตอบว่าไม่รองรับตามเดิม", () => {
+    const { speak } = renderVoicePos();
+
+    speak("หวานน้อย");
+
+    expect(screen.getByTestId("picker")).toHaveTextContent("ปิด");
+    expect(statusText()).toContain("ยังไม่รองรับ");
+  });
+
   it('เลือกตัวเลือกด้วยเสียง แล้ว "ยืนยัน" เพื่อเพิ่มลงตะกร้า', () => {
     const { speak } = renderVoicePos();
 

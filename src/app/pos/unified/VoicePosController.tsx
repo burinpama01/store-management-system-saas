@@ -28,7 +28,7 @@ import {
 import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
-import { useVoiceCartApi } from "./voice-cart-bridge";
+import { useVoiceCartApi, type VoiceCartApi } from "./voice-cart-bridge";
 
 const FOCUS_UNAVAILABLE: Record<VoicePosFocusAction, string> = {
   search: "หน้านี้ยังไม่มีช่องค้นหา — เลือกจากแท็บบนหน้าจอได้",
@@ -51,6 +51,24 @@ export interface VoicePosControllerProps {
   readonly className?: string;
   /** ฉีดนาฬิกาสำหรับทดสอบ Undo */
   readonly now?: () => number;
+}
+
+/**
+ * ข้อความหลังเลือกตัวเลือกได้หนึ่งค่า — ใช้ร่วมกันทั้งเส้นทาง "เลือก…" และเส้นทาง
+ * พูดชื่อตัวเลือกลอย ๆ ยังอยู่กลางลำดับ "เลือก → ยืนยัน" จึงเปิดไมค์ต่อทุกครั้ง
+ */
+function describeChoice(api: VoiceCartApi, chosen: string): VoiceResultResponse {
+  const after = api.getPicker?.() ?? null;
+  const remaining = after
+    ? [...(after.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...after.missingRequiredGroups]
+    : [];
+  return {
+    message:
+      remaining.length > 0
+        ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
+        : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`,
+    listenAgain: true,
+  };
 }
 
 export function VoicePosController({
@@ -99,8 +117,20 @@ export function VoicePosController({
   }, [clock, getCartApi, undoToken]);
 
   const handleResult = useCallback(
-    (result: VoiceParseResult): string | VoiceResultResponse => {
+    (result: VoiceParseResult, transcript = ""): string | VoiceResultResponse => {
       setUndoNotice("");
+
+      // ระบบเพิ่งเปิดไมค์ต่อเพื่อรอ "ตัวเลือก" — คนจริงมักพูดแค่ค่าที่ต้องการ
+      // ("คั่วเข้ม" / "หวาน 0%") ไม่ใส่คำว่า "เลือก" นำหน้า parser จึงตอบว่าไม่รองรับ
+      // ทั้งที่บริบทบนหน้าจอบอกความหมายชัด: หน้าต่างตัวเลือกเปิดค้างอยู่
+      if (result.intent.type === "unknown" && result.resultCode === "no_match" && transcript.trim()) {
+        const api = getCartApi();
+        const picker = api?.getPicker?.() ?? null;
+        if (api && picker) {
+          const chosen = api.selectPickerChoice?.(transcript) ?? null;
+          if (chosen) return describeChoice(api, chosen);
+        }
+      }
 
       // ── U21 — dialog ตัวเลือกของสินค้าเปิดอยู่: เลือก/ยืนยันด้วยเสียง ──────────
       if (result.intent.type === "pos.choose_option") {
@@ -119,18 +149,7 @@ export function VoicePosController({
             listenAgain: true,
           };
         }
-        const after = api.getPicker?.() ?? null;
-        const remaining = after
-          ? [...(after.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...after.missingRequiredGroups]
-          : [];
-        // ยังอยู่กลางลำดับ "เลือก → ยืนยัน" จึงเปิดไมค์ต่อจนกว่าจะจบรายการ
-        return {
-          message:
-            remaining.length > 0
-              ? `เลือก ${chosen} แล้ว — ยังต้องเลือก ${remaining.join(" และ ")}`
-              : `เลือก ${chosen} แล้ว — พูด "ยืนยัน" เพื่อเพิ่มลงตะกร้า`,
-          listenAgain: true,
-        };
+        return describeChoice(api, chosen);
       }
 
       if (result.intent.type === "pos.confirm_selection") {
