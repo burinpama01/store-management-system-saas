@@ -126,7 +126,7 @@ export function VoiceAliasManager({
           </label>
           <input type="hidden" name="intentType" value="navigate" />
           <div className="flex items-end">
-            <Button type="submit" disabled={isPending}>
+            <Button variant="primary" type="submit" disabled={isPending} className="min-h-11 w-full sm:w-auto">
               เพิ่มคำเรียก
             </Button>
           </div>
@@ -148,10 +148,20 @@ export function VoiceAliasManager({
               แล้วติ๊กเลือกเฉพาะคำที่ต้องการ (เมนูที่เพิ่มใหม่หรือมาจาก AI สแกน จะขึ้นที่นี่เองในครั้งถัดไป)
             </p>
           </div>
+          {/* ปุ่มบนหัวข้อสำหรับจอใหญ่ — ห่อด้วย wrapper เพราะ .btn-* เป็น CSS unlayered
+              ที่ชนะ utility "hidden" ถ้าใส่ที่ตัวปุ่มโดยตรง (เคยพลาดมาแล้ว) */}
           {suggestions.length > 0 ? (
-            <Button type="button" onClick={onSaveSuggestions} disabled={isPending || pickedCount === 0}>
-              บันทึกที่เลือก ({pickedCount})
-            </Button>
+            <div className="hidden md:block">
+              <Button
+                variant="primary"
+                type="button"
+                onClick={onSaveSuggestions}
+                disabled={isPending || pickedCount === 0}
+                className="min-h-11"
+              >
+                บันทึกที่เลือก ({pickedCount})
+              </Button>
+            </div>
           ) : null}
         </div>
 
@@ -160,41 +170,36 @@ export function VoiceAliasManager({
             ไม่มีคำเรียกใหม่ให้เสนอ — เมนูทั้งหมดพูดชื่อตรง ๆ ได้อยู่แล้ว หรือบันทึกคำเรียกไว้ครบแล้ว
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-125 text-left text-sm">
-              <thead>
-                <tr className="text-xs text-[var(--color-text-secondary)]">
-                  <th className="py-2">บันทึก</th>
-                  <th className="py-2">พนักงานพูดว่า</th>
-                  <th className="py-2">หมายถึงเมนู</th>
-                  <th className="py-2">ที่มา</th>
-                </tr>
-              </thead>
-              <tbody>
-                {suggestions.map((item) => (
-                  <tr key={suggestionKey(item)} className="border-t border-gray-100">
-                    <td className="py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`บันทึกคำเรียก ${item.aliasText}`}
-                        checked={isPicked(item)}
-                        onChange={(event) =>
-                          setPicked((current) => ({ ...current, [suggestionKey(item)]: event.target.checked }))
-                        }
-                        className="size-5"
-                      />
-                    </td>
-                    <td className="py-2">
-                      <input
-                        type="text"
-                        value={textOf(item)}
-                        maxLength={60}
-                        aria-label={`แก้ไขคำเรียกของ ${item.productName}`}
-                        onChange={(event) =>
-                          setEdited((current) => ({ ...current, [suggestionKey(item)]: event.target.value }))
-                        }
-                        className="min-h-10 w-full min-w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm font-semibold"
-                      />
+          <ul className="mt-3 space-y-2">
+            {suggestions.map((item) => (
+              <li
+                key={suggestionKey(item)}
+                className="rounded-lg border border-gray-200 p-3"
+              >
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    aria-label={`บันทึกคำเรียก ${item.aliasText}`}
+                    checked={isPicked(item)}
+                    onChange={(event) =>
+                      setPicked((current) => ({ ...current, [suggestionKey(item)]: event.target.checked }))
+                    }
+                    className="mt-2 size-5 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <input
+                      type="text"
+                      value={textOf(item)}
+                      maxLength={60}
+                      aria-label={`แก้ไขคำเรียกของ ${item.productName}`}
+                      onChange={(event) =>
+                        setEdited((current) => ({ ...current, [suggestionKey(item)]: event.target.value }))
+                      }
+                      className="min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold"
+                    />
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-text-secondary)]">
+                      <span>→ {item.productName}</span>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5">{item.reason}</span>
                       {textOf(item).trim() !== item.aliasText ? (
                         <button
                           type="button"
@@ -205,20 +210,33 @@ export function VoiceAliasManager({
                               return next;
                             })
                           }
-                          className="mt-1 text-[11px] text-[var(--color-text-secondary)] underline"
+                          className="underline"
                         >
                           คืนค่าที่ระบบเสนอ ({item.aliasText})
                         </button>
                       ) : null}
-                    </td>
-                    <td className="py-2">{item.productName}</td>
-                    <td className="py-2 text-xs text-[var(--color-text-secondary)]">{item.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
         )}
+
+        {/* ปุ่มบันทึกซ้ำท้ายรายการ — บนมือถือผู้ใช้ติ๊กจบล่างสุดแล้วกดได้เลย ไม่ต้องเลื่อนขึ้น */}
+        {suggestions.length > 0 ? (
+          <div className="sticky bottom-2 z-10 mt-3 flex justify-end md:hidden">
+            <Button
+              variant="primary"
+              type="button"
+              onClick={onSaveSuggestions}
+              disabled={isPending || pickedCount === 0}
+              className="min-h-11 shadow-lg"
+            >
+              บันทึกที่เลือก ({pickedCount})
+            </Button>
+          </div>
+        ) : null}
 
         {productAliases.length > 0 ? (
           <div className="mt-5">

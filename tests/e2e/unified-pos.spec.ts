@@ -2184,7 +2184,7 @@ test.describe("voice alias U22 (เสนอคำเรียกเมนูอ
     await page.goto("/settings/voice");
 
     // ระบบต้องเสนอคำไทยของเมนูชื่ออังกฤษให้เอง โดยยังไม่บันทึกจนกว่าจะกด
-    const suggestionRow = page.locator("tr", { hasText: "Espresso" }).first();
+    const suggestionRow = page.locator("li", { hasText: "Espresso" }).first();
     await expect(suggestionRow).toBeVisible();
     await expect(suggestionRow.getByRole("textbox")).toHaveValue("เอสเพรสโซ");
     await expect(suggestionRow.getByText("แปลจากชื่ออังกฤษ")).toBeVisible();
@@ -2197,6 +2197,8 @@ test.describe("voice alias U22 (เสนอคำเรียกเมนูอ
 
     // ติ๊กไว้ให้แล้วเป็นค่าเริ่มต้น และแก้ข้อความได้ก่อนบันทึก
     await expect(suggestionRow.getByRole("checkbox")).toBeChecked();
+    // ปุ่มบันทึกต้องมีตัวเดียวและกดได้จริงทั้งจอเล็ก/จอใหญ่ (เคยพลาด: ปุ่มไม่มีสไตล์/ซ้ำซ้อน)
+    await expect(page.getByRole("button", { name: /บันทึกที่เลือก/ })).toHaveCount(1);
     const aliasInput = suggestionRow.getByRole("textbox");
     await expect(aliasInput).toHaveValue("เอสเพรสโซ");
     await aliasInput.fill("เอสเพรสโซ่");
@@ -2227,6 +2229,6 @@ test.describe("voice alias U22 (เสนอคำเรียกเมนูอ
     // บันทึกแล้วต้องไม่ถูกเสนอซ้ำ และย้ายไปอยู่รายการ "บันทึกไว้แล้ว"
     await page.reload();
     await expect(page.getByText(/คำเรียกเมนูที่บันทึกไว้แล้ว/)).toBeVisible();
-    await expect(page.locator("tr", { hasText: "Espresso" })).toHaveCount(0);
+    await expect(page.locator("li", { hasText: "แปลจากชื่ออังกฤษ" })).toHaveCount(0);
   });
 });
