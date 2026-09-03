@@ -91,6 +91,24 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
+-- Receipt settings (ร้านจริงมีแถวนี้เสมอ — สร้างตอนสมัคร/ตั้งค่าใบเสร็จ)
+-- U17: หลัง `supabase db reset` เทส printing/e2e ต้องมีแถวนี้อยู่ก่อน ไม่งั้น fixture
+-- จะล้มทั้งชุด (เทสตั้งใจไม่ upsert เพื่อไม่ทับค่าจริงของร้าน)
+-- ============================================================
+INSERT INTO receipt_settings (id, organization_id, store_id, store_name, address, phone, paper_width, print_copies)
+VALUES (
+  'cccccccc-1111-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'cccccccc-0000-0000-0000-000000000001',
+  'Main Branch',
+  '123 Demo Street, Bangkok',
+  '0812345678',
+  '80mm',
+  1
+)
+ON CONFLICT (store_id) DO NOTHING;
+
+-- ============================================================
 -- Membership (owner)
 -- Note: replace user_id with the actual auth UID after creating the test user
 -- ============================================================

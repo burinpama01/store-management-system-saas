@@ -2570,7 +2570,9 @@ export function PosTerminal({
   // U15 — ลงทะเบียนตะกร้าให้ปุ่มเสียงของ shell ใช้ (ไม่มี provider = no-op ในเส้นทาง legacy)
   // เสียงอ่าน snapshot ล่าสุดผ่าน ref และเขียนผ่าน commitCart เดิมเท่านั้น
   const voiceCartSnapshotRef = useRef({ cart, products, locked: cartLocked });
-  voiceCartSnapshotRef.current = { cart, products, locked: cartLocked };
+  useEffect(() => {
+    voiceCartSnapshotRef.current = { cart, products, locked: cartLocked };
+  }, [cart, products, cartLocked]);
   const voiceCartApi = useMemo<VoiceCartApi>(
     () => ({
       getSnapshot: () => voiceCartSnapshotRef.current,

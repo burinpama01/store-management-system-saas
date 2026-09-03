@@ -8,7 +8,7 @@
 //   - transcript อยู่ใน state ชั่วคราวเท่านั้น และถูกล้างทันทีหลัง parse / timeout / unmount
 //   - ห้าม console.log / ส่ง transcript ออกนอกคอมโพเนนต์ (ผู้เรียกได้เฉพาะ intent + result code)
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import {
   createBrowserSpeechAdapter,
@@ -89,11 +89,13 @@ export function VoiceCommandButton({
   );
   // U17 — ห้ามตัดสิน "รองรับไหม" ตอน render แรก: server ไม่มี window เลยได้ false เสมอ
   // ส่วน client ได้ true → ข้อความไม่ตรงกัน = hydration mismatch (React #418)
-  // จึงเริ่มที่ null (ยังไม่รู้ = ปุ่มปิดไว้ก่อน) แล้วเช็ค capability จริงหลัง mount
-  const [supported, setSupported] = useState<boolean | null>(null);
-  useEffect(() => {
-    setSupported(speech.isSupported());
-  }, [speech]);
+  // useSyncExternalStore ให้ snapshot ฝั่ง server เป็น null (ยังไม่รู้ = ปุ่มปิดไว้ก่อน)
+  // แล้วสลับเป็นผลตรวจจริงของเบราว์เซอร์หลัง hydrate โดยไม่ต้อง setState ใน effect
+  const supported = useSyncExternalStore<boolean | null>(
+    useCallback(() => () => {}, []),
+    useCallback(() => speech.isSupported(), [speech]),
+    useCallback(() => null, []),
+  );
 
   const [state, setState] = useState<VoiceRecognitionState>("idle");
   // transcript ชั่วคราวสำหรับแสดงผลระหว่างฟังเท่านั้น — ล้างทุกครั้งที่จบรอบ

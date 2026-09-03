@@ -3,7 +3,7 @@
 // ⚠️ ต้องมี header jsdom ทุกครั้ง — static-import @testing-library/* บน node env คือ hang จน timeout
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "../setup/react";
 import { addToCart, emptyCart } from "@/modules/pos/cart";
 import type { Cart } from "@/modules/pos/types";
@@ -82,7 +82,9 @@ function createFakeAdapter() {
 function FakeSellSurface({ locked = false }: { readonly locked?: boolean }) {
   const [cart, setCart] = useState<Cart>(() => emptyCart("store-1"));
   const snapshotRef = useRef({ cart, products: [LATTE] as readonly Product[], locked });
-  snapshotRef.current = { cart, products: [LATTE], locked };
+  useEffect(() => {
+    snapshotRef.current = { cart, products: [LATTE], locked };
+  }, [cart, locked]);
   const api = useMemo<VoiceCartApi>(
     () => ({
       getSnapshot: () => snapshotRef.current,
