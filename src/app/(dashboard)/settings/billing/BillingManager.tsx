@@ -17,6 +17,7 @@ import {
   type BillingDuration,
   type PaidTier,
 } from "@/modules/billing/pricing";
+import { describeSubscriptionDisplay, subscriptionStatusLabel } from "@/modules/billing/status-display";
 import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { ModalDialog, ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
@@ -50,16 +51,9 @@ interface PaymentQuoteView {
   discountLabel: string | null;
 }
 
-function daysLeft(iso: string): number {
-  const d = new Date(iso).getTime();
-  if (Number.isNaN(d)) return 0;
-  return Math.max(0, Math.ceil((d - Date.now()) / 86_400_000));
-}
-
 export function BillingManager({
   orgName,
   plan,
-  status,
   currentPeriodEnd,
   isActive,
   prices,
@@ -72,10 +66,11 @@ export function BillingManager({
   freeTrialAvailable,
   freeTrialEndsAt = null,
   enterpriseRequest = null,
+  promoTrial = false,
+  expires = true,
 }: {
   orgName: string;
   plan: BillingPlan;
-  status: string;
   currentPeriodEnd: string;
   isActive: boolean;
   prices: Record<PaidTier, Record<BillingDuration, number>>;
@@ -88,14 +83,16 @@ export function BillingManager({
   freeTrialAvailable: boolean;
   freeTrialEndsAt?: string | null;
   enterpriseRequest?: { status: "new" | "contacted" | "closed"; createdAt: string } | null;
+  /** true = สิทธิ์ชุดนี้มาจากโปรทดลองฟรี (subscriptions.promo_trial_code) */
+  promoTrial?: boolean;
+  /** ผลของ isExpiringState() ฝั่งเซิร์ฟเวอร์ — false = สัญญาไม่มีวันหมดอายุ */
+  expires?: boolean;
 }) {
-  const isEnterprise = plan === "enterprise";
-  // Enterprise มี 2 แบบ: สัญญา (ไม่มีวันหมด) กับสิทธิ์ทดลองฟรี 30 วัน (status='trialing')
-  // ผู้ที่กำลังทดลองต้องเลือกซื้อแพ็กเกจต่อได้ จึงไม่ถูกซ่อน UI เหมือนลูกค้าสัญญา
-  const isEnterpriseTrial = isEnterprise && status === "trialing";
-  const isEnterpriseContract = isEnterprise && !isEnterpriseTrial;
-  const enterpriseActive = isEnterpriseContract && isActive;
-  const isTrial = status === "trialing" && isActive;
+  // ตรรกะการแสดงสถานะอยู่ใน modules/billing/status-display.ts (ทดสอบแยกได้)
+  const display = describeSubscriptionDisplay({ plan, isActive, promoTrial, expires, currentPeriodEnd });
+  const isEnterpriseContract = display.kind === "enterprise_contract" || display.kind === "enterprise_inactive";
+  const enterpriseActive = display.kind === "enterprise_contract";
+  const isTrial = display.kind === "trial";
   const router = useRouter();
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
@@ -278,16 +275,8 @@ export function BillingManager({
           <h1 className="page-title">การเรียกเก็บเงิน & แพ็กเกจ</h1>
           <p className="page-kicker">{orgName} · ชำระผ่าน PromptPay ยืนยันอัตโนมัติด้วย slip2go</p>
         </div>
-        <span className={`badge ${enterpriseActive ? "badge-brand" : isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
-          {enterpriseActive
-            ? "Enterprise contract"
-            : isEnterpriseContract
-              ? "ติดต่อผู้ดูแลแพลตฟอร์ม"
-              : isTrial
-                ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน`
-                : isActive
-                  ? "ใช้งานอยู่"
-                  : "ยังไม่เปิดใช้งาน"}
+        <span className={`badge ${enterpriseActive || isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
+          {enterpriseActive ? "Enterprise contract" : subscriptionStatusLabel(display)}
         </span>
       </div>
 
@@ -303,7 +292,7 @@ export function BillingManager({
       )}
       {!isEnterpriseContract && isTrial && (
         <p className="rounded-[var(--radius-md)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] px-3 py-2 text-sm text-[var(--tenant-primary-strong)]">
-          คุณกำลังทดลองใช้ฟรี (สิทธิ์ระดับ Enterprise — ทุกฟีเจอร์) เหลืออีก {daysLeft(currentPeriodEnd)} วัน · เลือกแพ็กเกจด้านล่างเพื่อใช้งานต่อหลังหมดทดลอง
+          คุณกำลังทดลองใช้ฟรี (สิทธิ์ระดับ Enterprise — ทุกฟีเจอร์) เหลืออีก {display.daysLeft} วัน · เลือกแพ็กเกจด้านล่างเพื่อใช้งานต่อหลังหมดทดลอง
         </p>
       )}
       {!isEnterpriseContract && expired && !isActive && (
@@ -322,8 +311,8 @@ export function BillingManager({
         <h2 className="panel-title mb-3">แพ็กเกจปัจจุบัน</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <InfoItem label={isEnterpriseContract ? "สัญญา" : "แพ็กเกจ"} value={isEnterpriseContract ? "Enterprise contract" : isTrial ? `${PLAN_LABELS[plan]} (ทดลองใช้)` : PLAN_LABELS[plan]} />
-          <InfoItem label="สถานะ" value={enterpriseActive ? "ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ" : isEnterpriseContract ? "ต้องติดต่อผู้ดูแลแพลตฟอร์ม" : isTrial ? `ทดลองใช้ · เหลือ ${daysLeft(currentPeriodEnd)} วัน` : isActive ? "ใช้งานอยู่" : "หมดอายุ/ยังไม่ชำระ"} />
-          {!isEnterpriseContract && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
+          <InfoItem label="สถานะ" value={subscriptionStatusLabel(display)} />
+          {display.showExpiryDate && <InfoItem label="ใช้งานได้ถึง" value={formatDate(currentPeriodEnd)} />}
           {plan === "business" && currentBusiness && (
             <InfoItem label="ที่เลือกไว้" value={describeBusinessConfig(currentBusiness)} />
           )}

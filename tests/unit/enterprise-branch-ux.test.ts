@@ -146,9 +146,12 @@ describe("enterprise branch UX contract", () => {
     expect(repository).toContain("current_period_end: nextPeriodEnd");
     expect(guards).toContain("hasBillingAccess(state)");
     expect(billingPage).toContain("hasBillingAccess(billingState)");
-    expect(billingManager).toContain("const isEnterprise = plan === \"enterprise\"");
+    // ตรรกะย้ายไป modules/billing/status-display.ts แล้ว (บั๊กเดิมเกิดจากตัดสินในไฟล์นี้เอง)
+    expect(billingManager).toContain("describeSubscriptionDisplay");
     expect(billingManager).toContain("Enterprise contract");
-    expect(billingManager).toContain("ไม่มีกำหนดหมดอายุ");
+    expect(read("src/modules/billing/status-display.ts")).toContain("ไม่มีกำหนดหมดอายุ");
+    // ห้ามกลับไปตัดสิน "ทดลองใช้" จาก status อีก — เป็นต้นเหตุที่ป้ายสถานะแสดงสลับกัน
+    expect(billingManager).not.toContain('status === "trialing"');
     // สัญญา Enterprise ซ่อน UI ต่ออายุ ส่วนสิทธิ์ทดลองฟรี (trialing) ยังเลือกซื้อแพ็กเกจต่อได้
     expect(billingManager).toContain("!isEnterpriseContract &&");
     expect(tenantPage).toContain("formatSubscriptionEnd");
@@ -274,8 +277,8 @@ describe("enterprise branch UX contract", () => {
       React.createElement(BillingManager, {
         orgName: "Example",
         plan: "enterprise",
-        status: "canceled",
         currentPeriodEnd: "2099-12-31T23:59:59Z",
+        expires: false,
         isActive: false,
         prices: {
           starter: { "30d": 690, "1y": 6900 },
@@ -293,6 +296,112 @@ describe("enterprise branch UX contract", () => {
 
     expect(html).toContain("ติดต่อผู้ดูแลแพลตฟอร์ม");
     expect(html).not.toContain("ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ");
+  });
+
+  // บั๊กที่เจ้าของระบบเจอบนมือถือ 2026-09-03 — หน้าแพ็กเกจแสดงสลับกัน:
+  // org ที่ไม่มีวันหมดอายุขึ้นว่า "ทดลองใช้ เหลือ 0 วัน" ส่วน org ที่หมดจริงขึ้นว่า "ไม่มีกำหนดหมดอายุ"
+  // ต้นเหตุ: UI เดาจาก status === "trialing" ซึ่ง 8 แถวบน prod ค้างค่านี้จากแคมเปญเก่า
+  it("Enterprise สัญญาไม่มีวันหมดอายุต้องไม่ขึ้นว่าทดลองใช้ แม้ current_period_end จะเป็นอดีต", async () => {
+    vi.doMock("next/navigation", () => ({
+      useRouter: () => ({ refresh: vi.fn() }),
+      useSearchParams: () => new URLSearchParams(),
+    }));
+    const { BillingManager } = await import("@/app/(dashboard)/settings/billing/BillingManager");
+
+    const html = renderToStaticMarkup(
+      React.createElement(BillingManager, {
+        orgName: "Each Other",
+        plan: "enterprise",
+        // ข้อมูลจริงของ org นี้: หมดไปแล้วตามวันที่ แต่ไม่ใช่สิทธิ์แบบมีกำหนด
+        currentPeriodEnd: "2026-07-21T00:00:00Z",
+        promoTrial: false,
+        expires: false,
+        isActive: true,
+        prices: {
+          starter: { "30d": 690, "1y": 6900 },
+          standard: { "30d": 1290, "1y": 12900 },
+          premium: { "30d": 2290, "1y": 22900 },
+        },
+        businessPrices: BUSINESS_DEFAULT_PRICES,
+        canManage: true,
+        paymentConfigured: true,
+        recipientName: "StoreOS",
+        slipVerificationReady: true,
+        freeTrialAvailable: false,
+      }),
+    );
+
+    expect(html).toContain("ใช้งานอยู่ · ไม่มีกำหนดหมดอายุ");
+    expect(html).not.toContain("ทดลองใช้");
+    // สัญญาไม่มีกำหนด ต้องไม่โชว์แถววันหมดอายุให้สับสน
+    expect(html).not.toContain("ใช้งานได้ถึง");
+  });
+
+  it("Enterprise แบบมีกำหนดต้องโชว์วันหมดอายุจริง ไม่ใช่ 'ไม่มีกำหนดหมดอายุ'", async () => {
+    vi.doMock("next/navigation", () => ({
+      useRouter: () => ({ refresh: vi.fn() }),
+      useSearchParams: () => new URLSearchParams(),
+    }));
+    const { BillingManager } = await import("@/app/(dashboard)/settings/billing/BillingManager");
+
+    const html = renderToStaticMarkup(
+      React.createElement(BillingManager, {
+        orgName: "proud.cafe",
+        plan: "enterprise",
+        currentPeriodEnd: "2026-10-02T00:00:00Z",
+        promoTrial: false,
+        expires: true,
+        isActive: true,
+        prices: {
+          starter: { "30d": 690, "1y": 6900 },
+          standard: { "30d": 1290, "1y": 12900 },
+          premium: { "30d": 2290, "1y": 22900 },
+        },
+        businessPrices: BUSINESS_DEFAULT_PRICES,
+        canManage: true,
+        paymentConfigured: true,
+        recipientName: "StoreOS",
+        slipVerificationReady: true,
+        freeTrialAvailable: false,
+      }),
+    );
+
+    expect(html).toContain("ใช้งานได้ถึง");
+    expect(html).not.toContain("ไม่มีกำหนดหมดอายุ");
+    expect(html).not.toContain("ทดลองใช้");
+  });
+
+  it("โปรทดลองฟรีจริง (promo_trial_code) ต้องขึ้นว่าทดลองใช้", async () => {
+    vi.doMock("next/navigation", () => ({
+      useRouter: () => ({ refresh: vi.fn() }),
+      useSearchParams: () => new URLSearchParams(),
+    }));
+    const { BillingManager } = await import("@/app/(dashboard)/settings/billing/BillingManager");
+
+    const html = renderToStaticMarkup(
+      React.createElement(BillingManager, {
+        orgName: "SKY",
+        plan: "enterprise",
+        currentPeriodEnd: "2099-01-01T00:00:00Z",
+        promoTrial: true,
+        expires: true,
+        isActive: true,
+        prices: {
+          starter: { "30d": 690, "1y": 6900 },
+          standard: { "30d": 1290, "1y": 12900 },
+          premium: { "30d": 2290, "1y": 22900 },
+        },
+        businessPrices: BUSINESS_DEFAULT_PRICES,
+        canManage: true,
+        paymentConfigured: true,
+        recipientName: "StoreOS",
+        slipVerificationReady: true,
+        freeTrialAvailable: false,
+      }),
+    );
+
+    expect(html).toContain("ทดลองใช้");
+    expect(html).not.toContain("ไม่มีกำหนดหมดอายุ");
   });
 
   it("writes a fixed no-expiry billing period for Enterprise platform overrides", async () => {

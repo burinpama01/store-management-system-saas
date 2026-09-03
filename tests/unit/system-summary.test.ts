@@ -18,6 +18,9 @@ function tenant(overrides: Partial<TenantOverview>): TenantOverview {
     memberCount: 1,
     suspended: false,
     createdAt: "2026-01-01T00:00:00Z",
+    currentPeriodEnd: null,
+    promoTrial: false,
+    expires: false,
     ...overrides,
   };
 }
@@ -41,7 +44,7 @@ describe("summarizeTenants", () => {
   it("aggregates counts, plans, and risk states", () => {
     const summary = summarizeTenants([
       tenant({ plan: "premium", status: "active", storeCount: 3, memberCount: 10 }),
-      tenant({ plan: "starter", status: "trialing", storeCount: 1, memberCount: 2 }),
+      tenant({ plan: "starter", status: "trialing", promoTrial: true, expires: true, currentPeriodEnd: "2099-01-01T00:00:00Z", storeCount: 1, memberCount: 2 }),
       tenant({ plan: "standard", status: "past_due", storeCount: 2, memberCount: 5 }),
       tenant({ plan: "free", status: "unpaid", storeCount: 1, memberCount: 1 }),
     ]);
@@ -55,6 +58,31 @@ describe("summarizeTenants", () => {
     expect(summary.byPlan.free).toBe(1);
     expect(summary.trialingCount).toBe(1);
     expect(summary.pastDueCount).toBe(2); // past_due + unpaid
+  });
+
+  // บั๊กที่เจอบน prod 2026-09-03: 8 แถวค้าง status='trialing' จากแคมเปญเก่าทั้งที่ไม่ใช่โปรทดลอง
+  // ทำให้หน้าซูเปอร์แอดมินนับผิด และหน้าแพ็กเกจของร้านขึ้นว่า "ทดลองใช้ เหลือ 0 วัน"
+  it("ไม่นับ status='trialing' ที่ค้างจากข้อมูลเก่าว่าเป็นโปรทดลอง", () => {
+    const summary = summarizeTenants([
+      tenant({ plan: "premium", status: "trialing", promoTrial: false }),
+      tenant({ plan: "enterprise", status: "trialing", promoTrial: true, expires: true, currentPeriodEnd: "2099-01-01T00:00:00Z" }),
+    ]);
+    expect(summary.trialingCount).toBe(1);
+  });
+
+  it("นับร้านที่หมดอายุแล้วและที่ใกล้หมดใน 7 วัน", () => {
+    const now = Date.now();
+    const iso = (days: number) => new Date(now + days * 86_400_000).toISOString();
+    const summary = summarizeTenants([
+      tenant({ plan: "premium", expires: true, currentPeriodEnd: iso(-10) }),
+      tenant({ plan: "premium", expires: true, currentPeriodEnd: iso(-1) }),
+      tenant({ plan: "starter", expires: true, currentPeriodEnd: iso(3) }),
+      tenant({ plan: "starter", expires: true, currentPeriodEnd: iso(20) }),
+      // สัญญาไม่มีวันหมดอายุต้องไม่ถูกนับว่าหมดอายุ แม้ currentPeriodEnd จะเป็นอดีต
+      tenant({ plan: "enterprise", expires: false, currentPeriodEnd: null }),
+    ]);
+    expect(summary.expiredCount).toBe(2);
+    expect(summary.expiringSoonCount).toBe(1);
   });
 });
 

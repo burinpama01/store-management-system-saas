@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
-import type { BillingPlan, BillingStatus } from "@/modules/billing/types";
+import { isExpiringState, type BillingPlan, type BillingStatus } from "@/modules/billing/types";
 
 const ENTERPRISE_PERIOD_END = "2099-12-31T23:59:59Z";
 
@@ -15,6 +15,12 @@ export interface TenantOverview {
   memberCount: number;
   suspended: boolean;
   createdAt: string;
+  /** วันหมดอายุจริง — null เมื่อเป็นสัญญาแบบไม่มีกำหนด */
+  currentPeriodEnd: string | null;
+  /** true เฉพาะสิทธิ์ที่มาจากโปรทดลองฟรี (promo_trial_code) ไม่ใช่ status='trialing' */
+  promoTrial: boolean;
+  /** false = สัญญาไม่มีวันหมดอายุ (ผลของ isExpiringState ฝั่งเซิร์ฟเวอร์) */
+  expires: boolean;
 }
 
 export interface PlatformSummary {
@@ -24,6 +30,10 @@ export interface PlatformSummary {
   byPlan: Record<BillingPlan, number>;
   trialingCount: number;
   pastDueCount: number;
+  /** หมดอายุไปแล้วแต่ยังไม่มีใครแจ้ง — ตัวเลขที่ต้องเห็นทุกวัน */
+  expiredCount: number;
+  /** จะหมดอายุภายใน 7 วัน */
+  expiringSoonCount: number;
 }
 
 /**
@@ -35,14 +45,37 @@ export async function listTenantOverview(): Promise<TenantOverview[]> {
 
   const [orgsRes, subsRes, storesRes, membersRes] = await Promise.all([
     supabase.from("organizations").select("id, name, slug, owner_id, suspended_at, created_at").order("created_at", { ascending: false }),
-    supabase.from("subscriptions").select("organization_id, plan, status"),
+    supabase
+      .from("subscriptions")
+      .select("organization_id, plan, status, current_period_end, promo_trial_code, enterprise_limited"),
     supabase.from("stores").select("organization_id, is_active"),
     supabase.from("memberships").select("organization_id, joined_at"),
   ]);
 
-  const subsByOrg = new Map<string, { plan: BillingPlan; status: BillingStatus }>();
+  const subsByOrg = new Map<
+    string,
+    { plan: BillingPlan; status: BillingStatus; currentPeriodEnd: string; promoTrial: boolean; expires: boolean }
+  >();
   for (const s of subsRes.data ?? []) {
-    subsByOrg.set(s.organization_id, { plan: s.plan as BillingPlan, status: s.status as BillingStatus });
+    const row = s as Record<string, unknown>;
+    const plan = s.plan as BillingPlan;
+    const promoTrial = Boolean(row.promo_trial_code);
+    subsByOrg.set(s.organization_id, {
+      plan,
+      status: s.status as BillingStatus,
+      currentPeriodEnd: s.current_period_end,
+      promoTrial,
+      // ใช้ตัวตัดสินเดียวกับที่ด่านสิทธิ์ใช้จริง จะได้ไม่ขัดกันระหว่างหน้าจอกับการบังคับใช้
+      expires: isExpiringState({
+        plan,
+        status: s.status as BillingStatus,
+        currentPeriodEnd: s.current_period_end,
+        cancelAtPeriodEnd: false,
+        trialEnd: null,
+        promoTrial,
+        enterpriseLimited: Boolean(row.enterprise_limited),
+      }),
+    });
   }
 
   const storeCountByOrg = new Map<string, number>();
@@ -70,6 +103,9 @@ export async function listTenantOverview(): Promise<TenantOverview[]> {
       memberCount: memberCountByOrg.get(org.id) ?? 0,
       suspended: Boolean(org.suspended_at),
       createdAt: org.created_at,
+      currentPeriodEnd: sub?.expires ? sub.currentPeriodEnd : null,
+      promoTrial: sub?.promoTrial ?? false,
+      expires: sub?.expires ?? false,
     };
   });
 }
@@ -251,7 +287,7 @@ export async function getTenantDetail(organizationId: string): Promise<TenantDet
   const [subRes, storesRes, membersRes] = await Promise.all([
     supabase
       .from("subscriptions")
-      .select("plan, status, current_period_end, cancel_at_period_end, trial_end, enterprise_limited")
+      .select("plan, status, current_period_end, cancel_at_period_end, trial_end, enterprise_limited, promo_trial_code")
       .eq("organization_id", organizationId)
       .maybeSingle(),
     supabase
@@ -565,13 +601,25 @@ export function summarizeTenants(tenants: TenantOverview[]): PlatformSummary {
   let totalMembers = 0;
   let trialingCount = 0;
   let pastDueCount = 0;
+  let expiredCount = 0;
+  let expiringSoonCount = 0;
+  const now = Date.now();
+  const soonCutoff = now + 7 * 86_400_000;
 
   for (const t of tenants) {
     byPlan[t.plan] = (byPlan[t.plan] ?? 0) + 1;
     totalStores += t.storeCount;
     totalMembers += t.memberCount;
-    if (t.status === "trialing") trialingCount += 1;
+    // นับเฉพาะโปรทดลองจริง — status='trialing' ค้างอยู่ในแถวเก่าที่ไม่ใช่ทดลอง
+    if (t.promoTrial) trialingCount += 1;
     if (t.status === "past_due" || t.status === "unpaid") pastDueCount += 1;
+    if (t.expires && t.currentPeriodEnd) {
+      const endsAt = new Date(t.currentPeriodEnd).getTime();
+      if (!Number.isNaN(endsAt)) {
+        if (endsAt < now) expiredCount += 1;
+        else if (endsAt < soonCutoff) expiringSoonCount += 1;
+      }
+    }
   }
 
   return {
@@ -581,5 +629,7 @@ export function summarizeTenants(tenants: TenantOverview[]): PlatformSummary {
     byPlan,
     trialingCount,
     pastDueCount,
+    expiredCount,
+    expiringSoonCount,
   };
 }

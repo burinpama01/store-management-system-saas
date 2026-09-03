@@ -4,6 +4,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { hasBillingAccess } from "@/modules/billing/pricing";
+import { isExpiringState } from "@/modules/billing/types";
 import { getBusinessPriceMap, getFreeTrialEligibility, listBillingPrices } from "@/modules/billing/pricing-repository";
 import { isSlip2goConfigured } from "@/modules/billing/slip2go";
 import { listEnterpriseRequestsForOrg } from "@/modules/enterprise/repository";
@@ -36,7 +37,6 @@ export default async function BillingSettingsPage() {
     <BillingManager
       orgName={ctx.orgName}
       plan={billingState.plan}
-      status={billingState.status}
       currentPeriodEnd={billingState.currentPeriodEnd}
       isActive={active}
       prices={prices}
@@ -46,6 +46,8 @@ export default async function BillingSettingsPage() {
       paymentConfigured={Boolean(settings.promptpayId || settings.promptpayStaticPayload)}
       recipientName={settings.promptpayName}
       slipVerificationReady={isSlip2goConfigured()}
+      promoTrial={billingState.promoTrial === true}
+      expires={isExpiringState(billingState)}
       freeTrialAvailable={freeTrial.available}
       freeTrialEndsAt={freeTrial.campaignEndsAt}
       enterpriseRequest={
