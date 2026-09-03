@@ -8,6 +8,7 @@ import type { LoyaltyReward } from "@/modules/loyalty/repository";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
+import { escapeLikePattern } from "@/shared/utils/like-pattern";
 
 type PortalLinkRow = Database["public"]["Tables"]["customer_member_portal_links"]["Row"];
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
@@ -344,7 +345,7 @@ async function findCustomerByIdentifier(storeId: string, identifier: string) {
 
   const query = supabase.from("customers").select("*").eq("store_id", storeId).eq("is_active", true);
   const result = normalized.includes("@")
-    ? await query.ilike("email", normalized).maybeSingle()
+    ? await query.ilike("email", escapeLikePattern(normalized)).maybeSingle()
     : await query.eq("phone", normalized).maybeSingle();
 
   if (result.error) return { data: null, error: mapError(result.error).userMessage };
@@ -360,7 +361,7 @@ async function findCustomerByEmail(storeId: string, email: string) {
     .from("customers")
     .select("*")
     .eq("store_id", storeId)
-    .ilike("email", normalized)
+    .ilike("email", escapeLikePattern(normalized))
     .eq("is_active", true)
     .maybeSingle();
 

@@ -167,7 +167,9 @@ export async function getLoyaltySettingsForStore(storeId: string, organizationId
         storeId,
         pointsPerCurrency: 0.01,
         earnEnabled: true,
-        redeemEnabled: false,
+        // ให้ตรงกับ default ของฐานข้อมูล (loyalty_settings.redeem_enabled default true)
+        // ไม่งั้นร้านที่ยังไม่เคยตั้งค่าจะเห็น "ปิด" ทั้งที่จริงแลกได้
+        redeemEnabled: true,
       },
       error: null,
     };
@@ -296,6 +298,21 @@ export async function redeemRewardForCurrentCustomer(input: {
   rewardId: string;
   idempotencyKey?: string;
 }) {
+  // ด่านเดียวของการแลกของรางวัล — ร้านที่ปิด "เปิดแลกแต้ม" ต้องแลกไม่ได้จริง
+  // (เดิมเก็บค่าไว้เฉย ๆ ไม่มีที่ไหน enforce เลย ปิดแล้วสมาชิกยังแลกได้)
+  const settings = await getLoyaltySettingsForStore(input.storeId, input.organizationId);
+  if (settings.error) return { data: null, error: settings.error };
+  if (!settings.data?.redeemEnabled) {
+    return {
+      data: null,
+      error: {
+        code: "loyalty_redeem_disabled",
+        message: "redeem disabled for store",
+        userMessage: "ร้านปิดการแลกของรางวัลอยู่",
+      },
+    };
+  }
+
   const supabase = await createSupabaseServiceClient();
   const { data, error } = await supabase.rpc("redeem_loyalty_reward", {
     p_organization_id: input.organizationId,

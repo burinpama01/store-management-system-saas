@@ -19,6 +19,7 @@ import {
 import type { CouponDiscountType } from "@/modules/promotions/types";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { storeDateTimeToUtc } from "@/shared/utils/datetime";
+import { parsePointsDeltaInput } from "@/modules/loyalty/points-input";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -212,11 +213,12 @@ export async function adjustCustomerPointsAction(formData: FormData): Promise<Ac
     await requireFeature("loyaltyPoints");
     const ctx = await getStoreContext();
     const customerId = text(formData, "customerId");
-    const pointsDelta = Number(text(formData, "pointsDelta"));
+    // แต้มเป็น numeric(12,2) และฟอร์มใส่ step 0.01 จึงต้องรับทศนิยม (ดู points-input.ts)
+    const pointsDelta = parsePointsDeltaInput(text(formData, "pointsDelta"));
     const reason = text(formData, "reason");
 
     if (!UUID_RE.test(customerId)) return { error: "ข้อมูลลูกค้าไม่ถูกต้อง" };
-    if (!Number.isInteger(pointsDelta) || pointsDelta === 0 || Math.abs(pointsDelta) > 100000) {
+    if (pointsDelta === null) {
       return { error: "จำนวนแต้มที่ปรับไม่ถูกต้อง" };
     }
 

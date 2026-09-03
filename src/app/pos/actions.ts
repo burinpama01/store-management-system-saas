@@ -576,9 +576,9 @@ export async function collectPaymentAction(
     if (unifiedFlag.enabled && unifiedFlag.organizationId) {
       // U7: ร้านที่เปิด flag → ชำระผ่าน governed RPC (idempotent + rewards exactly-once +
       // ยอดฝั่ง server); retry ของ request เดิม reuse idempotencyKey → replay
-      if (orderRes.data?.customerId) {
-        await requireFeature("loyaltyPoints");
-      }
+      // เดิมบล็อกการปิดบิลทั้งใบเมื่อออร์เดอร์ผูกลูกค้าและแพ็กเกจไม่มี loyalty
+      // → ร้านเก็บเงินไม่ได้เลย ซึ่งร้ายแรงกว่าการให้แต้มเกินสิทธิ์แพ็กเกจมาก
+      // การจำกัดแพ็กเกจยังอยู่ที่การ "จัดการ" loyalty (ตั้งค่า/ปรับแต้ม/ของรางวัล) เหมือนเดิม
       const settled = await settleOrdersGoverned({
         organizationId: unifiedFlag.organizationId,
         storeId: ctx.storeId,
