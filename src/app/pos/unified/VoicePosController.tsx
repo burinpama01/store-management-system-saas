@@ -150,7 +150,12 @@ export function VoicePosController({
             if (opened) {
               onSelectTab("sell");
               const picker = api.getPicker?.() ?? null;
-              const list = picker?.choices.slice(0, 6).join(" / ") ?? "";
+              if (!picker) {
+                // สินค้าไม่มีตัวเลือกให้เลือกเลย → หน้าขายเพิ่มลงตะกร้าให้ตรง ๆ
+                // (เกิดเมื่อพูดคำเกินมาแต่สินค้านั้นไม่มีตัวเลือก) — บอกตามจริง ไม่อ้างว่าต้องเลือก
+                return `เพิ่ม ${resolution.candidates[0].name} แล้ว — ส่วนที่พูดเพิ่มไม่ตรงตัวเลือกใด ตรวจบนหน้าจออีกครั้ง`;
+              }
+              const list = picker.choices.slice(0, 6).join(" / ");
               return list
                 ? `${resolution.candidates[0].name} ต้องเลือกก่อน — พูด "เลือก…" ได้เลย (${list})`
                 : `${resolution.candidates[0].name} ต้องเลือกตัวเลือกก่อน — เลือกบนหน้าจอได้เลย`;
