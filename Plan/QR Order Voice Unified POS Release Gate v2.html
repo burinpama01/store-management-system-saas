@@ -161,14 +161,64 @@
     </div>
   </section>
 
-  <h2>6. รายการที่ยังค้างก่อนเข้า U20</h2>
+  <h2>6. สิ่งที่ปล่อยเพิ่มหลัง v0.39.2 (จากการใช้งานจริงของร้านนำร่อง)</h2>
+  <section class="panel">
+    <p class="sub">
+      หลังเปิดใช้จริง ร้านนำร่องเจอปัญหาหน้างานที่แผนเดิมไม่ได้ครอบ จึงปล่อยเพิ่มเป็นรอบย่อย
+      (ทุกรอบผ่าน unit + playwright + typecheck + lint + build ก่อน deploy)
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>เวอร์ชัน</th><th>เรื่อง</th><th>สถานะ</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">0.39.3</td>
+            <td>คำสั่งยาว (สินค้า+ตัวเลือกประโยคเดียว), ตัวเลือกที่พูดทับค่าเริ่มต้น (ราคาเปลี่ยนจริง),
+              คำศัพท์ "ตะกร้า"="ออเดอร์", เด้ง dialog ตัวเลือกแล้วสั่งต่อด้วยเสียงได้</td>
+            <td><span class="tag ok">LIVE</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.39.4–0.39.5</td>
+            <td>ระบบเสนอคำเรียกเมนูอัตโนมัติ + จุดตรวจที่แก้ข้อความได้ ก่อนบันทึก
+              (แก้ปัญหาเมนูชื่ออังกฤษ พนักงานพูดไทย)</td>
+            <td><span class="tag ok">LIVE</span> — ร้านบันทึกแล้ว 53 คำ</td>
+          </tr>
+          <tr>
+            <td class="mono">0.39.6</td>
+            <td>แก้ปุ่มบันทึกบนมือถือ (ไม่มีสไตล์ + ตารางล้นจอ) เป็นการ์ด + ปุ่ม sticky</td>
+            <td><span class="tag ok">LIVE</span></td>
+          </tr>
+          <tr>
+            <td class="mono">0.40.0</td>
+            <td>เสียงตอบรับของระบบ (เสียงเตือน + อ่านผลลัพธ์ไทย) + ปุ่มปิดเสียงต่อเครื่อง</td>
+            <td><span class="tag ok">LIVE</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">
+      สัญญาณการใช้งานจริง (ตรวจจาก production): ร้านนำร่องบันทึกคำเรียกเมนูแล้ว 53 คำ
+      (each other home&amp;cafe 31 / each other II 22), ไม่มีคำเรียกที่ชี้ไปเมนูที่ถูกลบ,
+      และมีออเดอร์เกิดขึ้นจริงในรอบ 24 ชั่วโมง
+    </p>
+  </section>
+
+  <h2>7. รายการที่ยังค้างก่อนเข้า U20 (1.0.0)</h2>
   <section class="panel">
     <ul>
-      <li><span class="tag todo">ค้าง</span> ทดสอบเบราว์เซอร์ด้วยมือตาม <span class="mono">docs/deployment/voice-browser-matrix.md</span> (Safari/Firefox/มือถือจริง/screen reader)</li>
-      <li><span class="tag todo">ค้าง</span> วัด performance p95 บน staging (เกณฑ์ regression ≤20%, QR submit ≤1.5s, board ≤2s)</li>
-      <li><span class="tag todo">ค้าง</span> UAT ด้วยบัญชีจริงบน staging + ตรวจ multi-store isolation</li>
-      <li><span class="tag todo">ค้าง</span> soak window และการอนุมัติของเจ้าของ</li>
+      <li><span class="tag todo">ค้าง</span> ทดสอบเบราว์เซอร์ด้วยมือตาม <span class="mono">docs/deployment/voice-browser-matrix.md</span>
+        (Safari/Firefox/มือถือจริง/screen reader) — ตอนนี้ยืนยันแล้วเฉพาะ Chrome บนมือถือของเจ้าของร้าน</li>
+      <li><span class="tag warn">บางส่วน</span> performance: อ่านคิวออเดอร์บน production วัดได้ p50 ~137ms
+        (ตัวอย่างจากเครื่องพัฒนา ไม่ใช่เส้นทาง server จริง) — ยังต้องวัด QR submit ≤1.5s และ board ≤2s อย่างเป็นระบบ</li>
+      <li><span class="tag warn">บางส่วน</span> UAT: ร้านนำร่องใช้งานจริงแล้ว (มีออเดอร์ + บันทึกคำเรียก)
+        แต่ยังไม่ได้เดิน checklist เต็มสาย QR→ครัว→บิล→ชำระ→พิมพ์ พร้อมตรวจ multi-store isolation อย่างเป็นทางการ</li>
+      <li><span class="tag todo">ค้าง</span> soak window ตามที่เจ้าของอนุมัติ + เกณฑ์ error/performance</li>
+      <li><span class="tag todo">ค้าง</span> อนุมัติเลขเวอร์ชัน 1.0.0 แล้ว bump package/mobile surfaces + รัน verify ครบก่อน commit</li>
     </ul>
+    <p class="sub">
+      หมายเหตุ: ปัจจุบันอยู่ที่ <span class="mono">v0.40.0</span> บน production โดย flag เปิดเฉพาะ 3 ร้านนำร่อง
+      — การขึ้น 1.0.0 เป็นการ "ประกาศความพร้อม" ไม่ใช่การเปิดใช้เพิ่ม จึงเลื่อนได้จนกว่ารายการข้างบนจะครบ
+    </p>
   </section>
 
   <footer>
