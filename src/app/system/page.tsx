@@ -30,12 +30,24 @@ export default async function SystemOverviewPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="รายได้รวม (ยืนยันแล้ว)" value={baht(totals.total)} accent />
         <StatCard label="รายได้เดือนนี้" value={baht(totals.thisMonth)} />
         <StatCard label="จำนวน Tenant" value={String(summary.totalTenants)} />
+      </div>
+
+      {/* สถานะที่ต้องตามต่อ — แยกออกมาให้เห็นชัดกว่าปนไปกับตัวเลขรายได้ */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="หมดอายุแล้ว (ต้องตาม)" value={String(summary.expiredCount)} danger={summary.expiredCount > 0} />
+        <StatCard label="ใกล้หมดใน 7 วัน" value={String(summary.expiringSoonCount)} />
         <StatCard label="กำลังทดลองใช้" value={String(summary.trialingCount)} />
       </div>
+
+      {summary.expiredCount > 0 && (
+        <p className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          มี {summary.expiredCount} ร้านที่แพ็กเกจหมดอายุแล้ว — สิทธิ์ถูกลดเป็น free อัตโนมัติ ควรติดต่อกลับ
+        </p>
+      )}
 
       {summary.pastDueCount > 0 && (
         <p className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -118,11 +130,19 @@ export default async function SystemOverviewPage() {
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function StatCard({ label, value, accent, danger }: { label: string; value: string; accent?: boolean; danger?: boolean }) {
   return (
-    <div className={`panel p-4 ${accent ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)]" : ""}`}>
+    <div
+      className={`panel p-4 ${
+        accent
+          ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)]"
+          : danger
+            ? "border-red-300 bg-red-50"
+            : ""
+      }`}
+    >
       <p className="label-muted">{label}</p>
-      <p className="stat-value mt-1">{value}</p>
+      <p className={`stat-value mt-1 ${danger ? "text-red-700" : ""}`}>{value}</p>
     </div>
   );
 }

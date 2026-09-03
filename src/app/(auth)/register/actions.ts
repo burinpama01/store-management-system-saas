@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { logActionError } from "@/modules/system/event-log";
+import { notifyPlatformAdmin } from "@/modules/system/admin-alert";
 import {
   createSupabaseServerClient,
   createSupabaseServiceClient,
@@ -140,6 +141,24 @@ export async function registerOwner(
   if (trialErr) {
     logRegisterError("claim free trial", trialErr);
   }
+
+  // แจ้งผู้ดูแลแพลตฟอร์มว่ามีร้านสมัครใหม่ — ไม่ await เพื่อไม่ให้ผู้สมัครรอ
+  // และไม่ให้ความล้มเหลวของอีเมลไปทำให้การสมัครที่สำเร็จแล้วพัง
+  void notifyPlatformAdmin({
+    source: "auth.register",
+    action: "tenantSignedUp",
+    level: "info",
+    subject: `มีร้านสมัครใหม่: ${input.organizationName}`,
+    body: [
+      `ชื่อกิจการ: ${input.organizationName}`,
+      `อีเมลผู้สมัคร: ${input.email}`,
+      `สาขาแรก: ${input.storeName}`,
+      trialClaimed ? `รับสิทธิ์ทดลอง Enterprise ฟรี ${FREE_TRIAL_DAYS} วันแล้ว` : "ไม่ได้รับสิทธิ์ทดลอง (แคมเปญปิด/ใช้สิทธิ์ไปแล้ว)",
+      "",
+      "ดูรายละเอียดที่ /system/tenants",
+    ].join("\n"),
+    context: { organizationId: org.id, storeId: store.id, trialClaimed },
+  });
 
   if (data.session) {
     redirect("/onboarding?linePrompt=1");

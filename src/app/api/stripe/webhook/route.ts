@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { logActionError } from "@/modules/system/event-log";
+import { notifyPlatformAdmin } from "@/modules/system/admin-alert";
 import {
   constructWebhookEvent,
   mapStripePlan,
@@ -68,6 +69,22 @@ export async function POST(req: Request) {
       source: "billing.stripe.webhook",
       action: "handleEvent",
       error: e,
+      context: { eventType: event.type, eventId: event.id },
+    });
+    // เหตุการณ์นี้กระทบเงินจริงและไม่มีใครอยู่หน้าจอ — ต้องถึงตัวผู้ดูแลทันที
+    void notifyPlatformAdmin({
+      source: "billing.stripe.webhook",
+      action: "handleEventFailed",
+      level: "error",
+      subject: `Stripe webhook ล้มเหลว: ${event.type}`,
+      body: [
+        `ชนิดเหตุการณ์: ${event.type}`,
+        `รหัสเหตุการณ์: ${event.id}`,
+        `ข้อผิดพลาด: ${e instanceof Error ? e.message : String(e)}`,
+        "",
+        "ผลที่ตามมา: subscription ของร้านอาจไม่ถูกอัปเดตตามการชำระเงินจริง",
+        "ตรวจรายละเอียดที่ /system/logs",
+      ].join("\n"),
       context: { eventType: event.type, eventId: event.id },
     });
     console.error(`[stripe/webhook] failed to handle ${event.type}`, e);

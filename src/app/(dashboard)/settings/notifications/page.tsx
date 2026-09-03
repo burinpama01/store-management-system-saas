@@ -48,6 +48,7 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   approval: "การอนุมัติ",
   service_request: "เรียกพนักงาน/ขอความช่วยเหลือ",
   activation_nudge: "ตั้งค่าร้าน (nudge)",
+  subscription_expiring: "แพ็กเกจใกล้หมดอายุ/หมดอายุ",
   test: "ข้อความทดสอบ",
 };
 

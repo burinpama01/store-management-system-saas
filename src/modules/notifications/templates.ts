@@ -34,6 +34,10 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
   },
   service_request: { title: "ลูกค้าเรียกพนักงาน", message: "โต๊ะ {tableLabel}: {reason}" },
   activation_nudge: { title: "ขั้นตอนตั้งค่าร้านถัดไป", message: "ทำตามขั้นตอนใน StoreOS เพื่อเริ่มขายจริง ({step})" },
+  subscription_expiring: {
+    title: "แพ็กเกจใกล้หมดอายุ",
+    message: "แพ็กเกจเหลืออีก {daysLeft} วัน — ต่ออายุได้ที่ ตั้งค่า > แพ็กเกจ",
+  },
   test: { title: "ข้อความทดสอบ", message: "[TEST] notification พร้อมใช้งาน" },
 };
 
@@ -56,6 +60,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   approval: ["store", "employeeName", "date"],
   service_request: ["store", "tableLabel", "reason"],
   activation_nudge: ["store", "step"],
+  subscription_expiring: ["store", "daysLeft", "plan"],
   test: ["store"],
 };
 

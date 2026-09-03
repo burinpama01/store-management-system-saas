@@ -1,4 +1,6 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { logActionError, logSystemEvent } from "@/modules/system/event-log";
+import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { computeNewExpiry, type BillingDuration } from "./pricing";
 import { getBusinessUpgradeQuote, getFreeTrialEligibility, getUpgradeQuote } from "./pricing-repository";
 import { describeFreeTrialRejection } from "./free-trial";
@@ -108,6 +110,15 @@ export async function submitPromptPayPayment(
 
   if (!evaluation.ok) {
     await recordSubmission(supabase, input, expected, verification, "rejected", evaluation.reason);
+    void logSystemEvent({
+      level: "warn",
+      source: "billing.promptpay",
+      action: "slipRejected",
+      message: `สลิปไม่ผ่าน: ${evaluation.reason}`,
+      organizationId: input.organizationId,
+      actorUserId: input.submittedByUserId,
+      context: { plan: input.plan, duration: input.duration, expected, verifiedAmount: verification.amount },
+    });
     return { status: "rejected", reason: evaluation.reason, newExpiry: null };
   }
 
@@ -177,6 +188,27 @@ export async function submitPromptPayPayment(
     reason: `${input.plan}/${input.duration} ถึง ${newExpiry}`,
   });
 
+  // ยืนยันกลับให้ร้านเห็นในศูนย์แจ้งเตือน — เดิมจ่ายเงินแล้วเงียบสนิท
+  // ไม่ await เพราะการแจ้งเตือนต้องไม่ทำให้การชำระเงินที่สำเร็จแล้วช้าหรือพัง
+  void notifyOwnerNow({
+    type: "subscription_expiring",
+    destination: "owner",
+    title: "ต่ออายุแพ็กเกจสำเร็จ",
+    message: `ชำระเงินสำเร็จ · แพ็กเกจ ${input.plan} (${input.duration}) ใช้งานได้ถึง ${formatThaiDay(newExpiry)}`,
+    organizationId: input.organizationId,
+    metadata: { plan: input.plan, duration: input.duration, newExpiry },
+  });
+
+  void logSystemEvent({
+    level: "info",
+    source: "billing.promptpay",
+    action: "submitPromptPayPayment",
+    message: `ต่ออายุสำเร็จ ${input.plan}/${input.duration} ถึง ${newExpiry}`,
+    organizationId: input.organizationId,
+    actorUserId: input.submittedByUserId,
+    context: { amount: expected, discount: quote.discount, slipRef: verification.transRef },
+  });
+
   return { status: "verified", reason: null, newExpiry };
 }
 
@@ -202,6 +234,13 @@ export async function claimFreeTrial(
     p_user_id: input.submittedByUserId,
   });
   if (error) {
+    logActionError({
+      source: "billing.free-trial",
+      action: "claimFreeTrial",
+      error,
+      organizationId: input.organizationId,
+      actorUserId: input.submittedByUserId,
+    });
     return { status: "unavailable", reason: describeFreeTrialRejection(null), newExpiry: null };
   }
 
@@ -209,6 +248,15 @@ export async function claimFreeTrial(
   if (!row?.ok) {
     return { status: "unavailable", reason: describeFreeTrialRejection(row?.code ?? null), newExpiry: null };
   }
+
+  void logSystemEvent({
+    level: "info",
+    source: "billing.free-trial",
+    action: "claimFreeTrial",
+    message: `เปิดสิทธิ์ทดลอง Enterprise ฟรี ถึง ${row.new_expiry}`,
+    organizationId: input.organizationId,
+    actorUserId: input.submittedByUserId,
+  });
 
   return { status: "claimed", reason: null, newExpiry: row.new_expiry };
 }
@@ -237,4 +285,16 @@ async function recordSubmission(
     business_features: (input.businessConfig?.features ?? []) as never,
     verified_at: null,
   });
+}
+
+/** วันที่แบบไทยสำหรับข้อความแจ้งเตือน (คนอ่าน ไม่ใช่เครื่องอ่าน) */
+function formatThaiDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(d);
 }

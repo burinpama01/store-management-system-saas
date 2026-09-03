@@ -1,4 +1,8 @@
-// Cron: activation nudges (F5/Task 12) — วันละครั้งต่อ store/step (Asia/Bangkok)
+// Cron: งานประจำวันของผู้เช่า — วันละครั้ง (Asia/Bangkok)
+//   1) activation nudges (F5/Task 12) — ต่อ store/step
+//   2) เฝ้าดูวันหมดอายุแพ็กเกจ แล้วเตือนร้าน + สรุปให้ผู้ดูแล
+// รวมสองงานไว้ในรูทเดียวเพราะบัญชี Vercel เป็น Hobby ซึ่งมี cron ได้แค่ 2 ตัว
+// (อีกตัวคือ /api/connect/cron/reconcile) — เพิ่มตัวที่สามจะทำให้ deploy ล้ม
 // เรียกโดย Vercel Cron (Authorization: Bearer $CRON_SECRET เมื่อมี env CRON_SECRET)
 // กติกาตามแผน: opt-out/respect notification settings, query readiness ซ้ำก่อนส่ง,
 // หยุดเมื่อมี first paid order, idempotency store+step+date (atomic claim)
@@ -6,6 +10,8 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
 import { bangkokDateIso, pickActivationNudge } from "@/modules/onboarding/nudges";
 import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
+import { runSubscriptionWatch } from "@/modules/billing/subscription-watch-runner";
+import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +30,12 @@ export async function GET(req: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
+    void logSystemEvent({
+      level: "warn",
+      source: "cron.daily",
+      action: "auth",
+      message: secret ? "ปฏิเสธการเรียก cron: ไม่มีสิทธิ์" : "ปฏิเสธการเรียก cron: ยังไม่ได้ตั้ง CRON_SECRET",
+    });
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },
@@ -39,6 +51,7 @@ export async function GET(req: Request): Promise<Response> {
     .select("id, organization_id, name, address, phone, setup_profile")
     .eq("is_active", true);
   if (storesRes.error) {
+    logActionError({ source: "cron.daily", action: "listStores", error: storesRes.error });
     return new Response(JSON.stringify({ error: storesRes.error.message }), { status: 500, headers: { "content-type": "application/json" } });
   }
   const stores = (storesRes.data ?? []) as Array<{ id: string; organization_id: string; name: string; address: string | null; phone: string | null; setup_profile: unknown }>;
@@ -112,8 +125,32 @@ export async function GET(req: Request): Promise<Response> {
     claimed.push({ storeId: store.id, step: nudge.step, sent: true });
   }
 
-  return new Response(JSON.stringify({ ok: true, day: today, claimedCount: claimed.length, skippedCount: skipped.length, claimed, skipped }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
+  // งานที่ 2: เฝ้าดูวันหมดอายุแพ็กเกจ — แยกเป็นอิสระ ถ้าพังต้องไม่ทำให้ nudge ที่ส่งไปแล้วเสียเปล่า
+  let subscriptionWatch: Awaited<ReturnType<typeof runSubscriptionWatch>> | null = null;
+  try {
+    subscriptionWatch = await runSubscriptionWatch(now);
+  } catch (error) {
+    logActionError({ source: "cron.daily", action: "runSubscriptionWatch", error });
+  }
+
+  void logSystemEvent({
+    level: "info",
+    source: "cron.daily",
+    action: "GET",
+    message: `งานประจำวันเสร็จ · nudge ${claimed.length} ร้าน · เตือนแพ็กเกจ ${subscriptionWatch?.alerted ?? 0} ร้าน`,
+    context: { day: today, subscriptionWatch },
   });
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      day: today,
+      claimedCount: claimed.length,
+      skippedCount: skipped.length,
+      claimed,
+      skipped,
+      subscriptionWatch,
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
 }
