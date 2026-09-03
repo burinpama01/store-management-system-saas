@@ -2,6 +2,7 @@ import type { Store, Table } from "@/modules/stores/types";
 import type { CommandItem } from "@/modules/assistant/command-index";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { VoiceNavigationAlias } from "@/modules/voice-pos/navigation";
+import type { VoiceProductAlias } from "@/modules/voice-pos/cart";
 import type { UnifiedKitchenItem } from "./kitchen-types";
 
 // U9 — Store-gated unified POS shell (R2)
@@ -66,6 +67,8 @@ export interface UnifiedPosWorkspaceProps {
   readonly voiceCommands?: readonly CommandItem[];
   /** คำเรียกที่ร้านสร้างเอง เฉพาะที่เปิดใช้งาน (U16) */
   readonly voiceAliases?: readonly VoiceNavigationAlias[];
+  /** คำเรียกเมนูของร้าน เฉพาะที่เปิดใช้งาน (U22) */
+  readonly voiceProductAliases?: readonly VoiceProductAlias[];
   /** ฉีด speech adapter สำหรับทดสอบเท่านั้น (ปกติ undefined = ใช้ของเบราว์เซอร์) */
   readonly voiceAdapter?: VoiceSpeechAdapter;
 }

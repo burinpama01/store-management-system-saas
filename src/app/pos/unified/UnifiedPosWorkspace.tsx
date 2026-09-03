@@ -34,6 +34,7 @@ export function UnifiedPosWorkspace({
   voiceEnabled = false,
   voiceCommands = [],
   voiceAliases = [],
+  voiceProductAliases = [],
   voiceAdapter,
 }: UnifiedPosWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<TabId>("sell");
@@ -94,6 +95,7 @@ export function UnifiedPosWorkspace({
             voiceEnabled
             allowedCommands={voiceCommands}
             aliases={voiceAliases}
+            productAliases={voiceProductAliases}
             onSelectTab={selectTab}
             adapter={voiceAdapter}
           />

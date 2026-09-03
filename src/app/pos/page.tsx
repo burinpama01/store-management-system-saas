@@ -129,8 +129,17 @@ export default async function PosPage() {
         kitchenInitialItems={kitchenQueueResult.data ?? []}
         voiceEnabled={voiceEnabled}
         voiceAliases={(voiceAliasesResult.data ?? [])
-          .filter((alias) => alias.isActive && typeof alias.slots.query === "string")
+          .filter(
+            (alias) =>
+              alias.isActive && alias.intentType === "navigate" && typeof alias.slots.query === "string",
+          )
           .map((alias) => ({ aliasText: alias.aliasText, query: alias.slots.query as string }))}
+        voiceProductAliases={(voiceAliasesResult.data ?? [])
+          .filter(
+            (alias) =>
+              alias.isActive && alias.intentType === "product" && typeof alias.slots.product_id === "string",
+          )
+          .map((alias) => ({ aliasText: alias.aliasText, productId: alias.slots.product_id as string }))}
         voiceCommands={DASHBOARD_COMMANDS.filter((command) =>
           resolved.can(command.permission as PermissionKey),
         )}

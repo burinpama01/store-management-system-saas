@@ -17,7 +17,7 @@ import {
   type VoicePosFocusAction,
   type VoicePosTabId,
 } from "@/modules/voice-pos/navigation";
-import { applyVoiceCartIntent, isVoiceCartIntent } from "@/modules/voice-pos/cart";
+import { applyVoiceCartIntent, isVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
 import {
   consumeVoiceUndoToken,
   createVoiceUndoToken,
@@ -44,6 +44,8 @@ export interface VoicePosControllerProps {
   readonly onSelectTab: (tabId: VoicePosTabId) => void;
   /** คำเรียกที่ร้านสร้างเอง (เฉพาะที่เปิดใช้งาน) — U16 */
   readonly aliases?: readonly VoiceNavigationAlias[];
+  /** คำเรียกเมนูของร้าน ("มัจฉะลาเต้" → Matcha latte) — U22 */
+  readonly productAliases?: readonly VoiceProductAlias[];
   /** ฉีด adapter สำหรับทดสอบ — ปกติปุ่มจะใช้ Web Speech ของเบราว์เซอร์เอง */
   readonly adapter?: VoiceSpeechAdapter;
   readonly className?: string;
@@ -56,6 +58,7 @@ export function VoicePosController({
   allowedCommands,
   onSelectTab,
   aliases,
+  productAliases,
   adapter,
   className,
   now,
@@ -141,6 +144,7 @@ export function VoicePosController({
         const resolution = applyVoiceCartIntent(result.intent, {
           cart: snapshot.cart,
           products: snapshot.products,
+          productAliases,
           locked: snapshot.locked,
         });
         if (resolution.status === "blocked") {
@@ -221,7 +225,7 @@ export function VoicePosController({
       router.push(target.href);
       return outcome.announcement;
     },
-    [aliases, allowedCommands, clock, getCartApi, onSelectTab, router, voiceEnabled],
+    [aliases, allowedCommands, clock, getCartApi, onSelectTab, productAliases, router, voiceEnabled],
   );
 
   if (!voiceEnabled) return null;

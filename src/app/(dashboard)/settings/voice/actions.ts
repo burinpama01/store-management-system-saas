@@ -9,6 +9,7 @@ import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
   createVoiceAlias,
+  createVoiceAliases,
   setVoiceAliasActive,
   VOICE_ALIAS_INTENT_TYPES,
   type VoiceAliasIntentType,
@@ -72,4 +73,36 @@ export async function setVoiceAliasActiveAction(
 
   revalidatePath("/settings/voice", "page");
   return { error: null };
+}
+
+/**
+ * U22 — บันทึก "คำเรียกเมนู" ที่ผู้ใช้ติ๊กเลือกจากรายการที่ระบบวิเคราะห์มาให้
+ * ระบบไม่บันทึกเองแม้แต่คำเดียว — ต้องผ่านการติ๊กจากผู้จัดการเสมอ
+ */
+export async function saveProductAliasesAction(
+  selections: ReadonlyArray<{ aliasText: string; productId: string }>,
+): Promise<{ error: string | null; saved: number }> {
+  await requirePermission("settings.manage_store");
+  const { ctx, user } = await getStoreContext();
+
+  const cleaned = selections
+    .map((item) => ({ aliasText: String(item.aliasText ?? "").trim(), productId: String(item.productId ?? "").trim() }))
+    .filter((item) => item.aliasText.length > 0 && item.aliasText.length <= MAX_ALIAS_LENGTH && UUID_RE.test(item.productId));
+  if (cleaned.length === 0) return { error: "ยังไม่ได้เลือกคำเรียกที่จะบันทึก", saved: 0 };
+
+  const { saved, error } = await createVoiceAliases(
+    cleaned.map((item) => ({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      aliasText: item.aliasText,
+      intentType: "product" as const,
+      productId: item.productId,
+      createdBy: user.id,
+    })),
+  );
+  if (error) return { error: error.userMessage, saved: 0 };
+
+  revalidatePath("/settings/voice", "page");
+  revalidatePath("/pos", "page");
+  return { error: null, saved };
 }

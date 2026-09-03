@@ -15,8 +15,13 @@ import type { AppError } from "@/shared/utils/error";
 import { mapError } from "@/shared/utils/error";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 
-/** intent ที่ alias ผูกได้ — Tier A เท่านั้น (นำทาง) ตามหลัก "เสียงห้ามแตะเงิน/สต๊อก" */
-export const VOICE_ALIAS_INTENT_TYPES = ["navigate"] as const;
+/**
+ * intent ที่ alias ผูกได้
+ *   navigate = เปิดหน้าในระบบ (Tier A)
+ *   product  = คำเรียกเมนู เช่น "มัจฉะลาเต้" → สินค้า "Matcha latte" (U22)
+ * ยังคงหลัก "เสียงห้ามแตะเงิน/สต๊อก" — ไม่มี intent ที่ผูกกับการเงิน
+ */
+export const VOICE_ALIAS_INTENT_TYPES = ["navigate", "product"] as const;
 export type VoiceAliasIntentType = (typeof VOICE_ALIAS_INTENT_TYPES)[number];
 
 export interface VoiceAlias {
@@ -38,8 +43,21 @@ export interface CreateVoiceAliasInput {
   readonly storeId: string;
   readonly aliasText: string;
   readonly intentType: VoiceAliasIntentType;
-  readonly targetQuery: string;
+  /** navigate = คำค้นหน้าปลายทาง */
+  readonly targetQuery?: string;
+  /** product = สินค้าที่ต้องการ */
+  readonly productId?: string;
   readonly createdBy: string;
+}
+
+/** สร้าง slots ให้ตรงชนิด intent — คืน null เมื่อข้อมูลไม่ครบ */
+function buildAliasSlots(input: CreateVoiceAliasInput): Record<string, string> | null {
+  if (input.intentType === "product") {
+    const productId = input.productId?.trim();
+    return productId ? { product_id: productId } : null;
+  }
+  const query = normalizeAliasText(input.targetQuery ?? "");
+  return query ? { query } : null;
 }
 
 function toSlots(value: unknown): Record<string, string> {
@@ -96,8 +114,8 @@ export async function createVoiceAlias(
   input: CreateVoiceAliasInput,
 ): Promise<{ data: VoiceAlias | null; error: AppError | null }> {
   const aliasText = normalizeAliasText(input.aliasText);
-  const targetQuery = normalizeAliasText(input.targetQuery);
-  if (!aliasText || !targetQuery) {
+  const slots = buildAliasSlots(input);
+  if (!aliasText || !slots) {
     return {
       data: null,
       error: { code: "validation_error", message: "alias/target ว่าง", userMessage: "กรอกคำเรียกและปลายทางให้ครบ" },
@@ -112,7 +130,7 @@ export async function createVoiceAlias(
       store_id: input.storeId,
       alias_text: aliasText,
       intent_type: input.intentType,
-      slots: { query: targetQuery },
+      slots,
       is_active: true,
       created_by: input.createdBy,
     })
@@ -134,6 +152,40 @@ export async function createVoiceAlias(
     },
     error: null,
   };
+}
+
+/**
+ * U22 — บันทึกคำเรียกหลายคำในครั้งเดียว (มาจากหน้าตรวจสอบข้อเสนออัตโนมัติ)
+ * คำที่ซ้ำกับของเดิมจะถูกข้ามอย่างเงียบ ๆ (unique index ต่อร้านเป็นตัวตัดสินสุดท้าย)
+ */
+export async function createVoiceAliases(
+  inputs: readonly CreateVoiceAliasInput[],
+): Promise<{ saved: number; error: AppError | null }> {
+  const rows = inputs
+    .map((input) => {
+      const aliasText = normalizeAliasText(input.aliasText);
+      const slots = buildAliasSlots(input);
+      if (!aliasText || !slots) return null;
+      return {
+        organization_id: input.organizationId,
+        store_id: input.storeId,
+        alias_text: aliasText,
+        intent_type: input.intentType,
+        slots,
+        is_active: true,
+        created_by: input.createdBy,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+  if (rows.length === 0) return { saved: 0, error: null };
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("voice_aliases")
+    .upsert(rows, { onConflict: "store_id,alias_text", ignoreDuplicates: true })
+    .select("id");
+  if (error) return { saved: 0, error: mapError(error) };
+  return { saved: data?.length ?? 0, error: null };
 }
 
 /**

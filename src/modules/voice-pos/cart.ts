@@ -64,9 +64,17 @@ export type VoiceCartResolution =
       readonly candidates?: readonly VoiceCartCandidate[];
     };
 
+/** U22 — คำเรียกเมนูที่ร้านบันทึกไว้ ("มัจฉะลาเต้" → สินค้า Matcha latte) */
+export interface VoiceProductAlias {
+  readonly aliasText: string;
+  readonly productId: string;
+}
+
 export interface VoiceCartContext {
   readonly cart: Cart;
   readonly products: readonly Product[];
+  /** คำเรียกเมนูของร้าน (เฉพาะที่เปิดใช้งาน) */
+  readonly productAliases?: readonly VoiceProductAlias[];
   readonly priceTier?: PriceTier;
   /** ตะกร้าถูกล็อก (สร้างออร์เดอร์แล้ว/กำลังชำระ) — เสียงห้ามแตะ */
   readonly locked?: boolean;
@@ -150,21 +158,33 @@ export type VoiceProductResolution =
 export function resolveVoiceProductPhrase(
   phrase: string,
   products: readonly Product[],
+  productAliases: readonly VoiceProductAlias[] = [],
 ): VoiceProductResolution {
   const spoken = looseName(phrase);
   if (!spoken) return { status: "not_found" };
   const sellable = products.filter((p) => p.isActive && p.availableForPos);
 
-  // 1) ชื่อสินค้าที่เป็นคำขึ้นต้น — ยาวที่สุดชนะ ("อเมริกาโน่น้ำส้ม" ชนะ "อเมริกาโน่")
+  // 1) ชื่อสินค้า "และคำเรียกที่ร้านบันทึกไว้" ที่เป็นคำขึ้นต้น — ยาวที่สุดชนะ
+  //    ("อเมริกาโน่น้ำส้ม" ชนะ "อเมริกาโน่" / "มัจฉะลาเต้" ชี้ไปสินค้า Matcha latte)
+  const byId = new Map(sellable.map((product) => [product.id, product]));
+  const namedEntries: Array<{ name: string; product: Product }> = [
+    ...sellable.map((product) => ({ name: looseName(product.name), product })),
+    ...productAliases
+      .map((alias) => {
+        const product = byId.get(alias.productId);
+        return product ? { name: looseName(alias.aliasText), product } : null;
+      })
+      .filter((entry): entry is { name: string; product: Product } => entry !== null),
+  ];
+
   let best: { product: Product; rest: string; length: number } | null = null;
   let tied: Product[] = [];
-  for (const product of sellable) {
-    const name = looseName(product.name);
+  for (const { name, product } of namedEntries) {
     if (!name || !spoken.startsWith(name)) continue;
     if (!best || name.length > best.length) {
       best = { product, rest: spoken.slice(name.length), length: name.length };
       tied = [product];
-    } else if (name.length === best.length) {
+    } else if (name.length === best.length && !tied.some((item) => item.id === product.id)) {
       tied.push(product);
     }
   }
@@ -272,7 +292,7 @@ function findSingleCartLine(cart: Cart, productId: string) {
 
 /** แปลงผลจับคู่เป็น selection หรือ blocked ที่พร้อมส่งกลับ */
 function resolveSelection(phrase: string, context: VoiceCartContext) {
-  const resolution = resolveVoiceProductPhrase(phrase, context.products);
+  const resolution = resolveVoiceProductPhrase(phrase, context.products, context.productAliases);
   if (resolution.status === "not_found") {
     return blocked("product_not_found", "ไม่พบสินค้าที่พูด — เลือกจากเมนูบนหน้าจอได้");
   }

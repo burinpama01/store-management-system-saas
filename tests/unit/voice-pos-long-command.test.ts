@@ -204,3 +204,61 @@ describe("คำสั่งยาว — สินค้า + ตัวเล�
     }
   });
 });
+
+// U22 — คำเรียกเมนูที่ร้านบันทึกไว้ (แก้เคสเมนูชื่ออังกฤษ)
+describe("คำเรียกเมนูของร้าน (product alias)", () => {
+  const ENGLISH_MENU: Product = {
+    ...AMERICANO,
+    id: "p-matcha-latte",
+    name: "Matcha latte",
+    basePrice: 70,
+    modifierGroups: [],
+  };
+
+  function addWithAlias(phrase: string) {
+    return applyVoiceCartIntent(parseVoiceCommand(phrase).intent, {
+      cart: emptyCart("store-1"),
+      products: [ENGLISH_MENU],
+      productAliases: [{ aliasText: "มัจฉะลาเต้", productId: "p-matcha-latte" }],
+    });
+  }
+
+  it("พูดไทยสั่งเมนูชื่ออังกฤษได้เมื่อมีคำเรียกที่ร้านบันทึกไว้", () => {
+    const resolution = addWithAlias("เพิ่มมัจฉะลาเต้ 2 แก้ว");
+    expect(resolution.status).toBe("applied");
+    if (resolution.status === "applied") {
+      expect(resolution.cart.items[0].productName).toBe("Matcha latte");
+      expect(resolution.cart.items[0].quantity).toBe(2);
+    }
+  });
+
+  it("ไม่มีคำเรียก = ยังหาไม่เจอเหมือนเดิม (ไม่เดา)", () => {
+    const resolution = applyVoiceCartIntent(parseVoiceCommand("เพิ่มมัจฉะลาเต้").intent, {
+      cart: emptyCart("store-1"),
+      products: [ENGLISH_MENU],
+    });
+    expect(resolution).toMatchObject({ status: "blocked", reason: "product_not_found" });
+  });
+
+  it("คำเรียกใช้ร่วมกับตัวเลือกที่พูดต่อท้ายได้", () => {
+    const withOptions: Product = { ...AMERICANO, id: "p-am2", name: "Americano" };
+    const resolution = applyVoiceCartIntent(parseVoiceCommand("เพิ่มอเมริกาโน่ร้อน").intent, {
+      cart: emptyCart("store-1"),
+      products: [withOptions],
+      productAliases: [{ aliasText: "อเมริกาโน่", productId: "p-am2" }],
+    });
+    expect(resolution.status).toBe("applied");
+    if (resolution.status === "applied") {
+      expect(resolution.cart.items[0].modifiers.map((m) => m.option.name)).toEqual(["ร้อน"]);
+    }
+  });
+
+  it("คำเรียกชี้ไปสินค้าที่ไม่มีในเมนูแล้ว ต้องไม่พัง", () => {
+    const resolution = applyVoiceCartIntent(parseVoiceCommand("เพิ่มมัจฉะลาเต้").intent, {
+      cart: emptyCart("store-1"),
+      products: [AMERICANO],
+      productAliases: [{ aliasText: "มัจฉะลาเต้", productId: "ไม่มีแล้ว" }],
+    });
+    expect(resolution).toMatchObject({ status: "blocked", reason: "product_not_found" });
+  });
+});
