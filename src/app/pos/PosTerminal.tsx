@@ -649,18 +649,11 @@ function CartPanel({
   onRemove,
   onCheckout,
   onClear,
-  onApplyDiscount,
   onApplyItemDiscount,
   onClearItemDiscount,
   itemDiscountResetKey,
   canDiscount,
-  discountMode,
-  discountAmount,
-  discountPercentage,
-  discountNote,
-  onDiscountDraftChange,
-  discountFormOpen,
-  onDiscountFormOpenChange,
+  onOpenDiscountTools,
   activeTicket,
   isTicketSyncPending,
   savedTicketCount,
@@ -682,18 +675,11 @@ function CartPanel({
   onRemove: (key: string) => void;
   onCheckout: () => void;
   onClear: () => void;
-  onApplyDiscount: (type: DiscountType, value: number, note?: string) => void;
   onApplyItemDiscount: (key: string, type: DiscountType, value: number, note?: string) => void;
   onClearItemDiscount: (key: string) => void;
   itemDiscountResetKey: number;
   canDiscount: boolean;
-  discountMode: DiscountType;
-  discountAmount: string;
-  discountPercentage: string;
-  discountNote: string;
-  onDiscountDraftChange: (patch: Partial<DiscountDraft>) => void;
-  discountFormOpen: boolean;
-  onDiscountFormOpenChange: (open: boolean) => void;
+  onOpenDiscountTools: () => void;
   activeTicket: SavedOrderTicket | null;
   isTicketSyncPending: boolean;
   savedTicketCount: number;
@@ -706,95 +692,72 @@ function CartPanel({
   onClose?: () => void;
 }) {
   const summaryCart = displayCart ?? cart;
-  const discountInputValue = discountMode === "percentage" ? discountPercentage : discountAmount;
-  const parsedDiscountValue = Number(discountInputValue);
-  const percentagePreview =
-    discountMode === "percentage" && Number.isFinite(parsedDiscountValue)
-      ? Math.min(cart.subtotal, Math.max(0, cart.subtotal * (parsedDiscountValue / 100)))
-      : 0;
-  const discountFormVisible = discountFormOpen && cart.items.length > 0;
-  const canApplyDiscount =
-    canDiscount &&
-    cart.items.length > 0 &&
-    discountInputValue.trim() !== "" &&
-    Number.isFinite(parsedDiscountValue) &&
-    parsedDiscountValue > 0 &&
-    (discountMode === "amount" || parsedDiscountValue <= 100);
-
-  function handleApplyDiscount() {
-    if (!canApplyDiscount) return;
-    onApplyDiscount(discountMode, parsedDiscountValue, discountNote.trim() || undefined);
-    onDiscountFormOpenChange(false);
-  }
-
-  function handleClearDiscount() {
-    onApplyDiscount("amount", 0);
-    onDiscountFormOpenChange(false);
-  }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="space-y-3 border-b border-gray-100 px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span className="text-sm font-semibold text-gray-800">ออร์เดอร์</span>
+      {/* หัวแผงเป็นแถวเดียว — เดิมซ้อนสามแถว (ชื่อ / ปุ่มนับ 2 ปุ่ม / ปุ่มบันทึกตั๋ว)
+          กินความสูงพอ ๆ กับช่องรายการเอง ปุ่มยังครบเท่าเดิม แค่เรียงในแถวเดียวกัน */}
+      <div className="space-y-2 border-b border-gray-100 px-3 py-2">
+        <div className="flex items-center gap-1">
+          <span className="shrink-0 text-sm font-semibold text-gray-800">ออร์เดอร์</span>
           {activeTicket && (
-            <p className="truncate text-[11px] text-amber-600">
-              กำลังแก้ {activeTicket.ticketNumber}
-            </p>
+            <span className="min-w-0 truncate text-[11px] text-amber-600">
+              · แก้ {activeTicket.ticketNumber}
+            </span>
           )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {cart.items.length > 0 && (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={onClear}
-              className="min-h-11 px-3 text-xs text-red-400 hover:text-red-600"
+              onClick={onOpenTickets}
+              title="ตั๋วที่เปิดค้างไว้"
+              className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-semibold text-amber-800"
             >
-              ล้าง
+              ตั๋ว
+              <span className="ml-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-amber-700">
+                {savedTicketCount}
+              </span>
             </button>
-          )}
-          {onClose && (
             <button
               type="button"
-              onClick={onClose}
-              className="min-h-11 px-3 text-xs text-gray-500 hover:text-gray-800 lg:hidden"
+              onClick={onOpenBillHistory}
+              title="ประวัติบิล"
+              className="min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs font-semibold text-gray-700"
             >
-              ปิด
+              บิล
+              <span className="ml-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-500">
+                {billHistoryCount}
+              </span>
             </button>
-          )}
-        </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={onOpenTickets}
-            className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800"
-          >
-            เปิดตั๋ว
-            <span className="ml-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-amber-700">
-              {savedTicketCount}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenBillHistory}
-            className="min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-700"
-          >
-            ประวัติบิล
-            <span className="ml-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] text-gray-500">
-              {billHistoryCount}
-            </span>
-          </button>
-          <Button
-            loading={isTicketSyncPending}
-            loadingText="กำลังบันทึก..."
-            disabled={cart.items.length === 0}
-            onClick={onSaveTicket}
-            className="col-span-2 min-h-11 rounded-lg border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
-          </Button>
+            <Button
+              loading={isTicketSyncPending}
+              loadingText="..."
+              disabled={cart.items.length === 0}
+              onClick={onSaveTicket}
+              title={activeTicket ? "บันทึกตั๋วกลับ" : "บันทึกตั๋วใหม่"}
+              className="min-h-11 rounded-lg border border-amber-300 bg-amber-100 px-2 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {activeTicket ? "เก็บตั๋ว" : "เก็บตั๋ว"}
+            </Button>
+            {cart.items.length > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                title="ล้างออร์เดอร์"
+                className="min-h-11 px-2 text-xs text-red-400 hover:text-red-600"
+              >
+                ล้าง
+              </button>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-h-11 px-2 text-xs text-gray-500 hover:text-gray-800 lg:hidden"
+              >
+                ปิด
+              </button>
+            )}
+          </div>
         </div>
         {(ticketMessage || printStatusMessage) && (
           <div className="space-y-1">
@@ -857,129 +820,26 @@ function CartPanel({
           </span>
         </button>
         {canDiscount && (
-          <div className="space-y-2 rounded-lg border border-teal-100 bg-teal-50/50 p-2">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 text-xs text-teal-900">
-                <div className="flex items-center gap-2 font-semibold">
-                  <span>ส่วนลดท้ายบิล</span>
-                  {cart.discount > 0 && <span className="tabular-nums">-{priceStr(cart.discount)}</span>}
-                </div>
-                <p className="mt-0.5 truncate text-[11px] text-teal-700">
-                  {cart.discount > 0
-                    ? cart.discountNote
-                      ? `เหตุผล: ${cart.discountNote}`
-                      : "มีส่วนลดท้ายบิลในออร์เดอร์นี้"
-                    : "ลดจากยอดรวมทั้งออร์เดอร์"}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {cart.discount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearDiscount}
-                    className="min-h-9 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
-                  >
-                    ล้างส่วนลดท้ายบิล
-                  </button>
-                )}
-                <button
-                  type="button"
-                  aria-expanded={discountFormVisible}
-                  disabled={cart.items.length === 0}
-                  onClick={() => onDiscountFormOpenChange(!discountFormVisible)}
-                  className="min-h-9 rounded-lg border border-teal-200 bg-white px-2 text-[11px] font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {discountFormVisible ? "ปิด" : cart.discount > 0 ? "แก้ส่วนลดท้ายบิล" : "เรียกส่วนลดท้ายบิล"}
-                </button>
-              </div>
-            </div>
-            {discountFormVisible && (
-              <div className="space-y-2">
-                <div
-                  role="group"
-                  aria-label="ประเภทส่วนลด"
-                  className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
-                >
-                  <button
-                    type="button"
-                    aria-pressed={discountMode === "amount"}
-                    onClick={() => onDiscountDraftChange({ mode: "amount" })}
-                    className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
-                      discountMode === "amount"
-                        ? "bg-teal-700 text-white"
-                        : "text-teal-800 hover:bg-teal-50"
-                    }`}
-                  >
-                    บาท
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={discountMode === "percentage"}
-                    onClick={() => onDiscountDraftChange({ mode: "percentage" })}
-                    className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
-                      discountMode === "percentage"
-                        ? "bg-teal-700 text-white"
-                        : "text-teal-800 hover:bg-teal-50"
-                    }`}
-                  >
-                    %
-                  </button>
-                </div>
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                  {discountMode === "amount" ? (
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max={cart.subtotal}
-                      step="0.01"
-                      value={discountAmount}
-                      onChange={(event) => onDiscountDraftChange({ amount: event.target.value })}
-                      placeholder="0"
-                      aria-label="จำนวนส่วนลด"
-                      disabled={cart.items.length === 0}
-                      className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-                    />
-                  ) : (
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      value={discountPercentage}
-                      onChange={(event) => onDiscountDraftChange({ percentage: event.target.value })}
-                      placeholder="0"
-                      aria-label="เปอร์เซ็นต์ส่วนลด"
-                      disabled={cart.items.length === 0}
-                      className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    disabled={!canApplyDiscount}
-                    onClick={handleApplyDiscount}
-                    className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ใช้ส่วนลด
-                  </button>
-                </div>
-                {discountMode === "percentage" && percentagePreview > 0 && parsedDiscountValue <= 100 && (
-                  <p className="text-[11px] text-teal-700">
-                    ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(percentagePreview)}</span>
-                  </p>
-                )}
-                <input
-                  value={discountNote}
-                  onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
-                  placeholder="เหตุผล/โปรโมชัน"
-                  aria-label="เหตุผลส่วนลด"
-                  disabled={cart.items.length === 0}
-                  className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-                />
-              </div>
-            )}
-          </div>
+          /* ส่วนลดท้ายบิลพับเป็นปุ่มเช่นกัน — ฟอร์มเต็ม (บาท/% + เหตุผล) ย้ายไป sheet
+             ปุ่มยังโชว์ยอดที่ลดไว้แล้ว จึงไม่ต้องเปิดดูเพื่อรู้ว่ามีส่วนลดอยู่ */
+          <button
+            type="button"
+            onClick={onOpenDiscountTools}
+            disabled={cart.items.length === 0 && cart.discount === 0}
+            className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2 text-left transition-colors hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+          >
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold text-teal-900">ส่วนลดท้ายบิล</span>
+              <span className="block truncate text-[11px] text-teal-700">
+                {cart.discount > 0
+                  ? `-${priceStr(cart.discount)}${cart.discountNote ? ` · ${cart.discountNote}` : ""}`
+                  : "ลดจากยอดรวมทั้งออร์เดอร์"}
+              </span>
+            </span>
+            <span aria-hidden="true" className="shrink-0 text-xs text-teal-400">
+              ›
+            </span>
+          </button>
         )}
         <div className="flex justify-between text-xs text-gray-500">
           <span>ยอดรวม</span>
@@ -1009,6 +869,158 @@ function CartPanel({
         >
           ชำระเงิน
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ฟอร์มส่วนลดท้ายบิล — อยู่ใน sheet ไม่ใช่ท้ายแผงออร์เดอร์ เพราะฟอร์มเต็ม
+ * (เลือกบาท/% + ช่องกรอก + เหตุผล) กินความสูงจนช่องรายการเหลือไม่กี่บรรทัด
+ */
+function BillDiscountPanel({
+  cart,
+  discountMode,
+  discountAmount,
+  discountPercentage,
+  discountNote,
+  onDiscountDraftChange,
+  onApplyDiscount,
+  onClose,
+}: {
+  cart: Cart;
+  discountMode: DiscountType;
+  discountAmount: string;
+  discountPercentage: string;
+  discountNote: string;
+  onDiscountDraftChange: (patch: Partial<DiscountDraft>) => void;
+  onApplyDiscount: (type: DiscountType, value: number, note?: string) => void;
+  onClose: () => void;
+}) {
+  const discountInputValue = discountMode === "percentage" ? discountPercentage : discountAmount;
+  const parsedDiscountValue = Number(discountInputValue);
+  const percentagePreview =
+    discountMode === "percentage" && Number.isFinite(parsedDiscountValue)
+      ? Math.min(cart.subtotal, Math.max(0, cart.subtotal * (parsedDiscountValue / 100)))
+      : 0;
+  const canApplyDiscount =
+    cart.items.length > 0 &&
+    discountInputValue.trim() !== "" &&
+    Number.isFinite(parsedDiscountValue) &&
+    parsedDiscountValue > 0 &&
+    (discountMode === "amount" || parsedDiscountValue <= 100);
+
+  function handleApplyDiscount() {
+    if (!canApplyDiscount) return;
+    onApplyDiscount(discountMode, parsedDiscountValue, discountNote.trim() || undefined);
+    onClose();
+  }
+
+  function handleClearDiscount() {
+    onApplyDiscount("amount", 0);
+    onClose();
+  }
+
+  return (
+    <div className="space-y-2">
+      {cart.discount > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-teal-50 px-3 py-2 text-xs text-teal-900">
+          <span className="min-w-0 truncate">
+            ลดอยู่ <span className="font-semibold tabular-nums">-{priceStr(cart.discount)}</span>
+            {cart.discountNote ? ` · ${cart.discountNote}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={handleClearDiscount}
+            className="min-h-9 shrink-0 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
+          >
+            ล้างส่วนลด
+          </button>
+        </div>
+      )}
+<div className="space-y-2">
+        <div
+          role="group"
+          aria-label="ประเภทส่วนลด"
+          className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
+        >
+          <button
+            type="button"
+            aria-pressed={discountMode === "amount"}
+            onClick={() => onDiscountDraftChange({ mode: "amount" })}
+            className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+              discountMode === "amount"
+                ? "bg-teal-700 text-white"
+                : "text-teal-800 hover:bg-teal-50"
+            }`}
+          >
+            บาท
+          </button>
+          <button
+            type="button"
+            aria-pressed={discountMode === "percentage"}
+            onClick={() => onDiscountDraftChange({ mode: "percentage" })}
+            className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
+              discountMode === "percentage"
+                ? "bg-teal-700 text-white"
+                : "text-teal-800 hover:bg-teal-50"
+            }`}
+          >
+            %
+          </button>
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          {discountMode === "amount" ? (
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              max={cart.subtotal}
+              step="0.01"
+              value={discountAmount}
+              onChange={(event) => onDiscountDraftChange({ amount: event.target.value })}
+              placeholder="0"
+              aria-label="จำนวนส่วนลด"
+              disabled={cart.items.length === 0}
+              className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+            />
+          ) : (
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              max="100"
+              step="0.01"
+              value={discountPercentage}
+              onChange={(event) => onDiscountDraftChange({ percentage: event.target.value })}
+              placeholder="0"
+              aria-label="เปอร์เซ็นต์ส่วนลด"
+              disabled={cart.items.length === 0}
+              className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+            />
+          )}
+          <button
+            type="button"
+            disabled={!canApplyDiscount}
+            onClick={handleApplyDiscount}
+            className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ใช้ส่วนลด
+          </button>
+        </div>
+        {discountMode === "percentage" && percentagePreview > 0 && parsedDiscountValue <= 100 && (
+          <p className="text-[11px] text-teal-700">
+            ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(percentagePreview)}</span>
+          </p>
+        )}
+        <input
+          value={discountNote}
+          onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
+          placeholder="เหตุผล/โปรโมชัน"
+          aria-label="เหตุผลส่วนลด"
+          disabled={cart.items.length === 0}
+          className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+        />
       </div>
     </div>
   );
@@ -2586,7 +2598,7 @@ export function PosTerminal({
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
-  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen;
+  const utilitySheetOpen = ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen || discountFormOpen;
   const displayCart = useMemo(
     () => buildCouponPreviewCart(cart, appliedCoupon?.discount ?? 0),
     [cart, appliedCoupon?.discount],
@@ -3510,18 +3522,11 @@ export function PosTerminal({
               setOrderPanelOpen(true);
             }}
             onClear={() => clearCurrentOrder()}
-            onApplyDiscount={handleApplyDiscount}
             onApplyItemDiscount={handleApplyItemDiscount}
             onClearItemDiscount={handleClearItemDiscount}
             itemDiscountResetKey={itemDiscountResetKey}
             canDiscount={canDiscount}
-            discountMode={discountDraft.mode}
-            discountAmount={discountDraft.amount}
-            discountPercentage={discountDraft.percentage}
-            discountNote={discountDraft.note}
-            onDiscountDraftChange={updateDiscountDraft}
-            discountFormOpen={discountFormOpen}
-            onDiscountFormOpenChange={setDiscountFormOpen}
+            onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
             savedTicketCount={savedTickets.length}
@@ -3764,18 +3769,11 @@ export function PosTerminal({
               setOrderPanelOpen(true);
             }}
             onClear={() => clearCurrentOrder()}
-            onApplyDiscount={handleApplyDiscount}
             onApplyItemDiscount={handleApplyItemDiscount}
             onClearItemDiscount={handleClearItemDiscount}
             itemDiscountResetKey={itemDiscountResetKey}
             canDiscount={canDiscount}
-            discountMode={discountDraft.mode}
-            discountAmount={discountDraft.amount}
-            discountPercentage={discountDraft.percentage}
-            discountNote={discountDraft.note}
-            onDiscountDraftChange={updateDiscountDraft}
-            discountFormOpen={discountFormOpen}
-            onDiscountFormOpenChange={setDiscountFormOpen}
+            onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
             savedTicketCount={savedTickets.length}
@@ -3829,6 +3827,23 @@ export function PosTerminal({
       <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
         {renderOrderPanelContent()}
       </aside>
+
+      <PosUtilitySheet
+        open={discountFormOpen && canDiscount}
+        title="ส่วนลดท้ายบิล"
+        onClose={() => setDiscountFormOpen(false)}
+      >
+        <BillDiscountPanel
+          cart={cart}
+          discountMode={discountDraft.mode}
+          discountAmount={discountDraft.amount}
+          discountPercentage={discountDraft.percentage}
+          discountNote={discountDraft.note}
+          onDiscountDraftChange={updateDiscountDraft}
+          onApplyDiscount={handleApplyDiscount}
+          onClose={() => setDiscountFormOpen(false)}
+        />
+      </PosUtilitySheet>
 
       <PosUtilitySheet
         open={customerToolsOpen}

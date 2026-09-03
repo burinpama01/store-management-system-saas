@@ -262,13 +262,16 @@ export function VoiceCommandButton({
       {supported === false ? (
         <p className="text-xs text-gray-500">{ERROR_MESSAGE.unsupported_browser}</p>
       ) : supported === null ? null : (
-        <>
-          {/* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง */}
-          <p className="text-xs text-gray-500">
+        /* U16 — แจ้งก่อนขอไมโครโฟน: เบราว์เซอร์อาจส่งเสียงออกนอกเครื่อง.
+           ข้อความยังอยู่บนหน้าและอ่านได้ก่อนกดขอไมค์ แต่พับเป็นบรรทัดเดียว —
+           สองบรรทัดเต็มกินความสูงหน้า POS ที่ต้องพอดีจอ */
+        <details className="text-xs text-gray-500">
+          <summary className="cursor-pointer select-none">ความเป็นส่วนตัว / วิธีใช้</summary>
+          <p className="mt-1">
             ระบบไม่บันทึกเสียงหรือข้อความที่พูด แต่เบราว์เซอร์อาจส่งเสียงไปประมวลผลบนบริการของผู้ผลิตเบราว์เซอร์
           </p>
-          <p className="text-xs text-gray-500">พิมพ์คำสั่งแทนได้เสมอ (Ctrl+K ในหน้าอื่น) หรือใช้ปุ่มบนหน้าจอ</p>
-        </>
+          <p className="mt-1">พิมพ์คำสั่งแทนได้เสมอ (Ctrl+K ในหน้าอื่น) หรือใช้ปุ่มบนหน้าจอ</p>
+        </details>
       )}
     </div>
   );

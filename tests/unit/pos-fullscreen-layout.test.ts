@@ -35,10 +35,18 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(terminal).toContain('className="shrink-0 flex gap-2 overflow-x-auto border-b');
   });
 
-  it("shell รวมเป็นคอลัมน์เต็มความสูง หัวข้อ+แท็บคงที่", () => {
+  it("shell รวมเป็นคอลัมน์เต็มความสูง แถวแท็บคงที่", () => {
     expect(workspace).toContain('className="unified-pos-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden"');
-    expect(workspace).toContain('className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-1 pb-2"');
-    expect(workspace).toContain('className="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200"');
+    expect(workspace).toContain('className="flex shrink-0 items-center gap-2 border-b border-gray-200"');
+  });
+
+  it("ไม่มีหัวข้อสองชั้น — ชื่อร้านโชว์ที่แถบหัวของ PosTerminal ที่เดียว", () => {
+    // shell เคยมี header ของตัวเอง (ชื่อร้าน + ป้าย POS รวม) ซ้อนบน topbar ของ POS
+    // ที่โชว์ชื่อร้านอยู่แล้ว = เสียความสูงไปหนึ่งแถวเปล่า ๆ
+    expect(workspace).not.toContain("<header");
+    expect(workspace).toContain('<h1 className="sr-only">');
+    // ปุ่มเสียงต้องใช้ได้ทุกแท็บ จึงย้ายมาอยู่ท้ายแถวแท็บ ไม่ใช่หายไป
+    expect(workspace).toContain("<VoicePosController");
   });
 
   it("แท็บที่เปิดอยู่กินที่เหลือทั้งหมด แท็บที่ปิดถูกซ่อนด้วยคลาส hidden", () => {
@@ -48,7 +56,7 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
       expect(workspace).toContain(`activeTab === "${tab}" ?`);
       expect(workspace).toContain(`activeTab !== "${tab}"`);
     }
-    expect(workspace).toContain('flex-1 flex-col overflow-hidden pt-3');
+    expect(workspace).toContain('flex-1 flex-col overflow-hidden pt-2');
     expect(workspace).toContain('flex-1 overflow-y-auto pt-3');
   });
 
@@ -68,6 +76,16 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
   it("ปุ่มที่พับยังโชว์ลูกค้า/คูปองที่เลือกไว้ (ข้อมูลต้องไม่หายไปกับการพับ)", () => {
     expect(terminal).toContain("selectedCustomerName={selectedCustomer?.name ?? null}");
     expect(terminal).toContain("selectedCustomerName || appliedCoupon");
+  });
+
+  it("หัวแผงออร์เดอร์เป็นแถวเดียว และส่วนลดท้ายบิลพับเป็นปุ่ม", () => {
+    // เดิมหัวแผงซ้อนสามแถว (154px) กินความสูงพอ ๆ กับช่องรายการเอง
+    expect(terminal).toContain('title="ตั๋วที่เปิดค้างไว้"');
+    expect(terminal).toContain("onOpenDiscountTools");
+    expect(terminal).toContain('title="ส่วนลดท้ายบิล"');
+    expect(terminal).toContain("<BillDiscountPanel");
+    // sheet ของส่วนลดต้องนับเป็น utility sheet ด้วย ไม่งั้น drawer มือถือกินโฟกัสทับ
+    expect(terminal).toContain("|| discountFormOpen;");
   });
 
   it("รายการในออร์เดอร์เป็นตัวเลื่อนเดียว — aside ไม่เลื่อนซ้อน", () => {

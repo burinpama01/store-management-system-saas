@@ -86,33 +86,20 @@ export function UnifiedPosWorkspace({
       aria-label={`POS รวม — ${storeName}`}
       className="unified-pos-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
     >
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-1 pb-2">
-        <h1 className="min-w-0 truncate text-sm font-semibold text-gray-700">
-          {storeName}
-          <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
-            POS รวม
-          </span>
-        </h1>
-        {/* U14 — ปุ่มสั่งงานด้วยเสียง (Tier A): mount เฉพาะเมื่อ stores.voice_command_enabled = true
-            (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม) */}
-        {voiceEnabled ? (
-          <VoicePosController
-            voiceEnabled
-            allowedCommands={voiceCommands}
-            aliases={voiceAliases}
-            productAliases={voiceProductAliases}
-            onSelectTab={selectTab}
-            adapter={voiceAdapter}
-          />
-        ) : null}
-      </header>
+      {/* ชื่อร้านไม่ซ้ำที่นี่ — แถบหัวของหน้าขาย (PosTerminal) โชว์อยู่แล้ว การมีหัวข้อ
+          สองชั้นกินความสูงที่ควรเป็นของรายการสินค้า. ปุ่มเสียงต้องใช้ได้ทุกแท็บ
+          จึงย้ายมาอยู่ท้ายแถวแท็บแทนที่จะมี header เป็นของตัวเอง */}
+      <h1 className="sr-only">
+        {storeName} — POS รวม
+      </h1>
 
-      <div
-        role="tablist"
-        aria-label="ส่วนของ POS รวม"
-        onKeyDown={onTablistKeyDown}
-        className="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200"
-      >
+      <div className="flex shrink-0 items-center gap-2 border-b border-gray-200">
+        <div
+          role="tablist"
+          aria-label="ส่วนของ POS รวม"
+          onKeyDown={onTablistKeyDown}
+          className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+        >
         {TABS.map((tab) => {
           const isActive = tab.id === activeTab;
           return (
@@ -138,6 +125,20 @@ export function UnifiedPosWorkspace({
             </button>
           );
         })}
+        </div>
+        {/* U14 — ปุ่มสั่งงานด้วยเสียง (Tier A): mount เฉพาะเมื่อ stores.voice_command_enabled = true
+            (flag ปิด = ไม่ mount เลย จึงไม่มี hook ของ router/speech ทำงานในเส้นทางเดิม) */}
+        {voiceEnabled ? (
+          <VoicePosController
+            className="shrink-0 pb-1 pr-1"
+            voiceEnabled
+            allowedCommands={voiceCommands}
+            aliases={voiceAliases}
+            productAliases={voiceProductAliases}
+            onSelectTab={selectTab}
+            adapter={voiceAdapter}
+          />
+        ) : null}
       </div>
 
       {/* ทุก panel คง mounted — hidden ตัดออกจาก a11y tree/tab order โดย state ไม่หาย */}
@@ -148,9 +149,9 @@ export function UnifiedPosWorkspace({
         hidden={activeTab !== "sell"}
         tabIndex={-1}
         data-voice-focus="cart"
-        className={`min-w-0 flex-1 flex-col overflow-hidden pt-3 ${activeTab === "sell" ? "flex" : "hidden"}`}
+        className={`min-w-0 flex-1 flex-col overflow-hidden pt-2 ${activeTab === "sell" ? "flex" : "hidden"}`}
       >
-        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
+        <div className="mb-1 flex shrink-0 flex-wrap items-center gap-2 px-1 text-xs text-gray-600">
           <span className="font-medium">บริบท:</span>
           {selectedTable ? (
             <>
@@ -161,7 +162,7 @@ export function UnifiedPosWorkspace({
               <button
                 type="button"
                 onClick={() => setSelectedTable(null)}
-                className="min-h-8 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 transition-colors motion-reduce:transition-none"
+                className="min-h-8 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 transition-colors motion-reduce:transition-none"
               >
                 ล้างโต๊ะที่เลือก
               </button>
