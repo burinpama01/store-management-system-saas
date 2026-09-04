@@ -3965,6 +3965,16 @@ export interface Database {
           attempts: number;
         }[];
       };
+      /** v3 — ปิดงานที่รอคิวนานเกินเพดานให้เป็น failed (ไม่พิมพ์ใบเสร็จข้ามวัน) */
+      expire_old_print_jobs: {
+        Args: { p_store_id: string };
+        Returns: number;
+      };
+      /** v3 — เที่ยงคืนล่าสุดตามเวลาของร้าน (เส้นแบ่งวันของคิวงานพิมพ์) */
+      store_day_start: {
+        Args: { p_store_id: string };
+        Returns: string;
+      };
       /** v3 — ปิดงานที่ lease หมดโดยไม่มี ack ให้เป็น unknown (lazy reconciliation) */
       reconcile_stale_print_jobs: {
         Args: { p_store_id: string };

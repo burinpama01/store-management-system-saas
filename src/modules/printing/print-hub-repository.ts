@@ -223,6 +223,22 @@ export async function reconcileStalePrintJobs(storeId: string): Result<{ reconci
   return { data: { reconciled: typeof data === "number" ? data : 0 }, error: null };
 }
 
+/**
+ * ปิดงานที่ค้างข้ามเที่ยงคืน (ตามเวลาของร้าน) ให้เป็น failed พร้อมเหตุผล — lazy ตอน poll
+ *
+ * ร้านเริ่มวันใหม่ด้วยคิวสะอาดเสมอ: ใบเสร็จของเมื่อวานไม่มีใครรอแล้ว และถ้าปล่อยค้างไว้
+ * วันที่ร้านเปิด Hub อีกครั้งมันจะพิมพ์ย้อนหลังทั้งกองจนกระดาษหมดม้วน (เจอจริงที่หน้าร้าน
+ * 2026-09-04: ค้าง 861 ใบย้อนไปสองเดือน) บิลเก่ายังสั่งพิมพ์ย้อนหลังจากประวัติได้ตามปกติ
+ */
+export async function expireOldPrintJobs(storeId: string): Result<{ expired: number }> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("expire_old_print_jobs", {
+    p_store_id: storeId,
+  });
+  if (error) return { data: null, error: mapError(error) };
+  return { data: { expired: typeof data === "number" ? data : 0 }, error: null };
+}
+
 /** ผลของการ ack: applied=false แปลว่า ack นี้ไม่ตรงกับการเคลมปัจจุบัน (ค้างจากรอบก่อน) */
 export interface AckPrintJobResult {
   applied: boolean;

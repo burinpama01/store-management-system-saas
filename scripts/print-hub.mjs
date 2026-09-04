@@ -590,8 +590,12 @@ export async function printUsbJob(binding, bytes, options = {}) {
 }
 
 // ข้อความ error ที่แปลว่า "ยังไม่ได้ส่งไบต์ออกไปแน่นอน" -- งานพวกนี้พิมพ์ซ้ำได้ปลอดภัย
+// "Connection timed out" = ต่อ socket ไม่ติดตั้งแต่แรก (ยังไม่ได้ส่งไบต์) ต่างจาก
+// "Print send timed out" ที่ต่อติดแล้วค้างระหว่างส่ง ซึ่งกระดาษอาจออกไปบางส่วนแล้ว
+// ความต่างนี้เจอจากการทดสอบกับเครื่องจริง: เครื่องพิมพ์รับ TCP ได้ทีละงาน งานที่ต่อไม่ทัน
+// ถูกตีเป็น unknown ทั้งที่ยังไม่ได้พิมพ์ ทำให้ต้องให้คนมานั่งไล่ตรวจโดยไม่จำเป็น
 const DEFINITE_FAILURE_RE =
-  /Invalid or disallowed|Invalid print job|Print job too large|ไม่พบเครื่องพิมพ์|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|OpenPrinter failed/i;
+  /Invalid or disallowed|Invalid print job|Print job too large|ไม่พบเครื่องพิมพ์|Connection timed out|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|OpenPrinter failed/i;
 
 /**
  * แยก "รู้แน่ว่าไม่ออก" (failed) ออกจาก "ไม่รู้ผล" (unknown).
@@ -942,7 +946,8 @@ async function main() {
           printersSeen: result.printersSeen ?? null,
           storeId: config.storeId,
         });
-        if (result.processed > 0) console.log(`Printed ${result.processed} job(s).`);
+        // processed = จำนวนงานที่ "จัดการแล้ว" ไม่ใช่ "พิมพ์สำเร็จ" — บางใบ ack เป็น failed/unknown
+        if (result.processed > 0) console.log(`Handled ${result.processed} job(s) this cycle.`);
       } else {
         runtime.update({ state: "degraded", lastPollAt: pollAt, lastErrorCode: `http_${result.status ?? "error"}`, storeId: config.storeId });
         waitMs = ERROR_BACKOFF_MS;

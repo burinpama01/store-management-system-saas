@@ -143,6 +143,13 @@ export const PRINT_HUB_MIN_PROTOCOL_VERSION = PRINT_HUB_LEGACY_PROTOCOL_VERSION;
 /** เวลาที่ agent มีให้ ack หนึ่งงานก่อนถูกนับเป็น unknown (วินาที) */
 export const PRINT_JOB_LEASE_SECONDS = 120;
 
+/**
+ * คิวงานพิมพ์เริ่มใหม่ทุกเที่ยงคืนตามเวลาของร้าน — งานที่ค้างข้ามคืนถูกปิดเป็น failed
+ * และไม่ถูกแจกให้ agent อีก (บิลเก่าสั่งพิมพ์ย้อนหลังจากประวัติได้อยู่แล้ว)
+ * ตัวตัดสินอยู่ในฐานข้อมูล: store_day_start() / expire_old_print_jobs()
+ */
+export const PRINT_QUEUE_RESETS_AT_STORE_MIDNIGHT = true;
+
 /** ผลของงานพิมพ์หนึ่งใบตามที่ agent รายงานกลับ */
 export type PrintJobOutcome = "printed" | "failed" | "unknown";
 

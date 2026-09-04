@@ -9,6 +9,7 @@ import {
 } from "@/modules/printing/print-hub";
 import {
   claimPendingPrintJobs,
+  expireOldPrintJobs,
   getPrinterIdsForJobs,
   getStoreHubAuth,
   getUsbBindings,
@@ -89,6 +90,20 @@ export async function POST(req: NextRequest) {
       organizationId: auth.data.organizationId,
       storeId,
       context: { reconciled: reconciled.data.reconciled },
+    });
+  }
+
+  // งานที่ค้างข้ามวันไม่ควรถูกพิมพ์อีก — ปิดก่อนแจกงานรอบใหม่ (lazy เพราะไม่มี cron ว่าง)
+  const expired = await expireOldPrintJobs(storeId);
+  if (expired.data && expired.data.expired > 0) {
+    await logSystemEvent({
+      level: "warn",
+      source: "printing.hub",
+      action: "hubExpireOldJobs",
+      message: "ปิดงานพิมพ์ที่ค้างในคิวเกินเพดานเวลา — ไม่พิมพ์ย้อนหลัง",
+      organizationId: auth.data.organizationId,
+      storeId,
+      context: { expired: expired.data.expired },
     });
   }
 

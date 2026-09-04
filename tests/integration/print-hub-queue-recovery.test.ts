@@ -219,3 +219,69 @@ describe.skipIf(!envReady)("print hub queue recovery (v3 Task 1, local supabase)
     expect(status.data!.unknownJobList.some((job) => job.id === staleId)).toBe(true);
   });
 });
+
+// v3 — คิวเริ่มใหม่ทุกเที่ยงคืนของร้าน
+//
+// เจอจากหน้างานจริง: Hub ออฟไลน์สองเดือน งานสะสม 861 ใบ พอเปิด Hub มันพิมพ์ย้อนหลังทันที
+// ใบเสร็จของเมื่อวานไม่มีใครรอแล้ว และบิลเก่าสั่งพิมพ์ย้อนหลังจากประวัติได้อยู่แล้ว
+describe.skipIf(!envReady)("print queue resets at store midnight (v3)", () => {
+  const service = getLocalSupabase().client;
+  const createdIds: string[] = [];
+
+  async function insert(createdAt: string): Promise<string> {
+    const { data, error } = await service
+      .from("print_jobs")
+      .insert({
+        organization_id: ORG_A,
+        store_id: STORE_A,
+        target_kind: "ip",
+        target_host: "192.168.1.50",
+        payload_b64: PAYLOAD,
+        status: "pending",
+        created_at: createdAt,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    createdIds.push(data.id as string);
+    return data.id as string;
+  }
+
+  afterAll(async () => {
+    if (createdIds.length > 0) await service.from("print_jobs").delete().in("id", createdIds);
+  });
+
+  it("งานของเมื่อวานถูกปิดเป็น failed พร้อมเหตุผล และไม่ถูกแจกให้ agent", async () => {
+    const yesterday = await insert(new Date(Date.now() - 30 * 3600_000).toISOString());
+    const today = await insert(new Date().toISOString());
+
+    const { data: expired, error } = await service.rpc("expire_old_print_jobs", { p_store_id: STORE_A });
+    expect(error).toBeNull();
+    expect(Number(expired)).toBeGreaterThanOrEqual(1);
+
+    const { data: rows } = await service
+      .from("print_jobs")
+      .select("id, status, error")
+      .in("id", [yesterday, today]);
+    const oldRow = rows?.find((row) => row.id === yesterday);
+    const newRow = rows?.find((row) => row.id === today);
+
+    expect(oldRow?.status).toBe("failed");
+    expect(oldRow?.error).toContain("ข้ามคืน");
+    // งานของวันนี้ต้องไม่โดนลูกหลง
+    expect(newRow?.status).toBe("pending");
+
+    const { data: claimed } = await service.rpc("claim_print_jobs", { p_store_id: STORE_A, p_limit: 20 });
+    const claimedIds = (claimed ?? []).map((job: { id: string }) => job.id);
+    expect(claimedIds).not.toContain(yesterday);
+    expect(claimedIds).toContain(today);
+  });
+
+  it("claim ไม่หยิบงานข้ามคืนแม้ยังไม่ได้เรียก expire (กันจังหวะคาบเกี่ยว)", async () => {
+    const stale = await insert(new Date(Date.now() - 50 * 3600_000).toISOString());
+
+    const { data: claimed } = await service.rpc("claim_print_jobs", { p_store_id: STORE_A, p_limit: 20 });
+
+    expect((claimed ?? []).map((job: { id: string }) => job.id)).not.toContain(stale);
+  });
+});

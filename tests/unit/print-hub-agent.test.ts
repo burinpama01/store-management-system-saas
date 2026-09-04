@@ -291,3 +291,16 @@ describe("print hub agent — claim token และ outcome ใน ack", () => {
     expect(result).toMatchObject({ ok: true, processed: 1 });
   });
 });
+
+// เจอจากการทดสอบกับเครื่องพิมพ์จริง (each other II, 2026-09-04): เครื่องพิมพ์ TCP รับได้
+// ทีละงาน งานที่ต่อไม่ติดจึงได้ error "Connection timed out" ทั้งที่ยังไม่ได้ส่งไบต์เลย
+// ถ้าตีเป็น unknown จะกลายเป็นงานรอตรวจสอบกองโต ทั้งที่พิมพ์ซ้ำได้ปลอดภัย
+describe("print hub agent — แยก timeout ตอนต่อ ออกจาก timeout ตอนส่ง", () => {
+  it("ต่อ socket ไม่ติด = failed (ยังไม่ได้ส่งไบต์ พิมพ์ซ้ำได้)", () => {
+    expect(classifyPrintOutcome(new Error("Connection timed out (5000ms)"))).toBe("failed");
+  });
+
+  it("ค้างระหว่างส่ง = unknown (กระดาษอาจออกไปบางส่วนแล้ว)", () => {
+    expect(classifyPrintOutcome(new Error("Print send timed out (30000ms)"))).toBe("unknown");
+  });
+});
