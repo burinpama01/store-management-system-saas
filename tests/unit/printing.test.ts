@@ -251,13 +251,15 @@ describe("buildEscPosReceipt", () => {
     const result58 = buildEscPosReceipt(baseInput);
     // 80mm output should be larger (wider lines)
     expect(result80.length).toBeGreaterThan(result58.length);
-    // 80mm divider (42 chars) should appear in 80mm output
+    // 80mm = 48 ตัวอักษรต่อบรรทัด (576 จุด ÷ 12 จุดต่อตัว) — วัดกับเครื่องจริงที่หน้าร้าน
+    // แล้วว่าบรรทัดยาว 49 ตัวตกบรรทัด ส่วน 48 พอดีเป๊ะ; ค่าเก่า 42 ทำให้ใบเสร็จแคบกว่าที่ควร
     const text80 = new TextDecoder().decode(result80);
-    expect(text80).toContain("-".repeat(42));
-    // 58mm divider (32 chars) should NOT appear standalone in 58mm output when using 80mm
-    // i.e. 58mm output should NOT contain 42-char divider
+    expect(text80).toContain("-".repeat(48));
+    expect(text80).not.toContain("-".repeat(49));
+    // 58mm ต้องไม่กว้างเท่า 80mm ไม่งั้นบรรทัดจะตกทุกบรรทัดบนกระดาษแคบ
     const text58 = new TextDecoder().decode(result58);
-    expect(text58).not.toContain("-".repeat(42));
+    expect(text58).not.toContain("-".repeat(48));
+    expect(text58).toContain("-".repeat(32));
   });
 });
 

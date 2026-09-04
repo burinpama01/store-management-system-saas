@@ -108,3 +108,35 @@ describe("รูป QR ท้ายใบเสร็จของร้าน", 
     }
   });
 });
+
+// ความกว้างใบเสร็จผูกกันสองที่: จำนวนคอลัมน์ (receipt-lines / escpos) กับขนาดฟอนต์ของ
+// ตัววาด raster ถ้าใครแก้ค่าใดค่าหนึ่งโดยไม่ดูอีกค่า ใบเสร็จจะแคบลงหรือข้อความล้นออกนอกภาพ
+// เทสต์นี้ล็อกความสัมพันธ์ไว้ พร้อมค่าที่วัดจากเครื่องจริงหน้าร้าน
+describe("ความกว้างใบเสร็จต้องตรงกับหัวพิมพ์จริง", () => {
+  it("80mm = 48 คอลัมน์, 58mm = 32 คอลัมน์ (วัดจากเครื่องจริง)", async () => {
+    const { RECEIPT_COLS } = await import("@/modules/printing/receipt-lines");
+    expect(RECEIPT_COLS["80mm"]).toBe(48);
+    expect(RECEIPT_COLS["58mm"]).toBe(32);
+  });
+
+  it("เส้นคั่นในใบเสร็จยาวเท่าความกว้างกระดาษพอดี", () => {
+    const { lines } = buildReceiptLines(baseReceipt());
+    const divider = lines.find((line) => /^-+$/.test(line.text));
+    expect(divider?.text).toHaveLength(48);
+  });
+
+  it("ฟอนต์ของ raster ต้องแคบพอให้ 48 คอลัมน์อยู่ในความกว้าง 576 จุด", async () => {
+    const source = await import("node:fs").then((fs) =>
+      fs.readFileSync("src/modules/printing/receipt-raster-client.ts", "utf8"),
+    );
+    const fontPx = Number(/const fontPx = (\d+)/.exec(source)?.[1]);
+    const padX = Number(/const padX = (\d+)/.exec(source)?.[1]);
+    expect(Number.isFinite(fontPx)).toBe(true);
+
+    // Courier: ความกว้างตัวอักษร ~0.6 เท่าของขนาดฟอนต์
+    const usable80 = 576 - padX * 2;
+    const usable58 = 384 - padX * 2;
+    expect(48 * 0.6 * fontPx).toBeLessThanOrEqual(usable80);
+    expect(32 * 0.6 * fontPx).toBeLessThanOrEqual(usable58);
+  });
+});

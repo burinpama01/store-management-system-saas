@@ -97,8 +97,11 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
   const width = RASTER_WIDTH[data.paperWidth];
   const { lines } = buildReceiptLines(data);
 
-  // Monospace so the pre-padded columns line up; size tuned to fit the dot width.
-  const fontPx = data.paperWidth === "58mm" ? 20 : 22;
+  // Monospace so the pre-padded columns line up; ขนาดฟอนต์ต้องพอดีกับจำนวนคอลัมน์:
+  // Courier กว้างราว 0.6 เท่าของขนาดฟอนต์ ดังนั้น cols × 0.6 × fontPx ต้องไม่เกิน
+  // (width − padX×2) ไม่งั้นบรรทัดที่เต็มความกว้างจะล้นออกนอกภาพ
+  //   80mm: 48 × 0.6 × 19 = 547 ≤ 560   ·   58mm: 32 × 0.6 × 19 = 365 ≤ 368
+  const fontPx = 19;
   const lineH = Math.round(fontPx * 1.25);
   const padX = 8;
   const padY = 8;

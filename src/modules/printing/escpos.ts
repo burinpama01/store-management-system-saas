@@ -42,7 +42,11 @@ function encodeText(text: string): number[] {
 
 // ─── Column widths ───────────────────────────────────────────────────
 
-const COLUMNS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 42 };
+// จำนวนตัวอักษรต่อบรรทัดของ Font A ตามความกว้างหัวพิมพ์จริง (58mm = 384 จุด, 80mm = 576 จุด
+// หารด้วยความกว้างตัวอักษร 12 จุด). วัดยืนยันกับเครื่องจริงที่หน้าร้าน 2026-09-04:
+// บรรทัดยาว 49 ตัวตกบรรทัด ส่วน 48 ตัวพอดีเป๊ะ — ค่าเดิม 42 ทำให้ใบเสร็จ 80mm
+// ใช้กระดาษแค่ 87.5% และคอลัมน์ราคาไม่ชิดขอบขวาจริง
+const COLUMNS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 48 };
 
 function padRight(text: string, width: number): string {
   return text.length >= width ? text.slice(0, width) : text + " ".repeat(width - text.length);

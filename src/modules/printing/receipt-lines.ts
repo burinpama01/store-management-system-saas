@@ -3,7 +3,15 @@ import { buildReceiptPromptPayQr } from "./receipt-qr";
 import { formatPoints } from "@/shared/utils/points";
 
 // Characters per row for each paper width (monospace layout).
-export const RECEIPT_COLS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 42 };
+/**
+ * จำนวนตัวอักษรต่อบรรทัดตามความกว้างหัวพิมพ์จริง (58mm = 384 จุด, 80mm = 576 จุด
+ * หารด้วยความกว้างตัวอักษร 12 จุด). วัดกับเครื่องจริงที่หน้าร้าน 2026-09-04 แล้ว:
+ * บรรทัดยาว 49 ตัวตกบรรทัด ส่วน 48 ตัวพอดีเป๊ะ
+ *
+ * ค่านี้ผูกกับขนาดฟอนต์ของ receipt-raster-client: cols x 0.6 x fontPx ต้องไม่เกิน
+ * ความกว้างที่วาดได้ ถ้าเพิ่ม cols ต้องลด fontPx ตาม ไม่งั้นข้อความจะล้นออกนอกภาพ
+ */
+export const RECEIPT_COLS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 48 };
 
 function priceStr(n: number): string {
   return n.toFixed(2);
