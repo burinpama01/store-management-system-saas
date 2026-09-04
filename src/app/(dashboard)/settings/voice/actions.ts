@@ -14,6 +14,12 @@ import {
   VOICE_ALIAS_INTENT_TYPES,
   type VoiceAliasIntentType,
 } from "@/modules/voice-pos/alias-repository";
+import {
+  ModifierOptionSlotsSchema,
+  isOptionOwnedByStore,
+} from "@/modules/voice-pos/alias-proposal";
+import { listProducts } from "@/modules/catalog/repository";
+import { logSystemEvent } from "@/modules/system/event-log";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_ALIAS_LENGTH = 60;
@@ -105,4 +111,61 @@ export async function saveProductAliasesAction(
   revalidatePath("/settings/voice", "page");
   revalidatePath("/pos", "page");
   return { error: null, saved };
+}
+
+/**
+ * P9 — บันทึกคำเรียก "ตัวเลือกสินค้า" ที่ผู้จัดการกดยืนยันเอง
+ *
+ * ด่านที่ต้องผ่านครบก่อนเขียน:
+ *   1. สิทธิ์ settings.manage_store (คนอื่นไม่มีทางมาถึงบรรทัดนี้)
+ *   2. slots เป็น uuid ครบสามตัว
+ *   3. ตัวเลือกนั้นเป็นของ "สินค้าในร้านนี้" จริง — กัน alias ข้ามร้าน/ข้ามสินค้า
+ * ระบบไม่เคยสร้าง alias เองจากคำที่ได้ยิน: action นี้ถูกเรียกจากปุ่มยืนยันเท่านั้น
+ */
+export async function saveOptionAliasAction(
+  _prev: { error: string | null; success: string | null },
+  formData: FormData,
+): Promise<{ error: string | null; success: string | null }> {
+  await requirePermission("settings.manage_store");
+  const { ctx, user } = await getStoreContext();
+
+  const aliasText = String(formData.get("aliasText") ?? "").trim();
+  if (!aliasText) return { error: "ไม่มีคำเรียกให้บันทึก", success: null };
+  if (aliasText.length > MAX_ALIAS_LENGTH) return { error: "คำเรียกยาวเกินไป", success: null };
+
+  const slots = ModifierOptionSlotsSchema.safeParse({
+    productId: String(formData.get("productId") ?? ""),
+    modifierGroupId: String(formData.get("modifierGroupId") ?? ""),
+    optionId: String(formData.get("optionId") ?? ""),
+  });
+  if (!slots.success) return { error: "ข้อมูลตัวเลือกไม่ถูกต้อง", success: null };
+
+  const products = await listProducts(ctx.storeId, { includeInactive: true });
+  if (!isOptionOwnedByStore(slots.data, products.data ?? [])) {
+    return { error: "ตัวเลือกนี้ไม่ได้อยู่ในเมนูของร้านนี้", success: null };
+  }
+
+  const { error } = await createVoiceAlias({
+    organizationId: ctx.organizationId,
+    storeId: ctx.storeId,
+    aliasText,
+    intentType: "modifier_option",
+    modifierOptionSlots: slots.data,
+    createdBy: user.id,
+  });
+  if (error) return { error: error.userMessage, success: null };
+
+  await logSystemEvent({
+    level: "info",
+    source: "voice.alias",
+    action: "saveOptionAlias",
+    message: `บันทึกคำเรียกตัวเลือก "${aliasText}" แล้ว`,
+    organizationId: ctx.organizationId,
+    storeId: ctx.storeId,
+    actorUserId: user.id,
+    context: { ...slots.data },
+  });
+
+  revalidatePath("/settings/voice", "page");
+  return { error: null, success: `บันทึกคำเรียก "${aliasText}" แล้ว` };
 }

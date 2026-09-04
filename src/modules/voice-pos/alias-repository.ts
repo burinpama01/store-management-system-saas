@@ -17,11 +17,13 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 
 /**
  * intent ที่ alias ผูกได้
- *   navigate = เปิดหน้าในระบบ (Tier A)
- *   product  = คำเรียกเมนู เช่น "มัจฉะลาเต้" → สินค้า "Matcha latte" (U22)
+ *   navigate        = เปิดหน้าในระบบ (Tier A)
+ *   product         = คำเรียกเมนู เช่น "มัจฉะลาเต้" → สินค้า "Matcha latte" (U22)
+ *   modifier_option = คำเรียกตัวเลือก เช่น "หวานน้อย" → ตัวเลือก 25% ของสินค้านั้น (P9)
+ *                     ผู้จัดการต้องกดยืนยันเองเสมอ ระบบไม่เรียนรู้เอง
  * ยังคงหลัก "เสียงห้ามแตะเงิน/สต๊อก" — ไม่มี intent ที่ผูกกับการเงิน
  */
-export const VOICE_ALIAS_INTENT_TYPES = ["navigate", "product"] as const;
+export const VOICE_ALIAS_INTENT_TYPES = ["navigate", "product", "modifier_option"] as const;
 export type VoiceAliasIntentType = (typeof VOICE_ALIAS_INTENT_TYPES)[number];
 
 export interface VoiceAlias {
@@ -47,11 +49,26 @@ export interface CreateVoiceAliasInput {
   readonly targetQuery?: string;
   /** product = สินค้าที่ต้องการ */
   readonly productId?: string;
+  /** modifier_option = ตัวเลือกที่ผูก (ตรวจ ownership มาก่อนแล้วจากชั้น action) */
+  readonly modifierOptionSlots?: {
+    readonly productId: string;
+    readonly modifierGroupId: string;
+    readonly optionId: string;
+  };
   readonly createdBy: string;
 }
 
 /** สร้าง slots ให้ตรงชนิด intent — คืน null เมื่อข้อมูลไม่ครบ */
 function buildAliasSlots(input: CreateVoiceAliasInput): Record<string, string> | null {
+  if (input.intentType === "modifier_option") {
+    const slots = input.modifierOptionSlots;
+    if (!slots) return null;
+    return {
+      product_id: slots.productId,
+      modifier_group_id: slots.modifierGroupId,
+      option_id: slots.optionId,
+    };
+  }
   if (input.intentType === "product") {
     const productId = input.productId?.trim();
     return productId ? { product_id: productId } : null;
