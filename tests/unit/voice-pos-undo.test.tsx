@@ -116,9 +116,10 @@ function renderVoicePos(options: { readonly locked?: boolean } = {}) {
       />
     </VoiceCartBridgeProvider>,
   );
-  const speak = (phrase: string) => {
+  // onResult เป็น async ตั้งแต่ P5 (AI fallback) — ต้องรอ microtask ก่อนอ่านข้อความ
+  const speak = async (phrase: string) => {
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal(phrase));
+    await act(async () => fake.emitFinal(phrase));
   };
   return { speak, selectTab };
 }
@@ -128,7 +129,7 @@ afterEach(() => {
 });
 
 describe("voice cart + undo (state machine ล้วน)", () => {
-  it("token หมดอายุตามหน้าต่าง 6 วินาที", () => {
+  it("token หมดอายุตามหน้าต่าง 6 วินาที", async () => {
     const token = createVoiceUndoToken({
       id: "t1",
       previousCart: emptyCart("store-1"),
@@ -140,13 +141,13 @@ describe("voice cart + undo (state machine ล้วน)", () => {
     expect(isVoiceUndoTokenValid(token, 1000 + VOICE_UNDO_WINDOW_MS)).toBe(false);
   });
 
-  it("ใช้ token หมดอายุ = ไม่คืนตะกร้า และไม่ throw", () => {
+  it("ใช้ token หมดอายุ = ไม่คืนตะกร้า และไม่ throw", async () => {
     const token = createVoiceUndoToken({ id: "t1", previousCart: emptyCart("store-1"), label: "x", now: 0 });
     expect(consumeVoiceUndoToken(token, VOICE_UNDO_WINDOW_MS + 1).status).toBe("expired");
     expect(consumeVoiceUndoToken(null, 0).status).toBe("expired");
   });
 
-  it("คืนตะกร้าใบเดิมเป๊ะ (snapshot ทั้งใบ)", () => {
+  it("คืนตะกร้าใบเดิมเป๊ะ (snapshot ทั้งใบ)", async () => {
     const previous = addToCart(emptyCart("store-1"), { product: LATTE, variant: null, modifiers: [], quantity: 3 });
     const token = createVoiceUndoToken({ id: "t1", previousCart: previous, label: "x", now: 0 });
     const outcome = consumeVoiceUndoToken(token, 1000);
@@ -156,10 +157,10 @@ describe("voice cart + undo (state machine ล้วน)", () => {
 });
 
 describe("VoicePosController — voice cart กับ Undo บนหน้าจอ", () => {
-  it("voice cart: พูดเพิ่มสินค้า → ตะกร้าเปลี่ยน และมีปุ่มย้อนกลับ", () => {
+  it("voice cart: พูดเพิ่มสินค้า → ตะกร้าเปลี่ยน และมีปุ่มย้อนกลับ", async () => {
     const { speak, selectTab } = renderVoicePos();
 
-    speak("เพิ่มลาเต้ 2 แก้ว");
+    await speak("เพิ่มลาเต้ 2 แก้ว");
 
     expect(screen.getByTestId("cart-qty")).toHaveTextContent("2");
     expect(screen.getByTestId("cart-total")).toHaveTextContent("200");
@@ -167,21 +168,21 @@ describe("VoicePosController — voice cart กับ Undo บนหน้าจ
     expect(selectTab).toHaveBeenCalledWith("sell");
   });
 
-  it("undo: กดย้อนกลับแล้วตะกร้ากลับเป็นใบก่อนหน้า และปุ่มหายไป", () => {
+  it("undo: กดย้อนกลับแล้วตะกร้ากลับเป็นใบก่อนหน้า และปุ่มหายไป", async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มลาเต้ 2 แก้ว");
+    await speak("เพิ่มลาเต้ 2 แก้ว");
     fireEvent.click(screen.getByRole("button", { name: /ย้อนกลับ/ }));
 
     expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
     expect(screen.queryByRole("button", { name: /ย้อนกลับ/ })).toBeNull();
   });
 
-  it("undo: คำสั่งใหม่ทำให้ token เดิมใช้ไม่ได้ (ย้อนได้แค่ครั้งล่าสุด)", () => {
+  it("undo: คำสั่งใหม่ทำให้ token เดิมใช้ไม่ได้ (ย้อนได้แค่ครั้งล่าสุด)", async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มลาเต้ 2 แก้ว");
-    speak("เพิ่มอีก 3 ลาเต้");
+    await speak("เพิ่มลาเต้ 2 แก้ว");
+    await speak("เพิ่มอีก 3 ลาเต้");
     expect(screen.getByTestId("cart-qty")).toHaveTextContent("5");
 
     fireEvent.click(screen.getByRole("button", { name: /ย้อนกลับ/ }));
@@ -189,11 +190,11 @@ describe("VoicePosController — voice cart กับ Undo บนหน้าจ
     expect(screen.getByTestId("cart-qty")).toHaveTextContent("2");
   });
 
-  it("undo: พ้น 6 วินาทีแล้วปุ่มย้อนกลับหายไปเอง", () => {
+  it("undo: พ้น 6 วินาทีแล้วปุ่มย้อนกลับหายไปเอง", async () => {
     vi.useFakeTimers();
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มลาเต้ 2 แก้ว");
+    await speak("เพิ่มลาเต้ 2 แก้ว");
     expect(screen.getByRole("button", { name: /ย้อนกลับ/ })).toBeInTheDocument();
 
     act(() => {
@@ -204,32 +205,32 @@ describe("VoicePosController — voice cart กับ Undo บนหน้าจ
     expect(screen.getByTestId("cart-qty")).toHaveTextContent("2");
   });
 
-  it("blocked payment: คำสั่งการเงินไม่แตะตะกร้าและไม่มีปุ่มย้อนกลับ", () => {
+  it("blocked payment: คำสั่งการเงินไม่แตะตะกร้าและไม่มีปุ่มย้อนกลับ", async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มลาเต้ 2 แก้ว");
+    await speak("เพิ่มลาเต้ 2 แก้ว");
     fireEvent.click(screen.getByRole("button", { name: /ย้อนกลับ/ }));
 
     for (const phrase of ["ชำระเงิน", "เช็คบิล", "ล้างตะกร้า", "ให้ส่วนลด 50 บาท"]) {
-      speak(phrase);
+      await speak(phrase);
       expect(screen.getByTestId("cart-count"), phrase).toHaveTextContent("0");
       expect(screen.queryByRole("button", { name: /ย้อนกลับ/ }), phrase).toBeNull();
     }
   });
 
-  it("ตะกร้าถูกล็อก → เสียงแก้ไม่ได้ และแจ้งให้ทำบนหน้าจอ", () => {
+  it("ตะกร้าถูกล็อก → เสียงแก้ไม่ได้ และแจ้งให้ทำบนหน้าจอ", async () => {
     const { speak } = renderVoicePos({ locked: true });
 
-    speak("เพิ่มลาเต้ 2 แก้ว");
+    await speak("เพิ่มลาเต้ 2 แก้ว");
 
     expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
     expect(screen.queryByRole("button", { name: /ย้อนกลับ/ })).toBeNull();
   });
 
-  it("ไม่พบสินค้า → ตะกร้าไม่เปลี่ยนและไม่มี token ค้าง", () => {
+  it("ไม่พบสินค้า → ตะกร้าไม่เปลี่ยนและไม่มี token ค้าง", async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มยานอวกาศ");
+    await speak("เพิ่มยานอวกาศ");
 
     expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
     expect(screen.queryByRole("button", { name: /ย้อนกลับ/ })).toBeNull();

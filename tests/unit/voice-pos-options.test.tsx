@@ -183,9 +183,10 @@ function renderVoicePos() {
       <VoicePosController voiceEnabled allowedCommands={[]} onSelectTab={selectTab} adapter={fake.adapter} />
     </VoiceCartBridgeProvider>,
   );
-  const speak = (phrase: string) => {
+  // onResult เป็น async ตั้งแต่ P5 (AI fallback) — ต้องรอ microtask ก่อนอ่านข้อความ
+  const speak = async (phrase: string) => {
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal(phrase));
+    await act(async () => fake.emitFinal(phrase));
   };
   return { speak, selectTab };
 }
@@ -193,11 +194,11 @@ function renderVoicePos() {
 describe("U21 — คำศัพท์ตะกร้า/ออเดอร์", () => {
   it.each(["เปิดตะกร้า", "เปิดออเดอร์", "เปิดออร์เดอร์", "ไปที่ตะกร้า"])(
     '"%s" เปิดแผงออเดอร์เดียวกัน',
-    (phrase) => {
+    async (phrase) => {
       const { speak } = renderVoicePos();
       expect(screen.getByTestId("order-panel")).toHaveTextContent("ปิด");
 
-      speak(phrase);
+      await speak(phrase);
 
       expect(screen.getByTestId("order-panel")).toHaveTextContent("เปิด");
       expect(statusText()).toContain("เปิดออเดอร์แล้ว");
@@ -206,10 +207,10 @@ describe("U21 — คำศัพท์ตะกร้า/ออเดอร์"
 });
 
 describe("U21 — สินค้าที่ต้องเลือกตัวเลือก", () => {
-  it("พูดชื่อสินค้าที่มีตัวเลือกบังคับ → เด้ง dialog แทนการปฏิเสธ", () => {
+  it("พูดชื่อสินค้าที่มีตัวเลือกบังคับ → เด้ง dialog แทนการปฏิเสธ", async () => {
     const { speak, selectTab } = renderVoicePos();
 
-    speak("เพิ่มชาเย็นลงออเดอร์");
+    await speak("เพิ่มชาเย็นลงออเดอร์");
 
     expect(screen.getByTestId("picker")).toHaveTextContent("เปิด");
     expect(screen.getByTestId("cart-count")).toHaveTextContent("0");
@@ -217,71 +218,71 @@ describe("U21 — สินค้าที่ต้องเลือกตั�
     expect(statusText()).toContain("หวานน้อย");
   });
 
-  it("บอกเฉพาะกลุ่มที่ยังขาดจริง — ไม่สั่งให้เลือกสิ่งที่มีค่าเริ่มต้นอยู่แล้ว", () => {
+  it("บอกเฉพาะกลุ่มที่ยังขาดจริง — ไม่สั่งให้เลือกสิ่งที่มีค่าเริ่มต้นอยู่แล้ว", async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มชาเย็นลงออเดอร์");
+    await speak("เพิ่มชาเย็นลงออเดอร์");
     // ยังไม่ได้เลือก → บอกชื่อกลุ่มที่ขาดพร้อมตัวเลือกของกลุ่มนั้น
     expect(statusText()).toContain("ยังต้องเลือก ความหวาน");
     expect(statusText()).toContain("หวานน้อย");
 
     // เลือกแล้ว → ไม่มีอะไรค้าง เสียงต้องไม่สั่งให้เลือกซ้ำ
-    speak("เลือกหวานน้อย");
-    speak("เพิ่มชาเย็นลงออเดอร์");
+    await speak("เลือกหวานน้อย");
+    await speak("เพิ่มชาเย็นลงออเดอร์");
     expect(statusText()).not.toContain("ยังต้องเลือก");
   });
 
-  it('พูดชื่อตัวเลือกลอย ๆ ตอนหน้าต่างเปิดอยู่ (ไม่มีคำว่า "เลือก") ก็ต้องเลือกให้', () => {
+  it('พูดชื่อตัวเลือกลอย ๆ ตอนหน้าต่างเปิดอยู่ (ไม่มีคำว่า "เลือก") ก็ต้องเลือกให้', async () => {
     // หลังระบบเปิดไมค์ต่อเพื่อรอตัวเลือก คนจริงมักพูดแค่ค่าที่ต้องการ
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มชาเย็น");
-    speak("หวานน้อย");
+    await speak("เพิ่มชาเย็น");
+    await speak("หวานน้อย");
 
     expect(screen.getByTestId("chosen")).toHaveTextContent("หวานน้อย");
     expect(statusText()).not.toContain("ยังไม่รองรับ");
     expect(statusText()).toContain("ยืนยัน");
   });
 
-  it("พูดลอย ๆ ตอนไม่มีหน้าต่างตัวเลือกเปิด ยังต้องตอบว่าไม่รองรับตามเดิม", () => {
+  it("พูดลอย ๆ ตอนไม่มีหน้าต่างตัวเลือกเปิด ยังต้องตอบว่าไม่รองรับตามเดิม", async () => {
     const { speak } = renderVoicePos();
 
-    speak("หวานน้อย");
+    await speak("หวานน้อย");
 
     expect(screen.getByTestId("picker")).toHaveTextContent("ปิด");
     expect(statusText()).toContain("ยังไม่รองรับ");
   });
 
-  it('เลือกตัวเลือกด้วยเสียง แล้ว "ยืนยัน" เพื่อเพิ่มลงตะกร้า', () => {
+  it('เลือกตัวเลือกด้วยเสียง แล้ว "ยืนยัน" เพื่อเพิ่มลงตะกร้า', async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มชาเย็น");
-    speak("เลือกหวานน้อย");
+    await speak("เพิ่มชาเย็น");
+    await speak("เลือกหวานน้อย");
     expect(screen.getByTestId("chosen")).toHaveTextContent("หวานน้อย");
     expect(statusText()).toContain("ยืนยัน");
 
-    speak("ยืนยัน");
+    await speak("ยืนยัน");
     expect(screen.getByTestId("picker")).toHaveTextContent("ปิด");
     expect(statusText()).toContain("ลงตะกร้าแล้ว");
   });
 
-  it("พูดตัวเลือกที่ไม่มี → บอกรายการที่เลือกได้ และไม่ยืนยันให้", () => {
+  it("พูดตัวเลือกที่ไม่มี → บอกรายการที่เลือกได้ และไม่ยืนยันให้", async () => {
     const { speak } = renderVoicePos();
 
-    speak("เพิ่มชาเย็น");
-    speak("เลือกหวานมากที่สุด");
+    await speak("เพิ่มชาเย็น");
+    await speak("เลือกหวานมากที่สุด");
     expect(screen.getByTestId("chosen")).toHaveTextContent("-");
     expect(statusText()).toContain("ไม่พบตัวเลือกที่พูด");
 
-    speak("ยืนยัน");
+    await speak("ยืนยัน");
     expect(statusText()).toContain("ยังต้องเลือก");
     expect(screen.getByTestId("picker")).toHaveTextContent("เปิด");
   });
 
-  it('พูด "เลือก…" ตอนไม่มี dialog เปิด → บอกให้พูดชื่อสินค้าก่อน', () => {
+  it('พูด "เลือก…" ตอนไม่มี dialog เปิด → บอกให้พูดชื่อสินค้าก่อน', async () => {
     const { speak } = renderVoicePos();
 
-    speak("เลือกหวานน้อย");
+    await speak("เลือกหวานน้อย");
 
     expect(statusText()).toContain("ยังไม่มีหน้าต่างตัวเลือก");
   });

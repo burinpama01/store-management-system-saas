@@ -76,7 +76,7 @@ function createFakeAdapter(supported = true) {
 }
 
 describe("VoiceCommandButton", () => {
-  it("เบราว์เซอร์ไม่รองรับ → ปุ่ม disabled พร้อมทางสำรอง Ctrl+K", () => {
+  it("เบราว์เซอร์ไม่รองรับ → ปุ่ม disabled พร้อมทางสำรอง Ctrl+K", async () => {
     const fake = createFakeAdapter(false);
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
@@ -84,7 +84,7 @@ describe("VoiceCommandButton", () => {
     expect(screen.getByText(/Ctrl\+K/)).toBeInTheDocument();
   });
 
-  it("รองรับ → กดแล้วเข้าสถานะกำลังฟัง (push-to-talk)", () => {
+  it("รองรับ → กดแล้วเข้าสถานะกำลังฟัง (push-to-talk)", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
@@ -96,14 +96,14 @@ describe("VoiceCommandButton", () => {
     expect(button).toHaveTextContent("กำลังฟัง");
   });
 
-  it("ข้อความสถานะหายเองหลังผ่านไปพักหนึ่ง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด", () => {
+  it("ข้อความสถานะหายเองหลังผ่านไปพักหนึ่ง — คำแนะนำที่หมดอายุแล้วสั่งงานผิด", async () => {
     vi.useFakeTimers();
     try {
       const fake = createFakeAdapter();
       render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "ยังต้องเลือก ระดับการคั่ว"} />);
 
       fireEvent.click(screen.getByTestId("voice-mic"));
-      act(() => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
+      await act(async () => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
       expect(screen.getByRole("status")).toHaveTextContent("ยังต้องเลือก ระดับการคั่ว");
 
       act(() => {
@@ -115,7 +115,7 @@ describe("VoiceCommandButton", () => {
     }
   });
 
-  it("onResult ขอ listenAgain → เปิดไมค์ต่อเองหลังระบบพูดจบ โดยข้อความไม่ถูกล้าง", () => {
+  it("onResult ขอ listenAgain → เปิดไมค์ต่อเองหลังระบบพูดจบ โดยข้อความไม่ถูกล้าง", async () => {
     const fake = createFakeAdapter();
     render(
       <VoiceCommandButton
@@ -127,7 +127,7 @@ describe("VoiceCommandButton", () => {
     fireEvent.click(screen.getByTestId("voice-mic"));
     expect(fake.starts).toBe(1);
 
-    act(() => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
+    await act(async () => fake.emitFinal("เพิ่มอเมริกาโน่", 0.9));
 
     // jsdom ไม่มี speechSynthesis → ถือว่าพูดจบทันที แล้วเปิดไมค์รอบใหม่ให้เลย
     expect(fake.starts).toBe(2);
@@ -135,7 +135,7 @@ describe("VoiceCommandButton", () => {
     expect(screen.getByRole("status")).toHaveTextContent("ยังต้องเลือก ระดับการคั่ว");
   });
 
-  it("ไม่วนเปิดไมค์ไม่รู้จบ — มีเพดานของการต่อเนื่องอัตโนมัติ", () => {
+  it("ไม่วนเปิดไมค์ไม่รู้จบ — มีเพดานของการต่อเนื่องอัตโนมัติ", async () => {
     const fake = createFakeAdapter();
     render(
       <VoiceCommandButton adapter={fake.adapter} onResult={() => ({ message: "ยังต้องเลือก", listenAgain: true })} />,
@@ -143,23 +143,23 @@ describe("VoiceCommandButton", () => {
 
     fireEvent.click(screen.getByTestId("voice-mic"));
     for (let i = 0; i < 6; i += 1) {
-      act(() => fake.emitFinal("พูดอะไรสักอย่าง", 0.9));
+      await act(async () => fake.emitFinal("พูดอะไรสักอย่าง", 0.9));
     }
     // กด 1 ครั้ง + ต่อให้เองไม่เกินเพดาน
     expect(fake.starts).toBeLessThanOrEqual(4);
   });
 
-  it("ผลลัพธ์ที่ไม่ได้ขอ listenAgain ต้องไม่เปิดไมค์ต่อ", () => {
+  it("ผลลัพธ์ที่ไม่ได้ขอ listenAgain ต้องไม่เปิดไมค์ต่อ", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "เพิ่มลงตะกร้าแล้ว"} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("เพิ่มลาเต้", 0.9));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้", 0.9));
 
     expect(fake.starts).toBe(1);
   });
 
-  it("ระหว่างฟังมี overlay เต็มจอ ที่ไม่บล็อกการใช้งานหน้าจอข้างหลัง", () => {
+  it("ระหว่างฟังมี overlay เต็มจอ ที่ไม่บล็อกการใช้งานหน้าจอข้างหลัง", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
@@ -174,7 +174,7 @@ describe("VoiceCommandButton", () => {
     expect(overlay).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("overlay โชว์คำพูดชั่วคราวตัวใหญ่ แล้วหายเมื่อจบการฟัง", () => {
+  it("overlay โชว์คำพูดชั่วคราวตัวใหญ่ แล้วหายเมื่อจบการฟัง", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
@@ -182,11 +182,11 @@ describe("VoiceCommandButton", () => {
     act(() => fake.emitInterim("เพิ่มลาเต้"));
     expect(screen.getByTestId("voice-overlay")).toHaveTextContent("เพิ่มลาเต้");
 
-    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
     expect(screen.queryByTestId("voice-overlay")).toBeNull();
   });
 
-  it("กดซ้ำระหว่างฟัง = ขอให้สรุปผล ไม่เปิด session ใหม่", () => {
+  it("กดซ้ำระหว่างฟัง = ขอให้สรุปผล ไม่เปิด session ใหม่", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
     const button = screen.getByTestId("voice-mic");
@@ -198,7 +198,7 @@ describe("VoiceCommandButton", () => {
     expect(fake.stops).toBe(1);
   });
 
-  it("final transcript → ส่งผล parse ให้ผู้เรียก และล้างข้อความชั่วคราวทันที", () => {
+  it("final transcript → ส่งผล parse ให้ผู้เรียก และล้างข้อความชั่วคราวทันที", async () => {
     const fake = createFakeAdapter();
     const results: VoiceParseResult[] = [];
     render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => {
@@ -211,7 +211,7 @@ describe("VoiceCommandButton", () => {
     expect(screen.getByTestId("voice-transcript")).toHaveTextContent("เพิ่มลา");
     expect(screen.getByRole("status")).not.toHaveTextContent("เพิ่มลา");
 
-    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
 
     expect(results).toHaveLength(1);
     expect(results[0].intent).toEqual({ type: "pos.add_item", productPhrase: "ลาเต้", quantity: 2 });
@@ -222,7 +222,7 @@ describe("VoiceCommandButton", () => {
     expect(screen.getByRole("status")).toHaveTextContent("รับคำสั่งแล้ว");
   });
 
-  it("final ซ้ำจาก engine ในการกดเดียว → ส่งผลให้ผู้เรียกครั้งเดียว (U14 dedupe)", () => {
+  it("final ซ้ำจาก engine ในการกดเดียว → ส่งผลให้ผู้เรียกครั้งเดียว (U14 dedupe)", async () => {
     const fake = createFakeAdapter();
     const results: VoiceParseResult[] = [];
     render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => {
@@ -230,24 +230,24 @@ describe("VoiceCommandButton", () => {
         }} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("เปิดครัว", 0.95));
-    act(() => fake.emitFinal("เปิดครัว", 0.95));
+    await act(async () => fake.emitFinal("เปิดครัว", 0.95));
+    await act(async () => fake.emitFinal("เปิดครัว", 0.95));
 
     expect(results).toHaveLength(1);
   });
 
-  it("ข้อความที่ผู้เรียกคืนมา ถูกประกาศแทนข้อความมาตรฐาน (live region เดียว)", () => {
+  it("ข้อความที่ผู้เรียกคืนมา ถูกประกาศแทนข้อความมาตรฐาน (live region เดียว)", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} onResult={() => "เปิดแท็บครัวแล้ว"} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("เปิดครัว", 0.95));
+    await act(async () => fake.emitFinal("เปิดครัว", 0.95));
 
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("เปิดแท็บครัวแล้ว");
   });
 
-  it("คำสั่งต้องห้าม → แจ้งว่าต้องทำบนหน้าจอ และ decision ไม่ใช่ execute", () => {
+  it("คำสั่งต้องห้าม → แจ้งว่าต้องทำบนหน้าจอ และ decision ไม่ใช่ execute", async () => {
     const fake = createFakeAdapter();
     const results: VoiceParseResult[] = [];
     render(<VoiceCommandButton adapter={fake.adapter} onResult={(r) => {
@@ -255,13 +255,13 @@ describe("VoiceCommandButton", () => {
         }} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("ชำระเงิน", 0.95));
+    await act(async () => fake.emitFinal("ชำระเงิน", 0.95));
 
     expect(results[0].decision).toBe("block");
     expect(screen.getByRole("status")).toHaveTextContent("ต้องทำบนหน้าจอ");
   });
 
-  it("ไม่อนุญาตไมโครโฟน → ข้อความกู้คืนได้ และกดใหม่ได้", () => {
+  it("ไม่อนุญาตไมโครโฟน → ข้อความกู้คืนได้ และกดใหม่ได้", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
@@ -275,20 +275,20 @@ describe("VoiceCommandButton", () => {
     expect(fake.starts).toBe(2);
   });
 
-  it("telemetry ที่ส่งออกมีเฉพาะ enum — ไม่มีคำพูดของผู้ใช้", () => {
+  it("telemetry ที่ส่งออกมีเฉพาะ enum — ไม่มีคำพูดของผู้ใช้", async () => {
     const fake = createFakeAdapter();
     const events: VoiceTelemetryEvent[] = [];
     render(<VoiceCommandButton adapter={fake.adapter} onTelemetry={(e) => events.push(e)} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
 
     expect(events).toHaveLength(1);
     expect(JSON.stringify(events[0])).not.toContain("ลาเต้");
     expect(events[0]).toMatchObject({ intentType: "pos.add_item", resultCode: "matched", locale: "th-TH" });
   });
 
-  it("unmount ระหว่างฟัง → ยกเลิก session ไม่ทิ้ง transcript ค้าง", () => {
+  it("unmount ระหว่างฟัง → ยกเลิก session ไม่ทิ้ง transcript ค้าง", async () => {
     const fake = createFakeAdapter();
     const { unmount } = render(<VoiceCommandButton adapter={fake.adapter} />);
 
@@ -299,7 +299,7 @@ describe("VoiceCommandButton", () => {
     expect(fake.cancels).toBe(1);
   });
 
-  it("disabled = ไม่เริ่มฟังเลย", () => {
+  it("disabled = ไม่เริ่มฟังเลย", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} disabled />);
 
@@ -309,7 +309,7 @@ describe("VoiceCommandButton", () => {
     expect(fake.starts).toBe(0);
   });
 
-  it("ปุ่มมี touch target อย่างน้อย 44px ตามเกณฑ์เข้าถึงได้", () => {
+  it("ปุ่มมี touch target อย่างน้อย 44px ตามเกณฑ์เข้าถึงได้", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
     const button = screen.getByTestId("voice-mic");
@@ -317,14 +317,14 @@ describe("VoiceCommandButton", () => {
     expect(button.className).toContain("min-w-11");
   });
 
-  it("ไม่ log transcript ออกทาง console", () => {
+  it("ไม่ log transcript ออกทาง console", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.9));
 
     expect(spy).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
@@ -349,7 +349,7 @@ describe("VoiceCommandButton — เสียงตอบรับ", () => {
     };
   }
 
-  it("กดปุ่ม → มีเสียงเตือนว่ากำลังฟัง", () => {
+  it("กดปุ่ม → มีเสียงเตือนว่ากำลังฟัง", async () => {
     const fake = createFakeAdapter();
     const audio = createFakeFeedback();
     render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
@@ -359,7 +359,7 @@ describe("VoiceCommandButton — เสียงตอบรับ", () => {
     expect(audio.cues).toEqual(["listening"]);
   });
 
-  it("สั่งสำเร็จ → เสียงสำเร็จ + อ่านผลลัพธ์ที่ผู้เรียกคืนมา", () => {
+  it("สั่งสำเร็จ → เสียงสำเร็จ + อ่านผลลัพธ์ที่ผู้เรียกคืนมา", async () => {
     const fake = createFakeAdapter();
     const audio = createFakeFeedback();
     render(
@@ -371,25 +371,25 @@ describe("VoiceCommandButton — เสียงตอบรับ", () => {
     );
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.95));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้ 2 แก้ว", 0.95));
 
     expect(audio.cues).toEqual(["listening", "success"]);
     expect(audio.said).toEqual(["เพิ่ม ลาเต้ 2 รายการแล้ว"]);
   });
 
-  it("คำสั่งต้องห้าม → เสียงผิดพลาด และอ่านเหตุผล", () => {
+  it("คำสั่งต้องห้าม → เสียงผิดพลาด และอ่านเหตุผล", async () => {
     const fake = createFakeAdapter();
     const audio = createFakeFeedback();
     render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
-    act(() => fake.emitFinal("ชำระเงิน", 0.95));
+    await act(async () => fake.emitFinal("ชำระเงิน", 0.95));
 
     expect(audio.cues).toEqual(["listening", "error"]);
     expect(audio.said).toEqual(["คำสั่งนี้ต้องทำบนหน้าจอ"]);
   });
 
-  it("ไมโครโฟนถูกปฏิเสธ → เสียงผิดพลาด + อ่านวิธีแก้", () => {
+  it("ไมโครโฟนถูกปฏิเสธ → เสียงผิดพลาด + อ่านวิธีแก้", async () => {
     const fake = createFakeAdapter();
     const audio = createFakeFeedback();
     render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
@@ -401,19 +401,19 @@ describe("VoiceCommandButton — เสียงตอบรับ", () => {
     expect(audio.said[0]).toContain("ไมโครโฟน");
   });
 
-  it("ไม่อ่านคำพูดดิบของผู้ใช้ออกเสียง (อ่านเฉพาะข้อความของระบบ)", () => {
+  it("ไม่อ่านคำพูดดิบของผู้ใช้ออกเสียง (อ่านเฉพาะข้อความของระบบ)", async () => {
     const fake = createFakeAdapter();
     const audio = createFakeFeedback();
     render(<VoiceCommandButton adapter={fake.adapter} feedback={audio.feedback} />);
 
     fireEvent.click(screen.getByTestId("voice-mic"));
     act(() => fake.emitInterim("เพิ่มลาเต้สองแก้วครับ"));
-    act(() => fake.emitFinal("เพิ่มลาเต้สองแก้วครับ", 0.95));
+    await act(async () => fake.emitFinal("เพิ่มลาเต้สองแก้วครับ", 0.95));
 
     expect(audio.said.join(" ")).not.toContain("ครับ");
   });
 
-  it("มีปุ่มเปิด/ปิดเสียงตอบรับ และกดสลับได้", () => {
+  it("มีปุ่มเปิด/ปิดเสียงตอบรับ และกดสลับได้", async () => {
     const fake = createFakeAdapter();
     render(<VoiceCommandButton adapter={fake.adapter} />);
 

@@ -97,7 +97,11 @@ export interface VoiceCommandButtonProps {
      * พูดแค่ชื่อตัวเลือกโดยไม่มีคำว่า "เลือก" นำหน้า
      */
     transcript: string,
-  ) => string | VoiceResultResponse | void;
+    /**
+     * P5 — AI fallback เป็นงาน async ผู้เรียกจึงคืน Promise ได้
+     * ระหว่างรอ ปุ่มค้างสถานะ "กำลังแปลคำสั่ง…" และไม่รับ final ซ้ำของรอบเดิม
+     */
+  ) => string | VoiceResultResponse | void | Promise<string | VoiceResultResponse | void>;
   /** เหตุการณ์ที่บันทึกได้ (ไม่มี transcript) — U16 จะต่อปลายทางจริง */
   readonly onTelemetry?: (event: VoiceTelemetryEvent) => void;
   readonly locale?: string;
@@ -219,24 +223,30 @@ export function VoiceCommandButton({
         // ล้าง transcript ทันทีหลัง parse — ห้ามค้างใน state หรือ ref
         setInterim("");
         onTelemetry?.(buildVoiceTelemetry(result, locale));
-        const announcement = onResult?.(result, transcript);
-        const response =
-          typeof announcement === "string" || announcement === undefined || announcement === null
-            ? { message: typeof announcement === "string" ? announcement : "" }
-            : announcement;
-        const spoken = response.message || RESULT_MESSAGE[result.resultCode];
-        showMessage(spoken);
-        // อ่านเฉพาะ "ข้อความของระบบ" — ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น
-        player.cue(result.decision === "execute" ? "success" : "error");
-        // เปิดไมค์ต่อ "หลังระบบพูดจบ" เท่านั้น ไม่งั้นไมค์จะอัดเสียงที่ระบบกำลังพูดเอง
-        const shouldListenAgain =
-          response.listenAgain === true && autoListenCountRef.current < MAX_AUTO_LISTEN_CHAIN;
-        player.speak(spoken, shouldListenAgain
-          ? () => {
-            autoListenCountRef.current += 1;
-            startListeningRef.current?.({ keepMessage: true });
-          }
-          : undefined);
+
+        // ผู้เรียกอาจต้องถาม AI ต่อ (async) — ระหว่างนั้นค้างสถานะ "กำลังแปลคำสั่ง…"
+        setState("resolving");
+        void Promise.resolve(onResult?.(result, transcript))
+          .catch(() => undefined)
+          .then((announcement) => {
+            const response =
+              typeof announcement === "string" || announcement === undefined || announcement === null
+                ? { message: typeof announcement === "string" ? announcement : "" }
+                : announcement;
+            const spoken = response.message || RESULT_MESSAGE[result.resultCode];
+            showMessage(spoken);
+            // อ่านเฉพาะ "ข้อความของระบบ" — ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น
+            player.cue(result.decision === "execute" ? "success" : "error");
+            // เปิดไมค์ต่อ "หลังระบบพูดจบ" เท่านั้น ไม่งั้นไมค์จะอัดเสียงที่ระบบกำลังพูดเอง
+            const shouldListenAgain =
+              response.listenAgain === true && autoListenCountRef.current < MAX_AUTO_LISTEN_CHAIN;
+            player.speak(spoken, shouldListenAgain
+              ? () => {
+                autoListenCountRef.current += 1;
+                startListeningRef.current?.({ keepMessage: true });
+              }
+              : undefined);
+          });
       },
       onError: (code) => {
         if (settledRef.current) return;
