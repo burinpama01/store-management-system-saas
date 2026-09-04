@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-09-04T16:35:51.947Z",
+  "head": "6bcddb7",
+  "branch": "main",
+  "packageVersion": "0.43.0",
+  "recentCommits": [
+    "6bcddb7 merge: Stock Pool — สต๊อกกลางใช้ร่วมหลาย variant + เชื่อม Unified POS v0.43.0",
+    "62841cf feat: Stock Pool — สต๊อกกลางใช้ร่วมหลาย variant พร้อมเชื่อม Unified POS v0.43.0",
+    "538de7f chore: re-trigger production deploy",
+    "9dad3e8 fix: build ล้มเพราะหน้าตั้งค่าลาก node:net เข้า bundle เบราว์เซอร์ v0.42.2",
+    "e8e7a22 merge: กู้คืนคิวงานพิมพ์ + USB identity + Launcher + ใบเสร็จ 48 คอลัมน์ v0.42.1"
+  ],
+  "dirtyTracked": [
+    "M artifacts/unified-pos/r1-backend-gate.html",
+    " M artifacts/unified-pos/r1-backend-gate.json"
+  ],
+  "untrackedCount": 130,
+  "windowsStandbyPresent": {
+    "windowsHost": false,
+    "standbyPolicy": false
+  },
+  "versionRangeDecision": {
+    "planReserved": "0.43.0-0.43.9",
+    "conflict": "0.43.0 ใช้ไปแล้วโดย Stock Pool (merge 6bcddb7, deployed prod)",
+    "chosen": "0.44.0-0.44.7",
+    "approvedBy": "user (ตอบให้ลงมือทำหลังผมแจ้งว่าเลขชน)"
+  },
+  "migrations": "Phase 1 ไม่เพิ่ม migration — ใช้ voice_aliases.slots เดิมตามแผน"
+}
