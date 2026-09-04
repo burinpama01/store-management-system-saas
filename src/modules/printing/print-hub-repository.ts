@@ -532,3 +532,35 @@ export async function learnUsbIdentity(input: {
   if (error) return { error: mapError(error), learned: false };
   return { error: null, learned: (data ?? []).length > 0 };
 }
+
+/** ตั้งระดับการเลือกเครื่องพิมพ์อัตโนมัติของร้าน (ผลกับงาน USB ทุกใบตั้งแต่รอบถัดไป) */
+export async function setUsbBindingPolicy(input: {
+  storeId: string;
+  printerId: string;
+  policy: "auto_single" | "confirm_multi" | "manual";
+}): Promise<{ error: AppError | null }> {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("printers")
+    .update({ hub_usb_binding_policy: input.policy })
+    .eq("id", input.printerId)
+    .eq("store_id", input.storeId);
+  return { error: error ? mapError(error) : null };
+}
+
+/**
+ * ลืมเครื่องที่ผูกไว้ — ล้างทั้งชื่อคิวและ identity
+ * ใช้ตอนเปลี่ยนเครื่องพิมพ์ใหม่: ถ้าไม่ล้าง identity เดิม ระบบจะยังตามหาเครื่องเก่าที่ไม่มีแล้ว
+ */
+export async function forgetUsbBinding(input: {
+  storeId: string;
+  printerId: string;
+}): Promise<{ error: AppError | null }> {
+  const supabase = await createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("printers")
+    .update({ hub_usb_name: null, hub_usb_identity: null })
+    .eq("id", input.printerId)
+    .eq("store_id", input.storeId);
+  return { error: error ? mapError(error) : null };
+}

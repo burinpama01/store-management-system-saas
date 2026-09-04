@@ -1,7 +1,13 @@
 "use client";
 
 import { useActionState, useCallback, useEffect, useState } from "react";
-import { resolveUnknownPrintJobAction, rotateHubTokenAction } from "./actions";
+import {
+  forgetUsbBindingAction,
+  resolveUnknownPrintJobAction,
+  rotateHubTokenAction,
+  setUsbBindingPolicyAction,
+} from "./actions";
+import { HUB_USB_BINDING_POLICIES } from "@/modules/printing/print-hub";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
@@ -190,6 +196,73 @@ function UnknownJobsCard({ jobs, onResolved }: { jobs: UnknownPrintJob[]; onReso
 }
 
 /**
+ * ระดับที่ร้านยอมให้ Hub เลือกเครื่องพิมพ์เอง + ปุ่ม "ลืมเครื่องนี้"
+ *
+ * ร้านเครื่องเดียวอยากให้เสียบแล้วใช้ได้เลย ส่วนร้านที่มีเครื่องพิมพ์หลายตัว (ใบเสร็จ + ฉลาก)
+ * การเดาผิดหมายถึงใบเสร็จออกผิดเครื่องโดยไม่มีใครรู้ จึงต้องเลือกได้ว่าจะให้เดาแค่ไหน
+ *
+ * ทุกข้อความในนี้พูดถึง "ค่าเริ่มต้นของ StoreOS" เท่านั้น — ระบบไม่อ่านและไม่แก้
+ * เครื่องพิมพ์เริ่มต้นของ Windows
+ */
+function UsbBindingPolicyCard({ printer }: { printer: Printer }) {
+  const [policyState, policyAction, savingPolicy] = useActionState(setUsbBindingPolicyAction, { error: null });
+  const [forgetState, forgetAction, forgetting] = useActionState(forgetUsbBindingAction, { error: null });
+  const current = printer.hubUsbBindingPolicy ?? "auto_single";
+
+  return (
+    <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3">
+      <p className="text-sm font-semibold text-[var(--ink)]">ค่าเริ่มต้นของ StoreOS สำหรับเครื่องพิมพ์ USB</p>
+      <p className="mt-1 text-[11px] text-[var(--muted)]">
+        ใช้เฉพาะภายใน StoreOS — ไม่แก้เครื่องพิมพ์เริ่มต้นของ Windows และไม่ส่งงานไปออกเครื่องเอกสาร A4
+      </p>
+
+      <form action={policyAction} className="mt-2 space-y-2">
+        <input type="hidden" name="printerId" value={printer.id} />
+        {HUB_USB_BINDING_POLICIES.map((option) => (
+          <label
+            key={option.value}
+            className="flex cursor-pointer items-start gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2"
+          >
+            <input
+              type="radio"
+              name="policy"
+              value={option.value}
+              defaultChecked={current === option.value}
+              className="mt-1"
+            />
+            <span>
+              <span className="block text-xs font-semibold text-[var(--ink)]">{option.label}</span>
+              <span className="block text-[11px] text-[var(--muted)]">{option.hint}</span>
+            </span>
+          </label>
+        ))}
+        <button type="submit" disabled={savingPolicy} className="btn-secondary min-h-9 px-3 text-xs disabled:opacity-40">
+          {savingPolicy ? "กำลังบันทึก..." : "บันทึกระดับการเลือกอัตโนมัติ"}
+        </button>
+      </form>
+
+      {(printer.hubUsbName || printer.hubUsbIdentityQueueName) && (
+        <form action={forgetAction} className="mt-3 border-t border-[var(--border)] pt-2">
+          <input type="hidden" name="printerId" value={printer.id} />
+          <p className="text-[11px] text-[var(--muted)]">
+            ระบบจำเครื่องนี้ไว้: <b>{printer.hubUsbIdentityQueueName ?? printer.hubUsbName}</b>
+          </p>
+          <button type="submit" disabled={forgetting} className="btn-secondary mt-1 min-h-9 px-3 text-xs disabled:opacity-40">
+            {forgetting ? "กำลังล้าง..." : "ลืมเครื่องนี้ (เปลี่ยนเครื่องพิมพ์ใหม่)"}
+          </button>
+        </form>
+      )}
+
+      {(policyState.error || forgetState.error) && (
+        <p className="mt-2 rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {policyState.error ?? forgetState.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * เครื่องพิมพ์ USB ที่เสียบกับพีซีแคชเชียร์.
  *
  * Hub agent สแกนเครื่องพิมพ์ที่ Windows มองเห็นแล้วรายงานกลับมาทุกรอบ poll (~2.5 วินาที)
@@ -229,6 +302,8 @@ function DetectedUsbPrinters({
           สแกนใหม่
         </button>
       </div>
+
+      {existingPrinter && <UsbBindingPolicyCard printer={existingPrinter} />}
 
       {existingPrinter && (
         <p className="mb-2 rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">

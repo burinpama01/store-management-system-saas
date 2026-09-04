@@ -212,3 +212,24 @@ describe("printUsbJob — ใช้ binding จากเซิร์ฟเวอ
     }
   });
 });
+
+describe("binding policy — ค่าที่มาจากฟอร์ม/ฐานข้อมูล", () => {
+  it("รับเฉพาะสามค่าที่รู้จัก ที่เหลือตกมาที่ค่าปลอดภัยสุด", async () => {
+    const { parseUsbBindingPolicy, HUB_USB_BINDING_POLICIES } = await import("@/modules/printing/print-hub");
+
+    expect(parseUsbBindingPolicy("confirm_multi")).toBe("confirm_multi");
+    expect(parseUsbBindingPolicy("manual")).toBe("manual");
+    expect(parseUsbBindingPolicy("auto_single")).toBe("auto_single");
+    // ค่าแปลก/ว่าง = auto_single (พฤติกรรมเดิมของร้าน ไม่ใช่หยุดพิมพ์)
+    expect(parseUsbBindingPolicy("' OR 1=1")).toBe("auto_single");
+    expect(parseUsbBindingPolicy(null)).toBe("auto_single");
+    expect(parseUsbBindingPolicy(undefined)).toBe("auto_single");
+
+    // ตัวเลือกที่โชว์บนหน้าจอต้องครบทุกค่าที่ selection engine รู้จัก
+    expect(HUB_USB_BINDING_POLICIES.map((option) => option.value)).toEqual([
+      "auto_single",
+      "confirm_multi",
+      "manual",
+    ]);
+  });
+});

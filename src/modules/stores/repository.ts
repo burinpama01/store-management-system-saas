@@ -127,6 +127,12 @@ function mapPrinter(row: PrinterRow): Printer {
     hubBluetoothPort: row.hub_bluetooth_port ?? undefined,
     hubUsbEnabled: row.hub_usb_enabled ?? false,
     hubUsbName: row.hub_usb_name ?? undefined,
+    hubUsbBindingPolicy: row.hub_usb_binding_policy ?? "auto_single",
+    // แสดงให้ผู้ใช้เห็นว่าระบบจำเครื่องไหนไว้ — ส่งเฉพาะชื่อคิว ไม่ส่ง pnp id/serial ออกหน้าเว็บ
+    hubUsbIdentityQueueName:
+      row.hub_usb_identity && typeof row.hub_usb_identity === "object" && !Array.isArray(row.hub_usb_identity)
+        ? ((row.hub_usb_identity as Record<string, unknown>).queueName as string | undefined) ?? undefined
+        : undefined,
     paperWidth: row.paper_width,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

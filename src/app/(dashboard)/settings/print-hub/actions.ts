@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
-import { resolveUnknownPrintJob, rotateHubToken } from "@/modules/printing/print-hub-repository";
+import {
+  forgetUsbBinding,
+  resolveUnknownPrintJob,
+  rotateHubToken,
+  setUsbBindingPolicy,
+} from "@/modules/printing/print-hub-repository";
+import { parseUsbBindingPolicy } from "@/modules/printing/print-hub";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 async function requirePrinterAccess() {
@@ -69,6 +75,73 @@ export async function resolveUnknownPrintJobAction(
 
     revalidatePath("/settings/print-hub");
     return { error: null, done: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * ตั้งว่าจะให้ Hub เลือกเครื่องพิมพ์ USB เองได้แค่ไหน
+ * ร้านเครื่องเดียว = ให้เลือกเอง (สะดวก) / ร้านหลายเครื่อง = ต้องยืนยันก่อน (กันพิมพ์ผิดเครื่อง)
+ */
+export async function setUsbBindingPolicyAction(
+  _prev: { error: string | null; saved?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; saved?: boolean }> {
+  try {
+    const ctx = await requirePrinterAccess();
+    const printerId = String(formData.get("printerId") ?? "").trim();
+    if (!printerId) return { error: "ยังไม่ได้เลือกเครื่องพิมพ์" };
+    const policy = parseUsbBindingPolicy(formData.get("policy"));
+
+    const result = await setUsbBindingPolicy({ storeId: ctx.storeId, printerId, policy });
+    if (result.error) return { error: result.error.userMessage };
+
+    await logSystemEvent({
+      level: "info",
+      source: "printing.hub",
+      action: "setUsbBindingPolicy",
+      message: "เปลี่ยนระดับการเลือกเครื่องพิมพ์ USB อัตโนมัติ",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      context: { printerId, policy },
+    });
+
+    revalidatePath("/settings/print-hub");
+    return { error: null, saved: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * ลืมเครื่องพิมพ์ที่ผูกไว้ (ล้างทั้งชื่อและ identity)
+ * ใช้ตอนเปลี่ยนเครื่องพิมพ์ตัวใหม่ — ถ้าไม่ล้าง ระบบจะยังตามหาเครื่องเก่าที่ไม่มีอยู่แล้ว
+ */
+export async function forgetUsbBindingAction(
+  _prev: { error: string | null; saved?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; saved?: boolean }> {
+  try {
+    const ctx = await requirePrinterAccess();
+    const printerId = String(formData.get("printerId") ?? "").trim();
+    if (!printerId) return { error: "ยังไม่ได้เลือกเครื่องพิมพ์" };
+
+    const result = await forgetUsbBinding({ storeId: ctx.storeId, printerId });
+    if (result.error) return { error: result.error.userMessage };
+
+    await logSystemEvent({
+      level: "info",
+      source: "printing.hub",
+      action: "forgetUsbBinding",
+      message: "ลืมเครื่องพิมพ์ USB ที่ผูกไว้",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      context: { printerId },
+    });
+
+    revalidatePath("/settings/print-hub");
+    return { error: null, saved: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "เกิดข้อผิดพลาด" };
   }

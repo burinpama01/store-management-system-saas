@@ -121,6 +121,13 @@ export interface Printer {
    * (undefined = ให้ Hub ตรวจจับเครื่องพิมพ์ USB ที่เสียบอยู่เอง)
    */
   hubUsbName?: string;
+  /**
+   * ระดับที่อนุญาตให้ Hub เลือกเครื่องพิมพ์ USB เอง
+   * auto_single = เครื่องเดียวผูกให้เลย / confirm_multi = ต้องยืนยันก่อน / manual = เฉพาะที่ระบุ
+   */
+  hubUsbBindingPolicy?: "auto_single" | "confirm_multi" | "manual";
+  /** identity ที่เสถียรของเครื่องที่เคยพิมพ์สำเร็จ (ใช้ reconnect เมื่อชื่อคิว/พอร์ตเปลี่ยน) */
+  hubUsbIdentityQueueName?: string;
   paperWidth: "58mm" | "80mm";
   createdAt: string;
   updatedAt: string;

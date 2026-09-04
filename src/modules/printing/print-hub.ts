@@ -191,6 +191,36 @@ export function checkAgentProtocol(value: unknown): { version: number; supported
   return { version, supported: true };
 }
 
+/** ระดับที่ร้านอนุญาตให้ Hub เลือกเครื่องพิมพ์เอง (ตรงกับ printers.hub_usb_binding_policy) */
+export type HubUsbBindingPolicy = "auto_single" | "confirm_multi" | "manual";
+
+export const HUB_USB_BINDING_POLICIES: ReadonlyArray<{
+  readonly value: HubUsbBindingPolicy;
+  readonly label: string;
+  readonly hint: string;
+}> = [
+  {
+    value: "auto_single",
+    label: "ตรวจจับอัตโนมัติ (แนะนำสำหรับร้านที่มีเครื่องพิมพ์ตัวเดียว)",
+    hint: "เสียบสาย USB แล้วพิมพ์ได้เลย ย้ายพอร์ตหรือเปลี่ยนสายก็ไม่ต้องตั้งค่าใหม่",
+  },
+  {
+    value: "confirm_multi",
+    label: "ให้ยืนยันก่อนทุกครั้งที่เปลี่ยนเครื่อง",
+    hint: "เหมาะกับร้านที่มีเครื่องพิมพ์หลายตัว — ระบบจะไม่เดาให้ ต้องเลือกเองก่อนพิมพ์",
+  },
+  {
+    value: "manual",
+    label: "ใช้เฉพาะเครื่องที่เลือกไว้เท่านั้น",
+    hint: "ถ้าเครื่องที่ผูกไว้หายไป จะไม่พิมพ์ออกเครื่องอื่นเด็ดขาด",
+  },
+];
+
+/** ค่าจากฟอร์ม/ฐานข้อมูลอาจเป็นอะไรก็ได้ — ตกลงมาที่ค่าที่ปลอดภัยที่สุดเสมอ */
+export function parseUsbBindingPolicy(value: unknown): HubUsbBindingPolicy {
+  return value === "confirm_multi" || value === "manual" ? value : "auto_single";
+}
+
 /** claim token เป็น uuid ที่เซิร์ฟเวอร์ออกให้ต่อการเคลมหนึ่งครั้ง */
 const CLAIM_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
