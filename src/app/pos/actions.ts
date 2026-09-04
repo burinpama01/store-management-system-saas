@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { getResolvedCurrentPermissions, requireFeature, requirePermission } from "@/modules/auth/guards";
+import { resolveUnknownPrintJob } from "@/modules/printing/print-hub-repository";
+import { logSystemEvent } from "@/modules/system/event-log";
 import { listProducts } from "@/modules/catalog/repository";
 import { searchCustomersForStore } from "@/modules/customers/repository";
 import type { CustomerProfile } from "@/modules/customers/types";
@@ -1389,5 +1391,56 @@ export async function getReceiptLoyaltyClaimAction(orderId: string): Promise<{
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", claim: null };
+  }
+}
+
+/**
+ * แคชเชียร์ตัดสินผลของงานพิมพ์ที่ระบบไม่รู้ผล (สถานะ unknown)
+ *
+ * สิทธิ์ที่ใช้คือ pos.use ไม่ใช่สิทธิ์ตั้งค่าเครื่องพิมพ์ เพราะคนที่ตอบได้ว่า
+ * "กระดาษออกมาแล้วหรือยัง" คือคนที่ยืนอยู่หน้าเครื่องพิมพ์ตอนนั้น ถ้าบังคับให้เฉพาะ
+ * ผู้จัดการกดได้ ร้านเล็กที่มีพนักงานคนเดียวจะไม่มีใครเคลียร์งานค้างได้เลย
+ * ทุกครั้งที่กดมีบันทึกว่าใครเป็นคนตัดสิน
+ */
+export async function resolveUnknownPrintJobFromPosAction(input: {
+  jobId: string;
+  resolution: "printed_confirmed" | "retried";
+}): Promise<{ error: string | null; status?: "printed" | "pending" }> {
+  try {
+    await requirePermission("pos.use");
+    const { user, ctx } = await getStoreContext();
+
+    const jobId = input.jobId?.trim();
+    if (!jobId) return { error: "ไม่พบงานพิมพ์ที่ต้องการจัดการ" };
+    if (input.resolution !== "printed_confirmed" && input.resolution !== "retried") {
+      return { error: "ตัวเลือกไม่ถูกต้อง" };
+    }
+
+    const result = await resolveUnknownPrintJob({
+      jobId,
+      storeId: ctx.storeId,
+      resolution: input.resolution,
+      userId: user.id,
+    });
+    if (result.error || !result.data) {
+      return { error: result.error?.userMessage ?? "จัดการงานพิมพ์ไม่สำเร็จ" };
+    }
+
+    await logSystemEvent({
+      level: "info",
+      source: "printing.hub",
+      action: "resolveUnknownPrintJobFromPos",
+      message:
+        input.resolution === "printed_confirmed"
+          ? "แคชเชียร์ยืนยันว่าใบพิมพ์ออกแล้ว — ปิดงานที่ไม่ทราบผล"
+          : "แคชเชียร์สั่งพิมพ์งานที่ไม่ทราบผลใหม่",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      context: { jobId, resolution: input.resolution, newStatus: result.data.status },
+    });
+
+    return { error: null, status: result.data.status };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }

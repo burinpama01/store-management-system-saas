@@ -1,7 +1,12 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import { mapError, type AppError } from "@/shared/utils/error";
-import { generateHubToken, hashHubToken } from "@/modules/printing/print-hub";
+import {
+  generateHubToken,
+  hashHubToken,
+  PRINT_JOB_LEASE_SECONDS,
+  type PrintJobOutcome,
+} from "@/modules/printing/print-hub";
 
 /** "usb" prints through the Windows spooler on the cashier PC running the Hub. */
 export type PrintTargetKind = "ip" | "bt" | "usb";
@@ -13,6 +18,9 @@ export interface ClaimedPrintJob {
   targetPort: number;
   targetDevice: string | null;
   payloadB64: string;
+  /** โทเค็นต่อการเคลมครั้งนี้ — agent ต้องส่งกลับตอน ack (กัน ack ค้างจากรอบก่อน) */
+  claimToken: string | null;
+  attempts: number;
 }
 
 export interface StoreHubAuth {
@@ -20,9 +28,25 @@ export interface StoreHubAuth {
   tokenHash: string | null;
 }
 
+/** งานที่เคลมไปแล้วแต่ไม่รู้ผล — ต้องให้คนตรวจใบจริงก่อนตัดสิน (ห้ามพิมพ์ซ้ำเอง) */
+export interface UnknownPrintJob {
+  id: string;
+  jobKind: PrintJobKind | null;
+  attempts: number;
+  claimedAt: string | null;
+  createdAt: string;
+}
+
 export interface HubStatus {
   lastSeen: string | null;
   pendingJobs: number;
+  /** งานที่ agent กำลังถืออยู่ (ยังไม่เลย lease) */
+  claimedJobs: number;
+  /** งานที่ผลไม่ชัดเจน — แสดงให้ร้านตัดสินใจ */
+  unknownJobs: number;
+  failedJobs: number;
+  /** รายการงาน unknown ล่าสุดสำหรับหน้า Settings/POS */
+  unknownJobList: UnknownPrintJob[];
   /** เครื่องพิมพ์ที่ Hub agent สแกนเจอบนพีซีแคชเชียร์ (ผลล่าสุด) */
   devices: HubDevice[];
   devicesAt: string | null;
@@ -157,64 +181,154 @@ export async function touchHubHeartbeat(storeId: string): Promise<{ error: AppEr
 }
 
 /**
- * Claims the oldest pending jobs for a store. One Hub per store, so a guarded
- * two-step claim (select ids, then update where still pending) is race-safe.
+ * เคลมงานที่รอพิมพ์แบบ atomic ผ่าน RPC (FOR UPDATE SKIP LOCKED) — ถ้ามี agent
+ * สองตัวบนเครื่องเดียว (Scheduled Task + Launcher เปิดซ้ำ) งานหนึ่งใบจะไปได้ที่
+ * ตัวเดียวเท่านั้น ทุกการเคลมเพิ่ม attempts และออก claim token ใหม่เสมอ
  */
-export async function claimPendingPrintJobs(storeId: string, limit = 5): Result<ClaimedPrintJob[]> {
+export async function claimPendingPrintJobs(
+  storeId: string,
+  limit = 5,
+  options: { leaseSeconds?: number; agentVersion?: string | null } = {},
+): Result<ClaimedPrintJob[]> {
   const supabase = await createSupabaseServiceClient();
-  const { data: pending, error: selectError } = await supabase
-    .from("print_jobs")
-    .select("id")
-    .eq("store_id", storeId)
-    .eq("status", "pending")
-    .order("created_at", { ascending: true })
-    .limit(limit);
-  if (selectError) return { data: null, error: mapError(selectError) };
+  const { data, error } = await supabase.rpc("claim_print_jobs", {
+    p_store_id: storeId,
+    p_limit: limit,
+    p_lease_seconds: options.leaseSeconds ?? PRINT_JOB_LEASE_SECONDS,
+    p_agent_version: options.agentVersion ?? null,
+  });
+  if (error) return { data: null, error: mapError(error) };
 
-  const ids = (pending ?? []).map((row) => row.id);
-  if (ids.length === 0) return { data: [], error: null };
-
-  const { data: claimed, error: claimError } = await supabase
-    .from("print_jobs")
-    .update({ status: "claimed", claimed_at: new Date().toISOString() })
-    .in("id", ids)
-    .eq("status", "pending")
-    .select("id, target_kind, target_host, target_port, target_device, payload_b64");
-  if (claimError) return { data: null, error: mapError(claimError) };
-
-  const jobs = (claimed ?? []).map((row) => ({
+  const jobs = (data ?? []).map((row) => ({
     id: row.id,
     targetKind: (row.target_kind === "bt" || row.target_kind === "usb" ? row.target_kind : "ip") as PrintTargetKind,
     targetHost: row.target_host,
     targetPort: row.target_port,
     targetDevice: row.target_device,
     payloadB64: row.payload_b64,
+    claimToken: row.claim_token,
+    attempts: row.attempts,
   }));
   return { data: jobs, error: null };
 }
 
-/** Marks a claimed job as printed or failed after the Hub reports back. */
+/**
+ * ปิดงานที่ lease หมดโดยไม่มี ack ให้เป็น unknown — เรียกแบบ lazy ตอน poll/status
+ * เพราะโควตา cron ของ Vercel Hobby เต็มแล้ว (ไม่มี slot ให้ scheduled job)
+ */
+export async function reconcileStalePrintJobs(storeId: string): Result<{ reconciled: number }> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("reconcile_stale_print_jobs", { p_store_id: storeId });
+  if (error) return { data: null, error: mapError(error) };
+  return { data: { reconciled: typeof data === "number" ? data : 0 }, error: null };
+}
+
+/** ผลของการ ack: applied=false แปลว่า ack นี้ไม่ตรงกับการเคลมปัจจุบัน (ค้างจากรอบก่อน) */
+export interface AckPrintJobResult {
+  applied: boolean;
+  status: PrintJobOutcome | null;
+}
+
+/**
+ * บันทึกผลงานพิมพ์ที่ Hub รายงานกลับ โดยรับเฉพาะงานที่ยังอยู่สถานะ claimed และ
+ * โทเค็นตรงกับการเคลมล่าสุด — ack ที่มาช้าหลังงานถูกตีเป็น unknown/เคลมใหม่แล้ว
+ * ต้องไม่ทับผลปัจจุบัน (agent เก่าที่ฟื้นขึ้นมาหลังเน็ตกลับ)
+ */
 export async function ackPrintJob(input: {
   jobId: string;
   storeId: string;
-  ok: boolean;
+  outcome: PrintJobOutcome;
   error?: string | null;
-}): Promise<{ error: AppError | null }> {
+  /** null = agent รุ่นเก่าที่ยังไม่ส่งโทเค็น (compatibility window) */
+  claimToken?: string | null;
+}): Result<AckPrintJobResult> {
   const supabase = await createSupabaseServiceClient();
-  const patch = input.ok
-    ? { status: "printed" as const, printed_at: new Date().toISOString(), error: null }
-    : { status: "failed" as const, error: input.error?.slice(0, 500) ?? "Print failed" };
-  const { error } = await supabase
+  const patch =
+    input.outcome === "printed"
+      ? { status: "printed" as const, printed_at: new Date().toISOString(), error: null }
+      : input.outcome === "failed"
+        ? { status: "failed" as const, error: input.error?.slice(0, 500) ?? "Print failed" }
+        : {
+            status: "unknown" as const,
+            error:
+              input.error?.slice(0, 500) ??
+              "Print Hub รายงานว่าไม่ทราบผล — ตรวจว่ากระดาษออกแล้วหรือยังก่อนสั่งพิมพ์ซ้ำ",
+          };
+
+  let query = supabase
     .from("print_jobs")
     .update(patch)
     .eq("id", input.jobId)
-    .eq("store_id", input.storeId);
-  return { error: error ? mapError(error) : null };
+    .eq("store_id", input.storeId)
+    .eq("status", "claimed");
+  if (input.claimToken) query = query.eq("claim_token", input.claimToken);
+
+  const { data, error } = await query.select("id");
+  if (error) return { data: null, error: mapError(error) };
+  const applied = (data ?? []).length > 0;
+  return { data: { applied, status: applied ? input.outcome : null }, error: null };
 }
 
-/** Heartbeat + pending depth for the Settings UI status card. */
+/**
+ * คนตัดสินผลของงาน unknown หลังไปดูกระดาษจริง:
+ *   printed_confirmed = ใบออกแล้ว ปิดงาน
+ *   retried           = ใบไม่ออก ส่งกลับเข้าคิวเป็น attempt ใหม่
+ * ระบบไม่ทำสองอย่างนี้เองเด็ดขาด เพราะเดาผิดข้างหนึ่งคือใบเสร็จซ้ำ อีกข้างคือใบหาย
+ */
+export async function resolveUnknownPrintJob(input: {
+  jobId: string;
+  storeId: string;
+  resolution: "printed_confirmed" | "retried";
+  userId: string | null;
+}): Result<{ status: "printed" | "pending" }> {
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+  const patch =
+    input.resolution === "printed_confirmed"
+      ? {
+          status: "printed" as const,
+          printed_at: now,
+          error: null,
+          resolution: "printed_confirmed" as const,
+          resolved_at: now,
+          resolved_by: input.userId,
+        }
+      : {
+          status: "pending" as const,
+          error: null,
+          claim_token: null,
+          lease_expires_at: null,
+          claimed_at: null,
+          resolution: "retried" as const,
+          resolved_at: now,
+          resolved_by: input.userId,
+        };
+
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .update(patch)
+    .eq("id", input.jobId)
+    .eq("store_id", input.storeId)
+    .eq("status", "unknown")
+    .select("id");
+  if (error) return { data: null, error: mapError(error) };
+  if ((data ?? []).length === 0) {
+    return { data: null, error: mapError(new Error("งานนี้ถูกจัดการไปแล้ว หรือไม่ได้อยู่ในสถานะรอตรวจสอบ")) };
+  }
+  return { data: { status: input.resolution === "printed_confirmed" ? "printed" : "pending" }, error: null };
+}
+
+/** จำนวนงาน unknown ที่ดึงมาแสดง (พอให้ร้านไล่เคลียร์ ไม่ดึงทั้งประวัติ) */
+export const MAX_UNKNOWN_JOBS_LISTED = 20;
+
+/**
+ * Heartbeat + สภาพคิวสำหรับการ์ดสถานะ (Settings และแถบเตือนที่ POS)
+ * เรียก reconcile ก่อนนับเสมอ เพื่อให้ตัวเลข unknown เป็นของจริง ณ เวลาที่เปิดดู
+ */
 export async function getHubStatus(storeId: string): Result<HubStatus> {
   const supabase = await createSupabaseServiceClient();
+  await reconcileStalePrintJobs(storeId);
+
   const { data: store, error: storeError } = await supabase
     .from("stores")
     .select("print_hub_last_seen, print_hub_devices, print_hub_devices_at")
@@ -222,17 +336,36 @@ export async function getHubStatus(storeId: string): Result<HubStatus> {
     .single();
   if (storeError) return { data: null, error: mapError(storeError) };
 
-  const { count, error: countError } = await supabase
+  const { data: openJobs, error: jobsError } = await supabase
     .from("print_jobs")
-    .select("id", { count: "exact", head: true })
+    .select("id, status, job_kind, attempts, claimed_at, created_at")
     .eq("store_id", storeId)
-    .eq("status", "pending");
-  if (countError) return { data: null, error: mapError(countError) };
+    .in("status", ["pending", "claimed", "unknown", "failed"])
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (jobsError) return { data: null, error: mapError(jobsError) };
+
+  const rows = openJobs ?? [];
+  const countOf = (status: string) => rows.filter((row) => row.status === status).length;
+  const unknownJobList = rows
+    .filter((row) => row.status === "unknown")
+    .slice(0, MAX_UNKNOWN_JOBS_LISTED)
+    .map((row) => ({
+      id: row.id,
+      jobKind: (row.job_kind ?? null) as PrintJobKind | null,
+      attempts: row.attempts,
+      claimedAt: row.claimed_at,
+      createdAt: row.created_at,
+    }));
 
   return {
     data: {
       lastSeen: store.print_hub_last_seen,
-      pendingJobs: count ?? 0,
+      pendingJobs: countOf("pending"),
+      claimedJobs: countOf("claimed"),
+      unknownJobs: countOf("unknown"),
+      failedJobs: countOf("failed"),
+      unknownJobList,
       devices: parseHubDevices(store.print_hub_devices),
       devicesAt: store.print_hub_devices_at ?? null,
     },
@@ -289,4 +422,113 @@ export async function rotateHubToken(storeId: string): Result<{ token: string }>
     .eq("id", storeId);
   if (error) return { data: null, error: mapError(error) };
   return { data: { token }, error: null };
+}
+
+/** v3 — binding ของเครื่องพิมพ์ USB หนึ่งเครื่องที่ Hub ใช้เลือกปลายทาง */
+export interface HubUsbBinding {
+  printerId: string;
+  name: string | null;
+  identity: HubUsbIdentity | null;
+  policy: "auto_single" | "confirm_multi" | "manual";
+}
+
+/** identity ที่เสถียรของเครื่องพิมพ์ USB (เก็บที่แถว printers ไม่ใช่ไฟล์บนเครื่องร้าน) */
+export interface HubUsbIdentity {
+  v: number;
+  queueName: string | null;
+  pnpDeviceId: string | null;
+  vid: string | null;
+  pid: string | null;
+  serial: string | null;
+  driverName: string | null;
+}
+
+const IDENTITY_FIELD_MAX = 256;
+
+/** identity มาจากเครื่องของร้าน — เป็นข้อมูล ไม่ใช่คำสั่ง จึงตรวจรูปทรง+ตัดความยาวก่อนใช้ */
+export function parseHubUsbIdentity(value: unknown): HubUsbIdentity | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const text = (key: string): string | null => {
+    const raw = row[key];
+    if (typeof raw !== "string") return null;
+    const trimmed = raw.trim().slice(0, IDENTITY_FIELD_MAX);
+    return trimmed || null;
+  };
+  const pnpDeviceId = text("pnpDeviceId");
+  const vid = text("vid");
+  const pid = text("pid");
+  // identity ที่ไม่มีทั้ง pnp id และคู่ vid/pid ใช้จับคู่อะไรไม่ได้ ถือว่าไม่มี
+  if (!pnpDeviceId && !(vid && pid)) return null;
+  return {
+    v: typeof row.v === "number" && Number.isFinite(row.v) ? row.v : 1,
+    queueName: text("queueName"),
+    pnpDeviceId,
+    vid: vid ? vid.toUpperCase().slice(0, 8) : null,
+    pid: pid ? pid.toUpperCase().slice(0, 8) : null,
+    serial: text("serial"),
+    driverName: text("driverName"),
+  };
+}
+
+/** map jobId -> printerId ของงานที่เพิ่งเคลม (ใช้หา binding ของงาน USB) */
+export async function getPrinterIdsForJobs(storeId: string, jobIds: string[]): Result<Record<string, string | null>> {
+  const ids = [...new Set(jobIds.filter((id) => typeof id === "string" && id))];
+  if (ids.length === 0) return { data: {}, error: null };
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .select("id, printer_id")
+    .eq("store_id", storeId)
+    .in("id", ids);
+  if (error) return { data: null, error: mapError(error) };
+  const map: Record<string, string | null> = {};
+  for (const row of data ?? []) map[row.id] = row.printer_id;
+  return { data: map, error: null };
+}
+
+/** อ่าน binding ของเครื่องพิมพ์ที่งาน USB ในคิวอ้างถึง (Hub เลือกปลายทางจากค่าล่าสุดเสมอ) */
+export async function getUsbBindings(storeId: string, printerIds: string[]): Result<HubUsbBinding[]> {
+  const ids = [...new Set(printerIds.filter((id) => typeof id === "string" && id))];
+  if (ids.length === 0) return { data: [], error: null };
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("printers")
+    .select("id, hub_usb_name, hub_usb_identity, hub_usb_binding_policy")
+    .eq("store_id", storeId)
+    .in("id", ids);
+  if (error) return { data: null, error: mapError(error) };
+  const bindings = (data ?? []).map((row) => ({
+    printerId: row.id,
+    name: row.hub_usb_name,
+    identity: parseHubUsbIdentity(row.hub_usb_identity),
+    policy: row.hub_usb_binding_policy ?? "auto_single",
+  }));
+  return { data: bindings, error: null };
+}
+
+/**
+ * จำ identity ของเครื่องพิมพ์ที่ "พิมพ์สำเร็จจริง" ไว้กับ binding (แผน v3 §4 ข้อ 3)
+ * เขียนเฉพาะเมื่อยังไม่มี identity เดิม — ไม่แย่ง binding ที่คนเคยยืนยันไว้แล้ว
+ */
+export async function learnUsbIdentity(input: {
+  storeId: string;
+  printerId: string;
+  identity: unknown;
+}): Promise<{ error: AppError | null; learned: boolean }> {
+  const identity = parseHubUsbIdentity(input.identity);
+  if (!identity) return { error: null, learned: false };
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("printers")
+    .update({
+      hub_usb_identity: identity as unknown as Json,
+      hub_usb_name: identity.queueName ?? undefined,
+    })
+    .eq("id", input.printerId)
+    .eq("store_id", input.storeId)
+    .is("hub_usb_identity", null)
+    .select("id");
+  if (error) return { error: mapError(error), learned: false };
+  return { error: null, learned: (data ?? []).length > 0 };
 }

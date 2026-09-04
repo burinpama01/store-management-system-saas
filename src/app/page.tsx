@@ -117,11 +117,18 @@ export default async function LandingPage() {
             >
               <span aria-hidden="true">📱</span> ดาวน์โหลดแอป (Android)
             </a>
+            <a
+              href="/download/windows-launcher"
+              className="btn-secondary reference-secondary-cta"
+              rel="nofollow"
+            >
+              <span aria-hidden="true">🖥️</span> ตัวช่วยติดตั้งบน Windows
+            </a>
           </div>
           <small className="reference-note">
             {freeTrialOpen
-              ? "โปรจำกัดเวลา ครบทุกฟีเจอร์ ใช้ได้ 1 ครั้งต่อบัญชี · แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์"
-              : "แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์"}
+              ? "โปรจำกัดเวลา ครบทุกฟีเจอร์ ใช้ได้ 1 ครั้งต่อบัญชี · แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์ · ตัวช่วยติดตั้งบน Windows ลงเครื่องพิมพ์ให้อัตโนมัติ"
+              : "แอป Android รองรับแจ้งเตือนและเชื่อมเครื่องพิมพ์ · ตัวช่วยติดตั้งบน Windows ลงเครื่องพิมพ์ให้อัตโนมัติ"}
           </small>
         </div>
 

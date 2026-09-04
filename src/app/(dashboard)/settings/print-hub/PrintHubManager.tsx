@@ -1,17 +1,30 @@
 "use client";
 
 import { useActionState, useCallback, useEffect, useState } from "react";
-import { rotateHubTokenAction } from "./actions";
+import { resolveUnknownPrintJobAction, rotateHubTokenAction } from "./actions";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
 
+/** งานที่ Hub เคลมไปแล้วแต่ไม่ได้รายงานผล — ต้องให้คนดูกระดาษจริงก่อนตัดสิน */
+export interface UnknownPrintJob {
+  id: string;
+  jobKind: "receipt" | "station_ticket" | null;
+  attempts: number;
+  claimedAt: string | null;
+  createdAt: string;
+}
+
 interface HubStatus {
   online: boolean;
   secondsAgo: number | null;
   pendingJobs: number;
+  claimedJobs: number;
+  unknownJobs: number;
+  failedJobs: number;
+  unknownJobList: UnknownPrintJob[];
   /** เครื่องพิมพ์ที่ Hub agent สแกนเจอบนพีซีแคชเชียร์ (อัปเดตทุก 10 วินาที) */
   devices: HubDevice[];
 }
@@ -106,6 +119,73 @@ function HubFlowDiagram() {
         );
       })}
     </svg>
+  );
+}
+
+/**
+ * งานพิมพ์ที่ Hub เคลมไปแล้วแต่ไม่ได้รายงานผล (สถานะ "รอตรวจสอบ").
+ *
+ * ระบบไม่พิมพ์ซ้ำให้เองเด็ดขาด เพราะกระดาษอาจออกไปแล้วแต่ ack หายระหว่างทาง —
+ * เดาผิดข้างหนึ่งคือใบเสร็จซ้ำ อีกข้างคือใบเสร็จหาย คนที่เห็นกระดาษจริงเท่านั้นที่ตัดสินได้
+ * การ์ดนี้จึงมีแค่สองปุ่ม: ยืนยันว่าออกแล้ว หรือสั่งพิมพ์ใหม่
+ */
+function UnknownJobsCard({ jobs, onResolved }: { jobs: UnknownPrintJob[]; onResolved: () => void }) {
+  const [state, formAction, working] = useActionState(resolveUnknownPrintJobAction, { error: null });
+
+  useEffect(() => {
+    if (state.done) onResolved();
+  }, [state.done, onResolved]);
+
+  if (jobs.length === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-[var(--radius-md)] border border-amber-300 bg-amber-50 p-3">
+      <p className="text-sm font-semibold text-amber-900">
+        ⚠️ งานพิมพ์ที่ต้องตรวจสอบ ({jobs.length})
+      </p>
+      <p className="mt-1 text-[11px] text-amber-800">
+        Hub รับงานไปแล้วแต่ไม่ได้รายงานผลกลับ (เน็ตหลุด/เครื่องดับ) — ดูที่เครื่องพิมพ์ว่ากระดาษออกหรือยัง
+        แล้วเลือกให้ระบบ ระบบจะไม่พิมพ์ซ้ำเองเพื่อไม่ให้ได้ใบซ้ำ
+      </p>
+      <ul className="mt-2 space-y-2">
+        {jobs.map((job) => (
+          <li
+            key={job.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-amber-200 bg-[var(--surface)] px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                {job.jobKind === "station_ticket" ? "ตั๋วครัว" : job.jobKind === "receipt" ? "ใบเสร็จ" : "งานพิมพ์"}
+              </p>
+              <p className="text-[11px] text-[var(--muted)]">
+                ส่งเมื่อ {new Date(job.createdAt).toLocaleString("th-TH")} · พยายามแล้ว {job.attempts} ครั้ง
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <form action={formAction}>
+                <input type="hidden" name="jobId" value={job.id} />
+                <input type="hidden" name="resolution" value="printed_confirmed" />
+                <button type="submit" disabled={working} className="btn-secondary min-h-9 px-3 text-xs disabled:opacity-40">
+                  ออกแล้ว
+                </button>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="jobId" value={job.id} />
+                <input type="hidden" name="resolution" value="retried" />
+                <button type="submit" disabled={working} className="btn-primary min-h-9 px-3 text-xs disabled:opacity-40">
+                  พิมพ์ใหม่
+                </button>
+              </form>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {state.error && (
+        <p className="mt-2 rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {state.error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -305,12 +385,20 @@ export function PrintHubManager({
         online?: boolean;
         secondsAgo?: number | null;
         pendingJobs?: number;
+        claimedJobs?: number;
+        unknownJobs?: number;
+        failedJobs?: number;
+        unknownJobList?: UnknownPrintJob[];
         devices?: HubDevice[];
       };
       setStatus({
         online: Boolean(data.online),
         secondsAgo: data.secondsAgo ?? null,
         pendingJobs: data.pendingJobs ?? 0,
+        claimedJobs: data.claimedJobs ?? 0,
+        unknownJobs: data.unknownJobs ?? 0,
+        failedJobs: data.failedJobs ?? 0,
+        unknownJobList: Array.isArray(data.unknownJobList) ? data.unknownJobList : [],
         devices: Array.isArray(data.devices) ? data.devices : [],
       });
     } catch {
@@ -502,9 +590,14 @@ export function PrintHubManager({
           </div>
           <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
             <p className="text-xs text-[var(--muted)]">งานพิมพ์ค้างในคิว</p>
-            <p className="text-sm font-semibold text-[var(--ink)]">{status.pendingJobs} งาน</p>
+            <p className="text-sm font-semibold text-[var(--ink)]">
+              {status.pendingJobs} งาน
+              {status.claimedJobs > 0 ? ` · กำลังพิมพ์ ${status.claimedJobs}` : ""}
+            </p>
           </div>
         </div>
+
+        <UnknownJobsCard jobs={status.unknownJobList} onResolved={refreshStatus} />
 
         <details className="mt-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
           <summary className="cursor-pointer text-xs font-semibold text-[var(--muted)]">

@@ -33,6 +33,10 @@ export async function GET() {
     lastSeen: summary.lastSeen,
     secondsAgo: summary.secondsAgo,
     pendingJobs: status.data.pendingJobs,
+    claimedJobs: status.data.claimedJobs,
+    unknownJobs: status.data.unknownJobs,
+    failedJobs: status.data.failedJobs,
+    unknownJobList: status.data.unknownJobList,
     devices: status.data.devices,
     devicesAt: status.data.devicesAt,
   });

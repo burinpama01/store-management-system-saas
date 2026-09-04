@@ -16,6 +16,7 @@ import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { BillsPanel } from "./BillsPanel";
 import { VoicePosController } from "./VoicePosController";
 import { VoiceCartBridgeProvider } from "./voice-cart-bridge";
+import { PrintQueueAlert } from "@/modules/printing/PrintQueueAlert";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import { emitPosCommand } from "@/modules/pos/section-bus";
 import type { UnifiedPosWorkspaceProps, UnifiedTableSummary } from "./types";
@@ -129,6 +130,10 @@ export function UnifiedPosWorkspace({
         {/* ชื่อร้านไม่โชว์ซ้ำบนจอ — หน้า POS ไม่ต้องย้ำว่าอยู่ร้านไหนทุกวินาที
             แต่ยังต้องมีหัวข้อให้ screen reader รู้ว่ากำลังอยู่ที่ไหน */}
         <h1 className="sr-only">{storeName} — POS</h1>
+
+        {/* งานพิมพ์ที่ระบบไม่รู้ผลต้องเห็นตรงที่คนยืนอยู่หน้าเครื่องพิมพ์ ไม่ใช่แค่หน้าตั้งค่า
+            เป็นการ์ดลอย (fixed) จึงไม่กินความสูงของหน้าขายที่ต้องพอดีจอ */}
+        <PrintQueueAlert />
 
         {/* มือถือ: ปุ่มเสียง (ตัวใหญ่กดง่าย) + ปุ่มโต๊ะ อยู่แถวบน ปุ่มที่เหลือได้บรรทัด
             เต็มของตัวเอง — ถ้าอัดแถวเดียวช่องที่เหลือจะแคบราว 40px จนกดไม่ได้จริง

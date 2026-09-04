@@ -63,7 +63,9 @@ describe("Hub USB — ตรวจจับเครื่องพิมพ์�
     const one = parseWindowsPrinterList(
       JSON.stringify({ Name: "XP-80C", PortName: "USB001", Default: true, WorkOffline: false }),
     );
-    expect(one).toEqual([{ name: "XP-80C", port: "USB001", isDefault: true, isUsb: true, offline: false }]);
+    expect(one).toEqual([
+      { name: "XP-80C", port: "USB001", driverName: "", isDefault: true, isUsb: true, offline: false },
+    ]);
 
     const many = parseWindowsPrinterList(
       JSON.stringify([
@@ -194,8 +196,12 @@ describe("Hub USB — เส้นทางคิวงานพิมพ์", (
 
     const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: async () => [] });
 
-    expect(result).toEqual({ ok: true, processed: 1 });
-    expect(printJob).toHaveBeenCalledWith({ kind: "usb", device: null }, expect.any(Buffer));
+    expect(result).toMatchObject({ ok: true, processed: 1 });
+    // v3: binding ของเครื่องพิมพ์ (ชื่อ/identity/policy) มาจากเซิร์ฟเวอร์และถูกส่งต่อให้ตัวพิมพ์
+    expect(printJob).toHaveBeenCalledWith(
+      { kind: "usb", device: null, binding: { name: null, identity: null, policy: "auto_single" } },
+      expect.any(Buffer),
+    );
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toMatchObject({
       jobId: "job-usb",
       ok: true,
