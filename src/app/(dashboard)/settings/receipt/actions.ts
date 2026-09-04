@@ -53,6 +53,8 @@ export async function upsertReceiptSettingsAction(
     const footerText = (formData.get("footerText") as string | null)?.trim() || undefined;
     const logoUrl = (formData.get("logoUrl") as string | null)?.trim() || undefined;
     const footerImageUrl = (formData.get("footerImageUrl") as string | null)?.trim() || undefined;
+    const footerImageLabel = (formData.get("footerImageLabel") as string | null)?.trim().slice(0, 80) || undefined;
+    const hideFooterImageWithSystemQr = formData.get("hideFooterImageWithSystemQr") === "on";
     const autoPrintReceipt = formData.get("autoPrintReceipt") === "1";
     const autoPrintStationTickets = formData.get("autoPrintStationTickets") === "1";
     const paperWidth = formData.get("paperWidth") as "58mm" | "80mm" | null;
@@ -94,6 +96,8 @@ export async function upsertReceiptSettingsAction(
       footerText,
       logoUrl,
       footerImageUrl,
+      footerImageLabel,
+      hideFooterImageWithSystemQr,
       autoPrintReceipt,
       autoPrintStationTickets,
       paperWidth,

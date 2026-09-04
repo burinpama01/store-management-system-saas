@@ -1032,7 +1032,7 @@ export interface Database {
           target_device: string | null;
           target_port: number;
           payload_b64: string;
-          status: "pending" | "claimed" | "printed" | "failed";
+          status: "pending" | "claimed" | "printed" | "failed" | "unknown";
           attempts: number;
           error: string | null;
           claimed_at: string | null;
@@ -1042,6 +1042,13 @@ export interface Database {
           source_key: string | null;
           /** U11 — ชนิดงานของ intent (NULL = อื่น ๆ / legacy) */
           job_kind: "receipt" | "station_ticket" | null;
+          /** v3 — โทเค็นต่อการเคลมหนึ่งครั้ง (ack ต้องส่งกลับให้ตรง) */
+          claim_token: string | null;
+          lease_expires_at: string | null;
+          agent_version: string | null;
+          resolution: "printed_confirmed" | "retried" | null;
+          resolved_at: string | null;
+          resolved_by: string | null;
         };
         Insert: {
           id?: string;
@@ -1053,7 +1060,7 @@ export interface Database {
           target_device?: string | null;
           target_port?: number;
           payload_b64: string;
-          status?: "pending" | "claimed" | "printed" | "failed";
+          status?: "pending" | "claimed" | "printed" | "failed" | "unknown";
           attempts?: number;
           error?: string | null;
           claimed_at?: string | null;
@@ -1061,6 +1068,12 @@ export interface Database {
           created_at?: string;
           source_key?: string | null;
           job_kind?: "receipt" | "station_ticket" | null;
+          claim_token?: string | null;
+          lease_expires_at?: string | null;
+          agent_version?: string | null;
+          resolution?: "printed_confirmed" | "retried" | null;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
         };
         Update: {
           id?: string;
@@ -1072,7 +1085,7 @@ export interface Database {
           target_device?: string | null;
           target_port?: number;
           payload_b64?: string;
-          status?: "pending" | "claimed" | "printed" | "failed";
+          status?: "pending" | "claimed" | "printed" | "failed" | "unknown";
           attempts?: number;
           error?: string | null;
           claimed_at?: string | null;
@@ -1080,6 +1093,12 @@ export interface Database {
           created_at?: string;
           source_key?: string | null;
           job_kind?: "receipt" | "station_ticket" | null;
+          claim_token?: string | null;
+          lease_expires_at?: string | null;
+          agent_version?: string | null;
+          resolution?: "printed_confirmed" | "retried" | null;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
         };
         Relationships: [];
       };
@@ -3332,6 +3351,10 @@ export interface Database {
           footer_text: string | null;
           logo_url: string | null;
           footer_image_url: string | null;
+          /** ข้อความกำกับใต้รูป QR ท้ายใบเสร็จ */
+          footer_image_label: string | null;
+          /** ซ่อนรูปท้ายใบเมื่อใบนั้นมี QR ของระบบ */
+          footer_image_hide_with_system_qr: boolean;
           auto_print_receipt: boolean;
           auto_print_station_tickets: boolean;
           paper_width: "58mm" | "80mm";
@@ -3355,6 +3378,8 @@ export interface Database {
           footer_text?: string | null;
           logo_url?: string | null;
           footer_image_url?: string | null;
+          footer_image_label?: string | null;
+          footer_image_hide_with_system_qr?: boolean;
           auto_print_receipt?: boolean;
           auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
@@ -3378,6 +3403,8 @@ export interface Database {
           footer_text?: string | null;
           logo_url?: string | null;
           footer_image_url?: string | null;
+          footer_image_label?: string | null;
+          footer_image_hide_with_system_qr?: boolean;
           auto_print_receipt?: boolean;
           auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
@@ -3683,6 +3710,9 @@ export interface Database {
           hub_bluetooth_port: string | null;
           hub_usb_enabled: boolean;
           hub_usb_name: string | null;
+          /** v3 — identity ที่เสถียรของเครื่องพิมพ์ USB ที่เคยพิมพ์สำเร็จ */
+          hub_usb_identity: Json | null;
+          hub_usb_binding_policy: "auto_single" | "confirm_multi" | "manual";
           paper_width: "58mm" | "80mm";
           created_at: string;
           updated_at: string;
@@ -3702,6 +3732,8 @@ export interface Database {
           hub_bluetooth_port?: string | null;
           hub_usb_enabled?: boolean;
           hub_usb_name?: string | null;
+          hub_usb_identity?: Json | null;
+          hub_usb_binding_policy?: "auto_single" | "confirm_multi" | "manual";
           paper_width?: "58mm" | "80mm";
           created_at?: string;
           updated_at?: string;
@@ -3721,6 +3753,8 @@ export interface Database {
           hub_bluetooth_port?: string | null;
           hub_usb_enabled?: boolean;
           hub_usb_name?: string | null;
+          hub_usb_identity?: Json | null;
+          hub_usb_binding_policy?: "auto_single" | "confirm_multi" | "manual";
           paper_width?: "58mm" | "80mm";
           created_at?: string;
           updated_at?: string;
@@ -3911,6 +3945,41 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+
+      /** v3 — เคลมงานพิมพ์แบบ atomic (FOR UPDATE SKIP LOCKED) */
+      claim_print_jobs: {
+        Args: {
+          p_store_id: string;
+          p_limit?: number;
+          p_lease_seconds?: number;
+          p_agent_version?: string | null;
+        };
+        Returns: {
+          id: string;
+          target_kind: string;
+          target_host: string | null;
+          target_port: number;
+          target_device: string | null;
+          payload_b64: string;
+          claim_token: string | null;
+          attempts: number;
+        }[];
+      };
+      /** v3 — ปิดงานที่รอคิวนานเกินเพดานให้เป็น failed (ไม่พิมพ์ใบเสร็จข้ามวัน) */
+      expire_old_print_jobs: {
+        Args: { p_store_id: string };
+        Returns: number;
+      };
+      /** v3 — เที่ยงคืนล่าสุดตามเวลาของร้าน (เส้นแบ่งวันของคิวงานพิมพ์) */
+      store_day_start: {
+        Args: { p_store_id: string };
+        Returns: string;
+      };
+      /** v3 — ปิดงานที่ lease หมดโดยไม่มี ack ให้เป็น unknown (lazy reconciliation) */
+      reconcile_stale_print_jobs: {
+        Args: { p_store_id: string };
+        Returns: number;
+      };
 
       record_device_profile_success: {
         Args: {

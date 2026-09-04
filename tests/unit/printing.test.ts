@@ -251,13 +251,15 @@ describe("buildEscPosReceipt", () => {
     const result58 = buildEscPosReceipt(baseInput);
     // 80mm output should be larger (wider lines)
     expect(result80.length).toBeGreaterThan(result58.length);
-    // 80mm divider (42 chars) should appear in 80mm output
+    // 80mm = 48 ตัวอักษรต่อบรรทัด (576 จุด ÷ 12 จุดต่อตัว) — วัดกับเครื่องจริงที่หน้าร้าน
+    // แล้วว่าบรรทัดยาว 49 ตัวตกบรรทัด ส่วน 48 พอดีเป๊ะ; ค่าเก่า 42 ทำให้ใบเสร็จแคบกว่าที่ควร
     const text80 = new TextDecoder().decode(result80);
-    expect(text80).toContain("-".repeat(42));
-    // 58mm divider (32 chars) should NOT appear standalone in 58mm output when using 80mm
-    // i.e. 58mm output should NOT contain 42-char divider
+    expect(text80).toContain("-".repeat(48));
+    expect(text80).not.toContain("-".repeat(49));
+    // 58mm ต้องไม่กว้างเท่า 80mm ไม่งั้นบรรทัดจะตกทุกบรรทัดบนกระดาษแคบ
     const text58 = new TextDecoder().decode(result58);
-    expect(text58).not.toContain("-".repeat(42));
+    expect(text58).not.toContain("-".repeat(48));
+    expect(text58).toContain("-".repeat(32));
   });
 });
 
@@ -307,11 +309,17 @@ describe("buildReceiptLines", () => {
     const imageLines = lines.filter((line) => line.imageUrl);
     expect(imageLines).toHaveLength(2);
 
-    // Logo is the first line (before the store name); footer image is the last line.
+    // Logo is the first line (before the store name); the footer image is the last block
+    // of content — followed only by the blank spacer that keeps it clear of the tear-off.
     expect(lines[0]?.imageUrl).toBe("https://cdn.example.com/logo.png");
     expect(lines[0]?.imageKind).toBe("logo");
-    expect(lines[lines.length - 1]?.imageUrl).toBe("https://cdn.example.com/line-qr.png");
-    expect(lines[lines.length - 1]?.imageKind).toBe("footer");
+    const lastContent = [...lines].reverse().find((line) => line.text !== "" || line.imageUrl || line.qrPayload);
+    expect(lastContent?.imageUrl).toBe("https://cdn.example.com/line-qr.png");
+    expect(lastContent?.imageKind).toBe("footer");
+    // รูป QR ต้องมีกรอบและมีป้ายกำกับอยู่บรรทัดเหนือมันเสมอ (กันสแกนผิดอัน)
+    expect(lastContent?.framed).toBe(true);
+    const footerIndex = lines.findIndex((line) => line.imageKind === "footer");
+    expect(lines[footerIndex - 1]?.text).toBe("สแกน QR ของร้าน");
   });
 
   it("omits image lines when no logo or footer image is configured", () => {

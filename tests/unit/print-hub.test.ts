@@ -9,6 +9,9 @@ import {
   validateHubBluetoothPort,
   HUB_OFFLINE_THRESHOLD_MS,
   MAX_PRINT_JOB_BYTES,
+  normalizeAckOutcome,
+  sanitizeAgentVersion,
+  sanitizeClaimToken,
 } from "@/modules/printing/print-hub";
 
 describe("print hub tokens", () => {
@@ -115,5 +118,50 @@ describe("validatePrintPayloadBase64", () => {
   it("rejects payloads over the size limit", () => {
     const tooBig = "A".repeat(Math.ceil((MAX_PRINT_JOB_BYTES + 1024) * 4 / 3) + 8);
     expect(validatePrintPayloadBase64(tooBig).error).toBeTruthy();
+  });
+});
+
+// v3 Task 2 — queue recovery contract: ผลของงานพิมพ์ต้องแยก "รู้แน่ว่าไม่ออก" (failed)
+// ออกจาก "ไม่รู้ผล" (unknown) เพราะ unknown ห้ามถูกพิมพ์ซ้ำอัตโนมัติ
+describe("normalizeAckOutcome", () => {
+  it("รับ outcome ใหม่จาก agent v3 ตรง ๆ", () => {
+    expect(normalizeAckOutcome({ outcome: "printed" })).toBe("printed");
+    expect(normalizeAckOutcome({ outcome: "failed" })).toBe("failed");
+    expect(normalizeAckOutcome({ outcome: "unknown" })).toBe("unknown");
+    expect(normalizeAckOutcome({ outcome: " UNKNOWN " })).toBe("unknown");
+  });
+
+  it("แปลง ok ของ agent รุ่นเก่าได้ (compatibility window)", () => {
+    expect(normalizeAckOutcome({ ok: true })).toBe("printed");
+    expect(normalizeAckOutcome({ ok: false })).toBe("failed");
+  });
+
+  it("ไม่มีข้อมูลผล = unknown ไม่ใช่ failed (fail closed)", () => {
+    expect(normalizeAckOutcome({})).toBe("unknown");
+    expect(normalizeAckOutcome({ outcome: "weird" })).toBe("unknown");
+  });
+
+  it("outcome ใหม่ชนะ ok เก่าเมื่อส่งมาทั้งคู่", () => {
+    expect(normalizeAckOutcome({ ok: true, outcome: "unknown" })).toBe("unknown");
+  });
+});
+
+describe("sanitizeAgentVersion / sanitizeClaimToken", () => {
+  it("รับเวอร์ชันที่อยู่ในชุดอักขระปลอดภัย", () => {
+    expect(sanitizeAgentVersion("1.1.0")).toBe("1.1.0");
+    expect(sanitizeAgentVersion(" 1.1.0-beta ")).toBe("1.1.0-beta");
+  });
+
+  it("ปฏิเสธเวอร์ชันที่ยาวเกินหรือมีอักขระแปลก", () => {
+    expect(sanitizeAgentVersion("1.0\n<script>")).toBeNull();
+    expect(sanitizeAgentVersion("x".repeat(33))).toBeNull();
+    expect(sanitizeAgentVersion(42)).toBeNull();
+    expect(sanitizeAgentVersion("")).toBeNull();
+  });
+
+  it("รับเฉพาะ claim token รูปแบบ uuid", () => {
+    expect(sanitizeClaimToken("3f2504e0-4f89-11d3-9a0c-0305e82c3301")).toBe("3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+    expect(sanitizeClaimToken("not-a-token")).toBeNull();
+    expect(sanitizeClaimToken(null)).toBeNull();
   });
 });

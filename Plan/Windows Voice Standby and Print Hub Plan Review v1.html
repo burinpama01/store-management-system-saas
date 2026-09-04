@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รีวิวแผน: Windows Voice Standby v1 + Voice Standby &amp; Print Hub v2</title>
+<style>
+:root{--bg:#f6f4f0;--fg:#1f1c19;--muted:#6d675f;--line:#e2ddd4;--card:#fff;--ok:#2f7d4f;--warn:#a8721c;--bad:#a33a2c;--info:#245e9b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.75 "Noto Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:36px 22px 90px}
+h1{font-size:27px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:20px;margin:40px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+h3{font-size:16px;margin:24px 0 8px}
+.sub{color:var(--muted);margin:0 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:14px 0}
+.card.ok{border-left:5px solid var(--ok)}
+.card.warn{border-left:5px solid var(--warn)}
+.card.bad{border-left:5px solid var(--bad)}
+.card.info{border-left:5px solid var(--info)}
+code{background:#efece5;padding:1px 5px;border-radius:4px;font-family:Consolas,monospace;font-size:13px;overflow-wrap:anywhere}
+pre{background:#23211d;color:#e9e6dc;padding:13px 15px;border-radius:8px;overflow-x:auto;font-size:12.5px;line-height:1.6}
+pre code{background:none;color:inherit;padding:0}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#efece5;font-weight:700}
+.tbl-wrap{overflow-x:auto}
+ul,ol{padding-left:22px}li{margin:5px 0}
+.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:99px;border:1px solid var(--line);background:#efece5}
+.t-bad{background:#fbeae7;border-color:#e8c4bc;color:#8f2f22}
+.t-warn{background:#fdf3dd;border-color:#ecd8a6;color:#875a12}
+.t-ok{background:#e7f4ec;border-color:#bfe0cc;color:#256440}
+.t-info{background:#e9f1fb;border-color:#c3d8ef;color:#1d4e80}
+.muted{color:var(--muted)}
+.small{font-size:12.5px}
+footer{margin-top:48px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>รีวิวแผน: Windows Voice Standby v1 + Voice Standby &amp; Print Hub v2</h1>
+<p class="sub">เวอร์ชัน 1 · 2026-09-04 · รีวิวโดยตรวจเทียบ source จริง · StoreOS</p>
+<p class="sub small">เอกสารที่รีวิว: <code>Plan/Windows Voice Standby Implementation Plan v1.html</code> (00:40) · <code>Plan/Windows Voice Standby and Print Hub Implementation Plan v2.html</code> (00:50) · อ้างอิงเทียบ: <code>Plan/USB Printer Auto Detect via Print Hub Plan v1.html</code> (02:16 — implement แล้ว)</p>
+
+<h2>0. วิธีรีวิวและขอบเขต</h2>
+<div class="card">
+<p>รีวิวนี้ <strong>ไม่ได้อ่านแค่ตัวเอกสาร</strong> แต่ตรวจทุกข้ออ้างของแผนกับ source จริงที่คอมมิตปัจจุบัน (<code>3d48456</code>) หลักฐานที่ใช้:</p>
+<ul class="small">
+<li><code>package.json</code> · <code>src/modules/voice-pos/*</code> · <code>src/shared/components/VoiceCommandButton.tsx</code> · <code>src/app/pos/unified/VoicePosController.tsx</code></li>
+<li><code>scripts/print-hub.mjs</code> · <code>scripts/print-hub/install-windows.ps1</code> · <code>src/modules/printing/*</code> · <code>src/app/api/print/**</code></li>
+<li><code>supabase/migrations/20260625120000_print_hub_job_queue.sql</code> · <code>20260904000003_print_hub_usb.sql</code></li>
+<li>รัน <code>npx vitest run tests/unit/print-hub-usb.test.ts</code> → ผ่าน 21/21</li>
+</ul>
+<p class="small muted">ไม่ได้รีวิว: คุณภาพเสียง/ฮาร์ดแวร์จริง, ต้นทุนใบรับรอง code signing, เนื้อหา Design System v1/v2 ที่แผนอ้างถึง</p>
+</div>
+
+<h2>1. สรุปผู้บริหาร</h2>
+<div class="tbl-wrap">
+<table>
+<tr><th>เอกสาร</th><th>คุณภาพแผน</th><th>คำตัดสิน</th><th>เหตุผลสั้น</th></tr>
+<tr>
+<td>Voice Standby v1</td>
+<td><span class="tag t-ok">ดี</span> โครงสร้าง/gate/privacy แน่น</td>
+<td><span class="tag t-warn">อนุมัติเฉพาะ W0</span></td>
+<td>baseline ถูกต้อง ณ เวลาที่เขียน แต่ล้าสมัยแล้วจาก commit หลังแผน + ความเสี่ยง recognizer ยังไม่ถูกพิสูจน์</td>
+</tr>
+<tr>
+<td>Voice Standby + Print Hub v2</td>
+<td><span class="tag t-ok">ดี</span> หลักการ device identity ถูกต้อง</td>
+<td><span class="tag t-bad">ต้องทำ v3 ก่อน</span></td>
+<td>ขัดกับสถาปัตยกรรมที่ ship ไปแล้ว 4 จุด และสมมติว่า Print Hub มี health/mutex ซึ่งยังไม่มี</td>
+</tr>
+</table>
+</div>
+
+<div class="card bad">
+<strong>ประเด็นที่ใหญ่ที่สุด:</strong> แผน v2 เขียนเวลา 00:50 ส่วนแผน USB Auto Detect เขียน 02:16 <em>ในคืนเดียวกัน</em> และถูก implement + commit ไปแล้ว (<code>b6b80c2</code>) ผลคือ v2 บรรยาย Print Hub ในสภาพก่อนหน้า และ <strong>กติกาหลักของ v2 ขัดกับโค้ดที่รันอยู่ตอนนี้</strong> — ถ้า implement v2 ตามตัวอักษรจะได้ระบบที่มี source of truth สองที่
+</div>
+
+<h2>2. ตรวจข้อเท็จจริงของ baseline</h2>
+<p>ทุกข้อที่แผน v1 อ้างว่า "ตรวจจาก source ปัจจุบัน" — ตรวจซ้ำแล้ว</p>
+<div class="tbl-wrap">
+<table>
+<tr><th>ข้ออ้างในแผน</th><th>ผลตรวจจริง</th><th>สถานะ</th></tr>
+<tr><td>package version = 0.41.0</td><td><code>package.json</code> = 0.41.0</td><td><span class="tag t-ok">ตรง</span></td></tr>
+<tr><td><code>voice-pos/</code> มี parser, safety tier, speech adapter, aliases, telemetry, undo</td><td>ครบ: <code>parser.ts</code>, <code>types.ts</code> (<code>VoiceSafetyTier = "A"|"B"|"C"|"D"</code>), <code>speech-adapter.ts</code>, <code>alias-repository.ts</code>, <code>telemetry.ts</code>, <code>undo.ts</code></td><td><span class="tag t-ok">ตรง</span></td></tr>
+<tr><td>VoiceCommandButton เป็น one-shot <code>continuous=false</code></td><td><code>speech-adapter.ts:154</code> ตั้ง <code>recognition.continuous = false</code> จริง <strong>แต่</strong> <code>VoiceCommandButton.tsx:265</code> มี "สายการฟังต่อเนื่อง" (เปิดไมค์รอบใหม่เอง)</td><td><span class="tag t-bad">ล้าสมัย</span></td></tr>
+<tr><td>VoicePosController เป็นจุดเดียวที่ execute</td><td><code>src/app/pos/unified/VoicePosController.tsx</code> มีอยู่จริง</td><td><span class="tag t-ok">ตรง</span></td></tr>
+<tr><td>ยังไม่มี Windows Launcher / wake runtime ใน repo</td><td>ไม่มีโฟลเดอร์ <code>windows/</code></td><td><span class="tag t-ok">ตรง</span></td></tr>
+<tr><td>v2 อ้าง <code>scripts/print-hub/install-windows.ps1</code></td><td>มีจริง + ลงทะเบียน Scheduled Task ชื่อ <code>StoreOSPrintHub</code> (<code>install-windows.ps1:31,166</code>)</td><td><span class="tag t-ok">ตรง</span></td></tr>
+<tr><td>v2 อ้างถึง "Launcher v1 plan"</td><td>ไม่มีไฟล์ชื่อนี้ในโฟลเดอร์ <code>Plan/</code></td><td><span class="tag t-warn">อ้างลอย</span></td></tr>
+<tr><td>v2 ข้อ 3.1 "ตรวจ health endpoint/IPC ที่มีอยู่ก่อน"</td><td><code>print-hub.mjs</code> ไม่มี HTTP server, ไม่มี health endpoint, ไม่มี mutex/single-instance</td><td><span class="tag t-bad">ไม่มีจริง</span></td></tr>
+</table>
+</div>
+
+<h2>3. รีวิว Voice Standby v1</h2>
+
+<h3>3.1 สิ่งที่ทำได้ดี (ควรคงไว้ทุกข้อ)</h3>
+<div class="card ok">
+<ul>
+<li><strong>เลือกสถาปัตยกรรม B (WPF + WebView2) ถูก</strong> — ทางเลือก A (browser continuous) พังเรื่อง permission/background/tab จริง ส่วน C (localhost agent) เพิ่ม CORS/PNA/replay attack surface แลกกับความสะดวกเท่านั้น การเขียนเหตุผลปฏิเสธ A/C ไว้ในเอกสารทำให้คนอ่านทีหลังไม่รื้อการตัดสินใจซ้ำ</li>
+<li><strong>origin-aware policy คือหัวใจ</strong> — แยก <code>push_to_talk</code> กับ <code>windows_standby</code> แล้วบังคับว่า Tier B (แก้ตะกร้า) ต้อง preview + ยืนยันภายใน 8 วินาที ถ้าไม่มีข้อนี้ false wake ครั้งเดียวคือตะกร้าเพี้ยนเงียบ ๆ กลางชั่วโมงเร่ง</li>
+<li><strong>re-resolve snapshot ก่อน commit</strong> (W6) — กันเคส proposal ค้าง 8 วิแล้วตะกร้าเปลี่ยนไปแล้ว เป็นรายละเอียดที่แผนทั่วไปมักลืม</li>
+<li><strong>privacy contract วัดผลได้</strong> — ring buffer ≤2 วินาที, ห้าม transcript ลง log, และ canary test (ยัด transcript/เบอร์/token ปลอมแล้ว assert ว่าไม่โผล่ใน log/bundle) เป็นวิธีพิสูจน์จริง ไม่ใช่แค่สัญญาในเอกสาร</li>
+<li><strong>fail-closed ทุกทาง</strong> — unknown/low confidence = no-op; mic denied / WebView2 หาย = degraded ไป push-to-talk โดยไม่ crash</li>
+<li><strong>ห้าม synthetic click เพื่อข้าม user-activation</strong> — สำคัญมาก เพราะเป็นทางลัดที่มักถูกเลือกแล้วทำให้ทั้งฟีเจอร์กลายเป็นของเปราะที่พังทุกครั้งที่เบราว์เซอร์อัปเดต</li>
+</ul>
+</div>
+
+<h3>3.2 ปัญหาที่ต้องแก้</h3>
+
+<div class="card bad">
+<p><span class="tag t-bad">CRITICAL</span> <strong>F1 — mic ownership contract ใช้กับโค้ดปัจจุบันไม่ได้</strong></p>
+<p>แผนสมมติว่าเว็บเป็น one-shot ล้วน: <code>native stop → wake.detected → web one-shot → command.ended → cooldown 350ms → standby resume</code></p>
+<p>แต่ commit หลังแผน (<code>814420b</code>, <code>73bbd8c</code>) เปลี่ยนพฤติกรรมเป็น <strong>สายการฟังต่อเนื่อง</strong>: หลังระบบบอกว่า "ยังต้องเลือกอะไร" จะเปิดไมค์รอบใหม่เอง และยืดเวลารับเสียงเป็น 15 วินาที (<code>VoiceCommandButton.tsx:265</code>)</p>
+<p><strong>ผลกระทบ:</strong> native จะเข้าใจว่า command จบตั้งแต่ utterance แรก แล้ว resume standby ทับตอนที่เว็บยังถือไมค์อยู่ → device busy / session ซ้อน ซึ่งทำให้ success criteria ข้อ "500 รอบ handoff ไม่มี device busy" fail แน่นอน</p>
+<p><strong>แก้:</strong> นิยาม <code>command.ended</code> ใหม่ให้หมายถึง "จบทั้งสายฟัง" (รวมรอบถามตัวเลือกต่อเนื่อง) + เพิ่ม heartbeat หรือ <code>command.extended</code> เพื่อกัน watchdog ตัดกลางสาย + ปรับ watchdog จาก 15s เป็น ≥20s ให้ยาวกว่าเวลารับเสียงฝั่งเว็บเสมอ</p>
+</div>
+
+<div class="card warn">
+<p><span class="tag t-warn">HIGH</span> <strong>F2 — wake engine เป็น en-US บนเครื่องที่ใช้งานภาษาไทย</strong></p>
+<p>W2 กำหนด <code>Culture = en-US</code>, threshold 0.82 ผ่าน System.Speech constrained grammar ขณะที่คำสั่งจริงเป็น th-TH ผ่าน Web Speech ปัญหาคือเครื่อง Windows ที่ขายในไทยจำนวนมาก<strong>ไม่มี recognizer en-US ติดตั้ง</strong> และ System.Speech ไม่มี th-TH ให้ใช้เลย</p>
+<p>แผน<em>รู้</em>ข้อนี้และวาง STOP gate ไว้ที่ W0 ซึ่งถูกต้อง แต่โครงสร้างการอนุมัติกลับเสนอ W0–W12 มาเป็นก้อนเดียว</p>
+<p><strong>แก้:</strong> แยก W0 เป็นการอนุมัติต่างหาก (spike ~1 วัน) พร้อมเกณฑ์ตัดสินชัดเจน — ถ้า reference hardware ไม่มี en-US recognizer หรือ recall ต่ำกว่าเป้า ให้ประเมิน engine ทางเลือก (คนละ licensing model) <em>ก่อน</em> ลงทุน W1–W12</p>
+</div>
+
+<div class="card warn">
+<p><span class="tag t-warn">HIGH</span> <strong>F3 — ต้นทุนไม่สมมูลกับปัญหาที่ร้านเจออยู่จริง</strong></p>
+<p>W0–W12 + MSIX + code signing + burn-in 72 ชม. + pilot 21 วัน = งานหลายสัปดาห์ บวกค่าใบรับรองและภาระ support ระยะยาว (ตามอัปเดต WebView2, ไดรเวอร์เสียง, Windows policy)</p>
+<p>ขณะที่งานค้างที่กระทบร้านตรง ๆ ตอนนี้คือ <strong>ใบเสร็จ USB ที่ยังไม่ deploy</strong> และ Print Hub ที่ยังไม่มี health/mutex/สถานะงานที่เชื่อถือได้</p>
+<p>แผนไม่มีหัวข้อ "ทำไมไม่ทำ" หรือประมาณการว่าปุ่มกดพูดที่มีอยู่แล้วแก้ปัญหาไปได้กี่เปอร์เซ็นต์ — wake word แก้เฉพาะกรณี "มือไม่ว่าง/มือเปียก" ซึ่งควรมีตัวเลขรองรับก่อนลงทุน</p>
+<p><strong>แก้:</strong> เพิ่ม business case สั้น ๆ (ความถี่ที่พนักงานกดปุ่มไม่ได้ต่อกะ จากร้านนำร่อง 3 ร้านที่เปิด voice อยู่แล้ว) และจัดลำดับให้ Print Hub มาก่อน</p>
+</div>
+
+<div class="card info">
+<p><span class="tag t-info">MEDIUM</span> <strong>F4 — version train 12 bump ต่อ 12 work package</strong></p>
+<p>0.42.0 → 0.42.11 ทั้งหมดอยู่ก่อน pilot ทำให้ release history เต็มไปด้วยเวอร์ชันที่ไม่มีใครใช้ และการ rollback อ่านยาก</p>
+<p><strong>แก้:</strong> bump ที่ milestone จริง 4 จุดพอ — host skeleton / standby policy / RC / pilot</p>
+</div>
+
+<div class="card info">
+<p><span class="tag t-info">MEDIUM</span> <strong>F5 — ยังไม่มีคำตอบเรื่องการออกเสียงคำปลุกโดยผู้พูดไทย</strong></p>
+<p>แผนตัด Thai wake word ออกจาก v1 อย่างถูกต้อง แต่พนักงานที่พูดไทยทั้งวันจะออกเสียง "Hey StoreOS" ไม่สม่ำเสมอ ซึ่งกระทบ recall โดยตรง ส่วน negative corpus ที่วางไว้ (เพลง/ทีวี/บทสนทนา/เสียงเครื่องชง) ยังไม่ครอบคลุมกรณี "พนักงานพูดไทยปนอังกฤษกันเอง"</p>
+<p><strong>แก้:</strong> ระบุใน G6 ว่า positive corpus ต้องมาจากผู้พูดไทย ไม่ใช่ native speaker และ negative corpus ต้องมีบทสนทนาไทยในร้าน</p>
+</div>
+
+<div class="card info">
+<p><span class="tag t-info">LOW</span> <strong>F6 — ไม่มี logging ฝั่งเซิร์ฟเวอร์ตามกฎโปรเจกต์</strong></p>
+<p>AGENTS.md กำหนดว่าทุกฟีเจอร์ใหม่ต้องเขียน <code>system_event_logs</code> รวมถึงเส้นทางที่สำเร็จ แผนพูดถึง diagnostics ฝั่ง native (local, privacy-safe) แต่ไม่มีการบันทึกฝั่งเซิร์ฟเวอร์เลย — เช่นจำนวน standby activation ต่อร้าน, จำนวน confirm/cancel/timeout ซึ่งเป็นตัวชี้วัดเดียวที่จะบอกได้ว่าฟีเจอร์นี้ถูกใช้จริงไหมหลัง pilot (นับ event แบบไม่มี transcript ไม่ขัดกับ privacy contract)</p>
+</div>
+
+<h2>4. รีวิว Voice Standby + Print Hub v2</h2>
+
+<h3>4.1 สิ่งที่ทำได้ดี</h3>
+<div class="card ok">
+<ul>
+<li><strong>"StoreOS default ≠ Windows system default"</strong> — ตัดสินใจถูกและควรบันทึกเป็น ADR จริง เพราะการแก้ Windows default printer คือการเปลี่ยนสภาพเครื่องของลูกค้าโดยที่ระบบเราไม่มีสิทธิ์</li>
+<li><strong>Priority P1–P5 + กฎห้ามเดา</strong> — โดยเฉพาะ "ห้ามใช้ display name เป็น stable identity" และ "ห้ามเปลี่ยน binding ที่เคยยืนยันเพราะมีเครื่องอื่นถูกเสียบทีหลัง"</li>
+<li><strong>งานสถานะ unknown ห้าม auto-replay</strong> — ตรงกับบทเรียนจริงของโปรเจกต์นี้ที่เคยมีปัญหาใบเสร็จซ้ำจนต้องทำ localStorage claim กันปริ้นซ้ำข้ามแท็บ</li>
+<li><strong>kill switch แยก 4 ตัว</strong> พร้อมเงื่อนไข "ปิด autostart ต้องไม่ลบ binding / ปิด discovery ต้องยังเลือกด้วยมือได้" — ออกแบบ degradation ถูกหลัก</li>
+<li><strong>launch lease + ห้ามคงสองกลไก autostart</strong> — ตรงกับความเสี่ยงจริงที่มี Scheduled Task <code>StoreOSPrintHub</code> อยู่แล้ว</li>
+<li><strong>ไม่รวม process กับ Print Hub และไม่ reuse hubToken</strong> — การแยก credential ระหว่างสองระบบเป็นการตัดสินใจที่ถูก</li>
+</ul>
+</div>
+
+<h3>4.2 ความขัดแย้งกับโค้ดที่ ship ไปแล้ว</h3>
+<p>แผน USB Auto Detect ถูก implement แล้ว (<code>b6b80c2</code>, migration <code>20260904000003_print_hub_usb.sql</code>) ตารางนี้คือจุดที่ v2 ขัดกับของจริง</p>
+<div class="tbl-wrap">
+<table>
+<tr><th>หัวข้อ</th><th>v2 กำหนดว่า</th><th>โค้ดที่รันอยู่</th><th>ผล</th></tr>
+<tr>
+<td>ที่เก็บ binding</td>
+<td>local-first: JSON config ใน Print Hub (<code>schemaVersion</code>, atomic write, backup)</td>
+<td>server-first: <code>printers.hub_usb_name</code> ใน Supabase + ผลสแกนเข้า <code>stores.print_hub_devices</code></td>
+<td><span class="tag t-bad">ขัดกัน</span> ทำทั้งสองอย่าง = source of truth สองที่</td>
+</tr>
+<tr>
+<td>Device identity</td>
+<td>stable device id / VID+PID+serial; <strong>ห้าม</strong>ใช้ display name เป็น key</td>
+<td>ใช้ชื่อเครื่องพิมพ์ของ Windows เป็น key ตรง ๆ</td>
+<td><span class="tag t-bad">ขัดกัน</span></td>
+</tr>
+<tr>
+<td>Auto-selection</td>
+<td>"เลือกจากชื่อคล้ายกันแบบเดา" อยู่ใน Non-goals</td>
+<td><code>pickUsbPrinter()</code> จัดอันดับด้วย regex ชื่อ <code>POS/Thermal/Receipt/58/80/XP-/TM-/EPSON/RP/PT-</code></td>
+<td><span class="tag t-bad">ขัดกัน</span></td>
+</tr>
+<tr>
+<td>Windows default printer</td>
+<td>ไม่อ่าน ไม่เปลี่ยน</td>
+<td>tier 4 ของ <code>pickUsbPrinter()</code> = <strong>fallback ไปเครื่องพิมพ์ default ของ Windows</strong></td>
+<td><span class="tag t-bad">เสี่ยงจริง</span> ใบเสร็จอาจไหลไปเครื่องพิมพ์ A4/PDF ของสำนักงาน</td>
+</tr>
+<tr>
+<td>เครื่องใหม่ 1 เครื่อง</td>
+<td>P4 = เสนอเท่านั้น ต้อง test print + ยืนยันก่อน save binding</td>
+<td>auto-bind และพิมพ์ได้ทันทีโดยไม่ต้องยืนยัน</td>
+<td><span class="tag t-warn">ขัดกัน</span> แต่เป็นสิ่งที่ทำให้ UX "เสียบแล้วใช้ได้เลย" ตามโจทย์เดิม</td>
+</tr>
+<tr>
+<td>Role receipt/kitchen/label</td>
+<td>เพิ่ม role binding ระดับเครื่องใน Hub</td>
+<td>มี <code>src/modules/printing/station-routing.ts</code> ผูกเครื่องพิมพ์ต่อ kitchen station ในฐานข้อมูลอยู่แล้ว (ship 2026-06-27)</td>
+<td><span class="tag t-warn">ซ้ำซ้อน</span> จะมีสองระบบตัดสินว่าใบไหนไปเครื่องไหน</td>
+</tr>
+</table>
+</div>
+
+<div class="card info">
+<p><strong>ข้อเสนอ reconcile สำหรับ v3:</strong> คงสถาปัตยกรรม <em>server-first</em> ที่ ship แล้ว เพราะแท็บเล็ต/iPad ต้องอ่าน binding เดียวกันผ่านคิว (WebUSB/BLE ใช้ไม่ได้บน iOS อยู่แล้ว) แล้วยกของดีจาก v2 มาทับ 4 อย่าง:</p>
+<ol>
+<li>เพิ่ม <strong>stable identity</strong> (VID/PID + serial + PnP device id) เป็นฟิลด์เสริมข้าง <code>hub_usb_name</code> และใช้ match ก่อนชื่อเสมอ</li>
+<li><strong>ถอด tier-4 Windows-default</strong> ออกจากการเลือกอัตโนมัติ หรือเปลี่ยนเป็น "เสนอให้ยืนยัน" แทนการพิมพ์ทันที</li>
+<li><strong>confirm-before-bind</strong> เป็นตัวเลือกของร้าน (เปิดเมื่อมีเครื่องพิมพ์หลายตัว) โดยคง auto-detect เป็น default สำหรับร้านเครื่องเดียว</li>
+<li>ให้ role/station ใช้ตารางเดิม (<code>kitchen_stations</code> → printer) ไม่สร้าง role binding ชั้นที่สองใน Hub</li>
+</ol>
+</div>
+
+<h3>4.3 ช่องว่างอื่นของ v2</h3>
+<div class="card warn">
+<ul>
+<li><strong>W0 สมมติว่ามี health endpoint/IPC ให้ probe — ไม่มีจริง</strong> <code>print-hub.mjs</code> เป็น long-poll client ล้วน ไม่เปิด socket ใด ๆ และไม่มี single-instance guard ดังนั้น lifecycle ข้อ 1–3 (Probe 1.5s → Start → Ready 10s) ต้องเริ่มจากการ<em>สร้าง</em>ทั้ง health และ mutex ก่อน ไม่ใช่ "ตรวจของเดิม" ข้อนี้เปลี่ยนขนาดงาน W2/W3 อย่างมีนัยสำคัญ</li>
+<li><strong>ไม่มีการรับมือ Hub เวอร์ชันเก่า</strong> agent ไม่ส่ง version ในการ poll เซิร์ฟเวอร์จึงไม่รู้ว่าร้านไหนรันตัวเก่า — ปัจจุบัน agent เก่าที่ได้งาน <code>kind:"usb"</code> จะตกเข้า branch IP แล้ว ack กลับว่า "Invalid or disallowed IP address" ซึ่งผู้ใช้ตีความไม่ออก</li>
+<li><strong>"Launcher v1 plan" ที่อ้างถึงไม่มีอยู่จริง</strong> ต้องระบุให้ชัดว่า Launcher คือ process เดียวกับ VoiceHost (WPF ตัวเดียวคุมทั้งไมค์และ Hub) หรือคนละตัว ข้อนี้เปลี่ยน scope ทั้ง W2 และ W8</li>
+<li><strong>Uninstall/upgrade ปะทะ Scheduled Task เดิม</strong> v2 ให้เลือกเจ้าของ autostart หลัง pilot แต่ไม่ได้ระบุพฤติกรรมของ <code>uninstall-windows.ps1</code> ที่มีอยู่ ซึ่งจะลบ task ทิ้ง ถ้า Launcher เป็นเจ้าของแล้วผู้ใช้รัน uninstall เดิม จะเกิดสภาพ "ไม่มีใครเปิด Hub" โดยไม่มีใครรู้</li>
+<li><strong>ไม่มี logging ฝั่งเซิร์ฟเวอร์เช่นกัน</strong> — การเปลี่ยน binding, การพบ/หายของอุปกรณ์ และการ auto-select ควรลง <code>system_event_logs</code> ตามกฎโปรเจกต์ (ปัจจุบันมีแค่ผลพิมพ์ที่ <code>api/print/hub/ack</code>)</li>
+</ul>
+</div>
+
+<h2>5. ปัญหาข้ามแผน (ทั้งสองฉบับไม่ครอบคลุม)</h2>
+
+<div class="card bad">
+<p><span class="tag t-bad">CRITICAL</span> <strong>X1 — คิวงานพิมพ์ไม่มีสถานะ unknown และไม่มีการกู้งานค้าง</strong></p>
+<p>v2 พูดถึง <code>queued/sent/acknowledged/unknown</code> อย่างถูกต้อง แต่ของจริงคือ:</p>
+<pre><code>status check (status in ('pending','claimed','printed','failed'))   -- 20260625120000
+attempts integer not null default 0    -- ไม่เคยถูก +1 ที่ไหนเลย
+claimed_at timestamptz                 -- ไม่มีโค้ดไหนอ่านกลับ</code></pre>
+<p><strong>ผลกระทบจริง:</strong> ถ้า Hub เคลมงานแล้วเน็ตหลุด/เครื่องดับก่อน ack งานจะค้างสถานะ <code>claimed</code> <strong>ตลอดไป</strong> ไม่มี requeue ไม่มี timeout และหน้า Settings ก็มองไม่เห็น เพราะตัวนับแสดงเฉพาะ <code>pending</code> ผู้ใช้จะเจอ "ใบเสร็จไม่ออก แต่ระบบไม่ฟ้องอะไรเลย" ซึ่งเป็นเคสที่หาสาเหตุยากที่สุดหน้าร้าน และตรงกับกฎ "ห้ามสำเร็จแบบเงียบ" ของโปรเจกต์</p>
+<p><strong>แก้ (ควรทำก่อนงานใหญ่ทั้งสองแผน):</strong> เพิ่มสถานะ <code>unknown</code> + คืนงานที่ค้าง <code>claimed</code> เกิน N นาทีกลับคิวโดย<strong>ไม่</strong> auto-reprint (ให้ผู้ใช้ตัดสินใจ) + นับ <code>attempts</code> จริง + แสดงงานค้างในหน้า Settings พร้อมปุ่มสั่งพิมพ์ซ้ำด้วยมือ</p>
+</div>
+
+<div class="card warn">
+<p><span class="tag t-warn">HIGH</span> <strong>X2 — สองแผนอธิบายความสัมพันธ์ของ process ไม่ตรงกัน</strong></p>
+<p>v1 ระบุว่า "ไม่รวม process กับ Print Hub หรือ reuse hubToken" ส่วน v2 ให้ Launcher เป็นผู้ดูแล Print Hub สภาพหลังทำครบทั้งสองแผนจะมี Scheduled Task + Launcher (WPF) + WebView2 + เบราว์เซอร์ที่พนักงานอาจเปิดคู่กัน บนเครื่องแคชเชียร์เครื่องเดียว</p>
+<p><strong>แก้:</strong> freeze process model ให้จบก่อนเขียนโค้ดบรรทัดแรก — ผมแนะนำ WPF ตัวเดียวเป็นเจ้าของ lifecycle ของ Hub (supervisor) แต่แยก credential/config กันสนิทตามที่ v1 กำหนด</p>
+</div>
+
+<div class="card warn">
+<p><span class="tag t-warn">MEDIUM</span> <strong>X3 — ไม่มีแผนถอนตัวระดับผลิตภัณฑ์</strong></p>
+<p>ทั้งสองแผนมี rollback ทางเทคนิคครบ แต่ไม่มีเกณฑ์ว่า "ถ้า pilot ผ่านแต่ร้านไม่ใช้ จะเลิกเมื่อไหร่" ซึ่งสำคัญ เพราะ Windows host ที่ปล่อยไปแล้วกลายเป็นภาระ support ถาวร (ตามอัปเดต WebView2 / ต่ออายุใบรับรอง / Windows policy) แม้ไม่มีใครใช้</p>
+</div>
+
+<div class="card info">
+<p><span class="tag t-info">MEDIUM</span> <strong>X4 — อุปกรณ์ที่ไม่ใช่ Windows ยังไม่อยู่ในสมการ</strong></p>
+<p>ร้านจริงใช้ iPad และแอปมือถือปล่อยแค่ Android ทุกอย่างที่ผูกกับ Windows host จะใช้ไม่ได้บนอุปกรณ์เหล่านั้น แผนควรระบุเป็นข้อกำหนดว่า standby เป็นฟีเจอร์เฉพาะเครื่อง Windows และ UI ของอุปกรณ์อื่นต้องไม่แสดงตัวเลือกนี้เลย (v1 ครอบคลุมโดยบังเอิญผ่านข้อ "browser ปกติไม่เห็น toggle")</p>
+</div>
+
+<h2>6. ลำดับงานที่เสนอ</h2>
+<div class="tbl-wrap">
+<table>
+<tr><th>ลำดับ</th><th>งาน</th><th>ทำไมต้องมาก่อน</th><th>ขนาด</th></tr>
+<tr><td>1</td><td>ปิดงาน USB ที่ค้าง: apply migration → deploy → ทดสอบกระดาษจริง + log การสแกน + ส่ง agent version</td><td>โค้ดอยู่ใน main แล้วแต่ยังไม่ถึงมือร้าน การปล่อยค้างคือความเสี่ยงสะสม</td><td>เล็ก</td></tr>
+<tr><td>2</td><td><strong>X1</strong> คิวงานพิมพ์: สถานะ unknown + คืนงานค้าง + นับ attempts + แสดงในหน้า Settings</td><td>เป็นบั๊กเงียบที่กระทบทุกช่องทางพิมพ์ตอนนี้ ไม่ใช่ฟีเจอร์ใหม่</td><td>เล็ก–กลาง</td></tr>
+<tr><td>3</td><td><strong>v3 Print Hub reconcile</strong>: stable identity + ถอด Windows-default fallback + confirm-before-bind + mutex/health/version ใน agent</td><td>ยกของดีจาก v2 มาทับของที่ ship แล้ว โดยไม่สร้าง source of truth ที่สอง</td><td>กลาง</td></tr>
+<tr><td>4</td><td>Launcher/supervisor (ถ้ายังต้องการ) — ตัดสินใจเจ้าของ autostart ทางเดียว</td><td>เป็นเจ้าของ process ของทั้ง Hub และ VoiceHost จึงต้องมาก่อน voice</td><td>กลาง</td></tr>
+<tr><td>5</td><td>Voice Standby <strong>W0 spike เท่านั้น</strong>: probe recognizer + mic handoff 100 รอบ + WebView2 postMessage สองทาง</td><td>พิสูจน์สมมติฐานที่ทำให้ทั้งแผนล้มได้ ด้วยต้นทุน 1 วัน</td><td>เล็ก</td></tr>
+<tr><td>6</td><td>ตัดสินใจเดินต่อ/หยุด Voice Standby จากผล W0 + business case</td><td>อย่าลงทุน 12 work package ก่อนรู้ว่า engine ใช้ได้จริง</td><td>—</td></tr>
+</table>
+</div>
+
+<h2>7. Gate ที่ควรคง / ควรปรับ</h2>
+<div class="tbl-wrap">
+<table>
+<tr><th>Gate</th><th>ความเห็น</th></tr>
+<tr><td>G3 Safety (standby Tier B confirm 100%, forbidden execute = 0)</td><td><span class="tag t-ok">คงไว้</span> เป็น gate ที่มีค่าที่สุดของทั้งแผน</td></tr>
+<tr><td>G5 Privacy (canary + network/file scan)</td><td><span class="tag t-ok">คงไว้</span> วัดผลได้จริง</td></tr>
+<tr><td>G4 OS isolation (Windows default ไม่เปลี่ยน)</td><td><span class="tag t-ok">คงไว้</span> และ<strong>ต้องขยายให้ครอบคลุมโค้ดที่ ship แล้ว</strong> ซึ่งอ่านค่า default อยู่</td></tr>
+<tr><td>G7 Reliability burn-in 72 ชม.</td><td><span class="tag t-warn">ปรับ</span> ใช้ 24 ชม. ก่อน pilot แล้วค่อย 72 ชม. ก่อน production เพื่อไม่ยืดรอบ feedback</td></tr>
+<tr><td>G9 Pilot 21 วัน (1→3 เครื่อง)</td><td><span class="tag t-ok">คงไว้</span> สมเหตุสมผลกับความเสี่ยงเรื่องตะกร้า</td></tr>
+<tr><td>version train 12 bump</td><td><span class="tag t-bad">ตัด</span> เหลือ 4 milestone</td></tr>
+</table>
+</div>
+
+<h2>8. สรุป</h2>
+<div class="card">
+<p>ทั้งสองแผนเขียนดีกว่ามาตรฐานทั่วไปมาก — มี decision record, gate ที่พิสูจน์ได้, non-goals ที่ชัดเจน และ fail-closed ทุกทาง ปัญหาไม่ได้อยู่ที่คุณภาพการเขียน แต่อยู่ที่ <strong>ความสดของ baseline</strong> (โค้ดขยับหลังแผนภายในไม่กี่ชั่วโมง) และ <strong>ลำดับการลงทุน</strong> (แผนใหญ่สองฉบับถูกวางทับงานพื้นฐานของ Print Hub ที่ยังไม่เสร็จ)</p>
+<p>คำแนะนำสุดท้าย: <strong>อย่า implement v2 ตามตัวอักษร</strong> ให้ออก v3 ที่ reconcile กับสิ่งที่ ship แล้ว, ปิดหนี้เทคนิคของคิวงานพิมพ์ (X1) ก่อน, และอนุมัติ Voice Standby แค่ W0 จนกว่าจะมีหลักฐานเรื่อง recognizer</p>
+</div>
+
+<footer>
+StoreOS · Plan Review v1 · 2026-09-04 · ตรวจกับ commit <code>3d48456</code> · ไฟล์แผนต้นทางไม่ถูกแก้ไข
+</footer>
+
+</div>
+</body>
+</html>

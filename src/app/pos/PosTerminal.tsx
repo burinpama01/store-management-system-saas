@@ -1,5 +1,6 @@
 "use client";
 
+import { PrintQueueAlert } from "@/modules/printing/PrintQueueAlert";
 import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
@@ -3665,6 +3666,9 @@ export function PosTerminal({
 
   return (
     <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
+      {/* งานพิมพ์ที่ไม่ทราบผลต้องเห็นตรงจุดที่คนยืนอยู่หน้าเครื่องพิมพ์ (การ์ดลอย ไม่กินความสูง) */}
+      <PrintQueueAlert />
+
       {/* Product catalog */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* ปุ่มบนแถบหัว: ไม่มีโลโก้/ชื่อร้านแล้ว (หน้า POS ไม่ต้องบอกว่าอยู่ร้านไหน

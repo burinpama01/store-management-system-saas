@@ -1,0 +1,17 @@
+
+ RUN  v3.2.4 D:/Store management system saas
+
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > เคลมงานแล้วเพิ่ม attempts, ออก claim token และตั้ง lease 101ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > เคลมพร้อมกันสองรอบ งานหนึ่งใบไปได้ที่รอบเดียว 33ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > lease หมดโดยไม่มี ack → unknown (ไม่ย้อนเป็น pending และไม่พิมพ์ซ้ำเอง) 83ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > ack ที่ claim token ไม่ตรง ไม่ทับผลปัจจุบัน 72ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > ack ซ้ำหลังงานปิดไปแล้วไม่เปลี่ยนสถานะ 46ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > คนยืนยันว่ากระดาษออกแล้ว → ปิดงาน; สั่งพิมพ์ใหม่ → กลับเข้าคิวเป็น attempt ใหม่ 89ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > resolve งานที่ไม่ได้อยู่สถานะ unknown ต้องไม่ผ่าน 24ms
+ ✓  integration  tests/integration/print-hub-queue-recovery.test.ts > print hub queue recovery (v3 Task 1, local supabase) > สถานะ Hub รายงานจำนวนงานแยกตามสถานะและ reconcile ให้ก่อนนับ 59ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  06:41:09
+   Duration  1.11s (transform 76ms, setup 0ms, collect 183ms, tests 524ms, environment 0ms, prepare 121ms)
+

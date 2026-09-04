@@ -3,7 +3,15 @@ import { buildReceiptPromptPayQr } from "./receipt-qr";
 import { formatPoints } from "@/shared/utils/points";
 
 // Characters per row for each paper width (monospace layout).
-export const RECEIPT_COLS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 42 };
+/**
+ * จำนวนตัวอักษรต่อบรรทัดตามความกว้างหัวพิมพ์จริง (58mm = 384 จุด, 80mm = 576 จุด
+ * หารด้วยความกว้างตัวอักษร 12 จุด). วัดกับเครื่องจริงที่หน้าร้าน 2026-09-04 แล้ว:
+ * บรรทัดยาว 49 ตัวตกบรรทัด ส่วน 48 ตัวพอดีเป๊ะ
+ *
+ * ค่านี้ผูกกับขนาดฟอนต์ของ receipt-raster-client: cols x 0.6 x fontPx ต้องไม่เกิน
+ * ความกว้างที่วาดได้ ถ้าเพิ่ม cols ต้องลด fontPx ตาม ไม่งั้นข้อความจะล้นออกนอกภาพ
+ */
+export const RECEIPT_COLS: Record<"58mm" | "80mm", number> = { "58mm": 32, "80mm": 48 };
 
 function priceStr(n: number): string {
   return n.toFixed(2);
@@ -103,6 +111,12 @@ export interface ReceiptLine {
   imageUrl?: string;
   /** Logo gets dithered (photo-like); footer is thresholded (sharp, keeps QR scannable). */
   imageKind?: "logo" | "footer";
+  /**
+   * วาดกรอบล้อมรอบบล็อกนี้ (ใช้กับ QR ทุกอัน)
+   * บนกระดาษใบเดียวอาจมี QR หลายอัน — ของระบบ (จ่ายเงิน/รับแต้ม) และของร้าน (รูปท้ายใบ)
+   * กรอบ + ป้ายกำกับทำให้ลูกค้าเห็นว่า "อันนี้เป็นชุดเดียวกับข้อความนี้" ไม่สแกนผิดอัน
+   */
+  framed?: boolean;
 }
 
 /**
@@ -272,7 +286,9 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
       align: "center",
       qrPayload: promptPayQr.payload,
       qrAmount: promptPayQr.amount,
+      framed: true,
     });
+    lines.push({ text: "" });
   }
 
   // QR รับแต้ม — เฉพาะบิลที่ยังไม่ผูกลูกค้า (บิลที่ผูกแล้วได้แต้มไปตั้งแต่จ่ายเงิน)
@@ -285,9 +301,10 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     lines.push({ text: div });
     lines.push({ text: "สแกนรับแต้มสะสม", align: "center", bold: true });
     lines.push({ text: `รับ ${pointsStr(data.loyaltyClaim.points)} แต้ม`, align: "center", bold: true });
-    lines.push({ text: "", align: "center", qrPayload: data.loyaltyClaim.url });
+    lines.push({ text: "", align: "center", qrPayload: data.loyaltyClaim.url, framed: true });
     lines.push({ text: `รหัส ${data.loyaltyClaim.code}`, align: "center" });
     lines.push({ text: `รับได้ถึง ${claimExpiry} (1 บิลรับได้ครั้งเดียว)`, align: "center" });
+    lines.push({ text: "" });
   }
 
   if (data.footerText) {
@@ -295,8 +312,17 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     pushWrapped(lines, data.footerText, cols, { align: "center" });
   }
 
-  if (data.footerImageUrl) {
-    lines.push({ text: "", align: "center", imageUrl: data.footerImageUrl, imageKind: "footer" });
+  // รูป QR ท้ายใบของร้าน: ถ้าใบนี้มี QR ของระบบอยู่แล้ว การพิมพ์ QR อีกอันโดยไม่มีอะไรกำกับ
+  // ทำให้ลูกค้าสแกนผิดอันได้ — บนใบแจ้งยอดคือจ่ายผิดยอด บนบิลที่จ่ายแล้วคือจ่ายซ้ำ
+  // ค่าเริ่มต้นจึงซ่อนเมื่อชนกัน และให้ร้านเลือกปิดกฎนี้เองได้
+  const hasSystemQr = Boolean(promptPayQr) || Boolean(data.loyaltyClaim);
+  const hideFooterImage = hasSystemQr && (data.hideFooterImageWithSystemQr ?? true);
+  if (data.footerImageUrl && !hideFooterImage) {
+    lines.push({ text: div });
+    // QR ที่ไม่มีคำอธิบาย ลูกค้าไม่รู้ว่าสแกนแล้วได้อะไร จึงมีข้อความกลาง ๆ ให้เสมอ
+    lines.push({ text: data.footerImageLabel?.trim() || "สแกน QR ของร้าน", align: "center", bold: true });
+    lines.push({ text: "", align: "center", imageUrl: data.footerImageUrl, imageKind: "footer", framed: true });
+    lines.push({ text: "" });
   }
 
   return { lines, cols };

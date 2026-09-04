@@ -127,6 +127,12 @@ function mapPrinter(row: PrinterRow): Printer {
     hubBluetoothPort: row.hub_bluetooth_port ?? undefined,
     hubUsbEnabled: row.hub_usb_enabled ?? false,
     hubUsbName: row.hub_usb_name ?? undefined,
+    hubUsbBindingPolicy: row.hub_usb_binding_policy ?? "auto_single",
+    // แสดงให้ผู้ใช้เห็นว่าระบบจำเครื่องไหนไว้ — ส่งเฉพาะชื่อคิว ไม่ส่ง pnp id/serial ออกหน้าเว็บ
+    hubUsbIdentityQueueName:
+      row.hub_usb_identity && typeof row.hub_usb_identity === "object" && !Array.isArray(row.hub_usb_identity)
+        ? ((row.hub_usb_identity as Record<string, unknown>).queueName as string | undefined) ?? undefined
+        : undefined,
     paperWidth: row.paper_width,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -371,6 +377,9 @@ export async function getReceiptSettings(storeId: string) {
           footerText: data.footer_text ?? undefined,
           logoUrl: data.logo_url ?? undefined,
           footerImageUrl: data.footer_image_url ?? undefined,
+          footerImageLabel: data.footer_image_label ?? undefined,
+          // ค่าเริ่มต้น true — ร้านเก่าที่ยังไม่เคยตั้งค่าได้พฤติกรรมปลอดภัยไว้ก่อน
+          hideFooterImageWithSystemQr: data.footer_image_hide_with_system_qr ?? true,
           autoPrintReceipt: data.auto_print_receipt,
           autoPrintStationTickets: data.auto_print_station_tickets,
           paperWidth: data.paper_width,

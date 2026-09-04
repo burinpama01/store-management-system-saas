@@ -1,7 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runPollCycle, isAllowedNetworkPrinterHost, decodePrintJobBase64, normalizeComPort, sendToComPort } from "../../scripts/print-hub.mjs";
+import {
+  runPollCycle,
+  isAllowedNetworkPrinterHost,
+  decodePrintJobBase64,
+  normalizeComPort,
+  sendToComPort,
+  classifyPrintOutcome,
+  AGENT_VERSION,
+} from "../../scripts/print-hub.mjs";
 
 const config = { serverUrl: "https://hub.example", storeId: "store-1", hubToken: "secret" };
 
@@ -23,7 +31,7 @@ describe("print hub agent — runPollCycle", () => {
 
     const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
-    expect(result).toEqual({ ok: true, processed: 1 });
+    expect(result).toMatchObject({ ok: true, processed: 1 });
     expect(printJob).toHaveBeenCalledWith({ kind: "ip", host: "192.168.1.50", port: 9100 }, expect.any(Buffer));
     const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
     expect(ackBody).toMatchObject({ jobId: "job-1", ok: true, storeId: "store-1" });
@@ -39,7 +47,7 @@ describe("print hub agent — runPollCycle", () => {
 
     const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
-    expect(result).toEqual({ ok: true, processed: 1 });
+    expect(result).toMatchObject({ ok: true, processed: 1 });
     expect(printJob).toHaveBeenCalledWith({ kind: "bt", device: "COM5" }, expect.any(Buffer));
     const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
     expect(ackBody).toMatchObject({ jobId: "job-bt", ok: true });
@@ -109,7 +117,7 @@ describe("print hub agent — runPollCycle", () => {
 
     const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
 
-    expect(result).toEqual({ ok: true, processed: 0 });
+    expect(result).toMatchObject({ ok: true, processed: 0 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
@@ -210,5 +218,89 @@ describe("print hub installer contract (Task 8/F2 source guards)", () => {
     const readme = read("scripts/print-hub/README-TH.txt");
     expect(readme).toContain("ออนไลน์");
     expect(readme).toContain("Print Hub");
+  });
+});
+// v3 Task 3 — agent ต้องไม่เดาผลแทนเครื่องพิมพ์
+describe("print hub agent — outcome classification", () => {
+  it("จัดข้อผิดพลาดที่รู้แน่ว่ายังไม่ได้ส่งไบต์เป็น failed", () => {
+    expect(classifyPrintOutcome(new Error("Invalid or disallowed IP address"))).toBe("failed");
+    expect(classifyPrintOutcome(new Error("connect ECONNREFUSED 192.168.1.50:9100"))).toBe("failed");
+    expect(classifyPrintOutcome(new Error("ไม่พบเครื่องพิมพ์ USB บนเครื่องแคชเชียร์"))).toBe("failed");
+    expect(classifyPrintOutcome(new Error("OpenPrinter failed: 1801"))).toBe("failed");
+  });
+
+  it("จัด timeout / สายหลุดกลางทาง / เขียนไม่ครบ เป็น unknown", () => {
+    expect(classifyPrintOutcome(new Error("Print timeout"))).toBe("unknown");
+    expect(classifyPrintOutcome(new Error("socket hang up"))).toBe("unknown");
+    expect(classifyPrintOutcome(new Error("Short write: 120/4096"))).toBe("unknown");
+    expect(classifyPrintOutcome(undefined)).toBe("unknown");
+  });
+});
+
+describe("print hub agent — claim token และ outcome ใน ack", () => {
+  const jobBase = { id: "job-x", host: "192.168.1.50", port: 9100, printJobBase64: Buffer.from("x").toString("base64") };
+
+  it("ส่ง agentVersion ไปกับ poll และคืน claimToken ตอน ack", async () => {
+    const job = { ...jobBase, claimToken: "3f2504e0-4f89-11d3-9a0c-0305e82c3301" };
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, jobs: [job], protocolVersion: 1, leaseSeconds: 120 }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, applied: true }));
+
+    await runPollCycle({ config, fetchImpl, printJob: vi.fn().mockResolvedValue(undefined), listDevices: noDevices });
+
+    const pollBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(pollBody.agentVersion).toBe(AGENT_VERSION);
+    const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(ackBody).toMatchObject({
+      jobId: "job-x",
+      outcome: "printed",
+      ok: true,
+      claimToken: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    });
+  });
+
+  it("timeout ระหว่างพิมพ์ ack เป็น unknown ไม่ใช่ failed", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, jobs: [jobBase] }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    const printJob = vi.fn().mockRejectedValue(new Error("Print timeout"));
+
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
+
+    expect(result).toMatchObject({ ok: true, processed: 1 });
+    const ackBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(ackBody.outcome).toBe("unknown");
+    expect(ackBody.ok).toBe(false);
+  });
+
+  it("ack ส่งไม่ถึงเซิร์ฟเวอร์ไม่ทำให้รอบพัง (ปล่อยให้ lease หมดแล้วเป็น unknown)", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true, jobs: [jobBase] }))
+      .mockRejectedValueOnce(new Error("network down"));
+
+    const result = await runPollCycle({
+      config,
+      fetchImpl,
+      printJob: vi.fn().mockResolvedValue(undefined),
+      listDevices: noDevices,
+    });
+
+    expect(result).toMatchObject({ ok: true, processed: 1 });
+  });
+});
+
+// เจอจากการทดสอบกับเครื่องพิมพ์จริง (each other II, 2026-09-04): เครื่องพิมพ์ TCP รับได้
+// ทีละงาน งานที่ต่อไม่ติดจึงได้ error "Connection timed out" ทั้งที่ยังไม่ได้ส่งไบต์เลย
+// ถ้าตีเป็น unknown จะกลายเป็นงานรอตรวจสอบกองโต ทั้งที่พิมพ์ซ้ำได้ปลอดภัย
+describe("print hub agent — แยก timeout ตอนต่อ ออกจาก timeout ตอนส่ง", () => {
+  it("ต่อ socket ไม่ติด = failed (ยังไม่ได้ส่งไบต์ พิมพ์ซ้ำได้)", () => {
+    expect(classifyPrintOutcome(new Error("Connection timed out (5000ms)"))).toBe("failed");
+  });
+
+  it("ค้างระหว่างส่ง = unknown (กระดาษอาจออกไปบางส่วนแล้ว)", () => {
+    expect(classifyPrintOutcome(new Error("Print send timed out (30000ms)"))).toBe("unknown");
   });
 });

@@ -253,6 +253,41 @@ function ReceiptSettingsDialog({
             />
           )}
 
+          {/* QR ที่ไม่มีคำอธิบายทำให้ลูกค้าไม่รู้ว่าสแกนแล้วได้อะไร และถ้าใบนั้นมี QR ของระบบ
+              อยู่ด้วย (จ่ายเงิน/รับแต้ม) การสแกนผิดอันหมายถึงจ่ายผิดยอดหรือจ่ายซ้ำ */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">ข้อความกำกับใต้รูปท้ายใบเสร็จ</label>
+            <input
+              type="text"
+              name="footerImageLabel"
+              maxLength={80}
+              placeholder="เช่น สแกนติดตามร้าน / สแกนเพื่อโอนเงิน"
+              defaultValue={settings?.footerImageLabel ?? ""}
+              disabled={!canEdit}
+              className={field}
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              ไม่กรอก = พิมพ์ว่า &ldquo;สแกน QR ของร้าน&rdquo; ให้อัตโนมัติ เพื่อไม่ให้มี QR ลอย ๆ ที่ไม่มีคำอธิบาย
+            </p>
+          </div>
+
+          <label className="flex items-start gap-2 text-xs text-gray-700">
+            <input
+              type="checkbox"
+              name="hideFooterImageWithSystemQr"
+              defaultChecked={settings?.hideFooterImageWithSystemQr ?? true}
+              disabled={!canEdit}
+              className="mt-0.5"
+            />
+            <span>
+              ซ่อนรูปท้ายใบเสร็จเมื่อใบนั้นมี QR ของระบบอยู่แล้ว (แนะนำ)
+              <span className="block text-[11px] text-gray-500">
+                ใบแจ้งยอดมี QR พร้อมเพย์ล็อกยอด และบิลที่ยังไม่ผูกลูกค้ามี QR รับแต้ม —
+                ถ้ามี QR ของร้านซ้อนขึ้นมาอีกอัน ลูกค้าอาจสแกนผิดอันจนจ่ายผิดยอดหรือจ่ายซ้ำ
+              </span>
+            </span>
+          </label>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">ความกว้างกระดาษ</label>

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    StoreOS Launcher (แผน v3 Task 8)
+
+    หน้าที่เดียวในเวอร์ชันนี้: เปิด POS ใน WebView2 และ "ทำให้ Print Hub พร้อมใช้งาน"
+    โดยไม่เป็นเจ้าของ process ของ Hub เอง — Scheduled Task "StoreOSPrintHub" ที่ตัวติดตั้ง
+    สร้างไว้ยังเป็นเจ้าของทางเดียว (แผน v3 §2) Launcher แค่ตรวจสถานะแล้วสั่ง Start-ScheduledTask
+    ห้าม launch `node print-hub.mjs` ตรง ๆ เด็ดขาด เพราะจะได้ Hub สองตัวบนเครื่องเดียว
+
+    process เดียวกันนี้จะเป็นที่อยู่ของ Voice Standby host ในอนาคต (แผน v1 W1) แต่ยังไม่ทำ
+    จนกว่า W0 spike จะพิสูจน์เรื่อง wake recognizer ได้
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <Platforms>x64</Platforms>
+    <AssemblyName>StoreOS.Launcher</AssemblyName>
+    <RootNamespace>StoreOS.Launcher</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+</Project>

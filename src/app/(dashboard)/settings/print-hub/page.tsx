@@ -58,6 +58,10 @@ export default async function PrintHubSettingsPage() {
         online: summary.online,
         secondsAgo: summary.secondsAgo,
         pendingJobs: statusRes.data?.pendingJobs ?? 0,
+        claimedJobs: statusRes.data?.claimedJobs ?? 0,
+        unknownJobs: statusRes.data?.unknownJobs ?? 0,
+        failedJobs: statusRes.data?.failedJobs ?? 0,
+        unknownJobList: statusRes.data?.unknownJobList ?? [],
         devices: statusRes.data?.devices ?? [],
       }}
       loadError={statusRes.error?.userMessage ?? null}
