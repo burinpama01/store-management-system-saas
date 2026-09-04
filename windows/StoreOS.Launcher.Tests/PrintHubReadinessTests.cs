@@ -1,3 +1,4 @@
+using System.IO;
 using StoreOS.Launcher.Services;
 using Xunit;
 

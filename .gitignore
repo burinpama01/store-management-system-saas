@@ -64,3 +64,9 @@ artifacts/qa/
 
 # Isolated feature worktrees
 .worktrees/
+
+# ผลบิลด์ของ Windows Launcher — ไฟล์ใหญ่ (exe self-contained ~150MB) ไม่เก็บใน git
+# ชุดติดตั้งแจกผ่าน Supabase storage แทน (ดู scripts/windows-launcher/build-launcher.ps1)
+artifacts/launcher/
+windows/**/bin/
+windows/**/obj/
