@@ -7,7 +7,7 @@ import {
   rotateHubTokenAction,
   setUsbBindingPolicyAction,
 } from "./actions";
-import { HUB_USB_BINDING_POLICIES } from "@/modules/printing/print-hub";
+import { HUB_USB_BINDING_POLICIES } from "@/modules/printing/hub-usb-policy";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-bytes";
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
