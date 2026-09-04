@@ -52,6 +52,10 @@ export interface ReceiptData {
   headerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  /** ข้อความกำกับใต้รูป QR ท้ายใบ — QR ที่ไม่มีคำอธิบายลูกค้าไม่รู้ว่าต้องสแกนทำอะไร */
+  footerImageLabel?: string;
+  /** true = ซ่อนรูปท้ายใบเมื่อใบนั้นมี QR ของระบบอยู่แล้ว (กันสแกนผิดอัน/จ่ายซ้ำ) */
+  hideFooterImageWithSystemQr?: boolean;
   /** "receipt" (default) = full bill; "kitchen" = station prep ticket (no prices);
    *  "table_qr" = a table-open slip with the customer ordering QR. */
   ticketMode?: "receipt" | "kitchen" | "table_qr";
@@ -139,6 +143,8 @@ export function buildReceiptData(
     headerText: settings.headerText,
     logoUrl: settings.logoUrl,
     footerImageUrl: settings.footerImageUrl,
+    footerImageLabel: settings.footerImageLabel,
+    hideFooterImageWithSystemQr: settings.hideFooterImageWithSystemQr,
     paperWidth: settings.paperWidth,
     printCopies: normalizePrintCopies(settings.printCopies),
     printedAt: new Date().toISOString(),

@@ -85,6 +85,10 @@ export interface ReceiptSettings {
   footerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  /** ข้อความกำกับใต้รูป QR ท้ายใบเสร็จ */
+  footerImageLabel?: string;
+  /** ซ่อนรูปท้ายใบเมื่อใบนั้นมี QR ของระบบ (ไม่ระบุ = true, ปลอดภัยไว้ก่อน) */
+  hideFooterImageWithSystemQr?: boolean;
   autoPrintReceipt: boolean;
   autoPrintStationTickets: boolean;
   paperWidth: "58mm" | "80mm";

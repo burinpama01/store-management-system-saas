@@ -30,6 +30,10 @@ export interface ReceiptSettings {
   footerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  /** ข้อความกำกับใต้รูป QR ท้ายใบเสร็จ */
+  footerImageLabel?: string;
+  /** ซ่อนรูปท้ายใบเมื่อใบนั้นมี QR ของระบบ (ค่าเริ่มต้น true) */
+  hideFooterImageWithSystemQr: boolean;
   autoPrintReceipt: boolean;
   autoPrintStationTickets: boolean;
   paperWidth: "58mm" | "80mm";
@@ -55,6 +59,9 @@ function mapReceiptSettings(row: ReceiptSettingsRow): ReceiptSettings {
     footerText: row.footer_text ?? undefined,
     logoUrl: row.logo_url ?? undefined,
     footerImageUrl: row.footer_image_url ?? undefined,
+    footerImageLabel: row.footer_image_label ?? undefined,
+    // ร้านที่ยังไม่เคยตั้งค่า = true (ปลอดภัยไว้ก่อน ไม่ให้ QR ซ้อนกันจนสแกนผิดอัน)
+    hideFooterImageWithSystemQr: row.footer_image_hide_with_system_qr ?? true,
     autoPrintReceipt: row.auto_print_receipt,
     autoPrintStationTickets: row.auto_print_station_tickets,
     paperWidth: row.paper_width,
@@ -120,6 +127,10 @@ export interface ReceiptSettingsInput {
   footerText?: string;
   logoUrl?: string;
   footerImageUrl?: string;
+  /** ข้อความกำกับใต้รูป QR ท้ายใบเสร็จ */
+  footerImageLabel?: string;
+  /** ซ่อนรูปท้ายใบเมื่อใบนั้นมี QR ของระบบ (กัน QR ซ้อนกันจนสแกนผิดอัน) */
+  hideFooterImageWithSystemQr?: boolean;
   autoPrintReceipt?: boolean;
   autoPrintStationTickets?: boolean;
   paperWidth: "58mm" | "80mm";
@@ -149,6 +160,8 @@ export async function upsertReceiptSettings(
       footer_text: input.footerText ?? null,
       logo_url: input.logoUrl ?? null,
       footer_image_url: input.footerImageUrl ?? null,
+      footer_image_label: input.footerImageLabel ?? null,
+      footer_image_hide_with_system_qr: input.hideFooterImageWithSystemQr ?? true,
       auto_print_receipt: input.autoPrintReceipt ?? false,
       auto_print_station_tickets: input.autoPrintStationTickets ?? false,
       paper_width: input.paperWidth,

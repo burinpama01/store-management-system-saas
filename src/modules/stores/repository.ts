@@ -377,6 +377,9 @@ export async function getReceiptSettings(storeId: string) {
           footerText: data.footer_text ?? undefined,
           logoUrl: data.logo_url ?? undefined,
           footerImageUrl: data.footer_image_url ?? undefined,
+          footerImageLabel: data.footer_image_label ?? undefined,
+          // ค่าเริ่มต้น true — ร้านเก่าที่ยังไม่เคยตั้งค่าได้พฤติกรรมปลอดภัยไว้ก่อน
+          hideFooterImageWithSystemQr: data.footer_image_hide_with_system_qr ?? true,
           autoPrintReceipt: data.auto_print_receipt,
           autoPrintStationTickets: data.auto_print_station_tickets,
           paperWidth: data.paper_width,

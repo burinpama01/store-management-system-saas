@@ -103,6 +103,11 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
   const padX = 8;
   const padY = 8;
   const qrGap = Math.round(lineH * 0.6);
+  // กรอบล้อม QR: ช่องว่างระหว่างขอบภาพกับเส้นกรอบ และความหนาเส้น
+  // มีไว้เพื่อให้ลูกค้าเห็นว่า QR อันนี้เป็นชุดเดียวกับข้อความที่อยู่เหนือมัน
+  // (ใบเดียวอาจมี QR ของระบบและของร้านพร้อมกัน)
+  const framePad = Math.round(lineH * 0.35);
+  const frameLine = data.paperWidth === "58mm" ? 2 : 3;
   const imageGap = Math.round(lineH * 0.5);
   const maxImgW = width - padX * 2;
   const logoMaxH = Math.round(width * 0.5);
@@ -183,36 +188,57 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
     ctx.putImageData(out, x0, y);
   };
 
+  /** กรอบสี่เหลี่ยมรอบบล็อก QR/รูป — วาดด้วยแท่งทึบเพื่อให้ยังคมหลังแปลงเป็นขาวดำ */
+  const strokeFrame = (x0: number, y0: number, w: number, h: number) => {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(x0, y0, w, frameLine);
+    ctx.fillRect(x0, y0 + h - frameLine, w, frameLine);
+    ctx.fillRect(x0, y0, frameLine, h);
+    ctx.fillRect(x0 + w - frameLine, y0, frameLine, h);
+  };
+
   let y = padY;
   for (const line of lines) {
     if (line.imageUrl) {
       const prep = prepared.get(line);
       if (!prep) continue;
+      const inset = line.framed ? framePad + frameLine : 0;
       const x0 = Math.floor((width - prep.drawW) / 2);
-      drawImageMono(prep, x0, y);
-      y += prep.drawH + imageGap;
+      if (line.framed) {
+        const boxW = prep.drawW + inset * 2;
+        const boxH = prep.drawH + inset * 2;
+        strokeFrame(Math.floor((width - boxW) / 2), y, boxW, boxH);
+      }
+      drawImageMono(prep, x0, y + inset);
+      y += prep.drawH + imageGap + inset * 2;
       continue;
     }
 
     if (line.qrPayload) {
       const { matrix, quietModules, cellDots, drawDots } = getReceiptQrMetrics(line.qrPayload, data.paperWidth);
+      const inset = line.framed ? framePad + frameLine : 0;
       const x0 = Math.floor((width - drawDots) / 2);
+      if (line.framed) {
+        const box = drawDots + inset * 2;
+        strokeFrame(Math.floor((width - box) / 2), y, box, box);
+      }
+      const qrY = y + inset;
       ctx.fillStyle = "#fff";
-      ctx.fillRect(x0, y, drawDots, drawDots);
+      ctx.fillRect(x0, qrY, drawDots, drawDots);
       ctx.fillStyle = "#000";
       for (let row = 0; row < matrix.size; row += 1) {
         for (let col = 0; col < matrix.size; col += 1) {
           if (matrix.isDark(row, col)) {
             ctx.fillRect(
               x0 + (col + quietModules) * cellDots,
-              y + (row + quietModules) * cellDots,
+              qrY + (row + quietModules) * cellDots,
               cellDots,
               cellDots,
             );
           }
         }
       }
-      y += drawDots + qrGap;
+      y += drawDots + qrGap + inset * 2;
       continue;
     }
 

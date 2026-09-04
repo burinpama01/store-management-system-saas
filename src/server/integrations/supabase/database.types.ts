@@ -3351,6 +3351,10 @@ export interface Database {
           footer_text: string | null;
           logo_url: string | null;
           footer_image_url: string | null;
+          /** ข้อความกำกับใต้รูป QR ท้ายใบเสร็จ */
+          footer_image_label: string | null;
+          /** ซ่อนรูปท้ายใบเมื่อใบนั้นมี QR ของระบบ */
+          footer_image_hide_with_system_qr: boolean;
           auto_print_receipt: boolean;
           auto_print_station_tickets: boolean;
           paper_width: "58mm" | "80mm";
@@ -3374,6 +3378,8 @@ export interface Database {
           footer_text?: string | null;
           logo_url?: string | null;
           footer_image_url?: string | null;
+          footer_image_label?: string | null;
+          footer_image_hide_with_system_qr?: boolean;
           auto_print_receipt?: boolean;
           auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";
@@ -3397,6 +3403,8 @@ export interface Database {
           footer_text?: string | null;
           logo_url?: string | null;
           footer_image_url?: string | null;
+          footer_image_label?: string | null;
+          footer_image_hide_with_system_qr?: boolean;
           auto_print_receipt?: boolean;
           auto_print_station_tickets?: boolean;
           paper_width?: "58mm" | "80mm";

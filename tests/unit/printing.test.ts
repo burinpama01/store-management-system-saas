@@ -307,11 +307,17 @@ describe("buildReceiptLines", () => {
     const imageLines = lines.filter((line) => line.imageUrl);
     expect(imageLines).toHaveLength(2);
 
-    // Logo is the first line (before the store name); footer image is the last line.
+    // Logo is the first line (before the store name); the footer image is the last block
+    // of content — followed only by the blank spacer that keeps it clear of the tear-off.
     expect(lines[0]?.imageUrl).toBe("https://cdn.example.com/logo.png");
     expect(lines[0]?.imageKind).toBe("logo");
-    expect(lines[lines.length - 1]?.imageUrl).toBe("https://cdn.example.com/line-qr.png");
-    expect(lines[lines.length - 1]?.imageKind).toBe("footer");
+    const lastContent = [...lines].reverse().find((line) => line.text !== "" || line.imageUrl || line.qrPayload);
+    expect(lastContent?.imageUrl).toBe("https://cdn.example.com/line-qr.png");
+    expect(lastContent?.imageKind).toBe("footer");
+    // รูป QR ต้องมีกรอบและมีป้ายกำกับอยู่บรรทัดเหนือมันเสมอ (กันสแกนผิดอัน)
+    expect(lastContent?.framed).toBe(true);
+    const footerIndex = lines.findIndex((line) => line.imageKind === "footer");
+    expect(lines[footerIndex - 1]?.text).toBe("สแกน QR ของร้าน");
   });
 
   it("omits image lines when no logo or footer image is configured", () => {
