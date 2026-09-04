@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { computeStockAlerts } from "@/modules/stock/repository";
+import { isStockPoolLowStockSaleCrossing } from "@/modules/stock/notify";
 import type { Product } from "@/modules/catalog/types";
 
 function product(
@@ -141,5 +142,67 @@ describe("computeStockAlerts", () => {
     expect(action).toContain("track_stock");
     expect(action).toContain("requestedStockByVariant");
     expect(action).toContain("สินค้าเหลือไม่พอ");
+  });
+
+  it("alerts only when a sale movement crosses the Pool threshold", () => {
+    expect(isStockPoolLowStockSaleCrossing({ movementType: "sale", beforeQuantity: 6, afterQuantity: 5 }, 5)).toBe(true);
+    expect(isStockPoolLowStockSaleCrossing({ movementType: "sale", beforeQuantity: 5, afterQuantity: 4 }, 5)).toBe(false);
+    expect(isStockPoolLowStockSaleCrossing({ movementType: "sale", beforeQuantity: 8, afterQuantity: 6 }, 5)).toBe(false);
+    for (const movementType of ["receive", "set_balance", "cancel_restore", "item_void_restore", "migration"]) {
+      expect(isStockPoolLowStockSaleCrossing({ movementType, beforeQuantity: 6, afterQuantity: 5 }, 5)).toBe(false);
+    }
+  });
+
+  it("reads committed sale movements, claims each movement once, and includes linked selling items", () => {
+    const notifier = readFileSync(join(process.cwd(), "src/modules/stock/notify.ts"), "utf8").toLowerCase().replace(/\s+/g, " ");
+    const pos = readFileSync(join(process.cwd(), "src/app/pos/actions.ts"), "utf8").toLowerCase().replace(/\s+/g, " ");
+    const qr = readFileSync(join(process.cwd(), "src/app/qr/[storeSlug]/[tableId]/actions.ts"), "utf8").toLowerCase().replace(/\s+/g, " ");
+
+    expect(notifier).toContain('.from("stock_movements")');
+    expect(notifier).toContain('.eq("movement_type", "sale")');
+    expect(notifier).toContain('.eq("reference_type", "order")');
+    expect(notifier).toContain('.eq("reference_id", orderid)');
+    expect(notifier).toContain('.from("stock_movement_notification_claims")');
+    expect(notifier).toContain("movement_id: movement.id");
+    expect(notifier).toContain("stockmovementid: movement.id");
+    expect(notifier).toContain("const delivered = await notifyownernow");
+    expect(notifier).toContain("if (!delivered)");
+    expect(notifier).toMatch(/\.delete\(\)\s*\.eq\("movement_id", movement\.id\)/);
+    expect(notifier).toContain("linkeditemnames");
+    expect(notifier).toContain("pool.unit_label");
+    expect(notifier).toContain("movement.after_quantity");
+    expect(pos).toContain("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, orderid");
+    expect(pos).toContain("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, created.orderid");
+    expect(qr).toContain("notifylowstockaftersalesafely( store.organization_id, storeid, orderid");
+  });
+
+  it("checks open POS creation after commit and rechecks only after payment creates its sale movement", () => {
+    const pos = readFileSync(join(process.cwd(), "src/app/pos/actions.ts"), "utf8")
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+    const createCore = pos.slice(
+      pos.indexOf("async function createposordercore"),
+      pos.indexOf("export async function collectpaymentaction"),
+    );
+    const collectPayment = pos.slice(
+      pos.indexOf("export async function collectpaymentaction"),
+      pos.indexOf("export interface checkoutandpayresult"),
+    );
+    const checkoutAndPay = pos.slice(
+      pos.indexOf("export async function checkoutandpayaction"),
+      pos.indexOf("export interface opentablestatus"),
+    );
+
+    const createFailure = createCore.indexOf("if (result.error)");
+    const createNotify = createCore.indexOf("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, result.data.id");
+    expect(createFailure).toBeGreaterThanOrEqual(0);
+    expect(createNotify).toBeGreaterThan(createFailure);
+    expect(createCore.slice(createFailure, createNotify)).toContain("return { orderid: null");
+
+    // POS Stock Pool deduction is committed by close payment today, so payment
+    // boundaries must recheck; the movement claim prevents duplicate delivery.
+    expect(collectPayment).toContain("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, orderid");
+    expect(checkoutAndPay).toContain("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, created.orderid");
+    expect(pos.match(/notifylowstockaftersalesafely\(/g)).toHaveLength(3);
   });
 });

@@ -496,6 +496,16 @@ async function createPosOrderCore(
       return { orderId: null, orderNumber: null, error: result.error.userMessage };
     }
 
+    // Recheck committed sale movements at the order-creation boundary. Open POS
+    // orders currently create their Pool movement at payment close, so this is a
+    // no-op until then; pay-now may register both callbacks, with the movement
+    // claim providing the exactly-once delivery boundary.
+    notifyLowStockAfterSaleSafely(
+      ctx.organizationId,
+      ctx.storeId,
+      result.data.id,
+    );
+
     // Order exists — link the reserved reward vouchers to it (best-effort; single-use already locked).
     for (const redemptionId of reservedRedemptionIds) {
       const attached = await attachRewardVoucherOrder(ctx.storeId, redemptionId, result.data.id);
@@ -645,16 +655,11 @@ export async function collectPaymentAction(
         method: paidMethod,
       },
     });
-    if (paidOrder) {
-      notifyLowStockAfterSaleSafely(
-        ctx.organizationId,
-        ctx.storeId,
-        paidOrder.items.map((item) => ({
-          variantId: item.variantId,
-          baseQuantity: item.quantity * (item.unitQuantity ?? 1),
-        })),
-      );
-    }
+    notifyLowStockAfterSaleSafely(
+      ctx.organizationId,
+      ctx.storeId,
+      orderId,
+    );
     return { order: paidOrder, error: null };
   } catch (e) {
     return { order: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -803,10 +808,7 @@ export async function checkoutAndPayAction(
     notifyLowStockAfterSaleSafely(
       ctx.organizationId,
       ctx.storeId,
-      cart.items.map((item) => ({
-        variantId: item.variant?.id,
-        baseQuantity: item.quantity * (item.unit?.quantity ?? 1),
-      })),
+      created.orderId,
     );
     return { orderId: created.orderId, orderNumber: created.orderNumber, order: paidOrder, failedStage: null, error: null };
   } catch (e) {

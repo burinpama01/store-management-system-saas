@@ -1,26 +1,33 @@
 import { after } from "next/server";
+import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
-import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
-import { DEFAULT_LOW_STOCK_THRESHOLD } from "./repository";
 
-export interface SoldStockItem {
-  /** variant ที่ตัดสต็อก (ข้ามรายการที่ไม่มี variant / ไม่ตัดสต็อก) */
-  variantId: string | null | undefined;
-  /** จำนวนหน่วยฐานที่ตัดไป (quantity × ตัวคูณหน่วยแพ็ค) */
-  baseQuantity: number;
+export interface StockPoolMovementForAlert {
+  movementType: string;
+  beforeQuantity: number;
+  afterQuantity: number;
+}
+
+export function isStockPoolLowStockSaleCrossing(
+  movement: StockPoolMovementForAlert,
+  threshold: number,
+): boolean {
+  return movement.movementType === "sale"
+    && movement.beforeQuantity > threshold
+    && movement.afterQuantity <= threshold;
 }
 
 /**
- * ตรวจสต็อกหลังการขายแบบเบื้องหลัง (ไม่บล็อกการตอบ POS) แล้วยิงแจ้งเตือน stock_alert
- * เฉพาะ variant ที่ "เพิ่งข้ามเส้น" (ก่อนขายยังเกิน threshold แต่หลังขายเหลือ ≤ threshold)
- * เพื่อไม่ให้สแปมทุกบิลที่สต็อกต่ำอยู่แล้ว
+ * Reads committed Stock Pool sale movements after the order RPC succeeds.
+ * `after` keeps notification delivery outside the order transaction/response;
+ * the fallback is still best-effort for runtimes without a request lifecycle.
  */
 export function notifyLowStockAfterSaleSafely(
   organizationId: string,
   storeId: string,
-  items: SoldStockItem[],
+  orderId: string,
 ): void {
-  const run = () => checkAndNotify(organizationId, storeId, items).catch(() => {});
+  const run = () => checkAndNotify(organizationId, storeId, orderId).catch(() => {});
   try {
     after(run);
   } catch {
@@ -31,51 +38,118 @@ export function notifyLowStockAfterSaleSafely(
 async function checkAndNotify(
   organizationId: string,
   storeId: string,
-  items: SoldStockItem[],
+  orderId: string,
 ): Promise<void> {
-  const soldByVariant = new Map<string, number>();
-  for (const item of items) {
-    if (!item.variantId || !(item.baseQuantity > 0)) continue;
-    soldByVariant.set(item.variantId, (soldByVariant.get(item.variantId) ?? 0) + item.baseQuantity);
-  }
-  if (soldByVariant.size === 0) return;
+  if (!organizationId || !storeId || !orderId) return;
 
   const supabase = await createSupabaseServiceClient();
-  const variantIds = [...soldByVariant.keys()];
-  const { data: variants, error } = await supabase
-    .from("product_variants")
-    .select("id, name, stock_quantity, track_stock, product_id")
-    .in("id", variantIds);
-  if (error || !variants || variants.length === 0) return;
+  const { data: movements, error: movementError } = await supabase
+    .from("stock_movements")
+    .select("id, stock_pool_id, movement_type, before_quantity, after_quantity")
+    .eq("movement_type", "sale")
+    .eq("reference_type", "order")
+    .eq("reference_id", orderId);
+  if (movementError || !movements?.length) return;
 
-  const productIds = [...new Set(variants.map((v) => v.product_id))];
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, name, store_id")
-    .in("id", productIds);
-  const productById = new Map((products ?? []).map((p) => [p.id, p]));
+  const poolIds = [...new Set(movements.map((movement) => movement.stock_pool_id))];
+  const { data: pools, error: poolError } = await supabase
+    .from("stock_pools")
+    .select("id, name, unit_label, low_stock_threshold")
+    .eq("organization_id", organizationId)
+    .eq("store_id", storeId)
+    .in("id", poolIds);
+  if (poolError || !pools?.length) return;
 
-  const threshold = DEFAULT_LOW_STOCK_THRESHOLD;
+  const poolById = new Map(pools.map((pool) => [pool.id, pool]));
+  const crossingMovements = movements.filter((movement) => {
+    const pool = poolById.get(movement.stock_pool_id);
+    return Boolean(pool && isStockPoolLowStockSaleCrossing({
+      movementType: movement.movement_type,
+      beforeQuantity: movement.before_quantity,
+      afterQuantity: movement.after_quantity,
+    }, pool.low_stock_threshold));
+  });
+  if (!crossingMovements.length) return;
 
-  for (const variant of variants) {
-    const product = productById.get(variant.product_id);
-    if (!product || product.store_id !== storeId) continue;
-    if (!variant.track_stock || typeof variant.stock_quantity !== "number") continue;
+  const crossingPoolIds = [...new Set(crossingMovements.map((movement) => movement.stock_pool_id))];
+  const { data: links, error: linkError } = await supabase
+    .from("variant_stock_links")
+    .select("stock_pool_id, variant_id, consumption_quantity")
+    .in("stock_pool_id", crossingPoolIds);
+  if (linkError) return;
 
-    const post = variant.stock_quantity;
-    const sold = soldByVariant.get(variant.id) ?? 0;
-    const pre = post + sold;
-    // แจ้งเฉพาะตอนเพิ่งข้ามเส้น (กันสแปม)
-    if (!(pre > threshold && post <= threshold)) continue;
+  const variantIds = [...new Set((links ?? []).map((link) => link.variant_id))];
+  const { data: variants, error: variantError } = variantIds.length
+    ? await supabase
+      .from("product_variants")
+      .select("id, product_id, name, is_active")
+      .in("id", variantIds)
+      .eq("is_active", true)
+    : { data: [], error: null };
+  if (variantError) return;
 
-    const productName = variant.name ? `${product.name} (${variant.name})` : product.name;
-    notifyOwnerSafely({
+  const productIds = [...new Set((variants ?? []).map((variant) => variant.product_id))];
+  const { data: products, error: productError } = productIds.length
+    ? await supabase
+      .from("products")
+      .select("id, name, is_active")
+      .eq("organization_id", organizationId)
+      .eq("store_id", storeId)
+      .eq("is_active", true)
+      .in("id", productIds)
+    : { data: [], error: null };
+  if (productError) return;
+
+  const variantById = new Map((variants ?? []).map((variant) => [variant.id, variant]));
+  const productById = new Map((products ?? []).map((product) => [product.id, product]));
+  const itemNamesByPool = new Map<string, string[]>();
+  for (const link of links ?? []) {
+    const variant = variantById.get(link.variant_id);
+    const product = variant ? productById.get(variant.product_id) : null;
+    if (!variant || !product) continue;
+    const label = variant.name ? `${product.name} (${variant.name})` : product.name;
+    const names = itemNamesByPool.get(link.stock_pool_id) ?? [];
+    names.push(`${label} ×${link.consumption_quantity}`);
+    itemNamesByPool.set(link.stock_pool_id, names);
+  }
+
+  for (const movement of crossingMovements) {
+    const pool = poolById.get(movement.stock_pool_id);
+    if (!pool) continue;
+
+    const { error: claimError } = await supabase
+      .from("stock_movement_notification_claims")
+      .insert({
+        movement_id: movement.id,
+        organization_id: organizationId,
+        store_id: storeId,
+      });
+    if (claimError) continue;
+
+    const linkedItemNames = itemNamesByPool.get(pool.id) ?? [];
+    const linkedItemsText = linkedItemNames.length
+      ? linkedItemNames.join(", ")
+      : "ไม่มีรายการขายที่เปิดใช้งาน";
+    const delivered = await notifyOwnerNow({
       type: "stock_alert",
       organizationId,
       storeId,
-      title: "สต็อกใกล้หมด",
-      message: `${productName} เหลือ ${post} ชิ้น`,
-      metadata: { productName, stockQuantity: post, variantId: variant.id },
+      title: "Stock Pool ใกล้หมด",
+      message: `${pool.name} เหลือ ${movement.after_quantity} ${pool.unit_label} · ใช้กับ ${linkedItemsText}`,
+      metadata: {
+        stockMovementId: movement.id,
+        stockPoolId: pool.id,
+        productName: pool.name,
+        stockQuantity: movement.after_quantity,
+        unitLabel: pool.unit_label,
+        linkedItems: linkedItemsText,
+      },
     });
+    if (!delivered) {
+      await supabase
+        .from("stock_movement_notification_claims")
+        .delete()
+        .eq("movement_id", movement.id);
+    }
   }
 }

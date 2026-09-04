@@ -7,6 +7,7 @@ export interface ApiAuthSuccess {
   ok: true;
   organizationId: string;
   apiKeyId: string;
+  scopes: ApiScope[];
 }
 export interface ApiAuthFailure {
   ok: false;
@@ -14,6 +15,17 @@ export interface ApiAuthFailure {
   error: string;
 }
 export type ApiAuthResult = ApiAuthSuccess | ApiAuthFailure;
+export type ApiScope = "products.read" | "inventory.read" | "orders.read";
+
+const API_SCOPES = new Set<ApiScope>([
+  "products.read",
+  "inventory.read",
+  "orders.read",
+]);
+
+function isApiScope(value: string): value is ApiScope {
+  return API_SCOPES.has(value as ApiScope);
+}
 
 /** Extracts the API key from `Authorization: Bearer <key>` or `x-api-key`. */
 function readKey(req: Request): string | null {
@@ -30,7 +42,10 @@ function readKey(req: Request): string | null {
  * rejects revoked keys, then enforces the Enterprise `apiIntegration` feature
  * and an active subscription. Touches last_used_at on success (best-effort).
  */
-export async function authenticateApiKey(req: Request): Promise<ApiAuthResult> {
+export async function authenticateApiKey(
+  req: Request,
+  requiredScope?: ApiScope,
+): Promise<ApiAuthResult> {
   const plaintext = readKey(req);
   if (!plaintext) {
     return { ok: false, status: 401, error: "Missing API key" };
@@ -39,12 +54,17 @@ export async function authenticateApiKey(req: Request): Promise<ApiAuthResult> {
   const supabase = await createSupabaseServiceClient();
   const { data: row } = await supabase
     .from("api_keys")
-    .select("id, organization_id, revoked_at")
+    .select("id, organization_id, revoked_at, scopes")
     .eq("key_hash", hashApiKey(plaintext))
     .maybeSingle();
 
   if (!row || row.revoked_at) {
     return { ok: false, status: 401, error: "Invalid API key" };
+  }
+
+  const scopes = (row.scopes ?? []).filter(isApiScope);
+  if (requiredScope && !scopes.includes(requiredScope)) {
+    return { ok: false, status: 403, error: "API key ไม่มี scope ที่จำเป็น" };
   }
 
   const billingState =
@@ -59,7 +79,7 @@ export async function authenticateApiKey(req: Request): Promise<ApiAuthResult> {
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", row.id);
 
-  return { ok: true, organizationId: row.organization_id, apiKeyId: row.id };
+  return { ok: true, organizationId: row.organization_id, apiKeyId: row.id, scopes };
 }
 
 /** Standard JSON error envelope for the public API. */

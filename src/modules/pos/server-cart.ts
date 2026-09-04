@@ -173,15 +173,33 @@ function resolveUnit(product: Product, unitId: string | null | undefined): Produ
   return unit;
 }
 
+/**
+ * variant ที่ผูก Stock Pool ใช้ยอดของ Pool เป็นเกณฑ์ (Pool = แหล่งความจริงเดียว —
+ * RPC ก็ไม่ตัด product_variants.stock_quantity ให้รายการเหล่านี้) หลาย variant
+ * แชร์ Pool เดียวกันได้ จึงรวมความต้องการที่ระดับ "Pool" ไม่ใช่ระดับ variant
+ */
 function addVariantStockDemand(
   requestedStockByVariant: Map<string, { requested: number; available: number }>,
   variant: ProductVariant | null,
   quantity: number,
 ) {
-  if (
-    !variant?.trackStock ||
-    typeof variant.stockQuantity !== "number"
-  ) {
+  if (!variant) return;
+
+  const pool = variant.stockPool;
+  if (pool) {
+    const current = requestedStockByVariant.get(`pool:${pool.poolId}`) ?? {
+      requested: 0,
+      available: pool.quantity,
+    };
+    current.requested += quantity * pool.consumptionQuantity;
+    requestedStockByVariant.set(`pool:${pool.poolId}`, current);
+    if (current.requested > current.available) {
+      throw new CartValidationError(`สต๊อก ${pool.poolName} เหลือไม่พอ`);
+    }
+    return;
+  }
+
+  if (!variant.trackStock || typeof variant.stockQuantity !== "number") {
     return;
   }
 

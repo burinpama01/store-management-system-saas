@@ -521,6 +521,12 @@ export async function insertNotificationLog(input: {
     message: input.message,
     metadata: (input.metadata ?? {}) as Json,
   });
+  if (
+    error?.code === "23505"
+    && typeof input.metadata?.stockMovementId === "string"
+  ) {
+    return { ok: true, error: null };
+  }
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
 }

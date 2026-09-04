@@ -567,6 +567,17 @@ describe("notification dispatcher", () => {
     expect(qrActions).not.toMatch(/await\s+notifyOwnerSafely/);
   });
 
+  it("reports awaited owner-dispatch failure so movement claims can be retried", () => {
+    const dispatcher = read("src/modules/notifications/dispatcher.ts");
+    const repository = read("src/modules/notifications/repository.ts");
+
+    expect(dispatcher).toContain("export async function notifyOwnerNow(input: NotificationPayload): Promise<boolean>");
+    expect(dispatcher).toContain("return await runOwnerNotificationDeliveries(input)");
+    expect(dispatcher).toContain("return false");
+    expect(repository).toContain("error?.code === \"23505\"");
+    expect(repository).toContain("stockMovementId");
+  });
+
   it("adds tenant-scoped Telegram target storage and delivery pipeline", () => {
     const repository = read("src/modules/notifications/repository.ts");
     const dispatcher = read("src/modules/notifications/dispatcher.ts");

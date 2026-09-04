@@ -12,6 +12,7 @@ import type {
   ModifierOptionTemplate,
   ModifierGroup,
   ModifierOption,
+  VariantStockPool,
 } from "@/modules/catalog/types";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
@@ -39,7 +40,10 @@ function mapCategory(row: CategoryRow): Category {
   };
 }
 
-function mapVariant(row: VariantRow): ProductVariant {
+/** poolId/quantity/consumption ของแต่ละ variant (ว่าง = ยังไม่ผูก Pool → ใช้สต๊อกเดิม) */
+export type VariantStockPoolMap = ReadonlyMap<string, VariantStockPool>;
+
+function mapVariant(row: VariantRow, pools?: VariantStockPoolMap): ProductVariant {
   return {
     id: row.id,
     productId: row.product_id,
@@ -51,7 +55,66 @@ function mapVariant(row: VariantRow): ProductVariant {
     trackStock: row.track_stock,
     isActive: row.is_active,
     sortOrder: row.sort_order,
+    stockPool: pools?.get(row.id),
   };
+}
+
+type StockPoolClient = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      in: (column: string, values: string[]) => PromiseLike<{ data: unknown; error: unknown }>;
+    };
+  };
+};
+
+/**
+ * อ่าน Stock Pool ของ variant ชุดหนึ่ง — แยกเป็นคิวรีเดียวต่อการโหลดสินค้า 1 ครั้ง
+ * ล้มเหลว = คืน map ว่าง (สินค้ายังแสดงได้ตามปกติ โดย RPC ยังกันขายเกินให้อีกชั้น)
+ */
+export async function loadVariantStockPools(
+  supabase: unknown,
+  variantIds: readonly string[],
+): Promise<VariantStockPoolMap> {
+  const ids = [...new Set(variantIds)].filter((id) => id);
+  if (ids.length === 0) return new Map();
+  const client = supabase as StockPoolClient;
+  const linksRes = await client
+    .from("variant_stock_links")
+    .select("variant_id, stock_pool_id, consumption_quantity")
+    .in("variant_id", ids);
+  const links = (linksRes.data ?? []) as Array<{
+    variant_id: string;
+    stock_pool_id: string;
+    consumption_quantity: number;
+  }>;
+  if (linksRes.error || links.length === 0) return new Map();
+
+  const poolsRes = await client
+    .from("stock_pools")
+    .select("id, name, unit_label, quantity")
+    .in("id", [...new Set(links.map((link) => link.stock_pool_id))]);
+  const poolRows = (poolsRes.data ?? []) as Array<{
+    id: string;
+    name: string;
+    unit_label: string;
+    quantity: number;
+  }>;
+  if (poolsRes.error) return new Map();
+
+  const poolById = new Map(poolRows.map((pool) => [pool.id, pool]));
+  const byVariant = new Map<string, VariantStockPool>();
+  for (const link of links) {
+    const pool = poolById.get(link.stock_pool_id);
+    if (!pool) continue;
+    byVariant.set(link.variant_id, {
+      poolId: pool.id,
+      poolName: pool.name,
+      unitLabel: pool.unit_label,
+      quantity: pool.quantity,
+      consumptionQuantity: link.consumption_quantity,
+    });
+  }
+  return byVariant;
 }
 
 function mapProductUnit(row: ProductUnitRow): ProductUnit {
@@ -156,6 +219,7 @@ function mapProduct(
   modGroups: ModGroupRow[],
   modOptions: ModOptionRow[],
   units: ProductUnitRow[] = [],
+  pools?: VariantStockPoolMap,
 ): Product {
   return {
     id: row.id,
@@ -183,7 +247,7 @@ function mapProduct(
     sortOrder: row.sort_order,
     variants: variants
       .filter((v) => v.product_id === row.id)
-      .map(mapVariant)
+      .map((variant) => mapVariant(variant, pools))
       .sort((a, b) => a.sortOrder - b.sortOrder),
     units: units
       .filter((u) => u.product_id === row.id)
@@ -299,6 +363,11 @@ export async function listProducts(
           : { data: [], error: null };
       if (optionsRes.error) return { data: null, error: optionsRes.error };
 
+      const stockPools = await loadVariantStockPools(
+        supabase,
+        (variantsRes.data ?? []).map((variant) => variant.id),
+      );
+
       const products = productRows.map((row) =>
         mapProduct(
           row,
@@ -306,6 +375,7 @@ export async function listProducts(
           groupsRes.data ?? [],
           optionsRes.data ?? [],
           unitsRes.data ?? [],
+          stockPools,
         ),
       );
       return { data: products, error: null };
@@ -401,6 +471,7 @@ export async function getProduct(productId: string) {
         groupsRes.data ?? [],
         optionsRes.data ?? [],
         unitsRes.data ?? [],
+        await loadVariantStockPools(supabase, (variantsRes.data ?? []).map((v) => v.id)),
       ),
       error: null,
     };

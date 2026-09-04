@@ -5,13 +5,14 @@ import {
   getPlanFeatures,
   PLAN_LABELS,
 } from "@/modules/billing/types";
-import { requirePermission } from "@/modules/auth/guards";
+import { getResolvedCurrentPermissions, requirePermission } from "@/modules/auth/guards";
 import {
   getCurrentUser,
   getUserStores,
   resolveCurrentStore,
 } from "@/modules/auth/session";
 import { listProducts } from "@/modules/catalog/repository";
+import { listStockPoolLinks, listStockPools } from "@/modules/stock/pool-repository";
 import { StockManager } from "./StockManager";
 
 export const dynamic = "force-dynamic";
@@ -46,5 +47,26 @@ export default async function StockPage() {
   }
 
   const productsRes = await listProducts(ctx.storeId, { includeInactive: false });
-  return <StockManager products={productsRes.data ?? []} canManage={true} />;
+  const [poolsRes, { resolved }] = await Promise.all([
+    // รวม Pool ที่ปิดใช้งานด้วย — variant ที่ผูกอยู่ต้องยังแก้ยอดได้ (ดู listStockPools)
+    listStockPools(ctx.storeId, { includeInactive: true }),
+    getResolvedCurrentPermissions(),
+  ]);
+  const variantIds = (productsRes.data ?? []).flatMap((product) =>
+    product.variants.map((variant) => variant.id),
+  );
+  const linksRes = poolsRes.error
+    ? { data: [], error: poolsRes.error }
+    : await listStockPoolLinks(ctx.storeId, variantIds);
+  const stockDataError = Boolean(productsRes.error || poolsRes.error || linksRes.error);
+  return (
+    <StockManager
+      products={productsRes.data ?? []}
+      pools={poolsRes.data}
+      links={linksRes.data}
+      canManageStock={resolved.can("stock.manage")}
+      canManageCatalog={resolved.can("catalog.manage")}
+      stockDataError={stockDataError}
+    />
+  );
 }
