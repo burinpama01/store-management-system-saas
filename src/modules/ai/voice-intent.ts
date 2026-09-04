@@ -9,7 +9,8 @@
 // ขอบเขตความปลอดภัย:
 //   - ไม่มี tool, ไม่มี web search → โมเดลทำได้แค่ "เสนอ" ผ่าน schema เท่านั้น
 //   - utterance คือ "ข้อมูล" ไม่ใช่คำสั่ง: prompt injection ในคำพูดต้องไม่เปลี่ยนพฤติกรรม
-//   - timeout 2 วินาที; ทุกความล้มเหลวคืน typed failure และผู้เรียกต้องไม่ execute อะไร
+//   - timeout ปรับได้ (ดู VOICE_INTENT_TIMEOUT_MS); ทุกความล้มเหลวคืน typed failure
+//     และผู้เรียกต้องไม่ execute อะไรเลย
 
 import { generateText, Output } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -24,7 +25,19 @@ import { isAiEnabled } from "./gateway";
 
 /** เพดานคำพูดต่อรอบ — ยาวกว่านี้ไม่ใช่คำสั่ง POS แล้ว */
 export const VOICE_INTENT_MAX_UTTERANCE = 500;
-export const VOICE_INTENT_TIMEOUT_MS = 2_000;
+
+/**
+ * แผน v1 กำหนด hard timeout 2,000ms ไว้ แต่การวัดจริงกับ gpt-4o-mini (Responses API,
+ * structured output) ได้ 1.8s / 3.5s / 3.8s ต่อคำพูดหนึ่งประโยค — ที่ 2s จะ timeout
+ * แทบทุกครั้ง ฟีเจอร์จึงใช้งานไม่ได้เลยทั้งที่ทำงานถูกต้อง
+ * ค่าเริ่มต้นจึงเป็น 6s (เผื่อจากค่าที่วัดได้) และปรับได้ด้วย env เพื่อให้ pilot วัด p95
+ * จริงแล้วตัดสินใจอีกครั้ง — ตั้ง AI_VOICE_INTENT_TIMEOUT_MS=2000 เพื่อกลับไปตามแผนเดิม
+ */
+export const VOICE_INTENT_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.AI_VOICE_INTENT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 500 && raw <= 20_000 ? Math.round(raw) : 6_000;
+})();
+
 export const VOICE_INTENT_MAX_OUTPUT_TOKENS = 300;
 
 export const VOICE_INTENT_LOCALES = ["th-TH", "en-US"] as const;

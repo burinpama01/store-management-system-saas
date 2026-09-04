@@ -357,8 +357,14 @@ describe("Task 5 Stock Pool order RPC migration", () => {
   it("bumps the release version in package and lock files", () => {
     const packageJson = JSON.parse(readMaybe("package.json")) as { version: string };
     const packageLock = JSON.parse(readMaybe("package-lock.json")) as { version: string; packages: { "": { version: string } } };
-    expect(packageJson.version).toBe("0.43.0");
-    expect(packageLock.version).toBe("0.43.0");
-    expect(packageLock.packages[""].version).toBe("0.43.0");
+    // Stock Pool ออกที่ 0.43.0 — งานหลังจากนี้เดินเลขต่อไปได้ ข้อกำหนดจริงคือ
+    // "ต้องไม่ย้อนกลับไปต่ำกว่ารุ่นที่ migration ชุดนี้ออก" และ lockfile ต้องตรงกับ package
+    const atLeast = (version: string) => {
+      const [major, minor, patch] = version.split(".").map(Number);
+      return major > 0 || minor > 43 || (minor === 43 && patch >= 0);
+    };
+    expect(atLeast(packageJson.version)).toBe(true);
+    expect(packageLock.version).toBe(packageJson.version);
+    expect(packageLock.packages[""].version).toBe(packageJson.version);
   });
 });

@@ -46,7 +46,18 @@ export function validateAiProposalAgainstAllowlist(
   if (envelope.outcome !== "command_batch" || envelope.commands.length === 0) {
     return { source: "ai_no_command", envelope };
   }
-  return { source: "ai", envelope };
+
+  // ตัด "คำสั่งขยะ" ที่โมเดลชอบแถมมาท้าย batch — วัดจากของจริง: พูดว่า
+  // "ลาเต้สองแก้วกับอเมริกาโน่ร้อนหนึ่งแก้ว" แล้วได้ pos.clear_search แถมมาด้วย
+  // ไม่มีใครสั่งเพิ่มสินค้าพร้อมกับสั่งล้างคำค้นในประโยคเดียว: รับ clear_search
+  // ได้ก็ต่อเมื่อมันเป็นคำสั่งเดียวใน batch เท่านั้น
+  const commands =
+    envelope.commands.length > 1
+      ? envelope.commands.filter((command) => command.intent !== "pos.clear_search")
+      : envelope.commands;
+
+  if (commands.length === 0) return { source: "ai_no_command", envelope };
+  return { source: "ai", envelope: { ...envelope, commands } };
 }
 
 export interface HybridParseOptions extends ParseVoiceCommandOptions {

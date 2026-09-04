@@ -146,3 +146,35 @@ describe("ai intent client", () => {
     expect(createVoiceRequestId().length).toBeGreaterThanOrEqual(8);
   });
 });
+
+describe("ด่านกันคำสั่งขยะจากโมเดล (วัดจากพฤติกรรมจริงของ gpt-4o-mini)", () => {
+  const clearSearch = {
+    intent: "pos.clear_search" as const,
+    productPhrase: null,
+    quantity: null,
+    optionPhrases: [],
+  };
+
+  it("clear_search ที่แถมมาท้าย batch ถูกตัดทิ้ง", () => {
+    const outcome = validateAiProposalAgainstAllowlist(
+      envelope({
+        commands: [
+          { intent: "pos.add_item", productPhrase: "ลาเต้", quantity: 2, optionPhrases: [] },
+          { intent: "pos.add_item", productPhrase: "อเมริกาโน่ร้อน", quantity: 1, optionPhrases: [] },
+          clearSearch,
+        ],
+      }),
+    );
+    expect(outcome.source).toBe("ai");
+    if (outcome.source === "ai") {
+      expect(outcome.envelope.commands).toHaveLength(2);
+      expect(outcome.envelope.commands.every((c) => c.intent !== "pos.clear_search")).toBe(true);
+    }
+  });
+
+  it("clear_search ที่เป็นคำสั่งเดียวยังทำได้ตามปกติ", () => {
+    const outcome = validateAiProposalAgainstAllowlist(envelope({ commands: [clearSearch] }));
+    expect(outcome.source).toBe("ai");
+    if (outcome.source === "ai") expect(outcome.envelope.commands).toHaveLength(1);
+  });
+});

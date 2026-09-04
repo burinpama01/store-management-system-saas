@@ -3,7 +3,7 @@
 // ⚠️ ต้องมี header jsdom — static-import @testing-library/* บน node env คือ hang จน timeout
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "../setup/react";
 import { addToCart, emptyCart } from "@/modules/pos/cart";
 import type { Cart } from "@/modules/pos/types";
@@ -120,7 +120,10 @@ function HarnessWithSpeech({ envelope, fake }: { envelope: AiVoiceIntentEnvelope
   const [picker, setPicker] = useState<VoicePickerSnapshot | null>(null);
   const pickerProductRef = useRef<string | null>(null);
   const cartRef = useRef(cart);
-  cartRef.current = cart;
+  // sync ใน effect ไม่ใช่ระหว่าง render (react-hooks/refs)
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
 
   const api = useMemo<VoiceCartApi>(
     () => ({

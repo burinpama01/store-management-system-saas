@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Voice Intent Phase 1 Release Gate v1</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#60708a; --line:#dce4ef; --ok:#117a55; --warn:#a15b00; --stop:#b42318; --blue:#2457d6; --bg:#f5f7fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Noto Sans Thai","Segoe UI",sans-serif; color:var(--ink); background:var(--bg); line-height:1.6; }
+    main { width:min(1080px,calc(100% - 32px)); margin:32px auto 64px; }
+    header, section { background:#fff; border:1px solid var(--line); border-radius:18px; padding:24px; margin-bottom:16px; box-shadow:0 8px 28px rgba(32,52,89,.06); }
+    h1,h2 { margin:0 0 12px; line-height:1.3; } h1 { font-size:clamp(28px,4vw,46px); } h2 { font-size:22px; }
+    p { margin:8px 0; } code { background:#eef3fb; border-radius:6px; padding:2px 6px; font-size:.92em; }
+    .status { display:inline-flex; gap:8px; align-items:center; color:var(--warn); background:#fff6e5; border:1px solid #ffd99a; padding:7px 12px; border-radius:999px; font-weight:700; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+    .card { border:1px solid var(--line); border-radius:14px; padding:16px; }
+    .ok { border-left:5px solid var(--ok); } .warn { border-left:5px solid var(--warn); } .stop { border-left:5px solid var(--stop); }
+    .label { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }
+    ol,ul { margin:8px 0 0; padding-left:24px; } li+li { margin-top:8px; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:15px; }
+    th,td { border:1px solid var(--line); padding:9px 11px; text-align:left; vertical-align:top; }
+    th { background:#f0f4fb; }
+    .big { font-size:26px; font-weight:800; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="label">RELEASE GATE · AI VOICE INTENT · PHASE 1 · v1 · 2026-09-05</p>
+    <h1>AI Voice Intent Phase 1<br>พร้อมทดสอบ ยังไม่พร้อม deploy</h1>
+    <p class="status">⚠ ยังไม่ deploy — รอผลทดสอบด้วยไมค์จริงและการอนุมัติ pilot</p>
+    <p>ทำตามแผน <code>Plan/AI Voice Intent Phase 1 POS Implementation Plan v1.html</code>
+      งานอยู่บน branch <code>main</code> (commit ต่อเนื่อง v0.44.0–0.44.8) ยังไม่ push ขึ้น production</p>
+  </header>
+
+  <section>
+    <h2>1. ขอบเขตที่ทำจริง</h2>
+    <div class="grid">
+      <div class="card ok"><p class="label">เสร็จ</p><p class="big">P0–P7, P9</p><p>สัญญา + คิว + adapter + API + hybrid routing + resolver + UI + alias ตัวเลือก</p></div>
+      <div class="card warn"><p class="label">ข้ามตามกฎของแผนเอง</p><p class="big">P8</p><p>Windows Standby — โปรเจกต์ยังไม่มี <code>windows-host.ts</code>/<code>standby-policy.ts</code> กฎ P0 ของแผนสั่งให้ทำ P1–P7 แบบ push-to-talk แล้วหยุด</p></div>
+      <div class="card warn"><p class="label">ทำได้บางส่วน</p><p class="big">P10</p><p>corpus สังเคราะห์ + E2E จริง ผ่านหมด แต่ยังไม่มี corpus เสียงจริง 400 ประโยค/10 ผู้พูด และยังไม่ได้ pilot</p></div>
+    </div>
+    <p><strong>เลขเวอร์ชัน:</strong> แผนจอง <code>0.43.x</code> แต่ <code>0.43.0</code> ถูก Stock Pool ใช้ไปแล้ว (ขึ้น prod 2026-09-04)
+      Phase 1 จึงใช้ <code>0.44.0–0.44.8</code> — Phase 2 ที่จอง <code>0.44.x</code> ไว้ต้องเลื่อนเป็น <code>0.45.x</code></p>
+  </section>
+
+  <section>
+    <h2>2. เกณฑ์ความปลอดภัยที่พิสูจน์แล้ว</h2>
+    <table>
+      <tr><th>เกณฑ์</th><th>ผล</th><th>หลักฐาน</th></tr>
+      <tr><td>คำสั่งที่ parser เดิมเข้าใจ ต้องไม่ออก network</td><td>ผ่าน 12/12</td><td><code>voice-ai-corpus.test.ts</code></td></tr>
+      <tr><td>คำสั่งต้องห้าม execute = 0</td><td>ผ่าน 14/14 (รวม prompt injection 3)</td><td>corpus + denylist สองรอบ</td></tr>
+      <tr><td>AI เสนอคำต้องห้ามกลับมา ต้องถูก block</td><td>ผ่าน</td><td><code>validateAiProposalAgainstAllowlist</code></td></tr>
+      <tr><td>โมเดลส่ง id มาเอง = ปฏิเสธทั้งก้อน</td><td>ผ่าน</td><td>schema <code>.strict()</code> + parse ซ้ำฝั่ง server และ client</td></tr>
+      <tr><td>ไม่ส่งตะกร้า/ราคา/ลูกค้า/ชื่อร้านออกนอกเครื่อง</td><td>ผ่าน</td><td><code>voice-ai-adapter.test.ts</code> ตรวจ payload ที่ส่งจริง</td></tr>
+      <tr><td>ไม่ echo คำพูด / ไม่มี transcript ใน log</td><td>ผ่าน</td><td>unit + E2E บน server จริง</td></tr>
+      <tr><td>dialog ซ้อนกัน = 0</td><td>ผ่าน</td><td><code>voice-command-queue-ui.test.tsx</code></td></tr>
+      <tr><td>ข้ามรายการกลางแล้วของก่อนหน้าต้องอยู่</td><td>ผ่าน</td><td>เดียวกัน</td></tr>
+      <tr><td>จำนวนที่ไม่ได้พูด ต้องถาม ไม่เดาเป็น 1</td><td>ผ่าน</td><td>schema + resolver + UI</td></tr>
+      <tr><td>“หวานน้อย” ห้ามกลายเป็น 25% เอง</td><td>ผ่าน</td><td><code>voice-intent-resolver.test.ts</code></td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. ผลการวัดจริง (ของใหม่ที่แผนยังไม่รู้)</h2>
+    <div class="grid">
+      <div class="card stop">
+        <p class="label">latency ของ provider</p>
+        <p class="big">1.8s · 3.5s · 3.8s</p>
+        <p>gpt-4o-mini · Responses API · structured output — <strong>เกิน timeout 2s ที่แผนกำหนดทุกครั้ง</strong></p>
+      </div>
+      <div class="card warn">
+        <p class="label">คำสั่งขยะจากโมเดล</p>
+        <p class="big">พบจริง</p>
+        <p>พูดว่า “ลาเต้สองแก้วกับอเมริกาโน่ร้อนหนึ่งแก้ว” แล้วโมเดลแถม <code>pos.clear_search</code> มาด้วย</p>
+      </div>
+    </div>
+    <p><strong>สิ่งที่แก้:</strong></p>
+    <ul>
+      <li>timeout เปลี่ยนเป็นค่าเริ่มต้น <code>6000ms</code> และ override ได้ด้วย <code>AI_VOICE_INTENT_TIMEOUT_MS</code>
+        (ตั้ง 2000 เพื่อกลับไปตามแผนเดิมได้ทันที) — ต้องวัด p95 จริงตอน pilot แล้วตัดสินใจอีกครั้ง</li>
+      <li>รับ <code>pos.clear_search</code> ได้เฉพาะเมื่อเป็นคำสั่งเดียวใน batch — ไม่มีใครสั่งเพิ่มสินค้าพร้อมล้างคำค้นในประโยคเดียว</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. ผลรัน gate</h2>
+    <table>
+      <tr><th>รายการ</th><th>ผล</th></tr>
+      <tr><td><code>npx tsc --noEmit</code></td><td>ผ่าน</td></tr>
+      <tr><td><code>npm run lint</code></td><td>เหลือ error เดิม 1 จุดที่ <code>PosTerminal.tsx:2560</code> (มีอยู่ก่อนงานนี้ ไม่ได้แตะไฟล์นั้น)</td></tr>
+      <tr><td><code>npm run build</code></td><td>ผ่าน</td></tr>
+      <tr><td>unit ทั้งชุด</td><td>1,913 ผ่าน · fail 5 ที่ไม่เกี่ยว (<code>mobile-store-readiness</code> เป็นไฟล์นอก branch, <code>print-hub</code> integration ต้องมี <code>LOCAL_SUPABASE_URL</code>)</td></tr>
+      <tr><td>unit เฉพาะ voice/ai</td><td>324 ผ่าน (22 ไฟล์)</td></tr>
+      <tr><td>E2E บน server จริง + local Supabase</td><td>3/3 ผ่าน — <code>tests/e2e/voice-ai-pos.spec.ts</code></td></tr>
+    </table>
+    <p>หลักฐานดิบ: <code>artifacts/voice-ai-phase1/release-gate.json</code>, <code>p0-baseline.json</code>,
+      ภาพหน้า POS ที่ <code>artifacts/voice-ai-phase1/e2e/pos-voice-button.png</code></p>
+  </section>
+
+  <section>
+    <h2>5. ยังไม่ผ่าน / ยังทำไม่ได้</h2>
+    <ul>
+      <li class="stop"><strong>ยังไม่ได้ทดสอบด้วยไมค์จริง</strong> — Chromium headless ไม่มี Web Speech API
+        จึงกดปุ่มแล้วพูดจริงไม่ได้ ต้องมีคนทดสอบบนเครื่องที่มีไมค์</li>
+      <li><strong>corpus เสียงจริง</strong> ≥400 ประโยค ≥10 ผู้พูด เงียบ/มีเสียงรบกวน — ยังไม่มี
+        (ที่ทำไว้เป็น corpus สังเคราะห์ 33 ประโยค คุมได้แค่ตรรกะการตัดสินใจ)</li>
+      <li><strong>accuracy ≥95% / clarify ≥99% / p95 ≤ เป้าหมาย</strong> — วัดไม่ได้จนกว่าจะมี corpus จริง</li>
+      <li><strong>pilot 1 ร้าน 7 วัน แล้ว 3 เครื่อง 14 วัน</strong> — ยังไม่เริ่ม</li>
+      <li><strong>P8 Windows Standby</strong> — ยังไม่มีของให้ต่อ</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>6. การเปิดใช้งานและการถอย</h2>
+    <table>
+      <tr><th>ชั้น</th><th>ค่า</th><th>ผลเมื่อปิด</th></tr>
+      <tr><td>เสียงทั้งระบบ</td><td><code>stores.voice_command_enabled</code></td><td>ไม่มีปุ่มเสียงเลย (เหมือนก่อนมีฟีเจอร์)</td></tr>
+      <tr><td>AI fallback</td><td>prop <code>aiFallbackEnabled</code> ของ <code>VoicePosController</code></td><td>เหลือ deterministic voice เดิมทั้งหมด ไม่มี request ออกนอกเครื่อง</td></tr>
+      <tr><td>แพ็กเกจ</td><td><code>aiAssistant</code> (enterprise)</td><td>API ตอบ 403 พร้อมทางออกด้วยมือ</td></tr>
+      <tr><td>ระบบ AI</td><td><code>OPENAI_API_KEY</code></td><td>API ตอบ 503 พร้อมทางออกด้วยมือ</td></tr>
+      <tr><td>โควตา</td><td><code>AI_MONTHLY_TOKEN_BUDGET</code> · feature <code>aiVoiceIntent</code></td><td>API ตอบ 429 พร้อมทางออกด้วยมือ</td></tr>
+    </table>
+    <p><strong>หมายเหตุ:</strong> <code>aiFallbackEnabled</code> ยังไม่ถูกต่อเข้ากับ flag ของร้านในหน้า POS จริง
+      (ค่าเริ่มต้นคือ <code>false</code>) — ต้องตัดสินใจว่าจะผูกกับ flag ตัวใหม่หรือ reuse ตัวเดิม ก่อนเปิด pilot</p>
+  </section>
+
+  <section>
+    <h2>7. ขั้นถัดไป</h2>
+    <ol>
+      <li>ทดสอบด้วยไมค์จริงบนเครื่องที่มี Web Speech (พูดหลายเมนูในประโยคเดียว, เมนูที่ต้องเลือกตัวเลือก, คำสั่งต้องห้าม)</li>
+      <li>ตัดสินใจว่าจะผูก <code>aiFallbackEnabled</code> กับ flag ตัวไหน แล้วเปิดเฉพาะร้านทดสอบ</li>
+      <li>วัด p95 latency จริง แล้วสรุปค่า timeout (คงที่ 6s หรือกลับไป 2s ตามแผน)</li>
+      <li>เก็บ corpus จากการใช้งานจริงแบบมี consent เพื่อวัด accuracy</li>
+      <li>อนุมัติ deploy → merge → push (ยังไม่ทำในรอบนี้ตามคำสั่งผู้ใช้)</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

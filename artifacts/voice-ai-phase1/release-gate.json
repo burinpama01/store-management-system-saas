@@ -1,0 +1,64 @@
+{
+  "capturedAt": "2026-09-04T17:39:47.544Z",
+  "head": "0b22787",
+  "branch": "main",
+  "version": "0.44.8",
+  "scope": {
+    "completed": [
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P9",
+      "P10 (บางส่วน)"
+    ],
+    "skipped": {
+      "P8": "Windows Standby — ไม่มี windows-host.ts/standby-policy.ts ในโปรเจกต์ ตามกฎ P0 ของแผนเองให้ทำ P1–P7 แบบ push-to-talk แล้วหยุด"
+    },
+    "versionRange": {
+      "planReserved": "0.43.x",
+      "used": "0.44.x",
+      "reason": "0.43.0 ถูก Stock Pool ใช้ไปแล้ว (deploy prod 2026-09-04)"
+    }
+  },
+  "measurements": {
+    "providerLatencyMs": [
+      1816,
+      3540,
+      3845
+    ],
+    "note": "gpt-4o-mini · Responses API · structured output · วัดจากเครื่องพัฒนา 3 ครั้ง",
+    "timeoutDecision": "แผนกำหนด 2000ms แต่ค่าที่วัดได้เกินทุกครั้ง จึงตั้ง default 6000ms และเปิดให้ override ด้วย AI_VOICE_INTENT_TIMEOUT_MS — ต้องวัด p95 จริงตอน pilot"
+  },
+  "gates": {
+    "typecheck": {
+      "ok": true,
+      "ms": 7081,
+      "tail": [
+        ""
+      ]
+    },
+    "unit:voice+ai": {
+      "ok": true,
+      "ms": 5940,
+      "tail": [
+        "\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m324 passed\u001b[39m\u001b[22m\u001b[90m (324)\u001b[39m",
+        "\u001b[2m   Start at \u001b[22m 00:39:56",
+        "\u001b[2m   Duration \u001b[22m 4.29s\u001b[2m (transform 2.09s, setup 0ms, collect 6.95s, tests 4.62s, environment 7.22s, prepare 4.26s)\u001b[22m"
+      ]
+    },
+    "build": {
+      "ok": true,
+      "ms": 77063,
+      "tail": [
+        "ƒ Proxy (Middleware)",
+        "",
+        "ƒ  (Dynamic)  server-rendered on demand"
+      ]
+    }
+  }
+}
