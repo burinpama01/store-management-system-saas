@@ -252,6 +252,18 @@ function isQuantityInRange(quantity: number): boolean {
   return Number.isInteger(quantity) && quantity >= VOICE_MIN_QUANTITY && quantity <= VOICE_MAX_QUANTITY;
 }
 
+/**
+ * Tier D — เจอคำต้องห้ามที่ใดก็ตามในข้อความ = block
+ * export ไว้เพราะ P5 ต้องรันด่านนี้ "สองรอบ": ก่อนส่งคำพูดให้ AI และหลังได้คำตอบกลับมา
+ * (วลีที่ AI เสนอกลับมาต้องผ่านด่านเดียวกัน — AI ไม่มีสิทธิ์ override)
+ * รับได้ทั้งข้อความดิบและข้อความที่ normalize แล้ว
+ */
+export function containsForbiddenVoicePhrase(value: string): boolean {
+  const text = normalizeThaiTranscript(value);
+  if (!text) return false;
+  return FORBIDDEN_PHRASES.some((phrase) => text.includes(phrase));
+}
+
 export interface ParseVoiceCommandOptions {
   /** ค่าความมั่นใจจาก speech engine (0..1) — ไม่ส่งมา = ถือว่าเชื่อได้เท่า pattern */
   readonly recognitionConfidence?: number | null;
@@ -276,7 +288,7 @@ export function parseVoiceCommand(
   if (!text) return result(UNKNOWN, "C", "block", 0, "empty_transcript");
 
   // Tier D — คำสั่งต้องห้าม ตัดจบก่อนเสมอ
-  if (FORBIDDEN_PHRASES.some((phrase) => text.includes(phrase))) {
+  if (containsForbiddenVoicePhrase(text)) {
     return result(UNKNOWN, "D", "block", 1 * engine, "forbidden_command");
   }
 
