@@ -543,8 +543,8 @@ describe("UX/UI regression guards", () => {
     expect(sources.catalog).toContain("lg:grid-cols-[260px_minmax(0,1fr)]");
     expect(sources.catalog).toContain("overflow-x-auto");
     expect(sources.catalog).toContain("min-h-11");
-    expect(sources.stock).toContain("overflow-x-auto");
-    expect(sources.stock).toContain("min-w-[720px]");
+    expect(sources.stock).toContain("grid-cols-1");
+    expect(sources.stock).toContain("StockPoolCard");
     expect(sources.accounting).toContain("xl:grid-cols-3");
     expect(sources.accounting).toContain("<ModalDialog");
     expect(sources.reports).toContain("page-shell");
@@ -699,6 +699,9 @@ describe("UX/UI regression guards", () => {
     expect(page).toContain("features.stockManagement");
     expect(page).toContain("StockManager");
     expect(manager).toContain("สต็อกสินค้า");
+    expect(manager).toContain("AddStockDialog");
+    expect(manager).toContain("StockPoolCard");
+    // สต๊อกรายตัวเลือกยังแก้ได้สำหรับ variant ที่ยังไม่ผูก Stock Pool
     expect(manager).toContain("setStockAction");
   });
 

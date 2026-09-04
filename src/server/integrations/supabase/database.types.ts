@@ -1574,6 +1574,189 @@ export interface Database {
         };
         Relationships: [];
       };
+      stock_pools: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          unit_label: string;
+          quantity: number;
+          low_stock_threshold: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          unit_label: string;
+          quantity?: number;
+          low_stock_threshold?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          unit_label?: string;
+          quantity?: number;
+          low_stock_threshold?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stock_pools_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_pools_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ];
+      };
+      variant_stock_links: {
+        Row: {
+          variant_id: string;
+          stock_pool_id: string;
+          consumption_quantity: number;
+          created_at: string;
+        };
+        Insert: {
+          variant_id: string;
+          stock_pool_id: string;
+          consumption_quantity: number;
+          created_at?: string;
+        };
+        Update: {
+          variant_id?: string;
+          stock_pool_id?: string;
+          consumption_quantity?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "variant_stock_links_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: true
+            referencedRelation: "product_variants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "variant_stock_links_stock_pool_id_fkey"
+            columns: ["stock_pool_id"]
+            isOneToOne: false
+            referencedRelation: "stock_pools"
+            referencedColumns: ["id"]
+          },
+        ];
+      };
+      stock_movement_notification_claims: {
+        Row: {
+          movement_id: string;
+          organization_id: string;
+          store_id: string;
+          claimed_at: string;
+        };
+        Insert: {
+          movement_id: string;
+          organization_id: string;
+          store_id: string;
+          claimed_at?: string;
+        };
+        Update: {
+          movement_id?: string;
+          organization_id?: string;
+          store_id?: string;
+          claimed_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stock_movement_notification_claims_movement_id_fkey"
+            columns: ["movement_id"]
+            isOneToOne: true
+            referencedRelation: "stock_movements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movement_notification_claims_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movement_notification_claims_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ];
+      };
+      stock_movements: {
+        Row: {
+          id: string;
+          stock_pool_id: string;
+          movement_type: "receive" | "set_balance" | "sale" | "cancel_restore" | "item_void_restore" | "migration";
+          quantity_delta: number;
+          before_quantity: number;
+          after_quantity: number;
+          reason: string | null;
+          reference_type: string | null;
+          reference_id: string | null;
+          actor_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          stock_pool_id: string;
+          movement_type: "receive" | "set_balance" | "sale" | "cancel_restore" | "item_void_restore" | "migration";
+          quantity_delta: number;
+          before_quantity: number;
+          after_quantity: number;
+          reason?: string | null;
+          reference_type?: string | null;
+          reference_id?: string | null;
+          actor_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          stock_pool_id?: string;
+          movement_type?: "receive" | "set_balance" | "sale" | "cancel_restore" | "item_void_restore" | "migration";
+          quantity_delta?: number;
+          before_quantity?: number;
+          after_quantity?: number;
+          reason?: string | null;
+          reference_type?: string | null;
+          reference_id?: string | null;
+          actor_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_stock_pool_id_fkey"
+            columns: ["stock_pool_id"]
+            isOneToOne: false
+            referencedRelation: "stock_pools"
+            referencedColumns: ["id"]
+          },
+        ];
+      };
       product_units: {
         Row: {
           id: string;
@@ -2492,6 +2675,70 @@ export interface Database {
         };
         Relationships: [];
       };
+      order_item_stock_pool_cutover_provenance: {
+        Row: {
+          order_item_id: string;
+          order_id: string;
+          stock_pool_id: string;
+          stock_pool_name: string;
+          item_quantity: number;
+          unit_quantity: number;
+          stock_units_per_item: number;
+          total_stock_units: number;
+          order_created_at: string;
+          cutover_at: string;
+          cutover_migration: string;
+        };
+        Insert: {
+          order_item_id: string;
+          order_id: string;
+          stock_pool_id: string;
+          stock_pool_name: string;
+          item_quantity: number;
+          unit_quantity: number;
+          stock_units_per_item: number;
+          total_stock_units: number;
+          order_created_at: string;
+          cutover_at: string;
+          cutover_migration: string;
+        };
+        Update: {
+          order_item_id?: string;
+          order_id?: string;
+          stock_pool_id?: string;
+          stock_pool_name?: string;
+          item_quantity?: number;
+          unit_quantity?: number;
+          stock_units_per_item?: number;
+          total_stock_units?: number;
+          order_created_at?: string;
+          cutover_at?: string;
+          cutover_migration?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "order_item_stock_pool_cutover_provenance_order_item_id_fkey";
+            columns: ["order_item_id"];
+            isOneToOne: true;
+            referencedRelation: "order_items";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "order_item_stock_pool_cutover_provenance_order_id_fkey";
+            columns: ["order_id"];
+            isOneToOne: false;
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "order_item_stock_pool_cutover_provenance_stock_pool_id_fkey";
+            columns: ["stock_pool_id"];
+            isOneToOne: false;
+            referencedRelation: "stock_pools";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           id: string;
@@ -2518,6 +2765,9 @@ export interface Database {
           voided_reason: string | null;
           fulfillment_status: "new" | "preparing" | "ready" | "served";
           fulfillment_version: number;
+          stock_pool_id: string | null;
+          stock_pool_name: string | null;
+          stock_units_per_item: number | null;
         };
         Insert: {
           id?: string;
@@ -2544,6 +2794,9 @@ export interface Database {
           voided_reason?: string | null;
           fulfillment_status?: "new" | "preparing" | "ready" | "served";
           fulfillment_version?: number;
+          stock_pool_id?: string | null;
+          stock_pool_name?: string | null;
+          stock_units_per_item?: number | null;
         };
         Update: {
           id?: string;
@@ -2570,8 +2823,19 @@ export interface Database {
           voided_reason?: string | null;
           fulfillment_status?: "new" | "preparing" | "ready" | "served";
           fulfillment_version?: number;
+          stock_pool_id?: string | null;
+          stock_pool_name?: string | null;
+          stock_units_per_item?: number | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "order_items_stock_pool_id_fkey"
+            columns: ["stock_pool_id"]
+            isOneToOne: false
+            referencedRelation: "stock_pools"
+            referencedColumns: ["id"]
+          },
+        ];
       };
       payments: {
         Row: {
@@ -3998,6 +4262,35 @@ export interface Database {
           p_monthly_budget: number;
         };
         Returns: Json;
+      };
+      adjust_stock_pool: {
+        Args: {
+          p_pool_id: string;
+          p_mode: string;
+          p_quantity: number;
+          p_reason?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["stock_pools"]["Row"];
+      };
+      create_stock_pool_and_link_variant: {
+        Args: {
+          p_variant_id: string;
+          p_store_id: string;
+          p_name: string;
+          p_unit_label: string;
+          p_low_stock_threshold: number;
+          p_consumption_quantity: number;
+        };
+        Returns: Database["public"]["Tables"]["stock_pools"]["Row"];
+      };
+      link_variant_to_stock_pool: {
+        Args: {
+          p_variant_id: string;
+          p_pool_id: string;
+          p_store_id: string;
+          p_consumption_quantity: number;
+        };
+        Returns: Database["public"]["Tables"]["variant_stock_links"]["Row"];
       };
       adjust_customer_loyalty_points: {
         Args: {

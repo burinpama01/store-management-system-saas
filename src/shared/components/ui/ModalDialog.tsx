@@ -23,6 +23,7 @@ interface ModalDialogProps {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  description?: string;
   size?: keyof typeof SIZE_CLASS;
   closeLabel?: string;
 }
@@ -32,10 +33,12 @@ export function ModalDialog({
   title,
   children,
   onClose,
+  description,
   size = "md",
   closeLabel = "ปิด dialog",
 }: ModalDialogProps) {
   const titleId = useId();
+  const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const focusableSelectors = MODAL_DIALOG_FOCUSABLE_SELECTORS;
@@ -76,6 +79,11 @@ export function ModalDialog({
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
+      if (!dialogRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+        return;
+      }
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -96,6 +104,7 @@ export function ModalDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
     >
       <div
         className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
@@ -108,13 +117,16 @@ export function ModalDialog({
         tabIndex={-1}
       >
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-          <h2 id={titleId} className="text-sm font-semibold text-gray-900">
-            {title}
-          </h2>
+          <div>
+            <h2 id={titleId} className="text-sm font-semibold text-gray-900">
+              {title}
+            </h2>
+            {description && <p id={descriptionId} className="mt-1 text-xs text-gray-600">{description}</p>}
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="grid min-h-9 min-w-9 place-items-center rounded-md text-lg leading-none text-gray-400 hover:bg-slate-100 hover:text-gray-700"
+            className="grid min-h-11 min-w-11 place-items-center rounded-md text-lg leading-none text-gray-400 hover:bg-slate-100 hover:text-gray-700"
             aria-label={closeLabel}
           >
             x

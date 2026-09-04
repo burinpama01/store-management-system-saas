@@ -5,7 +5,7 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const auth = await authenticateApiKey(req);
+  const auth = await authenticateApiKey(req, "products.read");
   if (!auth.ok) return apiError(auth.status, auth.error);
 
   const { limit, offset } = parsePagination(req);

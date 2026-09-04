@@ -9,3 +9,13 @@ export interface StockAlert {
   threshold: number;
   severity: StockAlertSeverity;
 }
+
+export type StockPoolAdjustmentMode = "receive" | "set_balance";
+
+export interface StockPoolAdjustmentInput {
+  poolId: string;
+  storeId: string;
+  mode: StockPoolAdjustmentMode;
+  quantity: number;
+  reason: string | null;
+}

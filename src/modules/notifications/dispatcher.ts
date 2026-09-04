@@ -418,12 +418,14 @@ function logOwnerNotificationResult(result: NotificationResult) {
   }
 }
 
-async function runOwnerNotificationDelivery(input: NotificationPayload) {
+async function runOwnerNotificationDelivery(input: NotificationPayload): Promise<NotificationResult> {
   try {
     const result = await dispatchNotification(input);
     logOwnerNotificationResult(result);
+    return result;
   } catch {
     console.warn("owner notification skipped");
+    return { ok: false, skipped: false, message: "ส่งการแจ้งเตือนไม่สำเร็จ" };
   }
 }
 
@@ -483,7 +485,7 @@ async function renderOwnerNotification(input: NotificationPayload): Promise<Noti
   return { ...input, title, message };
 }
 
-async function runOwnerNotificationDeliveries(input: NotificationPayload) {
+async function runOwnerNotificationDeliveries(input: NotificationPayload): Promise<boolean> {
   // เตรียมข้อความ (ชื่อร้าน/template) พร้อมกันกับการ fan-out ช่องทาง เพื่อไม่ให้
   // การ resolve ข้อความไปหน่วงการส่งแบบขนานของแต่ละช่องทาง
   const renderedPromise = renderOwnerNotification(input);
@@ -491,10 +493,10 @@ async function runOwnerNotificationDeliveries(input: NotificationPayload) {
 
   // เก็บ log ในแอป (ศูนย์แจ้งเตือน) แบบ best-effort — ไม่บล็อกการส่งช่องทาง
   const persistPromise = (async () => {
-    if (input.type === "test" || !input.organizationId) return;
+    if (input.type === "test" || !input.organizationId) return true;
     try {
       const rendered = await renderedPromise;
-      await insertNotificationLog({
+      const result = await insertNotificationLog({
         organizationId: input.organizationId,
         storeId: input.storeId ?? null,
         type: input.type,
@@ -502,12 +504,14 @@ async function runOwnerNotificationDeliveries(input: NotificationPayload) {
         message: rendered.message,
         metadata: input.metadata ?? null,
       });
+      return result.ok;
     } catch {
       // best-effort — การเก็บ log พังต้องไม่กระทบการส่งแจ้งเตือน
+      return false;
     }
   })();
 
-  await Promise.allSettled([
+  const outcomes = await Promise.allSettled([
     persistPromise,
     ...channels.map(async (channel) => {
       const rendered = await renderedPromise;
@@ -518,6 +522,11 @@ async function runOwnerNotificationDeliveries(input: NotificationPayload) {
       });
     }),
   ]);
+
+  return outcomes.every((outcome) => (
+    outcome.status === "fulfilled"
+    && (typeof outcome.value === "boolean" ? outcome.value : outcome.value.ok)
+  ));
 }
 
 export function notifyOwnerSafely(input: NotificationPayload): void {
@@ -529,10 +538,10 @@ export function notifyOwnerSafely(input: NotificationPayload): void {
 }
 
 /** เหมือน notifyOwnerSafely แต่ await ให้ส่งเสร็จ — ใช้ในงาน cron ที่ไม่มี request lifecycle */
-export async function notifyOwnerNow(input: NotificationPayload): Promise<void> {
+export async function notifyOwnerNow(input: NotificationPayload): Promise<boolean> {
   try {
-    await runOwnerNotificationDeliveries(input);
+    return await runOwnerNotificationDeliveries(input);
   } catch {
-    // best-effort
+    return false;
   }
 }

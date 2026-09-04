@@ -1,6 +1,6 @@
 {
   "name": "store-management-saas",
-  "version": "0.42.2",
+  "version": "0.43.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:unified-pos:backend": "node scripts/verify-unified-pos-backend.mjs",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:stock-pool": "node scripts/verify-stock-pool.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.50",

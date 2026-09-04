@@ -61,6 +61,21 @@ export interface ProductUnit {
   isActive: boolean;
 }
 
+/**
+ * Stock Pool ที่ variant นี้ผูกอยู่ — เมื่อมีค่านี้ Pool คือ "แหล่งความจริงเดียว"
+ * ของสต๊อก: ห้ามใช้ stockQuantity ตัดสินว่าขายได้ไหม (RPC ก็ไม่ตัด variant stock
+ * ให้รายการที่ผูก Pool เช่นกัน มิฉะนั้นจะกลายเป็นสองแหล่งที่ไม่ตรงกัน)
+ */
+export interface VariantStockPool {
+  poolId: string;
+  poolName: string;
+  unitLabel: string;
+  /** ยอดคงเหลือของ Pool (หน่วยของ Pool) */
+  quantity: number;
+  /** ขาย variant นี้ 1 หน่วยฐาน ตัดจาก Pool กี่หน่วย */
+  consumptionQuantity: number;
+}
+
 export interface ProductVariant {
   id: string;
   productId: string;
@@ -72,6 +87,7 @@ export interface ProductVariant {
   trackStock: boolean;
   isActive: boolean;
   sortOrder: number;
+  stockPool?: VariantStockPool;
 }
 
 export interface VariantTemplate {

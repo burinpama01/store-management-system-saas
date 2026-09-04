@@ -9,6 +9,7 @@ import {
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
+import { loadVariantStockPools } from "@/modules/catalog/repository";
 import { getCurrentUser } from "@/modules/auth/session";
 import {
   computeRequestHash,
@@ -253,6 +254,10 @@ async function submitTableOrder(
     }
   }
 
+  // Stock Pool ของ variant เหล่านี้ — variant ที่ผูก Pool ใช้ยอด Pool เป็นเกณฑ์
+  // (RPC ไม่ตัด stock_quantity ให้รายการที่ผูก Pool ค่านั้นจึงค้างและใช้ตัดสินไม่ได้)
+  const poolByVariant = await loadVariantStockPools(supabase, [...variantMap.keys()]);
+
   // Batch-fetch modifier groups/options for selected products so required/min/max rules are server-enforced.
   const { data: groupRows, error: groupErr } = await supabase
     .from("modifier_groups")
@@ -322,7 +327,19 @@ async function submitTableOrder(
       unitPrice += variant.price_adjustment;
       variantId = variant.id;
       variantName = variant.name;
-      if (variant.track_stock && typeof variant.stock_quantity === "number") {
+      const pool = poolByVariant.get(variant.id);
+      if (pool) {
+        // หลาย variant แชร์ Pool เดียวกันได้ → รวมยอดที่ระดับ Pool
+        const current = requestedStockByVariant.get(`pool:${pool.poolId}`) ?? {
+          requested: 0,
+          available: pool.quantity,
+        };
+        current.requested += item.quantity * pool.consumptionQuantity;
+        requestedStockByVariant.set(`pool:${pool.poolId}`, current);
+        if (current.requested > current.available) {
+          return { orderId: null, orderNumber: null, error: `สต๊อก ${pool.poolName} เหลือไม่พอ` };
+        }
+      } else if (variant.track_stock && typeof variant.stock_quantity === "number") {
         const current = requestedStockByVariant.get(variant.id) ?? {
           requested: 0,
           available: variant.stock_quantity,
@@ -516,7 +533,7 @@ async function submitTableOrder(
         notifyLowStockAfterSaleSafely(
           store.organization_id,
           storeId,
-          orderLines.map((line) => ({ variantId: line.variantId, baseQuantity: line.quantity })),
+          parsed.result.order_id,
         );
       }
     }
@@ -542,7 +559,7 @@ async function submitTableOrder(
   notifyLowStockAfterSaleSafely(
     store.organization_id,
     storeId,
-    orderLines.map((line) => ({ variantId: line.variantId, baseQuantity: line.quantity })),
+    orderId,
   );
 
   return { orderId, orderNumber, error: null };

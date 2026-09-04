@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Pool Release Gate v1</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#60708a; --line:#dce4ef; --ok:#117a55; --warn:#a15b00; --stop:#b42318; --blue:#2457d6; --bg:#f5f7fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Noto Sans Thai","Segoe UI",sans-serif; color:var(--ink); background:var(--bg); line-height:1.6; }
+    main { width:min(1080px,calc(100% - 32px)); margin:32px auto 64px; }
+    header, section { background:#fff; border:1px solid var(--line); border-radius:18px; padding:24px; margin-bottom:16px; box-shadow:0 8px 28px rgba(32,52,89,.06); }
+    h1,h2 { margin:0 0 12px; line-height:1.3; } h1 { font-size:clamp(28px,4vw,46px); } h2 { font-size:22px; }
+    p { margin:8px 0; } code { background:#eef3fb; border-radius:6px; padding:2px 6px; }
+    .status { display:inline-flex; gap:8px; align-items:center; color:var(--warn); background:#fff6e5; border:1px solid #ffd99a; padding:7px 12px; border-radius:999px; font-weight:700; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+    .card { border:1px solid var(--line); border-radius:14px; padding:16px; }
+    .ok { border-left:5px solid var(--ok); } .warn { border-left:5px solid var(--warn); } .stop { border-left:5px solid var(--stop); }
+    .label { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }
+    ol,ul { margin:8px 0 0; padding-left:24px; } li+li { margin-top:8px; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; } th,td { border-bottom:1px solid var(--line); text-align:left; vertical-align:top; padding:10px; } th { color:var(--muted); font-size:13px; }
+    .flow { display:flex; flex-wrap:wrap; gap:8px; } .flow span { background:#eef3fb; border:1px solid #d6e0f2; border-radius:10px; padding:8px 10px; }
+    .note { color:var(--muted); font-size:14px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="status">Release Candidate · Production Pending</span>
+    <h1>Stock Pool Release Gate v1</h1>
+    <p>เวอร์ชัน <strong>0.32.7</strong> — เอกสารตรวจปล่อยระบบ Stock Pool โดยไม่แก้ทับ Design/Implementation Plan ที่อนุมัติแล้ว</p>
+  </header>
+
+  <section>
+    <h2>สิ่งที่ส่งมอบ</h2>
+    <div class="grid">
+      <div class="card ok"><strong>Variant</strong><p>รูปแบบย่อยที่ขายจริง เช่น “1 ขวด” หรือ “3 ขวด” แต่ละ Variant ผูก Stock Pool ได้หนึ่งรายการ</p></div>
+      <div class="card ok"><strong>Stock Pool</strong><p>ยอดของจริงกองกลาง แชร์ข้ามสินค้าคนละรายการได้ และใช้ตัวคูณ consumption ต่อ Variant</p></div>
+      <div class="card ok"><strong>รับเข้า</strong><p>เพิ่มจำนวนจากยอดปัจจุบัน เหมาะกับรับของใหม่เข้าร้าน</p></div>
+      <div class="card ok"><strong>กำหนดยอดใหม่</strong><p>แทนยอดปัจจุบันด้วยจำนวนที่นับได้จริง เหมาะกับตรวจนับ/แก้ยอดคลาดเคลื่อน</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>หลักฐาน Release Candidate</h2>
+    <table>
+      <tr><th>Gate</th><th>ผล</th><th>หลักฐาน</th></tr>
+      <tr><td>Unit tests</td><td>ผ่าน</td><td>1,049/1,049 หลัง merge main</td></tr>
+      <tr><td>TypeScript / scoped lint</td><td>ผ่าน</td><td><code>npm run typecheck</code> และ changed-file ESLint</td></tr>
+      <tr><td>Production build</td><td>ผ่าน</td><td>Next.js compile, type generation และ route generation สำเร็จ</td></tr>
+      <tr><td>Code review</td><td>ผ่าน</td><td>ไม่เหลือ Critical/Major/Minor ใน Stock Pool release diff</td></tr>
+      <tr><td>Remote history</td><td>ผ่านแบบมีเงื่อนไข</td><td><code>20260803000001–00005</code> ยังไม่เคย apply; remote มี <code>20260804000000</code> และ release branch merge source จาก main แล้ว</td></tr>
+      <tr><td>Full lint</td><td>Known baseline</td><td>3 React errors + 3 warnings นอก release diff</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Migration และผลกระทบ</h2>
+    <div class="flow">
+      <span>00001 Schema / backfill / guards</span><span>00002 Adjustment RPC</span><span>00003 Create/link RPC</span><span>00004 POS/QR order RPC</span><span>00005 API scopes / alert claims</span><span>20260804000000 remote-matched accounting policy</span>
+    </div>
+    <div class="card warn" style="margin-top:14px"><strong>Maintenance impact</strong><p>Migration จับ table locks เพื่อ cutover ที่ปลอดภัย จึงต้องหยุด writes ชั่วคราวและทำ backup ก่อน apply ห้ามเปิดรับ POS/QR write ระหว่าง migration ชุดนี้</p></div>
+    <div class="card stop" style="margin-top:12px"><strong>STOP conditions</strong><ul><li>remote history เปลี่ยน หรือพบว่า <code>20260803000001</code> เคย apply แล้ว</li><li>migration ใด fail, invariant ไม่ผ่าน, เกิด negative/cross-store/unlinked tracked Variant</li><li>build/deployment ไม่ READY หรือ smoke พบ 5xx/data mismatch</li></ul></div>
+  </section>
+
+  <section>
+    <h2>Production checklist</h2>
+    <ol>
+      <li>ยืนยัน environment เป็น production และทำ database backup/snapshot ที่กู้คืนได้</li>
+      <li>เปิด maintenance/write quiescence สำหรับ POS, QR และ Stock</li>
+      <li>ตรวจ remote migration list ซ้ำ แล้ว dry-run/apply <code>00001–00005</code> ตามลำดับ</li>
+      <li>ตรวจ invariant: tracked Variant มีหนึ่ง link, Pool ไม่ติดลบ, ไม่มี cross-store/org link, movement equation ถูกต้อง และ legacy scope ขยายเฉพาะ key ว่าง</li>
+      <li>deploy Vercel production ด้วย <code>VERCEL_TOKEN</code> จาก <code>.env.local</code> โดยไม่พิมพ์หรือบันทึก secret</li>
+      <li>smoke Stock, POS, QR, cancel/void, Inventory API 401/403/200 และ low-stock notification แล้วปิด maintenance</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Rollback runbook</h2>
+    <ol>
+      <li>หยุด writes และ revert/promote application version ก่อน Stock Pool</li>
+      <li>เก็บ tables, compatibility columns และ movement ledger ไว้ ห้าม drop table/column ใน release นี้</li>
+      <li>ปิด entry point/feature flag ของ Stock Pool หาก UI ต้องถูกพัก แล้วใช้ข้อมูล compatibility เดิมระหว่างสืบสวน</li>
+      <li>หาก migration transaction fail ให้ยืนยันว่า rollback ครบ; หาก apply สำเร็จแต่ app smoke fail ให้ rollback app ก่อน ไม่เขียน SQL ล้างข้อมูลแบบ ad-hoc</li>
+      <li>กู้ backup เฉพาะเมื่อได้รับอนุมัติแยกและมีหลักฐานว่าจำเป็น</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>ข้อจำกัดที่ยังเหลือ</h2>
+    <ul>
+      <li>ผู้ใช้สั่งข้าม Docker จึงไม่มี local PostgreSQL migration/concurrency evidence</li>
+      <li>Browser automation ถูก environment ปฏิเสธด้วย <code>EPERM</code> ที่ AppData; ต้องทำ production smoke หลัง deploy</li>
+      <li>External provider ไม่รับประกัน distributed exactly-once; partial-channel retry อาจทำให้ channel ที่ส่งสำเร็จแล้วถูกส่งซ้ำ</li>
+      <li>ห้ามถือว่า release เสร็จจนกว่า DB invariants, deployment READY และ production smoke ผ่าน</li>
+    </ul>
+    <p class="note">สร้างเมื่อ 2026-08-14 · Source of truth สำหรับ production gate ของ Stock Pool v0.32.7</p>
+  </section>
+</main>
+</body>
+</html>
