@@ -277,6 +277,7 @@ function DetectedUsbPrinters({
   hubOnline,
   paperWidth,
   existingPrinter,
+  currentDefault,
   saveAction,
   onRefresh,
 }: {
@@ -284,10 +285,16 @@ function DetectedUsbPrinters({
   hubOnline: boolean;
   paperWidth: "58mm" | "80mm";
   existingPrinter: Printer | null;
+  currentDefault: Printer | null;
   saveAction: SavePrinterAction;
   onRefresh: () => void;
 }) {
   const [state, formAction, saving] = useActionState(saveAction, { error: null });
+  // เครื่องร้าน 2026-09-05: ตั้งค่า USB สำเร็จ Hub ออนไลน์ เห็น POS-80C ครบ แต่ใบเสร็จ
+  // ยังวิ่งไปเครื่องพิมพ์ WiFi ตัวเก่าที่ถอดไปแล้ว → timeout ทุกใบ เพราะฟอร์มนี้ไม่เคยส่ง
+  // isDefault ไปเลย เครื่องพิมพ์ USB จึงไม่มีทางกลายเป็นเครื่องที่ใบเสร็จออกจริง
+  const [makeDefault, setMakeDefault] = useState(true);
+  const defaultIsElsewhere = Boolean(currentDefault && currentDefault.id !== existingPrinter?.id);
   // USB ขึ้นก่อนเสมอ — เป็นสิ่งที่ผู้ใช้กำลังมองหา ส่วนที่เหลือเป็นตัวเลือกสำรอง
   const sorted = [...devices].sort((a, b) => Number(b.isUsb) - Number(a.isUsb));
   const usbCount = devices.filter((d) => d.isUsb).length;
@@ -349,6 +356,7 @@ function DetectedUsbPrinters({
                   <input type="hidden" name="name" value={device.name} />
                   <input type="hidden" name="windowsPrinterName" value={device.name} />
                   <input type="hidden" name="paperWidth" value={paperWidth} />
+                  {makeDefault && <input type="hidden" name="isDefault" value="on" />}
                   <button
                     type="submit"
                     disabled={saving}
@@ -363,11 +371,29 @@ function DetectedUsbPrinters({
         </>
       )}
 
-      <form action={formAction} className="mt-3">
+      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+        <input
+          type="checkbox"
+          checked={makeDefault}
+          onChange={(event) => setMakeDefault(event.target.checked)}
+          className="mt-1"
+        />
+        <span>
+          <span className="block text-xs font-semibold text-[var(--ink)]">ให้ใบเสร็จออกที่เครื่องนี้</span>
+          <span className="block text-[11px] text-[var(--muted)]">
+            {defaultIsElsewhere
+              ? `ตอนนี้ใบเสร็จถูกส่งไปที่ “${currentDefault!.name}” — ติ๊กไว้แล้วกดปุ่มด้านล่างเพื่อย้ายมาที่เครื่อง USB นี้`
+              : "ตั้งเครื่องพิมพ์ USB นี้เป็นเครื่องพิมพ์ใบเสร็จหลักของร้าน"}
+          </span>
+        </span>
+      </label>
+
+      <form action={formAction} className="mt-2">
         <input type="hidden" name="printerId" value={existingPrinter?.id ?? ""} />
         <input type="hidden" name="name" value="เครื่องพิมพ์ USB (ตรวจจับอัตโนมัติ)" />
         <input type="hidden" name="windowsPrinterName" value="" />
         <input type="hidden" name="paperWidth" value={paperWidth} />
+        {makeDefault && <input type="hidden" name="isDefault" value="on" />}
         <button type="submit" disabled={saving} className="btn-primary min-h-11 px-4 text-sm font-semibold disabled:opacity-40">
           {saving ? "กำลังบันทึก..." : "ใช้โหมดตรวจจับอัตโนมัติ (แนะนำ)"}
         </button>
@@ -717,6 +743,7 @@ export function PrintHubManager({
           hubOnline={status.online}
           paperWidth={paperWidth}
           existingPrinter={usbHubPrinter}
+          currentDefault={printers.find((p) => p.isDefault) ?? null}
           saveAction={saveHubUsbPrinterAction}
           onRefresh={refreshStatus}
         />
