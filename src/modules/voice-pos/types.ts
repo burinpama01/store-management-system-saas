@@ -39,6 +39,9 @@ export type VoiceDecision = "execute" | "preview" | "block";
 /** bucket ของความมั่นใจ — telemetry เก็บได้แค่ระดับนี้ ห้ามเก็บค่า raw ต่อคำสั่ง */
 export type VoiceConfidenceBucket = "low" | "medium" | "high";
 
+/** ค่าที่อนุญาตแบบ runtime — server ใช้ตรวจก่อนบันทึก telemetry (fail closed) */
+export const VOICE_CONFIDENCE_BUCKETS = ["low", "medium", "high"] as const;
+
 /** intent ที่อนุญาต (allowlist) — นอกเหนือจากนี้คือ "unknown" เสมอ */
 export type VoiceIntentType =
   | "navigate"
@@ -52,6 +55,19 @@ export type VoiceIntentType =
   | "pos.confirm_selection"
   | "unknown";
 
+export const VOICE_INTENT_TYPES = [
+  "navigate",
+  "pos.add_item",
+  "pos.set_quantity",
+  "pos.increase_item",
+  "pos.decrease_item",
+  "pos.remove_item",
+  "pos.clear_search",
+  "pos.choose_option",
+  "pos.confirm_selection",
+  "unknown",
+] as const;
+
 /** เหตุผลของผลลัพธ์ — ใช้เลือกข้อความ UI และเป็นค่าเดียวที่ log ได้ */
 export type VoiceResultCode =
   | "matched"
@@ -60,6 +76,15 @@ export type VoiceResultCode =
   | "forbidden_command"
   | "invalid_quantity"
   | "low_confidence";
+
+export const VOICE_RESULT_CODES = [
+  "matched",
+  "empty_transcript",
+  "no_match",
+  "forbidden_command",
+  "invalid_quantity",
+  "low_confidence",
+] as const;
 
 export interface VoiceNavigateIntent {
   readonly type: "navigate";

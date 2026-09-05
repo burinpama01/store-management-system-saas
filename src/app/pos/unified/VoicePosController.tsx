@@ -26,6 +26,7 @@ import {
   type VoiceUndoToken,
 } from "@/modules/voice-pos/undo";
 import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry";
+import { recordVoiceTelemetryAction } from "./voice-telemetry-actions";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
 import {
@@ -114,8 +115,29 @@ export function VoicePosController({
   const [undoToken, setUndoToken] = useState<VoiceUndoToken | null>(null);
   const [undoNotice, setUndoNotice] = useState("");
   const undoSeqRef = useRef(0);
-  // U16 — telemetry อยู่ในหน่วยความจำของ session นี้เท่านั้น (ไม่มี transcript, purge 30 วัน)
+  // U16 — telemetry ในหน่วยความจำของ session (ใช้ debug ในเครื่อง)
   const telemetry = useMemo(() => createInMemoryVoiceTelemetrySink(), []);
+  /**
+   * v0.44.10 — ส่ง telemetry ขึ้น server เพื่อตอบให้ได้ว่า "พูดกี่ครั้ง เข้าใจกี่ครั้ง"
+   * ยิงแบบ fire-and-forget: การวัดผลต้องไม่หน่วงการขาย และพังก็ต้องไม่กระทบผู้ใช้
+   *
+   * ยิง 2 จังหวะต่อการพูด 1 ครั้ง:
+   *   deterministic — ผลของ parser เดิม (ปุ่มเรียก onTelemetry ก่อน onResult เสมอ)
+   *   ai            — ผลของทางสำรอง เฉพาะรอบที่ตกไปถึง AI จริง
+   * แยกกันเพื่อให้ดูได้ว่า "AI ช่วยกู้คืนคำสั่งที่ระบบเดิมไม่เข้าใจได้กี่ครั้ง"
+   */
+  const reportVoiceTelemetry = useCallback(
+    (event: {
+      intentType: string;
+      resultCode: string;
+      locale: string;
+      confidenceBucket: string;
+      source: "deterministic" | "ai";
+    }) => {
+      void recordVoiceTelemetryAction(event);
+    },
+    [],
+  );
   const clock = useMemo(() => now ?? (() => Date.now()), [now]);
 
   // token หมดอายุเองเมื่อพ้นหน้าต่าง 6 วินาที (การเปลี่ยนแปลงใหม่จะแทนที่ token เดิมทันที)
@@ -499,6 +521,21 @@ export function VoicePosController({
       const outcome = await parseVoiceCommandHybrid(transcript, { requestAiVoiceIntent: client });
       if (controller.signal.aborted) return "";
 
+      // เหตุการณ์ที่ 2 ของรอบนี้: ผลของทางสำรอง AI (ไม่มีคำพูดอยู่ในนั้น)
+      reportVoiceTelemetry({
+        intentType:
+          outcome.source === "ai" ? outcome.envelope.commands[0]?.intent ?? "unknown" : "unknown",
+        resultCode:
+          outcome.source === "ai"
+            ? "matched"
+            : outcome.source === "blocked"
+              ? "forbidden_command"
+              : "no_match",
+        locale: "th-TH",
+        confidenceBucket: outcome.source === "ai" ? outcome.envelope.confidence : "low",
+        source: "ai",
+      });
+
       switch (outcome.source) {
         case "deterministic":
           return handleDeterministicResult(outcome.result, transcript);
@@ -523,6 +560,7 @@ export function VoicePosController({
       getCartApi,
       handleDeterministicResult,
       publishQueue,
+      reportVoiceTelemetry,
       requestAiIntent,
       runQueue,
       voiceEnabled,
@@ -538,7 +576,10 @@ export function VoicePosController({
       <VoiceCommandButton
         adapter={adapter}
         onResult={handleResult}
-        onTelemetry={(event) => telemetry.record(event)}
+        onTelemetry={(event) => {
+          telemetry.record(event);
+          reportVoiceTelemetry({ ...event, source: "deterministic" });
+        }}
       />
       {undoVisible && undoToken ? (
         <button
