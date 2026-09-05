@@ -6,8 +6,8 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature } from "@/modules/billing/types";
 import { AI_DEFAULT_MODEL, isAiEnabled } from "@/modules/ai/gateway";
-import { extractMenuFromImage, sniffImageMime, MAX_IMAGE_BYTES } from "@/modules/ai/menu-scan";
-import { AI_MAX_OUTPUT_TOKENS, reserveQuota, settleUsage } from "@/modules/ai/quota";
+import { extractMenuFromImage, sniffImageMime, MAX_IMAGE_BYTES, MIN_IMAGE_BYTES } from "@/modules/ai/menu-scan";
+import { AI_MAX_OUTPUT_TOKENS, getQuotaStatus, reserveQuota, settleUsage } from "@/modules/ai/quota";
 import { createHash } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -37,21 +37,44 @@ export async function POST(request: Request) {
   if (!(file instanceof File)) return NextResponse.json({ error: "missing_image" }, { status: 400 });
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
-    return NextResponse.json({ error: "image_too_large", maxBytes: MAX_IMAGE_BYTES }, { status: 413 });
+    return NextResponse.json(
+      { ok: false, reason: "image_too_large", manualPath: "รูปใหญ่เกิน 5 MB — ถ่ายใหม่หรือย่อรูปก่อน", maxBytes: MAX_IMAGE_BYTES },
+      { status: 413 },
+    );
+  }
+  // กันรูปมั่ว/รูปเสีย: เล็กเกินกว่าจะเป็นรูปเมนูจริง → ปฏิเสธก่อนเผาโควตา
+  if (bytes.byteLength < MIN_IMAGE_BYTES) {
+    return NextResponse.json(
+      { ok: false, reason: "image_too_small", manualPath: "รูปเล็ก/ไม่ชัดเกินไป — ถ่ายรูปเมนูให้เต็มกรอบแล้วลองใหม่" },
+      { status: 400 },
+    );
   }
   const mime = sniffImageMime(bytes);
-  if (!mime) return NextResponse.json({ error: "unsupported_image" }, { status: 415 });
+  if (!mime) {
+    return NextResponse.json(
+      { ok: false, reason: "unsupported_image", manualPath: "ไฟล์นี้ไม่ใช่รูปภาพ (รองรับ JPG / PNG / WEBP เท่านั้น)" },
+      { status: 415 },
+    );
+  }
 
   const requestId = crypto.randomUUID();
   const requestHash = createHash("sha256").update(requestId).digest("hex").slice(0, 16);
   const reserve = await reserveQuota({ organizationId: ctx.organizationId, requestId, feature: "aiVision", maxTokens: AI_MAX_OUTPUT_TOKENS });
   if (!reserve.granted) {
-    return NextResponse.json({ ok: false, reason: "quota_denied", manualPath: "ครบโควตา AI — เพิ่มเมนูด้วยมือตามปกติ" }, { status: 429 });
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "quota_denied",
+        manualPath: "โควตา AI หมด — เติมเงินที่ ตั้งค่า → เรียกเก็บเงิน เพื่อใช้งานต่อ หรือเพิ่มเมนูด้วยมือตามปกติ",
+        quota: await getQuotaStatus({ organizationId: ctx.organizationId }),
+      },
+      { status: 429 },
+    );
   }
 
   try {
     const imageBase64 = Buffer.from(bytes).toString("base64");
-    const items = await extractMenuFromImage(imageBase64, mime, AI_DEFAULT_MODEL);
+    const scan = await extractMenuFromImage(imageBase64, mime, AI_DEFAULT_MODEL);
     await settleUsage({
       organizationId: ctx.organizationId,
       requestId,
@@ -63,7 +86,20 @@ export async function POST(request: Request) {
       status: "ok",
       requestHash,
     });
-    return NextResponse.json({ ok: true, items, note: "รูปถูกประมวลผลแล้วทิ้ง ระบบไม่เก็บรูป" });
+    const quota = await getQuotaStatus({ organizationId: ctx.organizationId });
+    // อ่านสำเร็จแต่ไม่ใช่รูปเมนู → บอกให้ถ่ายใหม่ (โควตายังถูกใช้ไปแล้ว 1 ครั้ง จึงแจ้งยอดคงเหลือด้วย)
+    if (!scan.isMenu) {
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "not_menu",
+          manualPath: "ไม่พบรายการเมนูในรูปนี้ — ถ่ายรูปป้ายเมนู/รายการราคาให้ชัดแล้วลองใหม่",
+          quota,
+        },
+        { status: 422 },
+      );
+    }
+    return NextResponse.json({ ok: true, items: scan.items, quota, note: "รูปถูกประมวลผลแล้วทิ้ง ระบบไม่เก็บรูป" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "error";
     const reason = message === "ai_timeout" ? "ai_timeout" : message === "ai_disabled" ? "ai_disabled" : "error";

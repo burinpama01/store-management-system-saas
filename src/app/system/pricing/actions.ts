@@ -16,6 +16,7 @@ import {
 import { isBusinessComponent } from "@/modules/billing/business-plan";
 import { updateFreeTrialCampaign } from "@/modules/billing/platform-settings";
 import { isDiscountablePlan, normalizeDiscountCode } from "@/modules/billing/discount-code";
+import { saveCreditPack, setCreditPackActive } from "@/modules/ai/credits";
 
 const VALID_TIERS: PlanTier[] = ["starter", "standard", "premium", "business", "enterprise"];
 
@@ -236,5 +237,49 @@ export async function updateFreeTrialCampaignAction(
   revalidatePath("/system/pricing");
   revalidatePath("/pricing");
   revalidatePath("/");
+  return { ok: true, error: null };
+}
+
+/* ───────── แพ็กเติมเงินโทเคน AI ───────── */
+
+/** id ใช้เป็น key ในตาราง — จำกัดให้ปลอดภัยและอ่านออก */
+const AI_PACK_ID_PATTERN = /^[a-z0-9_]{2,40}$/;
+
+export async function saveAiCreditPackAction(_prev: PricingState, fd: FormData): Promise<PricingState> {
+  const g = await guard();
+  if (g) return { ok: false, error: g.error };
+
+  const id = ((fd.get("id") as string | null) ?? "").trim().toLowerCase();
+  const name = ((fd.get("name") as string | null) ?? "").trim();
+  const tokens = Number(fd.get("tokens"));
+  const priceThb = Number(fd.get("priceThb"));
+  const sortOrder = Number(fd.get("sortOrder") ?? 0);
+  const isActive = fd.get("isActive") === "on";
+
+  if (!AI_PACK_ID_PATTERN.test(id)) return { ok: false, error: "รหัสแพ็กใช้ได้เฉพาะ a-z 0-9 _ ยาว 2-40 ตัว" };
+  if (!name) return { ok: false, error: "กรุณาระบุชื่อแพ็ก" };
+  if (!Number.isInteger(tokens) || tokens <= 0) return { ok: false, error: "จำนวนโทเคนต้องเป็นจำนวนเต็มบวก" };
+  if (!Number.isFinite(priceThb) || priceThb <= 0) return { ok: false, error: "ราคาต้องมากกว่า 0" };
+  if (!Number.isFinite(sortOrder)) return { ok: false, error: "ลำดับไม่ถูกต้อง" };
+
+  const res = await saveCreditPack({ id, name, tokens, priceThb, sortOrder, isActive });
+  if (!res.ok) return { ok: false, error: res.error ?? "บันทึกไม่สำเร็จ" };
+  revalidatePath("/system/pricing");
+  revalidatePath("/settings/billing");
+  return { ok: true, error: null };
+}
+
+export async function toggleAiCreditPackAction(_prev: PricingState, fd: FormData): Promise<PricingState> {
+  const g = await guard();
+  if (g) return { ok: false, error: g.error };
+
+  const id = ((fd.get("id") as string | null) ?? "").trim();
+  const next = fd.get("next") === "true";
+  if (!id) return { ok: false, error: "ไม่พบแพ็ก" };
+
+  const res = await setCreditPackActive(id, next);
+  if (!res.ok) return { ok: false, error: res.error ?? "บันทึกไม่สำเร็จ" };
+  revalidatePath("/system/pricing");
+  revalidatePath("/settings/billing");
   return { ok: true, error: null };
 }

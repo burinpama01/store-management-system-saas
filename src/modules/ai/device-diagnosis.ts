@@ -22,7 +22,7 @@ export function buildManualPath(reason: NonNullable<Extract<DeviceDiagnosisResul
     case "ai_timeout":
       return "AI ตอบช้าเกินไป — ลองใหม่อีกครั้ง หรือทำตามขั้นตอนแนะนำในหน้านี้ก่อน";
     case "quota_denied":
-      return "ครบโควตา AI ขององค์กรแล้ว — ใช้ขั้นตอนแนะนำแบบ manual ต่อได้ตามปกติ";
+      return "โควตา AI ขององค์กรหมดแล้ว — เติมเงินที่ ตั้งค่า → เรียกเก็บเงิน หรือใช้ขั้นตอนแนะนำแบบ manual ต่อได้ตามปกติ";
     default:
       return "เกิดข้อผิดพลาด — ลองใหม่ หรือทำตามขั้นตอนแนะนำในหน้านี้";
   }
