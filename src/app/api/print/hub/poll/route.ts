@@ -11,7 +11,7 @@ import {
   claimPendingPrintJobs,
   expireOldPrintJobs,
   getPrinterIdsForJobs,
-  getStoreHubAuth,
+  authenticateHubRequest,
   getUsbBindings,
   reconcileStalePrintJobs,
   saveHubDevices,
@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
   }
 
-  const auth = await getStoreHubAuth(storeId);
-  if (auth.error || !auth.data || !verifyHubToken(hubToken, auth.data.tokenHash)) {
+  const auth = await authenticateHubRequest(storeId, hubToken);
+  if (!auth.ok) {
     return NextResponse.json({ error: "Invalid Hub credentials" }, { status: 401 });
   }
 
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       source: "printing.hub",
       action: "hubProtocolRejected",
       message: "ปฏิเสธ Print Hub เวอร์ชันเก่า",
-      organizationId: auth.data.organizationId,
+      organizationId: auth.organizationId,
       storeId,
       context: { agentProtocol: protocol.version, minimum: PRINT_HUB_MIN_PROTOCOL_VERSION },
     });
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       source: "printing.hub",
       action: "hubReconcileStaleJobs",
       message: "พบงานพิมพ์ที่ Hub เคลมไปแล้วไม่รายงานผล — ตั้งเป็นรอตรวจสอบ",
-      organizationId: auth.data.organizationId,
+      organizationId: auth.organizationId,
       storeId,
       context: { reconciled: reconciled.data.reconciled },
     });
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       source: "printing.hub",
       action: "hubExpireOldJobs",
       message: "ปิดงานพิมพ์ที่ค้างในคิวเกินเพดานเวลา — ไม่พิมพ์ย้อนหลัง",
-      organizationId: auth.data.organizationId,
+      organizationId: auth.organizationId,
       storeId,
       context: { expired: expired.data.expired },
     });

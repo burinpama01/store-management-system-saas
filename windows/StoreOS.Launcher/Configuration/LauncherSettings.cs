@@ -9,7 +9,13 @@ namespace StoreOS.Launcher;
 /// </summary>
 public sealed class LauncherSettings
 {
-    public string PosUrl { get; init; } = "https://store-os-manage.vercel.app/pos/unified";
+    /// <summary>
+    /// ISSUE-001 — ต้องเป็น "/pos" เท่านั้น
+    /// /pos/unified ไม่ใช่ route (src/app/pos/unified มีแต่ component ไม่มี page.tsx)
+    /// Launcher จึงเปิดมาเจอ 404 บนเครื่องร้าน; หน้าจริงคือ /pos ซึ่ง compose
+    /// UnifiedPosWorkspace อยู่ข้างในอีกที และใช้โดเมนหลักของร้านแทน *.vercel.app
+    /// </summary>
+    public string PosUrl { get; init; } = "https://www.store-os.online/pos";
     public bool AllowDevTools { get; init; }
 
     public static LauncherSettings Load()

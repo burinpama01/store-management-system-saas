@@ -6,6 +6,7 @@ import {
   hashHubToken,
   PRINT_JOB_LEASE_SECONDS,
   type PrintJobOutcome,
+  verifyHubToken,
 } from "@/modules/printing/print-hub";
 
 /** "usb" prints through the Windows spooler on the cashier PC running the Hub. */
@@ -579,4 +580,116 @@ export async function forgetUsbBinding(input: {
     .eq("id", input.printerId)
     .eq("store_id", input.storeId);
   return { error: error ? mapError(error) : null };
+}
+
+// ── Print Hub auto-provision (v0.44.11) ──────────────────────────────────────
+// token รายเครื่อง: เครื่องหนึ่ง provision ใหม่ต้องไม่เตะเครื่องอื่นหลุด
+// (ดูเหตุผลเต็มใน migration 20260905000008)
+
+/** ตัวระบุเครื่องต้องสั้น เสถียร และไม่ใช่ข้อมูลส่วนบุคคล */
+export const MAX_HUB_DEVICE_ID_LENGTH = 128;
+
+export interface HubProvisionResult {
+  /** true = ออก token ใหม่ให้ (ผู้เรียกต้องเขียนลง config), false = ของเดิมยังใช้ได้ */
+  readonly rotated: boolean;
+  /** มีค่าเฉพาะเมื่อ rotated = true — แสดงครั้งเดียวเท่านั้น */
+  readonly token: string | null;
+}
+
+/**
+ * ตรวจ token ของ Hub — รับได้ทั้ง token รายเครื่อง (ใหม่) และ token รายร้าน (เดิม)
+ * เก็บ last_seen ของเครื่องนั้นไว้ให้หน้าตั้งค่าแสดงได้ว่าเครื่องไหนยังมีชีวิต
+ */
+export async function authenticateHubRequest(
+  storeId: string,
+  token: string,
+): Promise<{ ok: boolean; organizationId: string | null }> {
+  if (!storeId || !token) return { ok: false, organizationId: null };
+
+  const supabase = await createSupabaseServiceClient();
+  const store = await supabase
+    .from("stores")
+    .select("organization_id, print_hub_token_hash")
+    .eq("id", storeId)
+    .single();
+  if (store.error || !store.data) return { ok: false, organizationId: null };
+
+  // token รายร้านแบบเดิม — เครื่องที่ยังไม่ provision ใหม่ต้องใช้ได้ต่อ
+  if (verifyHubToken(token, store.data.print_hub_token_hash)) {
+    return { ok: true, organizationId: store.data.organization_id };
+  }
+
+  // token รายเครื่อง: เทียบทีละใบที่ยังไม่ถูกยกเลิก (ร้านหนึ่งมีไม่กี่เครื่อง)
+  const devices = await supabase
+    .from("print_hub_device_tokens")
+    .select("id, token_hash")
+    .eq("store_id", storeId)
+    .is("revoked_at", null);
+  if (devices.error || !devices.data) return { ok: false, organizationId: null };
+
+  const matched = devices.data.find((row) => verifyHubToken(token, row.token_hash));
+  if (!matched) return { ok: false, organizationId: null };
+
+  // best-effort — ล้มเหลวไม่ควรทำให้ Hub ที่ยืนยันตัวได้แล้วถูกปฏิเสธ
+  await supabase
+    .from("print_hub_device_tokens")
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq("id", matched.id);
+
+  return { ok: true, organizationId: store.data.organization_id };
+}
+
+/**
+ * ขอ config ล่าสุดของเครื่องนี้ (เรียกจาก Launcher ตอนเปิด ผ่าน session ของผู้ใช้)
+ *
+ * idempotent: ถ้า token ที่เครื่องถืออยู่ยังใช้ได้ จะไม่ออกใบใหม่เลย — จุดนี้สำคัญมาก
+ * เพราะ Launcher เรียกทุกครั้งที่เปิด ถ้า rotate ทุกครั้งจะกลายเป็นสร้าง token รัวๆ
+ */
+export async function provisionHubDeviceToken(input: {
+  readonly organizationId: string;
+  readonly storeId: string;
+  readonly deviceId: string;
+  readonly deviceLabel?: string | null;
+  readonly currentToken?: string | null;
+  readonly createdBy?: string | null;
+}): Result<HubProvisionResult> {
+  const deviceId = input.deviceId.trim();
+  if (!deviceId || deviceId.length > MAX_HUB_DEVICE_ID_LENGTH) {
+    return {
+      data: null,
+      error: { code: "validation_error", message: "device id ไม่ถูกต้อง", userMessage: "ข้อมูลเครื่องไม่ถูกต้อง" },
+    };
+  }
+
+  const supabase = await createSupabaseServiceClient();
+
+  // ของเดิมยังใช้ได้ = ไม่ต้องทำอะไร (กันการ rotate ทุกครั้งที่เปิดโปรแกรม)
+  if (input.currentToken) {
+    const current = await authenticateHubRequest(input.storeId, input.currentToken);
+    if (current.ok) return { data: { rotated: false, token: null }, error: null };
+  }
+
+  const token = generateHubToken();
+  const now = new Date().toISOString();
+
+  // ยกเลิกใบเดิมของ "เครื่องนี้เท่านั้น" — เครื่องอื่นไม่ถูกแตะ
+  const revoked = await supabase
+    .from("print_hub_device_tokens")
+    .update({ revoked_at: now })
+    .eq("store_id", input.storeId)
+    .eq("device_id", deviceId)
+    .is("revoked_at", null);
+  if (revoked.error) return { data: null, error: mapError(revoked.error) };
+
+  const inserted = await supabase.from("print_hub_device_tokens").insert({
+    organization_id: input.organizationId,
+    store_id: input.storeId,
+    device_id: deviceId,
+    device_label: input.deviceLabel?.slice(0, 120) ?? null,
+    token_hash: hashHubToken(token),
+    created_by: input.createdBy ?? null,
+  });
+  if (inserted.error) return { data: null, error: mapError(inserted.error) };
+
+  return { data: { rotated: true, token }, error: null };
 }

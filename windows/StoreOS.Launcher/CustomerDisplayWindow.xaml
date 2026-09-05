@@ -1,0 +1,12 @@
+﻿<Window x:Class="StoreOS.Launcher.CustomerDisplayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="StoreOS — จอลูกค้า"
+        Height="720" Width="1280"
+        WindowStartupLocation="Manual"
+        Background="Black">
+    <!-- หน้าต่างลูกของ Launcher: มีแต่ WebView2 ไม่มีแถบสถานะ
+         เจ้าของ (Owner) ถูกตั้งจาก MainWindow เพื่อให้ปิด Launcher แล้วจอลูกค้าปิดตาม -->
+    <wv2:WebView2 x:Name="DisplayWeb" />
+</Window>

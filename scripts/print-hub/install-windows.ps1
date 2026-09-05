@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Installs the StoreOS Print Hub as an auto-start background task on a Windows
   cashier PC / mini-PC. The Hub long-polls StoreOS for print jobs from tablet/iPad

@@ -1,6 +1,7 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
 using StoreOS.Launcher.Services;
 
 namespace StoreOS.Launcher;
@@ -15,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.0";
+    private const string LauncherVersion = "0.1.2";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -24,6 +25,8 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
     private DateTimeOffset _lastStartAttempt = DateTimeOffset.MinValue;
     private ReadinessState? _lastReportedState;
+    /// <summary>ISSUE-002 — หน้าต่างลูกที่ Launcher เป็นเจ้าของ ต้องปิดตามตอนปิด Launcher</summary>
+    private readonly List<Window> _childWindows = new();
 
     public MainWindow()
     {
@@ -34,6 +37,7 @@ public partial class MainWindow : Window
             LauncherLogShipper.ReadHubCredentials(HubConfigPath()),
             LauncherVersion);
         Loaded += OnLoaded;
+        Closing += OnClosing;
         Closed += async (_, _) => await _logs.DisposeAsync();
     }
 
@@ -49,6 +53,9 @@ public partial class MainWindow : Window
         // production kiosk profile: ปิดเมนูขวา/DevTools ตามแผน (v1 W1)
         Web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = settings.AllowDevTools;
         Web.CoreWebView2.Settings.AreDevToolsEnabled = settings.AllowDevTools;
+        // ISSUE-002 — ต้อง subscribe หลัง EnsureCoreWebView2Async เท่านั้น (ก่อนหน้านั้น
+        // CoreWebView2 ยังเป็น null) และต้องก่อนตั้ง Source เพื่อไม่พลาด popup แรก
+        Web.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
         Web.Source = new Uri(settings.PosUrl);
 
         _logs.Enqueue("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
@@ -56,6 +63,10 @@ public partial class MainWindow : Window
             ["launcherVersion"] = LauncherVersion,
             ["webview2"] = Web.CoreWebView2.Environment.BrowserVersionString,
         });
+
+        // Print Hub auto-provision — ขอ config ล่าสุดของเครื่องนี้หลังหน้าเว็บโหลดเสร็จ
+        // (ต้องรอให้ผู้ใช้ล็อกอินก่อน จึงผูกกับ NavigationCompleted ไม่ใช่ตอน Loaded)
+        Web.CoreWebView2.NavigationCompleted += OnNavigationCompletedAsync;
 
         Refresh();
         _timer.Tick += async (_, _) =>
@@ -65,6 +76,94 @@ public partial class MainWindow : Window
             await _logs.FlushAsync();
         };
         _timer.Start();
+    }
+
+    private bool _provisionAttempted;
+
+    /// <summary>
+    /// Print Hub auto-provision — แก้ปัญหา "Hub token rejected (401)" ให้หายเองตอนเปิดโปรแกรม
+    ///
+    /// เรียกครั้งเดียวต่อการเปิด Launcher หนึ่งรอบ และเรียกจากในหน้าเว็บเพื่อให้ติด session
+    /// ของผู้ใช้ไปด้วย — server เป็นคนตัดสินว่าต้องออก token ใหม่ไหม ถ้าของเดิมยังใช้ได้
+    /// เราจะไม่แตะไฟล์ config เลย
+    /// </summary>
+    private async void OnNavigationCompletedAsync(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (_provisionAttempted || !e.IsSuccess) return;
+        _provisionAttempted = true;
+
+        try
+        {
+            var configPath = HubConfigPath();
+            var current = LauncherLogShipper.ReadHubCredentials(configPath);
+            var deviceId = HubConfigProvisioner.DeviceId(ReadMachineGuid(), Environment.MachineName);
+            var script = HubConfigProvisioner.BuildProvisionScript(deviceId, Environment.MachineName, current?.HubToken);
+
+            var raw = await Web.CoreWebView2.ExecuteScriptAsync(script);
+            var outcome = HubConfigProvisioner.Interpret(raw);
+
+            if (!outcome.Rotated || outcome.ConfigJson is null)
+            {
+                // already_valid = ปกติที่สุด ไม่ต้องรบกวนใคร; ที่เหลือคือยังล็อกอินไม่เสร็จ/ไม่มีสิทธิ์
+                _logs.Enqueue("info", "hub_provision_skipped", $"ไม่ต้องออก Hub token ใหม่ ({outcome.Reason})");
+                return;
+            }
+
+            HubConfigProvisioner.WriteConfigAtomic(configPath, outcome.ConfigJson);
+            // config เปลี่ยนแล้ว agent ต้องอ่านใหม่ — restart task ให้เลย ไม่ต้องรอคนไปกด
+            _tasks.Restart();
+            _logs.Enqueue("info", "hub_provision_rotated", "อัปเดต Print Hub config ของเครื่องนี้อัตโนมัติแล้ว");
+        }
+        catch (Exception ex)
+        {
+            // provision ล้มต้องไม่ทำให้ POS เปิดไม่ได้ — Hub จะยัง 401 เหมือนเดิมเท่านั้น
+            _logs.Enqueue("warn", "hub_provision_failed", $"ขอ Print Hub config อัตโนมัติไม่สำเร็จ: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>MachineGuid ของ Windows — ใช้เป็นเมล็ดของ device id (ถูก hash ก่อนส่งเสมอ)</summary>
+    private static string? ReadMachineGuid()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography");
+            return key?.GetValue("MachineGuid") as string;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-002 — รับเฉพาะจอลูกค้าของเราเองมาเป็นหน้าต่างลูก
+    /// URL อื่นไม่ claim (e.Handled = false) เพื่อไม่ไปปิดหน้าต่างของเว็บอื่นผิดตัว
+    /// </summary>
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        if (!CustomerDisplayNavigation.TryResolve(Web.Source, e.Uri, out _)) return;
+
+        var deferral = e.GetDeferral();
+        var child = new CustomerDisplayWindow(Web.CoreWebView2.Environment, e, deferral)
+        {
+            Owner = this,
+        };
+        _childWindows.Add(child);
+        child.Closed += (_, _) => _childWindows.Remove(child);
+        child.Show();
+
+        _logs.Enqueue("info", "customer_display_opened", "เปิดจอลูกค้าเป็นหน้าต่างลูกของ Launcher");
+    }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // ปิดจาก snapshot เพราะ child.Closed จะแก้ list ระหว่างวน
+        foreach (var child in _childWindows.ToArray())
+        {
+            try { child.Close(); }
+            catch (InvalidOperationException) { /* ปิดไปแล้ว — ไม่ใช่ปัญหา */ }
+        }
+        _childWindows.Clear();
     }
 
     private void Refresh()

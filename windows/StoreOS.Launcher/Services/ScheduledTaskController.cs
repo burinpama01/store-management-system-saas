@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace StoreOS.Launcher.Services;
 
@@ -61,6 +61,17 @@ public sealed class ScheduledTaskController
     {
         var (exitCode, _) = _run("schtasks.exe", $"/Run /TN \"{TaskName}\"");
         return exitCode == 0;
+    }
+
+    /// <summary>
+    /// สั่งหยุดแล้วเริ่มใหม่ — ใช้หลังเขียน config ของ Hub ทับ เพราะ agent อ่าน config
+    /// ตอนเริ่มโปรเซสเท่านั้น ถ้าไม่ restart มันจะยังยิง token เก่าจน 401 ต่อไป
+    /// (/End กับ task ที่ไม่ได้รันอยู่จะคืน exit code ไม่ใช่ 0 ซึ่งไม่ใช่ความผิดพลาด)
+    /// </summary>
+    public bool Restart()
+    {
+        _run("schtasks.exe", $"/End /TN \"{TaskName}\"");
+        return Start();
     }
 
     private static (int, string) RunProcess(string fileName, string arguments)
