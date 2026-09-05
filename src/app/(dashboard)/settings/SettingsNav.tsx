@@ -30,6 +30,22 @@ export function SettingsNav({ tabs }: { tabs: SettingsTab[] }) {
           </Link>
         ))}
       </nav>
+      {/* Entry point ตาม Mobile Compliance Design System v1 — ค้นพบง่ายแต่ไม่ลบทันที
+          การยืนยันตัวตนและลบข้อมูลจริงอยู่หลังการติดต่อทีมงาน */}
+      <div className="panel-muted mt-2 flex flex-wrap items-center justify-between gap-2 p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-[var(--color-text-primary)]">บัญชีและข้อมูล</p>
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            อ่านข้อมูลที่จะถูกลบ ระยะเวลาดำเนินการ และข้อมูลที่ต้องเก็บตามกฎหมายก่อนเริ่มคำขอ
+          </p>
+        </div>
+        <Link
+          href="/account-deletion"
+          className="inline-flex min-h-11 items-center rounded-md border border-[#b91c1c] px-4 text-sm font-bold text-[#b91c1c] transition-colors hover:bg-[#fee2e2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b91c1c]"
+        >
+          ดูขั้นตอนการลบบัญชี
+        </Link>
+      </div>
     </div>
   );
 }

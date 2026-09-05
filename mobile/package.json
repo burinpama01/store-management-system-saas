@@ -1,6 +1,6 @@
 {
   "name": "storeos-mobile",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "description": "StoreOS mobile shell (Capacitor) — wraps the production web app with native push notifications and printer support",
   "scripts": {
