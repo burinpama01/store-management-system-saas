@@ -54,9 +54,32 @@ describe("ตัวติดตั้ง Print Hub — เส้นทางไ�
     expect(mainWindow).toContain('"print-hub.config.json"');
   });
 
-  it("ย้าย config ที่ผู้ใช้วางไว้ข้างตัวติดตั้งเข้าที่ทางการ", () => {
+  it("ไม่มี config ไม่ใช่ error อีกต่อไป — Launcher จะตั้งค่าให้เองตอนล็อกอิน", () => {
+    // เดิม throw ทำให้ติดตั้งไม่จบ ทั้งที่ auto-provision จะให้ค่ามาเองในอีกไม่กี่วินาที
+    expect(installer).toContain("$PendingProvision = $true");
+    expect(installer).not.toContain('throw "ไม่พบค่าตั้งค่า');
+    // ข้าม health check ที่รอ Running ไม่งั้นขึ้น warning ทั้งที่ปกติ (agent ยังไม่มี config)
+    expect(installer).toContain("if ($PendingProvision) {");
+    // ตั้ง ACL เฉพาะตอนมีไฟล์จริง (ไม่มี config แล้ว icacls จะ error)
+    expect(installer).toMatch(/if \(Test-Path \$ConfigPath\) \{\s*\r?\n\s*icacls/);
+  });
+
+  it("ปิด agent ตัวเก่าที่ค้างอยู่ก่อนติดตั้งทับ", () => {
+    // เคสจริง: ร้านเปิด print-hub.cmd ด้วยมือ เหลือ node.exe ถือ config เก่ายิง 401 วนไม่หยุด
+    expect(installer).toContain("Win32_Process");
+    expect(installer).toContain("print-hub\\.mjs");
+    // ต้องกรองด้วย command line — ห้ามปิด node ของงานอื่นบนเครื่อง
+    expect(installer).toContain("$_.CommandLine -match");
+  });
+
+  it("ย้าย config ที่ผู้ใช้ดาวน์โหลดมาเข้าที่ทางการ — หาให้ครบทุกที่ที่คนวางจริง", () => {
     expect(installer).toContain("$DroppedConfig");
     expect(installer).toContain("Copy-Item -Path $DroppedConfig -Destination $ConfigPath -Force");
+    // เคสจริง: ไฟล์อยู่ที่ Downloads แต่สคริปต์อยู่ลึกลงไปสองชั้น (Downloads/storeos-launcher/print-hub)
+    expect(installer).toContain("$PackageRoot = Split-Path -Parent $ScriptDir");
+    expect(installer).toContain("(Split-Path -Parent $PackageRoot)");
+    expect(installer).toContain("(Get-Location).Path");
+    expect(installer).toContain('Join-Path $env:USERPROFILE "Downloads"');
   });
 });
 

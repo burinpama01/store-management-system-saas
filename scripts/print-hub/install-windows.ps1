@@ -59,10 +59,18 @@ $ConfigPath = Join-Path $InstallRoot "print-hub.config.json"
 
 # ถ้าผู้ใช้วาง print-hub.config.json ไว้ข้างตัวติดตั้ง (วิธีที่คู่มือบอก) ให้ย้ายเข้า
 # ที่ทางการให้เลย จะได้ไม่มีไฟล์ config สองใบที่ค่าไม่ตรงกัน
+# หาไฟล์ที่ผู้ใช้ดาวน์โหลดมาให้ครอบทุกที่ที่คนวางจริง เรียงจากใกล้ตัวติดตั้งออกไป:
+#   print-hub\ → storeos-launcher\ → Downloads\ (ที่ไฟล์ตกลงมาตอนกดดาวน์โหลด)
+#   → โฟลเดอร์ที่กด install.cmd → Downloads ของผู้ใช้ตรง ๆ
+# เคสจริง: ไฟล์อยู่ที่ Downloads แต่สคริปต์อยู่ลึกลงไปสองชั้น เลยหาไม่เจอ
+$PackageRoot = Split-Path -Parent $ScriptDir
 $DroppedConfig = @(
   (Join-Path $ScriptDir "print-hub.config.json"),
-  (Join-Path (Split-Path -Parent $ScriptDir) "print-hub.config.json")
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
+  (Join-Path $PackageRoot "print-hub.config.json"),
+  (Join-Path (Split-Path -Parent $PackageRoot) "print-hub.config.json"),
+  (Join-Path (Get-Location).Path "print-hub.config.json"),
+  (Join-Path (Join-Path $env:USERPROFILE "Downloads") "print-hub.config.json")
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if ($DroppedConfig -and -not (Test-Path $ConfigPath)) {
   Copy-Item -Path $DroppedConfig -Destination $ConfigPath -Force
   Write-Host "ย้ายไฟล์ตั้งค่าเข้าที่ทางการแล้ว: $ConfigPath" -ForegroundColor Green
@@ -167,16 +175,41 @@ elseif (Test-Path $ConfigPath) {
   Write-Host "ใช้ค่าตั้งค่าจาก: $ConfigPath" -ForegroundColor Green
 }
 else {
-  throw "ไม่พบค่าตั้งค่า — ดาวน์โหลด print-hub.config.json จากหน้า StoreOS > ตั้งค่า > Print Hub มาวางไว้ในโฟลเดอร์นี้ก่อน (หรือส่ง -ServerUrl -StoreId -HubToken)"
+  # ไม่มี config = ไม่ใช่ความผิดพลาดอีกต่อไป
+  # StoreOS Launcher จะขอ config ให้เครื่องนี้เองตอนเปิดโปรแกรมแล้วล็อกอิน
+  # (POST /api/print/hub/provision) แล้วเขียนลง $ConfigPath นี้ พร้อมสั่ง restart task ให้
+  # การ throw ตรงนี้จะทำให้ติดตั้งไม่จบ ทั้งที่อีกไม่กี่วินาทีก็ได้ค่ามาเองอยู่ดี
+  $PendingProvision = $true
+  Write-Host "ยังไม่มีค่าตั้งค่า — ติดตั้งไว้ก่อน" -ForegroundColor Yellow
+  Write-Host "  เปิด StoreOS แล้วล็อกอิน ระบบจะตั้งค่าตัวช่วยพิมพ์ให้อัตโนมัติ" -ForegroundColor Yellow
+  Write-Host "  (หรือดาวน์โหลด print-hub.config.json จาก ตั้งค่า > Print Hub มาวางไว้ที่ $InstallRoot)" -ForegroundColor DarkGray
 }
 
 # The config file contains the hub token secret — restrict it to the current
 # user only (plan F2/Task 8: config secret ตั้ง ACL เฉพาะ user).
-icacls $ConfigPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
-Write-Host "ตั้งสิทธิ์ไฟล์ config (icacls) ให้เข้าถึงได้เฉพาะผู้ใช้นี้แล้ว" -ForegroundColor Green
+if (Test-Path $ConfigPath) {
+  icacls $ConfigPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+  Write-Host "ตั้งสิทธิ์ไฟล์ config (icacls) ให้เข้าถึงได้เฉพาะผู้ใช้นี้แล้ว" -ForegroundColor Green
+}
+
+# หยุด agent ตัวเก่าที่ยังเปิดค้างอยู่ก่อน
+# เคสจริงที่เจอ: ร้านเคยเปิด print-hub.cmd ด้วยมือ ทำให้มี node.exe ค้างถือ config เก่า
+# ยิง 401 วนไม่หยุด ต่อให้ติดตั้งใหม่แล้วก็ยังมีตัวเก่าแย่งทำงานอยู่
+# กรองด้วย command line ที่มี print-hub.mjs เท่านั้น — ห้ามไปปิด node ของงานอื่นบนเครื่อง
+try {
+  $stale = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -match 'print-hub\.mjs' }
+  foreach ($proc in $stale) {
+    Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    Write-Host "ปิดตัวช่วยพิมพ์ที่ค้างอยู่ (PID $($proc.ProcessId))" -ForegroundColor Yellow
+  }
+} catch {
+  Write-Host "ข้ามการปิด agent ตัวเก่า (ตรวจ process ไม่ได้)" -ForegroundColor DarkGray
+}
 
 # (Re)register the scheduled task.
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+  Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
@@ -194,6 +227,17 @@ $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interac
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger `
   -Settings $Settings -Principal $Principal -Force | Out-Null
 Write-Host "ลงทะเบียน Scheduled Task '$TaskName' (เปิดเองตอน logon) แล้ว" -ForegroundColor Green
+
+if ($PendingProvision) {
+  # ยังไม่มี config → agent จะออกทันทีที่เริ่ม การรอ "Running" จึงขึ้น warning ทั้งที่ปกติ
+  # Launcher จะเขียน config แล้วสั่ง restart task ให้เองหลังผู้ใช้ล็อกอิน
+  Write-Host ""
+  Write-Host "ติดตั้งเรียบร้อย — เหลือขั้นตอนเดียว" -ForegroundColor Cyan
+  Write-Host "  1) เปิด StoreOS จากไอคอนบนเดสก์ท็อป" -ForegroundColor Cyan
+  Write-Host "  2) ล็อกอินด้วยบัญชีที่มีสิทธิ์จัดการเครื่องพิมพ์" -ForegroundColor Cyan
+  Write-Host "  3) ระบบจะตั้งค่าตัวช่วยพิมพ์ให้เอง แล้วสถานะที่หน้า Print Hub จะเปลี่ยนเป็น 'Hub ออนไลน์'" -ForegroundColor Cyan
+  return
+}
 
 Start-ScheduledTask -TaskName $TaskName
 # Local health check: prove the task actually launched (Running). The REAL
