@@ -115,13 +115,14 @@ export async function saveHrSettingsAction(formData: FormData): Promise<{ error:
     const latePenaltyPerMinute = num("latePenaltyPerMinute", 0, 10_000);
     const latePenaltyMaxPerDay = num("latePenaltyMaxPerDay", 0, 100_000);
     const absentPenaltyPerDay = num("absentPenaltyPerDay", 0, 100_000);
+    const halfDayMaxHours = num("halfDayMaxHours", 0, 24);
     const backdatedRaw = parseInt(String(formData.get("backdatedRightsPerMonth") ?? ""), 10);
     const backdatedRightsPerMonth = Number.isInteger(backdatedRaw) && backdatedRaw >= 0 && backdatedRaw <= 31 ? backdatedRaw : null;
 
     if (
       regularHoursPerDay === null || otMultiplier === null || otDailyCapHours === null ||
       latePenaltyPerMinute === null || latePenaltyMaxPerDay === null || absentPenaltyPerDay === null ||
-      backdatedRightsPerMonth === null
+      halfDayMaxHours === null || backdatedRightsPerMonth === null
     ) {
       return { error: "ค่าตั้งค่าไม่ถูกต้อง" };
     }
@@ -135,6 +136,7 @@ export async function saveHrSettingsAction(formData: FormData): Promise<{ error:
       latePenaltyPerMinute,
       latePenaltyMaxPerDay,
       absentPenaltyPerDay,
+      halfDayMaxHours,
       backdatedRightsPerMonth,
     });
     if (result.error) return { error: result.error.userMessage };

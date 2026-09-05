@@ -51,5 +51,15 @@
 	<string>StoreOS ใช้ Bluetooth เพื่อเชื่อมต่อเครื่องพิมพ์ใบเสร็จ</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>StoreOS ใช้ Bluetooth เพื่อเชื่อมต่อเครื่องพิมพ์ใบเสร็จ</string>
+	<key>NSCameraUsageDescription</key>
+	<string>StoreOS ใช้กล้องเพื่อถ่ายรูปเมนูและสลิปสำหรับสร้างรายการสินค้าและตรวจสอบการชำระเงิน</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>StoreOS ขอเข้าถึงคลังรูปภาพเพื่อเลือกรูปเมนู รูปสินค้า หรือสลิปการโอนเงินที่บันทึกไว้</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>StoreOS บันทึกรูปใบเสร็จหรือรายงานที่คุณสั่งบันทึกลงคลังรูปภาพของเครื่อง</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

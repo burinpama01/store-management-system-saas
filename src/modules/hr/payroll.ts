@@ -22,6 +22,16 @@ export interface PayrollLine {
   /** Auto absent penalty (scheduled working days with no record × per-day rate). */
   absentDays: number;
   absentPenalty: number;
+  /** Days worked in full (hours above the half-day threshold). */
+  fullDays: number;
+  /** Days worked at or below the half-day threshold — paid at half. */
+  halfDays: number;
+  /** fullDays + 0.5 × halfDays — what daily-rate pay is actually multiplied by. */
+  payableDays: number;
+  /** Monthly staff: the half of a day not worked, priced like an absent day. */
+  halfDayDeduction: number;
+  /** Days on a store holiday with an unclosed shift — not paid, not absence. */
+  unpaidHolidayDays: number;
   /** Sum of manual bonus adjustments. */
   bonusTotal: number;
   /** Sum of manual deduction adjustments (penalty/leave/absent/late), as a positive number. */
@@ -46,14 +56,22 @@ export function effectiveHourlyRate(profile: EmployeeProfile, regularHoursPerDay
   return 0;
 }
 
-/** Base pay implied by the wage profile for a period's attendance totals. */
-export function computeBasePay(profile: EmployeeProfile | undefined, summary: PayrollSummary): number {
+/**
+ * Base pay implied by the wage profile for a period's attendance totals.
+ * `payableDays` counts a half-worked day as 0.5 so daily-rate staff are paid half —
+ * omit it and the raw attendance day count is used (legacy behaviour).
+ */
+export function computeBasePay(
+  profile: EmployeeProfile | undefined,
+  summary: PayrollSummary,
+  payableDays?: number,
+): number {
   if (!profile) return 0;
   switch (profile.payType) {
     case "monthly":
       return round2(profile.monthlySalary);
     case "daily":
-      return round2(profile.dailyRate * summary.totalDays);
+      return round2(profile.dailyRate * (payableDays ?? summary.totalDays));
     case "hourly":
       return round2(profile.hourlyRate * summary.totalHours);
     default:
@@ -199,8 +217,39 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     const totalDays = summary?.totalDays ?? 0;
     const totalHours = summary?.totalHours ?? 0;
 
+    // --- Worked days: closed hours per day decide full / half / unpaid-holiday ---
+    // (คิดก่อน basePay เพราะค่าแรงรายวันต้องคูณด้วยวันที่จ่ายจริง ไม่ใช่จำนวนวันดิบ)
+    const closedHoursByDay = new Map<string, number>();
+    const hasOpenShiftByDay = new Map<string, boolean>();
+    for (const r of userRecords) {
+      if (r.clockOutAt) {
+        const ms = new Date(r.clockOutAt).getTime() - new Date(r.clockInAt).getTime();
+        if (ms > 0) closedHoursByDay.set(r.date, (closedHoursByDay.get(r.date) ?? 0) + ms / 3_600_000);
+      } else {
+        hasOpenShiftByDay.set(r.date, true);
+      }
+    }
+    const halfDayMaxHours = settings.halfDayMaxHours ?? 0;
+    let fullDays = 0;
+    let halfDays = 0;
+    for (const [date, hours] of closedHoursByDay) {
+      if (hours <= 0) continue;
+      // วันหยุดร้านที่ยังกะค้าง = ไม่คิดเงิน (จัดการด้านล่าง) แต่ถ้าปิดกะครบก็จ่ายตามจริง
+      if (halfDayMaxHours > 0 && hours <= halfDayMaxHours) halfDays += 1;
+      else fullDays += 1;
+      void date;
+    }
+    // วันหยุดที่ "เข้างานแต่ไม่ออกงาน" ไม่นำมาคิดเงินเดือน และไม่นับเป็นขาดงาน (เพราะเป็นวันหยุด)
+    let unpaidHolidayDays = 0;
+    for (const date of hasOpenShiftByDay.keys()) {
+      if (holidayDateSet.has(date) && !closedHoursByDay.has(date)) unpaidHolidayDays += 1;
+    }
+    const payableDays = round2(fullDays + 0.5 * halfDays);
+
+    // ไม่มี record เลย (เช่นข้อมูลสรุปมาจากที่อื่น) ให้ใช้จำนวนวันดิบตามเดิม —
+    // การหักครึ่งวัน/ตัดวันหยุดที่กะค้าง ทำได้ก็ต่อเมื่อมี record ให้ดูจริง
     const basePay = summary
-      ? computeBasePay(profile, summary)
+      ? computeBasePay(profile, summary, userRecords.length > 0 ? payableDays : undefined)
       : profile && profile.payType === "monthly"
         ? round2(profile.monthlySalary)
         : 0;
@@ -246,11 +295,17 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     // --- Auto absent: scheduled working days (per profile) with no record, up to today ---
     let absentDays = 0;
     let perAbsentDay = 0;
+    if (profile) {
+      // คิดค่าต่อวันไว้เสมอ — ใช้ทั้งกับวันขาดและกับการหักครึ่งวัน
+      perAbsentDay = absentPenaltyPerDay(
+        profile,
+        settings,
+        scheduledDaysInPeriod(periodStart, periodEnd, profile.workingDays),
+      );
+    }
     if (profile && profile.workingDays.length > 0 && periodStart <= absentScanEnd) {
       // Divisor spans the whole period even though absences are only scanned up to today —
       // a mid-period payroll preview must not inflate what each missed day costs.
-      const scheduledDays = scheduledDaysInPeriod(periodStart, periodEnd, profile.workingDays);
-      perAbsentDay = absentPenaltyPerDay(profile, settings, scheduledDays);
       // A shift counts as worked only once it is closed. Clocking in and never clocking out
       // breaks the rule the employee is responsible for, so payroll scores it as absence —
       // except for today, where the shift may still legitimately be open.
@@ -270,6 +325,10 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
       }
     }
     const absentPenalty = round2(absentDays * perAbsentDay);
+    // รายเดือน/รายวันที่มีค่าปรับต่อวัน: ครึ่งวันที่ไม่ได้ทำ ถูกหักครึ่งหนึ่งของค่าวันนั้น
+    // (รายวันไม่ต้องหักซ้ำ เพราะ basePay คูณด้วย payableDays ที่ลดครึ่งไปแล้ว)
+    const halfDayDeduction =
+      profile && profile.payType === "monthly" ? round2(0.5 * halfDays * perAbsentDay) : 0;
 
     // --- Manual adjustments ---
     let bonusTotal = 0;
@@ -293,9 +352,16 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
       latePenalty,
       absentDays,
       absentPenalty,
+      fullDays,
+      halfDays,
+      payableDays,
+      halfDayDeduction,
+      unpaidHolidayDays,
       bonusTotal,
       deductionTotal,
-      netPay: round2(basePay + otPay + bonusTotal - latePenalty - absentPenalty - deductionTotal),
+      netPay: round2(
+        basePay + otPay + bonusTotal - latePenalty - absentPenalty - halfDayDeduction - deductionTotal,
+      ),
       adjustments: userAdj.sort((a, b) => b.date.localeCompare(a.date)),
       hasProfile: !!profile,
     });

@@ -1,0 +1,15 @@
+﻿StoreOS — ตรวจชุดรู้จำเสียงสำหรับ Voice Standby
+
+Windows : Microsoft Windows 11 Home Single Language build 26200 (64-bit)
+recognizer  : พบ 4 ตัว
+              - MS-1033-80-DESK [en-US]
+              - MS-1036-80-DESK [fr-FR]
+              - MS-2057-80-DESK [en-GB]
+              - MS-3082-80-DESK [es-ES]
+capability  : Language.Speech~~~en-US~0.0.1.0 = Unavailable
+
+OK: เครื่องนี้มี recognizer en-US อยู่แล้ว — Voice Standby ผ่านเงื่อนไขข้อนี้
+WebView2    : 152.0.4191.62
+
+----- JSON (แนบเป็นหลักฐาน W0) -----
+{"checkedAt":"2026-09-06T00:26:39.4115748+07:00","windows":"Microsoft Windows 11 Home Single Language 26200 64-bit","culture":"en-US","hasRecognizer":true,"recognizers":[{"id":"MS-1033-80-DESK","name":"MS-1033-80-DESK","culture":"en-US"},{"id":"MS-1036-80-DESK","name":"MS-1036-80-DESK","culture":"fr-FR"},{"id":"MS-2057-80-DESK","name":"MS-2057-80-DESK","culture":"en-GB"},{"id":"MS-3082-80-DESK","name":"MS-3082-80-DESK","culture":"es-ES"}],"capabilityState":"Unavailable","webview2Version":"152.0.4191.62","installAttempted":false,"installResult":"skipped","w0Gate1Pass":true}

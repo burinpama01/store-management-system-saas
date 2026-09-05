@@ -32,6 +32,8 @@ export interface StoreHrSettings {
   latePenaltyPerMinute: number;
   latePenaltyMaxPerDay: number;
   absentPenaltyPerDay: number;
+  /** วันที่ทำงานจริง ≤ ชั่วโมงนี้ = ครึ่งวัน (จ่ายครึ่งเดียว); 0 = ปิดการคิดครึ่งวัน */
+  halfDayMaxHours: number;
   backdatedRightsPerMonth: number;
   /** Weekdays the store is open (0=Sun .. 6=Sat). Default for the attendance calendar. */
   workingDays: number[];
@@ -46,6 +48,7 @@ export const DEFAULT_HR_SETTINGS: Omit<StoreHrSettings, "storeId" | "organizatio
   latePenaltyPerMinute: 0,
   latePenaltyMaxPerDay: 0,
   absentPenaltyPerDay: 0,
+  halfDayMaxHours: 0,
   backdatedRightsPerMonth: 3,
   workingDays: [0, 1, 2, 3, 4, 5, 6],
 };

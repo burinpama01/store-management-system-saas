@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StoreOS — Windows Voice Standby W0 Spike Evidence v1</title>
+<style>
+:root{--ink:#101a2b;--muted:#5d6b82;--paper:#fff;--line:#dbe4f0;--brand:#1b5262;--green:#147454;--amber:#936000;--red:#b53e38;--soft:#f7fafd}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(135deg,#eef4fa,#f6f9f7 55%,#eef2f8);color:var(--ink);font:16px/1.65 "Noto Sans Thai","Leelawadee UI",Tahoma,Arial,sans-serif}
+main{width:min(1080px,calc(100% - 26px));margin:20px auto 70px}
+header,section{border:1px solid var(--line);border-radius:18px;background:var(--paper);box-shadow:0 14px 36px rgba(20,35,60,.07)}
+header{padding:clamp(28px,5vw,54px);color:#fff;background:linear-gradient(135deg,#13202f,#1b5262 60%,#147454)}
+section{padding:clamp(18px,3.2vw,34px);margin-top:14px}
+h1{font-size:clamp(30px,5vw,54px);line-height:1.06;margin:10px 0}
+h2{font-size:clamp(21px,2.6vw,30px);margin:0 0 14px}
+h3{margin:0 0 6px}
+.tag{display:inline-flex;padding:5px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.12);font-weight:800;font-size:13px}
+.pill{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.pill.green{background:#e8f7f0;color:var(--green)}
+.pill.amber{background:#fdf4e3;color:var(--amber)}
+.pill.red{background:#fdeeed;color:var(--red)}
+.pill.grey{background:#eef1f6;color:var(--muted)}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px}
+th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:800}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.card{border:1px solid var(--line);border-radius:14px;padding:15px;background:var(--soft)}
+code{background:#eef1f6;padding:1px 6px;border-radius:6px;font-size:14px}
+.note{border-left:4px solid var(--amber);background:#fdf9f0;padding:14px 16px;border-radius:0 12px 12px 0;margin-top:12px}
+.stop{border-left:4px solid var(--red);background:#fdf1f0;padding:14px 16px;border-radius:0 12px 12px 0;margin-top:12px}
+.ok{border-left:4px solid var(--green);background:#f0f9f5;padding:14px 16px;border-radius:0 12px 12px 0;margin-top:12px}
+ul{margin:6px 0 0;padding-left:20px}
+small{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="tag">Evidence · ไม่ใช่แผนใหม่</span>
+  <h1>Windows Voice Standby<br>W0 Spike Evidence v1</h1>
+  <p style="max-width:70ch;margin:0;opacity:.92">
+    เอกสารนี้บันทึกผลการวัดจริงของ Task 9 (W0 spike) ตาม
+    “Windows Voice Standby and Print Hub Implementation Plan v3” — วัดเท่าที่วัดได้บนเครื่องพัฒนา
+    และระบุอย่างชัดเจนว่าอะไรยังปิดไม่ได้เพราะขาดเครื่อง/ฮาร์ดแวร์/ข้อมูลหน้าร้าน
+    <br><small style="color:#cfe3ea">วันที่วัด 6 กันยายน 2026 · ไม่มีการสร้างฟีเจอร์ production ในรอบนี้</small>
+  </p>
+</header>
+
+<section>
+  <h2>สรุปหนึ่งย่อหน้า</h2>
+  <p>
+    เงื่อนไขข้อแรกของ W0 คือ “เครื่องต้องมีชุดรู้จำเสียงที่ใช้ได้จริง” —
+    <strong>ผ่านบนเครื่องพัฒนา 1 เครื่อง</strong> (มี recognizer <code>en-US</code> + WebView2 152.0.4191.62)
+    แต่แผนกำหนดให้เก็บอย่างน้อย 3 เครื่องในตลาดไทย จึงยัง <strong>ปิด gate ไม่ได้</strong>
+    ส่วนข้ออื่นของ W0 (mic handoff 100 รอบ, false wake, CPU, device-busy, user-activation)
+    ต้องใช้ไมโครโฟนจริงและ native wake host ซึ่ง<strong>ยังไม่มีในรีโป</strong> จึงยังวัดไม่ได้
+    และตาม Rollout Order ของแผน v3 นั้น Phase 6 (Voice W0) จะเริ่มได้ก็ต่อเมื่อ
+    Print Hub ผ่าน pilot 21 วันก่อน ซึ่ง<strong>ยังไม่เริ่มนับ</strong>
+  </p>
+  <div class="stop">
+    <strong>สถานะ Task 9 = ยังไม่เริ่มได้ตามกติกาของแผนเอง</strong> — entry gate (Phase 5 pilot) ยังไม่ผ่าน
+    คำแนะนำ: คง push-to-talk ต่อไป และอย่าเพิ่งลงแรงกับ W1–W12
+  </div>
+</section>
+
+<section>
+  <h2>สิ่งที่วัดได้จริงในรอบนี้</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>recognizer (System.Speech)</h3>
+      <p><span class="pill green">พบ 4 ตัว</span></p>
+      <p><small>MS-1033-80-DESK (en-US), MS-2057-80-DESK (en-GB), MS-1036-80-DESK (fr-FR), MS-3082-80-DESK (es-ES)</small></p>
+    </div>
+    <div class="card">
+      <h3>OneCore / WinRT</h3>
+      <p><span class="pill amber">en-US, en-GB เท่านั้น</span></p>
+      <p><small>SupportedTopicLanguages = en-GB, en-US · SystemSpeechLanguage = en-US</small></p>
+    </div>
+    <div class="card">
+      <h3>ภาษาไทยบนเครื่อง</h3>
+      <p><span class="pill red">ไม่มี th-TH</span></p>
+      <p><small>ไม่มีทั้ง desktop recognizer และ OneCore — ตรงกับที่แผนสมมติไว้ว่า wake word ต้องเป็นภาษาอังกฤษ (“Hey StoreOS”) ส่วนคำสั่งภาษาไทยยังใช้ Web Speech ในเบราว์เซอร์</small></p>
+    </div>
+    <div class="card">
+      <h3>WebView2 runtime</h3>
+      <p><span class="pill green">152.0.4191.62</span></p>
+      <p><small>Launcher (WPF .NET 8) ใช้แสดง POS ได้</small></p>
+    </div>
+  </div>
+  <p style="margin-top:14px"><strong>หลักฐาน:</strong>
+    <code>artifacts/voice-standby-w0/w0-recognizer-probe-devbox.json</code> และ
+    <code>artifacts/voice-standby-w0/w0-recognizer-probe-devbox.log</code>
+    (ผลจาก <code>scripts/windows-voice/install-en-us-recognizer.ps1</code> โหมด probe อ่านอย่างเดียว)
+  </p>
+  <div class="note">
+    <code>Get-WindowsCapability</code> อ่านไม่ได้เพราะต้องสิทธิ์ Administrator — ค่า capabilityState จึงเป็น
+    “Unavailable” ซึ่งหมายถึง “อ่านไม่ได้” ไม่ใช่ “ไม่มี” ให้รันซ้ำแบบ Administrator บนเครื่องหน้าร้านตอนเก็บหลักฐานจริง
+  </div>
+</section>
+
+<section>
+  <h2>เช็กลิสต์ W0 ตามแผน v3 Task 9</h2>
+  <table>
+    <tr><th style="width:30%">เกณฑ์</th><th style="width:16%">สถานะ</th><th>เหตุผล / สิ่งที่ต้องมี</th></tr>
+    <tr>
+      <td>inventory recognizer บนเครื่องไทยอย่างน้อย 3 รุ่น</td>
+      <td><span class="pill amber">1 / 3</span></td>
+      <td>เก็บได้เฉพาะเครื่องพัฒนา (Windows 11 Home SL build 26200) ต้องรัน probe เดิมบนเครื่อง POS หน้าร้านอีกอย่างน้อย 2 รุ่น</td>
+    </tr>
+    <tr>
+      <td>mic handoff 100 รอบกับ VoiceCommandButton</td>
+      <td><span class="pill red">วัดไม่ได้</span></td>
+      <td>ต้องมี native wake host ที่ปล่อยไมค์แล้วรอ <code>AudioState=Stopped</code> ก่อนส่ง <code>wake.detected</code> — ยังไม่มีในรีโป (Launcher ปัจจุบันไม่มีโค้ด standby เลย) และต้องมีไมโครโฟนจริง</td>
+    </tr>
+    <tr>
+      <td>contract <code>command.sessionStarted / sessionExtended / sessionEnded</code></td>
+      <td><span class="pill grey">ยังไม่ทำ</span></td>
+      <td>เป็นสัญญาสำหรับ harness ของ spike ไม่ควรเขียนลง production ก่อน entry gate ผ่าน</td>
+    </tr>
+    <tr>
+      <td>watchdog &gt; maximum web listening window + fallback push-to-talk</td>
+      <td><span class="pill grey">ยังไม่ทำ</span></td>
+      <td>ต้องวัดค่า listening window จริงก่อน — เกี่ยวโยงกับข้อมูลเดิมที่วัดได้ 1.8–3.8 วินาที (timeout จริงตั้ง 6 วินาที)</td>
+    </tr>
+    <tr>
+      <td>false wake / CPU / device-busy / user-activation</td>
+      <td><span class="pill red">วัดไม่ได้</span></td>
+      <td>ต้องมี wake engine ทำงานจริงในสภาพเสียงร้าน 65–75 dBA ตามเกณฑ์แผน v1</td>
+    </tr>
+    <tr>
+      <td>business case: เหตุการณ์ “มือไม่ว่าง” ต่อกะ จากร้านนำร่อง 3 ร้าน</td>
+      <td><span class="pill red">ไม่มีข้อมูล</span></td>
+      <td>Voice AI Phase 1 ปิด flag อยู่ทุกร้าน จึงยังไม่มีการใช้งานจริงให้เก็บสถิติ</td>
+    </tr>
+  </table>
+</section>
+
+<section>
+  <h2>Entry gate ที่ยังไม่ผ่าน (สำคัญกว่าตัว spike)</h2>
+  <p>Rollout Order ของแผน v3 เขียนไว้ชัดว่า <em>“Phase 6 — Voice W0 เฉพาะเมื่อ Print Hub gates ผ่านและ business case รองรับ”</em></p>
+  <table>
+    <tr><th style="width:22%">Phase</th><th style="width:16%">สถานะ</th><th>หมายเหตุ</th></tr>
+    <tr><td>1 — Queue recovery X1</td><td><span class="pill green">ทำแล้ว</span></td><td>migration <code>20260904000004</code></td></tr>
+    <tr><td>2 — USB identity + selection v3</td><td><span class="pill green">ทำแล้ว</span></td><td>migration <code>20260904000005</code>, commit <code>b65db19</code>, <code>47cba5c</code></td></tr>
+    <tr><td>3 — Agent health / single instance</td><td><span class="pill green">ทำแล้ว</span></td><td>token รายเครื่อง <code>20260905000008</code></td></tr>
+    <tr><td>4 — Launcher readiness</td><td><span class="pill green">ทำแล้ว</span></td><td>deploy prod 5 ก.ย. 2026</td></tr>
+    <tr><td>5 — Pilot Print Hub 1→3 เครื่อง อย่างน้อย 21 วัน</td><td><span class="pill red">ยังไม่เริ่ม</span></td><td>ยังไม่เคยติดตั้งบนเครื่องร้านจริงแม้แต่เครื่องเดียว</td></tr>
+    <tr><td>6 — Voice W0</td><td><span class="pill red">ถูกบล็อก</span></td><td>รอ Phase 5</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>คำแนะนำ</h2>
+  <div class="ok">
+    <strong>1. คง push-to-talk เป็นทางเดียวไปก่อน</strong> — ตรงกับเงื่อนไขในแผนเองที่ว่า “ถ้าไม่ผ่านให้คง push-to-talk”
+  </div>
+  <div class="note">
+    <strong>2. งานที่ให้ผลจริงกว่าคือเปิด Phase 5</strong> — เอา Print Hub + Launcher ไปติดตั้งบนเครื่องร้านจริง 1 เครื่อง
+    แล้วเริ่มนับ 21 วัน พร้อมกับเปิด flag <code>voice_ai_fallback_enabled</code> ให้ร้านนำร่อง
+    เพื่อให้มีข้อมูล business case ของ W0 ไปด้วยในตัว
+  </div>
+  <div class="note">
+    <strong>3. เมื่อไปหน้าร้าน ให้รัน probe เดิมทุกเครื่อง</strong>
+    <code>powershell -ExecutionPolicy Bypass -File scripts\windows-voice\install-en-us-recognizer.ps1</code>
+    (แบบ Administrator เพื่อให้อ่าน capability ได้) แล้วเก็บ JSON ลง
+    <code>artifacts/voice-standby-w0/</code> ครบ 3 เครื่องจึงจะปิดเกณฑ์ข้อแรกได้
+  </div>
+</section>
+
+<section>
+  <h2>เอกสารที่อ้างอิง</h2>
+  <ul>
+    <li>Plan/Windows Voice Standby and Print Hub Implementation Plan v3.html — Task 9, Test Matrix, Rollout Order</li>
+    <li>Plan/Windows Voice Standby Implementation Plan v1.html — W0 และเกณฑ์ wake recall / CPU / handoff</li>
+    <li>Plan/Windows Voice Standby and Print Hub Plan Review v1.html</li>
+    <li>Design/Windows Voice Standby Design System v1.html</li>
+    <li>scripts/windows-voice/install-en-us-recognizer.ps1</li>
+  </ul>
+</section>
+</main>
+</body>
+</html>

@@ -49,6 +49,7 @@ function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
     latePenaltyPerMinute: row.late_penalty_per_minute,
     latePenaltyMaxPerDay: row.late_penalty_max_per_day,
     absentPenaltyPerDay: row.absent_penalty_per_day,
+    halfDayMaxHours: row.half_day_max_hours ?? 0,
     backdatedRightsPerMonth: row.backdated_rights_per_month,
     workingDays: row.working_days ?? [0, 1, 2, 3, 4, 5, 6],
     createdAt: row.created_at,
@@ -155,6 +156,7 @@ export interface UpsertHrSettingsInput {
   latePenaltyPerMinute: number;
   latePenaltyMaxPerDay: number;
   absentPenaltyPerDay: number;
+  halfDayMaxHours: number;
   backdatedRightsPerMonth: number;
 }
 
@@ -170,6 +172,7 @@ export async function upsertStoreHrSettings(input: UpsertHrSettingsInput) {
       late_penalty_per_minute: input.latePenaltyPerMinute,
       late_penalty_max_per_day: input.latePenaltyMaxPerDay,
       absent_penalty_per_day: input.absentPenaltyPerDay,
+      half_day_max_hours: input.halfDayMaxHours,
       backdated_rights_per_month: input.backdatedRightsPerMonth,
       updated_at: new Date().toISOString(),
     },

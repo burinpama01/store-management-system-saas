@@ -13,7 +13,7 @@ import {
 } from "@/modules/attendance/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
-import { computeDayStatuses } from "@/modules/attendance/calendar";
+import { computeDayStatuses, type DayStatus } from "@/modules/attendance/calendar";
 import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser, listPayrollAdjustments } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { listBranchStores } from "@/modules/stores/repository";
@@ -85,6 +85,7 @@ export default async function AttendancePage({
     },
     holidays: new Set(holidays.map((h) => h.date)),
     leaveDates: new Set(myLeaveDates),
+    halfDayMaxHours: hrSettings.halfDayMaxHours,
   });
   const dayStatus = Object.fromEntries(dayStatusMap);
   const holidayDates = holidays.map((h) => h.date);
@@ -100,6 +101,8 @@ export default async function AttendancePage({
   let leaveAdjustments: PayrollAdjustment[] = [];
   let branchStores: { id: string; name: string }[] = [];
   let branchFilter = ctx.storeId;
+  // ปฏิทินทีม: สถานะรายวันของพนักงานแต่ละคน (ครบ/สาย/ครึ่งวัน/ขาด/ลา/วันหยุด)
+  let teamDayStatus: Record<string, Record<string, DayStatus>> = {};
 
   if (canManage) {
     const params = await searchParams;
@@ -144,6 +147,46 @@ export default async function AttendancePage({
     members = (membersRes.data ?? [])
       .filter((m) => m.role !== "super_admin")
       .map((m) => ({ userId: m.userId, name: m.email }));
+
+    // สถานะรายวันต่อคนสำหรับปฏิทินทีม — คิดเฉพาะเดือนที่ปฏิทินแสดง และเฉพาะช่วงวันที่
+    // ที่โหลด record มาจริง (วันนอกช่วงต้องไม่ถูกมาร์กว่าขาดงาน)
+    const calendarMonth = dateFrom.slice(0, 7);
+    const [cy, cm] = calendarMonth.split("-").map(Number);
+    const calMonthStart = `${calendarMonth}-01`;
+    const calMonthEnd = `${calendarMonth}-${String(new Date(Date.UTC(cy, cm, 0)).getUTCDate()).padStart(2, "0")}`;
+    const calHolidaysRes = await listStoreHolidays(ctx.storeId, calMonthStart, calMonthEnd);
+    const calHolidays = new Set((calHolidaysRes.data ?? []).map((h) => h.date));
+    const profiles = profilesRes.data ?? [];
+    const scanFrom = dateFrom > calMonthStart ? dateFrom : calMonthStart;
+    const scanTo = dateTo < today ? dateTo : today;
+
+    const statusByDate: Record<string, Record<string, DayStatus>> = {};
+    for (const member of members) {
+      const profile = profiles.find((p) => p.userId === member.userId) ?? null;
+      const memberStatuses = computeDayStatuses({
+        month: calendarMonth,
+        today,
+        timezone: ctx.storeTimezone,
+        records: (records ?? []).filter((r) => r.userId === member.userId),
+        profile: {
+          expectedStartTime: profile?.expectedStartTime,
+          lateGraceMinutes: profile?.lateGraceMinutes ?? 0,
+          workingDays: profile?.workingDays?.length ? profile.workingDays : storeWorkingDays,
+        },
+        holidays: calHolidays,
+        leaveDates: new Set(
+          leaveAdjustments.filter((a) => a.userId === member.userId).map((a) => a.date),
+        ),
+        halfDayMaxHours: hrSettings.halfDayMaxHours,
+        scanFrom,
+        scanTo,
+      });
+      for (const [date, status] of memberStatuses) {
+        if (status === "off") continue;
+        (statusByDate[date] ??= {})[member.userId] = status;
+      }
+    }
+    teamDayStatus = statusByDate;
   }
 
   return (
@@ -170,6 +213,7 @@ export default async function AttendancePage({
       holidayDates={holidayDates}
       canManageHolidays={canManageHolidays}
       leaveAdjustments={leaveAdjustments}
+      teamDayStatus={teamDayStatus}
       branchStores={branchStores}
       branchFilter={branchFilter}
     />
