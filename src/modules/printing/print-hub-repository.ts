@@ -1,10 +1,12 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import { mapError, type AppError } from "@/shared/utils/error";
+import { shouldRetargetToUsb } from "@/modules/printing/usb-fallback";
 import {
   generateHubToken,
   hashHubToken,
   PRINT_JOB_LEASE_SECONDS,
+  summarizeHubStatus,
   type PrintJobOutcome,
   verifyHubToken,
 } from "@/modules/printing/print-hub";
@@ -244,6 +246,8 @@ export async function expireOldPrintJobs(storeId: string): Result<{ expired: num
 export interface AckPrintJobResult {
   applied: boolean;
   status: PrintJobOutcome | null;
+  /** งานใหม่ที่ถูกส่งไปออกเครื่องพิมพ์ USB แทน เมื่อเครื่องเดิมติดต่อไม่ได้ */
+  retargetedJobId?: string | null;
 }
 
 /**
@@ -283,7 +287,94 @@ export async function ackPrintJob(input: {
   const { data, error } = await query.select("id");
   if (error) return { data: null, error: mapError(error) };
   const applied = (data ?? []).length > 0;
-  return { data: { applied, status: applied ? input.outcome : null }, error: null };
+
+  let retargetedJobId: string | null = null;
+  if (applied && input.outcome === "failed") {
+    // ติดต่อเครื่องพิมพ์เดิมไม่ได้ แต่มีเครื่อง USB เสียบอยู่ → ส่งใบเดิมออกทางนั้นให้เลย
+    const retarget = await retargetFailedJobToUsb(input.jobId, input.storeId);
+    retargetedJobId = retarget.data ?? null;
+  }
+
+  return {
+    data: { applied, status: applied ? input.outcome : null, retargetedJobId },
+    error: null,
+  };
+}
+
+/**
+ * ย้ายงานที่ล้มเพราะ "ไปไม่ถึงเครื่องพิมพ์" ไปออกที่เครื่อง USB ที่เสียบกับพีซีแคชเชียร์
+ *
+ * คืน job id ใหม่เมื่อย้ายจริง / null เมื่อไม่เข้าเงื่อนไข (ดูกติกาใน usb-fallback.ts)
+ * ทำเงียบ ๆ ไม่ throw — งานพิมพ์ล้มไปแล้วหนึ่งใบ ห้ามทำให้เส้นทาง ack พังตามไปด้วย
+ */
+export async function retargetFailedJobToUsb(
+  jobId: string,
+  storeId: string,
+): Result<string | null> {
+  try {
+    const supabase = await createSupabaseServiceClient();
+
+    const { data: job } = await supabase
+      .from("print_jobs")
+      .select("id, organization_id, target_kind, payload_b64, error, job_kind")
+      .eq("id", jobId)
+      .eq("store_id", storeId)
+      .maybeSingle();
+    if (!job) return { data: null, error: null };
+
+    const { data: store } = await supabase
+      .from("stores")
+      .select("print_hub_last_seen, print_hub_devices")
+      .eq("id", storeId)
+      .maybeSingle();
+
+    const { data: usbPrinter } = await supabase
+      .from("printers")
+      .select("id, hub_usb_name")
+      .eq("store_id", storeId)
+      .eq("type", "usb")
+      .eq("hub_usb_enabled", true)
+      .limit(1)
+      .maybeSingle();
+
+    const devices = Array.isArray(store?.print_hub_devices)
+      ? (store!.print_hub_devices as { isUsb?: boolean; offline?: boolean }[])
+      : null;
+
+    const allowed = shouldRetargetToUsb({
+      failedKind: job.target_kind,
+      errorMessage: job.error,
+      hubOnline: summarizeHubStatus(store?.print_hub_last_seen ?? null).online,
+      devices,
+      hasHubUsbPrinter: Boolean(usbPrinter),
+    });
+    if (!allowed || !usbPrinter) return { data: null, error: null };
+
+    const enqueued = await enqueuePrintJob({
+      organizationId: job.organization_id,
+      storeId,
+      printerId: usbPrinter.id,
+      kind: "usb",
+      // null = ให้ Hub เลือกเครื่องพิมพ์ USB ที่เสียบอยู่เอง
+      device: usbPrinter.hub_usb_name ?? null,
+      payloadB64: job.payload_b64,
+      jobKind: job.job_kind,
+    });
+    if (enqueued.error || !enqueued.data) return { data: null, error: null };
+
+    // ให้คนที่มาไล่ดูทีหลังรู้ว่าใบนี้ไม่ได้หาย แต่ถูกย้ายไปออกอีกเครื่อง
+    await supabase
+      .from("print_jobs")
+      .update({
+        error: `${job.error ?? "พิมพ์ไม่สำเร็จ"} — ส่งใบนี้ออกที่เครื่องพิมพ์ USB ที่เสียบอยู่แทนแล้ว`.slice(0, 500),
+      })
+      .eq("id", jobId)
+      .eq("store_id", storeId);
+
+    return { data: enqueued.data.id, error: null };
+  } catch {
+    return { data: null, error: null };
+  }
 }
 
 /**
