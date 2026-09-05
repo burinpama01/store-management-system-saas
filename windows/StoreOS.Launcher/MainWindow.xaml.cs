@@ -1,6 +1,7 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
 using StoreOS.Launcher.Services;
 
 namespace StoreOS.Launcher;
@@ -15,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.0";
+    private const string LauncherVersion = "0.1.1";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -24,6 +25,8 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
     private DateTimeOffset _lastStartAttempt = DateTimeOffset.MinValue;
     private ReadinessState? _lastReportedState;
+    /// <summary>ISSUE-002 — หน้าต่างลูกที่ Launcher เป็นเจ้าของ ต้องปิดตามตอนปิด Launcher</summary>
+    private readonly List<Window> _childWindows = new();
 
     public MainWindow()
     {
@@ -34,6 +37,7 @@ public partial class MainWindow : Window
             LauncherLogShipper.ReadHubCredentials(HubConfigPath()),
             LauncherVersion);
         Loaded += OnLoaded;
+        Closing += OnClosing;
         Closed += async (_, _) => await _logs.DisposeAsync();
     }
 
@@ -49,6 +53,9 @@ public partial class MainWindow : Window
         // production kiosk profile: ปิดเมนูขวา/DevTools ตามแผน (v1 W1)
         Web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = settings.AllowDevTools;
         Web.CoreWebView2.Settings.AreDevToolsEnabled = settings.AllowDevTools;
+        // ISSUE-002 — ต้อง subscribe หลัง EnsureCoreWebView2Async เท่านั้น (ก่อนหน้านั้น
+        // CoreWebView2 ยังเป็น null) และต้องก่อนตั้ง Source เพื่อไม่พลาด popup แรก
+        Web.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
         Web.Source = new Uri(settings.PosUrl);
 
         _logs.Enqueue("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
@@ -65,6 +72,37 @@ public partial class MainWindow : Window
             await _logs.FlushAsync();
         };
         _timer.Start();
+    }
+
+    /// <summary>
+    /// ISSUE-002 — รับเฉพาะจอลูกค้าของเราเองมาเป็นหน้าต่างลูก
+    /// URL อื่นไม่ claim (e.Handled = false) เพื่อไม่ไปปิดหน้าต่างของเว็บอื่นผิดตัว
+    /// </summary>
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        if (!CustomerDisplayNavigation.TryResolve(Web.Source, e.Uri, out _)) return;
+
+        var deferral = e.GetDeferral();
+        var child = new CustomerDisplayWindow(Web.CoreWebView2.Environment, e, deferral)
+        {
+            Owner = this,
+        };
+        _childWindows.Add(child);
+        child.Closed += (_, _) => _childWindows.Remove(child);
+        child.Show();
+
+        _logs.Enqueue("info", "customer_display_opened", "เปิดจอลูกค้าเป็นหน้าต่างลูกของ Launcher");
+    }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // ปิดจาก snapshot เพราะ child.Closed จะแก้ list ระหว่างวน
+        foreach (var child in _childWindows.ToArray())
+        {
+            try { child.Close(); }
+            catch (InvalidOperationException) { /* ปิดไปแล้ว — ไม่ใช่ปัญหา */ }
+        }
+        _childWindows.Clear();
     }
 
     private void Refresh()
