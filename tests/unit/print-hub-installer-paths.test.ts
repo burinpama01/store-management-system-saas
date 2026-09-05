@@ -83,6 +83,29 @@ describe("ตัวติดตั้ง Print Hub — เส้นทางไ�
   });
 });
 
+describe("สิทธิ์ Administrator", () => {
+  const launcherCmd = readFileSync(
+    join(process.cwd(), "scripts/windows-launcher/install.cmd"),
+    "utf8",
+  );
+
+  it("ตัวที่ผู้ใช้ดับเบิลคลิกต้องขอสิทธิ์ตั้งแต่ครั้งแรก", () => {
+    // เครื่องร้านติดตั้งไปเกือบจบแล้วเจอ "Access is denied" ตอนลงทะเบียน Scheduled Task
+    // เพราะ install.cmd ของ launcher ไม่เคยขอสิทธิ์เลย (ของ print-hub ขออยู่แล้ว)
+    expect(launcherCmd).toContain("net session >nul 2>nul");
+    expect(launcherCmd).toContain("-Verb RunAs");
+    // ต้องขอ "ก่อน" เรียกตัวติดตั้งจริง ไม่ใช่หลัง
+    expect(launcherCmd.indexOf("-Verb RunAs")).toBeLessThan(launcherCmd.indexOf("install-launcher.ps1"));
+  });
+
+  it("ถ้าถูกเรียกตรงโดยไม่มีสิทธิ์ ต้องบอกทางออก ไม่ใช่ CimException ดิบ", () => {
+    expect(installer).toContain("IsInRole");
+    expect(installer).toContain("Run as administrator");
+    // ต้องเช็คก่อนแตะ Scheduled Task
+    expect(installer.indexOf("IsInRole")).toBeLessThan(installer.indexOf("Unregister-ScheduledTask"));
+  });
+});
+
 describe("แพ็กเกจที่ส่งให้ร้าน", () => {
   it("วาง agent ไว้ในโฟลเดอร์เดียวกับตัวติดตั้ง (layout ที่ทดสอบไว้)", () => {
     // ถ้าบรรทัดนี้เปลี่ยน layout ต้องกลับมาแก้ตัวติดตั้งด้วย

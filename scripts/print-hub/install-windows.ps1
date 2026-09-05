@@ -207,6 +207,19 @@ try {
   Write-Host "ข้ามการปิด agent ตัวเก่า (ตรวจ process ไม่ได้)" -ForegroundColor DarkGray
 }
 
+# ขั้นตอนนี้ต้องใช้สิทธิ์ Administrator — บอกให้ชัดตั้งแต่ก่อนลงมือ
+# ไม่ใช่ปล่อยให้ล้มด้วย CimException "Access is denied" ที่ผู้ใช้ตีความไม่ออก
+$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+  ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $IsAdmin) {
+  Write-Host ""
+  Write-Warning "ขั้นตอนตั้งค่าให้เปิดเองอัตโนมัติต้องใช้สิทธิ์ผู้ดูแลเครื่อง (Administrator)"
+  Write-Host "  ตัวช่วยพิมพ์และค่าตั้งค่าถูกติดตั้งไว้เรียบร้อยแล้วที่ $InstallRoot" -ForegroundColor Green
+  Write-Host "  วิธีทำต่อ: คลิกขวาที่ install.cmd แล้วเลือก 'Run as administrator'" -ForegroundColor Cyan
+  Write-Host "  (หรือเปิดใช้เองชั่วคราวด้วยการดับเบิลคลิก print-hub.cmd)" -ForegroundColor DarkGray
+  exit 1
+}
+
 # (Re)register the scheduled task.
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
