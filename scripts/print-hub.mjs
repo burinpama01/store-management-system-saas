@@ -8,7 +8,7 @@
 //     "storeId": "<uuid>", "hubToken": "<token>", "pollIntervalMs": 2500 }
 
 import net from "node:net";
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 // เวอร์ชันของ agent ตัวนี้ + protocol ที่คุยกับเซิร์ฟเวอร์ (แผน v3 Task 3).
 // ส่งไปกับทุก poll เพื่อให้เซิร์ฟเวอร์รู้ว่าร้านไหนยังรัน Hub รุ่นเก่า -- เดิมไม่มีเลย
 // จึงไล่ปัญหา "ร้านนี้พิมพ์ไม่ออก" ไม่ได้ว่าเป็นเพราะ agent เก่าหรือของอย่างอื่น
-export const AGENT_VERSION = "1.1.0";
+export const AGENT_VERSION = "1.2.0";
 export const PROTOCOL_VERSION = 1;
 
 const MAX_PRINT_JOB_BYTES = 256 * 1024;
@@ -862,9 +862,33 @@ export function createHubRuntimeState(options = {}) {
   };
 }
 
+export function hubConfigPath() {
+  return join(dirname(fileURLToPath(import.meta.url)), "print-hub.config.json");
+}
+
+/**
+ * ลายเซ็นของไฟล์ config (เวลาแก้ + ขนาด) — ใช้รู้ว่า Launcher เขียนทับหรือยัง
+ * ไม่มีไฟล์ = null ซึ่งต่างจาก "มีไฟล์แต่ยังไม่เปลี่ยน" อย่างชัดเจน
+ */
+export function configFileStamp(path = hubConfigPath()) {
+  try {
+    const stat = statSync(path);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
+}
+
+/** credential เปลี่ยนจริงไหม (pollIntervalMs เปลี่ยนไม่ต้องประกาศอะไร) */
+export function hasCredentialChanged(previous, next) {
+  if (!previous || !next) return false;
+  return previous.hubToken !== next.hubToken
+    || previous.storeId !== next.storeId
+    || previous.serverUrl !== next.serverUrl;
+}
+
 function loadConfig() {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const configPath = join(here, "print-hub.config.json");
+  const configPath = hubConfigPath();
   let fileConfig = {};
   try {
     // Strip a UTF-8 BOM (PowerShell/Notepad may prepend one) before parsing,
@@ -892,7 +916,8 @@ function loadConfig() {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
-  const config = loadConfig();
+  let config = loadConfig();
+  let configStamp = configFileStamp();
 
   // ตัวเดียวต่อเครื่องเท่านั้น: Scheduled Task และ Launcher อาจสั่งเปิดพร้อมกันได้
   const runtime = createHubRuntimeState();
@@ -912,6 +937,25 @@ async function main() {
   process.on("SIGTERM", () => { running = false; });
 
   while (running) {
+    // Launcher เขียน config ใหม่ตอนขอ token ให้เครื่องนี้ แล้วสั่ง restart task ต่อ
+    // แต่การ restart อาจไม่ผ่าน (สิทธิ์/นโยบายเครื่อง) — ถ้าเราไม่อ่านไฟล์ซ้ำเลย
+    // เครื่องจะค้าง 401 ตลอดไปทั้งที่ token ที่ถูกต้องนอนอยู่ในไฟล์ข้าง ๆ
+    const stamp = configFileStamp();
+    if (stamp !== null && stamp !== configStamp) {
+      configStamp = stamp;
+      try {
+        const next = loadConfig();
+        if (hasCredentialChanged(config, next)) {
+          config = next;
+          console.log("พบค่าตั้งค่าใหม่ในไฟล์ — ใช้ token ล่าสุดต่อทันที");
+          runtime.update({ state: "starting", lastErrorCode: null, storeId: config.storeId });
+        }
+      } catch (err) {
+        // ไฟล์กำลังถูกเขียนอยู่/ไม่ครบ — ใช้ค่าเดิมต่อ แล้วลองใหม่รอบหน้า
+        console.error(`อ่านค่าตั้งค่าใหม่ไม่สำเร็จ: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     let waitMs = config.pollIntervalMs;
     try {
       const result = await runPollCycle({

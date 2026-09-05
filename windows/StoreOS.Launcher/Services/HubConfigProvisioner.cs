@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -34,9 +34,18 @@ public static class HubConfigProvisioner
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    /// <summary>ตัวคั่นว่าข้อความจากหน้าเว็บเป็นของ provision ไม่ใช่ของฟีเจอร์อื่น</summary>
+    public const string MessageType = "storeos.hub.provision";
+
     /// <summary>
     /// JavaScript ที่รันในหน้าเว็บของ POS (จึงมี session cookie ติดไปด้วย)
-    /// คืนผลเป็น JSON string เสมอ เพื่อให้ฝั่ง native แยก "เรียกไม่ได้" กับ "server ปฏิเสธ" ออกจากกัน
+    ///
+    /// **ห้ามคืนค่าเป็น Promise** — ExecuteScriptAsync ของ WebView2 ไม่ await promise
+    /// มันคืน "{}" ทันทีตั้งแต่ก่อน fetch จะเสร็จ ผลคือ server ออก token ใหม่ให้ทุกครั้ง
+    /// แต่ Launcher ไม่เคยได้ token นั้นไปเขียนไฟล์เลย เครื่องร้านจึงค้าง 401 ตลอด
+    /// ทั้งที่ log ฝั่ง server ขึ้น rotated=true รัว ๆ (เจอจริง 2026-09-05)
+    ///
+    /// จึงส่งผลกลับผ่าน postMessage แทน แล้วรับที่ WebMessageReceived
     /// </summary>
     public static string BuildProvisionScript(string deviceId, string deviceLabel, string? currentToken)
     {
@@ -46,9 +55,14 @@ public static class HubConfigProvisioner
             deviceLabel,
             currentToken,
         });
-        // ห่อ try/catch ให้ ExecuteScriptAsync ไม่คืน undefined ตอน network ล้ม
+        var type = JsonSerializer.Serialize(MessageType);
         return $$"""
         (async () => {
+          const post = (status, body) => {
+            try {
+              window.chrome.webview.postMessage(JSON.stringify({ type: {{type}}, status, body }));
+            } catch (e) { /* ไม่มีสะพาน = ไม่มีอะไรให้ทำต่อ */ }
+          };
           try {
             const res = await fetch('/api/print/hub/provision', {
               method: 'POST',
@@ -56,13 +70,33 @@ public static class HubConfigProvisioner
               cache: 'no-store',
               body: JSON.stringify({{payload}})
             });
-            const text = await res.text();
-            return JSON.stringify({ status: res.status, body: text });
+            post(res.status, await res.text());
           } catch (e) {
-            return JSON.stringify({ status: 0, body: '' });
+            post(0, '');
           }
-        })()
+        })();
         """;
+    }
+
+    /// <summary>
+    /// ข้อความจากหน้าเว็บเป็นผลของ provision หรือเปล่า
+    /// fail closed: อ่านไม่ออก/ไม่มี type ที่ถูกต้อง = ไม่ใช่ของเรา
+    /// </summary>
+    public static bool IsProvisionMessage(string? messageJson)
+    {
+        if (string.IsNullOrWhiteSpace(messageJson)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(messageJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("type", out var type)
+                && type.ValueKind == JsonValueKind.String
+                && type.GetString() == MessageType;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     public sealed record ProvisionOutcome(bool Rotated, string? ConfigJson, string Reason);
@@ -74,14 +108,26 @@ public static class HubConfigProvisioner
     public static ProvisionOutcome Interpret(string? scriptResult)
     {
         if (string.IsNullOrWhiteSpace(scriptResult)) return new(false, null, "no_result");
+        try
+        {
+            // ค่าที่ถูก quote อีกชั้น (ผลตรงจาก ExecuteScriptAsync) — แกะก่อน
+            var unwrapped = JsonSerializer.Deserialize<string>(scriptResult);
+            return InterpretEnvelope(unwrapped);
+        }
+        catch (JsonException)
+        {
+            return new(false, null, "unreadable");
+        }
+    }
+
+    /// <summary>อ่านซองผลลัพธ์ {status, body} ที่หน้าเว็บส่งมาทาง postMessage</summary>
+    public static ProvisionOutcome InterpretEnvelope(string? envelopeJson)
+    {
+        if (string.IsNullOrWhiteSpace(envelopeJson)) return new(false, null, "no_result");
 
         try
         {
-            // ExecuteScriptAsync คืนค่าเป็น JSON ของ JS value → string ของเราถูก quote อีกชั้น
-            var unwrapped = JsonSerializer.Deserialize<string>(scriptResult);
-            if (string.IsNullOrWhiteSpace(unwrapped)) return new(false, null, "no_result");
-
-            using var envelope = JsonDocument.Parse(unwrapped);
+            using var envelope = JsonDocument.Parse(envelopeJson);
             var status = envelope.RootElement.TryGetProperty("status", out var s) ? s.GetInt32() : 0;
             var body = envelope.RootElement.TryGetProperty("body", out var b) ? b.GetString() : null;
 

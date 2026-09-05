@@ -178,4 +178,55 @@ public class HubConfigProvisionerTests
             JsonSerializer.Serialize(new { status, body = "" }));
         Assert.Equal(expected, HubConfigProvisioner.Interpret(raw).Reason);
     }
+
+    /// <summary>
+    /// เหตุที่เครื่องร้านค้า 401 ทั้งที่ server ขึ้น rotated=true รัว ๆ:
+    /// ExecuteScriptAsync ไม่ await promise มันคืน "{}" ตั้งแต่ก่อน fetch เสร็จ
+    /// สคริปต์จึงต้อง "ส่งผลกลับ" เอง ห้ามหวังพึ่งค่าคืนของ statement สุดท้าย
+    /// </summary>
+    [Fact]
+    public void สคริปต์ต้องส่งผลกลับทาง_postMessage()
+    {
+        var script = HubConfigProvisioner.BuildProvisionScript("dev", "PC", null);
+        Assert.Contains("window.chrome.webview.postMessage", script);
+        Assert.Contains(HubConfigProvisioner.MessageType, script);
+        // ต้องไม่ใช่ expression ที่คืน promise ออกไปให้ ExecuteScriptAsync
+        Assert.DoesNotContain("return JSON.stringify", script);
+        Assert.EndsWith(";", script.TrimEnd());
+    }
+
+    [Fact]
+    public void รับเฉพาะข้อความของ_provision_เท่านั้น()
+    {
+        var ours = JsonSerializer.Serialize(new { type = HubConfigProvisioner.MessageType, status = 200, body = "{}" });
+        Assert.True(HubConfigProvisioner.IsProvisionMessage(ours));
+
+        Assert.False(HubConfigProvisioner.IsProvisionMessage(null));
+        Assert.False(HubConfigProvisioner.IsProvisionMessage("ข้อความธรรมดา"));
+        Assert.False(HubConfigProvisioner.IsProvisionMessage(JsonSerializer.Serialize(new { type = "อื่น", status = 200 })));
+    }
+
+    [Fact]
+    public void ซองจาก_postMessage_อ่านได้โดยไม่ต้องแกะ_quote_ซ้อน()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            ok = true,
+            rotated = true,
+            config = new { serverUrl = "https://example.test", storeId = "s1", hubToken = "t1", pollIntervalMs = 2500 },
+        });
+        var message = JsonSerializer.Serialize(new { type = HubConfigProvisioner.MessageType, status = 200, body });
+
+        var outcome = HubConfigProvisioner.InterpretEnvelope(message);
+
+        Assert.True(outcome.Rotated);
+        Assert.Contains("\"hubToken\":\"t1\"", outcome.ConfigJson);
+    }
+
+    [Fact]
+    public void ผลดิบจาก_ExecuteScriptAsync_ของ_promise_ต้องไม่ถูกตีความว่าสำเร็จ()
+    {
+        // "{}" คือสิ่งที่ WebView2 คืนจริงเมื่อ script เป็น promise
+        Assert.False(HubConfigProvisioner.Interpret("{}").Rotated);
+    }
 }

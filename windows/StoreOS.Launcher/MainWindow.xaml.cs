@@ -16,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.6";
+    private const string LauncherVersion = "0.1.7";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -56,6 +56,8 @@ public partial class MainWindow : Window
         // ISSUE-002 — ต้อง subscribe หลัง EnsureCoreWebView2Async เท่านั้น (ก่อนหน้านั้น
         // CoreWebView2 ยังเป็น null) และต้องก่อนตั้ง Source เพื่อไม่พลาด popup แรก
         Web.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
+        // ผลของ provision กลับมาทางนี้ ไม่ใช่ค่าคืนของ ExecuteScriptAsync (ดู HubConfigProvisioner)
+        Web.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
         Web.Source = new Uri(settings.PosUrl);
 
         _logs.Enqueue("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
@@ -108,38 +110,73 @@ public partial class MainWindow : Window
 
         try
         {
-            var configPath = HubConfigPath();
-            var current = LauncherLogShipper.ReadHubCredentials(configPath);
+            var current = LauncherLogShipper.ReadHubCredentials(HubConfigPath());
             var deviceId = HubConfigProvisioner.DeviceId(ReadMachineGuid(), Environment.MachineName);
             var script = HubConfigProvisioner.BuildProvisionScript(deviceId, Environment.MachineName, current?.HubToken);
-
-            var raw = await Web.CoreWebView2.ExecuteScriptAsync(script);
-            var outcome = HubConfigProvisioner.Interpret(raw);
-
-            if (!outcome.Rotated || outcome.ConfigJson is null)
-            {
-                // already_valid = ปกติที่สุด ไม่ต้องรบกวนใคร
-                // not_signed_in / network_error = ยังไม่ชี้ขาด ปล่อยให้ลองใหม่ตอนโหลดหน้าถัดไป
-                if (IsConclusive(outcome.Reason)) _provisionSettled = true;
-                _logs.Enqueue("info", "hub_provision_skipped", $"ไม่ต้องออก Hub token ใหม่ ({outcome.Reason})");
-                return;
-            }
-
-            _provisionSettled = true;
-            HubConfigProvisioner.WriteConfigAtomic(configPath, outcome.ConfigJson);
-            // config เปลี่ยนแล้ว agent ต้องอ่านใหม่ — restart task ให้เลย ไม่ต้องรอคนไปกด
-            _tasks.Restart();
-            _logs.Enqueue("info", "hub_provision_rotated", "อัปเดต Print Hub config ของเครื่องนี้อัตโนมัติแล้ว");
+            // ยิงอย่างเดียว — ผลลัพธ์รอที่ OnWebMessageReceived
+            await Web.CoreWebView2.ExecuteScriptAsync(script);
         }
         catch (Exception ex)
         {
-            // provision ล้มต้องไม่ทำให้ POS เปิดไม่ได้ — Hub จะยัง 401 เหมือนเดิมเท่านั้น
-            _logs.Enqueue("warn", "hub_provision_failed", $"ขอ Print Hub config อัตโนมัติไม่สำเร็จ: {ex.GetType().Name}");
-        }
-        finally
-        {
             _provisionInFlight = false;
+            RecordProvision("warn", $"ขอ Print Hub config อัตโนมัติไม่สำเร็จ: {ex.GetType().Name}");
         }
+    }
+
+    /// <summary>
+    /// รับผล provision จากหน้าเว็บ — นี่คือจุดเดียวที่ config ถูกเขียนทับ
+    /// รับเฉพาะข้อความจากหน้าเว็บของ StoreOS เอง (host เดียวกับที่ Launcher เปิด)
+    /// </summary>
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        string? message;
+        try
+        {
+            message = e.TryGetWebMessageAsString();
+        }
+        catch (ArgumentException)
+        {
+            return; // ข้อความที่ไม่ใช่ string — ไม่ใช่ของเรา
+        }
+
+        if (!HubConfigProvisioner.IsProvisionMessage(message)) return;
+        if (!IsTrustedSource(e.Source)) return;
+
+        _provisionInFlight = false;
+        var outcome = HubConfigProvisioner.InterpretEnvelope(message);
+
+        if (!outcome.Rotated || outcome.ConfigJson is null)
+        {
+            // already_valid = ปกติที่สุด; not_signed_in / network_error = ยังไม่ชี้ขาด ลองใหม่หน้าถัดไป
+            if (IsConclusive(outcome.Reason)) _provisionSettled = true;
+            RecordProvision("info", $"ไม่ต้องออก Hub token ใหม่ ({outcome.Reason})");
+            return;
+        }
+
+        try
+        {
+            _provisionSettled = true;
+            HubConfigProvisioner.WriteConfigAtomic(HubConfigPath(), outcome.ConfigJson);
+            // config เปลี่ยนแล้ว agent ต้องอ่านใหม่ — สั่ง restart ให้ แต่ถึง restart ไม่ผ่าน
+            // agent รุ่น 1.2.0+ ก็จะเห็นไฟล์เปลี่ยนแล้วโหลดเองในรอบ poll ถัดไป
+            var restarted = _tasks.Restart();
+            RecordProvision("info", restarted
+                ? "อัปเดต Print Hub config ของเครื่องนี้อัตโนมัติแล้ว"
+                : "เขียน Print Hub config ใหม่แล้ว แต่สั่งรีสตาร์ตตัวช่วยพิมพ์ไม่สำเร็จ (agent จะโหลดเองในไม่กี่วินาที)");
+        }
+        catch (Exception ex)
+        {
+            RecordProvision("warn", $"เขียน Print Hub config ไม่สำเร็จ: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>ข้อความต้องมาจากหน้าเว็บของ StoreOS เอง ไม่ใช่ iframe/หน้าอื่นที่หลุดเข้ามา</summary>
+    private bool IsTrustedSource(string? source)
+    {
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) return false;
+        if (Web.Source is not { } current) return false;
+        return uri.Scheme == Uri.UriSchemeHttps
+            && uri.Host.Equals(current.Host, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -148,6 +185,26 @@ public partial class MainWindow : Window
     /// </summary>
     private static bool IsConclusive(string reason) =>
         reason is "already_valid" or "no_permission" or "server_rejected";
+
+    /// <summary>
+    /// log ที่ "อ่านได้จากเครื่องร้าน" — log ที่ส่งขึ้น server ใช้ hub token ซึ่งตอนมีปัญหา
+    /// มักโดน 401 อยู่แล้ว จึงไม่มีวันไปถึง คนหน้างานต้องมีไฟล์เปิดดูเองได้
+    /// ไม่มี token ในไฟล์นี้
+    /// </summary>
+    private void RecordProvision(string level, string message)
+    {
+        _logs.Enqueue(level, "hub_provision", message);
+        try
+        {
+            var path = Path.Combine(Path.GetDirectoryName(HubConfigPath())!, "launcher-provision.log");
+            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}{Environment.NewLine}";
+            File.AppendAllText(path, line);
+        }
+        catch (Exception)
+        {
+            // เขียน log ไม่ได้ต้องไม่ทำให้ POS สะดุด
+        }
+    }
 
     /// <summary>MachineGuid ของ Windows — ใช้เป็นเมล็ดของ device id (ถูก hash ก่อนส่งเสมอ)</summary>
     private static string? ReadMachineGuid()
@@ -241,4 +298,5 @@ public partial class MainWindow : Window
         }
     }
 }
+
 
