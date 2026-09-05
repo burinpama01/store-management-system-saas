@@ -16,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.5";
+    private const string LauncherVersion = "0.1.6";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -78,7 +78,16 @@ public partial class MainWindow : Window
         _timer.Start();
     }
 
-    private bool _provisionAttempted;
+    /// <summary>
+    /// จบเรื่อง provision แล้ว (ได้คำตอบชี้ขาดจาก server) — หยุดถามซ้ำ
+    /// ตั้งเฉพาะตอนได้ผลชี้ขาดเท่านั้น ไม่ใช่ตอน "ลองแล้ว"
+    /// </summary>
+    private bool _provisionSettled;
+    /// <summary>กันยิงซ้อนกันเอง เพราะ NavigationCompleted เป็น async void</summary>
+    private bool _provisionInFlight;
+    /// <summary>เพดานจำนวนครั้ง กันหน้าเว็บที่ redirect รัวทำให้ยิงไม่หยุด</summary>
+    private int _provisionAttempts;
+    private const int MaxProvisionAttempts = 12;
 
     /// <summary>
     /// Print Hub auto-provision — แก้ปัญหา "Hub token rejected (401)" ให้หายเองตอนเปิดโปรแกรม
@@ -89,8 +98,13 @@ public partial class MainWindow : Window
     /// </summary>
     private async void OnNavigationCompletedAsync(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
-        if (_provisionAttempted || !e.IsSuccess) return;
-        _provisionAttempted = true;
+        // navigation แรกคือ "หน้าล็อกอิน" ซึ่งยังไม่มี session — ถ้าเลิกถามตั้งแต่ครั้งนั้น
+        // เครื่องที่ token เพี้ยนจะค้าง 401 ตลอดไป (เครื่องร้านเจอจริง 2026-09-05)
+        // จึงลองใหม่ทุกครั้งที่โหลดหน้าเสร็จ จนกว่าจะได้คำตอบชี้ขาดจาก server
+        if (_provisionSettled || _provisionInFlight || !e.IsSuccess) return;
+        if (_provisionAttempts >= MaxProvisionAttempts) return;
+        _provisionInFlight = true;
+        _provisionAttempts++;
 
         try
         {
@@ -104,11 +118,14 @@ public partial class MainWindow : Window
 
             if (!outcome.Rotated || outcome.ConfigJson is null)
             {
-                // already_valid = ปกติที่สุด ไม่ต้องรบกวนใคร; ที่เหลือคือยังล็อกอินไม่เสร็จ/ไม่มีสิทธิ์
+                // already_valid = ปกติที่สุด ไม่ต้องรบกวนใคร
+                // not_signed_in / network_error = ยังไม่ชี้ขาด ปล่อยให้ลองใหม่ตอนโหลดหน้าถัดไป
+                if (IsConclusive(outcome.Reason)) _provisionSettled = true;
                 _logs.Enqueue("info", "hub_provision_skipped", $"ไม่ต้องออก Hub token ใหม่ ({outcome.Reason})");
                 return;
             }
 
+            _provisionSettled = true;
             HubConfigProvisioner.WriteConfigAtomic(configPath, outcome.ConfigJson);
             // config เปลี่ยนแล้ว agent ต้องอ่านใหม่ — restart task ให้เลย ไม่ต้องรอคนไปกด
             _tasks.Restart();
@@ -119,7 +136,18 @@ public partial class MainWindow : Window
             // provision ล้มต้องไม่ทำให้ POS เปิดไม่ได้ — Hub จะยัง 401 เหมือนเดิมเท่านั้น
             _logs.Enqueue("warn", "hub_provision_failed", $"ขอ Print Hub config อัตโนมัติไม่สำเร็จ: {ex.GetType().Name}");
         }
+        finally
+        {
+            _provisionInFlight = false;
+        }
     }
+
+    /// <summary>
+    /// เหตุผลที่ถือว่า "ถามไปแล้วได้คำตอบ" — ไม่ต้องถามซ้ำ
+    /// ที่ไม่อยู่ในรายการนี้ (ยังไม่ล็อกอิน / เน็ตหลุด / อ่านผลไม่ออก) ต้องลองใหม่
+    /// </summary>
+    private static bool IsConclusive(string reason) =>
+        reason is "already_valid" or "no_permission" or "server_rejected";
 
     /// <summary>MachineGuid ของ Windows — ใช้เป็นเมล็ดของ device id (ถูก hash ก่อนส่งเสมอ)</summary>
     private static string? ReadMachineGuid()
@@ -213,3 +241,4 @@ public partial class MainWindow : Window
         }
     }
 }
+

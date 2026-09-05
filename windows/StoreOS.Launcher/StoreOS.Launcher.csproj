@@ -1,15 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    StoreOS Launcher (แผน v3 Task 8)
+    StoreOS Launcher (เนเธเธ v3 Task 8)
 
-    หน้าที่เดียวในเวอร์ชันนี้: เปิด POS ใน WebView2 และ "ทำให้ Print Hub พร้อมใช้งาน"
-    โดยไม่เป็นเจ้าของ process ของ Hub เอง — Scheduled Task "StoreOSPrintHub" ที่ตัวติดตั้ง
-    สร้างไว้ยังเป็นเจ้าของทางเดียว (แผน v3 §2) Launcher แค่ตรวจสถานะแล้วสั่ง Start-ScheduledTask
-    ห้าม launch `node print-hub.mjs` ตรง ๆ เด็ดขาด เพราะจะได้ Hub สองตัวบนเครื่องเดียว
+    เธซเธเนเธฒเธ—เธตเนเน€เธ”เธตเธขเธงเนเธเน€เธงเธญเธฃเนเธเธฑเธเธเธตเน: เน€เธเธดเธ” POS เนเธ WebView2 เนเธฅเธฐ "เธ—เธณเนเธซเน Print Hub เธเธฃเนเธญเธกเนเธเนเธเธฒเธ"
+    เนเธ”เธขเนเธกเนเน€เธเนเธเน€เธเนเธฒเธเธญเธ process เธเธญเธ Hub เน€เธญเธ โ€” Scheduled Task "StoreOSPrintHub" เธ—เธตเนเธ•เธฑเธงเธ•เธดเธ”เธ•เธฑเนเธ
+    เธชเธฃเนเธฒเธเนเธงเนเธขเธฑเธเน€เธเนเธเน€เธเนเธฒเธเธญเธเธ—เธฒเธเน€เธ”เธตเธขเธง (เนเธเธ v3 ยง2) Launcher เนเธเนเธ•เธฃเธงเธเธชเธ–เธฒเธเธฐเนเธฅเนเธงเธชเธฑเนเธ Start-ScheduledTask
+    เธซเนเธฒเธก launch `node print-hub.mjs` เธ•เธฃเธ เน เน€เธ”เนเธ”เธเธฒเธ” เน€เธเธฃเธฒเธฐเธเธฐเนเธ”เน Hub เธชเธญเธเธ•เธฑเธงเธเธเน€เธเธฃเธทเนเธญเธเน€เธ”เธตเธขเธง
 
-    process เดียวกันนี้จะเป็นที่อยู่ของ Voice Standby host ในอนาคต (แผน v1 W1) แต่ยังไม่ทำ
-    จนกว่า W0 spike จะพิสูจน์เรื่อง wake recognizer ได้
+    process เน€เธ”เธตเธขเธงเธเธฑเธเธเธตเนเธเธฐเน€เธเนเธเธ—เธตเนเธญเธขเธนเนเธเธญเธ Voice Standby host เนเธเธญเธเธฒเธเธ• (เนเธเธ v1 W1) เนเธ•เนเธขเธฑเธเนเธกเนเธ—เธณ
+    เธเธเธเธงเนเธฒ W0 spike เธเธฐเธเธดเธชเธนเธเธเนเน€เธฃเธทเนเธญเธ wake recognizer เนเธ”เน
   -->
 
   <PropertyGroup>
@@ -21,7 +21,7 @@
     <Platforms>x64</Platforms>
     <AssemblyName>StoreOS.Launcher</AssemblyName>
     <RootNamespace>StoreOS.Launcher</RootNamespace>
-    <Version>0.1.5</Version>
+    <Version>0.1.6</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,3 +29,4 @@
   </ItemGroup>
 
 </Project>
+

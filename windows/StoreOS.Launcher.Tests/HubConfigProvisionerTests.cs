@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using StoreOS.Launcher.Services;
 using Xunit;
@@ -163,5 +163,19 @@ public class HubConfigProvisionerTests
         {
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// เครื่องร้าน 2026-09-05: Launcher เปิดมาเจอหน้าล็อกอินก่อนเสมอ
+    /// ผลตอนนั้นคือ not_signed_in ซึ่ง "ห้าม" นับว่าจบ ไม่งั้นล็อกอินเสร็จแล้วไม่มีใครขอ token ใหม่
+    /// </summary>
+    [Theory]
+    [InlineData(401, "not_signed_in")]
+    [InlineData(0, "network_error")]
+    public void ยังไม่ล็อกอินหรือเน็ตหลุด_ต้องไม่ถือว่าจบ(int status, string expected)
+    {
+        var raw = JsonSerializer.Serialize(
+            JsonSerializer.Serialize(new { status, body = "" }));
+        Assert.Equal(expected, HubConfigProvisioner.Interpret(raw).Reason);
     }
 }
