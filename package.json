@@ -16,7 +16,8 @@
     "test:e2e": "playwright test",
     "test:unified-pos:backend": "node scripts/verify-unified-pos-backend.mjs",
     "test:watch": "vitest",
-    "verify:stock-pool": "node scripts/verify-stock-pool.mjs"
+    "verify:stock-pool": "node scripts/verify-stock-pool.mjs",
+    "pilot:print-hub": "node scripts/pilot-print-hub-report.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.50",

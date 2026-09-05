@@ -1,0 +1,68 @@
+{
+  "checkedAt": "2026-09-06T00:54:49.6469157\u002B07:00",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "machine": "LAPTOP-0QGEJ8CU",
+  "recognizers": [
+    {
+      "Id": "MS-1033-80-DESK",
+      "Name": "MS-1033-80-DESK",
+      "Culture": "en-US"
+    },
+    {
+      "Id": "MS-1036-80-DESK",
+      "Name": "MS-1036-80-DESK",
+      "Culture": "fr-FR"
+    },
+    {
+      "Id": "MS-2057-80-DESK",
+      "Name": "MS-2057-80-DESK",
+      "Culture": "en-GB"
+    },
+    {
+      "Id": "MS-3082-80-DESK",
+      "Name": "MS-3082-80-DESK",
+      "Culture": "es-ES"
+    }
+  ],
+  "chosenRecognizer": {
+    "Id": "MS-1033-80-DESK",
+    "Name": "MS-1033-80-DESK",
+    "Culture": "en-US"
+  },
+  "microphoneUsable": true,
+  "microphoneError": null,
+  "wakePhrases": [
+    {
+      "Id": "hello_os",
+      "Display": "Hello OS",
+      "Language": "en",
+      "Pronunciation": "h eh l ow ow eh s"
+    },
+    {
+      "Id": "hanlo_os",
+      "Display": "\u0E2E\u0E31\u0E25\u0E42\u0E2B\u0E25\u0E42\u0E2D\u0E40\u0E2D\u0E2A",
+      "Language": "th",
+      "Pronunciation": "h ah l ow ow eh s"
+    },
+    {
+      "Id": "helo_os",
+      "Display": "\u0E40\u0E2E\u0E25\u0E42\u0E2B\u0E25\u0E42\u0E2D\u0E40\u0E2D\u0E2A",
+      "Language": "th",
+      "Pronunciation": "h ey l ow ow eh s"
+    },
+    {
+      "Id": "watdee_os",
+      "Display": "\u0E2B\u0E27\u0E31\u0E14\u0E14\u0E35\u0E42\u0E2D\u0E40\u0E2D\u0E2A",
+      "Language": "th",
+      "Pronunciation": "w ah t d iy ow eh s"
+    },
+    {
+      "Id": "sawatdee_os",
+      "Display": "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E42\u0E2D\u0E40\u0E2D\u0E2A",
+      "Language": "th",
+      "Pronunciation": "s ah w ah t d iy ow eh s"
+    }
+  ],
+  "pronunciationGrammarLoaded": true,
+  "pronunciationGrammarError": null
+}

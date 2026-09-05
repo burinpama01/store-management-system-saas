@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StoreOS — Windows Voice Standby Design System v2 (คำปลุก + การส่งไมค์)</title>
+<style>
+:root{--ink:#101a2b;--muted:#5d6b82;--paper:#fff;--line:#dbe4f0;--brand:#1b5262;--green:#147454;--amber:#936000;--red:#b53e38;--soft:#f7fafd;--code:#eef2f7}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(140deg,#eef4fa,#f4f9f6 55%,#eff2f8);color:var(--ink);font:16px/1.65 "Noto Sans Thai","Leelawadee UI",Tahoma,Arial,sans-serif}
+main{width:min(1120px,calc(100% - 26px));margin:20px auto 70px}
+header,section{border:1px solid var(--line);border-radius:18px;background:var(--paper);box-shadow:0 14px 36px rgba(20,35,60,.07)}
+header{padding:clamp(28px,5vw,52px);color:#fff;background:linear-gradient(135deg,#111d2b,#1b5262 58%,#147454)}
+section{padding:clamp(18px,3.2vw,34px);margin-top:14px}
+h1{font-size:clamp(28px,5vw,50px);line-height:1.07;margin:10px 0}
+h2{font-size:clamp(21px,2.6vw,30px);margin:0 0 14px}
+h3{margin:18px 0 6px}
+.tag{display:inline-flex;padding:5px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.12);font-weight:800;font-size:13px}
+.pill{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.pill.green{background:#e8f7f0;color:var(--green)}
+.pill.amber{background:#fdf4e3;color:var(--amber)}
+.pill.red{background:#fdeeed;color:var(--red)}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:800}
+code,pre{background:var(--code);border-radius:8px}
+code{padding:1px 6px;font-size:14px}
+pre{padding:14px;overflow-x:auto;font-size:13.5px;line-height:1.5}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.card{border:1px solid var(--line);border-radius:14px;padding:15px;background:var(--soft)}
+.note{border-left:4px solid var(--amber);background:#fdf9f0;padding:13px 15px;border-radius:0 12px 12px 0;margin-top:12px}
+.stop{border-left:4px solid var(--red);background:#fdf1f0;padding:13px 15px;border-radius:0 12px 12px 0;margin-top:12px}
+.ok{border-left:4px solid var(--green);background:#f0f9f5;padding:13px 15px;border-radius:0 12px 12px 0;margin-top:12px}
+ul,ol{margin:6px 0 0;padding-left:20px}
+small{color:var(--muted)}
+.flow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.step{padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--soft);font-size:14px}
+.arrow{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="tag">Design System v2 · ต่อจาก v1 (ไม่ทับของเดิม)</span>
+  <h1>คำปลุกและการส่งไมค์<br>Windows Voice Standby</h1>
+  <p style="max-width:72ch;margin:0;opacity:.92">
+    v1 กำหนดสถาปัตยกรรมไว้แล้ว (native ถือไมค์ → ปลุก → เว็บฟังคำสั่ง)
+    v2 เติมสิ่งที่ v1 ยังไม่มี: <strong>ชุดคำปลุกจริง ห้าคำ</strong>, วิธีทำให้ recognizer ภาษาอังกฤษ
+    ได้ยินคำไทย, กติกากันปลุกผิด, สัญญาข้อความและ watchdog — ทุกข้อมาจากตัวเลขที่วัดจริงบนเครื่อง
+    ไม่ใช่ค่าที่ตั้งไว้ลอย ๆ
+    <br><small style="color:#cfe3ea">6 กันยายน 2026 · อ้างอิงหลักฐาน artifacts/voice-standby-w0/</small>
+  </p>
+</header>
+
+<section>
+  <h2>1. ชุดคำปลุก</h2>
+  <p>เจ้าของโปรเจกต์เลือกไว้ห้าคำ ทุกคำลงท้ายด้วยเสียง “โอเอส” ซึ่งเป็นส่วนที่แยกจากบทสนทนาในร้านได้ดีที่สุด</p>
+  <table>
+    <tr><th style="width:16%">คำ</th><th style="width:14%">รหัส</th><th style="width:26%">หน่วยเสียง SAPI (en-US)</th><th>ผลวัดด้วยเสียงสังเคราะห์</th></tr>
+    <tr><td>Hello OS</td><td><code>hello_os</code></td><td>h eh l ow ow eh s<br>h eh l ow ow ey s</td><td><span class="pill green">จับได้ทุกความเร็ว</span> 0.97–0.99</td></tr>
+    <tr><td>ฮัลโหลโอเอส</td><td><code>hanlo_os</code></td><td>h ah l ow ow eh s<br>h ah l ow ow ey eh s</td><td><span class="pill amber">เฉพาะพูดช้า</span> 0.70–0.90</td></tr>
+    <tr><td>เฮลโหลโอเอส</td><td><code>helo_os</code></td><td>h ey l ow ow eh s<br>h ey l ow ow ey eh s</td><td><span class="pill amber">เฉพาะพูดช้า</span> 0.83–0.93</td></tr>
+    <tr><td>หวัดดีโอเอส</td><td><code>watdee_os</code></td><td>w ah t d iy ow eh s<br>w ah t d iy ow ey eh s</td><td><span class="pill amber">เฉพาะพูดช้า</span> 0.98</td></tr>
+    <tr><td>สวัสดีโอเอส</td><td><code>sawatdee_os</code></td><td>s ah w ah t d iy ow eh s<br>s ax w ah t d iy ow ey eh s</td><td><span class="pill amber">เฉพาะพูดช้า</span> 0.98</td></tr>
+  </table>
+
+  <h3>ทำไมต้องเขียนหน่วยเสียงเอง</h3>
+  <p>
+    Windows ไม่มีชุดรู้จำเสียงภาษาไทยเลย (วัดแล้วทั้ง System.Speech และ OneCore/WinRT รองรับแค่ en-US/en-GB)
+    คำปลุกภาษาไทยจึงต้องอธิบายให้ engine ภาษาอังกฤษฟังสองทางพร้อมกันในไวยากรณ์เดียว:
+  </p>
+  <ol>
+    <li><strong>รูปสะกดอังกฤษ</strong> เช่น <code>sa wat dee oh es</code> — ให้ engine ใช้พจนานุกรมของตัวเอง ทนสำเนียงต่างคนได้ดีกว่า</li>
+    <li><strong>หน่วยเสียง SAPI</strong> — บังคับเสียงตรง ๆ สำหรับคำที่สะกดอังกฤษแล้วเพี้ยน</li>
+  </ol>
+  <div class="note">
+    <strong>กับดักที่เสียเวลาไปแล้วหนึ่งรอบ:</strong> ต้องตั้ง <code>SrgsDocument.PhoneticAlphabet = Sapi</code>
+    ไม่งั้น System.Speech จะตีความเป็นชุด UPS แล้วโยน <code>Invalid phoneme ' '</code> ทั้งไวยากรณ์
+    — พังทั้งฟีเจอร์โดยไม่มี error ให้ผู้ใช้เห็น จึงต้องมี unit test ยืนยันว่าไวยากรณ์โหลดขึ้นจริง
+  </div>
+</section>
+
+<section>
+  <h2>2. คำล่อ (decoy) — วิธีลดการปลุกผิดโดยไม่ต้องขันเกณฑ์</h2>
+  <p>
+    ก่อนใส่คำล่อ ประโยค <strong>“หวัดดีครับพี่”</strong> ถูกจับเป็น <code>watdee_os</code> ที่ความมั่นใจ 0.84
+    — สูงกว่าเกณฑ์ปลุก แปลว่าทักทายเพื่อนร่วมงานทีไร POS ตื่นทุกที
+  </p>
+  <p>
+    วิธีแก้ที่ใช้: โหลด<strong>ไวยากรณ์คู่แข่ง</strong>ที่มีคำทักทายเหล่านั้นอยู่ (wat dee krap, sa wat dee ka, ha lo, oh kay krap …)
+    เมื่อ engine มี “ที่ให้เสียงลง” ที่ตรงกว่า มันจะไม่ถูกบีบให้เลือกคำปลุกที่ใกล้ที่สุด
+  </p>
+  <div class="ok">
+    ผลหลังใส่คำล่อ: false wake <strong>1/10 → 0/10</strong> โดยที่คำปลุกจริงยังจับได้เท่าเดิม
+    (ถ้าแก้ด้วยการดันเกณฑ์ความมั่นใจแทน คำปลุกไทยจะหลุดทันทีเพราะบางคำอยู่ที่ 0.70)
+  </div>
+</section>
+
+<section>
+  <h2>3. กติกาตัดสินปลุก</h2>
+  <div class="grid">
+    <div class="card"><h3>เกณฑ์ความมั่นใจ</h3><p><strong>0.72</strong></p><small>ต่ำกว่านี้ไม่ปลุก — ค่านี้อยู่ใต้คำปลุกไทยที่แย่ที่สุดที่วัดได้ (0.70) เพียงเล็กน้อย ต้องปรับใหม่เมื่อมีข้อมูลเสียงคนจริง</small></div>
+    <div class="card"><h3>ช่วงพักหลังปลุก</h3><p><strong>3 วินาที</strong></p><small>กันเสียงสะท้อน/ลำโพงร้านปลุกรัว</small></div>
+    <div class="card"><h3>ห้ามปลุกซ้อน</h3><p><strong>ขณะเว็บถือไมค์</strong></p><small>ไมค์มีเจ้าของได้ทีละคน</small></div>
+    <div class="card"><h3>คำสั้น</h3><p><strong>ห้ามน้อยกว่า 3 พยางค์</strong></p><small>คำสั้นทำให้ปลุกผิดพุ่งในร้านที่มีเสียงคุย</small></div>
+  </div>
+</section>
+
+<section>
+  <h2>4. สัญญาข้อความและการส่งไมค์</h2>
+  <div class="flow">
+    <span class="step">native ฟังคำปลุก</span><span class="arrow">→</span>
+    <span class="step">ปล่อยไมค์ + รอ RecognizeCompleted</span><span class="arrow">→</span>
+    <span class="step"><code>wake.detected</code></span><span class="arrow">→</span>
+    <span class="step">เว็บเปิดไมค์</span><span class="arrow">→</span>
+    <span class="step"><code>command.sessionStarted</code></span><span class="arrow">→</span>
+    <span class="step">คุยต่อ = <code>sessionExtended</code></span><span class="arrow">→</span>
+    <span class="step"><code>sessionEnded</code> คืนไมค์</span>
+  </div>
+  <table>
+    <tr><th style="width:26%">ข้อความ</th><th style="width:12%">ทิศทาง</th><th>ความหมายและกฎ</th></tr>
+    <tr><td><code>wake.detected</code></td><td>native → web</td><td>ได้ยินคำปลุกและ<strong>ปล่อยไมค์แล้ว</strong> — ส่งได้แค่ <code>phraseId</code> กับ <code>confidence</code> ห้ามมี transcript/intent/เสียง</td></tr>
+    <tr><td><code>wake.fallback</code></td><td>native → web</td><td>ปลุกแล้วแต่ไปต่อไม่ได้ ให้เว็บโชว์ “แตะเพื่อพูด”</td></tr>
+    <tr><td><code>command.sessionStarted</code></td><td>web → native</td><td>เว็บถือไมค์แล้ว เริ่มนับ watchdog</td></tr>
+    <tr><td><code>command.sessionExtended</code></td><td>web → native</td><td>ยังคุยต่อ (multi-turn) ขอต่อเวลา</td></tr>
+    <tr><td><code>command.sessionEnded</code></td><td>web → native</td><td>จบรอบ คืนไมค์ให้ native</td></tr>
+  </table>
+
+  <h3>ขอบเขตความปลอดภัย (บังคับด้วยเทสต์ ไม่ใช่แค่เขียนไว้)</h3>
+  <ul>
+    <li>ข้อความจาก native คือ <strong>ข้อมูล ไม่ใช่คำสั่ง</strong> — ฟิลด์แปลกปลอม (<code>intent</code>, <code>transcript</code>, <code>command</code>) ถูกตัดทิ้งตั้งแต่ชั้น parse</li>
+    <li>wake หนึ่งครั้ง = สิทธิ์เปิดไมค์หนึ่งรอบ <strong>ไม่ใช่สิทธิ์ทำรายการ</strong> การตีความยังเป็นของโมดูลเดิมบนเว็บทั้งหมด</li>
+    <li><code>seq</code> ย้อนหลังหรือซ้ำถูกทิ้ง; <code>phraseId</code> ที่ไม่อยู่ในชุดห้าคำถูกปฏิเสธ</li>
+    <li><strong>ห้ามสร้างคลิกปลอมเพื่อข้าม user-activation</strong> ของเบราว์เซอร์ — ถ้าเปิดไมค์เองไม่ได้ ต้องให้ผู้ใช้แตะ</li>
+  </ul>
+</section>
+
+<section>
+  <h2>5. Watchdog — กันไมค์ค้างแบบเงียบ</h2>
+  <p>ถ้าเว็บเปิด session แล้วแท็บถูกปิด เครื่องล็อก หรือเบราว์เซอร์ปฏิเสธเงียบ ๆ native จะรอไมค์คืนตลอดกาล = คำปลุกตายทั้งเครื่องโดยไม่มี error ให้เห็น</p>
+  <table>
+    <tr><th style="width:34%">ตัวจับเวลา</th><th style="width:16%">ค่า</th><th>เหตุผลของค่านี้</th></tr>
+    <tr><td>รอเว็บตอบว่าเริ่มฟัง</td><td>1,200 ms</td><td>งบของแผน v1 คือ wake→listening p95 ≤900ms; เกินกว่านี้ถือว่า user-activation ไม่ผ่าน</td></tr>
+    <tr><td>หน้าต่างฟังของเว็บ (ของจริง)</td><td>6,000 ms</td><td>แผนเขียน 2s แต่วัดใช้งานจริงได้ 1.8–3.8s จึงตั้ง 6s</td></tr>
+    <tr><td>watchdog ต่อรอบ</td><td>9,000 ms</td><td><strong>ต้องมากกว่า 6,000 เสมอ</strong> ไม่งั้นตัดกลางประโยคผู้ใช้ — บังคับด้วย guard ใน constructor และมีเทสต์คุม</td></tr>
+    <tr><td>เพดานรวม multi-turn</td><td>20,000 ms</td><td>Test Matrix ของแผนกำหนดเคส multi-turn 15 วินาทีต้องผ่าน</td></tr>
+  </table>
+  <div class="note">
+    หมดเวลาแล้วต้อง <strong>คืนไมค์ให้ native ทันที</strong> และตกไปที่ push-to-talk เสมอ ห้ามเงียบ
+  </div>
+</section>
+
+<section>
+  <h2>6. สิ่งที่ยังไม่ยืนยัน</h2>
+  <div class="stop">
+    ตัวเลขทั้งหมดในเอกสารนี้มาจาก<strong>เสียงสังเคราะห์</strong> (Microsoft Pattara th-TH / David, George en) บนเครื่องเงียบ
+    ไม่มีเสียงร้าน ไม่มีสำเนียงหลากหลาย ไม่มีระยะห่างจากไมค์ — จึงเป็น <em>เพดานบน</em> ไม่ใช่ตัวเลขที่ร้านจะเจอ
+    <br>ข้อที่ต้องพิสูจน์บนเครื่องร้าน: recall กับคนพูดจริงในเสียง 65–75 dBA, false wake ต่อกะ, CPU ตอน standby,
+    และการส่งไมค์กับเบราว์เซอร์จริง (ไม่ใช่ engine ตัวที่สองที่ใช้จำลอง)
+  </div>
+</section>
+</main>
+</body>
+</html>
