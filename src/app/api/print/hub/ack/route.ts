@@ -7,7 +7,7 @@ import {
 import {
   ackPrintJob,
   getPrinterIdsForJobs,
-  getStoreHubAuth,
+  authenticateHubRequest,
   learnUsbIdentity,
 } from "@/modules/printing/print-hub-repository";
 import { logSystemEvent } from "@/modules/system/event-log";
@@ -49,8 +49,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  const auth = await getStoreHubAuth(storeId);
-  if (auth.error || !auth.data || !verifyHubToken(hubToken, auth.data.tokenHash)) {
+  const auth = await authenticateHubRequest(storeId, hubToken);
+  if (!auth.ok) {
     return NextResponse.json({ error: "Invalid Hub credentials" }, { status: 401 });
   }
 
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
         : outcome === "unknown"
           ? "Print Hub ไม่ทราบผลงานพิมพ์ — รอให้ร้านตรวจกระดาษจริง"
           : "Print Hub พิมพ์งานไม่สำเร็จ",
-    organizationId: auth.data.organizationId,
+    organizationId: auth.organizationId,
     storeId,
     context: {
       jobId,

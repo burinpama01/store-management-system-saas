@@ -1024,6 +1024,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      print_hub_device_tokens: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          device_id: string;
+          device_label: string | null;
+          token_hash: string;
+          created_by: string | null;
+          created_at: string;
+          last_seen_at: string | null;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          device_id: string;
+          device_label?: string | null;
+          token_hash: string;
+          created_by?: string | null;
+          created_at?: string;
+          last_seen_at?: string | null;
+          revoked_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          device_id?: string;
+          device_label?: string | null;
+          token_hash?: string;
+          created_by?: string | null;
+          created_at?: string;
+          last_seen_at?: string | null;
+          revoked_at?: string | null;
+        };
+        Relationships: [];
+      };
       print_jobs: {
         Row: {
           id: string;

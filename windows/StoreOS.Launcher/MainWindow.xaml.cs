@@ -16,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.1";
+    private const string LauncherVersion = "0.1.2";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -64,6 +64,10 @@ public partial class MainWindow : Window
             ["webview2"] = Web.CoreWebView2.Environment.BrowserVersionString,
         });
 
+        // Print Hub auto-provision — ขอ config ล่าสุดของเครื่องนี้หลังหน้าเว็บโหลดเสร็จ
+        // (ต้องรอให้ผู้ใช้ล็อกอินก่อน จึงผูกกับ NavigationCompleted ไม่ใช่ตอน Loaded)
+        Web.CoreWebView2.NavigationCompleted += OnNavigationCompletedAsync;
+
         Refresh();
         _timer.Tick += async (_, _) =>
         {
@@ -72,6 +76,63 @@ public partial class MainWindow : Window
             await _logs.FlushAsync();
         };
         _timer.Start();
+    }
+
+    private bool _provisionAttempted;
+
+    /// <summary>
+    /// Print Hub auto-provision — แก้ปัญหา "Hub token rejected (401)" ให้หายเองตอนเปิดโปรแกรม
+    ///
+    /// เรียกครั้งเดียวต่อการเปิด Launcher หนึ่งรอบ และเรียกจากในหน้าเว็บเพื่อให้ติด session
+    /// ของผู้ใช้ไปด้วย — server เป็นคนตัดสินว่าต้องออก token ใหม่ไหม ถ้าของเดิมยังใช้ได้
+    /// เราจะไม่แตะไฟล์ config เลย
+    /// </summary>
+    private async void OnNavigationCompletedAsync(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (_provisionAttempted || !e.IsSuccess) return;
+        _provisionAttempted = true;
+
+        try
+        {
+            var configPath = HubConfigPath();
+            var current = LauncherLogShipper.ReadHubCredentials(configPath);
+            var deviceId = HubConfigProvisioner.DeviceId(ReadMachineGuid(), Environment.MachineName);
+            var script = HubConfigProvisioner.BuildProvisionScript(deviceId, Environment.MachineName, current?.HubToken);
+
+            var raw = await Web.CoreWebView2.ExecuteScriptAsync(script);
+            var outcome = HubConfigProvisioner.Interpret(raw);
+
+            if (!outcome.Rotated || outcome.ConfigJson is null)
+            {
+                // already_valid = ปกติที่สุด ไม่ต้องรบกวนใคร; ที่เหลือคือยังล็อกอินไม่เสร็จ/ไม่มีสิทธิ์
+                _logs.Enqueue("info", "hub_provision_skipped", $"ไม่ต้องออก Hub token ใหม่ ({outcome.Reason})");
+                return;
+            }
+
+            HubConfigProvisioner.WriteConfigAtomic(configPath, outcome.ConfigJson);
+            // config เปลี่ยนแล้ว agent ต้องอ่านใหม่ — restart task ให้เลย ไม่ต้องรอคนไปกด
+            _tasks.Restart();
+            _logs.Enqueue("info", "hub_provision_rotated", "อัปเดต Print Hub config ของเครื่องนี้อัตโนมัติแล้ว");
+        }
+        catch (Exception ex)
+        {
+            // provision ล้มต้องไม่ทำให้ POS เปิดไม่ได้ — Hub จะยัง 401 เหมือนเดิมเท่านั้น
+            _logs.Enqueue("warn", "hub_provision_failed", $"ขอ Print Hub config อัตโนมัติไม่สำเร็จ: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>MachineGuid ของ Windows — ใช้เป็นเมล็ดของ device id (ถูก hash ก่อนส่งเสมอ)</summary>
+    private static string? ReadMachineGuid()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography");
+            return key?.GetValue("MachineGuid") as string;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

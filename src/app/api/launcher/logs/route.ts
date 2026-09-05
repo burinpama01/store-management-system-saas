@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyHubToken } from "@/modules/printing/print-hub";
-import { getStoreHubAuth } from "@/modules/printing/print-hub-repository";
+import { authenticateHubRequest } from "@/modules/printing/print-hub-repository";
 import {
   MAX_LAUNCHER_LOG_ENTRIES,
   sanitizeLauncherLogBatch,
@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
   }
 
-  const auth = await getStoreHubAuth(storeId);
-  if (auth.error || !auth.data || !verifyHubToken(hubToken, auth.data.tokenHash)) {
+  const auth = await authenticateHubRequest(storeId, hubToken);
+  if (!auth.ok) {
     return NextResponse.json({ error: "Invalid Hub credentials" }, { status: 401 });
   }
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       source: "launcher.windows",
       action: entry.code,
       message: entry.message || entry.code,
-      organizationId: auth.data.organizationId,
+      organizationId: auth.organizationId,
       storeId,
       context: {
         ...(entry.context ?? {}),
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       source: "launcher.windows",
       action: "launcherLogDropped",
       message: "log จาก Launcher บางรายการถูกทิ้งเพราะรูปแบบไม่ผ่านหรือเกินเพดาน",
-      organizationId: auth.data.organizationId,
+      organizationId: auth.organizationId,
       storeId,
       context: { dropped: batch.dropped, limit: MAX_LAUNCHER_LOG_ENTRIES, launcherVersion },
     });
