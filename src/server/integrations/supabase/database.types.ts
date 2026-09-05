@@ -4,6 +4,99 @@ export interface Database {
   public: {
 
     Tables: {
+        ai_credit_balances: {
+          Row: {
+            organization_id: string;
+            tokens_remaining: number;
+            tokens_purchased: number;
+            updated_at: string;
+          };
+          Insert: {
+            organization_id: string;
+            tokens_remaining?: number;
+            tokens_purchased?: number;
+            updated_at?: string;
+          };
+          Update: {
+            organization_id?: string;
+            tokens_remaining?: number;
+            tokens_purchased?: number;
+            updated_at?: string;
+          };
+        Relationships: [];
+        };
+        ai_credit_packs: {
+          Row: {
+            id: string;
+            name: string;
+            tokens: number;
+            price_thb: number;
+            sort_order: number;
+            is_active: boolean;
+          };
+          Insert: {
+            id: string;
+            name: string;
+            tokens: number;
+            price_thb: number;
+            sort_order?: number;
+            is_active?: boolean;
+          };
+          Update: {
+            id?: string;
+            name?: string;
+            tokens?: number;
+            price_thb?: number;
+            sort_order?: number;
+            is_active?: boolean;
+          };
+        Relationships: [];
+        };
+        ai_credit_topups: {
+          Row: {
+            id: string;
+            organization_id: string;
+            pack_id: string;
+            tokens: number;
+            amount_expected: number;
+            verified_amount: number | null;
+            slip_ref: string | null;
+            slip2go_raw: Json | null;
+            status: "verified" | "rejected" | "duplicate";
+            reason: string | null;
+            submitted_by: string | null;
+            created_at: string;
+          };
+          Insert: {
+            id?: string;
+            organization_id: string;
+            pack_id: string;
+            tokens: number;
+            amount_expected: number;
+            verified_amount?: number | null;
+            slip_ref?: string | null;
+            slip2go_raw?: Json | null;
+            status: "verified" | "rejected" | "duplicate";
+            reason?: string | null;
+            submitted_by?: string | null;
+            created_at?: string;
+          };
+          Update: {
+            id?: string;
+            organization_id?: string;
+            pack_id?: string;
+            tokens?: number;
+            amount_expected?: number;
+            verified_amount?: number | null;
+            slip_ref?: string | null;
+            slip2go_raw?: Json | null;
+            status?: "verified" | "rejected" | "duplicate";
+            reason?: string | null;
+            submitted_by?: string | null;
+            created_at?: string;
+          };
+        Relationships: [];
+        };
         ai_quota_reservations: {
           Row: {
             id: string;
@@ -12,6 +105,7 @@ export interface Database {
             feature: string;
             tokens_reserved: number;
             status: "reserved" | "settled" | "reconcile";
+            source: "monthly" | "credit";
             created_at: string;
           };
           Insert: {
@@ -21,6 +115,7 @@ export interface Database {
             feature: string;
             tokens_reserved: number;
             status?: "reserved" | "settled" | "reconcile";
+            source?: "monthly" | "credit";
             created_at?: string;
           };
           Update: {
@@ -30,6 +125,7 @@ export interface Database {
             feature?: string;
             tokens_reserved?: number;
             status?: "reserved" | "settled" | "reconcile";
+            source?: "monthly" | "credit";
             created_at?: string;
           };
         Relationships: [];
@@ -4294,6 +4390,13 @@ export interface Database {
           p_channel: string;
         };
         Returns: undefined;
+      };
+      add_ai_credit: {
+        Args: {
+          p_organization_id: string;
+          p_tokens: number;
+        };
+        Returns: number;
       };
       reserve_ai_quota: {
         Args: {

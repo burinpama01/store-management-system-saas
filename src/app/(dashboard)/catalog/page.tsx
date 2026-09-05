@@ -48,7 +48,7 @@ export default async function CatalogPage() {
 
   return (
     <div className="min-h-full">
-      <MenuScanWizard />
+      <MenuScanWizard kitchenStations={kitchenStations} canUseQrOrdering={features.qrOrdering} />
     <CatalogManager
         categories={categories}
         products={products}

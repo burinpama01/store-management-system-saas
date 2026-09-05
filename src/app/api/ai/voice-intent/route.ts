@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     maxTokens: AI_MAX_OUTPUT_TOKENS,
   });
   if (!reserve.granted) {
-    return fail("quota_denied", 429, "ครบโควตา AI ของเดือนนี้ — ใช้ปุ่มบนหน้าจอได้ตามปกติ");
+    return fail("quota_denied", 429, "โควตา AI หมด — เติมเงินที่ ตั้งค่า → เรียกเก็บเงิน หรือใช้ปุ่มบนหน้าจอได้ตามปกติ");
   }
 
   const result = await interpretVoiceIntent({

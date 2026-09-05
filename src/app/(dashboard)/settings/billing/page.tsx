@@ -8,7 +8,10 @@ import { isExpiringState } from "@/modules/billing/types";
 import { getBusinessPriceMap, getFreeTrialEligibility, listBillingPrices } from "@/modules/billing/pricing-repository";
 import { isSlip2goConfigured } from "@/modules/billing/slip2go";
 import { listEnterpriseRequestsForOrg } from "@/modules/enterprise/repository";
+import { getAiUsageSummary } from "@/modules/ai/quota";
+import { listCreditPacks, listTopupHistory } from "@/modules/ai/credits";
 import { BillingManager } from "./BillingManager";
+import { AiUsagePanel } from "./AiUsagePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +36,14 @@ export default async function BillingSettingsPage() {
 
   const active = hasBillingAccess(billingState);
 
+  const [aiSummary, aiPacks, aiHistory] = await Promise.all([
+    getAiUsageSummary({ organizationId: ctx.organizationId }),
+    listCreditPacks(),
+    listTopupHistory(ctx.organizationId),
+  ]);
+
   return (
+    <>
     <BillingManager
       orgName={ctx.orgName}
       plan={billingState.plan}
@@ -56,6 +66,17 @@ export default async function BillingSettingsPage() {
           : null
       }
     />
+      <div className="page-shell pt-0">
+        <AiUsagePanel
+          initialSummary={aiSummary}
+          initialPacks={aiPacks}
+          initialHistory={aiHistory}
+          canManageBilling={resolved.can("billing.manage")}
+          paymentConfigured={Boolean(settings.promptpayId || settings.promptpayStaticPayload)}
+          recipientName={settings.promptpayName}
+        />
+      </div>
+    </>
   );
 }
 

@@ -4,6 +4,7 @@ import {
   normalizeScanItems,
   sniffImageMime,
   MAX_IMAGE_BYTES,
+  MIN_IMAGE_BYTES,
 } from "@/modules/ai/menu-scan";
 
 describe("menu scan schema — strict structured output (Task 11 plan)", () => {
@@ -99,5 +100,24 @@ describe("image intake guards", () => {
 
   it("caps the image size at 5 MB", () => {
     expect(MAX_IMAGE_BYTES).toBe(5 * 1024 * 1024);
+  });
+
+  it("rejects images below 8 KB (กันรูปมั่ว/รูปเสีย)", () => {
+    expect(MIN_IMAGE_BYTES).toBe(8 * 1024);
+    expect(MIN_IMAGE_BYTES).toBeLessThan(MAX_IMAGE_BYTES);
+  });
+});
+
+describe("not-a-menu detection", () => {
+  it("keeps isMenu true by default when the model omits it", () => {
+    const parsed = MenuScanResultSchema.parse({
+      items: [{ category: "ของหวาน", name: "บัวลอย", price: 45, confidence: 0.9 }],
+    });
+    expect(parsed.isMenu).toBe(true);
+  });
+
+  it("accepts isMenu=false with an empty item list (รูปไม่ใช่เมนู)", () => {
+    const parsed = MenuScanResultSchema.safeParse({ isMenu: false, items: [] });
+    expect(parsed.success).toBe(true);
   });
 });

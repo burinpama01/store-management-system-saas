@@ -13,6 +13,7 @@ import {
 import type { Promotion, PlanSetting } from "@/modules/billing/pricing-repository";
 import type { BillingDiscountCode, DiscountablePlan } from "@/modules/billing/discount-code";
 import { FREE_TRIAL_DAYS, type FreeTrialCampaign } from "@/modules/billing/free-trial";
+import type { AdminCreditPack } from "@/modules/ai/credits";
 import {
   updatePriceAction,
   updateBusinessPriceAction,
@@ -22,6 +23,8 @@ import {
   createDiscountCodeAction,
   toggleDiscountCodeAction,
   updateFreeTrialCampaignAction,
+  saveAiCreditPackAction,
+  toggleAiCreditPackAction,
   type PricingState,
 } from "./actions";
 
@@ -36,6 +39,9 @@ export function PricingManager({
   planSettings,
   discountCodes,
   freeTrial,
+  aiCreditPacks,
+  aiMonthlyBudget,
+  aiTokensPerRequest,
 }: {
   prices: Record<PaidTier, Record<BillingDuration, number>>;
   businessPrices: BusinessPriceMap;
@@ -43,6 +49,9 @@ export function PricingManager({
   planSettings: PlanSetting[];
   discountCodes: BillingDiscountCode[];
   freeTrial: FreeTrialCampaign;
+  aiCreditPacks: AdminCreditPack[];
+  aiMonthlyBudget: number;
+  aiTokensPerRequest: number;
 }) {
   return (
     <div className="space-y-5">
@@ -98,6 +107,23 @@ export function PricingManager({
           {planSettings.map((p) => (
             <PlanSettingCard key={p.tier} setting={p} />
           ))}
+        </div>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="panel-title mb-3">แพ็กเติมเงินโทเคน AI</h2>
+        <p className="page-kicker mb-3">
+          โควตา AI เป็นก้อนเดียวใช้ร่วมกันทุกฟีเจอร์ · โควตาฟรี{" "}
+          <b className="tabular-nums">{aiMonthlyBudget.toLocaleString("th-TH")}</b> โทเคน/เดือน/องค์กร (ตั้งที่ env{" "}
+          <code>AI_MONTHLY_TOKEN_BUDGET</code>) · ครั้งละ{" "}
+          <b className="tabular-nums">{aiTokensPerRequest.toLocaleString("th-TH")}</b> โทเคน ·
+          เมื่อโควตาฟรีหมด ร้านซื้อแพ็กด้านล่างเพื่อใช้งานต่อ (เครดิตไม่หมดอายุรายเดือน)
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {aiCreditPacks.map((pack) => (
+            <AiCreditPackCard key={pack.id} pack={pack} tokensPerRequest={aiTokensPerRequest} />
+          ))}
+          <AiCreditPackCard pack={null} tokensPerRequest={aiTokensPerRequest} />
         </div>
       </section>
 
@@ -456,5 +482,94 @@ function DiscountCodeForm() {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** การ์ดแก้แพ็กเติมเงิน AI — pack = null คือฟอร์มสร้างแพ็กใหม่ */
+function AiCreditPackCard({ pack, tokensPerRequest }: { pack: AdminCreditPack | null; tokensPerRequest: number }) {
+  const [state, action, pending] = useActionState(saveAiCreditPackAction, INITIAL);
+  const [toggleState, toggleAction, toggling] = useActionState(toggleAiCreditPackAction, INITIAL);
+  const isNew = pack === null;
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+      <form action={action} className="space-y-2">
+        <p className="label-muted">
+          {isNew ? "เพิ่มแพ็กใหม่" : pack.name}
+          {!isNew && !pack.isActive ? <span className="ml-2 text-amber-700">(ปิดขายอยู่)</span> : null}
+        </p>
+        <label className="block text-xs text-[var(--muted)]">
+          รหัสแพ็ก (a-z 0-9 _)
+          <input
+            name="id"
+            defaultValue={pack?.id ?? ""}
+            readOnly={!isNew}
+            required
+            className="form-input mt-1"
+            placeholder="ai_small"
+          />
+        </label>
+        <label className="block text-xs text-[var(--muted)]">
+          ชื่อที่ร้านเห็น
+          <input name="name" defaultValue={pack?.name ?? ""} required className="form-input mt-1" placeholder="เติม 50,000 โทเคน" />
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block text-xs text-[var(--muted)]">
+            โทเคน
+            <input
+              type="number"
+              name="tokens"
+              defaultValue={pack?.tokens ?? 50000}
+              min={1}
+              step={1000}
+              required
+              className="form-input mt-1 tabular-nums"
+            />
+          </label>
+          <label className="block text-xs text-[var(--muted)]">
+            ราคา (บาท)
+            <input
+              type="number"
+              name="priceThb"
+              defaultValue={pack?.priceThb ?? 49}
+              min={1}
+              step={1}
+              required
+              className="form-input mt-1 tabular-nums"
+            />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 items-end gap-2">
+          <label className="block text-xs text-[var(--muted)]">
+            ลำดับแสดง
+            <input type="number" name="sortOrder" defaultValue={pack?.sortOrder ?? 99} step={1} className="form-input mt-1 tabular-nums" />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--ink-2)]">
+            <input type="checkbox" name="isActive" defaultChecked={pack?.isActive ?? true} />
+            เปิดขาย
+          </label>
+        </div>
+        {pack ? (
+          <p className="text-xs text-[var(--muted)]">
+            ≈ {Math.floor(pack.tokens / Math.max(1, tokensPerRequest)).toLocaleString("th-TH")} ครั้ง ·{" "}
+            {(pack.priceThb / Math.max(1, Math.floor(pack.tokens / Math.max(1, tokensPerRequest)))).toFixed(2)} บาท/ครั้ง
+          </p>
+        ) : null}
+        <Button type="submit" variant="primary" loading={pending} loadingText="กำลังบันทึก..." className="w-full text-xs">
+          {isNew ? "เพิ่มแพ็ก" : "บันทึก"}
+        </Button>
+        {state.error ? <p className="alert-danger mt-1">{state.error}</p> : null}
+        {state.ok ? <p className="mt-1 text-xs text-emerald-700">บันทึกแล้ว</p> : null}
+      </form>
+      {pack ? (
+        <form action={toggleAction} className="mt-2">
+          <input type="hidden" name="id" value={pack.id} />
+          <input type="hidden" name="next" value={pack.isActive ? "false" : "true"} />
+          <Button type="submit" variant="secondary" loading={toggling} loadingText="..." className="w-full text-xs">
+            {pack.isActive ? "ปิดขายแพ็กนี้" : "เปิดขายอีกครั้ง"}
+          </Button>
+          {toggleState.error ? <p className="alert-danger mt-1">{toggleState.error}</p> : null}
+        </form>
+      ) : null}
+    </div>
   );
 }
