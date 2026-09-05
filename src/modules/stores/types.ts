@@ -30,6 +30,8 @@ export interface Store {
   unifiedPosEnabled?: boolean;
   kitchenQueueEnabled?: boolean;
   voiceCommandEnabled?: boolean;
+  /** Phase 1 AI Voice: ทางสำรอง AI (ต้องเปิดคู่กับ voiceCommandEnabled) */
+  voiceAiFallbackEnabled?: boolean;
   qrOrderingMode: QrOrderingMode;
   tableOpenPolicy: TableOpenPolicy;
   serviceButtons: ServiceButtonConfig[];

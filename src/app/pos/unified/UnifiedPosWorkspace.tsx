@@ -43,6 +43,7 @@ export function UnifiedPosWorkspace({
   sell,
   kitchenInitialItems,
   voiceEnabled = false,
+  voiceAiFallbackEnabled = false,
   voiceCommands = [],
   voiceAliases = [],
   voiceProductAliases = [],
@@ -146,6 +147,7 @@ export function UnifiedPosWorkspace({
             <VoicePosController
               className="shrink-0"
               voiceEnabled
+              aiFallbackEnabled={voiceAiFallbackEnabled}
               allowedCommands={voiceCommands}
               aliases={voiceAliases}
               productAliases={voiceProductAliases}

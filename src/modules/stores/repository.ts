@@ -34,6 +34,7 @@ function mapStore(row: StoreRow): Store {
     unifiedPosEnabled: row.unified_pos_enabled ?? false,
     kitchenQueueEnabled: row.kitchen_queue_enabled ?? false,
     voiceCommandEnabled: row.voice_command_enabled ?? false,
+    voiceAiFallbackEnabled: row.voice_ai_fallback_enabled ?? false,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
     serviceButtons: parseServiceButtons(row.qr_service_buttons),

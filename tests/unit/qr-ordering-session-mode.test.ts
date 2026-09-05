@@ -23,6 +23,7 @@ function row(overrides: Partial<StoreRow> = {}): StoreRow {
     unified_pos_enabled: false,
     kitchen_queue_enabled: false,
     voice_command_enabled: false,
+    voice_ai_fallback_enabled: false,
     dine_in_duration_minutes: 120,
     theme_preset_id: "caramel-cafe",
     theme_primary_color: "#000000",

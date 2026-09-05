@@ -70,13 +70,15 @@ const validBody = {
   origin: "push_to_talk",
 };
 
+// ไม่แตะ process.env: isAiEnabled ถูก mock ทุกเคสอยู่แล้ว การ set/delete env ที่นี่
+// เคยทำให้ผลไม่นิ่งเมื่อรันพร้อมไฟล์อื่นที่ใช้ตัวแปรเดียวกัน
 beforeEach(() => {
-  process.env.OPENAI_API_KEY = "sk-test";
+  vi.resetModules();
 });
 
 afterEach(() => {
   vi.resetModules();
-  delete process.env.OPENAI_API_KEY;
+  vi.clearAllMocks();
 });
 
 describe("POST /api/ai/voice-intent — ด่านความปลอดภัย", () => {

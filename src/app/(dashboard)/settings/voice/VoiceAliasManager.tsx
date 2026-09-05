@@ -16,6 +16,8 @@ interface Props {
   readonly suggestions: readonly VoiceAliasSuggestion[];
   readonly productNameById: Readonly<Record<string, string>>;
   readonly voiceEnabled: boolean;
+  /** Phase 1 AI Voice — stores.voice_ai_fallback_enabled */
+  readonly aiFallbackEnabled: boolean;
   readonly loadError?: string | null;
   readonly memberEmails: Readonly<Record<string, string>>;
 }
@@ -25,6 +27,7 @@ export function VoiceAliasManager({
   suggestions,
   productNameById,
   voiceEnabled,
+  aiFallbackEnabled,
   loadError,
   memberEmails,
 }: Props) {
@@ -86,6 +89,12 @@ export function VoiceAliasManager({
           {voiceEnabled
             ? "ร้านนี้เปิดใช้งานปุ่มสั่งงานด้วยเสียงใน POS รวมแล้ว"
             : "ร้านนี้ยังไม่เปิดใช้งานสั่งงานด้วยเสียง — ปุ่มไมค์จะไม่แสดงในหน้า POS"}
+        </p>
+        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+          <strong>ทางสำรอง AI:</strong>{" "}
+          {aiFallbackEnabled
+            ? "เปิดอยู่ — คำพูดที่ระบบเดิมไม่เข้าใจจะถูกส่งไปให้ AI ช่วยแปลเป็นคำสั่ง (คำสั่งเรื่องเงิน/ส่วนลด/สต๊อก ยังถูกปฏิเสธเสมอ)"
+            : "ปิดอยู่ — ใช้เฉพาะคำสั่งรูปแบบเดิม ไม่มีการส่งคำพูดออกนอกเครื่อง"}
         </p>
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-semibold">ความเป็นส่วนตัวที่ระบบรับประกัน</p>

@@ -42,6 +42,7 @@ export default async function VoiceSettingsPage() {
       suggestions={suggestions}
       productNameById={productNameById}
       voiceEnabled={storeRes.data?.voiceCommandEnabled ?? false}
+      aiFallbackEnabled={storeRes.data?.voiceAiFallbackEnabled ?? false}
       loadError={aliasesRes.error?.userMessage ?? null}
       memberEmails={memberEmails}
     />

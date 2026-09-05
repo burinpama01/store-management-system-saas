@@ -63,6 +63,11 @@ export interface UnifiedPosWorkspaceProps {
    * flag นี้อ่านจาก server เท่านั้น ห้าม client เปิดเอง
    */
   readonly voiceEnabled?: boolean;
+  /**
+   * Phase 1 AI Voice — stores.voice_ai_fallback_enabled (default false)
+   * คันโยกแยกจาก voiceEnabled: ปิดตัวนี้ = เสียงแบบเดิมยังใช้ได้ครบ แค่ไม่มีทางสำรอง AI
+   */
+  readonly voiceAiFallbackEnabled?: boolean;
   /** command ที่ผู้ใช้คนนี้เข้าถึงได้ (server กรองสิทธิ์แล้ว) — เสียงนำทางได้เฉพาะรายการนี้ */
   readonly voiceCommands?: readonly CommandItem[];
   /** คำเรียกที่ร้านสร้างเอง เฉพาะที่เปิดใช้งาน (U16) */

@@ -117,6 +117,8 @@ export default async function PosPage() {
   const kitchenQueueResult = await listUnifiedPosKitchenQueue(ctx.storeId);
   // U16 — คำเรียกที่ร้านสร้างเอง โหลดเฉพาะเมื่อเปิดใช้งานเสียง (flag ปิด = ไม่ query เพิ่ม)
   const voiceEnabled = storeResult.data?.voiceCommandEnabled ?? false;
+  // ทางสำรอง AI เป็นคันโยกแยก: ต้องเปิดทั้งเสียงและ AI ถึงจะยิงออกไปได้
+  const voiceAiFallbackEnabled = voiceEnabled && (storeResult.data?.voiceAiFallbackEnabled ?? false);
   const voiceAliasesResult = voiceEnabled
     ? await listVoiceAliases(ctx.storeId)
     : { data: [], error: null };
@@ -129,6 +131,7 @@ export default async function PosPage() {
         sell={terminal}
         kitchenInitialItems={kitchenQueueResult.data ?? []}
         voiceEnabled={voiceEnabled}
+        voiceAiFallbackEnabled={voiceAiFallbackEnabled}
         voiceAliases={(voiceAliasesResult.data ?? [])
           .filter(
             (alias) =>
