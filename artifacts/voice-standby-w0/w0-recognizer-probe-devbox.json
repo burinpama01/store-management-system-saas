@@ -1,0 +1,44 @@
+{
+  "checkedAt": "2026-09-06T00:26:39.4115748+07:00",
+  "machineRole": "dev workstation (ไม่ใช่เครื่อง POS หน้าร้าน)",
+  "windows": "Microsoft Windows 11 Home Single Language 26200 64-bit",
+  "culture": "en-US",
+  "hasRecognizer": true,
+  "recognizers": [
+    {
+      "id": "MS-1033-80-DESK",
+      "culture": "en-US"
+    },
+    {
+      "id": "MS-1036-80-DESK",
+      "culture": "fr-FR"
+    },
+    {
+      "id": "MS-2057-80-DESK",
+      "culture": "en-GB"
+    },
+    {
+      "id": "MS-3082-80-DESK",
+      "culture": "es-ES"
+    }
+  ],
+  "oneCoreRecognizerTokens": [
+    "MS-1033-110-WINMO-DNN",
+    "MS-2057-110-WINMO-DNN"
+  ],
+  "winrtSupportedTopicLanguages": [
+    "en-GB",
+    "en-US"
+  ],
+  "winrtSupportedGrammarLanguages": [
+    "en-US",
+    "en-GB"
+  ],
+  "winrtSystemSpeechLanguage": "en-US",
+  "thaiOnDeviceRecognizer": false,
+  "capabilityState": "Unavailable (ต้อง elevation ถึงจะอ่าน Get-WindowsCapability ได้)",
+  "webview2Version": "152.0.4191.62",
+  "w0Gate1Pass": true,
+  "machinesCovered": 1,
+  "machinesRequiredByPlan": 3
+}
