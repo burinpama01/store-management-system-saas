@@ -3496,6 +3496,7 @@ export interface Database {
           store_id: string;
           organization_id: string;
           regular_hours_per_day: number;
+          half_day_max_hours: number;
           ot_multiplier: number;
           ot_daily_cap_hours: number;
           late_penalty_per_minute: number;
@@ -3510,6 +3511,7 @@ export interface Database {
           store_id: string;
           organization_id: string;
           regular_hours_per_day?: number;
+          half_day_max_hours?: number;
           ot_multiplier?: number;
           ot_daily_cap_hours?: number;
           late_penalty_per_minute?: number;
@@ -3522,6 +3524,7 @@ export interface Database {
         };
         Update: {
           regular_hours_per_day?: number;
+          half_day_max_hours?: number;
           ot_multiplier?: number;
           ot_daily_cap_hours?: number;
           late_penalty_per_minute?: number;

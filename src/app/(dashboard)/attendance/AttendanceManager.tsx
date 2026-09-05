@@ -52,6 +52,8 @@ interface Props {
   holidayDates: string[];
   canManageHolidays: boolean;
   leaveAdjustments: PayrollAdjustment[];
+  /** สถานะรายวันต่อพนักงานสำหรับปฏิทินทีม (date → userId → DayStatus) */
+  teamDayStatus?: Record<string, Record<string, DayStatus>>;
   /** สาขาทั้งหมดในองค์กร (จอผู้จัดการ) — ใช้กรอง/ติดป้ายรายการข้ามสาขา */
   branchStores: { id: string; name: string }[];
   /** "all" = ทุกสาขา หรือ store id ที่เลือกกรอง */
@@ -173,6 +175,7 @@ export function AttendanceManager({
   holidayDates,
   canManageHolidays,
   leaveAdjustments,
+  teamDayStatus,
   branchStores,
   branchFilter,
 }: Props) {
@@ -715,6 +718,7 @@ export function AttendanceManager({
             employees={members}
             holidayDates={holidayDates}
             employeeLeaveDates={leaveAdjustments}
+            teamDayStatus={teamDayStatus}
             timeZone={storeTimezone}
           />
 

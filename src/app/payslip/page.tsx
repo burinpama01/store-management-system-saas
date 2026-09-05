@@ -49,12 +49,24 @@ function Payslip({ line, currency, storeName, dateFrom, dateTo }: {
       </div>
       <div className="text-sm">
         <Row label={`จำนวนวันทำงาน`} value={`${line.totalDays} วัน`} />
+        {line.halfDays > 0 && (
+          <Row label={`ทำงานครึ่งวัน (${line.halfDays} วัน)`} value={`คิดเป็น ${line.payableDays} วัน`} />
+        )}
+        {line.unpaidHolidayDays > 0 && (
+          <Row
+            label={`วันหยุดที่ไม่ได้ลงออกงาน (${line.unpaidHolidayDays} วัน)`}
+            value="ไม่คิดค่าแรง / ไม่นับขาดงาน"
+          />
+        )}
         <Row label={`ชั่วโมงรวม`} value={`${line.totalHours} ชม.`} />
         <Row label="ค่าจ้างพื้นฐาน" value={money(line.basePay, currency)} />
         {line.otPay > 0 && <Row label={`ค่าล่วงเวลา (OT ${line.otHours} ชม.)`} value={`+${money(line.otPay, currency)}`} />}
         {line.bonusTotal > 0 && <Row label="โบนัส/เพิ่มเติม" value={`+${money(line.bonusTotal, currency)}`} />}
         {line.latePenalty > 0 && <Row label="หักมาสาย" value={`−${money(line.latePenalty, currency)}`} />}
         {line.absentPenalty > 0 && <Row label={`หักขาดงาน (${line.absentDays} วัน)`} value={`−${money(line.absentPenalty, currency)}`} />}
+        {line.halfDayDeduction > 0 && (
+          <Row label={`หักครึ่งวัน (${line.halfDays} วัน)`} value={`−${money(line.halfDayDeduction, currency)}`} />
+        )}
         {line.deductionTotal > 0 && <Row label="หักอื่นๆ" value={`−${money(line.deductionTotal, currency)}`} />}
         <Row label="เงินสุทธิ" value={money(line.netPay, currency)} strong />
       </div>
@@ -153,7 +165,7 @@ export default async function PayslipPage({
                   <td className="py-2">{l.employeeName}</td>
                   <td className="py-2 text-right">{money(l.basePay, currency)}</td>
                   <td className="py-2 text-right">{l.otPay ? money(l.otPay, currency) : "—"}</td>
-                  <td className="py-2 text-right">{money(l.latePenalty + l.absentPenalty + l.deductionTotal, currency)}</td>
+                  <td className="py-2 text-right">{money(l.latePenalty + l.absentPenalty + l.halfDayDeduction + l.deductionTotal, currency)}</td>
                   <td className="py-2 text-right font-semibold">{money(l.netPay, currency)}</td>
                 </tr>
               ))}

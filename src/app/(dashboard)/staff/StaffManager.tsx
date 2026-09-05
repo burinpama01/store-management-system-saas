@@ -327,6 +327,7 @@ export function StaffManager({
                   <th className="px-3 py-2 font-medium text-right">ฐาน</th>
                   <th className="px-3 py-2 font-medium text-right">OT</th>
                   <th className="px-3 py-2 font-medium text-right">สาย</th>
+                  <th className="px-3 py-2 font-medium text-right">ครึ่งวัน</th>
                   <th className="px-3 py-2 font-medium text-right">ขาด</th>
                   <th className="px-3 py-2 font-medium text-right">เพิ่ม</th>
                   <th className="px-3 py-2 font-medium text-right">หัก</th>
@@ -337,7 +338,7 @@ export function StaffManager({
               <tbody>
                 {payrollLines.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-3 py-8 text-center text-gray-400">ไม่มีข้อมูลในช่วงนี้</td>
+                    <td colSpan={13} className="px-3 py-8 text-center text-gray-400">ไม่มีข้อมูลในช่วงนี้</td>
                   </tr>
                 ) : (
                   payrollLines.map((l) => (
@@ -347,11 +348,23 @@ export function StaffManager({
                         {!l.hasProfile && <span className="ml-1 text-xs text-amber-500">(ยังไม่ตั้งค่าจ้าง)</span>}
                       </td>
                       <td className="px-3 py-2 text-gray-500">{PAY_TYPE_LABEL[l.payType]}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{l.totalDays}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">
+                        {l.totalDays}
+                        {l.halfDays > 0 || l.unpaidHolidayDays > 0 ? (
+                          <span className="block text-[10px] text-gray-400">
+                            {l.halfDays > 0 ? `จ่าย ${l.payableDays} วัน` : ""}
+                            {l.unpaidHolidayDays > 0 ? ` · วันหยุดไม่คิดเงิน ${l.unpaidHolidayDays}` : ""}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2 text-right text-gray-700">{l.totalHours}</td>
                       <td className="px-3 py-2 text-right text-gray-700">{fmt(l.basePay, currency)}</td>
                       <td className="px-3 py-2 text-right text-green-600">{l.otPay ? `+${fmt(l.otPay, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.otHours ? `${l.otHours} ชม.` : ""}</span></td>
                       <td className="px-3 py-2 text-right text-red-600">{l.latePenalty ? `−${fmt(l.latePenalty, currency)}` : "—"}</td>
+                      <td className="px-3 py-2 text-right text-yellow-700">
+                        {l.halfDayDeduction ? `−${fmt(l.halfDayDeduction, currency)}` : l.halfDays ? "จ่ายครึ่ง" : "—"}
+                        <span className="block text-[10px] text-gray-400">{l.halfDays ? `${l.halfDays} วัน` : ""}</span>
+                      </td>
                       <td className="px-3 py-2 text-right text-red-600">{l.absentPenalty ? `−${fmt(l.absentPenalty, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.absentDays ? `${l.absentDays} วัน` : ""}</span></td>
                       <td className="px-3 py-2 text-right text-green-600">{l.bonusTotal ? `+${fmt(l.bonusTotal, currency)}` : "—"}</td>
                       <td className="px-3 py-2 text-right text-red-600">{l.deductionTotal ? `−${fmt(l.deductionTotal, currency)}` : "—"}</td>
@@ -486,6 +499,13 @@ export function StaffManager({
               <label className="text-xs font-medium text-gray-600">
                 ค่าปรับขาดงาน/วัน (รายเดือนใช้เงินเดือน ÷ จำนวนวัน)
                 <input name="absentPenaltyPerDay" type="number" min={0} step="0.01" defaultValue={hrSettings.absentPenaltyPerDay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              </label>
+              <label className="text-xs font-medium text-gray-600">
+                ทำงานครึ่งวันไม่เกิน (ชม.) — จ่ายครึ่งเดียว
+                <input name="halfDayMaxHours" type="number" min={0} max={24} step="0.5" defaultValue={hrSettings.halfDayMaxHours} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  วันที่ทำงานจริงไม่เกินค่านี้จะนับเป็นครึ่งวัน · 0 = ปิด (ค่าเริ่มต้น — นับเต็มวันทุกวันที่มาทำงาน)
+                </span>
               </label>
               <label className="text-xs font-medium text-gray-600">
                 สิทธิลงเวลาย้อนหลัง/เดือน
