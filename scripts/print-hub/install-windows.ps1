@@ -30,14 +30,42 @@ param(
 $ErrorActionPreference = "Stop"
 $TaskName = "StoreOSPrintHub"
 
-# Resolve paths (this script lives in scripts/print-hub/, the agent in scripts/).
+# หา print-hub.mjs ให้เจอทั้งสอง layout:
+#   แพ็กเกจที่ร้านโหลด : storeos-launcher\print-hub\{install-windows.ps1, print-hub.mjs}
+#   repo               : scripts\print-hub\install-windows.ps1 + scripts\print-hub.mjs
+# เดิมมองหาแต่โฟลเดอร์แม่ ทำให้แพ็กเกจจริงติดตั้งไม่ได้ ("ไม่พบ print-hub.mjs")
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$ScriptsDir = Split-Path -Parent $ScriptDir
-$AgentPath = Join-Path $ScriptsDir "print-hub.mjs"
-$ConfigPath = Join-Path $ScriptsDir "print-hub.config.json"
+$AgentSource = @(
+  (Join-Path $ScriptDir "print-hub.mjs"),
+  (Join-Path (Split-Path -Parent $ScriptDir) "print-hub.mjs")
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-if (-not (Test-Path $AgentPath)) {
-  throw "ไม่พบ print-hub.mjs ที่ $AgentPath — โปรดวางโฟลเดอร์ scripts ให้ครบก่อนติดตั้ง"
+if (-not $AgentSource) {
+  throw "ไม่พบ print-hub.mjs ทั้งใน $ScriptDir และโฟลเดอร์แม่ — แตกไฟล์แพ็กเกจให้ครบก่อนติดตั้ง"
+}
+
+# ติดตั้งตัว agent ลง LocalAppData ไม่ใช่รันจากโฟลเดอร์ Downloads
+# เหตุผล: โฟลเดอร์ที่โหลดมาถูกลบ/ย้าย/โหลดซ้ำเป็น "(1)" ได้ตลอด ถ้า Scheduled Task
+# ชี้ไปที่นั่น Hub จะพังเงียบ ๆ ภายหลัง และ config ต้องอยู่ที่เดียวกับที่ Launcher
+# เขียนให้ตอน auto-provision ($env:LOCALAPPDATA\StoreOSPrintHub) ไม่งั้นต่างคนต่างอ่านคนละไฟล์
+$InstallRoot = Join-Path $env:LOCALAPPDATA "StoreOSPrintHub"
+New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+$AgentPath = Join-Path $InstallRoot "print-hub.mjs"
+Copy-Item -Path $AgentSource -Destination $AgentPath -Force
+Write-Host "ติดตั้งตัวช่วยพิมพ์ไว้ที่: $AgentPath" -ForegroundColor Green
+
+$ScriptsDir = $InstallRoot
+$ConfigPath = Join-Path $InstallRoot "print-hub.config.json"
+
+# ถ้าผู้ใช้วาง print-hub.config.json ไว้ข้างตัวติดตั้ง (วิธีที่คู่มือบอก) ให้ย้ายเข้า
+# ที่ทางการให้เลย จะได้ไม่มีไฟล์ config สองใบที่ค่าไม่ตรงกัน
+$DroppedConfig = @(
+  (Join-Path $ScriptDir "print-hub.config.json"),
+  (Join-Path (Split-Path -Parent $ScriptDir) "print-hub.config.json")
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($DroppedConfig -and -not (Test-Path $ConfigPath)) {
+  Copy-Item -Path $DroppedConfig -Destination $ConfigPath -Force
+  Write-Host "ย้ายไฟล์ตั้งค่าเข้าที่ทางการแล้ว: $ConfigPath" -ForegroundColor Green
 }
 
 # Node runtime is required. Resolve it automatically so a non-technical operator

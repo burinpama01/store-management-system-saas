@@ -16,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.2";
+    private const string LauncherVersion = "0.1.3";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
