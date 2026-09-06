@@ -24,6 +24,8 @@ try
         "recognize" => await RecognizeAsync(),
         "handoff" => Handoff(),
         "listen" => Listen(),
+        "vosk-listen" => VoskListen(),
+        "vosk-recognize" => await VoskRecognizeAsync(),
         "chatter" => await BuildChatterAsync(),
         _ => throw new ArgumentException($"ไม่รู้จักคำสั่ง '{command}'"),
     };
@@ -171,6 +173,67 @@ async Task<object> BuildChatterAsync()
 {
     var path = await CorpusBuilder.BuildChatterAsync(CorpusDir(), ArgInt("--repeats", 3));
     return new { checkedAt = DateTimeOffset.Now.ToString("o"), file = path };
+}
+
+string VoskModelPath() =>
+    ArgValue("--model")
+    ?? Path.Combine(Path.GetTempPath(), "claude", "D--Store-management-system-saas",
+                    "ce760d78-4317-431e-bd0c-906277a94cd3", "scratchpad", "vosk", "vosk-model-small-en-us-0.15");
+
+/// <summary>คำปลุกที่ทดสอบกับ Vosk — ต้องเป็นคำที่มีอยู่ในพจนานุกรมของโมเดล</summary>
+string[] VoskPhrases() => (ArgValue("--phrases") ?? "hello store os").Split('|');
+
+object VoskListen()
+{
+    var seconds = ArgInt("--seconds", 60);
+    var phrases = VoskPhrases();
+    Console.WriteLine($"Vosk: ฟัง {seconds} วินาที (คำปลุก: {string.Join(", ", phrases)})");
+    var detections = VoskWakeProbe.ListenToMicrophone(VoskModelPath(), phrases, seconds);
+
+    return new
+    {
+        checkedAt = DateTimeOffset.Now.ToString("o"),
+        engine = "vosk",
+        model = Path.GetFileName(VoskModelPath()),
+        phrases,
+        listenedSeconds = seconds,
+        detections,
+    };
+}
+
+async Task<object> VoskRecognizeAsync()
+{
+    var phrases = VoskPhrases();
+    var dir = CorpusDir();
+    var items = ArgValue("--corpus-set") == "long"
+        ? await CorpusBuilder.BuildLongPhraseCorpusAsync(dir)
+        : await CorpusBuilder.BuildAsync(dir);
+
+    var results = items.Select(item =>
+    {
+        var detection = VoskWakeProbe.RecognizeFile(VoskModelPath(), phrases, item.File);
+        return new
+        {
+            file = Path.GetFileName(item.File),
+            kind = item.Kind,
+            label = item.Label,
+            heard = detection?.Text ?? "",
+            confidence = detection?.Confidence ?? 0,
+            isWakePhrase = detection?.IsWakePhrase ?? false,
+        };
+    }).ToList();
+
+    return new
+    {
+        checkedAt = DateTimeOffset.Now.ToString("o"),
+        engine = "vosk",
+        phrases,
+        positives = results.Count(r => r.kind == "positive"),
+        positiveHits = results.Count(r => r.kind == "positive" && r.isWakePhrase),
+        negatives = results.Count(r => r.kind == "negative"),
+        falseWakes = results.Count(r => r.kind == "negative" && r.isWakePhrase),
+        results,
+    };
 }
 
 object Listen()

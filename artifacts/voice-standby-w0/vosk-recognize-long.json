@@ -1,0 +1,333 @@
+{
+  "checkedAt": "2026-09-06T19:53:26.9941756\u002B07:00",
+  "engine": "vosk",
+  "phrases": [
+    "hello store"
+  ],
+  "positives": 30,
+  "positiveHits": 12,
+  "negatives": 10,
+  "falseWakes": 0,
+  "results": [
+    {
+      "file": "long_hello_storeos_MicrosoftDavid_0.80.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftDavid_0.85.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftDavid_0.90.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftDavid_0.95.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftDavid_1.00.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftDavid_1.20.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftGeorge_0.80.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftGeorge_0.85.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftGeorge_0.90.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftGeorge_0.95.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftGeorge_1.00.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_hello_storeos_MicrosoftGeorge_1.20.wav",
+      "kind": "positive",
+      "label": "hello_storeos",
+      "heard": "hello store [unk]",
+      "confidence": 1,
+      "isWakePhrase": true
+    },
+    {
+      "file": "long_sawatdee_storeos_MicrosoftPattara_0.80.wav",
+      "kind": "positive",
+      "label": "sawatdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_sawatdee_storeos_MicrosoftPattara_0.85.wav",
+      "kind": "positive",
+      "label": "sawatdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_sawatdee_storeos_MicrosoftPattara_0.90.wav",
+      "kind": "positive",
+      "label": "sawatdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_sawatdee_storeos_MicrosoftPattara_0.95.wav",
+      "kind": "positive",
+      "label": "sawatdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_sawatdee_storeos_MicrosoftPattara_1.00.wav",
+      "kind": "positive",
+      "label": "sawatdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_sawatdee_storeos_MicrosoftPattara_1.20.wav",
+      "kind": "positive",
+      "label": "sawatdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_watdee_storeos_MicrosoftPattara_0.80.wav",
+      "kind": "positive",
+      "label": "watdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_watdee_storeos_MicrosoftPattara_0.85.wav",
+      "kind": "positive",
+      "label": "watdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_watdee_storeos_MicrosoftPattara_0.90.wav",
+      "kind": "positive",
+      "label": "watdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_watdee_storeos_MicrosoftPattara_0.95.wav",
+      "kind": "positive",
+      "label": "watdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_watdee_storeos_MicrosoftPattara_1.00.wav",
+      "kind": "positive",
+      "label": "watdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_watdee_storeos_MicrosoftPattara_1.20.wav",
+      "kind": "positive",
+      "label": "watdee_storeos",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_hanlo_storeos_MicrosoftPattara_0.80.wav",
+      "kind": "positive",
+      "label": "hanlo_storeos",
+      "heard": "hello [unk]",
+      "confidence": 0.647,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_hanlo_storeos_MicrosoftPattara_0.85.wav",
+      "kind": "positive",
+      "label": "hanlo_storeos",
+      "heard": "hello [unk]",
+      "confidence": 0.666,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_hanlo_storeos_MicrosoftPattara_0.90.wav",
+      "kind": "positive",
+      "label": "hanlo_storeos",
+      "heard": "hello [unk]",
+      "confidence": 0.816,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_hanlo_storeos_MicrosoftPattara_0.95.wav",
+      "kind": "positive",
+      "label": "hanlo_storeos",
+      "heard": "hello [unk]",
+      "confidence": 0.73,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_hanlo_storeos_MicrosoftPattara_1.00.wav",
+      "kind": "positive",
+      "label": "hanlo_storeos",
+      "heard": "hello [unk]",
+      "confidence": 0.885,
+      "isWakePhrase": false
+    },
+    {
+      "file": "long_hanlo_storeos_MicrosoftPattara_1.20.wav",
+      "kind": "positive",
+      "label": "hanlo_storeos",
+      "heard": "hello [unk]",
+      "confidence": 0.877,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_00.wav",
+      "kind": "negative",
+      "label": "probe_00",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_01.wav",
+      "kind": "negative",
+      "label": "probe_01",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_02.wav",
+      "kind": "negative",
+      "label": "probe_02",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_03.wav",
+      "kind": "negative",
+      "label": "probe_03",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_04.wav",
+      "kind": "negative",
+      "label": "probe_04",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_05.wav",
+      "kind": "negative",
+      "label": "probe_05",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_06.wav",
+      "kind": "negative",
+      "label": "probe_06",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_07.wav",
+      "kind": "negative",
+      "label": "probe_07",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_08.wav",
+      "kind": "negative",
+      "label": "probe_08",
+      "heard": "hello [unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "file": "longneg_09.wav",
+      "kind": "negative",
+      "label": "probe_09",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    }
+  ]
+}
