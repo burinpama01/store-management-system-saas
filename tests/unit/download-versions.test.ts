@@ -33,4 +33,12 @@ describe("เวอร์ชันชุดติดตั้งที่หน�
       "`storeos-launcher-${LAUNCHER_VERSION}.zip`",
     );
   });
+
+  it("ชื่อ tag ของ GitHub Release ต้องผูกกับ LAUNCHER_VERSION ตัวเดียวกับชื่อไฟล์", () => {
+    // ชุดติดตั้งย้ายจาก Supabase storage มา GitHub Releases เพราะโตเกินเพดาน 50MB
+    // ที่นั่นไฟล์ไม่ได้ทับ path เดิม แต่ผูกกับ tag — เลขที่หลุดจากกันแปลว่าลิงก์ 404
+    const source = read("src/app/download/windows-launcher/route.ts");
+    expect(source).toContain("launcher-v${LAUNCHER_VERSION}");
+    expect(source).not.toContain("storage/v1/object/public/app/storeos-launcher.zip");
+  });
 });

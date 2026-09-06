@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   รันบน "เครื่องนักพัฒนา" เท่านั้น (ต้องมี .NET SDK — ติดตั้งด้วย install-build-prereqs.ps1)
-  ผลลัพธ์คือ artifacts/launcher/storeos-launcher.zip ที่ร้านดาวน์โหลดไปแตกแล้วดับเบิลคลิก
+  ผลลัพธ์คือ artifacts/launcher/storeos-launcher-<เวอร์ชัน>.zip ที่ร้านดาวน์โหลดไปแตกแล้วดับเบิลคลิก
   install.cmd ได้เลย
 
   ค่าเริ่มต้น publish แบบ **self-contained single file** เพื่อให้เครื่องร้านไม่ต้องติดตั้ง
@@ -33,7 +33,11 @@ $Project    = Join-Path $RepoRoot "windows\StoreOS.Launcher\StoreOS.Launcher.csp
 $TestProj   = Join-Path $RepoRoot "windows\StoreOS.Launcher.Tests\StoreOS.Launcher.Tests.csproj"
 $OutRoot    = Join-Path $RepoRoot "artifacts\launcher"
 $StageDir   = Join-Path $OutRoot "stage"
-$ZipPath    = Join-Path $OutRoot "storeos-launcher.zip"
+# เลขเวอร์ชันมาจาก csproj ที่เดียว — ชื่อไฟล์ zip, ชื่อ tag ของ release และ
+# LAUNCHER_VERSION บนเว็บต้องตรงกันหมด ไม่งั้นลิงก์ดาวน์โหลดจะชี้ไปไฟล์ที่ไม่มีอยู่
+$Version    = ([xml](Get-Content $Project)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+if (-not $Version) { throw "อ่าน <Version> จาก $Project ไม่ได้" }
+$ZipPath    = Join-Path $OutRoot "storeos-launcher-$Version.zip"
 
 function Resolve-Dotnet {
   $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
@@ -133,5 +137,7 @@ $hash   = (Get-FileHash $ZipPath -Algorithm SHA256).Hash
 Write-Host "`nเสร็จแล้ว: $ZipPath ($sizeMb MB)" -ForegroundColor Green
 Write-Host "SHA256: $hash" -ForegroundColor Green
 Write-Host ""
-Write-Host "ขั้นต่อไป: อัปโหลดไฟล์นี้ขึ้น Supabase storage bucket 'app' ชื่อ storeos-launcher.zip" -ForegroundColor Yellow
-Write-Host "แล้วลิงก์ /download/windows-launcher จะชี้ไปหาไฟล์ใหม่ทันทีโดยไม่ต้อง deploy" -ForegroundColor Yellow
+Write-Host "ขั้นต่อไป: ปล่อยเป็น GitHub Release (ไฟล์ใหญ่เกินเพดาน 50MB ของ Supabase)" -ForegroundColor Yellow
+Write-Host "  gh release create launcher-v$Version `"$ZipPath`"" -ForegroundColor Green
+Write-Host "ชื่อ tag และชื่อไฟล์ต้องตรงกับ LAUNCHER_VERSION ใน src/modules/launcher/version.ts" -ForegroundColor Yellow
+Write-Host "ขยับเลขนั้นแล้ว deploy เว็บ ลิงก์ /download/windows-launcher จึงจะชี้ไปรุ่นใหม่" -ForegroundColor Yellow
