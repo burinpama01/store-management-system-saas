@@ -1,4 +1,4 @@
-using Microsoft.Web.WebView2.Core;
+﻿using Microsoft.Web.WebView2.Core;
 
 using StoreOS.Voice;
 
@@ -27,20 +27,27 @@ public sealed class WebViewStandbyBridge : IDisposable
     private readonly VoiceStandbyHost _voice;
     private readonly Action<string, string, string> _log;
     private readonly StandbyBridgePolicy _policy = new();
+    private readonly StandbyOutbox _outbox;
     private Uri? _allowedOrigin;
     private bool _enabled;
 
+    /// <param name="dispatch">
+    /// พางานไปทำบนเธรด UI — คำปลุกถูกตรวจพบบนเธรดของการ์ดเสียง และ CoreWebView2
+    /// เรียกข้ามเธรดไม่ได้ (ดู StandbyOutbox)
+    /// </param>
     public WebViewStandbyBridge(
         CoreWebView2 web,
         VoiceStandbyHost voice,
         Uri allowedOrigin,
-        Action<string, string, string> log)
+        Action<string, string, string> log,
+        Action<Action> dispatch)
     {
         _web = web;
         _voice = voice;
         _allowedOrigin = allowedOrigin;
         _log = log;
         _enabled = true;
+        _outbox = new StandbyOutbox(dispatch, json => web.PostWebMessageAsJson(json), log);
 
         _voice.MessageForWeb += OnMessageForWeb;
         _voice.HealthForWeb += OnHealthForWeb;
@@ -51,32 +58,11 @@ public sealed class WebViewStandbyBridge : IDisposable
     /// <summary>จำนวนข้อความที่ถูกด่านปฏิเสธ — เอาไว้ดูว่ามีอะไรผิดปกติบนเครื่องร้าน</summary>
     public int RejectedCount { get; private set; }
 
-    private void OnHealthForWeb(object? sender, VoiceHealthMessage health)
-    {
-        if (!_enabled) return;
-        try
-        {
-            _web.PostWebMessageAsJson(StandbyContract.Serialize(health));
-        }
-        catch (Exception ex)
-        {
-            _log("warn", "voice_bridge_post_failed", $"ส่งสถานะให้หน้าเว็บไม่สำเร็จ: {ex.GetType().Name}");
-        }
-    }
+    private void OnHealthForWeb(object? sender, VoiceHealthMessage health) =>
+        _outbox.Send(StandbyContract.Serialize(health));
 
-    private void OnMessageForWeb(object? sender, StandbyMessage message)
-    {
-        if (!_enabled) return;
-        try
-        {
-            _web.PostWebMessageAsJson(StandbyContract.Serialize(message));
-        }
-        catch (Exception ex)
-        {
-            // ส่งไม่ได้ (หน้าเว็บกำลังโหลด/ถูกปิด) ต้องไม่ทำให้ Launcher ล้ม
-            _log("warn", "voice_bridge_post_failed", $"ส่งข้อความให้หน้าเว็บไม่สำเร็จ: {ex.GetType().Name}");
-        }
-    }
+    private void OnMessageForWeb(object? sender, StandbyMessage message) =>
+        _outbox.Send(StandbyContract.Serialize(message));
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -134,6 +120,7 @@ public sealed class WebViewStandbyBridge : IDisposable
 
         _policy.Reset();
         _enabled = sameOrigin;
+        _outbox.Enabled = sameOrigin;
 
         // ระหว่างเปลี่ยนหน้า เว็บไม่มีทางรายงาน sessionEnded กลับมาได้ — ต้องคืนไมค์ให้เอง
         await _voice.OnWebSessionEndedAsync();
@@ -147,6 +134,7 @@ public sealed class WebViewStandbyBridge : IDisposable
     public void Dispose()
     {
         _enabled = false;
+        _outbox.Enabled = false;
         _voice.MessageForWeb -= OnMessageForWeb;
         _voice.HealthForWeb -= OnHealthForWeb;
         _web.WebMessageReceived -= OnWebMessageReceived;

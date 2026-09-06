@@ -17,7 +17,17 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.4.0";
+    /// <summary>
+    /// อ่านจาก assembly ไม่ใช่พิมพ์ทับไว้เอง
+    ///
+    /// เดิมเป็นค่าคงที่ที่ต้องแก้เองทุกรุ่น แล้วก็ลืมจริง ๆ: รุ่น 0.4.1 เขียน log ว่า "0.4.0"
+    /// เวลาไล่ปัญหาจากเครื่องร้าน เลขรุ่นที่โกหกทำให้สรุปผิดว่า "ยังไม่ได้อัปเดต"
+    /// ทั้งที่อัปแล้ว — ค่าเดียวที่เชื่อได้คือค่าที่มาจากไฟล์ที่กำลังรันอยู่จริง
+    /// </summary>
+    private static readonly string LauncherVersion =
+        typeof(MainWindow).Assembly.GetName().Version is { } v
+            ? $"{v.Major}.{v.Minor}.{v.Build}"
+            : "0.0.0";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -100,6 +110,14 @@ public partial class MainWindow : Window
     {
         var settings = LauncherSettings.Load();
 
+        // ต้องบันทึก "เริ่มเปิดแล้ว" ก่อนแตะ WebView2
+        //
+        // เจอกับตัวจริง: มีรอบหนึ่งที่หน้าต่างเปิดขึ้นมาแต่ล็อกไฟล์ไม่มีบรรทัดใหม่เลย
+        // เพราะ EnsureCoreWebView2Async ค้าง (ไม่ใช่ throw จึงไม่เข้า catch) ทุกอย่างหลังจากนั้น
+        // รวมถึงการเริ่มฟังคำปลุก จึงไม่ทำงาน และไม่มีร่องรอยให้ไล่เลย
+        // บรรทัดนี้ทำให้แยกออกว่า "ไม่ได้เปิด" กับ "เปิดแล้วค้างที่เบราว์เซอร์" ต่างกัน
+        AppendLocalLog("info", "launcher_starting", $"กำลังเปิด StoreOS Launcher {LauncherVersion}");
+
         // WebView2 ต้องมีโฟลเดอร์ข้อมูลที่ผู้ใช้เขียนได้ ไม่งั้นเครื่องที่ติดตั้งลง Program Files
         // จะเปิด POS ไม่ขึ้นเลย (ค่าเริ่มต้นของ WebView2 คือโฟลเดอร์ข้าง ๆ ไฟล์ exe)
         try
@@ -162,7 +180,9 @@ public partial class MainWindow : Window
             Web.CoreWebView2,
             _voice,
             new Uri(posUrl),
-            Log);
+            Log,
+            // ห้าม Invoke แบบรอ: ผู้เรียกคือเธรดของการ์ดเสียง การบล็อกที่นั่นทำให้อัดเสียงสะดุด
+            action => Dispatcher.InvokeAsync(action));
         _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
         _voiceTimer.Start();
 
