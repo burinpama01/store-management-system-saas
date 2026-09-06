@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     StoreOS Launcher (เนเธเธ v3 Task 8)
@@ -21,7 +21,9 @@
     <Platforms>x64</Platforms>
     <AssemblyName>StoreOS.Launcher</AssemblyName>
     <RootNamespace>StoreOS.Launcher</RootNamespace>
-    <Version>0.2.5</Version>
+    <Version>0.3.0</Version>
+    <!-- ไอคอนของไฟล์ .exe และของทางลัดบนเดสก์ท็อป (สร้างด้วย scripts/windows-launcher/build-icon.ps1) -->
+    <ApplicationIcon>Assets\storeos.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,6 +32,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\StoreOS.Voice\StoreOS.Voice.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ต้องเป็น Resource ด้วย ไม่ใช่แค่ ApplicationIcon เพราะหน้าต่างอ้างไฟล์นี้ตอนรัน -->
+    <Resource Include="Assets\storeos.ico" />
   </ItemGroup>
 
 </Project>

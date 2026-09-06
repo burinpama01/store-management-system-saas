@@ -151,6 +151,8 @@ foreach ($dir in @(
   $lnk.TargetPath = $exePath
   $lnk.WorkingDirectory = $InstallDir
   $lnk.Description = "StoreOS POS"
+  # ระบุไอคอนตรง ๆ ด้วย เผื่อ Windows ยังแคชไอคอนเดิมของทางลัดที่เคยสร้างไว้
+  $lnk.IconLocation = "$exePath,0"
   $lnk.Save()
 }
 Write-Ok "สร้างทางลัดบนเดสก์ท็อปและ Start Menu แล้ว"
