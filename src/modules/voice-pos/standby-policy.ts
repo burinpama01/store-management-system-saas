@@ -12,6 +12,7 @@
 //   * tier C/D — ห้ามทั้งคู่ (เหมือนเดิม ไม่มีอะไรเปลี่ยน)
 //   * ข้อเสนอที่รอยืนยันมีอายุ 8 วินาที อยู่ในหน่วยความจำเท่านั้น และผูกกับรอบคำปลุกนั้น
 
+import type { AiVoiceCommand } from "./ai-intent-schema";
 import type { VoiceParseResult, VoiceResultCode } from "./types";
 
 /** ไมค์รอบนี้เปิดขึ้นมาได้อย่างไร */
@@ -71,6 +72,12 @@ export function decideStandbyAction(
 /** ข้อเสนอที่กำลังรอการยืนยัน — อยู่ในหน่วยความจำของหน้าจอเท่านั้น */
 export interface StandbyProposal {
   readonly result: VoiceParseResult;
+  /**
+   * มีค่าเมื่อรอบนั้นเป็นการสั่งหลายเมนูรวดเดียว — ยืนยันครั้งเดียวได้ทั้งชุด
+   * (ถามทีละรายการหลังคำปลุกคือการทำลายเหตุผลของฟีเจอร์นี้ ซึ่งมีไว้ให้คนมือไม่ว่าง)
+   * ผู้เรียกต้อง resolve ใหม่ตอนยืนยันเสมอ ไม่ใช่เล่นซ้ำผลที่คำนวณไว้ตอนพูด
+   */
+  readonly commands?: readonly AiVoiceCommand[];
   readonly expiresAt: number;
   /** รอบคำปลุกที่เป็นต้นเรื่อง — ใช้ผูกให้ยืนยันได้เฉพาะรอบเดียวกัน */
   readonly sessionId: string | null;

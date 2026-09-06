@@ -53,8 +53,9 @@ const LATTE: Product = {
       maxSelections: 1,
       sortOrder: 0,
       options: [
-        { id: "o1", groupId: "g1", name: "หวานปกติ", priceDelta: 0, isDefault: true, sortOrder: 0 },
-        { id: "o2", groupId: "g1", name: "หวานน้อย", priceDelta: 0, isDefault: false, sortOrder: 1 },
+        // ไม่มีตัวเลือกตั้งต้น — กลุ่มบังคับที่มีค่าเริ่มต้นจะถูกเลือกให้อัตโนมัติ ไม่ใช่เคสที่ทดสอบ
+        { id: "o1", modifierGroupId: "g1", name: "หวานปกติ", priceAdjustment: 0, isDefault: false, isActive: true, sortOrder: 0 },
+        { id: "o2", modifierGroupId: "g1", name: "หวานน้อย", priceAdjustment: 0, isDefault: false, isActive: true, sortOrder: 1 },
       ],
     },
   ],
@@ -119,16 +120,16 @@ function FakeSellSurface({ missing }: { readonly missing: readonly string[] }) {
           items: [
             ...current.items,
             {
-              id: "line-1",
+              key: "line-1",
               productId: LATTE.id,
               productName: LATTE.name,
-              variantId: undefined,
-              variantName: undefined,
-              unitPrice: LATTE.basePrice,
-              quantity: 1,
+              categoryId: LATTE.categoryId,
+              variant: null,
               modifiers: [],
-              lineTotal: LATTE.basePrice,
-            } as Cart["items"][number],
+              quantity: 1,
+              unitPrice: LATTE.basePrice,
+              totalPrice: LATTE.basePrice,
+            } satisfies Cart["items"][number],
           ],
         }));
         return { ok: true, message: "เพิ่ม ลาเต้ ลงตะกร้าแล้ว" };

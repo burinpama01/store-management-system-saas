@@ -21,7 +21,14 @@ import {
   type VoicePosFocusAction,
   type VoicePosTabId,
 } from "@/modules/voice-pos/navigation";
-import { applyVoiceCartIntent, isVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
+import {
+  applyVoiceCartIntent,
+  isVoiceCartIntent,
+  resolveVoiceProductPhrase,
+  type VoiceProductAlias,
+} from "@/modules/voice-pos/cart";
+import { buildMultiCommandBatch } from "@/modules/voice-pos/multi-command";
+import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import {
   consumeVoiceUndoToken,
   createVoiceUndoToken,
@@ -39,6 +46,7 @@ import {
   describeProposal,
   isProposalValid,
   readStandbyVoiceReply,
+  STANDBY_PROPOSAL_WINDOW_MS,
   type StandbyProposal,
 } from "@/modules/voice-pos/standby-policy";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
@@ -60,8 +68,14 @@ import {
   type VoiceCommandQueue as VoiceQueue,
 } from "@/modules/voice-pos/command-queue";
 import { resolveAiVoiceCommand } from "@/modules/voice-pos/intent-resolver";
+import type { AiVoiceCommand } from "@/modules/voice-pos/ai-intent-schema";
 import { useVoiceCartApi, type VoiceCartApi } from "./voice-cart-bridge";
 import { VoiceCommandQueue } from "./VoiceCommandQueue";
+
+/** เทียบชื่อสินค้าแบบไม่สนช่องว่าง/ตัวพิมพ์ — ใช้ยืนยันว่า "ตรงทั้งชื่อ" ไม่ใช่แค่ขึ้นต้นตรง */
+function compactName(value: string): string {
+  return value.normalize("NFC").toLowerCase().replace(/\s+/g, "");
+}
 
 const FOCUS_UNAVAILABLE: Record<VoicePosFocusAction, string> = {
   search: "หน้านี้ยังไม่มีช่องค้นหา — เลือกจากแท็บบนหน้าจอได้",
@@ -567,6 +581,43 @@ export function VoicePosController({
    * deterministic ก่อนเสมอ; ส่ง AI เฉพาะ no_match ที่ไม่ได้อยู่ในบริบทเลือกตัวเลือก
    * (บริบทนั้น deterministic เดาได้ดีกว่าอยู่แล้ว และไม่ต้องเสียโควตา)
    */
+  /** เริ่มคิวใหม่จากชุดคำสั่งที่ตีความได้ (ใช้ทั้งทาง deterministic และทาง AI) */
+  const runCommandBatch = useCallback(
+    (commands: readonly AiVoiceCommand[]): string | VoiceResultResponse => {
+      queueSeqRef.current += 1;
+      const next = createVoiceQueue(`vq-${queueSeqRef.current}`, commands);
+      publishQueue(next);
+      return runQueue(next);
+    },
+    [publishQueue, runQueue],
+  );
+
+  /**
+   * ประโยคเดียวที่มีหลายเมนู ("เพิ่มลาเต้สองแก้วกับชาเย็นหนึ่งแก้ว")
+   *
+   * ต้องตรวจก่อนเส้นทาง AI เพราะประโยคแบบนี้ parser เดิม "ฟังออกเมนูแรก" เสมอ
+   * จึงไม่เคยตกไปถึงทางสำรอง AI เลย — เมนูที่เหลือหายไปเงียบ ๆ
+   * ตัดสินด้วยเมนูจริงบนจอ: ทุกท่อนต้องเป็นสินค้าที่มีอยู่ ไม่งั้นถือว่าเป็นคำสั่งเดียว
+   */
+  const detectCommandBatch = useCallback(
+    (text: string) => {
+      const products = getCartApi()?.getSnapshot().products ?? [];
+      if (products.length === 0) return null;
+      const resolve = (phrase: string) => resolveVoiceProductPhrase(phrase, products, productAliases ?? []);
+      return buildMultiCommandBatch(text, {
+        parse: (segment) => parseVoiceCommand(segment),
+        isKnownProduct: (phrase) => resolve(phrase).status !== "not_found",
+        isExactProduct: (phrase) => {
+          const resolution = resolve(phrase);
+          if (resolution.status !== "matched") return false;
+          // ตัวจับคู่จับแบบคำขึ้นต้น จึงต้องเทียบชื่อเต็มซ้ำอีกชั้น
+          return compactName(resolution.selection.product.name) === compactName(phrase);
+        },
+      });
+    },
+    [getCartApi, productAliases],
+  );
+
   /**
    * W6 — ลงมือทำตามข้อเสนอที่ค้างอยู่
    *
@@ -577,9 +628,10 @@ export function VoicePosController({
   const commitProposal = useCallback(
     (accepted: StandbyProposal): string | VoiceResultResponse | Promise<string | VoiceResultResponse> => {
       setProposal(null);
+      if (accepted.commands) return runCommandBatch(accepted.commands);
       return handleDeterministicResult(accepted.result, "");
     },
-    [handleDeterministicResult],
+    [handleDeterministicResult, runCommandBatch],
   );
 
   const cancelProposal = useCallback(() => {
@@ -659,6 +711,27 @@ export function VoicePosController({
         // คำอื่นไม่นับเป็นคำตอบ — ปล่อยให้ไหลไปเป็นคำสั่งใหม่ตามปกติ
       }
       const pickerOpen = Boolean(getCartApi()?.getPicker?.());
+
+      // สั่งหลายเมนูรวดเดียว — ห้ามทำระหว่าง dialog ตัวเลือกเปิดอยู่ (ต้องจบทีละรายการ)
+      const batch = pickerOpen || text.length === 0 ? null : detectCommandBatch(text);
+      if (batch) {
+        // คำปลุกที่แตะตะกร้าต้องยืนยันก่อนเหมือนคำสั่งเดี่ยว — แต่ยืนยันครั้งเดียวได้ทั้งชุด
+        if (context.origin === "windows_standby") {
+          setProposal({
+            result,
+            commands: batch.commands,
+            expiresAt: clock() + STANDBY_PROPOSAL_WINDOW_MS,
+            sessionId: context.sessionId,
+            label: batch.label,
+          });
+          return keepListening(
+            `รอการยืนยัน: ${batch.label} — พูดว่า “ยืนยัน” ได้เลย`,
+            context.origin,
+          );
+        }
+        return runCommandBatch(batch.commands);
+      }
+
       const shouldTryAi =
         aiFallbackEnabled && voiceEnabled && result.resultCode === "no_match" && text.length > 0 && !pickerOpen;
 
@@ -702,12 +775,8 @@ export function VoicePosController({
           return AI_UNAVAILABLE_MESSAGE;
         case "ai_no_command":
           return "ยังไม่แน่ใจว่าหมายถึงเมนูไหน — ลองพูดชื่อเมนูให้ชัดอีกครั้ง";
-        case "ai": {
-          queueSeqRef.current += 1;
-          const next = createVoiceQueue(`vq-${queueSeqRef.current}`, outcome.envelope.commands);
-          publishQueue(next);
-          return runQueue(next);
-        }
+        case "ai":
+          return runCommandBatch(outcome.envelope.commands);
         default:
           return AI_UNAVAILABLE_MESSAGE;
       }
@@ -718,13 +787,13 @@ export function VoicePosController({
       cancelProposal,
       clock,
       commitProposal,
+      detectCommandBatch,
       getCartApi,
       keepListening,
       proposal,
-      publishQueue,
       reportVoiceTelemetry,
       requestAiIntent,
-      runQueue,
+      runCommandBatch,
       voiceEnabled,
     ],
   );
