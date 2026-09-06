@@ -136,6 +136,13 @@ export interface VoiceCommandButtonProps {
    * ไม่ส่งมา = ไม่มีคำปลุก ปุ่มทำงานแบบกดพูดเหมือนเดิมทุกประการ
    */
   readonly standbyHost?: WindowsVoiceHostAdapter;
+  /**
+   * ไมค์เปิดรับเสียงรอบใหม่แล้ว (ทั้งกดเองและเปิดต่อเองหลังระบบพูดจบ)
+   *
+   * ผู้เรียกใช้จังหวะนี้เริ่มนับหน้าต่าง "ย้อนกลับ" ใหม่ — ถ้านับตั้งแต่ตอนแก้ตะกร้า
+   * เวลาส่วนใหญ่จะหมดไปกับเสียงที่ระบบกำลังพูดเอง แล้วผู้ใช้พูดย้อนไม่ทัน
+   */
+  readonly onListeningStart?: () => void;
 }
 
 export function VoiceCommandButton({
@@ -148,6 +155,7 @@ export function VoiceCommandButton({
   announceTranscript = false,
   feedback,
   standbyHost,
+  onListeningStart,
 }: VoiceCommandButtonProps) {
   const speech = useMemo(
     () => adapter ?? createBrowserSpeechAdapter({ locale }),
@@ -246,6 +254,7 @@ export function VoiceCommandButton({
     settledRef.current = false;
     player.stop();
     player.cue("listening");
+    onListeningStart?.();
 
     sessionRef.current = speech.start({
       onState: (next) => {
@@ -314,7 +323,7 @@ export function VoiceCommandButton({
         player.speak(ERROR_MESSAGE[code]);
       },
     });
-  }, [endStandbySession, locale, onResult, onTelemetry, player, showMessage, speech, standbyHost]);
+  }, [endStandbySession, locale, onListeningStart, onResult, onTelemetry, player, showMessage, speech, standbyHost]);
 
   // startListening เรียกตัวเองผ่าน ref — ประกาศตรง ๆ จะเป็น use-before-define
   useEffect(() => {

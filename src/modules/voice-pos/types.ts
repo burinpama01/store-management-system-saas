@@ -52,6 +52,7 @@ export type VoiceIntentType =
   | "pos.remove_item"
   | "pos.clear_search"
   | "pos.choose_option"
+  | "pos.change_option"
   | "pos.confirm_selection"
   | "unknown";
 
@@ -64,6 +65,7 @@ export const VOICE_INTENT_TYPES = [
   "pos.remove_item",
   "pos.clear_search",
   "pos.choose_option",
+  "pos.change_option",
   "pos.confirm_selection",
   "unknown",
 ] as const;
@@ -137,6 +139,19 @@ export interface VoiceChooseOptionIntent {
   readonly optionPhrase: string;
 }
 
+/**
+ * แก้ตัวเลือกของรายการที่ "อยู่ในตะกร้าแล้ว" ("เปลี่ยนลาเต้เป็นหวานน้อย")
+ *
+ * ต่างจาก pos.choose_option ตรงที่อันนั้นใช้ตอน dialog เลือกตัวเลือกเปิดอยู่ระหว่างเพิ่มของ
+ * ส่วนอันนี้คือกลับไปแก้บรรทัดที่ขึ้นตะกร้าไปแล้ว ซึ่งเดิมทำด้วยเสียงไม่ได้เลย
+ * ต้องเอามือแตะจอ — ขัดกับเหตุผลของฟีเจอร์ที่มีไว้ให้คนมือไม่ว่าง
+ */
+export interface VoiceChangeOptionIntent {
+  readonly type: "pos.change_option";
+  readonly productPhrase: string;
+  readonly optionPhrase: string;
+}
+
 /** U21 — ยืนยันเพิ่มลงตะกร้าหลังเลือกตัวเลือกครบ ("ยืนยัน" / "ตกลง") */
 export interface VoiceConfirmSelectionIntent {
   readonly type: "pos.confirm_selection";
@@ -155,6 +170,7 @@ export type VoiceIntent =
   | VoiceRemoveItemIntent
   | VoiceClearSearchIntent
   | VoiceChooseOptionIntent
+  | VoiceChangeOptionIntent
   | VoiceConfirmSelectionIntent
   | VoiceUnknownIntent;
 
