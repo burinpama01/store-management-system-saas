@@ -1,5 +1,6 @@
 using System.Speech.Recognition;
 
+using StoreOS.Voice;
 using StoreOS.VoiceSpike;
 
 using Xunit;
@@ -68,7 +69,7 @@ public class WakePhrasesTests
     [Fact]
     public void ไวยากรณ์คำปลุกสร้างได้จริงและมีทางเลือกครบทุกคำ()
     {
-        var grammar = WakeRecognizer.BuildWakeGrammar(usePronunciation: true);
+        var grammar = WakeGrammar.BuildWakeGrammar(usePronunciation: true);
 
         Assert.NotNull(grammar);
         Assert.Equal("storeos-wake", grammar.Name);
@@ -77,12 +78,12 @@ public class WakePhrasesTests
     [Fact]
     public void ไวยากรณ์โหลดเข้า_engine_ภาษาอังกฤษบนเครื่องนี้ได้()
     {
-        var chosen = WakeRecognizer.PickEnglishRecognizer();
+        var chosen = WakeGrammar.PickEnglishRecognizer();
         // เครื่อง build ที่ไม่มี recognizer ไม่ควรทำให้ CI แดง — แต่ต้องเห็นว่าข้ามไป
         if (chosen is null) return;
 
         using var engine = new SpeechRecognitionEngine(chosen!.Id);
-        var withPronunciation = WakeRecognizer.LoadWakeGrammar(engine, out var error);
+        var withPronunciation = WakeGrammar.Load(engine, out var error);
 
         Assert.True(withPronunciation, $"ไวยากรณ์แบบมีหน่วยเสียงโหลดไม่ขึ้น: {error}");
     }

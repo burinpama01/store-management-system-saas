@@ -1,3 +1,4 @@
+using StoreOS.Voice;
 using Windows.Media.SpeechSynthesis;
 using Windows.Storage.Streams;
 

@@ -1,4 +1,4 @@
-namespace StoreOS.VoiceSpike;
+namespace StoreOS.Voice;
 
 /// <summary>ผลตัดสินว่าจะปลุกหรือไม่ปลุก — เก็บเหตุผลไว้เสมอเพื่อให้ debug ได้จาก log อย่างเดียว</summary>
 public enum WakeVerdict

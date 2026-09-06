@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using StoreOS.Launcher.Services;
+using StoreOS.Voice;
 
 namespace StoreOS.Launcher;
 
@@ -16,7 +17,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.2.0";
+    private const string LauncherVersion = "0.2.1";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -28,8 +29,8 @@ public partial class MainWindow : Window
     /// <summary>ISSUE-002 — หน้าต่างลูกที่ Launcher เป็นเจ้าของ ต้องปิดตามตอนปิด Launcher</summary>
     private readonly List<Window> _childWindows = new();
     /// <summary>
-    /// ฝั่งคำปลุก (แผน v1 W1) — W1 มีแค่วงจรชีวิต ยังไม่มีเครื่องยนต์จริง (W2)
-    /// factory คืน null-engine ไว้ก่อน เพื่อให้เส้นทางเปิด/ปิด/คืนไมค์ถูกใช้งานจริงตั้งแต่วันนี้
+    /// ฝั่งคำปลุก (แผน v1 W1 + เครื่องยนต์จริง W2) — ปิดเป็นค่าเริ่มต้น
+    /// เปิดทีละเครื่องด้วย VoiceStandbyEnabled ใน launcher.json ระหว่าง pilot เท่านั้น
     /// </summary>
     private readonly VoiceStandbyHost _voice;
 
@@ -42,7 +43,7 @@ public partial class MainWindow : Window
             LauncherLogShipper.ReadHubCredentials(HubConfigPath()),
             LauncherVersion);
         _voice = new VoiceStandbyHost(
-            () => new PlaceholderWakeEngine(),
+            () => new SystemSpeechWakeEngine(),
             (level, code, message) => _logs.Enqueue(level, code, message));
         Loaded += OnLoaded;
         Closing += OnClosing;

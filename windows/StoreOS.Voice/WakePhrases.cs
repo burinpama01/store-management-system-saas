@@ -1,4 +1,4 @@
-namespace StoreOS.VoiceSpike;
+namespace StoreOS.Voice;
 
 /// <summary>
 /// คำปลุกหนึ่งคำ พร้อมวิธีที่จะให้ recognizer ภาษาอังกฤษ "ได้ยิน" คำไทย

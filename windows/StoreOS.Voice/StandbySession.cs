@@ -1,4 +1,4 @@
-namespace StoreOS.VoiceSpike;
+namespace StoreOS.Voice;
 
 public enum StandbyState
 {

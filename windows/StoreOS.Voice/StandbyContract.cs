@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace StoreOS.VoiceSpike;
+namespace StoreOS.Voice;
 
 /// <summary>
 /// สัญญาข้อความระหว่าง native host กับหน้าเว็บ StoreOS (แผน v3 Task 9)

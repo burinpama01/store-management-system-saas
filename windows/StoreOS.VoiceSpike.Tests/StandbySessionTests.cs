@@ -1,8 +1,8 @@
-using StoreOS.VoiceSpike;
+using StoreOS.Voice;
 
 using Xunit;
 
-namespace StoreOS.VoiceSpike.Tests;
+namespace StoreOS.Voice.Tests;
 
 public class StandbySessionTests
 {

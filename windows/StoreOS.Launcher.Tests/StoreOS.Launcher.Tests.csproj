@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\StoreOS.Launcher\StoreOS.Launcher.csproj" />
+    <ProjectReference Include="..\StoreOS.Voice\StoreOS.Voice.csproj" />
   </ItemGroup>
 
 </Project>

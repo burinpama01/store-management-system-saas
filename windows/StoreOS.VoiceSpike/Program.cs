@@ -1,6 +1,7 @@
 using System.Speech.Recognition;
 using System.Text.Json;
 
+using StoreOS.Voice;
 using StoreOS.VoiceSpike;
 
 // CLI ของ spike — ทุกคำสั่งจบด้วยการเขียน JSON หนึ่งไฟล์เพื่อแนบเป็นหลักฐาน W0
@@ -52,8 +53,8 @@ string CorpusDir() => ArgValue("--corpus") ?? Path.Combine(Path.GetTempPath(), "
 
 object Inventory()
 {
-    var recognizers = WakeRecognizer.Inventory();
-    var chosen = WakeRecognizer.PickEnglishRecognizer();
+    var recognizers = WakeGrammar.InstalledRecognizers();
+    var chosen = WakeGrammar.PickEnglishRecognizer();
 
     var micOk = false;
     string? micError = null;
@@ -74,7 +75,7 @@ object Inventory()
     if (chosen is not null)
     {
         using var engine = new SpeechRecognitionEngine(chosen.Id);
-        pronunciationOk = WakeRecognizer.LoadWakeGrammar(engine, out pronunciationError);
+        pronunciationOk = WakeGrammar.Load(engine, out pronunciationError);
     }
 
     return new
@@ -101,7 +102,7 @@ async Task<object> BuildCorpusAsync()
 
 async Task<object> RecognizeAsync()
 {
-    var chosen = WakeRecognizer.PickEnglishRecognizer()
+    var chosen = WakeGrammar.PickEnglishRecognizer()
         ?? throw new InvalidOperationException("เครื่องนี้ไม่มี recognizer ภาษาอังกฤษ — W0 ตกตั้งแต่ข้อแรก");
 
     var dir = CorpusDir();
@@ -140,7 +141,7 @@ async Task<object> RecognizeAsync()
 
 object Handoff()
 {
-    var chosen = WakeRecognizer.PickEnglishRecognizer()
+    var chosen = WakeGrammar.PickEnglishRecognizer()
         ?? throw new InvalidOperationException("เครื่องนี้ไม่มี recognizer ภาษาอังกฤษ");
 
     var rounds = ArgInt("--rounds", 100);
@@ -164,7 +165,7 @@ object Handoff()
 
 object Listen()
 {
-    var chosen = WakeRecognizer.PickEnglishRecognizer()
+    var chosen = WakeGrammar.PickEnglishRecognizer()
         ?? throw new InvalidOperationException("เครื่องนี้ไม่มี recognizer ภาษาอังกฤษ");
 
     var seconds = ArgInt("--seconds", 60);
@@ -175,12 +176,12 @@ object Listen()
     var clock = System.Diagnostics.Stopwatch.StartNew();
 
     using var engine = new SpeechRecognitionEngine(chosen.Id);
-    WakeRecognizer.LoadWakeGrammar(engine, out _);
+    WakeGrammar.Load(engine, out _);
     engine.SetInputToDefaultAudioDevice();
 
     engine.SpeechRecognized += (_, e) =>
     {
-        var phraseId = WakeRecognizer.PhraseIdForText(e.Result.Text) ?? "unknown";
+        var phraseId = WakeGrammar.PhraseIdForText(e.Result.Text) ?? "unknown";
         var verdict = decider.Evaluate(phraseId, e.Result.Confidence, clock.ElapsedMilliseconds, session.MicHeldByWeb);
         detections.Add(new
         {

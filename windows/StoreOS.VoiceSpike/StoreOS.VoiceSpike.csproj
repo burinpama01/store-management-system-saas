@@ -31,4 +31,8 @@
     <PackageReference Include="System.Speech" Version="8.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\StoreOS.Voice\StoreOS.Voice.csproj" />
+  </ItemGroup>
+
 </Project>

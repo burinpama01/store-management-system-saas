@@ -1,3 +1,5 @@
+using StoreOS.Voice;
+
 namespace StoreOS.Launcher.Services;
 
 /// <summary>สถานะของฝั่งคำปลุกใน Launcher</summary>
@@ -14,17 +16,7 @@ public enum VoiceHostState
 }
 
 /// <summary>
-/// ตัวเครื่องยนต์คำปลุก — W1 ยังไม่ใส่ของจริง (นั่นคือ W2)
-/// แยกเป็น interface ตั้งแต่ตอนนี้เพื่อให้ lifecycle ทดสอบได้โดยไม่ต้องมีไมโครโฟน
-/// </summary>
-public interface IWakeEngine : IAsyncDisposable
-{
-    Task StartAsync(CancellationToken ct);
-    Task StopAsync(CancellationToken ct);
-}
-
-/// <summary>
-/// วงจรชีวิตของฝั่งคำปลุกใน Launcher (แผน v1 W1)
+/// วงจรชีวิตของฝั่งคำปลุกใน Launcher (แผน v1 W1 + เครื่องยนต์จริงของ W2)
 ///
 /// กฎที่ยึด:
 ///   * <b>POS ต้องเปิดได้เสมอ</b> — คำปลุกพังต้องไม่ทำให้ขายของไม่ได้ ทุก error จบที่
@@ -32,31 +24,37 @@ public interface IWakeEngine : IAsyncDisposable
 ///   * ปิดโปรแกรมทางไหนก็ต้องคืนไมโครโฟน — <see cref="StopAsync"/> ต้องเรียกซ้ำได้
 ///     และต้องปลอดภัยแม้ไม่เคย Start
 ///   * ค่าเริ่มต้นคือ "ปิด" — เปิดได้เฉพาะเมื่อ settings เปิดไว้จริง (feature flag ต่อเครื่อง)
+///   * ไม่มี transcript ผ่านชั้นนี้เลย — ได้แค่รหัสคำปลุกกับความมั่นใจ
 /// </summary>
 public sealed class VoiceStandbyHost : IAsyncDisposable
 {
-    private readonly Func<IWakeEngine> _engineFactory;
+    private readonly Func<IWakeWordEngine> _engineFactory;
     private readonly Action<string, string, string> _log;
+    private readonly WakeWordOptions _options;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private IWakeEngine? _engine;
+    private IWakeWordEngine? _engine;
     private bool _disposed;
 
-    /// <param name="engineFactory">สร้างเครื่องยนต์คำปลุก (W2 จะส่งตัวจริงเข้ามา)</param>
+    /// <param name="engineFactory">สร้างเครื่องยนต์คำปลุก (ตัวจริงคือ SystemSpeechWakeEngine)</param>
     /// <param name="log">level, code, message — ต่อเข้ากับ LauncherLogShipper</param>
-    public VoiceStandbyHost(Func<IWakeEngine> engineFactory, Action<string, string, string> log)
+    public VoiceStandbyHost(
+        Func<IWakeWordEngine> engineFactory,
+        Action<string, string, string> log,
+        WakeWordOptions? options = null)
     {
         _engineFactory = engineFactory;
         _log = log;
+        _options = options ?? new WakeWordOptions();
     }
 
     public VoiceHostState State { get; private set; } = VoiceHostState.Off;
     public string? LastFault { get; private set; }
     /// <summary>นับจำนวนครั้งที่เปิดเครื่องยนต์จริง — ใช้ยืนยันว่า Start ซ้ำไม่เปิดซ้อน</summary>
     public int EngineStartCount { get; private set; }
+    /// <summary>ได้ยินคำปลุก — W3/W4 จะเอาไปเริ่มการส่งไมค์ต่อให้หน้าเว็บ</summary>
+    public event EventHandler<WakeDetectedEventArgs>? WakeDetected;
 
-    /// <summary>
-    /// เปิดโหมดฟังคำปลุก
-    /// </summary>
+    /// <summary>เปิดโหมดฟังคำปลุก</summary>
     /// <param name="enabled">ค่าจาก settings ของเครื่อง — ปิดอยู่ = ไม่ทำอะไรเลย</param>
     public async Task StartAsync(bool enabled, CancellationToken ct = default)
     {
@@ -75,9 +73,12 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
 
             State = VoiceHostState.Starting;
             var engine = _engineFactory();
+            engine.WakeDetected += OnWakeDetected;
+            engine.Faulted += OnFaulted;
+
             try
             {
-                await engine.StartAsync(ct);
+                await engine.StartAsync(_options, ct);
             }
             catch (Exception ex)
             {
@@ -89,10 +90,18 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
                 return;
             }
 
+            // engine รายงานปัญหาผ่าน event แล้วคืนมาปกติ — ต้องอ่านสถานะจริงของมัน ไม่ใช่เดา
+            if (engine.State != WakeEngineState.Listening)
+            {
+                await SafeDisposeAsync(engine);
+                State = VoiceHostState.Degraded;
+                _log("error", "voice_standby_failed", $"เปิดโหมดคำปลุกไม่สำเร็จ: {LastFault ?? "unknown"}");
+                return;
+            }
+
             _engine = engine;
             EngineStartCount++;
             State = VoiceHostState.Standby;
-            LastFault = null;
             _log("info", "voice_standby_started", "เริ่มฟังคำปลุกแล้ว");
         }
         finally
@@ -144,8 +153,31 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
         _gate.Dispose();
     }
 
-    private async Task SafeDisposeAsync(IWakeEngine engine)
+    private void OnWakeDetected(object? sender, WakeDetectedEventArgs e)
     {
+        // log ได้แค่รหัสคำปลุก ห้ามมีข้อความที่ได้ยิน
+        _log("info", "voice_wake_detected", $"ได้ยินคำปลุก {e.PhraseId} ({e.Confidence:0.00})");
+        WakeDetected?.Invoke(this, e);
+    }
+
+    private void OnFaulted(object? sender, WakeEngineFaultEventArgs e)
+    {
+        LastFault = e.Code;
+
+        // ไวยากรณ์ตกไปใช้แบบสะกดอย่างเดียวยังฟังได้ แค่จับคำไทยได้แย่ลง — ไม่ใช่เหตุให้ปิดทั้งฟีเจอร์
+        if (e.Code == "pronunciation_fallback")
+        {
+            _log("warn", "voice_pronunciation_fallback", "เครื่องนี้ใช้ไวยากรณ์แบบไม่มีหน่วยเสียง คำปลุกไทยอาจจับได้น้อยลง");
+            return;
+        }
+
+        _log("error", "voice_standby_fault", $"ชุดรู้จำเสียงมีปัญหา: {e.Code}");
+    }
+
+    private async Task SafeDisposeAsync(IWakeWordEngine engine)
+    {
+        engine.WakeDetected -= OnWakeDetected;
+        engine.Faulted -= OnFaulted;
         try
         {
             await engine.DisposeAsync();
