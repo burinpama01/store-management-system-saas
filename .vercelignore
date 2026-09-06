@@ -8,3 +8,26 @@
 .codex*.log
 .playwright-cli/
 .preview-dev.log
+
+# Heavy non-web-app directories (desktop launcher, mobile shell, QA artifacts).
+# Vercel CLI uploads everything except this list, and a 148MB launcher exe in
+# artifacts/ broke uploads with "File size limit exceeded (100 MB)".
+# Patterns are root-anchored ("/artifacts") so they never match same-named
+# folders inside src/ (e.g. "Marketing" must not hit src/.../marketing/).
+/artifacts
+/.codex-temp
+/.codex-remote-attachments
+/.openclaw-*.log
+/windows
+/mobile
+/graphify-out
+/output
+/Marketing
+/Design
+/Plan
+/Brainstorming
+/docs
+/tests
+/test-results
+/playwright-report
+/scripts

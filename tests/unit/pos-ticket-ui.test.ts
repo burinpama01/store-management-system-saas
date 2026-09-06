@@ -32,7 +32,9 @@ describe("POS ticket UX guards", () => {
     const receiptPanelEnd = source.indexOf("//", receiptPanelStart + 1);
     const receiptPanelSource = source.slice(receiptPanelStart, receiptPanelEnd);
     const historyStart = source.indexOf("async function handlePrintHistoryOrder");
-    const historyEnd = source.indexOf("setPrintStatusMessage", historyStart);
+    // ห้ามตัดที่ setPrintStatusMessage: ฟังก์ชันนี้ขึ้นต้นด้วยการรายงานสถานะอยู่แล้ว
+    // (ตั้งแต่เพิ่ม QR รับแต้ม) ทำให้ช่วงที่ตัดได้สั้นจนไม่เหลือของที่จะตรวจ
+    const historyEnd = source.indexOf("printSuccessMessage", historyStart);
     const historySource = source.slice(historyStart, historyEnd);
 
     expect(printTicketSource).toContain('paymentStatus: "unpaid"');
