@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createPortal } from "react-dom";
 import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import type { WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
+import type { VoiceActivationOrigin } from "@/modules/voice-pos/standby-policy";
 import {
   createBrowserSpeechAdapter,
   type VoiceSpeechAdapter,
@@ -56,6 +57,15 @@ const RESULT_MESSAGE: Record<VoiceParseResult["resultCode"], string> = {
 const MESSAGE_VISIBLE_MS = 8000;
 
 /** คำตอบจาก onResult ที่ขอให้ฟังต่อได้ */
+/**
+ * บริบทของรอบที่พูด — ผู้เรียกใช้ตัดสินว่าต้องขอการยืนยันไหม (W6)
+ * ไมค์ที่เปิดเองด้วยคำปลุกไม่มีใครตั้งใจกด เสียงที่เข้ามาจึงเชื่อได้น้อยกว่า
+ */
+export interface VoiceResultContext {
+  readonly origin: VoiceActivationOrigin;
+  readonly sessionId: string | null;
+}
+
 export interface VoiceResultResponse {
   readonly message: string;
   readonly listenAgain?: boolean;
@@ -101,6 +111,8 @@ export interface VoiceCommandButtonProps {
      * พูดแค่ชื่อตัวเลือกโดยไม่มีคำว่า "เลือก" นำหน้า
      */
     transcript: string,
+    /** W6 — รอบนี้เปิดไมค์มาได้อย่างไร (กดปุ่มเอง หรือคำปลุกของ Launcher) */
+    context: VoiceResultContext,
     /**
      * P5 — AI fallback เป็นงาน async ผู้เรียกจึงคืน Promise ได้
      * ระหว่างรอ ปุ่มค้างสถานะ "กำลังแปลคำสั่ง…" และไม่รับ final ซ้ำของรอบเดิม
@@ -249,7 +261,12 @@ export function VoiceCommandButton({
 
         // ผู้เรียกอาจต้องถาม AI ต่อ (async) — ระหว่างนั้นค้างสถานะ "กำลังแปลคำสั่ง…"
         setState("resolving");
-        void Promise.resolve(onResult?.(result, transcript))
+        // บริบทต้องอ่านตอนนี้ ไม่ใช่ตอน callback ทำงานเสร็จ — รอบอาจถูกปิดไปแล้วระหว่างรอ
+        const context = {
+          origin: (standbySessionRef.current ? "windows_standby" : "push_to_talk") as VoiceActivationOrigin,
+          sessionId: standbySessionRef.current,
+        };
+        void Promise.resolve(onResult?.(result, transcript, context))
           .catch(() => undefined)
           .then((announcement) => {
             const response =
