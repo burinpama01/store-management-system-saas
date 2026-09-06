@@ -1,6 +1,6 @@
 {
   "name": "store-management-saas",
-  "version": "0.44.19",
+  "version": "0.44.20",
   "private": true,
   "scripts": {
     "dev": "next dev",

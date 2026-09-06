@@ -87,7 +87,8 @@ describe("windows voice host — รับคำปลุก", () => {
     web.emit({ v: 99, type: "wake.detected" });
     web.emit("ปลุกหน่อย");
     web.emit(null);
-    web.emit(wake({ phraseId: "open_cash_drawer" }));
+    // รหัสคำปลุกที่รูปทรงผิด (ไม่ใช่ "รหัสที่ไม่รู้จัก" ซึ่งต้องผ่านได้)
+    web.emit(wake({ phraseId: "อักขระแปลก!" }));
 
     expect(listener).not.toHaveBeenCalled();
   });

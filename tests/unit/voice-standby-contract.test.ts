@@ -34,9 +34,29 @@ describe("standby contract — ข้อความจาก native host", () =
     expect(parseStandbyMessage(wakeMessage({ v: 2 }))).toBeNull();
   });
 
-  it("ทิ้ง wake ที่ไม่มีรหัสคำปลุกที่รู้จัก", () => {
-    expect(parseStandbyMessage(wakeMessage({ phraseId: "open_cash_drawer" }))).toBeNull();
+  it("ทิ้ง wake ที่ไม่มีรหัสคำปลุก หรือรหัสรูปทรงผิด", () => {
     expect(parseStandbyMessage(wakeMessage({ phraseId: undefined }))).toBeNull();
+    expect(parseStandbyMessage(wakeMessage({ phraseId: "" }))).toBeNull();
+    expect(parseStandbyMessage(wakeMessage({ phraseId: "มีอักขระแปลก!" }))).toBeNull();
+    expect(parseStandbyMessage(wakeMessage({ phraseId: "x".repeat(33) }))).toBeNull();
+  });
+
+  it("รหัสคำปลุกใหม่ที่เว็บยังไม่รู้จักต้องใช้งานได้ ไม่ใช่ถูกทิ้งเงียบ", () => {
+    // เจอของจริง: เปลี่ยนเครื่องยนต์ฝั่ง Windows แล้วรหัสใหม่ไม่อยู่ในรายการปิดของเว็บ
+    // ผู้ใช้เห็นว่า "ปลุกติดแล้วแต่ไม่ขึ้นรับคำสั่ง" โดยไม่มีอะไรบอกสาเหตุ
+    // ฝั่งเครื่องกับฝั่งเว็บอัปเดตคนละเวลาเสมอ รหัสเป็นแค่ป้ายชื่อ ไม่ใช่ด่านความปลอดภัย
+    const parsed = parseStandbyMessage(wakeMessage({ phraseId: "engine_v9_phrase" }));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.phraseId).toBe("engine_v9_phrase");
+  });
+
+  it("คำสั่งอันตรายที่แฝงมาเป็นรหัสก็ยังเป็นแค่ป้ายชื่อ ไม่ได้สั่งอะไร", () => {
+    // ปลอดภัยเพราะชนิดข้อความบังคับว่าเป็นแค่ "ได้ยินคำปลุก" ไม่ใช่เพราะรายการรหัส
+    const parsed = parseStandbyMessage(wakeMessage({ phraseId: "open_cash_drawer" }));
+
+    expect(parsed!.type).toBe(STANDBY_MESSAGE_TYPES.wakeDetected);
+    expect(Object.keys(parsed!)).not.toContain("intent");
   });
 
   it("ตัดฟิลด์แปลกปลอมทิ้งทั้งหมด — native สั่งงานผ่านสัญญานี้ไม่ได้", () => {

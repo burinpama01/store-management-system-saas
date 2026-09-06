@@ -31,13 +31,17 @@ export const STANDBY_MESSAGE_TYPES = {
 export type StandbyMessageType = (typeof STANDBY_MESSAGE_TYPES)[keyof typeof STANDBY_MESSAGE_TYPES];
 
 /**
- * รหัสคำปลุกที่อนุญาต — native ส่งรหัสมา ไม่ใช่ข้อความที่ได้ยิน
+ * รหัสคำปลุกที่รู้จัก — ใช้แสดงผล/สถิติเท่านั้น
  *
- * "hello_storeos" คือคำที่ใช้จริงบนเครื่องร้าน (engine Vosk)
- * ส่วนรหัสเดิมเก็บไว้เพราะเครื่องที่ยังไม่อัปเดตใช้ engine เก่าอยู่ — ต้องรับได้ทั้งคู่
- * ระหว่างที่ยังมีเครื่องคละรุ่น ไม่งั้นข้อความจากเครื่องเก่าจะถูกทิ้งทั้งหมด
+ * <b>ห้ามใช้เป็นด่านความปลอดภัย</b> ขอบเขตความปลอดภัยจริงคือ "native บอกได้แค่ว่า
+ * ได้ยินคำปลุก" ซึ่งบังคับด้วยชนิดข้อความอยู่แล้ว ตัวรหัสเป็นแค่ป้ายชื่อ
+ *
+ * เคยทำเป็นรายการปิดแล้วเจอของจริง: พอเปลี่ยนเครื่องยนต์คำปลุกฝั่ง Windows
+ * รหัสใหม่ (hello_storeos) ไม่อยู่ในรายการของเว็บที่ deploy ไว้ ข้อความจึงถูกทิ้งเงียบ ๆ
+ * ผู้ใช้เห็นว่า "ปลุกติดแล้วแต่ไม่ขึ้นรับคำสั่ง" โดยไม่มีอะไรบอกสาเหตุเลย
+ * ฝั่งเครื่องกับฝั่งเว็บอัปเดตคนละเวลาเสมอ สัญญาจึงต้องทนรหัสที่ยังไม่รู้จักได้
  */
-export const WAKE_PHRASE_IDS = [
+export const KNOWN_WAKE_PHRASE_IDS = [
   "hello_storeos",
   "hello_os",
   "hanlo_os",
@@ -45,7 +49,11 @@ export const WAKE_PHRASE_IDS = [
   "watdee_os",
   "sawatdee_os",
 ] as const;
-export type WakePhraseId = (typeof WAKE_PHRASE_IDS)[number];
+
+/** รูปทรงที่ยอมรับ: ตัวพิมพ์เล็ก ตัวเลข ขีดล่าง ยาวไม่เกิน 32 (กันข้อความยาว/อักขระแปลก) */
+const WAKE_PHRASE_ID_RE = /^[a-z0-9_]{1,32}$/;
+
+export type WakePhraseId = string;
 
 export interface StandbyInboundMessage {
   readonly v: number;
@@ -128,7 +136,7 @@ export function parseHostHealth(raw: unknown): VoiceHostHealth | null {
 const SESSION_ID_RE = /^[a-z0-9]{6,32}$/i;
 
 function isWakePhraseId(value: unknown): value is WakePhraseId {
-  return typeof value === "string" && (WAKE_PHRASE_IDS as readonly string[]).includes(value);
+  return typeof value === "string" && WAKE_PHRASE_ID_RE.test(value);
 }
 
 /**
