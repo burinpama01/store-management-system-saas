@@ -300,7 +300,12 @@ public partial class MainWindow : Window
         try
         {
             var path = Path.Combine(Path.GetDirectoryName(HubConfigPath())!, "launcher-provision.log");
-            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}{Environment.NewLine}";
+            // ต้องบังคับปฏิทินสากล: เครื่องร้านตั้งค่าภูมิภาคไทย ทำให้ "yyyy" กลายเป็นปีพุทธศักราช
+            // (2569 แทน 2026) แล้วเทียบเวลากับ log ฝั่งเซิร์ฟเวอร์ไม่ได้เลย
+            var line = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}{3}",
+                DateTimeOffset.Now, level, message, Environment.NewLine);
             File.AppendAllText(path, line);
         }
         catch (Exception)
