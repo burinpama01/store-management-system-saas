@@ -99,6 +99,31 @@ public static class WakeGrammar
         return new Grammar(document) { Name = "storeos-decoy" };
     }
 
+    /// <summary>
+    /// ไวยากรณ์ "ที่รองรับเสียงอื่น" — กฎเดียวที่ยอมรับอะไรก็ได้ (GARBAGE ของ SAPI)
+    ///
+    /// นี่คือชิ้นที่ขาดไปและทำให้เครื่องปลุกเองรัว ๆ ในที่ที่มีเสียงคน:
+    /// ไวยากรณ์แบบจำกัดคำไม่มีที่ให้เสียงทั่วไปลง engine จึงถูกบังคับให้เลือก
+    /// "คำที่ใกล้ที่สุด" จากรายการคำปลุกเสมอ แม้เสียงนั้นจะไม่ใกล้อะไรเลย
+    /// (วัดได้จริง: ฟัง 45 วินาทีโดยไม่มีใครพูด เด้ง 3 ครั้ง สูงสุด 0.975)
+    ///
+    /// พอมีกฎนี้แข่งอยู่ เสียงที่ไม่ใช่คำปลุกจะไปตกที่กฎนี้แทน
+    /// </summary>
+    public static Grammar BuildRejectGrammar()
+    {
+        // SrgsRule.Add รับเฉพาะ SrgsElement — ห่อ ruleref ไว้ใน item ก่อน
+        var item = new SrgsItem();
+        item.Add(SrgsRuleRef.Garbage);
+        var rule = new SrgsRule("reject");
+        rule.Add(item);
+
+        var document = new SrgsDocument { Culture = new CultureInfo("en-US") };
+        document.Rules.Add(rule);
+        document.Root = rule;
+
+        return new Grammar(document) { Name = "storeos-reject" };
+    }
+
     /// <summary>ข้อความของ token ที่ผูกหน่วยเสียงไว้ — ใช้เป็นกุญแจย้อนกลับหารหัสคำปลุก</summary>
     public static string PronunciationTokenText(WakePhrase phrase) => phrase.Id.Replace('_', ' ');
 
@@ -131,6 +156,7 @@ public static class WakeGrammar
         {
             engine.LoadGrammar(BuildWakeGrammar(usePronunciation: true));
             engine.LoadGrammar(BuildDecoyGrammar());
+            engine.LoadGrammar(BuildRejectGrammar());
             return true;
         }
         catch (Exception ex)
@@ -139,6 +165,7 @@ public static class WakeGrammar
             engine.UnloadAllGrammars();
             engine.LoadGrammar(BuildWakeGrammar(usePronunciation: false));
             engine.LoadGrammar(BuildDecoyGrammar());
+            engine.LoadGrammar(BuildRejectGrammar());
             return false;
         }
     }

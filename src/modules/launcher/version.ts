@@ -7,4 +7,4 @@
  *
  * อัปโหลด zip ใหม่เมื่อไหร่ ขยับเลขนี้ตามทันที ไม่งั้นชื่อไฟล์ที่ผู้ใช้ได้จะโกหก
  */
-export const LAUNCHER_VERSION = "0.3.0";
+export const LAUNCHER_VERSION = "0.3.1";

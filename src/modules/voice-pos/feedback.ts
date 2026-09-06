@@ -8,7 +8,12 @@
 // ข้อบังคับความเป็นส่วนตัว: พูดได้เฉพาะ "ข้อความผลลัพธ์ที่ระบบสร้างเอง" เท่านั้น
 // ห้ามอ่านคำพูดดิบของผู้ใช้ (transcript) ออกมาไม่ว่ากรณีใด — ตัวเรียกส่งเฉพาะ announcement
 
-export type VoiceCueKind = "listening" | "success" | "error";
+export type VoiceCueKind =
+  /** ตอบรับคำปลุกทันทีที่ได้ยิน — ต้องมาก่อน "listening" เพื่อให้รู้ว่าระบบตื่นแล้ว */
+  | "wake"
+  | "listening"
+  | "success"
+  | "error";
 
 export interface VoiceFeedback {
   /** เสียงเตือนสั้น — คืนทันที ไม่รอเสียงจบ */
@@ -68,6 +73,9 @@ export interface GainLike {
 
 /** โทนเสียงของแต่ละสถานะ — สั้นและต่างกันพอให้แยกออกในร้านที่มีเสียงรบกวน */
 const CUE_TONES: Record<VoiceCueKind, { readonly hz: number; readonly ms: number }> = {
+  // เสียงตอบรับคำปลุก: ต่ำและสั้นกว่าเสียง "เริ่มฟัง" เพื่อให้แยกออกว่าเป็นคนละจังหวะ
+  // (ตื่นแล้ว → กำลังฟัง) พนักงานที่มือไม่ว่างต้องรู้ได้โดยไม่ต้องมองจอ
+  wake: { hz: 660, ms: 70 },
   listening: { hz: 880, ms: 90 },
   success: { hz: 1320, ms: 110 },
   error: { hz: 320, ms: 220 },

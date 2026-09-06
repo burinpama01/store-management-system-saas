@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-09-06T18:40:09.1848204\u002B07:00",
+  "recognizer": {
+    "Id": "MS-1033-80-DESK",
+    "Name": "MS-1033-80-DESK",
+    "Culture": "en-US"
+  },
+  "listenedSeconds": 45,
+  "detections": [
+    {
+      "at": "2026-09-06T18:40:13.6479509\u002B07:00",
+      "heard": "hello os",
+      "phraseId": "hello_os",
+      "confidence": 0.975,
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T18:40:34.1992474\u002B07:00",
+      "heard": "hun lo oh es",
+      "phraseId": "hanlo_os",
+      "confidence": 0.768,
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T18:40:45.4519590\u002B07:00",
+      "heard": "ha lo",
+      "phraseId": "unknown",
+      "confidence": 0.909,
+      "verdict": "Accepted"
+    }
+  ],
+  "watchdogFallbacks": 3
+}

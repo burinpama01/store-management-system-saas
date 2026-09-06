@@ -181,17 +181,21 @@ object Listen()
 
     engine.SpeechRecognized += (_, e) =>
     {
-        var phraseId = WakeGrammar.PhraseIdForText(e.Result.Text) ?? "unknown";
-        var verdict = decider.Evaluate(phraseId, e.Result.Confidence, clock.ElapsedMilliseconds, session.MicHeldByWeb);
+        // ต้องเป็นคำปลุกจริงเท่านั้น — ของเดิมยัด "unknown" เข้าไปแล้วนับเป็นปลุกด้วย
+        // ทำให้ตัวเลขที่วัดได้สูงเกินจริง (ตัวจริงใน SystemSpeechWakeEngine ทิ้งไปถูกแล้ว)
+        var phraseId = WakeGrammar.PhraseIdForText(e.Result.Text);
+        var verdict = phraseId is null
+            ? new WakeEvaluation(WakeVerdict.RejectedLowConfidence, "not_a_wake_phrase", e.Result.Confidence)
+            : decider.Evaluate(phraseId, e.Result.Confidence, clock.ElapsedMilliseconds, session.MicHeldByWeb);
         detections.Add(new
         {
             at = DateTimeOffset.Now.ToString("o"),
             heard = e.Result.Text,
-            phraseId,
+            phraseId = phraseId ?? "(ไม่ใช่คำปลุก)",
             confidence = Math.Round(e.Result.Confidence, 3),
             verdict = verdict.Verdict.ToString(),
         });
-        if (verdict.ShouldWake)
+        if (verdict.ShouldWake && phraseId is not null)
         {
             var message = session.OnWakeAccepted(phraseId, e.Result.Confidence, clock.ElapsedMilliseconds, DateTimeOffset.Now);
             Console.WriteLine($"WAKE → {StandbyContract.Serialize(message)}");

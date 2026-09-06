@@ -21,7 +21,7 @@
     <Platforms>x64</Platforms>
     <AssemblyName>StoreOS.Launcher</AssemblyName>
     <RootNamespace>StoreOS.Launcher</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <!-- ไอคอนของไฟล์ .exe และของทางลัดบนเดสก์ท็อป (สร้างด้วย scripts/windows-launcher/build-icon.ps1) -->
     <ApplicationIcon>Assets\storeos.ico</ApplicationIcon>
   </PropertyGroup>
