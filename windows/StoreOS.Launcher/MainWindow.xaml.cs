@@ -17,7 +17,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.2.4";
+    private const string LauncherVersion = "0.2.5";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         Web.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
         // ผลของ provision กลับมาทางนี้ ไม่ใช่ค่าคืนของ ExecuteScriptAsync (ดู HubConfigProvisioner)
         Web.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+        Web.CoreWebView2.PermissionRequested += OnPermissionRequested;
 
         // config ของเครื่องถูกโปรแกรมอื่นแก้ให้ชี้เว็บปลอมได้ — Launcher เปิดเต็มจอไม่มีแถบที่อยู่
         // ผู้ใช้จึงไม่มีทางสังเกตเห็น ต้องกรองที่นี่
@@ -236,6 +237,40 @@ public partial class MainWindow : Window
         {
             RecordProvision("warn", $"เขียน Print Hub config ไม่สำเร็จ: {ex.GetType().Name}");
         }
+    }
+
+    /// <summary>
+    /// ตัดสินคำขอสิทธิ์ของหน้าเว็บแทนพนักงานหน้าร้าน
+    ///
+    /// ถ้าไม่ดักไว้ WebView2 จะเด้งกล่องถาม "อนุญาตให้ใช้ไมโครโฟนไหม" ซึ่งพนักงานหน้าร้าน
+    /// ไม่มีข้อมูลพอจะตัดสิน และถ้ากดปฏิเสธครั้งเดียว คำสั่งเสียงจะใช้ไม่ได้ทั้งเครื่อง
+    /// โดยไม่มีใครรู้สาเหตุ — เจ้าของร้านตัดสินใจไปแล้วตั้งแต่ตอนติดตั้งโปรแกรมนี้
+    ///
+    /// อนุญาตเฉพาะสิ่งที่ StoreOS ใช้จริงและเฉพาะคำขอจาก origin ของตัวเอง
+    /// </summary>
+    private void OnPermissionRequested(object? sender, CoreWebView2PermissionRequestedEventArgs e)
+    {
+        var permission = e.PermissionKind switch
+        {
+            CoreWebView2PermissionKind.Microphone => WebPermission.Microphone,
+            CoreWebView2PermissionKind.Camera => WebPermission.Camera,
+            CoreWebView2PermissionKind.Geolocation => WebPermission.Geolocation,
+            CoreWebView2PermissionKind.Notifications => WebPermission.Notifications,
+            CoreWebView2PermissionKind.OtherSensors => WebPermission.OtherSensors,
+            CoreWebView2PermissionKind.ClipboardRead => WebPermission.ClipboardRead,
+            _ => WebPermission.Unknown,
+        };
+
+        var decision = WebViewPermissionPolicy.Decide(permission, e.Uri, Web.Source);
+        var allow = decision == WebPermissionDecision.Allow;
+        e.State = allow ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+        // จำไว้ในโปรไฟล์ของเครื่อง จะได้ไม่ต้องตัดสินซ้ำทุกครั้งที่เปิดโปรแกรม
+        e.SavesInProfile = true;
+
+        _logs.Enqueue(
+            allow ? "info" : "warn",
+            allow ? "webview_permission_allowed" : "webview_permission_denied",
+            $"คำขอสิทธิ์ {permission} จากหน้าเว็บ: {(allow ? "อนุญาต" : "ปฏิเสธ")}");
     }
 
     /// <summary>

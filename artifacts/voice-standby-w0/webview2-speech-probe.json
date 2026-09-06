@@ -1,0 +1,26 @@
+{
+  "checkedAt": "2026-09-06T13:05:00+07:00",
+  "purpose": "ตอบคำถามชี้ขาดก่อนไปเครื่องร้าน: Web Speech ทำงานใน WebView2 หรือไม่ และต้องมี user gesture ไหม",
+  "webview2": "Edge 152.0.0.0 (WebView2 runtime 152.0.4191.62)",
+  "origin": "https://www.store-os.online/login",
+  "secureContext": true,
+  "hasMediaDevices": true,
+  "hasSpeechRecognition": true,
+  "hasWebkitSpeechRecognition": true,
+  "constructorWorks": true,
+  "programmaticStartWithoutUserGesture": {
+    "events": ["start-called", "start", "audiostart", "soundstart", "end"],
+    "errors": [],
+    "conclusion": "เริ่มฟังได้เองโดยไม่ต้องมี user gesture และไมค์เปิดจริง (audiostart/soundstart)"
+  },
+  "permissionRequested": {
+    "kind": "Microphone",
+    "note": "WebView2 ยิง PermissionRequested — Launcher ต้องมี handler ไม่งั้นพนักงานเจอกล่องถามหรือถูกปฏิเสธ",
+    "fixedIn": "Launcher 0.2.5 (WebViewPermissionPolicy)"
+  },
+  "limitations": [
+    "ทดสอบบนเครื่องพัฒนา ไม่ใช่เครื่อง POS หน้าร้าน",
+    "ยังไม่ได้พิสูจน์ว่าถอดคำพูดภาษาไทยออกมาถูกต้อง (ไม่มีคนพูดตอนทดสอบ)",
+    "ยังไม่ได้วัดว่าใช้เน็ตเท่าไรและหน่วงแค่ไหนเมื่อเน็ตร้านช้า"
+  ]
+}
