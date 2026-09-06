@@ -207,6 +207,49 @@ describe("VoiceCommandButton — ถูกปลุกจาก Launcher", () =>
     expect(screen.getByTestId("voice-mic")).toBeTruthy();
   });
 
+  it("แถบสถานะขึ้นเมื่อมี Launcher และหายเมื่อไม่มี", () => {
+    const speech = createFakeAdapter();
+    const withHost = createFakeHost();
+    const view = render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={withHost.host} feedback={silentFeedback} />,
+    );
+    expect(screen.getByTestId("voice-standby-status").textContent).toContain("พร้อมรับคำปลุก");
+
+    view.unmount();
+    render(<VoiceCommandButton adapter={speech.adapter} feedback={silentFeedback} />);
+
+    expect(screen.queryByTestId("voice-standby-status")).toBeNull();
+  });
+
+  it("พักคำปลุกแล้วคำปลุกต้องไม่เปิดไมค์ และสถานะต้องเปลี่ยน", () => {
+    const speech = createFakeAdapter();
+    const host = createFakeHost();
+    render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={host.host} feedback={silentFeedback} />,
+    );
+
+    act(() => {
+      screen.getByTestId("voice-standby-toggle").click();
+    });
+    act(() => host.wake());
+
+    expect(speech.starts).toBe(0);
+    expect(host.calls).toEqual(["ended:sess000001:tap_required"]);
+    expect(screen.getByTestId("voice-standby-status").textContent).toContain("สแตนด์บายปิด");
+  });
+
+  it("ระหว่างฟังคำสั่ง สถานะต้องเป็น “กำลังฟัง” ไม่ใช่ “พร้อมรับคำปลุก”", () => {
+    const speech = createFakeAdapter();
+    const host = createFakeHost();
+    render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={host.host} feedback={silentFeedback} />,
+    );
+
+    act(() => host.wake());
+
+    expect(screen.getByTestId("voice-standby-status").textContent).toContain("กำลังฟังคำสั่ง");
+  });
+
   it("ถอดคอมโพเนนต์ออกแล้วต้องเลิกรับคำปลุก", () => {
     const speech = createFakeAdapter();
     const host = createFakeHost();

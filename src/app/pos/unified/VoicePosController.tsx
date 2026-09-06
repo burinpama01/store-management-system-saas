@@ -144,6 +144,8 @@ export function VoicePosController({
    * อยู่ในหน่วยความจำของหน้าจอ ไม่บันทึกที่ไหน และหายเมื่อออกจากหน้า
    */
   const [proposal, setProposal] = useState<StandbyProposal | null>(null);
+  /** บังคับ re-render ให้ตัวเลขนับถอยหลังขยับ (ค่าเองไม่ได้ถูกใช้ที่ไหน) */
+  const [, setProposalTick] = useState(0);
   const [undoNotice, setUndoNotice] = useState("");
   const undoSeqRef = useRef(0);
   // U16 — telemetry ในหน่วยความจำของ session (ใช้ debug ในเครื่อง)
@@ -180,6 +182,31 @@ export function VoicePosController({
     }, remaining);
     return () => clearTimeout(timer);
   }, [clock, undoToken]);
+
+  /**
+   * เดินนาฬิกาให้การ์ดยืนยัน: นับถอยหลังต้องขยับจริง และพอหมดเวลาต้องหายเอง
+   * ไม่ตั้ง timer เมื่อไม่มีข้อเสนอ — หน้าขายไม่ควรมี timer เดินเปล่า ๆ ตลอดกะ
+   */
+  useEffect(() => {
+    if (!proposal) return;
+    const timer = setInterval(() => {
+      setProposalTick((tick) => tick + 1);
+      if (!isProposalValid(proposal, clock())) setProposal(null);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [clock, proposal]);
+
+  /** Esc = ยกเลิกข้อเสนอ (ตาม interaction contract ของดีไซน์) */
+  useEffect(() => {
+    if (!proposal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setProposal(null);
+      setUndoNotice("ยกเลิกคำสั่งที่รอยืนยันแล้ว");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [proposal]);
 
   const handleUndo = useCallback(() => {
     const outcome = consumeVoiceUndoToken(undoToken, clock());
@@ -674,6 +701,7 @@ export function VoicePosController({
 
   const undoVisible = isVoiceUndoTokenValid(undoToken, clock());
   const proposalVisible = isProposalValid(proposal, clock());
+  const proposalSecondsLeft = proposal ? Math.max(0, Math.ceil((proposal.expiresAt - clock()) / 1000)) : 0;
 
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`.trim()}>
@@ -687,31 +715,46 @@ export function VoicePosController({
         }}
       />
       {proposalVisible && proposal ? (
-        // W6 — แถวยืนยันแบบเรียบง่าย (หน้าตาเต็มรูปแบบเป็นงานของ W7)
-        // ต้องบอกให้ชัดว่าจะทำอะไรกับอะไร ไม่ใช่แค่ "ยืนยันไหม"
+        // W7 — การ์ดยืนยันตาม Design System v1
+        // แสดง "สิ่งที่ระบบจะทำ" ไม่ใช่คำพูดดิบ และไม่บังรายการขายทั้งหมด
         <div
           data-testid="voice-standby-proposal"
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2"
+          role="group"
+          aria-label="ยืนยันคำสั่งจากสแตนด์บาย"
+          className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[#B8D4F0] bg-[#F2F8FE] px-3 py-2"
         >
-          <p role="status" aria-live="polite" className="text-sm font-semibold text-sky-900">
-            รอการยืนยัน: {proposal.label}
-          </p>
-          <button
-            type="button"
-            onClick={() => void commitProposal(proposal)}
-            aria-label={`ยืนยัน: ${proposal.label}`}
-            className="min-h-11 rounded-lg bg-sky-600 px-4 text-sm font-bold text-white hover:bg-sky-700"
-          >
-            ยืนยัน
-          </button>
-          <button
-            type="button"
-            onClick={cancelProposal}
-            aria-label={`ยกเลิก: ${proposal.label}`}
-            className="min-h-11 rounded-lg border border-sky-300 px-4 text-sm font-semibold text-sky-800 hover:bg-sky-100"
-          >
-            ยกเลิก
-          </button>
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-2 text-xs font-bold text-[#245E9B]">
+              <span aria-hidden="true">🎙️</span>
+              ยืนยันคำสั่งจากสแตนด์บาย
+              {/* นับถอยหลังเป็นตัวเลข ไม่พึ่ง animation อย่างเดียว (คนที่ปิด motion ต้องเห็นด้วย) */}
+              <span data-testid="voice-standby-countdown" className="font-mono font-normal">
+                เหลือ {proposalSecondsLeft} วินาที
+              </span>
+            </p>
+            <p role="status" aria-live="polite" className="truncate text-sm font-bold text-[#0F2B47]">
+              {proposal.label}
+            </p>
+            <p className="text-xs text-[#3A5A78]">ตะกร้ายังไม่เปลี่ยนจนกว่าจะยืนยัน</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void commitProposal(proposal)}
+              aria-label={`ยืนยัน: ${proposal.label}`}
+              className="min-h-11 min-w-11 rounded-lg bg-[#245E9B] px-4 text-sm font-bold text-white hover:bg-[#1D4E82] focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              ยืนยัน
+            </button>
+            <button
+              type="button"
+              onClick={cancelProposal}
+              aria-label={`ยกเลิก: ${proposal.label}`}
+              className="min-h-11 min-w-11 rounded-lg border border-[#B8D4F0] px-4 text-sm font-semibold text-[#245E9B] hover:bg-[#E4F0FB] focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              ยกเลิก
+            </button>
+          </div>
         </div>
       ) : null}
       {undoVisible && undoToken ? (

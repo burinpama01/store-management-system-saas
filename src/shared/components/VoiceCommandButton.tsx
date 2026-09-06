@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import type { WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
 import type { VoiceActivationOrigin } from "@/modules/voice-pos/standby-policy";
+import { VoiceStandbyControl, type VoiceStandbyUiState } from "./VoiceStandbyControl";
 import {
   createBrowserSpeechAdapter,
   type VoiceSpeechAdapter,
@@ -187,6 +188,11 @@ export function VoiceCommandButton({
   const settledRef = useRef(false);
   /** รอบคำปลุกที่กำลังถืออยู่ (null = รอบนี้ผู้ใช้กดปุ่มเอง) — ต้องรายงานคืนให้ Launcher เสมอ */
   const standbySessionRef = useRef<string | null>(null);
+  /**
+   * W7 — ผู้ใช้พักคำปลุกไว้หรือยัง (ต่อหน้าจอ ไม่ใช่ต่อเครื่อง)
+   * ตอนร้านเสียงดังหรือมีอีเวนต์ พนักงานต้องปิดได้ในหนึ่งจังหวะโดยไม่ต้องไปหน้าตั้งค่า
+   */
+  const [standbyPaused, setStandbyPaused] = useState(false);
 
   // unmount = ยกเลิก session ที่ค้าง และล้าง transcript ออกจากหน่วยความจำ
   useEffect(() => {
@@ -344,8 +350,8 @@ export function VoiceCommandButton({
       }
       if (event.kind !== "start-listening") return;
 
-      // ปุ่มถูกปิดอยู่ (เช่นกำลังชำระเงิน) — คืนไมค์ทันที อย่าให้ Launcher รอจนหมดเวลา
-      if (disabled || supported !== true || sessionRef.current?.isActive()) {
+      // พักอยู่ / ปุ่มถูกปิด (เช่นกำลังชำระเงิน) — คืนไมค์ทันที อย่าให้ Launcher รอจนหมดเวลา
+      if (standbyPaused || disabled || supported !== true || sessionRef.current?.isActive()) {
         standbyHost.commandEnded(event.sessionId, "tap_required");
         showMessage(WAKE_TAP_REQUIRED_MESSAGE);
         return;
@@ -358,10 +364,25 @@ export function VoiceCommandButton({
     });
 
     return unsubscribe;
-  }, [disabled, showMessage, standbyHost, startListening, supported]);
+  }, [disabled, showMessage, standbyHost, standbyPaused, startListening, supported]);
 
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;
+
+  /**
+   * สถานะที่แถบบนหัวต้องแสดง
+   * ไม่มี Launcher = ไม่แสดงอะไรเลย (เบราว์เซอร์ปกติต้องไม่เห็นปุ่มที่กดแล้วไม่เกิดอะไร)
+   * เบราว์เซอร์ไม่รองรับเสียงทั้งที่มี Launcher = degraded ไม่ใช่ standby
+   */
+  const standbyUiState: VoiceStandbyUiState = !standbyHost?.available
+    ? "unavailable"
+    : listening
+      ? "listening"
+      : standbyPaused
+        ? "off"
+        : supported === true
+          ? "standby"
+          : "degraded";
 
   const overlay =
     overlayVisible && typeof document !== "undefined"
@@ -395,6 +416,10 @@ export function VoiceCommandButton({
     // ไปแสดงบน overlay เต็มจอแทน ที่นี่จึงเหลือแค่บรรทัดสั้น ๆ
     <div className={`flex items-center gap-2 ${className ?? ""}`.trim()}>
       {overlay}
+      <VoiceStandbyControl
+        state={standbyUiState}
+        onToggle={standbyUiState === "unavailable" ? undefined : () => setStandbyPaused((paused) => !paused)}
+      />
       <button
         type="button"
         data-testid="voice-mic"

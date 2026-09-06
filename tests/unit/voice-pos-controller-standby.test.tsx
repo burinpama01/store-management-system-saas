@@ -156,9 +156,11 @@ describe("VoicePosController — คำสั่งจากคำปลุก",
     await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
 
     expect(pos.qty()).toBe(0);
-    // ข้อความเดียวกันปรากฏทั้งบนแถบยืนยันและบนข้อความตอบกลับของปุ่ม — เจาะดูที่แถบยืนยัน
-    const row = screen.getByTestId("voice-standby-proposal");
-    expect(row.textContent).toContain("รอการยืนยัน: เพิ่ม ลาเต้ 2");
+    // การ์ดยืนยันต้องบอก "สิ่งที่ระบบจะทำ" + เวลาที่เหลือเป็นตัวเลข + คำเตือนว่ายังไม่แตะตะกร้า
+    const card = screen.getByTestId("voice-standby-proposal");
+    expect(card.textContent).toContain("เพิ่ม ลาเต้ 2");
+    expect(card.textContent).toContain("ตะกร้ายังไม่เปลี่ยนจนกว่าจะยืนยัน");
+    expect(screen.getByTestId("voice-standby-countdown").textContent).toContain("เหลือ 8 วินาที");
   });
 
   it("กดปุ่มยืนยันแล้วจึงเข้าตะกร้า", async () => {
@@ -212,6 +214,18 @@ describe("VoicePosController — คำสั่งจากคำปลุก",
     await pos.wakeAndSay("ยืนยัน");
 
     expect(pos.qty()).toBe(0);
+  });
+
+  it("กด Esc = ยกเลิกข้อเสนอโดยไม่แตะตะกร้า", async () => {
+    const pos = renderVoicePos();
+    await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+
+    expect(pos.qty()).toBe(0);
+    expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
   });
 
   it("กดปุ่มพูดเองยังทำงานทันทีเหมือนเดิม ไม่มีขั้นตอนยืนยันเพิ่ม", async () => {
