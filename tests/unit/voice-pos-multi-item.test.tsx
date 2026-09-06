@@ -173,19 +173,13 @@ describe("สั่งหลายเมนูในประโยคเดี�
     expect(pos.cart()).toBe("ลาเต้x3");
   });
 
-  it("มาจากคำปลุก: ยืนยันครั้งเดียวได้ทั้งชุด ไม่ใช่ถามทีละรายการ", async () => {
+  it("มาจากคำปลุกก็ขึ้นครบทั้งชุดทันที ไม่มีขั้นยืนยันคั่น", async () => {
+    // ถามยืนยันหลังคำปลุกคือการทำลายเหตุผลของฟีเจอร์ ซึ่งมีไว้ให้คนมือไม่ว่าง
     const pos = renderVoicePos();
 
     await pos.wakeAndSay("เพิ่มลาเต้สองแก้วและชาเย็นหนึ่งแก้ว");
 
-    // ยังไม่แตะตะกร้าจนกว่าจะยืนยัน
-    expect(pos.cart()).toBe("");
-    expect(screen.getByTestId("voice-standby-proposal").textContent).toContain("2 รายการ");
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^ยืนยัน:/ }));
-    });
-
     expect(pos.cart()).toBe("ลาเต้x2|ชาเย็นx1");
+    expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
   });
 });

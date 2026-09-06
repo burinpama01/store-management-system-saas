@@ -22,6 +22,7 @@ import type {
 } from "@/modules/voice-pos/speech-adapter";
 import type { StandbyBridgeEvent, VoiceHostHealth } from "@/modules/voice-pos/standby-contract";
 import type { WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
+import type { VoiceFeedback } from "@/modules/voice-pos/feedback";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
@@ -123,7 +124,30 @@ function FakeSellSurface() {
   return <span data-testid="cart-qty">{cart.items[0]?.quantity ?? 0}</span>;
 }
 
-function renderVoicePos(now?: () => number) {
+/**
+ * ตัวเล่นเสียงจำลองที่ "ยังพูดไม่จบ" จนกว่าจะสั่ง — ของจริงใช้เวลาหลายวินาที
+ * และไมค์จะเปิดอีกครั้งก็ต่อเมื่อพูดจบ ซึ่งเป็นหัวใจของเรื่องเวลาที่ทดสอบอยู่
+ */
+function createFakeFeedback() {
+  let pending: (() => void) | null = null;
+  return {
+    player: {
+      cue: () => {},
+      speak: (_text: string, onEnd?: () => void) => {
+        pending = onEnd ?? null;
+      },
+      stop: () => {},
+    } satisfies VoiceFeedback,
+    /** ระบบพูดจบแล้ว → ปุ่มจะเปิดไมค์รอบใหม่ตรงนี้ */
+    finishSpeaking: () => {
+      const done = pending;
+      pending = null;
+      done?.();
+    },
+  };
+}
+
+function renderVoicePos(now?: () => number, feedback?: VoiceFeedback) {
   const speech = createFakeAdapter();
   const host = createFakeHost();
   render(
@@ -135,6 +159,7 @@ function renderVoicePos(now?: () => number) {
         onSelectTab={vi.fn()}
         adapter={speech.adapter}
         standbyHost={host.host}
+        feedback={feedback}
         now={now}
       />
     </VoiceCartBridgeProvider>,
@@ -152,90 +177,81 @@ function renderVoicePos(now?: () => number) {
       act(() => host.wake());
       await act(async () => speech.emitFinal(phrase));
     },
+    /** แยกสองจังหวะ เพื่อทดสอบเวลาที่ผ่านไประหว่าง "ไมค์เปิด" กับ "ผู้ใช้พูดจบ" */
+    wake: () => act(() => host.wake()),
+    say: async (phrase: string) => act(async () => speech.emitFinal(phrase)),
     qty: () => Number(screen.getByTestId("cart-qty").textContent),
   };
 }
 
 describe("VoicePosController — คำสั่งจากคำปลุก", () => {
-  it("คำสั่งเพิ่มของจากคำปลุกต้องยังไม่แตะตะกร้า", async () => {
+  it("คำสั่งเพิ่มของจากคำปลุกลงมือทันที ไม่มีขั้นยืนยันคั่นอีกแล้ว", async () => {
+    // การ์ดยืนยัน 8 วินาทีถูกถอดออก: ระบบพูดข้อเสนอออกลำโพงก่อนแล้วค่อยเปิดไมค์
+    // พอพูดจบเวลาก็เกือบหมด คนที่มือไม่ว่างจึงยืนยันไม่ทันแทบทุกครั้ง
     const pos = renderVoicePos();
 
     await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
-
-    expect(pos.qty()).toBe(0);
-    // การ์ดยืนยันต้องบอก "สิ่งที่ระบบจะทำ" + เวลาที่เหลือเป็นตัวเลข + คำเตือนว่ายังไม่แตะตะกร้า
-    const card = screen.getByTestId("voice-standby-proposal");
-    expect(card.textContent).toContain("เพิ่ม ลาเต้ 2");
-    expect(card.textContent).toContain("ตะกร้ายังไม่เปลี่ยนจนกว่าจะยืนยัน");
-    expect(screen.getByTestId("voice-standby-countdown").textContent).toContain("เหลือ 8 วินาที");
-  });
-
-  it("กดปุ่มยืนยันแล้วจึงเข้าตะกร้า", async () => {
-    const pos = renderVoicePos();
-    await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^ยืนยัน:/ }));
-    });
 
     expect(pos.qty()).toBe(2);
     expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
+    // สิ่งที่มาแทนความปลอดภัยของการยืนยันคือการย้อนกลับ ซึ่งต้องมีให้เห็นทันที
+    expect(screen.getByRole("button", { name: /^ย้อนกลับ:/ })).toBeTruthy();
   });
 
-  it("พูดว่า “ยืนยัน” ก็ทำงานเหมือนกดปุ่ม", async () => {
+  it("พูดว่า “ย้อนกลับ” แล้วตะกร้าต้องกลับเป็นใบเดิม", async () => {
     const pos = renderVoicePos();
     await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
 
-    await pos.wakeAndSay("ยืนยัน");
-
-    expect(pos.qty()).toBe(2);
-  });
-
-  it("พูดคำอื่นไม่ใช่การยืนยัน — ตะกร้าต้องไม่ขยับ", async () => {
-    const pos = renderVoicePos();
-    await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
-
-    await pos.wakeAndSay("ตกลงว่าจะเอาอย่างนั้น");
+    await pos.wakeAndSay("ย้อนกลับ");
 
     expect(pos.qty()).toBe(0);
   });
 
-  it("กดยกเลิกแล้วตะกร้าต้องไม่ถูกแตะเลย", async () => {
+  it("พูดว่า “ยกเลิก” ก็ย้อนกลับได้ ทั้งที่ parser ถือเป็นคำต้องห้าม", async () => {
+    // "ยกเลิก" อยู่ใน denylist (tier D) ถ้าปล่อยให้ไหลตามปกติจะกลายเป็น
+    // "คำสั่งนี้ต้องทำบนหน้าจอ" แทนที่จะย้อนตะกร้า — ต้องอ่านคำสั่งย้อนก่อนเสมอ
     const pos = renderVoicePos();
     await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^ยกเลิก:/ }));
-    });
+    await pos.wakeAndSay("ยกเลิก");
 
     expect(pos.qty()).toBe(0);
-    expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
   });
 
-  it("ข้อเสนอหมดอายุแล้วยืนยันไม่ได้อีก", async () => {
+  it("หน้าต่างย้อนกลับเริ่มนับใหม่ตอนไมค์เปิดอีกครั้ง", async () => {
+    // นี่คือต้นเหตุเดียวกับที่ทำให้การ์ดยืนยันเดิมใช้ไม่ได้:
+    // นาฬิกาเดินอยู่ระหว่างที่ระบบยังพูดผลออกลำโพง ผู้ใช้จึงพูดตอบไม่ทัน
     let now = 1_000_000;
-    const pos = renderVoicePos(() => now);
+    const speaker = createFakeFeedback();
+    const pos = renderVoicePos(() => now, speaker.player);
     await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
 
-    now += 8_001;
-    await pos.wakeAndSay("ยืนยัน");
+    now += 5_000;              // ระบบพูดผลออกลำโพงจนเกือบหมดหน้าต่างเดิม (6 วินาที)
+    act(() => speaker.finishSpeaking()); // พูดจบ → ไมค์เปิดอีกครั้ง → เริ่มนับใหม่
+    now += 4_000;              // ผู้ใช้พูดจบ — เกิน 6 วินาทีนับจากตอนแก้ตะกร้าไปแล้ว
+    await pos.say("ย้อนกลับ");
 
     expect(pos.qty()).toBe(0);
   });
 
-  it("กด Esc = ยกเลิกข้อเสนอโดยไม่แตะตะกร้า", async () => {
-    const pos = renderVoicePos();
+  it("ต่อเวลาได้ครั้งเดียว — ตะกร้าที่แก้ไปนานแล้วต้องย้อนไม่ได้", async () => {
+    let now = 1_000_000;
+    const speaker = createFakeFeedback();
+    const pos = renderVoicePos(() => now, speaker.player);
     await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
 
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape" });
-    });
+    now += 5_000;
+    act(() => speaker.finishSpeaking()); // ต่อเวลาครั้งแรก
+    await pos.say("อะไรสักอย่างที่ไม่ใช่คำสั่ง");
+    now += 5_000;
+    act(() => speaker.finishSpeaking()); // ครั้งที่สองต้องไม่ต่อให้อีก
+    now += 4_000;
+    await pos.say("ย้อนกลับ");
 
-    expect(pos.qty()).toBe(0);
-    expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
+    expect(pos.qty()).toBe(2);
   });
 
-  it("สั่งจากคำปลุกแล้วต้องเปิดไมค์ต่อ เพื่อพูดยืนยันได้โดยไม่ต้องแตะจอ", async () => {
+  it("สั่งจากคำปลุกแล้วต้องเปิดไมค์ต่อ เพื่อสั่งคำถัดไปโดยไม่ต้องแตะจอ", async () => {
     // หัวใจของฟีเจอร์: คนที่มือไม่ว่างต้องจบงานด้วยเสียงล้วน
     const pos = renderVoicePos();
 
@@ -245,23 +261,20 @@ describe("VoicePosController — คำสั่งจากคำปลุก",
     expect(pos.host.calls).not.toContain("ended:sess000001:completed");
   });
 
-  it("ยืนยันด้วยเสียงแล้วยังฟังต่อเพื่อรับคำสั่งถัดไป", async () => {
-    const pos = renderVoicePos();
-    await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
-
-    await pos.wakeAndSay("ยืนยัน");
-
-    expect(pos.qty()).toBe(2);
-    // ยังไม่คืนไมค์ — ผู้ใช้สั่งคำต่อไปได้เลย
-    expect(pos.host.calls).not.toContain("ended:sess000001:completed");
-  });
-
-  it("กดปุ่มพูดเองยังทำงานทันทีเหมือนเดิม ไม่มีขั้นตอนยืนยันเพิ่ม", async () => {
+  it("กดปุ่มพูดเองยังทำงานทันทีเหมือนเดิม", async () => {
     const pos = renderVoicePos();
 
     await pos.tapAndSay("เพิ่มลาเต้ 2 แก้ว");
 
     expect(pos.qty()).toBe(2);
     expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
+  });
+
+  it("คำสั่งต้องห้ามยังถูกปฏิเสธเหมือนเดิม แม้ไม่มีขั้นยืนยันแล้ว", async () => {
+    const pos = renderVoicePos();
+
+    await pos.wakeAndSay("ชำระเงิน");
+
+    expect(pos.qty()).toBe(0);
   });
 });

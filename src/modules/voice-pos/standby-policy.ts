@@ -1,55 +1,51 @@
-// W6 — กฎความปลอดภัยที่ขึ้นกับ "ที่มาของการเปิดไมค์"
+// กฎความปลอดภัยที่ขึ้นกับ "ที่มาของการเปิดไมค์"
 //
-// ทำไมต้องแยกตามที่มา: การกดปุ่มพูดคือเจตนาที่ชัดเจนของคนหน้าเคาน์เตอร์ —
-// มีคนตั้งใจกด แล้วพูดใส่ไมค์ทันที ส่วนคำปลุกเปิดไมค์ขึ้นมาเองโดยไม่มีใครกดอะไร
-// เสียงที่เข้ามาหลังจากนั้นจึงอาจเป็นลูกค้าที่ยืนอยู่หน้าร้าน เสียงทีวี หรือคนคุยกันข้าง ๆ
-// ถ้าปฏิบัติกับสองที่มานี้เหมือนกัน "เพิ่มกาแฟเย็นสองแก้ว" ที่ลอยมาจากโต๊ะข้าง ๆ
-// จะขึ้นบิลจริงโดยไม่มีใครสั่ง
+// ── ประวัติที่ต้องรู้ก่อนแก้ไฟล์นี้ ─────────────────────────────────────────────
+// รอบแรก (W6) คำสั่งที่แตะตะกร้าและมาจากคำปลุก ต้องมีคนยืนยันก่อนเสมอ (การ์ด 8 วินาที)
+// เหตุผลตอนนั้นคือ engine คำปลุกเดิม (System.Speech) ปลุกเองรัว ๆ — วัดได้ 14-20 ครั้ง
+// ต่อ 4 นาทีโดยไม่มีใครพูดคำปลุกเลย เสียงคุยในร้านจึงกลายเป็นคำสั่งขึ้นบิลได้จริง
 //
-// กติกาที่ล็อกไว้:
-//   * คำสั่งที่ไม่แตะตะกร้า (tier A เช่นเปิดหน้า) — ทำได้เลยทั้งสองที่มา
-//   * คำสั่งที่แก้ตะกร้า (tier B) — กดปุ่มเอง = ทำเลย, คำปลุก = ต้องยืนยันก่อน
-//   * tier C/D — ห้ามทั้งคู่ (เหมือนเดิม ไม่มีอะไรเปลี่ยน)
-//   * ข้อเสนอที่รอยืนยันมีอายุ 8 วินาที อยู่ในหน่วยความจำเท่านั้น และผูกกับรอบคำปลุกนั้น
+// สองอย่างเปลี่ยนไปแล้ว:
+//   1) เปลี่ยน engine เป็น Vosk — วัดด้วยไมค์จริงในห้องจริงชุดละ 4 นาที ปลุกผิด 0 ครั้ง
+//      สมมติฐานที่ทำให้ต้องมีการยืนยัน ("ไมค์เปิดเองโดยไม่มีใครตั้งใจ") จึงอ่อนลงมาก
+//   2) หน้างานจริงใช้ไม่ได้: ระบบพูดข้อเสนอออกลำโพงก่อน แล้วค่อยเปิดไมค์ให้ตอบ
+//      แต่นาฬิกา 8 วินาทีเริ่มเดินตั้งแต่ตอนสร้างข้อเสนอ — พอระบบพูดจบ เวลาก็เกือบหมด
+//      คนที่มือไม่ว่างจึงยืนยันไม่ทันแทบทุกครั้ง
+//
+// ตอนนี้จึงตัดการยืนยันออก: คำปลุกลงมือได้ทันทีเหมือนกดปุ่มเอง
+// สิ่งที่มาแทนคือ **การย้อนกลับ** ซึ่งใช้ได้ทั้งปุ่มบนจอและด้วยเสียง และหน้าต่างเวลา
+// เริ่มนับใหม่ตอนไมค์เปิดอีกครั้ง (ดู refreshVoiceUndoToken) — แก้ที่ต้นเหตุของ
+// ปัญหาข้อ 2 คือ "นาฬิกาเดินระหว่างที่ระบบยังพูดอยู่"
+//
+// กติกาที่ยังล็อกไว้เหมือนเดิม:
+//   * tier C/D — ห้ามทั้งสองที่มา (เงิน/ส่วนลด/สต๊อก/สิทธิ์/ข้อมูลลูกค้า)
+//   * parser ปฏิเสธมาแล้ว (block/preview) = ปฏิเสธต่อ ไม่ว่ามาจากทางไหน
 
-import type { AiVoiceCommand } from "./ai-intent-schema";
 import type { VoiceParseResult, VoiceResultCode } from "./types";
 
 /** ไมค์รอบนี้เปิดขึ้นมาได้อย่างไร */
 export type VoiceActivationOrigin = "push_to_talk" | "windows_standby";
 
-/** ข้อเสนอที่รอยืนยันอยู่ได้นานแค่ไหน — สั้นพอที่บริบทบนจอยังเป็นชุดเดิม */
-export const STANDBY_PROPOSAL_WINDOW_MS = 8_000;
-
 export type StandbyDecision =
   | { readonly action: "execute"; readonly result: VoiceParseResult }
-  | { readonly action: "confirm"; readonly result: VoiceParseResult; readonly expiresAt: number }
   | { readonly action: "block"; readonly reason: VoiceResultCode };
 
-/** intent ที่แตะตะกร้า — ชุดนี้คือสิ่งที่ต้องยืนยันเมื่อมาจากคำปลุก */
-const CART_MUTATING_INTENTS = new Set([
-  "pos.add_item",
-  "pos.set_quantity",
-  "pos.increase_item",
-  "pos.decrease_item",
-  "pos.remove_item",
-  "pos.confirm_selection",
-]);
-
 /**
- * ตัดสินว่าคำสั่งนี้ทำได้เลย ต้องยืนยันก่อน หรือห้ามทำ
+ * ตัดสินว่าคำสั่งนี้ทำได้ หรือห้ามทำ
  *
  * ฟังก์ชันบริสุทธิ์ — ไม่แตะตะกร้า ไม่แตะ DOM ผู้เรียกเป็นคนลงมือตามผลเท่านั้น
+ * ที่มาของไมค์ไม่เปลี่ยนคำตอบอีกต่อไป แต่ยังรับเป็นพารามิเตอร์ไว้ เพราะเป็นข้อมูล
+ * ที่ผู้เรียกใช้ตัดสินเรื่องอื่นต่อ (เช่น จะเปิดไมค์ฟังต่อหรือไม่)
  */
 export function decideStandbyAction(
   result: VoiceParseResult,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ยังรับไว้เพื่อบังคับให้ผู้เรียกคิดถึงที่มาของไมค์
   origin: VoiceActivationOrigin,
-  now: number,
 ): StandbyDecision {
-  // parser ปฏิเสธมาแล้ว = ปฏิเสธต่อ ไม่ว่ามาจากทางไหน
+  // parser ปฏิเสธมาแล้ว = ปฏิเสธต่อ
   if (result.decision === "block") return { action: "block", reason: result.resultCode };
 
-  // preview = ยังขาดข้อมูล/จำนวนไม่ถูกต้อง/ความมั่นใจต่ำ — ห้ามแตะตะกร้าอยู่แล้วเดิม
+  // preview = ยังขาดข้อมูล/จำนวนไม่ถูกต้อง/ความมั่นใจต่ำ — ห้ามแตะตะกร้า
   if (result.decision === "preview") return { action: "block", reason: result.resultCode };
 
   // tier C/D ห้ามเสมอ แม้ parser จะปล่อยผ่านมาเป็น execute (กันความไม่ตรงกันของสองชั้น)
@@ -57,77 +53,36 @@ export function decideStandbyAction(
     return { action: "block", reason: result.resultCode === "matched" ? "forbidden_command" : result.resultCode };
   }
 
-  // กดปุ่มเอง = พฤติกรรมเดิมทุกประการ ห้ามเพิ่มขั้นตอนให้คนที่ตั้งใจกด
-  if (origin === "push_to_talk") return { action: "execute", result };
-
-  // คำปลุก + คำสั่งที่แตะตะกร้า = ต้องมีคนยืนยันก่อน
-  if (CART_MUTATING_INTENTS.has(result.intent.type)) {
-    return { action: "confirm", result, expiresAt: now + STANDBY_PROPOSAL_WINDOW_MS };
-  }
-
-  // คำปลุก + คำสั่งที่ไม่แตะตะกร้า (เปิดหน้า/ล้างคำค้น/เลือกตัวเลือก) = ทำได้เลย
   return { action: "execute", result };
 }
 
-/** ข้อเสนอที่กำลังรอการยืนยัน — อยู่ในหน่วยความจำของหน้าจอเท่านั้น */
-export interface StandbyProposal {
-  readonly result: VoiceParseResult;
-  /**
-   * มีค่าเมื่อรอบนั้นเป็นการสั่งหลายเมนูรวดเดียว — ยืนยันครั้งเดียวได้ทั้งชุด
-   * (ถามทีละรายการหลังคำปลุกคือการทำลายเหตุผลของฟีเจอร์นี้ ซึ่งมีไว้ให้คนมือไม่ว่าง)
-   * ผู้เรียกต้อง resolve ใหม่ตอนยืนยันเสมอ ไม่ใช่เล่นซ้ำผลที่คำนวณไว้ตอนพูด
-   */
-  readonly commands?: readonly AiVoiceCommand[];
-  readonly expiresAt: number;
-  /** รอบคำปลุกที่เป็นต้นเรื่อง — ใช้ผูกให้ยืนยันได้เฉพาะรอบเดียวกัน */
-  readonly sessionId: string | null;
-  /** ป้ายที่ผู้ใช้ต้องเห็นก่อนกดยืนยัน เช่น "เพิ่ม กาแฟเย็น 2" */
-  readonly label: string;
-}
-
-export function isProposalValid(proposal: StandbyProposal | null, now: number): proposal is StandbyProposal {
-  return proposal !== null && proposal.expiresAt > now;
-}
+export type VoiceUndoReply = "undo" | "none";
 
 /**
- * คำที่นับว่าเป็นการยืนยันด้วยเสียง — <b>allowlist ตรงตัวเท่านั้น</b>
+ * คำที่นับว่าเป็นการสั่งย้อนกลับด้วยเสียง — <b>allowlist ตรงตัวเท่านั้น</b>
  *
- * ตั้งใจไม่ใช้การเดาความหมาย: ถ้ายอมรับคำใกล้เคียง เสียงพูดคุยทั่วไปในร้าน
- * ("ตกลงว่าจะไปไหนดี") จะกลายเป็นการยืนยันบิลได้
+ * ตั้งใจไม่ใช้การเดาความหมาย: ถ้ายอมรับคำใกล้เคียง บทสนทนาทั่วไปในร้าน
+ * ("ยกเลิกโต๊ะ 3 ให้หน่อย") จะย้อนตะกร้าของอีกคนได้
+ *
+ * หมายเหตุ: "ยกเลิก" อยู่ใน denylist ของ parser (tier D) จึงไม่มีทางกลายเป็นคำสั่งอื่น
+ * ผู้เรียกต้องอ่านคำตอบนี้ "ก่อน" ใช้ผลของ parser เสมอ
  */
-const CONFIRM_PHRASES = new Set(["ยืนยัน", "ตกลง", "ใช่", "เอาเลย", "ยืนยันครับ", "ยืนยันค่ะ", "ตกลงครับ", "ตกลงค่ะ"]);
-const CANCEL_PHRASES = new Set(["ยกเลิก", "ไม่ใช่", "ไม่เอา", "ยกเลิกครับ", "ยกเลิกค่ะ"]);
-
-export type StandbyVoiceReply = "confirm" | "cancel" | "none";
+const UNDO_PHRASES = new Set([
+  "ยกเลิก",
+  "ยกเลิกครับ",
+  "ยกเลิกค่ะ",
+  "ย้อนกลับ",
+  "ย้อน",
+  "ไม่เอา",
+  "ไม่ใช่",
+  "เอาคืน",
+]);
 
 /**
- * ตีความคำพูดสั้น ๆ ระหว่างที่มีข้อเสนอค้างอยู่
- * คำอื่นทั้งหมดคือ "none" — ผู้เรียกต้องไม่ทำอะไรกับข้อเสนอ ไม่ใช่ตีความเป็นคำสั่งใหม่
+ * ตีความคำพูดสั้น ๆ ระหว่างที่ยังย้อนกลับได้
+ * คำอื่นทั้งหมดคือ "none" — ผู้เรียกต้องปล่อยให้ไหลไปเป็นคำสั่งใหม่ตามปกติ
  */
-export function readStandbyVoiceReply(transcript: string): StandbyVoiceReply {
+export function readVoiceUndoReply(transcript: string): VoiceUndoReply {
   const phrase = transcript.trim().replace(/\s+/g, "");
-  if (CONFIRM_PHRASES.has(phrase)) return "confirm";
-  if (CANCEL_PHRASES.has(phrase)) return "cancel";
-  return "none";
-}
-
-/** ป้ายสั้น ๆ ของข้อเสนอ ไม่มีคำพูดดิบของผู้ใช้อยู่ในนั้น */
-export function describeProposal(result: VoiceParseResult): string {
-  const intent = result.intent;
-  switch (intent.type) {
-    case "pos.add_item":
-      return `เพิ่ม ${intent.productPhrase} ${intent.quantity}`;
-    case "pos.set_quantity":
-      return `ตั้งจำนวน ${intent.productPhrase} เป็น ${intent.quantity}`;
-    case "pos.increase_item":
-      return `เพิ่ม ${intent.productPhrase} อีก ${intent.delta}`;
-    case "pos.decrease_item":
-      return `ลด ${intent.productPhrase} ลง ${intent.delta}`;
-    case "pos.remove_item":
-      return `เอา ${intent.productPhrase} ออก`;
-    case "pos.confirm_selection":
-      return "ยืนยันตัวเลือกที่เลือกไว้";
-    default:
-      return "คำสั่งที่รอการยืนยัน";
-  }
+  return UNDO_PHRASES.has(phrase) ? "undo" : "none";
 }

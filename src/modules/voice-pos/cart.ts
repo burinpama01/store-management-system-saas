@@ -15,6 +15,7 @@ import type { ModifierOption, Product, ProductVariant } from "@/modules/catalog/
 import { VOICE_MAX_QUANTITY, VOICE_MIN_QUANTITY } from "./parser";
 import type {
   VoiceAddItemIntent,
+  VoiceChangeOptionIntent,
   VoiceDecreaseItemIntent,
   VoiceIncreaseItemIntent,
   VoiceIntent,
@@ -28,7 +29,8 @@ export type VoiceCartIntent =
   | VoiceSetQuantityIntent
   | VoiceIncreaseItemIntent
   | VoiceDecreaseItemIntent
-  | VoiceRemoveItemIntent;
+  | VoiceRemoveItemIntent
+  | VoiceChangeOptionIntent;
 
 export function isVoiceCartIntent(intent: VoiceIntent): intent is VoiceCartIntent {
   return (
@@ -36,7 +38,8 @@ export function isVoiceCartIntent(intent: VoiceIntent): intent is VoiceCartInten
     intent.type === "pos.set_quantity" ||
     intent.type === "pos.increase_item" ||
     intent.type === "pos.decrease_item" ||
-    intent.type === "pos.remove_item"
+    intent.type === "pos.remove_item" ||
+    intent.type === "pos.change_option"
   );
 }
 
@@ -48,7 +51,9 @@ export type VoiceCartBlockedReason =
   | "needs_selection"
   | "product_unavailable"
   | "item_not_in_cart"
-  | "invalid_quantity";
+  | "invalid_quantity"
+  | "option_not_found"
+  | "option_not_applicable";
 
 export interface VoiceCartCandidate {
   readonly id: string;
@@ -285,6 +290,57 @@ function applySpokenOptions(product: Product, restRaw: string): VoiceProductSele
   };
 }
 
+type SpokenOptionMatch =
+  | { readonly kind: "variant"; readonly variant: ProductVariant }
+  | {
+      readonly kind: "option";
+      readonly groupId: string;
+      readonly groupName: string;
+      readonly option: ModifierOption;
+      readonly single: boolean;
+    };
+
+/**
+ * จับคู่ "ตัวเลือกที่พูดมาคำเดียว" กับตัวเลือกจริงของสินค้านั้น
+ *
+ * ต่างจาก applySpokenOptions ตรงที่อันนี้ไม่แตะค่าอื่นเลย — ใช้ตอนแก้ของที่อยู่ในตะกร้าแล้ว
+ * ซึ่งต้องรักษาตัวเลือกอื่นที่เลือกไว้ก่อนหน้าไว้ทั้งหมด (เปลี่ยนความหวานต้องไม่ทำให้นมโอ๊ตหาย)
+ * เทียบชื่อยาวสุดก่อน เพื่อให้ "หวานน้อย" ชนะ "หวาน"
+ */
+function matchSpokenOption(product: Product, phrase: string): SpokenOptionMatch | null {
+  const target = looseName(phrase);
+  if (!target) return null;
+
+  const candidates: Array<{ name: string; match: SpokenOptionMatch }> = [
+    ...product.variants
+      .filter((variant) => variant.isActive)
+      .map((variant) => ({
+        name: looseName(variant.name),
+        match: { kind: "variant" as const, variant },
+      })),
+    ...product.modifierGroups.flatMap((group) =>
+      group.options
+        .filter((option) => option.isActive)
+        .map((option) => ({
+          name: looseName(option.name),
+          match: {
+            kind: "option" as const,
+            groupId: group.id,
+            groupName: group.name,
+            option,
+            single: group.selectionType === "single",
+          },
+        })),
+    ),
+  ]
+    .filter((entry) => entry.name.length > 0)
+    .sort((a, b) => b.name.length - a.name.length);
+
+  return candidates.find((entry) => entry.name === target)?.match
+    ?? candidates.find((entry) => target.includes(entry.name))?.match
+    ?? null;
+}
+
 function candidatesOf(products: readonly Product[]): readonly VoiceCartCandidate[] {
   return products.slice(0, 5).map((p) => ({ id: p.id, name: p.name }));
 }
@@ -392,6 +448,61 @@ export function applyVoiceCartIntent(intent: VoiceIntent, context: VoiceCartCont
       status: "applied",
       cart: removeFromCart(context.cart, line.key),
       announcement: `เอา ${product.name} ออกจากตะกร้าแล้ว`,
+    };
+  }
+
+  // แก้ตัวเลือกของบรรทัดที่อยู่ในตะกร้าแล้ว ("เปลี่ยนลาเต้เป็นหวานน้อย")
+  if (intent.type === "pos.change_option") {
+    // หน่วยแพ็ค (โหล/ลัง) เป็นราคาเหมา ไม่มีตัวเลือกให้แก้ — บอกตรง ๆ ดีกว่าแก้เงียบ ๆ
+    if (line.unit) {
+      return blocked("option_not_applicable", `${product.name} ขายเป็นแพ็ค ไม่มีตัวเลือกให้แก้`);
+    }
+
+    const match = matchSpokenOption(product, intent.optionPhrase);
+    if (!match) {
+      return blocked("option_not_found", `${product.name} ไม่มีตัวเลือกที่พูด — แก้บนหน้าจอได้`);
+    }
+
+    // ตั้งต้นจาก "ตัวเลือกที่บรรทัดนี้เลือกไว้จริง" ไม่ใช่ค่าเริ่มต้นของสินค้า
+    // ไม่งั้นการเปลี่ยนความหวานจะล้างตัวเลือกอื่นที่เคยเลือกไว้ทิ้งไปด้วย
+    let variant: ProductVariant | null =
+      product.variants.find((item) => item.id === line.variant?.id) ?? null;
+    const current: Array<{ groupId: string; groupName: string; option: ModifierOption }> = [];
+    for (const selected of line.modifiers) {
+      const group = product.modifierGroups.find((item) => item.id === selected.modifierGroupId);
+      const option = group?.options.find((item) => item.id === selected.option.id);
+      if (group && option) current.push({ groupId: group.id, groupName: group.name, option });
+    }
+
+    let modifiers = current;
+    if (match.kind === "variant") {
+      if (variant?.id === match.variant.id) {
+        return blocked("option_not_applicable", `${product.name} เป็น ${match.variant.name} อยู่แล้ว`);
+      }
+      variant = match.variant;
+    } else {
+      if (current.some((item) => item.option.id === match.option.id)) {
+        return blocked("option_not_applicable", `${product.name} เป็น ${match.option.name} อยู่แล้ว`);
+      }
+      // กลุ่มเลือกได้อย่างเดียว = แทนที่ของเดิมในกลุ่มนั้น; เลือกได้หลายอย่าง = เพิ่มเข้าไป
+      const kept = match.single ? current.filter((item) => item.groupId !== match.groupId) : current;
+      modifiers = [...kept, { groupId: match.groupId, groupName: match.groupName, option: match.option }];
+    }
+
+    const withoutOld = removeFromCart(context.cart, line.key);
+    const cart = addToCart(withoutOld, {
+      product,
+      variant,
+      modifiers,
+      quantity: line.quantity,
+      priceTier: context.priceTier,
+      note: line.note,
+    });
+    const optionName = match.kind === "variant" ? match.variant.name : match.option.name;
+    return {
+      status: "applied",
+      cart,
+      announcement: `เปลี่ยน ${product.name} เป็น ${optionName} แล้ว`,
     };
   }
 

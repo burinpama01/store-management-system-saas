@@ -376,6 +376,35 @@ export function parseVoiceCommand(
     return result({ type: "pos.set_quantity", productPhrase, quantity }, "B", "execute", 0.95 * engine, "matched");
   }
 
+  // Tier B — "เปลี่ยน <สินค้าในตะกร้า> เป็น <ตัวเลือก>" / "แก้ลาเต้เป็นหวานน้อย"
+  //
+  // ต้องมาหลัง "ตั้งจำนวน/เปลี่ยนจำนวน" เสมอ เพราะรูปประโยคคล้ายกันมาก
+  // และถ้าสิ่งที่พูดหลัง "เป็น" เป็นตัวเลขล้วน คนหมายถึงจำนวน ไม่ใช่ชื่อตัวเลือก
+  const changeOption = /^(?:เปลี่ยน|แก้ไข|แก้)\s*(.+?)\s*(?:ให้เป็น|เป็น)\s*(.+)$/.exec(text);
+  if (changeOption) {
+    const productPhrase = stripProductFillers(changeOption[1]);
+    const optionPhrase = stripProductFillers(changeOption[2]);
+    const asQuantity = /^(\d+)(?:\s*\S+)?$/.exec(optionPhrase);
+    if (asQuantity) {
+      const quantity = parseQuantity(asQuantity[1]);
+      if (!productPhrase) return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
+      if (quantity === null || !isQuantityInRange(quantity)) {
+        return result(UNKNOWN, "C", "preview", 0.9 * engine, "invalid_quantity");
+      }
+      return result({ type: "pos.set_quantity", productPhrase, quantity }, "B", "execute", 0.9 * engine, "matched");
+    }
+    if (productPhrase && optionPhrase) {
+      return result(
+        { type: "pos.change_option", productPhrase, optionPhrase },
+        "B",
+        "execute",
+        0.9 * engine,
+        "matched",
+      );
+    }
+    return result(UNKNOWN, "C", "block", 0.5 * engine, "no_match");
+  }
+
   // Tier B — "เพิ่ม <สินค้า> [จำนวน] [หน่วยนับ]" (ไม่ระบุจำนวน = 1)
   const addItem = /^(?:เพิ่ม|ใส่|สั่ง)\s*(.+)$/.exec(text);
   if (addItem) {

@@ -75,8 +75,6 @@ export interface MultiCommandDeps {
 
 export interface MultiCommandBatch {
   readonly commands: readonly AiVoiceCommand[];
-  /** ป้ายสำหรับให้ผู้ใช้ยืนยันก่อนแตะตะกร้า — ไม่มีคำพูดดิบอยู่ในนั้น */
-  readonly label: string;
 }
 
 /**
@@ -109,28 +107,5 @@ export function buildMultiCommandBatch(
     commands.push(command);
   }
 
-  return { commands, label: describeBatch(commands) };
-}
-
-/** ป้ายของทั้งชุด เช่น "2 รายการ: ลาเต้ 2, ชาเย็น 1" */
-export function describeBatch(commands: readonly AiVoiceCommand[]): string {
-  const parts = commands.map((command) => {
-    const quantity = command.quantity ?? 1;
-    const name = command.productPhrase ?? "";
-    switch (command.intent) {
-      case "pos.add_item":
-        return `${name} ${quantity}`;
-      case "pos.set_quantity":
-        return `${name} เป็น ${quantity}`;
-      case "pos.increase_item":
-        return `${name} +${quantity}`;
-      case "pos.decrease_item":
-        return `${name} -${quantity}`;
-      case "pos.remove_item":
-        return `เอา ${name} ออก`;
-      default:
-        return name;
-    }
-  });
-  return `${commands.length} รายการ: ${parts.join(", ")}`;
+  return { commands };
 }
