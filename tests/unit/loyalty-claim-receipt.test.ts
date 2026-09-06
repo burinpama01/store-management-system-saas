@@ -89,6 +89,17 @@ describe("URL ที่ฝังใน QR", () => {
   });
 });
 
+describe("server action ต้องรายงานสาเหตุที่สร้าง QR ไม่ได้", () => {
+  const actionSource = read("src/app/pos/actions.ts");
+
+  it("slug, portal token และ host ที่ขาดต้องเป็น error ไม่ใช่ claim null แบบเงียบ", () => {
+    expect(actionSource).toContain("ร้านค้ายังไม่มี slug สำหรับ QR รับแต้ม");
+    expect(actionSource).toContain("ไม่สามารถสร้างลิงก์สมาชิกสำหรับ QR รับแต้มได้");
+    expect(actionSource).toContain("ไม่สามารถระบุ URL สำหรับ QR รับแต้มได้");
+    expect(actionSource).not.toContain("if (portal.error || !portal.data?.token) return { error: null, claim: null };");
+  });
+});
+
 describe("กติกาที่ต้องบังคับในฐานข้อมูล", () => {
   const migration = read("supabase/migrations/20260903000002_loyalty_claim_codes.sql");
 
@@ -124,18 +135,39 @@ describe("พิมพ์อัตโนมัติต้องรอ QR รั
   const source = read("src/app/pos/PosTerminal.tsx");
 
   it("ใบเสร็จรู้ว่ากำลังรอ QR อยู่", () => {
-    expect(source).toContain("loyaltyClaimPending: !selectedCustomer && Boolean(paidOrder?.id)");
+    expect(source).toContain("loyaltyClaimPending: !selectedCustomer && Boolean(order.orderId)");
     expect(source).toContain("loyaltyClaimPending: false");
   });
 
-  it("ยังไม่พิมพ์จนกว่า QR จะมาถึง หรือหมดเวลารอ", () => {
-    expect(source).toContain("if (order.loyaltyClaimPending && !claimWaitElapsed) return;");
-    expect(source).toContain("}, [order.loyaltyClaimPending, claimWaitElapsed]);");
+  it("บิล walk-in ใช้ orderId ที่สร้างสำเร็จ ไม่ผูกกับ paidOrder ซึ่ง Unified POS ไม่โหลดกลับมา", () => {
+    expect(source).toContain("const claimOrderId = order.orderId;");
+    expect(source).not.toContain("!selectedCustomer && paidOrder?.id");
+    expect(source).not.toContain("Boolean(paidOrder?.id)");
   });
 
-  it("รอไม่เกินเวลาที่กำหนด — เน็ตช้าต้องไม่ทำให้ใบเสร็จไม่ออกเลย", () => {
+  it("ยังไม่พิมพ์จนกว่าผล QR จะกลับมา แม้เกินเวลาเตือนแล้ว", () => {
+    expect(source).toContain("if (order.loyaltyClaimPending) return;");
+    expect(source).not.toContain("if (order.loyaltyClaimPending && !claimWaitElapsed) return;");
+    expect(source).toContain("}, [order.loyaltyClaimPending, order.loyaltyClaimError, claimWaitElapsed]);");
+    expect(source).toContain("disabled={isPrinting || order.loyaltyClaimPending || Boolean(order.loyaltyClaimError)}");
+  });
+
+  it("ครบเวลาแล้วแจ้งว่ากำลังรอ แต่ไม่ปล่อยใบเสร็จที่ไม่มี QR", () => {
     expect(source).toMatch(/const AUTO_PRINT_CLAIM_WAIT_MS = \d+/);
     expect(source).toContain("setTimeout(() => setClaimWaitElapsed(true), AUTO_PRINT_CLAIM_WAIT_MS)");
+    expect(source).toContain("กำลังรอ QR รับแต้มจากระบบ");
+  });
+
+  it("พิมพ์ซ้ำบิล walk-in ขอ QR รับแต้มด้วย เพื่อกู้บิลที่ใบแรกพิมพ์ไม่ทัน", () => {
+    expect(source).toContain("await getReceiptLoyaltyClaimAction(order.id)");
+    expect(source).toContain("loyaltyClaim: claimResult?.claim ?? undefined");
+  });
+
+  it("สร้าง QR ผิดพลาดต้องหยุด auto-print และแจ้งให้พิมพ์ซ้ำ ไม่กลืน error", () => {
+    expect(source).toContain("loyaltyClaimError?: string");
+    expect(source).toContain("if (order.loyaltyClaimError) return;");
+    expect(source).toContain("QR รับแต้มไม่พร้อม");
+    expect(source).toContain("claimResult.error ?? undefined");
   });
 });
 

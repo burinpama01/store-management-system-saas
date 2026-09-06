@@ -20,7 +20,10 @@ export async function buildReceiptPrinterBytes(escpos: EscPosReceiptInput, brows
   const copies = normalizePrintCopies(browser.printCopies);
   // QR-bearing receipts (PromptPay, or a table-open QR slip) must render as a
   // raster image so the QR is scannable and Thai text is code-page-independent.
-  const requiresRaster = Boolean(buildReceiptPromptPayQr(browser)) || browser.ticketMode === "table_qr";
+  const requiresRaster =
+    Boolean(buildReceiptPromptPayQr(browser)) ||
+    Boolean(browser.loyaltyClaim?.url) ||
+    browser.ticketMode === "table_qr";
   const rasterError = "QR ต้องพิมพ์ผ่าน raster image กรุณาสั่งพิมพ์จาก browser ที่รองรับ canvas";
   try {
     const raster = await renderReceiptRaster(browser);

@@ -1426,21 +1426,23 @@ export async function getReceiptLoyaltyClaimAction(orderId: string): Promise<{
     if (!codeRes.data || codeRes.data.claimed) return { error: null, claim: null };
 
     const storeRes = await getStore(ctx.storeId);
+    if (storeRes.error) return { error: storeRes.error.userMessage, claim: null };
     const slug = storeRes.data?.slug;
-    if (!slug) return { error: null, claim: null };
+    if (!slug) return { error: "ร้านค้ายังไม่มี slug สำหรับ QR รับแต้ม", claim: null };
 
     // ลิงก์สมาชิกของร้าน (get-or-create) — QR ต้องพาลูกค้าเข้าหน้าร้านที่ถูกต้อง
     const portal = await generateMemberPortalLink({
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
     });
-    if (portal.error || !portal.data?.token) return { error: null, claim: null };
+    if (portal.error) return { error: portal.error.userMessage, claim: null };
+    if (!portal.data?.token) return { error: "ไม่สามารถสร้างลิงก์สมาชิกสำหรับ QR รับแต้มได้", claim: null };
 
     const h = await headers();
     const host = h.get("host") ?? "";
     const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
     const baseUrl = host ? `${proto}://${host}` : "";
-    if (!baseUrl) return { error: null, claim: null };
+    if (!baseUrl) return { error: "ไม่สามารถระบุ URL สำหรับ QR รับแต้มได้", claim: null };
 
     return {
       error: null,

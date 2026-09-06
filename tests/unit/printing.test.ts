@@ -945,6 +945,20 @@ describe("printer adapters", () => {
     ).rejects.toThrow("raster");
   });
 
+  it("does not fall back to text ESC/POS when loyalty claim QR needs raster output", async () => {
+    await expect(
+      buildReceiptPrinterBytes(receiptFixture, {
+        ...receiptFixture,
+        loyaltyClaim: {
+          url: "https://shop.example.com/member/store?claim=8B7D9C24",
+          code: "8B7D9C24",
+          points: 0.65,
+          expiresAt: "2026-09-13T00:00:00.000Z",
+        },
+      }),
+    ).rejects.toThrow("raster");
+  });
+
   it("renders a PromptPay QR block into ESC/POS raster bytes", async () => {
     type MockCanvas = {
       width: number;

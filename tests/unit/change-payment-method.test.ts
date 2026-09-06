@@ -59,6 +59,19 @@ describe("ฝั่งแอป", () => {
     expect(pos).toContain("แก้ช่องทางชำระ");
     expect(pos).toContain("changeOrderPaymentMethodAction");
   });
+
+  it("ซ่อน dialog ประวัติบิลชั่วคราวขณะเปิด dialog แก้ช่องทางชำระ", () => {
+    const pos = read("src/app/pos/PosTerminal.tsx");
+    expect(pos).toContain("open={billHistoryPanelOpen && changePaymentOrder === null}");
+  });
+
+  it("เมื่อแก้ไม่สำเร็จ dialog ต้องค้างอยู่และแสดงสาเหตุแบบ alert", () => {
+    const pos = read("src/app/pos/PosTerminal.tsx");
+    expect(pos).toContain("changePaymentError");
+    expect(pos).toContain("setChangePaymentError(result.error);");
+    expect(pos).toContain('role="alert"');
+    expect(pos).toContain("แก้ช่องทางชำระไม่สำเร็จ");
+  });
 });
 
 function receipt(payments: ReceiptData["payments"]): ReceiptData {
