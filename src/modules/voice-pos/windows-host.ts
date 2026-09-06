@@ -39,6 +39,8 @@ export interface WindowsVoiceHostAdapter {
   subscribeHealth(listener: (health: VoiceHostHealth) => void): () => void;
   /** ขอสถานะล่าสุด / สั่งให้เครื่องลองเปิดใหม่ถ้าตอนนี้ใช้ไม่ได้ */
   requestHealth(): void;
+  /** เปิด/ปิดคำปลุกของเครื่องนี้ (เครื่องจะจำค่าไว้ข้ามการเปิดโปรแกรม) */
+  setStandby(enabled: boolean): void;
   /** บอก host ว่าเว็บถือไมค์แล้ว */
   commandStarted(sessionId: string): void;
   /** ยังคุยต่อในรอบเดิม — ขอต่อเวลา watchdog ของ host */
@@ -83,6 +85,7 @@ const UNAVAILABLE: WindowsVoiceHostAdapter = {
   subscribe: () => () => {},
   subscribeHealth: () => () => {},
   requestHealth: () => {},
+  setStandby: () => {},
   commandStarted: () => {},
   commandExtended: () => {},
   commandEnded: () => {},
@@ -142,6 +145,17 @@ export function createWindowsVoiceHost(options?: WindowsVoiceHostOptions): Windo
         // ฝั่ง native ตรวจรูปทรงข้อความทุกใบ จึงต้องมี sessionId เสมอแม้คำขอนี้ไม่ผูกกับรอบไหน
         sessionId: "health",
         at: new Date().toISOString(),
+      });
+    },
+    setStandby(enabled) {
+      if (disposed) return;
+      webview.postMessage({
+        v: STANDBY_CONTRACT_VERSION,
+        type: STANDBY_MESSAGE_TYPES.setStandby,
+        seq: ++healthSeq,
+        sessionId: "health",
+        at: new Date().toISOString(),
+        enabled,
       });
     },
     commandStarted(sessionId) {

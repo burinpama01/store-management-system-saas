@@ -22,6 +22,8 @@ export const STANDBY_MESSAGE_TYPES = {
   sessionEnded: "command.sessionEnded",
   /** web → native: ขอสถานะล่าสุดของเครื่อง (ปุ่ม "ตรวจอีกครั้ง") */
   requestHealth: "command.requestHealth",
+  /** web → native: เปิด/ปิดคำปลุกของเครื่องนี้ และจำค่าไว้ */
+  setStandby: "command.setStandby",
   /** native → web: สถานะของฝั่งเครื่อง */
   health: "host.health",
 } as const;
@@ -49,7 +51,8 @@ export interface StandbyOutboundMessage {
     | typeof STANDBY_MESSAGE_TYPES.sessionStarted
     | typeof STANDBY_MESSAGE_TYPES.sessionExtended
     | typeof STANDBY_MESSAGE_TYPES.sessionEnded
-    | typeof STANDBY_MESSAGE_TYPES.requestHealth;
+    | typeof STANDBY_MESSAGE_TYPES.requestHealth
+    | typeof STANDBY_MESSAGE_TYPES.setStandby;
   readonly seq: number;
   readonly sessionId: string;
   readonly reason?: string;

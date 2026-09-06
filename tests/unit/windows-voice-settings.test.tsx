@@ -84,6 +84,7 @@ describe("คำแนะนำวิธีแก้", () => {
 
 function createFakeHost(available = true) {
   const listeners = new Set<(health: VoiceHostHealth) => void>();
+  const standbyCalls: boolean[] = [];
   let requests = 0;
   const host: WindowsVoiceHostAdapter = {
     available,
@@ -95,6 +96,9 @@ function createFakeHost(available = true) {
     requestHealth: () => {
       requests += 1;
     },
+    setStandby: (enabled: boolean) => {
+      standbyCalls.push(enabled);
+    },
     commandStarted: () => {},
     commandExtended: () => {},
     commandEnded: () => {},
@@ -102,6 +106,7 @@ function createFakeHost(available = true) {
   };
   return {
     host,
+    standbyCalls,
     get requests() {
       return requests;
     },
@@ -169,6 +174,59 @@ describe("VoiceStandbyDiagnostics", () => {
     act(() => fake.emit());
 
     expect(screen.getByTestId("voice-standby-recheck").textContent).toBe("ตรวจอีกครั้ง");
+  });
+
+  it("กดเปิดคำปลุกแล้วส่งคำสั่งไปที่เครื่อง", () => {
+    const fake = createFakeHost();
+    render(<VoiceStandbyDiagnostics host={fake.host} />);
+    act(() => fake.emit({ state: "off" }));
+
+    fireEvent.click(screen.getByTestId("voice-standby-switch"));
+
+    expect(fake.standbyCalls).toEqual([true]);
+    // ยังไม่แสดงว่าเปิดสำเร็จจนกว่าเครื่องจะยืนยัน — เปิดไม่ขึ้นเพราะไม่มีไมค์เป็นเรื่องปกติ
+    expect(screen.getByTestId("voice-standby-switch").textContent).toBe("กำลังตั้งค่า…");
+    expect(screen.getByTestId("voice-standby-switch").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("เครื่องยืนยันว่าเปิดแล้ว ปุ่มจึงเปลี่ยนเป็นเปิดอยู่", () => {
+    const fake = createFakeHost();
+    render(<VoiceStandbyDiagnostics host={fake.host} />);
+    act(() => fake.emit({ state: "off" }));
+    fireEvent.click(screen.getByTestId("voice-standby-switch"));
+
+    act(() => fake.emit({ state: "standby" }));
+
+    const button = screen.getByTestId("voice-standby-switch");
+    expect(button.textContent).toBe("เปิดอยู่");
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("กดปิดตอนเปิดอยู่ = ส่งคำสั่งปิด", () => {
+    const fake = createFakeHost();
+    render(<VoiceStandbyDiagnostics host={fake.host} />);
+    act(() => fake.emit({ state: "standby" }));
+
+    fireEvent.click(screen.getByTestId("voice-standby-switch"));
+
+    expect(fake.standbyCalls).toEqual([false]);
+  });
+
+  it("เปิดไว้แล้วแต่เครื่องใช้ไม่ได้ ยังต้องกดปิดได้", () => {
+    const fake = createFakeHost();
+    render(<VoiceStandbyDiagnostics host={fake.host} />);
+    act(() => fake.emit({ state: "degraded", faultCode: "no_recognizer" }));
+
+    expect(screen.getByTestId("voice-standby-switch").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("voice-standby-switch"));
+    expect(fake.standbyCalls).toEqual([false]);
+  });
+
+  it("บอกว่าเครื่องจะจำค่าไว้ให้", () => {
+    const fake = createFakeHost();
+    render(<VoiceStandbyDiagnostics host={fake.host} />);
+
+    expect(screen.getByTestId("voice-standby-diagnostics").textContent).toContain("จำค่าไว้ให้");
   });
 
   it("บอกชัดว่าเป็นค่าเฉพาะเครื่องนี้ ไม่กระทบเครื่องอื่น", () => {
