@@ -51,9 +51,15 @@ public static class WakeGrammar
                 // ใส่ทุกแบบการออกเสียงเป็นทางเลือกแยกกัน — engine เลือกอันที่ตรงที่สุดเอง
                 foreach (var pronunciation in phrase.Pronunciations)
                 {
-                    var token = new SrgsToken(PronunciationTokenText(phrase)) { Pronunciation = pronunciation };
+                    // หนึ่ง token ต่อหนึ่งคำ — ไม่ยัดทั้งวลีเป็น token เดียว
+                    // เพื่อให้ engine ให้คะแนนรายคำ แล้วเรากรองด้วยคำที่แย่ที่สุดได้
                     var item = new SrgsItem();
-                    item.Add(token);
+                    var texts = PronunciationTokenText(phrase).Split(' ');
+                    for (var i = 0; i < pronunciation.Count; i++)
+                    {
+                        var text = i < texts.Length ? texts[i] : $"{phrase.Id}{i}";
+                        item.Add(new SrgsToken(text) { Pronunciation = pronunciation[i] });
+                    }
                     alternatives.Add(item);
                 }
             }

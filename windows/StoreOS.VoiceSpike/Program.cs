@@ -24,6 +24,7 @@ try
         "recognize" => await RecognizeAsync(),
         "handoff" => Handoff(),
         "listen" => Listen(),
+        "chatter" => await BuildChatterAsync(),
         _ => throw new ArgumentException($"ไม่รู้จักคำสั่ง '{command}'"),
     };
 
@@ -106,8 +107,11 @@ async Task<object> RecognizeAsync()
         ?? throw new InvalidOperationException("เครื่องนี้ไม่มี recognizer ภาษาอังกฤษ — W0 ตกตั้งแต่ข้อแรก");
 
     var dir = CorpusDir();
-    var items = await CorpusBuilder.BuildAsync(dir);
-    var results = WakeRecognizer.RecognizeCorpus(chosen.Id, items);
+    var longSet = ArgValue("--phrases") == "long";
+    var items = longSet
+        ? await CorpusBuilder.BuildLongPhraseCorpusAsync(dir)
+        : await CorpusBuilder.BuildAsync(dir);
+    var results = WakeRecognizer.RecognizeCorpus(chosen.Id, items, longSet);
 
     var positives = results.Where(r => r.Kind == "positive").ToList();
     var negatives = results.Where(r => r.Kind == "negative").ToList();
@@ -163,6 +167,12 @@ object Handoff()
     };
 }
 
+async Task<object> BuildChatterAsync()
+{
+    var path = await CorpusBuilder.BuildChatterAsync(CorpusDir(), ArgInt("--repeats", 3));
+    return new { checkedAt = DateTimeOffset.Now.ToString("o"), file = path };
+}
+
 object Listen()
 {
     var chosen = WakeGrammar.PickEnglishRecognizer()
@@ -175,24 +185,39 @@ object Listen()
     var started = DateTimeOffset.Now;
     var clock = System.Diagnostics.Stopwatch.StartNew();
 
+    // --phrases long = วัดชุดคำปลุกทดลอง (ยาวขึ้น) แทนชุดปัจจุบัน
+    var useLongPhrases = ArgValue("--phrases") == "long";
     using var engine = new SpeechRecognitionEngine(chosen.Id);
-    WakeGrammar.Load(engine, out _);
+    if (useLongPhrases) ExperimentalPhrases.Load(engine);
+    else WakeGrammar.Load(engine, out _);
     engine.SetInputToDefaultAudioDevice();
 
     engine.SpeechRecognized += (_, e) =>
     {
         // ต้องเป็นคำปลุกจริงเท่านั้น — ของเดิมยัด "unknown" เข้าไปแล้วนับเป็นปลุกด้วย
         // ทำให้ตัวเลขที่วัดได้สูงเกินจริง (ตัวจริงใน SystemSpeechWakeEngine ทิ้งไปถูกแล้ว)
-        var phraseId = WakeGrammar.PhraseIdForText(e.Result.Text);
+        var phraseId = useLongPhrases
+            ? ExperimentalPhrases.PhraseIdForText(e.Result.Text)
+            : WakeGrammar.PhraseIdForText(e.Result.Text);
+        var weakest = e.Result.Words.Count > 0 ? e.Result.Words.Min(w => w.Confidence) : 0;
         var verdict = phraseId is null
             ? new WakeEvaluation(WakeVerdict.RejectedLowConfidence, "not_a_wake_phrase", e.Result.Confidence)
-            : decider.Evaluate(phraseId, e.Result.Confidence, clock.ElapsedMilliseconds, session.MicHeldByWeb);
+            : weakest < WakeDecider.DefaultMinWordConfidence
+                ? new WakeEvaluation(WakeVerdict.RejectedLowConfidence, "weak_word", e.Result.Confidence)
+                : decider.Evaluate(phraseId, e.Result.Confidence, clock.ElapsedMilliseconds, session.MicHeldByWeb);
+        // เก็บสัญญาณเพิ่มเพื่อหาเกณฑ์แยก "คำปลุกจริง" ออกจาก "เสียงคุยที่ฟังคล้าย"
+        // (ค่าความมั่นใจอย่างเดียวแยกไม่ออก — ของจริงกับของปลอมทับช่วงกัน)
+        var words = e.Result.Words.Select(w => Math.Round(w.Confidence, 3)).ToArray();
         detections.Add(new
         {
             at = DateTimeOffset.Now.ToString("o"),
             heard = e.Result.Text,
             phraseId = phraseId ?? "(ไม่ใช่คำปลุก)",
             confidence = Math.Round(e.Result.Confidence, 3),
+            durationMs = (int)(e.Result.Audio?.Duration.TotalMilliseconds ?? 0),
+            wordCount = words.Length,
+            minWordConfidence = words.Length > 0 ? words.Min() : 0,
+            words,
             verdict = verdict.Verdict.ToString(),
         });
         if (verdict.ShouldWake && phraseId is not null)
@@ -219,7 +244,13 @@ object Listen()
         }
     }
 
+    // ต้องรอ RecognizeCompleted ก่อนตัด input เสมอ — บั๊กเดียวกับที่เจอตอนวัด handoff
+    // ("Cannot perform this operation while the recognizer is doing recognition")
+    // ถ้าไม่รอ การวัดจะพังท้ายรอบและไม่ได้ไฟล์ผลลัพธ์เลย
+    using var completed = new ManualResetEventSlim(false);
+    engine.RecognizeCompleted += (_, _) => completed.Set();
     engine.RecognizeAsyncCancel();
+    completed.Wait(TimeSpan.FromSeconds(5));
     engine.SetInputToNull();
 
     return new
@@ -227,6 +258,7 @@ object Listen()
         checkedAt = started.ToString("o"),
         recognizer = chosen,
         listenedSeconds = seconds,
+        phraseSet = useLongPhrases ? "long-experimental" : "current",
         detections,
         watchdogFallbacks = fallbacks,
     };

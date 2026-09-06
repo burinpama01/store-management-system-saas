@@ -37,10 +37,18 @@ public sealed class WakeEngineFaultEventArgs(string code, string message) : Even
 /// เกณฑ์ปลุก — ค่าเริ่มต้น 0.72 มาจากผลวัดจริง (คำปลุกไทยที่แย่ที่สุดอยู่ที่ 0.70–0.71)
 /// แผน v1 เขียนไว้ 0.82 ซึ่งตั้งก่อนมีข้อมูล ถ้าใช้ค่านั้นคำว่า "ฮัลโหลโอเอส" จะไม่เคยติดเลย
 /// </param>
+/// <param name="MinimumWordConfidence">
+/// คะแนนต่ำสุดที่ยอมรับได้ของ "คำที่แย่ที่สุด" ในวลี
+///
+/// วัดจากห้องจริง: เสียงคุยที่ถูกมโนเป็นคำปลุกมีคะแนนรวมสูงถึง 0.87 ได้
+/// แต่คะแนนรายคำเกือบศูนย์ (0.002–0.02) ขณะที่คำปลุกจริงทุกคำได้คะแนนพอสมควร
+/// ตัวกรองนี้จึงแยกสองอย่างออกจากกันได้ ทั้งที่คะแนนรวมแยกไม่ออก
+/// </param>
 /// <param name="Cooldown">ช่วงพักหลังปลุก กันเสียงสะท้อน/ลำโพงร้านปลุกรัว</param>
 /// <param name="InputWaveFile">ถ้าระบุ = อ่านจากไฟล์เสียงแทนไมโครโฟน (ใช้ทดสอบเท่านั้น)</param>
 public sealed record WakeWordOptions(
     double MinimumConfidence = WakeDecider.DefaultMinConfidence,
+    double MinimumWordConfidence = WakeDecider.DefaultMinWordConfidence,
     TimeSpan? Cooldown = null,
     string? RecognizerId = null,
     string? InputWaveFile = null);
@@ -73,6 +81,7 @@ public sealed class SystemSpeechWakeEngine : IWakeWordEngine
 
     private SpeechRecognitionEngine? _engine;
     private WakeDecider? _decider;
+    private double _minWordConfidence = WakeDecider.DefaultMinWordConfidence;
     private ManualResetEventSlim? _completed;
     private bool _disposed;
 
@@ -135,6 +144,7 @@ public sealed class SystemSpeechWakeEngine : IWakeWordEngine
                         "pronunciation_fallback", pronunciationError ?? "ไวยากรณ์แบบมีหน่วยเสียงโหลดไม่ขึ้น"));
                 }
 
+                _minWordConfidence = options.MinimumWordConfidence;
                 _decider = new WakeDecider(
                     options.MinimumConfidence,
                     (int)(options.Cooldown ?? TimeSpan.FromMilliseconds(WakeDecider.DefaultCooldownMs)).TotalMilliseconds);
@@ -219,7 +229,11 @@ public sealed class SystemSpeechWakeEngine : IWakeWordEngine
         // ตกที่กฎคำล่อหรือได้ยินอย่างอื่น = ไม่ใช่คำปลุก จบตรงนี้ ไม่ส่งอะไรออกไปเลย
         if (phraseId is null || _decider is null) return;
 
-        var verdict = _decider.Evaluate(phraseId, e.Result!.Confidence, _clock.ElapsedMilliseconds, sessionActive: false);
+        // คำที่แย่ที่สุดต้องผ่านเกณฑ์ด้วย ไม่ใช่ดูแค่คะแนนรวมของวลี
+        var weakest = e.Result!.Words.Count > 0 ? e.Result.Words.Min(w => w.Confidence) : 0;
+        if (weakest < _minWordConfidence) return;
+
+        var verdict = _decider.Evaluate(phraseId, e.Result.Confidence, _clock.ElapsedMilliseconds, sessionActive: false);
         if (!verdict.ShouldWake) return;
 
         WakeDetected?.Invoke(this, new WakeDetectedEventArgs(

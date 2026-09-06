@@ -1,0 +1,197 @@
+{
+  "checkedAt": "2026-09-06T19:32:25.1803730\u002B07:00",
+  "recognizer": {
+    "Id": "MS-1033-80-DESK",
+    "Name": "MS-1033-80-DESK",
+    "Culture": "en-US"
+  },
+  "listenedSeconds": 240,
+  "phraseSet": "long-experimental",
+  "detections": [
+    {
+      "at": "2026-09-06T19:32:28.5588690\u002B07:00",
+      "heard": "hello store os",
+      "phraseId": "hello_storeos",
+      "confidence": 0.808,
+      "durationMs": 1600,
+      "wordCount": 3,
+      "minWordConfidence": 0.012,
+      "words": [
+        0.907,
+        0.012,
+        0.934
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:32:32.2876503\u002B07:00",
+      "heard": "hello store os",
+      "phraseId": "hello_storeos",
+      "confidence": 0.88,
+      "durationMs": 3370,
+      "wordCount": 3,
+      "minWordConfidence": 0.002,
+      "words": [
+        0.92,
+        0.002,
+        0.906
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:32:45.9815224\u002B07:00",
+      "heard": "hello store os",
+      "phraseId": "hello_storeos",
+      "confidence": 0.768,
+      "durationMs": 3750,
+      "wordCount": 3,
+      "minWordConfidence": 0.299,
+      "words": [
+        0.893,
+        0.299,
+        0.93
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:32:49.4817499\u002B07:00",
+      "heard": "hello store os",
+      "phraseId": "hello_storeos",
+      "confidence": 0.884,
+      "durationMs": 2390,
+      "wordCount": 3,
+      "minWordConfidence": 0.576,
+      "words": [
+        0.934,
+        0.866,
+        0.576
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:32:52.5361641\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "durationMs": 2050,
+      "wordCount": 1,
+      "minWordConfidence": 1,
+      "words": [
+        1
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:33:31.4725781\u002B07:00",
+      "heard": "hello store o s",
+      "phraseId": "hello_storeos",
+      "confidence": 0.812,
+      "durationMs": 8600,
+      "wordCount": 4,
+      "minWordConfidence": 0.472,
+      "words": [
+        0.915,
+        0.472,
+        0.937,
+        0.662
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:34:25.3495928\u002B07:00",
+      "heard": "hello store o s",
+      "phraseId": "hello_storeos",
+      "confidence": 0.874,
+      "durationMs": 3760,
+      "wordCount": 4,
+      "minWordConfidence": 0.002,
+      "words": [
+        0.923,
+        0.002,
+        0.917,
+        0.911
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:34:30.7956802\u002B07:00",
+      "heard": "hello store o s",
+      "phraseId": "hello_storeos",
+      "confidence": 0.86,
+      "durationMs": 3990,
+      "wordCount": 4,
+      "minWordConfidence": 0.039,
+      "words": [
+        0.938,
+        0.039,
+        0.928,
+        0.881
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:35:23.9787635\u002B07:00",
+      "heard": "hello store os",
+      "phraseId": "hello_storeos",
+      "confidence": 0.785,
+      "durationMs": 5030,
+      "wordCount": 3,
+      "minWordConfidence": 0.352,
+      "words": [
+        0.931,
+        0.352,
+        0.747
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:35:28.9147642\u002B07:00",
+      "heard": "wat dee store os",
+      "phraseId": "watdee_storeos",
+      "confidence": 0.763,
+      "durationMs": 3290,
+      "wordCount": 4,
+      "minWordConfidence": 0.004,
+      "words": [
+        0.858,
+        0.917,
+        0.004,
+        0.923
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:35:34.4117070\u002B07:00",
+      "heard": "hun lo store os",
+      "phraseId": "hanlo_storeos",
+      "confidence": 0.749,
+      "durationMs": 4600,
+      "wordCount": 4,
+      "minWordConfidence": 0.093,
+      "words": [
+        0.862,
+        0.906,
+        0.093,
+        0.905
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:36:21.7257032\u002B07:00",
+      "heard": "hello store o s",
+      "phraseId": "hello_storeos",
+      "confidence": 0.865,
+      "durationMs": 3660,
+      "wordCount": 4,
+      "minWordConfidence": 0.092,
+      "words": [
+        0.914,
+        0.092,
+        0.935,
+        0.908
+      ],
+      "verdict": "RejectedLowConfidence"
+    }
+  ],
+  "watchdogFallbacks": 1
+}

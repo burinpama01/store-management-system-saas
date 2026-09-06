@@ -33,6 +33,7 @@ import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry"
 import { recordVoiceTelemetryAction } from "./voice-telemetry-actions";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import { createWindowsVoiceHost, type WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
+import type { VoiceActivationOrigin } from "@/modules/voice-pos/standby-policy";
 import {
   decideStandbyAction,
   describeProposal,
@@ -581,6 +582,27 @@ export function VoicePosController({
    * ด่านสุดท้ายก่อนลงมือ — ตัดสินตาม "ที่มาของการเปิดไมค์"
    * กดปุ่มเอง = ทำเลยเหมือนเดิม; คำปลุก + คำสั่งที่แตะตะกร้า = ขอให้ยืนยันก่อน
    */
+  /**
+   * ฟีเจอร์นี้มีไว้ให้คนที่มือไม่ว่าง — ถ้าจบรอบแล้วต้องเอามือมาแตะจอ ก็ไม่ต่างจาก
+   * การกดปุ่มพูดตั้งแต่แรก จึงต้องเปิดไมค์ต่อทันทีหลังระบบพูดจบ เพื่อให้ผู้ใช้
+   * "ยืนยัน" หรือสั่งคำสั่งถัดไปด้วยเสียงได้เลย
+   *
+   * จำกัดจำนวนรอบต่อเนื่องด้วย MAX_AUTO_LISTEN_CHAIN ในตัวปุ่มอยู่แล้ว
+   * ไมค์จึงไม่เปิดค้างไม่รู้จบ และผู้ใช้เริ่มรอบใหม่ด้วยคำปลุกได้เสมอ
+   */
+  const keepListening = useCallback(
+    async (
+      outcome: string | VoiceResultResponse | Promise<string | VoiceResultResponse>,
+      origin: VoiceActivationOrigin,
+    ): Promise<string | VoiceResultResponse> => {
+      const resolved = await outcome;
+      if (origin !== "windows_standby") return resolved;
+      const response = typeof resolved === "string" ? { message: resolved } : resolved;
+      return { ...response, listenAgain: true };
+    },
+    [],
+  );
+
   const applyWithStandbyPolicy = useCallback(
     (
       result: VoiceParseResult,
@@ -589,11 +611,9 @@ export function VoicePosController({
     ): string | VoiceResultResponse | Promise<string | VoiceResultResponse> => {
       const decision = decideStandbyAction(result, context.origin, clock());
 
-      if (decision.action === "execute") return handleDeterministicResult(result, transcript);
-
-      if (decision.action === "block") {
-        // ข้อความเดิมของเส้นทาง deterministic ยังเหมาะสมที่สุด (บอกเหตุผลตาม resultCode)
-        return handleDeterministicResult(result, transcript);
+      // block ใช้ข้อความเดิมของเส้นทาง deterministic (บอกเหตุผลตาม resultCode)
+      if (decision.action === "execute" || decision.action === "block") {
+        return keepListening(handleDeterministicResult(result, transcript), context.origin);
       }
 
       const label = describeProposal(decision.result);
@@ -603,9 +623,10 @@ export function VoicePosController({
         sessionId: context.sessionId,
         label,
       });
-      return `รอการยืนยัน: ${label} — พูดว่า “ยืนยัน” หรือแตะปุ่มยืนยัน`;
+      // ต้องฟังต่อทันที ไม่งั้นคำว่า "ยืนยัน" ที่เราเพิ่งบอกให้พูด จะไม่มีใครได้ยิน
+      return keepListening(`รอการยืนยัน: ${label} — พูดว่า “ยืนยัน” ได้เลย`, context.origin);
     },
-    [clock, handleDeterministicResult],
+    [clock, handleDeterministicResult, keepListening],
   );
 
   const handleResult = useCallback(
@@ -620,10 +641,10 @@ export function VoicePosController({
       const active = isProposalValid(proposal, clock()) ? proposal : null;
       if (active) {
         const reply = readStandbyVoiceReply(text);
-        if (reply === "confirm") return commitProposal(active);
+        if (reply === "confirm") return keepListening(commitProposal(active), context.origin);
         if (reply === "cancel") {
           cancelProposal();
-          return "ยกเลิกแล้ว";
+          return keepListening("ยกเลิกแล้ว", context.origin);
         }
         // คำอื่นไม่นับเป็นคำตอบ — ปล่อยให้ไหลไปเป็นคำสั่งใหม่ตามปกติ
       }
@@ -688,6 +709,7 @@ export function VoicePosController({
       clock,
       commitProposal,
       getCartApi,
+      keepListening,
       proposal,
       publishQueue,
       reportVoiceTelemetry,

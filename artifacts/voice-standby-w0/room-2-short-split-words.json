@@ -1,0 +1,479 @@
+{
+  "checkedAt": "2026-09-06T19:15:18.0718910\u002B07:00",
+  "recognizer": {
+    "Id": "MS-1033-80-DESK",
+    "Name": "MS-1033-80-DESK",
+    "Culture": "en-US"
+  },
+  "listenedSeconds": 240,
+  "detections": [
+    {
+      "at": "2026-09-06T19:15:21.7106814\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.898,
+      "durationMs": 1620,
+      "wordCount": 2,
+      "minWordConfidence": 0.849,
+      "words": [
+        0.849,
+        0.922
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:15:27.7426360\u002B07:00",
+      "heard": "hey lo oh es",
+      "phraseId": "helo_os",
+      "confidence": 0.846,
+      "durationMs": 2890,
+      "wordCount": 4,
+      "minWordConfidence": 0.8,
+      "words": [
+        0.871,
+        0.8,
+        0.915,
+        0.806
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:15:30.3703234\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.906,
+      "durationMs": 2390,
+      "wordCount": 2,
+      "minWordConfidence": 0.905,
+      "words": [
+        0.905,
+        0.907
+      ],
+      "verdict": "RejectedCooldown"
+    },
+    {
+      "at": "2026-09-06T19:15:32.3032308\u002B07:00",
+      "heard": "helo os",
+      "phraseId": "helo_os",
+      "confidence": 0.846,
+      "durationMs": 1110,
+      "wordCount": 2,
+      "minWordConfidence": 0.809,
+      "words": [
+        0.896,
+        0.809
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:15:40.4906499\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.827,
+      "durationMs": 1340,
+      "wordCount": 2,
+      "minWordConfidence": 0.473,
+      "words": [
+        0.934,
+        0.473
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:15:47.9314118\u002B07:00",
+      "heard": "hun lo oh es",
+      "phraseId": "hanlo_os",
+      "confidence": 0.907,
+      "durationMs": 1740,
+      "wordCount": 4,
+      "minWordConfidence": 0.418,
+      "words": [
+        0.915,
+        0.924,
+        0.925,
+        0.418
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:16:06.8047054\u002B07:00",
+      "heard": "hello oh es",
+      "phraseId": "hello_os",
+      "confidence": 0.909,
+      "durationMs": 1580,
+      "wordCount": 3,
+      "minWordConfidence": 0.867,
+      "words": [
+        0.901,
+        0.931,
+        0.867
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:16:44.7040629\u002B07:00",
+      "heard": "hello oh es",
+      "phraseId": "hello_os",
+      "confidence": 0.862,
+      "durationMs": 3630,
+      "wordCount": 3,
+      "minWordConfidence": 0.797,
+      "words": [
+        0.932,
+        0.84,
+        0.797
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:16:56.8042461\u002B07:00",
+      "heard": "hallo oh es",
+      "phraseId": "hello_os",
+      "confidence": 0.905,
+      "durationMs": 2790,
+      "wordCount": 3,
+      "minWordConfidence": 0.894,
+      "words": [
+        0.899,
+        0.922,
+        0.894
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:17:01.4962137\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.85,
+      "durationMs": 1940,
+      "wordCount": 2,
+      "minWordConfidence": 0.47,
+      "words": [
+        0.923,
+        0.47
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:17:07.1231743\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.893,
+      "durationMs": 3740,
+      "wordCount": 2,
+      "minWordConfidence": 0.885,
+      "words": [
+        0.911,
+        0.885
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:17:11.1783314\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.844,
+      "durationMs": 2220,
+      "wordCount": 2,
+      "minWordConfidence": 0.809,
+      "words": [
+        0.809,
+        0.876
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:17:13.4284082\u002B07:00",
+      "heard": "helo os",
+      "phraseId": "helo_os",
+      "confidence": 0.847,
+      "durationMs": 1660,
+      "wordCount": 2,
+      "minWordConfidence": 0.843,
+      "words": [
+        0.843,
+        0.851
+      ],
+      "verdict": "RejectedCooldown"
+    },
+    {
+      "at": "2026-09-06T19:17:20.3049749\u002B07:00",
+      "heard": "hey lo oh es",
+      "phraseId": "helo_os",
+      "confidence": 0.815,
+      "durationMs": 2840,
+      "wordCount": 4,
+      "minWordConfidence": 0.296,
+      "words": [
+        0.775,
+        0.921,
+        0.296,
+        0.888
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:17:25.8205507\u002B07:00",
+      "heard": "hey lo oh es",
+      "phraseId": "helo_os",
+      "confidence": 0.887,
+      "durationMs": 2350,
+      "wordCount": 4,
+      "minWordConfidence": 0.808,
+      "words": [
+        0.861,
+        0.95,
+        0.808,
+        0.937
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:17:29.3704670\u002B07:00",
+      "heard": "hello o s",
+      "phraseId": "hello_os",
+      "confidence": 0.901,
+      "durationMs": 3430,
+      "wordCount": 3,
+      "minWordConfidence": 0.866,
+      "words": [
+        0.913,
+        0.866,
+        0.894
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:17:38.6196242\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.744,
+      "durationMs": 820,
+      "wordCount": 2,
+      "minWordConfidence": 0.493,
+      "words": [
+        0.493,
+        0.896
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:17:44.3712781\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.848,
+      "durationMs": 1810,
+      "wordCount": 2,
+      "minWordConfidence": 0.75,
+      "words": [
+        0.75,
+        0.91
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:11.6805653\u002B07:00",
+      "heard": "hello oh es",
+      "phraseId": "hello_os",
+      "confidence": 0.832,
+      "durationMs": 4720,
+      "wordCount": 3,
+      "minWordConfidence": 0.535,
+      "words": [
+        0.915,
+        0.535,
+        0.93
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:16.2381626\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.92,
+      "durationMs": 1840,
+      "wordCount": 2,
+      "minWordConfidence": 0.911,
+      "words": [
+        0.926,
+        0.911
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:28.9952519\u002B07:00",
+      "heard": "helo os",
+      "phraseId": "helo_os",
+      "confidence": 0.791,
+      "durationMs": 850,
+      "wordCount": 2,
+      "minWordConfidence": 0.725,
+      "words": [
+        0.725,
+        0.848
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:37.2546491\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.923,
+      "durationMs": 2230,
+      "wordCount": 2,
+      "minWordConfidence": 0.912,
+      "words": [
+        0.925,
+        0.912
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:39.8712609\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.917,
+      "durationMs": 2280,
+      "wordCount": 2,
+      "minWordConfidence": 0.908,
+      "words": [
+        0.908,
+        0.927
+      ],
+      "verdict": "RejectedCooldown"
+    },
+    {
+      "at": "2026-09-06T19:18:41.7430360\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.896,
+      "durationMs": 1160,
+      "wordCount": 2,
+      "minWordConfidence": 0.816,
+      "words": [
+        0.926,
+        0.816
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:43.6810954\u002B07:00",
+      "heard": "hello os",
+      "phraseId": "hello_os",
+      "confidence": 0.927,
+      "durationMs": 1900,
+      "wordCount": 2,
+      "minWordConfidence": 0.926,
+      "words": [
+        0.926,
+        0.928
+      ],
+      "verdict": "RejectedSessionActive"
+    },
+    {
+      "at": "2026-09-06T19:18:51.1769302\u002B07:00",
+      "heard": "hel lo oh es",
+      "phraseId": "helo_os",
+      "confidence": 0.922,
+      "durationMs": 2240,
+      "wordCount": 4,
+      "minWordConfidence": 0.898,
+      "words": [
+        0.916,
+        0.936,
+        0.932,
+        0.898
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:18:57.2465096\u002B07:00",
+      "heard": "helo os",
+      "phraseId": "helo_os",
+      "confidence": 0.911,
+      "durationMs": 3560,
+      "wordCount": 2,
+      "minWordConfidence": 0.908,
+      "words": [
+        0.914,
+        0.908
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:19:01.9259281\u002B07:00",
+      "heard": "oh kay ka",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 0.916,
+      "durationMs": 3780,
+      "wordCount": 3,
+      "minWordConfidence": 0.879,
+      "words": [
+        0.933,
+        0.879,
+        0.931
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:19:07.9951415\u002B07:00",
+      "heard": "watdee os",
+      "phraseId": "watdee_os",
+      "confidence": 0.667,
+      "durationMs": 2680,
+      "wordCount": 2,
+      "minWordConfidence": 0.536,
+      "words": [
+        0.536,
+        0.927
+      ],
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T19:19:11.6959819\u002B07:00",
+      "heard": "hun lo oh es",
+      "phraseId": "hanlo_os",
+      "confidence": 0.921,
+      "durationMs": 3090,
+      "wordCount": 4,
+      "minWordConfidence": 0.887,
+      "words": [
+        0.887,
+        0.945,
+        0.922,
+        0.944
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:19:14.8765463\u002B07:00",
+      "heard": "helo os",
+      "phraseId": "helo_os",
+      "confidence": 0.9,
+      "durationMs": 2580,
+      "wordCount": 2,
+      "minWordConfidence": 0.896,
+      "words": [
+        0.907,
+        0.896
+      ],
+      "verdict": "Accepted"
+    },
+    {
+      "at": "2026-09-06T19:19:17.4299724\u002B07:00",
+      "heard": "oh kay ka",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 0.773,
+      "durationMs": 2250,
+      "wordCount": 3,
+      "minWordConfidence": 0.244,
+      "words": [
+        0.918,
+        0.925,
+        0.244
+      ],
+      "verdict": "RejectedLowConfidence"
+    }
+  ],
+  "watchdogFallbacks": 20
+}

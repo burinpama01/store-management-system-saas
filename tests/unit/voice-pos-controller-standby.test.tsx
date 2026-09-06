@@ -235,6 +235,27 @@ describe("VoicePosController — คำสั่งจากคำปลุก",
     expect(screen.queryByTestId("voice-standby-proposal")).toBeNull();
   });
 
+  it("สั่งจากคำปลุกแล้วต้องเปิดไมค์ต่อ เพื่อพูดยืนยันได้โดยไม่ต้องแตะจอ", async () => {
+    // หัวใจของฟีเจอร์: คนที่มือไม่ว่างต้องจบงานด้วยเสียงล้วน
+    const pos = renderVoicePos();
+
+    await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
+
+    expect(pos.host.calls).toContain("extended:sess000001");
+    expect(pos.host.calls).not.toContain("ended:sess000001:completed");
+  });
+
+  it("ยืนยันด้วยเสียงแล้วยังฟังต่อเพื่อรับคำสั่งถัดไป", async () => {
+    const pos = renderVoicePos();
+    await pos.wakeAndSay("เพิ่มลาเต้ 2 แก้ว");
+
+    await pos.wakeAndSay("ยืนยัน");
+
+    expect(pos.qty()).toBe(2);
+    // ยังไม่คืนไมค์ — ผู้ใช้สั่งคำต่อไปได้เลย
+    expect(pos.host.calls).not.toContain("ended:sess000001:completed");
+  });
+
   it("กดปุ่มพูดเองยังทำงานทันทีเหมือนเดิม ไม่มีขั้นตอนยืนยันเพิ่ม", async () => {
     const pos = renderVoicePos();
 
