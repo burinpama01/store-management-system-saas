@@ -27,7 +27,12 @@ public sealed class StandbySession
 {
     /// <summary>หน้าต่างฟังสูงสุดของเว็บที่ใช้จริง — ค่านี้คือเพดานล่างของ watchdog</summary>
     public const int WebMaxListeningWindowMs = 6000;
-    public const int DefaultHandoffTimeoutMs = 1200;
+    /// <summary>
+    /// เวลาที่รอให้เว็บตอบว่าเริ่มฟัง — แผน v1 W3 กำหนด 2 วินาที
+    /// (งบ wake→listening p95 ที่แผนตั้งไว้คือ 900ms ค่านี้จึงเผื่อไว้กว่าเท่าตัว
+    ///  ก่อนจะสรุปว่าเบราว์เซอร์ไม่ยอมเริ่มฟังเอง)
+    /// </summary>
+    public const int DefaultHandoffTimeoutMs = 2000;
     public const int DefaultMaxListeningWindowMs = 9000;
     public const int DefaultAbsoluteMaxMs = 20000;
 

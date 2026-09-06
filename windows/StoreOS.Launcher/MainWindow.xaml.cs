@@ -17,11 +17,18 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.2.1";
+    private const string LauncherVersion = "0.2.2";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
+    /// <summary>
+    /// นาฬิกาของ watchdog เสียง — ต้องถี่กว่าตัวจับเวลาสถานะเครื่องพิมพ์มาก
+    /// เพราะเส้นตายที่ต้องจับคือ 2 วินาที (เว็บตอบว่าเริ่มฟัง) ถ้าใช้รอบ 5 วินาที
+    /// ผู้ใช้จะยืนรอปุ่ม "แตะเพื่อพูด" นานกว่าที่ควรถึงสองเท่า
+    /// เดินเฉพาะตอนเปิดโหมดคำปลุกเท่านั้น จึงไม่กิน CPU บนเครื่องที่ปิดฟีเจอร์นี้
+    /// </summary>
+    private readonly DispatcherTimer _voiceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly string _healthPath = PrintHubReadiness.HealthFilePath(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
     private DateTimeOffset _lastStartAttempt = DateTimeOffset.MinValue;
@@ -33,6 +40,8 @@ public partial class MainWindow : Window
     /// เปิดทีละเครื่องด้วย VoiceStandbyEnabled ใน launcher.json ระหว่าง pilot เท่านั้น
     /// </summary>
     private readonly VoiceStandbyHost _voice;
+    /// <summary>สัญญาณล็อกจอ/หลับของ Windows — ต้องถอด handler ตอนปิดไม่งั้น SystemEvents ถือ reference ค้าง</summary>
+    private readonly WindowsSuspendSignals _suspendSignals = new();
 
     public MainWindow()
     {
@@ -45,11 +54,16 @@ public partial class MainWindow : Window
         _voice = new VoiceStandbyHost(
             () => new SystemSpeechWakeEngine(),
             (level, code, message) => _logs.Enqueue(level, code, message));
+        _voice.Attach(_suspendSignals);
+        // W3 ส่งข้อความออกมาแล้ว แต่ยังไม่ยิงเข้าหน้าเว็บ — การส่งจริงพร้อมด่านความปลอดภัยคือ W4
+        _voice.MessageForWeb += (_, message) =>
+            _logs.Enqueue("info", "voice_message_pending", $"มีข้อความรอส่งให้หน้าเว็บ: {message.Type}");
         Loaded += OnLoaded;
         Closing += OnClosing;
         // ปิดหน้าต่างทางไหนก็ตาม ต้องคืนไมโครโฟนก่อนแล้วค่อยปล่อยคิว log
         Closed += async (_, _) =>
         {
+            _suspendSignals.Dispose();
             await _voice.DisposeAsync();
             await _logs.DisposeAsync();
         };
@@ -111,6 +125,11 @@ public partial class MainWindow : Window
 
         // เปิดโหมดคำปลุกถ้าเครื่องนี้เปิดไว้ — ล้มเหลวก็แค่ไม่มีคำปลุก POS ยังขายได้
         await _voice.StartAsync(settings.VoiceStandbyEnabled);
+        if (settings.VoiceStandbyEnabled)
+        {
+            _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
+            _voiceTimer.Start();
+        }
 
         Refresh();
         _timer.Tick += async (_, _) =>
@@ -295,6 +314,7 @@ public partial class MainWindow : Window
         {
             e.Cancel = true;
             _timer.Stop();
+            _voiceTimer.Stop();
             try
             {
                 await _voice.StopAsync();

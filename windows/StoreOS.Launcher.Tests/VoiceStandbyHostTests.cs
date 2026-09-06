@@ -6,9 +6,10 @@ using Xunit;
 namespace StoreOS.Launcher.Tests;
 
 /// <summary>
-/// W1 — วงจรชีวิตของฝั่งคำปลุก
+/// ด้านที่ Launcher มองเห็นของฟีเจอร์คำปลุก (W1–W3)
 ///
 /// ข้อที่สำคัญที่สุดคือ "ปิดโปรแกรมทางไหนก็ต้องคืนไมโครโฟน" และ "คำปลุกพังต้องไม่ทำให้ POS พัง"
+/// ตารางสถานะละเอียดอยู่ที่ MicrophoneCoordinatorTests
 /// </summary>
 public class VoiceStandbyHostTests
 {
@@ -59,6 +60,14 @@ public class VoiceStandbyHostTests
 
         public void RaiseFault(string code) =>
             Faulted?.Invoke(this, new WakeEngineFaultEventArgs(code, code));
+    }
+
+    private sealed class FakeSuspendSignals : ISystemSuspendSignals
+    {
+        public event EventHandler? Suspending;
+        public event EventHandler? Resumed;
+        public void RaiseSuspending() => Suspending?.Invoke(this, EventArgs.Empty);
+        public void RaiseResumed() => Resumed?.Invoke(this, EventArgs.Empty);
     }
 
     private static (VoiceStandbyHost host, FakeEngine engine, List<string> logs) Build(FakeEngine? engine = null)
@@ -117,7 +126,7 @@ public class VoiceStandbyHostTests
         Assert.Equal("InvalidOperationException", host.LastFault);
         // เปิดไม่ขึ้นต้องปล่อยของทิ้ง ไม่ค้างไว้กินไมค์
         Assert.Equal(1, engine.DisposeCalls);
-        Assert.Contains("error:voice_standby_failed", logs);
+        Assert.Contains("error:voice_mic_start_failed", logs);
     }
 
     [Fact]
@@ -129,6 +138,24 @@ public class VoiceStandbyHostTests
 
         Assert.Equal(VoiceHostState.Off, host.State);
         Assert.Equal(0, engine.StopCalls);
+    }
+
+    [Fact]
+    public async Task ล็อกจอแล้วปลดล็อกต้องกลับมาฟังเอง()
+    {
+        var signals = new FakeSuspendSignals();
+        var (host, engine, _) = Build();
+        host.Attach(signals);
+        await host.StartAsync(enabled: true);
+
+        signals.RaiseSuspending();
+        await Task.Delay(50);
+        Assert.Equal(VoiceHostState.Off, host.State);
+
+        signals.RaiseResumed();
+        await Task.Delay(50);
+        Assert.Equal(VoiceHostState.Standby, host.State);
+        Assert.Equal(2, engine.StartCalls);
     }
 
     [Fact]
@@ -156,7 +183,7 @@ public class VoiceStandbyHostTests
 
         Assert.Equal(1, engine.DisposeCalls);
         Assert.Equal(VoiceHostState.Off, host.State);
-        Assert.Contains("error:voice_standby_stop_failed", logs);
+        Assert.Contains("error:voice_mic_stop_failed", logs);
     }
 
     [Fact]
@@ -218,23 +245,25 @@ public class VoiceStandbyHostTests
         Assert.Equal(VoiceHostState.Degraded, host.State);
         Assert.Equal("no_recognizer", host.LastFault);
         Assert.Equal(1, engine.DisposeCalls);
-        Assert.Contains("error:voice_standby_fault", logs);
+        Assert.Contains("error:voice_mic_fault", logs);
     }
 
     [Fact]
-    public async Task ได้ยินคำปลุกแล้วส่งต่อขึ้นไป_และ_log_ไม่มีข้อความที่ได้ยิน()
+    public async Task ได้ยินคำปลุกแล้วมีข้อความสำหรับหน้าเว็บ_และไม่มีข้อความที่ได้ยินหลุดไป()
     {
         var engine = new FakeEngine();
-        var (host, _, logs) = Build(engine);
-        WakeDetectedEventArgs? seen = null;
-        host.WakeDetected += (_, e) => seen = e;
+        var (host, _, _) = Build(engine);
+        StandbyMessage? seen = null;
+        host.MessageForWeb += (_, m) => seen = m;
         await host.StartAsync(enabled: true);
 
         engine.RaiseWake("sawatdee_os", 0.93);
+        await Task.Delay(50); // ตัวรับคำปลุกทำงานแบบ async
 
         Assert.NotNull(seen);
-        Assert.Equal("sawatdee_os", seen!.PhraseId);
-        Assert.Contains("info:voice_wake_detected", logs);
+        Assert.Equal(StandbyContract.WakeDetected, seen!.Type);
+        Assert.Equal("sawatdee_os", seen.PhraseId);
+        Assert.DoesNotContain("transcript", StandbyContract.Serialize(seen));
     }
 
     [Fact]
