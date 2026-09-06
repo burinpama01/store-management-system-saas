@@ -200,8 +200,11 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
     ctx.fillRect(x0 + w - frameLine, y0, frameLine, h);
   };
 
+  // ตำแหน่ง y ต้นบล็อกทุกบล็อก = จุดที่ตัดแถบ raster ได้โดยไม่ผ่ากลางตัวหนังสือ
+  const bandBreaks: number[] = [];
   let y = padY;
   for (const line of lines) {
+    bandBreaks.push(y);
     if (line.imageUrl) {
       const prep = prepared.get(line);
       if (!prep) continue;
@@ -259,6 +262,6 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
 
   const img = ctx.getImageData(0, 0, width, height);
   const mono = rgbaToMono(img.data, width, height);
-  const raster = packEscPosRaster(width, height, mono);
+  const raster = packEscPosRaster(width, height, mono, bandBreaks);
   return wrapRasterJob(raster);
 }

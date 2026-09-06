@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 // เวอร์ชันของ agent ตัวนี้ + protocol ที่คุยกับเซิร์ฟเวอร์ (แผน v3 Task 3).
 // ส่งไปกับทุก poll เพื่อให้เซิร์ฟเวอร์รู้ว่าร้านไหนยังรัน Hub รุ่นเก่า -- เดิมไม่มีเลย
 // จึงไล่ปัญหา "ร้านนี้พิมพ์ไม่ออก" ไม่ได้ว่าเป็นเพราะ agent เก่าหรือของอย่างอื่น
-export const AGENT_VERSION = "1.2.0";
+export const AGENT_VERSION = "1.3.0";
 export const PROTOCOL_VERSION = 1;
 
 const MAX_PRINT_JOB_BYTES = 256 * 1024;
@@ -25,6 +25,10 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const SEND_TIMEOUT_MS = 30000;
 const DEFAULT_POLL_INTERVAL_MS = 2500;
 const ERROR_BACKOFF_MS = 8000;
+// ช่วงที่ร้านกำลังขายอยู่ ให้ถามงานถี่ขึ้น: รอบ poll ปกติ 2.5 วิ คือเวลารอเปล่า ๆ
+// ก่อนใบเสร็จจะเริ่มพิมพ์ ส่วนตอนร้านว่างก็กลับไปถามห่างเหมือนเดิม (ไม่ถล่มเซิร์ฟเวอร์)
+const BUSY_POLL_INTERVAL_MS = 500;
+const BUSY_WINDOW_MS = 90_000;
 
 function clampInt(value, fallback) {
   const n = Number(value);
@@ -475,11 +479,20 @@ export async function listWindowsPrinters(options = {}) {
   return printers;
 }
 
+// ชื่อไฟล์ผูกกับเวอร์ชันตัวช่วย: แก้โค้ด C# เมื่อไหร่ต้องขยับเลขนี้ ไม่งั้นเครื่องที่
+// เคยพิมพ์แล้วจะโหลด DLL เก่าค้างไว้ตลอด
+const RAW_PRINT_ASSEMBLY = "storeos-rawprint-v1.dll";
+
+function rawPrintAssemblyPath() {
+  return join(tmpdir(), RAW_PRINT_ASSEMBLY);
+}
+
 // Sends a payload file to a Windows printer with datatype RAW via winspool.drv.
 // `printerName` is pre-validated to a safe character set and single quotes are
 // doubled, so it cannot break out of the PowerShell string literal.
-export function buildRawSpoolScript(printerName, file) {
+export function buildRawSpoolScript(printerName, file, dllPath = rawPrintAssemblyPath()) {
   const safeName = printerName.replace(/'/g, "''");
+  const safeDll = dllPath.replace(/'/g, "''");
   const csharp = [
     "using System;using System.Runtime.InteropServices;",
     "public class StoreOsRawPrint{",
@@ -506,11 +519,19 @@ export function buildRawSpoolScript(printerName, file) {
     "finally{Marshal.FreeCoTaskMem(buf);}",
     "EndPagePrinter(h);}finally{EndDocPrinter(h);}}finally{ClosePrinter(h);}}}",
   ].join("");
+  // Add-Type คอมไพล์ C# ใหม่ทุกครั้งที่ spawn PowerShell (~1 วินาทีต่อใบเสร็จ) เพราะ
+  // แต่ละงานพิมพ์คือโปรเซสใหม่ที่ไม่มีชนิดนี้อยู่เลย -> คอมไพล์ครั้งเดียวเก็บเป็น DLL
+  // ไว้ใน temp แล้วรอบต่อไปแค่โหลด ทำให้เวลาตั้งแต่กดชำระเงินถึงกระดาษออกสั้นลง
   return [
     "$ErrorActionPreference='Stop';",
+    `$dll='${safeDll}';`,
+    "if(Test-Path $dll){ try{ [void][Reflection.Assembly]::LoadFrom($dll) }catch{ Remove-Item $dll -Force -ErrorAction SilentlyContinue } };",
+    "if(-not ('StoreOsRawPrint' -as [type])){",
     // ตัวปิด here-string ต้องอยู่ต้นบรรทัดของมันเอง จึงขึ้นบรรทัดใหม่หลัง '@
     `$src=@'\n${csharp}\n'@\n`,
-    "if(-not ('StoreOsRawPrint' -as [type])){ Add-Type -TypeDefinition $src };",
+    // เขียน DLL ไม่ได้ (สิทธิ์/ดิสก์เต็ม) ต้องยังพิมพ์ได้ -> ถอยไปคอมไพล์ในหน่วยความจำ
+    "try{ Add-Type -TypeDefinition $src -OutputAssembly $dll -OutputType Library; [void][Reflection.Assembly]::LoadFrom($dll) }",
+    "catch{ Add-Type -TypeDefinition $src } };",
     `[StoreOsRawPrint]::Send('${safeName}',[System.IO.File]::ReadAllBytes('${file}'));`,
   ].join(" ");
 }
@@ -686,6 +707,9 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
     } catch (err) {
       outcome = classifyPrintOutcome(err);
       error = err instanceof Error ? err.message : "Print failed";
+      // เดิมงานที่พิมพ์ไม่ออกเงียบสนิทบนหน้าจอ Hub เห็นแต่ "Handled n job(s)" ทำให้
+      // ที่ร้านแยกไม่ออกว่า "พิมพ์แล้ว" กับ "ล้มเหลว" ต่างกันตรงไหน
+      console.error(`Job ${job.id} (${job.kind ?? "ip"}) ${outcome}: ${error}`);
     }
     try {
       await fetchImpl(`${serverUrl}/api/print/hub/ack`, {
@@ -918,6 +942,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   let config = loadConfig();
   let configStamp = configFileStamp();
+  // เวลาที่มีงานพิมพ์เข้าล่าสุด ใช้ตัดสินว่าตอนนี้ควร poll ถี่ (ร้านกำลังขาย) หรือห่าง (ร้านว่าง)
+  let lastJobAt = 0;
 
   // ตัวเดียวต่อเครื่องเท่านั้น: Scheduled Task และ Launcher อาจสั่งเปิดพร้อมกันได้
   const runtime = createHubRuntimeState();
@@ -956,7 +982,9 @@ async function main() {
       }
     }
 
-    let waitMs = config.pollIntervalMs;
+    let waitMs = Date.now() - lastJobAt < BUSY_WINDOW_MS
+      ? Math.min(BUSY_POLL_INTERVAL_MS, config.pollIntervalMs)
+      : config.pollIntervalMs;
     try {
       const result = await runPollCycle({
         config,
@@ -991,7 +1019,12 @@ async function main() {
           storeId: config.storeId,
         });
         // processed = จำนวนงานที่ "จัดการแล้ว" ไม่ใช่ "พิมพ์สำเร็จ" — บางใบ ack เป็น failed/unknown
-        if (result.processed > 0) console.log(`Handled ${result.processed} job(s) this cycle.`);
+        if (result.processed > 0) {
+          console.log(`Handled ${result.processed} job(s) this cycle.`);
+          // เพิ่งมีงานเข้า = ร้านกำลังขาย -> รอบถัดไปถามถี่ (ใบเสร็จ+ตั๋วครัวมักมาติด ๆ กัน)
+          lastJobAt = Date.now();
+          waitMs = Math.min(BUSY_POLL_INTERVAL_MS, waitMs);
+        }
       } else {
         runtime.update({ state: "degraded", lastPollAt: pollAt, lastErrorCode: `http_${result.status ?? "error"}`, storeId: config.storeId });
         waitMs = ERROR_BACKOFF_MS;

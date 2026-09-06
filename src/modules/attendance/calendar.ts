@@ -1,4 +1,5 @@
 import type { AttendanceRecord } from "./types";
+import { isHalfDay } from "@/modules/hr/payroll";
 
 export type DayStatus =
   | "completed" // ครบ (เข้า-ออก ตรงเวลา)
@@ -97,7 +98,7 @@ export function computeDayStatuses(input: DayStatusInput): Map<string, DayStatus
       if (hasOpen && closedHours <= 0) {
         // วันหยุดที่เข้างานแต่ไม่ออกงาน = ไม่คิดเงิน แต่ไม่ใช่ขาดงาน
         out.set(date, holidays.has(date) ? "holiday_open" : "in_no_out");
-      } else if (halfDayMaxHours > 0 && closedHours > 0 && closedHours <= halfDayMaxHours) {
+      } else if (isHalfDay(closedHours, halfDayMaxHours)) {
         out.set(date, "half_day");
       } else if (startMin !== null) {
         const earliestIn = Math.min(...dayRecs.map((r) => localMinutesOfDay(r.clockInAt, timezone)));

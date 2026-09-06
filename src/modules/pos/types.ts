@@ -146,6 +146,10 @@ export interface Payment {
   changeAmount?: number;
   processedAt: string;
   processedByUserId: string;
+  /** ช่องทางที่บันทึกไว้ครั้งแรก — มีค่าเมื่อบิลนี้ถูกแก้ช่องทางชำระภายหลังเท่านั้น */
+  originalMethod?: PaymentMethod;
+  methodChangedAt?: string;
+  methodChangeReason?: string;
 }
 
 export interface CartItemKey {

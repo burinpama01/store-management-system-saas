@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    StoreOS.Voice — แกนกลางของคำปลุกเสียง (แผน v1 W2)
+
+    อยู่แยกจากทั้ง Launcher และ VoiceSpike เพราะสองตัวนั้นใช้ของชุดเดียวกันคนละหน้าที่:
+      * Launcher  = ใช้จริงบนเครื่องร้าน (ฟังไมโครโฟน)
+      * VoiceSpike = เครื่องมือวัด (ยิงไฟล์เสียง วัด false wake/handoff)
+    ถ้าปล่อยให้ Launcher อ้างโปรเจกต์ spike โดยตรง เครื่องมือวัดจะกลายเป็น dependency
+    ของโปรแกรมที่ลงเครื่องลูกค้า ซึ่งลบทิ้งไม่ได้อีกเลย
+
+    net8.0-windows (ไม่ผูก Windows SDK) เพื่อให้ Launcher ที่เป็น WPF อ้างได้ตรง ๆ
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <AssemblyName>StoreOS.Voice</AssemblyName>
+    <RootNamespace>StoreOS.Voice</RootNamespace>
+    <Version>0.2.1</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

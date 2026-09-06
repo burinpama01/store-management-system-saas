@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    StoreOS Voice Spike (แผน v3 Task 9 / แผน v1 W0)
+
+    นี่คือ "เครื่องมือวัด" ไม่ใช่ฟีเจอร์ — ไม่มี UI ไม่ถูกติดตั้งลงเครื่องร้าน
+    และไม่ถูกอ้างอิงจาก Launcher. หน้าที่เดียวคือตอบคำถามของ W0 ด้วยตัวเลขจริง:
+      1. เครื่องนี้มี recognizer ที่ใช้ได้ไหม
+      2. ไวยากรณ์คำปลุกภาษาไทยที่ออกเสียงผ่าน recognizer en-US จับได้จริงไหม
+      3. false wake จากประโยคสั่งงานปกติในร้านมีแค่ไหน
+      4. ส่งไมค์ต่อให้เว็บ 100 รอบแล้วไมค์หลุด/ค้างไหม
+
+    ทำไมต้องเป็นโปรเจกต์แยก: แผน v3 เขียนว่า Task 9 คือ spike และห้ามกลายเป็นฟีเจอร์
+    การแยกโปรเจกต์ทำให้ลบทิ้งทั้งก้อนได้ถ้าผลออกมาว่าไม่คุ้ม
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- ต้องระบุเวอร์ชัน Windows SDK เพราะ CorpusBuilder เรียก WinRT (เสียงสังเคราะห์ภาษาไทย Pattara) -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <AssemblyName>StoreOS.VoiceSpike</AssemblyName>
+    <RootNamespace>StoreOS.VoiceSpike</RootNamespace>
+    <Version>0.1.0</Version>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StoreOS.Voice\StoreOS.Voice.csproj" />
+  </ItemGroup>
+
+</Project>

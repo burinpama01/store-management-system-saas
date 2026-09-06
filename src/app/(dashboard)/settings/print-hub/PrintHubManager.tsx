@@ -13,6 +13,7 @@ import { buildReceiptPrinterBytes } from "@/modules/printing/receipt-printer-byt
 import { bytesToBase64 } from "@/modules/printing/print-job-base64";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
+import { PRINT_HUB_VERSION } from "@/modules/printing/hub-version";
 
 /** งานที่ Hub เคลมไปแล้วแต่ไม่ได้รายงานผล — ต้องให้คนดูกระดาษจริงก่อนตัดสิน */
 export interface UnknownPrintJob {
@@ -645,11 +646,11 @@ export function PrintHubManager({
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <a
-            href="/downloads/storeos-print-hub.zip"
-            download
+            href={`/downloads/storeos-print-hub.zip?v=${PRINT_HUB_VERSION}`}
+            download={`storeos-print-hub-${PRINT_HUB_VERSION}.zip`}
             className="btn-primary inline-flex min-h-11 items-center gap-2 px-4 text-sm font-semibold"
           >
-            ⬇ ดาวน์โหลดตัวติดตั้ง (.zip)
+            ⬇ ดาวน์โหลดตัวติดตั้ง (.zip) เวอร์ชัน {PRINT_HUB_VERSION}
           </a>
           <button
             type="button"

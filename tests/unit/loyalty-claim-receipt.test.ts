@@ -117,3 +117,37 @@ describe("กติกาที่ต้องบังคับในฐาน�
     expect(migration).toContain("revoke all on function public.claim_loyalty_points");
   });
 });
+
+// QR รับแต้มถูกขอจาก server หลังจ่ายเงินแบบไม่บล็อก ถ้าพิมพ์อัตโนมัติยิงทันที
+// ใบเสร็จจะออกมา "ไม่มี QR" ทั้งที่ข้อความชวนสแกนพิมพ์ไปแล้ว (เจอที่หน้าร้าน 2026-09-06)
+describe("พิมพ์อัตโนมัติต้องรอ QR รับแต้มก่อน", () => {
+  const source = read("src/app/pos/PosTerminal.tsx");
+
+  it("ใบเสร็จรู้ว่ากำลังรอ QR อยู่", () => {
+    expect(source).toContain("loyaltyClaimPending: !selectedCustomer && Boolean(paidOrder?.id)");
+    expect(source).toContain("loyaltyClaimPending: false");
+  });
+
+  it("ยังไม่พิมพ์จนกว่า QR จะมาถึง หรือหมดเวลารอ", () => {
+    expect(source).toContain("if (order.loyaltyClaimPending && !claimWaitElapsed) return;");
+    expect(source).toContain("}, [order.loyaltyClaimPending, claimWaitElapsed]);");
+  });
+
+  it("รอไม่เกินเวลาที่กำหนด — เน็ตช้าต้องไม่ทำให้ใบเสร็จไม่ออกเลย", () => {
+    expect(source).toMatch(/const AUTO_PRINT_CLAIM_WAIT_MS = \d+/);
+    expect(source).toContain("setTimeout(() => setClaimWaitElapsed(true), AUTO_PRINT_CLAIM_WAIT_MS)");
+  });
+});
+
+// รูปที่ร้านอัปโหลดไว้ต้องถูกส่งไปกับข้อมูลใบเสร็จ ไม่งั้น renderer ไม่มีอะไรให้วาด
+describe("รูปโลโก้/QR ท้ายใบต้องไปกับใบเสร็จจาก POS", () => {
+  const source = read("src/app/pos/PosTerminal.tsx");
+
+  it("ทั้งใบแรกและใบพิมพ์ซ้ำส่งรูปจากการตั้งค่าไปด้วย", () => {
+    const occurrences = source.split("logoUrl: settings.logoUrl").length - 1;
+    expect(occurrences).toBeGreaterThanOrEqual(2);
+    expect(source.split("footerImageUrl: settings.footerImageUrl").length - 1).toBeGreaterThanOrEqual(2);
+    expect(source).toContain("footerImageLabel: settings.footerImageLabel");
+    expect(source).toContain("hideFooterImageWithSystemQr: settings.hideFooterImageWithSystemQr");
+  });
+});

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   RASTER_WIDTH,
   packEscPosRaster,
+  planRasterBands,
   wrapRasterJob,
   rgbaToMono,
 } from "@/modules/printing/escpos-raster";
@@ -25,6 +26,33 @@ describe("ESC/POS raster (image) printing", () => {
     expect(out[4]).toBe(2);
     expect(out[6]).toBe(2);
     expect(out.length).toBe(8 + 2 * 2);
+  });
+
+  // เครื่องพิมพ์หยุดมอเตอร์ชั่วขณะระหว่างแถบ ถ้ารอยต่อตกกลางบรรทัด ตัวหนังสือจะขาด
+  // ครึ่งตัว -- อาการที่หน้าร้านเจอ ("พิมพ์ไม่ต่อเนื่อง ตัวหนังสือขาด")
+  it("ตัดแถบตรงช่องว่างระหว่างบรรทัดที่ผู้เรียกบอกมา ไม่ผ่ากลางตัวหนังสือ", () => {
+    const lineTops = Array.from({ length: 40 }, (_, index) => 8 + index * 24);
+    const bands = planRasterBands(900, lineTops);
+
+    expect(bands.reduce((sum, band) => sum + band.height, 0)).toBe(900);
+    for (const band of bands) {
+      expect(band.height).toBeLessThanOrEqual(255);
+      expect(band.height).toBeGreaterThan(0);
+    }
+    // ทุกรอยต่อ (ยกเว้นต้นภาพ) ต้องตรงกับจุดขึ้นบรรทัดใหม่
+    for (const band of bands.slice(1)) {
+      expect(lineTops).toContain(band.top);
+    }
+  });
+
+  it("ไม่มีจุดตัดที่ปลอดภัยในระยะแถบ -> ตัดตามความยาวสูงสุดเหมือนเดิม", () => {
+    expect(planRasterBands(600, [])).toEqual([
+      { top: 0, height: 240 },
+      { top: 240, height: 240 },
+      { top: 480, height: 120 },
+    ]);
+    // จุดตัดที่อยู่นอกภาพ/ไม่ใช่จำนวนเต็ม ต้องถูกมองข้าม ไม่ทำให้แถบเพี้ยน
+    expect(planRasterBands(100, [0, 100, 250, 12.5])).toEqual([{ top: 0, height: 100 }]);
   });
 
   it("splits tall raster images into short bands for mobile printers", () => {

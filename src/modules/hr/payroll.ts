@@ -32,6 +32,10 @@ export interface PayrollLine {
   halfDayDeduction: number;
   /** Days on a store holiday with an unclosed shift — not paid, not absence. */
   unpaidHolidayDays: number;
+  /** ค่าแรงต่อวันที่ใช้คิดค่าปรับขาดงาน/ครึ่งวัน (แสดงบนสลิปให้ตรวจได้) */
+  absentRatePerDay: number;
+  /** รายละเอียดรายวันตลอดงวด — ที่มาของทุกตัวเลขด้านบน */
+  days: PayrollDay[];
   /** Sum of manual bonus adjustments. */
   bonusTotal: number;
   /** Sum of manual deduction adjustments (penalty/leave/absent/late), as a positive number. */
@@ -44,6 +48,40 @@ export interface PayrollLine {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * ผ่อนผัน 15 นาทีให้เกณฑ์ครึ่งวัน — คนตอกบัตรจริงไม่ได้ออกตรงเป๊ะ
+ * (เข้า 07:24 ออก 11:30 = 4 ชม. 6 นาที ต้องยังเป็นครึ่งวัน ไม่ใช่เต็มวัน)
+ */
+export const HALF_DAY_TOLERANCE_HOURS = 0.25;
+
+/** วันนั้นนับเป็นครึ่งวันไหม (ใช้ร่วมกันทั้ง payroll และปฏิทิน) */
+export function isHalfDay(hours: number, halfDayMaxHours: number): boolean {
+  if (!(halfDayMaxHours > 0) || !(hours > 0)) return false;
+  return hours <= halfDayMaxHours + HALF_DAY_TOLERANCE_HOURS;
+}
+
+/** สถานะรายวันที่ใช้คิดเงิน — สลิปเงินเดือนแสดงตารางนี้ตรง ๆ */
+export type PayrollDayStatus =
+  | "full" // ทำงานเต็มวัน
+  | "half" // ทำงานครึ่งวัน (จ่ายครึ่ง)
+  | "in_no_out" // เข้างานแต่ไม่ลงออก = ถือว่าขาด
+  | "unpaid_holiday" // วันหยุด + เข้างานไม่ครบ = ไม่คิดเงิน ไม่นับขาด
+  | "absent" // ขาดงาน
+  | "leave" // ลา
+  | "holiday" // วันหยุดร้าน
+  | "off"; // วันหยุดประจำ/ยังไม่ถึง
+
+export interface PayrollDay {
+  date: string;
+  hours: number;
+  clockInAt: string | null;
+  clockOutAt: string | null;
+  status: PayrollDayStatus;
+  /** มาสายเกินเวลาผ่อนผันของวันนั้นหรือไม่ (นับครั้งเดียวต่อวัน) */
+  late: boolean;
+  lateMinutes: number;
 }
 
 /** Effective hourly rate for OT, derived from whichever wage basis the employee uses. */
@@ -221,7 +259,15 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     // (คิดก่อน basePay เพราะค่าแรงรายวันต้องคูณด้วยวันที่จ่ายจริง ไม่ใช่จำนวนวันดิบ)
     const closedHoursByDay = new Map<string, number>();
     const hasOpenShiftByDay = new Map<string, boolean>();
+    const firstInByDay = new Map<string, string>();
+    const lastOutByDay = new Map<string, string>();
     for (const r of userRecords) {
+      const seenIn = firstInByDay.get(r.date);
+      if (!seenIn || Date.parse(r.clockInAt) < Date.parse(seenIn)) firstInByDay.set(r.date, r.clockInAt);
+      if (r.clockOutAt) {
+        const seenOut = lastOutByDay.get(r.date);
+        if (!seenOut || Date.parse(r.clockOutAt) > Date.parse(seenOut)) lastOutByDay.set(r.date, r.clockOutAt);
+      }
       if (r.clockOutAt) {
         const ms = new Date(r.clockOutAt).getTime() - new Date(r.clockInAt).getTime();
         if (ms > 0) closedHoursByDay.set(r.date, (closedHoursByDay.get(r.date) ?? 0) + ms / 3_600_000);
@@ -232,17 +278,20 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     const halfDayMaxHours = settings.halfDayMaxHours ?? 0;
     let fullDays = 0;
     let halfDays = 0;
-    for (const [date, hours] of closedHoursByDay) {
+    for (const hours of closedHoursByDay.values()) {
       if (hours <= 0) continue;
       // วันหยุดร้านที่ยังกะค้าง = ไม่คิดเงิน (จัดการด้านล่าง) แต่ถ้าปิดกะครบก็จ่ายตามจริง
-      if (halfDayMaxHours > 0 && hours <= halfDayMaxHours) halfDays += 1;
+      if (isHalfDay(hours, halfDayMaxHours)) halfDays += 1;
       else fullDays += 1;
-      void date;
     }
-    // วันหยุดที่ "เข้างานแต่ไม่ออกงาน" ไม่นำมาคิดเงินเดือน และไม่นับเป็นขาดงาน (เพราะเป็นวันหยุด)
+    // "เข้างานแต่ไม่ออกงาน" ในวันที่ไม่ใช่วันทำงาน (วันหยุดร้าน หรือวันหยุดประจำของคนนั้น)
+    // ไม่นำมาคิดเงินเดือน และไม่นับเป็นขาดงาน — คนละกรณีกับวันทำงานปกติที่ลืมลงออก
+    const isNonWorkingDate = (date: string): boolean =>
+      holidayDateSet.has(date) ||
+      (!!profile && profile.workingDays.length > 0 && !profile.workingDays.includes(weekdayOf(date)));
     let unpaidHolidayDays = 0;
     for (const date of hasOpenShiftByDay.keys()) {
-      if (holidayDateSet.has(date) && !closedHoursByDay.has(date)) unpaidHolidayDays += 1;
+      if (isNonWorkingDate(date) && !closedHoursByDay.has(date)) unpaidHolidayDays += 1;
     }
     const payableDays = round2(fullDays + 0.5 * halfDays);
 
@@ -330,6 +379,39 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     const halfDayDeduction =
       profile && profile.payType === "monthly" ? round2(0.5 * halfDays * perAbsentDay) : 0;
 
+    // --- ตารางรายวัน: ที่มาของทุกตัวเลขบนสลิป (ใช้กติกาชุดเดียวกับที่คิดเงินด้านบน) ---
+    const leaveDateSet = new Set(userAdj.filter((a) => a.type === "leave").map((a) => a.date));
+    const workingDaySet = profile?.workingDays?.length ? profile.workingDays : null;
+    const startMinForDays = profile?.expectedStartTime ? expectedStartMinutes(profile.expectedStartTime) : null;
+    const days: PayrollDay[] = eachDate(periodStart, periodEnd).map((date) => {
+      const hours = round2(closedHoursByDay.get(date) ?? 0);
+      const clockInAt = firstInByDay.get(date) ?? null;
+      const clockOutAt = lastOutByDay.get(date) ?? null;
+      let lateMinutes = 0;
+      if (clockInAt && startMinForDays !== null && profile) {
+        lateMinutes = Math.max(
+          0,
+          localMinutesOfDay(clockInAt, timezone) - (startMinForDays + profile.lateGraceMinutes),
+        );
+      }
+      let status: PayrollDayStatus;
+      if (hours > 0) {
+        status = isHalfDay(hours, halfDayMaxHours) ? "half" : "full";
+      } else if (hasOpenShiftByDay.get(date)) {
+        // วันหยุด = ไม่คิดเงินแต่ไม่ผิด; วันนี้ยังปิดกะได้อยู่จึงยังไม่ตัดสิน
+        status = date === today ? "off" : isNonWorkingDate(date) ? "unpaid_holiday" : "in_no_out";
+      } else if (holidayDateSet.has(date)) {
+        status = "holiday";
+      } else if (leaveDateSet.has(date)) {
+        status = "leave";
+      } else if (date <= absentScanEnd && workingDaySet && workingDaySet.includes(weekdayOf(date))) {
+        status = "absent";
+      } else {
+        status = "off";
+      }
+      return { date, hours, clockInAt, clockOutAt, status, late: lateMinutes > 0, lateMinutes };
+    });
+
     // --- Manual adjustments ---
     let bonusTotal = 0;
     let deductionTotal = 0;
@@ -357,6 +439,8 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
       payableDays,
       halfDayDeduction,
       unpaidHolidayDays,
+      absentRatePerDay: round2(perAbsentDay),
+      days,
       bonusTotal,
       deductionTotal,
       netPay: round2(

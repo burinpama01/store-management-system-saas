@@ -1,3 +1,4 @@
+import { LAUNCHER_VERSION } from "@/modules/launcher/version";
 import { NextResponse } from "next/server";
 
 /**
@@ -16,8 +17,11 @@ export function GET() {
   if (!base) {
     return NextResponse.json({ error: "download unavailable" }, { status: 503 });
   }
+  // ไฟล์บน storage ทับ path เดิมทุกรุ่น ชื่อไฟล์ที่ผู้ใช้ได้จึงเหมือนกันหมดจนแยกไม่ออก
+  // ว่าอันไหนใหม่ — ?download= ของ Supabase storage ตั้งชื่อไฟล์ตอนบันทึกให้ได้
+  const filename = `storeos-launcher-${LAUNCHER_VERSION}.zip`;
   return NextResponse.redirect(
-    `${base}/storage/v1/object/public/app/storeos-launcher.zip`,
+    `${base}/storage/v1/object/public/app/storeos-launcher.zip?download=${encodeURIComponent(filename)}`,
     { status: 307 },
   );
 }

@@ -10,7 +10,7 @@ import { onPosCommand } from "@/modules/pos/section-bus";
 // ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
 import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
-import type { Cart, CartItem, DiscountType, Order, SavedOrderTicket } from "@/modules/pos/types";
+import type { Cart, CartItem, DiscountType, Order, PaymentMethod, SavedOrderTicket } from "@/modules/pos/types";
 import {
   emptyCart,
   addToCart,
@@ -33,6 +33,7 @@ import {
   getReceiptLoyaltyClaimAction,
   listOrdersHistoryAction,
   listTodayOrdersAction,
+  changeOrderPaymentMethodAction,
   voidOrderAction,
   addItemsToTableAction,
   type RewardProductLine,
@@ -82,6 +83,8 @@ type ReceiptOrder = {
   loyaltyPointsBalance?: number;
   /** QR รับแต้มท้ายใบเสร็จ (เฉพาะบิลที่ยังไม่ผูกลูกค้า) — ดึงหลังจ่ายเงินสำเร็จ */
   loyaltyClaim?: { url: string; code: string; points: number; expiresAt: string };
+  /** true = กำลังรอ QR รับแต้มจาก server อยู่ (พิมพ์อัตโนมัติต้องรอก่อน ไม่งั้นได้ใบที่ไม่มี QR) */
+  loyaltyClaimPending?: boolean;
 };
 
 const EMPTY_TICKET_DRAFT: TicketDraft = {
@@ -1474,6 +1477,7 @@ function BillHistoryPanel({
   onRefresh,
   onPrint,
   onVoid,
+  onChangePayment,
   historyMode = "compact",
 }: {
   orders: Order[];
@@ -1484,6 +1488,7 @@ function BillHistoryPanel({
   onRefresh: (range?: BillHistoryRange) => void;
   onPrint: (order: Order) => void;
   onVoid: (order: Order) => void;
+  onChangePayment: (order: Order) => void;
   historyMode?: "compact" | "sheet";
 }) {
   const compactBillHistoryLimit = 8;
@@ -1624,6 +1629,17 @@ function BillHistoryPanel({
                     ยกเลิก
                   </button>
                 </div>
+                {/* บิลที่จ่ายแล้วยกเลิกจากตรงนี้ไม่ได้ ทางแก้เดียวเมื่อลงช่องทางผิด
+                    (เช่น ลูกค้าโอนแต่กดเงินสด) คือแก้ช่องทางชำระของบิลนั้น */}
+                {order.status === "paid" && (
+                  <button
+                    type="button"
+                    onClick={() => onChangePayment(order)}
+                    className="min-h-9 w-full rounded border border-amber-200 bg-amber-50 px-2 text-[11px] font-semibold text-amber-800"
+                  >
+                    แก้ช่องทางชำระ
+                  </button>
+                )}
               </div>
             </li>
           ))}
@@ -1637,6 +1653,94 @@ function BillHistoryPanel({
         />
       )}
     </div>
+  );
+}
+
+const CHANGEABLE_PAYMENT_METHODS: PaymentMethod[] = [
+  "cash",
+  "qr_promptpay",
+  "bank_transfer",
+  "credit_card",
+  "other",
+];
+
+/**
+ * แก้ช่องทางชำระของบิลที่จ่ายแล้ว — ใช้ตอนพนักงานลงผิดประเภท (ลูกค้าโอนแต่กดเงินสด)
+ * ยอดขายไม่เปลี่ยน เปลี่ยนแค่ประเภทเงินที่รับ ระบบจะปรับเงินสดในลิ้นชักให้เอง
+ */
+function ChangePaymentModal({
+  order,
+  isPending,
+  onClose,
+  onSubmit,
+}: {
+  order: Order;
+  isPending: boolean;
+  onClose: () => void;
+  onSubmit: (method: PaymentMethod, reason: string) => void;
+}) {
+  const currentMethod = order.payments[0]?.method;
+  const [method, setMethod] = useState<PaymentMethod>(
+    CHANGEABLE_PAYMENT_METHODS.find((option) => option !== currentMethod) ?? "bank_transfer",
+  );
+  const [reason, setReason] = useState("");
+
+  return (
+    <ModalDialog
+      open
+      title={`แก้ช่องทางชำระ ${order.orderNumber}`}
+      description={`ยอด ${priceStr(order.total)} บาท · ตอนนี้บันทึกเป็น ${currentMethod ? paymentMethodLabel(currentMethod) : "ไม่ทราบ"}`}
+      onClose={onClose}
+      size="sm"
+    >
+      <div className="space-y-3">
+        <div className="grid gap-1">
+          {CHANGEABLE_PAYMENT_METHODS.filter((option) => option !== currentMethod).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setMethod(option)}
+              className={`min-h-10 rounded-lg border px-3 text-left text-sm ${
+                method === option
+                  ? "border-teal-600 bg-teal-50 font-semibold text-teal-800"
+                  : "border-gray-200 text-gray-700"
+              }`}
+            >
+              {paymentMethodLabel(option)}
+            </button>
+          ))}
+        </div>
+        <label className="block text-xs font-semibold text-gray-600">
+          เหตุผล (บันทึกไว้ตรวจย้อนหลัง)
+          <input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="เช่น ลูกค้าโอน แต่กดเงินสด"
+            className="mt-1 min-h-10 w-full rounded-lg border border-gray-200 px-2 text-sm"
+          />
+        </label>
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800">
+          แก้ได้เฉพาะบิลในรอบเงินสดที่เปิดอยู่ · เงินสดในลิ้นชักจะถูกปรับให้อัตโนมัติ
+          และบันทึกไว้ในบัญชีรายวัน · หลังแก้เสร็จ ระบบจะพิมพ์ใบใหม่ที่มีป้าย REPRINT ให้ทันที
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-10 flex-1 rounded-lg border border-gray-200 text-sm text-gray-600"
+          >
+            ยกเลิก
+          </button>
+          <Button
+            className="flex-1"
+            loading={isPending}
+            onClick={() => onSubmit(method, reason.trim())}
+          >
+            บันทึกช่องทางใหม่
+          </Button>
+        </div>
+      </div>
+    </ModalDialog>
   );
 }
 
@@ -2262,6 +2366,9 @@ function PaymentPanel({
  * is open in multiple tabs/windows on the same device (localStorage is shared).
  * Returns true only for the tab that wins the claim.
  */
+/** รอ QR รับแต้มนานสุดก่อนพิมพ์อัตโนมัติ — เลยจากนี้ถือว่าไม่มี แล้วพิมพ์ไปเลย */
+const AUTO_PRINT_CLAIM_WAIT_MS = 4000;
+
 function claimReceiptAutoPrint(orderNumber: string): boolean {
   if (typeof window === "undefined") return true;
   try {
@@ -2353,10 +2460,17 @@ function ReceiptPanel({
         loyaltyPointsBalance: order.loyaltyPointsBalance,
         // QR รับแต้ม — มีเฉพาะบิลที่ยังไม่ผูกลูกค้า
         loyaltyClaim: order.loyaltyClaim,
+        vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
         footerText: settings.footerText,
         headerText: settings.headerText,
         showQrPayment: false,
         promptpayId: settings.promptpayId,
+        // รูปที่ร้านอัปโหลดไว้ (โลโก้หัวใบ / QR ท้ายใบ) ต้องส่งไปกับข้อมูลใบเสร็จด้วย
+        // ไม่งั้น renderer ไม่มีอะไรให้วาด — ใบเสร็จจาก POS จึงออกมาไม่มีรูปทั้งที่ตั้งค่าไว้แล้ว
+        logoUrl: settings.logoUrl,
+        footerImageUrl: settings.footerImageUrl,
+        footerImageLabel: settings.footerImageLabel,
+        hideFooterImageWithSystemQr: settings.hideFooterImageWithSystemQr,
         paperWidth: settings.paperWidth,
         printCopies: settings.printCopies,
         printedAt: new Date().toISOString(),
@@ -2400,18 +2514,28 @@ function ReceiptPanel({
     }
   }
 
+  // QR รับแต้มถูกขอจาก server แบบไม่บล็อกหลังจ่ายเงิน ถ้าพิมพ์ทันทีใบเสร็จจะออกมา
+  // "ไม่มี QR" ทั้งที่ข้อความชวนสแกนพิมพ์ไปแล้ว จึงรอ QR ก่อน แต่รอไม่เกินเวลานี้
+  // เพื่อไม่ให้เน็ตช้าหรือ server ล่มทำให้ใบเสร็จไม่ออกเลย
+  const [claimWaitElapsed, setClaimWaitElapsed] = useState(false);
+  useEffect(() => {
+    if (!order.loyaltyClaimPending) return;
+    const timer = setTimeout(() => setClaimWaitElapsed(true), AUTO_PRINT_CLAIM_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [order.loyaltyClaimPending]);
+
   // Auto-print the receipt once when the store has it enabled (fires on the
   // payment-success receipt screen). The ref guards against a double print.
   useEffect(() => {
-    if (receiptSettings?.autoPrintReceipt && !autoPrintedRef.current) {
-      autoPrintedRef.current = true;
-      // Only auto-print if another tab/window on this device hasn't already.
-      // handlePrint is fire-and-forget async — its setState runs off-cycle.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (claimReceiptAutoPrint(order.orderNumber)) void handlePrint();
-    }
+    if (!receiptSettings?.autoPrintReceipt || autoPrintedRef.current) return;
+    if (order.loyaltyClaimPending && !claimWaitElapsed) return;
+    autoPrintedRef.current = true;
+    // Only auto-print if another tab/window on this device hasn't already.
+    // handlePrint is fire-and-forget async — its setState runs off-cycle.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (claimReceiptAutoPrint(order.orderNumber)) void handlePrint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [order.loyaltyClaimPending, claimWaitElapsed]);
 
   return (
     <div className="flex flex-col h-full">
@@ -2579,6 +2703,8 @@ export function PosTerminal({
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
   const { confirm, confirmDialog } = useConfirm();
+  // บิลที่กำลังจะแก้ช่องทางชำระ (null = ไม่ได้เปิด dialog)
+  const [changePaymentOrder, setChangePaymentOrder] = useState<Order | null>(null);
   const [printStatusMessage, setPrintStatusMessage] = useState<string | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerProfile[]>([]);
@@ -3325,6 +3451,8 @@ export function PosTerminal({
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned,
         loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance,
+        // บิลที่ยังไม่ผูกลูกค้าจะมี QR รับแต้มตามมาทีหลัง — บอกใบเสร็จให้รอก่อนพิมพ์อัตโนมัติ
+        loyaltyClaimPending: !selectedCustomer && Boolean(paidOrder?.id),
       });
       // Receipt must appear immediately after payment — ticket cleanup runs in the
       // background and must never delay the phase switch.
@@ -3336,14 +3464,12 @@ export function PosTerminal({
       if (!selectedCustomer && paidOrder?.id) {
         const claimOrderId = paidOrder.id;
         void (async () => {
-          const claimResult = await getReceiptLoyaltyClaimAction(claimOrderId);
-          if (claimResult.claim) {
-            setReceipt((current) =>
-              current && current.orderNumber === order.orderNumber
-                ? { ...current, loyaltyClaim: claimResult.claim ?? undefined }
-                : current,
-            );
-          }
+          const claimResult = await getReceiptLoyaltyClaimAction(claimOrderId).catch(() => null);
+          setReceipt((current) =>
+            current && current.orderNumber === order.orderNumber
+              ? { ...current, loyaltyClaim: claimResult?.claim ?? undefined, loyaltyClaimPending: false }
+              : current,
+          );
         })();
       }
       if (activeTicketId) {
@@ -3444,13 +3570,23 @@ export function PosTerminal({
         amount: payment.amount,
         receivedAmount: payment.receivedAmount,
         changeAmount: payment.changeAmount,
+        // บิลที่แก้ช่องทางชำระย้อนหลังต้องบอกบนใบว่าเดิมลงเป็นอะไร
+        originalMethod: payment.originalMethod,
       })),
       paymentStatus: "paid" as const,
       loyaltyPointsEarned: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsEarned : undefined,
       loyaltyPointsBalance: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsBalance : undefined,
+      vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
       footerText: settings.footerText,
       showQrPayment: false,
       promptpayId: settings.promptpayId,
+      // ใบซ้ำต้องมีป้าย REPRINT ไม่งั้นแยกจากใบจริงไม่ออก (เอาไปเบิก/ลงบัญชีซ้ำได้)
+      isReprint: true,
+      // พิมพ์ซ้ำต้องได้ใบเหมือนใบแรก รวมถึงโลโก้หัวใบและรูป QR ท้ายใบที่ร้านอัปโหลดไว้
+      logoUrl: settings.logoUrl,
+      footerImageUrl: settings.footerImageUrl,
+      footerImageLabel: settings.footerImageLabel,
+      hideFooterImageWithSystemQr: settings.hideFooterImageWithSystemQr,
       paperWidth: settings.paperWidth,
       printCopies: settings.printCopies,
       printedAt: new Date().toISOString(),
@@ -3486,6 +3622,27 @@ export function PosTerminal({
       }
       setTicketMessage(`ยกเลิกบิล ${order.orderNumber} แล้ว`);
       handleRefreshBillHistory();
+    });
+  }
+
+  function handleChangePaymentMethod(order: Order, method: PaymentMethod, reason: string) {
+    startTransition(async () => {
+      const result = await changeOrderPaymentMethodAction({
+        orderId: order.id,
+        method,
+        reason: reason || undefined,
+      });
+      if (result.error) {
+        setTicketMessage(`แก้ช่องทางชำระไม่สำเร็จ: ${result.error}`);
+        return;
+      }
+      setChangePaymentOrder(null);
+      setTicketMessage(`แก้ช่องทางชำระบิล ${order.orderNumber} เป็น ${paymentMethodLabel(method)} แล้ว กำลังพิมพ์ใบใหม่...`);
+      handleRefreshBillHistory();
+      // ใบที่ลูกค้า/ร้านถืออยู่ยังบอกช่องทางเก่า จึงต้องมีใบใหม่ที่บอกว่าแก้เป็นอะไรออกมาคู่กันเสมอ
+      if (result.order) {
+        await handlePrintHistoryOrder(result.order);
+      }
     });
   }
 
@@ -3959,6 +4116,7 @@ export function PosTerminal({
           onRefresh={handleRefreshBillHistory}
           onPrint={handlePrintHistoryOrder}
           onVoid={handleVoidHistoryOrder}
+          onChangePayment={setChangePaymentOrder}
           historyMode="sheet"
         />
       </PosUtilitySheet>
@@ -4046,6 +4204,14 @@ export function PosTerminal({
         />
       )}
 
+      {changePaymentOrder && (
+        <ChangePaymentModal
+          order={changePaymentOrder}
+          isPending={isPending}
+          onClose={() => setChangePaymentOrder(null)}
+          onSubmit={(method, reason) => handleChangePaymentMethod(changePaymentOrder, method, reason)}
+        />
+      )}
       {confirmDialog}
     </div>
   );

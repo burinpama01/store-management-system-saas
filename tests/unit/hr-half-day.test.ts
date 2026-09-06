@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { computePayrollLines } from "@/modules/hr/payroll";
+import { computePayrollLines, isHalfDay, HALF_DAY_TOLERANCE_HOURS } from "@/modules/hr/payroll";
 import { computeDayStatuses } from "@/modules/attendance/calendar";
 import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type StoreHrSettings } from "@/modules/hr/types";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
@@ -98,9 +98,20 @@ describe("ทำงานครึ่งวัน = จ่ายครึ่ง�
     expect(line.basePay).toBe(750); // 500 × 1.5
   });
 
-  it("ทำงานพอดีเกณฑ์ (4 ชม.) ยังนับครึ่งวัน แต่เกิน 4 ชม. นับเต็มวัน", () => {
+  it("ทำงานพอดีเกณฑ์ (4 ชม.) ยังนับครึ่งวัน แต่เกินเกณฑ์+ผ่อนผัน นับเต็มวัน", () => {
     expect(run({ records: [record("2026-09-01", 4)], settingsOver: HALF_DAY_ON }).halfDays).toBe(1);
-    expect(run({ records: [record("2026-09-01", 4.5)], settingsOver: HALF_DAY_ON }).halfDays).toBe(0);
+    expect(run({ records: [record("2026-09-01", 4.6)], settingsOver: HALF_DAY_ON }).halfDays).toBe(0);
+  });
+
+  it("ผ่อนผัน 15 นาที — ตอกออกช้า 6 นาที (4.10 ชม.) ยังเป็นครึ่งวัน", () => {
+    // เคสจริงของร้าน: เข้า 07:24 ออก 11:30 = 4 ชม. 6 นาที ต้องไม่กลายเป็นเต็มวัน
+    expect(HALF_DAY_TOLERANCE_HOURS).toBe(0.25);
+    expect(isHalfDay(4.1, 4)).toBe(true);
+    expect(isHalfDay(4.25, 4)).toBe(true);
+    expect(isHalfDay(4.26, 4)).toBe(false);
+    expect(isHalfDay(0, 4)).toBe(false);
+    expect(isHalfDay(3, 0)).toBe(false); // ปิดการคิดครึ่งวัน
+    expect(run({ records: [record("2026-09-01", 4.1)], settingsOver: HALF_DAY_ON }).halfDays).toBe(1);
   });
 
   it("ค่าเริ่มต้นของระบบคือปิด (0)", () => {
@@ -170,6 +181,49 @@ describe("วันหยุดที่เข้างานแต่ไม่�
     const line = run({ records: [record("2026-09-02", null)], periodStart: "2026-09-02", periodEnd: "2026-09-02" });
     expect(line.unpaidHolidayDays).toBe(0);
     expect(line.absentDays).toBeGreaterThan(0);
+  });
+});
+
+describe("ตารางรายวันบนสลิปเงินเดือน", () => {
+  it("บอกที่มาของทุกวันในงวด แยกครึ่งวัน/ขาด/เข้าไม่ออก", () => {
+    const line = run({
+      records: [record("2026-09-01", 8), record("2026-09-02", 4.1), record("2026-09-03", null)],
+      settingsOver: HALF_DAY_ON,
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-04",
+    });
+    const byDate = Object.fromEntries(line.days.map((d) => [d.date, d.status]));
+    expect(byDate["2026-09-01"]).toBe("full");
+    expect(byDate["2026-09-02"]).toBe("half");
+    expect(byDate["2026-09-03"]).toBe("in_no_out");
+    expect(byDate["2026-09-04"]).toBe("absent");
+    // จำนวนวันที่ระบบหักต้องตรงกับตารางที่โชว์ให้พนักงานดู
+    expect(line.absentDays).toBe(line.days.filter((d) => d.status === "absent" || d.status === "in_no_out").length);
+  });
+
+  it("แสดงเวลาเข้า-ออกและนาทีที่มาสายของแต่ละวัน", () => {
+    const line = run({
+      records: [record("2026-09-01", 8)], // เข้า 09:00 ตามเวลาไทย
+      profileOver: { expectedStartTime: "08:00", lateGraceMinutes: 15 },
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-01",
+    });
+    const day = line.days[0];
+    expect(day.clockInAt).toBeTruthy();
+    expect(day.clockOutAt).toBeTruthy();
+    expect(day.late).toBe(true);
+    expect(day.lateMinutes).toBe(45); // 09:00 − (08:00 + 15 นาที)
+  });
+
+  it("บอกอัตราค่าแรงต่อวันที่ใช้คิดค่าปรับ เพื่อให้ตรวจยอดย้อนได้", () => {
+    const line = run({
+      records: [],
+      profileOver: { payType: "monthly", monthlySalary: 30000, dailyRate: 0, absentPenaltyAmount: 500 },
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-02",
+    });
+    expect(line.absentRatePerDay).toBe(500);
+    expect(line.absentPenalty).toBe(line.absentDays * 500);
   });
 });
 

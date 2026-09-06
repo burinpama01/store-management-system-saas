@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using StoreOS.Launcher.Services;
+using StoreOS.Voice;
 
 namespace StoreOS.Launcher;
 
@@ -16,17 +17,33 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.7";
+    private const string LauncherVersion = "0.2.5";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
+    /// <summary>
+    /// นาฬิกาของ watchdog เสียง — ต้องถี่กว่าตัวจับเวลาสถานะเครื่องพิมพ์มาก
+    /// เพราะเส้นตายที่ต้องจับคือ 2 วินาที (เว็บตอบว่าเริ่มฟัง) ถ้าใช้รอบ 5 วินาที
+    /// ผู้ใช้จะยืนรอปุ่ม "แตะเพื่อพูด" นานกว่าที่ควรถึงสองเท่า
+    /// เดินเฉพาะตอนเปิดโหมดคำปลุกเท่านั้น จึงไม่กิน CPU บนเครื่องที่ปิดฟีเจอร์นี้
+    /// </summary>
+    private readonly DispatcherTimer _voiceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly string _healthPath = PrintHubReadiness.HealthFilePath(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
     private DateTimeOffset _lastStartAttempt = DateTimeOffset.MinValue;
     private ReadinessState? _lastReportedState;
     /// <summary>ISSUE-002 — หน้าต่างลูกที่ Launcher เป็นเจ้าของ ต้องปิดตามตอนปิด Launcher</summary>
     private readonly List<Window> _childWindows = new();
+    /// <summary>
+    /// ฝั่งคำปลุก (แผน v1 W1 + เครื่องยนต์จริง W2) — ปิดเป็นค่าเริ่มต้น
+    /// เปิดทีละเครื่องด้วย VoiceStandbyEnabled ใน launcher.json ระหว่าง pilot เท่านั้น
+    /// </summary>
+    private readonly VoiceStandbyHost _voice;
+    /// <summary>สัญญาณล็อกจอ/หลับของ Windows — ต้องถอด handler ตอนปิดไม่งั้น SystemEvents ถือ reference ค้าง</summary>
+    private readonly WindowsSuspendSignals _suspendSignals = new();
+    /// <summary>สายคุยคำปลุก↔หน้าเว็บ (W4) — สร้างหลัง WebView2 พร้อมเท่านั้น</summary>
+    private WebViewStandbyBridge? _voiceBridge;
 
     public MainWindow()
     {
@@ -36,9 +53,21 @@ public partial class MainWindow : Window
         _logs = new LauncherLogShipper(
             LauncherLogShipper.ReadHubCredentials(HubConfigPath()),
             LauncherVersion);
+        _voice = new VoiceStandbyHost(
+            () => new SystemSpeechWakeEngine(),
+            (level, code, message) => _logs.Enqueue(level, code, message),
+            hostVersion: LauncherVersion);
+        _voice.Attach(_suspendSignals);
         Loaded += OnLoaded;
         Closing += OnClosing;
-        Closed += async (_, _) => await _logs.DisposeAsync();
+        // ปิดหน้าต่างทางไหนก็ตาม ต้องคืนไมโครโฟนก่อนแล้วค่อยปล่อยคิว log
+        Closed += async (_, _) =>
+        {
+            _voiceBridge?.Dispose();
+            _suspendSignals.Dispose();
+            await _voice.DisposeAsync();
+            await _logs.DisposeAsync();
+        };
     }
 
     private static string HubConfigPath() => Path.Combine(
@@ -49,7 +78,24 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         var settings = LauncherSettings.Load();
-        await Web.EnsureCoreWebView2Async();
+
+        // WebView2 ต้องมีโฟลเดอร์ข้อมูลที่ผู้ใช้เขียนได้ ไม่งั้นเครื่องที่ติดตั้งลง Program Files
+        // จะเปิด POS ไม่ขึ้นเลย (ค่าเริ่มต้นของ WebView2 คือโฟลเดอร์ข้าง ๆ ไฟล์ exe)
+        try
+        {
+            var userData = WebViewProfile.UserDataFolder(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                settings.Channel);
+            Directory.CreateDirectory(userData);
+            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
+            await Web.EnsureCoreWebView2Async(environment);
+        }
+        catch (Exception ex)
+        {
+            // สร้าง environment เองไม่ได้ (สิทธิ์/ดิสก์) — ถอยไปใช้ค่าเริ่มต้นดีกว่าเปิดไม่ขึ้น
+            _logs.Enqueue("warn", "webview2_profile_fallback", $"ใช้โฟลเดอร์ WebView2 เริ่มต้นแทน: {ex.GetType().Name}");
+            await Web.EnsureCoreWebView2Async();
+        }
         // production kiosk profile: ปิดเมนูขวา/DevTools ตามแผน (v1 W1)
         Web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = settings.AllowDevTools;
         Web.CoreWebView2.Settings.AreDevToolsEnabled = settings.AllowDevTools;
@@ -58,7 +104,16 @@ public partial class MainWindow : Window
         Web.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
         // ผลของ provision กลับมาทางนี้ ไม่ใช่ค่าคืนของ ExecuteScriptAsync (ดู HubConfigProvisioner)
         Web.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-        Web.Source = new Uri(settings.PosUrl);
+        Web.CoreWebView2.PermissionRequested += OnPermissionRequested;
+
+        // config ของเครื่องถูกโปรแกรมอื่นแก้ให้ชี้เว็บปลอมได้ — Launcher เปิดเต็มจอไม่มีแถบที่อยู่
+        // ผู้ใช้จึงไม่มีทางสังเกตเห็น ต้องกรองที่นี่
+        var posUrl = settings.ResolvePosUrl(out var rejectedUrl);
+        if (rejectedUrl)
+        {
+            _logs.Enqueue("error", "pos_url_rejected", "ค่า PosUrl ในไฟล์ตั้งค่าใช้ไม่ได้ กลับไปใช้ที่อยู่มาตรฐาน");
+        }
+        Web.Source = new Uri(posUrl);
 
         _logs.Enqueue("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
         {
@@ -69,6 +124,20 @@ public partial class MainWindow : Window
         // Print Hub auto-provision — ขอ config ล่าสุดของเครื่องนี้หลังหน้าเว็บโหลดเสร็จ
         // (ต้องรอให้ผู้ใช้ล็อกอินก่อน จึงผูกกับ NavigationCompleted ไม่ใช่ตอน Loaded)
         Web.CoreWebView2.NavigationCompleted += OnNavigationCompletedAsync;
+
+        // เปิดโหมดคำปลุกถ้าเครื่องนี้เปิดไว้ — ล้มเหลวก็แค่ไม่มีคำปลุก POS ยังขายได้
+        await _voice.StartAsync(settings.VoiceStandbyEnabled);
+        if (settings.VoiceStandbyEnabled)
+        {
+            // สายคุยผูกกับ origin ที่ Launcher เปิดจริงเท่านั้น (ผ่านด่าน ResolvePosUrl มาแล้ว)
+            _voiceBridge = new WebViewStandbyBridge(
+                Web.CoreWebView2,
+                _voice,
+                new Uri(posUrl),
+                (level, code, message) => _logs.Enqueue(level, code, message));
+            _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
+            _voiceTimer.Start();
+        }
 
         Refresh();
         _timer.Tick += async (_, _) =>
@@ -170,14 +239,48 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>ข้อความต้องมาจากหน้าเว็บของ StoreOS เอง ไม่ใช่ iframe/หน้าอื่นที่หลุดเข้ามา</summary>
-    private bool IsTrustedSource(string? source)
+    /// <summary>
+    /// ตัดสินคำขอสิทธิ์ของหน้าเว็บแทนพนักงานหน้าร้าน
+    ///
+    /// ถ้าไม่ดักไว้ WebView2 จะเด้งกล่องถาม "อนุญาตให้ใช้ไมโครโฟนไหม" ซึ่งพนักงานหน้าร้าน
+    /// ไม่มีข้อมูลพอจะตัดสิน และถ้ากดปฏิเสธครั้งเดียว คำสั่งเสียงจะใช้ไม่ได้ทั้งเครื่อง
+    /// โดยไม่มีใครรู้สาเหตุ — เจ้าของร้านตัดสินใจไปแล้วตั้งแต่ตอนติดตั้งโปรแกรมนี้
+    ///
+    /// อนุญาตเฉพาะสิ่งที่ StoreOS ใช้จริงและเฉพาะคำขอจาก origin ของตัวเอง
+    /// </summary>
+    private void OnPermissionRequested(object? sender, CoreWebView2PermissionRequestedEventArgs e)
     {
-        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) return false;
-        if (Web.Source is not { } current) return false;
-        return uri.Scheme == Uri.UriSchemeHttps
-            && uri.Host.Equals(current.Host, StringComparison.OrdinalIgnoreCase);
+        var permission = e.PermissionKind switch
+        {
+            CoreWebView2PermissionKind.Microphone => WebPermission.Microphone,
+            CoreWebView2PermissionKind.Camera => WebPermission.Camera,
+            CoreWebView2PermissionKind.Geolocation => WebPermission.Geolocation,
+            CoreWebView2PermissionKind.Notifications => WebPermission.Notifications,
+            CoreWebView2PermissionKind.OtherSensors => WebPermission.OtherSensors,
+            CoreWebView2PermissionKind.ClipboardRead => WebPermission.ClipboardRead,
+            _ => WebPermission.Unknown,
+        };
+
+        var decision = WebViewPermissionPolicy.Decide(permission, e.Uri, Web.Source);
+        var allow = decision == WebPermissionDecision.Allow;
+        e.State = allow ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+        // จำไว้ในโปรไฟล์ของเครื่อง จะได้ไม่ต้องตัดสินซ้ำทุกครั้งที่เปิดโปรแกรม
+        e.SavesInProfile = true;
+
+        _logs.Enqueue(
+            allow ? "info" : "warn",
+            allow ? "webview_permission_allowed" : "webview_permission_denied",
+            $"คำขอสิทธิ์ {permission} จากหน้าเว็บ: {(allow ? "อนุญาต" : "ปฏิเสธ")}");
     }
+
+    /// <summary>
+    /// ข้อความต้องมาจากหน้าเว็บของ StoreOS เอง ไม่ใช่ iframe/หน้าอื่นที่หลุดเข้ามา
+    ///
+    /// W4 — เปลี่ยนมาเทียบ origin แบบตรงตัว (scheme + host + port) แทนการเทียบแค่ host
+    /// ของเดิมยอมรับพอร์ตใดก็ได้บนโฮสต์เดียวกัน ซึ่งกว้างเกินจำเป็นสำหรับข้อความที่
+    /// เขียนไฟล์ตั้งค่าของเครื่องได้
+    /// </summary>
+    private bool IsTrustedSource(string? source) => WebOrigin.IsSameOrigin(source, Web.Source);
 
     /// <summary>
     /// เหตุผลที่ถือว่า "ถามไปแล้วได้คำตอบ" — ไม่ต้องถามซ้ำ
@@ -197,7 +300,12 @@ public partial class MainWindow : Window
         try
         {
             var path = Path.Combine(Path.GetDirectoryName(HubConfigPath())!, "launcher-provision.log");
-            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}{Environment.NewLine}";
+            // ต้องบังคับปฏิทินสากล: เครื่องร้านตั้งค่าภูมิภาคไทย ทำให้ "yyyy" กลายเป็นปีพุทธศักราช
+            // (2569 แทน 2026) แล้วเทียบเวลากับ log ฝั่งเซิร์ฟเวอร์ไม่ได้เลย
+            var line = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}{3}",
+                DateTimeOffset.Now, level, message, Environment.NewLine);
             File.AppendAllText(path, line);
         }
         catch (Exception)
@@ -240,8 +348,32 @@ public partial class MainWindow : Window
         _logs.Enqueue("info", "customer_display_opened", "เปิดจอลูกค้าเป็นหน้าต่างลูกของ Launcher");
     }
 
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    /// <summary>ผ่านขั้นตอนปิดที่ต้องรอ (คืนไมโครโฟน) แล้วหรือยัง</summary>
+    private bool _shutdownPrepared;
+
+    private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // WPF ไม่รอ async void — ถ้าปล่อยให้ปิดไปเลยระหว่างที่ StopAsync ยังทำงาน
+        // ไมโครโฟนจะถูกปล่อยหลัง process ตาย (หรือไม่ถูกปล่อยเลย) ซึ่งเป็นอาการ
+        // "ไฟไมค์ค้างหลังปิดโปรแกรม" ที่ผู้ใช้ตีความว่าโปรแกรมแอบฟัง
+        // จึงยกเลิกการปิดรอบแรก ทำให้เสร็จก่อน แล้วค่อยสั่งปิดจริง
+        if (!_shutdownPrepared)
+        {
+            e.Cancel = true;
+            _timer.Stop();
+            _voiceTimer.Stop();
+            try
+            {
+                await _voice.StopAsync();
+            }
+            finally
+            {
+                _shutdownPrepared = true;
+                Close();
+            }
+            return;
+        }
+
         // ปิดจาก snapshot เพราะ child.Closed จะแก้ list ระหว่างวน
         foreach (var child in _childWindows.ToArray())
         {

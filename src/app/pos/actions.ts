@@ -30,6 +30,7 @@ import {
   getOrderPaymentContext,
   listOrdersHistory,
   listTodayOrders,
+  changeOrderPaymentMethod,
   voidOrder,
 } from "@/modules/pos/order-repository";
 import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
@@ -43,7 +44,7 @@ import { getUnifiedPosStoreFlag, settleOrdersGoverned } from "@/modules/unified-
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
-import type { Cart, Order, SavedOrderTicket } from "@/modules/pos/types";
+import type { Cart, Order, PaymentMethod, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import type { Printer, QrOrderingMode } from "@/modules/stores/types";
@@ -1338,6 +1339,70 @@ export async function voidOrderAction(
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * แก้ช่องทางชำระของบิลที่จ่ายแล้ว — เคสจริงคือ "ลูกค้าโอนแต่พนักงานกดเงินสด"
+ * ซึ่งเดิมต้องยกเลิกบิลแล้วออกใหม่ทั้งใบ (เลขบิล/แต้ม/สต๊อกรวนโดยไม่จำเป็น)
+ *
+ * สิทธิ์เท่ากับการยกเลิกบิล และ RPC จะยอมเฉพาะบิลในรอบเงินสดที่เปิดอยู่เท่านั้น
+ * ทุกครั้งที่แก้ต้องมี log เพราะเป็นการแตะตัวเลขเงินสดของร้านย้อนหลัง
+ */
+export async function changeOrderPaymentMethodAction(input: {
+  orderId: string;
+  method: PaymentMethod;
+  reason?: string;
+  receivedAmount?: number;
+  changeAmount?: number;
+  reference?: string;
+}): Promise<{ error: string | null; order: Order | null }> {
+  try {
+    await requirePermission("pos.delete_bill");
+    const { user, ctx } = await getStoreContext();
+
+    const result = await changeOrderPaymentMethod({
+      orderId: input.orderId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      method: input.method,
+      reason: input.reason ?? null,
+      receivedAmount: input.receivedAmount ?? null,
+      changeAmount: input.changeAmount ?? null,
+      reference: input.reference ?? null,
+    });
+    if (result.error) {
+      await logSystemEvent({
+        level: "warn",
+        source: "pos.payment",
+        action: "changeOrderPaymentMethod",
+        message: `แก้ช่องทางชำระไม่สำเร็จ: ${result.error.userMessage}`,
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        context: { orderId: input.orderId, method: input.method },
+      });
+      return { error: result.error.userMessage, order: null };
+    }
+
+    await logSystemEvent({
+      level: "info",
+      source: "pos.payment",
+      action: "changeOrderPaymentMethod",
+      message: `แก้ช่องทางชำระเป็น ${input.method}`,
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      context: {
+        orderId: input.orderId,
+        method: input.method,
+        reason: input.reason ?? null,
+      },
+    });
+
+    // คืนบิลที่อัปเดตแล้วให้ POS พิมพ์ใบใหม่ต่อได้ทันที — ใบที่ลูกค้าถืออยู่ยังบอกช่องทางเก่า
+    const updated = await getOrder(input.orderId);
+    return { error: null, order: updated.data ?? null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", order: null };
   }
 }
 

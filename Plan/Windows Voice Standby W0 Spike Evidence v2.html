@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StoreOS — Windows Voice Standby W0 Spike Evidence v2 (ผลวัดจริง)</title>
+<style>
+:root{--ink:#101a2b;--muted:#5d6b82;--paper:#fff;--line:#dbe4f0;--green:#147454;--amber:#936000;--red:#b53e38;--soft:#f7fafd}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(140deg,#eef4fa,#f5f9f6 55%,#eef2f8);color:var(--ink);font:16px/1.65 "Noto Sans Thai","Leelawadee UI",Tahoma,Arial,sans-serif}
+main{width:min(1120px,calc(100% - 26px));margin:20px auto 70px}
+header,section{border:1px solid var(--line);border-radius:18px;background:var(--paper);box-shadow:0 14px 36px rgba(20,35,60,.07)}
+header{padding:clamp(28px,5vw,52px);color:#fff;background:linear-gradient(135deg,#12202f,#245e9b 58%,#147454)}
+section{padding:clamp(18px,3.2vw,34px);margin-top:14px}
+h1{font-size:clamp(28px,5vw,50px);line-height:1.07;margin:10px 0}
+h2{font-size:clamp(21px,2.6vw,30px);margin:0 0 14px}
+h3{margin:16px 0 6px}
+.tag{display:inline-flex;padding:5px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.12);font-weight:800;font-size:13px}
+.pill{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.pill.green{background:#e8f7f0;color:var(--green)}
+.pill.amber{background:#fdf4e3;color:var(--amber)}
+.pill.red{background:#fdeeed;color:var(--red)}
+.pill.grey{background:#eef1f6;color:var(--muted)}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:800}
+code{background:#eef2f7;padding:1px 6px;border-radius:6px;font-size:14px}
+pre{background:#eef2f7;border-radius:10px;padding:13px;overflow-x:auto;font-size:13.5px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.card{border:1px solid var(--line);border-radius:14px;padding:15px;background:var(--soft)}
+.metric{font-size:26px;font-weight:900;margin:4px 0}
+.note{border-left:4px solid var(--amber);background:#fdf9f0;padding:13px 15px;border-radius:0 12px 12px 0;margin-top:12px}
+.stop{border-left:4px solid var(--red);background:#fdf1f0;padding:13px 15px;border-radius:0 12px 12px 0;margin-top:12px}
+.ok{border-left:4px solid var(--green);background:#f0f9f5;padding:13px 15px;border-radius:0 12px 12px 0;margin-top:12px}
+ul,ol{margin:6px 0 0;padding-left:20px}
+small{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="tag">Evidence v2 · แทนที่ v1 ที่ยังไม่มีผลวัดเสียง</span>
+  <h1>W0 Spike — ผลวัดจริง<br>คำปลุกภาษาไทยบน recognizer อังกฤษ</h1>
+  <p style="max-width:72ch;margin:0;opacity:.92">
+    v1 สรุปว่า “ทำไม่ได้เพราะไม่มี recognizer ภาษาไทย” — v2 คือผลหลังลงมือวัดจริง
+    ปรากฏว่า<strong>ทำได้</strong> ถ้าเขียนหน่วยเสียงเองและใส่คำล่อกันปลุกผิด
+    แต่มีเงื่อนไขสำคัญหนึ่งข้อที่เปลี่ยนหน้าตาฟีเจอร์
+    <br><small style="color:#cfe3ea">6 กันยายน 2026 · เครื่องพัฒนา Windows 11 build 26200 · เครื่องมือ: windows/StoreOS.VoiceSpike</small>
+  </p>
+</header>
+
+<section>
+  <h2>ผลรวม</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>ไวยากรณ์คำปลุก</h3>
+      <p class="metric" style="color:var(--green)">โหลดได้</p>
+      <small>หน่วยเสียง SAPI ทั้ง 5 คำ ผ่าน engine <code>MS-1033-80-DESK</code> (en-US)</small>
+    </div>
+    <div class="card">
+      <h3>คำปลุกไทย (เสียงสังเคราะห์)</h3>
+      <p class="metric" style="color:var(--amber)">เฉพาะพูดช้า</p>
+      <small>จับได้ 100% ที่ความเร็ว ≤0.85 · จับไม่ได้เลยที่ ≥0.90</small>
+    </div>
+    <div class="card">
+      <h3>ปลุกผิด (false wake)</h3>
+      <p class="metric" style="color:var(--green)">0 / 10</p>
+      <small>จาก 1/10 ก่อนใส่ไวยากรณ์คำล่อ</small>
+    </div>
+    <div class="card">
+      <h3>ส่งไมค์ native ↔ เว็บ</h3>
+      <p class="metric" style="color:var(--green)">100 / 100</p>
+      <small>ปล่อยไมค์ p95 0.3ms · ฝั่งรับเปิดได้ p95 12.6ms · ไม่มีรอบไหนไมค์ชนกัน</small>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>1. คำปลุกไทยจับได้จริงไหม</h2>
+  <p>
+    วิธีวัด: สังเคราะห์เสียงคำปลุกด้วย <strong>Microsoft Pattara (th-TH)</strong> ซึ่งเป็นเสียงไทยจริงที่ติดมากับ Windows 11
+    แล้วยิงไฟล์เสียงเข้า recognizer en-US ที่โหลดไวยากรณ์คำปลุกไว้ ทำซ้ำที่ความเร็วพูด 6 ระดับ
+  </p>
+  <table>
+    <tr><th style="width:24%">คำปลุก</th><th>0.80</th><th>0.85</th><th>0.90</th><th>0.95</th><th>1.00</th><th>1.20</th></tr>
+    <tr><td>ฮัลโหลโอเอส</td><td>0.90</td><td>0.71</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+    <tr><td>เฮลโหลโอเอส</td><td>0.93</td><td>0.90</td><td>–</td><td>0.83</td><td>–</td><td>–</td></tr>
+    <tr><td>หวัดดีโอเอส</td><td>0.99</td><td>0.98</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+    <tr><td>สวัสดีโอเอส</td><td>0.99</td><td>0.98</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+    <tr><td>Hello OS (อังกฤษ)</td><td>0.99</td><td>0.99</td><td>0.99</td><td>0.99</td><td>0.99</td><td>0.99</td></tr>
+  </table>
+  <p><small>ตัวเลข = ความมั่นใจของ engine, “–” = ไม่จับเลย · เกณฑ์ปลุกที่ตั้งไว้คือ 0.72</small></p>
+
+  <div class="note">
+    <strong>เส้นแบ่งอยู่ระหว่าง 0.85 กับ 0.90 อย่างคมชัด</strong> ทั้งสี่คำ — ไม่ใช่การค่อย ๆ แย่ลง
+    แปลว่า recognizer อังกฤษรับลำดับเสียงไทยได้เฉพาะเมื่อพูดแบบตั้งใจชัดถ้อยชัดคำ
+    (ประมาณช้ากว่าที่คนพูดปกติ 15–20%)
+  </div>
+  <p>สิ่งที่ตัดออกไปแล้วว่าไม่ใช่สาเหตุ:</p>
+  <ul>
+    <li><strong>ไม่ใช่รูปแบบไฟล์</strong> — เสียงอังกฤษจากท่อเดียวกัน (WinRT TTS 16kHz mono) จับได้ 0.99 ทุกความเร็ว</li>
+    <li><strong>ไม่ใช่ความเงียบนำหน้า</strong> — เติมความเงียบหัวท้าย 300ms แล้วผลไม่เปลี่ยนแม้แต่หลักที่สาม</li>
+    <li><strong>ไม่ใช่หน่วยเสียงเพี้ยน</strong> — ลองเพิ่มรูปการออกเสียงแบบลดรูป (ow ey s, ตัดพยางค์) แล้วไม่ช่วย</li>
+  </ul>
+</section>
+
+<section>
+  <h2>2. ปลุกผิดจากคำทักทายปกติ</h2>
+  <p>ชุดทดสอบด้านลบ 10 ประโยคที่พนักงานพูดจริง สังเคราะห์ด้วยเสียงไทยเช่นกัน</p>
+  <table>
+    <tr><th style="width:34%">ประโยค</th><th style="width:22%">ก่อนใส่คำล่อ</th><th>หลังใส่คำล่อ</th></tr>
+    <tr><td>“หวัดดีครับพี่”</td><td><span class="pill red">ปลุกผิด</span> watdee_os 0.84</td><td><span class="pill green">ไม่ปลุก</span> ตกที่กฎคำล่อ 0.78</td></tr>
+    <tr><td>อีก 9 ประโยค (เพิ่มกาแฟเย็นสองแก้ว, เช็คบิลโต๊ะห้า, สวัสดีค่ะรับอะไรดีคะ, ฮัลโหลได้ยินไหม, โอเคครับ …)</td><td><span class="pill green">ไม่ปลุก</span></td><td><span class="pill green">ไม่ปลุก</span></td></tr>
+  </table>
+  <div class="ok">
+    วิธีที่ได้ผลคือ<strong>ให้เสียงมีที่ลงที่ตรงกว่า</strong> (ไวยากรณ์คำล่อ) ไม่ใช่การดันเกณฑ์ความมั่นใจ —
+    ถ้าดันเกณฑ์ขึ้นเป็น 0.85 เพื่อกัน “หวัดดีครับพี่” คำว่า “ฮัลโหลโอเอส” (0.71) จะหลุดทันที
+  </div>
+</section>
+
+<section>
+  <h2>3. ส่งไมค์ต่อ 100 รอบ</h2>
+  <p>
+    จำลองฝั่งเว็บด้วย recognizer ตัวที่สองที่แย่งเปิดไมค์ตัวเดียวกัน — ถ้า native ยังไม่ปล่อยจริง ตัวที่สองจะเปิดไม่ได้
+  </p>
+  <table>
+    <tr><th style="width:40%">ตัวชี้วัด</th><th>ค่า</th></tr>
+    <tr><td>รอบที่สำเร็จ</td><td><strong>100 / 100</strong></td></tr>
+    <tr><td>native ปล่อยไมค์ (p95)</td><td>0.30 ms</td></tr>
+    <tr><td>ฝั่งเว็บเปิดไมค์ได้ (p95)</td><td>12.55 ms</td></tr>
+    <tr><td>native ขอไมค์คืน (p95)</td><td>12.93 ms</td></tr>
+  </table>
+  <div class="note">
+    <strong>บั๊กที่เจอระหว่างทาง และเป็นเหตุผลว่าทำไม spike นี้คุ้ม:</strong> รอบแรกล้มเหลว 90/100 ด้วยข้อความ
+    “Cannot perform this operation while the recognizer is doing recognition.”
+    เพราะ <code>RecognizeAsyncCancel()</code> เป็นงานแบบไม่รอ — ต้องรออีเวนต์ <code>RecognizeCompleted</code>
+    ก่อนจึงจะปล่อยอุปกรณ์ได้จริง ถ้า native host ตัวจริงเขียนแบบแรก ไมค์จะค้างเป็นระยะโดยหาสาเหตุไม่เจอ
+  </div>
+</section>
+
+<section>
+  <h2>4. สัญญาข้อความและ watchdog</h2>
+  <p>ทำครบทั้งสองฝั่งแล้ว พร้อมเทสต์ที่บังคับกฎความปลอดภัย</p>
+  <table>
+    <tr><th style="width:32%">สิ่งที่ทำ</th><th style="width:20%">ที่อยู่</th><th>เทสต์</th></tr>
+    <tr><td>สัญญาฝั่ง native + watchdog</td><td><code>windows/StoreOS.VoiceSpike/</code></td><td>21 เทสต์ (xUnit) ผ่านหมด</td></tr>
+    <tr><td>สัญญาฝั่งเว็บ + สะพานรับข้อความ</td><td><code>src/modules/voice-pos/standby-contract.ts</code></td><td>15 เทสต์ (vitest) ผ่านหมด</td></tr>
+  </table>
+  <p>กฎที่ถูกล็อกด้วยเทสต์:</p>
+  <ul>
+    <li>watchdog (9s) <strong>ต้องมากกว่า</strong> หน้าต่างฟังของเว็บ (6s) — constructor โยน error ถ้าตั้งผิด</li>
+    <li>multi-turn ต่อเวลาได้ถึง 15 วินาที แต่ถูกตัดที่เพดานรวม 20 วินาทีเสมอ</li>
+    <li><code>sessionStarted</code> ที่มาช้าหลัง watchdog ตัดไปแล้ว ต้องถูกทิ้ง (ไม่ใช่เปิด session ย้อนหลัง)</li>
+    <li>ฟิลด์ <code>intent</code> / <code>transcript</code> / <code>command</code> ที่แนบมากับข้อความ native ถูกตัดทิ้งเสมอ</li>
+    <li>เปิดไมค์เองไม่ได้ = แสดงปุ่มให้ผู้ใช้แตะ ห้ามสร้างคลิกปลอม</li>
+  </ul>
+</section>
+
+<section>
+  <h2>5. เช็กลิสต์ W0 — สถานะหลังรอบนี้</h2>
+  <table>
+    <tr><th style="width:34%">เกณฑ์ตามแผน v3 Task 9</th><th style="width:14%">สถานะ</th><th>หมายเหตุ</th></tr>
+    <tr><td>recognizer availability</td><td><span class="pill amber">1 / 3 เครื่อง</span></td><td>ผ่านบนเครื่องพัฒนา; ต้องรัน <code>StoreOS.VoiceSpike inventory</code> บนเครื่อง POS อีก 2 รุ่น</td></tr>
+    <tr><td>mic handoff 100 รอบ</td><td><span class="pill green">ผ่าน</span></td><td>100/100 ไม่มี overlap — แต่ฝั่งเว็บเป็นตัวจำลอง ยังไม่ใช่เบราว์เซอร์จริง</td></tr>
+    <tr><td>contract sessionStarted/Extended/Ended</td><td><span class="pill green">ทำแล้ว</span></td><td>สองฝั่ง + เทสต์ 36 ตัว</td></tr>
+    <tr><td>watchdog + push-to-talk fallback</td><td><span class="pill green">ทำแล้ว</span></td><td>ค่าเวลามาจากตัวเลขที่วัดได้จริง</td></tr>
+    <tr><td>false wake</td><td><span class="pill amber">0/10 แต่เป็นเสียงสังเคราะห์</span></td><td>ต้องวัดซ้ำในเสียงร้าน 65–75 dBA</td></tr>
+    <tr><td>CPU ตอน standby / device-busy</td><td><span class="pill grey">ยังไม่วัด</span></td><td>ต้องวัดบนเครื่อง POS จริงที่รันทั้งวัน</td></tr>
+    <tr><td>user-activation กับเบราว์เซอร์จริง</td><td><span class="pill grey">ยังไม่วัด</span></td><td>ต้องมี native host + WebView2/Chrome จริง</td></tr>
+    <tr><td>business case จากร้านนำร่อง</td><td><span class="pill red">ไม่มีข้อมูล</span></td><td><code>voice_ai_fallback_enabled</code> ยังปิดทุกร้าน</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>6. ข้อสรุปที่เปลี่ยนจาก v1</h2>
+  <div class="ok">
+    <strong>คำปลุกภาษาไทยบน Windows ทำได้จริง</strong> — ไม่ต้องมี recognizer ภาษาไทย ไม่ต้องใช้บริการคลาวด์
+    ใช้หน่วยเสียง SAPI ของ en-US เขียนเองบวกไวยากรณ์คำล่อก็พอ
+  </div>
+  <div class="note">
+    <strong>แต่ต้องพูดช้าและชัด</strong> ซึ่งเปลี่ยนหน้าตาฟีเจอร์: ต้องบอกผู้ใช้ตรง ๆ ว่าให้พูดคำปลุกแบบชัดถ้อยชัดคำ
+    และต้องคง push-to-talk ไว้เป็นทางหลักเสมอ ไม่ใช่ทางสำรอง<br>
+    ทางเลือกที่ควรพิจารณาถ้าอยากให้พูดเร็วได้: ให้ร้านเลือก <strong>“Hello OS”</strong> เป็นคำปลุกเริ่มต้น
+    (จับได้ทุกความเร็ว 0.99) แล้วให้คำไทยเป็นตัวเลือกเสริม
+  </div>
+  <div class="stop">
+    <strong>สิ่งที่ยังไม่เปลี่ยน:</strong> ลำดับใน Rollout Order — Phase 6 (Voice บนเครื่องร้าน) ยังต้องรอ Phase 5
+    (pilot Print Hub 21 วัน) และตอนนี้ยังไม่ผ่าน: 21 วันล่าสุดมีงานพิมพ์แค่ 25 ใบ ล้มเหลว 64%
+    และมี log จากเครื่องร้านแค่ 2 วัน (ดู <code>npm run pilot:print-hub</code>)
+  </div>
+</section>
+
+<section>
+  <h2>7. วิธีทำซ้ำ</h2>
+<pre>dotnet run --project windows/StoreOS.VoiceSpike -- inventory  --out artifacts/voice-standby-w0/w0-inventory-&lt;เครื่อง&gt;.json
+dotnet run --project windows/StoreOS.VoiceSpike -- recognize --out artifacts/voice-standby-w0/w0-recognize-&lt;เครื่อง&gt;.json
+dotnet run --project windows/StoreOS.VoiceSpike -- handoff --rounds 100 --out artifacts/voice-standby-w0/w0-handoff-&lt;เครื่อง&gt;.json
+dotnet run --project windows/StoreOS.VoiceSpike -- listen  --seconds 120   # โหมดให้คนพูดจริงหน้าร้าน
+dotnet test windows/StoreOS.VoiceSpike.Tests</pre>
+  <p><small>โหมด <code>listen</code> คือโหมดเดียวที่ต้องมีคนพูด — ใช้ตอนไปหน้าร้านเพื่อเก็บ recall/false wake ของจริง</small></p>
+</section>
+</main>
+</body>
+</html>

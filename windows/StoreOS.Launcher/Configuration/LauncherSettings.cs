@@ -18,6 +18,84 @@ public sealed class LauncherSettings
     public string PosUrl { get; init; } = "https://www.store-os.online/pos";
     public bool AllowDevTools { get; init; }
 
+    /// <summary>
+    /// ช่องทางของเครื่องนี้ — แยก mutex กันเปิดซ้ำ และแยกโฟลเดอร์ข้อมูลของ WebView2
+    /// "prod" คือเครื่องขายจริง, "dev" ใช้ตอนทดสอบ (ยอมให้ชี้ localhost ได้)
+    /// </summary>
+    public string Channel { get; init; } = "prod";
+
+    /// <summary>
+    /// เปิดโหมดฟังคำปลุกบนเครื่องนี้หรือไม่ (แผน v1 W1)
+    /// ค่าเริ่มต้นคือปิด — เปิดทีละเครื่องระหว่าง pilot เท่านั้น ไม่เปิดพร้อมกันทั้งฝูง
+    /// </summary>
+    public bool VoiceStandbyEnabled { get; init; }
+
+    /// <summary>โฮสต์ที่ยอมให้ Launcher เปิดได้ — กัน config ที่ถูกแก้ให้ชี้ไปเว็บอื่น</summary>
+    private static readonly string[] AllowedHosts =
+    [
+        "www.store-os.online",
+        "store-os.online",
+    ];
+
+    /// <summary>
+    /// ตรวจว่า URL ที่ตั้งมาเปิดได้ไหม
+    ///
+    /// เหตุผลที่ต้องมีด่านนี้: launcher.json อยู่ใน %LOCALAPPDATA% ที่โปรแกรมอื่นบนเครื่อง
+    /// เขียนได้ ถ้าไม่ตรวจ ใครก็ตั้งให้ Launcher เปิดหน้าเลียนแบบ StoreOS แล้วรอผู้ใช้
+    /// พิมพ์รหัสผ่านได้ — Launcher เปิดแบบเต็มจอไม่มีแถบที่อยู่ ผู้ใช้จึงไม่มีทางเห็นว่าโดนเปลี่ยน
+    /// </summary>
+    public static bool IsAllowedPosUrl(string? url, string? channel)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (!string.IsNullOrEmpty(uri.UserInfo)) return false; // https://user@host = เทคนิคหลอกตา
+
+        var isLoopback = uri.IsLoopback;
+        if (uri.Scheme != Uri.UriSchemeHttps && !(isLoopback && uri.Scheme == Uri.UriSchemeHttp)) return false;
+
+        // localhost เปิดได้เฉพาะ channel ทดสอบ ไม่ใช่บนเครื่องขายจริง
+        if (isLoopback) return string.Equals(channel, "dev", StringComparison.OrdinalIgnoreCase);
+
+        return AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// URL ที่จะเปิดจริง — ถ้าค่าที่ตั้งมาไม่ผ่านด่าน ให้กลับไปใช้ค่าเริ่มต้น
+    /// (ไม่ใช่ปฏิเสธจนเปิดโปรแกรมไม่ได้ เพราะร้านต้องขายของต่อ)
+    /// </summary>
+    public string ResolvePosUrl(out bool rejected)
+    {
+        if (IsAllowedPosUrl(PosUrl, Channel))
+        {
+            rejected = false;
+            return PosUrl;
+        }
+
+        rejected = true;
+        return new LauncherSettings().PosUrl;
+    }
+
+    /// <summary>เส้นทางไฟล์ตั้งค่าของเครื่องนี้</summary>
+    public static string FilePath(string localAppData) =>
+        Path.Combine(localAppData, "StoreOSLauncher", "launcher.json");
+
+    /// <summary>
+    /// บันทึกแบบ atomic — เขียนไฟล์ชั่วคราวก่อนแล้วค่อยสลับ
+    ///
+    /// ถ้าเขียนทับตรง ๆ แล้วไฟดับกลางทาง ไฟล์จะเหลือครึ่งเดียวและ Launcher จะอ่านไม่ออก
+    /// รอบหน้า = ผู้ใช้เสียค่าตั้งทั้งหมดโดยไม่รู้ตัว (Load จะ fallback ไปค่าเริ่มต้นเงียบ ๆ)
+    /// </summary>
+    public void Save(string localAppData)
+    {
+        var path = FilePath(localAppData);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, json);
+        if (File.Exists(path)) File.Replace(temp, path, null);
+        else File.Move(temp, path);
+    }
+
     public static LauncherSettings Load()
     {
         try

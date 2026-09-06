@@ -3,12 +3,14 @@
 // U16 — จัดการคำเรียกด้วยเสียงของร้าน (owner-authored เท่านั้น)
 // ทุกแถวแสดง "ใครสร้าง/เมื่อไร/สถานะ" เพื่อให้ตรวจย้อนหลังได้ และปิดใช้งานแทนการลบ
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { VoiceAlias } from "@/modules/voice-pos/alias-repository";
 import type { VoiceAliasSuggestion } from "@/modules/voice-pos/alias-suggest";
 import { createVoiceAliasAction, saveProductAliasesAction, setVoiceAliasActiveAction } from "./actions";
 import { Button } from "@/shared/components/ui";
+import { VoiceStandbyDiagnostics } from "@/shared/components/VoiceStandbyDiagnostics";
+import { createWindowsVoiceHost } from "@/modules/voice-pos/windows-host";
 
 interface Props {
   readonly aliases: readonly VoiceAlias[];
@@ -51,6 +53,10 @@ export function VoiceAliasManager({
     [suggestions, picked, edited],
   );
 
+  // สร้างครั้งเดียวต่อการเปิดหน้า และถอดตัวรับตอนออกจากหน้า
+  const standbyHost = useMemo(() => createWindowsVoiceHost(), []);
+  useEffect(() => () => standbyHost.dispose(), [standbyHost]);
+
   const productAliases = aliases.filter((alias) => alias.intentType === "product");
   const navigateAliases = aliases.filter((alias) => alias.intentType === "navigate");
 
@@ -83,6 +89,9 @@ export function VoiceAliasManager({
 
   return (
     <div className="space-y-5">
+      {/* W8 — สถานะคำปลุกของ "เครื่องนี้" ไม่ใช่ค่าของร้าน
+          เปิดหน้านี้ในเบราว์เซอร์ปกติจะไม่เห็นการ์ดนี้เลย */}
+      <VoiceStandbyDiagnostics host={standbyHost} />
       <section className="panel p-4">
         <h2 className="text-base font-bold text-[var(--color-text-primary)]">สั่งงานด้วยเสียง</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">

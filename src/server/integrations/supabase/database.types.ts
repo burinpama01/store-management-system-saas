@@ -2987,6 +2987,10 @@ export interface Database {
           change_amount: number | null;
           processed_at: string;
           processed_by_user_id: string;
+          original_method: "cash" | "qr_promptpay" | "credit_card" | "bank_transfer" | "other" | null;
+          method_changed_at: string | null;
+          method_changed_by_user_id: string | null;
+          method_change_reason: string | null;
         };
         Insert: {
           id?: string;
@@ -2999,6 +3003,10 @@ export interface Database {
           change_amount?: number | null;
           processed_at?: string;
           processed_by_user_id: string;
+          original_method?: "cash" | "qr_promptpay" | "credit_card" | "bank_transfer" | "other" | null;
+          method_changed_at?: string | null;
+          method_changed_by_user_id?: string | null;
+          method_change_reason?: string | null;
         };
         Update: {
           id?: string;
@@ -3011,6 +3019,10 @@ export interface Database {
           change_amount?: number | null;
           processed_at?: string;
           processed_by_user_id?: string;
+          original_method?: "cash" | "qr_promptpay" | "credit_card" | "bank_transfer" | "other" | null;
+          method_changed_at?: string | null;
+          method_changed_by_user_id?: string | null;
+          method_change_reason?: string | null;
         };
         Relationships: [];
       };
@@ -4461,6 +4473,19 @@ export interface Database {
           p_event_type: string;
           p_processing_attempt_id: string;
           p_stale_after?: string;
+        };
+        Returns: string;
+      };
+      change_pos_order_payment_method: {
+        Args: {
+          p_store_id: string;
+          p_order_id: string;
+          p_method: string;
+          p_actor_user_id: string;
+          p_reason?: string | null;
+          p_received_amount?: number | null;
+          p_change_amount?: number | null;
+          p_reference?: string | null;
         };
         Returns: string;
       };

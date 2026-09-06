@@ -4,6 +4,7 @@ import { MarketingFooter, MarketingHeader } from "@/shared/components/marketing/
 import { MarketingProductShowcase } from "@/shared/components/marketing/MarketingProductShowcase";
 import { getFreeTrialCampaign } from "@/modules/billing/platform-settings";
 import { isFreeTrialCampaignOpen } from "@/modules/billing/free-trial";
+import { LAUNCHER_VERSION } from "@/modules/launcher/version";
 
 // อ่านสถานะแคมเปญทดลองฟรีจาก platform_settings ทุกครั้ง เพื่อให้ CTA ตรงกับที่ super-admin ตั้งไว้
 export const dynamic = "force-dynamic";
@@ -122,7 +123,7 @@ export default async function LandingPage() {
               className="btn-secondary reference-secondary-cta"
               rel="nofollow"
             >
-              <span aria-hidden="true">🖥️</span> ตัวช่วยติดตั้งบน Windows
+              <span aria-hidden="true">🖥️</span> ตัวช่วยติดตั้งบน Windows (v{LAUNCHER_VERSION})
             </a>
           </div>
           <small className="reference-note">

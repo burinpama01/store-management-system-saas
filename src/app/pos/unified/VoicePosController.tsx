@@ -9,7 +9,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { VoiceCommandButton, type VoiceResultResponse } from "@/shared/components/VoiceCommandButton";
+import {
+  VoiceCommandButton,
+  type VoiceResultContext,
+  type VoiceResultResponse,
+} from "@/shared/components/VoiceCommandButton";
 import { DASHBOARD_COMMANDS, type CommandItem } from "@/modules/assistant/command-index";
 import {
   resolveVoiceNavigation,
@@ -28,6 +32,14 @@ import {
 import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry";
 import { recordVoiceTelemetryAction } from "./voice-telemetry-actions";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
+import { createWindowsVoiceHost, type WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
+import {
+  decideStandbyAction,
+  describeProposal,
+  isProposalValid,
+  readStandbyVoiceReply,
+  type StandbyProposal,
+} from "@/modules/voice-pos/standby-policy";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
 import {
   AI_UNAVAILABLE_MESSAGE,
@@ -68,6 +80,8 @@ export interface VoicePosControllerProps {
   readonly productAliases?: readonly VoiceProductAlias[];
   /** ฉีด adapter สำหรับทดสอบ — ปกติปุ่มจะใช้ Web Speech ของเบราว์เซอร์เอง */
   readonly adapter?: VoiceSpeechAdapter;
+  /** ฉีด host ของ Launcher ได้ในเทสต์; ไม่ส่งมาจะตรวจ chrome.webview เองตอนรัน */
+  readonly standbyHost?: WindowsVoiceHostAdapter;
   readonly className?: string;
   /** ฉีดนาฬิกาสำหรับทดสอบ Undo */
   readonly now?: () => number;
@@ -105,6 +119,7 @@ export function VoicePosController({
   aliases,
   productAliases,
   adapter,
+  standbyHost,
   className,
   now,
   aiFallbackEnabled = false,
@@ -112,7 +127,25 @@ export function VoicePosController({
 }: VoicePosControllerProps) {
   const router = useRouter();
   const getCartApi = useVoiceCartApi();
+  /**
+   * W5 — สายคุยกับ StoreOS Launcher (คำปลุก)
+   *
+   * บนเบราว์เซอร์ปกติจะได้ตัวที่ available = false ซึ่งไม่ทำอะไรเลย
+   * ปุ่มกดพูดจึงทำงานเหมือนเดิมทุกประการ ไม่มีเงื่อนไขเพิ่มบนเส้นทางเดิม
+   */
+  const resolvedStandbyHost = useMemo<WindowsVoiceHostAdapter>(
+    () => standbyHost ?? createWindowsVoiceHost(),
+    [standbyHost],
+  );
+  useEffect(() => () => resolvedStandbyHost.dispose(), [resolvedStandbyHost]);
   const [undoToken, setUndoToken] = useState<VoiceUndoToken | null>(null);
+  /**
+   * W6 — ข้อเสนอที่รอการยืนยัน (มาจากคำปลุกเท่านั้น)
+   * อยู่ในหน่วยความจำของหน้าจอ ไม่บันทึกที่ไหน และหายเมื่อออกจากหน้า
+   */
+  const [proposal, setProposal] = useState<StandbyProposal | null>(null);
+  /** บังคับ re-render ให้ตัวเลขนับถอยหลังขยับ (ค่าเองไม่ได้ถูกใช้ที่ไหน) */
+  const [, setProposalTick] = useState(0);
   const [undoNotice, setUndoNotice] = useState("");
   const undoSeqRef = useRef(0);
   // U16 — telemetry ในหน่วยความจำของ session (ใช้ debug ในเครื่อง)
@@ -149,6 +182,31 @@ export function VoicePosController({
     }, remaining);
     return () => clearTimeout(timer);
   }, [clock, undoToken]);
+
+  /**
+   * เดินนาฬิกาให้การ์ดยืนยัน: นับถอยหลังต้องขยับจริง และพอหมดเวลาต้องหายเอง
+   * ไม่ตั้ง timer เมื่อไม่มีข้อเสนอ — หน้าขายไม่ควรมี timer เดินเปล่า ๆ ตลอดกะ
+   */
+  useEffect(() => {
+    if (!proposal) return;
+    const timer = setInterval(() => {
+      setProposalTick((tick) => tick + 1);
+      if (!isProposalValid(proposal, clock())) setProposal(null);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [clock, proposal]);
+
+  /** Esc = ยกเลิกข้อเสนอ (ตาม interaction contract ของดีไซน์) */
+  useEffect(() => {
+    if (!proposal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setProposal(null);
+      setUndoNotice("ยกเลิกคำสั่งที่รอยืนยันแล้ว");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [proposal]);
 
   const handleUndo = useCallback(() => {
     const outcome = consumeVoiceUndoToken(undoToken, clock());
@@ -498,14 +556,82 @@ export function VoicePosController({
    * deterministic ก่อนเสมอ; ส่ง AI เฉพาะ no_match ที่ไม่ได้อยู่ในบริบทเลือกตัวเลือก
    * (บริบทนั้น deterministic เดาได้ดีกว่าอยู่แล้ว และไม่ต้องเสียโควตา)
    */
+  /**
+   * W6 — ลงมือทำตามข้อเสนอที่ค้างอยู่
+   *
+   * ต้องเรียก resolver ใหม่ตอนกดยืนยัน ไม่ใช่เก็บผลที่คำนวณไว้ตอนพูด —
+   * ระหว่าง 8 วินาทีนั้น ตะกร้า/สินค้า/หน้าต่างตัวเลือกอาจเปลี่ยนไปแล้ว
+   * การเล่นซ้ำผลเก่าคือการแก้ตะกร้าตามสภาพที่ไม่มีอยู่จริงอีกต่อไป
+   */
+  const commitProposal = useCallback(
+    (accepted: StandbyProposal): string | VoiceResultResponse | Promise<string | VoiceResultResponse> => {
+      setProposal(null);
+      return handleDeterministicResult(accepted.result, "");
+    },
+    [handleDeterministicResult],
+  );
+
+  const cancelProposal = useCallback(() => {
+    // ยกเลิก/หมดเวลา ต้องไม่แตะตะกร้าเลย
+    setProposal(null);
+    setUndoNotice("ยกเลิกคำสั่งที่รอยืนยันแล้ว");
+  }, []);
+
+  /**
+   * ด่านสุดท้ายก่อนลงมือ — ตัดสินตาม "ที่มาของการเปิดไมค์"
+   * กดปุ่มเอง = ทำเลยเหมือนเดิม; คำปลุก + คำสั่งที่แตะตะกร้า = ขอให้ยืนยันก่อน
+   */
+  const applyWithStandbyPolicy = useCallback(
+    (
+      result: VoiceParseResult,
+      transcript: string,
+      context: VoiceResultContext,
+    ): string | VoiceResultResponse | Promise<string | VoiceResultResponse> => {
+      const decision = decideStandbyAction(result, context.origin, clock());
+
+      if (decision.action === "execute") return handleDeterministicResult(result, transcript);
+
+      if (decision.action === "block") {
+        // ข้อความเดิมของเส้นทาง deterministic ยังเหมาะสมที่สุด (บอกเหตุผลตาม resultCode)
+        return handleDeterministicResult(result, transcript);
+      }
+
+      const label = describeProposal(decision.result);
+      setProposal({
+        result: decision.result,
+        expiresAt: decision.expiresAt,
+        sessionId: context.sessionId,
+        label,
+      });
+      return `รอการยืนยัน: ${label} — พูดว่า “ยืนยัน” หรือแตะปุ่มยืนยัน`;
+    },
+    [clock, handleDeterministicResult],
+  );
+
   const handleResult = useCallback(
-    async (result: VoiceParseResult, transcript = ""): Promise<string | VoiceResultResponse> => {
+    async (
+      result: VoiceParseResult,
+      transcript = "",
+      context: VoiceResultContext = { origin: "push_to_talk", sessionId: null },
+    ): Promise<string | VoiceResultResponse> => {
       const text = transcript.trim();
+
+      // มีข้อเสนอค้างอยู่ = ฟังคำตอบสั้น ๆ ก่อน (allowlist ตรงตัวเท่านั้น)
+      const active = isProposalValid(proposal, clock()) ? proposal : null;
+      if (active) {
+        const reply = readStandbyVoiceReply(text);
+        if (reply === "confirm") return commitProposal(active);
+        if (reply === "cancel") {
+          cancelProposal();
+          return "ยกเลิกแล้ว";
+        }
+        // คำอื่นไม่นับเป็นคำตอบ — ปล่อยให้ไหลไปเป็นคำสั่งใหม่ตามปกติ
+      }
       const pickerOpen = Boolean(getCartApi()?.getPicker?.());
       const shouldTryAi =
         aiFallbackEnabled && voiceEnabled && result.resultCode === "no_match" && text.length > 0 && !pickerOpen;
 
-      if (!shouldTryAi) return handleDeterministicResult(result, transcript);
+      if (!shouldTryAi) return applyWithStandbyPolicy(result, transcript, context);
 
       // คำขอเก่าที่ยังค้างต้องถูกทิ้ง — คำตอบที่มาช้าห้ามไปแตะตะกร้าของรอบใหม่
       abortRef.current?.abort();
@@ -538,7 +664,7 @@ export function VoicePosController({
 
       switch (outcome.source) {
         case "deterministic":
-          return handleDeterministicResult(outcome.result, transcript);
+          return applyWithStandbyPolicy(outcome.result, transcript, context);
         case "blocked":
           return "คำสั่งนี้ต้องทำบนหน้าจอเอง — เสียงยังไม่รับคำสั่งเรื่องเงิน/ส่วนลด/สต๊อก";
         case "ai_unavailable":
@@ -557,8 +683,12 @@ export function VoicePosController({
     },
     [
       aiFallbackEnabled,
+      applyWithStandbyPolicy,
+      cancelProposal,
+      clock,
+      commitProposal,
       getCartApi,
-      handleDeterministicResult,
+      proposal,
       publishQueue,
       reportVoiceTelemetry,
       requestAiIntent,
@@ -570,17 +700,63 @@ export function VoicePosController({
   if (!voiceEnabled) return null;
 
   const undoVisible = isVoiceUndoTokenValid(undoToken, clock());
+  const proposalVisible = isProposalValid(proposal, clock());
+  const proposalSecondsLeft = proposal ? Math.max(0, Math.ceil((proposal.expiresAt - clock()) / 1000)) : 0;
 
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`.trim()}>
       <VoiceCommandButton
         adapter={adapter}
+        standbyHost={resolvedStandbyHost}
         onResult={handleResult}
         onTelemetry={(event) => {
           telemetry.record(event);
           reportVoiceTelemetry({ ...event, source: "deterministic" });
         }}
       />
+      {proposalVisible && proposal ? (
+        // W7 — การ์ดยืนยันตาม Design System v1
+        // แสดง "สิ่งที่ระบบจะทำ" ไม่ใช่คำพูดดิบ และไม่บังรายการขายทั้งหมด
+        <div
+          data-testid="voice-standby-proposal"
+          role="group"
+          aria-label="ยืนยันคำสั่งจากสแตนด์บาย"
+          className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[#B8D4F0] bg-[#F2F8FE] px-3 py-2"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-2 text-xs font-bold text-[#245E9B]">
+              <span aria-hidden="true">🎙️</span>
+              ยืนยันคำสั่งจากสแตนด์บาย
+              {/* นับถอยหลังเป็นตัวเลข ไม่พึ่ง animation อย่างเดียว (คนที่ปิด motion ต้องเห็นด้วย) */}
+              <span data-testid="voice-standby-countdown" className="font-mono font-normal">
+                เหลือ {proposalSecondsLeft} วินาที
+              </span>
+            </p>
+            <p role="status" aria-live="polite" className="truncate text-sm font-bold text-[#0F2B47]">
+              {proposal.label}
+            </p>
+            <p className="text-xs text-[#3A5A78]">ตะกร้ายังไม่เปลี่ยนจนกว่าจะยืนยัน</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void commitProposal(proposal)}
+              aria-label={`ยืนยัน: ${proposal.label}`}
+              className="min-h-11 min-w-11 rounded-lg bg-[#245E9B] px-4 text-sm font-bold text-white hover:bg-[#1D4E82] focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              ยืนยัน
+            </button>
+            <button
+              type="button"
+              onClick={cancelProposal}
+              aria-label={`ยกเลิก: ${proposal.label}`}
+              className="min-h-11 min-w-11 rounded-lg border border-[#B8D4F0] px-4 text-sm font-semibold text-[#245E9B] hover:bg-[#E4F0FB] focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      ) : null}
       {undoVisible && undoToken ? (
         <button
           type="button"
