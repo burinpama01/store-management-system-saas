@@ -30,8 +30,21 @@ export const STANDBY_MESSAGE_TYPES = {
 
 export type StandbyMessageType = (typeof STANDBY_MESSAGE_TYPES)[keyof typeof STANDBY_MESSAGE_TYPES];
 
-/** รหัสคำปลุกที่อนุญาต — native ส่งรหัสมา ไม่ใช่ข้อความที่ได้ยิน */
-export const WAKE_PHRASE_IDS = ["hello_os", "hanlo_os", "helo_os", "watdee_os", "sawatdee_os"] as const;
+/**
+ * รหัสคำปลุกที่อนุญาต — native ส่งรหัสมา ไม่ใช่ข้อความที่ได้ยิน
+ *
+ * "hello_storeos" คือคำที่ใช้จริงบนเครื่องร้าน (engine Vosk)
+ * ส่วนรหัสเดิมเก็บไว้เพราะเครื่องที่ยังไม่อัปเดตใช้ engine เก่าอยู่ — ต้องรับได้ทั้งคู่
+ * ระหว่างที่ยังมีเครื่องคละรุ่น ไม่งั้นข้อความจากเครื่องเก่าจะถูกทิ้งทั้งหมด
+ */
+export const WAKE_PHRASE_IDS = [
+  "hello_storeos",
+  "hello_os",
+  "hanlo_os",
+  "helo_os",
+  "watdee_os",
+  "sawatdee_os",
+] as const;
 export type WakePhraseId = (typeof WAKE_PHRASE_IDS)[number];
 
 export interface StandbyInboundMessage {
@@ -71,6 +84,7 @@ export interface VoiceHostHealth {
 
 /** รหัสปัญหาที่รู้จัก — enum ปิด เพื่อให้แปลเป็นคำแนะนำได้โดยไม่ต้องรับข้อความ error ดิบ */
 export const VOICE_HOST_FAULT_CODES = [
+  "vosk_model_missing",
   "no_recognizer",
   "audio_device_busy",
   "audio_input_missing",

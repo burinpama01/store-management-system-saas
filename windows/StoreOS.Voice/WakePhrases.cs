@@ -112,6 +112,28 @@ public static class WakePhrases
     };
 
     /// <summary>
+    /// คำปลุกที่ใช้กับ Vosk (engine ที่ใช้จริงบนเครื่องร้าน)
+    ///
+    /// ต้องเป็นคำอังกฤษที่อยู่ในพจนานุกรมของโมเดล — "โอเอส" ถูกถอดเป็น [unk] เสมอ
+    /// จึงใช้แค่ "hello store" แล้วให้ผู้ใช้พูดเต็มว่า "Hello StoreOS" ได้ตามปกติ
+    /// (วัดแล้วจับได้ 12/12 ทุกเสียงทุกความเร็ว และปลุกผิด 0 ครั้งใน 4 นาที)
+    ///
+    /// ไม่ใส่คำไทย เพราะ Vosk ไม่มีโมเดลภาษาไทย และการเขียนหน่วยเสียงไทยเองบน engine
+    /// ภาษาอังกฤษคือสาเหตุของการปลุกเองที่วัดได้ 10–20 ครั้งต่อ 4 นาที
+    /// </summary>
+    public static IReadOnlyList<string> VoskPhrases { get; } = ["hello store"];
+
+    /// <summary>รหัสคำปลุกสำหรับ telemetry — ต้องเป็นรหัส ไม่ใช่ข้อความที่ได้ยิน</summary>
+    public static string VoskPhraseId(string phrase) => phrase switch
+    {
+        "hello store" => "hello_storeos",
+        _ => "unknown",
+    };
+
+    /// <summary>สิ่งที่ผู้ใช้ต้องพูด (แสดงบนหน้าจอ)</summary>
+    public const string VoskDisplayPhrase = "Hello StoreOS";
+
+    /// <summary>
     /// "คำล่อ" — คำทักทายไทยที่ไม่ได้ตั้งใจปลุก แต่เสียงใกล้คำปลุกมาก
     ///
     /// หมายเหตุ: เคยมี "ha lo"/"hallo" อยู่ในรายการนี้ แต่ถอดออกเพราะมันแย่งกับคำปลุก

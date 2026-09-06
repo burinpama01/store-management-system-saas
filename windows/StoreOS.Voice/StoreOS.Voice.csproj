@@ -23,7 +23,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- System.Speech เก็บไว้เป็นทางถอย เมื่อเครื่องไม่มีชุดข้อมูลเสียงของ Vosk -->
     <PackageReference Include="System.Speech" Version="8.0.0" />
+    <!-- Vosk = engine หลัก (Apache-2.0 ออฟไลน์ ไม่ต้องมี key), NAudio = รับเสียงจากไมค์ (MIT) -->
+    <PackageReference Include="Vosk" Version="0.3.38" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
 </Project>
