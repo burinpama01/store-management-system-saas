@@ -327,7 +327,7 @@ export function VoicePosController({
           current = reduceVoiceQueue(current, { type: "await_input", note: resolved.note });
           publishQueue(current);
           return {
-            message: `${resolved.productName} — ${resolved.note} พูด "เลือก…" หรือกดบนหน้าจอ`,
+            message: `${resolved.productName} — ${resolved.note} พูด "เลือก…" ได้เลย`,
             listenAgain: true,
           };
         }
@@ -475,16 +475,26 @@ export function VoicePosController({
               // 100%) ไม่ต้องสั่งให้เลือกซ้ำ ไม่งั้นพนักงานไม่รู้ว่าจริง ๆ ขาดอะไร
               const missing = picker.missingRequiredGroups.join(" / ");
               const list = picker.pendingChoices.slice(0, 6).join(" / ");
+
+              // ไม่มีอะไรต้องเลือกแล้ว = การกด "เพิ่มในออร์เดอร์" ไม่ได้ให้ข้อมูลอะไรเพิ่ม
+              // ปิดให้เองเลย ไม่งั้นคำสั่งเสียงจบลงด้วยการบังคับให้เอามือมาแตะจอ
+              // ซึ่งขัดกับเหตุผลทั้งหมดของฟีเจอร์นี้ (คนมือไม่ว่าง)
               if (!missing && !picker.needsVariant) {
-                return `${picker.productName} เปิดหน้าต่างตัวเลือกให้แล้ว — กดเพิ่มในออร์เดอร์ได้เลย`;
+                const outcome = api.confirmPicker?.();
+                if (outcome?.ok) return outcome.message;
+                return {
+                  message: `${picker.productName} พร้อมเพิ่มแล้ว — พูดว่า "ยืนยัน" ได้เลย`,
+                  listenAgain: true,
+                };
               }
+
               const what = missing || "ตัวเลือก";
               // ขั้นถัดไปคือคำสั่งเสียงอีกคำเสมอ ("เลือก…") จึงเปิดไมค์ต่อให้เลย
               // แคชเชียร์มักถือถาด/แก้วอยู่ การให้กดปุ่มซ้ำคือแรงเสียดทานที่ตัดออกได้
               return {
                 message: list
                   ? `${picker.productName} ยังต้องเลือก ${what} — พูด "เลือก…" ได้เลย (${list})`
-                  : `${picker.productName} ยังต้องเลือก ${what} — เลือกบนหน้าจอได้เลย`,
+                  : `${picker.productName} ยังต้องเลือก ${what} — พูดชื่อตัวเลือกได้เลย`,
                 listenAgain: true,
               };
             }
