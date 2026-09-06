@@ -27,7 +27,8 @@
 /Plan
 /Brainstorming
 /docs
-/tests
+# NOTE: keep /tests uploaded — tsconfig includes **/*.ts, so next build typechecks
+# playwright.config.ts which imports ./tests/e2e/helpers/local-supabase-env.
 /test-results
 /playwright-report
 /scripts
