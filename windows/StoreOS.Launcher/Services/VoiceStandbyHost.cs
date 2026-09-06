@@ -29,6 +29,7 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
     private readonly MicrophoneCoordinator _coordinator;
     private readonly Action<string, string, string> _log;
     private readonly string _hostVersion;
+    private readonly Action<bool>? _persistEnabled;
     private long _healthSeq;
     private bool _enabled;
     private bool _disposed;
@@ -39,10 +40,12 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
         Func<IWakeWordEngine> engineFactory,
         Action<string, string, string> log,
         WakeWordOptions? options = null,
-        string hostVersion = "0.0.0")
+        string hostVersion = "0.0.0",
+        Action<bool>? persistEnabled = null)
     {
         _log = log;
         _hostVersion = hostVersion;
+        _persistEnabled = persistEnabled;
         _coordinator = new MicrophoneCoordinator(engineFactory, log, options);
         _coordinator.MessageForWeb += (_, message) => MessageForWeb?.Invoke(this, message);
     }
@@ -96,6 +99,7 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
         _enabled = false;
         await _coordinator.StopAsync(ct);
         _log("info", "voice_standby_stopped", "ปิดโหมดคำปลุกและคืนไมโครโฟนแล้ว");
+        PublishHealth();
     }
 
     /// <summary>เดินนาฬิกาให้ watchdog — Launcher เรียกจากตัวจับเวลาเดิมที่มีอยู่แล้ว</summary>
@@ -109,6 +113,42 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
     {
         if (!_enabled) return;
         if (State == VoiceHostState.Degraded) await _coordinator.StartAsync(ct);
+        PublishHealth();
+    }
+
+    /// <summary>เปิดอยู่บนเครื่องนี้หรือไม่ (ค่าที่จะถูกจำไว้ข้ามการเปิดโปรแกรม)</summary>
+    public bool Enabled => _enabled;
+
+    /// <summary>
+    /// ผู้ใช้กดสวิตช์บนหน้าตั้งค่าของเว็บ — เปิด/ปิดทันทีและจำค่าไว้
+    ///
+    /// ต้องจำลงไฟล์ด้วย ไม่ใช่เปิดไว้เฉพาะรอบนี้: ร้านตั้งค่าครั้งเดียวแล้วคาดหวังว่า
+    /// เปิดเครื่องพรุ่งนี้จะยังเป็นเหมือนเดิม ถ้าลืมทุกเช้าจะไม่มีใครใช้ฟีเจอร์นี้เลย
+    /// </summary>
+    public async Task SetEnabledAsync(bool enabled, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (enabled && !_enabled)
+        {
+            await StartAsync(true, ct);
+        }
+        else if (!enabled && _enabled)
+        {
+            await StopAsync(ct);
+        }
+
+        // จำค่าเสมอ แม้สถานะไม่เปลี่ยน (เช่นเปิดไม่ขึ้นเพราะไม่มีไมค์ — เจตนาของผู้ใช้ยังคือ "เปิด")
+        try
+        {
+            _persistEnabled?.Invoke(enabled);
+        }
+        catch (Exception ex)
+        {
+            // เขียนไฟล์ไม่ได้ต้องไม่ทำให้สวิตช์ใช้ไม่ได้ในรอบนี้ แต่ต้องบอกให้รู้ว่าจำไม่ได้
+            _log("warn", "voice_standby_persist_failed", $"จำค่าสวิตช์คำปลุกไม่ได้: {ex.GetType().Name}");
+        }
+
         PublishHealth();
     }
 

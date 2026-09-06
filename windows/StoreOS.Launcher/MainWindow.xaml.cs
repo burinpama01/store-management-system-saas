@@ -17,7 +17,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.2.5";
+    private const string LauncherVersion = "0.3.0";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -56,7 +56,9 @@ public partial class MainWindow : Window
         _voice = new VoiceStandbyHost(
             () => new SystemSpeechWakeEngine(),
             (level, code, message) => _logs.Enqueue(level, code, message),
-            hostVersion: LauncherVersion);
+            hostVersion: LauncherVersion,
+            // สวิตช์บนหน้าตั้งค่าของเว็บต้องถูกจำไว้ในไฟล์ตั้งค่าของเครื่อง
+            persistEnabled: PersistVoiceStandby);
         _voice.Attach(_suspendSignals);
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -68,6 +70,13 @@ public partial class MainWindow : Window
             await _voice.DisposeAsync();
             await _logs.DisposeAsync();
         };
+    }
+
+    /// <summary>จำค่าสวิตช์คำปลุกลงไฟล์ตั้งค่าของเครื่อง (อ่านของเดิมมาก่อนเพื่อไม่ทับค่าอื่น)</summary>
+    private static void PersistVoiceStandby(bool enabled)
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        LauncherSettings.Load().WithVoiceStandby(enabled).Save(localAppData);
     }
 
     private static string HubConfigPath() => Path.Combine(
@@ -127,17 +136,16 @@ public partial class MainWindow : Window
 
         // เปิดโหมดคำปลุกถ้าเครื่องนี้เปิดไว้ — ล้มเหลวก็แค่ไม่มีคำปลุก POS ยังขายได้
         await _voice.StartAsync(settings.VoiceStandbyEnabled);
-        if (settings.VoiceStandbyEnabled)
-        {
-            // สายคุยผูกกับ origin ที่ Launcher เปิดจริงเท่านั้น (ผ่านด่าน ResolvePosUrl มาแล้ว)
-            _voiceBridge = new WebViewStandbyBridge(
-                Web.CoreWebView2,
-                _voice,
-                new Uri(posUrl),
-                (level, code, message) => _logs.Enqueue(level, code, message));
-            _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
-            _voiceTimer.Start();
-        }
+
+        // สายคุยต้องต่อเสมอ แม้คำปลุกจะปิดอยู่ — ไม่งั้นผู้ใช้เปิดสวิตช์จากหน้าตั้งค่าไม่ได้เลย
+        // (สายนี้ไม่แตะไมโครโฟนด้วยตัวเอง มันแค่ส่งข้อความ)
+        _voiceBridge = new WebViewStandbyBridge(
+            Web.CoreWebView2,
+            _voice,
+            new Uri(posUrl),
+            (level, code, message) => _logs.Enqueue(level, code, message));
+        _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
+        _voiceTimer.Start();
 
         Refresh();
         _timer.Tick += async (_, _) =>

@@ -4,7 +4,11 @@ using System.Text.Json;
 namespace StoreOS.Voice;
 
 /// <summary>ข้อความที่หน้าเว็บส่งกลับมาหา native (หลังผ่านด่านแล้วเท่านั้น)</summary>
-public sealed record StandbyInbound(string Type, long Seq, string SessionId, DateTimeOffset At);
+public sealed record StandbyInbound(string Type, long Seq, string SessionId, DateTimeOffset At)
+{
+    /// <summary>ค่าสำหรับ command.setStandby เท่านั้น — ชนิดอื่นเป็น null เสมอ</summary>
+    public bool? Enabled { get; init; }
+}
 
 /// <summary>ผลการตรวจข้อความหนึ่งใบ — ถูกปฏิเสธต้องมีเหตุผลเสมอเพื่อให้ไล่ปัญหาได้จาก log</summary>
 public sealed record BridgeVerdict(bool Accepted, string Reason, StandbyInbound? Message = null)
@@ -62,6 +66,7 @@ public sealed class StandbyBridgePolicy
         StandbyContract.SessionExtended,
         StandbyContract.SessionEnded,
         StandbyContract.RequestHealth,
+        StandbyContract.SetStandby,
     ];
 
     private readonly Dictionary<string, long> _lastSeqBySession = new();
@@ -124,6 +129,16 @@ public sealed class StandbyBridgePolicy
             return BridgeVerdict.Reject("replayed_seq");
         _lastSeqBySession[sessionId] = seq;
 
-        return BridgeVerdict.Accept(new StandbyInbound(type, seq, sessionId, at));
+        // คำสั่งเปิด/ปิดต้องระบุค่ามาให้ชัด — ไม่มีค่า = ไม่ใช่คำสั่งที่ใช้ได้
+        bool? enabled = null;
+        if (type == StandbyContract.SetStandby)
+        {
+            if (!root.TryGetProperty("enabled", out var enabledElement)
+                || enabledElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                return BridgeVerdict.Reject("missing_enabled");
+            enabled = enabledElement.GetBoolean();
+        }
+
+        return BridgeVerdict.Accept(new StandbyInbound(type, seq, sessionId, at) { Enabled = enabled });
     }
 }

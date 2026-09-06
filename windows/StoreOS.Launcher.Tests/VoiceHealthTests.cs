@@ -175,3 +175,127 @@ public class VoiceHealthTests
         Assert.Equal(0, reports);
     }
 }
+
+/// <summary>สวิตช์เปิด-ปิดคำปลุกจากหน้าตั้งค่าของเว็บ</summary>
+public class VoiceStandbySwitchTests
+{
+    private sealed class FakeEngine : IWakeWordEngine
+    {
+        public int StartCalls { get; private set; }
+        public int StopCalls { get; private set; }
+        public WakeEngineState State { get; private set; } = WakeEngineState.Off;
+        public event EventHandler<WakeDetectedEventArgs>? WakeDetected;
+        public event EventHandler<WakeEngineFaultEventArgs>? Faulted;
+        public WakeEngineFaultEventArgs? StartFault { get; init; }
+
+        public Task StartAsync(WakeWordOptions options, CancellationToken ct)
+        {
+            StartCalls++;
+            _ = WakeDetected;
+            if (StartFault is not null)
+            {
+                State = WakeEngineState.Faulted;
+                Faulted?.Invoke(this, StartFault);
+                return Task.CompletedTask;
+            }
+            State = WakeEngineState.Listening;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken ct)
+        {
+            StopCalls++;
+            State = WakeEngineState.Off;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private static (VoiceStandbyHost host, FakeEngine engine, List<bool> persisted) Build(FakeEngine? engine = null)
+    {
+        var e = engine ?? new FakeEngine();
+        var persisted = new List<bool>();
+        var host = new VoiceStandbyHost(() => e, (_, _, _) => { }, hostVersion: "9.9.9", persistEnabled: persisted.Add);
+        return (host, e, persisted);
+    }
+
+    [Fact]
+    public async Task เปิดจากหน้าเว็บแล้วเริ่มฟังจริงและจำค่าไว้()
+    {
+        var (host, engine, persisted) = Build();
+
+        await host.SetEnabledAsync(true);
+
+        Assert.Equal(1, engine.StartCalls);
+        Assert.Equal(VoiceHostState.Standby, host.State);
+        Assert.Equal(new[] { true }, persisted);
+    }
+
+    [Fact]
+    public async Task ปิดจากหน้าเว็บแล้วคืนไมโครโฟนและจำค่าไว้()
+    {
+        var (host, engine, persisted) = Build();
+        await host.SetEnabledAsync(true);
+
+        await host.SetEnabledAsync(false);
+
+        Assert.Equal(1, engine.StopCalls);
+        Assert.Equal(VoiceHostState.Off, host.State);
+        Assert.Equal(new[] { true, false }, persisted);
+    }
+
+    [Fact]
+    public async Task กดเปิดซ้ำตอนเปิดอยู่แล้วต้องไม่เปิดเครื่องยนต์ซ้อน()
+    {
+        var (host, engine, _) = Build();
+        await host.SetEnabledAsync(true);
+
+        await host.SetEnabledAsync(true);
+
+        Assert.Equal(1, engine.StartCalls);
+    }
+
+    [Fact]
+    public async Task เปิดไม่ขึ้นเพราะไม่มีไมค์_ยังต้องจำเจตนาว่าผู้ใช้สั่งเปิด()
+    {
+        // ถ้าไม่จำ พอแก้เรื่องไมค์เสร็จแล้วเปิดโปรแกรมใหม่ ผู้ใช้จะงงว่าทำไมยังปิดอยู่
+        var (host, _, persisted) = Build(new FakeEngine
+        {
+            StartFault = new WakeEngineFaultEventArgs("no_recognizer", "ไม่มีชุดรู้จำเสียง"),
+        });
+
+        await host.SetEnabledAsync(true);
+
+        Assert.Equal(VoiceHostState.Degraded, host.State);
+        Assert.Equal(new[] { true }, persisted);
+    }
+
+    [Fact]
+    public async Task เขียนไฟล์ตั้งค่าไม่ได้ต้องไม่ทำให้สวิตช์พัง()
+    {
+        var engine = new FakeEngine();
+        var host = new VoiceStandbyHost(
+            () => engine,
+            (_, _, _) => { },
+            hostVersion: "9.9.9",
+            persistEnabled: _ => throw new UnauthorizedAccessException("เขียนไฟล์ไม่ได้"));
+
+        await host.SetEnabledAsync(true);
+
+        Assert.Equal(VoiceHostState.Standby, host.State);
+    }
+
+    [Fact]
+    public async Task ทุกครั้งที่สวิตช์เปลี่ยน_หน้าเว็บต้องได้สถานะใหม่()
+    {
+        var (host, _, _) = Build();
+        var reports = 0;
+        host.HealthForWeb += (_, _) => reports++;
+
+        await host.SetEnabledAsync(true);
+        await host.SetEnabledAsync(false);
+
+        Assert.True(reports >= 2);
+    }
+}

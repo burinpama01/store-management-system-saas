@@ -112,6 +112,9 @@ public sealed class WebViewStandbyBridge : IDisposable
             case StandbyContract.SessionEnded:
                 await _voice.OnWebSessionEndedAsync();
                 break;
+            case StandbyContract.SetStandby when verdict.Message.Enabled is { } enabled:
+                await _voice.SetEnabledAsync(enabled);
+                break;
             case StandbyContract.RequestHealth:
                 // ผู้ใช้กด "ตรวจอีกครั้ง" บนหน้าตั้งค่า หรือหน้าเว็บเพิ่งโหลดแล้วอยากรู้สถานะ
                 await _voice.RecheckAsync();

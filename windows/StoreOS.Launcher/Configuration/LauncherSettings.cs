@@ -74,6 +74,15 @@ public sealed class LauncherSettings
         return new LauncherSettings().PosUrl;
     }
 
+    /// <summary>สำเนาของค่าตั้งเดิมที่เปลี่ยนเฉพาะสวิตช์คำปลุก (คลาสนี้เป็น init-only ทั้งหมด)</summary>
+    public LauncherSettings WithVoiceStandby(bool enabled) => new()
+    {
+        PosUrl = PosUrl,
+        AllowDevTools = AllowDevTools,
+        Channel = Channel,
+        VoiceStandbyEnabled = enabled,
+    };
+
     /// <summary>เส้นทางไฟล์ตั้งค่าของเครื่องนี้</summary>
     public static string FilePath(string localAppData) =>
         Path.Combine(localAppData, "StoreOSLauncher", "launcher.json");

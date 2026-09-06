@@ -29,6 +29,8 @@ public static class StandbyContract
     public const string SessionEnded = "command.sessionEnded";
     /// <summary>web → native: ขอสถานะล่าสุด (ปุ่ม "ตรวจอีกครั้ง" บนหน้าตั้งค่า)</summary>
     public const string RequestHealth = "command.requestHealth";
+    /// <summary>web → native: เปิด/ปิดโหมดคำปลุกของเครื่องนี้ และจำค่าไว้ข้ามการเปิดโปรแกรม</summary>
+    public const string SetStandby = "command.setStandby";
     /// <summary>native → web: สถานะของฝั่งเครื่อง (เวอร์ชัน/ชุดรู้จำเสียง/ไมค์/ปัญหาล่าสุด)</summary>
     public const string Health = "host.health";
 

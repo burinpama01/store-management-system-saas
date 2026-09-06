@@ -70,6 +70,7 @@ function createFakeHost(available = true) {
       return () => healthListeners.delete(listener);
     },
     requestHealth: () => calls.push("requestHealth"),
+    setStandby: (enabled: boolean) => calls.push(`setStandby:${enabled}`),
     commandStarted: (sessionId) => calls.push(`started:${sessionId}`),
     commandExtended: (sessionId) => calls.push(`extended:${sessionId}`),
     commandEnded: (sessionId, outcome) => calls.push(`ended:${sessionId}:${outcome}`),

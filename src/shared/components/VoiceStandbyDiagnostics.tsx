@@ -25,12 +25,14 @@ export interface VoiceStandbyDiagnosticsProps {
 export function VoiceStandbyDiagnostics({ host }: VoiceStandbyDiagnosticsProps) {
   const [health, setHealth] = useState<VoiceHostHealth | null>(null);
   const [checking, setChecking] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     if (!host.available) return;
     const unsubscribe = host.subscribeHealth((next) => {
       setHealth(next);
       setChecking(false);
+      setSwitching(false);
     });
     // ขอสถานะทันทีที่เปิดหน้า — ไม่งั้นจะว่างเปล่าจนกว่าสถานะฝั่งเครื่องจะเปลี่ยนเอง
     host.requestHealth();
@@ -42,6 +44,9 @@ export function VoiceStandbyDiagnostics({ host }: VoiceStandbyDiagnosticsProps) 
 
   const guide = describeHostFault(health?.faultCode ?? null);
   const state = health ? STATE_TEXT[health.state] : null;
+  // "เปิดอยู่" = เครื่องกำลังทำงานจริง (ฟังคำปลุกหรือกำลังฟังคำสั่ง) ไม่ใช่แค่ผู้ใช้กดสวิตช์
+  // สถานะ degraded ถือว่าเปิดไว้แล้วแต่ใช้ไม่ได้ จึงยังให้ปิดได้
+  const standbyOn = health?.state === "standby" || health?.state === "listening" || health?.state === "degraded";
 
   return (
     <section
@@ -53,6 +58,26 @@ export function VoiceStandbyDiagnostics({ host }: VoiceStandbyDiagnosticsProps) 
         <h3 id="voice-standby-diagnostics-title" className="text-sm font-bold">
           คำปลุกบนเครื่องนี้
         </h3>
+        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-testid="voice-standby-switch"
+          onClick={() => {
+            // ส่งเจตนาไปให้เครื่องแล้วรอสถานะจริงกลับมา ไม่แสดงผลไปก่อนล่วงหน้า
+            // (เปิดไม่ขึ้นเพราะไม่มีไมค์เป็นเรื่องปกติ ปุ่มต้องไม่โกหกว่าเปิดสำเร็จ)
+            setSwitching(true);
+            host.setStandby(!standbyOn);
+          }}
+          aria-pressed={standbyOn}
+          aria-label={standbyOn ? "ปิดคำปลุกบนเครื่องนี้" : "เปิดคำปลุกบนเครื่องนี้"}
+          className={`min-h-11 rounded-lg px-4 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            standbyOn
+              ? "bg-[#167554] text-white hover:bg-[#11603F]"
+              : "border border-[var(--color-border,#D0D5DD)] hover:bg-black/5"
+          }`}
+        >
+          {switching ? "กำลังตั้งค่า…" : standbyOn ? "เปิดอยู่" : "เปิดคำปลุก"}
+        </button>
         <button
           type="button"
           data-testid="voice-standby-recheck"
@@ -64,6 +89,7 @@ export function VoiceStandbyDiagnostics({ host }: VoiceStandbyDiagnosticsProps) 
         >
           {checking ? "กำลังตรวจ…" : "ตรวจอีกครั้ง"}
         </button>
+        </div>
       </div>
 
       {health ? (
@@ -98,6 +124,7 @@ export function VoiceStandbyDiagnostics({ host }: VoiceStandbyDiagnosticsProps) 
 
       <p className="text-xs text-[var(--color-text-secondary,#475467)]">
         การเปิด-ปิดคำปลุกเป็นค่าเฉพาะของเครื่องนี้ ไม่ส่งผลกับเครื่องอื่นในร้าน
+        และเครื่องจะจำค่าไว้ให้เมื่อเปิดโปรแกรมครั้งต่อไป
       </p>
     </section>
   );
