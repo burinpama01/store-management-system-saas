@@ -17,7 +17,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.2.2";
+    private const string LauncherVersion = "0.2.3";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -42,6 +42,8 @@ public partial class MainWindow : Window
     private readonly VoiceStandbyHost _voice;
     /// <summary>สัญญาณล็อกจอ/หลับของ Windows — ต้องถอด handler ตอนปิดไม่งั้น SystemEvents ถือ reference ค้าง</summary>
     private readonly WindowsSuspendSignals _suspendSignals = new();
+    /// <summary>สายคุยคำปลุก↔หน้าเว็บ (W4) — สร้างหลัง WebView2 พร้อมเท่านั้น</summary>
+    private WebViewStandbyBridge? _voiceBridge;
 
     public MainWindow()
     {
@@ -55,14 +57,12 @@ public partial class MainWindow : Window
             () => new SystemSpeechWakeEngine(),
             (level, code, message) => _logs.Enqueue(level, code, message));
         _voice.Attach(_suspendSignals);
-        // W3 ส่งข้อความออกมาแล้ว แต่ยังไม่ยิงเข้าหน้าเว็บ — การส่งจริงพร้อมด่านความปลอดภัยคือ W4
-        _voice.MessageForWeb += (_, message) =>
-            _logs.Enqueue("info", "voice_message_pending", $"มีข้อความรอส่งให้หน้าเว็บ: {message.Type}");
         Loaded += OnLoaded;
         Closing += OnClosing;
         // ปิดหน้าต่างทางไหนก็ตาม ต้องคืนไมโครโฟนก่อนแล้วค่อยปล่อยคิว log
         Closed += async (_, _) =>
         {
+            _voiceBridge?.Dispose();
             _suspendSignals.Dispose();
             await _voice.DisposeAsync();
             await _logs.DisposeAsync();
@@ -127,6 +127,12 @@ public partial class MainWindow : Window
         await _voice.StartAsync(settings.VoiceStandbyEnabled);
         if (settings.VoiceStandbyEnabled)
         {
+            // สายคุยผูกกับ origin ที่ Launcher เปิดจริงเท่านั้น (ผ่านด่าน ResolvePosUrl มาแล้ว)
+            _voiceBridge = new WebViewStandbyBridge(
+                Web.CoreWebView2,
+                _voice,
+                new Uri(posUrl),
+                (level, code, message) => _logs.Enqueue(level, code, message));
             _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
             _voiceTimer.Start();
         }
@@ -231,14 +237,14 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>ข้อความต้องมาจากหน้าเว็บของ StoreOS เอง ไม่ใช่ iframe/หน้าอื่นที่หลุดเข้ามา</summary>
-    private bool IsTrustedSource(string? source)
-    {
-        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) return false;
-        if (Web.Source is not { } current) return false;
-        return uri.Scheme == Uri.UriSchemeHttps
-            && uri.Host.Equals(current.Host, StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary>
+    /// ข้อความต้องมาจากหน้าเว็บของ StoreOS เอง ไม่ใช่ iframe/หน้าอื่นที่หลุดเข้ามา
+    ///
+    /// W4 — เปลี่ยนมาเทียบ origin แบบตรงตัว (scheme + host + port) แทนการเทียบแค่ host
+    /// ของเดิมยอมรับพอร์ตใดก็ได้บนโฮสต์เดียวกัน ซึ่งกว้างเกินจำเป็นสำหรับข้อความที่
+    /// เขียนไฟล์ตั้งค่าของเครื่องได้
+    /// </summary>
+    private bool IsTrustedSource(string? source) => WebOrigin.IsSameOrigin(source, Web.Source);
 
     /// <summary>
     /// เหตุผลที่ถือว่า "ถามไปแล้วได้คำตอบ" — ไม่ต้องถามซ้ำ
