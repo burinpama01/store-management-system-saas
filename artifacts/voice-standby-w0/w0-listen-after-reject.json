@@ -1,0 +1,68 @@
+{
+  "checkedAt": "2026-09-06T18:42:43.9340896\u002B07:00",
+  "recognizer": {
+    "Id": "MS-1033-80-DESK",
+    "Name": "MS-1033-80-DESK",
+    "Culture": "en-US"
+  },
+  "listenedSeconds": 60,
+  "detections": [
+    {
+      "at": "2026-09-06T18:42:48.6587560\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:42:59.5678504\u002B07:00",
+      "heard": "hanlo os",
+      "phraseId": "hanlo_os",
+      "confidence": 0.693,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:43:08.6308258\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:43:23.0713729\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:43:31.5081544\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:43:33.6343705\u002B07:00",
+      "heard": "helo os",
+      "phraseId": "helo_os",
+      "confidence": 0.616,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:43:36.5661620\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "verdict": "RejectedLowConfidence"
+    },
+    {
+      "at": "2026-09-06T18:43:39.4524338\u002B07:00",
+      "heard": "...",
+      "phraseId": "(\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E04\u0E33\u0E1B\u0E25\u0E38\u0E01)",
+      "confidence": 1,
+      "verdict": "RejectedLowConfidence"
+    }
+  ],
+  "watchdogFallbacks": 0
+}

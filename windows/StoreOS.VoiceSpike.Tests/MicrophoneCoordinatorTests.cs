@@ -124,6 +124,8 @@ public class MicrophoneCoordinatorTests
         Assert.Single(h.ToWeb);
         Assert.Equal(StandbyContract.WakeDetected, h.ToWeb[0].Type);
         Assert.Equal("sawatdee_os", h.ToWeb[0].PhraseId);
+        // ต้องมี log ทุกครั้ง — เป็นข้อมูลชุดเดียวที่จะได้กลับมาจากเครื่องร้านจริง
+        Assert.Contains("info:voice_wake_detected", h.Logs);
     }
 
     [Fact]

@@ -17,7 +17,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.3.0";
+    private const string LauncherVersion = "0.4.0";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -54,8 +54,8 @@ public partial class MainWindow : Window
             LauncherLogShipper.ReadHubCredentials(HubConfigPath()),
             LauncherVersion);
         _voice = new VoiceStandbyHost(
-            () => new SystemSpeechWakeEngine(),
-            (level, code, message) => _logs.Enqueue(level, code, message),
+            CreateWakeEngine,
+            Log,
             hostVersion: LauncherVersion,
             // สวิตช์บนหน้าตั้งค่าของเว็บต้องถูกจำไว้ในไฟล์ตั้งค่าของเครื่อง
             persistEnabled: PersistVoiceStandby);
@@ -78,6 +78,18 @@ public partial class MainWindow : Window
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         LauncherSettings.Load().WithVoiceStandby(enabled).Save(localAppData);
     }
+
+    /// <summary>
+    /// เลือกเครื่องยนต์คำปลุก — ใช้ Vosk เมื่อมีชุดข้อมูลเสียงมาด้วย (ตัวติดตั้งวางไว้ให้)
+    ///
+    /// วัดในห้องจริงแล้ว Vosk ปลุกผิด 0 ครั้ง/4 นาที ส่วน System.Speech ปลุกผิด 14–20 ครั้ง
+    /// จึงใช้ System.Speech เป็นทางถอยเท่านั้น (เช่นเครื่องที่อัปเกรดมาแบบไม่มีโฟลเดอร์โมเดล)
+    /// ผู้ใช้จะเห็นเหตุผลบนหน้าตั้งค่าผ่านรหัสปัญหา vosk_model_missing
+    /// </summary>
+    private static IWakeWordEngine CreateWakeEngine() =>
+        VoskWakeEngine.ModelExists()
+            ? new VoskWakeEngine(VoskWakeEngine.DefaultModelPath())
+            : new SystemSpeechWakeEngine();
 
     private static string HubConfigPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -124,7 +136,7 @@ public partial class MainWindow : Window
         }
         Web.Source = new Uri(posUrl);
 
-        _logs.Enqueue("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
+        Log("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
         {
             ["launcherVersion"] = LauncherVersion,
             ["webview2"] = Web.CoreWebView2.Environment.BrowserVersionString,
@@ -135,6 +147,13 @@ public partial class MainWindow : Window
         Web.CoreWebView2.NavigationCompleted += OnNavigationCompletedAsync;
 
         // เปิดโหมดคำปลุกถ้าเครื่องนี้เปิดไว้ — ล้มเหลวก็แค่ไม่มีคำปลุก POS ยังขายได้
+        if (settings.VoiceStandbyEnabled)
+        {
+            // ต้องรู้ว่าเครื่องนี้ใช้ engine ไหน เวลาไล่ปัญหาจากที่ไกล ๆ
+            // (ตัวถอยใช้ System.Speech ซึ่งวัดแล้วปลุกเองบ่อยกว่ามาก)
+            var engineName = VoskWakeEngine.ModelExists() ? "vosk" : "system_speech_fallback";
+            Log("info", "voice_engine_selected", $"ใช้เครื่องยนต์คำปลุก: {engineName}");
+        }
         await _voice.StartAsync(settings.VoiceStandbyEnabled);
 
         // สายคุยต้องต่อเสมอ แม้คำปลุกจะปิดอยู่ — ไม่งั้นผู้ใช้เปิดสวิตช์จากหน้าตั้งค่าไม่ได้เลย
@@ -143,7 +162,7 @@ public partial class MainWindow : Window
             Web.CoreWebView2,
             _voice,
             new Uri(posUrl),
-            (level, code, message) => _logs.Enqueue(level, code, message));
+            Log);
         _voiceTimer.Tick += async (_, _) => await _voice.TickAsync();
         _voiceTimer.Start();
 
@@ -314,6 +333,51 @@ public partial class MainWindow : Window
                 System.Globalization.CultureInfo.InvariantCulture,
                 "{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}{3}",
                 DateTimeOffset.Now, level, message, Environment.NewLine);
+            File.AppendAllText(path, line);
+        }
+        catch (Exception)
+        {
+            // เขียน log ไม่ได้ต้องไม่ทำให้ POS สะดุด
+        }
+    }
+
+    /// <summary>
+    /// บันทึกเหตุการณ์ทั้งขึ้น server และลงไฟล์ในเครื่อง
+    ///
+    /// ต้องมีไฟล์ในเครื่องด้วย เพราะ log ที่ส่งขึ้น server ใช้โทเค็นของ Print Hub —
+    /// เครื่องที่ยังไม่ได้ผูก Hub (หรือโทเค็นเพี้ยน ซึ่งเป็นตอนที่ต้องการ log ที่สุด)
+    /// จะไม่มีอะไรไปถึงเซิร์ฟเวอร์เลย คนหน้างานต้องเปิดไฟล์อ่านเองได้
+    /// ไม่มีโทเค็นและไม่มีคำพูดของผู้ใช้ในไฟล์นี้
+    /// </summary>
+    private void Log(string level, string code, string message) => Log(level, code, message, null);
+
+    private void Log(string level, string code, string message, IReadOnlyDictionary<string, object>? context)
+    {
+        _logs.Enqueue(level, code, message, context);
+        AppendLocalLog(level, code, message);
+    }
+
+    private static void AppendLocalLog(string level, string code, string message)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "StoreOSLauncher");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "launcher.log");
+
+            // ตัดไฟล์เมื่อโตเกิน 1 MB — เครื่องร้านเปิดทั้งวันทุกวัน ปล่อยไว้จะกินดิสก์
+            if (File.Exists(path) && new FileInfo(path).Length > 1_000_000)
+            {
+                File.Copy(path, path + ".1", overwrite: true);
+                File.Delete(path);
+            }
+
+            var line = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}: {3}{4}",
+                DateTimeOffset.Now, level, code, message, Environment.NewLine);
             File.AppendAllText(path, line);
         }
         catch (Exception)

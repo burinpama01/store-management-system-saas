@@ -321,6 +321,29 @@ export function VoiceCommandButton({
     startListeningRef.current = startListening;
   }, [startListening]);
 
+  /** ยกเลิกการฟังทันที — ใช้ทั้งปุ่มบน overlay และปุ่ม Esc */
+  const cancelListening = useCallback(() => {
+    if (!sessionRef.current?.isActive()) return;
+    settledRef.current = true;      // กันผลที่ค้างอยู่ยิงกลับมาหลังยกเลิก
+    sessionRef.current.cancel();
+    sessionRef.current = null;
+    setInterim("");
+    setState("idle");
+    player.stop();
+    endStandbySession("aborted");
+    showMessage("ยกเลิกการฟังแล้ว");
+  }, [endStandbySession, player, showMessage]);
+
+  // Esc = ยกเลิกการฟัง (ตาม interaction contract ของ Design System)
+  useEffect(() => {
+    if (!listening) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelListening();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cancelListening, listening]);
+
   const handleClick = useCallback(() => {
     if (disabled) return;
 
@@ -366,6 +389,9 @@ export function VoiceCommandButton({
         return;
       }
 
+      // ตอบรับด้วยเสียงก่อนเปิดไมค์ — ผู้ใช้ต้องรู้ทันทีว่าระบบได้ยินคำปลุกแล้ว
+      // ไม่งั้นจะพูดคำสั่งทับช่วงที่ไมค์ยังไม่เปิด แล้วคำสั่งหายไปเฉย ๆ
+      player.cue("wake");
       standbySessionRef.current = event.sessionId;
       autoListenCountRef.current = 0;
       startListening();
@@ -373,7 +399,7 @@ export function VoiceCommandButton({
     });
 
     return unsubscribe;
-  }, [disabled, showMessage, standbyHost, standbyPaused, startListening, supported]);
+  }, [disabled, player, showMessage, standbyHost, standbyPaused, startListening, supported]);
 
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;
@@ -420,11 +446,32 @@ export function VoiceCommandButton({
         )
       : null;
 
+  // ปุ่มหยุดฟังต้องอยู่ "นอก" ชั้นตกแต่งที่ซ่อนจาก screen reader (aria-hidden)
+  // ไม่งั้นเทคโนโลยีช่วยเหลือจะมองไม่เห็นปุ่มเดียวที่หยุดการฟังได้
+  // ผืนหลังยังปล่อยคลิกทะลุไปที่ POS เหมือนเดิม — มีแค่ปุ่มนี้ที่รับคลิก
+  const stopButton =
+    overlayVisible && listening && typeof document !== "undefined"
+      ? createPortal(
+          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[91] flex justify-center px-6">
+            <button
+              type="button"
+              data-testid="voice-stop"
+              onClick={cancelListening}
+              className="pointer-events-auto min-h-11 rounded-lg bg-white/95 px-6 text-base font-bold text-gray-900 shadow-lg hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              หยุดฟัง (Esc)
+            </button>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     // แถวเดียวแนวนอน — ปุ่มนี้อยู่บนแถบหัวของ POS ที่ความสูงมีค่า สถานะระหว่างฟัง
     // ไปแสดงบน overlay เต็มจอแทน ที่นี่จึงเหลือแค่บรรทัดสั้น ๆ
     <div className={`flex items-center gap-2 ${className ?? ""}`.trim()}>
       {overlay}
+      {stopButton}
       <VoiceStandbyControl
         state={standbyUiState}
         onToggle={standbyUiState === "unavailable" ? undefined : () => setStandbyPaused((paused) => !paused)}

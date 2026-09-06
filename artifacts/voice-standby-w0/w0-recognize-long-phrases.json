@@ -1,0 +1,482 @@
+{
+  "checkedAt": "2026-09-06T19:38:31.8056826\u002B07:00",
+  "recognizer": {
+    "Id": "MS-1033-80-DESK",
+    "Name": "MS-1033-80-DESK",
+    "Culture": "en-US"
+  },
+  "minConfidence": 0.72,
+  "positiveCount": 30,
+  "positiveHits": 16,
+  "positiveHitsAtThreshold": 15,
+  "negativeCount": 10,
+  "falseWakesAtThreshold": 0,
+  "perPhrase": [
+    {
+      "phraseId": "hello_storeos",
+      "attempts": 12,
+      "hits": 12,
+      "bestConfidence": 0.947
+    },
+    {
+      "phraseId": "sawatdee_storeos",
+      "attempts": 6,
+      "hits": 4,
+      "bestConfidence": 1
+    },
+    {
+      "phraseId": "watdee_storeos",
+      "attempts": 6,
+      "hits": 0,
+      "bestConfidence": 1
+    },
+    {
+      "phraseId": "hanlo_storeos",
+      "attempts": 6,
+      "hits": 0,
+      "bestConfidence": 1
+    }
+  ],
+  "results": [
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftDavid_0.80.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.922,
+      "Error": null,
+      "DurationMs": 1640,
+      "WordCount": 3,
+      "MinWordConfidence": 0.851
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftDavid_0.85.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.915,
+      "Error": null,
+      "DurationMs": 1540,
+      "WordCount": 3,
+      "MinWordConfidence": 0.829
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftDavid_0.90.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.912,
+      "Error": null,
+      "DurationMs": 1460,
+      "WordCount": 3,
+      "MinWordConfidence": 0.823
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftDavid_0.95.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.897,
+      "Error": null,
+      "DurationMs": 1390,
+      "WordCount": 3,
+      "MinWordConfidence": 0.778
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftDavid_1.00.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.884,
+      "Error": null,
+      "DurationMs": 1370,
+      "WordCount": 3,
+      "MinWordConfidence": 0.742
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftDavid_1.20.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.798,
+      "Error": null,
+      "DurationMs": 1120,
+      "WordCount": 3,
+      "MinWordConfidence": 0.43
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftGeorge_0.80.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.947,
+      "Error": null,
+      "DurationMs": 1320,
+      "WordCount": 3,
+      "MinWordConfidence": 0.936
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftGeorge_0.85.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.945,
+      "Error": null,
+      "DurationMs": 1260,
+      "WordCount": 3,
+      "MinWordConfidence": 0.932
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftGeorge_0.90.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.943,
+      "Error": null,
+      "DurationMs": 1200,
+      "WordCount": 3,
+      "MinWordConfidence": 0.931
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftGeorge_0.95.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.943,
+      "Error": null,
+      "DurationMs": 1120,
+      "WordCount": 3,
+      "MinWordConfidence": 0.932
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftGeorge_1.00.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.936,
+      "Error": null,
+      "DurationMs": 1070,
+      "WordCount": 3,
+      "MinWordConfidence": 0.918
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hello_storeos_MicrosoftGeorge_1.20.wav",
+      "Kind": "positive",
+      "Label": "hello_storeos",
+      "PhraseId": "hello_storeos",
+      "Confidence": 0.877,
+      "Error": null,
+      "DurationMs": 910,
+      "WordCount": 4,
+      "MinWordConfidence": 0.4
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_sawatdee_storeos_MicrosoftPattara_0.80.wav",
+      "Kind": "positive",
+      "Label": "sawatdee_storeos",
+      "PhraseId": "sawatdee_storeos",
+      "Confidence": 0.754,
+      "Error": null,
+      "DurationMs": 1340,
+      "WordCount": 3,
+      "MinWordConfidence": 0.436
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_sawatdee_storeos_MicrosoftPattara_0.85.wav",
+      "Kind": "positive",
+      "Label": "sawatdee_storeos",
+      "PhraseId": "sawatdee_storeos",
+      "Confidence": 0.746,
+      "Error": null,
+      "DurationMs": 1270,
+      "WordCount": 3,
+      "MinWordConfidence": 0.33
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_sawatdee_storeos_MicrosoftPattara_0.90.wav",
+      "Kind": "positive",
+      "Label": "sawatdee_storeos",
+      "PhraseId": "sawatdee_storeos",
+      "Confidence": 0.723,
+      "Error": null,
+      "DurationMs": 1200,
+      "WordCount": 3,
+      "MinWordConfidence": 0.158
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_sawatdee_storeos_MicrosoftPattara_0.95.wav",
+      "Kind": "positive",
+      "Label": "sawatdee_storeos",
+      "PhraseId": "sawatdee_storeos",
+      "Confidence": 0.631,
+      "Error": null,
+      "DurationMs": 1150,
+      "WordCount": 3,
+      "MinWordConfidence": 0.224
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_sawatdee_storeos_MicrosoftPattara_1.00.wav",
+      "Kind": "positive",
+      "Label": "sawatdee_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_sawatdee_storeos_MicrosoftPattara_1.20.wav",
+      "Kind": "positive",
+      "Label": "sawatdee_storeos",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1020,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_watdee_storeos_MicrosoftPattara_0.80.wav",
+      "Kind": "positive",
+      "Label": "watdee_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_watdee_storeos_MicrosoftPattara_0.85.wav",
+      "Kind": "positive",
+      "Label": "watdee_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_watdee_storeos_MicrosoftPattara_0.90.wav",
+      "Kind": "positive",
+      "Label": "watdee_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_watdee_storeos_MicrosoftPattara_0.95.wav",
+      "Kind": "positive",
+      "Label": "watdee_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_watdee_storeos_MicrosoftPattara_1.00.wav",
+      "Kind": "positive",
+      "Label": "watdee_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_watdee_storeos_MicrosoftPattara_1.20.wav",
+      "Kind": "positive",
+      "Label": "watdee_storeos",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1110,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hanlo_storeos_MicrosoftPattara_0.80.wav",
+      "Kind": "positive",
+      "Label": "hanlo_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hanlo_storeos_MicrosoftPattara_0.85.wav",
+      "Kind": "positive",
+      "Label": "hanlo_storeos",
+      "PhraseId": null,
+      "Confidence": 0,
+      "Error": null,
+      "DurationMs": 0,
+      "WordCount": 0,
+      "MinWordConfidence": 0
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hanlo_storeos_MicrosoftPattara_0.90.wav",
+      "Kind": "positive",
+      "Label": "hanlo_storeos",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1240,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hanlo_storeos_MicrosoftPattara_0.95.wav",
+      "Kind": "positive",
+      "Label": "hanlo_storeos",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1210,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hanlo_storeos_MicrosoftPattara_1.00.wav",
+      "Kind": "positive",
+      "Label": "hanlo_storeos",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1130,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\long_hanlo_storeos_MicrosoftPattara_1.20.wav",
+      "Kind": "positive",
+      "Label": "hanlo_storeos",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 970,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_00.wav",
+      "Kind": "negative",
+      "Label": "probe_00",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1490,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_01.wav",
+      "Kind": "negative",
+      "Label": "probe_01",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1080,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_02.wav",
+      "Kind": "negative",
+      "Label": "probe_02",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1260,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_03.wav",
+      "Kind": "negative",
+      "Label": "probe_03",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 870,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_04.wav",
+      "Kind": "negative",
+      "Label": "probe_04",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1000,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_05.wav",
+      "Kind": "negative",
+      "Label": "probe_05",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1300,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_06.wav",
+      "Kind": "negative",
+      "Label": "probe_06",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1780,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_07.wav",
+      "Kind": "negative",
+      "Label": "probe_07",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1180,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_08.wav",
+      "Kind": "negative",
+      "Label": "probe_08",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1190,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    },
+    {
+      "File": "C:\\Users\\burin\\AppData\\Local\\Temp\\storeos-wake-corpus\\longneg_09.wav",
+      "Kind": "negative",
+      "Label": "probe_09",
+      "PhraseId": null,
+      "Confidence": 1,
+      "Error": null,
+      "DurationMs": 1390,
+      "WordCount": 1,
+      "MinWordConfidence": 1
+    }
+  ]
+}

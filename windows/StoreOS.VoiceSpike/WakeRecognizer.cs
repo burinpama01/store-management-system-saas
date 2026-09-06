@@ -5,7 +5,16 @@ using StoreOS.Voice;
 
 namespace StoreOS.VoiceSpike;
 
-public sealed record WavResult(string File, string Kind, string Label, string? PhraseId, double Confidence, string? Error);
+public sealed record WavResult(
+    string File,
+    string Kind,
+    string Label,
+    string? PhraseId,
+    double Confidence,
+    string? Error,
+    int DurationMs = 0,
+    int WordCount = 0,
+    double MinWordConfidence = 0);
 
 public sealed record HandoffRound(int Round, double NativeReleaseMs, double WebAcquireMs, double NativeReacquireMs, string Status, string? Error);
 
@@ -18,7 +27,10 @@ public sealed record HandoffRound(int Round, double NativeReleaseMs, double WebA
 public sealed class WakeRecognizer
 {
     /// <summary>ยิงไฟล์เสียงเข้า engine ทีละไฟล์ — ใช้วัด recall ของคำปลุกและ false wake ของประโยคทั่วไป</summary>
-    public static IReadOnlyList<WavResult> RecognizeCorpus(string recognizerId, IEnumerable<CorpusItem> corpus)
+    public static IReadOnlyList<WavResult> RecognizeCorpus(
+        string recognizerId,
+        IEnumerable<CorpusItem> corpus,
+        bool useLongPhrases = false)
     {
         var results = new List<WavResult>();
 
@@ -28,7 +40,8 @@ public sealed class WakeRecognizer
             {
                 // engine ใหม่ต่อไฟล์: state ของ engine เดิมค้างข้ามไฟล์ได้ และเราต้องการผลที่ทำซ้ำได้
                 using var engine = new SpeechRecognitionEngine(recognizerId);
-                WakeGrammar.Load(engine, out _);
+                if (useLongPhrases) ExperimentalPhrases.Load(engine);
+                else WakeGrammar.Load(engine, out _);
                 engine.SetInputToWaveFile(item.File);
 
                 var result = engine.Recognize(TimeSpan.FromSeconds(3));
@@ -38,8 +51,15 @@ public sealed class WakeRecognizer
                     continue;
                 }
 
-                var phraseId = WakeGrammar.PhraseIdForText(result.Text);
-                results.Add(new WavResult(item.File, item.Kind, item.Label, phraseId, Math.Round(result.Confidence, 3), null));
+                var phraseId = useLongPhrases
+                    ? ExperimentalPhrases.PhraseIdForText(result.Text)
+                    : WakeGrammar.PhraseIdForText(result.Text);
+                var words = result.Words.Select(w => w.Confidence).ToArray();
+                results.Add(new WavResult(
+                    item.File, item.Kind, item.Label, phraseId, Math.Round(result.Confidence, 3), null,
+                    (int)(result.Audio?.Duration.TotalMilliseconds ?? 0),
+                    words.Length,
+                    words.Length > 0 ? Math.Round(words.Min(), 3) : 0));
             }
             catch (Exception ex)
             {

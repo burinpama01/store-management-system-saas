@@ -29,6 +29,9 @@
 
   <ItemGroup>
     <PackageReference Include="System.Speech" Version="8.0.0" />
+    <!-- ทดลองเปลี่ยน engine (แผน v1 W2 engine gate) — ทั้งคู่ Apache-2.0/MIT ทำงานออฟไลน์ -->
+    <PackageReference Include="Vosk" Version="0.3.38" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>

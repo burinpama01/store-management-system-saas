@@ -64,6 +64,85 @@ public static class CorpusBuilder
         return items;
     }
 
+    /// <summary>
+    /// บทสนทนาในร้านสำหรับเปิดผ่านลำโพงตอนวัด false wake
+    /// ต้องยาวพอที่จะเจอเสียงหลากหลาย ไม่ใช่ประโยคเดียวซ้ำ ๆ
+    /// </summary>
+    public static readonly string[] ShopChatter =
+    [
+        "รับอะไรดีคะ วันนี้มีโปรกาแฟเย็นซื้อสองแถมหนึ่ง",
+        "เอาลาเต้ร้อนหนึ่งแก้ว หวานน้อยนะครับ",
+        "โต๊ะห้าสั่งเพิ่มชาไทยสองแก้วกับครัวซองต์หนึ่งชิ้น",
+        "พี่ครับ ขอน้ำเปล่าเพิ่มหน่อยได้ไหม",
+        "จ่ายเงินสดหรือโอนดีคะ สแกนคิวอาร์ตรงนี้ได้เลย",
+        "เดี๋ยวผมไปเอาของหลังร้านนะ รอสักครู่",
+        "สวัสดีค่ะ ยินดีต้อนรับ นั่งตรงไหนก็ได้เลยค่ะ",
+        "อันนี้เท่าไหร่ครับ แล้วมีขนาดใหญ่กว่านี้ไหม",
+        "หวัดดีครับพี่ วันนี้คนเยอะจังเลยนะ",
+        "ฮัลโหล ได้ยินไหม เดี๋ยวโทรกลับนะ",
+        "ปิดร้านกี่โมงคะ พรุ่งนี้เปิดเช้าเหมือนเดิมไหม",
+        "ขอบคุณมากค่ะ แล้วมาใหม่นะคะ",
+    ];
+
+    /// <summary>สร้างชุดเสียงของคำปลุกทดลอง (ชุดยาว) เพื่อวัดว่ายังจับได้จริงไหม</summary>
+    public static async Task<IReadOnlyList<CorpusItem>> BuildLongPhraseCorpusAsync(string outputDir)
+    {
+        Directory.CreateDirectory(outputDir);
+        var items = new List<CorpusItem>();
+
+        var voices = SpeechSynthesizer.AllVoices;
+        var thaiVoice = voices.FirstOrDefault(v => v.Language.StartsWith("th", StringComparison.OrdinalIgnoreCase));
+        var englishVoices = voices.Where(v => v.Language.StartsWith("en", StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+
+        foreach (var candidate in ExperimentalPhrases.Long)
+        {
+            var thai = candidate.Display.Any(c => c >= '฀' && c <= '๿');
+            var speakers = thai
+                ? (thaiVoice is null ? new List<VoiceInformation>() : [thaiVoice])
+                : englishVoices;
+
+            foreach (var voice in speakers)
+            {
+                foreach (var rate in SpeakingRates)
+                {
+                    var file = Path.Combine(outputDir, $"long_{candidate.Id}_{Sanitize(voice.DisplayName)}_{rate:0.00}.wav");
+                    await SynthesizeAsync(voice, candidate.Display, file, rate);
+                    items.Add(new CorpusItem(file, "positive", candidate.Id, candidate.Display, $"{voice.DisplayName}@{rate:0.00}"));
+                }
+            }
+        }
+
+        // ชุดลบ: ประโยคในร้านชุดเดิม
+        if (thaiVoice is not null)
+        {
+            var index = 0;
+            foreach (var probe in WakePhrases.FalseWakeProbes)
+            {
+                var file = Path.Combine(outputDir, $"longneg_{index:00}.wav");
+                await SynthesizeAsync(thaiVoice, probe, file);
+                items.Add(new CorpusItem(file, "negative", $"probe_{index:00}", probe, thaiVoice.DisplayName));
+                index++;
+            }
+        }
+
+        return items;
+    }
+
+    /// <summary>สร้างไฟล์เสียงบทสนทนายาวหนึ่งไฟล์ (ไทย) ไว้เปิดผ่านลำโพง</summary>
+    public static async Task<string> BuildChatterAsync(string outputDir, int repeats = 3)
+    {
+        Directory.CreateDirectory(outputDir);
+        var path = Path.Combine(outputDir, "shop-chatter.wav");
+
+        var thaiVoice = SpeechSynthesizer.AllVoices
+            .FirstOrDefault(v => v.Language.StartsWith("th", StringComparison.OrdinalIgnoreCase));
+        if (thaiVoice is null) throw new InvalidOperationException("เครื่องนี้ไม่มีเสียงสังเคราะห์ภาษาไทย");
+
+        var text = string.Join(" ", Enumerable.Repeat(string.Join(" ", ShopChatter), repeats));
+        await SynthesizeAsync(thaiVoice, text, path);
+        return path;
+    }
+
     private static async Task SynthesizeAsync(VoiceInformation voice, string text, string path, double speakingRate = 1.0)
     {
         using var synth = new SpeechSynthesizer { Voice = voice };

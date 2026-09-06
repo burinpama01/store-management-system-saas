@@ -17,6 +17,15 @@ export interface HostRepairGuide {
 }
 
 const GUIDES: Record<VoiceHostFaultCode, HostRepairGuide> = {
+  vosk_model_missing: {
+    problem: "ชุดข้อมูลเสียงของโปรแกรมหายไป",
+    steps: [
+      "ดาวน์โหลดตัวติดตั้ง StoreOS ใหม่จากหน้าดาวน์โหลด แล้วติดตั้งทับของเดิม",
+      "ตัวติดตั้งจะวางชุดข้อมูลเสียงให้เอง ไม่ต้องตั้งค่าอะไรเพิ่ม",
+      "เปิดโปรแกรมแล้วกด “ตรวจอีกครั้ง”",
+    ],
+    fallback: "ระหว่างนี้ยังกดปุ่มไมค์เพื่อพูดคำสั่งได้ตามปกติ",
+  },
   no_recognizer: {
     problem: "เครื่องนี้ยังไม่มีชุดรู้จำเสียงของ Windows",
     steps: [

@@ -43,7 +43,7 @@ const STATUS: Record<Exclude<VoiceStandbyUiState, "unavailable">, StatusStyle> =
   standby: {
     icon: "●",
     label: "พร้อมรับคำปลุก",
-    hint: "พูดว่า “สวัสดีโอเอส”",
+    hint: "พูดว่า “Hello StoreOS”",
     color: "#167554",
     background: "#E7F6EF",
     border: "#A6E0C6",

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // W5 — ปุ่มเสียงเมื่อถูกปลุกจาก StoreOS Launcher (Windows)
 // ⚠️ ต้องมี header jsdom ทุกครั้ง — static-import @testing-library/* บน node env คือ hang จน timeout
-import { act, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../setup/react";
 
 import { VoiceCommandButton } from "@/shared/components/VoiceCommandButton";
@@ -94,6 +94,12 @@ function createFakeHost(available = true) {
 }
 
 const silentFeedback = { cue: vi.fn(), speak: vi.fn(), stop: vi.fn() };
+
+beforeEach(() => {
+  silentFeedback.cue.mockClear();
+  silentFeedback.speak.mockClear();
+  silentFeedback.stop.mockClear();
+});
 
 describe("VoiceCommandButton — ถูกปลุกจาก Launcher", () => {
   it("คำปลุกเปิดไมค์ให้เองและรายงานกลับว่าเริ่มฟังแล้ว", () => {
@@ -256,6 +262,68 @@ describe("VoiceCommandButton — ถูกปลุกจาก Launcher", () =>
     act(() => host.wake());
 
     expect(screen.getByTestId("voice-standby-status").textContent).toContain("กำลังฟังคำสั่ง");
+  });
+
+  it("ได้ยินคำปลุกแล้วต้องมีเสียงตอบรับก่อนเปิดไมค์", () => {
+    const speech = createFakeAdapter();
+    const host = createFakeHost();
+    render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={host.host} feedback={silentFeedback} />,
+    );
+
+    act(() => host.wake());
+
+    // ต้องมีเสียง "ตื่นแล้ว" แยกจากเสียง "เริ่มฟัง" และต้องมาก่อน
+    const kinds = silentFeedback.cue.mock.calls.map((call) => call[0]);
+    expect(kinds[0]).toBe("wake");
+    expect(kinds).toContain("listening");
+  });
+
+  it("ระหว่างฟังต้องกดหยุดได้ และคืนไมค์ให้ Launcher", () => {
+    const speech = createFakeAdapter();
+    const host = createFakeHost();
+    render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={host.host} feedback={silentFeedback} />,
+    );
+    act(() => host.wake());
+
+    act(() => {
+      screen.getByTestId("voice-stop").click();
+    });
+
+    expect(host.calls).toEqual(["started:sess000001", "ended:sess000001:aborted"]);
+    expect(screen.queryByTestId("voice-stop")).toBeNull();
+  });
+
+  it("กด Esc ระหว่างฟังก็หยุดได้", () => {
+    const speech = createFakeAdapter();
+    const host = createFakeHost();
+    render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={host.host} feedback={silentFeedback} />,
+    );
+    act(() => host.wake());
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+
+    expect(host.calls).toEqual(["started:sess000001", "ended:sess000001:aborted"]);
+  });
+
+  it("ปุ่มหยุดฟังต้องไม่ถูกซ่อนจาก screen reader", () => {
+    const speech = createFakeAdapter();
+    const host = createFakeHost();
+    render(
+      <VoiceCommandButton adapter={speech.adapter} standbyHost={host.host} feedback={silentFeedback} />,
+    );
+    act(() => host.wake());
+
+    // ปุ่มต้องไม่มีบรรพบุรุษที่ aria-hidden — ไม่งั้นเทคโนโลยีช่วยเหลือมองไม่เห็น
+    let node: HTMLElement | null = screen.getByTestId("voice-stop");
+    while (node) {
+      expect(node.getAttribute("aria-hidden")).not.toBe("true");
+      node = node.parentElement;
+    }
   });
 
   it("ถอดคอมโพเนนต์ออกแล้วต้องเลิกรับคำปลุก", () => {

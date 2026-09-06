@@ -16,14 +16,19 @@ namespace StoreOS.Voice;
 /// <param name="Display">คำที่ผู้ใช้เห็นในคู่มือและหน้าตั้งค่า</param>
 /// <param name="Language">ภาษาที่คนพูดจริง (ไม่ใช่ภาษาของ recognizer)</param>
 /// <param name="SpokenForms">รูปสะกดอังกฤษที่ให้ engine เดาเสียงเอง</param>
-/// <param name="Pronunciations">หน่วยเสียง SAPI en-US คั่นด้วยช่องว่าง — ใส่ได้หลายแบบต่อหนึ่งคำ
-/// เพราะคนไทยออกเสียง "โอเอส" ไม่เหมือนกัน (โอ-เอ-ส / โอ-เอส) และสระ เอ ยาวใกล้ ey มากกว่า eh</param>
+/// <param name="Pronunciations">
+/// การออกเสียงแต่ละแบบ = ลำดับของ "คำ" (SAPI en-US)
+///
+/// เคยลองยุบเป็น token เดียวและลองแยกเป็นหลายคำ วัดในห้องจริงทั้งสองแบบแล้ว
+/// ทั้งคู่ปลุกผิดสูงพอ ๆ กัน (14 กับ 20 ครั้งต่อ 4 นาที) — ปัจจัยชี้ขาดไม่ใช่โครงสร้าง token
+/// แต่เป็น "ความยาวและความเฉพาะตัวของคำปลุก" (ดู artifacts/voice-standby-w0/)
+/// </param>
 public sealed record WakePhrase(
     string Id,
     string Display,
     string Language,
     IReadOnlyList<string> SpokenForms,
-    IReadOnlyList<string> Pronunciations);
+    IReadOnlyList<IReadOnlyList<string>> Pronunciations);
 
 /// <summary>ชุดคำปลุกที่เจ้าของโปรเจกต์เลือกไว้ (6 ก.ย. 2026)</summary>
 public static class WakePhrases
@@ -39,31 +44,53 @@ public static class WakePhrases
             Display: "Hello OS",
             Language: "en",
             SpokenForms: new[] { "hello oh es", "hello o s", "hallo oh es", "hello oh ay es" },
-            Pronunciations: new[] { "h eh l ow ow eh s", "h eh l ow ow ey eh s", "h eh l ow ow ey s" }),
+            Pronunciations: new IReadOnlyList<string>[]
+            {
+                new[] { "h eh l ow", "ow eh s" },
+                new[] { "h eh l ow", "ow ey eh s" },
+            }),
         new(
             Id: "hanlo_os",
             Display: "ฮัลโหลโอเอส",
             Language: "th",
             SpokenForms: new[] { "han lo oh es", "hun lo oh es", "hallo oh es", "han lo oh ay es" },
-            Pronunciations: new[] { "h ah l ow ow eh s", "h ah l ow ow ey eh s", "h ah n l ow ow ey eh s", "h ah l ow ow ey s", "h ah l ow ey s" }),
+            Pronunciations: new IReadOnlyList<string>[]
+            {
+                new[] { "h ah l ow", "ow eh s" },
+                new[] { "h ah l ow", "ow ey eh s" },
+                new[] { "h ah n l ow", "ow ey eh s" },
+            }),
         new(
             Id: "helo_os",
             Display: "เฮลโหลโอเอส",
             Language: "th",
             SpokenForms: new[] { "hey lo oh es", "hel lo oh es", "hey lo oh ay es" },
-            Pronunciations: new[] { "h ey l ow ow eh s", "h ey l ow ow ey eh s", "h ey l ow ow ey s", "h eh l ow ey s" }),
+            Pronunciations: new IReadOnlyList<string>[]
+            {
+                new[] { "h ey l ow", "ow eh s" },
+                new[] { "h ey l ow", "ow ey eh s" },
+            }),
         new(
             Id: "watdee_os",
             Display: "หวัดดีโอเอส",
             Language: "th",
             SpokenForms: new[] { "wat dee oh es", "what dee oh es", "wat dee oh ay es" },
-            Pronunciations: new[] { "w ah t d iy ow eh s", "w ah t d iy ow ey eh s", "w ah t d iy ow ey s", "w ah d iy ow ey s" }),
+            Pronunciations: new IReadOnlyList<string>[]
+            {
+                new[] { "w ah t d iy", "ow eh s" },
+                new[] { "w ah t d iy", "ow ey eh s" },
+            }),
         new(
             Id: "sawatdee_os",
             Display: "สวัสดีโอเอส",
             Language: "th",
             SpokenForms: new[] { "sa wat dee oh es", "sawa dee oh es", "sa wat dee oh ay es" },
-            Pronunciations: new[] { "s ah w ah t d iy ow eh s", "s ah w ah t d iy ow ey eh s", "s ax w ah t d iy ow ey eh s", "s ah w ah t d iy ow ey s", "s ax w ah d iy ow ey s" }),
+            Pronunciations: new IReadOnlyList<string>[]
+            {
+                new[] { "s ah w ah t d iy", "ow eh s" },
+                new[] { "s ah w ah t d iy", "ow ey eh s" },
+                new[] { "s ax w ah t d iy", "ow ey eh s" },
+            }),
     };
 
     /// <summary>
@@ -85,7 +112,33 @@ public static class WakePhrases
     };
 
     /// <summary>
+    /// คำปลุกที่ใช้กับ Vosk (engine ที่ใช้จริงบนเครื่องร้าน)
+    ///
+    /// ต้องเป็นคำอังกฤษที่อยู่ในพจนานุกรมของโมเดล — "โอเอส" ถูกถอดเป็น [unk] เสมอ
+    /// จึงใช้แค่ "hello store" แล้วให้ผู้ใช้พูดเต็มว่า "Hello StoreOS" ได้ตามปกติ
+    /// (วัดแล้วจับได้ 12/12 ทุกเสียงทุกความเร็ว และปลุกผิด 0 ครั้งใน 4 นาที)
+    ///
+    /// ไม่ใส่คำไทย เพราะ Vosk ไม่มีโมเดลภาษาไทย และการเขียนหน่วยเสียงไทยเองบน engine
+    /// ภาษาอังกฤษคือสาเหตุของการปลุกเองที่วัดได้ 10–20 ครั้งต่อ 4 นาที
+    /// </summary>
+    public static IReadOnlyList<string> VoskPhrases { get; } = ["hello store"];
+
+    /// <summary>รหัสคำปลุกสำหรับ telemetry — ต้องเป็นรหัส ไม่ใช่ข้อความที่ได้ยิน</summary>
+    public static string VoskPhraseId(string phrase) => phrase switch
+    {
+        "hello store" => "hello_storeos",
+        _ => "unknown",
+    };
+
+    /// <summary>สิ่งที่ผู้ใช้ต้องพูด (แสดงบนหน้าจอ)</summary>
+    public const string VoskDisplayPhrase = "Hello StoreOS";
+
+    /// <summary>
     /// "คำล่อ" — คำทักทายไทยที่ไม่ได้ตั้งใจปลุก แต่เสียงใกล้คำปลุกมาก
+    ///
+    /// หมายเหตุ: เคยมี "ha lo"/"hallo" อยู่ในรายการนี้ แต่ถอดออกเพราะมันแย่งกับคำปลุก
+    /// "ฮัลโหลโอเอส"/"เฮลโหลโอเอส" โดยตรง (วัดแล้วทำให้สองคำนั้นจับไม่ได้เลย)
+    /// งานกันเสียงทั่วไปเป็นหน้าที่ของกฎ GARBAGE ไม่ใช่ของรายการที่เขียนมือ
     ///
     /// ใส่ไว้เป็นไวยากรณ์คู่แข่งในเครื่องเดียวกัน เพื่อให้ engine มีที่ให้เสียงเหล่านี้ "ลง"
     /// แทนที่จะถูกบีบให้เลือกคำปลุกที่ใกล้ที่สุด — เป็นวิธีมาตรฐานในการลด false wake
@@ -99,8 +152,6 @@ public static class WakePhrases
         "sa wat dee krap",
         "sa wat dee ka",
         "sa wat dee",
-        "ha lo",
-        "hallo",
         "oh kay krap",
         "oh kay ka",
     };

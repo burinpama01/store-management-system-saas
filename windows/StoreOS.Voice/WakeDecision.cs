@@ -27,6 +27,8 @@ public sealed record WakeEvaluation(WakeVerdict Verdict, string PhraseId, double
 public sealed class WakeDecider
 {
     public const double DefaultMinConfidence = 0.72;
+    /// <summary>เกณฑ์ของ "คำที่แย่ที่สุด" ในวลี — ดูเหตุผลที่ WakeWordOptions</summary>
+    public const double DefaultMinWordConfidence = 0.50;
     public const int DefaultCooldownMs = 3000;
 
     private readonly double _minConfidence;

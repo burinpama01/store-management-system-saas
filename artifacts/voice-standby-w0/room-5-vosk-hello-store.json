@@ -1,0 +1,245 @@
+{
+  "checkedAt": "2026-09-06T19:57:43.3328824\u002B07:00",
+  "engine": "vosk",
+  "model": "vosk-model-small-en-us-0.15",
+  "phrases": [
+    "hello store"
+  ],
+  "listenedSeconds": 240,
+  "detections": [
+    {
+      "at": "2026-09-06T19:53:49.9089192\u002B07:00",
+      "heard": "hello",
+      "confidence": 0.512,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:53:54.9086581\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 0.757,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:00.0046179\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 0.64,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:10.0045789\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.646,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:15.1045298\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.525,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:25.2012105\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.644,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:30.4032815\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:36.4077176\u002B07:00",
+      "heard": "[unk] hello",
+      "confidence": 0.868,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:38.4000452\u002B07:00",
+      "heard": "hello",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:43.4028285\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.927,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:48.4035982\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.788,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:54:54.7009989\u002B07:00",
+      "heard": "hello [unk]",
+      "confidence": 0.727,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:00.2088454\u002B07:00",
+      "heard": "[unk] hello [unk]",
+      "confidence": 0.591,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:02.1041202\u002B07:00",
+      "heard": "[unk] hello",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:07.1989012\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:12.1987000\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:17.2039237\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.763,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:21.1050246\u002B07:00",
+      "heard": "store",
+      "confidence": 0.722,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:26.1022548\u002B07:00",
+      "heard": "hello",
+      "confidence": 0.575,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:31.2029857\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 1,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:36.2029465\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 0.932,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:41.2045619\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.895,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:46.2990995\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.811,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:51.3002751\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.723,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:55:56.4015238\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.834,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:01.3986884\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.631,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:04.3004879\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 0.8,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:10.5010355\u002B07:00",
+      "heard": "[unk] hello [unk]",
+      "confidence": 0.49,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:15.5985744\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.715,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:25.6102824\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.841,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:36.2055633\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.825,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:56:51.3020498\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.675,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:06.3990072\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.723,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:11.4991122\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.794,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:16.5082405\u002B07:00",
+      "heard": "[unk] [unk]",
+      "confidence": 0.736,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:21.6013055\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.743,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:26.6021870\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.735,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:32.4018322\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.594,
+      "isWakePhrase": false
+    },
+    {
+      "at": "2026-09-06T19:57:42.4170339\u002B07:00",
+      "heard": "[unk]",
+      "confidence": 0.713,
+      "isWakePhrase": false
+    }
+  ]
+}

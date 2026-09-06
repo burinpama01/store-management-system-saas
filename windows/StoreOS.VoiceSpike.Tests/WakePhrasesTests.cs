@@ -34,9 +34,12 @@ public class WakePhrasesTests
             Assert.NotEmpty(phrase.Pronunciations);
             foreach (var pronunciation in phrase.Pronunciations)
             {
-                foreach (var phoneme in pronunciation.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                foreach (var word in pronunciation)
                 {
-                    Assert.Contains(phoneme, SapiEnglishPhonemes);
+                    foreach (var phoneme in word.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        Assert.Contains(phoneme, SapiEnglishPhonemes);
+                    }
                 }
             }
         }
@@ -47,11 +50,14 @@ public class WakePhrasesTests
     {
         foreach (var phrase in WakePhrases.All)
         {
-            // ทุกแบบการออกเสียงต้องมีสระ "โอ" แล้วจบด้วยเสียง s — นี่คือส่วนที่กันคำทักทายทั่วไป
-            Assert.All(phrase.Pronunciations, p =>
+            Assert.All(phrase.Pronunciations, variant =>
             {
-                Assert.Contains("ow", p.Split(' '));
-                Assert.EndsWith(" s", p);
+                // ต้องแยกเป็นอย่างน้อยสองคำ — วลีทั้งก้อนใน token เดียวทำให้เสียงรบกวนปลุกได้
+                // (วัดจากห้องจริง: แบบ token เดียวปลุกผิด 10 ครั้งใน 4 นาที)
+                Assert.True(variant.Count >= 2, "การออกเสียงต้องแยกเป็นหลายคำ");
+                // ทุกแบบต้องมีสระ "โอ" และจบด้วยเสียง s — ส่วนที่กันคำทักทายทั่วไป
+                Assert.Contains("ow", string.Join(" ", variant).Split(' '));
+                Assert.EndsWith(" s", variant[^1]);
             });
             Assert.True(phrase.SpokenForms.Count > 0);
         }

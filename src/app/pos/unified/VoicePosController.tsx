@@ -21,7 +21,14 @@ import {
   type VoicePosFocusAction,
   type VoicePosTabId,
 } from "@/modules/voice-pos/navigation";
-import { applyVoiceCartIntent, isVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
+import {
+  applyVoiceCartIntent,
+  isVoiceCartIntent,
+  resolveVoiceProductPhrase,
+  type VoiceProductAlias,
+} from "@/modules/voice-pos/cart";
+import { buildMultiCommandBatch } from "@/modules/voice-pos/multi-command";
+import { parseVoiceCommand } from "@/modules/voice-pos/parser";
 import {
   consumeVoiceUndoToken,
   createVoiceUndoToken,
@@ -33,11 +40,13 @@ import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry"
 import { recordVoiceTelemetryAction } from "./voice-telemetry-actions";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
 import { createWindowsVoiceHost, type WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
+import type { VoiceActivationOrigin } from "@/modules/voice-pos/standby-policy";
 import {
   decideStandbyAction,
   describeProposal,
   isProposalValid,
   readStandbyVoiceReply,
+  STANDBY_PROPOSAL_WINDOW_MS,
   type StandbyProposal,
 } from "@/modules/voice-pos/standby-policy";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
@@ -59,8 +68,14 @@ import {
   type VoiceCommandQueue as VoiceQueue,
 } from "@/modules/voice-pos/command-queue";
 import { resolveAiVoiceCommand } from "@/modules/voice-pos/intent-resolver";
+import type { AiVoiceCommand } from "@/modules/voice-pos/ai-intent-schema";
 import { useVoiceCartApi, type VoiceCartApi } from "./voice-cart-bridge";
 import { VoiceCommandQueue } from "./VoiceCommandQueue";
+
+/** เทียบชื่อสินค้าแบบไม่สนช่องว่าง/ตัวพิมพ์ — ใช้ยืนยันว่า "ตรงทั้งชื่อ" ไม่ใช่แค่ขึ้นต้นตรง */
+function compactName(value: string): string {
+  return value.normalize("NFC").toLowerCase().replace(/\s+/g, "");
+}
 
 const FOCUS_UNAVAILABLE: Record<VoicePosFocusAction, string> = {
   search: "หน้านี้ยังไม่มีช่องค้นหา — เลือกจากแท็บบนหน้าจอได้",
@@ -326,7 +341,7 @@ export function VoicePosController({
           current = reduceVoiceQueue(current, { type: "await_input", note: resolved.note });
           publishQueue(current);
           return {
-            message: `${resolved.productName} — ${resolved.note} พูด "เลือก…" หรือกดบนหน้าจอ`,
+            message: `${resolved.productName} — ${resolved.note} พูด "เลือก…" ได้เลย`,
             listenAgain: true,
           };
         }
@@ -474,16 +489,26 @@ export function VoicePosController({
               // 100%) ไม่ต้องสั่งให้เลือกซ้ำ ไม่งั้นพนักงานไม่รู้ว่าจริง ๆ ขาดอะไร
               const missing = picker.missingRequiredGroups.join(" / ");
               const list = picker.pendingChoices.slice(0, 6).join(" / ");
+
+              // ไม่มีอะไรต้องเลือกแล้ว = การกด "เพิ่มในออร์เดอร์" ไม่ได้ให้ข้อมูลอะไรเพิ่ม
+              // ปิดให้เองเลย ไม่งั้นคำสั่งเสียงจบลงด้วยการบังคับให้เอามือมาแตะจอ
+              // ซึ่งขัดกับเหตุผลทั้งหมดของฟีเจอร์นี้ (คนมือไม่ว่าง)
               if (!missing && !picker.needsVariant) {
-                return `${picker.productName} เปิดหน้าต่างตัวเลือกให้แล้ว — กดเพิ่มในออร์เดอร์ได้เลย`;
+                const outcome = api.confirmPicker?.();
+                if (outcome?.ok) return outcome.message;
+                return {
+                  message: `${picker.productName} พร้อมเพิ่มแล้ว — พูดว่า "ยืนยัน" ได้เลย`,
+                  listenAgain: true,
+                };
               }
+
               const what = missing || "ตัวเลือก";
               // ขั้นถัดไปคือคำสั่งเสียงอีกคำเสมอ ("เลือก…") จึงเปิดไมค์ต่อให้เลย
               // แคชเชียร์มักถือถาด/แก้วอยู่ การให้กดปุ่มซ้ำคือแรงเสียดทานที่ตัดออกได้
               return {
                 message: list
                   ? `${picker.productName} ยังต้องเลือก ${what} — พูด "เลือก…" ได้เลย (${list})`
-                  : `${picker.productName} ยังต้องเลือก ${what} — เลือกบนหน้าจอได้เลย`,
+                  : `${picker.productName} ยังต้องเลือก ${what} — พูดชื่อตัวเลือกได้เลย`,
                 listenAgain: true,
               };
             }
@@ -556,6 +581,43 @@ export function VoicePosController({
    * deterministic ก่อนเสมอ; ส่ง AI เฉพาะ no_match ที่ไม่ได้อยู่ในบริบทเลือกตัวเลือก
    * (บริบทนั้น deterministic เดาได้ดีกว่าอยู่แล้ว และไม่ต้องเสียโควตา)
    */
+  /** เริ่มคิวใหม่จากชุดคำสั่งที่ตีความได้ (ใช้ทั้งทาง deterministic และทาง AI) */
+  const runCommandBatch = useCallback(
+    (commands: readonly AiVoiceCommand[]): string | VoiceResultResponse => {
+      queueSeqRef.current += 1;
+      const next = createVoiceQueue(`vq-${queueSeqRef.current}`, commands);
+      publishQueue(next);
+      return runQueue(next);
+    },
+    [publishQueue, runQueue],
+  );
+
+  /**
+   * ประโยคเดียวที่มีหลายเมนู ("เพิ่มลาเต้สองแก้วกับชาเย็นหนึ่งแก้ว")
+   *
+   * ต้องตรวจก่อนเส้นทาง AI เพราะประโยคแบบนี้ parser เดิม "ฟังออกเมนูแรก" เสมอ
+   * จึงไม่เคยตกไปถึงทางสำรอง AI เลย — เมนูที่เหลือหายไปเงียบ ๆ
+   * ตัดสินด้วยเมนูจริงบนจอ: ทุกท่อนต้องเป็นสินค้าที่มีอยู่ ไม่งั้นถือว่าเป็นคำสั่งเดียว
+   */
+  const detectCommandBatch = useCallback(
+    (text: string) => {
+      const products = getCartApi()?.getSnapshot().products ?? [];
+      if (products.length === 0) return null;
+      const resolve = (phrase: string) => resolveVoiceProductPhrase(phrase, products, productAliases ?? []);
+      return buildMultiCommandBatch(text, {
+        parse: (segment) => parseVoiceCommand(segment),
+        isKnownProduct: (phrase) => resolve(phrase).status !== "not_found",
+        isExactProduct: (phrase) => {
+          const resolution = resolve(phrase);
+          if (resolution.status !== "matched") return false;
+          // ตัวจับคู่จับแบบคำขึ้นต้น จึงต้องเทียบชื่อเต็มซ้ำอีกชั้น
+          return compactName(resolution.selection.product.name) === compactName(phrase);
+        },
+      });
+    },
+    [getCartApi, productAliases],
+  );
+
   /**
    * W6 — ลงมือทำตามข้อเสนอที่ค้างอยู่
    *
@@ -566,9 +628,10 @@ export function VoicePosController({
   const commitProposal = useCallback(
     (accepted: StandbyProposal): string | VoiceResultResponse | Promise<string | VoiceResultResponse> => {
       setProposal(null);
+      if (accepted.commands) return runCommandBatch(accepted.commands);
       return handleDeterministicResult(accepted.result, "");
     },
-    [handleDeterministicResult],
+    [handleDeterministicResult, runCommandBatch],
   );
 
   const cancelProposal = useCallback(() => {
@@ -581,6 +644,27 @@ export function VoicePosController({
    * ด่านสุดท้ายก่อนลงมือ — ตัดสินตาม "ที่มาของการเปิดไมค์"
    * กดปุ่มเอง = ทำเลยเหมือนเดิม; คำปลุก + คำสั่งที่แตะตะกร้า = ขอให้ยืนยันก่อน
    */
+  /**
+   * ฟีเจอร์นี้มีไว้ให้คนที่มือไม่ว่าง — ถ้าจบรอบแล้วต้องเอามือมาแตะจอ ก็ไม่ต่างจาก
+   * การกดปุ่มพูดตั้งแต่แรก จึงต้องเปิดไมค์ต่อทันทีหลังระบบพูดจบ เพื่อให้ผู้ใช้
+   * "ยืนยัน" หรือสั่งคำสั่งถัดไปด้วยเสียงได้เลย
+   *
+   * จำกัดจำนวนรอบต่อเนื่องด้วย MAX_AUTO_LISTEN_CHAIN ในตัวปุ่มอยู่แล้ว
+   * ไมค์จึงไม่เปิดค้างไม่รู้จบ และผู้ใช้เริ่มรอบใหม่ด้วยคำปลุกได้เสมอ
+   */
+  const keepListening = useCallback(
+    async (
+      outcome: string | VoiceResultResponse | Promise<string | VoiceResultResponse>,
+      origin: VoiceActivationOrigin,
+    ): Promise<string | VoiceResultResponse> => {
+      const resolved = await outcome;
+      if (origin !== "windows_standby") return resolved;
+      const response = typeof resolved === "string" ? { message: resolved } : resolved;
+      return { ...response, listenAgain: true };
+    },
+    [],
+  );
+
   const applyWithStandbyPolicy = useCallback(
     (
       result: VoiceParseResult,
@@ -589,11 +673,9 @@ export function VoicePosController({
     ): string | VoiceResultResponse | Promise<string | VoiceResultResponse> => {
       const decision = decideStandbyAction(result, context.origin, clock());
 
-      if (decision.action === "execute") return handleDeterministicResult(result, transcript);
-
-      if (decision.action === "block") {
-        // ข้อความเดิมของเส้นทาง deterministic ยังเหมาะสมที่สุด (บอกเหตุผลตาม resultCode)
-        return handleDeterministicResult(result, transcript);
+      // block ใช้ข้อความเดิมของเส้นทาง deterministic (บอกเหตุผลตาม resultCode)
+      if (decision.action === "execute" || decision.action === "block") {
+        return keepListening(handleDeterministicResult(result, transcript), context.origin);
       }
 
       const label = describeProposal(decision.result);
@@ -603,9 +685,10 @@ export function VoicePosController({
         sessionId: context.sessionId,
         label,
       });
-      return `รอการยืนยัน: ${label} — พูดว่า “ยืนยัน” หรือแตะปุ่มยืนยัน`;
+      // ต้องฟังต่อทันที ไม่งั้นคำว่า "ยืนยัน" ที่เราเพิ่งบอกให้พูด จะไม่มีใครได้ยิน
+      return keepListening(`รอการยืนยัน: ${label} — พูดว่า “ยืนยัน” ได้เลย`, context.origin);
     },
-    [clock, handleDeterministicResult],
+    [clock, handleDeterministicResult, keepListening],
   );
 
   const handleResult = useCallback(
@@ -620,14 +703,35 @@ export function VoicePosController({
       const active = isProposalValid(proposal, clock()) ? proposal : null;
       if (active) {
         const reply = readStandbyVoiceReply(text);
-        if (reply === "confirm") return commitProposal(active);
+        if (reply === "confirm") return keepListening(commitProposal(active), context.origin);
         if (reply === "cancel") {
           cancelProposal();
-          return "ยกเลิกแล้ว";
+          return keepListening("ยกเลิกแล้ว", context.origin);
         }
         // คำอื่นไม่นับเป็นคำตอบ — ปล่อยให้ไหลไปเป็นคำสั่งใหม่ตามปกติ
       }
       const pickerOpen = Boolean(getCartApi()?.getPicker?.());
+
+      // สั่งหลายเมนูรวดเดียว — ห้ามทำระหว่าง dialog ตัวเลือกเปิดอยู่ (ต้องจบทีละรายการ)
+      const batch = pickerOpen || text.length === 0 ? null : detectCommandBatch(text);
+      if (batch) {
+        // คำปลุกที่แตะตะกร้าต้องยืนยันก่อนเหมือนคำสั่งเดี่ยว — แต่ยืนยันครั้งเดียวได้ทั้งชุด
+        if (context.origin === "windows_standby") {
+          setProposal({
+            result,
+            commands: batch.commands,
+            expiresAt: clock() + STANDBY_PROPOSAL_WINDOW_MS,
+            sessionId: context.sessionId,
+            label: batch.label,
+          });
+          return keepListening(
+            `รอการยืนยัน: ${batch.label} — พูดว่า “ยืนยัน” ได้เลย`,
+            context.origin,
+          );
+        }
+        return runCommandBatch(batch.commands);
+      }
+
       const shouldTryAi =
         aiFallbackEnabled && voiceEnabled && result.resultCode === "no_match" && text.length > 0 && !pickerOpen;
 
@@ -671,12 +775,8 @@ export function VoicePosController({
           return AI_UNAVAILABLE_MESSAGE;
         case "ai_no_command":
           return "ยังไม่แน่ใจว่าหมายถึงเมนูไหน — ลองพูดชื่อเมนูให้ชัดอีกครั้ง";
-        case "ai": {
-          queueSeqRef.current += 1;
-          const next = createVoiceQueue(`vq-${queueSeqRef.current}`, outcome.envelope.commands);
-          publishQueue(next);
-          return runQueue(next);
-        }
+        case "ai":
+          return runCommandBatch(outcome.envelope.commands);
         default:
           return AI_UNAVAILABLE_MESSAGE;
       }
@@ -687,12 +787,13 @@ export function VoicePosController({
       cancelProposal,
       clock,
       commitProposal,
+      detectCommandBatch,
       getCartApi,
+      keepListening,
       proposal,
-      publishQueue,
       reportVoiceTelemetry,
       requestAiIntent,
-      runQueue,
+      runCommandBatch,
       voiceEnabled,
     ],
   );

@@ -352,6 +352,12 @@ public sealed class MicrophoneCoordinator : IAsyncDisposable
             await StopEngineLockedAsync(CancellationToken.None);
             var message = _session.OnWakeAccepted(e.PhraseId, e.Confidence, _clock(), e.DetectedAt);
             State = MicOwnerState.Handoff;
+
+            // ต้องบันทึกทุกครั้งที่ปลุก: นี่คือข้อมูลชุดเดียวที่จะได้จากเครื่องร้านจริง
+            // (เครื่องหน้าร้านไม่มีเครื่องมือวัดของนักพัฒนา) ถ้าไม่บันทึกก็ตอบไม่ได้ว่า
+            // พูดกี่ครั้งได้ยินกี่ครั้ง — บันทึกแค่รหัสคำปลุกกับความมั่นใจ ไม่มีคำพูด
+            _log("info", "voice_wake_detected", $"ได้ยินคำปลุก {e.PhraseId} ({e.Confidence:0.00})");
+
             MessageForWeb?.Invoke(this, message);
         }
         catch (Exception ex)

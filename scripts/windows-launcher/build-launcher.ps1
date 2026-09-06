@@ -79,6 +79,31 @@ if ($FrameworkDependent) {
 & $dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "publish ไม่สำเร็จ" }
 
+# ---- ชุดข้อมูลเสียงของ Vosk (คำปลุก) ----
+# ฝังมากับชุดติดตั้งเลย เพื่อให้ร้านติดตั้งจบในครั้งเดียวโดยไม่ต้องพึ่งเน็ตตอนติดตั้ง
+# เก็บสำเนาไว้ที่เครื่อง build (ไม่เข้า git เพราะ 40 MB) แล้วคัดลอกลง stage ทุกครั้ง
+$modelName  = "vosk-model-small-en-us-0.15"
+$modelCache = Join-Path $env:LOCALAPPDATA "StoreOSBuild\$modelName"
+if (-not (Test-Path $modelCache)) {
+  Write-Host "`n== ดาวน์โหลดชุดข้อมูลเสียง (ครั้งแรกเท่านั้น ~40 MB)" -ForegroundColor Cyan
+  $zip = Join-Path $env:TEMP "$modelName.zip"
+  Invoke-WebRequest -Uri "https://alphacephei.com/vosk/models/$modelName.zip" -OutFile $zip
+  $cacheRoot = Split-Path $modelCache
+  New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+  Expand-Archive -Path $zip -DestinationPath $cacheRoot -Force
+  Remove-Item $zip -Force
+}
+Write-Host "== ใส่ชุดข้อมูลเสียงคำปลุก" -ForegroundColor Cyan
+$modelDest = Join-Path $appDir "vosk-model"
+Copy-Item $modelCache $modelDest -Recurse -Force
+# ที่มาและสัญญาอนุญาตของโมเดล — ต้องแนบไปกับไฟล์ที่แจกจ่าย
+Set-Content -Path (Join-Path $modelDest "SOURCE.txt") -Encoding UTF8 -Value @"
+ชุดข้อมูลเสียง: $modelName
+ที่มา: https://alphacephei.com/vosk/models
+สัญญาอนุญาต: Apache-2.0 (Vosk / Alpha Cephei)
+ใช้สำหรับตรวจจับคำปลุก "Hello StoreOS" บนเครื่องเท่านั้น ไม่มีการส่งเสียงออกนอกเครื่อง
+"@
+
 # ตัวติดตั้งฝั่งร้านใช้ไฟล์หมายนี้ตัดสินว่าต้องลง .NET Desktop Runtime ให้หรือไม่
 if ($FrameworkDependent) {
   Set-Content -Path (Join-Path $StageDir "REQUIRES_DOTNET_RUNTIME") -Value "1" -Encoding UTF8
