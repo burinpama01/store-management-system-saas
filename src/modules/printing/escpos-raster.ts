@@ -11,23 +11,60 @@ const GS = 0x1d;
 const MAX_RASTER_BAND_HEIGHT = 240;
 
 /**
+ * แบ่งภาพเป็นแถบ GS v 0 โดยพยายามให้รอยต่อของแถบตกอยู่ใน "ช่องว่างระหว่างบรรทัด"
+ * ที่ผู้เรียกบอกมา (`breaks` = ตำแหน่ง y ที่ตัดได้)
+ *
+ * เครื่องพิมพ์ความร้อนจะหยุดมอเตอร์ชั่วขณะระหว่างแถบ ถ้ารอยต่อไปตกกลางบรรทัด
+ * ตัวหนังสือจะขาดครึ่งตัวตรงรอยนั้น — อาการ "พิมพ์ไม่ต่อเนื่อง ตัวหนังสือขาด"
+ * ที่หน้าร้านเจอ. เมื่อไม่มีจุดตัดที่ปลอดภัยในระยะที่แถบยาวได้ ก็ตัดตามความยาวสูงสุด
+ */
+export function planRasterBands(height: number, breaks: number[] = []): Array<{ top: number; height: number }> {
+  const safe = Array.from(new Set(breaks))
+    .filter((value) => Number.isInteger(value) && value > 0 && value < height)
+    .sort((a, b) => a - b);
+  const bands: Array<{ top: number; height: number }> = [];
+  let top = 0;
+  let cursor = 0;
+  while (top < height) {
+    const limit = Math.min(top + MAX_RASTER_BAND_HEIGHT, height);
+    let end = limit;
+    if (limit < height) {
+      while (cursor < safe.length && safe[cursor] <= top) cursor += 1;
+      let best = -1;
+      for (let i = cursor; i < safe.length && safe[i] <= limit; i += 1) best = safe[i];
+      if (best > top) end = best;
+    }
+    bands.push({ top, height: end - top });
+    top = end;
+  }
+  return bands;
+}
+
+/**
  * Packs a 1-byte-per-pixel monochrome bitmap (1 = black dot, 0 = white) into an
  * ESC/POS GS v 0 raster bit-image command. width must match the row stride of
- * `pixels` (length = width * height).
+ * `pixels` (length = width * height). `breaks` are y positions where splitting
+ * the image into a new band is safe (see planRasterBands).
  */
-export function packEscPosRaster(width: number, height: number, pixels: Uint8Array): Uint8Array {
+export function packEscPosRaster(
+  width: number,
+  height: number,
+  pixels: Uint8Array,
+  breaks: number[] = [],
+): Uint8Array {
   const bytesPerRow = Math.ceil(width / 8);
+  const bands = planRasterBands(height, breaks);
   let totalLength = 0;
-  for (let y = 0; y < height; y += MAX_RASTER_BAND_HEIGHT) {
-    const bandHeight = Math.min(MAX_RASTER_BAND_HEIGHT, height - y);
-    totalLength += 8 + bytesPerRow * bandHeight;
+  for (const band of bands) {
+    totalLength += 8 + bytesPerRow * band.height;
   }
 
   const body = new Uint8Array(totalLength);
   let p = 0;
 
-  for (let bandTop = 0; bandTop < height; bandTop += MAX_RASTER_BAND_HEIGHT) {
-    const bandHeight = Math.min(MAX_RASTER_BAND_HEIGHT, height - bandTop);
+  for (const band of bands) {
+    const bandTop = band.top;
+    const bandHeight = band.height;
 
     // GS v 0 m xL xH yL yH. Keep yH zero because some mobile printers ignore
     // it and print the remaining raster bytes as garbage at the receipt tail.

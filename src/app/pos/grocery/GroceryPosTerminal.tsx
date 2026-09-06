@@ -664,7 +664,7 @@ export function GroceryPosTerminal({
     });
   }
 
-  async function handlePrintReceipt(orderArg?: Order) {
+  async function handlePrintReceipt(orderArg?: Order, options: { reprint?: boolean } = {}) {
     const order = orderArg ?? checkoutOrder;
     if (!order || order.status !== "paid") {
       setCheckoutMessage("ต้องชำระเงินก่อนพิมพ์ใบเสร็จ");
@@ -690,6 +690,8 @@ export function GroceryPosTerminal({
       ...buildReceiptData(order, settings),
       storeName: settings.storeName || storeName,
       showQrPayment: false,
+      // ใบซ้ำต้องมีป้าย REPRINT บนกระดาษ ไม่งั้นแยกจากใบจริงไม่ออก
+      isReprint: options.reprint === true,
       loyaltyPointsEarned: order.loyaltyPointsEarned,
       loyaltyPointsBalance: order.loyaltyPointsBalance,
       printedAt: new Date().toISOString(),
@@ -1250,7 +1252,7 @@ export function GroceryPosTerminal({
                   <Button
                     loading={isPrintingReceipt}
                     disabled={order.status !== "paid"}
-                    onClick={() => handlePrintReceipt(order)}
+                    onClick={() => handlePrintReceipt(order, { reprint: true })}
                   >
                     พิมพ์ซ้ำ
                   </Button>

@@ -127,12 +127,21 @@ export interface EscPosReceiptInput {
   discount: number;
   discountNote?: string;
   total: number;
-  payments: { method: string; amount: number; receivedAmount?: number; changeAmount?: number }[];
+  payments: {
+    method: string;
+    amount: number;
+    receivedAmount?: number;
+    changeAmount?: number;
+    /** ช่องทางเดิมก่อนถูกแก้ (บิลที่แก้ช่องทางชำระย้อนหลัง) */
+    originalMethod?: string;
+  }[];
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
   footerText?: string;
   paperWidth: "58mm" | "80mm";
   printedAt: string;
+  /** ใบนี้เป็นการพิมพ์ซ้ำ — ต้องมีป้ายบอกบนกระดาษให้แยกจากใบจริงได้ */
+  isReprint?: boolean;
 }
 
 export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
@@ -158,6 +167,13 @@ export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
   if (receipt.address) push(encodeText(receipt.address + "\n"));
   if (receipt.phone) push(encodeText("Tel: " + receipt.phone + "\n"));
   if (receipt.headerText) push(encodeText(receipt.headerText + "\n"));
+
+  if (receipt.isReprint) {
+    // ASCII ล้วนเพื่อให้อ่านออกทุกเครื่อง ไม่ต้องพึ่ง code page ภาษาไทย
+    push(CMD.BOLD_ON);
+    push(encodeText("*** REPRINT ***\n"));
+    push(CMD.BOLD_OFF);
+  }
 
   push(CMD.ALIGN_LEFT);
   push(divider(paperWidth));
@@ -196,6 +212,12 @@ export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
     };
     const displayAmount = payment.method === "cash" && payment.receivedAmount !== undefined ? payment.receivedAmount : payment.amount;
     push(summaryLine(methodLabel[payment.method] ?? payment.method, formatPrice(displayAmount), paperWidth));
+    // บิลที่แก้ช่องทางชำระย้อนหลัง — ASCII ล้วนเพื่อให้อ่านออกทุกเครื่อง
+    if (payment.originalMethod && payment.originalMethod !== payment.method) {
+      const from = methodLabel[payment.originalMethod] ?? payment.originalMethod;
+      const to = methodLabel[payment.method] ?? payment.method;
+      push(encodeText(`* Payment changed: ${from} -> ${to}\n`));
+    }
     if (payment.method !== "cash" && payment.receivedAmount !== undefined) {
       push(summaryLine("  Received", formatPrice(payment.receivedAmount), paperWidth));
     }

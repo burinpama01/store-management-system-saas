@@ -512,6 +512,31 @@ export async function resolveSettlementPrintIntent(
  *     — collision จากการกดพร้อมกันแก้ด้วยการนับใหม่ (unique index เป็นผู้ตัดสิน)
  *   - เขียน audit row (append-only) ทุกครั้ง — request_id = คีย์ของงานพิมพ์ซ้ำ
  */
+/**
+ * เติมป้าย "*** REPRINT ***" ไว้หัวงานพิมพ์ซ้ำ โดยไม่แตะไบต์ใบเสร็จเดิมแม้แต่ไบต์เดียว
+ *
+ * unified POS พิมพ์ซ้ำด้วยการเล่นซ้ำ payload เดิมเป๊ะ ๆ (ตั้งใจ: ใบซ้ำต้องเหมือนใบจริง
+ * และ audit ตรวจย้อนได้ว่าเป็นไบต์ชุดเดียวกัน) ฝั่งเซิร์ฟเวอร์จึง rebuild ใบใหม่ไม่ได้
+ * เพราะใบเสร็จถูก render เป็นภาพในเบราว์เซอร์ — ทางที่เหลือคือแปะป้ายเป็นข้อความ
+ * ASCII ไว้ข้างหน้า ซึ่งเครื่องพิมพ์ทุกตัวอ่านออกโดยไม่ต้องพึ่ง code page ภาษาไทย
+ */
+export function prependReprintBanner(payloadB64: string): string {
+  const label = Array.from("*** REPRINT ***\n", (char) => char.charCodeAt(0));
+  const banner = Uint8Array.from([
+    ...CMD.INIT,
+    ...CMD.ALIGN_CENTER,
+    ...CMD.BOLD_ON,
+    ...CMD.DOUBLE_HEIGHT,
+    ...label,
+    ...CMD.NORMAL_SIZE,
+    ...CMD.BOLD_OFF,
+    ...CMD.ALIGN_LEFT,
+    ...CMD.LF,
+  ]);
+  const original = Buffer.from(payloadB64, "base64");
+  return Buffer.concat([Buffer.from(banner), original]).toString("base64");
+}
+
 export async function reprintUnifiedPosReceipt(input: {
   organizationId: string;
   storeId: string;
@@ -571,7 +596,8 @@ export async function reprintUnifiedPosReceipt(input: {
       host: originalRow.target_host,
       port: originalRow.target_port,
       device: originalRow.target_device,
-      payloadB64: originalRow.payload_b64, // พิมพ์ซ้ำ = ข้อมูลใบเสร็จเดิมเป๊ะ (ไม่ rebuild)
+      // พิมพ์ซ้ำ = ไบต์ใบเสร็จเดิมเป๊ะ (ไม่ rebuild) + ป้าย REPRINT นำหน้าเท่านั้น
+      payloadB64: prependReprintBanner(originalRow.payload_b64),
       sourceKey: reprintKey,
       jobKind: "receipt",
     });

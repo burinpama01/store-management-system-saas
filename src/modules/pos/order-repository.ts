@@ -24,6 +24,9 @@ function mapPayment(row: PaymentRow): Payment {
     changeAmount: row.change_amount ?? undefined,
     processedAt: row.processed_at,
     processedByUserId: row.processed_by_user_id,
+    originalMethod: row.original_method ?? undefined,
+    methodChangedAt: row.method_changed_at ?? undefined,
+    methodChangeReason: row.method_change_reason ?? undefined,
   };
 }
 
@@ -298,6 +301,37 @@ export async function voidOrder(orderId: string, storeId: string, userId: string
   });
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
+}
+
+/**
+ * แก้ช่องทางชำระของบิลที่จ่ายแล้ว (พนักงานลงผิด เช่น ลูกค้าโอนแต่กดเงินสด)
+ *
+ * ทุกกติกา — สิทธิ์, ต้องอยู่ในรอบเงินสดที่เปิดอยู่, ห้ามบิลแยกจ่าย, การปรับเงินสด
+ * ในลิ้นชัก — อยู่ใน RPC ทั้งหมด เพราะต้องเกิดในทรานแซกชันเดียวกับการแก้ payments
+ */
+export async function changeOrderPaymentMethod(input: {
+  orderId: string;
+  storeId: string;
+  actorUserId: string;
+  method: Payment["method"];
+  reason?: string | null;
+  receivedAmount?: number | null;
+  changeAmount?: number | null;
+  reference?: string | null;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("change_pos_order_payment_method", {
+    p_store_id: input.storeId,
+    p_order_id: input.orderId,
+    p_method: input.method,
+    p_actor_user_id: input.actorUserId,
+    p_reason: input.reason ?? null,
+    p_received_amount: input.receivedAmount ?? null,
+    p_change_amount: input.changeAmount ?? null,
+    p_reference: input.reference ?? null,
+  });
+  if (error) return { ok: false as const, error: mapError(error) };
+  return { ok: true as const, error: null };
 }
 
 export async function getOrder(orderId: string) {

@@ -25,6 +25,11 @@ export interface ReceiptPayment {
   amount: number;
   receivedAmount?: number;
   changeAmount?: number;
+  /**
+   * ช่องทางที่ลงไว้ครั้งแรกก่อนถูกแก้ (เช่น กดเงินสดแล้วมาแก้เป็นโอน)
+   * ใบเสร็จต้องบอกให้เห็น ไม่งั้นใบที่แก้แล้วกับใบที่ลงถูกตั้งแต่แรกแยกกันไม่ออก
+   */
+  originalMethod?: string;
 }
 
 export interface ReceiptData {
@@ -80,6 +85,11 @@ export interface ReceiptData {
   paperWidth: "58mm" | "80mm";
   printCopies?: number;
   printedAt: string;
+  /**
+   * ใบนี้เป็นการพิมพ์ซ้ำ ไม่ใช่ใบแรกที่ออกตอนจ่ายเงิน — ต้องมีป้ายบอกบนกระดาษ
+   * ไม่งั้นใบซ้ำกับใบจริงแยกกันไม่ออก (ลูกค้าเอาไปเคลม/ลงบัญชีซ้ำได้)
+   */
+  isReprint?: boolean;
 }
 
 export function normalizePrintCopies(printCopies?: number): number {
@@ -132,6 +142,7 @@ export function buildReceiptData(
       amount: p.amount,
       receivedAmount: p.receivedAmount,
       changeAmount: p.changeAmount,
+      originalMethod: p.originalMethod,
     })),
     paymentStatus: "paid",
     vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,

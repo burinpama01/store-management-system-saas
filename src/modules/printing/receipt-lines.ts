@@ -164,6 +164,10 @@ function buildTableQrLines(data: ReceiptData): { lines: ReceiptLine[]; cols: num
   lines.push({ text: data.storeName, align: "center", bold: true });
   lines.push({ text: "ใบเปิดโต๊ะ", align: "center" });
   lines.push({ text: div });
+  if (data.isReprint) {
+    lines.push({ text: "*** พิมพ์ซ้ำ / REPRINT ***", align: "center", bold: true });
+    lines.push({ text: div });
+  }
   if (data.tableNumber) lines.push({ text: `โต๊ะ ${data.tableNumber}`, align: "center", bold: true });
   if (data.tableValidUntil) {
     lines.push({
@@ -199,6 +203,11 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   if (data.showTaxId && data.taxId) lines.push({ text: `เลขผู้เสียภาษี: ${data.taxId}`, align: "center" });
   pushWrapped(lines, data.headerText, cols, { align: "center" });
   lines.push({ text: div });
+  // ใบพิมพ์ซ้ำต้องแยกออกจากใบจริงด้วยตาเปล่า — ทั้งภาษาไทยและ REPRINT ให้คนอ่านออกทั้งคู่
+  if (data.isReprint) {
+    lines.push({ text: "*** พิมพ์ซ้ำ / REPRINT ***", align: "center", bold: true });
+    lines.push({ text: div });
+  }
   if (data.paymentStatus === "unpaid") {
     // ใบแจ้งยอดก่อนชำระ (pre-bill) — ระบุชัดว่ายังไม่ใช่ใบเสร็จรับเงิน
     lines.push({ text: "ใบแจ้งยอด (ยังไม่ชำระเงิน)", align: "center", bold: true });
@@ -253,6 +262,15 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
   for (const p of data.payments) {
     const displayAmount = p.method === "cash" && p.receivedAmount !== undefined ? p.receivedAmount : p.amount;
     lines.push({ text: padLine(METHOD_LABELS[p.method] ?? p.method, priceStr(displayAmount), cols) });
+    // บิลที่แก้ช่องทางชำระย้อนหลังต้องบอกบนกระดาษว่าเดิมลงเป็นอะไร ไม่งั้นใบที่แก้แล้ว
+    // กับใบที่ลงถูกตั้งแต่แรกแยกกันไม่ออกตอนตรวจเงิน
+    if (p.originalMethod && p.originalMethod !== p.method) {
+      pushWrapped(
+        lines,
+        `* แก้ช่องทางชำระจาก ${METHOD_LABELS[p.originalMethod] ?? p.originalMethod} เป็น ${METHOD_LABELS[p.method] ?? p.method}`,
+        cols,
+      );
+    }
     if (p.method !== "cash" && p.receivedAmount !== undefined) {
       lines.push({ text: padLine("  รับเงิน", priceStr(p.receivedAmount), cols) });
     }
