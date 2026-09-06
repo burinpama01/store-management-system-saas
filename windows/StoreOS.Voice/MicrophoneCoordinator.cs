@@ -225,6 +225,40 @@ public sealed class MicrophoneCoordinator : IAsyncDisposable
     /// <summary>ยังมีชุดรู้จำเสียงให้ใช้อยู่ไหม</summary>
     private static bool DefaultHealthProbe() => WakeGrammar.PickEnglishRecognizer() is not null;
 
+    /// <summary>
+    /// สรุปสถานะให้หน้าเว็บแสดงบนหน้าตั้งค่า (W8)
+    /// ไม่มีรหัสอุปกรณ์ดิบ ไม่มีเส้นทางไฟล์ ไม่มีชื่อเครื่อง — แค่พอให้รู้ว่าใช้ได้ไหมและติดอะไร
+    /// </summary>
+    public VoiceHealthMessage BuildHealth(string hostVersion, long seq)
+    {
+        var recognizer = WakeGrammar.PickEnglishRecognizer();
+        return new VoiceHealthMessage(
+            StandbyContract.Version,
+            StandbyContract.Health,
+            seq,
+            DateTimeOffset.Now.ToString("o"),
+            State switch
+            {
+                MicOwnerState.Standby => "standby",
+                MicOwnerState.Handoff or MicOwnerState.Listening => "listening",
+                MicOwnerState.Degraded => "degraded",
+                _ => "off",
+            },
+            hostVersion,
+            recognizer?.Name,
+            recognizer?.Culture,
+            MicrophoneName(),
+            LastFault,
+            (_engine as SystemSpeechWakeEngine)?.PronunciationGrammarLoaded ?? true);
+    }
+
+    /// <summary>
+    /// ชื่อไมโครโฟนที่คนอ่านออก — System.Speech ไม่บอกชื่ออุปกรณ์ที่ใช้อยู่
+    /// จึงรายงานได้แค่ว่า "ใช้ตัวที่ Windows ตั้งเป็นค่าเริ่มต้น" ตามความจริง
+    /// ไม่เดาชื่อจากที่อื่นเพราะจะทำให้ผู้ใช้ไล่ปัญหาผิดตัว
+    /// </summary>
+    private string? MicrophoneName() => State == MicOwnerState.Degraded ? null : "ไมโครโฟนเริ่มต้นของ Windows";
+
     private async Task StartEngineLockedAsync(CancellationToken ct)
     {
         if (_engine is not null) return;

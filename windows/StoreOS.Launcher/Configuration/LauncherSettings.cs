@@ -74,6 +74,28 @@ public sealed class LauncherSettings
         return new LauncherSettings().PosUrl;
     }
 
+    /// <summary>เส้นทางไฟล์ตั้งค่าของเครื่องนี้</summary>
+    public static string FilePath(string localAppData) =>
+        Path.Combine(localAppData, "StoreOSLauncher", "launcher.json");
+
+    /// <summary>
+    /// บันทึกแบบ atomic — เขียนไฟล์ชั่วคราวก่อนแล้วค่อยสลับ
+    ///
+    /// ถ้าเขียนทับตรง ๆ แล้วไฟดับกลางทาง ไฟล์จะเหลือครึ่งเดียวและ Launcher จะอ่านไม่ออก
+    /// รอบหน้า = ผู้ใช้เสียค่าตั้งทั้งหมดโดยไม่รู้ตัว (Load จะ fallback ไปค่าเริ่มต้นเงียบ ๆ)
+    /// </summary>
+    public void Save(string localAppData)
+    {
+        var path = FilePath(localAppData);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, json);
+        if (File.Exists(path)) File.Replace(temp, path, null);
+        else File.Move(temp, path);
+    }
+
     public static LauncherSettings Load()
     {
         try

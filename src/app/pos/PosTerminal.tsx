@@ -82,6 +82,8 @@ type ReceiptOrder = {
   loyaltyPointsBalance?: number;
   /** QR รับแต้มท้ายใบเสร็จ (เฉพาะบิลที่ยังไม่ผูกลูกค้า) — ดึงหลังจ่ายเงินสำเร็จ */
   loyaltyClaim?: { url: string; code: string; points: number; expiresAt: string };
+  /** true = กำลังรอ QR รับแต้มจาก server อยู่ (พิมพ์อัตโนมัติต้องรอก่อน ไม่งั้นได้ใบที่ไม่มี QR) */
+  loyaltyClaimPending?: boolean;
 };
 
 const EMPTY_TICKET_DRAFT: TicketDraft = {
@@ -2262,6 +2264,9 @@ function PaymentPanel({
  * is open in multiple tabs/windows on the same device (localStorage is shared).
  * Returns true only for the tab that wins the claim.
  */
+/** รอ QR รับแต้มนานสุดก่อนพิมพ์อัตโนมัติ — เลยจากนี้ถือว่าไม่มี แล้วพิมพ์ไปเลย */
+const AUTO_PRINT_CLAIM_WAIT_MS = 4000;
+
 function claimReceiptAutoPrint(orderNumber: string): boolean {
   if (typeof window === "undefined") return true;
   try {
@@ -2353,10 +2358,17 @@ function ReceiptPanel({
         loyaltyPointsBalance: order.loyaltyPointsBalance,
         // QR รับแต้ม — มีเฉพาะบิลที่ยังไม่ผูกลูกค้า
         loyaltyClaim: order.loyaltyClaim,
+        vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
         footerText: settings.footerText,
         headerText: settings.headerText,
         showQrPayment: false,
         promptpayId: settings.promptpayId,
+        // รูปที่ร้านอัปโหลดไว้ (โลโก้หัวใบ / QR ท้ายใบ) ต้องส่งไปกับข้อมูลใบเสร็จด้วย
+        // ไม่งั้น renderer ไม่มีอะไรให้วาด — ใบเสร็จจาก POS จึงออกมาไม่มีรูปทั้งที่ตั้งค่าไว้แล้ว
+        logoUrl: settings.logoUrl,
+        footerImageUrl: settings.footerImageUrl,
+        footerImageLabel: settings.footerImageLabel,
+        hideFooterImageWithSystemQr: settings.hideFooterImageWithSystemQr,
         paperWidth: settings.paperWidth,
         printCopies: settings.printCopies,
         printedAt: new Date().toISOString(),
@@ -2400,18 +2412,28 @@ function ReceiptPanel({
     }
   }
 
+  // QR รับแต้มถูกขอจาก server แบบไม่บล็อกหลังจ่ายเงิน ถ้าพิมพ์ทันทีใบเสร็จจะออกมา
+  // "ไม่มี QR" ทั้งที่ข้อความชวนสแกนพิมพ์ไปแล้ว จึงรอ QR ก่อน แต่รอไม่เกินเวลานี้
+  // เพื่อไม่ให้เน็ตช้าหรือ server ล่มทำให้ใบเสร็จไม่ออกเลย
+  const [claimWaitElapsed, setClaimWaitElapsed] = useState(false);
+  useEffect(() => {
+    if (!order.loyaltyClaimPending) return;
+    const timer = setTimeout(() => setClaimWaitElapsed(true), AUTO_PRINT_CLAIM_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [order.loyaltyClaimPending]);
+
   // Auto-print the receipt once when the store has it enabled (fires on the
   // payment-success receipt screen). The ref guards against a double print.
   useEffect(() => {
-    if (receiptSettings?.autoPrintReceipt && !autoPrintedRef.current) {
-      autoPrintedRef.current = true;
-      // Only auto-print if another tab/window on this device hasn't already.
-      // handlePrint is fire-and-forget async — its setState runs off-cycle.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (claimReceiptAutoPrint(order.orderNumber)) void handlePrint();
-    }
+    if (!receiptSettings?.autoPrintReceipt || autoPrintedRef.current) return;
+    if (order.loyaltyClaimPending && !claimWaitElapsed) return;
+    autoPrintedRef.current = true;
+    // Only auto-print if another tab/window on this device hasn't already.
+    // handlePrint is fire-and-forget async — its setState runs off-cycle.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (claimReceiptAutoPrint(order.orderNumber)) void handlePrint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [order.loyaltyClaimPending, claimWaitElapsed]);
 
   return (
     <div className="flex flex-col h-full">
@@ -3325,6 +3347,8 @@ export function PosTerminal({
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned,
         loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance,
+        // บิลที่ยังไม่ผูกลูกค้าจะมี QR รับแต้มตามมาทีหลัง — บอกใบเสร็จให้รอก่อนพิมพ์อัตโนมัติ
+        loyaltyClaimPending: !selectedCustomer && Boolean(paidOrder?.id),
       });
       // Receipt must appear immediately after payment — ticket cleanup runs in the
       // background and must never delay the phase switch.
@@ -3336,14 +3360,12 @@ export function PosTerminal({
       if (!selectedCustomer && paidOrder?.id) {
         const claimOrderId = paidOrder.id;
         void (async () => {
-          const claimResult = await getReceiptLoyaltyClaimAction(claimOrderId);
-          if (claimResult.claim) {
-            setReceipt((current) =>
-              current && current.orderNumber === order.orderNumber
-                ? { ...current, loyaltyClaim: claimResult.claim ?? undefined }
-                : current,
-            );
-          }
+          const claimResult = await getReceiptLoyaltyClaimAction(claimOrderId).catch(() => null);
+          setReceipt((current) =>
+            current && current.orderNumber === order.orderNumber
+              ? { ...current, loyaltyClaim: claimResult?.claim ?? undefined, loyaltyClaimPending: false }
+              : current,
+          );
         })();
       }
       if (activeTicketId) {
@@ -3448,9 +3470,15 @@ export function PosTerminal({
       paymentStatus: "paid" as const,
       loyaltyPointsEarned: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsEarned : undefined,
       loyaltyPointsBalance: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsBalance : undefined,
+      vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
       footerText: settings.footerText,
       showQrPayment: false,
       promptpayId: settings.promptpayId,
+      // พิมพ์ซ้ำต้องได้ใบเหมือนใบแรก รวมถึงโลโก้หัวใบและรูป QR ท้ายใบที่ร้านอัปโหลดไว้
+      logoUrl: settings.logoUrl,
+      footerImageUrl: settings.footerImageUrl,
+      footerImageLabel: settings.footerImageLabel,
+      hideFooterImageWithSystemQr: settings.hideFooterImageWithSystemQr,
       paperWidth: settings.paperWidth,
       printCopies: settings.printCopies,
       printedAt: new Date().toISOString(),

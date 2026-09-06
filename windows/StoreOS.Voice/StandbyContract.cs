@@ -27,6 +27,10 @@ public static class StandbyContract
     public const string SessionExtended = "command.sessionExtended";
     /// <summary>web → native: จบรอบแล้ว คืนไมค์ให้ native</summary>
     public const string SessionEnded = "command.sessionEnded";
+    /// <summary>web → native: ขอสถานะล่าสุด (ปุ่ม "ตรวจอีกครั้ง" บนหน้าตั้งค่า)</summary>
+    public const string RequestHealth = "command.requestHealth";
+    /// <summary>native → web: สถานะของฝั่งเครื่อง (เวอร์ชัน/ชุดรู้จำเสียง/ไมค์/ปัญหาล่าสุด)</summary>
+    public const string Health = "host.health";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -34,6 +38,8 @@ public static class StandbyContract
     };
 
     public static string Serialize(StandbyMessage message) => JsonSerializer.Serialize(message, JsonOptions);
+
+    public static string Serialize(VoiceHealthMessage message) => JsonSerializer.Serialize(message, JsonOptions);
 }
 
 /// <summary>ข้อความหนึ่งใบบนสาย native ↔ web</summary>
@@ -49,3 +55,28 @@ public sealed record StandbyMessage(
     [property: JsonPropertyName("confidence")] double? Confidence = null,
     /// <summary>เหตุผลที่จบ/ตกไป เช่น watchdog_timeout, user_activation_missing</summary>
     [property: JsonPropertyName("reason")] string? Reason = null);
+
+/// <summary>
+/// สถานะฝั่งเครื่องที่ส่งให้หน้าเว็บแสดงบนหน้าตั้งค่า (แผน v1 W8)
+///
+/// สิ่งที่ตั้งใจ<b>ไม่</b>ส่ง: รหัสอุปกรณ์ดิบ, เส้นทางไฟล์, โทเค็น, ชื่อเครื่อง
+/// ผู้ใช้ต้องการรู้แค่ "ใช้ได้ไหม ถ้าไม่ได้เพราะอะไร และต้องทำอะไรต่อ"
+/// รหัสปัญหาเป็น enum ปิด จึงแปลเป็นคำแนะนำได้โดยไม่ต้องส่งข้อความ error ดิบไปหน้าเว็บ
+/// </summary>
+public sealed record VoiceHealthMessage(
+    [property: JsonPropertyName("v")] int V,
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("seq")] long Seq,
+    [property: JsonPropertyName("at")] string At,
+    /// <summary>สถานะปัจจุบัน: off / standby / listening / degraded</summary>
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("hostVersion")] string HostVersion,
+    /// <summary>ชื่อชุดรู้จำเสียงที่ใช้อยู่ (null = ไม่มีให้ใช้บนเครื่องนี้)</summary>
+    [property: JsonPropertyName("recognizer")] string? Recognizer = null,
+    [property: JsonPropertyName("recognizerCulture")] string? RecognizerCulture = null,
+    /// <summary>ชื่อไมโครโฟนที่คนอ่านออก ไม่ใช่รหัสอุปกรณ์</summary>
+    [property: JsonPropertyName("microphone")] string? Microphone = null,
+    /// <summary>รหัสปัญหาล่าสุด (enum ปิด) — null = ปกติ</summary>
+    [property: JsonPropertyName("faultCode")] string? FaultCode = null,
+    /// <summary>ไวยากรณ์แบบมีหน่วยเสียงใช้ได้ไหม (false = จับคำไทยได้แย่ลง)</summary>
+    [property: JsonPropertyName("pronunciationGrammar")] bool PronunciationGrammar = true);

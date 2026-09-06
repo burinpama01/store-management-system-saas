@@ -193,6 +193,8 @@ export function VoiceCommandButton({
    * ตอนร้านเสียงดังหรือมีอีเวนต์ พนักงานต้องปิดได้ในหนึ่งจังหวะโดยไม่ต้องไปหน้าตั้งค่า
    */
   const [standbyPaused, setStandbyPaused] = useState(false);
+  /** สถานะจริงจากเครื่อง (W8) — null = ยังไม่เคยรายงานมา */
+  const [hostDegraded, setHostDegraded] = useState(false);
 
   // unmount = ยกเลิก session ที่ค้าง และล้าง transcript ออกจากหน่วยความจำ
   useEffect(() => {
@@ -339,6 +341,13 @@ export function VoiceCommandButton({
    * ของเบราว์เซอร์ — เราเรียกเส้นทางเดียวกับตอนกดปุ่มโดยตรง ถ้าเบราว์เซอร์ปฏิเสธ
    * (permission_denied) ก็บอกให้ผู้ใช้แตะเอง ไม่พยายามหลบด่านนั้น
    */
+  // สถานะจากเครื่องเป็นแหล่งความจริงของ "ใช้ได้จริงไหม" — เดาจากฝั่งเว็บอย่างเดียวไม่พอ
+  // (เบราว์เซอร์รองรับเสียง ไม่ได้แปลว่าเครื่องมีชุดรู้จำเสียงหรือไมค์ว่าง)
+  useEffect(() => {
+    if (!standbyHost?.available) return;
+    return standbyHost.subscribeHealth((health) => setHostDegraded(health.state === "degraded"));
+  }, [standbyHost]);
+
   useEffect(() => {
     if (!standbyHost?.available) return;
 
@@ -380,9 +389,9 @@ export function VoiceCommandButton({
       ? "listening"
       : standbyPaused
         ? "off"
-        : supported === true
-          ? "standby"
-          : "degraded";
+        : hostDegraded || supported !== true
+          ? "degraded"
+          : "standby";
 
   const overlay =
     overlayVisible && typeof document !== "undefined"

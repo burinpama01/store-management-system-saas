@@ -20,7 +20,7 @@ import type {
   VoiceSpeechHandlers,
   VoiceSpeechSession,
 } from "@/modules/voice-pos/speech-adapter";
-import type { StandbyBridgeEvent } from "@/modules/voice-pos/standby-contract";
+import type { StandbyBridgeEvent, VoiceHostHealth } from "@/modules/voice-pos/standby-contract";
 import type { WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
 
 vi.mock("next/navigation", () => ({
@@ -77,6 +77,7 @@ function createFakeAdapter() {
 
 function createFakeHost() {
   const listeners = new Set<(event: StandbyBridgeEvent) => void>();
+  const healthListeners = new Set<(health: VoiceHostHealth) => void>();
   const calls: string[] = [];
   const host: WindowsVoiceHostAdapter = {
     available: true,
@@ -84,6 +85,11 @@ function createFakeHost() {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    subscribeHealth: (listener) => {
+      healthListeners.add(listener);
+      return () => healthListeners.delete(listener);
+    },
+    requestHealth: () => calls.push("requestHealth"),
     commandStarted: (sessionId) => calls.push(`started:${sessionId}`),
     commandExtended: (sessionId) => calls.push(`extended:${sessionId}`),
     commandEnded: (sessionId, outcome) => calls.push(`ended:${sessionId}:${outcome}`),

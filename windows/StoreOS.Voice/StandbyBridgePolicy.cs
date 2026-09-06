@@ -61,6 +61,7 @@ public sealed class StandbyBridgePolicy
         StandbyContract.SessionStarted,
         StandbyContract.SessionExtended,
         StandbyContract.SessionEnded,
+        StandbyContract.RequestHealth,
     ];
 
     private readonly Dictionary<string, long> _lastSeqBySession = new();

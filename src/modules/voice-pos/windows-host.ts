@@ -11,9 +11,13 @@
 //     ต้องบอกให้ผู้ใช้แตะปุ่มเดิม
 
 import {
+  STANDBY_CONTRACT_VERSION,
+  STANDBY_MESSAGE_TYPES,
   StandbyBridge,
+  parseHostHealth,
   type StandbyBridgeEvent,
   type StandbyOutboundMessage,
+  type VoiceHostHealth,
 } from "./standby-contract";
 
 /** ผลของรอบคำสั่งที่รายงานกลับไปให้ host รู้ว่าคืนไมค์ได้แล้ว */
@@ -31,6 +35,10 @@ export interface WindowsVoiceHostAdapter {
   readonly available: boolean;
   /** รับเหตุการณ์คำปลุก คืนฟังก์ชันสำหรับเลิกรับ */
   subscribe(listener: (event: StandbyBridgeEvent) => void): () => void;
+  /** รับสถานะของเครื่อง (W8) — ใช้บนหน้าตั้งค่าและแถบสถานะ */
+  subscribeHealth(listener: (health: VoiceHostHealth) => void): () => void;
+  /** ขอสถานะล่าสุด / สั่งให้เครื่องลองเปิดใหม่ถ้าตอนนี้ใช้ไม่ได้ */
+  requestHealth(): void;
   /** บอก host ว่าเว็บถือไมค์แล้ว */
   commandStarted(sessionId: string): void;
   /** ยังคุยต่อในรอบเดิม — ขอต่อเวลา watchdog ของ host */
@@ -73,6 +81,8 @@ function detectWebView(): WindowsWebViewLike | null {
 const UNAVAILABLE: WindowsVoiceHostAdapter = {
   available: false,
   subscribe: () => () => {},
+  subscribeHealth: () => () => {},
+  requestHealth: () => {},
   commandStarted: () => {},
   commandExtended: () => {},
   commandEnded: () => {},
@@ -84,6 +94,8 @@ export function createWindowsVoiceHost(options?: WindowsVoiceHostOptions): Windo
   if (!webview) return UNAVAILABLE;
 
   const listeners = new Set<(event: StandbyBridgeEvent) => void>();
+  const healthListeners = new Set<(health: VoiceHostHealth) => void>();
+  let healthSeq = 0;
   const bridge = new StandbyBridge({
     send: (message: StandbyOutboundMessage) => {
       if (disposed) return;
@@ -95,6 +107,14 @@ export function createWindowsVoiceHost(options?: WindowsVoiceHostOptions): Windo
 
   const onMessage = (event: { data: unknown }) => {
     if (disposed) return;
+
+    // สถานะของเครื่องเป็นข้อความคนละชนิดกับคำปลุก — ไม่ผ่านตัวนับ seq ของรอบคำสั่ง
+    const health = parseHostHealth(event.data);
+    if (health) {
+      for (const listener of healthListeners) listener(health);
+      return;
+    }
+
     // ทุกข้อความผ่านด่านเดียวกับฝั่ง native: รูปทรงผิด/ซ้ำ/ย้อนหลัง ถูกทิ้งเงียบ
     const decision = bridge.handle(event.data);
     if (decision.kind === "ignored") return;
@@ -109,6 +129,21 @@ export function createWindowsVoiceHost(options?: WindowsVoiceHostOptions): Windo
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    subscribeHealth(listener) {
+      healthListeners.add(listener);
+      return () => healthListeners.delete(listener);
+    },
+    requestHealth() {
+      if (disposed) return;
+      webview.postMessage({
+        v: STANDBY_CONTRACT_VERSION,
+        type: STANDBY_MESSAGE_TYPES.requestHealth,
+        seq: ++healthSeq,
+        // ฝั่ง native ตรวจรูปทรงข้อความทุกใบ จึงต้องมี sessionId เสมอแม้คำขอนี้ไม่ผูกกับรอบไหน
+        sessionId: "health",
+        at: new Date().toISOString(),
+      });
+    },
     commandStarted(sessionId) {
       bridge.notifyListeningStarted(sessionId);
     },
@@ -122,6 +157,7 @@ export function createWindowsVoiceHost(options?: WindowsVoiceHostOptions): Windo
       if (disposed) return;
       disposed = true;
       listeners.clear();
+      healthListeners.clear();
       webview.removeEventListener("message", onMessage);
     },
   };

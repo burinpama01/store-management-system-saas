@@ -17,7 +17,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.2.3";
+    private const string LauncherVersion = "0.2.4";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -55,7 +55,8 @@ public partial class MainWindow : Window
             LauncherVersion);
         _voice = new VoiceStandbyHost(
             () => new SystemSpeechWakeEngine(),
-            (level, code, message) => _logs.Enqueue(level, code, message));
+            (level, code, message) => _logs.Enqueue(level, code, message),
+            hostVersion: LauncherVersion);
         _voice.Attach(_suspendSignals);
         Loaded += OnLoaded;
         Closing += OnClosing;

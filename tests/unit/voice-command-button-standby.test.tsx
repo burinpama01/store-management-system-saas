@@ -10,7 +10,7 @@ import type {
   VoiceSpeechAdapter,
   VoiceSpeechHandlers,
 } from "@/modules/voice-pos/speech-adapter";
-import type { StandbyBridgeEvent } from "@/modules/voice-pos/standby-contract";
+import type { StandbyBridgeEvent, VoiceHostHealth } from "@/modules/voice-pos/standby-contract";
 import type { WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
 
 function createFakeAdapter(supported = true) {
@@ -56,6 +56,7 @@ function createFakeAdapter(supported = true) {
 /** host ปลอมที่ยิงคำปลุกได้จากเทสต์ */
 function createFakeHost(available = true) {
   const listeners = new Set<(event: StandbyBridgeEvent) => void>();
+  const healthListeners = new Set<(health: VoiceHostHealth) => void>();
   const calls: string[] = [];
 
   const host: WindowsVoiceHostAdapter = {
@@ -64,6 +65,11 @@ function createFakeHost(available = true) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    subscribeHealth: (listener) => {
+      healthListeners.add(listener);
+      return () => healthListeners.delete(listener);
+    },
+    requestHealth: () => calls.push("requestHealth"),
     commandStarted: (sessionId) => calls.push(`started:${sessionId}`),
     commandExtended: (sessionId) => calls.push(`extended:${sessionId}`),
     commandEnded: (sessionId, outcome) => calls.push(`ended:${sessionId}:${outcome}`),
@@ -74,6 +80,7 @@ function createFakeHost(available = true) {
     host,
     calls,
     listenerCount: () => listeners.size,
+    emitHealth: (health: VoiceHostHealth) => healthListeners.forEach((listener) => listener(health)),
     wake: (sessionId = "sess000001") =>
       listeners.forEach((listener) =>
         listener({ kind: "start-listening", sessionId, phraseId: "sawatdee_os" }),

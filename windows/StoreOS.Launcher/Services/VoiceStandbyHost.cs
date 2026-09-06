@@ -28,6 +28,8 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
 {
     private readonly MicrophoneCoordinator _coordinator;
     private readonly Action<string, string, string> _log;
+    private readonly string _hostVersion;
+    private long _healthSeq;
     private bool _enabled;
     private bool _disposed;
 
@@ -36,9 +38,11 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
     public VoiceStandbyHost(
         Func<IWakeWordEngine> engineFactory,
         Action<string, string, string> log,
-        WakeWordOptions? options = null)
+        WakeWordOptions? options = null,
+        string hostVersion = "0.0.0")
     {
         _log = log;
+        _hostVersion = hostVersion;
         _coordinator = new MicrophoneCoordinator(engineFactory, log, options);
         _coordinator.MessageForWeb += (_, message) => MessageForWeb?.Invoke(this, message);
     }
@@ -54,8 +58,18 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
     /// <summary>นับจำนวนครั้งที่เปิดเครื่องยนต์จริง — ใช้ยืนยันว่า Start ซ้ำไม่เปิดซ้อน</summary>
     public int EngineStartCount => _coordinator.EngineStartCount;
 
-    /// <summary>ข้อความที่ต้องส่งให้หน้าเว็บ — W4 จะเป็นคนส่งจริงผ่าน WebView2</summary>
+    /// <summary>ข้อความที่ต้องส่งให้หน้าเว็บ — ส่งจริงผ่าน WebView2 ที่ชั้น bridge</summary>
     public event EventHandler<StandbyMessage>? MessageForWeb;
+
+    /// <summary>สถานะของเครื่องที่ต้องส่งให้หน้าตั้งค่าบนเว็บ (W8)</summary>
+    public event EventHandler<VoiceHealthMessage>? HealthForWeb;
+
+    /// <summary>ส่งสถานะล่าสุดให้หน้าเว็บ (ตอนเปิดหน้า, ตอนสถานะเปลี่ยน, หรือตอนผู้ใช้กด "ตรวจอีกครั้ง")</summary>
+    public void PublishHealth()
+    {
+        var health = _coordinator.BuildHealth(_hostVersion, ++_healthSeq);
+        HealthForWeb?.Invoke(this, health);
+    }
 
     /// <summary>เปิดโหมดฟังคำปลุก</summary>
     /// <param name="enabled">ค่าจาก settings ของเครื่อง — ปิดอยู่ = ไม่ทำอะไรเลย</param>
@@ -72,6 +86,7 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
         await _coordinator.StartAsync(ct);
         if (State == VoiceHostState.Standby)
             _log("info", "voice_standby_started", "เริ่มฟังคำปลุกแล้ว");
+        PublishHealth();
     }
 
     /// <summary>ปิดและคืนไมโครโฟน — เรียกซ้ำได้ และปลอดภัยแม้ไม่เคยเปิด</summary>
@@ -85,6 +100,17 @@ public sealed class VoiceStandbyHost : IAsyncDisposable
 
     /// <summary>เดินนาฬิกาให้ watchdog — Launcher เรียกจากตัวจับเวลาเดิมที่มีอยู่แล้ว</summary>
     public Task TickAsync() => _enabled ? _coordinator.TickAsync() : Task.CompletedTask;
+
+    /// <summary>
+    /// ผู้ใช้กด "ตรวจอีกครั้ง" บนหน้าตั้งค่า — ลองเปิดใหม่ถ้าตอนนี้ใช้ไม่ได้ แล้วรายงานผลกลับ
+    /// เป็นทางออกจากสถานะ Degraded โดยไม่ต้องปิดเปิดโปรแกรมทั้งตัว
+    /// </summary>
+    public async Task RecheckAsync(CancellationToken ct = default)
+    {
+        if (!_enabled) return;
+        if (State == VoiceHostState.Degraded) await _coordinator.StartAsync(ct);
+        PublishHealth();
+    }
 
     /// <summary>ต่อสัญญาณล็อกจอ/หลับของ Windows</summary>
     public void Attach(ISystemSuspendSignals signals) => _coordinator.Attach(signals);

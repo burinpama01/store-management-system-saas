@@ -43,12 +43,26 @@ public sealed class WebViewStandbyBridge : IDisposable
         _enabled = true;
 
         _voice.MessageForWeb += OnMessageForWeb;
+        _voice.HealthForWeb += OnHealthForWeb;
         _web.WebMessageReceived += OnWebMessageReceived;
         _web.NavigationStarting += OnNavigationStarting;
     }
 
     /// <summary>จำนวนข้อความที่ถูกด่านปฏิเสธ — เอาไว้ดูว่ามีอะไรผิดปกติบนเครื่องร้าน</summary>
     public int RejectedCount { get; private set; }
+
+    private void OnHealthForWeb(object? sender, VoiceHealthMessage health)
+    {
+        if (!_enabled) return;
+        try
+        {
+            _web.PostWebMessageAsJson(StandbyContract.Serialize(health));
+        }
+        catch (Exception ex)
+        {
+            _log("warn", "voice_bridge_post_failed", $"ส่งสถานะให้หน้าเว็บไม่สำเร็จ: {ex.GetType().Name}");
+        }
+    }
 
     private void OnMessageForWeb(object? sender, StandbyMessage message)
     {
@@ -98,6 +112,10 @@ public sealed class WebViewStandbyBridge : IDisposable
             case StandbyContract.SessionEnded:
                 await _voice.OnWebSessionEndedAsync();
                 break;
+            case StandbyContract.RequestHealth:
+                // ผู้ใช้กด "ตรวจอีกครั้ง" บนหน้าตั้งค่า หรือหน้าเว็บเพิ่งโหลดแล้วอยากรู้สถานะ
+                await _voice.RecheckAsync();
+                break;
         }
     }
 
@@ -127,6 +145,7 @@ public sealed class WebViewStandbyBridge : IDisposable
     {
         _enabled = false;
         _voice.MessageForWeb -= OnMessageForWeb;
+        _voice.HealthForWeb -= OnHealthForWeb;
         _web.WebMessageReceived -= OnWebMessageReceived;
         _web.NavigationStarting -= OnNavigationStarting;
     }

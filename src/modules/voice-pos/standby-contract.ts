@@ -20,6 +20,10 @@ export const STANDBY_MESSAGE_TYPES = {
   sessionStarted: "command.sessionStarted",
   sessionExtended: "command.sessionExtended",
   sessionEnded: "command.sessionEnded",
+  /** web → native: ขอสถานะล่าสุดของเครื่อง (ปุ่ม "ตรวจอีกครั้ง") */
+  requestHealth: "command.requestHealth",
+  /** native → web: สถานะของฝั่งเครื่อง */
+  health: "host.health",
 } as const;
 
 export type StandbyMessageType = (typeof STANDBY_MESSAGE_TYPES)[keyof typeof STANDBY_MESSAGE_TYPES];
@@ -44,10 +48,64 @@ export interface StandbyOutboundMessage {
   readonly type:
     | typeof STANDBY_MESSAGE_TYPES.sessionStarted
     | typeof STANDBY_MESSAGE_TYPES.sessionExtended
-    | typeof STANDBY_MESSAGE_TYPES.sessionEnded;
+    | typeof STANDBY_MESSAGE_TYPES.sessionEnded
+    | typeof STANDBY_MESSAGE_TYPES.requestHealth;
   readonly seq: number;
   readonly sessionId: string;
   readonly reason?: string;
+}
+
+/** สถานะที่ฝั่งเครื่องรายงานมา — ไม่มีรหัสอุปกรณ์ดิบและไม่มีเส้นทางไฟล์ */
+export interface VoiceHostHealth {
+  readonly state: "off" | "standby" | "listening" | "degraded";
+  readonly hostVersion: string;
+  readonly recognizer: string | null;
+  readonly recognizerCulture: string | null;
+  readonly microphone: string | null;
+  readonly faultCode: VoiceHostFaultCode | null;
+  readonly pronunciationGrammar: boolean;
+}
+
+/** รหัสปัญหาที่รู้จัก — enum ปิด เพื่อให้แปลเป็นคำแนะนำได้โดยไม่ต้องรับข้อความ error ดิบ */
+export const VOICE_HOST_FAULT_CODES = [
+  "no_recognizer",
+  "audio_device_busy",
+  "audio_input_missing",
+  "microphone_denied",
+  "pronunciation_fallback",
+  "engine_error",
+] as const;
+export type VoiceHostFaultCode = (typeof VOICE_HOST_FAULT_CODES)[number];
+
+const HEALTH_STATES = ["off", "standby", "listening", "degraded"] as const;
+
+/** แปลงข้อความสถานะจากเครื่อง — คืน null เมื่อรูปทรงไม่ผ่าน */
+export function parseHostHealth(raw: unknown): VoiceHostHealth | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  if (value.v !== STANDBY_CONTRACT_VERSION) return null;
+  if (value.type !== STANDBY_MESSAGE_TYPES.health) return null;
+
+  const state = HEALTH_STATES.find((candidate) => candidate === value.state);
+  if (!state) return null;
+
+  const fault = (VOICE_HOST_FAULT_CODES as readonly string[]).includes(value.faultCode as string)
+    ? (value.faultCode as VoiceHostFaultCode)
+    : null;
+
+  // ตัดความยาวทุกข้อความที่จะเอาไปแสดง — ค่าที่มาจากนอกหน้าเว็บต้องไม่ทำ layout พัง
+  const text = (input: unknown): string | null =>
+    typeof input === "string" && input.length > 0 ? input.slice(0, 120) : null;
+
+  return {
+    state,
+    hostVersion: text(value.hostVersion) ?? "ไม่ทราบ",
+    recognizer: text(value.recognizer),
+    recognizerCulture: text(value.recognizerCulture),
+    microphone: text(value.microphone),
+    faultCode: fault,
+    pronunciationGrammar: value.pronunciationGrammar !== false,
+  };
 }
 
 const SESSION_ID_RE = /^[a-z0-9]{6,32}$/i;
