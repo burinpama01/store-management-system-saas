@@ -28,6 +28,7 @@ import {
 import { createInMemoryVoiceTelemetrySink } from "@/modules/voice-pos/telemetry";
 import { recordVoiceTelemetryAction } from "./voice-telemetry-actions";
 import type { VoiceSpeechAdapter } from "@/modules/voice-pos/speech-adapter";
+import { createWindowsVoiceHost, type WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
 import type { VoiceParseResult } from "@/modules/voice-pos/types";
 import {
   AI_UNAVAILABLE_MESSAGE,
@@ -68,6 +69,8 @@ export interface VoicePosControllerProps {
   readonly productAliases?: readonly VoiceProductAlias[];
   /** ฉีด adapter สำหรับทดสอบ — ปกติปุ่มจะใช้ Web Speech ของเบราว์เซอร์เอง */
   readonly adapter?: VoiceSpeechAdapter;
+  /** ฉีด host ของ Launcher ได้ในเทสต์; ไม่ส่งมาจะตรวจ chrome.webview เองตอนรัน */
+  readonly standbyHost?: WindowsVoiceHostAdapter;
   readonly className?: string;
   /** ฉีดนาฬิกาสำหรับทดสอบ Undo */
   readonly now?: () => number;
@@ -105,6 +108,7 @@ export function VoicePosController({
   aliases,
   productAliases,
   adapter,
+  standbyHost,
   className,
   now,
   aiFallbackEnabled = false,
@@ -112,6 +116,17 @@ export function VoicePosController({
 }: VoicePosControllerProps) {
   const router = useRouter();
   const getCartApi = useVoiceCartApi();
+  /**
+   * W5 — สายคุยกับ StoreOS Launcher (คำปลุก)
+   *
+   * บนเบราว์เซอร์ปกติจะได้ตัวที่ available = false ซึ่งไม่ทำอะไรเลย
+   * ปุ่มกดพูดจึงทำงานเหมือนเดิมทุกประการ ไม่มีเงื่อนไขเพิ่มบนเส้นทางเดิม
+   */
+  const resolvedStandbyHost = useMemo<WindowsVoiceHostAdapter>(
+    () => standbyHost ?? createWindowsVoiceHost(),
+    [standbyHost],
+  );
+  useEffect(() => () => resolvedStandbyHost.dispose(), [resolvedStandbyHost]);
   const [undoToken, setUndoToken] = useState<VoiceUndoToken | null>(null);
   const [undoNotice, setUndoNotice] = useState("");
   const undoSeqRef = useRef(0);
@@ -575,6 +590,7 @@ export function VoicePosController({
     <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`.trim()}>
       <VoiceCommandButton
         adapter={adapter}
+        standbyHost={resolvedStandbyHost}
         onResult={handleResult}
         onTelemetry={(event) => {
           telemetry.record(event);

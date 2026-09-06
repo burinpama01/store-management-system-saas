@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { parseVoiceCommand } from "@/modules/voice-pos/parser";
+import type { WindowsVoiceHostAdapter } from "@/modules/voice-pos/windows-host";
 import {
   createBrowserSpeechAdapter,
   type VoiceSpeechAdapter,
@@ -66,6 +67,9 @@ export interface VoiceResultResponse {
  */
 const MAX_AUTO_LISTEN_CHAIN = 3;
 
+/** ใช้เมื่อได้ยินคำปลุกแล้วแต่เปิดไมค์เองไม่ได้ — ต้องบอกให้ชัดว่าต้องทำอะไรต่อ */
+const WAKE_TAP_REQUIRED_MESSAGE = "ตรวจพบคำปลุก — แตะปุ่มไมค์เพื่อพูด";
+
 const STATE_LABEL: Record<VoiceRecognitionState, string> = {
   idle: "สั่งงานด้วยเสียง",
   requesting: "กำลังขอไมโครโฟน…",
@@ -114,6 +118,11 @@ export interface VoiceCommandButtonProps {
   readonly announceTranscript?: boolean;
   /** ฉีดตัวเล่นเสียงตอบรับได้ (ทดสอบ/ปิดเสียง) — ไม่ส่งมาจะใช้ของเบราว์เซอร์ */
   readonly feedback?: VoiceFeedback;
+  /**
+   * W5 — สายคุยกับ StoreOS Launcher บน Windows (คำปลุก)
+   * ไม่ส่งมา = ไม่มีคำปลุก ปุ่มทำงานแบบกดพูดเหมือนเดิมทุกประการ
+   */
+  readonly standbyHost?: WindowsVoiceHostAdapter;
 }
 
 export function VoiceCommandButton({
@@ -125,6 +134,7 @@ export function VoiceCommandButton({
   className,
   announceTranscript = false,
   feedback,
+  standbyHost,
 }: VoiceCommandButtonProps) {
   const speech = useMemo(
     () => adapter ?? createBrowserSpeechAdapter({ locale }),
@@ -163,6 +173,8 @@ export function VoiceCommandButton({
   const sessionRef = useRef<VoiceSpeechSession | null>(null);
   // U14 — กัน final ซ้ำจาก engine: 1 การกด = ส่งผลให้ผู้เรียกได้ครั้งเดียว
   const settledRef = useRef(false);
+  /** รอบคำปลุกที่กำลังถืออยู่ (null = รอบนี้ผู้ใช้กดปุ่มเอง) — ต้องรายงานคืนให้ Launcher เสมอ */
+  const standbySessionRef = useRef<string | null>(null);
 
   // unmount = ยกเลิก session ที่ค้าง และล้าง transcript ออกจากหน่วยความจำ
   useEffect(() => {
@@ -194,6 +206,17 @@ export function VoiceCommandButton({
   // overlay ไม่รับคลิก (pointer-events-none) แอปข้างหลังจึงยังกดได้ตามปกติ
   // = "ทำงานอยู่พื้นหลัง" ไม่ใช่ modal ที่บล็อกการขาย
   const overlayVisible = listening || state === "resolving";
+
+  /** ปิดรอบคำปลุกและคืนไมค์ให้ Launcher — เรียกซ้ำได้ ไม่มีผลถ้าไม่ได้ถือรอบอยู่ */
+  const endStandbySession = useCallback(
+    (outcome: "completed" | "aborted" | "tap_required") => {
+      const sessionId = standbySessionRef.current;
+      if (!sessionId) return;
+      standbySessionRef.current = null;
+      standbyHost?.commandEnded(sessionId, outcome);
+    },
+    [standbyHost],
+  );
 
   const startListening = useCallback((options?: { keepMessage?: boolean }) => {
     // เปิดไมค์ต่อเองต้องไม่ลบข้อความที่เพิ่งบอกไป — มันคือคำสั่งที่ผู้ใช้กำลังจะทำตาม
@@ -240,6 +263,12 @@ export function VoiceCommandButton({
             // เปิดไมค์ต่อ "หลังระบบพูดจบ" เท่านั้น ไม่งั้นไมค์จะอัดเสียงที่ระบบกำลังพูดเอง
             const shouldListenAgain =
               response.listenAgain === true && autoListenCountRef.current < MAX_AUTO_LISTEN_CHAIN;
+            // ยังคุยต่อ = ขอต่อเวลา watchdog ของ Launcher; จบรอบ = คืนไมค์ให้ทันที
+            if (shouldListenAgain && standbySessionRef.current) {
+              standbyHost?.commandExtended(standbySessionRef.current);
+            } else {
+              endStandbySession("completed");
+            }
             player.speak(spoken, shouldListenAgain
               ? () => {
                 autoListenCountRef.current += 1;
@@ -252,12 +281,15 @@ export function VoiceCommandButton({
         if (settledRef.current) return;
         settledRef.current = true;
         setInterim("");
+        // เปิดไมค์เองไม่ได้เพราะเบราว์เซอร์ไม่ให้ = ไม่ใช่ความผิดพลาดของอุปกรณ์
+        // ต้องบอก Launcher ให้กลับไปฟังคำปลุกต่อ แล้วให้ผู้ใช้แตะปุ่มเอง
+        endStandbySession(code === "permission_denied" ? "tap_required" : "aborted");
         showMessage(ERROR_MESSAGE[code]);
         player.cue("error");
         player.speak(ERROR_MESSAGE[code]);
       },
     });
-  }, [locale, onResult, onTelemetry, player, showMessage, speech]);
+  }, [endStandbySession, locale, onResult, onTelemetry, player, showMessage, speech, standbyHost]);
 
   // startListening เรียกตัวเองผ่าน ref — ประกาศตรง ๆ จะเป็น use-before-define
   useEffect(() => {
@@ -276,6 +308,40 @@ export function VoiceCommandButton({
     autoListenCountRef.current = 0;
     startListening();
   }, [disabled, startListening]);
+
+  /**
+   * รับคำปลุกจาก Launcher
+   *
+   * ข้อห้ามที่สำคัญที่สุดของ W5: <b>ห้ามสร้างคลิกปลอม</b>เพื่อข้าม user-activation
+   * ของเบราว์เซอร์ — เราเรียกเส้นทางเดียวกับตอนกดปุ่มโดยตรง ถ้าเบราว์เซอร์ปฏิเสธ
+   * (permission_denied) ก็บอกให้ผู้ใช้แตะเอง ไม่พยายามหลบด่านนั้น
+   */
+  useEffect(() => {
+    if (!standbyHost?.available) return;
+
+    const unsubscribe = standbyHost.subscribe((event) => {
+      if (event.kind === "show-push-to-talk") {
+        standbySessionRef.current = null;
+        showMessage(WAKE_TAP_REQUIRED_MESSAGE);
+        return;
+      }
+      if (event.kind !== "start-listening") return;
+
+      // ปุ่มถูกปิดอยู่ (เช่นกำลังชำระเงิน) — คืนไมค์ทันที อย่าให้ Launcher รอจนหมดเวลา
+      if (disabled || supported !== true || sessionRef.current?.isActive()) {
+        standbyHost.commandEnded(event.sessionId, "tap_required");
+        showMessage(WAKE_TAP_REQUIRED_MESSAGE);
+        return;
+      }
+
+      standbySessionRef.current = event.sessionId;
+      autoListenCountRef.current = 0;
+      startListening();
+      standbyHost.commandStarted(event.sessionId);
+    });
+
+    return unsubscribe;
+  }, [disabled, showMessage, standbyHost, startListening, supported]);
 
   // ยังไม่รู้ผลตรวจ (render แรก/SSR) = ปิดปุ่มไว้ก่อน ปลอดภัยกว่าเปิดแล้วกดไม่ได้
   const unavailable = disabled || supported !== true;
