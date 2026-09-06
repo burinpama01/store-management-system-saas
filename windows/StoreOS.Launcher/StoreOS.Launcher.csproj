@@ -21,7 +21,7 @@
     <Platforms>x64</Platforms>
     <AssemblyName>StoreOS.Launcher</AssemblyName>
     <RootNamespace>StoreOS.Launcher</RootNamespace>
-    <Version>0.1.7</Version>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

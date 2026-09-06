@@ -16,7 +16,7 @@ namespace StoreOS.Launcher;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string LauncherVersion = "0.1.7";
+    private const string LauncherVersion = "0.2.0";
 
     private readonly ScheduledTaskController _tasks = new();
     private readonly LauncherLogShipper _logs;
@@ -27,6 +27,11 @@ public partial class MainWindow : Window
     private ReadinessState? _lastReportedState;
     /// <summary>ISSUE-002 — หน้าต่างลูกที่ Launcher เป็นเจ้าของ ต้องปิดตามตอนปิด Launcher</summary>
     private readonly List<Window> _childWindows = new();
+    /// <summary>
+    /// ฝั่งคำปลุก (แผน v1 W1) — W1 มีแค่วงจรชีวิต ยังไม่มีเครื่องยนต์จริง (W2)
+    /// factory คืน null-engine ไว้ก่อน เพื่อให้เส้นทางเปิด/ปิด/คืนไมค์ถูกใช้งานจริงตั้งแต่วันนี้
+    /// </summary>
+    private readonly VoiceStandbyHost _voice;
 
     public MainWindow()
     {
@@ -36,9 +41,17 @@ public partial class MainWindow : Window
         _logs = new LauncherLogShipper(
             LauncherLogShipper.ReadHubCredentials(HubConfigPath()),
             LauncherVersion);
+        _voice = new VoiceStandbyHost(
+            () => new PlaceholderWakeEngine(),
+            (level, code, message) => _logs.Enqueue(level, code, message));
         Loaded += OnLoaded;
         Closing += OnClosing;
-        Closed += async (_, _) => await _logs.DisposeAsync();
+        // ปิดหน้าต่างทางไหนก็ตาม ต้องคืนไมโครโฟนก่อนแล้วค่อยปล่อยคิว log
+        Closed += async (_, _) =>
+        {
+            await _voice.DisposeAsync();
+            await _logs.DisposeAsync();
+        };
     }
 
     private static string HubConfigPath() => Path.Combine(
@@ -49,7 +62,24 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         var settings = LauncherSettings.Load();
-        await Web.EnsureCoreWebView2Async();
+
+        // WebView2 ต้องมีโฟลเดอร์ข้อมูลที่ผู้ใช้เขียนได้ ไม่งั้นเครื่องที่ติดตั้งลง Program Files
+        // จะเปิด POS ไม่ขึ้นเลย (ค่าเริ่มต้นของ WebView2 คือโฟลเดอร์ข้าง ๆ ไฟล์ exe)
+        try
+        {
+            var userData = WebViewProfile.UserDataFolder(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                settings.Channel);
+            Directory.CreateDirectory(userData);
+            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
+            await Web.EnsureCoreWebView2Async(environment);
+        }
+        catch (Exception ex)
+        {
+            // สร้าง environment เองไม่ได้ (สิทธิ์/ดิสก์) — ถอยไปใช้ค่าเริ่มต้นดีกว่าเปิดไม่ขึ้น
+            _logs.Enqueue("warn", "webview2_profile_fallback", $"ใช้โฟลเดอร์ WebView2 เริ่มต้นแทน: {ex.GetType().Name}");
+            await Web.EnsureCoreWebView2Async();
+        }
         // production kiosk profile: ปิดเมนูขวา/DevTools ตามแผน (v1 W1)
         Web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = settings.AllowDevTools;
         Web.CoreWebView2.Settings.AreDevToolsEnabled = settings.AllowDevTools;
@@ -58,7 +88,15 @@ public partial class MainWindow : Window
         Web.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
         // ผลของ provision กลับมาทางนี้ ไม่ใช่ค่าคืนของ ExecuteScriptAsync (ดู HubConfigProvisioner)
         Web.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-        Web.Source = new Uri(settings.PosUrl);
+
+        // config ของเครื่องถูกโปรแกรมอื่นแก้ให้ชี้เว็บปลอมได้ — Launcher เปิดเต็มจอไม่มีแถบที่อยู่
+        // ผู้ใช้จึงไม่มีทางสังเกตเห็น ต้องกรองที่นี่
+        var posUrl = settings.ResolvePosUrl(out var rejectedUrl);
+        if (rejectedUrl)
+        {
+            _logs.Enqueue("error", "pos_url_rejected", "ค่า PosUrl ในไฟล์ตั้งค่าใช้ไม่ได้ กลับไปใช้ที่อยู่มาตรฐาน");
+        }
+        Web.Source = new Uri(posUrl);
 
         _logs.Enqueue("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
         {
@@ -69,6 +107,9 @@ public partial class MainWindow : Window
         // Print Hub auto-provision — ขอ config ล่าสุดของเครื่องนี้หลังหน้าเว็บโหลดเสร็จ
         // (ต้องรอให้ผู้ใช้ล็อกอินก่อน จึงผูกกับ NavigationCompleted ไม่ใช่ตอน Loaded)
         Web.CoreWebView2.NavigationCompleted += OnNavigationCompletedAsync;
+
+        // เปิดโหมดคำปลุกถ้าเครื่องนี้เปิดไว้ — ล้มเหลวก็แค่ไม่มีคำปลุก POS ยังขายได้
+        await _voice.StartAsync(settings.VoiceStandbyEnabled);
 
         Refresh();
         _timer.Tick += async (_, _) =>
@@ -240,8 +281,31 @@ public partial class MainWindow : Window
         _logs.Enqueue("info", "customer_display_opened", "เปิดจอลูกค้าเป็นหน้าต่างลูกของ Launcher");
     }
 
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    /// <summary>ผ่านขั้นตอนปิดที่ต้องรอ (คืนไมโครโฟน) แล้วหรือยัง</summary>
+    private bool _shutdownPrepared;
+
+    private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // WPF ไม่รอ async void — ถ้าปล่อยให้ปิดไปเลยระหว่างที่ StopAsync ยังทำงาน
+        // ไมโครโฟนจะถูกปล่อยหลัง process ตาย (หรือไม่ถูกปล่อยเลย) ซึ่งเป็นอาการ
+        // "ไฟไมค์ค้างหลังปิดโปรแกรม" ที่ผู้ใช้ตีความว่าโปรแกรมแอบฟัง
+        // จึงยกเลิกการปิดรอบแรก ทำให้เสร็จก่อน แล้วค่อยสั่งปิดจริง
+        if (!_shutdownPrepared)
+        {
+            e.Cancel = true;
+            _timer.Stop();
+            try
+            {
+                await _voice.StopAsync();
+            }
+            finally
+            {
+                _shutdownPrepared = true;
+                Close();
+            }
+            return;
+        }
+
         // ปิดจาก snapshot เพราะ child.Closed จะแก้ list ระหว่างวน
         foreach (var child in _childWindows.ToArray())
         {
