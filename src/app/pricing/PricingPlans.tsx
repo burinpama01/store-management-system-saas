@@ -3,143 +3,45 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { PublicPlan } from "@/modules/billing/pricing-repository";
-import { GlassPanel } from "@/shared/components/marketing/MarketingShell";
+import { COMPARISON_FEATURES, featureAvailability, planHighlights, planLimit } from "./plan-catalog";
 
-type BillingPeriod = "30d" | "1y";
-
-const PLAN_COPY: Record<string, { icon: string; intro: string; cta: string }> = {
-  starter: {
-    icon: "▣",
-    intro: "เหมาะสำหรับร้านเริ่มต้นที่อยากมีระบบครบพื้นฐาน",
-    cta: "เริ่มใช้งาน",
-  },
-  standard: {
-    icon: "◇",
-    intro: "เหมาะสำหรับร้านที่เติบโต เพิ่มประสิทธิภาพการจัดการ",
-    cta: "เริ่มใช้งาน",
-  },
-  premium: {
-    icon: "♕",
-    intro: "เหมาะสำหรับร้านที่ต้องการครบทุกเครื่องมือและระบบขั้นสูง",
-    cta: "เริ่มใช้งาน",
-  },
-  business: {
-    icon: "⚙",
-    intro: "ออกแบบแพ็กเกจเอง เลือกที่นั่ง สาขา และฟีเจอร์ที่ใช้จริง",
-    cta: "เลือกฟีเจอร์เอง",
-  },
-  enterprise: {
-    icon: "▥",
-    intro: "เหมาะสำหรับธุรกิจขนาดใหญ่ ปรับแต่งระบบและดูแลพิเศษ",
-    cta: "ติดต่อฝ่ายขาย",
-  },
+const PLAN_COPY: Record<string, { intro: string; cta: string }> = {
+  starter: { intro: "เริ่มจัดการงานขายและเมนูของร้าน", cta: "เลือก Starter" },
+  standard: { intro: "เพิ่มสต็อก บุฟเฟต์ และรายงานขั้นสูง", cta: "เลือก Standard" },
+  premium: { intro: "ให้ลูกค้าสั่งเอง พร้อมเครื่องมือดูแลทีม", cta: "เลือก Premium" },
+  business: { intro: "ประกอบแพ็กเกจจากสิ่งที่ร้านใช้", cta: "จัดแพ็กเกจของคุณ" },
+  enterprise: { intro: "รวมเครื่องมือสำหรับบริหารหลายสาขา", cta: "สอบถาม Enterprise" },
 };
+const money = (amount: number | null) => amount === null ? "สอบถามราคา" : `฿${amount.toLocaleString("th-TH")}`;
 
-function formatPrice(amount: number | null) {
-  return amount == null ? "สอบถามราคา" : `฿ ${amount.toLocaleString("th-TH")}`;
-}
-
-export function PricingPlans({
-  plans,
-  freeTrialOpen = false,
-}: Readonly<{ plans: PublicPlan[]; freeTrialOpen?: boolean }>) {
-  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("30d");
-  const isAnnual = billingPeriod === "1y";
-
-  return (
-    <>
-      <div className="reference-billing-toggle" role="group" aria-label="รอบการชำระเงิน">
-        <button
-          type="button"
-          className={!isAnnual ? "is-active" : ""}
-          aria-pressed={!isAnnual}
-          onClick={() => setBillingPeriod("30d")}
-        >
-          รายเดือน
-        </button>
-        <button
-          type="button"
-          className={isAnnual ? "is-active" : ""}
-          aria-pressed={isAnnual}
-          onClick={() => setBillingPeriod("1y")}
-        >
-          รายปี ประหยัดสูงสุด 20%
-        </button>
-      </div>
-
-      <section className="reference-pricing-grid" aria-label="แพ็กเกจ StoreOS">
-        {plans.map((plan) => {
-          const copy = PLAN_COPY[plan.tier] ?? PLAN_COPY.starter;
-          const isPremium = plan.tier === "premium";
-          const isEnterprise = plan.price30d == null;
-          // โปรจำกัดเวลา: ทดลอง Enterprise ฟรี 30 วัน (ครบทุกฟีเจอร์)
-          const enterpriseTrial = isEnterprise && freeTrialOpen;
-          const isConfigurable = plan.configurable;
-          const activePrice = isAnnual ? plan.price1y : plan.price30d;
-          const inactivePrice = isAnnual ? plan.price30d : plan.price1y;
-
-          return (
-            <GlassPanel
-              key={plan.tier}
-              className={`reference-plan-card${plan.highlight || isPremium || enterpriseTrial ? " is-highlight" : ""}`}
-            >
-              {enterpriseTrial ? (
-                <span className="reference-plan-ribbon">ทดลองฟรี 30 วัน</span>
-              ) : (
-                isPremium && <span className="reference-plan-ribbon">แนะนำ</span>
-              )}
-              <span className="reference-plan-icon">{copy.icon}</span>
-              <h2>{plan.displayName}</h2>
-              <p>{copy.intro}</p>
-
-              <div className="reference-plan-price">
-                {enterpriseTrial ? (
-                  <>
-                    <strong className="reference-trial-price">0 บาท</strong>
-                    <span className="reference-trial-period">/ 30 วันแรก</span>
-                    <small>โปรจำกัดเวลา: ใช้ครบทุกฟีเจอร์ระดับ Enterprise ฟรี 30 วัน</small>
-                    <small>ใช้ได้ 1 ครั้งต่อบัญชี · หลังหมดทดลองเลือกแพ็กเกจที่ใช่ หรือคุยกับทีมขายต่อ</small>
-                  </>
-                ) : isEnterprise ? (
-                  <>
-                    <strong>สอบถามราคา</strong>
-                    <small>ทีมงานช่วยออกแบบแพ็กเกจและเงื่อนไขรายปีให้เหมาะกับหลายสาขา</small>
-                  </>
-                ) : isConfigurable ? (
-                  <>
-                    <strong>เริ่มต้น {formatPrice(activePrice)}</strong>
-                    <span>/ {isAnnual ? "ปี" : "เดือน"}</span>
-                    <small>ราคาขึ้นกับจำนวนที่นั่ง สาขา และฟีเจอร์ที่เลือก</small>
-                    <small>ปรับแต่งและชำระได้ในหน้าตั้งค่าแพ็กเกจหลังสมัคร</small>
-                  </>
-                ) : (
-                  <>
-                    <strong>{formatPrice(activePrice)}</strong>
-                    <span>/ {isAnnual ? "ปี" : "เดือน"}</span>
-                    <small>
-                      {isAnnual ? "รายเดือน" : "รายปี"} {formatPrice(inactivePrice)} /{" "}
-                      {isAnnual ? "เดือน" : "ปี"}
-                    </small>
-                  </>
-                )}
-              </div>
-
-              <Link
-                href={enterpriseTrial ? "/register" : isEnterprise ? "/enterprise" : `/register?plan=${plan.tier}`}
-                className={isPremium || enterpriseTrial ? "btn-primary reference-plan-action" : "btn-secondary reference-plan-action"}
-              >
-                {enterpriseTrial ? "ทดลองใช้ฟรี 30 วัน" : copy.cta}
-              </Link>
-
-              <ul>
-                {plan.featureLines.map((feature) => (
-                  <li key={feature}>{feature}</li>
-                ))}
-              </ul>
-            </GlassPanel>
-          );
-        })}
-      </section>
-    </>
-  );
+export function PricingPlans({ plans, freeTrialOpen = false }: Readonly<{ plans: PublicPlan[]; freeTrialOpen?: boolean }>) {
+  const [annual, setAnnual] = useState(false);
+  const fixed = plans.filter(p => p.tier !== "business" && p.tier !== "enterprise");
+  const flexible = plans.filter(p => p.tier === "business" || p.tier === "enterprise");
+  function card(plan: PublicPlan) {
+    const enterprise = plan.tier === "enterprise";
+    const price = annual ? plan.price1y : plan.price30d;
+    const copy = PLAN_COPY[plan.tier] ?? PLAN_COPY.starter;
+    return <article key={plan.tier} aria-label={`แพ็กเกจ ${plan.displayName}`} className={`pricing-card pricing-card-${plan.tier}${plan.highlight ? " is-featured" : ""}`}>
+      <div className="pricing-card-top"><span className="pricing-sculpture" aria-hidden="true"><i/><i/><i/></span>{plan.highlight && <span className="pricing-badge">แพ็กเกจแนะนำ</span>}</div>
+      <h2>{plan.displayName}</h2><p className="pricing-intro">{copy.intro}</p>
+      <div className="pricing-price" aria-live="polite">{plan.configurable && <small>เริ่มต้น</small>}<strong>{money(price)}</strong>{!enterprise && price !== null && <span>/ {annual ? "365 วัน" : "30 วัน"}</span>}</div>
+      <p className="pricing-capacity">{plan.configurable ? "สมาชิก สาขา และฟีเจอร์ตามที่เลือก" : `เพดาน ${planLimit(plan.tier, "maxStores")} สาขา · ${planLimit(plan.tier, "maxMembers")} สมาชิก`}</p>
+      {featureAvailability(plan.tier, "multiBranchReporting") === "ไม่รวม" && <p className="pricing-branch-note">แพ็กเกจนี้ยังเพิ่มสาขาเองไม่ได้</p>}
+      {plan.configurable && <p className="pricing-branch-note">หากต้องการเพิ่มสาขา ต้องเลือกฟีเจอร์รายงานหลายสาขาด้วย</p>}
+      <Link className={`pricing-action ${plan.highlight ? "is-primary" : ""}`} href={enterprise ? "/enterprise" : `/register?plan=${plan.tier}`}>{copy.cta}<span aria-hidden="true">↗</span></Link>
+      <ul>{planHighlights(plan.tier).map(line => <li key={line}><span aria-hidden="true">✓</span>{line}</li>)}</ul>
+      {enterprise && <p className="pricing-card-note">ราคาและระยะเวลาเป็นไปตามข้อเสนอของทีมงาน</p>}
+    </article>;
+  }
+  return <>
+    {freeTrialOpen && <aside className="pricing-trial"><div><span className="pricing-eyebrow">เริ่มด้วยการลองใช้</span><h2>ทดลอง Enterprise ฟรี 30 วัน</h2><p>สำหรับบัญชีและกิจการที่ยังไม่เคยใช้สิทธิ์ทดลอง และไม่มีแพ็กเกจที่ยังใช้งานอยู่ ระบบตรวจสิทธิ์หลังสมัครหรือเข้าสู่ระบบ</p></div><Link href="/register" className="pricing-action is-primary">เริ่มทดลอง Enterprise<span aria-hidden="true">↗</span></Link></aside>}
+    <div className="pricing-selection"><div><h2>เลือกจังหวะที่เหมาะกับร้าน</h2><p>ราคาแพ็กเกจพื้นฐานจากการตั้งค่าปัจจุบันของ StoreOS</p></div><div className="pricing-toggle" role="group" aria-label="รอบการชำระเงิน"><button type="button" aria-pressed={!annual} onClick={() => setAnnual(false)}>30 วัน</button><button type="button" aria-pressed={annual} onClick={() => setAnnual(true)}>1 ปี · 365 วัน</button></div></div>
+    {plans.length === 0 ? <p className="pricing-empty" role="status">ยังไม่มีแพ็กเกจแสดงในขณะนี้ กรุณาติดต่อทีม StoreOS</p> : <>
+      <section className="pricing-grid" aria-label="แพ็กเกจสำเร็จรูป">{fixed.map(card)}</section>
+      {flexible.length > 0 && <section className="pricing-flex-section"><div className="pricing-section-title"><span className="pricing-eyebrow">ร้านคุณ เลือกได้</span><h2>อยากเลือกเอง หรือมีหลายสาขา?</h2></div><div className="pricing-flex-grid">{flexible.map(card)}</div></section>}
+      <section className="pricing-comparison"><div className="pricing-section-title"><span className="pricing-eyebrow">ดูให้ชัด ก่อนตัดสินใจ</span><h2>เปรียบเทียบฟีเจอร์หลัก</h2><p>เพดานสาขาและสิทธิ์เพิ่มสาขาแสดงแยกกัน · Business ต้องเลือกซื้อฟีเจอร์เพิ่ม</p></div><div className="pricing-table-scroll" tabIndex={0} role="region" aria-label="ตารางฟีเจอร์ เลื่อนแนวนอนได้"><table aria-label="เปรียบเทียบสิทธิ์แพ็กเกจ"><thead><tr><th scope="col">ฟีเจอร์</th>{plans.map(p => <th scope="col" key={p.tier}>{p.displayName}</th>)}</tr></thead><tbody>{(["maxStores", "maxMembers"] as const).map(key => <tr key={key}><th scope="row">{key === "maxStores" ? "เพดานจำนวนสาขา" : "จำนวนสมาชิก"}</th>{plans.map(p => <td key={p.tier}>{planLimit(p.tier, key)}</td>)}</tr>)}{COMPARISON_FEATURES.map(f => <tr key={f.key}><th scope="row">{f.label}</th>{plans.map(p => <td key={p.tier} className={featureAvailability(p.tier, f.key) === "รวมแล้ว" ? "is-included" : ""}>{featureAvailability(p.tier, f.key)}</td>)}</tr>)}</tbody></table></div></section>
+    </>}
+    <p className="pricing-terms">ราคาแสดงเป็นบาทต่อรอบที่เลือก โปรโมชันหรือโค้ดส่วนลดที่เข้าเงื่อนไขจะคำนวณในหน้าชำระเงิน กรุณาตรวจยอดสุดท้ายก่อนยืนยัน ฟีเจอร์บางส่วนต้องตั้งค่าร้าน อุปกรณ์ หรือบริการที่เชื่อมต่อก่อนใช้งาน</p>
+  </>;
 }

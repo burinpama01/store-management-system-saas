@@ -819,6 +819,7 @@ describe("UX/UI regression guards", () => {
     const shell = read("src/shared/components/marketing/MarketingShell.tsx");
     const showcase = read("src/shared/components/marketing/MarketingProductShowcase.tsx");
     const landingWorkflow = read("src/shared/components/marketing/LandingWorkflow.tsx");
+    const workflowDemo = read("src/shared/components/marketing/WorkflowDemo3D.tsx");
     const landing = read("src/app/page.tsx");
     const pricing = read("src/app/pricing/page.tsx");
     const pricingPlans = read("src/app/pricing/PricingPlans.tsx");
@@ -857,28 +858,16 @@ describe("UX/UI regression guards", () => {
     expect(landingWorkflow).toContain("data-step={activeIndex + 1}");
     expect(landingWorkflow).toContain("aria-pressed");
     expect(landingWorkflow).toContain("setActiveIndex");
-    expect(landingWorkflow).toContain("reference-feature-picture");
-    expect(landingWorkflow).toContain("activeStep.image.desktop");
-    expect(landingWorkflow).toContain("activeStep.image.mobile");
+    // หกขั้นตอนเปลี่ยนจากภาพหน้าจอเป็น UI จำลองด้วย CSS แล้ว — ห้ามกลับไปแนบ raster/canvas อีก
+    expect(landingWorkflow).toContain("WorkflowDemo3D");
+    expect(landingWorkflow).not.toContain("<img");
     expect(landingWorkflow).not.toContain("MarketingProductShowcase");
+    expect(landing).not.toContain("/marketing/workflow/");
+    expect(workflowDemo).toContain("const DEMOS = [PosDemo, QrDemo, StockDemo, AttendanceDemo, ReportsDemo, BranchesDemo]");
+    expect(workflowDemo).toContain("prefers-reduced-motion");
+    expect(workflowDemo).toContain("IntersectionObserver");
+    expect(workflowDemo).toContain("document.hidden");
     expect(nextConfig).toContain('allowedDevOrigins: ["127.0.0.1"]');
-    for (const assetPath of [
-      "public/marketing/workflow/pos-desktop.png",
-      "public/marketing/workflow/pos-mobile.png",
-      "public/marketing/workflow/qr-ordering-desktop.png",
-      "public/marketing/workflow/qr-ordering-mobile.png",
-      "public/marketing/workflow/stock-desktop.png",
-      "public/marketing/workflow/stock-mobile.png",
-      "public/marketing/workflow/attendance-desktop.png",
-      "public/marketing/workflow/attendance-mobile.png",
-      "public/marketing/workflow/reports-desktop.png",
-      "public/marketing/workflow/reports-mobile.png",
-      "public/marketing/workflow/branches-desktop.png",
-      "public/marketing/workflow/branches-mobile.png",
-    ]) {
-      expect(existsSync(join(root, assetPath)), `${assetPath} must exist for workflow responsive artwork`).toBe(true);
-      expect(landing).toContain(assetPath.replace("public", ""));
-    }
     expect(css).toContain("@keyframes glassCardFloat");
     expect(css).toContain("@keyframes workflowPanelIn");
     expect(css).toContain("@keyframes workflowItemIn");
@@ -921,7 +910,10 @@ describe("UX/UI regression guards", () => {
     expect(pricing).toContain('id="enterprise-contact"');
     // Enterprise CTA points to the dedicated request form instead of a mailto link.
     expect(pricing).toContain("/enterprise");
-    expect(pricingPlans).toContain("useState<BillingPeriod>");
+    // ปุ่มสลับรอบชำระต้องยังอยู่ ราคาที่โชว์ต้องมาจากราคาในระบบทั้งรอบ 30 วันและ 365 วัน
+    expect(pricingPlans).toContain("setAnnual");
+    expect(pricingPlans).toContain('aria-label="รอบการชำระเงิน"');
+    expect(pricingPlans).toContain("plan.price30d");
     expect(pricingPlans).toContain("price1y");
     expect(pricingPlans).toContain("/enterprise");
     expect(pricingPlans).not.toContain("/register?plan=enterprise");
@@ -971,14 +963,14 @@ describe("UX/UI regression guards", () => {
     const shell = read("src/shared/components/marketing/MarketingShell.tsx");
     const pricingSurface = `${pricing}\n${pricingPlans}`;
 
-    expect(pricingSurface).toContain("0 บาท");
-    expect(pricingSurface).toContain("/ 30 วันแรก");
-    // การ์ดโปรขึ้นเฉพาะตอนแคมเปญเปิด (super-admin คุมที่ /system/pricing)
-    expect(pricingSurface).toContain("enterpriseTrial");
+    // ส่วนทดลองฟรีขึ้นเฉพาะตอนแคมเปญเปิด (super-admin คุมที่ /system/pricing)
+    expect(pricingPlans).toContain("freeTrialOpen &&");
     expect(pricingSurface).toContain("isFreeTrialCampaignOpen");
-    expect(pricingSurface).toContain("โปรจำกัดเวลา: ใช้ครบทุกฟีเจอร์ระดับ Enterprise ฟรี 30 วัน");
-    expect(pricing).toContain("ทดลองใช้ Enterprise ครบทุกฟีเจอร์ฟรี 30 วัน");
-    expect(pricingSurface).toContain("ใช้ได้ 1 ครั้งต่อบัญชี");
+    expect(pricingPlans).toContain("ทดลอง Enterprise ฟรี 30 วัน");
+    // เงื่อนไขสิทธิ์ครั้งเดียวต่อบัญชี/กิจการ ต้องบอกผู้ใช้ก่อนกดเริ่มทดลองเสมอ
+    expect(pricingPlans).toContain("ยังไม่เคยใช้สิทธิ์ทดลอง");
+    expect(pricingPlans).toContain("ไม่มีแพ็กเกจที่ยังใช้งานอยู่");
+    expect(pricing).toContain("ทดลองฟรีแล้วเลือกแพ็กเกจอย่างไร?");
     expect(pricing).not.toContain("reference-promo-strip");
     expect(pricing).not.toContain("7,415 บาท");
     expect(shell).toContain("PRICING_NAV_ITEMS");

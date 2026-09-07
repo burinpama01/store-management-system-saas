@@ -2,16 +2,12 @@
 
 import { type CSSProperties, useState } from "react";
 import { GlassPanel } from "./MarketingShell";
-import { MarketingHeroScene } from "./MarketingHeroScene";
+import { WorkflowDemo3D } from "./WorkflowDemo3D";
 
 export type LandingWorkflowStep = {
   title: string;
   detail: string;
   bullets: string[];
-  image: {
-    desktop: string;
-    mobile: string;
-  };
 };
 
 type LandingWorkflowProps = {
@@ -54,22 +50,10 @@ export function LandingWorkflow({ steps }: LandingWorkflowProps) {
               <li key={item}>{item}</li>
             ))}
           </ul>
+          <small>ฟีเจอร์ที่ใช้งานได้ขึ้นอยู่กับแพ็กเกจ สิทธิ์ และการตั้งค่าของร้าน</small>
         </div>
-        <div className="reference-feature-visual" aria-hidden="true">
-          <MarketingHeroScene className="reference-feature-scene" />
-          <picture key={`${activeStep.title}-image`} className="reference-feature-picture">
-            <source media="(max-width: 767px)" srcSet={activeStep.image.mobile} />
-            <img
-              className="reference-feature-image"
-              src={activeStep.image.desktop}
-              width={1280}
-              height={720}
-              alt=""
-              loading="eager"
-              decoding="async"
-              draggable={false}
-            />
-          </picture>
+        <div className="reference-feature-visual">
+          <WorkflowDemo3D key={activeIndex} step={activeIndex} />
         </div>
       </GlassPanel>
 

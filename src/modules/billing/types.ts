@@ -264,6 +264,11 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
   },
 };
 
+/** Read-only definition for public plan comparisons; does not grant tenant access. */
+export function getPlanDefinition(plan: Exclude<BillingPlan, "business">): Readonly<PlanFeatures> {
+  return { ...PLAN_FEATURES[plan] };
+}
+
 export function isAccessAllowed(state: BillingState): boolean {
   switch (state.status) {
     case "active":
