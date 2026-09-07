@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Printer } from "@/modules/stores/types";
 import { printKitchenForOrder, type StationPrinter } from "./delivery/print-kitchen";
 import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
+import { deliveryAnnouncement } from "@/shared/notifications/announcement-text";
 
 interface IncomingItem {
   name: string;
@@ -34,6 +35,7 @@ export function DeliveryGlobalNotifier({
   paperWidth,
   printers,
   autoPrintOnArrival,
+  voiceEnabled = false,
 }: {
   storeId: string;
   canManage: boolean;
@@ -42,6 +44,8 @@ export function DeliveryGlobalNotifier({
   paperWidth: "58mm" | "80mm";
   printers: Printer[];
   autoPrintOnArrival: boolean;
+  /** stores.notification_voice_enabled — อ่านออกเสียงแทน beep */
+  voiceEnabled?: boolean;
 }) {
   const router = useRouter();
   const seen = useRef(new Set<string>());
@@ -49,7 +53,11 @@ export function DeliveryGlobalNotifier({
   const [orders, setOrders] = useState<IncomingDeliveryOrder[]>([]);
   const current = orders[0] ?? null;
   // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออเดอร์ Connect/เดลิเวอรี
-  useRepeatingAlert(Boolean(current), "connect");
+  // ประโยคที่พูดต้องไม่มีข้อมูลลูกค้าหรือยอดเงิน — ลำโพงอยู่หน้าร้าน ลูกค้าได้ยินด้วย
+  useRepeatingAlert(Boolean(current), "connect", {
+    announcement: current ? deliveryAnnouncement(orders.length) : null,
+    voiceEnabledByStore: voiceEnabled,
+  });
 
   const poll = useCallback(async () => {
     let list: IncomingDeliveryOrder[];

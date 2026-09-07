@@ -32,6 +32,8 @@ export interface Store {
   voiceCommandEnabled?: boolean;
   /** Phase 1 AI Voice: ทางสำรอง AI (ต้องเปิดคู่กับ voiceCommandEnabled) */
   voiceAiFallbackEnabled?: boolean;
+  /** อ่านออกเสียงแจ้งเตือน (TTS ไทย) แทน beep — ค่าเริ่มต้นของร้าน แต่ละเครื่องปรับทับได้ */
+  notificationVoiceEnabled?: boolean;
   qrOrderingMode: QrOrderingMode;
   tableOpenPolicy: TableOpenPolicy;
   serviceButtons: ServiceButtonConfig[];

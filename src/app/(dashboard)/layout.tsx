@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -6,18 +6,10 @@ import type { PermissionKey } from "@/modules/tenants/types";
 import { getResolvedCurrentPermissions, shouldStartAtAttendance } from "@/modules/auth/guards";
 import { getUserStores } from "@/modules/auth/session";
 import { buildThemeStyle } from "@/modules/theme/presets";
-import {
-  listAssignedKitchenStationIdsForUser,
-  listKitchenStations,
-} from "@/modules/qr-ordering/kitchen-stations";
-import { getReceiptSettings } from "@/modules/settings/repository";
 import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
-import { listPrinters } from "@/modules/stores/repository";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
-import { QrOrderGlobalNotifier } from "./QrOrderGlobalNotifier";
-import { DeliveryGlobalNotifier } from "./DeliveryGlobalNotifier";
-import { NotificationGlobalNotifier } from "./NotificationGlobalNotifier";
+import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
 import { PushTokenRegistrar } from "./PushTokenRegistrar";
 import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
@@ -45,9 +37,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         music_request_enabled?: boolean;
         music_license_status?: string;
         setup_profile?: unknown;
+        notification_voice_enabled?: boolean;
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
+  // ค่าเริ่มต้นเสียงพูดของร้าน — แต่ละเครื่องปรับทับได้เองที่หน้าตั้งค่าแจ้งเตือน
+  const notificationVoiceEnabled = Boolean(currentStoreRow?.notification_voice_enabled);
   // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
   // permission checks still gate every route, hiding is presentation only.
   const setupProfile = parseSetupProfileOrNull(currentStoreRow?.setup_profile);
@@ -56,27 +51,6 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     canManageQr &&
     Boolean(currentStoreRow?.music_request_enabled) &&
     currentStoreRow?.music_license_status === "approved";
-  const assignedKitchenStationIds =
-    canManageQr && qrOrderingEnabled && storeContext.role === "staff"
-      ? (await listAssignedKitchenStationIdsForUser(storeContext.storeId, user.id)).data ?? []
-      : [];
-  const [stationsForPrinting, receiptSettingsForPrinting, printersForPrinting] =
-    canManageQr
-      ? await Promise.all([
-          listKitchenStations(storeContext.storeId),
-          getReceiptSettings(storeContext.storeId, storeContext.organizationId),
-          listPrinters(storeContext.storeId, storeContext.organizationId),
-        ])
-      : [{ data: [] }, { data: null }, { data: [] }];
-  const receiptPrinters = printersForPrinting.data ?? [];
-  const stationPrinters = (stationsForPrinting.data ?? [])
-    .filter((station) => station.printerId)
-    .map((station) => ({ id: station.id, name: station.name, printerId: station.printerId }));
-  const deliveryStationPrinters = (stationsForPrinting.data ?? [])
-    .filter((station) => station.printerId)
-    .map((station) => ({ id: station.id, name: station.name, printerId: station.printerId as string }));
-  const autoPrintStationTickets = Boolean(receiptSettingsForPrinting.data?.autoPrintStationTickets);
-  const receiptPaperWidth = receiptSettingsForPrinting.data?.paperWidth === "58mm" ? "58mm" : "80mm";
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
@@ -196,28 +170,20 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </div>
       <CommandPalette commands={commandItems} />
       <PushTokenRegistrar />
-      {can("reports.view") && <NotificationGlobalNotifier storeId={storeContext.storeId} />}
-      <QrOrderGlobalNotifier
-        storeId={storeContext.storeId}
-        storeName={storeContext.storeName}
-        qrOrderingEnabled={qrOrderingEnabled}
-        canManageQr={canManageQr}
-        canViewEveryKitchenStation={storeContext.role !== "staff"}
-        assignedKitchenStationIds={assignedKitchenStationIds}
-        stationPrinters={stationPrinters}
-        autoPrintStationTickets={autoPrintStationTickets}
-        receiptPaperWidth={receiptPaperWidth}
-        receiptPrinters={receiptPrinters}
-      />
-      <DeliveryGlobalNotifier
-        storeId={storeContext.storeId}
-        canManage={canManageQr}
-        storeName={storeContext.storeName}
-        stationPrinters={deliveryStationPrinters}
-        paperWidth={receiptPaperWidth}
-        printers={receiptPrinters}
-        autoPrintOnArrival={autoPrintStationTickets}
-      />
+      {/* ตัวเด้งชุดเดียวกับหน้า POS — โหลดสถานีครัว/เครื่องพิมพ์ข้างในตัวเอง */}
+      <Suspense fallback={null}>
+        <StoreAlertNotifiers
+          storeId={storeContext.storeId}
+          organizationId={storeContext.organizationId}
+          storeName={storeContext.storeName}
+          userId={user.id}
+          role={storeContext.role}
+          qrOrderingEnabled={qrOrderingEnabled}
+          canManageQr={canManageQr}
+          canViewNotifications={can("reports.view")}
+          voiceEnabled={notificationVoiceEnabled}
+        />
+      </Suspense>
     </div>
   );
 }

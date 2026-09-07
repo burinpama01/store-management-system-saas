@@ -70,6 +70,7 @@ function store(id: string, organizationId = ORG): StoreRow {
     kitchen_queue_enabled: false,
     voice_command_enabled: false,
     voice_ai_fallback_enabled: false,
+    notification_voice_enabled: false,
     dine_in_duration_minutes: 120,
     theme_preset_id: "caramel-cafe",
     theme_primary_color: "#c2603a",

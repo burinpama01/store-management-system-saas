@@ -86,10 +86,14 @@ describe("QR kitchen staff routing and notifications", () => {
   it("adds a global QR order notifier with sound, dialog navigation, auto-print toggle, and printer connection state", () => {
     expect(exists("src/app/(dashboard)/QrOrderGlobalNotifier.tsx")).toBe(true);
 
+    // ตัวเด้งย้ายไปอยู่ใน StoreAlertNotifiers เพื่อให้หน้า POS ใช้ชุดเดียวกับแดชบอร์ดได้
+    const bundle = read("src/shared/notifications/StoreAlertNotifiers.tsx");
+    expect(bundle).toContain("<QrOrderGlobalNotifier");
+    expect(bundle).toContain("qrOrderingEnabled");
+    expect(bundle).toContain("assignedKitchenStationIds");
+
     const layout = read("src/app/(dashboard)/layout.tsx");
-    expect(layout).toContain("<QrOrderGlobalNotifier");
-    expect(layout).toContain("qrOrderingEnabled");
-    expect(layout).toContain("assignedKitchenStationIds");
+    expect(layout).toContain("<StoreAlertNotifiers");
 
     const notifier = read("src/app/(dashboard)/QrOrderGlobalNotifier.tsx");
     expect(notifier).toContain("managedRealtimeSubscription");
@@ -100,5 +104,15 @@ describe("QR kitchen staff routing and notifications", () => {
     expect(notifier).toContain("isBluetoothPrinterConnected");
     expect(notifier).toContain("isUsbPrinterConnected");
     expect(notifier).toContain("printQrKitchenOrder");
+  });
+
+  it("หน้า POS ต้องมีตัวเด้งชุดเดียวกัน (เครื่องที่รัน Launcher เปิดค้างที่ /pos ตลอดวัน)", () => {
+    const pos = read("src/app/pos/page.tsx");
+    expect(pos).toContain("<StoreAlertNotifiers");
+    // ต้องอยู่ทั้ง shell เดิมและ Unified POS ไม่ใช่เฉพาะทางใดทางหนึ่ง
+    expect(pos.match(/\{alertNotifiers\}/g)?.length).toBe(2);
+
+    // ห้ามทำเป็น layout ของ /pos เพราะจะครอบ /pos/display ซึ่งเป็นจอที่หันหาลูกค้า
+    expect(exists("src/app/pos/layout.tsx")).toBe(false);
   });
 });
