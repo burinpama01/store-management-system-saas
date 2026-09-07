@@ -35,6 +35,7 @@ function mapStore(row: StoreRow): Store {
     kitchenQueueEnabled: row.kitchen_queue_enabled ?? false,
     voiceCommandEnabled: row.voice_command_enabled ?? false,
     voiceAiFallbackEnabled: row.voice_ai_fallback_enabled ?? false,
+    notificationVoiceEnabled: row.notification_voice_enabled ?? false,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
     serviceButtons: parseServiceButtons(row.qr_service_buttons),
@@ -238,6 +239,26 @@ export async function updateStore(storeId: string, organizationId: string, input
     .eq("id", storeId)
     .eq("organization_id", organizationId);
   if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/**
+ * เปิด/ปิดเสียงพูดแจ้งเตือน (TTS) ระดับร้าน
+ * แยกจาก updateStore เพราะเป็นสวิตช์เดี่ยวที่กดจากหน้าตั้งค่าแจ้งเตือน ไม่ควรลาก
+ * ฟิลด์อื่นทั้งฟอร์มไปเขียนทับด้วย (updateStore เขียนทุกคอลัมน์ที่รับเข้ามา)
+ */
+export async function setStoreNotificationVoiceEnabled(
+  storeId: string,
+  organizationId: string,
+  enabled: boolean,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("stores")
+    .update({ notification_voice_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("id", storeId)
+    .eq("organization_id", organizationId);
+  if (error) return { ok: false, error: mapError(error).userMessage };
   return { ok: true, error: null };
 }
 

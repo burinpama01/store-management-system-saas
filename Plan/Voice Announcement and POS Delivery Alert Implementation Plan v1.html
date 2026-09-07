@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>แผนงาน: เสียงพูดแจ้งเตือน (TTS) + POS/Launcher เห็นออเดอร์เดลิเวอรี v1</title>
+<style>
+  :root { --ink:#111827; --ink2:#374151; --muted:#6b7280; --line:#e5e7eb; --bg:#f8fafc; --brand:#c2410c; --ok:#047857; --warn:#b45309; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px 20px 80px; background:var(--bg); color:var(--ink);
+         font-family:"Segoe UI","Noto Sans Thai",system-ui,sans-serif; line-height:1.7; }
+  main { max-width:960px; margin:0 auto; }
+  h1 { font-size:1.9rem; margin:0 0 4px; }
+  h2 { font-size:1.25rem; margin:36px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--brand); }
+  h3 { font-size:1.02rem; margin:22px 0 6px; color:var(--ink2); }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin-bottom:14px; }
+  table { width:100%; border-collapse:collapse; font-size:.93rem; }
+  th, td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; font-weight:700; }
+  code { background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:.88em; }
+  ul, ol { margin:8px 0; padding-left:22px; }
+  li { margin:4px 0; }
+  .tag { display:inline-block; font-size:.75rem; font-weight:700; padding:2px 9px; border-radius:999px; }
+  .tag-new { background:#ecfdf5; color:var(--ok); }
+  .tag-edit { background:#fff7ed; color:var(--warn); }
+  .tag-db { background:#eff6ff; color:#1d4ed8; }
+  .note { border-left:4px solid var(--warn); background:#fffbeb; padding:10px 14px; border-radius:0 8px 8px 0; margin:12px 0; }
+  .bad { border-left:4px solid #dc2626; background:#fef2f2; padding:10px 14px; border-radius:0 8px 8px 0; margin:12px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>เสียงพูดแจ้งเตือน (TTS) + ให้ POS/Launcher เห็นออเดอร์เดลิเวอรี</h1>
+  <p class="sub">แผน v1 · 2026-09-07 · ฐาน v0.46.3</p>
+
+  <h2>1. ปัญหาที่พบจากการอ่านโค้ดจริง</h2>
+  <section>
+    <h3>1.1 Launcher ไม่รองรับเดลิเวอรี</h3>
+    <ul>
+      <li>Launcher เป็นเปลือก WebView2 ที่เปิด <code>https://www.store-os.online/pos</code> ตายตัว
+          (<code>windows/StoreOS.Launcher/Configuration/LauncherSettings.cs:22</code>) ไม่มีโค้ดเกี่ยวกับเดลิเวอรีเลย
+          และสาย native↔web มีแค่คำปลุกเสียง (<code>windows/StoreOS.Voice/StandbyContract.cs</code>)</li>
+      <li>ตัวเด้งออเดอร์ทั้ง 3 ตัว (<code>DeliveryGlobalNotifier</code> / <code>QrOrderGlobalNotifier</code> /
+          <code>NotificationGlobalNotifier</code>) mount อยู่ใน <code>src/app/(dashboard)/layout.tsx:199-212</code> เท่านั้น</li>
+      <li><code>/pos</code> อยู่นอก route group <code>(dashboard)</code> และไม่มี layout ของตัวเอง
+          → <b>เครื่องที่รัน Launcher ไม่มีทางรู้ว่ามีออเดอร์เดลิเวอรี/QR เข้า</b> จนกว่าจะออกจาก POS</li>
+      <li>ออเดอร์เดลิเวอรีไม่ผ่าน dispatcher (<code>NotificationType</code> ไม่มีชนิดเดลิเวอรี) — รู้ได้ทางเดียวคือ
+          poll <code>/api/connect/pending</code> ทุก 12 วินาที ซึ่งอยู่ใน DeliveryGlobalNotifier</li>
+    </ul>
+    <h3>1.2 เสียงแจ้งเตือนไม่บอกว่าเกิดอะไร</h3>
+    <p>ทุกเสียงเป็น beep จาก oscillator (<code>src/shared/notifications/alert-sound.ts:48</code>) — แยกได้แค่
+       <code>qr</code> (สูง 3 จังหวะ) กับ <code>connect</code> (ต่ำ 2 จังหวะ) พนักงานต้องมองจอถึงจะรู้เรื่อง</p>
+  </section>
+
+  <h2>2. ขอบเขตที่เคาะแล้ว</h2>
+  <section>
+    <ol>
+      <li>ทำทั้งสองอย่าง: ย้ายตัวเด้งลง <code>/pos</code> ด้วย + เปลี่ยนเสียงเป็น TTS</li>
+      <li>กลไกเสียง: <code>speechSynthesis</code> (th-TH) และ<b>ถอยเป็น beep เดิม</b>เมื่อเครื่องไม่มีเสียงไทย</li>
+      <li>ตั้งค่า 2 ชั้น: ร้านตั้งค่าเริ่มต้น (คอลัมน์ใน <code>stores</code>) + แต่ละเครื่องปรับทับได้ (localStorage)</li>
+    </ol>
+  </section>
+
+  <h2>3. สิ่งที่จะสร้าง/แก้</h2>
+  <section>
+    <table>
+      <thead><tr><th>ไฟล์</th><th>สถานะ</th><th>สาระ</th></tr></thead>
+      <tbody>
+        <tr><td><code>supabase/migrations/20260907000000_notification_voice_announcement.sql</code></td>
+            <td><span class="tag tag-db">DB</span></td>
+            <td><code>stores.notification_voice_enabled boolean not null default false</code> — default false เพื่อให้ deploy แล้วไม่มีร้านไหนพูดขึ้นมาเองโดยไม่ได้ขอ</td></tr>
+        <tr><td><code>src/shared/notifications/announce.ts</code></td>
+            <td><span class="tag tag-new">ใหม่</span></td>
+            <td>เลือกเสียงไทยจาก <code>getVoices()</code> (รอ <code>voiceschanged</code>), <code>speakAnnouncement()</code> คืน false เมื่อพูดไม่ได้, อ่าน/เขียนค่าตั้งต่อเครื่อง (<code>storeos.notify.voice</code> = store | on | off)</td></tr>
+        <tr><td><code>src/shared/notifications/alert-sound.ts</code></td>
+            <td><span class="tag tag-edit">แก้</span></td>
+            <td><code>useRepeatingAlert(active, pattern, announcement?)</code> — <b>พูดครั้งเดียวตอนขึ้น dialog</b> รอบซ้ำทุก 3.5 วิ เป็น beep เหมือนเดิม; พูดไม่ได้ = beep ทันที</td></tr>
+        <tr><td><code>src/shared/notifications/StoreAlertNotifiers.tsx</code></td>
+            <td><span class="tag tag-new">ใหม่</span></td>
+            <td>server component รวมการโหลด kitchen station / receipt settings / printers แล้ว render 3 notifier — ตัดโค้ดซ้ำระหว่าง dashboard กับ POS</td></tr>
+        <tr><td><code>src/app/(dashboard)/layout.tsx</code></td>
+            <td><span class="tag tag-edit">แก้</span></td>
+            <td>เรียก StoreAlertNotifiers แทนการประกอบเอง (พฤติกรรมเดิมทุกอย่าง)</td></tr>
+        <tr><td><code>src/app/pos/page.tsx</code></td>
+            <td><span class="tag tag-edit">แก้</span></td>
+            <td>render StoreAlertNotifiers คู่กับ POS shell ทั้ง legacy และ unified</td></tr>
+        <tr><td>Notifier ทั้ง 3</td>
+            <td><span class="tag tag-edit">แก้</span></td>
+            <td>ส่งข้อความพูด: "ออเดอร์เดลิเวอรีเข้าใหม่" / "ออเดอร์โต๊ะ 4 เข้าใหม่" / ตามชนิดแจ้งเตือน</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/notifications/*</code></td>
+            <td><span class="tag tag-edit">แก้</span></td>
+            <td>สวิตช์ระดับร้าน + ปุ่ม "ทดสอบเสียงพูด" (ต้องกดบนเครื่องร้านจริงเพื่อพิสูจน์ว่า WebView2 มีเสียงไทย)</td></tr>
+        <tr><td><code>src/app/(dashboard)/settings/devices/*</code></td>
+            <td><span class="tag tag-edit">แก้</span></td>
+            <td>ตัวเลือกต่อเครื่อง: ตามร้าน / เปิด / ปิด</td></tr>
+        <tr><td><code>tests/unit/notification-voice-announcement.test.ts</code></td>
+            <td><span class="tag tag-new">ใหม่</span></td>
+            <td>เลือกเสียงไทย, ถอยเป็น beep, ลำดับความสำคัญของค่าตั้ง 2 ชั้น, ข้อความที่ประกาศ</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <h2>4. จุดที่พลาดง่าย (บันทึกไว้ก่อนลงมือ)</h2>
+  <section>
+    <div class="bad"><b>ห้ามทำเป็น <code>src/app/pos/layout.tsx</code></b> — layout จะครอบ <code>/pos/display</code>
+      ซึ่งเป็นจอที่หันหาลูกค้า ถ้าเด้ง dialog ออเดอร์ที่นั่นคือเอาข้อมูลร้านไปโชว์ลูกค้า จึงต้อง mount ที่ <code>page.tsx</code> ของ <code>/pos</code> เท่านั้น</div>
+    <div class="note">เสียงเตือนดังซ้ำทุก 3.5 วินาที — ถ้าพูดทุกรอบจะทับกันจนฟังไม่รู้เรื่อง (<code>synth.cancel()</code> ตัดของเก่าทิ้ง) จึงพูดครั้งแรกครั้งเดียว</div>
+    <div class="note">Chromium เลือกเสียงเองเมื่อไม่มี th-TH แล้วจะอ่านไทยด้วยเสียงอังกฤษเป็นเสียงต่างดาว — ต้องเช็ค <code>getVoices()</code> ก่อนพูดเสมอ ไม่มีก็ beep</div>
+    <div class="note"><code>getVoices()</code> คืน array ว่างในครั้งแรกบน Chromium ต้องรอ event <code>voiceschanged</code></div>
+    <div class="note">POS กินเต็มจอ (<code>h-dvh overflow-hidden</code>) — notifier ต้องเป็น overlay <code>fixed</code> เท่านั้น ห้ามแทรกใน flow</div>
+  </section>
+
+  <h2>5. ลำดับงาน</h2>
+  <section>
+    <ol>
+      <li>migration + ต่อสายคอลัมน์เข้า <code>Store</code> type / repository</li>
+      <li><code>announce.ts</code> + แก้ <code>alert-sound.ts</code> + unit tests</li>
+      <li><code>StoreAlertNotifiers.tsx</code> แล้วให้ dashboard layout ใช้ (ต้องไม่เปลี่ยนพฤติกรรมเดิม)</li>
+      <li>ต่อเข้า <code>/pos</code> ทั้ง legacy และ unified</li>
+      <li>ข้อความพูดในแต่ละ notifier</li>
+      <li>หน้าตั้งค่า 2 ชั้น + ปุ่มทดสอบเสียง</li>
+      <li><code>npm run typecheck</code> + <code>npm test</code> + <code>npm run lint</code></li>
+      <li>บันทึก log ลง Obsidian</li>
+    </ol>
+  </section>
+
+  <h2>6. เกณฑ์ว่าเสร็จ</h2>
+  <section>
+    <ul>
+      <li>เปิด <code>/pos</code> แล้วมีออเดอร์เดลิเวอรีเข้า → เด้ง dialog + ได้ยินเสียงบนเครื่องที่รัน Launcher</li>
+      <li>เปิดสวิตช์ระดับร้าน → ได้ยินประโยคไทยแทน beep; ปิดที่เครื่องใดเครื่องหนึ่ง → เครื่องนั้นกลับไป beep</li>
+      <li>เครื่องที่ไม่มีเสียงไทย → ยังได้ยิน beep เดิม ไม่เงียบและไม่อ่านผิดภาษา</li>
+      <li>typecheck / test / lint ผ่านหมด</li>
+    </ul>
+    <p class="sub" style="margin-top:14px">ยังไม่ครอบคลุมในรอบนี้: <code>/pos/grocery</code> (POS ขายส่ง), การพูดผ่าน native TTS ของ Launcher,
+       และการแจ้งเตือนเดลิเวอรีผ่าน LINE/Telegram/Push (ต้องเพิ่ม <code>NotificationType</code> ใหม่ = งานคนละก้อน)</p>
+  </section>
+</main>
+</body>
+</html>

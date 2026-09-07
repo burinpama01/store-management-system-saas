@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
@@ -13,6 +14,7 @@ import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
 import { listUnifiedPosKitchenQueue } from "@/modules/unified-pos/kitchen-repository";
 import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
 import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
+import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +78,24 @@ export default async function PosPage() {
 
   // U9 — gate เดียวจาก stores.unified_pos_enabled (default false = พฤติกรรมเดิมทุกอย่าง)
   const surface = resolveUnifiedPosSurface(storeResult.data);
+  // ตัวเด้งออเดอร์เดลิเวอรี/QR/แจ้งเตือน — เดิมมีแต่ในแดชบอร์ด ทำให้เครื่องที่เปิดค้างที่ POS
+  // (โดยเฉพาะเครื่องที่รัน Launcher ซึ่งเปิด /pos ตายตัว) ไม่รู้เลยว่ามีออเดอร์เข้า
+  // Suspense: การโหลดสถานีครัว/เครื่องพิมพ์ของตัวเด้งต้องไม่หน่วงการเปิดหน้าขาย
+  const alertNotifiers = (
+    <Suspense fallback={null}>
+      <StoreAlertNotifiers
+        storeId={ctx.storeId}
+        organizationId={ctx.organizationId}
+        storeName={ctx.storeName}
+        userId={ctx.userId}
+        role={ctx.role}
+        qrOrderingEnabled={Boolean(storeResult.data?.qrOrderingEnabled)}
+        canManageQr={resolved.can("orders.manage_qr")}
+        canViewNotifications={resolved.can("reports.view")}
+        voiceEnabled={Boolean(storeResult.data?.notificationVoiceEnabled)}
+      />
+    </Suspense>
+  );
   const terminal = (
     <PosTerminal
       storeId={ctx.storeId}
@@ -107,6 +127,7 @@ export default async function PosPage() {
       // POS กินเต็มจอพอดี — ไม่มีการเลื่อนทั้งหน้า (เลื่อนได้เฉพาะรายการเมนู/ออร์เดอร์ข้างใน)
       <div style={themeStyle} className="h-dvh overflow-hidden">
         {terminal}
+        {alertNotifiers}
       </div>
     );
   }
@@ -148,6 +169,7 @@ export default async function PosPage() {
           resolved.can(command.permission as PermissionKey),
         )}
       />
+      {alertNotifiers}
     </div>
   );
 }

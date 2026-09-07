@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import {
+  cancelAnnouncement,
+  primeVoices,
+  readVoicePreference,
+  resolveVoiceEnabled,
+  speakAnnouncement,
+} from "./announce";
 
 /**
  * เสียงแจ้งเตือนในแอปสำหรับออเดอร์ที่ต้องรีบรับ (QR / Connect):
@@ -85,22 +92,70 @@ function vibrate(pattern: AlertPattern) {
 const REPEAT_INTERVAL_MS = 3500;
 
 /**
+ * แจ้งเตือนหนึ่งครั้ง (toast ที่ไม่มี dialog ค้าง): พูดถ้าเปิดเสียงพูดไว้และพูดได้ ไม่งั้น beep
+ * คืนค่า true เมื่อพูดออกไปจริง — ผู้เรียกไม่ต้องเล่นเสียงซ้ำเอง
+ */
+export function playAlertOrSpeak(
+  pattern: AlertPattern,
+  announcement: string | null,
+  voiceEnabledByStore: boolean,
+): boolean {
+  const voiceOn = resolveVoiceEnabled(voiceEnabledByStore, readVoicePreference());
+  const spoken = voiceOn && announcement ? speakAnnouncement(announcement) : false;
+  if (!spoken) playAlertChime(pattern);
+  return spoken;
+}
+
+export interface RepeatingAlertOptions {
+  /**
+   * ข้อความที่จะอ่านออกเสียงแทน beep (ระบบสร้างเอง ไม่ใช่ข้อมูลลูกค้า)
+   * ไม่ส่งมา = ใช้ beep อย่างเดียวเหมือนเดิม
+   */
+  readonly announcement?: string | null;
+  /** ค่าเริ่มต้นระดับร้าน (stores.notification_voice_enabled) — เครื่องปรับทับได้ */
+  readonly voiceEnabledByStore?: boolean;
+}
+
+/**
  * เล่นเสียงเตือนซ้ำต่อเนื่องขณะที่ `active` เป็น true (มี dialog ค้างอยู่)
  * หยุดทันทีเมื่อปิด dialog — ให้พนักงานไม่พลาดออเดอร์เร่งด่วน
+ *
+ * เมื่อเปิดเสียงพูดไว้ จะ**พูดซ้ำทุกรอบเหมือน beep** จนกว่าจะปิด dialog
+ * (ประโยคสั้น ~2 วิ สั้นกว่าคาบซ้ำ 3.5 วิ จึงไม่ตัดประโยคตัวเองกลางคัน)
+ * ถ้าเครื่องพูดไม่ได้ (ไม่มีเสียงไทย) รอบนั้นจะ beep แทน ไม่มีทางเงียบ
  */
-export function useRepeatingAlert(active: boolean, pattern: AlertPattern) {
+export function useRepeatingAlert(
+  active: boolean,
+  pattern: AlertPattern,
+  options: RepeatingAlertOptions = {},
+) {
+  const { announcement = null, voiceEnabledByStore = false } = options;
+  // เก็บไว้ใน ref: ข้อความเปลี่ยนกลางรอบ (ออเดอร์ใบถัดไป) ต้องไม่รีสตาร์ท interval
+  // — ถ้าใส่ใน dependency คาบเสียงจะรีเซ็ตทุกครั้งที่จำนวนออเดอร์เปลี่ยน
+  const announcementRef = useRef(announcement);
+  useEffect(() => {
+    announcementRef.current = announcement;
+  }, [announcement]);
+
   useEffect(() => {
     ensureAudioUnlocked();
+    primeVoices();
   }, []);
 
   useEffect(() => {
     if (!active) return;
-    playAlertChime(pattern);
-    vibrate(pattern);
-    const id = window.setInterval(() => {
-      playAlertChime(pattern);
+
+    const ring = () => {
+      playAlertOrSpeak(pattern, announcementRef.current ?? null, voiceEnabledByStore);
       vibrate(pattern);
-    }, REPEAT_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [active, pattern]);
+    };
+
+    ring();
+    const id = window.setInterval(ring, REPEAT_INTERVAL_MS);
+    return () => {
+      window.clearInterval(id);
+      // ปิด dialog แล้วต้องเงียบทันที ไม่ปล่อยให้ประโยคสุดท้ายพูดค้างต่อ
+      cancelAnnouncement();
+    };
+  }, [active, pattern, voiceEnabledByStore]);
 }

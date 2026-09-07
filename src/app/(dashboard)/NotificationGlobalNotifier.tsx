@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { managedRealtimeSubscription } from "@/shared/realtime/realtime-client";
-import { ensureAudioUnlocked, playAlertChime } from "@/shared/notifications/alert-sound";
+import { ensureAudioUnlocked, playAlertOrSpeak } from "@/shared/notifications/alert-sound";
+import { primeVoices } from "@/shared/notifications/announce";
+import { toastAnnouncement } from "@/shared/notifications/announcement-text";
 import { metaFor } from "./notifications/NotificationCenter";
 import {
   listNewNotificationsAction,
@@ -27,6 +29,8 @@ interface Toast extends NewNotificationItem {
 
 interface Props {
   storeId: string;
+  /** stores.notification_voice_enabled — อ่านออกเสียงแทน beep */
+  voiceEnabled?: boolean;
 }
 
 /**
@@ -34,12 +38,18 @@ interface Props {
  * (เรียกพนักงาน, ชำระเงิน, สต็อก ฯลฯ) — ฟัง realtime และ **มี polling fallback**
  * เผื่อ realtime ใช้ไม่ได้ (เน็ตร้านบล็อก WebSocket ฯลฯ) จะเด้งช้าสุด ~25 วินาที
  */
-export function NotificationGlobalNotifier({ storeId }: Props) {
+export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Props) {
   const router = useRouter();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seenIds = useRef(new Set<string>());
   // สนใจเฉพาะแจ้งเตือนที่เกิดหลังเปิดหน้า — ของเก่าดูได้ที่ /notifications
   const mountedAtIso = useRef(new Date().toISOString());
+
+  // ref: ค่าจาก props ไม่ควรทำให้ pushToasts (และ subscription ที่ผูกกับมัน) สร้างใหม่
+  const voiceEnabledRef = useRef(voiceEnabled);
+  useEffect(() => {
+    voiceEnabledRef.current = voiceEnabled;
+  }, [voiceEnabled]);
 
   const pushToasts = useCallback((items: NewNotificationItem[], source: "realtime" | "poll") => {
     const fresh = items.filter((item) => {
@@ -56,7 +66,11 @@ export function NotificationGlobalNotifier({ storeId }: Props) {
     if (fresh.length === 0) return;
     for (const item of fresh) seenIds.current.add(item.id);
     setToasts((prev) => [...prev, ...fresh.map((item) => ({ ...item, shownAt: Date.now() }))].slice(-MAX_TOASTS));
-    playAlertChime("connect");
+    playAlertOrSpeak(
+      "connect",
+      toastAnnouncement(metaFor(fresh[0].type).label, fresh.length),
+      voiceEnabledRef.current,
+    );
     try {
       navigator.vibrate?.([150, 80, 150]);
     } catch {
@@ -67,6 +81,7 @@ export function NotificationGlobalNotifier({ storeId }: Props) {
   // ปลดล็อกเสียงตั้งแต่ mount (ดังได้หลัง user แตะหน้าจอครั้งแรก)
   useEffect(() => {
     ensureAudioUnlocked();
+    primeVoices();
   }, []);
 
   // Realtime: เด้งทันทีเมื่อ dispatcher บันทึกแจ้งเตือนใหม่

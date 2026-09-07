@@ -20,6 +20,7 @@ import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
 import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
+import { qrOrderAnnouncement } from "@/shared/notifications/announcement-text";
 
 const AUTO_PRINT_KEY = "qrOrderAutoPrintEnabled";
 
@@ -90,6 +91,8 @@ interface Props {
   receiptPaperWidth: "58mm" | "80mm";
   /** Store printers, so the whole-order receipt can enqueue to the Hub (iPad-safe). */
   receiptPrinters: Printer[];
+  /** stores.notification_voice_enabled — อ่านออกเสียงแทน beep */
+  voiceEnabled?: boolean;
 }
 
 function readAutoPrintPreference() {
@@ -180,6 +183,7 @@ export function QrOrderGlobalNotifier({
   autoPrintStationTickets,
   receiptPaperWidth,
   receiptPrinters,
+  voiceEnabled = false,
 }: Props) {
   const router = useRouter();
   const seenOrderIds = useRef(new Set<string>());
@@ -196,7 +200,11 @@ export function QrOrderGlobalNotifier({
   );
   const currentOrder = orders[0] ?? null;
   // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออร์เดอร์ QR
-  useRepeatingAlert(Boolean(currentOrder), "qr");
+  // ประโยคที่พูดต้องไม่มีข้อมูลลูกค้าหรือยอดเงิน — ลำโพงอยู่หน้าร้าน ลูกค้าได้ยินด้วย
+  useRepeatingAlert(Boolean(currentOrder), "qr", {
+    announcement: currentOrder ? qrOrderAnnouncement(currentOrder.tableNumber, orders.length) : null,
+    voiceEnabledByStore: voiceEnabled,
+  });
 
   useEffect(() => {
     const preferenceTimer = window.setTimeout(() => {

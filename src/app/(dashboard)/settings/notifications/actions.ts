@@ -18,6 +18,8 @@ import {
   upsertTelegramNotificationTarget,
 } from "@/modules/notifications/repository";
 import { dispatchNotification } from "@/modules/notifications/dispatcher";
+import { setStoreNotificationVoiceEnabled } from "@/modules/stores/repository";
+import { logSystemEvent } from "@/modules/system/event-log";
 import type { ActionFeedbackState } from "./feedback";
 
 function actionError(error: unknown, fallback: string): ActionFeedbackState {
@@ -164,6 +166,45 @@ export async function toggleNotificationSettingAction(
     };
   } catch (error) {
     return actionError(error, "บันทึกการตั้งค่าแจ้งเตือนไม่สำเร็จ");
+  }
+}
+
+/**
+ * เปิด/ปิดเสียงพูดแจ้งเตือน (TTS) ระดับร้าน
+ *
+ * เป็นแค่ "ค่าเริ่มต้น" — เครื่องที่ตั้งค่าเองไว้ (localStorage) จะไม่ถูกค่านี้เปลี่ยน
+ * เพราะเครื่องที่วางติดลูกค้าต้องปิดเสียงพูดได้โดยไม่กระทบเครื่องในครัว
+ */
+export async function setNotificationVoiceEnabledAction(
+  _prevState: ActionFeedbackState,
+  formData: FormData,
+): Promise<ActionFeedbackState> {
+  try {
+    await requirePermission("notifications.manage");
+    const ctx = await getStoreContext();
+    const enabled = formData.get("enabled") === "on";
+
+    const result = await setStoreNotificationVoiceEnabled(ctx.storeId, ctx.organizationId, enabled);
+    if (!result.ok) throw new Error(result.error ?? "บันทึกไม่สำเร็จ");
+
+    await logSystemEvent({
+      level: "info",
+      source: "settings.notifications",
+      action: "setNotificationVoiceEnabledAction",
+      message: enabled ? "เปิดเสียงพูดแจ้งเตือนของร้าน" : "ปิดเสียงพูดแจ้งเตือนของร้าน",
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      context: { enabled },
+    });
+
+    revalidatePath("/settings/notifications");
+    return {
+      status: "success",
+      message: enabled ? "เปิดเสียงพูดแล้ว" : "ปิดเสียงพูดแล้ว",
+      submittedAt: Date.now(),
+    };
+  } catch (error) {
+    return actionError(error, "บันทึกการตั้งค่าเสียงพูดไม่สำเร็จ");
   }
 }
 

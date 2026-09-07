@@ -33,6 +33,7 @@ export function mapStore(row: StoreRow): Store {
     kitchenQueueEnabled: row.kitchen_queue_enabled ?? false,
     voiceCommandEnabled: row.voice_command_enabled ?? false,
     voiceAiFallbackEnabled: row.voice_ai_fallback_enabled ?? false,
+    notificationVoiceEnabled: row.notification_voice_enabled ?? false,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
     serviceButtons: parseServiceButtons(row.qr_service_buttons),

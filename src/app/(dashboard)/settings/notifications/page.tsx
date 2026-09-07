@@ -6,6 +6,7 @@ import {
   PLAN_LABELS,
 } from "@/modules/billing/types";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { getStore } from "@/modules/stores/repository";
 import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_TYPES,
@@ -30,6 +31,7 @@ import { TelegramChatIdForm } from "./TelegramChatIdForm";
 import { NotificationSettingToggle } from "./NotificationSettingToggle";
 import { NotificationTemplateEditor } from "./NotificationTemplateEditor";
 import { LineAccountLinkPanel } from "./LineAccountLinkPanel";
+import { VoiceAnnouncementPanel } from "./VoiceAnnouncementPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +113,9 @@ export default async function NotificationSettingsPage() {
     ]),
   );
   const lineDeliveryTargetReady = lineDeliveryTargetResult.data?.status === "active";
+  // เสียงพูดในแอปไม่ผ่านช่องทาง LINE/Telegram/Push จึงไม่ผูกกับ features.lineNotify
+  const storeResult = await getStore(ctx.storeId);
+  const notificationVoiceEnabled = Boolean(storeResult.data?.notificationVoiceEnabled);
 
   return (
     <section className="space-y-5">
@@ -125,6 +130,8 @@ export default async function NotificationSettingsPage() {
           แสดงเฉพาะช่องทางที่พร้อมใช้งานและการตั้งค่าของร้านนี้
         </p>
       </header>
+
+      <VoiceAnnouncementPanel storeEnabled={notificationVoiceEnabled} canManage={canManage} />
 
       {!features.lineNotify && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
