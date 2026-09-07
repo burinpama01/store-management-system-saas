@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { PublicPlan } from "@/modules/billing/pricing-repository";
-import { COMPARISON_FEATURES, featureAvailability, planHighlights, planLimit } from "./plan-catalog";
+import { ALWAYS_INCLUDED, COMPARISON_FEATURES, featureAvailability, planHighlights } from "./plan-catalog";
 
 const PLAN_COPY: Record<string, { intro: string; cta: string }> = {
   starter: { intro: "เริ่มจัดการงานขายและเมนูของร้าน", cta: "เลือก Starter" },
@@ -26,8 +26,7 @@ export function PricingPlans({ plans, freeTrialOpen = false }: Readonly<{ plans:
       <div className="pricing-card-top"><span className="pricing-sculpture" aria-hidden="true"><i/><i/><i/></span>{plan.highlight && <span className="pricing-badge">แพ็กเกจแนะนำ</span>}</div>
       <h2>{plan.displayName}</h2><p className="pricing-intro">{copy.intro}</p>
       <div className="pricing-price" aria-live="polite">{plan.configurable && <small>เริ่มต้น</small>}<strong>{money(price)}</strong>{!enterprise && price !== null && <span>/ {annual ? "365 วัน" : "30 วัน"}</span>}</div>
-      <p className="pricing-capacity">{plan.configurable ? "สมาชิก สาขา และฟีเจอร์ตามที่เลือก" : `เพดาน ${planLimit(plan.tier, "maxStores")} สาขา · ${planLimit(plan.tier, "maxMembers")} สมาชิก`}</p>
-      {featureAvailability(plan.tier, "multiBranchReporting") === "ไม่รวม" && <p className="pricing-branch-note">แพ็กเกจนี้ยังเพิ่มสาขาเองไม่ได้</p>}
+      {plan.configurable && <p className="pricing-capacity">สมาชิก สาขา และฟีเจอร์ตามที่เลือก</p>}
       {plan.configurable && <p className="pricing-branch-note">หากต้องการเพิ่มสาขา ต้องเลือกฟีเจอร์รายงานหลายสาขาด้วย</p>}
       <Link className={`pricing-action ${plan.highlight ? "is-primary" : ""}`} href={enterprise ? "/enterprise" : `/register?plan=${plan.tier}`}>{copy.cta}<span aria-hidden="true">↗</span></Link>
       <ul>{planHighlights(plan.tier).map(line => <li key={line}><span aria-hidden="true">✓</span>{line}</li>)}</ul>
@@ -40,8 +39,9 @@ export function PricingPlans({ plans, freeTrialOpen = false }: Readonly<{ plans:
     {plans.length === 0 ? <p className="pricing-empty" role="status">ยังไม่มีแพ็กเกจแสดงในขณะนี้ กรุณาติดต่อทีม StoreOS</p> : <>
       <section className="pricing-grid" aria-label="แพ็กเกจสำเร็จรูป">{fixed.map(card)}</section>
       {flexible.length > 0 && <section className="pricing-flex-section"><div className="pricing-section-title"><span className="pricing-eyebrow">ร้านคุณ เลือกได้</span><h2>อยากเลือกเอง หรือมีหลายสาขา?</h2></div><div className="pricing-flex-grid">{flexible.map(card)}</div></section>}
-      <section className="pricing-comparison"><div className="pricing-section-title"><span className="pricing-eyebrow">ดูให้ชัด ก่อนตัดสินใจ</span><h2>เปรียบเทียบฟีเจอร์หลัก</h2><p>เพดานสาขาและสิทธิ์เพิ่มสาขาแสดงแยกกัน · Business ต้องเลือกซื้อฟีเจอร์เพิ่ม</p></div><div className="pricing-table-scroll" tabIndex={0} role="region" aria-label="ตารางฟีเจอร์ เลื่อนแนวนอนได้"><table aria-label="เปรียบเทียบสิทธิ์แพ็กเกจ"><thead><tr><th scope="col">ฟีเจอร์</th>{plans.map(p => <th scope="col" key={p.tier}>{p.displayName}</th>)}</tr></thead><tbody>{(["maxStores", "maxMembers"] as const).map(key => <tr key={key}><th scope="row">{key === "maxStores" ? "เพดานจำนวนสาขา" : "จำนวนสมาชิก"}</th>{plans.map(p => <td key={p.tier}>{planLimit(p.tier, key)}</td>)}</tr>)}{COMPARISON_FEATURES.map(f => <tr key={f.key}><th scope="row">{f.label}</th>{plans.map(p => <td key={p.tier} className={featureAvailability(p.tier, f.key) === "รวมแล้ว" ? "is-included" : ""}>{featureAvailability(p.tier, f.key)}</td>)}</tr>)}</tbody></table></div></section>
+      <section className="pricing-comparison"><div className="pricing-section-title"><span className="pricing-eyebrow">ดูให้ชัด ก่อนตัดสินใจ</span><h2>เปรียบเทียบฟีเจอร์หลัก</h2><p>ทุกช่องอ่านจากสิทธิ์จริงของระบบ · Business เลือกซื้อเฉพาะฟีเจอร์ที่ต้องใช้</p></div><div className="pricing-table-scroll" tabIndex={0} role="region" aria-label="ตารางฟีเจอร์ เลื่อนแนวนอนได้"><table aria-label="เปรียบเทียบสิทธิ์แพ็กเกจ"><thead><tr><th scope="col">ฟีเจอร์</th>{plans.map(p => <th scope="col" key={p.tier}>{p.displayName}</th>)}</tr></thead><tbody>{COMPARISON_FEATURES.map(f => <tr key={f.key}><th scope="row">{f.label}</th>{plans.map(p => <td key={p.tier} className={featureAvailability(p.tier, f.key) === "รวมแล้ว" ? "is-included" : ""}>{featureAvailability(p.tier, f.key)}</td>)}</tr>)}</tbody></table></div></section>
     </>}
+    <section className="pricing-included" aria-label="ความสามารถที่ได้ทุกแพ็กเกจ"><div className="pricing-section-title"><span className="pricing-eyebrow">ได้ทุกแพ็กเกจ</span><h2>ใช้ได้เลย ไม่ต้องซื้อเพิ่ม</h2><p>ความสามารถพื้นฐานที่ไม่ผูกกับแพ็กเกจ ทุกร้านใช้ได้ตั้งแต่วันแรก</p></div><ul className="pricing-included-grid">{ALWAYS_INCLUDED.map(item => <li key={item.title}><span aria-hidden="true">✓</span><div><strong>{item.title}</strong><small>{item.detail}</small></div></li>)}</ul></section>
     <p className="pricing-terms">ราคาแสดงเป็นบาทต่อรอบที่เลือก โปรโมชันหรือโค้ดส่วนลดที่เข้าเงื่อนไขจะคำนวณในหน้าชำระเงิน กรุณาตรวจยอดสุดท้ายก่อนยืนยัน ฟีเจอร์บางส่วนต้องตั้งค่าร้าน อุปกรณ์ หรือบริการที่เชื่อมต่อก่อนใช้งาน</p>
   </>;
 }
