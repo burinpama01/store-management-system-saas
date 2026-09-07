@@ -19,13 +19,22 @@ export const COMPARISON_FEATURES: { key: Exclude<FeatureKey, "maxStores" | "maxM
   { key: "customerDisplay", label: "จอแสดงผลลูกค้า" },
   { key: "multiBranchReporting", label: "เพิ่มสาขาและรายงานหลายสาขา" },
   { key: "musicRequest", label: "ขอเพลงและเครื่องเล่นเพลง" },
+  { key: "apiIntegration", label: "เชื่อมต่อเดลิเวอรีและ API" },
+  { key: "aiVision", label: "AI สแกนเมนูจากรูปภาพ" },
+  { key: "aiAssistant", label: "ผู้ช่วย AI ช่วยแก้ปัญหาอุปกรณ์" },
+  // ไม่ใส่ aiForecast: มีแค่ราคา component ของ Business ยังไม่มีฟีเจอร์ให้ผู้ใช้จริง
 ];
 
-export function planLimit(tier: PlanTier, key: "maxStores" | "maxMembers"): string {
-  if (tier === "business") return "เลือกจำนวนเอง";
-  const value = getPlanDefinition(tier)[key];
-  return Number.isFinite(value) ? value.toLocaleString("th-TH") : "ไม่จำกัด";
-}
+// ความสามารถที่ไม่มี feature gate ในโค้ด = ทุกแพ็กเกจใช้ได้ ไม่ต้องซื้อเพิ่ม
+// เพิ่มรายการใหม่ที่นี่ได้เฉพาะเมื่อยืนยันแล้วว่าไม่มี requireFeature/canUseFeature คุมอยู่
+export const ALWAYS_INCLUDED: { title: string; detail: string }[] = [
+  { title: "สั่งงานด้วยเสียงในหน้าขาย", detail: "พูดสั่งเมนู แก้ตัวเลือกในตะกร้า และเปิดหน้าจอในระบบ ร้านเปิดใช้เองได้ในตั้งค่า" },
+  { title: "ขายหน้าร้านและออกใบเสร็จ", detail: "รับออเดอร์ ชำระเงิน พิมพ์ใบเสร็จ และพิมพ์ซ้ำจากประวัติบิล" },
+  { title: "พิมพ์ผ่านคอมพิวเตอร์ร้าน", detail: "StoreOS Print Hub และ Launcher บน Windows ให้แท็บเล็ตส่งงานเข้าเครื่องพิมพ์ตัวเดียวกัน" },
+  { title: "แอปมือถือ Android", detail: "รับแจ้งเตือนออเดอร์และงานในร้านบนมือถือ" },
+  { title: "ลงเวลาและคำนวณเงินเดือน", detail: "ตอกบัตร กะ วันหยุด ปฏิทินทีม และสลิปเงินเดือน" },
+  { title: "รายรับ-รายจ่ายและรอบเงินสด", detail: "บันทึกรายการ ปิดรอบ และตรวจส่วนต่างในลิ้นชัก" },
+];
 
 export function featureAvailability(tier: PlanTier, key: FeatureKey): string {
   if (tier === "business") return "เลือกเพิ่ม";
