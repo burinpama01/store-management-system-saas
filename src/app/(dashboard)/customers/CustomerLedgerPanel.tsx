@@ -89,7 +89,13 @@ export function CustomerLedgerPanel({
                     {entry.pointsDelta > 0 ? "+" : ""}
                     {formatPoints(entry.pointsDelta)}
                   </span>
-                  {entry.reason ? <span className="w-full text-xs text-[var(--muted)]">{entry.reason}</span> : null}
+                  {entry.orderNumber || entry.reason ? (
+                    <span className="w-full text-xs text-[var(--muted)]">
+                      {entry.orderNumber ? `บิล ${entry.orderNumber}` : ""}
+                      {entry.orderNumber && entry.reason ? " · " : ""}
+                      {entry.reason ?? ""}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

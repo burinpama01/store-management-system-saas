@@ -4900,6 +4900,69 @@ export interface Database {
         Args: Record<string, never>;
         Returns: number;
       };
+      get_loyalty_points_summary: {
+        Args: {
+          p_store_id: string;
+          p_from: string;
+          p_to: string;
+        };
+        Returns: {
+          earned_points: number;
+          redeemed_points: number;
+          reversal_points: number;
+          adjustment_points: number;
+          net_points: number;
+          earn_count: number;
+          redeem_count: number;
+          reversal_count: number;
+          adjustment_count: number;
+          entry_count: number;
+          active_customer_count: number;
+        }[];
+      };
+      get_loyalty_points_daily: {
+        Args: {
+          p_store_id: string;
+          p_from: string;
+          p_to: string;
+          p_timezone?: string;
+        };
+        Returns: {
+          date: string;
+          earned_points: number;
+          redeemed_points: number;
+          reversal_points: number;
+          adjustment_points: number;
+          net_points: number;
+          entry_count: number;
+        }[];
+      };
+      get_loyalty_top_customers: {
+        Args: {
+          p_store_id: string;
+          p_from: string;
+          p_to: string;
+          p_limit?: number;
+        };
+        Returns: {
+          customer_id: string;
+          customer_name: string;
+          phone: string | null;
+          earned_points: number;
+          redeemed_points: number;
+          net_points: number;
+          entry_count: number;
+          points_balance: number;
+        }[];
+      };
+      get_loyalty_points_outstanding: {
+        Args: { p_store_id: string };
+        Returns: {
+          outstanding_points: number;
+          member_count: number;
+          members_with_points: number;
+        }[];
+      };
     };
     Enums: Record<string, never>;
   };

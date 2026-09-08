@@ -120,13 +120,24 @@ export async function listLoyaltyLedgerForCustomer(
     .limit(safeLimit);
 
   if (error) return { data: null, error: mapError(error) };
+
+  const rows = data ?? [];
+  // เลขบิลมาจาก orders — ledger เก็บแค่ order_id ซึ่งพนักงานเอาไปหาบิลต่อไม่ได้
+  const orderIds = [...new Set(rows.map((row) => row.order_id).filter((id): id is string => Boolean(id)))];
+  const ordersRes = orderIds.length
+    ? await supabase.from("orders").select("id, order_number").eq("store_id", storeId).in("id", orderIds)
+    : { data: [], error: null };
+  if (ordersRes.error) return { data: null, error: mapError(ordersRes.error) };
+  const orderNumberById = new Map((ordersRes.data ?? []).map((row) => [row.id, row.order_number]));
+
   return {
-    data: (data ?? []).map((row) => ({
+    data: rows.map((row) => ({
       id: row.id,
       type: row.type,
       pointsDelta: row.points_delta,
       reason: row.reason,
       orderId: row.order_id,
+      orderNumber: row.order_id ? orderNumberById.get(row.order_id) ?? null : null,
       createdAt: row.created_at,
     })),
     error: null,
@@ -139,6 +150,8 @@ export interface LoyaltyLedgerEntry {
   pointsDelta: number;
   reason: string | null;
   orderId: string | null;
+  /** เลขบิลของ order_id (null เมื่อรายการไม่ผูกบิล เช่น ปรับมือ) */
+  orderNumber: string | null;
   createdAt: string;
 }
 

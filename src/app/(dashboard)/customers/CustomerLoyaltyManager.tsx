@@ -402,9 +402,14 @@ export function CustomerLoyaltyManager({
             <p className="page-kicker">แพ็กเกจ {planName}</p>
             <h1 className="panel-title">ลูกค้า คูปอง และสะสมแต้ม</h1>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className={loyaltyEnabled ? "badge badge-success" : "badge badge-warning"}>สะสมแต้ม</span>
             <span className={couponEnabled ? "badge badge-success" : "badge badge-warning"}>คูปอง</span>
+            {loyaltyEnabled ? (
+              <Link href="/customers/stats" className="btn-secondary">
+                สถิติแต้ม
+              </Link>
+            ) : null}
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
