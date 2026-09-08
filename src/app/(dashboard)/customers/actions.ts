@@ -253,12 +253,16 @@ export async function adjustCustomerPointsAction(formData: FormData): Promise<Ac
 /**
  * ประวัติแต้มของลูกค้าหนึ่งราย — ให้พนักงานตอบได้ว่าแต้มมาจากไหน/หายตอนไหน (audit ข้อ 7)
  * ดึงตามต้องการ ไม่โหลดมาพร้อมหน้าเพราะร้านที่ลูกค้าเยอะจะหนักโดยเปล่าประโยชน์
+ *
+ * สิทธิ์ต้องเท่ากับหน้า /customers (catalog.manage) — เดิมบังคับ settings.manage_store
+ * ทำให้ผู้จัดการเห็นปุ่ม "ประวัติแต้ม" แต่กดแล้วขึ้น error ทุกครั้ง เพราะ role manager
+ * มี catalog.manage แต่ไม่มี settings.manage_store (modules/tenants/types.ts)
  */
 export async function loadCustomerLedgerAction(
   customerId: string,
 ): Promise<{ error: string | null; entries: LoyaltyLedgerEntry[] }> {
   try {
-    await requirePermission("settings.manage_store");
+    await requirePermission("catalog.manage");
     await requireFeature("loyaltyPoints");
     const ctx = await getStoreContext();
     if (!UUID_RE.test(customerId)) return { error: "ข้อมูลลูกค้าไม่ถูกต้อง", entries: [] };
