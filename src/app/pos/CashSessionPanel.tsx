@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CashSession } from "@/modules/cashflow/types";
 import { openCashSessionAction, closeCashSessionAction } from "./cash-actions";
 import { Button } from "@/shared/components/ui";
+import { signOut } from "../(dashboard)/actions";
 
 interface Props {
   session: CashSession | null;
@@ -15,6 +16,8 @@ interface Props {
   cashMovementPreview: number;
   currency: string;
   forceOpenPrompt?: boolean;
+  /** Same permission-resolved destination as the POS header; null means sign out. */
+  exitHref?: string | null;
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -25,7 +28,7 @@ function formatMoney(amount: number, currency: string): string {
   }).format(amount);
 }
 
-export function CashSessionPanel({ session, cashSalesPreview, cashMovementPreview, currency, forceOpenPrompt = false }: Props) {
+export function CashSessionPanel({ session, cashSalesPreview, cashMovementPreview, currency, forceOpenPrompt = false, exitHref }: Props) {
   const router = useRouter();
   const [modal, setModal] = useState<"open" | "close" | null>(() => forceOpenPrompt && !session ? "open" : null);
   const [floatInput, setFloatInput] = useState("");
@@ -69,6 +72,16 @@ export function CashSessionPanel({ session, cashSalesPreview, cashMovementPrevie
       close(true);
       router.refresh();
     });
+  }
+
+  function handleExit() {
+    if (isPending) return;
+    // Leave POS without dismissing its cash-session guard or creating a session.
+    if (exitHref) {
+      router.push(exitHref);
+    } else {
+      startTransition(async () => { await signOut(); });
+    }
   }
 
   function handleClose() {
@@ -185,7 +198,11 @@ export function CashSessionPanel({ session, cashSalesPreview, cashMovementPrevie
                 </label>
                 {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
                 <div className="mt-5 flex gap-2">
-                  {!forcedOpen && (
+                  {forcedOpen ? (
+                    <button type="button" onClick={handleExit} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
+                      {exitHref ? "กลับจาก POS" : "ออกจากระบบ"}
+                    </button>
+                  ) : (
                     <button onClick={() => close()} disabled={isPending} className="btn-secondary min-h-11 flex-1 text-sm">
                       ยกเลิก
                     </button>

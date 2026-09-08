@@ -3855,6 +3855,7 @@ export function PosTerminal({
         cashMovementPreview={cashMovementPreview}
         currency={currency}
         forceOpenPrompt={!cashSession && canRecordCashflow}
+        exitHref={exitHref}
       />
       <button
         type="button"
