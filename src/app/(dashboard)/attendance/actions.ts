@@ -32,7 +32,16 @@ import { listStoreMemberships } from "@/modules/settings/repository";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
 import { getStoreLocalDate, storeDateTimeToUtc } from "@/modules/attendance/date";
 import { parseClockLocation, validateAttendanceGpsPolicy } from "@/modules/attendance/policy";
-import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
+import { after } from "next/server";
+import { notifyOwnerNow, notifyOwnerSafely } from "@/modules/notifications/dispatcher";
+import { loadStoreDailySummary } from "@/modules/reports/daily-summary-repository";
+import {
+  claimDailySummaryNotification,
+  completeDailySummaryNotification,
+  countOpenShiftsInStore,
+} from "@/modules/attendance/shift-status-repository";
+import { buildDailySummaryMessage } from "@/modules/reports/daily-summary";
+import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
 
 async function getStoreContext() {
@@ -90,6 +99,116 @@ function formatClockNotificationTime(value: string, timeZone: string) {
     }).format(new Date(value));
   } catch {
     return value;
+  }
+}
+
+/**
+ * สรุปยอดของวันนั้นส่งถึงเจ้าของตอนพนักงานกดออกงาน (LINE/Telegram/Push + ศูนย์แจ้งเตือน)
+ *
+ * ส่ง **เฉพาะคนสุดท้ายที่ออกงาน** ของสาขานั้นในวันนั้น (ผู้ใช้สั่งไว้ 2026-09-09)
+ * — ยังมีคนค้างกะอยู่แปลว่าร้านยังไม่ปิด ตัวเลขยังไม่นิ่ง และเจ้าของจะโดนข้อความซ้ำหลายฉบับ
+ *
+ * ทำหลังตอบ request (after) เพราะต้องยิงหลาย query — พนักงานต้องไม่รอ
+ * ไม่มีออเดอร์ที่ปิดบิลวันนั้น = ไม่ส่ง (ไม่มีอะไรให้เจ้าของอ่าน)
+ * เจ้าของปิดได้เองที่ ตั้งค่า > การแจ้งเตือน > "สรุปยอดประจำวัน" ต่อช่องทาง
+ */
+function notifyDailySummaryAfterClockOut(input: {
+  organizationId: string;
+  storeId: string;
+  timezone: string;
+  employeeName: string;
+  date: string;
+  attendanceRecordId: string;
+}): void {
+  const run = async () => {
+    try {
+      const openShifts = await countOpenShiftsInStore({
+        storeId: input.storeId,
+        organizationId: input.organizationId,
+        date: input.date,
+        excludeRecordId: input.attendanceRecordId,
+      });
+      // อ่านไม่ได้ = ยืนยันไม่ได้ว่าเป็นคนสุดท้าย ต้อง fail closed เพื่อไม่ส่งยอดระหว่างร้านยังเปิด
+      if (openShifts === null) {
+        await logSystemEvent({
+          level: "warn",
+          source: "attendance.daily-summary",
+          action: "countOpenShiftsInStore",
+          message: "เช็คคนค้างกะไม่ได้ — ข้ามสรุปยอดเพื่อไม่ส่งก่อนร้านปิด",
+          organizationId: input.organizationId,
+          storeId: input.storeId,
+          context: { date: input.date },
+        });
+        return;
+      }
+      // ยังมีคนไม่กดออก = ยังไม่ใช่คนสุดท้าย ไม่ต้องส่ง
+      if (openShifts > 0) return;
+
+      const summary = await loadStoreDailySummary({
+        storeId: input.storeId,
+        organizationId: input.organizationId,
+        storeName: "",
+        date: input.date,
+        timezone: input.timezone,
+      });
+      if (!summary) return;
+
+      const claimed = await claimDailySummaryNotification({
+        storeId: input.storeId,
+        organizationId: input.organizationId,
+        date: input.date,
+        attendanceRecordId: input.attendanceRecordId,
+      });
+      if (!claimed) return;
+
+      const trigger = `${input.employeeName} ออกงานแล้ว (คนสุดท้ายของวัน)`;
+      const delivered = await notifyOwnerNow({
+        type: "daily_summary",
+        destination: "owner",
+        title: "สรุปยอดประจำวัน",
+        message: buildDailySummaryMessage(summary, input.date, { trigger }),
+        organizationId: input.organizationId,
+        storeId: input.storeId,
+        metadata: {
+          date: input.date,
+          orderCount: summary.orderCount,
+          revenue: summary.revenue,
+          employeeName: input.employeeName,
+          trigger,
+        },
+      });
+      await completeDailySummaryNotification({
+        storeId: input.storeId,
+        organizationId: input.organizationId,
+        date: input.date,
+        delivered,
+      });
+      if (!delivered) {
+        await logSystemEvent({
+          level: "warn",
+          source: "attendance.daily-summary",
+          action: "notifyOwnerNow",
+          message: "ส่งสรุปยอดไม่ครบทุกช่องทาง — เก็บ claim ไว้เพื่อป้องกันข้อความซ้ำ",
+          organizationId: input.organizationId,
+          storeId: input.storeId,
+          context: { date: input.date, attendanceRecordId: input.attendanceRecordId },
+        });
+      }
+    } catch (error) {
+      logActionError({
+        source: "attendance.daily-summary",
+        action: "notifyDailySummaryAfterClockOut",
+        error,
+        organizationId: input.organizationId,
+        storeId: input.storeId,
+      });
+    }
+  };
+
+  try {
+    after(run);
+  } catch {
+    void run();
   }
 }
 
@@ -225,6 +344,15 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
           clockOutAt: result.data.clockOutAt ?? null,
           locationLabel: result.data.clockOutLocationLabel ?? null,
         },
+      });
+
+      notifyDailySummaryAfterClockOut({
+        organizationId: ctx.organizationId,
+        storeId: recordStoreId,
+        timezone: ctx.storeTimezone,
+        employeeName: result.data.employeeName,
+        date: result.data.date,
+        attendanceRecordId: result.data.id,
       });
     }
 

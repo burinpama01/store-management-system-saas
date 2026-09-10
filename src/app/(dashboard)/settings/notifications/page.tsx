@@ -32,6 +32,7 @@ import { NotificationSettingToggle } from "./NotificationSettingToggle";
 import { NotificationTemplateEditor } from "./NotificationTemplateEditor";
 import { LineAccountLinkPanel } from "./LineAccountLinkPanel";
 import { VoiceAnnouncementPanel } from "./VoiceAnnouncementPanel";
+import { DailySummaryEmailPanel } from "./DailySummaryEmailPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,7 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   service_request: "เรียกพนักงาน/ขอความช่วยเหลือ",
   activation_nudge: "ตั้งค่าร้าน (nudge)",
   subscription_expiring: "แพ็กเกจใกล้หมดอายุ/หมดอายุ",
+  daily_summary: "สรุปยอดประจำวัน (ตอนคนสุดท้ายออกงาน)",
   test: "ข้อความทดสอบ",
 };
 
@@ -116,6 +118,8 @@ export default async function NotificationSettingsPage() {
   // เสียงพูดในแอปไม่ผ่านช่องทาง LINE/Telegram/Push จึงไม่ผูกกับ features.lineNotify
   const storeResult = await getStore(ctx.storeId);
   const notificationVoiceEnabled = Boolean(storeResult.data?.notificationVoiceEnabled);
+  // ค่าเริ่มต้นของคอลัมน์นี้คือ true — undefined (แถวเก่า/โหลดไม่ได้) ต้องอ่านว่าเปิด ไม่ใช่ปิด
+  const dailySummaryEmailEnabled = storeResult.data?.dailySummaryEmailEnabled !== false;
 
   return (
     <section className="space-y-5">
@@ -132,6 +136,8 @@ export default async function NotificationSettingsPage() {
       </header>
 
       <VoiceAnnouncementPanel storeEnabled={notificationVoiceEnabled} canManage={canManage} />
+
+      <DailySummaryEmailPanel storeEnabled={dailySummaryEmailEnabled} canManage={canManage} />
 
       {!features.lineNotify && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

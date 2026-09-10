@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StoreOS · แผนงานสรุปรายวัน (อีเมล + LINE/Telegram + ผู้ดูแลแพลตฟอร์ม) v1</title>
+<style>
+  :root {
+    --ink: #0f172a; --ink-2: #334155; --muted: #64748b;
+    --brand: #0d9488; --brand-soft: #ccfbf1; --border: #e2e8f0;
+    --bg: #f8fafc; --surface: #ffffff; --warn: #b45309; --warn-soft: #fef3c7;
+    --ok: #15803d; --ok-soft: #dcfce7; --danger: #b91c1c; --danger-soft: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 80px; background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans Thai", sans-serif;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header.hero {
+    background: linear-gradient(135deg, #0f766e, #0ea5e9); color: #fff;
+    border-radius: 18px; padding: 28px 26px; margin-bottom: 24px;
+    box-shadow: 0 20px 40px -24px rgba(13,148,136,.7);
+  }
+  header.hero h1 { margin: 0 0 6px; font-size: 26px; }
+  header.hero p { margin: 0; opacity: .92; font-size: 14px; }
+  .chips { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
+    border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700;
+  }
+  section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px 22px; margin-bottom: 18px;
+  }
+  h2 { font-size: 18px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  h2 .num {
+    width: 26px; height: 26px; border-radius: 8px; background: var(--brand-soft);
+    color: #0f766e; font-size: 13px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  h3 { font-size: 15px; margin: 18px 0 8px; color: var(--ink-2); }
+  p, li { font-size: 14px; color: var(--ink-2); }
+  code {
+    background: #f1f5f9; border: 1px solid var(--border); border-radius: 6px;
+    padding: 1px 6px; font-size: 12.5px; color: #0f172a;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 700; }
+  .note, .warn, .ok {
+    border-radius: 10px; padding: 12px 14px; font-size: 13.5px; margin-top: 12px;
+  }
+  .note { background: #f1f5f9; border: 1px solid var(--border); }
+  .warn { background: var(--warn-soft); border: 1px solid #fcd34d; color: #7c2d12; }
+  .ok { background: var(--ok-soft); border: 1px solid #86efac; color: #14532d; }
+  .mock {
+    background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 14px 16px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; white-space: pre-wrap;
+    line-height: 1.6; margin-top: 10px;
+  }
+  .mock .head { color: #5eead4; font-weight: 700; }
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 820px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+  .status { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 800; }
+  .status.done { background: var(--ok-soft); color: #14532d; }
+  .status.todo { background: var(--warn-soft); color: #7c2d12; }
+  ul { margin: 8px 0; padding-left: 20px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>สรุปรายวัน 3 จุด — อีเมลเจ้าของร้าน · LINE/Telegram ตอนออกงาน · รายงานผู้ดูแลแพลตฟอร์ม</h1>
+  <p>StoreOS v0.49.0 · เขียนแผน + ลงมือ 2026-09-09 · สถานะโค้ด: เสร็จและผ่านการตรวจแล้ว รอ apply migration + deploy</p>
+  <div class="chips">
+    <span class="chip">migration 20260909000000</span>
+    <span class="chip">cron รวมในรูทเดิม (Hobby จำกัด 2 ตัว)</span>
+    <span class="chip">tests 2271 ผ่าน</span>
+    <span class="chip">build ผ่าน</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="num">0</span> โจทย์จากผู้ใช้</h2>
+  <table>
+    <tr><th style="width:32px">#</th><th>สิ่งที่สั่ง</th><th style="width:110px">สถานะ</th></tr>
+    <tr>
+      <td>1</td>
+      <td>เพิ่มการสรุปรายวันส่งไปยังอีเมล <b>เฉพาะผู้ใช้ที่มีออเดอร์ของวันนั้น</b></td>
+      <td><span class="status done">เสร็จ</span></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>เพิ่มจุดแจ้งเตือนอีกหนึ่งจุดทาง LINE/Telegram — <b>พนักงานกดออกงาน</b> แล้วส่งสรุปของวันนั้นถึงเจ้าของ</td>
+      <td><span class="status done">เสร็จ</span></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>ฝั่งซูเปอร์แอดมิน ปรับปรุงรายงานสรุปรายวัน — <b>ผู้ใช้ใหม่ / ผู้ใช้ล่าสุด / ผู้ใช้ที่ยังแอคทีฟ</b></td>
+      <td><span class="status done">เสร็จ</span></td>
+    </tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">1</span> อีเมลสรุปยอดรายวันถึงเจ้าของร้าน</h2>
+  <h3>กติกาที่ยึด</h3>
+  <ul>
+    <li><b>ส่งเฉพาะองค์กรที่มีออเดอร์ปิดบิลเมื่อวาน</b> — ร้านที่ไม่ได้ขาย ไม่มีอีเมลเลย (ไม่ใช่อีเมลยอดศูนย์)</li>
+    <li>หนึ่งองค์กร = หนึ่งฉบับ แยกการ์ดต่อสาขา (สาขาที่ไม่มีออเดอร์จะไม่อยู่ในอีเมล)</li>
+    <li>ผู้รับคือ <b>อีเมลเจ้าขององค์กร</b> (<code>organizations.owner_id</code>) เท่านั้น</li>
+    <li>วันที่สรุป = <b>เมื่อวาน ตามนาฬิกาของร้าน</b> (ร้านไทย = 00:00–24:00 ICT ไม่ใช่ UTC)</li>
+    <li>กันส่งซ้ำด้วย <code>daily_summary_email_log</code> unique(organization_id, summary_date)</li>
+  </ul>
+
+  <h3>ตัวอย่างอีเมล</h3>
+  <div class="mock"><span class="head">หัวข้อ: สรุปยอดขาย 8 ก.ย. 2569 · ฿4,650.00 (17 บิล)</span>
+
+สรุปยอดขายประจำวัน
+Each Other · 8 ก.ย. 2569
+
+  ยอดรวมทุกร้าน  ฿4,650.00
+  17 บิล · 2 ร้าน
+
+■ each other home&amp;cafe
+   ยอดขาย        ฿3,450.00
+   จำนวนบิล             12
+   เฉลี่ยต่อบิล    ฿287.50
+   ช่องทาง    POS 9 · QR 2 · เดลิเวอรี 1
+   เงินสด     ฿2,100.00 (8)
+   QR PromptPay ฿1,350.00 (4)
+   ขายดี: กาแฟเย็น ×9, ชาเย็น ×5
+
+■ each other II
+   ยอดขาย        ฿1,200.00
+   จำนวนบิล              5</div>
+
+  <h3>ไฟล์</h3>
+  <table>
+    <tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+    <tr><td><code>src/modules/reports/daily-summary.ts</code></td><td>ประกอบข้อความ/HTML (บริสุทธิ์ ทดสอบได้โดยไม่ต้องมี DB)</td></tr>
+    <tr><td><code>src/modules/reports/daily-summary-repository.ts</code></td><td>รวมยอดของ 1 ร้าน 1 วัน (service client, ล็อก org+store) — คืน <code>null</code> เมื่อไม่มีออเดอร์</td></tr>
+    <tr><td><code>src/modules/reports/daily-summary-runner.ts</code></td><td>งาน cron: ไล่ทุกองค์กร → claim → ส่ง Resend → log ทุกเส้นทาง</td></tr>
+    <tr><td><code>.../settings/notifications/DailySummaryEmailPanel.tsx</code></td><td>สวิตช์เปิด/ปิดต่อร้าน (ค่าเริ่มต้นเปิด)</td></tr>
+  </table>
+
+  <div class="warn">
+    <b>ข้อจำกัดที่ต้องรู้:</b> บัญชี Vercel เป็น Hobby มี cron ได้แค่ 2 ตัวและใช้เต็มแล้ว
+    งานนี้จึงไปฝากอยู่ในรูทเดิม <code>/api/notifications/cron/activation</code> (รัน 02:00 UTC = 09:00 ไทย)
+    — เพิ่ม cron ตัวที่ 3 จะทำให้ deploy ล้ม
+  </div>
+  <div class="warn">
+    อีเมลจะออกจริงก็ต่อเมื่อ <code>RESEND_API_KEY</code> + <code>ENTERPRISE_FROM_EMAIL</code> ถูกตั้งบน Vercel prod
+    และโดเมนผู้ส่ง verified แล้ว (memory เดิมระบุว่าโดเมน Resend ยัง failed) — ถ้ายังไม่พร้อม ระบบจะข้ามพร้อมบันทึก log ที่ <code>/system/logs</code>
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">2</span> LINE/Telegram สรุปของวันนั้น เมื่อพนักงานกดออกงาน</h2>
+  <ul>
+    <li>ชนิดแจ้งเตือนใหม่ <code>daily_summary</code> เข้าไปอยู่ใน Notification Matrix — เจ้าของเปิด/ปิดได้เองแยกตามช่องทาง (LINE / Telegram / Push)</li>
+    <li>ยิงทุกครั้งที่มีคนกดออกงานสำเร็จ ตามที่สั่ง — ถ้าวันนั้น <b>ยังไม่มีบิลปิดเลย จะไม่ส่ง</b></li>
+    <li>ทำงานหลังตอบ request (<code>after()</code>) พนักงานไม่ต้องรอการรวมยอด</li>
+    <li>วันที่ใช้คือ <b>วันของกะนั้น</b> (<code>attendance_records.date</code>) ไม่ใช่วันที่นาฬิกาเซิร์ฟเวอร์</li>
+    <li>เข้าศูนย์แจ้งเตือนในแอปด้วย (ป้าย 📊 สรุปยอดประจำวัน)</li>
+  </ul>
+  <div class="mock"><span class="head">LINE / Telegram</span>
+each other home&amp;cafe · สรุปยอดประจำวัน
+สรุปยอดวันที่ 8 ก.ย. 2569
+ยอดขาย ฿3,450.00 · 12 บิล · เฉลี่ย ฿287.50
+ช่องทาง: POS 9 · QR 2 · เดลิเวอรี 1
+การชำระ: เงินสด ฿2,100.00 · QR PromptPay ฿1,350.00
+ขายดี: กาแฟเย็น ×9, ชาเย็น ×5
+สมชาย ออกงานแล้ว</div>
+  <div class="note">
+    <b>ข้อควรระวังที่แจ้งผู้ใช้:</b> ร้านที่พนักงานหลายคนกดออกงานพร้อมกันจะได้ข้อความหลายฉบับที่ตัวเลขใกล้เคียงกัน
+    (ทำตามคำสั่งตรง ๆ ว่า “เมื่อพนักงานกดออกงาน”) — ถ้ารบกวนเกินไป ปิดช่องทางที่ไม่ต้องการได้ที่
+    ตั้งค่า &gt; การแจ้งเตือน &gt; “สรุปยอดประจำวัน (ตอนพนักงานออกงาน)” หรือแจ้งให้ปรับเป็น “เฉพาะคนสุดท้ายที่ออกงาน”
+  </div>
+</section>
+
+<section>
+  <h2><span class="num">3</span> รายงานสรุปรายวันฝั่งซูเปอร์แอดมิน</h2>
+  <h3>ของเดิมเป็นอย่างไร</h3>
+  <p>
+    มีแค่อีเมล “สรุปแพ็กเกจร้านประจำวัน” ที่ <b>ส่งเฉพาะวันที่มีร้านใกล้หมด/หมดอายุ</b>
+    ผู้ดูแลจึงไม่มีทางรู้จากอีเมลเลยว่าวันนี้มีใครสมัครใหม่ ใครยังใช้งานอยู่ ใครหายไป
+  </p>
+  <h3>ของใหม่</h3>
+  <div class="grid2">
+    <div>
+      <ul>
+        <li><b>ผู้ใช้ใหม่</b> — องค์กรที่สมัครเมื่อวาน (พร้อมอีเมลเจ้าของ) + ยอด 7 วัน + สมาชิกใหม่ 7 วัน</li>
+        <li><b>ผู้ใช้ล่าสุด</b> — 5 องค์กรล่าสุด พร้อมวันสมัครและวันที่ขายล่าสุด</li>
+        <li><b>ผู้ใช้ที่ยังแอคทีฟ</b> — องค์กรที่มีบิลใน 7 วัน เรียงตามยอด</li>
+        <li><b>เงียบเกิน 14 วัน</b> — กลุ่มเสี่ยงเลิกใช้ (ร้านที่เพิ่งสมัครไม่ถูกนับ)</li>
+        <li><b>ยอดขายทั้งแพลตฟอร์มเมื่อวาน</b> — ยอดรวม/บิล/จำนวนร้านที่ขายได้</li>
+        <li>ส่วนแพ็กเกจเดิมถูกยุบมาเป็น “ส่วนหนึ่ง” ของรายงานฉบับเดียว (ไม่ส่งสองใบอีกแล้ว)</li>
+      </ul>
+    </div>
+    <div>
+      <div class="mock"><span class="head">[2026-09-09] สรุปแพลตฟอร์มประจำวัน</span>
+
+ยอดขายทั้งแพลตฟอร์มเมื่อวาน (2026-09-08):
+  ฿12,345.50 · 42 บิล · ขายได้ 4 ร้าน
+ผู้ใช้ทั้งหมด 15 องค์กร (ระงับ 1)
+  แอคทีฟ 7 วัน 6 · เงียบเกิน 14 วัน 2
+
+ผู้ใช้ใหม่เมื่อวาน: 1 องค์กร
+  • ร้านใหม่เอี่ยม (free) · owner@example.com
+
+ผู้ใช้ล่าสุด:
+  • ร้านล่าสุด (premium) · ขายล่าสุด 8 ก.ย.
+
+ผู้ใช้ที่ยังแอคทีฟ (มีบิลใน 7 วัน): 6 องค์กร
+  • each other home&amp;cafe ฿22,400 · 96 บิล
+
+— แพ็กเกจ —
+[2026-09-09] หมดอายุแล้ว 1 ร้าน · ใกล้หมด 2 ร้าน</div>
+    </div>
+  </div>
+  <p style="margin-top:14px">
+    ตัวเลขชุดเดียวกันขึ้นบนหน้าจอ <code>/system</code> ด้วย (แผง “สรุปรายวัน · เมื่อวาน”, “ผู้ใช้ล่าสุด” ที่มีวันสมัคร/วันขายล่าสุด/อีเมล
+    และแผงใหม่ “ผู้ใช้ที่ยังแอคทีฟ (7 วัน)”) — จอกับอีเมลต้องไม่เล่าคนละเรื่อง
+  </p>
+</section>
+
+<section>
+  <h2><span class="num">4</span> ฐานข้อมูล — <code>supabase/migrations/20260909000000_daily_summary.sql</code></h2>
+  <table>
+    <tr><th>สิ่งที่เปลี่ยน</th><th>เหตุผล</th></tr>
+    <tr><td>ตาราง <code>daily_summary_email_log</code> + unique(organization_id, summary_date)</td><td>กันอีเมลซ้ำเมื่อ cron รันซ้ำ/ซ้อน (RLS เปิด ไม่มี policy = service role เท่านั้น)</td></tr>
+    <tr><td><code>stores.daily_summary_email_enabled</code> (default <b>true</b>)</td><td>สวิตช์ปิดอีเมลต่อสาขา</td></tr>
+    <tr><td><code>notification_settings</code> check += <code>daily_summary</code></td><td>เปิด/ปิดแจ้งเตือนสรุปรายวันต่อช่องทาง</td></tr>
+    <tr><td><code>notification_templates</code> check += <code>activation_nudge</code>, <code>subscription_expiring</code>, <code>daily_summary</code></td><td>เก็บหนี้เก่า: constraint ค้างที่ชุดปี 2026-07-07 ทำให้ชนิดที่เพิ่มมาทีหลังบันทึก template ไม่ได้เลย</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">5</span> ผลการตรวจ</h2>
+  <div class="ok">
+    <ul style="margin:0">
+      <li><code>npx tsc --noEmit</code> — ผ่าน</li>
+      <li><code>npx vitest run --project unit</code> — <b>206 ไฟล์ / 2271 เทสต์ ผ่านทั้งหมด</b> (เพิ่มใหม่ 24 เทสต์)</li>
+      <li><code>npx eslint</code> เฉพาะไฟล์ที่แก้ — ไม่มี warning</li>
+      <li><code>npm run build</code> — ผ่าน</li>
+    </ul>
+  </div>
+  <h3>เทสต์ที่เพิ่ม</h3>
+  <ul>
+    <li><code>tests/unit/daily-summary.test.ts</code> — ข้อความ/อีเมล, ไม่โชว์ช่องทางที่ไม่มีบิล, ความยาวไม่เกินเพดาน 1000 ตัวอักษรของ dispatcher, escape HTML, ขอบวันตามเวลาไทย (17:00Z)</li>
+    <li><code>tests/unit/platform-daily-report.test.ts</code> — ครบสามคำถามของผู้ดูแล, ต่อท้ายส่วนแพ็กเกจ, กรณีไม่มีใครสมัคร/ไม่มีใครขาย</li>
+    <li><code>tests/unit/attendance-actions.test.ts</code> — กดออกงานแล้วได้สรุป และ <b>ไม่ส่งเมื่อวันนั้นยังไม่มีออเดอร์</b></li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="num">6</span> ค้างอยู่ (ต้องได้ไฟเขียวก่อน)</h2>
+  <ul>
+    <li><span class="status todo">รอ</span> apply migration <code>20260909000000_daily_summary.sql</code> ลง prod</li>
+    <li><span class="status todo">รอ</span> commit + push main (= auto-deploy prod)</li>
+    <li><span class="status todo">รอ</span> ยืนยัน <code>RESEND_API_KEY</code> / <code>ENTERPRISE_FROM_EMAIL</code> และโดเมนผู้ส่ง verified — ไม่งั้นอีเมลไม่ออก (มี log บอก)</li>
+    <li><span class="status todo">รอ</span> ทดสอบจริง: กดออกงานที่ร้านแล้วดูว่า LINE/Telegram เด้ง + เช้าวันถัดไปเช็คอีเมลสรุป</li>
+  </ul>
+</section>
+
+<footer>StoreOS · Plan v1 · 2026-09-09 · ห้ามเขียนทับไฟล์นี้ ถ้ามีรอบถัดไปให้สร้าง v2</footer>
+
+</div>
+</body>
+</html>

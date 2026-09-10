@@ -38,6 +38,10 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
     title: "แพ็กเกจใกล้หมดอายุ",
     message: "แพ็กเกจเหลืออีก {daysLeft} วัน — ต่ออายุได้ที่ ตั้งค่า > แพ็กเกจ",
   },
+  daily_summary: {
+    title: "สรุปยอดประจำวัน",
+    message: "ปิดร้านแล้ว — ยอดขายวันนี้ {revenue} จาก {orderCount} บิล ({trigger})",
+  },
   test: { title: "ข้อความทดสอบ", message: "[TEST] notification พร้อมใช้งาน" },
 };
 
@@ -61,6 +65,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   service_request: ["store", "tableLabel", "reason"],
   activation_nudge: ["store", "step"],
   subscription_expiring: ["store", "daysLeft", "plan"],
+  daily_summary: ["store", "date", "orderCount", "revenue", "employeeName", "trigger"],
   test: ["store"],
 };
 

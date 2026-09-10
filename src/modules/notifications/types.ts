@@ -16,7 +16,8 @@ export type NotificationType =
   | "service_request"
   | "test"
   | "activation_nudge"
-  | "subscription_expiring";
+  | "subscription_expiring"
+  | "daily_summary";
 
 export interface NotificationPayload {
   type: NotificationType;
@@ -47,6 +48,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "test",
   "activation_nudge",
   "subscription_expiring",
+  "daily_summary",
 ];
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram", "push"];

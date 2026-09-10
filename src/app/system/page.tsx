@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { requireSystemAccess } from "@/modules/auth/guards";
 import { getPlatformDashboard } from "@/modules/system/repository";
+import { loadPlatformDailyReport } from "@/modules/system/platform-daily-report-runner";
+import { daysSince } from "@/modules/system/platform-daily-report";
 import { PLAN_LABELS } from "@/modules/billing/types";
 import type { BillingPlan } from "@/modules/billing/types";
 
@@ -19,7 +21,10 @@ function fmtDate(iso: string | null) {
 
 export default async function SystemOverviewPage() {
   await requireSystemAccess();
-  const { summary, totals, recentPayments, recentTenants } = await getPlatformDashboard();
+  const { summary, totals, recentPayments } = await getPlatformDashboard();
+  // ตัวเลขชุดเดียวกับที่ส่งเข้าอีเมลสรุปรายวันของผู้ดูแล — จอกับอีเมลต้องไม่เล่าคนละเรื่อง
+  const daily = await loadPlatformDailyReport();
+  const now = new Date();
 
   return (
     <div className="space-y-5">
@@ -42,6 +47,54 @@ export default async function SystemOverviewPage() {
         <StatCard label="ใกล้หมดใน 7 วัน" value={String(summary.expiringSoonCount)} />
         <StatCard label="กำลังทดลองใช้" value={String(summary.trialingCount)} />
       </div>
+
+      {/* สรุปรายวัน — ตัวเลขที่ผู้ดูแลต้องเห็นทุกเช้า (ชุดเดียวกับอีเมลสรุปรายวัน) */}
+      <section className="panel p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="panel-title">สรุปรายวัน · เมื่อวาน ({daily.yesterday})</h2>
+          <span className="badge">อัปเดตทุกเช้า</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MiniStat
+            label="ยอดขายทั้งแพลตฟอร์ม"
+            value={baht(daily.yesterdayRevenue)}
+            hint={`${daily.yesterdayOrderCount} บิล · ขายได้ ${daily.yesterdaySellingTenants} องค์กร`}
+          />
+          <MiniStat
+            label="ผู้ใช้ใหม่เมื่อวาน"
+            value={String(daily.newTenants.length)}
+            hint={`7 วันล่าสุด ${daily.newTenants7d} องค์กร · สมาชิกใหม่ ${daily.newMembers7d} คน`}
+          />
+          <MiniStat
+            label="ผู้ใช้ที่ยังแอคทีฟ (7 วัน)"
+            value={String(daily.activeTenants.length)}
+            hint={`จากทั้งหมด ${daily.totalTenants} องค์กร`}
+          />
+          <MiniStat
+            label="เงียบเกิน 14 วัน"
+            value={String(daily.dormantTenants.length)}
+            hint={daily.dormantTenants.length > 0 ? "ควรติดต่อกลับก่อนเลิกใช้" : "ไม่มีร้านที่หายไป"}
+          />
+        </div>
+        {daily.newTenants.length > 0 && (
+          <div className="mt-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+            <p className="label-muted mb-1">สมัครใหม่เมื่อวาน</p>
+            <ul className="space-y-1 text-sm">
+              {daily.newTenants.map((t) => (
+                <li key={t.organizationId} className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/system/tenants/${t.organizationId}`}
+                    className="min-w-0 truncate font-bold text-[var(--color-brand)] hover:underline"
+                  >
+                    {t.name}
+                  </Link>
+                  <span className="shrink-0 text-xs text-[var(--muted)]">{t.ownerEmail ?? "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       {summary.expiredCount > 0 && (
         <p className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -108,24 +161,71 @@ export default async function SystemOverviewPage() {
 
           <section className="panel p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="panel-title">Tenant ล่าสุด</h2>
+              <h2 className="panel-title">ผู้ใช้ล่าสุด</h2>
               <Link href="/system/tenants" className="text-xs font-bold text-[var(--color-brand)]">ดูทั้งหมด</Link>
             </div>
             <div className="space-y-2">
-              {recentTenants.map((t) => (
-                <Link
-                  key={t.organizationId}
-                  href={`/system/tenants/${t.organizationId}`}
-                  className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm hover:border-[var(--tenant-primary)]"
-                >
-                  <span className="min-w-0 truncate font-bold text-[var(--ink)]">{t.name}</span>
-                  <span className="text-xs text-[var(--muted)]">{PLAN_LABELS[t.plan]}</span>
-                </Link>
-              ))}
+              {daily.recentTenants.map((t) => {
+                const idle = daysSince(t.lastOrderAt, now);
+                return (
+                  <Link
+                    key={t.organizationId}
+                    href={`/system/tenants/${t.organizationId}`}
+                    className="block rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm hover:border-[var(--tenant-primary)]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate font-bold text-[var(--ink)]">{t.name}</span>
+                      <span className="shrink-0 text-xs text-[var(--muted)]">{PLAN_LABELS[t.plan as BillingPlan] ?? t.plan}</span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-[var(--muted)]">
+                      สมัคร {fmtDate(t.createdAt)} ·{" "}
+                      {t.lastOrderAt
+                        ? `ขายล่าสุด ${fmtDate(t.lastOrderAt)}${idle !== null && idle > 0 ? ` (${idle} วันก่อน)` : ""}`
+                        : "ยังไม่เคยปิดบิล"}
+                    </p>
+                    {t.ownerEmail && <p className="truncate text-xs text-[var(--muted)]">{t.ownerEmail}</p>}
+                  </Link>
+                );
+              })}
             </div>
+          </section>
+
+          <section className="panel p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="panel-title">ผู้ใช้ที่ยังแอคทีฟ (7 วัน)</h2>
+              <span className="badge">{daily.activeTenants.length} องค์กร</span>
+            </div>
+            {daily.activeTenants.length === 0 ? (
+              <p className="py-4 text-center text-sm text-[var(--muted)]">ยังไม่มีร้านที่ปิดบิลใน 7 วันล่าสุด</p>
+            ) : (
+              <div className="space-y-2">
+                {daily.activeTenants.slice(0, 8).map((t) => (
+                  <Link
+                    key={t.organizationId}
+                    href={`/system/tenants/${t.organizationId}`}
+                    className="flex items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm hover:border-[var(--tenant-primary)]"
+                  >
+                    <span className="min-w-0 truncate font-bold text-[var(--ink)]">{t.name}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-[var(--muted)]">
+                      {baht(t.revenue7d)} · {t.orderCount7d} บิล
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+      <p className="label-muted">{label}</p>
+      <p className="mt-1 text-xl font-extrabold tabular-nums text-[var(--ink)]">{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-[var(--muted)]">{hint}</p>}
     </div>
   );
 }

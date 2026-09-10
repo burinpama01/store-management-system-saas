@@ -16,6 +16,13 @@ const mocks = vi.hoisted(() => ({
   clockIn: vi.fn(),
   clockOut: vi.fn(),
   notifyOwnerSafely: vi.fn(),
+  notifyOwnerNow: vi.fn(),
+  loadStoreDailySummary: vi.fn(),
+  countOpenShiftsInStore: vi.fn(),
+  claimDailySummaryNotification: vi.fn(),
+  completeDailySummaryNotification: vi.fn(),
+  logSystemEvent: vi.fn(),
+  logActionError: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
@@ -64,6 +71,22 @@ vi.mock("@/modules/billing/billing-service", () => ({
 
 vi.mock("@/modules/notifications/dispatcher", () => ({
   notifyOwnerSafely: mocks.notifyOwnerSafely,
+  notifyOwnerNow: mocks.notifyOwnerNow,
+}));
+
+vi.mock("@/modules/reports/daily-summary-repository", () => ({
+  loadStoreDailySummary: mocks.loadStoreDailySummary,
+}));
+
+vi.mock("@/modules/attendance/shift-status-repository", () => ({
+  countOpenShiftsInStore: mocks.countOpenShiftsInStore,
+  claimDailySummaryNotification: mocks.claimDailySummaryNotification,
+  completeDailySummaryNotification: mocks.completeDailySummaryNotification,
+}));
+
+vi.mock("@/modules/system/event-log", () => ({
+  logSystemEvent: mocks.logSystemEvent,
+  logActionError: mocks.logActionError,
 }));
 
 function fd(values: Record<string, string>) {
@@ -98,6 +121,11 @@ describe("attendance manager actions", () => {
     mocks.getActiveRecordToday.mockResolvedValue(null);
     mocks.clockIn.mockResolvedValue({ data: null, error: null });
     mocks.clockOut.mockResolvedValue({ data: null, error: null });
+    mocks.notifyOwnerNow.mockResolvedValue(true);
+    mocks.loadStoreDailySummary.mockResolvedValue(null);
+    mocks.countOpenShiftsInStore.mockResolvedValue(0);
+    mocks.claimDailySummaryNotification.mockResolvedValue(true);
+    mocks.completeDailySummaryNotification.mockResolvedValue(undefined);
   });
 
   it("notifies owners after a successful employee clock-in", async () => {
@@ -199,6 +227,276 @@ describe("attendance manager actions", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // งานใหม่ 2026-09-09: คนสุดท้ายที่ออกงาน = เจ้าของได้สรุปยอดของวันนั้นทาง LINE/Telegram/Push
+  it("ส่งสรุปยอดของวันนั้นถึงเจ้าของเมื่อคนสุดท้ายกดออกงานและวันนั้นมีการขาย", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T11:05:00.000Z"));
+    mocks.getActiveRecordToday.mockResolvedValue({
+      id: "att-1",
+      userId: MANAGER_ID,
+      organizationId: "org-1",
+      storeId: "store-1",
+      employeeName: "manager@example.com",
+      date: "2026-06-20",
+      clockInAt: "2026-06-20T02:15:00.000Z",
+      clockOutAt: null,
+      status: "active",
+      createdAt: "2026-06-20T02:15:00.000Z",
+      updatedAt: "2026-06-20T02:15:00.000Z",
+    });
+    mocks.clockOut.mockResolvedValue({
+      data: {
+        id: "att-1",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-20",
+        clockInAt: "2026-06-20T02:15:00.000Z",
+        clockOutAt: "2026-06-20T11:05:00.000Z",
+        status: "completed",
+        createdAt: "2026-06-20T02:15:00.000Z",
+        updatedAt: "2026-06-20T11:05:00.000Z",
+      },
+      error: null,
+    });
+    mocks.loadStoreDailySummary.mockResolvedValue({
+      storeId: "store-1",
+      storeName: "",
+      orderCount: 12,
+      revenue: 3450,
+      avgOrderValue: 287.5,
+      posOrderCount: 10,
+      qrOrderCount: 2,
+      deliveryOrderCount: 0,
+      voidedCount: 0,
+      paymentMethods: [{ method: "cash", count: 10, amount: 2450 }],
+      topProducts: [{ name: "กาแฟเย็น", quantity: 9, revenue: 540 }],
+    });
+    const { clockOutAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockOutAction(fd({}));
+      expect(result.error).toBeNull();
+      // after() ไม่มี request context ในเทสต์ จึงตกไปทาง fallback ที่รันทันที — รอ microtask ให้จบก่อน
+      await vi.waitFor(() => expect(mocks.notifyOwnerNow).toHaveBeenCalled());
+
+      expect(mocks.loadStoreDailySummary).toHaveBeenCalledWith(
+        expect.objectContaining({ storeId: "store-1", organizationId: "org-1", date: "2026-06-20" }),
+      );
+      expect(mocks.claimDailySummaryNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storeId: "store-1",
+          organizationId: "org-1",
+          date: "2026-06-20",
+          attendanceRecordId: "att-1",
+        }),
+      );
+      expect(mocks.notifyOwnerNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "daily_summary",
+          organizationId: "org-1",
+          storeId: "store-1",
+          message: expect.stringContaining("3,450.00"),
+          metadata: expect.objectContaining({ orderCount: 12, revenue: 3450 }),
+        }),
+      );
+      expect(mocks.completeDailySummaryNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storeId: "store-1",
+          organizationId: "org-1",
+          date: "2026-06-20",
+          delivered: true,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ผู้ใช้สั่ง 2026-09-09: ส่งเฉพาะคนสุดท้าย ไม่งั้นเจ้าของโดนข้อความซ้ำทุกคนที่ออกงาน
+  it("ไม่ส่งสรุปยอดเมื่อยังมีเพื่อนร่วมงานค้างกะอยู่", async () => {
+    mocks.getActiveRecordToday.mockResolvedValue({
+      id: "att-3",
+      userId: MANAGER_ID,
+      organizationId: "org-1",
+      storeId: "store-1",
+      employeeName: "manager@example.com",
+      date: "2026-06-22",
+      clockInAt: "2026-06-22T02:15:00.000Z",
+      clockOutAt: null,
+      status: "active",
+      createdAt: "2026-06-22T02:15:00.000Z",
+      updatedAt: "2026-06-22T02:15:00.000Z",
+    });
+    mocks.clockOut.mockResolvedValue({
+      data: {
+        id: "att-3",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-22",
+        clockInAt: "2026-06-22T02:15:00.000Z",
+        clockOutAt: "2026-06-22T08:00:00.000Z",
+        status: "completed",
+        createdAt: "2026-06-22T02:15:00.000Z",
+        updatedAt: "2026-06-22T08:00:00.000Z",
+      },
+      error: null,
+    });
+    mocks.countOpenShiftsInStore.mockResolvedValue(2);
+    const { clockOutAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    const result = await clockOutAction(fd({}));
+
+    expect(result.error).toBeNull();
+    await vi.waitFor(() => expect(mocks.countOpenShiftsInStore).toHaveBeenCalled());
+    expect(mocks.countOpenShiftsInStore).toHaveBeenCalledWith(
+      expect.objectContaining({ storeId: "store-1", date: "2026-06-22", excludeRecordId: "att-3" }),
+    );
+    // ไม่แตะฐานข้อมูลรายงานเลยเมื่อยังไม่ใช่คนสุดท้าย
+    expect(mocks.loadStoreDailySummary).not.toHaveBeenCalled();
+    expect(mocks.notifyOwnerNow).not.toHaveBeenCalled();
+  });
+
+  it("ไม่ส่งสรุปยอดเมื่อเช็คคนค้างกะไม่ได้", async () => {
+    mocks.getActiveRecordToday.mockResolvedValue({
+      id: "att-4",
+      userId: MANAGER_ID,
+      organizationId: "org-1",
+      storeId: "store-1",
+      employeeName: "manager@example.com",
+      date: "2026-06-23",
+      clockInAt: "2026-06-23T02:15:00.000Z",
+      clockOutAt: null,
+      status: "active",
+      createdAt: "2026-06-23T02:15:00.000Z",
+      updatedAt: "2026-06-23T02:15:00.000Z",
+    });
+    mocks.clockOut.mockResolvedValue({
+      data: {
+        id: "att-4",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-23",
+        clockInAt: "2026-06-23T02:15:00.000Z",
+        clockOutAt: "2026-06-23T08:00:00.000Z",
+        status: "completed",
+        createdAt: "2026-06-23T02:15:00.000Z",
+        updatedAt: "2026-06-23T08:00:00.000Z",
+      },
+      error: null,
+    });
+    mocks.countOpenShiftsInStore.mockResolvedValue(null);
+    const { clockOutAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    const result = await clockOutAction(fd({}));
+
+    expect(result.error).toBeNull();
+    await vi.waitFor(() => expect(mocks.logSystemEvent).toHaveBeenCalled());
+    expect(mocks.loadStoreDailySummary).not.toHaveBeenCalled();
+    expect(mocks.claimDailySummaryNotification).not.toHaveBeenCalled();
+    expect(mocks.notifyOwnerNow).not.toHaveBeenCalled();
+  });
+
+  it("ไม่ส่งสรุปซ้ำเมื่ออีกคำขอจองสิทธิ์ของร้านและวันเดียวกันไปแล้ว", async () => {
+    mocks.getActiveRecordToday.mockResolvedValue({
+      id: "att-5",
+      userId: MANAGER_ID,
+      organizationId: "org-1",
+      storeId: "store-1",
+      employeeName: "manager@example.com",
+      date: "2026-06-24",
+      clockInAt: "2026-06-24T02:15:00.000Z",
+      clockOutAt: null,
+      status: "active",
+      createdAt: "2026-06-24T02:15:00.000Z",
+      updatedAt: "2026-06-24T02:15:00.000Z",
+    });
+    mocks.clockOut.mockResolvedValue({
+      data: {
+        id: "att-5",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-24",
+        clockInAt: "2026-06-24T02:15:00.000Z",
+        clockOutAt: "2026-06-24T08:00:00.000Z",
+        status: "completed",
+        createdAt: "2026-06-24T02:15:00.000Z",
+        updatedAt: "2026-06-24T08:00:00.000Z",
+      },
+      error: null,
+    });
+    mocks.loadStoreDailySummary.mockResolvedValue({
+      storeId: "store-1",
+      storeName: "",
+      orderCount: 2,
+      revenue: 500,
+      avgOrderValue: 250,
+      posOrderCount: 2,
+      qrOrderCount: 0,
+      deliveryOrderCount: 0,
+      voidedCount: 0,
+      paymentMethods: [],
+      topProducts: [],
+    });
+    mocks.claimDailySummaryNotification.mockResolvedValue(false);
+    const { clockOutAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    const result = await clockOutAction(fd({}));
+
+    expect(result.error).toBeNull();
+    await vi.waitFor(() => expect(mocks.claimDailySummaryNotification).toHaveBeenCalled());
+    expect(mocks.notifyOwnerNow).not.toHaveBeenCalled();
+    expect(mocks.completeDailySummaryNotification).not.toHaveBeenCalled();
+  });
+
+  it("ไม่ส่งสรุปยอดเมื่อวันนั้นยังไม่มีออเดอร์เลย", async () => {
+    mocks.getActiveRecordToday.mockResolvedValue({
+      id: "att-2",
+      userId: MANAGER_ID,
+      organizationId: "org-1",
+      storeId: "store-1",
+      employeeName: "manager@example.com",
+      date: "2026-06-21",
+      clockInAt: "2026-06-21T02:15:00.000Z",
+      clockOutAt: null,
+      status: "active",
+      createdAt: "2026-06-21T02:15:00.000Z",
+      updatedAt: "2026-06-21T02:15:00.000Z",
+    });
+    mocks.clockOut.mockResolvedValue({
+      data: {
+        id: "att-2",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-21",
+        clockInAt: "2026-06-21T02:15:00.000Z",
+        clockOutAt: "2026-06-21T11:05:00.000Z",
+        status: "completed",
+        createdAt: "2026-06-21T02:15:00.000Z",
+        updatedAt: "2026-06-21T11:05:00.000Z",
+      },
+      error: null,
+    });
+    mocks.loadStoreDailySummary.mockResolvedValue(null);
+    mocks.countOpenShiftsInStore.mockResolvedValue(0);
+    const { clockOutAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    const result = await clockOutAction(fd({}));
+
+    expect(result.error).toBeNull();
+    await vi.waitFor(() => expect(mocks.loadStoreDailySummary).toHaveBeenCalled());
+    expect(mocks.notifyOwnerNow).not.toHaveBeenCalled();
   });
 
   it("rejects employee leave for a user outside the current store before inserting payroll adjustment", async () => {

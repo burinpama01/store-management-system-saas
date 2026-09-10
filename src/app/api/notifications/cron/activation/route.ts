@@ -1,7 +1,10 @@
 // Cron: งานประจำวันของผู้เช่า — วันละครั้ง (Asia/Bangkok)
 //   1) activation nudges (F5/Task 12) — ต่อ store/step
-//   2) เฝ้าดูวันหมดอายุแพ็กเกจ แล้วเตือนร้าน + สรุปให้ผู้ดูแล
-// รวมสองงานไว้ในรูทเดียวเพราะบัญชี Vercel เป็น Hobby ซึ่งมี cron ได้แค่ 2 ตัว
+//   2) เฝ้าดูวันหมดอายุแพ็กเกจ แล้วเตือนร้าน
+//   3) ล้าง log เก่า
+//   4) อีเมลสรุปยอดรายวันถึงเจ้าของ — เฉพาะองค์กรที่มีออเดอร์เมื่อวาน
+//   5) รายงานสรุปรายวันถึงผู้ดูแลแพลตฟอร์ม (ผู้ใช้ใหม่ / ล่าสุด / ที่ยังแอคทีฟ + แพ็กเกจที่ต้องตาม)
+// รวมทุกงานไว้ในรูทเดียวเพราะบัญชี Vercel เป็น Hobby ซึ่งมี cron ได้แค่ 2 ตัว
 // (อีกตัวคือ /api/connect/cron/reconcile) — เพิ่มตัวที่สามจะทำให้ deploy ล้ม
 // เรียกโดย Vercel Cron (Authorization: Bearer $CRON_SECRET เมื่อมี env CRON_SECRET)
 // กติกาตามแผน: opt-out/respect notification settings, query readiness ซ้ำก่อนส่ง,
@@ -11,6 +14,8 @@ import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
 import { bangkokDateIso, pickActivationNudge } from "@/modules/onboarding/nudges";
 import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { runSubscriptionWatch } from "@/modules/billing/subscription-watch-runner";
+import { runDailySummaryEmails } from "@/modules/reports/daily-summary-runner";
+import { runPlatformDailyReport } from "@/modules/system/platform-daily-report-runner";
 import { logActionError, logSystemEvent, purgeOldSystemEventLogs } from "@/modules/system/event-log";
 
 export const dynamic = "force-dynamic";
@@ -136,12 +141,28 @@ export async function GET(req: Request): Promise<Response> {
   // งานที่ 3: ล้างบันทึกระบบที่เก่ากว่า 30 วัน ไม่ให้ตารางโตไม่หยุด
   const purgedLogs = await purgeOldSystemEventLogs(30);
 
+  // งานที่ 4: อีเมลสรุปยอดรายวันถึงเจ้าของ — ส่งเฉพาะองค์กรที่มีออเดอร์เมื่อวาน
+  let dailySummary: Awaited<ReturnType<typeof runDailySummaryEmails>> | null = null;
+  try {
+    dailySummary = await runDailySummaryEmails(now);
+  } catch (error) {
+    logActionError({ source: "cron.daily", action: "runDailySummaryEmails", error });
+  }
+
+  // งานที่ 5: รายงานรวมถึงผู้ดูแลแพลตฟอร์ม — ต่อท้ายด้วยส่วนแพ็กเกจจากงานที่ 2
+  let platformReport: Awaited<ReturnType<typeof runPlatformDailyReport>> | null = null;
+  try {
+    platformReport = await runPlatformDailyReport(now, subscriptionWatch?.adminDigest ?? null);
+  } catch (error) {
+    logActionError({ source: "cron.daily", action: "runPlatformDailyReport", error });
+  }
+
   void logSystemEvent({
     level: "info",
     source: "cron.daily",
     action: "GET",
-    message: `งานประจำวันเสร็จ · nudge ${claimed.length} ร้าน · เตือนแพ็กเกจ ${subscriptionWatch?.alerted ?? 0} ร้าน`,
-    context: { day: today, subscriptionWatch, purgedLogs },
+    message: `งานประจำวันเสร็จ · nudge ${claimed.length} ร้าน · เตือนแพ็กเกจ ${subscriptionWatch?.alerted ?? 0} ร้าน · อีเมลสรุป ${dailySummary?.sent ?? 0} องค์กร`,
+    context: { day: today, subscriptionWatch, purgedLogs, dailySummary, platformReport },
   });
 
   return new Response(
@@ -154,6 +175,8 @@ export async function GET(req: Request): Promise<Response> {
       skipped,
       subscriptionWatch,
       purgedLogs,
+      dailySummary,
+      platformReport,
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );

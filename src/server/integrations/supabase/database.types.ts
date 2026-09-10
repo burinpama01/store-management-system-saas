@@ -1017,6 +1017,7 @@ export interface Database {
           voice_command_enabled: boolean;
           voice_ai_fallback_enabled: boolean;
           notification_voice_enabled: boolean;
+          daily_summary_email_enabled: boolean;
           dine_in_duration_minutes: number;
           theme_preset_id: string;
           theme_primary_color: string;
@@ -1058,6 +1059,7 @@ export interface Database {
           voice_command_enabled?: boolean;
           voice_ai_fallback_enabled?: boolean;
           notification_voice_enabled?: boolean;
+          daily_summary_email_enabled?: boolean;
           dine_in_duration_minutes?: number;
           theme_preset_id?: string;
           theme_primary_color?: string;
@@ -1099,6 +1101,7 @@ export interface Database {
           voice_command_enabled?: boolean;
           voice_ai_fallback_enabled?: boolean;
           notification_voice_enabled?: boolean;
+          daily_summary_email_enabled?: boolean;
           dine_in_duration_minutes?: number;
           theme_preset_id?: string;
           theme_primary_color?: string;

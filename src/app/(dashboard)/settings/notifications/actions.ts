@@ -18,7 +18,10 @@ import {
   upsertTelegramNotificationTarget,
 } from "@/modules/notifications/repository";
 import { dispatchNotification } from "@/modules/notifications/dispatcher";
-import { setStoreNotificationVoiceEnabled } from "@/modules/stores/repository";
+import {
+  setStoreDailySummaryEmailEnabled,
+  setStoreNotificationVoiceEnabled,
+} from "@/modules/stores/repository";
 import { logSystemEvent } from "@/modules/system/event-log";
 import type { ActionFeedbackState } from "./feedback";
 
@@ -205,6 +208,44 @@ export async function setNotificationVoiceEnabledAction(
     };
   } catch (error) {
     return actionError(error, "บันทึกการตั้งค่าเสียงพูดไม่สำเร็จ");
+  }
+}
+
+/**
+ * เปิด/ปิดการรวมร้านนี้ในอีเมลสรุปยอดรายวัน (ส่งถึงเจ้าขององค์กรวันละครั้ง)
+ *
+ * ค่าเริ่มต้นคือเปิด เพราะอีเมลออกเฉพาะวันที่ร้านขายได้จริง ไม่ใช่อีเมลรายวันแบบรบกวน
+ */
+export async function setDailySummaryEmailEnabledAction(
+  _prevState: ActionFeedbackState,
+  formData: FormData,
+): Promise<ActionFeedbackState> {
+  try {
+    await requirePermission("notifications.manage");
+    const ctx = await getStoreContext();
+    const enabled = formData.get("enabled") === "on";
+
+    const result = await setStoreDailySummaryEmailEnabled(ctx.storeId, ctx.organizationId, enabled);
+    if (!result.ok) throw new Error(result.error ?? "บันทึกไม่สำเร็จ");
+
+    await logSystemEvent({
+      level: "info",
+      source: "settings.notifications",
+      action: "setDailySummaryEmailEnabledAction",
+      message: enabled ? "เปิดอีเมลสรุปยอดรายวันของร้าน" : "ปิดอีเมลสรุปยอดรายวันของร้าน",
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      context: { enabled },
+    });
+
+    revalidatePath("/settings/notifications");
+    return {
+      status: "success",
+      message: enabled ? "เปิดอีเมลสรุปรายวันแล้ว" : "ปิดอีเมลสรุปรายวันแล้ว",
+      submittedAt: Date.now(),
+    };
+  } catch (error) {
+    return actionError(error, "บันทึกการตั้งค่าอีเมลสรุปรายวันไม่สำเร็จ");
   }
 }
 

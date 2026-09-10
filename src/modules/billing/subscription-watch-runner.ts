@@ -8,7 +8,6 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
-import { notifyPlatformAdmin } from "@/modules/system/admin-alert";
 import { isExpiringState, type BillingPlan, type BillingStatus } from "./types";
 import {
   alertIdempotencyKey,
@@ -27,6 +26,12 @@ export interface SubscriptionWatchResult {
   readonly alerted: number;
   readonly skipped: number;
   readonly failed: number;
+  /**
+   * ส่วน "แพ็กเกจที่ต้องตาม" ของวันนี้ — null เมื่อไม่มีร้านต้องตาม
+   * งานนี้ไม่ส่งอีเมลผู้ดูแลเองอีกแล้ว: รายงานรวมประจำวัน (system/daily-report) เป็นคนส่ง
+   * เพื่อไม่ให้ผู้ดูแลได้อีเมลวันละสองฉบับที่เล่าเรื่องเดียวกันคนละครึ่ง
+   */
+  readonly adminDigest: string | null;
 }
 
 /** วันปัจจุบันตามเวลาไทย — ต้องตรงกับคอลัมน์ alerted_on */
@@ -130,7 +135,7 @@ export async function runSubscriptionWatch(now: Date = new Date()): Promise<Subs
     subs = await loadWatchedSubscriptions();
   } catch (error) {
     logActionError({ source: SOURCE, action: "loadWatchedSubscriptions", error });
-    return { day, scanned: 0, alerted: 0, skipped: 0, failed: 1 };
+    return { day, scanned: 0, alerted: 0, skipped: 0, failed: 1, adminDigest: null };
   }
 
   const alerts = planSubscriptionAlerts(subs, now);
@@ -159,18 +164,6 @@ export async function runSubscriptionWatch(now: Date = new Date()): Promise<Subs
     }
   }
 
-  // สรุปถึงผู้ดูแล — ส่งเฉพาะวันที่มีอะไรให้ตาม จะได้ไม่กลายเป็นอีเมลที่ทุกคนเมิน
-  if (sent.length > 0) {
-    await notifyPlatformAdmin({
-      source: SOURCE,
-      action: "dailyDigest",
-      level: sent.some((a) => a.stage === "expired") ? "warn" : "info",
-      subject: `สรุปแพ็กเกจร้านประจำวัน ${day}`,
-      body: buildAdminDigest(sent, day),
-      context: { alerted: sent.length, skipped, failed },
-    });
-  }
-
   await logSystemEvent({
     level: failed > 0 ? "warn" : "info",
     source: SOURCE,
@@ -180,5 +173,13 @@ export async function runSubscriptionWatch(now: Date = new Date()): Promise<Subs
     context: { day, stages: sent.map((a) => `${a.organizationName}:${a.stage}`) },
   });
 
-  return { day, scanned: subs.length, alerted: sent.length, skipped, failed };
+  return {
+    day,
+    scanned: subs.length,
+    alerted: sent.length,
+    skipped,
+    failed,
+    // ส่งต่อให้รายงานรวมประจำวันเอาไปต่อท้าย (ดู system/platform-daily-report-runner.ts)
+    adminDigest: sent.length > 0 ? buildAdminDigest(sent, day) : null,
+  };
 }

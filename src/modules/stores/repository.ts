@@ -36,6 +36,7 @@ function mapStore(row: StoreRow): Store {
     voiceCommandEnabled: row.voice_command_enabled ?? false,
     voiceAiFallbackEnabled: row.voice_ai_fallback_enabled ?? false,
     notificationVoiceEnabled: row.notification_voice_enabled ?? false,
+    dailySummaryEmailEnabled: row.daily_summary_email_enabled ?? true,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
     serviceButtons: parseServiceButtons(row.qr_service_buttons),
@@ -256,6 +257,25 @@ export async function setStoreNotificationVoiceEnabled(
   const { error } = await supabase
     .from("stores")
     .update({ notification_voice_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("id", storeId)
+    .eq("organization_id", organizationId);
+  if (error) return { ok: false, error: mapError(error).userMessage };
+  return { ok: true, error: null };
+}
+
+/**
+ * เปิด/ปิดการรวมร้านนี้ในอีเมลสรุปยอดรายวันที่ส่งถึงเจ้าขององค์กร
+ * แยกจาก updateStore ด้วยเหตุผลเดียวกับสวิตช์เสียงพูด — กดจากหน้าตั้งค่าแจ้งเตือนตัวเดียว
+ */
+export async function setStoreDailySummaryEmailEnabled(
+  storeId: string,
+  organizationId: string,
+  enabled: boolean,
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("stores")
+    .update({ daily_summary_email_enabled: enabled, updated_at: new Date().toISOString() })
     .eq("id", storeId)
     .eq("organization_id", organizationId);
   if (error) return { ok: false, error: mapError(error).userMessage };

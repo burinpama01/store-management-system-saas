@@ -34,6 +34,8 @@ export interface Store {
   voiceAiFallbackEnabled?: boolean;
   /** อ่านออกเสียงแจ้งเตือน (TTS ไทย) แทน beep — ค่าเริ่มต้นของร้าน แต่ละเครื่องปรับทับได้ */
   notificationVoiceEnabled?: boolean;
+  /** ให้ร้านนี้อยู่ในอีเมลสรุปยอดรายวันที่ส่งถึงเจ้าขององค์กร (ค่าเริ่มต้นเปิด) */
+  dailySummaryEmailEnabled?: boolean;
   qrOrderingMode: QrOrderingMode;
   tableOpenPolicy: TableOpenPolicy;
   serviceButtons: ServiceButtonConfig[];
