@@ -63,7 +63,11 @@ async function syncInternalOrderStatus(
     const nextStatus = order.status === "paid" ? "refunded" : "cancelled";
     await supabase
       .from("orders")
-      .update({ status: nextStatus, updated_at: now })
+      .update({
+        status: nextStatus,
+        updated_at: now,
+        ...(nextStatus === "refunded" ? { voided_at: now } : {}),
+      })
       .eq("id", internalOrderId);
   }
 }

@@ -629,7 +629,7 @@ describe("UX/UI regression guards", () => {
   });
 
   it("settings notifications exposes event/channel matrix without secrets", () => {
-    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const layout = `${read("src/app/(dashboard)/settings/layout.tsx")}\n${read("src/app/(dashboard)/settings/settings-tabs.ts")}`;
     const page = read("src/app/(dashboard)/settings/notifications/page.tsx");
     const notificationTest = read("src/app/(dashboard)/settings/notifications/NotificationTest.tsx");
     const visibleCopy = `${page}\n${notificationTest}`;
@@ -716,7 +716,7 @@ describe("UX/UI regression guards", () => {
   });
 
   it("settings tabs only expose functions the user can access", () => {
-    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const layout = `${read("src/app/(dashboard)/settings/layout.tsx")}\n${read("src/app/(dashboard)/settings/settings-tabs.ts")}`;
     const nav = read("src/app/(dashboard)/settings/SettingsNav.tsx");
     const team = read("src/app/(dashboard)/settings/team/page.tsx");
     const tables = read("src/app/(dashboard)/settings/tables/page.tsx");

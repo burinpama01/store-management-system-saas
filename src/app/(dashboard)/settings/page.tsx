@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
-import { buildSettingsTabs } from "./layout";
+import { buildSettingsTabs } from "./settings-tabs";
 
 export default async function SettingsPage() {
   const { resolved } = await getResolvedCurrentPermissions();

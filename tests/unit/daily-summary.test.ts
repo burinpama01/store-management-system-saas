@@ -10,7 +10,7 @@ import {
   type StoreDailySummary,
 } from "@/modules/reports/daily-summary";
 import { previousLocalDate } from "@/modules/reports/daily-summary-runner";
-import { storeDayWindowUtc } from "@/modules/reports/daily-summary-repository";
+import { requireExactCount, storeDayWindowUtc } from "@/modules/reports/daily-summary-repository";
 
 function store(overrides: Partial<StoreDailySummary> = {}): StoreDailySummary {
   return {
@@ -184,5 +184,13 @@ describe("ขอบเขตวันตามเวลาร้าน", () => {
   it("previousLocalDate ข้ามวันถูกต้องเมื่อ UTC ยังไม่ขึ้นวันใหม่แต่ไทยขึ้นแล้ว", () => {
     // 2026-09-08T17:30Z = 09-09 00:30 ตามเวลาไทย → เมื่อวานของร้านคือ 09-08
     expect(previousLocalDate(new Date("2026-09-08T17:30:00.000Z"), "Asia/Bangkok")).toBe("2026-09-08");
+  });
+});
+
+describe("การอ่านจำนวนรายการแบบ exact", () => {
+  it("fail closed เมื่อ query count มี error", () => {
+    expect(() => requireExactCount({ count: null, error: new Error("count unavailable") })).toThrow(
+      "count unavailable",
+    );
   });
 });

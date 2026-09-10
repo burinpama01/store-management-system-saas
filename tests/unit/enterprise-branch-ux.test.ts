@@ -158,7 +158,7 @@ describe("enterprise branch UX contract", () => {
   });
 
   it("adds an Enterprise branch management entry point and keeps branch writes organization-scoped", () => {
-    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const layout = read("src/app/(dashboard)/settings/settings-tabs.ts");
     const page = read("src/app/(dashboard)/settings/branches/page.tsx");
     const actions = read("src/app/(dashboard)/settings/branches/actions.ts");
     const manager = read("src/app/(dashboard)/settings/branches/BranchManager.tsx");

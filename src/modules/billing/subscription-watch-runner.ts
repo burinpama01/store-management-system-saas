@@ -9,6 +9,7 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 import { isExpiringState, type BillingPlan, type BillingStatus } from "./types";
+import { loadAllRows } from "@/modules/reports/pagination";
 import {
   alertIdempotencyKey,
   buildAdminDigest,
@@ -19,6 +20,7 @@ import {
 } from "./subscription-watch";
 
 const SOURCE = "billing.subscription-watch";
+const QUERY_PAGE_SIZE = 1000;
 
 export interface SubscriptionWatchResult {
   readonly day: string;
@@ -49,18 +51,26 @@ function bangkokDay(now: Date): string {
 /** ดึง subscription ทุกรายพร้อมข้อมูลที่จำเป็นต่อการตัดสินใจ */
 async function loadWatchedSubscriptions(): Promise<WatchedSubscription[]> {
   const supabase = await createSupabaseServiceClient();
-  const [subsRes, orgsRes] = await Promise.all([
-    supabase
-      .from("subscriptions")
-      .select("organization_id, plan, status, current_period_end, promo_trial_code, enterprise_limited"),
-    supabase.from("organizations").select("id, name, suspended_at"),
+  const [subscriptions, organizations] = await Promise.all([
+    loadAllRows((from, to) =>
+      supabase
+        .from("subscriptions")
+        .select("id, organization_id, plan, status, current_period_end, promo_trial_code, enterprise_limited")
+        .order("id", { ascending: true })
+        .range(from, to),
+    QUERY_PAGE_SIZE),
+    loadAllRows((from, to) =>
+      supabase
+        .from("organizations")
+        .select("id, name, suspended_at")
+        .order("id", { ascending: true })
+        .range(from, to),
+    QUERY_PAGE_SIZE),
   ]);
-  if (subsRes.error) throw subsRes.error;
-  if (orgsRes.error) throw orgsRes.error;
 
-  const orgById = new Map((orgsRes.data ?? []).map((o) => [o.id, o]));
+  const orgById = new Map(organizations.map((o) => [o.id, o]));
 
-  return (subsRes.data ?? []).flatMap((row) => {
+  return subscriptions.flatMap((row) => {
     const org = orgById.get(row.organization_id);
     if (!org) return [];
     const raw = row as Record<string, unknown>;

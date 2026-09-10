@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   getUserStores: vi.fn(),
   resolveCurrentStore: vi.fn(),
+  getStore: vi.fn(),
   listStoreMemberships: vi.fn(),
   addPayrollAdjustment: vi.fn(),
   addManualAttendance: vi.fn(),
@@ -42,6 +43,10 @@ vi.mock("@/modules/auth/session", () => ({
 
 vi.mock("@/modules/settings/repository", () => ({
   listStoreMemberships: mocks.listStoreMemberships,
+}));
+
+vi.mock("@/modules/stores/repository", () => ({
+  getStore: mocks.getStore,
 }));
 
 vi.mock("@/modules/hr/repository", () => ({
@@ -106,6 +111,7 @@ describe("attendance manager actions", () => {
       storeId: "store-1",
       storeTimezone: "Asia/Bangkok",
     });
+    mocks.getStore.mockResolvedValue({ data: { timezone: "Asia/Bangkok" }, error: null });
     mocks.listStoreMemberships.mockResolvedValue({
       data: [
         {
@@ -246,6 +252,12 @@ describe("attendance manager actions", () => {
       createdAt: "2026-06-20T02:15:00.000Z",
       updatedAt: "2026-06-20T02:15:00.000Z",
     });
+    // current context อาจอยู่คนละสาขา แต่สรุปต้องใช้ timezone ของ recordStoreId
+    mocks.resolveCurrentStore.mockResolvedValue({
+      organizationId: "org-1",
+      storeId: "store-other",
+      storeTimezone: "America/Los_Angeles",
+    });
     mocks.clockOut.mockResolvedValue({
       data: {
         id: "att-1",
@@ -284,7 +296,7 @@ describe("attendance manager actions", () => {
       await vi.waitFor(() => expect(mocks.notifyOwnerNow).toHaveBeenCalled());
 
       expect(mocks.loadStoreDailySummary).toHaveBeenCalledWith(
-        expect.objectContaining({ storeId: "store-1", organizationId: "org-1", date: "2026-06-20" }),
+        expect.objectContaining({ storeId: "store-1", organizationId: "org-1", date: "2026-06-20", timezone: "Asia/Bangkok" }),
       );
       expect(mocks.claimDailySummaryNotification).toHaveBeenCalledWith(
         expect.objectContaining({

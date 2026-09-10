@@ -43,6 +43,7 @@ import {
 import { buildDailySummaryMessage } from "@/modules/reports/daily-summary";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
+import { getStore } from "@/modules/stores/repository";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -346,10 +347,24 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
         },
       });
 
+      const recordStore = await getStore(recordStoreId);
+      if (recordStore.error || !recordStore.data?.timezone) {
+        await logSystemEvent({
+          level: "warn",
+          source: "attendance.daily-summary",
+          action: "getRecordStoreTimezone",
+          message: "อ่าน timezone ของสาขาที่ออกงานไม่ได้ — ข้ามสรุปยอดเพื่อไม่ดึงข้อมูลผิดวัน",
+          organizationId: ctx.organizationId,
+          storeId: recordStoreId,
+          context: { attendanceRecordId: result.data.id, date: result.data.date },
+        });
+        return { error: null };
+      }
+
       notifyDailySummaryAfterClockOut({
         organizationId: ctx.organizationId,
         storeId: recordStoreId,
-        timezone: ctx.storeTimezone,
+        timezone: recordStore.data.timezone,
         employeeName: result.data.employeeName,
         date: result.data.date,
         attendanceRecordId: result.data.id,

@@ -17,6 +17,7 @@ import { runSubscriptionWatch } from "@/modules/billing/subscription-watch-runne
 import { runDailySummaryEmails } from "@/modules/reports/daily-summary-runner";
 import { runPlatformDailyReport } from "@/modules/system/platform-daily-report-runner";
 import { logActionError, logSystemEvent, purgeOldSystemEventLogs } from "@/modules/system/event-log";
+import { loadAllRows } from "@/modules/reports/pagination";
 
 export const dynamic = "force-dynamic";
 
@@ -51,15 +52,20 @@ export async function GET(req: Request): Promise<Response> {
   const now = new Date();
   const today = bangkokDateIso(now);
 
-  const storesRes = await supabase
-    .from("stores")
-    .select("id, organization_id, name, address, phone, setup_profile")
-    .eq("is_active", true);
-  if (storesRes.error) {
-    logActionError({ source: "cron.daily", action: "listStores", error: storesRes.error });
-    return new Response(JSON.stringify({ error: storesRes.error.message }), { status: 500, headers: { "content-type": "application/json" } });
+  let stores: Array<{ id: string; organization_id: string; name: string; address: string | null; phone: string | null; setup_profile: unknown }>;
+  try {
+    stores = await loadAllRows((from, to) =>
+      supabase
+        .from("stores")
+        .select("id, organization_id, name, address, phone, setup_profile")
+        .eq("is_active", true)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+  } catch (error) {
+    logActionError({ source: "cron.daily", action: "listStores", error });
+    return new Response(JSON.stringify({ error: "โหลดรายการร้านไม่สำเร็จ" }), { status: 500, headers: { "content-type": "application/json" } });
   }
-  const stores = (storesRes.data ?? []) as Array<{ id: string; organization_id: string; name: string; address: string | null; phone: string | null; setup_profile: unknown }>;
 
   const claimed: Array<{ storeId: string; step: string; sent: boolean }> = [];
   const skipped: Array<{ storeId: string; reason: string }> = [];

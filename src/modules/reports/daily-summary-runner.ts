@@ -83,19 +83,41 @@ async function claimDailySummary(
   stats: { storeCount: number; orderCount: number; revenue: number },
 ): Promise<boolean> {
   const supabase = await createSupabaseServiceClient();
-  // ตารางใหม่ ยังไม่อยู่ใน database.types — cast เพื่อไม่ให้ generics ทั้ง repo บวม (ดู log 2026-08-28)
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: boolean | null; error: { code?: string; message?: string } | null }>;
+  const { data, error } = await rpc("claim_daily_summary_email", {
+    p_organization_id: organizationId,
+    p_summary_date: day,
+    p_store_count: stats.storeCount,
+    p_order_count: stats.orderCount,
+    p_revenue: stats.revenue,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+async function completeDailySummaryEmail(input: {
+  organizationId: string;
+  day: string;
+  delivered: boolean;
+  errorMessage?: string;
+}): Promise<void> {
+  const supabase = await createSupabaseServiceClient();
+  // ตารางใหม่ยังไม่อยู่ใน database.types — cast เฉพาะจุดที่บันทึก delivery state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const table = supabase.from("daily_summary_email_log") as any;
-  const { error } = await table.insert({
-    organization_id: organizationId,
-    summary_date: day,
-    store_count: stats.storeCount,
-    order_count: stats.orderCount,
-    revenue: stats.revenue,
-  });
-  if (!error) return true;
-  if ((error as { code?: string }).code === "23505") return false;
-  throw error;
+  const { error } = await table
+    .update({
+      delivery_status: input.delivered ? "sent" : "failed",
+      last_error: input.errorMessage ?? null,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("organization_id", input.organizationId)
+    .eq("summary_date", input.day)
+    .eq("delivery_status", "claimed");
+  if (error) throw error;
 }
 
 /** ส่งอีเมลสรุปให้ทุกองค์กรที่มีออเดอร์เมื่อวาน — ไม่ throw: องค์กรหนึ่งพังต้องไม่ล้มทั้งงาน */
@@ -168,6 +190,9 @@ export async function runDailySummaryEmails(now: Date = new Date()): Promise<Dai
     }
     scanned += 1;
 
+    let claimAcquired = false;
+    let deliveryFinalized = false;
+    let providerOutcome: "unknown" | "sent" | "failed" = "unknown";
     try {
       const summaries: StoreDailySummary[] = [];
       for (const store of stores) {
@@ -215,6 +240,7 @@ export async function runDailySummaryEmails(now: Date = new Date()): Promise<Dai
         skipped += 1;
         continue;
       }
+      claimAcquired = true;
 
       const summary: OrganizationDailySummary = {
         organizationId: org.id,
@@ -233,7 +259,15 @@ export async function runDailySummaryEmails(now: Date = new Date()): Promise<Dai
       });
 
       if (result.ok && !result.skipped) {
+        providerOutcome = "sent";
         sent += 1;
+        try {
+          await completeDailySummaryEmail({ organizationId: org.id, day, delivered: true });
+          deliveryFinalized = true;
+        } catch (stateError) {
+          // ผู้ให้บริการตอบว่าส่งแล้ว ห้าม downgrade เป็น failed เพราะจะเปิดทางให้ส่งซ้ำ
+          logActionError({ source: SOURCE, action: "completeDailySummaryEmail", error: stateError, organizationId: org.id });
+        }
         await logSystemEvent({
           level: "info",
           source: SOURCE,
@@ -243,7 +277,14 @@ export async function runDailySummaryEmails(now: Date = new Date()): Promise<Dai
           context: { day, stores: summaries.length },
         });
       } else {
+        providerOutcome = "failed";
         failed += 1;
+        try {
+          await completeDailySummaryEmail({ organizationId: org.id, day, delivered: false, errorMessage: result.message });
+          deliveryFinalized = true;
+        } catch (stateError) {
+          logActionError({ source: SOURCE, action: "completeDailySummaryEmail", error: stateError, organizationId: org.id });
+        }
         await logSystemEvent({
           level: "error",
           source: SOURCE,
@@ -254,7 +295,14 @@ export async function runDailySummaryEmails(now: Date = new Date()): Promise<Dai
         });
       }
     } catch (error) {
-      failed += 1;
+      if (providerOutcome === "sent" && !deliveryFinalized) {
+        logActionError({ source: SOURCE, action: "dailySummaryDeliveryStatePending", error, organizationId: org.id });
+      }
+      if (claimAcquired && providerOutcome === "unknown") {
+        // timeout/exception หลัง claim = provider outcome ไม่แน่ใจ จึงค้าง claimed เพื่อไม่เสี่ยงส่งซ้ำ
+        logActionError({ source: SOURCE, action: "dailySummaryDeliveryOutcomeUnknown", error, organizationId: org.id });
+      }
+      if (providerOutcome !== "sent") failed += 1;
       logActionError({ source: SOURCE, action: "runDailySummaryEmails", error, organizationId: org.id });
     }
   }

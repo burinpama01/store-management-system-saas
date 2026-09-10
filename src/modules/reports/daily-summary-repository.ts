@@ -88,6 +88,11 @@ export interface LoadStoreDailySummaryInput {
   readonly timezone: string;
 }
 
+export function requireExactCount(result: { count: number | null; error: unknown }): number {
+  if (result.error) throw result.error;
+  return result.count ?? 0;
+}
+
 /**
  * คืน null เมื่อร้านนี้ "ไม่มีออเดอร์ที่ปิดบิลในวันนั้น" — ผู้เรียกใช้ค่านี้เป็นตัวตัดสินว่าจะส่งหรือไม่ส่ง
  * (โจทย์คือส่งเฉพาะร้านที่มีออเดอร์ของวันนั้นเท่านั้น)
@@ -128,6 +133,7 @@ export async function loadStoreDailySummary(
       .lt("voided_at", window.endUtc),
   ]);
 
+  if (voidedRes.error) throw voidedRes.error;
   if (orders.length === 0) return null;
 
   const revenue = round2(orders.reduce((sum, row) => sum + toNumber(row.total), 0));
@@ -190,7 +196,7 @@ export async function loadStoreDailySummary(
     posOrderCount,
     qrOrderCount,
     deliveryOrderCount,
-    voidedCount: voidedRes.error ? 0 : voidedRes.count ?? 0,
+    voidedCount: requireExactCount(voidedRes),
     paymentMethods: aggregatePaymentMethods(paymentRows),
     topProducts: aggregateTopProducts(itemRows),
   };

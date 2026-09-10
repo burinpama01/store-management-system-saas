@@ -30,6 +30,12 @@ export interface CompleteDailySummaryNotificationInput {
   readonly delivered: boolean;
 }
 
+/** exact head count ที่อ่านไม่ได้ต้องคงสถานะไม่แน่ใจไว้ ห้ามแปลงเป็นศูนย์ */
+export function toSafeExactCount(count: number | null, error: unknown): number | null {
+  if (error || count === null) return null;
+  return count;
+}
+
 /**
  * จำนวนคนที่ยังไม่กดออกงานในสาขานี้ของวันนั้น
  * คืน null เมื่ออ่านไม่ได้ — ผู้เรียกต้องตัดสินใจเองว่าจะถือว่า "ไม่แน่ใจ" แปลว่าอะไร
@@ -46,8 +52,7 @@ export async function countOpenShiftsInStore(input: CountOpenShiftsInput): Promi
   if (input.excludeRecordId) query = query.neq("id", input.excludeRecordId);
 
   const { count, error } = await query;
-  if (error) return null;
-  return count ?? 0;
+  return toSafeExactCount(count, error);
 }
 
 /**

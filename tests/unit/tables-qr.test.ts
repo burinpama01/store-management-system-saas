@@ -27,7 +27,7 @@ describe("table management + QR codes (Batch 3)", () => {
     expect(manager).toContain("window.print()");
     expect(manager).toContain("QrCode");
 
-    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const layout = read("src/app/(dashboard)/settings/settings-tabs.ts");
     expect(layout).toContain('href: "/settings/tables"');
     expect(layout).toContain('resolved.can("settings.manage_store")');
   });

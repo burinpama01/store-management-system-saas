@@ -36,6 +36,67 @@ revoke all on public.daily_summary_email_log from anon, authenticated;
 comment on table public.daily_summary_email_log is
   'กันส่งอีเมลสรุปรายวันซ้ำ — หนึ่งองค์กร หนึ่งวัน (เขียนโดย cron เท่านั้น)';
 
+alter table public.daily_summary_email_log
+  add column if not exists delivery_status text not null default 'claimed',
+  add column if not exists last_error text,
+  add column if not exists completed_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'daily_summary_email_log_delivery_status_check'
+      and conrelid = 'public.daily_summary_email_log'::regclass
+  ) then
+    alter table public.daily_summary_email_log
+      add constraint daily_summary_email_log_delivery_status_check
+      check (delivery_status in ('claimed', 'sent', 'failed'));
+  end if;
+end $$;
+
+create or replace function public.claim_daily_summary_email(
+  p_organization_id uuid,
+  p_summary_date date,
+  p_store_count integer,
+  p_order_count integer,
+  p_revenue numeric
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  claimed boolean;
+begin
+  insert into public.daily_summary_email_log (
+    organization_id, summary_date, store_count, order_count, revenue, delivery_status, last_error, completed_at
+  ) values (
+    p_organization_id, p_summary_date, p_store_count, p_order_count, p_revenue, 'claimed', null, null
+  )
+  on conflict (organization_id, summary_date) do update
+    set store_count = excluded.store_count,
+        order_count = excluded.order_count,
+        revenue = excluded.revenue,
+        delivery_status = 'claimed',
+        last_error = null,
+        completed_at = null
+    where public.daily_summary_email_log.delivery_status = 'failed'
+  returning true into claimed;
+
+  return coalesce(claimed, false);
+end;
+$$;
+
+revoke all on function public.claim_daily_summary_email(uuid, date, integer, integer, numeric) from public, anon, authenticated;
+grant execute on function public.claim_daily_summary_email(uuid, date, integer, integer, numeric) to service_role;
+
+-- Refund จาก integration รุ่นก่อนบันทึกเฉพาะ updated_at ทำให้รายงานย้อนหลังนับไม่ครบ
+update public.orders
+set voided_at = updated_at
+where status = 'refunded'
+  and voided_at is null;
+
 -- ------------------------------------------------------------
 -- 1.1) กันแจ้งเตือนซ้ำตอนคนสุดท้ายออกงาน
 -- ------------------------------------------------------------

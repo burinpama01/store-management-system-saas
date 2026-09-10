@@ -6,7 +6,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
 
 describe("customer display ad settings", () => {
   it("adds a gated customer display settings tab and page", () => {
-    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const layout = `${read("src/app/(dashboard)/settings/layout.tsx")}\n${read("src/app/(dashboard)/settings/settings-tabs.ts")}`;
     const page = read("src/app/(dashboard)/settings/customer-display/page.tsx");
     const actions = read("src/app/(dashboard)/settings/customer-display/actions.ts");
     const form = read("src/app/(dashboard)/settings/customer-display/CustomerDisplaySettingsForm.tsx");

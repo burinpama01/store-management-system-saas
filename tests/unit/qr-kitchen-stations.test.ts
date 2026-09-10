@@ -58,7 +58,7 @@ describe("QR kitchen stations", () => {
     expect(exists("src/app/(dashboard)/settings/kitchen/actions.ts")).toBe(true);
     expect(exists("src/app/(dashboard)/settings/kitchen/KitchenStationsManager.tsx")).toBe(true);
 
-    const layout = read("src/app/(dashboard)/settings/layout.tsx");
+    const layout = read("src/app/(dashboard)/settings/settings-tabs.ts");
     expect(layout).toContain("{ href: \"/settings/kitchen\", label: \"Kitchen\" }");
 
     const page = read("src/app/(dashboard)/settings/kitchen/page.tsx");
