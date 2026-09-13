@@ -2298,6 +2298,7 @@ export interface Database {
           expires_at: string;
           consumed_at: string | null;
           created_at: string;
+          delivery_channel: "campaigns" | "otp_v2";
         };
         Insert: {
           id?: string;
@@ -2314,6 +2315,7 @@ export interface Database {
           expires_at: string;
           consumed_at?: string | null;
           created_at?: string;
+          delivery_channel?: "campaigns" | "otp_v2";
         };
         Update: {
           id?: string;
@@ -2330,6 +2332,7 @@ export interface Database {
           expires_at?: string;
           consumed_at?: string | null;
           created_at?: string;
+          delivery_channel?: "campaigns" | "otp_v2";
         };
         Relationships: [];
       };

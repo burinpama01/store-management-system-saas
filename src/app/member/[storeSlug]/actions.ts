@@ -8,7 +8,7 @@ import {
   verifyMemberOtp,
 } from "@/modules/customers/member-repository";
 import { redeemRewardForCurrentCustomer } from "@/modules/loyalty/repository";
-import { sendSmskubOtp } from "@/modules/notifications/smskub";
+import { deliverMemberOtp, verifyProviderOtp } from "@/modules/notifications/smskub";
 import { claimLoyaltyPointsWithCode } from "@/modules/loyalty/claim-repository";
 import { logActionError } from "@/modules/system/event-log";
 
@@ -52,6 +52,7 @@ const PUBLIC_MEMBER_ERROR_MESSAGES = new Set([
   "OTP หมดอายุแล้ว",
   "กรอก OTP ผิดเกินจำนวนที่กำหนด",
   "ไม่สามารถสร้างสมาชิกได้",
+  "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
   "กรุณาเข้าสู่ระบบก่อนแลกของรางวัล",
   "ข้อมูลของรางวัลไม่ถูกต้อง",
   "idempotency key ไม่ถูกต้อง",
@@ -101,7 +102,7 @@ export async function requestMemberOtpAction(formData: FormData): Promise<Member
         email: text(formData, "email"),
         identifier: text(formData, "identifier"),
       },
-      sendSmskubOtp,
+      deliverMemberOtp,
     );
 
     if (result.error || !result.data) {
@@ -117,12 +118,15 @@ export async function requestMemberOtpAction(formData: FormData): Promise<Member
 export async function verifyMemberOtpAction(formData: FormData): Promise<MemberActionResult> {
   try {
     const storeSlug = text(formData, "storeSlug");
-    const result = await verifyMemberOtp({
-      storeSlug,
-      portalCode: text(formData, "portalCode"),
-      otpId: text(formData, "otpId"),
-      code: text(formData, "code"),
-    });
+    const result = await verifyMemberOtp(
+      {
+        storeSlug,
+        portalCode: text(formData, "portalCode"),
+        otpId: text(formData, "otpId"),
+        code: text(formData, "code"),
+      },
+      verifyProviderOtp,
+    );
     if (result.error) return { error: publicMemberError(result.error, "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า") };
     revalidateMemberPortal(storeSlug);
 

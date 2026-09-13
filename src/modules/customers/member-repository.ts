@@ -7,6 +7,7 @@ import { mapStore } from "@/modules/stores/public-repository";
 import type { Store } from "@/modules/stores/types";
 import type { LoyaltyReward } from "@/modules/loyalty/repository";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { verifyProviderOtp as defaultVerifyProviderOtp } from "@/modules/notifications/smskub";
 import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
 import { escapeLikePattern } from "@/shared/utils/like-pattern";
@@ -19,7 +20,12 @@ type LoyaltyRewardRow = Database["public"]["Tables"]["loyalty_rewards"]["Row"];
 type RewardRedemptionRow = Database["public"]["Tables"]["loyalty_reward_redemptions"]["Row"];
 type MemberOtpRow = Database["public"]["Tables"]["customer_member_otps"]["Row"];
 
-export type OtpSender = (phone: string, code: string) => Promise<unknown>;
+export type OtpDeliveryChannel = "campaigns" | "otp_v2";
+export type OtpSender = (
+  phone: string,
+  code: string,
+) => Promise<{ channel: OtpDeliveryChannel }>;
+export type ProviderOtpVerifier = (phone: string, code: string) => Promise<boolean>;
 
 const ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE =
   "ระบบสมัครสมาชิก สะสมแต้ม และคูปองอยู่ในแพ็กเกจ Enterprise เท่านั้น";
@@ -66,6 +72,14 @@ function hashValue(value: string) {
 
 function generateOtpCode() {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
+/**
+ * OTP ที่ส่งผ่านบริการ OTP v2 ใช้รหัสของผู้ให้บริการ — เราไม่มีตัวรหัสจริงมา hash
+ * เก็บค่านี้แทนเพื่อให้ตรวจกับ hash ไม่มีทางตรงโดยบังเอิญ (verify จะไปทาง provider)
+ */
+function providerOtpHash(phone: string) {
+  return hashValue(`provider-otp-v2:${phone}`);
 }
 
 function getMemberSessionCookieName(storeId: string) {
@@ -537,7 +551,28 @@ export async function requestMemberOtp(
   if (otp.error) return { data: null, error: mapError(otp.error).userMessage };
 
   try {
-    await sendOtp(phone, code);
+    const delivery = await sendOtp(phone, code);
+    if (delivery.channel === "otp_v2") {
+      // ส่งสำเร็จผ่าน fallback — รหัสจริงอยู่กับผู้ให้บริการ ไม่ใช่รหัสที่เราสุ่ม
+      const mark = await supabase
+        .from("customer_member_otps")
+        .update({ delivery_channel: "otp_v2", code_hash: providerOtpHash(phone) })
+        .eq("id", otp.data.id);
+      if (mark.error) {
+        // mark ไม่ได้ = แถวจะค้างเป็น campaigns พร้อมรหัสที่ลูกค้าไม่เคยได้รับ
+        // ลบทิ้งแล้วให้ขอใหม่ดีกว่าปล่อยให้ใส่รหัสถูกแล้วโดนนับว่าผิดจน lock
+        logActionError({
+          source: "member.otp",
+          action: "markOtpV2Channel",
+          error: mark.error,
+          storeId: portal.store.id,
+          organizationId: portal.store.organizationId,
+          context: { mode: input.mode, maskedPhone: maskPhone(phone), otpId: otp.data.id },
+        });
+        await supabase.from("customer_member_otps").delete().eq("id", otp.data.id);
+        return { data: null, error: MEMBER_OTP_SEND_ERROR_MESSAGE };
+      }
+    }
   } catch (error) {
     const cleanup = await supabase.from("customer_member_otps").delete().eq("id", otp.data.id);
     // OTP ล้มเหลว = สมาชิกเข้าระบบไม่ได้ทั้งร้าน แต่ลูกค้าเห็นแค่ข้อความกลาง ๆ
@@ -640,12 +675,15 @@ export async function signOutMemberSession(storeSlug: string) {
   return { error: null };
 }
 
-export async function verifyMemberOtp(input: {
-  storeSlug: string;
-  portalCode: string;
-  otpId: string;
-  code: string;
-}) {
+export async function verifyMemberOtp(
+  input: {
+    storeSlug: string;
+    portalCode: string;
+    otpId: string;
+    code: string;
+  },
+  verifyProviderOtp?: ProviderOtpVerifier,
+) {
   const portal = await resolvePortalLink(input.storeSlug, input.portalCode);
   if (!portal.store || !portal.link) return { data: null, error: portal.error ?? "ต้องเปิดจาก QR ของร้าน" };
 
@@ -667,11 +705,33 @@ export async function verifyMemberOtp(input: {
   if (typedOtp.attempts >= 5) return { data: null, error: "กรอก OTP ผิดเกินจำนวนที่กำหนด" };
 
   const code = input.code.trim();
-  if (hashValue(`${typedOtp.phone}:${code}`) !== typedOtp.code_hash) {
+  const channel = typedOtp.delivery_channel ?? "campaigns";
+  let verified = false;
+  if (channel === "otp_v2") {
+    const verify = verifyProviderOtp ?? defaultVerifyProviderOtp;
+    try {
+      verified = await verify(typedOtp.phone, code);
+    } catch (error) {
+      logActionError({
+        source: "member.otp",
+        action: "verifyProviderOtp",
+        error,
+        storeId: portal.store.id,
+        organizationId: portal.store.organizationId,
+        context: { mode: typedOtp.purpose, maskedPhone: maskPhone(typedOtp.phone) },
+      });
+      return { data: null, error: "ยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
+    }
+  } else {
+    verified = hashValue(`${typedOtp.phone}:${code}`) === typedOtp.code_hash;
+  }
+  if (!verified) {
+    // กำหนดค่าเดิมในเงื่อนไข — ถ้ามี request คู่ขนานแย่งกันนับ รอบหลังจะไม่ทับค่ารอบก่อน
     await supabase
       .from("customer_member_otps")
       .update({ attempts: typedOtp.attempts + 1 })
-      .eq("id", typedOtp.id);
+      .eq("id", typedOtp.id)
+      .eq("attempts", typedOtp.attempts);
     return { data: null, error: "รหัส OTP ไม่ถูกต้อง" };
   }
 
@@ -689,9 +749,11 @@ export async function verifyMemberOtp(input: {
 
   const consumed = await supabase
     .from("customer_member_otps")
-    .update({ consumed_at: new Date().toISOString() })
-    .eq("id", typedOtp.id);
+    .update({ consumed_at: new Date().toISOString() }, { count: "exact" })
+    .eq("id", typedOtp.id)
+    .is("consumed_at", null);
   if (consumed.error) return { data: null, error: mapError(consumed.error).userMessage };
+  if ((consumed.count ?? 1) === 0) return { data: null, error: "OTP นี้ถูกใช้แล้ว" };
 
   const session = await createMemberSession(portal.store, customerId.data);
   if (session.error) return { data: null, error: session.error };

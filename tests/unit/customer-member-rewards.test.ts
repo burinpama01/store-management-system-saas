@@ -81,7 +81,7 @@ describe("customer member rewards", () => {
     expect(actions).toContain("verifyMemberOtpAction");
     expect(actions).toContain("getCustomerPortalData");
     expect(actions).toContain("redeemRewardForCurrentCustomer");
-    expect(actions).toContain("sendSmskubOtp");
+    expect(actions).toContain("deliverMemberOtp");
     expect(actions).toContain("ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า");
     expect(actions).toContain('logPublicMemberActionError("requestMemberOtp", e)');
     expect(actions).not.toContain("return { error: e instanceof Error ? e.message");
