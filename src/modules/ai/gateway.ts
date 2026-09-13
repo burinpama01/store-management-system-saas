@@ -28,6 +28,8 @@ export async function generateDeviceAdvice(input: RedactedDeviceInput, approvedM
   try {
     result = await generateText({
       model: openai(approvedModelId),
+      // ISSUE-20260904-001: opt out of OpenAI application-state persistence (default store=true)
+      providerOptions: { openai: { store: false } },
       output: Output.object({ schema: DeviceAdviceSchema }),
       abortSignal: AbortSignal.timeout(15000),
       maxOutputTokens: 600,

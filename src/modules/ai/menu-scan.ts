@@ -114,6 +114,8 @@ export async function extractMenuFromImage(
   try {
     result = await generateText({
       model: openai(approvedModelId),
+      // ISSUE-20260904-001: opt out of OpenAI application-state persistence (default store=true)
+      providerOptions: { openai: { store: false } },
       output: Output.object({ schema: MenuScanResultSchema }),
       abortSignal: AbortSignal.timeout(30000),
       maxOutputTokens: 2000,
