@@ -27,6 +27,9 @@ export type OtpSender = (
 ) => Promise<{ channel: OtpDeliveryChannel }>;
 export type ProviderOtpVerifier = (phone: string, code: string) => Promise<boolean>;
 
+export const OTP_RESEND_COOLDOWN_SECONDS = 60;
+const OTP_RESEND_COOLDOWN_MESSAGE = `กรุณารอ ${OTP_RESEND_COOLDOWN_SECONDS} วินาทีก่อนขอรหัส OTP ใหม่`;
+
 const ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE =
   "ระบบสมัครสมาชิก สะสมแต้ม และคูปองอยู่ในแพ็กเกจ Enterprise เท่านั้น";
 const MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE = "ไม่สามารถตรวจสอบ QR ได้ กรุณาลองใหม่หรือแจ้งร้านค้า";
@@ -528,6 +531,17 @@ export async function requestMemberOtp(
 
   if (recentOtpCount.error) return { data: null, error: mapError(recentOtpCount.error).userMessage };
   if ((recentOtpCount.count ?? 0) >= 5) return { data: null, error: "ขอ OTP บ่อยเกินไป กรุณารอสักครู่" };
+
+  // ขอรหัสใหม่ได้ทุก ๆ OTP_RESEND_COOLDOWN_SECONDS — กันกดซ้ำจนได้ SMS หลายรหัส
+  // (รายการที่ส่งไม่สำเร็จถูกลบทิ้งแล้ว จึงไม่ติด cooldown)
+  const cooldownOtpCount = await supabase
+    .from("customer_member_otps")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", portal.store.id)
+    .eq("phone", phone)
+    .gte("created_at", new Date(Date.now() - OTP_RESEND_COOLDOWN_SECONDS * 1000).toISOString());
+  if (cooldownOtpCount.error) return { data: null, error: mapError(cooldownOtpCount.error).userMessage };
+  if ((cooldownOtpCount.count ?? 0) > 0) return { data: null, error: OTP_RESEND_COOLDOWN_MESSAGE };
 
   const code = generateOtpCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();

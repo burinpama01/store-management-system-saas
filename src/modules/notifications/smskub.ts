@@ -105,10 +105,17 @@ export async function requestProviderOtp(phone: string) {
   return { ok: true };
 }
 
+/** ข้อความ 4xx ที่หมายถึงปัญหาฝั่งบัญชี/ระบบ ไม่ใช่ลูกค้าใส่รหัสผิด */
+const PROVIDER_ACCOUNT_PROBLEM = /package|credit|quota|balance|api ?key|\bkey\b|project|unauthori[sz]ed|forbidden|permission|limit|too many/i;
+/** ข้อความ 4xx ที่ยืนยันแล้วว่าเป็นเรื่องตัวรหัส (ผิด/หมดอายุ/ไม่มีคำขอ) */
+const PROVIDER_WRONG_CODE = /otp|code|invalid|incorrect|wrong|expire|not request/i;
+
 /** ตรวจรหัส OTP กับบริการ OTP v2 — คืน true เฉพาะผู้ให้บริการยืนยันว่าถูกต้อง
  * contract จริง (ยืนยันกับ API แล้ว): รหัสผิด/ไม่มีคำขอ ตอบ HTTP 4xx เช่น
  * {code:401,message:"OTP not request"} → ถือเป็น "รหัสผิด" ให้นับ attempts
- * ส่วน 5xx/network error = provider ล้ม → throw เพื่อไม่ลงโทษลูกค้า */
+ * แต่ 4xx ที่เป็นปัญหาบัญชี (key ผิด, แพ็กเกจหมด, 429) หรือข้อความที่ไม่รู้จัก
+ * ต้อง throw — ไม่งั้นลูกค้าใส่รหัสถูกแต่โดนนับว่าผิดจนถูกล็อก และไม่มี log ให้ไล่
+ * ส่วน 5xx/network error = provider ล้ม → throw เช่นกัน */
 export async function verifyProviderOtp(phone: string, code: string) {
   const config = providerOtpConfig();
   if (!config) throw new Error("Missing SMSKUB_OTP_PROJECT");
@@ -117,11 +124,20 @@ export async function verifyProviderOtp(phone: string, code: string) {
     { phone, otp: code, project: config.project },
     config,
   );
-  if (status >= 500) {
-    const detail = typeof payload?.message === "string" ? payload.message : null;
-    throw new Error(`SMSKUB otp verify failed (${status})${detail ? `: ${detail}` : ""}`);
+  const detail = typeof payload?.message === "string" ? payload.message : null;
+  const fail = () =>
+    new Error(`SMSKUB otp verify failed (${status})${detail ? `: ${detail}` : ""}`);
+
+  if (ok) {
+    if (payload?.code === 200 && payload?.data?.validate === true) return true;
+    if (payload?.data?.validate === false) return false;
+    throw fail();
   }
-  return Boolean(ok && payload?.code === 200 && payload?.data?.validate === true);
+  if (status === 429 || status >= 500) throw fail();
+  if (detail && !PROVIDER_ACCOUNT_PROBLEM.test(detail) && PROVIDER_WRONG_CODE.test(detail)) {
+    return false;
+  }
+  throw fail();
 }
 
 export type MemberOtpDelivery =

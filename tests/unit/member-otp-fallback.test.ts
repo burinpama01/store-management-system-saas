@@ -292,6 +292,52 @@ describe("member OTP delivery fallback (v1 campaigns → v2 provider OTP)", () =
     }
   });
 
+  it.each([
+    [401, { code: 401, message: "Invalid api key" }],
+    [403, { code: 403, message: "your package is expired" }],
+    [429, { code: 429, message: "OTP too many request" }],
+    [400, { code: 400 }],
+  ])("throws on a %s account/unknown provider response instead of counting a wrong code", async (status, body) => {
+    vi.resetModules();
+    global.fetch = vi.fn().mockResolvedValue(jsonResponder(status, body)) as unknown as typeof fetch;
+    const { verifyProviderOtp } = await import("@/modules/notifications/smskub");
+    await expect(verifyProviderOtp("0812345678", "123456")).rejects.toThrow(`SMSKUB otp verify failed (${status})`);
+  });
+
+  it("returns false when the provider answers 200 with validate:false", async () => {
+    vi.resetModules();
+    global.fetch = vi.fn().mockResolvedValue(
+      jsonResponder(200, { code: 200, data: { validate: false } }),
+    ) as unknown as typeof fetch;
+    const { verifyProviderOtp } = await import("@/modules/notifications/smskub");
+    await expect(verifyProviderOtp("0812345678", "000000")).resolves.toBe(false);
+  });
+
+  it("blocks a new OTP request within the 60 second resend cooldown", async () => {
+    vi.resetModules();
+    const { queries } = setupServiceClient({
+      customer_member_otps: createQuery({ data: { id: "otp-1" }, count: 1, error: null }),
+    });
+    const { requestMemberOtp } = await import("@/modules/customers/member-repository");
+    const sendOtp = vi.fn();
+
+    const result = await requestMemberOtp(
+      {
+        storeSlug: "each-other-ii-f62fc0",
+        portalCode: "valid-code",
+        mode: "register",
+        name: "ลูกค้า",
+        phone: "0812345678",
+      },
+      sendOtp,
+    );
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBe("กรุณารอ 60 วินาทีก่อนขอรหัส OTP ใหม่");
+    expect(sendOtp).not.toHaveBeenCalled();
+    expect(queries.customer_member_otps.insert).not.toHaveBeenCalled();
+  });
+
   it("throws on a 5xx provider response so an outage never burns attempts", async () => {
     vi.resetModules();
     const originalFetch = global.fetch;

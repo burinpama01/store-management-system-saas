@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { CustomerPortalData, CustomerRewardRedemption } from "@/modules/customers/member-repository";
 import type { LoyaltyReward } from "@/modules/loyalty/repository";
@@ -12,6 +12,8 @@ import {
   verifyMemberOtpAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+
+const RESEND_COOLDOWN_SECONDS = 60;
 
 interface Props {
   storeSlug: string;
@@ -121,15 +123,31 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
     });
   }
 
+  // นับถอยหลังก่อนขอรหัสใหม่ (ฝั่งเซิร์ฟเวอร์บังคับ 60 วิเหมือนกัน)
+  const [resendIn, setResendIn] = useState(0);
+  const lastOtpRequest = useRef<FormData | null>(null);
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = window.setTimeout(() => setResendIn((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendIn]);
+
   function requestOtp(formData: FormData) {
     startTransition(async () => {
       const result = await requestMemberOtpAction(formData);
       setMessage(result.error ?? `ส่ง OTP ไปที่ ${result.maskedPhone ?? "เบอร์ของคุณ"} แล้ว`);
       if (!result.error && result.otpId) {
+        lastOtpRequest.current = formData;
         setOtpId(result.otpId);
         setMaskedPhone(result.maskedPhone ?? null);
+        setResendIn(RESEND_COOLDOWN_SECONDS);
       }
     });
+  }
+
+  function resendOtp() {
+    if (resendIn > 0 || !lastOtpRequest.current) return;
+    requestOtp(lastOtpRequest.current);
   }
 
   function verifyOtp(formData: FormData) {
@@ -254,6 +272,15 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
                 </label>
                 <Button variant="primary" className="w-full" type="submit" loading={isPending}>
                   ยืนยัน OTP
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  type="button"
+                  onClick={resendOtp}
+                  disabled={resendIn > 0 || isPending}
+                >
+                  {resendIn > 0 ? `ขอรหัสใหม่ได้ใน ${resendIn} วินาที` : "ขอรหัสใหม่"}
                 </Button>
                 <Button variant="secondary" className="w-full" onClick={() => setOtpId(null)} loading={isPending}>
                   เปลี่ยนข้อมูล
