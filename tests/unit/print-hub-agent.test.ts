@@ -8,6 +8,10 @@ import {
   normalizeComPort,
   sendToComPort,
   classifyPrintOutcome,
+  nextPollDelayMs,
+  DEFAULT_POLL_INTERVAL_MS,
+  BUSY_POLL_INTERVAL_MS,
+  ERROR_BACKOFF_MS,
   AGENT_VERSION,
 } from "../../scripts/print-hub.mjs";
 
@@ -302,5 +306,75 @@ describe("print hub agent — แยก timeout ตอนต่อ ออกจ�
 
   it("ค้างระหว่างส่ง = unknown (กระดาษอาจออกไปบางส่วนแล้ว)", () => {
     expect(classifyPrintOutcome(new Error("Print send timed out (30000ms)"))).toBe("unknown");
+  });
+});
+
+
+describe("print hub agent — poll delay knobs (speed)", () => {
+  it("drains immediately after a non-empty claim cycle", () => {
+    expect(
+      nextPollDelayMs({
+        now: 10_000,
+        lastJobAt: 9_500,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 2,
+      }),
+    ).toBe(0);
+  });
+
+  it("uses the busy interval while the store is selling but the last poll was empty", () => {
+    expect(
+      nextPollDelayMs({
+        now: 10_000,
+        lastJobAt: 9_500,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 0,
+      }),
+    ).toBe(BUSY_POLL_INTERVAL_MS);
+  });
+
+  it("falls back to the idle poll interval when the busy window has elapsed", () => {
+    expect(
+      nextPollDelayMs({
+        now: 200_000,
+        lastJobAt: 1_000,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 0,
+      }),
+    ).toBe(DEFAULT_POLL_INTERVAL_MS);
+  });
+
+  it("backs off on auth / transport failures without busy-poll", () => {
+    expect(nextPollDelayMs({ authFailed: true })).toBe(ERROR_BACKOFF_MS);
+    expect(nextPollDelayMs({ degraded: true })).toBe(ERROR_BACKOFF_MS);
+    expect(nextPollDelayMs({ outdated: true, pollIntervalMs: 1500 })).toBe(ERROR_BACKOFF_MS * 4);
+  });
+
+  it("acks multiple jobs without waiting for each ack before the next print finishes", async () => {
+    const jobs = [
+      { id: "job-a", host: "192.168.1.50", port: 9100, printJobBase64: Buffer.from("a").toString("base64") },
+      { id: "job-b", host: "192.168.1.50", port: 9100, printJobBase64: Buffer.from("b").toString("base64") },
+    ];
+    let acksStarted = 0;
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/poll")) return jsonResponse(200, { ok: true, jobs });
+      acksStarted += 1;
+      // Slow ack — previously this would serialize behind the next print
+      await new Promise((r) => setTimeout(r, 30));
+      return jsonResponse(200, { ok: true });
+    });
+    const printOrder: string[] = [];
+    const printJob = vi.fn().mockImplementation(async (_t: unknown, bytes: Buffer) => {
+      printOrder.push(bytes.toString());
+      // After first print, first ack should already be in flight (not awaited)
+      if (printOrder.length === 2) {
+        expect(acksStarted).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    const result = await runPollCycle({ config, fetchImpl, printJob, listDevices: noDevices });
+    expect(result).toMatchObject({ ok: true, processed: 2 });
+    expect(printOrder).toEqual(["a", "b"]);
+    expect(acksStarted).toBe(2);
   });
 });

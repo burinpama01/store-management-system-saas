@@ -70,16 +70,18 @@ export async function POST(req: NextRequest) {
 
   await touchHubHeartbeat(storeId);
 
-  // Agent รายงานเครื่องพิมพ์ที่สแกนเจอบนพีซีแคชเชียร์มาพร้อมทุก poll — เก็บไว้ให้หน้า
-  // Settings แสดงรายการ USB ที่เสียบอยู่ ผู้ใช้กดเลือกได้เลยโดยไม่ต้องพิมพ์ชื่อเครื่องเอง
+  // Device inventory is independent of claim — run it alongside reconcile/expire so
+  // the Hub's queue→print path is not blocked on an extra round-trip to stores.
   // (เนื้อหาเป็นข้อมูล ไม่ใช่คำสั่ง — saveHubDevices ตรวจรูปทรง/ตัดจำนวนก่อนบันทึก)
-  if (body.devices !== undefined) {
-    await saveHubDevices(storeId, body.devices);
-  }
+  const saveDevicesPromise =
+    body.devices !== undefined ? saveHubDevices(storeId, body.devices) : Promise.resolve({ error: null });
 
-  // ปิดงานที่ agent รอบก่อนเคลมไปแล้วไม่ ack ให้เป็น unknown ก่อนแจกงานรอบใหม่ —
+  // ปิดงานค้าง (stale lease / ข้ามวัน) ก่อนเคลม — ทำคู่ขนานกันได้เพราะคนละชุดสถานะ
   // ทำตรงนี้เพราะโควตา cron เต็มแล้ว จึงไม่มี scheduled job ให้ใช้ (แผน v3 §3)
-  const reconciled = await reconcileStalePrintJobs(storeId);
+  const [reconciled, expired] = await Promise.all([
+    reconcileStalePrintJobs(storeId),
+    expireOldPrintJobs(storeId),
+  ]);
   if (reconciled.data && reconciled.data.reconciled > 0) {
     await logSystemEvent({
       level: "warn",
@@ -91,9 +93,6 @@ export async function POST(req: NextRequest) {
       context: { reconciled: reconciled.data.reconciled },
     });
   }
-
-  // งานที่ค้างข้ามวันไม่ควรถูกพิมพ์อีก — ปิดก่อนแจกงานรอบใหม่ (lazy เพราะไม่มี cron ว่าง)
-  const expired = await expireOldPrintJobs(storeId);
   if (expired.data && expired.data.expired > 0) {
     await logSystemEvent({
       level: "warn",
@@ -108,11 +107,13 @@ export async function POST(req: NextRequest) {
 
   const agentVersion = sanitizeAgentVersion(body.agentVersion);
   const limit = Number.isInteger(body.limit) && body.limit! > 0 ? Math.min(body.limit!, 20) : 5;
+  // Claim does not wait on device inventory write — that finishes before we respond.
   const claimed = await claimPendingPrintJobs(storeId, limit, {
     leaseSeconds: PRINT_JOB_LEASE_SECONDS,
     agentVersion,
   });
   if (claimed.error || !claimed.data) {
+    await saveDevicesPromise.catch(() => null);
     return NextResponse.json({ error: claimed.error?.userMessage ?? "Failed to claim jobs" }, { status: 500 });
   }
 
@@ -120,7 +121,8 @@ export async function POST(req: NextRequest) {
   // แนบไปกับงานเลย เพื่อให้ agent ตัดสินได้โดยไม่ต้องถามเซิร์ฟเวอร์เพิ่ม
   const usbJobIds = claimed.data.filter((job) => job.targetKind === "usb").map((job) => job.id);
   const bindingByJob = new Map<string, HubUsbBinding>();
-  if (usbJobIds.length > 0) {
+  const loadUsbBindings = async () => {
+    if (usbJobIds.length === 0) return;
     const printerIds = await getPrinterIdsForJobs(storeId, usbJobIds);
     const idMap = printerIds.data ?? {};
     const bindings = await getUsbBindings(storeId, Object.values(idMap).filter((id): id is string => !!id));
@@ -130,7 +132,8 @@ export async function POST(req: NextRequest) {
       const binding = printerId ? byPrinter.get(printerId) : undefined;
       if (binding) bindingByJob.set(jobId, binding);
     }
-  }
+  };
+  await Promise.all([loadUsbBindings(), saveDevicesPromise]);
 
   const jobs = claimed.data.map((job) => ({
     id: job.id,

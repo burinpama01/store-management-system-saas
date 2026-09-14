@@ -87,7 +87,7 @@ export async function POST(request: Request) {
             serverUrl: new URL(request.url).origin,
             storeId: ctx.storeId,
             hubToken: result.data.token,
-            pollIntervalMs: 2500,
+            pollIntervalMs: 1500,
           }
         : null,
     },

@@ -24,7 +24,7 @@ param(
   [string] $ServerUrl,
   [string] $StoreId,
   [string] $HubToken,
-  [int] $PollIntervalMs = 2500
+  [int] $PollIntervalMs = 1500
 )
 
 $ErrorActionPreference = "Stop"

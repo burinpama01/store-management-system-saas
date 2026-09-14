@@ -593,7 +593,7 @@ export function PrintHubManager({
   }
 
   const configSnippet = JSON.stringify(
-    { serverUrl, storeId, hubToken: token ?? "PASTE_TOKEN_HERE", pollIntervalMs: 2500 },
+    { serverUrl, storeId, hubToken: token ?? "PASTE_TOKEN_HERE", pollIntervalMs: 1500 },
     null,
     2,
   );

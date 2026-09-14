@@ -99,7 +99,7 @@ describe("POST /api/print/hub/provision — พฤติกรรม", () => {
       serverUrl: "https://www.store-os.online",
       storeId: "store-1",
       hubToken: "tok-new",
-      pollIntervalMs: 2500,
+      pollIntervalMs: 1500,
     });
     expect(res.headers.get("Cache-Control")).toBe("no-store");
   });

@@ -7,7 +7,7 @@ export const MAX_PRINT_JOB_BASE64_CHARS = Math.ceil((MAX_PRINT_JOB_BYTES * 4) / 
 
 /** A Hub that has not polled within this window is shown as offline. */
 export const HUB_OFFLINE_THRESHOLD_MS = 90 * 1000;
-export const HUB_DEFAULT_POLL_INTERVAL_MS = 2500;
+export const HUB_DEFAULT_POLL_INTERVAL_MS = 1500;
 
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 

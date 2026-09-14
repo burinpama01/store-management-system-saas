@@ -5,7 +5,7 @@
 //
 // Config: scripts/print-hub.config.json next to this file, or STOREOS_HUB_* env.
 //   { "serverUrl": "https://store-os-manage.vercel.app",
-//     "storeId": "<uuid>", "hubToken": "<token>", "pollIntervalMs": 2500 }
+//     "storeId": "<uuid>", "hubToken": "<token>", "pollIntervalMs": 1500 }
 
 import net from "node:net";
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync } from "node:fs";
@@ -17,18 +17,19 @@ import { fileURLToPath } from "node:url";
 // เวอร์ชันของ agent ตัวนี้ + protocol ที่คุยกับเซิร์ฟเวอร์ (แผน v3 Task 3).
 // ส่งไปกับทุก poll เพื่อให้เซิร์ฟเวอร์รู้ว่าร้านไหนยังรัน Hub รุ่นเก่า -- เดิมไม่มีเลย
 // จึงไล่ปัญหา "ร้านนี้พิมพ์ไม่ออก" ไม่ได้ว่าเป็นเพราะ agent เก่าหรือของอย่างอื่น
-export const AGENT_VERSION = "1.3.0";
+export const AGENT_VERSION = "1.3.1";
 export const PROTOCOL_VERSION = 1;
 
 const MAX_PRINT_JOB_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5000;
 const SEND_TIMEOUT_MS = 30000;
-const DEFAULT_POLL_INTERVAL_MS = 2500;
-const ERROR_BACKOFF_MS = 8000;
-// ช่วงที่ร้านกำลังขายอยู่ ให้ถามงานถี่ขึ้น: รอบ poll ปกติ 2.5 วิ คือเวลารอเปล่า ๆ
-// ก่อนใบเสร็จจะเริ่มพิมพ์ ส่วนตอนร้านว่างก็กลับไปถามห่างเหมือนเดิม (ไม่ถล่มเซิร์ฟเวอร์)
-const BUSY_POLL_INTERVAL_MS = 500;
-const BUSY_WINDOW_MS = 90_000;
+// Idle poll: 1.5s (was 2.5s). Busy poll: 250ms (was 500ms). After a non-empty
+// claim we re-poll immediately (0ms) so receipt+kitchen batches drain without an
+// extra half-second gap. Reliability unchanged — claim tokens / lease still gate duplicates.
+export const DEFAULT_POLL_INTERVAL_MS = 1500;
+export const ERROR_BACKOFF_MS = 8000;
+export const BUSY_POLL_INTERVAL_MS = 250;
+export const BUSY_WINDOW_MS = 90_000;
 
 function clampInt(value, fallback) {
   const n = Number(value);
@@ -41,8 +42,8 @@ function clampInt(value, fallback) {
 // garbage characters. Writing in small chunks with a short delay (like the
 // Bluetooth client) lets the printer keep up. Tunable via env if a printer
 // needs to go slower.
-const PRINT_CHUNK_BYTES = clampInt(process.env.STOREOS_HUB_CHUNK_BYTES, 1024);
-const PRINT_CHUNK_DELAY_MS = clampInt(process.env.STOREOS_HUB_CHUNK_DELAY_MS, 20);
+const PRINT_CHUNK_BYTES = clampInt(process.env.STOREOS_HUB_CHUNK_BYTES, 2048);
+const PRINT_CHUNK_DELAY_MS = clampInt(process.env.STOREOS_HUB_CHUNK_DELAY_MS, 10);
 
 const PRIVATE_LAN_RANGES = [/^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./];
 const BLOCKED_LAN_RANGES = [/^127\./, /^169\.254\./, /^0\./, /^255\./];
@@ -127,7 +128,7 @@ function buildSerialPortScript(port, file, baud) {
     `$sp=New-Object System.IO.Ports.SerialPort('${port}',${baud},[System.IO.Ports.Parity]::None,8,[System.IO.Ports.StopBits]::One);`,
     "$sp.WriteTimeout=8000; $sp.Open();",
     "$i=0; while($i -lt $bytes.Length){ $n=[Math]::Min(256,$bytes.Length-$i); $sp.Write($bytes,$i,$n); Start-Sleep -Milliseconds 15; $i+=$n }",
-    "Start-Sleep -Milliseconds 400; $sp.Close();",
+    "Start-Sleep -Milliseconds 250; $sp.Close();",
   ].join(" ");
 }
 
@@ -442,7 +443,16 @@ export function mergePrinterIdentities(printers, devices) {
 const PRINTER_CACHE_MS = clampInt(process.env.STOREOS_HUB_PRINTER_CACHE_MS, 20000);
 let printerCache = { at: 0, printers: [] };
 
-/** Enumerates the printers Windows can see (cached briefly; polls run every ~2.5s). */
+/** Sync peek of the last WMI scan — never blocks on PowerShell. */
+export function getCachedWindowsPrinters() {
+  return printerCache.at > 0 ? printerCache.printers : null;
+}
+
+export function isPrinterCacheFresh(now = Date.now()) {
+  return printerCache.at > 0 && now - printerCache.at < PRINTER_CACHE_MS;
+}
+
+/** Enumerates the printers Windows can see (cached briefly; polls run every ~1.5s). */
 export async function listWindowsPrinters(options = {}) {
   const runner = options.runner ?? ((script) => runPowerShell(script, DEFAULT_TIMEOUT_MS * 3));
   const now = Date.now();
@@ -639,15 +649,46 @@ export function classifyPrintOutcome(error) {
  * `printJob(target, bytes)` receives an `{ kind: "ip", host, port }` or
  * `{ kind: "bt", device }` target. Returns the number of jobs processed.
  */
+/**
+ * How long the main loop should sleep before the next poll.
+ * processed > 0 → 0ms (drain the queue immediately; claim/lease still prevent dupes).
+ */
+export function nextPollDelayMs({
+  now = Date.now(),
+  lastJobAt = 0,
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  processed = 0,
+  authFailed = false,
+  outdated = false,
+  degraded = false,
+} = {}) {
+  if (authFailed || degraded) return ERROR_BACKOFF_MS;
+  if (outdated) return Math.max(ERROR_BACKOFF_MS * 4, pollIntervalMs);
+  if (processed > 0) return 0;
+  const busy = now - lastJobAt < BUSY_WINDOW_MS;
+  return busy ? Math.min(BUSY_POLL_INTERVAL_MS, pollIntervalMs) : pollIntervalMs;
+}
+
 export async function runPollCycle({ config, fetchImpl, printJob, listDevices = listWindowsPrinters }) {
   const { serverUrl, storeId, hubToken } = config;
-  // รายงานเครื่องพิมพ์ที่เห็นบนพีซีนี้ไปกับทุก poll -> หน้า Settings แสดงรายการให้ร้าน
-  // กดเลือกเครื่องพิมพ์ USB ได้ทันทีที่เสียบสาย โดยไม่ต้องพิมพ์ชื่อเครื่องเอง
+  // Production path: never block claim on WMI/PowerShell — send last cached scan
+  // (omit devices on cold start so saveHubDevices does not wipe Settings with []).
+  // Injected listDevices (unit tests) still awaits so stubs keep working.
   let devices;
-  try {
-    devices = await listDevices();
-  } catch {
-    devices = undefined;
+  if (listDevices === listWindowsPrinters) {
+    const cached = getCachedWindowsPrinters();
+    devices = Array.isArray(cached) ? cached : undefined;
+    if (!isPrinterCacheFresh()) {
+      void Promise.resolve()
+        .then(() => listDevices())
+        .catch(() => null);
+    }
+  } else {
+    try {
+      devices = await listDevices();
+    } catch {
+      devices = undefined;
+    }
   }
   const pollRes = await fetchImpl(`${serverUrl}/api/print/hub/poll`, {
     method: "POST",
@@ -679,6 +720,9 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
   const jobs = Array.isArray(body?.jobs) ? body.jobs : [];
 
   let processed = 0;
+  // พิมพ์ทีละงาน (เครื่องพิมพ์รับพร้อมกันไม่ไหว) แต่ยิง ack พร้อมกันหลังพิมพ์ครบ —
+  // ประหยัด RTT ของ ack ระหว่างใบเสร็จ+ตั๋วครัว โดยไม่แตะ claim token / idempotency
+  const ackTasks = [];
   for (const job of jobs) {
     let outcome = "printed";
     let error = null;
@@ -711,8 +755,8 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
       // ที่ร้านแยกไม่ออกว่า "พิมพ์แล้ว" กับ "ล้มเหลว" ต่างกันตรงไหน
       console.error(`Job ${job.id} (${job.kind ?? "ip"}) ${outcome}: ${error}`);
     }
-    try {
-      await fetchImpl(`${serverUrl}/api/print/hub/ack`, {
+    ackTasks.push(
+      fetchImpl(`${serverUrl}/api/print/hub/ack`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -729,14 +773,15 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
           reason,
           targetIdentity: identity,
         }),
-      });
-    } catch {
-      // ack ไม่ถึงเซิร์ฟเวอร์ (เน็ตหลุด) -- ไม่ต้องเดาแทน: งานจะค้าง claimed แล้วถูก
-      // เซิร์ฟเวอร์ปิดเป็น unknown เมื่อ lease หมด ซึ่งเป็นผลลัพธ์ที่ถูกต้องกว่าการ
-      // รายงานสำเร็จ/ล้มเหลวโดยไม่มีหลักฐาน
-    }
+      }).catch(() => {
+        // ack ไม่ถึงเซิร์ฟเวอร์ (เน็ตหลุด) -- ไม่ต้องเดาแทน: งานจะค้าง claimed แล้วถูก
+        // เซิร์ฟเวอร์ปิดเป็น unknown เมื่อ lease หมด ซึ่งเป็นผลลัพธ์ที่ถูกต้องกว่าการ
+        // รายงานสำเร็จ/ล้มเหลวโดยไม่มีหลักฐาน
+      }),
+    );
     processed += 1;
   }
+  if (ackTasks.length > 0) await Promise.all(ackTasks);
   return { ok: true, processed, printersSeen: Array.isArray(devices) ? devices.length : null };
 }
 
@@ -982,9 +1027,11 @@ async function main() {
       }
     }
 
-    let waitMs = Date.now() - lastJobAt < BUSY_WINDOW_MS
-      ? Math.min(BUSY_POLL_INTERVAL_MS, config.pollIntervalMs)
-      : config.pollIntervalMs;
+    let waitMs = nextPollDelayMs({
+      lastJobAt,
+      pollIntervalMs: config.pollIntervalMs,
+      processed: 0,
+    });
     try {
       const result = await runPollCycle({
         config,
@@ -1003,12 +1050,12 @@ async function main() {
       if (result.authFailed) {
         console.error("Hub token rejected (401). Check storeId/hubToken in config.");
         runtime.update({ state: "error", lastPollAt: pollAt, lastErrorCode: "auth_rejected", storeId: config.storeId });
-        waitMs = ERROR_BACKOFF_MS;
+        waitMs = nextPollDelayMs({ authFailed: true, pollIntervalMs: config.pollIntervalMs });
       } else if (result.outdated) {
         // เซิร์ฟเวอร์ปฏิเสธ protocol รุ่นนี้ -> รอนานขึ้นและบอกวิธีแก้ ไม่ถล่ม endpoint
         console.error(result.message);
         runtime.update({ state: "outdated", lastPollAt: pollAt, lastErrorCode: "protocol_unsupported", storeId: config.storeId });
-        waitMs = Math.max(ERROR_BACKOFF_MS * 4, waitMs);
+        waitMs = nextPollDelayMs({ outdated: true, pollIntervalMs: config.pollIntervalMs });
       } else if (result.ok) {
         runtime.update({
           state: "ready",
@@ -1021,20 +1068,24 @@ async function main() {
         // processed = จำนวนงานที่ "จัดการแล้ว" ไม่ใช่ "พิมพ์สำเร็จ" — บางใบ ack เป็น failed/unknown
         if (result.processed > 0) {
           console.log(`Handled ${result.processed} job(s) this cycle.`);
-          // เพิ่งมีงานเข้า = ร้านกำลังขาย -> รอบถัดไปถามถี่ (ใบเสร็จ+ตั๋วครัวมักมาติด ๆ กัน)
+          // เพิ่งมีงานเข้า = ร้านกำลังขาย -> ถามทันทีรอบถัดไป (ใบเสร็จ+ตั๋วครัวมักมาติด ๆ กัน)
           lastJobAt = Date.now();
-          waitMs = Math.min(BUSY_POLL_INTERVAL_MS, waitMs);
         }
+        waitMs = nextPollDelayMs({
+          lastJobAt,
+          pollIntervalMs: config.pollIntervalMs,
+          processed: result.processed,
+        });
       } else {
         runtime.update({ state: "degraded", lastPollAt: pollAt, lastErrorCode: `http_${result.status ?? "error"}`, storeId: config.storeId });
-        waitMs = ERROR_BACKOFF_MS;
+        waitMs = nextPollDelayMs({ degraded: true, pollIntervalMs: config.pollIntervalMs });
       }
     } catch (err) {
       console.error(`Poll cycle failed: ${err instanceof Error ? err.message : err}`);
       runtime.update({ state: "degraded", lastErrorCode: "poll_failed", storeId: config.storeId });
-      waitMs = ERROR_BACKOFF_MS;
+      waitMs = nextPollDelayMs({ degraded: true, pollIntervalMs: config.pollIntervalMs });
     }
-    await sleep(waitMs);
+    if (waitMs > 0) await sleep(waitMs);
   }
   runtime.update({ state: "stopping", storeId: config.storeId });
   runtime.release();
