@@ -27,8 +27,7 @@
 /Plan
 /Brainstorming
 /docs
-# NOTE: keep /tests uploaded — tsconfig includes **/*.ts, so next build typechecks
+# NOTE: keep /tests and /scripts uploaded — tsconfig includes **/*.ts, and print-hub unit tests import ../../scripts/print-hub.mjs (Vercel typecheck needs the file present).
 # playwright.config.ts which imports ./tests/e2e/helpers/local-supabase-env.
 /test-results
 /playwright-report
-/scripts
