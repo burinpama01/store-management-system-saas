@@ -311,4 +311,20 @@ describe("grocery POS offline sync", () => {
     expect(terminal).toContain("offlineSyncState");
     expect(terminal).toContain("pendingOperations");
   });
+
+  it("resolves offline queue writes only after IndexedDB transaction commit (ISSUE-20260828-001)", () => {
+    const source = readFileSync("src/modules/grocery-pos/offline-sync.ts", "utf8");
+    const fnStart = source.indexOf("function withOperationStore");
+    const fnEnd = source.indexOf("export async function enqueueGroceryOfflineOrder", fnStart);
+    expect(fnStart).toBeGreaterThan(-1);
+    expect(fnEnd).toBeGreaterThan(fnStart);
+    const fn = source.slice(fnStart, fnEnd);
+
+    expect(fn).toContain("tx.oncomplete");
+    expect(fn).toContain("resolve(requestResult as T)");
+    expect(fn).toContain("tx.onabort");
+    // Must not resolve the outer promise from request.onsuccess alone
+    expect(fn).not.toMatch(/request\.onsuccess\s*=\s*\(\)\s*=>\s*\{[\s\S]*?resolve\(/);
+    expect(fn).toMatch(/request\.onsuccess\s*=\s*\(\)\s*=>\s*\{\s*requestResult\s*=\s*request\.result;\s*\}/);
+  });
 });

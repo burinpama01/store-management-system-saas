@@ -287,20 +287,55 @@ function withOperationStore<T>(
     new Promise<T>((resolve, reject) => {
       const tx = db.transaction(GROCERY_POS_OPERATION_STORE, mode);
       const store = tx.objectStore(GROCERY_POS_OPERATION_STORE);
-      let request: IDBRequest<T>;
-      tx.oncomplete = () => db.close();
+      let settled = false;
+      let requestResult: T | undefined;
+      let requestError: DOMException | Error | null = null;
+
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        try {
+          db.close();
+        } catch {
+          // ignore close races after abort
+        }
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+
+      // ISSUE-20260828-001: resolve only after the transaction commits.
+      // request.onsuccess can fire before durable commit; abort after success
+      // would otherwise leave callers thinking the offline queue write stuck.
+      tx.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        try {
+          db.close();
+        } catch {
+          // ignore
+        }
+        if (requestError) {
+          reject(requestError);
+          return;
+        }
+        resolve(requestResult as T);
+      };
+      tx.onabort = () => {
+        fail(tx.error ?? new Error("Offline queue transaction aborted"));
+      };
       tx.onerror = () => {
-        db.close();
-        reject(tx.error ?? new Error("Offline queue transaction failed"));
+        fail(tx.error ?? new Error("Offline queue transaction failed"));
       };
 
       Promise.resolve(handler(store))
-        .then((result) => {
-          request = result;
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error ?? new Error("Offline queue request failed"));
+        .then((request) => {
+          request.onsuccess = () => {
+            requestResult = request.result;
+          };
+          request.onerror = () => {
+            requestError = request.error ?? new Error("Offline queue request failed");
+          };
         })
-        .catch((error) => reject(error));
+        .catch(fail);
     }),
   );
 }
