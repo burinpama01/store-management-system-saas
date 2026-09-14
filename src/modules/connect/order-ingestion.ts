@@ -106,7 +106,6 @@ export async function processInboundOrder(
 
   const itemsSubtotal = mapped.reduce((s, m) => s + m.qty * m.price, 0);
   const merchantTotal = resolveShopAmount(payload, itemsSubtotal, link.commissionRate);
-  const now = new Date().toISOString();
   const supabase = await createSupabaseServiceClient();
 
   // สร้าง order ภายใน — status=open (ยังไม่ชำระ จนกว่าคนขับจะรับอาหาร)

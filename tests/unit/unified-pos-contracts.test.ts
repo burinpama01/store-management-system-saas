@@ -247,7 +247,7 @@ describe("UNIFIED_POS_ERROR_CODES (stable error codes prefix 'up_' สำหร�
 
 describe("type-level guard (compile-time — กัน dual truth รอบสอง)", () => {
   it("'done' (OrderPrepStatus) และ 'voided' ต้องไม่ใช่ FulfillmentStatus", () => {
-    const acceptFulfillment = (_status: FulfillmentStatus): undefined => undefined;
+    const acceptFulfillment = (_status: FulfillmentStatus): undefined => undefined; // eslint-disable-line @typescript-eslint/no-unused-vars -- type-level probe
 
     // @ts-expect-error 'done' อยู่ใน OrderPrepStatus แต่ห้ามอยู่ใน FulfillmentStatus
     expect(acceptFulfillment("done" as OrderPrepStatus)).toBeUndefined();

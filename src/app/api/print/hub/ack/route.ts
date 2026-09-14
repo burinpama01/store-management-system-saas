@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   normalizeAckOutcome,
   sanitizeClaimToken,
-  verifyHubToken,
 } from "@/modules/printing/print-hub";
 import {
   ackPrintJob,

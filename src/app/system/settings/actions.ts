@@ -122,7 +122,7 @@ export async function uploadPlatformLogoAction(
 }
 
 export async function resetPlatformLogoAction(
-  _prev: PlatformSettingsState,
+  _prev: PlatformSettingsState, // eslint-disable-line @typescript-eslint/no-unused-vars -- server action signature
 ): Promise<PlatformSettingsState> {
   let user;
   try {

@@ -177,7 +177,6 @@ function OrderCard({
 export function DeliveryBoard({
   orders,
   canManage,
-  storeId,
   storeName,
   stationPrinters,
   paperWidth,

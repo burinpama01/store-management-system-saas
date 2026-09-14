@@ -478,8 +478,6 @@ async function submitTableOrder(
     // hash เฉพาะ semantic ของคำขอ — ห้ามรวม orderNumber (ที่ regenerate ตอน retry)
     // มิฉะนั้น retry ที่ถือ key เดิมจะโดน hash_conflict ทั้งที่เป็นคำขอเดียวกัน
     const requestHash = computeRequestHash({ storeId, tableId, subtotal, items });
-
-    const rpcName = isStaff ? "add_items_to_table_v2" : "create_qr_order_with_items_v2";
     const rpcArgs = {
       p_organization_id: store.organization_id,
       p_store_id: storeId,

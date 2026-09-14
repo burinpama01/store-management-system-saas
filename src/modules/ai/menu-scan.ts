@@ -60,7 +60,6 @@ export function sniffImageMime(bytes: Uint8Array): "image/jpeg" | "image/png" | 
 
 function stripControl(text: string): string {
   // ตัด control characters (U+0000-U+0008, U+000B, U+000C, U+000E-U+001F) ออกจากชื่อ
-  // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/\s+/g, " ").trim();
 }
 

@@ -25,8 +25,7 @@ import {
 } from "@/modules/voice-pos/types";
 
 /** ที่มาของคำสั่ง — deterministic = parser เดิม, ai = ผ่านทางสำรอง AI */
-const SOURCES = ["deterministic", "ai"] as const;
-type VoiceTelemetrySource = (typeof SOURCES)[number];
+type VoiceTelemetrySource = "deterministic" | "ai";
 
 const LOCALE_MAX = 16;
 

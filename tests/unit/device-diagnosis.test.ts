@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { diagnoseDeviceError, buildManualPath } from "@/modules/ai/device-diagnosis";
+import { buildManualPath } from "@/modules/ai/device-diagnosis";
 import { redactDeviceDiagnosisInput } from "@/modules/ai/redaction";
 
 const repoRoot = process.cwd();

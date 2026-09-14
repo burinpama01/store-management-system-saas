@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // U9 — unified POS shell: server gate + workspace tabs (ทำงานบน jsdom ตาม pattern U0.5)
 // ⚠️ ต้องมี header jsdom ทุกครั้ง — static-import @testing-library/* บน node env คือ hang จน timeout
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "../setup/react";
 import type { Table } from "@/modules/stores/types";

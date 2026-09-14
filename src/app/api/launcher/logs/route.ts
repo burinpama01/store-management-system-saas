@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHubToken } from "@/modules/printing/print-hub";
 import { authenticateHubRequest } from "@/modules/printing/print-hub-repository";
 import {
   MAX_LAUNCHER_LOG_ENTRIES,

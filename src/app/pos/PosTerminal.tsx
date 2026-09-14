@@ -1,7 +1,7 @@
 "use client";
 
 import { PrintQueueAlert } from "@/modules/printing/PrintQueueAlert";
-import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
@@ -2707,15 +2707,24 @@ export function PosTerminal({
   const [showTableOpen, setShowTableOpen] = useState(false);
   /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
-  /** ที่วางปุ่มบนแถบหัวของ shell รวม — null = หน้า POS เดี่ยว (ใช้แถบหัวของตัวเอง) */
-  const [topbarHost, setTopbarHost] = useState<HTMLElement | null>(null);
-
-  // shell รวมเตรียมที่ว่างไว้บนแถบแท็บให้ปุ่มของหน้าขายไปอยู่แถวเดียวกัน — เดิมแถบหัว
-  // ของ POS เป็นแถวที่สองซ้อนใต้แถบแท็บ เสียความสูงไปเปล่า ๆ ถ้าไม่มีที่วาง (เปิด POS
-  // เดี่ยวแบบเดิม) ก็ยังวาดแถบหัวของตัวเองเหมือนเดิม
-  useEffect(() => {
-    setTopbarHost(document.getElementById(POS_TOPBAR_ACTIONS_ID));
-  }, []);
+  // ช่องแถบหัวของ shell รวม (อ่านจาก DOM) — null = เปิด POS เดี่ยว ต้องวาดแถบเอง
+  // ใช้ useSyncExternalStore แทน setState-ใน-effect (ISSUE-20260802-002)
+  const topbarHost = useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof document === "undefined") return () => {};
+      if (document.getElementById(POS_TOPBAR_ACTIONS_ID)) {
+        queueMicrotask(onStoreChange);
+        return () => {};
+      }
+      const observer = new MutationObserver(() => {
+        if (document.getElementById(POS_TOPBAR_ACTIONS_ID)) onStoreChange();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      return () => observer.disconnect();
+    },
+    () => (typeof document === "undefined" ? null : document.getElementById(POS_TOPBAR_ACTIONS_ID)),
+    () => null,
+  )
 
   // เปิดโต๊ะ/เช็คบิลโต๊ะ ถูกยุบไปอยู่ใน dialog "โต๊ะ / ครัว / บิล" ของ shell รวม
   // ซึ่งอยู่คนละต้นไม้กับ PosTerminal — คำสั่งจึงวิ่งมาทาง section-bus

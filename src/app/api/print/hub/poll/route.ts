@@ -5,7 +5,6 @@ import {
   PRINT_HUB_PROTOCOL_VERSION,
   PRINT_JOB_LEASE_SECONDS,
   sanitizeAgentVersion,
-  verifyHubToken,
 } from "@/modules/printing/print-hub";
 import {
   claimPendingPrintJobs,
