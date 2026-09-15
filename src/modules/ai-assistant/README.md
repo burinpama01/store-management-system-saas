@@ -2,7 +2,7 @@
 
 Provider-agnostic Natural Language Control Layer for StoreOS.
 
-**Status:** stub only — see Phase 0 docs before implementing.
+**Status:** PR1 tool foundation implemented (config, foundation, server adapter) — uncommitted, awaiting review. No API route / UI / Live yet.
 
 - Plan: `Plan/StoreOS AI Assistant OpenAI Live Implementation Plan v2.html`
 - Audit: `docs/ai-assistant/repo-audit.md`
