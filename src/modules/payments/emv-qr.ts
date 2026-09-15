@@ -88,3 +88,77 @@ export function maskEmvPayload(payload: string): string {
   if (s.length <= 16) return "••••";
   return `${s.slice(0, 10)}…${s.slice(-6)}`;
 }
+
+const TRUEMONEY_AID = "A000000677010111";
+
+/** Digits-only TrueMoney e-wallet / Shop QR merchant id (tag 03). */
+export function normalizeTrueMoneyEWalletId(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 20) return null;
+  return digits;
+}
+
+/**
+ * Build a static TrueMoney Shop EMV payload matching live-validated shop QRs:
+ * 00=01, 01=11, 29={00=AID, 03=eWalletId}, 58=TH, 53=764, 63=CRC.
+ */
+export function buildTrueMoneyShopStaticPayload(eWalletId: string): string | null {
+  const id = normalizeTrueMoneyEWalletId(eWalletId);
+  if (!id) return null;
+  const nested = buildEmvTlv([
+    { tag: "00", value: TRUEMONEY_AID },
+    { tag: "03", value: id },
+  ]);
+  const body =
+    buildEmvTlv([
+      { tag: "00", value: "01" },
+      { tag: "01", value: "11" },
+      { tag: "29", value: nested },
+      { tag: "58", value: "TH" },
+      { tag: "53", value: "764" },
+    ]) + "6304";
+  return body + crc16Ccitt(body);
+}
+
+/** Extract e-wallet id from TrueMoney merchant account (tag 29 → nested tag 03). */
+export function extractTrueMoneyEWalletId(payload: string): string | null {
+  const items = parseEmvTlv(payload.trim());
+  if (!items) return null;
+  const merchant = items.find((t) => t.tag === "29");
+  if (!merchant) return null;
+  const nested = parseEmvTlv(merchant.value);
+  if (!nested) return null;
+  const idTag = nested.find((t) => t.tag === "03");
+  if (!idTag) return null;
+  return normalizeTrueMoneyEWalletId(idTag.value);
+}
+
+export function maskTrueMoneyEWalletId(eWalletId: string): string {
+  const id = normalizeTrueMoneyEWalletId(eWalletId) ?? eWalletId.trim();
+  if (id.length <= 8) return "••••";
+  return `${id.slice(0, 4)}…${id.slice(-4)}`;
+}
+
+/** Lightweight summary for Test Connection UI. */
+export function summarizeTrueMoneyEmv(payload: string): {
+  eWalletId: string | null;
+  eWalletIdMasked: string | null;
+  hasAid: boolean;
+  country: string | null;
+  currency: string | null;
+} | null {
+  const items = parseEmvTlv(payload.trim());
+  if (!items) return null;
+  const merchant = items.find((t) => t.tag === "29");
+  const nested = merchant ? parseEmvTlv(merchant.value) : null;
+  const aid = nested?.find((t) => t.tag === "00")?.value ?? null;
+  const eWalletId = extractTrueMoneyEWalletId(payload);
+  return {
+    eWalletId,
+    eWalletIdMasked: eWalletId ? maskTrueMoneyEWalletId(eWalletId) : null,
+    hasAid: aid === TRUEMONEY_AID || payload.includes(TRUEMONEY_AID),
+    country: items.find((t) => t.tag === "58")?.value ?? null,
+    currency: items.find((t) => t.tag === "53")?.value ?? null,
+  };
+}
+

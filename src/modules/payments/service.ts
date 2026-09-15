@@ -1,26 +1,42 @@
 import { randomUUID } from "node:crypto";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { PaymentError, PaymentErrorCodes } from "./errors";
-import { looksLikeEmvPayload } from "./emv-qr";
 import { amountsEqualMajor, roundMajorThb } from "./money";
 import { getPaymentProviderAdapter } from "./registry";
 import {
   findGatewayPaymentByReference,
   getEnabledTrueMoneyManualConfig,
   getGatewayPayment,
+  getTrueMoneyManualConfig,
   insertGatewayPayment,
   markGatewayPaymentPaidManual,
   softDisableTrueMoneyManualConfig,
   upsertTrueMoneyManualConfig,
 } from "./repository";
+import {
+  buildTrueMoneyShopStaticPayload,
+  crc16Ccitt,
+  extractTrueMoneyEWalletId,
+  looksLikeEmvPayload,
+  maskTrueMoneyEWalletId,
+  normalizeTrueMoneyEWalletId,
+  summarizeTrueMoneyEmv,
+} from "./emv-qr";
 import { canTransitionGatewayStatus } from "./status";
-import type { GatewayPayment, PaymentProviderConfigPublic } from "./types";
+import type {
+  GatewayPayment,
+  PaymentProviderConfigPublic,
+  TrueMoneyManualTestResult,
+} from "./types";
+
+export type { TrueMoneyManualTestResult };
 
 export async function saveTrueMoneyManualConfigForStore(input: {
   organizationId: string;
   storeId: string;
   staticEmvPayload: string;
   isEnabled: boolean;
+  displayName?: string | null;
   actorUserId: string;
 }): Promise<{ data: PaymentProviderConfigPublic | null; error: string | null }> {
   const payload = input.staticEmvPayload.trim();
@@ -41,6 +57,7 @@ export async function saveTrueMoneyManualConfigForStore(input: {
     storeId: input.storeId,
     staticEmvPayload: payload,
     isEnabled: input.isEnabled,
+    displayName: input.displayName,
     actorUserId: input.actorUserId,
   });
   if (result.error) return { data: null, error: result.error.userMessage };
@@ -324,6 +341,98 @@ export async function confirmTrueMoneyManualPayment(input: {
   });
 
   return { ok: true, payment: marked.data, alreadyPaid: false };
+}
+
+
+/**
+ * Validate TrueMoney Shop QR config without creating gateway_payments or calling external APIs.
+ * Resolves payload from pasted EMV, e-wallet id, or saved store credentials.
+ */
+export async function testTrueMoneyManualConnection(input: {
+  staticEmvPayload?: string | null;
+  eWalletId?: string | null;
+  storeId?: string | null;
+}): Promise<TrueMoneyManualTestResult> {
+  let payload = (input.staticEmvPayload ?? "").trim();
+
+  if (!payload) {
+    const id = normalizeTrueMoneyEWalletId(input.eWalletId ?? "");
+    if (id) {
+      const built = buildTrueMoneyShopStaticPayload(id);
+      if (!built) {
+        return { ok: false, error: "สร้าง TrueMoney Shop QR จาก E-Wallet ID ไม่สำเร็จ" };
+      }
+      payload = built;
+    }
+  }
+
+  if (!payload && input.storeId) {
+    const loaded = await getTrueMoneyManualConfig(input.storeId);
+    if (loaded.error) {
+      return { ok: false, error: loaded.error.userMessage };
+    }
+    payload = loaded.data?.staticEmvPayload?.trim() ?? "";
+  }
+
+  if (!payload) {
+    return {
+      ok: false,
+      error: "กรุณาวาง EMV หรือระบุ E-Wallet ID (หรือบันทึกการตั้งค่าไว้ก่อน)",
+    };
+  }
+
+  if (!looksLikeEmvPayload(payload)) {
+    return { ok: false, error: "รูปแบบ TrueMoney Shop QR (EMV) ไม่ถูกต้อง" };
+  }
+
+  const adapter = getPaymentProviderAdapter("truemoney", "manual");
+  if (!adapter) {
+    return { ok: false, error: "TrueMoney adapter ไม่พร้อม" };
+  }
+
+  try {
+    const created = adapter.createDisplayPayment({
+      staticEmvPayload: payload,
+      amountMajor: 1.0,
+    });
+    const injected = created.display?.payload;
+    if (!injected) {
+      return { ok: false, error: "สร้าง QR ทดสอบไม่สำเร็จ" };
+    }
+    const crcOk = injected.slice(-4) === crc16Ccitt(injected.slice(0, -4));
+    if (!crcOk) {
+      return { ok: false, error: "CRC ของ QR ทดสอบไม่ถูกต้อง" };
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "ทดสอบเชื่อมต่อไม่สำเร็จ",
+    };
+  }
+
+  const eWalletId =
+    extractTrueMoneyEWalletId(payload) ??
+    normalizeTrueMoneyEWalletId(input.eWalletId ?? "");
+  const summary = summarizeTrueMoneyEmv(payload);
+
+  return {
+    ok: true,
+    mode: "manual",
+    providerKey: "truemoney",
+    eWalletIdMasked: eWalletId ? maskTrueMoneyEWalletId(eWalletId) : summary?.eWalletIdMasked ?? null,
+    sampleInjectedCrcOk: true,
+    capabilities: {
+      createPayment: true,
+      webhook: false,
+      lookup: false,
+      refund: false,
+      manualConfirm: true,
+    },
+    message: "เชื่อมต่อโหมด Manual ได้ — ล็อกยอด/CRC ผ่าน (ยังไม่มี webhook/API)",
+    summary: summary
+      ? { hasAid: summary.hasAid, country: summary.country, currency: summary.currency }
+      : undefined,
+  };
 }
 
 export function buildTrueMoneyReference(parts: {

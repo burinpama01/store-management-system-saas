@@ -4,6 +4,10 @@ import {
   looksLikeEmvPayload,
   maskEmvPayload,
   crc16Ccitt,
+  buildTrueMoneyShopStaticPayload,
+  extractTrueMoneyEWalletId,
+  normalizeTrueMoneyEWalletId,
+  summarizeTrueMoneyEmv,
 } from "@/modules/payments/emv-qr";
 import { trueMoneyManualAdapter } from "@/modules/payments/adapters/truemoney-manual";
 import { canTransitionGatewayStatus, isTerminalGatewayStatus } from "@/modules/payments/status";
@@ -12,6 +16,7 @@ import {
   decodeTrueMoneyManualCredentials,
 } from "@/modules/payments/credentials";
 import { canUseFeature, getPlanFeatures, type BillingState } from "@/modules/billing/types";
+import { testTrueMoneyManualConnection } from "@/modules/payments/service";
 import { injectAmountIntoStaticPayload as billingInject } from "@/modules/billing/promptpay-provider";
 
 /** User shop static QR (decoded) — validated live for 35 & 265 THB. */
@@ -84,11 +89,78 @@ describe("gateway confirm idempotency (status machine)", () => {
   });
 });
 
+
+describe("TrueMoney e-wallet self-config helpers", () => {
+  it("normalizes e-wallet ids to digits 10–20", () => {
+    expect(normalizeTrueMoneyEWalletId("140000956879045")).toBe("140000956879045");
+    expect(normalizeTrueMoneyEWalletId(" 1400-0095-6879-045 ")).toBe("140000956879045");
+    expect(normalizeTrueMoneyEWalletId("123")).toBeNull();
+  });
+
+  it("buildTrueMoneyShopStaticPayload matches live shop static QR", () => {
+    const built = buildTrueMoneyShopStaticPayload("140000956879045");
+    expect(built).toBe(SHOP_STATIC);
+    assertValidCrc(built!);
+  });
+
+  it("extractTrueMoneyEWalletId reads tag 29/03 from shop static", () => {
+    expect(extractTrueMoneyEWalletId(SHOP_STATIC)).toBe("140000956879045");
+  });
+
+  it("built payload injects to live-validated 35.00", () => {
+    const built = buildTrueMoneyShopStaticPayload("140000956879045");
+    expect(built).not.toBeNull();
+    expect(injectAmountIntoStaticPayload(built!, 35)).toBe(LIVE_35);
+    const created = trueMoneyManualAdapter.createDisplayPayment({
+      staticEmvPayload: built!,
+      amountMajor: 1.0,
+    });
+    const injected = created.display?.payload;
+    expect(injected).toBeTruthy();
+    assertValidCrc(injected!);
+  });
+
+  it("summarizeTrueMoneyEmv exposes masked id and AID", () => {
+    const summary = summarizeTrueMoneyEmv(SHOP_STATIC);
+    expect(summary?.hasAid).toBe(true);
+    expect(summary?.country).toBe("TH");
+    expect(summary?.currency).toBe("764");
+    expect(summary?.eWalletId).toBe("140000956879045");
+    expect(summary?.eWalletIdMasked).toContain("…");
+    expect(summary?.eWalletIdMasked).not.toBe("140000956879045");
+  });
+});
+
 describe("credential codec v0", () => {
   it("round-trips static EMV payload", () => {
     const encoded = encodeTrueMoneyManualCredentials({ staticEmvPayload: SHOP_STATIC });
     expect(encoded.startsWith("v0:")).toBe(true);
     expect(decodeTrueMoneyManualCredentials(encoded)?.staticEmvPayload).toBe(SHOP_STATIC);
+  });
+});
+
+
+describe("testTrueMoneyManualConnection (no DB / no external)", () => {
+  it("succeeds from e-wallet id with CRC-ok inject", async () => {
+    const res = await testTrueMoneyManualConnection({ eWalletId: "140000956879045" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.mode).toBe("manual");
+    expect(res.providerKey).toBe("truemoney");
+    expect(res.sampleInjectedCrcOk).toBe(true);
+    expect(res.capabilities.manualConfirm).toBe(true);
+    expect(res.capabilities.webhook).toBe(false);
+    expect(res.eWalletIdMasked).toContain("…");
+  });
+
+  it("succeeds from pasted shop static EMV", async () => {
+    const res = await testTrueMoneyManualConnection({ staticEmvPayload: SHOP_STATIC });
+    expect(res.ok).toBe(true);
+  });
+
+  it("fails on empty input", async () => {
+    const res = await testTrueMoneyManualConnection({});
+    expect(res.ok).toBe(false);
   });
 });
 

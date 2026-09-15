@@ -153,6 +153,23 @@ export async function getEnabledTrueMoneyManualConfig(storeId: string) {
   return { data: mapConfig(data as ConfigRow), error: null };
 }
 
+/** Load TrueMoney manual config whether enabled or soft-disabled (for Test Connection / keep-existing). */
+export async function getTrueMoneyManualConfig(storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("payment_provider_configs")
+    .select(
+      "id, organization_id, store_id, provider_key, mode, environment, display_name, is_enabled, is_default, disabled_at, credentials_encrypted, public_config, created_at, updated_at",
+    )
+    .eq("store_id", storeId)
+    .eq("provider_key", "truemoney")
+    .eq("mode", "manual")
+    .maybeSingle();
+  if (error) return { data: null as PaymentProviderConfig | null, error: mapError(error) };
+  if (!data) return { data: null, error: null };
+  return { data: mapConfig(data as ConfigRow), error: null };
+}
+
 export async function upsertTrueMoneyManualConfig(input: {
   organizationId: string;
   storeId: string;

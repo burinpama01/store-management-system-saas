@@ -78,3 +78,26 @@ export interface GatewayPayment {
 export interface TrueMoneyManualCredentials {
   staticEmvPayload: string;
 }
+
+export type TrueMoneyManualTestResult =
+  | {
+      ok: true;
+      mode: "manual";
+      providerKey: "truemoney";
+      eWalletIdMasked: string | null;
+      sampleInjectedCrcOk: true;
+      capabilities: {
+        createPayment: true;
+        webhook: false;
+        lookup: false;
+        refund: false;
+        manualConfirm: true;
+      };
+      message: string;
+      summary?: {
+        hasAid: boolean;
+        country: string | null;
+        currency: string | null;
+      };
+    }
+  | { ok: false; error: string };
