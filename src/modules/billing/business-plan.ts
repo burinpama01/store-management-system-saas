@@ -60,6 +60,7 @@ function buildDefaultPrices(): BusinessPriceMap {
     advancedPermissions: 100,
     multiBranchReporting: 200,
     apiIntegration: 300,
+    byoPaymentGateway: 300,
     musicRequest: 200,
     aiAssistant: 200,
     aiVision: 150,

@@ -238,6 +238,188 @@ export interface Database {
         };
         Relationships: [];
       };
+
+      payment_provider_configs: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          provider_key: string
+          mode: string
+          environment: string
+          display_name: string | null
+          is_enabled: boolean
+          is_default: boolean
+          disabled_at: string | null
+          credentials_encrypted: string | null
+          encryption_key_version: number
+          public_config: Json
+          created_by: string | null
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          provider_key: string
+          mode: string
+          environment?: string
+          display_name?: string | null
+          is_enabled?: boolean
+          is_default?: boolean
+          disabled_at?: string | null
+          credentials_encrypted?: string | null
+          encryption_key_version?: number
+          public_config?: Json
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          provider_key?: string
+          mode?: string
+          environment?: string
+          display_name?: string | null
+          is_enabled?: boolean
+          is_default?: boolean
+          disabled_at?: string | null
+          credentials_encrypted?: string | null
+          encryption_key_version?: number
+          public_config?: Json
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gateway_payments: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          order_id: string | null
+          provider_config_id: string
+          provider_key: string
+          mode: string
+          amount: number
+          currency: string
+          status: string
+          storeos_reference: string
+          provider_payment_id: string | null
+          injected_emv_payload: string | null
+          verification_source: string | null
+          confirmed_by: string | null
+          confirmed_at: string | null
+          confirm_reason: string | null
+          pos_payment_id: string | null
+          failure_code: string | null
+          failure_message: string | null
+          metadata: Json
+          paid_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          order_id?: string | null
+          provider_config_id: string
+          provider_key: string
+          mode: string
+          amount: number
+          currency?: string
+          status?: string
+          storeos_reference: string
+          provider_payment_id?: string | null
+          injected_emv_payload?: string | null
+          verification_source?: string | null
+          confirmed_by?: string | null
+          confirmed_at?: string | null
+          confirm_reason?: string | null
+          pos_payment_id?: string | null
+          failure_code?: string | null
+          failure_message?: string | null
+          metadata?: Json
+          paid_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          order_id?: string | null
+          provider_config_id?: string
+          provider_key?: string
+          mode?: string
+          amount?: number
+          currency?: string
+          status?: string
+          storeos_reference?: string
+          provider_payment_id?: string | null
+          injected_emv_payload?: string | null
+          verification_source?: string | null
+          confirmed_by?: string | null
+          confirmed_at?: string | null
+          confirm_reason?: string | null
+          pos_payment_id?: string | null
+          failure_code?: string | null
+          failure_message?: string | null
+          metadata?: Json
+          paid_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gateway_payment_attempts: {
+        Row: {
+          id: string
+          gateway_payment_id: string
+          organization_id: string
+          store_id: string
+          attempt_number: number
+          status: string
+          injected_emv_payload: string | null
+          provider_payment_id: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          gateway_payment_id: string
+          organization_id: string
+          store_id: string
+          attempt_number: number
+          status?: string
+          injected_emv_payload?: string | null
+          provider_payment_id?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          gateway_payment_id?: string
+          organization_id?: string
+          store_id?: string
+          attempt_number?: number
+          status?: string
+          injected_emv_payload?: string | null
+          provider_payment_id?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+
       connect_channel_links: {
         Row: {
           id: string;

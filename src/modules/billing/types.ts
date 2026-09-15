@@ -59,6 +59,7 @@ export interface PlanFeatures {
   advancedPermissions: boolean;
   multiBranchReporting: boolean;
   apiIntegration: boolean;
+  byoPaymentGateway: boolean;
   musicRequest: boolean;
   aiAssistant: boolean;
   aiVision: boolean;
@@ -93,6 +94,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   advancedPermissions: "สิทธิ์ขั้นสูง",
   multiBranchReporting: "รายงานหลายสาขา",
   apiIntegration: "API Integration",
+  byoPaymentGateway: "Payment Gateway (BYO)",
   musicRequest: "ขอเพลง",
   aiAssistant: "ผู้ช่วย AI",
   aiVision: "AI อ่านภาพ",
@@ -125,6 +127,7 @@ export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "ma
   "advancedPermissions",
   "multiBranchReporting",
   "apiIntegration",
+  "byoPaymentGateway",
   "musicRequest",
   "aiAssistant",
   "aiVision",
@@ -165,6 +168,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    byoPaymentGateway: false,
     musicRequest: false,
     aiAssistant: false,
     aiVision: false,
@@ -188,6 +192,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    byoPaymentGateway: false,
     musicRequest: false,
     aiAssistant: false,
     aiVision: false,
@@ -211,6 +216,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     advancedPermissions: false,
     multiBranchReporting: false,
     apiIntegration: false,
+    byoPaymentGateway: false,
     musicRequest: false,
     aiAssistant: false,
     aiVision: false,
@@ -234,6 +240,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     advancedPermissions: true,
     multiBranchReporting: false,
     apiIntegration: false,
+    byoPaymentGateway: true,
     musicRequest: false,
     aiAssistant: false,
     aiVision: false,
@@ -257,6 +264,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     advancedPermissions: true,
     multiBranchReporting: true,
     apiIntegration: true,
+    byoPaymentGateway: true,
     musicRequest: true,
     aiAssistant: true,
     aiVision: true,

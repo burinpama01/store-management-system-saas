@@ -8,6 +8,7 @@ import { getOpenCashSession, getCashSalesSince, getCashMovementSince } from "@/m
 import { buildThemeStyle } from "@/modules/theme/presets";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
+import { getEnabledTrueMoneyManualConfig } from "@/modules/payments/repository";
 import { PosTerminal } from "./PosTerminal";
 import { resolveUnifiedPosSurface, toUnifiedTableSummaries } from "./unified/types";
 import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
@@ -75,6 +76,13 @@ export default async function PosPage() {
   const customerDisplayUnavailableMessage = customerDisplayEnabled
     ? null
     : explainFeatureLock(resolvedBillingState, "customerDisplay") ?? "แพ็กเกจนี้ยังไม่รองรับจอลูกค้า";
+  const byoPaymentGatewayEnabled = canUseFeature(resolvedBillingState, "byoPaymentGateway");
+  const trueMoneyConfig = byoPaymentGatewayEnabled
+    ? await getEnabledTrueMoneyManualConfig(ctx.storeId)
+    : { data: null };
+  const trueMoneyEnabled = Boolean(
+    byoPaymentGatewayEnabled && trueMoneyConfig.data?.staticEmvPayload,
+  );
 
   // U9 — gate เดียวจาก stores.unified_pos_enabled (default false = พฤติกรรมเดิมทุกอย่าง)
   const surface = resolveUnifiedPosSurface(storeResult.data);
@@ -119,6 +127,7 @@ export default async function PosPage() {
       loyaltyUnavailableMessage={loyaltyUnavailableMessage}
       customerDisplayEnabled={customerDisplayEnabled}
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
+      trueMoneyEnabled={trueMoneyEnabled}
     />
   );
 

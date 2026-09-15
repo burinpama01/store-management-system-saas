@@ -23,6 +23,7 @@ export function buildSettingsTabs(
       { href: "/settings/buffet", label: "บุฟเฟต์" },
       { href: "/settings/customer-display", label: "จอลูกค้า", featureKey: "customerDisplay" },
       { href: "/settings/music-player", label: "เครื่องเล่นเพลง", featureKey: "musicRequest" },
+      { href: "/settings/payments", label: "ชำระเงินลูกค้า", featureKey: "byoPaymentGateway" },
       { href: "/settings/integrations", label: "API", featureKey: "apiIntegration" },
       { href: "/settings/connect", label: "เดลิเวอรี (JDC)", featureKey: "apiIntegration" },
     );

@@ -36,6 +36,7 @@ import {
   changeOrderPaymentMethodAction,
   voidOrderAction,
   addItemsToTableAction,
+  prepareTrueMoneyQrAction,
   type RewardProductLine,
 } from "./actions";
 import { useSearchParams } from "next/navigation";
@@ -128,6 +129,7 @@ interface Props {
   loyaltyUnavailableMessage: string | null;
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
+  trueMoneyEnabled?: boolean;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -2161,9 +2163,14 @@ function PaymentPanel({
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
   cashSessionRequired,
+  trueMoneyEnabled,
 }: {
   cart: Cart;
-  onConfirm: (method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) => void;
+  onConfirm: (
+    method: "cash" | "qr_promptpay" | "truemoney",
+    received?: number,
+    opts?: { qrPaymentVerified?: boolean; trueMoneyConfirmReason?: string },
+  ) => void;
   onBack: () => void;
   onShowPromptPayOnCustomerDisplay: (payment: CustomerDisplayPayment) => void;
   isPending: boolean;
@@ -2173,16 +2180,25 @@ function PaymentPanel({
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
   cashSessionRequired: boolean;
+  trueMoneyEnabled?: boolean;
 }) {
-  const [method, setMethod] = useState<"cash" | "qr_promptpay">("cash");
+  const [method, setMethod] = useState<"cash" | "qr_promptpay" | "truemoney">("cash");
   const [received, setReceived] = useState<string>("");
   const [qrPaymentVerified, setQrPaymentVerified] = useState(false);
   const [customerDisplayNotice, setCustomerDisplayNotice] = useState<string | null>(null);
+  const [trueMoneyPayload, setTrueMoneyPayload] = useState<string | null>(null);
+  const [trueMoneyError, setTrueMoneyError] = useState<string | null>(null);
+  const [trueMoneyLoading, setTrueMoneyLoading] = useState(false);
+  const [trueMoneyReason, setTrueMoneyReason] = useState("");
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
   const cashReady = method !== "cash" || (!cashSessionRequired && receivedNum >= cart.total);
-  const qrReady = method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
+  const qrReady =
+    method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
+  const trueMoneyReady =
+    method !== "truemoney" ||
+    (!!trueMoneyPayload && qrPaymentVerified && trueMoneyReason.trim().length >= 2);
 
   let promptPayPayload: string | null = null;
   if (method === "qr_promptpay" && promptpayId && cart.total > 0) {
@@ -2192,6 +2208,33 @@ function PaymentPanel({
       promptPayPayload = null;
     }
   }
+
+  useEffect(() => {
+    if (method !== "truemoney" || !trueMoneyEnabled || !(cart.total > 0)) {
+      return;
+    }
+    let cancelled = false;
+    setTrueMoneyLoading(true);
+    setTrueMoneyError(null);
+    setTrueMoneyPayload(null);
+    void prepareTrueMoneyQrAction(cart.total).then((res) => {
+      if (cancelled) return;
+      setTrueMoneyLoading(false);
+      if (res.error || !res.payload) {
+        setTrueMoneyError(res.error ?? "สร้าง TrueMoney QR ไม่สำเร็จ");
+        setTrueMoneyPayload(null);
+        return;
+      }
+      setTrueMoneyPayload(res.payload);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [method, trueMoneyEnabled, cart.total]);
+
+  const methodOptions: Array<"cash" | "qr_promptpay" | "truemoney"> = trueMoneyEnabled
+    ? ["cash", "qr_promptpay", "truemoney"]
+    : ["cash", "qr_promptpay"];
 
   return (
     <div className="flex flex-col h-full">
@@ -2217,23 +2260,24 @@ function PaymentPanel({
 
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-600">วิธีชำระ</p>
-          <div className="grid grid-cols-2 gap-2">
-            {(["cash", "qr_promptpay"] as const).map((m) => (
+          <div className={`grid gap-2 ${methodOptions.length > 2 ? "grid-cols-3" : "grid-cols-2"}`}>
+            {methodOptions.map((m) => (
               <button
                 key={m}
                 type="button"
-                 onClick={() => {
-                   setMethod(m);
-                   setQrPaymentVerified(false);
-                   setCustomerDisplayNotice(null);
-                 }}
+                onClick={() => {
+                  setMethod(m);
+                  setQrPaymentVerified(false);
+                  setCustomerDisplayNotice(null);
+                  setTrueMoneyReason("");
+                }}
                 className={`min-h-11 py-2.5 text-xs font-medium rounded-lg border transition-colors ${
                   method === m
                     ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
                     : "border-gray-300 text-gray-700 hover:border-gray-500"
                 }`}
               >
-                {m === "cash" ? "เงินสด" : "QR พร้อมเพย์"}
+                {m === "cash" ? "เงินสด" : m === "qr_promptpay" ? "QR พร้อมเพย์" : "TrueMoney"}
               </button>
             ))}
           </div>
@@ -2339,6 +2383,47 @@ function PaymentPanel({
           </div>
         )}
 
+        {method === "truemoney" && (
+          <div className="flex flex-col items-center gap-2 py-4">
+            {trueMoneyLoading ? (
+              <p className="text-xs text-gray-500">กำลังสร้าง TrueMoney QR ล็อกยอด...</p>
+            ) : trueMoneyPayload ? (
+              <>
+                <QrCode value={trueMoneyPayload} size={200} />
+                <p className="text-sm font-semibold text-gray-700">
+                  TrueMoney — ให้ลูกค้าสแกนชำระ {priceStr(cart.total)}
+                </p>
+                <p className="text-xs text-amber-700 text-center">
+                  โหมดยืนยันด้วยพนักงาน (ไม่ใช่ API) — ตรวจในแอป TrueMoney ก่อนยืนยัน
+                </p>
+                <label className="mt-1 w-full space-y-1 text-left">
+                  <span className="text-xs font-semibold text-gray-600">เหตุผลที่ยืนยันรับเงิน</span>
+                  <input
+                    type="text"
+                    value={trueMoneyReason}
+                    onChange={(e) => setTrueMoneyReason(e.target.value)}
+                    placeholder="เช่น เห็นยอดเข้าในแอป TrueMoney"
+                    className="w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                  />
+                </label>
+                <label className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 text-xs font-semibold text-green-700">
+                  <input
+                    type="checkbox"
+                    checked={qrPaymentVerified}
+                    onChange={(event) => setQrPaymentVerified(event.target.checked)}
+                  />
+                  ยืนยันว่าได้รับเงิน TrueMoney แล้ว
+                </label>
+              </>
+            ) : (
+              <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-center text-xs text-amber-700">
+                {trueMoneyError ??
+                  "ยังไม่ได้ตั้งค่า TrueMoney Shop QR — ไปที่ ตั้งค่า › ชำระเงินลูกค้า"}
+              </div>
+            )}
+          </div>
+        )}
+
         {error && (
           <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
             {error}
@@ -2356,12 +2441,25 @@ function PaymentPanel({
           variant="primary"
           loading={isPending}
           loadingText="กำลังชำระเงิน..."
-          disabled={!cashReady || !qrReady || (method === "qr_promptpay" && !promptPayPayload)}
+          disabled={
+            !cashReady ||
+            !qrReady ||
+            !trueMoneyReady ||
+            (method === "qr_promptpay" && !promptPayPayload) ||
+            (method === "truemoney" && !trueMoneyPayload)
+          }
           onClick={() =>
             onConfirm(
               method,
               method === "cash" ? receivedNum : undefined,
-              { qrPaymentVerified: method === "qr_promptpay" ? qrPaymentVerified : undefined },
+              {
+                qrPaymentVerified:
+                  method === "qr_promptpay" || method === "truemoney"
+                    ? qrPaymentVerified
+                    : undefined,
+                trueMoneyConfirmReason:
+                  method === "truemoney" ? trueMoneyReason.trim() : undefined,
+              },
             )
           }
           className="w-full disabled:opacity-40"
@@ -2686,6 +2784,7 @@ export function PosTerminal({
   loyaltyUnavailableMessage,
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
+  trueMoneyEnabled = false,
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -3403,20 +3502,24 @@ export function PosTerminal({
     }
   }
 
-  function handleConfirmPayment(method: "cash" | "qr_promptpay", received?: number, opts?: { qrPaymentVerified?: boolean }) {
+  function handleConfirmPayment(method: "cash" | "qr_promptpay" | "truemoney", received?: number, opts?: { qrPaymentVerified?: boolean; trueMoneyConfirmReason?: string }) {
     setPayError(null);
     if (couponCode.trim() && !appliedCoupon) {
       setPayError("กรุณากดใช้คูปองก่อนชำระเงิน");
       return;
     }
     startTransition(async () => {
+      const isTrueMoney = method === "truemoney";
       const paymentInput = {
-        method,
+        method: isTrueMoney ? ("other" as const) : method,
         amount: displayCart.total,
         receivedAmount: received,
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined,
       };
+      const trueMoneyOpts = isTrueMoney
+        ? { confirmReason: opts?.trueMoneyConfirmReason?.trim() || "" }
+        : null;
       let order = pendingOrder;
       let paidOrder: Order | null = null;
       if (!order) {
@@ -3437,6 +3540,7 @@ export function PosTerminal({
           clientCouponDiscountAmount: appliedCoupon?.discount ?? 0,
           idempotencyKey: checkoutIdempotencyKey,
           paymentIdempotencyKey: createTicketId(),
+          trueMoney: trueMoneyOpts,
         });
         if (result.error) {
           // Order persisted but payment failed — remember it so retry only pays.
@@ -3457,6 +3561,7 @@ export function PosTerminal({
         // Retry path: the order already exists from a failed payment attempt.
         const payResult = await collectPaymentAction(order.orderId, paymentInput, {
           idempotencyKey: createTicketId(),
+          trueMoney: trueMoneyOpts,
         });
         if (payResult.error) {
           setPayError(payResult.error);
@@ -3820,6 +3925,7 @@ export function PosTerminal({
             customerDisplayEnabled={customerDisplayEnabled}
             customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
             cashSessionRequired={!cashSession}
+            trueMoneyEnabled={trueMoneyEnabled}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -4070,6 +4176,7 @@ export function PosTerminal({
             customerDisplayEnabled={customerDisplayEnabled}
             customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
             cashSessionRequired={!cashSession}
+            trueMoneyEnabled={trueMoneyEnabled}
           />
         )}
         {phase === "receipt" && receipt && (

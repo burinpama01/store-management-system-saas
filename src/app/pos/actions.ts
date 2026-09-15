@@ -46,6 +46,14 @@ import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import { getOpenCashSession } from "@/modules/cashflow/repository";
 import type { Cart, Order, PaymentMethod, SavedOrderTicket } from "@/modules/pos/types";
 import type { AddPaymentInput } from "@/modules/pos/order-repository";
+import {
+  confirmTrueMoneyManualPayment,
+  createTrueMoneyManualPending,
+  prepareTrueMoneyManualQr,
+} from "@/modules/payments/service";
+import { getEnabledTrueMoneyManualConfig } from "@/modules/payments/repository";
+import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import type { Printer, QrOrderingMode } from "@/modules/stores/types";
 import { buildLoyaltyClaimUrl, ensureLoyaltyClaimCode } from "@/modules/loyalty/claim-repository";
@@ -559,7 +567,7 @@ async function createPosOrderCore(
 export async function collectPaymentAction(
   orderId: string,
   payment: AddPaymentInput,
-  opts?: { idempotencyKey?: string | null },
+  opts?: { idempotencyKey?: string | null; trueMoney?: { confirmReason: string } | null },
 ): Promise<{ order: Order | null; error: string | null }> {
   try {
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
@@ -575,18 +583,51 @@ export async function collectPaymentAction(
       return { order: null, error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
     }
 
+    let trueMoneyGatewayId: string | null = null;
+    let workingPayment: AddPaymentInput = payment;
+    if (opts?.trueMoney) {
+      await requireFeature("byoPaymentGateway");
+      const reason = opts.trueMoney.confirmReason?.trim() ?? "";
+      if (reason.length < 2) {
+        return { order: null, error: "กรุณาระบุเหตุผลที่ยืนยันรับเงิน TrueMoney" };
+      }
+    }
+
     // Slim lookup: the close RPC re-validates store/status; this only needs tenant
     // scope plus whether the order carries a customer (rewards close path).
     const orderRes = await getOrderPaymentContext(orderId);
     if (orderRes.error) return { order: null, error: orderRes.error.userMessage };
     if (orderRes.data?.storeId !== ctx.storeId) return { order: null, error: "ร้านค้าในออร์เดอร์ไม่ถูกต้อง" };
 
+    if (opts?.trueMoney) {
+      const orderFull = await getOrder(orderId);
+      if (orderFull.error || !orderFull.data) {
+        return { order: null, error: orderFull.error?.userMessage ?? "ไม่พบออร์เดอร์" };
+      }
+      const amount = orderFull.data.total;
+      const pending = await createTrueMoneyManualPending({
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        orderId,
+        amountMajor: amount,
+        actorUserId: user.id,
+        idempotencyKey: opts.idempotencyKey ?? null,
+      });
+      if (!pending.ok) return { order: null, error: pending.error };
+      trueMoneyGatewayId = pending.payment.id;
+      workingPayment = {
+        method: "other",
+        amount,
+        reference: `TM:${pending.payment.id}`,
+      };
+    }
+
     // U7: flags-gated — ร้านเปิด unified_pos_enabled → เส้นทาง governed ด้านล่าง
     const unifiedFlag = await getUnifiedPosStoreFlag(ctx.storeId);
 
     let paymentId: string | null = null;
-    let paidAmount = payment.amount;
-    let paidMethod = payment.method;
+    let paidAmount = workingPayment.amount;
+    let paidMethod = workingPayment.method;
     let paidOrder: Order | null = null;
     if (unifiedFlag.enabled && unifiedFlag.organizationId) {
       // U7: ร้านที่เปิด flag → ชำระผ่าน governed RPC (idempotent + rewards exactly-once +
@@ -599,11 +640,11 @@ export async function collectPaymentAction(
         storeId: ctx.storeId,
         mode: "partial",
         orderIds: [orderId],
-        method: payment.method,
-        amount: payment.amount,
-        receivedAmount: payment.receivedAmount ?? null,
-        changeAmount: payment.changeAmount ?? null,
-        reference: payment.reference ?? null,
+        method: workingPayment.method,
+        amount: workingPayment.amount,
+        receivedAmount: workingPayment.receivedAmount ?? null,
+        changeAmount: workingPayment.changeAmount ?? null,
+        reference: workingPayment.reference ?? null,
         actorUserId: user.id,
         idempotencyKey: opts?.idempotencyKey ?? null,
       });
@@ -611,7 +652,7 @@ export async function collectPaymentAction(
       const completedPayment = settled.result.payments[0];
       paymentId = completedPayment?.payment_id ?? null;
       paidAmount = completedPayment?.amount ?? paidAmount;
-      paidMethod = payment.method;
+      paidMethod = workingPayment.method;
       const paidOrderRes = await getOrder(orderId);
       if (!paidOrderRes.error) {
         paidOrder = paidOrderRes.data ?? null;
@@ -622,7 +663,7 @@ export async function collectPaymentAction(
         orderId,
         storeId: ctx.storeId,
         processedByUserId: user.id,
-        payment,
+        payment: workingPayment,
         idempotencyKey: opts?.idempotencyKey ?? randomUUID(),
       });
       if (result.error) return { order: null, error: result.error.userMessage };
@@ -632,7 +673,7 @@ export async function collectPaymentAction(
       paidAmount = completedPayment?.amount ?? paidAmount;
       paidMethod = completedPayment?.method ?? paidMethod;
     } else {
-      const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, payment);
+      const result = await addPaymentAndClose(orderId, ctx.storeId, user.id, workingPayment);
       if (result.error) return { order: null, error: result.error.userMessage };
       paymentId = result.data.id;
       paidAmount = result.data.amount;
@@ -640,6 +681,21 @@ export async function collectPaymentAction(
       const paidOrderRes = await getOrder(orderId);
       if (!paidOrderRes.error) {
         paidOrder = paidOrderRes.data ?? null;
+      }
+    }
+
+    if (trueMoneyGatewayId && opts?.trueMoney) {
+      const confirmed = await confirmTrueMoneyManualPayment({
+        gatewayPaymentId: trueMoneyGatewayId,
+        storeId: ctx.storeId,
+        orderId,
+        expectedAmount: paidAmount,
+        confirmedBy: user.id,
+        confirmReason: opts.trueMoney.confirmReason,
+        posPaymentId: paymentId,
+      });
+      if (!confirmed.ok) {
+        return { order: paidOrder, error: confirmed.error };
       }
     }
 
@@ -654,6 +710,7 @@ export async function collectPaymentAction(
         paymentId,
         amount: paidAmount,
         method: paidMethod,
+        trueMoneyGatewayId,
       },
     });
     notifyLowStockAfterSaleSafely(
@@ -695,6 +752,7 @@ export async function checkoutAndPayAction(
     clientCouponDiscountAmount?: number;
     idempotencyKey?: string | null;
     paymentIdempotencyKey?: string | null;
+    trueMoney?: { confirmReason: string } | null;
   },
 ): Promise<CheckoutAndPayResult> {
   let createdOrderId: string | null = null;
@@ -718,6 +776,22 @@ export async function checkoutAndPayAction(
       return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: "กรุณายืนยันว่าได้รับเงิน QR แล้ว" };
     }
 
+    let trueMoneyGatewayId: string | null = null;
+    let workingPayment: AddPaymentInput = payment;
+    if (opts?.trueMoney) {
+      await requireFeature("byoPaymentGateway");
+      const reason = opts.trueMoney.confirmReason?.trim() ?? "";
+      if (reason.length < 2) {
+        return {
+          orderId: null,
+          orderNumber: null,
+          order: null,
+          failedStage: "order",
+          error: "กรุณาระบุเหตุผลที่ยืนยันรับเงิน TrueMoney",
+        };
+      }
+    }
+
     const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
     const created = await createPosOrderCore(user, ctx, canDiscount, cart, opts);
     if (created.error || !created.orderId || !created.orderNumber) {
@@ -726,10 +800,47 @@ export async function checkoutAndPayAction(
     createdOrderId = created.orderId;
     createdOrderNumber = created.orderNumber;
 
+    if (opts?.trueMoney) {
+      const orderFull = await getOrder(created.orderId);
+      if (orderFull.error || !orderFull.data) {
+        return {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          order: null,
+          failedStage: "payment",
+          error: orderFull.error?.userMessage ?? "ไม่พบออร์เดอร์",
+        };
+      }
+      const amount = orderFull.data.total;
+      const pending = await createTrueMoneyManualPending({
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        orderId: created.orderId,
+        amountMajor: amount,
+        actorUserId: user.id,
+        idempotencyKey: opts.paymentIdempotencyKey ?? null,
+      });
+      if (!pending.ok) {
+        return {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          order: null,
+          failedStage: "payment",
+          error: pending.error,
+        };
+      }
+      trueMoneyGatewayId = pending.payment.id;
+      workingPayment = {
+        method: "other",
+        amount,
+        reference: `TM:${pending.payment.id}`,
+      };
+    }
+
     const customerId = opts?.customerId?.trim() || null;
     let paymentId: string | null = null;
-    let paidAmount = payment.amount;
-    let paidMethod = payment.method;
+    let paidAmount = workingPayment.amount;
+    let paidMethod = workingPayment.method;
     let paidOrder: Order | null = null;
     const unifiedFlag = await getUnifiedPosStoreFlag(ctx.storeId);
     if (unifiedFlag.enabled && unifiedFlag.organizationId) {
@@ -743,11 +854,11 @@ export async function checkoutAndPayAction(
         storeId: ctx.storeId,
         mode: "partial",
         orderIds: [created.orderId],
-        method: payment.method,
-        amount: payment.amount,
-        receivedAmount: payment.receivedAmount ?? null,
-        changeAmount: payment.changeAmount ?? null,
-        reference: payment.reference ?? null,
+        method: workingPayment.method,
+        amount: workingPayment.amount,
+        receivedAmount: workingPayment.receivedAmount ?? null,
+        changeAmount: workingPayment.changeAmount ?? null,
+        reference: workingPayment.reference ?? null,
         actorUserId: user.id,
         idempotencyKey: opts?.paymentIdempotencyKey?.trim() || null,
       });
@@ -770,7 +881,7 @@ export async function checkoutAndPayAction(
         orderId: created.orderId,
         storeId: ctx.storeId,
         processedByUserId: user.id,
-        payment,
+        payment: workingPayment,
         idempotencyKey: opts?.paymentIdempotencyKey?.trim() || randomUUID(),
       });
       if (result.error) {
@@ -782,7 +893,7 @@ export async function checkoutAndPayAction(
       paidAmount = completedPayment?.amount ?? paidAmount;
       paidMethod = completedPayment?.method ?? paidMethod;
     } else {
-      const result = await addPaymentAndClose(created.orderId, ctx.storeId, user.id, payment);
+      const result = await addPaymentAndClose(created.orderId, ctx.storeId, user.id, workingPayment);
       if (result.error) {
         return { orderId: created.orderId, orderNumber: created.orderNumber, order: null, failedStage: "payment", error: result.error.userMessage };
       }
@@ -791,6 +902,27 @@ export async function checkoutAndPayAction(
       paidMethod = result.data.method;
       // No post-payment order refresh: non-customer orders carry no loyalty
       // movement and the receipt renders from client-side cart data.
+    }
+
+    if (trueMoneyGatewayId && opts?.trueMoney) {
+      const confirmed = await confirmTrueMoneyManualPayment({
+        gatewayPaymentId: trueMoneyGatewayId,
+        storeId: ctx.storeId,
+        orderId: created.orderId,
+        expectedAmount: paidAmount,
+        confirmedBy: user.id,
+        confirmReason: opts.trueMoney.confirmReason,
+        posPaymentId: paymentId,
+      });
+      if (!confirmed.ok) {
+        return {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          order: paidOrder,
+          failedStage: "payment",
+          error: confirmed.error,
+        };
+      }
     }
 
     notifyOwnerSafely({
@@ -804,6 +936,7 @@ export async function checkoutAndPayAction(
         paymentId,
         amount: paidAmount,
         method: paidMethod,
+        trueMoneyGatewayId,
       },
     });
     notifyLowStockAfterSaleSafely(
@@ -1511,5 +1644,43 @@ export async function resolveUnknownPrintJobFromPosAction(input: {
     return { error: null, status: result.data.status };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+
+export async function getTrueMoneyPosStatusAction(): Promise<{
+  enabled: boolean;
+  configured: boolean;
+}> {
+  try {
+    const { ctx } = await getResolvedCurrentPermissions();
+    const billing =
+      (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    if (!canUseFeature(billing, "byoPaymentGateway")) {
+      return { enabled: false, configured: false };
+    }
+    const config = await getEnabledTrueMoneyManualConfig(ctx.storeId);
+    const configured = Boolean(config.data?.staticEmvPayload);
+    return { enabled: configured, configured };
+  } catch {
+    return { enabled: false, configured: false };
+  }
+}
+
+export async function prepareTrueMoneyQrAction(
+  amount: number,
+): Promise<{ payload: string | null; error: string | null }> {
+  try {
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { payload: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    await requireFeature("byoPaymentGateway");
+    const prepared = await prepareTrueMoneyManualQr({
+      storeId: ctx.storeId,
+      amountMajor: amount,
+    });
+    if (!prepared.ok) return { payload: null, error: prepared.error };
+    return { payload: prepared.injectedPayload, error: null };
+  } catch (e) {
+    return { payload: null, error: e instanceof Error ? e.message : "สร้าง QR ไม่สำเร็จ" };
   }
 }

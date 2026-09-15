@@ -20,6 +20,7 @@ export const COMPARISON_FEATURES: { key: Exclude<FeatureKey, "maxStores" | "maxM
   { key: "multiBranchReporting", label: "เพิ่มสาขาและรายงานหลายสาขา" },
   { key: "musicRequest", label: "ขอเพลงและเครื่องเล่นเพลง" },
   { key: "apiIntegration", label: "เชื่อมต่อเดลิเวอรีและ API" },
+  { key: "byoPaymentGateway", label: "Payment Gateway (TrueMoney)" },
   { key: "aiVision", label: "AI สแกนเมนูจากรูปภาพ" },
   { key: "aiAssistant", label: "ผู้ช่วย AI ช่วยแก้ปัญหาอุปกรณ์" },
   // ไม่ใส่ aiForecast: มีแค่ราคา component ของ Business ยังไม่มีฟีเจอร์ให้ผู้ใช้จริง
