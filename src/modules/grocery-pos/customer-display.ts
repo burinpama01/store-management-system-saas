@@ -5,7 +5,8 @@ export const CUSTOMER_DISPLAY_CHANNEL = "storeos:grocery-pos:customer-display";
 export type CustomerDisplayStatus = "idle" | "scanning" | "checkout" | "paid";
 
 export interface CustomerDisplayPayment {
-  method: "qr_promptpay";
+  /** QR payload (PromptPay or TrueMoney EMV). Field name kept for BroadcastChannel compat. */
+  method: "qr_promptpay" | "truemoney";
   amount: number;
   promptPayPayload: string;
 }
@@ -104,7 +105,7 @@ function isValidCustomerDisplayPayment(value: unknown): value is CustomerDisplay
   if (!value || typeof value !== "object") return false;
   const payment = value as Partial<CustomerDisplayPayment>;
   return (
-    payment.method === "qr_promptpay" &&
+    (payment.method === "qr_promptpay" || payment.method === "truemoney") &&
     typeof payment.amount === "number" &&
     Number.isFinite(payment.amount) &&
     payment.amount > 0 &&

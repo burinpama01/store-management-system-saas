@@ -211,12 +211,18 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
       </section>
 
       {payment ? (
-        <section className="customer-display-qr-layer" aria-label="QR พร้อมเพย์ล็อกยอด" role="dialog">
+        <section
+          className="customer-display-qr-layer"
+          aria-label={payment.method === "truemoney" ? "QR ชำระเงิน" : "QR พร้อมเพย์ล็อกยอด"}
+          role="dialog"
+        >
           <div className="customer-display-qr-dialog">
-            <p className="customer-display-qr-kicker">QR พร้อมเพย์ล็อกยอด</p>
+            {payment.method === "truemoney" ? null : (
+              <p className="customer-display-qr-kicker">QR พร้อมเพย์ล็อกยอด</p>
+            )}
             <QrCode value={payment.promptPayPayload} size={280} />
             <div>
-              <span>ยอดที่ต้องจ่าย</span>
+              {payment.method === "truemoney" ? null : <span>ยอดที่ต้องจ่าย</span>}
               <strong>{money(payment.amount)}</strong>
             </div>
           </div>

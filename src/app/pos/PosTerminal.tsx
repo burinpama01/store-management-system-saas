@@ -2232,6 +2232,17 @@ function PaymentPanel({
     };
   }, [method, trueMoneyEnabled, cart.total]);
 
+  // ส่ง QR + ยอดไปจอลูกค้าอัตโนมัติเมื่อพร้อม
+  useEffect(() => {
+    if (method !== "truemoney" || !trueMoneyPayload || !customerDisplayEnabled) return;
+    onShowPromptPayOnCustomerDisplay({
+      method: "truemoney",
+      amount: cart.total,
+      promptPayPayload: trueMoneyPayload,
+    });
+    setCustomerDisplayNotice("ส่ง QR ไปจอลูกค้าแล้ว");
+  }, [method, trueMoneyPayload, customerDisplayEnabled, cart.total, onShowPromptPayOnCustomerDisplay]);
+
   const methodOptions: Array<"cash" | "qr_promptpay" | "truemoney"> = trueMoneyEnabled
     ? ["cash", "qr_promptpay", "truemoney"]
     : ["cash", "qr_promptpay"];
@@ -2391,18 +2402,25 @@ function PaymentPanel({
               <>
                 <QrCode value={trueMoneyPayload} size={200} />
                 <p className="text-sm font-semibold text-gray-700">
-                  TrueMoney — ให้ลูกค้าสแกนชำระ {priceStr(cart.total)}
+                  ให้ลูกค้าสแกนชำระ {priceStr(cart.total)}
                 </p>
                 <p className="text-xs text-amber-700 text-center">
-                  โหมดยืนยันด้วยพนักงาน (ไม่ใช่ API) — ตรวจในแอป TrueMoney ก่อนยืนยัน
+                  โหมดยืนยันด้วยพนักงาน — ตรวจสลิปโอนก่อนกดยืนยัน
                 </p>
+                {customerDisplayEnabled ? (
+                  <p className="text-xs text-gray-400 text-center">
+                    {customerDisplayNotice ?? "กำลังส่ง QR ไปจอลูกค้า…"}
+                  </p>
+                ) : customerDisplayUnavailableMessage ? (
+                  <p className="text-xs text-gray-400 text-center">{customerDisplayUnavailableMessage}</p>
+                ) : null}
                 <label className="mt-1 w-full space-y-1 text-left">
                   <span className="text-xs font-semibold text-gray-600">เหตุผลที่ยืนยันรับเงิน</span>
                   <input
                     type="text"
                     value={trueMoneyReason}
                     onChange={(e) => setTrueMoneyReason(e.target.value)}
-                    placeholder="เช่น เห็นยอดเข้าในแอป TrueMoney"
+                    placeholder="เช่น ตรวจสลิปยอดถูกต้อง"
                     className="w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
                   />
                 </label>
@@ -2412,7 +2430,7 @@ function PaymentPanel({
                     checked={qrPaymentVerified}
                     onChange={(event) => setQrPaymentVerified(event.target.checked)}
                   />
-                  ยืนยันว่าได้รับเงิน TrueMoney แล้ว
+                  ยืนยันว่าตรวจสลิปแล้ว ได้รับเงินครบ
                 </label>
               </>
             ) : (
