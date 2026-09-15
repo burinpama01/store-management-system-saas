@@ -46,9 +46,12 @@ export interface PaymentProviderConfigPublic {
   isEnabled: boolean;
   isDefault: boolean;
   disabledAt: string | null;
-  /** Masked EMV payload for settings UI. */
+  /** Masked EMV payload for settings UI (manual mode). */
   staticEmvPayloadMasked: string | null;
   hasStaticEmvPayload: boolean;
+  /** Open API: masked webhook secret only — never full secret. */
+  webhookSecretMasked: string | null;
+  hasWebhookSecret: boolean;
   updatedAt: string;
 }
 
@@ -71,6 +74,8 @@ export interface GatewayPayment {
   confirmReason: string | null;
   posPaymentId: string | null;
   paidAt: string | null;
+  failureMessage: string | null;
+  metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -101,3 +106,27 @@ export type TrueMoneyManualTestResult =
       };
     }
   | { ok: false; error: string };
+
+export interface TrueMoneyOpenApiCredentials {
+  webhookSecret: string;
+  apiKey?: string | null;
+}
+
+export type TrueMoneyOpenApiTestResult =
+  | {
+      ok: true;
+      mode: "open_api";
+      providerKey: "truemoney";
+      webhookSecretMasked: string;
+      webhookUrl: string;
+      capabilities: {
+        createPayment: false;
+        webhook: true;
+        lookup: false;
+        refund: false;
+        manualConfirm: false;
+      };
+      message: string;
+    }
+  | { ok: false; error: string };
+

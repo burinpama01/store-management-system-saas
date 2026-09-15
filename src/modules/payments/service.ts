@@ -4,15 +4,22 @@ import { PaymentError, PaymentErrorCodes } from "./errors";
 import { amountsEqualMajor, roundMajorThb } from "./money";
 import { getPaymentProviderAdapter } from "./registry";
 import {
+  cancelGatewayPayment,
   findGatewayPaymentByReference,
   getEnabledTrueMoneyManualConfig,
   getGatewayPayment,
   getTrueMoneyManualConfig,
+  getTrueMoneyOpenApiConfig,
   insertGatewayPayment,
+  listGatewayPaymentsForStore,
+  markGatewayPaymentExternalRefund,
   markGatewayPaymentPaidManual,
   softDisableTrueMoneyManualConfig,
+  softDisableTrueMoneyOpenApiConfig,
   upsertTrueMoneyManualConfig,
+  upsertTrueMoneyOpenApiConfig,
 } from "./repository";
+import { maskSecret } from "./credentials";
 import {
   buildTrueMoneyShopStaticPayload,
   crc16Ccitt,
@@ -25,11 +32,13 @@ import {
 import { canTransitionGatewayStatus } from "./status";
 import type {
   GatewayPayment,
+  GatewayPaymentStatus,
   PaymentProviderConfigPublic,
   TrueMoneyManualTestResult,
+  TrueMoneyOpenApiTestResult,
 } from "./types";
 
-export type { TrueMoneyManualTestResult };
+export type { TrueMoneyManualTestResult, TrueMoneyOpenApiTestResult };
 
 export async function saveTrueMoneyManualConfigForStore(input: {
   organizationId: string;
@@ -444,3 +453,278 @@ export function buildTrueMoneyReference(parts: {
   const nonce = parts.nonce ?? randomUUID().slice(0, 8);
   return `tm_manual:${parts.storeId}:${parts.orderId}:${roundMajorThb(parts.amount).toFixed(2)}:${nonce}`;
 }
+
+
+export async function listTrueMoneyManualPaymentsForStore(
+  storeId: string,
+  opts?: { limit?: number; status?: GatewayPaymentStatus | null },
+) {
+  const result = await listGatewayPaymentsForStore(storeId, {
+    limit: opts?.limit ?? 30,
+    status: opts?.status ?? null,
+  });
+  if (result.error) return { data: null as GatewayPayment[] | null, error: result.error.userMessage };
+  // Phase A list is store-scoped; prefer TrueMoney rows when mixed providers appear later.
+  const filtered = (result.data ?? []).filter(
+    (p) => p.providerKey === "truemoney" && p.mode === "manual",
+  );
+  return { data: filtered, error: null };
+}
+
+export async function cancelTrueMoneyManualPending(input: {
+  gatewayPaymentId: string;
+  storeId: string;
+  organizationId: string;
+  actorUserId: string;
+  reason: string;
+}): Promise<
+  | { ok: true; payment: GatewayPayment }
+  | { ok: false; error: string; code: string }
+> {
+  const reason = input.reason.trim();
+  if (reason.length < 2) {
+    return {
+      ok: false,
+      error: "กรุณาระบุเหตุผลการยกเลิก",
+      code: PaymentErrorCodes.REASON_REQUIRED,
+    };
+  }
+
+  const loaded = await getGatewayPayment(input.gatewayPaymentId);
+  if (loaded.error || !loaded.data) {
+    return { ok: false, error: "ไม่พบรายการชำระ", code: PaymentErrorCodes.CONFIG_MISSING };
+  }
+  const payment = loaded.data;
+  if (payment.storeId !== input.storeId) {
+    return { ok: false, error: "ร้านค้าไม่ตรงกัน", code: PaymentErrorCodes.CONFIG_MISSING };
+  }
+  if (payment.providerKey !== "truemoney" || payment.mode !== "manual") {
+    return { ok: false, error: "ไม่ใช่รายการ TrueMoney manual", code: PaymentErrorCodes.CONFIG_MISSING };
+  }
+  if (!canTransitionGatewayStatus(payment.status, "CANCELLED")) {
+    return {
+      ok: false,
+      error: `สถานะ ${payment.status} ยกเลิกไม่ได้`,
+      code: PaymentErrorCodes.INVALID_TRANSITION,
+    };
+  }
+
+  const cancelled = await cancelGatewayPayment(payment.id, {
+    reason,
+    actorUserId: input.actorUserId,
+  });
+  if (cancelled.error || !cancelled.data) {
+    return {
+      ok: false,
+      error: cancelled.error?.userMessage ?? "ยกเลิกรายการไม่สำเร็จ",
+      code: PaymentErrorCodes.INVALID_TRANSITION,
+    };
+  }
+
+  await logSystemEvent({
+    level: "info",
+    source: "payments.reconcile",
+    action: "GATEWAY_PAYMENT_CANCEL",
+    message: "ยกเลิก TrueMoney manual pending",
+    organizationId: input.organizationId,
+    storeId: input.storeId,
+    actorUserId: input.actorUserId,
+    context: {
+      gatewayPaymentId: payment.id,
+      orderId: payment.orderId,
+      amount: payment.amount,
+      fromStatus: payment.status,
+      reason,
+    },
+  });
+
+  return { ok: true, payment: cancelled.data };
+}
+
+export async function recordTrueMoneyExternalRefund(input: {
+  gatewayPaymentId: string;
+  storeId: string;
+  organizationId: string;
+  actorUserId: string;
+  note: string;
+}): Promise<
+  | { ok: true; payment: GatewayPayment }
+  | { ok: false; error: string; code: string }
+> {
+  const note = input.note.trim();
+  if (note.length < 2) {
+    return {
+      ok: false,
+      error: "กรุณาระบุหมายเหตุการคืนเงิน (อย่างน้อย 2 ตัวอักษร)",
+      code: PaymentErrorCodes.REASON_REQUIRED,
+    };
+  }
+
+  const loaded = await getGatewayPayment(input.gatewayPaymentId);
+  if (loaded.error || !loaded.data) {
+    return { ok: false, error: "ไม่พบรายการชำระ", code: PaymentErrorCodes.CONFIG_MISSING };
+  }
+  const payment = loaded.data;
+  if (payment.storeId !== input.storeId) {
+    return { ok: false, error: "ร้านค้าไม่ตรงกัน", code: PaymentErrorCodes.CONFIG_MISSING };
+  }
+  if (payment.providerKey !== "truemoney" || payment.mode !== "manual") {
+    return { ok: false, error: "ไม่ใช่รายการ TrueMoney manual", code: PaymentErrorCodes.CONFIG_MISSING };
+  }
+  if (payment.status !== "PAID") {
+    return {
+      ok: false,
+      error: "บันทึกคืนเงินภายนอกได้เฉพาะรายการที่ PAID แล้ว",
+      code: PaymentErrorCodes.INVALID_TRANSITION,
+    };
+  }
+  if (!canTransitionGatewayStatus(payment.status, "REFUND_SUCCEEDED")) {
+    return {
+      ok: false,
+      error: `สถานะ ${payment.status} บันทึกคืนเงินไม่ได้`,
+      code: PaymentErrorCodes.INVALID_TRANSITION,
+    };
+  }
+
+  const refunded = await markGatewayPaymentExternalRefund(payment.id, {
+    note,
+    actorUserId: input.actorUserId,
+  });
+  if (refunded.error || !refunded.data) {
+    return {
+      ok: false,
+      error: refunded.error?.userMessage ?? "บันทึกคืนเงินภายนอกไม่สำเร็จ",
+      code: PaymentErrorCodes.INVALID_TRANSITION,
+    };
+  }
+
+  await logSystemEvent({
+    level: "info",
+    source: "payments.refund",
+    action: "GATEWAY_PAYMENT_EXTERNAL_REFUND",
+    message: "บันทึกคืนเงินภายนอก TrueMoney (ไม่มี API — พนักงานคืนในแอปแล้ว)",
+    organizationId: input.organizationId,
+    storeId: input.storeId,
+    actorUserId: input.actorUserId,
+    context: {
+      gatewayPaymentId: payment.id,
+      orderId: payment.orderId,
+      amount: payment.amount,
+      note,
+      phase: "A_external_only",
+    },
+  });
+
+  return { ok: true, payment: refunded.data };
+}
+
+
+export function buildTrueMoneyWebhookUrl(storeId: string): string {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    process.env.APP_URL?.replace(/\/$/, "") ||
+    "https://www.store-os.online";
+  return `${base}/api/payments/webhooks/truemoney?storeId=${encodeURIComponent(storeId)}`;
+}
+
+export async function saveTrueMoneyOpenApiConfigForStore(input: {
+  organizationId: string;
+  storeId: string;
+  webhookSecret: string;
+  keepExistingSecret?: boolean;
+  isEnabled: boolean;
+  displayName?: string | null;
+  actorUserId: string;
+}): Promise<{ data: PaymentProviderConfigPublic | null; error: string | null }> {
+  // Ensure adapter is registered (scaffold gate).
+  const adapter = getPaymentProviderAdapter("truemoney", "open_api");
+  if (!adapter) return { data: null, error: "TrueMoney Open API adapter ไม่พร้อม" };
+
+  const result = await upsertTrueMoneyOpenApiConfig({
+    organizationId: input.organizationId,
+    storeId: input.storeId,
+    webhookSecret: input.webhookSecret,
+    isEnabled: input.isEnabled,
+    displayName: input.displayName,
+    actorUserId: input.actorUserId,
+    keepExistingSecret: input.keepExistingSecret,
+  });
+  if (result.error) return { data: null, error: result.error.userMessage };
+
+  await logSystemEvent({
+    level: "info",
+    source: "payments.config",
+    action: "PAYMENT_PROVIDER_UPSERT",
+    message: input.isEnabled
+      ? "บันทึกและเปิดใช้ TrueMoney Open API (scaffold)"
+      : "บันทึก TrueMoney Open API (ปิดใช้งาน)",
+    organizationId: input.organizationId,
+    storeId: input.storeId,
+    actorUserId: input.actorUserId,
+    context: {
+      providerKey: "truemoney",
+      mode: "open_api",
+      isEnabled: input.isEnabled,
+      configId: result.data?.id,
+      phase: "B_scaffold",
+    },
+  });
+
+  return { data: result.data, error: null };
+}
+
+export async function disableTrueMoneyOpenApiConfigForStore(input: {
+  organizationId: string;
+  storeId: string;
+  actorUserId: string;
+}) {
+  const result = await softDisableTrueMoneyOpenApiConfig(input.storeId, input.actorUserId);
+  if (result.error) return { error: result.error.userMessage };
+  await logSystemEvent({
+    level: "info",
+    source: "payments.config",
+    action: "PAYMENT_PROVIDER_DISABLE",
+    message: "ปิดใช้ TrueMoney Open API",
+    organizationId: input.organizationId,
+    storeId: input.storeId,
+    actorUserId: input.actorUserId,
+    context: { providerKey: "truemoney", mode: "open_api" },
+  });
+  return { error: null };
+}
+
+export async function testTrueMoneyOpenApiConnection(input: {
+  storeId: string;
+  webhookSecret?: string | null;
+}): Promise<TrueMoneyOpenApiTestResult> {
+  let secret = (input.webhookSecret ?? "").trim();
+  if (!secret) {
+    const loaded = await getTrueMoneyOpenApiConfig(input.storeId);
+    if (loaded.error) return { ok: false, error: loaded.error.userMessage };
+    secret = loaded.creds?.webhookSecret?.trim() ?? "";
+  }
+  if (!secret || secret.length < 8) {
+    return { ok: false, error: "กรุณาวาง Webhook Secret จากแอป TrueMoney (อย่างน้อย 8 ตัวอักษร)" };
+  }
+  const masked = maskSecret(secret);
+  if (!masked) return { ok: false, error: "Webhook Secret ไม่ถูกต้อง" };
+
+  // No live charge / no external HTTP — validate secret presence + show register URL.
+  return {
+    ok: true,
+    mode: "open_api",
+    providerKey: "truemoney",
+    webhookSecretMasked: masked,
+    webhookUrl: buildTrueMoneyWebhookUrl(input.storeId),
+    capabilities: {
+      createPayment: false,
+      webhook: true,
+      lookup: false,
+      refund: false,
+      manualConfirm: false,
+    },
+    message:
+      "Secret พร้อมใช้งาน (scaffold) — คัดลอก Webhook URL ไปใส่ในแอป TrueMoney หลังมีสิทธิ์ Open API; ยังไม่มีการเรียก API สร้างรายการชำระ",
+  };
+}
+

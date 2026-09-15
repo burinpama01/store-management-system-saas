@@ -196,3 +196,25 @@ describe("byoPaymentGateway feature gate", () => {
     expect(getPlanFeatures(withFeat).byoPaymentGateway).toBe(true);
   });
 });
+
+
+describe("gateway cancel + external refund transitions", () => {
+  it("allows PENDING → CANCELLED for abandoned pending", () => {
+    expect(canTransitionGatewayStatus("PENDING", "CANCELLED")).toBe(true);
+    expect(canTransitionGatewayStatus("CREATED", "CANCELLED")).toBe(true);
+    expect(canTransitionGatewayStatus("REQUIRES_ACTION", "CANCELLED")).toBe(true);
+    expect(canTransitionGatewayStatus("PROCESSING", "CANCELLED")).toBe(true);
+  });
+
+  it("allows PAID → REFUND_SUCCEEDED for Phase A external refund note", () => {
+    expect(canTransitionGatewayStatus("PAID", "REFUND_SUCCEEDED")).toBe(true);
+    expect(canTransitionGatewayStatus("PAID", "REFUND_PENDING")).toBe(true);
+    expect(canTransitionGatewayStatus("REFUND_PENDING", "REFUND_SUCCEEDED")).toBe(true);
+  });
+
+  it("rejects PAID → CANCELLED (use REFUND_* path instead)", () => {
+    expect(canTransitionGatewayStatus("PAID", "CANCELLED")).toBe(false);
+    expect(canTransitionGatewayStatus("REFUND_SUCCEEDED", "CANCELLED")).toBe(false);
+    expect(canTransitionGatewayStatus("CANCELLED", "PAID")).toBe(false);
+  });
+});

@@ -420,6 +420,54 @@ export interface Database {
         Relationships: []
       }
 
+      gateway_payment_webhook_events: {
+        Row: {
+          id: string
+          organization_id: string | null
+          store_id: string | null
+          provider_key: string
+          provider_event_id: string
+          event_type: string | null
+          processing_status: string
+          gateway_payment_id: string | null
+          amount_major: number | null
+          payload_redacted: Json
+          failure_message: string | null
+          created_at: string
+          processed_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id?: string | null
+          store_id?: string | null
+          provider_key: string
+          provider_event_id: string
+          event_type?: string | null
+          processing_status?: string
+          gateway_payment_id?: string | null
+          amount_major?: number | null
+          payload_redacted?: Json
+          failure_message?: string | null
+          created_at?: string
+          processed_at?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string | null
+          store_id?: string | null
+          provider_key?: string
+          provider_event_id?: string
+          event_type?: string | null
+          processing_status?: string
+          gateway_payment_id?: string | null
+          amount_major?: number | null
+          payload_redacted?: Json
+          failure_message?: string | null
+          created_at?: string
+          processed_at?: string | null
+        }
+        Relationships: []
+      }
       connect_channel_links: {
         Row: {
           id: string;

@@ -3,7 +3,11 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { mapError } from "@/shared/utils/error";
 import {
   decodeTrueMoneyManualCredentials,
+  decodeTrueMoneyOpenApiCredentials,
   encodeTrueMoneyManualCredentials,
+  encodeTrueMoneyOpenApiCredentials,
+  maskSecret,
+  OPEN_API_CREDENTIAL_KEY_VERSION,
 } from "./credentials";
 import { maskEmvPayload } from "./emv-qr";
 import type {
@@ -52,6 +56,8 @@ type GatewayRow = {
   confirm_reason: string | null;
   pos_payment_id: string | null;
   paid_at: string | null;
+  failure_message: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
@@ -76,7 +82,17 @@ function mapConfig(row: ConfigRow): PaymentProviderConfig {
   };
 }
 
-function toPublic(config: PaymentProviderConfig): PaymentProviderConfigPublic {
+function toPublic(
+  config: PaymentProviderConfig,
+  opts?: { webhookSecretMasked?: string | null; hasWebhookSecret?: boolean },
+): PaymentProviderConfigPublic {
+  const fromPublic =
+    config.publicConfig && typeof config.publicConfig === "object"
+      ? (config.publicConfig as {
+          webhookSecretMasked?: string | null;
+          hasWebhookSecret?: boolean;
+        })
+      : {};
   return {
     id: config.id,
     providerKey: config.providerKey,
@@ -90,6 +106,11 @@ function toPublic(config: PaymentProviderConfig): PaymentProviderConfigPublic {
       ? maskEmvPayload(config.staticEmvPayload)
       : null,
     hasStaticEmvPayload: Boolean(config.staticEmvPayload),
+    webhookSecretMasked:
+      opts?.webhookSecretMasked ?? fromPublic.webhookSecretMasked ?? null,
+    hasWebhookSecret: Boolean(
+      opts?.hasWebhookSecret ?? fromPublic.hasWebhookSecret ?? false,
+    ),
     updatedAt: config.updatedAt,
   };
 }
@@ -114,10 +135,19 @@ function mapGateway(row: GatewayRow): GatewayPayment {
     confirmReason: row.confirm_reason,
     posPaymentId: row.pos_payment_id,
     paidAt: row.paid_at,
+    failureMessage: row.failure_message ?? null,
+    metadata: row.metadata ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
+
+const GATEWAY_SELECT =
+  "id, organization_id, store_id, order_id, provider_config_id, provider_key, mode, amount, currency, status, storeos_reference, injected_emv_payload, verification_source, confirmed_by, confirmed_at, confirm_reason, pos_payment_id, paid_at, failure_message, metadata, created_at, updated_at";
+
+/** List select omits injected EMV (settings UI does not need it). */
+const GATEWAY_LIST_SELECT =
+  "id, organization_id, store_id, order_id, provider_config_id, provider_key, mode, amount, currency, status, storeos_reference, verification_source, confirmed_by, confirmed_at, confirm_reason, pos_payment_id, paid_at, failure_message, metadata, created_at, updated_at";
 
 export async function listProviderConfigsPublic(storeId: string) {
   const supabase = await createSupabaseServerClient();
@@ -260,7 +290,7 @@ export async function insertGatewayPayment(input: {
       metadata: (input.metadata ?? {}) as Json,
     })
     .select(
-      "id, organization_id, store_id, order_id, provider_config_id, provider_key, mode, amount, currency, status, storeos_reference, injected_emv_payload, verification_source, confirmed_by, confirmed_at, confirm_reason, pos_payment_id, paid_at, created_at, updated_at",
+      GATEWAY_SELECT,
     )
     .single();
   if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
@@ -281,7 +311,7 @@ export async function findGatewayPaymentByReference(storeId: string, storeosRefe
   const { data, error } = await supabase
     .from("gateway_payments")
     .select(
-      "id, organization_id, store_id, order_id, provider_config_id, provider_key, mode, amount, currency, status, storeos_reference, injected_emv_payload, verification_source, confirmed_by, confirmed_at, confirm_reason, pos_payment_id, paid_at, created_at, updated_at",
+      GATEWAY_SELECT,
     )
     .eq("store_id", storeId)
     .eq("storeos_reference", storeosReference)
@@ -296,7 +326,7 @@ export async function getGatewayPayment(id: string) {
   const { data, error } = await supabase
     .from("gateway_payments")
     .select(
-      "id, organization_id, store_id, order_id, provider_config_id, provider_key, mode, amount, currency, status, storeos_reference, injected_emv_payload, verification_source, confirmed_by, confirmed_at, confirm_reason, pos_payment_id, paid_at, created_at, updated_at",
+      GATEWAY_SELECT,
     )
     .eq("id", id)
     .maybeSingle();
@@ -330,7 +360,7 @@ export async function markGatewayPaymentPaidManual(input: {
     .eq("id", input.id)
     .in("status", ["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING"])
     .select(
-      "id, organization_id, store_id, order_id, provider_config_id, provider_key, mode, amount, currency, status, storeos_reference, injected_emv_payload, verification_source, confirmed_by, confirmed_at, confirm_reason, pos_payment_id, paid_at, created_at, updated_at",
+      GATEWAY_SELECT,
     )
     .maybeSingle();
   if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
@@ -341,3 +371,449 @@ export async function markGatewayPaymentPaidManual(input: {
   }
   return { data: mapGateway(data as GatewayRow), error: null };
 }
+
+
+export async function listGatewayPaymentsForStore(
+  storeId: string,
+  opts?: { limit?: number; status?: GatewayPaymentStatus | null },
+) {
+  const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 200);
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("gateway_payments")
+    .select(GATEWAY_LIST_SELECT)
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (opts?.status) {
+    query = query.eq("status", opts.status);
+  }
+  const { data, error } = await query;
+  if (error) return { data: null as GatewayPayment[] | null, error: mapError(error) };
+  const mapped = ((data ?? []) as Omit<GatewayRow, "injected_emv_payload">[]).map((row) =>
+    mapGateway({ ...row, injected_emv_payload: null }),
+  );
+  return { data: mapped, error: null };
+}
+
+const CANCELABLE_STATUSES: GatewayPaymentStatus[] = [
+  "CREATED",
+  "PENDING",
+  "REQUIRES_ACTION",
+  "PROCESSING",
+];
+
+export async function cancelGatewayPayment(
+  id: string,
+  input: { reason: string; actorUserId: string },
+) {
+  const supabase = await createSupabaseServerClient();
+  const loaded = await getGatewayPayment(id);
+  if (loaded.error) return { data: null as GatewayPayment | null, error: loaded.error };
+  if (!loaded.data) {
+    return {
+      data: null,
+      error: { code: "not_found", message: "gateway payment not found", userMessage: "ไม่พบรายการชำระ" },
+    };
+  }
+  const current = loaded.data;
+  if (!CANCELABLE_STATUSES.includes(current.status)) {
+    return {
+      data: null,
+      error: {
+        code: "invalid_transition",
+        message: `cannot cancel from ${current.status}`,
+        userMessage: `สถานะ ${current.status} ยกเลิกไม่ได้`,
+      },
+    };
+  }
+
+  const now = new Date().toISOString();
+  const metadata = {
+    ...current.metadata,
+    cancel: {
+      reason: input.reason,
+      at: now,
+      by: input.actorUserId,
+    },
+  };
+
+  const { data, error } = await supabase
+    .from("gateway_payments")
+    .update({
+      status: "CANCELLED",
+      failure_message: input.reason,
+      metadata: metadata as Json,
+      updated_at: now,
+    })
+    .eq("id", id)
+    .in("status", CANCELABLE_STATUSES)
+    .select(GATEWAY_SELECT)
+    .maybeSingle();
+  if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
+  if (!data) {
+    const again = await getGatewayPayment(id);
+    return again;
+  }
+  return { data: mapGateway(data as GatewayRow), error: null };
+}
+
+export async function markGatewayPaymentExternalRefund(
+  id: string,
+  input: { note: string; actorUserId: string },
+) {
+  const supabase = await createSupabaseServerClient();
+  const loaded = await getGatewayPayment(id);
+  if (loaded.error) return { data: null as GatewayPayment | null, error: loaded.error };
+  if (!loaded.data) {
+    return {
+      data: null,
+      error: { code: "not_found", message: "gateway payment not found", userMessage: "ไม่พบรายการชำระ" },
+    };
+  }
+  const current = loaded.data;
+  if (current.status !== "PAID") {
+    return {
+      data: null,
+      error: {
+        code: "invalid_transition",
+        message: `cannot external-refund from ${current.status}`,
+        userMessage: `สถานะ ${current.status} บันทึกคืนเงินภายนอกไม่ได้`,
+      },
+    };
+  }
+
+  const now = new Date().toISOString();
+  const metadata = {
+    ...current.metadata,
+    externalRefund: {
+      note: input.note,
+      at: now,
+      by: input.actorUserId,
+    },
+  };
+
+  const { data, error } = await supabase
+    .from("gateway_payments")
+    .update({
+      status: "REFUND_SUCCEEDED",
+      metadata: metadata as Json,
+      updated_at: now,
+    })
+    .eq("id", id)
+    .eq("status", "PAID")
+    .select(GATEWAY_SELECT)
+    .maybeSingle();
+  if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
+  if (!data) {
+    const again = await getGatewayPayment(id);
+    return again;
+  }
+  return { data: mapGateway(data as GatewayRow), error: null };
+}
+
+
+const CONFIG_SELECT =
+  "id, organization_id, store_id, provider_key, mode, environment, display_name, is_enabled, is_default, disabled_at, credentials_encrypted, public_config, created_at, updated_at";
+
+export async function getTrueMoneyOpenApiConfig(storeId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("payment_provider_configs")
+    .select(CONFIG_SELECT)
+    .eq("store_id", storeId)
+    .eq("provider_key", "truemoney")
+    .eq("mode", "open_api")
+    .maybeSingle();
+  if (error) return { data: null as PaymentProviderConfig | null, error: mapError(error), creds: null as ReturnType<typeof decodeTrueMoneyOpenApiCredentials> };
+  if (!data) return { data: null, error: null, creds: null };
+  const row = data as ConfigRow;
+  const config = mapConfig(row);
+  const creds = decodeTrueMoneyOpenApiCredentials(row.credentials_encrypted);
+  return { data: config, error: null, creds };
+}
+
+export async function upsertTrueMoneyOpenApiConfig(input: {
+  organizationId: string;
+  storeId: string;
+  webhookSecret: string;
+  apiKey?: string | null;
+  isEnabled: boolean;
+  displayName?: string | null;
+  actorUserId: string;
+  keepExistingSecret?: boolean;
+}) {
+  const supabase = await createSupabaseServerClient();
+  let encoded: string;
+  let masked: string | null;
+
+  if (input.keepExistingSecret) {
+    const existing = await getTrueMoneyOpenApiConfig(input.storeId);
+    if (!existing.creds?.webhookSecret) {
+      return {
+        data: null as PaymentProviderConfigPublic | null,
+        error: {
+          code: "missing",
+          message: "no existing secret",
+          userMessage: "ยังไม่มี Webhook Secret ที่บันทึกไว้ — กรุณาวาง Secret ใหม่",
+        },
+      };
+    }
+    encoded = encodeTrueMoneyOpenApiCredentials({
+      webhookSecret: existing.creds.webhookSecret,
+      apiKey: input.apiKey ?? existing.creds.apiKey ?? null,
+    });
+    masked = maskSecret(existing.creds.webhookSecret);
+  } else {
+    const secret = input.webhookSecret.trim();
+    if (secret.length < 8) {
+      return {
+        data: null as PaymentProviderConfigPublic | null,
+        error: {
+          code: "invalid",
+          message: "secret too short",
+          userMessage: "Webhook Secret สั้นเกินไป",
+        },
+      };
+    }
+    encoded = encodeTrueMoneyOpenApiCredentials({
+      webhookSecret: secret,
+      apiKey: input.apiKey ?? null,
+    });
+    masked = maskSecret(secret);
+  }
+
+  const publicConfig = {
+    hasWebhookSecret: true,
+    webhookSecretMasked: masked,
+  };
+
+  const { data, error } = await supabase
+    .from("payment_provider_configs")
+    .upsert(
+      {
+        organization_id: input.organizationId,
+        store_id: input.storeId,
+        provider_key: "truemoney",
+        mode: "open_api",
+        environment: "live",
+        display_name: input.displayName ?? "TrueMoney Open API",
+        is_enabled: input.isEnabled,
+        is_default: false,
+        disabled_at: input.isEnabled ? null : new Date().toISOString(),
+        credentials_encrypted: encoded,
+        encryption_key_version: OPEN_API_CREDENTIAL_KEY_VERSION,
+        public_config: publicConfig,
+        updated_by: input.actorUserId,
+        created_by: input.actorUserId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "store_id,provider_key,mode" },
+    )
+    .select(CONFIG_SELECT)
+    .single();
+  if (error) return { data: null as PaymentProviderConfigPublic | null, error: mapError(error) };
+  return {
+    data: toPublic(mapConfig(data as ConfigRow), {
+      webhookSecretMasked: masked,
+      hasWebhookSecret: true,
+    }),
+    error: null,
+  };
+}
+
+export async function softDisableTrueMoneyOpenApiConfig(storeId: string, actorUserId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("payment_provider_configs")
+    .update({
+      is_enabled: false,
+      disabled_at: new Date().toISOString(),
+      updated_by: actorUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("store_id", storeId)
+    .eq("provider_key", "truemoney")
+    .eq("mode", "open_api");
+  if (error) return { error: mapError(error) };
+  return { error: null };
+}
+
+export async function findPendingGatewayPaymentByAmount(input: {
+  storeId: string;
+  amountMajor: number;
+  providerKey?: PaymentProviderKey;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("gateway_payments")
+    .select(GATEWAY_SELECT)
+    .eq("store_id", input.storeId)
+    .eq("provider_key", input.providerKey ?? "truemoney")
+    .eq("amount", input.amountMajor)
+    .in("status", ["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING"])
+    .order("created_at", { ascending: false })
+    .limit(2);
+  if (error) return { data: null as GatewayPayment | null, ambiguous: false, error: mapError(error) };
+  const rows = (data ?? []) as GatewayRow[];
+  if (rows.length === 0) return { data: null, ambiguous: false, error: null };
+  if (rows.length > 1) return { data: mapGateway(rows[0]!), ambiguous: true, error: null };
+  return { data: mapGateway(rows[0]!), ambiguous: false, error: null };
+}
+
+export async function markGatewayPaymentPaidFromWebhook(input: {
+  id: string;
+  providerPaymentId?: string | null;
+  metadataMerge?: Record<string, unknown>;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const loaded = await getGatewayPayment(input.id);
+  if (loaded.error || !loaded.data) return loaded;
+  const now = new Date().toISOString();
+  const metadata = {
+    ...loaded.data.metadata,
+    ...(input.metadataMerge ?? {}),
+  };
+  const { data, error } = await supabase
+    .from("gateway_payments")
+    .update({
+      status: "PAID",
+      verification_source: "PROVIDER_WEBHOOK",
+      provider_payment_id: input.providerPaymentId ?? null,
+      paid_at: now,
+      metadata: metadata as Json,
+      updated_at: now,
+    })
+    .eq("id", input.id)
+    .in("status", ["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING"])
+    .select(GATEWAY_SELECT)
+    .maybeSingle();
+  if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
+  if (!data) return getGatewayPayment(input.id);
+  return { data: mapGateway(data as GatewayRow), error: null };
+}
+
+export async function markGatewayPaymentReviewFromWebhook(input: {
+  id?: string | null;
+  storeId: string;
+  organizationId: string;
+  providerConfigId: string;
+  amountMajor: number;
+  providerEventId: string;
+  reason: string;
+  metadata?: Record<string, unknown>;
+}) {
+  // If we have a payment id, move to REVIEW_REQUIRED / LATE_PAID; else insert LATE_PAID orphan.
+  const supabase = await createSupabaseServerClient();
+  const now = new Date().toISOString();
+  if (input.id) {
+    const loaded = await getGatewayPayment(input.id);
+    if (loaded.data) {
+      const toStatus =
+        loaded.data.status === "CANCELLED" || loaded.data.status === "EXPIRED"
+          ? "LATE_PAID"
+          : "REVIEW_REQUIRED";
+      const { data, error } = await supabase
+        .from("gateway_payments")
+        .update({
+          status: toStatus,
+          verification_source: "PROVIDER_WEBHOOK",
+          failure_message: input.reason,
+          metadata: { ...loaded.data.metadata, ...(input.metadata ?? {}) } as Json,
+          updated_at: now,
+        })
+        .eq("id", input.id)
+        .select(GATEWAY_SELECT)
+        .maybeSingle();
+      if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
+      if (data) return { data: mapGateway(data as GatewayRow), error: null };
+    }
+  }
+
+  const reference = `tm_openapi_unmatched:${input.storeId}:${input.providerEventId}`;
+  const { data, error } = await supabase
+    .from("gateway_payments")
+    .upsert(
+      {
+        organization_id: input.organizationId,
+        store_id: input.storeId,
+        order_id: null,
+        provider_config_id: input.providerConfigId,
+        provider_key: "truemoney",
+        mode: "open_api",
+        amount: input.amountMajor > 0 ? input.amountMajor : 0.01,
+        currency: "THB",
+        status: "LATE_PAID",
+        storeos_reference: reference,
+        verification_source: "PROVIDER_WEBHOOK",
+        failure_message: input.reason,
+        metadata: (input.metadata ?? {}) as Json,
+        paid_at: now,
+        updated_at: now,
+      },
+      { onConflict: "store_id,storeos_reference" },
+    )
+    .select(GATEWAY_SELECT)
+    .maybeSingle();
+  if (error) return { data: null as GatewayPayment | null, error: mapError(error) };
+  if (!data) return { data: null, error: null };
+  return { data: mapGateway(data as GatewayRow), error: null };
+}
+
+export async function claimWebhookEvent(input: {
+  providerKey: string;
+  providerEventId: string;
+  eventType: string | null;
+  storeId: string | null;
+  organizationId: string | null;
+  amountMajor: number | null;
+  payloadRedacted: Record<string, unknown>;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("gateway_payment_webhook_events")
+    .insert({
+      provider_key: input.providerKey,
+      provider_event_id: input.providerEventId,
+      event_type: input.eventType,
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      amount_major: input.amountMajor,
+      payload_redacted: input.payloadRedacted as Json,
+      processing_status: "processing",
+    })
+    .select("id, processing_status")
+    .maybeSingle();
+  if (error) {
+    // Unique violation → already seen
+    if (String((error as { code?: string }).code) === "23505") {
+      return { decision: "skip" as const, eventRowId: null, error: null };
+    }
+    return { decision: "error" as const, eventRowId: null, error: mapError(error) };
+  }
+  return {
+    decision: "process" as const,
+    eventRowId: (data as { id: string } | null)?.id ?? null,
+    error: null,
+  };
+}
+
+export async function completeWebhookEvent(
+  eventRowId: string,
+  status: "processed" | "ignored" | "failed",
+  opts?: { gatewayPaymentId?: string | null; failureMessage?: string | null },
+) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("gateway_payment_webhook_events")
+    .update({
+      processing_status: status,
+      gateway_payment_id: opts?.gatewayPaymentId ?? null,
+      failure_message: opts?.failureMessage ?? null,
+      processed_at: new Date().toISOString(),
+    })
+    .eq("id", eventRowId);
+  if (error) return { error: mapError(error) };
+  return { error: null };
+}
+

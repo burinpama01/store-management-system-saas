@@ -1,8 +1,9 @@
 import { trueMoneyManualAdapter } from "./adapters/truemoney-manual";
+import { trueMoneyOpenApiAdapter } from "./adapters/truemoney-openapi";
 import type { PaymentProviderAdapter } from "./provider-contract";
 import type { PaymentProviderKey, PaymentProviderMode } from "./types";
 
-const adapters: PaymentProviderAdapter[] = [trueMoneyManualAdapter];
+const adapters: PaymentProviderAdapter[] = [trueMoneyManualAdapter, trueMoneyOpenApiAdapter];
 
 export function getPaymentProviderAdapter(
   key: PaymentProviderKey,

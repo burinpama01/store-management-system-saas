@@ -3,6 +3,10 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { listProviderConfigsPublic } from "@/modules/payments/repository";
+import {
+  buildTrueMoneyWebhookUrl,
+  listTrueMoneyManualPaymentsForStore,
+} from "@/modules/payments/service";
 import { PaymentIntegrationsManager } from "./PaymentIntegrationsManager";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +32,16 @@ export default async function PaymentsSettingsPage() {
     );
   }
 
-  const configsRes = await listProviderConfigsPublic(ctx.storeId);
-  return <PaymentIntegrationsManager configs={configsRes.data ?? []} />;
+  const [configsRes, paymentsRes] = await Promise.all([
+    listProviderConfigsPublic(ctx.storeId),
+    listTrueMoneyManualPaymentsForStore(ctx.storeId, { limit: 30 }),
+  ]);
+  return (
+    <PaymentIntegrationsManager
+      configs={configsRes.data ?? []}
+      recentPayments={paymentsRes.data ?? []}
+      storeId={ctx.storeId}
+      webhookUrl={buildTrueMoneyWebhookUrl(ctx.storeId)}
+    />
+  );
 }

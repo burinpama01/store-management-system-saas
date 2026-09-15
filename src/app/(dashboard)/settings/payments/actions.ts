@@ -7,11 +7,19 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { decodeTrueMoneyManualCredentials } from "@/modules/payments/credentials";
 import { buildTrueMoneyShopStaticPayload } from "@/modules/payments/emv-qr";
 import {
+  cancelTrueMoneyManualPending,
   disableTrueMoneyManualConfigForStore,
+  disableTrueMoneyOpenApiConfigForStore,
+  recordTrueMoneyExternalRefund,
   saveTrueMoneyManualConfigForStore,
+  saveTrueMoneyOpenApiConfigForStore,
   testTrueMoneyManualConnection,
+  testTrueMoneyOpenApiConnection,
 } from "@/modules/payments/service";
-import type { TrueMoneyManualTestResult } from "@/modules/payments/types";
+import type {
+  TrueMoneyManualTestResult,
+  TrueMoneyOpenApiTestResult,
+} from "@/modules/payments/types";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -154,3 +162,123 @@ export async function disableTrueMoneyManualConfigAction(): Promise<{ error: str
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
+
+
+export async function cancelTrueMoneyPendingAction(
+  paymentId: string,
+  reason: string,
+): Promise<{ error: string | null; ok?: boolean }> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { user, ctx } = await getStoreContext();
+    const result = await cancelTrueMoneyManualPending({
+      gatewayPaymentId: paymentId,
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      actorUserId: user.id,
+      reason,
+    });
+    if (!result.ok) return { error: result.error };
+    revalidatePath("/settings/payments");
+    return { error: null, ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function recordTrueMoneyExternalRefundAction(
+  paymentId: string,
+  note: string,
+): Promise<{ error: string | null; ok?: boolean }> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { user, ctx } = await getStoreContext();
+    const result = await recordTrueMoneyExternalRefund({
+      gatewayPaymentId: paymentId,
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      actorUserId: user.id,
+      note,
+    });
+    if (!result.ok) return { error: result.error };
+    revalidatePath("/settings/payments");
+    return { error: null, ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+
+export async function saveTrueMoneyOpenApiConfigAction(
+  _prev: { error: string | null; ok?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; ok?: boolean }> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { user, ctx } = await getStoreContext();
+
+    const webhookSecret = (formData.get("webhookSecret") as string | null)?.trim() ?? "";
+    const keepExisting = formData.get("keepExistingSecret") === "1";
+    const isEnabled = formData.get("isEnabled") === "1";
+    const displayNameRaw = (formData.get("displayName") as string | null)?.trim() ?? "";
+    const displayName = displayNameRaw || "TrueMoney Open API";
+
+    if (!keepExisting && !webhookSecret) {
+      return { error: "กรุณาวาง Webhook Secret จากแอป TrueMoney" };
+    }
+
+    const result = await saveTrueMoneyOpenApiConfigForStore({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      webhookSecret,
+      keepExistingSecret: keepExisting && !webhookSecret,
+      isEnabled,
+      displayName,
+      actorUserId: user.id,
+    });
+    if (result.error) return { error: result.error };
+    revalidatePath("/settings/payments");
+    return { error: null, ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function testTrueMoneyOpenApiConnectionAction(
+  formData: FormData,
+): Promise<TrueMoneyOpenApiTestResult> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { ctx } = await getStoreContext();
+    const webhookSecret = (formData.get("webhookSecret") as string | null)?.trim() ?? "";
+    return await testTrueMoneyOpenApiConnection({
+      storeId: ctx.storeId,
+      webhookSecret: webhookSecret || null,
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function disableTrueMoneyOpenApiConfigAction(): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { user, ctx } = await getStoreContext();
+    const result = await disableTrueMoneyOpenApiConfigForStore({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+    });
+    if (result.error) return { error: result.error };
+    revalidatePath("/settings/payments");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
