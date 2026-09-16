@@ -701,12 +701,12 @@ export async function collectPaymentAction(
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "ชำระเงินแล้ว",
-      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${paidMethod}`,
+      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${trueMoneyGatewayId ? "TrueMoney" : paidMethod}`,
       metadata: {
         orderId,
         paymentId,
         amount: paidAmount,
-        method: paidMethod,
+        method: trueMoneyGatewayId ? "TrueMoney" : paidMethod,
         trueMoneyGatewayId,
       },
     });
@@ -918,12 +918,12 @@ export async function checkoutAndPayAction(
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "ชำระเงินแล้ว",
-      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${paidMethod}`,
+      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${trueMoneyGatewayId ? "TrueMoney" : paidMethod}`,
       metadata: {
         orderId: created.orderId,
         paymentId,
         amount: paidAmount,
-        method: paidMethod,
+        method: trueMoneyGatewayId ? "TrueMoney" : paidMethod,
         trueMoneyGatewayId,
       },
     });
