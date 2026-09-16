@@ -1303,7 +1303,7 @@ function PosUtilitySheet({
       <div
         ref={sheetRef}
         data-pos-utility-sheet="true"
-        className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+        className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] w-full max-w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[420px] sm:max-w-[calc(100vw-1.5rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <p className="text-sm font-semibold text-gray-900">{title}</p>
@@ -1316,7 +1316,7 @@ function PosUtilitySheet({
             ปิด
           </button>
         </div>
-        <div className="overflow-y-auto p-4">
+        <div className="min-w-0 overflow-x-hidden overflow-y-auto p-4">
           {children}
         </div>
       </div>
@@ -1477,23 +1477,26 @@ function TicketPanel({
             ยังไม่มีตั๋วที่บันทึก
           </p>
         ) : (
-          <ul className="max-h-[45dvh] space-y-2 overflow-y-auto pr-1">
+          <ul className="max-h-[45dvh] min-w-0 space-y-2 overflow-y-auto overflow-x-hidden pr-1">
             {filteredSavedTickets.map((ticket) => {
               const syncBadge = ticketSyncBadge(ticket.syncState);
               return (
-              <li key={ticket.id} className="flex items-stretch gap-1">
+              <li
+                key={ticket.id}
+                className={`min-w-0 overflow-hidden rounded-lg border ${
+                  ticket.id === activeTicketId ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => onLoadTicket(ticket)}
-                  className={`min-h-11 flex-1 rounded-lg border px-3 py-2.5 text-left text-xs ${
-                    ticket.id === activeTicketId
-                      ? "border-amber-300 bg-amber-50 text-amber-800"
-                      : "border-gray-200 text-gray-700 hover:border-gray-300"
+                  className={`min-h-11 w-full min-w-0 px-3 py-2.5 text-left text-xs ${
+                    ticket.id === activeTicketId ? "text-amber-800" : "text-gray-700"
                   }`}
                 >
-                  <span className="flex items-center justify-between gap-2 font-semibold">
-                    <span>{ticket.ticketNumber}</span>
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${syncBadge.className}`}>
+                  <span className="flex min-w-0 items-center justify-between gap-2 font-semibold">
+                    <span className="min-w-0 truncate">{ticket.ticketNumber}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${syncBadge.className}`}>
                       {syncBadge.label}
                     </span>
                   </span>
@@ -1506,32 +1509,34 @@ function TicketPanel({
                   <span className="mt-0.5 block truncate text-[11px] text-gray-500">
                     {ticketMetaLabel(ticket)}
                   </span>
-                  <span className="mt-0.5 block text-[10px] text-gray-400">
+                  <span className="mt-0.5 block truncate text-[10px] text-gray-400">
                     แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · ซิงค์ {ticketTimeLabel(ticket.lastSyncedAt)}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  disabled={isTicketSyncPending || isPrintingTicket || ticket.cart.items.length === 0}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void onPrintTicket(ticket);
-                  }}
-                  className="min-h-11 rounded-lg border border-teal-200 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-800 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={`พิมพ์ใบสั่ง ${ticket.ticketNumber}`}
-                  aria-busy={printingTicketId === ticket.id || undefined}
-                >
-                  {printingTicketId === ticket.id ? "พิมพ์..." : "พิมพ์"}
-                </button>
-                <button
-                  type="button"
-                  disabled={isTicketSyncPending}
-                  onClick={() => onDeleteTicket(ticket.id)}
-                  className="min-h-11 rounded-lg px-2 text-[11px] text-red-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={ticket.tableId ? `ลบตั๋วและเคลียร์โต๊ะ ${ticket.ticketNumber}` : `ลบตั๋ว ${ticket.ticketNumber}`}
-                >
-                  ลบ
-                </button>
+                <div className="flex min-w-0 gap-1 border-t border-gray-100 p-1.5">
+                  <button
+                    type="button"
+                    disabled={isTicketSyncPending || isPrintingTicket || ticket.cart.items.length === 0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void onPrintTicket(ticket);
+                    }}
+                    className="min-h-11 min-w-0 flex-1 rounded-lg border border-teal-200 bg-teal-50 px-2 text-xs font-semibold text-teal-800 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={`พิมพ์ใบสั่ง ${ticket.ticketNumber}`}
+                    aria-busy={printingTicketId === ticket.id || undefined}
+                  >
+                    {printingTicketId === ticket.id ? "พิมพ์..." : "พิมพ์"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isTicketSyncPending}
+                    onClick={() => onDeleteTicket(ticket.id)}
+                    className="min-h-11 shrink-0 rounded-lg px-3 text-xs text-red-500 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={ticket.tableId ? `ลบตั๋วและเคลียร์โต๊ะ ${ticket.ticketNumber}` : `ลบตั๋ว ${ticket.ticketNumber}`}
+                  >
+                    ลบ
+                  </button>
+                </div>
               </li>
               );
             })}
