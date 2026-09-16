@@ -16,7 +16,13 @@ import {
   decodeTrueMoneyManualCredentials,
 } from "@/modules/payments/credentials";
 import { canUseFeature, getPlanFeatures, type BillingState } from "@/modules/billing/types";
-import { testTrueMoneyManualConnection } from "@/modules/payments/service";
+import {
+  testTrueMoneyManualConnection,
+  resolveTrueMoneyManualConfirmReason,
+  TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON,
+} from "@/modules/payments/service";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { injectAmountIntoStaticPayload as billingInject } from "@/modules/billing/promptpay-provider";
 
 /** User shop static QR (decoded) — validated live for 35 & 265 THB. */
@@ -216,5 +222,37 @@ describe("gateway cancel + external refund transitions", () => {
     expect(canTransitionGatewayStatus("PAID", "CANCELLED")).toBe(false);
     expect(canTransitionGatewayStatus("REFUND_SUCCEEDED", "CANCELLED")).toBe(false);
     expect(canTransitionGatewayStatus("CANCELLED", "PAID")).toBe(false);
+  });
+});
+
+
+describe("TrueMoney manual confirm reason (floor speed)", () => {
+  it("defaults blank/short reasons to slip-checked audit text", () => {
+    expect(resolveTrueMoneyManualConfirmReason("")).toBe(TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON);
+    expect(resolveTrueMoneyManualConfirmReason("   ")).toBe(TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON);
+    expect(resolveTrueMoneyManualConfirmReason(null)).toBe(TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON);
+    expect(resolveTrueMoneyManualConfirmReason(undefined)).toBe(TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON);
+    expect(resolveTrueMoneyManualConfirmReason("x")).toBe(TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON);
+    expect(TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON).toBe("ตรวจสลิปแล้ว ได้รับเงินครบ");
+  });
+
+  it("keeps a staff-typed reason of at least 2 characters", () => {
+    expect(resolveTrueMoneyManualConfirmReason("ตรวจสลิปยอดถูกต้อง")).toBe("ตรวจสลิปยอดถูกต้อง");
+    expect(resolveTrueMoneyManualConfirmReason("  ok  ")).toBe("ok");
+  });
+
+  it("POS TrueMoney UI has slip checkbox gate without typed reason field", () => {
+    const source = readFileSync(join(process.cwd(), "src/app/pos/PosTerminal.tsx"), "utf8");
+    expect(source).toContain("ยืนยันว่าตรวจสลิปแล้ว ได้รับเงินครบ");
+    expect(source).not.toContain("เหตุผลที่ยืนยันรับเงิน");
+    expect(source).not.toContain("trueMoneyReason");
+    expect(source).toContain("!!trueMoneyPayload && qrPaymentVerified");
+    expect(source).not.toContain("trueMoneyReason.trim().length >= 2");
+  });
+
+  it("POS actions do not block TrueMoney on typed reason length", () => {
+    const source = readFileSync(join(process.cwd(), "src/app/pos/actions.ts"), "utf8");
+    expect(source).not.toContain("กรุณาระบุเหตุผลที่ยืนยันรับเงิน TrueMoney");
+    expect(source).toContain("confirmTrueMoneyManualPayment");
   });
 });

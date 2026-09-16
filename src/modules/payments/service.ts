@@ -265,6 +265,15 @@ export async function createTrueMoneyManualPending(input: {
   return { ok: true, payment: inserted.data, injectedPayload: prepared.injectedPayload };
 }
 
+/** Audit text stored when cashier confirms via slip checkbox (no typed reason). */
+export const TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON = "ตรวจสลิปแล้ว ได้รับเงินครบ";
+
+/** Prefer staff-typed reason when present; otherwise the floor-speed default. */
+export function resolveTrueMoneyManualConfirmReason(reason?: string | null): string {
+  const trimmed = reason?.trim() ?? "";
+  return trimmed.length >= 2 ? trimmed : TRUEMONEY_MANUAL_DEFAULT_CONFIRM_REASON;
+}
+
 /**
  * Mark gateway payment PAID via staff confirm. Idempotent if already PAID.
  * Caller is responsible for closing the POS order exactly once via existing RPC.
@@ -275,20 +284,13 @@ export async function confirmTrueMoneyManualPayment(input: {
   orderId: string;
   expectedAmount: number;
   confirmedBy: string;
-  confirmReason: string;
+  confirmReason?: string | null;
   posPaymentId: string | null;
 }): Promise<
   | { ok: true; payment: GatewayPayment; alreadyPaid: boolean }
   | { ok: false; error: string; code: string }
 > {
-  const reason = input.confirmReason.trim();
-  if (reason.length < 2) {
-    return {
-      ok: false,
-      error: "กรุณาระบุเหตุผลที่ยืนยันรับเงิน",
-      code: PaymentErrorCodes.REASON_REQUIRED,
-    };
-  }
+  const reason = resolveTrueMoneyManualConfirmReason(input.confirmReason);
 
   const loaded = await getGatewayPayment(input.gatewayPaymentId);
   if (loaded.error || !loaded.data) {

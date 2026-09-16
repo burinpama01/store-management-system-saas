@@ -567,7 +567,7 @@ async function createPosOrderCore(
 export async function collectPaymentAction(
   orderId: string,
   payment: AddPaymentInput,
-  opts?: { idempotencyKey?: string | null; trueMoney?: { confirmReason: string } | null },
+  opts?: { idempotencyKey?: string | null; trueMoney?: { confirmReason?: string | null } | null },
 ): Promise<{ order: Order | null; error: string | null }> {
   try {
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
@@ -587,10 +587,7 @@ export async function collectPaymentAction(
     let workingPayment: AddPaymentInput = payment;
     if (opts?.trueMoney) {
       await requireFeature("byoPaymentGateway");
-      const reason = opts.trueMoney.confirmReason?.trim() ?? "";
-      if (reason.length < 2) {
-        return { order: null, error: "กรุณาระบุเหตุผลที่ยืนยันรับเงิน TrueMoney" };
-      }
+      // Slip checkbox is the cashier gate; confirm_reason defaults server-side for audit.
     }
 
     // Slim lookup: the close RPC re-validates store/status; this only needs tenant
@@ -752,7 +749,7 @@ export async function checkoutAndPayAction(
     clientCouponDiscountAmount?: number;
     idempotencyKey?: string | null;
     paymentIdempotencyKey?: string | null;
-    trueMoney?: { confirmReason: string } | null;
+    trueMoney?: { confirmReason?: string | null } | null;
   },
 ): Promise<CheckoutAndPayResult> {
   let createdOrderId: string | null = null;
@@ -780,16 +777,7 @@ export async function checkoutAndPayAction(
     let workingPayment: AddPaymentInput = payment;
     if (opts?.trueMoney) {
       await requireFeature("byoPaymentGateway");
-      const reason = opts.trueMoney.confirmReason?.trim() ?? "";
-      if (reason.length < 2) {
-        return {
-          orderId: null,
-          orderNumber: null,
-          order: null,
-          failedStage: "order",
-          error: "กรุณาระบุเหตุผลที่ยืนยันรับเงิน TrueMoney",
-        };
-      }
+      // Slip checkbox is the cashier gate; confirm_reason defaults server-side for audit.
     }
 
     const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");

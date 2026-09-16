@@ -2189,7 +2189,6 @@ function PaymentPanel({
   const [trueMoneyPayload, setTrueMoneyPayload] = useState<string | null>(null);
   const [trueMoneyError, setTrueMoneyError] = useState<string | null>(null);
   const [trueMoneyLoading, setTrueMoneyLoading] = useState(false);
-  const [trueMoneyReason, setTrueMoneyReason] = useState("");
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
@@ -2198,7 +2197,7 @@ function PaymentPanel({
     method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
   const trueMoneyReady =
     method !== "truemoney" ||
-    (!!trueMoneyPayload && qrPaymentVerified && trueMoneyReason.trim().length >= 2);
+    (!!trueMoneyPayload && qrPaymentVerified);
 
   let promptPayPayload: string | null = null;
   if (method === "qr_promptpay" && promptpayId && cart.total > 0) {
@@ -2280,7 +2279,6 @@ function PaymentPanel({
                   setMethod(m);
                   setQrPaymentVerified(false);
                   setCustomerDisplayNotice(null);
-                  setTrueMoneyReason("");
                 }}
                 className={`min-h-11 py-2.5 text-xs font-medium rounded-lg border transition-colors ${
                   method === m
@@ -2414,16 +2412,6 @@ function PaymentPanel({
                 ) : customerDisplayUnavailableMessage ? (
                   <p className="text-xs text-gray-400 text-center">{customerDisplayUnavailableMessage}</p>
                 ) : null}
-                <label className="mt-1 w-full space-y-1 text-left">
-                  <span className="text-xs font-semibold text-gray-600">เหตุผลที่ยืนยันรับเงิน</span>
-                  <input
-                    type="text"
-                    value={trueMoneyReason}
-                    onChange={(e) => setTrueMoneyReason(e.target.value)}
-                    placeholder="เช่น ตรวจสลิปยอดถูกต้อง"
-                    className="w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
-                  />
-                </label>
                 <label className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 text-xs font-semibold text-green-700">
                   <input
                     type="checkbox"
@@ -2475,8 +2463,6 @@ function PaymentPanel({
                   method === "qr_promptpay" || method === "truemoney"
                     ? qrPaymentVerified
                     : undefined,
-                trueMoneyConfirmReason:
-                  method === "truemoney" ? trueMoneyReason.trim() : undefined,
               },
             )
           }
@@ -3535,6 +3521,7 @@ export function PosTerminal({
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined,
       };
+      // Server stores automatic audit confirm_reason when blank (slip checkbox is the gate).
       const trueMoneyOpts = isTrueMoney
         ? { confirmReason: opts?.trueMoneyConfirmReason?.trim() || "" }
         : null;
