@@ -1,6 +1,17 @@
 # จุดรับช่วง AI Assistant
 
-## สถานะล่าสุด — PR1 implementation เสร็จ + รีวิวผ่าน + commit ในเครื่องแล้ว — 2026-09-16 (รอบ 2)
+## สถานะล่าสุด — แก้ Major ledger capacity เสร็จ (per-scope + expired eviction + global backstop) + commit ในเครื่อง — 2026-09-16 (รอบ 3)
+- แก้ Major finding จาก review รอบก่อน (user ที่ผ่าน auth เติม idempotencyKey จน `CAPACITY_EXCEEDED` ทั้ง process): `MemoryIdempotencyStore` เปลี่ยนเป็น ledger แยกตาม scope `Map<scope, Map<key, entry>>` — scope = `JSON.stringify([organizationId, storeId, userId, sessionId])`, entry เก็บ `fingerprint + result + expiresAt`
+- `claim(key, fingerprint, meta: IdempotencyClaimMeta { scope, expiresAt }, execute)` — `createDispatcher` ส่ง scope + `ctx.expiresAt` เข้า store เอง จึง **ไม่ต้องแก้ server.ts**; session หมดอายุถูกปัด `CONTEXT_UNAVAILABLE` ก่อนเข้า store เหมือนเดิม
+- ตัวเลข capacity: `scopeCapacity` default **128 ต่อ session** (เพิ่ม option `scopeCapacity` ใน DispatcherOptions), global backstop default **1000** (คงความหมายเดิมของ `capacity`) — session เดียวเต็มโควตาตัวเองแล้ว fail-closed `CAPACITY_EXCEEDED` เฉพาะ session นั้น ไม่กระทบ session อื่น
+- จุด evict: ตัดสินความจุทั้ง 2 ระดับต้อง evict entry ที่ `expiresAt <= now` ก่อนเสมอ (evictExpired ระดับ scope / evictExpiredAll ระดับ global พร้อมลบ ledger ว่าง); replay ที่ผ่าน gate จะต่ออายุ entry (delete+set ด้วย expiresAt ใหม่) กันโดน evict ก่อนเวลา; atomic claim คงเดิม (ไม่มี await ระหว่าง check กับ insert)
+- Replay/conflict semantics เดิมครบ: same key+same fingerprint → cached structuredClone, ต่าง fingerprint → `IDEMPOTENCY_CONFLICT`, concurrent dedupe execute ครั้งเดียว — pinned tests เดิมทั้งหมดไม่ถูกแก้และผ่าน
+- ผล verify (ตัวเลขจริง หลัง fix findings): targeted `npx vitest run tests/unit/ai-assistant --project unit` = **57/57 ผ่าน exit 0** (config 3, foundation 44 = 35 เดิม + 9 ใหม่, server 10); `npm run typecheck` exit 0; `npx eslint` เฉพาะ foundation.ts + foundation.test.ts exit 0
+- code_reviewer (fallback spawned reviewer) ตรวจ diff: **ไม่พบ Critical/Major**; รับแก้ Minor "refresh expiry on replay" (session ถูกต่ออายุแล้ว entry เก่าต้องไม่โดน evict ก่อนเวลา) + Minor "test timing margin" (+200ms/300ms) + Suggestion เพิ่ม test backstop bind ก่อน scopeCapacity — แก้ครบแล้ว; ไม่รับ Suggestion totalSize counter (O(#scopes) ยังไม่ใช่ hot path)
+- Residual risk ก่อนเปิด endpoint (PR2 ต้องคุม): (1) attacker สร้าง assistant session ใหม่ได้เรื่อย ๆ = scope ใหม่ที่แชร์ global backstop — ต้อง rate limit ที่ route layer ตามข้อ 3 เดิม (2) ไม่มี proactive/background sweep — entry หมดอายุถูก reclaim เมื่อมี pressure เท่านั้น (bounded โดย capacity แล้ว) (3) หน้าต่าง evict ระหว่าง session ถูกต่ออายุโดยไม่มี replay เลยระหว่างนั้น — contract ของ `resolveSession` ควรเลี่ยง extend expiry ด้วย session id เดิมถ้าไม่ยอมรับ re-execute
+- Commit `fix(ai-assistant): bound per-scope idempotency ledger with expired-session eviction` บน branch นี้แล้ว (ไม่ push/merge/deploy)
+
+## สถานะก่อนหน้า — PR1 implementation เสร็จ + รีวิวผ่าน + commit ในเครื่องแล้ว — 2026-09-16 (รอบ 2)
 - `src/modules/ai-assistant/server.ts` เสร็จแล้ว: `createServerAssistantDispatcher({ registry, resolveSession })` + `writeAssistantAudit` — derive identity จาก `getResolvedCurrentPermissions` + billing จาก `getOrganizationBillingState`, ปฏิเสธ browser runtime ก่อนแตะ auth, ตรวจ session mismatch ทุก field, re-read kill switch + re-check permission ทุก dispatch รวม replay, audit allowlist `{ tool, risk, outcome }` ผ่าน `logSystemEvent` เท่านั้น
 - แก้ `foundation.ts` ตามที่ test spec บังคับ: เพิ่ม `MUTATIONS_DISABLED` + `mutationsEnabled` switch (ปิด default, re-check ทุกครั้ง), `canonical()` ปฏิเสธ non-JSON (NaN/Infinity/Date/Map/undefined)
 - แก้ `config.ts`: เพิ่ม `mutationsEnabled: false` ล็อกถาวรใน PR1 ไม่มี env ปลดล็อก
@@ -9,7 +20,7 @@
 - AutoCoder รีวิวอิสระแล้ว (อ่านโค้ดทั้งหมด + รัน targeted tests 48/48 และ typecheck exit 0 ซ้ำเอง) และ commit ในเครื่องบน branch นี้; ยังไม่ push/merge/deploy — รอผู้ใช้ตัดสินใจ
 
 ## สิ่งที่เบี่ยงเบน / การตัดสินใจรอ PR2 (จาก review)
-1. **Major รอตัดสินใจก่อน PR2:** `MemoryIdempotencyStore` ไม่มี eviction — user ที่ผ่าน auth ยิง idempotencyKey ใหม่ ๆ เติม ledger จน `CAPACITY_EXCEEDED` ทั้ง process ได้ (รวม read tool) — ตอนนี้ fail-closed และยังไม่มี endpoint จริง จึงยอมรับไว้; ทางแก้ที่เสนอ: ข้าม claim เมื่อ risk=read (ต้องปรับ foundation.test.ts:45) หรือ capacity ราย session/user — ห้ามเปิด endpoint ก่อนแก้
+1. **Major รอตัดสินใจก่อน PR2 — แก้เรียบร้อยแล้ว (รอบ 3, commit ใหม่ด้านบน):** `MemoryIdempotencyStore` ไม่มี eviction — ทางแก้ที่ใช้คือ capacity ต่อ scope + evict entry ของ session หมดอายุ + global backstop (ไม่ใช่แนวข้าม claim เมื่อ risk=read เพราะทลาย replay semantics); ห้ามเปิด endpoint จนกว่าจะมี route-layer rate limit ตามข้อ 3
 2. **Test gap รอ PR2:** ยังไม่มี test พิสูจน์ server adapter derive environment จาก NODE_ENV (stub NODE_ENV=production + safe_write → DURABLE_STORAGE_REQUIRED); ยังไม่มี audit assertion ฝั่ง failure outcome; การเพิ่ม test ไม่ได้รับอนุญาตใน scope รอบนี้จึงบันทึกไว้
 3. Denial paths ก่อนรู้ context (INVALID_REQUEST/FEATURE_DISABLED/UNKNOWN_TOOL) ไม่ถูก audit — ให้ PR2 คุมที่ route layer (rate limit/monitoring)
 4. ควรพิจารณา `import "server-only"` ใน server.ts เป็น build-time guard เสริม (ตอนนี้มี runtime check `typeof window`)

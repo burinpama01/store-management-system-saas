@@ -60,6 +60,8 @@ interface DispatcherOptions {
   resolveContext: () => Promise<TrustedContext>;
   audit: (metadata: AuditMetadata) => Promise<void>;
   capacity?: number;
+  /** โควตา idempotency ต่อ scope (organization|store|user|session) — session เดียวเต็มแล้ว fail เฉพาะตัวเอง ไม่กระทบ session อื่น */
+  scopeCapacity?: number;
 }
 function canonical(value: unknown): string {
   if (value === null) return "null";
@@ -79,33 +81,92 @@ function canonical(value: unknown): string {
 }
 const fail = (code: ErrorCode): Result => ({ ok: false, code });
 
+/** ขอบเขตโควตาของแต่ละ claim — store แยก ledger ตาม scope และใช้ expiresAt หา entry ที่ evict ได้ */
+export interface IdempotencyClaimMeta {
+  /** กลุ่มโควตา เช่น organization|store|user|session — ต่างกันคือคนละ ledger ไม่แชร์ key และไม่แชร์ capacity */
+  scope: string;
+  /** เวลาหมดอายุของ session เจ้าของ claim (epoch ms) — entry ที่ expiresAt <= now evict ได้ทุกเมื่อ */
+  expiresAt: number;
+}
+
 export interface IdempotencyStore {
   readonly durability: "memory";
-  claim(key: string, fingerprint: string, execute: () => Promise<Result>): Promise<Result>;
+  claim(key: string, fingerprint: string, meta: IdempotencyClaimMeta, execute: () => Promise<Result>): Promise<Result>;
 }
 
-/** ไม่มี eviction/retry อัตโนมัติ เพราะ handler ที่ throw อาจทำ side effect ไปแล้ว */
+interface IdempotencyEntry {
+  fingerprint: string;
+  result: Promise<Result>;
+  expiresAt: number;
+}
+
+/**
+ * Ledger แยกตาม scope (organization|store|user|session): session เดียวเติมเต็มโควตาตัวเองแล้ว fail-closed
+ * เฉพาะ scope นั้น ไม่ลาก session อื่น ส่วน global backstop จำกัดหน่วยความจำรวมเมื่อมี session เยอะ
+ * ทั้งสองชั้นต้อง evict entry ที่หมดอายุ (expiresAt <= now) ก่อนตัดสินว่าเต็ม
+ * Evict ได้เฉพาะ entry ที่ expiresAt <= now เท่านั้น เพราะ dispatcher ปัด context หมดอายุด้วย
+ * CONTEXT_UNAVAILABLE ก่อนถึง store แล้ว และ replay ที่ผ่าน gate จะต่ออายุ entry ด้วย expiresAt ใหม่ทุกครั้ง
+ * จึงไม่มี replay ของ session ที่ยังผ่าน gate ไปเจอ entry ที่ถูก evict (ยกเว้นหน้าต่างที่ session ถูกต่ออายุ
+ * แต่ยังไม่มี replay เลยระหว่างนั้น — ผู้เรียก store ตรง ๆ ต้องรักษากฎนี้เอง)
+ * ยังไม่มี retry อัตโนมัติ เพราะ handler ที่ throw อาจทำ side effect ไปแล้ว
+ */
 export class MemoryIdempotencyStore implements IdempotencyStore {
   readonly durability = "memory" as const;
-  private readonly ledger = new Map<string, { fingerprint: string; result: Promise<Result> }>();
-  constructor(private readonly capacity = 1000) {
+  private readonly ledgers = new Map<string, Map<string, IdempotencyEntry>>();
+  constructor(private readonly capacity = 1000, private readonly scopeCapacity = 128) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) throw Error("Invalid capacity");
+    if (!Number.isSafeInteger(scopeCapacity) || scopeCapacity < 1) throw Error("Invalid scope capacity");
   }
-  async claim(key: string, fingerprint: string, execute: () => Promise<Result>): Promise<Result> {
-    const existing = this.ledger.get(key);
-    if (existing) return existing.fingerprint === fingerprint ? structuredClone(await existing.result) : fail("IDEMPOTENCY_CONFLICT");
-    if (this.ledger.size >= this.capacity) return fail("CAPACITY_EXCEEDED");
+  async claim(key: string, fingerprint: string, meta: IdempotencyClaimMeta, execute: () => Promise<Result>): Promise<Result> {
+    // expiresAt แบบ NaN/Infinity จะไม่มีวันหมดอายุและรั่วถาวร จึงต้องปฏิเสธ (dispatcher ตรวจ finite มาก่อนแล้ว)
+    if (typeof meta?.scope !== "string" || meta.scope.length === 0 || !Number.isFinite(meta.expiresAt)) throw Error("Invalid idempotency claim");
+    const existing = this.ledgers.get(meta.scope)?.get(key);
+    // replay/conflict ตรวจก่อนเสมอ แม้ entry หมดอายุแล้ว — ห้าม execute ซ้ำเมื่อ key+fingerprint เดิม
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) return fail("IDEMPOTENCY_CONFLICT");
+      // replay ผ่าน gate มาได้แปลว่า session ยังมีชีวิตถึง meta.expiresAt จึงต่ออายุ entry กันโดน evict ก่อนเวลา (delete+set คง insertion order)
+      const ledger = this.ledgers.get(meta.scope);
+      if (ledger && meta.expiresAt > existing.expiresAt) {
+        ledger.delete(key);
+        ledger.set(key, { ...existing, expiresAt: meta.expiresAt });
+      }
+      return structuredClone(await existing.result);
+    }
+    const ledger = this.ledgers.get(meta.scope) ?? new Map<string, IdempotencyEntry>();
+    if (ledger.size >= this.scopeCapacity) this.evictExpired(ledger);
+    if (this.totalSize() >= this.capacity) this.evictExpiredAll();
+    if (ledger.size >= this.scopeCapacity || this.totalSize() >= this.capacity) {
+      if (ledger.size === 0) this.ledgers.delete(meta.scope);
+      return fail("CAPACITY_EXCEEDED");
+    }
     // จองก่อน callback เริ่ม จึงไม่มีช่องว่างระหว่าง check กับ insert
     const result = Promise.resolve().then(execute).catch(() => fail("EXECUTION_FAILED"));
-    this.ledger.set(key, { fingerprint, result });
+    ledger.set(key, { fingerprint, result, expiresAt: meta.expiresAt });
+    this.ledgers.set(meta.scope, ledger);
     return structuredClone(await result);
+  }
+  private totalSize(): number {
+    let total = 0;
+    for (const ledger of this.ledgers.values()) total += ledger.size;
+    return total;
+  }
+  private evictExpired(ledger: Map<string, IdempotencyEntry>): void {
+    const now = Date.now();
+    for (const [key, entry] of ledger) if (entry.expiresAt <= now) ledger.delete(key);
+  }
+  private evictExpiredAll(): void {
+    const now = Date.now();
+    for (const [scope, ledger] of this.ledgers) {
+      for (const [key, entry] of ledger) if (entry.expiresAt <= now) ledger.delete(key);
+      if (ledger.size === 0) this.ledgers.delete(scope);
+    }
   }
 }
 
-/** In-memory ledger ไม่มี eviction: เต็มแล้วปฏิเสธ แทนเสี่ยง execute write ซ้ำ */
+/** In-memory ledger: capacity ต่อ scope + evict session หมดอายุ + global backstop — เต็มจริงแล้วจึงปฏิเสธ แทนเสี่ยง execute write ซ้ำ */
 export function createDispatcher(options: DispatcherOptions): (request: unknown) => Promise<Result> {
   // PR1 ไม่รับ durable:true หรือ external store เพื่อปลด production write
-  const store: IdempotencyStore = new MemoryIdempotencyStore(options.capacity);
+  const store: IdempotencyStore = new MemoryIdempotencyStore(options.capacity, options.scopeCapacity);
   return async request => {
     const parsed = envelope.safeParse(request);
     if (!parsed.success) return fail("INVALID_REQUEST");
@@ -140,9 +201,9 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       if (!args.success) return audit(fail("INVALID_ARGS"));
       let fingerprint: string;
       try { fingerprint = createHash("sha256").update(canonical({ tool: tool.name, args: args.data })).digest("hex"); } catch { return audit(fail("INVALID_ARGS")); }
-      // tool อยู่ใน fingerprint เพื่อให้ reuse key ข้าม tool เป็น conflict
-      const key = JSON.stringify([ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId, parsed.data.idempotencyKey]);
-      const result = await store.claim(key, fingerprint, async (): Promise<Result> => {
+      // tool อยู่ใน fingerprint เพื่อให้ reuse key ข้าม tool เป็น conflict; scope แยกโควตา/eviction ต่อ org|store|user|session
+      const scope = JSON.stringify([ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId]);
+      const result = await store.claim(parsed.data.idempotencyKey, fingerprint, { scope, expiresAt: ctx.expiresAt }, async (): Promise<Result> => {
         try {
           const raw = await tool.execute(args.data, ctx);
           const output = tool.result.safeParse(raw);
