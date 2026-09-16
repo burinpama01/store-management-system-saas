@@ -8,6 +8,9 @@ import type { Cart } from "@/modules/pos/types";
 /** เพดานความยาวข้อความ — ตรงกับ route (VOICE_INTENT_MAX_UTTERANCE) แต่ค่าคงที่นี้ใช้ฝั่ง client ได้ */
 export const TEXT_COMMAND_MAX_LENGTH = 500;
 
+/** รูปแบบ activeCartId ที่ route/session ยอมรับ — จุดเดียวของฝั่ง client (M4 review) */
+export const ASSISTANT_CART_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+
 export interface AssistantCandidate {
   readonly id: string;
   readonly name: string;
@@ -102,7 +105,7 @@ export function describeDenialCode(code: string): string {
   }
   switch (code) {
     case "CONTEXT_UNAVAILABLE":
-      return "ยังผูกตะกร้าไม่ได้ — ปิดแล้วเปิดผู้ช่วยใหม่อีกครั้ง";
+      return "ยังผูกตะกร้าไม่ได้ — แท็บหรืออุปกรณ์อื่นของบัญชีนี้อาจกำลังใช้ผู้ช่วยอยู่ ใช้แท็บเดิมหรือลองใหม่ภายหลัง";
     case "IDEMPOTENCY_CONFLICT":
       return "คำสั่งนี้ส่งมาแล้วด้วยเนื้อหาต่างกัน — ลองพิมพ์ใหม่";
     case "CAPACITY_EXCEEDED":

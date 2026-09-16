@@ -21,6 +21,7 @@ import {
 import type { Cart } from "@/modules/pos/types";
 import type { Product } from "@/modules/catalog/types";
 import {
+  ASSISTANT_CART_ID_PATTERN,
   cartFingerprint,
   createAssistantCartId,
   createAssistantRequestId,
@@ -70,11 +71,21 @@ export interface TextAssistantState {
   readonly busy: boolean;
   /** null = ไม่มีอะไรให้ย้อน (หรือหมดเวลา/ถูกปฏิเสธไปแล้ว) */
   readonly undo: { readonly label: string; readonly expiresAt: number } | null;
+  /** ตัวนับ version ล่าสุด — ผู้เรียกใช้เก็บคู่กับ cartId เพื่อให้ remount ยังผูก session เดิมได้ */
+  readonly cartVersion: number;
 }
 
 export interface TextAssistantCoreDeps {
   readonly getCartApi: () => AssistantCartBridge | null;
   readonly sendCommand: (body: TextCommandRequestBody) => Promise<TextCommandResponse>;
+  /**
+   * id ตะกร้า + version ที่เคยใช้ (เช่น จาก sessionStorage ต่อแท็บ) — reuse เพื่อให้ reload/กลับมา
+   * หน้าเดิมยังผูก session เดิมได้: server ผูกตะกร้า 1 ใบต่อ session และปฏิเสธ version ย้อนหลัง
+   * (id ใหม่/version เคาะกลับทุก mount = โดน CONTEXT_UNAVAILABLE จนครบ TTL)
+   * รูปแบบไม่ตรงที่ server รับ = สร้าง/เริ่มใหม่ทันที (fail closed)
+   */
+  readonly cartId?: string;
+  readonly initialCartVersion?: number;
   /** คำเรียกเมนูของร้าน (ชุดเดียวกับ Voice POS) — อ่านตอน apply แต่ละครั้ง */
   readonly getProductAliases?: () => readonly VoiceProductAlias[];
   /** กลับไปแท็บขายหลังแก้ตะกร้า/เปิด dialog สินค้า (พฤติกรรมเดียวกับเสียง) */
@@ -106,18 +117,27 @@ export function createTextAssistantCore(deps: TextAssistantCoreDeps): TextAssist
   let undoToken: VoiceUndoToken | null = null;
   /** fingerprint ของตะกร้า "หลังการแก้ล่าสุดที่ผู้ช่วยทำ" — เทียบก่อน undo ทุกครั้ง */
   let appliedFingerprint: string | null = null;
-  /** ตัวนับ cartVersion ฝั่ง client — ส่งขึ้น server ได้เฉพาะค่าที่ไต่ขึ้น (session ห้ามย้อนหลัง) */
-  let cartVersion = 0;
+  /**
+   * ตัวนับ cartVersion ฝั่ง client — ไต่ขึ้นอย่างเดียว (server ห้ามย้อนหลัง) และเริ่มจากค่า
+   * ที่ผู้เรียกเคยเก็บไว้ เพื่อให้ remount ยังส่ง version ที่ไม่ต่ำกว่าที่ server เคยเห็น
+   */
+  const activeCartId = typeof deps.cartId === "string" && ASSISTANT_CART_ID_PATTERN.test(deps.cartId)
+    ? deps.cartId
+    : createAssistantCartId();
+  const startCartVersion = typeof deps.initialCartVersion === "number"
+    && Number.isSafeInteger(deps.initialCartVersion)
+    && deps.initialCartVersion > 0
+    ? deps.initialCartVersion
+    : 0;
+  let cartVersion = startCartVersion;
   let requestSequence = 0;
   let entrySequence = 0;
-  /** activeCartId ของ terminal นี้ — คงเส้นตายตามอายุของ core (1 mount = 1 ใบ) */
-  const activeCartId = createAssistantCartId();
 
   const listeners = new Set<() => void>();
-  let snapshot: TextAssistantState = { entries, busy, undo };
+  let snapshot: TextAssistantState = { entries, busy, undo, cartVersion };
 
   function notify(): void {
-    snapshot = { entries, busy, undo };
+    snapshot = { entries, busy, undo, cartVersion };
     for (const listener of listeners) listener();
   }
 

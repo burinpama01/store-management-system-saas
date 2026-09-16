@@ -31,12 +31,18 @@ async function loadRoute(options: Options = {}) {
     planHasAi = true,
     aiEnabled = true,
     quotaGranted = true,
+    quotaThrows = false,
     assistantEnabled = true,
     interpret = { ok: true, envelope, tokens: 88 },
   } = options;
 
   vi.resetModules();
-  const reserveQuota = vi.fn().mockResolvedValue({ granted: quotaGranted });
+  const reserveQuota = vi.fn();
+  if (quotaThrows) {
+    reserveQuota.mockRejectedValue(new Error("quota store down"));
+  } else {
+    reserveQuota.mockResolvedValue({ granted: quotaGranted });
+  }
   const settleUsage = vi.fn().mockResolvedValue({ ok: true, error: null });
   const interpretVoiceIntent = vi.fn().mockResolvedValue(interpret);
   const logSystemEvent = vi.fn().mockResolvedValue(undefined);
@@ -77,6 +83,7 @@ interface Options {
   planHasAi?: boolean;
   aiEnabled?: boolean;
   quotaGranted?: boolean;
+  quotaThrows?: boolean;
   assistantEnabled?: boolean;
   interpret?: unknown;
 }
@@ -175,6 +182,15 @@ describe("text command route gates", () => {
     expect(body.note).toBeTruthy();
     expect(JSON.stringify(body)).not.toContain("ขออะไรแปลก");
     expect(route.settleUsage).not.toHaveBeenCalled();
+  });
+
+  it("answers typed ai_error instead of a 500 when the quota infra throws (M4 review)", async () => {
+    const route = await loadRoute({ quotaThrows: true });
+    const response = await route.route.POST(post({ ...textBody, text: "ขออะไรแปลก ๆ หน่อยครับ" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, failure: "ai_error" });
+    expect(JSON.stringify(body)).not.toContain("ขออะไรแปลก");
   });
 
   it("denies quota exhaustion as its own reason", async () => {

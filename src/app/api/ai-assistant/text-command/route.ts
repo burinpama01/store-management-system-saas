@@ -86,6 +86,15 @@ const FAILURE_NOTES: Record<string, string> = {
   ai_invalid_output: "แปลคำสั่งไม่สำเร็จ — ลองพิมพ์ใหม่แบบสั้น ๆ",
 };
 
+/** จ่ายโควตา/บันทึก event พัง = ไม่เปลี่ยนผลลัพธ์ของ request (M4 review — กัน 500 ที่ไม่มี reason) */
+async function safely(action: () => Promise<unknown>): Promise<void> {
+  try {
+    await action();
+  } catch {
+    // infra outage — ผู้เรียกตอบ typed reason แทน
+  }
+}
+
 /** เรียก provider ผ่าน quota เดิมของระบบ (reserve ก่อนเรียก, settle หลังรู้ผล) — เหมือนเส้นทางเสียง */
 async function callTextProvider(input: {
   readonly text: string;
@@ -95,14 +104,6 @@ async function callTextProvider(input: {
   readonly requestId: string;
 }): Promise<{ ok: true; envelope: AiVoiceIntentEnvelope } | { ok: false; reason: TextFailureReason }> {
   const requestHash = createHash("sha256").update(input.requestId).digest("hex").slice(0, 16);
-  const reserve = await reserveQuota({
-    organizationId: input.organizationId,
-    requestId: input.requestId,
-    feature: QUOTA_FEATURE,
-    maxTokens: AI_MAX_OUTPUT_TOKENS,
-  });
-  if (!reserve.granted) return { ok: false, reason: "quota_denied" };
-  const result = await interpretTextIntent({ text: input.text, locale: "th-TH", approvedModelId: AI_DEFAULT_MODEL });
   const settleBase = {
     organizationId: input.organizationId,
     requestId: input.requestId,
@@ -112,12 +113,51 @@ async function callTextProvider(input: {
     userId: input.userId,
     requestHash,
   } as const;
+  try {
+    const reserve = await reserveQuota({
+      organizationId: input.organizationId,
+      requestId: input.requestId,
+      feature: QUOTA_FEATURE,
+      maxTokens: AI_MAX_OUTPUT_TOKENS,
+    });
+    if (!reserve.granted) return { ok: false, reason: "quota_denied" };
+  } catch {
+    // ระบบโควตาล่ม — ตอบ typed failure ไม่ปล่อยเป็น 500 (log เฉพาะ reason กันช่องว่าง troubleshooting)
+    await safely(() => logSystemEvent({
+      level: "warn",
+      source: "ai.assistant",
+      action: "textCommand",
+      message: "ระบบโควตา AI มีปัญหา (ai_error)",
+      organizationId: input.organizationId,
+      storeId: input.storeId,
+      actorUserId: input.userId,
+      context: { reason: "ai_error", mode: "text", stage: "quota_reserve" },
+    }));
+    return { ok: false, reason: "ai_error" };
+  }
+  let result: Awaited<ReturnType<typeof interpretTextIntent>>;
+  try {
+    result = await interpretTextIntent({ text: input.text, locale: "th-TH", approvedModelId: AI_DEFAULT_MODEL });
+  } catch {
+    await safely(() => settleUsage({ ...settleBase, tokens: 0, status: "error" }));
+    await safely(() => logSystemEvent({
+      level: "warn",
+      source: "ai.assistant",
+      action: "textCommand",
+      message: "แปลคำสั่งข้อความด้วย AI ไม่สำเร็จ (ai_error)",
+      organizationId: input.organizationId,
+      storeId: input.storeId,
+      actorUserId: input.userId,
+      context: { reason: "ai_error", mode: "text" },
+    }));
+    return { ok: false, reason: "ai_error" };
+  }
   if (!result.ok) {
     // timeout คง reservation ไว้ให้ reconcile ตาม convention ของ quota module
     if (result.reason !== "ai_timeout") {
-      await settleUsage({ ...settleBase, tokens: 0, status: result.reason === "ai_disabled" ? "denied" : "error" });
+      await safely(() => settleUsage({ ...settleBase, tokens: 0, status: result.reason === "ai_disabled" ? "denied" : "error" }));
     }
-    await logSystemEvent({
+    await safely(() => logSystemEvent({
       level: "warn",
       source: "ai.assistant",
       action: "textCommand",
@@ -126,10 +166,10 @@ async function callTextProvider(input: {
       storeId: input.storeId,
       actorUserId: input.userId,
       context: { reason: result.reason, mode: "text" },
-    });
+    }));
     return result;
   }
-  await settleUsage({ ...settleBase, tokens: result.tokens, status: "ok" });
+  await safely(() => settleUsage({ ...settleBase, tokens: result.tokens, status: "ok" }));
   return { ok: true, envelope: result.envelope };
 }
 

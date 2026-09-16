@@ -94,4 +94,32 @@ describe("foundation cart binding gate (PR2)", () => {
     expect(await s.dispatch(request())).toEqual({ ok: false, code: "CONTEXT_UNAVAILABLE" });
     expect(s.execute).toHaveBeenCalledTimes(1);
   });
+
+  it("does not record cart binding for safe_write commands the mutation gate denies (M4 review)", async () => {
+    const ctx: TrustedContext = { organizationId: "org", storeId: "store", userId: "user", sessionId: "session", expiresAt: Date.now() + 60000, allowedTools: ["test.write"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true };
+    const bindingCalls = vi.fn(async (): Promise<CartBinding | null> => ({ activeCartId: "cart-12345678", cartVersion: 1 }));
+    const execute = vi.fn(async () => ({ ok: true }));
+    const registry = new ToolRegistry("test");
+    registry.register({
+      name: "test.write",
+      risk: "safe_write",
+      permissions: [],
+      requiresActiveCart: true,
+      args: z.object({}).strict(),
+      result: z.object({ ok: z.boolean() }),
+      execute,
+    });
+    const dispatch = createDispatcher({
+      registry,
+      enabled: true,
+      environment: "test",
+      mutationsEnabled: false,
+      resolveContext: async () => ctx,
+      audit: vi.fn(async () => {}),
+      resolveCartBinding: bindingCalls,
+    });
+    expect(await dispatch({ tool: "test.write", args: {}, idempotencyKey: "w1" })).toEqual({ ok: false, code: "MUTATIONS_DISABLED" });
+    expect(bindingCalls).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
 });

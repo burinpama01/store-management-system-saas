@@ -207,18 +207,20 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       if (tool.risk !== "read" && tool.risk !== "safe_write") return audit(fail("RISK_BLOCKED"));
       const args = tool.args.safeParse(parsed.data.args);
       if (!args.success) return audit(fail("INVALID_ARGS"));
+      // PR2 (M4 review) — เกต mutation ต้องมาก่อนการผูกตะกร้า: คำสั่งเขียนที่ถูกปฏิเสธ
+      // ต้องไม่ทำให้ session ผูก cartId (binding เป็น side effect ของ session store)
+      if (tool.risk === "safe_write" && options.environment === "production") return audit(fail("DURABLE_STORAGE_REQUIRED"));
+      if (tool.risk === "safe_write") {
+        let mutationsEnabled: boolean;
+        try { mutationsEnabled = (typeof options.mutationsEnabled === "function" ? options.mutationsEnabled() : options.mutationsEnabled) === true; } catch { mutationsEnabled = false; }
+        if (!mutationsEnabled) return audit(fail("MUTATIONS_DISABLED"));
+      }
       // PR2 — tool ที่ต้องมี active cart: ไม่มี trusted resolver หรือตรวจไม่ผ่าน = ปฏิเสธก่อน execute เสมอ
       let cartBinding: CartBinding | null = null;
       if (tool.requiresActiveCart) {
         if (!options.resolveCartBinding) return audit(fail("CONTEXT_UNAVAILABLE"));
         try { cartBinding = await options.resolveCartBinding(ctx, args.data); } catch { cartBinding = null; }
         if (!cartBinding) return audit(fail("CONTEXT_UNAVAILABLE"));
-      }
-      if (tool.risk === "safe_write" && options.environment === "production") return audit(fail("DURABLE_STORAGE_REQUIRED"));
-      if (tool.risk === "safe_write") {
-        let mutationsEnabled: boolean;
-        try { mutationsEnabled = (typeof options.mutationsEnabled === "function" ? options.mutationsEnabled() : options.mutationsEnabled) === true; } catch { mutationsEnabled = false; }
-        if (!mutationsEnabled) return audit(fail("MUTATIONS_DISABLED"));
       }
       let fingerprint: string;
       try { fingerprint = createHash("sha256").update(canonical({ tool: tool.name, args: args.data })).digest("hex"); } catch { return audit(fail("INVALID_ARGS")); }

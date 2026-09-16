@@ -68,6 +68,24 @@ describe("text interpreter (deterministic → AI fallback)", () => {
     expect(outcome).toMatchObject({ ok: true, source: "deterministic", commands: [] });
     expect(s.callProvider).not.toHaveBeenCalled();
   });
+
+  it("answers voice-dialog commands deterministically instead of spending AI quota (M4 review)", async () => {
+    const s = setupInterpreter();
+    // "ยืนยัน" ของเสียง = pos.confirm_selection — โหมดข้อความไม่มี dialog ให้ยืนยัน
+    const outcome = await s.interpret("ยืนยัน");
+    expect(outcome).toMatchObject({ ok: true, source: "deterministic", commands: [] });
+    if (outcome.ok) expect(outcome.note).toContain("โหมดข้อความ");
+    expect(s.callProvider).not.toHaveBeenCalled();
+  });
+
+  it("still routes 'ขอ…' ordering phrases to the AI fallback (parser reads them as option choices)", async () => {
+    // M4 review — "ขอชาเขียวมะนาวหนึ่งแก้ว" ถูก parser อ่านเป็น choose_option แต่มันคือคำสั่งสั่งของ
+    // ต้องยังถึงทางสำรอง AI เพื่อแปลงเป็น add_item ห้ามตอบ "ใช้หน้าจอแทน"
+    const s = setupInterpreter({ provider: vi.fn(async () => ({ ok: true as const, envelope: envelope([cmd({ productPhrase: "ชาเขียวมะนาว", quantity: 1 })]) })) });
+    const outcome = await s.interpret("ขอชาเขียวมะนาวหนึ่งแก้วครับ");
+    expect(s.callProvider).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ ok: true, source: "ai" });
+  });
 });
 
 describe("text command runner", () => {

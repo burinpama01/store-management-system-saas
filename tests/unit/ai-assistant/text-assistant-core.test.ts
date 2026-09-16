@@ -75,6 +75,8 @@ function createCore(options: {
   bridge: AssistantCartBridge | null;
   respond?: (body: TextCommandRequestBody) => Promise<TextCommandResponse> | TextCommandResponse;
   aliases?: readonly VoiceProductAlias[];
+  cartId?: string;
+  initialCartVersion?: number;
   now?: { value: number };
 }) {
   const now = options.now ?? { value: 1_000_000 };
@@ -83,6 +85,8 @@ function createCore(options: {
     options.respond ? await options.respond(body) : { ok: true as const, outcomes: [] },
   );
   const core = createTextAssistantCore({
+    cartId: options.cartId,
+    initialCartVersion: options.initialCartVersion,
     getCartApi: () => options.bridge,
     sendCommand,
     getProductAliases: () => options.aliases ?? [],
@@ -121,6 +125,38 @@ describe("fail closed", () => {
     expect(sendCommand).not.toHaveBeenCalled();
     expect(core.cartId).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
     expect(core.getState().entries).toHaveLength(0);
+  });
+
+  it("reuses a supplied cart id so remounts keep the server binding (M4 review)", async () => {
+    const bridge = createBridge();
+    const { core, sendCommand } = createCore({ bridge: bridge.api, cartId: "cart-stored-12345678" });
+    await core.send("เพิ่มลาเต้ 2 แก้ว");
+    expect(sendCommand.mock.calls[0][0].activeCartId).toBe("cart-stored-12345678");
+  });
+
+  it("resumes from the stored cart version so reloads never send a lower one (M4 review)", async () => {
+    const bridge = createBridge();
+    // reload หลังใช้สำเร็จ 2 ครั้ง: server คง lastCartVersion=2 — core ใหม่ต้องเริ่มที่ 2 ไม่ใช่ 0
+    const { core, sendCommand } = createCore({
+      bridge: bridge.api,
+      cartId: "cart-stored-12345678",
+      initialCartVersion: 2,
+      respond: () => ({ ok: true, outcomes: [applyOutcome(addIntent("ลาเต้", 2), "ลาเต้")] }),
+    });
+    expect(core.getState().cartVersion).toBe(2);
+    await core.send("เพิ่มลาเต้ 2 แก้ว");
+    expect(sendCommand.mock.calls[0][0].cartVersion).toBe(2);
+    expect(core.getState().cartVersion).toBe(3); // apply สำเร็จแล้วไต่ขึ้น — ผู้เรียกจดกลับ storage ต่อ
+  });
+
+  it("falls back to a fresh id and version 0 when the stored ones are malformed", async () => {
+    const bridge = createBridge();
+    const { core, sendCommand } = createCore({ bridge: bridge.api, cartId: "bad id!!", initialCartVersion: -5 });
+    await core.send("เพิ่มลาเต้");
+    expect(core.cartId).not.toBe("bad id!!");
+    expect(core.cartId).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
+    expect(sendCommand.mock.calls[0][0].activeCartId).toBe(core.cartId);
+    expect(sendCommand.mock.calls[0][0].cartVersion).toBe(0);
   });
 
   it("reports a network failure as a retryable message", async () => {

@@ -34,11 +34,17 @@ export function createTextInterpreter(deps: TextInterpreterDeps): (text: string)
     if (fast.resultCode === "matched") {
       const command = voiceIntentToAiCommand(fast.intent);
       if (command) return { ok: true, source: "deterministic", commands: [command] };
+      // navigate/confirm_selection ตอบ deterministic ได้ทันที (โหมดข้อความไม่มี dialog/การนำทาง)
+      // ส่วน choose_option/change_option ต้องยังลงไปถึงทางสำรอง AI — parser จับคำสั่งสั่งของ
+      // "ขอชาเขียวมะนาวหนึ่งแก้ว" เป็น choose_option ซึ่ง AI ช่วยแปลงเป็น add_item ได้ (M4 review)
+      if (fast.intent.type === "navigate" || fast.intent.type === "pos.confirm_selection") {
+        return { ok: true, source: "deterministic", commands: [], note: unsupportedIntentNote(fast.intent.type) };
+      }
     }
     if (fast.resultCode === "invalid_quantity") {
       return { ok: true, source: "deterministic", commands: [], note: "จำนวนไม่ถูกต้อง — ระบุจำนวน 1 ถึง 99" };
     }
-    // no_match / low_confidence / matched-but-ไม่รองรับในโหมดข้อความ → ทางสำรอง AI
+    // no_match / low_confidence → ทางสำรอง AI
     if (!deps.aiEnabled()) return { ok: false, reason: "ai_disabled" };
     const provider = await deps.callProvider(text);
     if (!provider.ok) return { ok: false, reason: provider.reason };
@@ -49,6 +55,14 @@ export function createTextInterpreter(deps: TextInterpreterDeps): (text: string)
     if (validated.source === "ai") return { ok: true, source: "ai", commands: validated.envelope.commands };
     return { ok: false, reason: "ai_error" };
   };
+}
+
+/** ข้อความของ intent ที่ deterministic เข้าใจแต่โหมดข้อความไม่รองรับ — บอกทางออกเสมอ */
+function unsupportedIntentNote(intentType: string): string {
+  if (intentType === "navigate") {
+    return "การนำทางยังใช้ปุ่มเดิม — โหมดข้อความรองรับคำสั่งตะกร้า เช่น “เพิ่มลาเต้ 2 แก้ว”";
+  }
+  return "ยังไม่มีอะไรให้ยืนยันในโหมดข้อความ — พิมพ์คำสั่งตะกร้าได้เลย เช่น “เพิ่มลาเต้ 2 แก้ว”";
 }
 
 function voiceIntentToAiCommand(intent: VoiceIntent): AiVoiceCommand | null {

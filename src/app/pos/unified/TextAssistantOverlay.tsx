@@ -18,7 +18,7 @@ import {
   type TextCommandRequestBody,
   type TextCommandResponse,
 } from "@/modules/ai-assistant/ui/text-assistant-core";
-import { TEXT_COMMAND_MAX_LENGTH } from "@/modules/ai-assistant/ui/text-assistant-ui";
+import { createAssistantCartId, ASSISTANT_CART_ID_PATTERN, TEXT_COMMAND_MAX_LENGTH } from "@/modules/ai-assistant/ui/text-assistant-ui";
 
 export interface TextAssistantOverlayProps {
   /** คำเรียกเมนูของร้าน — ชุดเดียวกับ Voice POS (ผ่านให้ applyVoiceCartIntent) */
@@ -31,6 +31,40 @@ function readReason(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const reason = (payload as { reason?: unknown }).reason;
   return typeof reason === "string" && reason.length > 0 ? reason : null;
+}
+
+// binding ของแท็บเก็บต่อแท็บใน sessionStorage — reload/นำทางกลับมา = ใช้ id + version เดิมแล้ว
+// server ยังผูก session เดิมให้ (session ผูกตะกร้า 1 ใบตลอดอายุ และปฏิเสธ version ย้อนหลัง)
+// ถ้า version เคาะกลับมา 0 ทุก mount ผู้ช่วยจะโดน CONTEXT_UNAVAILABLE จนครบ TTL 30 นาที (M4 review)
+const CART_ID_STORAGE_KEY = "ai-assistant:active-cart-binding";
+
+interface StoredCartBinding {
+  readonly cartId: string;
+  readonly cartVersion: number;
+}
+
+function readStoredBinding(): StoredCartBinding | null {
+  try {
+    const raw = sessionStorage.getItem(CART_ID_STORAGE_KEY);
+    if (typeof raw !== "string" || raw.length === 0) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const cartId = (parsed as { cartId?: unknown }).cartId;
+    const cartVersion = (parsed as { cartVersion?: unknown }).cartVersion;
+    if (typeof cartId !== "string" || !ASSISTANT_CART_ID_PATTERN.test(cartId)) return null;
+    if (typeof cartVersion !== "number" || !Number.isSafeInteger(cartVersion) || cartVersion < 0) return null;
+    return { cartId, cartVersion };
+  } catch {
+    return null; // โหมดส่วนตัว/JSON พัง — เริ่ม binding ใหม่ได้
+  }
+}
+
+function writeStoredBinding(binding: StoredCartBinding): void {
+  try {
+    sessionStorage.setItem(CART_ID_STORAGE_KEY, JSON.stringify(binding));
+  } catch {
+    // เขียนไม่ได้ = ยอมรับ binding ชั่วคราว (fail ฝั่งความจำ ไม่กระทบความถูกต้อง)
+  }
 }
 
 /** ตัวเรียกจริงของแผง — HTTP ไม่ 200 / JSON พัง = reason ตัวเดียว ไม่ปล่อยข้อความดิบเข้า UI */
@@ -70,10 +104,16 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell }: TextA
   });
   const getProductAliases = useCallback(() => liveProps.current.productAliases, []);
   const notifyFocusSell = useCallback(() => liveProps.current.onFocusSell?.(), []);
-  const [state, setState] = useState<TextAssistantState>({ entries: [], busy: false, undo: null });
+  const [state, setState] = useState<TextAssistantState>({ entries: [], busy: false, undo: null, cartVersion: 0 });
   useEffect(() => {
     if (!coreRef.current) {
+      // reuse binding เดิมของแท็บถ้ามี (รูปแบบไม่ผ่าน = core สร้างใหม่เอง) แล้วจดไว้สำหรับ mount ถัดไป
+      const stored = readStoredBinding();
+      const cartId = stored?.cartId ?? createAssistantCartId();
+      writeStoredBinding({ cartId, cartVersion: stored?.cartVersion ?? 0 });
       coreRef.current = createTextAssistantCore({
+        cartId,
+        initialCartVersion: stored?.cartVersion ?? 0,
         getCartApi,
         sendCommand: sendTextCommand,
         getProductAliases,
@@ -81,7 +121,11 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell }: TextA
       });
     }
     const core = coreRef.current;
-    return core.subscribe(() => setState(core.getState()));
+    return core.subscribe(() => {
+      // version ไต่ขึ้นทุกครั้งที่แก้ตะกร้าสำเร็จ — จดกลับ storage ทุกจังหวะ state เปลี่ยน
+      setState(core.getState());
+      writeStoredBinding({ cartId: core.cartId, cartVersion: core.getState().cartVersion });
+    });
   }, [getCartApi, getProductAliases, notifyFocusSell]);
 
   // นาฬิกาเดินเฉพาะตอนมี undo ค้าง — ค่าที่แสดงคำนวณจากเวลาที่ re-render ล่าสุด

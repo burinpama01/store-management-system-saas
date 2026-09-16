@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VOICE_INTENT_MAX_UTTERANCE } from "@/modules/ai/voice-intent";
 import {
   MUTATION_CLOSED_CODES,
   TEXT_COMMAND_MAX_LENGTH,
@@ -126,8 +127,9 @@ describe("ids and fingerprint", () => {
     expect(cartFingerprint(edited)).not.toBe(cartFingerprint(CART));
   });
 
-  it("keeps the text length cap in sync with the route limit", () => {
-    expect(TEXT_COMMAND_MAX_LENGTH).toBe(500);
+  it("mirrors the server-side utterance limit exactly (M4 review)", () => {
+    // ค่าฝั่ง client ต้องไปกับค่าที่ route ตรวจ (VOICE_INTENT_MAX_UTTERANCE) — เพดานคนละค่า = ผู้ใช้พิมพ์เกินแล้วเจอ 400 ไม่รู้เหตุผล
+    expect(TEXT_COMMAND_MAX_LENGTH).toBe(VOICE_INTENT_MAX_UTTERANCE);
   });
 });
 
