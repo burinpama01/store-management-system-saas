@@ -24,6 +24,87 @@ const products = [
 
 const CART = "cart-12345678";
 
+// PR3 — fake supabase client สำหรับตาราง ai_assistant_actions (pattern เดียวกับ
+// durable-idempotency.test.ts แต่ฉบับย่อ: unique (org, key) + filter eq/lte/in + maybeSingle)
+// route ผูก DurableIdempotencyStore เข้า dispatcher แล้ว จึงต้อง mock service client เสมอ
+type FakeRow = {
+  id: string;
+  organization_id: string;
+  store_id: string;
+  user_id: string;
+  session_id: string;
+  idempotency_key: string;
+  tool: string;
+  fingerprint: string;
+  status: string;
+  result: unknown;
+  created_at: string;
+  expires_at: string;
+};
+
+function createFakeActionsDb() {
+  const rows: FakeRow[] = [];
+  type Filter = { op: "eq" | "lte" | "in"; col: string; val: unknown };
+  const cell = (row: FakeRow, col: string): unknown => (row as unknown as Record<string, unknown>)[col];
+  const matches = (row: FakeRow, filters: Filter[]): boolean => filters.every((filter) => {
+    if (filter.op === "eq") return cell(row, filter.col) === filter.val;
+    if (filter.op === "in") return Array.isArray(filter.val) && (filter.val as unknown[]).includes(cell(row, filter.col));
+    return Date.parse(String(cell(row, filter.col))) <= Date.parse(String(filter.val));
+  });
+  function makeChain(state: { op: "select" | "insert" | "update" | "delete"; values?: Partial<FakeRow>; filters: Filter[]; selected: boolean; single: boolean; maybeSingle: boolean; limitCount?: number }) {
+    const run = async (): Promise<{ data: unknown; error: { code?: string; message: string } | null }> => {
+      if (state.op === "insert") {
+        const values = state.values as FakeRow;
+        if (rows.some((row) => row.organization_id === values.organization_id && row.idempotency_key === values.idempotency_key)) {
+          return { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } };
+        }
+        rows.push({ ...values });
+        return { data: null, error: null };
+      }
+      if (state.op === "update") {
+        for (const row of rows) if (matches(row, state.filters)) Object.assign(row, state.values);
+        return { data: null, error: null };
+      }
+      if (state.op === "delete") {
+        const doomed = rows.filter((row) => matches(row, state.filters));
+        const limited = state.limitCount !== undefined ? doomed.slice(0, state.limitCount) : doomed;
+        for (const row of limited) rows.splice(rows.indexOf(row), 1);
+        return { data: state.selected ? limited.map((row) => ({ id: row.id })) : null, error: null };
+      }
+      const found = rows.filter((row) => matches(row, state.filters));
+      const limited = state.limitCount !== undefined ? found.slice(0, state.limitCount) : found;
+      if (state.single || state.maybeSingle) return { data: limited[0] ?? null, error: null };
+      return { data: limited, error: null };
+    };
+    const chain = {
+      select: () => { state.selected = true; return chain; },
+      eq: (col: string, val: unknown) => { state.filters.push({ op: "eq", col, val }); return chain; },
+      lte: (col: string, val: unknown) => { state.filters.push({ op: "lte", col, val }); return chain; },
+      in: (col: string, val: unknown[]) => { state.filters.push({ op: "in", col, val }); return chain; },
+      limit: (n: number) => { state.limitCount = n; return chain; },
+      single: () => { state.single = true; return chain; },
+      maybeSingle: () => { state.maybeSingle = true; return chain; },
+      then: (onFulfilled?: (value: { data: unknown; error: { code?: string; message: string } | null }) => unknown, onRejected?: (reason: unknown) => unknown) =>
+        Promise.resolve().then(run).then(onFulfilled, onRejected),
+    };
+    return chain;
+  }
+  const client = {
+    from(table: string) {
+      if (table !== "ai_assistant_actions") throw Error(`fake db: unexpected table ${table}`);
+      const state: { op: "select" | "insert" | "update" | "delete"; values: Partial<FakeRow> | undefined; filters: Filter[]; selected: boolean; single: boolean; maybeSingle: boolean; limitCount: number | undefined } = { op: "select", values: undefined, filters: [], selected: false, single: false, maybeSingle: false, limitCount: undefined };
+      const chain = makeChain(state);
+      return {
+        select: () => chain.select(),
+        insert: (values: FakeRow) => { state.op = "insert"; state.values = values; return chain; },
+        update: (values: Partial<FakeRow>) => { state.op = "update"; state.values = values; return chain; },
+        delete: () => { state.op = "delete"; return chain; },
+      };
+    },
+  };
+  return { rows, client };
+}
+
 async function loadRoute(options: Options = {}) {
   const {
     authed = true,
@@ -33,6 +114,8 @@ async function loadRoute(options: Options = {}) {
     quotaGranted = true,
     quotaThrows = false,
     assistantEnabled = true,
+    nodeEnv = "test",
+    mutationsEnabled = false,
     interpret = { ok: true, envelope, tokens: 88 },
   } = options;
 
@@ -47,6 +130,7 @@ async function loadRoute(options: Options = {}) {
   const interpretVoiceIntent = vi.fn().mockResolvedValue(interpret);
   const logSystemEvent = vi.fn().mockResolvedValue(undefined);
   const loadCatalog = vi.fn(async () => ({ products, aliases: [] }));
+  const db = createFakeActionsDb();
 
   vi.doMock("@/modules/auth/guards", () => ({
     getResolvedCurrentPermissions: vi
@@ -70,11 +154,18 @@ async function loadRoute(options: Options = {}) {
     return { ...actual, interpretVoiceIntent };
   });
   vi.doMock("@/modules/ai-assistant/tools/pos-tools-server", () => ({ createServerPosToolDeps: () => ({ loadCatalog }) }));
+  // PR3 — route สร้าง DurableIdempotencyStore จาก service client: ต้อง mock เป็น fake table เสมอ
+  vi.doMock("@/server/integrations/supabase/server", () => ({
+    createSupabaseServiceClient: vi.fn(async () => db.client as unknown),
+  }));
   // ปิด kill switch ให้เส้นทางปกติผ่าน (หรือเปิดไว้เพื่อทดสอบ 503)
   vi.stubEnv("AI_ASSISTANT_ENABLED", assistantEnabled ? "true" : "");
+  // environment ของ registry/dispatcher อ่าน NODE_ENV ตอน composition (test = ค่าเริ่มต้นของ vitest)
+  if (nodeEnv !== "test") vi.stubEnv("NODE_ENV", nodeEnv);
+  if (mutationsEnabled) vi.stubEnv("AI_ASSISTANT_MUTATIONS_ENABLED", "true");
 
   const route = await import("@/app/api/ai-assistant/text-command/route");
-  return { route, reserveQuota, settleUsage, interpretVoiceIntent, logSystemEvent, loadCatalog };
+  return { route, reserveQuota, settleUsage, interpretVoiceIntent, logSystemEvent, loadCatalog, db };
 }
 
 interface Options {
@@ -85,6 +176,8 @@ interface Options {
   quotaGranted?: boolean;
   quotaThrows?: boolean;
   assistantEnabled?: boolean;
+  nodeEnv?: "test" | "production";
+  mutationsEnabled?: boolean;
   interpret?: unknown;
 }
 
@@ -243,5 +336,54 @@ describe("text command route gates", () => {
     }));
     expect((await replay.json())).toMatchObject({ outcomes: [{ kind: "tool", ok: true }] });
     expect(route.loadCatalog).not.toHaveBeenCalled();
+  });
+});
+
+// PR3 — composition root ต้องผูก DurableIdempotencyStore (durability "supabase") เข้า dispatcher
+// ผ่าน service client เดิมของ repo: พิสูจน์ด้วย ledger จริง (fake table) + เกต production
+describe("durable idempotency wiring (PR3)", () => {
+  it("claims idempotency through the supabase-backed ledger instead of the memory store", async () => {
+    const route = await loadRoute();
+    const first = await route.route.POST(post({ requestId: "req-12345678", tool: "pos.search_product", args: { query: "ลาเต้" } }));
+    expect(first.status).toBe(200);
+    // memory store ไม่แตะ DB เลย — มีแถวลงตาราง = claim เดินผ่าน DurableIdempotencyStore จริง
+    expect(route.db.rows).toHaveLength(1);
+    expect(route.db.rows[0]).toMatchObject({
+      organization_id: "org-1",
+      store_id: "store-1",
+      user_id: "user-1",
+      idempotency_key: "req-12345678",
+      tool: "pos.search_product",
+      status: "completed",
+    });
+
+    // replay คีย์เดิม (fingerprint + identity เดิม) = ผลจาก ledger ไม่ execute ซ้ำ
+    const replay = await route.route.POST(post({ requestId: "req-12345678", tool: "pos.search_product", args: { query: "ลาเต้" } }));
+    expect((await replay.json())).toMatchObject({ outcomes: [{ kind: "tool", ok: true, tool: "pos.search_product" }] });
+    expect(route.loadCatalog).toHaveBeenCalledTimes(1);
+    expect(route.db.rows).toHaveLength(1);
+  });
+
+  it("unlocks production safe_write when the mutation env is on top of the wired durable store", async () => {
+    // production + durable wired + env เปิด → ผ่านเกต DURABLE_STORAGE_REQUIRED และถึง execute จริง
+    const unlocked = await loadRoute({ nodeEnv: "production", mutationsEnabled: true });
+    const response = await unlocked.route.POST(post(textBody));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    // fixture ลาเต้ไม่มี variants/modifierGroups → resolver คืน apply (พิสูจน์ว่า tool ถูก execute ในฐานะ safe_write)
+    expect(body.outcomes[0]).toMatchObject({ kind: "tool", ok: true, tool: "pos.add_item" });
+    expect(body.outcomes[0].result).toMatchObject({ status: "apply", productName: "ลาเต้" });
+    expect(unlocked.db.rows).toHaveLength(1);
+    expect(unlocked.db.rows[0]).toMatchObject({ tool: "pos.add_item", status: "completed" });
+  });
+
+  it("keeps production mutations closed when only the durable store is wired (env off)", async () => {
+    // wiring อย่างเดียว (ไม่ตั้ง env) = production ยังปิด mutation เหมือนเดิม และไม่แตะ ledger
+    const locked = await loadRoute({ nodeEnv: "production" });
+    const denied = await locked.route.POST(post(textBody));
+    const deniedBody = await denied.json();
+    expect(deniedBody.outcomes[0]).toMatchObject({ kind: "error", ok: false, code: "MUTATIONS_DISABLED" });
+    expect(deniedBody.outcomes[0].code).not.toBe("DURABLE_STORAGE_REQUIRED");
+    expect(locked.db.rows).toHaveLength(0);
   });
 });

@@ -23,6 +23,8 @@ import { VOICE_INTENT_MAX_UTTERANCE } from "@/modules/ai/voice-intent";
 import { readAssistantConfig } from "@/modules/ai-assistant/config";
 import { ToolRegistry } from "@/modules/ai-assistant/foundation";
 import { createServerAssistantDispatcher } from "@/modules/ai-assistant/server";
+import { DurableIdempotencyStore } from "@/modules/ai-assistant/durable-idempotency";
+import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { createAssistantSessionStore } from "@/modules/ai-assistant/session";
 import { createFixedWindowRateLimiter } from "@/modules/ai-assistant/rate-limit";
 import { createTextInterpreter, runTextCommand, type TextFailureReason } from "@/modules/ai-assistant/orchestrator";
@@ -53,15 +55,31 @@ const rateLimiter = createFixedWindowRateLimiter({
   limitPerWindow: readRateLimitPerMinute(),
   windowMs: 60_000,
 });
-const dispatch = createServerAssistantDispatcher({
-  registry,
-  resolveSession: (identity) => sessions.resolve(identity),
-  resolveCartBinding: async (context, args) => {
-    const parsed = args as { activeCartId?: unknown; cartVersion?: unknown } | null;
-    if (!parsed || typeof parsed.activeCartId !== "string" || typeof parsed.cartVersion !== "number") return null;
-    return sessions.bindCart(context, parsed.activeCartId, parsed.cartVersion);
-  },
-});
+
+// PR3 — composition root ปลด mutation ขั้นที่ (2): wire durable idempotency ผ่าน service client
+// เดิมของ repo (RLS เลี่ยง — pattern เดียวกับ connect/pending / notifications cron) เข้า dispatcher
+// durability "supabase" ทำให้เกต DURABLE_STORAGE_REQUIRED ผ่านได้ แต่การเขียนยังต้องผ่าน env
+// AI_ASSISTANT_MUTATIONS_ENABLED=true อีกชั้น — wiring อย่างเดียวจึงยังไม่ปลด mutation
+// (การ sweep ของแถวค้างทำงานเองตาม design ของ store: opportunistic ตอน claim ทุก 60 วิ/instance
+// และล้มเหลวเงียบไม่กระทบ request — atomicity ของ claim มาจาก unique constraint เสมอ)
+// client สร้างไม่ได้ (env supabase หาย) = throw ตาม convention ของ route อื่นที่ใช้ service client
+type TextCommandDispatcher = ReturnType<typeof createServerAssistantDispatcher>;
+let dispatchPromise: Promise<TextCommandDispatcher> | null = null;
+function getDispatch(): Promise<TextCommandDispatcher> {
+  dispatchPromise ??= createSupabaseServiceClient().then((client) =>
+    createServerAssistantDispatcher({
+      registry,
+      resolveSession: (identity) => sessions.resolve(identity),
+      resolveCartBinding: async (context, args) => {
+        const parsed = args as { activeCartId?: unknown; cartVersion?: unknown } | null;
+        if (!parsed || typeof parsed.activeCartId !== "string" || typeof parsed.cartVersion !== "number") return null;
+        return sessions.bindCart(context, parsed.activeCartId, parsed.cartVersion);
+      },
+      idempotencyStore: new DurableIdempotencyStore(client),
+    }),
+  );
+  return dispatchPromise;
+}
 
 const BodySchema = z.object({
   requestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
@@ -214,6 +232,9 @@ export async function POST(request: Request) {
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) return fail("invalid_body", 400);
   const input = parsed.data;
+
+  // dispatcher (รวม durable idempotency store) สร้าง lazy แบบ memoize ครั้งเดียวต่อ process
+  const dispatch = await getDispatch();
 
   // ── โหมด read-tool: เรียก tool อ่านตรง (search / current order) ผ่าน dispatcher เดิมทุกด่าน ──
   if (input.tool) {
