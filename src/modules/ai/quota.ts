@@ -77,6 +77,7 @@ export const AI_FEATURE_LABELS: Record<string, string> = {
   aiVision: "สแกนเมนูด้วย AI",
   aiAssistant: "ผู้ช่วยแก้ปัญหาอุปกรณ์",
   aiVoiceIntent: "สั่งงานด้วยเสียง",
+  aiAssistantText: "สั่งงาน POS ด้วยข้อความ",
 };
 
 export function labelAiFeature(feature: string): string {

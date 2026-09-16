@@ -15,6 +15,7 @@ import { TablesPanel } from "./TablesPanel";
 import { KitchenQueuePanel } from "./KitchenQueuePanel";
 import { BillsPanel } from "./BillsPanel";
 import { VoicePosController } from "./VoicePosController";
+import { TextAssistantOverlay } from "./TextAssistantOverlay";
 import { VoiceCartBridgeProvider } from "./voice-cart-bridge";
 import { PrintQueueAlert } from "@/modules/printing/PrintQueueAlert";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
@@ -48,6 +49,7 @@ export function UnifiedPosWorkspace({
   voiceAliases = [],
   voiceProductAliases = [],
   voiceAdapter,
+  aiAssistantTextEnabled = false,
 }: UnifiedPosWorkspaceProps) {
   /** null = ปิด dialog (เห็นหน้าขายเต็มจอ) */
   const [openSection, setOpenSection] = useState<SectionId | null>(null);
@@ -153,6 +155,16 @@ export function UnifiedPosWorkspace({
               productAliases={voiceProductAliases}
               onSelectTab={selectTab}
               adapter={voiceAdapter}
+            />
+          ) : null}
+
+          {/* PR2 — ปุ่มผู้ช่วย AI โหมดข้อความ (ADR-008): แยกจากปุ่มเสียงชัดเจน ไม่มีไมค์
+              mount เฉพาะเมื่อ server env เปิด (kill switch ปิด = ไม่มีปุ่มเลย); สิทธิ์/แพ็กเกจ
+              ตรวจซ้ำที่ route ทุกครั้ง ปุ่มเป็นแค่ทางเข้า */}
+          {aiAssistantTextEnabled ? (
+            <TextAssistantOverlay
+              productAliases={voiceProductAliases}
+              onFocusSell={() => selectTab("sell")}
             />
           ) : null}
 

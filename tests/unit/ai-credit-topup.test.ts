@@ -14,7 +14,7 @@ function migration(): string {
 describe("โควตา AI รวมทุกฟีเจอร์", () => {
   it("ครอบคลุมทุกฟีเจอร์ที่เรียกโควตาจริง", () => {
     // ต้องตรงกับ feature key ที่ route แต่ละตัวส่งเข้า reserveQuota
-    expect(Object.keys(AI_FEATURE_LABELS).sort()).toEqual(["aiAssistant", "aiVision", "aiVoiceIntent"]);
+    expect(Object.keys(AI_FEATURE_LABELS).sort()).toEqual(["aiAssistant", "aiAssistantText", "aiVision", "aiVoiceIntent"]);
   });
 
   it("ฟีเจอร์ที่ไม่รู้จักยังแสดงชื่อ key เดิมแทนที่จะหาย", () => {
