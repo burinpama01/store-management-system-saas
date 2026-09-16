@@ -5,6 +5,12 @@
 - ข้อบังคับเดิมยังใช้: ADR-005 (MVP = Push-to-Talk เท่านั้น ไม่ always-listening), ADR-008 (ไม่แย่งไมค์ Voice POS), ADR-003 (เสียง+ข้อความใช้ dispatcher เดียวกัน)
 # จุดรับช่วง AI Assistant
 
+## ADR note — PR3-Live (2026-09-16, เจ้าของตัดสินใจ)
+- **เจ้าของ override ADR-005**: จากเดิม "MVP = Push-to-Talk เท่านั้น" → เปลี่ยนเป็น **one-press Live conversation mode** บนท่อ OpenAI Realtime (แตะปุ่มเดียวเปิดเซสชันเสียงสด พูดหลายประโยค AI ตอบเสียง + execute tools ผ่าน dispatcher เดิม; จบเซสชันด้วยการแตะปุ่มซ้ำ / idle timeout / หมด caps) — **Whisper PTT เลื่อนออก**
+- **pilot เฉพาะ org "Each Other"** (`11460ba9-bd2d-48d3-bda6-c5e7ddacacc9`, enterprise) — คนนอก pilot โดน 403 `live_pilot_only` เสมอ
+- kill switch `AI_ASSISTANT_LIVE_ENABLED` (default **false** = production พฤติกรรมเดิม 100%) + kill switch กลาง `AI_ASSISTANT_KILL_SWITCH` ยังคุมทุกช่องทาง
+- ADR-008 (ไม่แย่งไมค์ Voice POS) และ ADR-003 (dispatcher ชุดเดียว) ยังบังคับครบ — Live ใช้ session-bound signed tool channel ตาม plan v2 §11: OPENAI_API_KEY server เท่านั้น, hard caps (นาที/เซสชัน, tool calls/เซสชัน, concurrent/ร้าน), metering เฉพาะ metadata
+
 ## สถานะล่าสุด — ปลด mutation รอบสุดท้าย: wire durable store เข้า route + e2e text path เสร็จ 2026-09-16
 - Branch: `feat/ai-assistant-text-e2e` (ตัดจาก `origin/main` = `644b538` ที่รวม PR1+PR2+PR3a แล้ว) ใน worktree `.worktrees/ai-assistant-implementation` — commits: `f87bbaa` (Task A: wiring) → `6d36920` (Task B: e2e spec) → docs หัวข้อนี้; **ยังไม่ push ตามคำสั่ง — ผู้ประสานงาน verify แล้ว push/PR เอง**
 - **Task A — wire durable idempotency เข้า route (ขั้นที่ (2) ของลำดับปลด mutation ด้านล่าง)**
