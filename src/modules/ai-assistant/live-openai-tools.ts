@@ -104,6 +104,52 @@ if (LIVE_OPENAI_TOOL_NAMES.length !== MVP_TOOL_NAMES.length
   throw new Error("Live OpenAI tools must mirror MVP_TOOL_NAMES exactly");
 }
 
+// ── การฉีด args ตอน relay (server เท่านั้น) ──────────────────────────────────
+// model ห้ามปลอมตัวตนตะกร้า (activeCartId/cartVersion/summary) — key เหล่านี้ถูก strip
+// ออกจาก args ของ model แล้วฉีดค่าที่ server เชื่อถือทับเสมอ (ค่าที่ฉีดชนะเสมอ)
+
+/** tool ที่ args ต้องมี cartRef (activeCartId + cartVersion) ตาม pos-tools — ต้าน drift ด้วย test */
+const LIVE_CART_REF_TOOLS: ReadonlySet<string> = new Set<MvpToolName>([
+  "pos.get_current_order",
+  "pos.add_item",
+  "pos.remove_item",
+  "pos.change_quantity",
+]);
+
+/** tool ที่ args ต้องมี summary ของตะกร้า (client เป็นคนถือสถานะตะกร้า — ตรงตาม pos-tools) */
+const LIVE_SUMMARY_TOOLS: ReadonlySet<string> = new Set<MvpToolName>(["pos.get_current_order"]);
+
+export interface LiveInjectedCartContext {
+  readonly activeCartId: string;
+  readonly cartVersion: number;
+  readonly summary?: { readonly itemCount: number; readonly total: number; readonly locked: boolean } | null;
+}
+
+/**
+ * รวม args ของ model กับค่าที่ server ฉีด เป็น args สุดท้ายที่ dispatcher จะ parse
+ * - search tools: ไม่ฉีดอะไรเลย (schema strict — คีย์แปลกปลอมต้องไม่ผ่าน)
+ * - cart tools: strip key ที่ห้ามมาจาก model แล้วฉีด cartRef (+ summary เฉพาะ get_current_order)
+ * รูปทรงสุดท้ายผ่าน tool.args ของ pos-tools เสมอ — pin ไว้ด้วย test ถ้า pos-tools เปลี่ยน test จะล้ม
+ */
+export function buildLiveToolArgs(tool: MvpToolName, modelArgs: unknown, injected: LiveInjectedCartContext): Record<string, unknown> {
+  const raw = typeof modelArgs === "object" && modelArgs !== null ? modelArgs as Record<string, unknown> : {};
+  // strip คีย์ที่ server ฉีดเองออกจาก args ของ model ทุกครั้ง — ค่าที่ฉีดชนะเสมอ
+  const rest: Record<string, unknown> = { ...raw };
+  for (const key of LIVE_INJECTED_ARG_KEYS) delete rest[key];
+  if (!LIVE_CART_REF_TOOLS.has(tool)) return rest;
+  const cartRef = { activeCartId: injected.activeCartId, cartVersion: injected.cartVersion };
+  if (!LIVE_SUMMARY_TOOLS.has(tool)) {
+    // pos.add_item ของ pos-tools ต้องการ optionPhrases เสมอ (orchestrator โหมดข้อความก็เติม [] ให้)
+    if (tool === "pos.add_item" && !Array.isArray((rest as { optionPhrases?: unknown }).optionPhrases)) {
+      return { ...cartRef, ...rest, optionPhrases: [] };
+    }
+    return { ...cartRef, ...rest };
+  }
+  // summary มาจาก client เท่านั้น (ตะกร้าเป็น state ในเครื่อง) — ไม่มี = ปล่อยให้ dispatcher
+  // ปฏิเสธ INVALID_ARGS ตามจริง ห้ามปลอมค่าเพราะ AI จะพูดยอดที่ผิดกับตะกร้า
+  return injected.summary ? { ...cartRef, ...rest, summary: injected.summary } : { ...cartRef, ...rest };
+}
+
 // ── provider client (server เท่านั้น) ────────────────────────────────────────
 
 export interface LiveEphemeralSessionResult {
