@@ -1334,6 +1334,7 @@ function TicketPanel({
   printStatusMessage,
   isTicketSyncPending,
   isPrintingTicket,
+  printingTicketId = null,
   onSaveTicket,
   onPrintTicket,
   onLoadTicket,
@@ -1349,8 +1350,9 @@ function TicketPanel({
   printStatusMessage: string | null;
   isTicketSyncPending: boolean;
   isPrintingTicket: boolean;
+  printingTicketId?: string | null;
   onSaveTicket: () => void;
-  onPrintTicket: () => void;
+  onPrintTicket: (ticket?: SavedOrderTicket) => void;
   onLoadTicket: (ticket: SavedOrderTicket) => void;
   onDeleteTicket: (ticketId: string) => void;
   onTicketDraftChange: (patch: Partial<TicketDraft>) => void;
@@ -1434,10 +1436,10 @@ function TicketPanel({
         </Button>
         <Button
           variant="primary"
-          loading={isPrintingTicket}
+          loading={isPrintingTicket && !printingTicketId}
           loadingText="กำลังพิมพ์..."
-          disabled={cart.items.length === 0}
-          onClick={onPrintTicket}
+          disabled={cart.items.length === 0 || isPrintingTicket}
+          onClick={() => onPrintTicket()}
           className="min-h-11 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-40"
         >
           พิมพ์ใบสั่ง
@@ -1507,6 +1509,19 @@ function TicketPanel({
                   <span className="mt-0.5 block text-[10px] text-gray-400">
                     แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · ซิงค์ {ticketTimeLabel(ticket.lastSyncedAt)}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isTicketSyncPending || isPrintingTicket || ticket.cart.items.length === 0}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onPrintTicket(ticket);
+                  }}
+                  className="min-h-11 rounded-lg border border-teal-200 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-800 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label={`พิมพ์ใบสั่ง ${ticket.ticketNumber}`}
+                  aria-busy={printingTicketId === ticket.id || undefined}
+                >
+                  {printingTicketId === ticket.id ? "พิมพ์..." : "พิมพ์"}
                 </button>
                 <button
                   type="button"
@@ -2918,6 +2933,7 @@ export function PosTerminal({
   const [historyRange, setHistoryRange] = useState<BillHistoryRange>(() => createHistoryRange("today", storeTimezone));
   const [isBillHistoryPending, setIsBillHistoryPending] = useState(false);
   const [isPrintingTicket, setIsPrintingTicket] = useState(false);
+  const [printingTicketId, setPrintingTicketId] = useState<string | null>(null);
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; orderNumber: string } | null>(null);
   const [receipt, setReceipt] = useState<ReceiptOrder | null>(null);
   const preferredPrinterIdForPrint = printers.some((printer) => printer.id === preferredPrinterId) ? preferredPrinterId : null;
@@ -3484,8 +3500,9 @@ export function PosTerminal({
     });
   }
 
-  async function handlePrintTicket() {
-    if (cart.items.length === 0) {
+  async function handlePrintTicket(ticket?: SavedOrderTicket | null) {
+    const printCart = ticket?.cart ?? cart;
+    if (printCart.items.length === 0) {
       setTicketMessage("ยังไม่มีรายการให้พิมพ์ใบสั่งออเดอร์");
       return;
     }
@@ -3505,7 +3522,14 @@ export function PosTerminal({
       vatRate: 7,
       updatedAt: new Date().toISOString(),
     };
-    const ticketNumber = activeTicket?.ticketNumber ?? createTicketNumber();
+    const ticketNumber = ticket?.ticketNumber ?? activeTicket?.ticketNumber ?? createTicketNumber();
+    const metaBits = [
+      ticket?.tableNumber ? `โต๊ะ ${ticket.tableNumber}` : null,
+      ticket?.customerName ? `ลูกค้า ${ticket.customerName}` : null,
+    ].filter(Boolean);
+    const headerText = metaBits.length > 0
+      ? `*** ใบสั่งออเดอร์ ***\n${metaBits.join(" · ")}`
+      : "*** ใบสั่งออเดอร์ ***";
     const ticketData = {
       storeName: settings.storeName || storeName,
       address: settings.address,
@@ -3513,7 +3537,7 @@ export function PosTerminal({
       taxId: settings.taxId,
       showTaxId: false,
       orderNumber: `ใบสั่ง ${ticketNumber}`,
-      items: cart.items.map((item) => ({
+      items: printCart.items.map((item) => ({
         name: item.productName,
         variantName: item.variant?.name,
         modifierNames: item.modifiers.map(modifierDetail),
@@ -3526,22 +3550,23 @@ export function PosTerminal({
         discountNote: item.discountNote,
         note: item.note,
       })),
-      subtotal: cart.subtotal,
-      discount: cart.discount,
-      discountNote: cart.discountNote,
-      total: cart.total,
+      subtotal: printCart.subtotal,
+      discount: printCart.discount,
+      discountNote: printCart.discountNote,
+      total: printCart.total,
       payments: [],
       paymentStatus: "unpaid" as const,
       footerText: "ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ",
       showQrPayment: settings.showQrPayment,
       promptpayId: settings.promptpayId,
-      headerText: "*** ใบสั่งออเดอร์ ***",
+      headerText,
       paperWidth: settings.paperWidth,
       printCopies: settings.printCopies,
       printedAt: new Date().toISOString(),
     };
 
     setIsPrintingTicket(true);
+    setPrintingTicketId(ticket?.id ?? null);
     setTicketMessage(null);
     setPrintStatusMessage("กำลังส่งงานพิมพ์ใบสั่ง...");
     try {
@@ -3559,6 +3584,7 @@ export function PosTerminal({
       setTicketMessage(err instanceof Error ? err.message : "พิมพ์ใบสั่งออเดอร์ไม่สำเร็จ");
     } finally {
       setIsPrintingTicket(false);
+      setPrintingTicketId(null);
     }
   }
 
@@ -4336,6 +4362,7 @@ export function PosTerminal({
           printStatusMessage={printStatusMessage}
           isTicketSyncPending={isTicketSyncPending}
           isPrintingTicket={isPrintingTicket}
+          printingTicketId={printingTicketId}
           onSaveTicket={handleSaveTicket}
           onPrintTicket={handlePrintTicket}
           onLoadTicket={(ticket) => {
