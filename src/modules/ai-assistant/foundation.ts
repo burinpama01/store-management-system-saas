@@ -5,7 +5,7 @@ import type { PermissionKey } from "@/modules/tenants/types";
 
 export type Environment = "development" | "test" | "production";
 export type Risk = "read" | "safe_write" | "sensitive" | "critical";
-export type ErrorCode = "INVALID_REQUEST" | "UNKNOWN_TOOL" | "INVALID_ARGS" | "PERMISSION_DENIED" | "FEATURE_DISABLED" | "MUTATIONS_DISABLED" | "RISK_BLOCKED" | "CONTEXT_UNAVAILABLE" | "DURABLE_STORAGE_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "CAPACITY_EXCEEDED" | "EXECUTION_FAILED";
+export type ErrorCode = "INVALID_REQUEST" | "UNKNOWN_TOOL" | "INVALID_ARGS" | "PERMISSION_DENIED" | "FEATURE_DISABLED" | "MUTATIONS_DISABLED" | "RISK_BLOCKED" | "CONTEXT_UNAVAILABLE" | "DURABLE_STORAGE_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "IDEMPOTENCY_PENDING" | "CAPACITY_EXCEEDED" | "EXECUTION_FAILED";
 export type Result = { ok: true; data: unknown } | { ok: false; code: ErrorCode };
 /** ส่งมาจาก server resolver เท่านั้น ห้ามสร้างจาก model/client request */
 export interface TrustedContext {
@@ -94,7 +94,7 @@ function canonical(value: unknown): string {
   if (proto !== Object.prototype && proto !== null) throw Error("Non JSON argument");
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
 }
-const fail = (code: ErrorCode): Result => ({ ok: false, code });
+export const fail = (code: ErrorCode): Result => ({ ok: false, code });
 
 /** ขอบเขตโควตาของแต่ละ claim — store แยก ledger ตาม scope และใช้ expiresAt หา entry ที่ evict ได้ */
 export interface IdempotencyClaimMeta {
@@ -102,10 +102,23 @@ export interface IdempotencyClaimMeta {
   scope: string;
   /** เวลาหมดอายุของ session เจ้าของ claim (epoch ms) — entry ที่ expiresAt <= now evict ได้ทุกเมื่อ */
   expiresAt: number;
+  /** PR3 — ชื่อ tool ที่ถูกเรียก สำหรับบันทึกลง ai_assistant_actions (memory store ไม่ใช้) */
+  tool?: string;
+  /** PR3 — identity ของ scope สำหรับ durable store ตัดสิน replay/conflict ว่าเป็นของ session เดิม (memory store ไม่ใช้) */
+  identity?: {
+    readonly organizationId: string;
+    readonly storeId: string;
+    readonly userId: string;
+    readonly sessionId: string;
+  };
 }
 
+/**
+ * durability "memory" = อยู่เฉพาะ process (dev/test), "supabase" = อยู่รอด restart
+ * และปลอดภัยข้าม process — เกต production safe_write ของ dispatcher ยอมรับเฉพาะเจ้าหลัง
+ */
 export interface IdempotencyStore {
-  readonly durability: "memory";
+  readonly durability: "memory" | "supabase";
   claim(key: string, fingerprint: string, meta: IdempotencyClaimMeta, execute: () => Promise<Result>): Promise<Result>;
 }
 

@@ -4,6 +4,66 @@ export interface Database {
   public: {
 
     Tables: {
+      ai_assistant_actions: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          session_id: string;
+          idempotency_key: string;
+          tool: string;
+          fingerprint: string;
+          status: "pending" | "completed" | "failed";
+          result: Json | null;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          session_id: string;
+          idempotency_key: string;
+          tool: string;
+          fingerprint: string;
+          status?: "pending" | "completed" | "failed";
+          result?: Json | null;
+          created_at?: string;
+          expires_at: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          user_id?: string;
+          session_id?: string;
+          idempotency_key?: string;
+          tool?: string;
+          fingerprint?: string;
+          status?: "pending" | "completed" | "failed";
+          result?: Json | null;
+          created_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ai_assistant_actions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_assistant_actions_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ];
+      };
         ai_credit_balances: {
           Row: {
             organization_id: string;
