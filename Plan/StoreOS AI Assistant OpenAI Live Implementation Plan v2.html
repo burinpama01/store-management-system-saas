@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>StoreOS — AI Assistant + OpenAI Live Implementation Plan v2</title>
+  <style>
+    :root{--bg:#f6f2ed;--card:#fff;--soft:#fffaf6;--ink:#25211f;--muted:#625952;--line:#e5dcd4;--brand:#ea7b53;--brand2:#a64229;--safe:#167554;--safe-bg:#e9f8f1;--warn:#946000;--warn-bg:#fff5d8;--danger:#b42318;--danger-bg:#fff0ee;--info:#245e9b;--info-bg:#eaf3fc;--code:#282c34;--shadow:0 14px 36px rgba(54,38,25,.09)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:linear-gradient(145deg,#f8eee6,#edf5f2);color:var(--ink);font-family:"Noto Sans Thai","Leelawadee UI",Tahoma,Arial,sans-serif;line-height:1.62}.page{width:min(1220px,calc(100% - 28px));margin:22px auto 70px}header,section,article.task{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow)}header{padding:clamp(28px,5vw,54px);background:linear-gradient(135deg,#fff 42%,#fff0e7)}section{padding:clamp(20px,4vw,34px);margin-top:16px}article.task{padding:22px;margin-top:13px;border-radius:16px}h1{margin:6px 0;font-size:clamp(34px,5vw,56px);line-height:1.07}h2{margin:0 0 16px;font-size:clamp(23px,3vw,31px)}h3{margin:18px 0 8px;font-size:19px}p{margin:7px 0;color:var(--muted)}.eyebrow{color:var(--brand2);font-weight:900;letter-spacing:.06em}.meta,.grid2,.grid3{display:grid;gap:12px}.meta,.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}.pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:850}.safe{background:var(--safe-bg);color:var(--safe)}.warn{background:var(--warn-bg);color:var(--warn)}.danger{background:var(--danger-bg);color:var(--danger)}.info{background:var(--info-bg);color:var(--info)}.checks{list-style:none;padding:0}.checks li{position:relative;padding:7px 8px 7px 34px;border-bottom:1px dashed var(--line)}.checks li:before{content:"☐";position:absolute;left:8px;top:7px;font-weight:900;color:var(--brand2)}pre{overflow:auto;background:var(--code);color:#f7f7f4;border-radius:12px;padding:14px;font:12px/1.5 Consolas,"Courier New",monospace;white-space:pre-wrap}code{padding:2px 5px;border-radius:5px;background:#f1ebe5;color:#7a432e;font-family:Consolas,monospace}pre code{padding:0;background:transparent;color:inherit}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:13px}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:11px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);font-size:13px}th{background:#faf5f0}.callout{padding:14px 16px;border-radius:12px;border-left:5px solid var(--info);background:var(--info-bg);margin:12px 0}.stop{border-left-color:var(--danger);background:var(--danger-bg)}.ok{border-left-color:var(--safe);background:var(--safe-bg)}.warnbox{border-left-color:var(--warn);background:var(--warn-bg)}.small{font-size:12px;color:var(--muted)}ul,ol{padding-left:22px}li+li{margin-top:5px}a{color:#185a9d}@media(max-width:820px){.meta,.grid2,.grid3{grid-template-columns:1fr}header,section{padding:20px}}body{overflow-wrap:anywhere}.page,header,section,.meta,.grid2,.grid3,.card{min-width:0}code{overflow-wrap:anywhere;word-break:break-word}pre{max-width:100%;min-width:0}
+  </style>
+</head>
+<body><main class="page">
+  <header>
+    <div class="eyebrow">IMPLEMENTATION PLAN · AI ASSISTANT + OPENAI LIVE · v2 · 2026-09-15</div>
+    <h1>StoreOS AI Assistant<br>+ OpenAI Live</h1>
+    <p><strong>สถานะ:</strong> Planning / พร้อม Phase 0 audit — <strong>ยังไม่ implement Live</strong> จนกว่า Tool Registry + text POS e2e + Voice POS coexistence ADR ผ่าน</p>
+    <p><strong>Repo:</strong> <code>burinpama01/store-management-system-saas</code> · supersedes markdown master plan v1 (2026-09-15) โดยแก้ความเสี่ยงจาก review</p>
+    <div class="meta">
+      <div class="card"><strong>Goal</strong><p>รับคำสั่งเสียง/ข้อความ → เลือก tool จาก allowlist → StoreOS execute ภายใต้ permission / risk / audit — AI ห้ามแตะ DB โดยตรง</p></div>
+      <div class="card"><strong>Authority</strong><p>OpenAI = interpreter · StoreOS = authority ของทุก action, ID, permission, confirmation, fulfillment</p></div>
+      <div class="card"><strong>ลำดับบังคับ</strong><p>Phase 0 audit → Tool foundation → Text POS → แล้วค่อย OpenAI Live · ห้ามกลับลำดับ</p></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>0. Changelog v1 → v2</h2>
+    <div class="callout ok"><strong>เก็บจาก v1:</strong> tool allowlist, Zod, server re-check permission, semantic query ไม่ invent ID, risk levels, confirmation token, push-to-talk, kill switches, text ก่อน Live, ไม่รื้อ Voice POS, ADR AI ไม่แตะ DB</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ความเสี่ยงจาก review</th><th>การแก้ใน v2</th></tr></thead>
+        <tbody>
+          <tr><td>สองระบบเสียง (Voice POS / Standby / AI Assistant)</td><td>เพิ่ม <strong>ADR-008 Coexistence</strong> + UX matrix + pilot ใช้ช่องทางเดียว</td></tr>
+          <tr><td>Resolver ซ้ำ / diverge</td><td><strong>บังคับ shared Voice POS resolver/alias</strong> — ห้าม search ชุดใหม่ใน <code>ai-assistant</code></td></tr>
+          <tr><td>Live sideband อาจไม่มี</td><td>Phase 6 มี <strong>verify + fallback signed tool channel</strong> ก่อนเขียน WebRTC</td></tr>
+          <tr><td>Feature gate ขนาน billing</td><td>map เข้า <code>canUseFeature</code> / entitlement เดิม ห้าม invent ระบบคู่ขนาน</td></tr>
+          <tr><td>สมมติ device/terminal มีแล้ว</td><td>Phase 0 ตอบ source of truth; MVP ใช้ active cart ที่ server validate ได้ก่อน</td></tr>
+          <tr><td>ต้นทุน/latency Live</td><td>hard cap session/นาที + kill switch <strong>ตั้งแต่ Live PR แรก</strong></td></tr>
+          <tr><td>แผนยาว agent กลืนทั้งก้อน</td><td>ล็อก scope PR1–PR3; ห้าม implement Phase 6+ ใน PR เดียวกับ foundation</td></tr>
+          <tr><td>Critical / PIN ยังไม่มี</td><td>MVP <strong>block critical ทั้งหมด</strong>; sensitive ต้องมี confirmation; PIN เฉพาะเมื่อมี reauth จริง</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>1. Non-Goals (MVP)</h2>
+    <ul>
+      <li>AI เขียน SQL / ใช้ service role / query Supabase โดยตรง</li>
+      <li>Always-listening / wake word / background autonomous agent</li>
+      <li>Refund, void closed bill, price change, permission change ผ่าน AI</li>
+      <li>Stock write / customer write ผ่าน AI</li>
+      <li>แทนที่ Voice POS หรือ Windows Voice Standby ใน release เดียวกัน</li>
+      <li>คิดเงิน Live แบบละเอียดวันแรก (log usage ให้ครบก่อน)</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. Reuse จาก repo (ห้าม duplicate)</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>ต้อง reuse</h3>
+        <ul>
+          <li><code>src/modules/assistant/command-index.ts</code> — allowlist / deterministic-first</li>
+          <li><code>src/modules/ai/gateway.ts</code>, <code>credits.ts</code>, <code>quota.ts</code>, <code>redaction.ts</code></li>
+          <li><code>src/modules/voice-pos/</code> — <code>intent-resolver</code>, <code>alias-*</code>, <code>command-queue</code>, <code>multi-command</code>, <code>undo</code>, <code>cart</code></li>
+          <li><code>src/modules/system/event-log.ts</code></li>
+          <li>RBAC / <code>canUseFeature</code> / billing entitlement ที่มีอยู่</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>สร้างใหม่</h3>
+        <ul>
+          <li><code>src/modules/ai-assistant/</code> — orchestrator, tool registry, policy, session, live transport</li>
+          <li>ตาราง audit/session/confirmation/usage แบบ additive</li>
+          <li>UI overlay Push-to-Talk / text (ไม่ chatbot เต็มจอ)</li>
+        </ul>
+        <p class="small">ณ 2026-09-15 ยังไม่มี <code>ai-assistant/</code> ใน repo — ถูกต้องตามสถานะ Planning</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. ADR ที่ต้องรักษา</h2>
+    <div class="grid2">
+      <div class="card"><strong>ADR-001</strong><p>AI ไม่แตะ DB โดยตรง — เรียกเฉพาะ StoreOS tools</p></div>
+      <div class="card"><strong>ADR-002</strong><p>Tool layer provider-agnostic — ไม่ import OpenAI types ใน business tools</p></div>
+      <div class="card"><strong>ADR-003</strong><p>Voice และ Text ใช้ Tool Dispatcher เดียวกัน</p></div>
+      <div class="card"><strong>ADR-004</strong><p>AI permission เป็น gate เพิ่ม ไม่แทน domain permission (<code>pos.use</code> ฯลฯ)</p></div>
+      <div class="card"><strong>ADR-005</strong><p>MVP = Push-to-Talk เท่านั้น</p></div>
+      <div class="card"><strong>ADR-006</strong><p>Model ส่ง semantic query — StoreOS resolve ID</p></div>
+      <div class="card"><strong>ADR-007</strong><p>Critical / policy fail = fail closed</p></div>
+      <div class="card"><strong>ADR-008 (ใหม่)</strong><p>Coexistence: Voice POS / Standby / AI Assistant ไม่รวม module ใน MVP; แชร์ domain services เท่านั้น</p></div>
+      <div class="card"><strong>ADR-009 (ใหม่)</strong><p>Product/cart resolution ต้องผ่าน Voice POS resolver path ที่เดียว</p></div>
+      <div class="card"><strong>ADR-010 (ใหม่)</strong><p>Entitlement ผ่าน billing <code>canUseFeature</code> — ห้าม parallel flag ระบบใหม่</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. ADR-008 — Voice coexistence (บังคับก่อน Live)</h2>
+    <div class="callout warnbox">ต้องมีเอกสารสั้น <code>docs/ai-assistant/VOICE_COEXISTENCE.md</code> ก่อนเปิดไมค์ AI Assistant ใน pilot</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ระบบ</th><th>บทบาทช่วง pilot</th><th>UI entry</th></tr></thead>
+        <tbody>
+          <tr><td>Voice POS (เดิม)</td><td><strong>Primary</strong> สำหรับ intent→cart ที่ร้านใช้แล้ว</td><td>คงปุ่ม/flow เดิม</td></tr>
+          <tr><td>Windows Voice Standby / Launcher TTS</td><td>Optional input/output channel — ไม่ผูก AI Assistant MVP</td><td>คงตามแผน Standby แยก</td></tr>
+          <tr><td>AI Assistant (ใหม่)</td><td><strong>Opt-in overlay</strong> บน POS; text ก่อน แล้วค่อย PTT</td><td>ปุ่ม AI แยก ไม่แทนปุ่ม Voice POS</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul>
+      <li>ห้ามให้คำสั่งเดียวกันวิ่งสอง pipeline พร้อมกัน</li>
+      <li>ถ้าเปิด AI Assistant mic → mute/ignore Voice POS capture ใน session นั้น (และกลับกัน)</li>
+      <li>ผลลัพธ์ cart ต้องมาจาก domain service เดียว — ไม่มี cart state คนละชุด</li>
+      <li>หลัง pilot ค่อยตัดสินใจ absorb หรือ sunset ช่องทางใดช่องทางหนึ่ง</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>5. Shared resolver (ADR-009)</h2>
+    <pre><code>AI tool: pos.add_item({ productQuery, quantity, ... })
+        │
+        ▼
+voice-pos intent-resolver / alias / catalog search  (SAME modules)
+        │
+        ▼
+voice-pos cart / existing POS domain services
+        │
+        ▼
+Supabase (ผ่าน service เดิม + RLS)</code></pre>
+    <div class="callout stop"><strong>ห้าม:</strong> สร้าง <code>ai-assistant/tools/pos/search-internal.ts</code> ที่ query catalog คนละชุดกับ Voice POS</div>
+    <p>Ambiguity → <code>clarification_required</code> พร้อม candidate set จาก resolver เดิม · follow-up “เย็น” ใช้ pending candidates ไม่ search ทั้งร้านใหม่โดยไม่จำเป็น</p>
+  </section>
+
+  <section>
+    <h2>6. Architecture</h2>
+    <pre><code>Voice / Text
+    │
+    ▼
+OpenAI Live (optional)  หรือ  Text provider
+    │  "ผู้ใช้ต้องการทำอะไร?"  (tools ที่ server อนุญาตเท่านั้น)
+    ▼
+AI Assistant Orchestrator
+    ├ Feature Gate (canUseFeature)
+    ├ Auth / Org / Store / User / Device-or-Session
+    ├ Permission (AI gate AND domain permission)
+    ├ Tool Allowlist + Zod
+    ├ Risk Policy + Confirmation
+    ├ Idempotency
+    ├ Audit + Usage
+    └ Shared Voice POS resolver / cart services
+    │
+    ▼
+Supabase</code></pre>
+    <p><strong>Context ห้ามรับจาก model:</strong> <code>organizationId</code>, <code>storeId</code>, <code>userId</code>, permissions, role, device — derive จาก authenticated StoreOS session เท่านั้น</p>
+  </section>
+
+  <section>
+    <h2>7. MVP Tool Set</h2>
+    <pre><code>pos.get_current_order
+pos.search_product
+pos.add_item
+pos.remove_item
+pos.change_quantity
+catalog.search</code></pre>
+    <p>Risk: read / safe_write เท่านั้น · undo 6–10s สำหรับ safe mutation · <strong>critical tools = blocked ทั้งก้อนใน MVP</strong></p>
+    <p>Current order ต้อง resolve จาก UI/session ของ terminal นี้ ไม่ใช่ latest order ทั้งร้าน</p>
+  </section>
+
+  <section>
+    <h2>8. Feature gating &amp; permissions</h2>
+    <div class="callout ok"><strong>ADR-010:</strong> ใช้ pattern เดียวกับ entitlement อื่น (เช่น <code>byoPaymentGateway</code>) ผ่าน <code>canUseFeature</code> / billing state — อย่าสร้างตาราง flag คนละระบบถ้ามีอยู่แล้ว</div>
+    <p>Capabilities ที่ map เข้า entitlement (ชื่อสุดท้ายจาก audit):</p>
+    <pre><code>ai_assistant.enabled
+ai_assistant.voice
+ai_assistant.text
+ai_assistant.pos_tools</code></pre>
+    <p>Permissions เพิ่มได้ แต่ tool ยังต้องผ่าน domain permission จริง เช่น <code>pos.add_item</code> ต้อง <code>ai_assistant.use</code> AND <code>ai_assistant.pos</code> AND <code>pos.use</code></p>
+    <h3>Kill switches (env + platform)</h3>
+    <pre><code>AI_ASSISTANT_ENABLED
+AI_ASSISTANT_LIVE_ENABLED
+AI_ASSISTANT_MUTATIONS_ENABLED</code></pre>
+    <p>Default production: code deploy ได้ แต่ org/store entitlement = false จนกว่าเปิด pilot</p>
+  </section>
+
+  <section>
+    <h2>9. Device / terminal binding</h2>
+    <div class="callout warnbox"><strong>อย่า block ทั้งฟีเจอร์</strong> ถ้ายังไม่มี device registry สมบูรณ์</div>
+    <ol>
+      <li>Phase 0 ตอบ: มี <code>device_id</code> / <code>terminal_id</code> source of truth หรือยัง</li>
+      <li>ถ้ามี — ผูก AI session กับ terminal + active cart</li>
+      <li>ถ้ายังไม่มี — MVP รับ <code>activeCartId</code> / <code>activeOrderId</code> จาก UI แล้ว <strong>server validate</strong> ว่าอยู่ใน store + user scope</li>
+      <li>ห้าม query “ออเดอร์ล่าสุดของร้าน” เป็น fallback</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>10. Confirmation &amp; critical policy</h2>
+    <ul>
+      <li>ห้ามเชื่อ <code>confirmed: true</code> จากโมเดล</li>
+      <li>server confirmation record + <code>arguments_hash</code> + expiry</li>
+      <li>MVP: <strong>block</strong> refund / void closed bill / cash drawer adjust / permission / price change</li>
+      <li>PIN/reauth ใช้ได้ต่อเมื่อมี flow จริงใน repo — อย่า mock แล้วปล่อย critical</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>11. OpenAI Live — verify ก่อน implement</h2>
+    <div class="callout stop">Phase 6 เริ่มด้วย spike เอกสาร + PoC เล็ก ห้ามเขียน production WebRTC ทั้งก้อนก่อนผ่านเกตนี้</div>
+    <h3>Preferred</h3>
+    <pre><code>Browser (audio + limited events)
+  ↔ OpenAI Live
+      → sideband/delegation tool request
+      → StoreOS trusted server → Tool Dispatcher</code></pre>
+    <h3>Fallback ถ้า sideband/delegation ไม่พร้อมกับ model ที่เลือก</h3>
+    <pre><code>Browser → StoreOS /api/ai-assistant/tools/execute
+  ต้องมี: assistantSessionId + signed session token (HMAC/short-TTL)
+  + tool allowlist ที่ bind ตอนสร้าง session
+  ห้าม generic execute ไร้ session / ห้าม client เลือก tool list เอง
+  OPENAI_API_KEY อยู่ server เท่านั้น</code></pre>
+    <h3>Hard caps ตั้งแต่ Live PR แรก (ไม่รอ billing phase)</h3>
+    <ul>
+      <li>max live session minutes (config; เริ่ม ~10–15 สำหรับ pilot)</li>
+      <li>max tool calls / session</li>
+      <li>max concurrent live sessions / store</li>
+      <li><code>AI_ASSISTANT_LIVE_ENABLED</code> kill switch</li>
+      <li>meter: audio seconds + session seconds + tool_calls (แม้ยังไม่คิดเงิน)</li>
+    </ul>
+    <p>Latency: แยก speech / model / tool / DB / TTS — เป้า &lt;2.5s เป็น aspiration ไม่ใช่ ship gate จนกว่าวัดจาก pilot จริง</p>
+  </section>
+
+  <section>
+    <h2>12. Module layout (proposal)</h2>
+    <pre><code>src/modules/ai-assistant/
+├── config/          feature, models, limits
+├── session/         session-service, context
+├── live/            only after Phase 6 gate
+├── orchestrator/    dispatcher, clarification
+├── tools/           registry + pos/* wrapping voice-pos services
+├── policy/          risk, confirmation, permission-map
+├── audit/           audit + redaction
+├── usage/           meter + limits
+└── ui/              store hooks / types</code></pre>
+    <p>API: <code>/api/ai-assistant/session</code>, <code>live/session</code>, <code>confirmation</code>, <code>usage</code>, <code>feedback</code> · หลีกเลี่ยง browser generic execute ถ้า sideband ใช้ได้</p>
+  </section>
+
+  <section>
+    <h2>13. Data (additive)</h2>
+    <p>Proposal — ตรวจ schema จริงก่อนสร้าง: <code>ai_assistant_sessions</code>, <code>ai_assistant_actions</code> (unique org+idempotency_key), <code>ai_assistant_confirmations</code>, <code>ai_usage_events</code> (ถ้ายังไม่มี ledger)</p>
+    <ul>
+      <li>RLS ทุกตาราง · action log append-only ถ้าทำได้</li>
+      <li>ไม่เก็บ raw audio โดย default · transcript ไม่ถาวร</li>
+      <li>data minimization: ส่ง tool result เท่าที่จำเป็น</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>14. Implementation phases (ล็อก scope)</h2>
+    <article class="task"><div class="task-head"><div><h3>Phase 0 — Repo audit</h3><span class="pill info">ก่อนแก้ code</span></div></div>
+      <p>Deliverable: <code>docs/ai-assistant/repo-audit.md</code> + ร่าง <code>VOICE_COEXISTENCE.md</code></p>
+      <ul class="checks">
+        <li>POS cart / active order source of truth</li>
+        <li>server permission helper</li>
+        <li>canUseFeature / package entitlement</li>
+        <li>Voice POS resolver / queue / undo reuse map</li>
+        <li>event-log + AI quota integration points</li>
+        <li>device/terminal reality check</li>
+        <li>มี/ไม่มี PIN reauth</li>
+        <li>file-by-file plan สำหรับ PR1</li>
+      </ul>
+    </article>
+    <article class="task"><div class="task-head"><div><h3>Phase 1–2 — Foundation + Tool registry</h3><span class="pill safe">PR1</span></div></div>
+      <p><code>feat(ai-assistant): add provider-agnostic tool foundation</code></p>
+      <ul class="checks">
+        <li>module skeleton, feature gate via canUseFeature, typed errors</li>
+        <li>registry, Zod, risk policy, idempotency, dispatcher, audit</li>
+        <li>mock <code>system.echo</code> ใน dev เท่านั้น</li>
+        <li>ยังไม่มี OpenAI Live / WebRTC / mic</li>
+      </ul>
+    </article>
+    <article class="task"><div class="task-head"><div><h3>Phase 3–5 — POS tools + Text UI</h3><span class="pill safe">PR2</span></div></div>
+      <p><code>feat(ai-assistant): add text command interface for POS</code></p>
+      <ul class="checks">
+        <li>read + mutation tools ผ่าน shared Voice POS resolver</li>
+        <li>clarification, undo, queue, feature gate UI</li>
+        <li>e2e: “เพิ่มลาเต้เย็นสอง” → cart</li>
+        <li>cross-tenant + permission deny tests</li>
+      </ul>
+    </article>
+    <article class="task"><div class="task-head"><div><h3>Phase 6 — OpenAI Live PTT</h3><span class="pill warn">PR3 · หลัง PR2 ผ่าน</span></div></div>
+      <p><code>feat(ai-assistant): add OpenAI Live push-to-talk</code></p>
+      <ul class="checks">
+        <li>verify sideband/delegation หรือเปิด fallback signed channel</li>
+        <li>server session endpoint, PTT state machine, hard caps, kill switch</li>
+        <li>usage meter audio/session/tools</li>
+        <li>Live disconnect ไม่กระทบ POS</li>
+        <li>coexistence ADR ถูก implement ใน UI</li>
+      </ul>
+    </article>
+    <article class="task"><div class="task-head"><div><h3>Phase 7+ — Confirmations, usage billing, hardware, expanded tools</h3><span class="pill info">หลัง pilot</span></div></div>
+      <p>confirmation UI สำหรับ sensitive (ถ้าเปิด), usage dashboard, USB button, stock/customer/report <strong>read</strong> tools</p>
+    </article>
+  </section>
+
+  <section>
+    <h2>15. Definition of Done — MVP</h2>
+    <ul class="checks">
+      <li>เปิด/ปิดรายร้านผ่าน entitlement จริง</li>
+      <li>text command POS ทำงาน end-to-end</li>
+      <li>push-to-talk ใช้ Tool Dispatcher เดียวกับ text</li>
+      <li>shared resolver — ไม่มี catalog path คนละชุด</li>
+      <li>current order ถูก terminal/session</li>
+      <li>ambiguity ถามกลับ · duplicate tool ไม่ทำซ้ำ · undo ได้</li>
+      <li>audit ทุก mutation · usage ถูกบันทึก</li>
+      <li>API key ไม่อยู่ client · critical ยัง block</li>
+      <li>AI outage ≠ POS outage · Voice POS coexistence ชัด</li>
+      <li>lint / typecheck / unit / integration / e2e critical path ผ่าน</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>16. Tests (ขั้นต่ำ)</h2>
+    <pre><code>tests/unit/ai-assistant/tool-registry.test.ts
+tests/unit/ai-assistant/policy-engine.test.ts
+tests/unit/ai-assistant/idempotency.test.ts
+tests/unit/ai-assistant/confirmation.test.ts
+tests/unit/ai-assistant/shared-resolver-wiring.test.ts
+
+tests/integration/ai-assistant/pos-tools.test.ts
+tests/integration/ai-assistant/permissions.test.ts
+tests/integration/ai-assistant/cross-tenant.test.ts
+
+tests/e2e/ai-assistant-text.spec.ts
+tests/e2e/ai-assistant-pos.spec.ts</code></pre>
+    <p>WebRTC E2E mock ใน CI · ทดสอบจริงใน pilot</p>
+  </section>
+
+  <section>
+    <h2>17. Threat checklist (ย่อ)</h2>
+    <ul>
+      <li>prompt injection / tool injection จากชื่อสินค้า</li>
+      <li>cross-tenant · ID injection · replay · confirmation bypass</li>
+      <li>client เปิด tool เพิ่มเอง · secret ใน bundle</li>
+      <li>สอง mic pipeline พร้อมกันทำให้ double mutation</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>18. First action for implementation agent</h2>
+    <div class="callout ok">
+      อ่าน <code>AGENTS.md</code> แล้ว audit เฉพาะ assistant / ai / voice-pos / pos / catalog / auth / billing / event-log / devices / migrations<br><br>
+      สร้าง <code>docs/ai-assistant/repo-audit.md</code> + ร่าง <code>docs/ai-assistant/VOICE_COEXISTENCE.md</code><br>
+      <strong>ห้ามแก้ production code ก่อน audit ผ่าน review</strong><br>
+      ห้ามเดา path · ห้าม duplicate business logic · ห้ามให้ AI เข้า Supabase โดยตรง · ห้ามเริ่ม Live ก่อน PR2
+    </div>
+  </section>
+
+  <section>
+    <h2>19. Final rule</h2>
+    <p><strong>OpenAI Live คือ Interface + Natural Language Interpreter · StoreOS คือ Authority</strong></p>
+    <p>ถ้า implementation ผ่านเฉพาะ happy path — ยังไม่ถือว่าเสร็จ · correctness, tenant isolation, idempotency, coexistence กับ Voice POS, และ recoverability เป็น mandatory</p>
+    <p class="small">เอกสารนี้คือ Plan v2 · 2026-09-15 · เขียนเพื่อแก้ความเสี่ยงจาก review ของ master plan v1</p>
+  </section>
+</main></body></html>
