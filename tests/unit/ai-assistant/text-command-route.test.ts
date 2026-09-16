@@ -116,6 +116,7 @@ async function loadRoute(options: Options = {}) {
     assistantEnabled = true,
     nodeEnv = "test",
     mutationsEnabled = false,
+    serviceClientRejectOnce = false,
     interpret = { ok: true, envelope, tokens: 88 },
   } = options;
 
@@ -155,8 +156,12 @@ async function loadRoute(options: Options = {}) {
   });
   vi.doMock("@/modules/ai-assistant/tools/pos-tools-server", () => ({ createServerPosToolDeps: () => ({ loadCatalog }) }));
   // PR3 — route สร้าง DurableIdempotencyStore จาก service client: ต้อง mock เป็น fake table เสมอ
+  // (serviceClientRejectOnce = จำลอง env supabase พังครั้งแรก พิสูจน์ retry หลัง memoize ถูก reset)
+  const serviceClientMock = serviceClientRejectOnce
+    ? vi.fn().mockRejectedValueOnce(new Error("supabaseUrl is required.")).mockResolvedValue(db.client)
+    : vi.fn(async () => db.client);
   vi.doMock("@/server/integrations/supabase/server", () => ({
-    createSupabaseServiceClient: vi.fn(async () => db.client as unknown),
+    createSupabaseServiceClient: serviceClientMock,
   }));
   // ปิด kill switch ให้เส้นทางปกติผ่าน (หรือเปิดไว้เพื่อทดสอบ 503)
   vi.stubEnv("AI_ASSISTANT_ENABLED", assistantEnabled ? "true" : "");
@@ -178,6 +183,7 @@ interface Options {
   assistantEnabled?: boolean;
   nodeEnv?: "test" | "production";
   mutationsEnabled?: boolean;
+  serviceClientRejectOnce?: boolean;
   interpret?: unknown;
 }
 
@@ -385,5 +391,19 @@ describe("durable idempotency wiring (PR3)", () => {
     expect(deniedBody.outcomes[0]).toMatchObject({ kind: "error", ok: false, code: "MUTATIONS_DISABLED" });
     expect(deniedBody.outcomes[0].code).not.toBe("DURABLE_STORAGE_REQUIRED");
     expect(locked.db.rows).toHaveLength(0);
+  });
+
+  it("answers typed 503 when dispatcher creation fails and retries on the next request", async () => {
+    // service client พังครั้งแรก → 503 ที่มี reason (ไม่ใช่ 500 เปล่า) และ memoize ถูก reset
+    const route = await loadRoute({ serviceClientRejectOnce: true });
+    const first = await route.route.POST(post({ requestId: "req-12345678", tool: "pos.search_product", args: { query: "ลาเต้" } }));
+    expect(first.status).toBe(503);
+    expect(await first.json()).toMatchObject({ ok: false, reason: "assistant_unavailable" });
+
+    // request ถัดไปลองสร้าง dispatcher ใหม่ได้จริง (ไม่ติด rejection เดิมตลอดอายุ process)
+    const second = await route.route.POST(post({ requestId: "req-12345679", tool: "pos.search_product", args: { query: "ลาเต้" } }));
+    expect(second.status).toBe(200);
+    expect((await second.json())).toMatchObject({ outcomes: [{ kind: "tool", ok: true, tool: "pos.search_product" }] });
+    expect(route.db.rows).toHaveLength(1);
   });
 });

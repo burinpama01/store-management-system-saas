@@ -28,9 +28,13 @@ import { readLocalSupabaseStatusEnv } from "./helpers/local-supabase-env";
 //   - คุณภาพคำตอบของ AI จริง — ชุดนี้รันกับ AI ปิดเสมอ
 //
 // วิธีรัน (ห้ามแก้ .env จริง — env ทั้งหมดให้ shell ของ command):
-//   AI_ASSISTANT_ENABLED=true OPENAI_API_KEY="" \
+//   AI_ASSISTANT_ENABLED=true AI_ASSISTANT_MUTATIONS_ENABLED="" OPENAI_API_KEY="" \
 //     npx playwright test tests/e2e/ai-assistant-text.spec.ts
-//   (OPENAI_API_KEY="" บังคับปิดทางสำรอง AI ให้ deterministic — process env ชนะ .env.local)
+//   (OPENAI_API_KEY="" บังคับปิดทางสำรอง AI และ MUTATIONS_ENABLED="" ปักหมุดว่า mutation
+//   ปิด — deterministic ไม่ขึ้นกับ shell env ค้าง เพราะ webServer env ชนะ .env และ shell)
+//   ⚠️ ห้ามรันขนานกับ unified-pos/voice-ai-pos (fixture แชร์แถว seed เดียวกัน:
+//   stores.unified_pos_enabled / subscriptions ของ org เดียว) — รันเป็นไฟล์เดียว
+//   หรือยอมรับความเสี่ยงจนกว่าจะแยก org fixture / ล็อก workers=1 ระดับ config
 
 const SEED_STORE_ID = "cccccccc-0000-0000-0000-000000000001"; // Main Branch (seed.sql)
 const OWNER_AUTH_USER_ID = "00000000-0000-0000-0000-000000000001"; // owner (seed.sql)

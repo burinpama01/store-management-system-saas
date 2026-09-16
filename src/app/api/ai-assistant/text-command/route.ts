@@ -66,18 +66,24 @@ const rateLimiter = createFixedWindowRateLimiter({
 type TextCommandDispatcher = ReturnType<typeof createServerAssistantDispatcher>;
 let dispatchPromise: Promise<TextCommandDispatcher> | null = null;
 function getDispatch(): Promise<TextCommandDispatcher> {
-  dispatchPromise ??= createSupabaseServiceClient().then((client) =>
-    createServerAssistantDispatcher({
-      registry,
-      resolveSession: (identity) => sessions.resolve(identity),
-      resolveCartBinding: async (context, args) => {
-        const parsed = args as { activeCartId?: unknown; cartVersion?: unknown } | null;
-        if (!parsed || typeof parsed.activeCartId !== "string" || typeof parsed.cartVersion !== "number") return null;
-        return sessions.bindCart(context, parsed.activeCartId, parsed.cartVersion);
-      },
-      idempotencyStore: new DurableIdempotencyStore(client),
-    }),
-  );
+  dispatchPromise ??= createSupabaseServiceClient()
+    .then((client) =>
+      createServerAssistantDispatcher({
+        registry,
+        resolveSession: (identity) => sessions.resolve(identity),
+        resolveCartBinding: async (context, args) => {
+          const parsed = args as { activeCartId?: unknown; cartVersion?: unknown } | null;
+          if (!parsed || typeof parsed.activeCartId !== "string" || typeof parsed.cartVersion !== "number") return null;
+          return sessions.bindCart(context, parsed.activeCartId, parsed.cartVersion);
+        },
+        idempotencyStore: new DurableIdempotencyStore(client),
+      }),
+    )
+    // สร้างไม่สำเร็จ = คืนโอกาสให้ request ถัดไปลองใหม่ (ไม่ memoize rejection ตลอดอายุ process)
+    .catch((error: unknown) => {
+      dispatchPromise = null;
+      throw error;
+    });
   return dispatchPromise;
 }
 
@@ -233,8 +239,14 @@ export async function POST(request: Request) {
   if (!parsed.success) return fail("invalid_body", 400);
   const input = parsed.data;
 
-  // dispatcher (รวม durable idempotency store) สร้าง lazy แบบ memoize ครั้งเดียวต่อ process
-  const dispatch = await getDispatch();
+  // dispatcher (รวม durable idempotency store) สร้าง lazy แบบ memoize ครั้งเดียวต่อ process —
+  // สร้างไม่ได้ (env supabase ผิดพลาด) = ตอบ typed 503 ไม่ปล่อย 500 ที่ไม่มี reason (review fix)
+  let dispatch: Awaited<ReturnType<typeof getDispatch>>;
+  try {
+    dispatch = await getDispatch();
+  } catch {
+    return fail("assistant_unavailable", 503, "ผู้ช่วยยังใช้ไม่ได้ชั่วคราว — ลองใหม่อีกครั้ง");
+  }
 
   // ── โหมด read-tool: เรียก tool อ่านตรง (search / current order) ผ่าน dispatcher เดิมทุกด่าน ──
   if (input.tool) {
