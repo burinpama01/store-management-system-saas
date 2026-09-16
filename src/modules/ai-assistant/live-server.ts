@@ -110,6 +110,15 @@ export type LiveAccessResult =
       readonly reason: "unauthorized" | "forbidden" | "ai_not_in_plan" | "live_pilot_only" | "live_disabled";
     };
 
+/** ข้อความบอกทางออก (ภาษาไทย) ของด่านร่วม — route ทั้งสองใช้ชุดเดียวกัน ไม่โชว์ code ดิบ */
+export const LIVE_ACCESS_NOTES: Record<Extract<LiveAccessResult, { ok: false }>["reason"], string> = {
+  unauthorized: "กรุณาเข้าสู่ระบบใหม่",
+  forbidden: "ต้องมีสิทธิ์ใช้ POS จึงเปิดโหมดเสียงสดได้",
+  ai_not_in_plan: "แพ็กเกจนี้ยังไม่รวมผู้ช่วย AI — ใช้หน้าจอได้ตามปกติ",
+  live_pilot_only: "โหมดเสียงสดเปิดให้เฉพาะร้านที่เข้าร่วมทดลอง — ใช้ปุ่มเสียงหรือหน้าจอได้ตามปกติ",
+  live_disabled: "โหมดเสียงสดยังปิดใช้งาน",
+};
+
 export async function resolveLiveAccess(): Promise<LiveAccessResult> {
   const authz = await getResolvedCurrentPermissions();
   if (!authz) return { ok: false, status: 401, reason: "unauthorized" };

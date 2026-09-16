@@ -26,7 +26,7 @@ import {
   resolveLiveTokenSecret,
   verifyLiveSessionToken,
 } from "@/modules/ai-assistant/live-session";
-import { liveComposition, resolveLiveAccess } from "@/modules/ai-assistant/live-server";
+import { liveComposition, resolveLiveAccess, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
 
 export const dynamic = "force-dynamic";
 
@@ -36,14 +36,7 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 /** คีย์ provider ต้องยาวพอสมควร — ค่าที่สั้นกว่านี้คือค่าผิด/ค่าว่าง ไม่ใช่ key จริง */
 const MIN_PROVIDER_KEY_LENGTH = 16;
 
-/** ข้อความบอกทางออก (ภาษาไทย) — UI ใช้แสดง ไม่มี code ดิบ */
-const ACCESS_NOTES: Record<string, string> = {
-  unauthorized: "กรุณาเข้าสู่ระบบใหม่",
-  forbidden: "ต้องมีสิทธิ์ใช้ POS จึงเปิดโหมดเสียงสดได้",
-  ai_not_in_plan: "แพ็กเกจนี้ยังไม่รวมผู้ช่วย AI — ใช้หน้าจอได้ตามปกติ",
-  live_pilot_only: "โหมดเสียงสดเปิดให้เฉพาะร้านที่เข้าร่วมทดลอง — ใช้ปุ่มเสียงหรือหน้าจอได้ตามปกติ",
-  live_disabled: "โหมดเสียงสดยังปิดใช้งาน",
-};
+const ACCESS_NOTES = LIVE_ACCESS_NOTES;
 
 function fail(reason: string, status: number, manualPath?: string, headers: Record<string, string> = {}) {
   return NextResponse.json({ ok: false, reason, manualPath }, { status, headers: { ...NO_STORE, ...headers } });
