@@ -108,6 +108,9 @@ export function describeDenialCode(code: string): string {
       return "ยังผูกตะกร้าไม่ได้ — แท็บหรืออุปกรณ์อื่นของบัญชีนี้อาจกำลังใช้ผู้ช่วยอยู่ ใช้แท็บเดิมหรือลองใหม่ภายหลัง";
     case "IDEMPOTENCY_CONFLICT":
       return "คำสั่งนี้ส่งมาแล้วด้วยเนื้อหาต่างกัน — ลองพิมพ์ใหม่";
+    case "IDEMPOTENCY_PENDING":
+      // PR3 — คำสั่งเดิม (คีย์เดียวกัน) ยังไม่ยืนยันผลในระบบ durable ห้ามทำซ้ำจนรู้ผล
+      return "คำสั่งเดิมยังไม่ยืนยันผล — รอสักครู่แล้วลองใหม่อีกครั้ง";
     case "CAPACITY_EXCEEDED":
       return "คำสั่งแน่นเกินไปชั่วขณะ — พักแป๊บเดียวแล้วลองใหม่";
     case "PERMISSION_DENIED":
