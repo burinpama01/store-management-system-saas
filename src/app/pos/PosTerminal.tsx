@@ -419,6 +419,37 @@ function ticketTimeLabel(iso?: string) {
   }).format(new Date(iso));
 }
 
+function ticketSyncBadge(syncState: SavedOrderTicket["syncState"] | undefined) {
+  if (syncState === "sync_failed") {
+    return { label: "ซิงค์ไม่สำเร็จ", className: "bg-red-50 text-red-700" };
+  }
+  if (syncState === "local") {
+    return { label: "ในเครื่อง", className: "bg-gray-100 text-gray-600" };
+  }
+  return { label: "ซิงค์แล้ว", className: "bg-emerald-50 text-emerald-700" };
+}
+
+function ticketPanelMessageTone(message: string): "success" | "warning" | "error" | "info" {
+  const normalized = message.toLowerCase();
+  if (/ไม่สำเร็จ|ล้มเหลว|fail|error|ไม่สามารถ|กรุณาตรวจ/.test(normalized)) return "error";
+  if (/กำลัง/.test(message)) return "info";
+  if (/แล้ว|สำเร็จ/.test(message)) return "success";
+  return "warning";
+}
+
+function ticketPanelMessageClass(tone: ReturnType<typeof ticketPanelMessageTone>) {
+  if (tone === "error") return "text-red-700";
+  if (tone === "success") return "text-teal-700";
+  if (tone === "info") return "text-teal-700";
+  return "text-amber-700";
+}
+
+function ticketPanelStatusShellClass(tones: Array<ReturnType<typeof ticketPanelMessageTone>>) {
+  if (tones.includes("error")) return "border-red-200 bg-red-50";
+  if (tones.includes("warning")) return "border-amber-200 bg-amber-50";
+  return "border-teal-200 bg-teal-50";
+}
+
 function historyPaymentLabel(order: Order) {
   const paid = order.payments.find((payment) => payment.status === "completed") ?? order.payments[0];
   if (!paid) return order.status === "paid" ? "ชำระแล้ว" : "ยังไม่ชำระ";
@@ -1327,15 +1358,24 @@ function TicketPanel({
   const [ticketSearch, setTicketSearch] = useState("");
   const normalizedSearch = ticketSearch.trim().toLowerCase();
   const filteredSavedTickets = normalizedSearch
-    ? savedTickets.filter((ticket) => [
-      ticket.ticketNumber,
-      ticket.label,
-      ticket.tableNumber,
-      ticket.customerName,
-      ticket.note,
-      ticket.syncState,
-    ].some((value) => (value ?? "").toLowerCase().includes(normalizedSearch)))
+    ? savedTickets.filter((ticket) => {
+      const syncLabel = ticketSyncBadge(ticket.syncState).label;
+      return [
+        ticket.ticketNumber,
+        ticket.label,
+        ticket.tableNumber,
+        ticket.customerName,
+        ticket.note,
+        ticket.syncState,
+        syncLabel,
+      ].some((value) => (value ?? "").toLowerCase().includes(normalizedSearch));
+    })
     : savedTickets;
+  const statusMessages = [
+    ticketMessage ? { key: "ticket", text: ticketMessage } : null,
+    printStatusMessage ? { key: "print", text: printStatusMessage } : null,
+  ].filter(Boolean) as Array<{ key: string; text: string }>;
+  const statusTones = statusMessages.map((entry) => ticketPanelMessageTone(entry.text));
 
   return (
     <div className="relative space-y-4" aria-busy={isTicketSyncPending}>
@@ -1347,67 +1387,80 @@ function TicketPanel({
         />
       )}
       <fieldset disabled={isTicketSyncPending} aria-disabled={isTicketSyncPending} className="space-y-4 disabled:opacity-60">
-      <div className="grid grid-cols-2 gap-2">
-        <label className="text-[11px] font-semibold text-gray-500">
-          โต๊ะ
-          <input
-            value={ticketDraft.tableNumber ?? ""}
-            onChange={(event) => onTicketDraftChange({ tableNumber: event.target.value })}
-            placeholder="เช่น 12"
-            className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
-          />
-        </label>
-        <label className="text-[11px] font-semibold text-gray-500">
-          ลูกค้า
-          <input
-            value={ticketDraft.customerName ?? ""}
-            onChange={(event) => onTicketDraftChange({ customerName: event.target.value })}
-            placeholder="ชื่อลูกค้า"
-            className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
-          />
-        </label>
-        <label className="col-span-2 text-[11px] font-semibold text-gray-500">
-          note
-          <input
-            value={ticketDraft.note ?? ""}
-            onChange={(event) => onTicketDraftChange({ note: event.target.value })}
-            placeholder="หมายเหตุของตั๋ว"
-            className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
-          />
-        </label>
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-[11px] font-semibold text-gray-500">
+            โต๊ะ
+            <input
+              value={ticketDraft.tableNumber ?? ""}
+              onChange={(event) => onTicketDraftChange({ tableNumber: event.target.value })}
+              placeholder="เช่น 12"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+            />
+          </label>
+          <label className="text-[11px] font-semibold text-gray-500">
+            ลูกค้า
+            <input
+              value={ticketDraft.customerName ?? ""}
+              onChange={(event) => onTicketDraftChange({ customerName: event.target.value })}
+              placeholder="ชื่อลูกค้า"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+            />
+          </label>
+          <label className="col-span-2 text-[11px] font-semibold text-gray-500">
+            หมายเหตุ
+            <input
+              value={ticketDraft.note ?? ""}
+              onChange={(event) => onTicketDraftChange({ note: event.target.value })}
+              placeholder="หมายเหตุของตั๋ว"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-xs font-normal text-gray-800"
+            />
+          </label>
+        </div>
+        <p className="text-[11px] leading-snug text-gray-400">
+          โต๊ะใช้เรียกครัว — ลูกค้า/หมายเหตุไม่บังคับ
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Button
+          variant="secondary"
           loading={isTicketSyncPending}
           loadingText="กำลังบันทึก..."
           disabled={cart.items.length === 0}
           onClick={onSaveTicket}
-          className="min-h-11 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="min-h-11 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-40"
         >
           {activeTicket ? "บันทึกทับตั๋ว" : "บันทึกตั๋ว"}
         </Button>
         <Button
+          variant="primary"
           loading={isPrintingTicket}
           loadingText="กำลังพิมพ์..."
           disabled={cart.items.length === 0}
           onClick={onPrintTicket}
-          className="min-h-11 rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="min-h-11 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-40"
         >
           พิมพ์ใบสั่ง
         </Button>
       </div>
-      <p className="text-[11px] text-gray-500">ใบสั่งออเดอร์ ไม่ใช่ใบเสร็จ</p>
-      {ticketMessage && (
-        <p aria-live="polite" className="text-xs text-amber-700">
-          {ticketMessage}
-        </p>
-      )}
-      {printStatusMessage && (
-        <p aria-live="polite" className="text-xs text-teal-700">
-          {printStatusMessage}
-        </p>
-      )}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
+        <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-500">
+          ใบสั่งออเดอร์ — ไม่ใช่ใบเสร็จ
+        </span>
+        {statusMessages.length > 0 && (
+          <div
+            aria-live="polite"
+            className={`space-y-1 rounded-lg border px-3 py-2 ${ticketPanelStatusShellClass(statusTones)}`}
+          >
+            {statusMessages.map((entry) => (
+              <p key={entry.key} className={`text-xs leading-snug ${ticketPanelMessageClass(ticketPanelMessageTone(entry.text))}`}>
+                {entry.text}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
           <input
@@ -1422,13 +1475,15 @@ function TicketPanel({
             ยังไม่มีตั๋วที่บันทึก
           </p>
         ) : (
-          <ul className="max-h-[45dvh] space-y-1 overflow-y-auto pr-1">
-            {filteredSavedTickets.map((ticket) => (
+          <ul className="max-h-[45dvh] space-y-2 overflow-y-auto pr-1">
+            {filteredSavedTickets.map((ticket) => {
+              const syncBadge = ticketSyncBadge(ticket.syncState);
+              return (
               <li key={ticket.id} className="flex items-stretch gap-1">
                 <button
                   type="button"
                   onClick={() => onLoadTicket(ticket)}
-                  className={`min-h-11 flex-1 rounded-lg border px-3 py-2 text-left text-xs ${
+                  className={`min-h-11 flex-1 rounded-lg border px-3 py-2.5 text-left text-xs ${
                     ticket.id === activeTicketId
                       ? "border-amber-300 bg-amber-50 text-amber-800"
                       : "border-gray-200 text-gray-700 hover:border-gray-300"
@@ -1436,21 +1491,21 @@ function TicketPanel({
                 >
                   <span className="flex items-center justify-between gap-2 font-semibold">
                     <span>{ticket.ticketNumber}</span>
-                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-                      {ticket.syncState === "sync_failed" ? "sync fail" : ticket.syncState === "local" ? "local" : "synced"}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${syncBadge.className}`}>
+                      {syncBadge.label}
                     </span>
                   </span>
-                  <span className="block text-[11px] text-gray-500">
+                  <span className="mt-1 block text-[11px] text-gray-500">
                     {ticket.cart.items.length} รายการ · {priceStr(ticket.cart.total)}
                   </span>
-                  <span className="block text-[11px] leading-snug text-gray-600">
+                  <span className="mt-0.5 block truncate text-[11px] leading-relaxed text-gray-600">
                     {ticketItemSummary(ticket)}
                   </span>
-                  <span className="block truncate text-[11px] text-gray-500">
+                  <span className="mt-0.5 block truncate text-[11px] text-gray-500">
                     {ticketMetaLabel(ticket)}
                   </span>
-                  <span className="block text-[10px] text-gray-400">
-                    แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · sync {ticketTimeLabel(ticket.lastSyncedAt)}
+                  <span className="mt-0.5 block text-[10px] text-gray-400">
+                    แก้ล่าสุด {ticketTimeLabel(ticket.updatedAt)} · ซิงค์ {ticketTimeLabel(ticket.lastSyncedAt)}
                   </span>
                 </button>
                 <button
@@ -1463,7 +1518,8 @@ function TicketPanel({
                   ลบ
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
