@@ -4,8 +4,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/server/integrations/supabase/database.types";
+import { z } from "zod";
+import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { DurableIdempotencyStore } from "@/modules/ai-assistant/durable-idempotency";
-import type { IdempotencyClaimMeta, Result } from "@/modules/ai-assistant/foundation";
+import { createDispatcher, ToolRegistry, type IdempotencyClaimMeta, type Result, type TrustedContext } from "@/modules/ai-assistant/foundation";
 
 type FakeRow = {
   id: string;
@@ -238,5 +240,54 @@ describe("DurableIdempotencyStore", () => {
     await expect(store.claim("k1", "f1", { scope: "s", expiresAt: Date.now() + 1_000 }, async () => ok(null))).rejects.toThrow();
     expect(() => new DurableIdempotencyStore(db.client, { retentionGraceMs: -1 })).toThrow();
     expect(() => new DurableIdempotencyStore(db.client, { sweepBatchSize: 0 })).toThrow();
+  });
+});
+
+// PR3 — wiring ของ dispatcher: production safe_write ปลดได้เฉพาะเมื่อ wire durable store
+// และเปิด mutation switch เท่านั้น — ค่า default (memory) ยังติด DURABLE_STORAGE_REQUIRED เหมือนเดิม
+describe("dispatcher wired with durable idempotency", () => {
+  const context = (): TrustedContext => ({ organizationId: "org", storeId: "store", userId: "user", sessionId: "session", expiresAt: Date.now() + 60000, allowedTools: ["test.write"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true });
+  const write = (idempotencyKey = "key1") => ({ tool: "test.write", args: { value: "hello" }, idempotencyKey });
+  function setup(overrides: { mutationsEnabled?: boolean } = {}) {
+    const db = createFakeDb();
+    const execute = vi.fn(async () => ({ count: 1 }));
+    const audit = vi.fn(async () => {});
+    const registry = new ToolRegistry("production");
+    registry.register({ name: "test.write", risk: "safe_write", permissions: ["pos.use"], args: z.object({ value: z.string() }).strict(), result: z.object({ count: z.number() }), execute });
+    const ctx = context();
+    const dispatch = createDispatcher({
+      registry, enabled: true, environment: "production", mutationsEnabled: overrides.mutationsEnabled,
+      resolveContext: async () => ctx, audit,
+      idempotencyStore: new DurableIdempotencyStore(db.client, { sweepIntervalMs: 3_600_000 }),
+    });
+    return { db, execute, audit, dispatch };
+  }
+
+  it("passes production safe_write through a durable store when mutations are enabled", async () => {
+    const s = setup({ mutationsEnabled: true });
+    expect(await s.dispatch(write())).toEqual({ ok: true, data: { count: 1 } });
+    expect(s.execute).toHaveBeenCalledTimes(1);
+    expect(s.db.rows).toHaveLength(1);
+    expect(s.db.rows[0].status).toBe("completed");
+    expect(s.db.rows[0].tool).toBe("test.write");
+    expect(s.db.rows[0].session_id).toBe("session");
+    // replay ข้าม request ผ่าน durable store — execute ครั้งเดียว
+    expect(await s.dispatch(write())).toEqual({ ok: true, data: { count: 1 } });
+    expect(s.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("still requires the mutation switch even when a durable store is wired", async () => {
+    const s = setup();
+    expect(await s.dispatch(write())).toEqual({ ok: false, code: "MUTATIONS_DISABLED" });
+    expect(s.execute).not.toHaveBeenCalled();
+    // ปฏิเสธก่อนแตะ store — ไม่มีแถวค้างในตาราง
+    expect(s.db.rows).toHaveLength(0);
+  });
+
+  it("maps durable storage outages to CONTEXT_UNAVAILABLE without executing", async () => {
+    const s = setup({ mutationsEnabled: true });
+    s.db.script.failInsert = 1;
+    expect(await s.dispatch(write())).toEqual({ ok: false, code: "CONTEXT_UNAVAILABLE" });
+    expect(s.execute).not.toHaveBeenCalled();
   });
 });

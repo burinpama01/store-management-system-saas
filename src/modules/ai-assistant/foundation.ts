@@ -72,6 +72,12 @@ interface DispatcherOptions {
   /** โควตา idempotency ต่อ scope (organization|store|user|session) — session เดียวเต็มแล้ว fail เฉพาะตัวเอง ไม่กระทบ session อื่น */
   scopeCapacity?: number;
   /**
+   * PR3 — store idempotency ภายนอก (เช่น DurableIdempotencyStore) ไม่ให้ = memory store เดิม
+   * production จะปลด safe_write ได้ก็ต่อเมื่อ store ที่ให้มามี durability แบบ durable เท่านั้น
+   * (memory เสมอ → ติด DURABLE_STORAGE_REQUIRED เหมือนเดิม)
+   */
+  idempotencyStore?: IdempotencyStore;
+  /**
    * ตรวจ cart binding ให้ tool ที่ requiresActiveCart (PR2) — derive จาก session ฝั่ง server เท่านั้น
    * คืน null / throw = ปฏิเสธด้วย CONTEXT_UNAVAILABLE ก่อนถึง execute เสมอ
    * ไม่ให้ option นี้ = tool ที่ต้องการ binding ถูกปฏิเสธทั้งหมด (fail closed เหมือน PR1)
@@ -193,8 +199,8 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 
 /** In-memory ledger: capacity ต่อ scope + evict session หมดอายุ + global backstop — เต็มจริงแล้วจึงปฏิเสธ แทนเสี่ยง execute write ซ้ำ */
 export function createDispatcher(options: DispatcherOptions): (request: unknown) => Promise<Result> {
-  // PR1 ไม่รับ durable:true หรือ external store เพื่อปลด production write
-  const store: IdempotencyStore = new MemoryIdempotencyStore(options.capacity, options.scopeCapacity);
+  // PR3 — รับ external store ได้แล้ว แต่ไม่ให้ = memory store เดิมเสมอ (พฤติกรรม dev/test/production คงเดิม)
+  const store: IdempotencyStore = options.idempotencyStore ?? new MemoryIdempotencyStore(options.capacity, options.scopeCapacity);
   return async request => {
     const parsed = envelope.safeParse(request);
     if (!parsed.success) return fail("INVALID_REQUEST");
@@ -222,7 +228,8 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       if (!args.success) return audit(fail("INVALID_ARGS"));
       // PR2 (M4 review) — เกต mutation ต้องมาก่อนการผูกตะกร้า: คำสั่งเขียนที่ถูกปฏิเสธ
       // ต้องไม่ทำให้ session ผูก cartId (binding เป็น side effect ของ session store)
-      if (tool.risk === "safe_write" && options.environment === "production") return audit(fail("DURABLE_STORAGE_REQUIRED"));
+      // PR3 — production ปลดได้เฉพาะเมื่อ store ที่ wire เป็น durable (durability != "memory")
+      if (tool.risk === "safe_write" && options.environment === "production" && store.durability === "memory") return audit(fail("DURABLE_STORAGE_REQUIRED"));
       if (tool.risk === "safe_write") {
         let mutationsEnabled: boolean;
         try { mutationsEnabled = (typeof options.mutationsEnabled === "function" ? options.mutationsEnabled() : options.mutationsEnabled) === true; } catch { mutationsEnabled = false; }
@@ -239,7 +246,13 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       try { fingerprint = createHash("sha256").update(canonical({ tool: tool.name, args: args.data })).digest("hex"); } catch { return audit(fail("INVALID_ARGS")); }
       // tool อยู่ใน fingerprint เพื่อให้ reuse key ข้าม tool เป็น conflict; scope แยกโควตา/eviction ต่อ org|store|user|session
       const scope = JSON.stringify([ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId]);
-      const result = await store.claim(parsed.data.idempotencyKey, fingerprint, { scope, expiresAt: ctx.expiresAt }, async (): Promise<Result> => {
+      const result = await store.claim(parsed.data.idempotencyKey, fingerprint, {
+        scope,
+        expiresAt: ctx.expiresAt,
+        // PR3 — durable store ใช้บันทึกแถวและตัดสิน replay/conflict ว่าเป็นของ session เดิม
+        tool: tool.name,
+        identity: { organizationId: ctx.organizationId, storeId: ctx.storeId, userId: ctx.userId, sessionId: ctx.sessionId },
+      }, async (): Promise<Result> => {
         try {
           const raw = await tool.execute(args.data, ctx, cartBinding);
           const output = tool.result.safeParse(raw);

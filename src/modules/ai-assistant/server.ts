@@ -2,7 +2,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { readAssistantConfig } from "./config";
-import { createDispatcher, type AuditMetadata, type CartBinding, type ToolRegistry, type TrustedContext } from "./foundation";
+import { createDispatcher, type AuditMetadata, type CartBinding, type IdempotencyStore, type ToolRegistry, type TrustedContext } from "./foundation";
 
 /** identity ที่ derive จาก server session เท่านั้น ห้ามรับจาก model หรือ caller */
 export interface AssistantIdentity {
@@ -27,6 +27,11 @@ export interface ServerAssistantDispatcherOptions {
    * args ที่ได้รับคือ args ที่ผ่าน Zod แล้วเท่านั้น; คืน null/throw = ปฏิเสธ CONTEXT_UNAVAILABLE
    */
   resolveCartBinding?: (context: TrustedContext, args: unknown) => Promise<CartBinding | null>;
+  /**
+   * PR3 — store idempotency แบบ durable (DurableIdempotencyStore) สำหรับปลด safe_write ใน production;
+   * ไม่ให้ = memory store เดิม และ production safe_write ยังโดน DURABLE_STORAGE_REQUIRED ตามเกตเดิม
+   */
+  idempotencyStore?: IdempotencyStore;
 }
 
 /** Audit เขียนผ่าน logSystemEvent เฉพาะ allowlist metadata ไม่มี args/result/error/raw text */
@@ -83,6 +88,7 @@ export function createServerAssistantDispatcher(options: ServerAssistantDispatch
     mutationsEnabled: () => readAssistantConfig(process.env).mutationsEnabled,
     resolveContext: () => resolveServerContext(options),
     resolveCartBinding: options.resolveCartBinding,
+    idempotencyStore: options.idempotencyStore,
     audit: writeAssistantAudit,
   });
 }
