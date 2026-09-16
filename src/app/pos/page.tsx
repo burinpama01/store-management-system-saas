@@ -15,6 +15,7 @@ import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
 import { listUnifiedPosKitchenQueue } from "@/modules/unified-pos/kitchen-repository";
 import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
 import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
+import { readAssistantConfig } from "@/modules/ai-assistant/config";
 import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
 
 export const dynamic = "force-dynamic";
@@ -177,6 +178,7 @@ export default async function PosPage() {
         voiceCommands={DASHBOARD_COMMANDS.filter((command) =>
           resolved.can(command.permission as PermissionKey),
         )}
+        aiAssistantTextEnabled={readAssistantConfig(process.env).enabled}
       />
       {alertNotifiers}
     </div>

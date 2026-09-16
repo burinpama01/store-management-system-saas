@@ -76,4 +76,10 @@ export interface UnifiedPosWorkspaceProps {
   readonly voiceProductAliases?: readonly VoiceProductAlias[];
   /** ฉีด speech adapter สำหรับทดสอบเท่านั้น (ปกติ undefined = ใช้ของเบราว์เซอร์) */
   readonly voiceAdapter?: VoiceSpeechAdapter;
+  /**
+   * PR2 — ผู้ช่วย AI โหมดข้อความ (ADR-008: ปุ่มแยกจาก Voice POS)
+   * อ่านจาก server env เท่านั้น (AI_ASSISTANT_ENABLED + kill switch) ห้าม client เปิดเอง;
+   * สิทธิ์/แพ็กเกจ/rate limit ตรวจซ้ำที่ route ทุกครั้ง ปุ่มเป็นแค่ทางเข้า
+   */
+  readonly aiAssistantTextEnabled?: boolean;
 }
