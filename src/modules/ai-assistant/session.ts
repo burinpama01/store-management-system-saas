@@ -8,7 +8,9 @@
 //     ทำหน้าที่แค่ "ผูก session ↔ ตะกร้าใบเดียว" และกัน replay เก่าด้วย cart version
 //
 // ข้อจำกัดที่ยอมรับใน MVP (บันทึกใน checkpoint):
-//   - เก็บในหน่วยความจำของ process เดียว: restart/หลาย instance = session ใหม่ (idempotency ledger เป็น memory เช่นกัน)
+//   - เก็บในหน่วยความจำของ process เดียว: restart/หลาย instance = session ใหม่ (session id ต่อ process —
+//     idempotency ledger เป็น durable (supabase) แล้ว แต่ replay ข้าม instance/restart จะโดน
+//     IDEMPOTENCY_CONFLICT เพราะ session_id ไม่ตรง — fail-closed กัน execute ซ้ำ แก้จริงด้วย device/terminal registry)
 //   - TTL คงที่ ไม่ต่ออายุด้วย session id เดิม (ตาม contract ที่ค้างจาก PR1) — หมดอายุแล้วได้ session id ใหม่
 //     ซึ่งหมายถึง idempotency scope ใหม่; client จึงต้องกันการ apply ซ้ำที่ชั้น UI ด้วย cart version/การเทียบตะกร้า
 
