@@ -2,7 +2,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { readAssistantConfig } from "./config";
-import { createDispatcher, type AuditMetadata, type ToolRegistry, type TrustedContext } from "./foundation";
+import { createDispatcher, type AuditMetadata, type CartBinding, type ToolRegistry, type TrustedContext } from "./foundation";
 
 /** identity ที่ derive จาก server session เท่านั้น ห้ามรับจาก model หรือ caller */
 export interface AssistantIdentity {
@@ -22,6 +22,11 @@ export interface ServerAssistantDispatcherOptions {
   registry: ToolRegistry;
   /** resolver ที่เชื่อถือได้ เช่น ตาราง assistant session ฝั่ง server — ห้ามสร้างจาก request */
   resolveSession: (identity: AssistantIdentity) => Promise<AssistantServerSession>;
+  /**
+   * PR2 — ตรวจ active cart binding ให้ tool ที่ requiresActiveCart ผ่าน session store ฝั่ง server
+   * args ที่ได้รับคือ args ที่ผ่าน Zod แล้วเท่านั้น; คืน null/throw = ปฏิเสธ CONTEXT_UNAVAILABLE
+   */
+  resolveCartBinding?: (context: TrustedContext, args: unknown) => Promise<CartBinding | null>;
 }
 
 /** Audit เขียนผ่าน logSystemEvent เฉพาะ allowlist metadata ไม่มี args/result/error/raw text */
@@ -77,6 +82,7 @@ export function createServerAssistantDispatcher(options: ServerAssistantDispatch
     // PR1 config ล็อก false ไว้ แต่ต้อง wire ผ่าน config เดียวกันเสมอ กัน config drift ตอน PR2+
     mutationsEnabled: () => readAssistantConfig(process.env).mutationsEnabled,
     resolveContext: () => resolveServerContext(options),
+    resolveCartBinding: options.resolveCartBinding,
     audit: writeAssistantAudit,
   });
 }

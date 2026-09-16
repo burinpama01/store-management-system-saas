@@ -18,6 +18,15 @@ export interface TrustedContext {
   billing: BillingState;
   can: (permission: PermissionKey) => boolean;
 }
+/**
+ * binding ของตะกร้าที่ server ตรวจแล้วเท่านั้น (PR2) — tool ที่ requiresActiveCart ได้รับ
+ * ค่านี้จาก dispatcher ผ่าน resolveCartBinding ซึ่งต้อง derive จาก session ฝั่ง server
+ * ห้ามสร้างจาก model หรือเชื่อ activeCartId จาก request โดยตรง
+ */
+export interface CartBinding {
+  readonly activeCartId: string;
+  readonly cartVersion: number;
+}
 export interface ToolDefinition {
   name: string;
   risk: Risk;
@@ -26,7 +35,7 @@ export interface ToolDefinition {
   result: z.ZodType;
   developmentOnly?: boolean;
   requiresActiveCart?: boolean;
-  execute: (args: unknown, context: TrustedContext) => Promise<unknown>;
+  execute: (args: unknown, context: TrustedContext, cartBinding: CartBinding | null) => Promise<unknown>;
 }
 const nameSchema = z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/).max(80);
 const envelope = z.object({ tool: nameSchema, args: z.unknown(), idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/) }).strict();
@@ -62,6 +71,12 @@ interface DispatcherOptions {
   capacity?: number;
   /** โควตา idempotency ต่อ scope (organization|store|user|session) — session เดียวเต็มแล้ว fail เฉพาะตัวเอง ไม่กระทบ session อื่น */
   scopeCapacity?: number;
+  /**
+   * ตรวจ cart binding ให้ tool ที่ requiresActiveCart (PR2) — derive จาก session ฝั่ง server เท่านั้น
+   * คืน null / throw = ปฏิเสธด้วย CONTEXT_UNAVAILABLE ก่อนถึง execute เสมอ
+   * ไม่ให้ option นี้ = tool ที่ต้องการ binding ถูกปฏิเสธทั้งหมด (fail closed เหมือน PR1)
+   */
+  resolveCartBinding?: (context: TrustedContext, args: unknown) => Promise<CartBinding | null>;
 }
 function canonical(value: unknown): string {
   if (value === null) return "null";
@@ -190,22 +205,28 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       if (!ctx.allowedTools.includes(tool.name) || !tool.permissions.every(permission => ctx.can(permission))) return audit(fail("PERMISSION_DENIED"));
       if (options.environment === "production" && (tool.developmentOnly || tool.name === "system.echo")) return audit(fail("RISK_BLOCKED"));
       if (tool.risk !== "read" && tool.risk !== "safe_write") return audit(fail("RISK_BLOCKED"));
-      if (tool.requiresActiveCart) return audit(fail("CONTEXT_UNAVAILABLE"));
+      const args = tool.args.safeParse(parsed.data.args);
+      if (!args.success) return audit(fail("INVALID_ARGS"));
+      // PR2 — tool ที่ต้องมี active cart: ไม่มี trusted resolver หรือตรวจไม่ผ่าน = ปฏิเสธก่อน execute เสมอ
+      let cartBinding: CartBinding | null = null;
+      if (tool.requiresActiveCart) {
+        if (!options.resolveCartBinding) return audit(fail("CONTEXT_UNAVAILABLE"));
+        try { cartBinding = await options.resolveCartBinding(ctx, args.data); } catch { cartBinding = null; }
+        if (!cartBinding) return audit(fail("CONTEXT_UNAVAILABLE"));
+      }
       if (tool.risk === "safe_write" && options.environment === "production") return audit(fail("DURABLE_STORAGE_REQUIRED"));
       if (tool.risk === "safe_write") {
         let mutationsEnabled: boolean;
         try { mutationsEnabled = (typeof options.mutationsEnabled === "function" ? options.mutationsEnabled() : options.mutationsEnabled) === true; } catch { mutationsEnabled = false; }
         if (!mutationsEnabled) return audit(fail("MUTATIONS_DISABLED"));
       }
-      const args = tool.args.safeParse(parsed.data.args);
-      if (!args.success) return audit(fail("INVALID_ARGS"));
       let fingerprint: string;
       try { fingerprint = createHash("sha256").update(canonical({ tool: tool.name, args: args.data })).digest("hex"); } catch { return audit(fail("INVALID_ARGS")); }
       // tool อยู่ใน fingerprint เพื่อให้ reuse key ข้าม tool เป็น conflict; scope แยกโควตา/eviction ต่อ org|store|user|session
       const scope = JSON.stringify([ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId]);
       const result = await store.claim(parsed.data.idempotencyKey, fingerprint, { scope, expiresAt: ctx.expiresAt }, async (): Promise<Result> => {
         try {
-          const raw = await tool.execute(args.data, ctx);
+          const raw = await tool.execute(args.data, ctx, cartBinding);
           const output = tool.result.safeParse(raw);
           return output.success ? { ok: true, data: structuredClone(output.data) } : fail("EXECUTION_FAILED");
         } catch { return fail("EXECUTION_FAILED"); }
