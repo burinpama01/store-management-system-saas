@@ -108,6 +108,8 @@ export const LIVE_TELEMETRY_EVENTS = [
   "cart.apply_failed",
   // AI "กดปุ่มคิดเงิน" ให้ (ไม่ได้สร้าง payment เอง) — ต้องเห็นใน timeline ว่าใครเป็นคนเปิดจอ
   "cart.checkout_opened",
+  // ผู้ช่วยได้คำถามตัวเลือกเดิมซ้ำจนถึงเพดาน — ตัดวงวนแล้วให้พนักงานเลือกบนจอ
+  "cart.clarification_repeated",
 ] as const;
 export type LiveTelemetryEventName = (typeof LIVE_TELEMETRY_EVENTS)[number];
 

@@ -73,6 +73,8 @@ const PendingItemSchema = z.object({
   note: z.string().max(200).nullish(),
   candidates: z.array(ProductRefSchema).max(5).nullish(),
   choices: z.array(OptionChoiceSchema).max(4).nullish(),
+  missingGroups: z.array(z.string().min(1).max(60)).max(8).nullish(),
+  unmatchedOptionPhrases: z.array(z.string().min(1).max(120)).max(9).nullish(),
 }).strict();
 
 /** intent ตะกร้าที่ resolver เดิมคืน — ต้อง serialize ได้และตรงกับ VoiceIntent จริง */
@@ -126,6 +128,8 @@ const CartCommandResultSchema = z.discriminatedUnion("status", [
     note: z.string().max(200).nullish(),
     candidates: z.array(ProductRefSchema).max(5).nullish(),
     choices: z.array(OptionChoiceSchema).max(4).nullish(),
+    missingGroups: z.array(z.string().min(1).max(60)).max(8).nullish(),
+    unmatchedOptionPhrases: z.array(z.string().min(1).max(120)).max(9).nullish(),
   }).strict(),
 ]);
 
@@ -266,6 +270,124 @@ function cartRefArgs() {
   return { activeCartId: ActiveCartIdSchema, cartVersion: CartVersionSchema };
 }
 
+// ── เพิ่มเมนูพร้อมตัวเลือกจากคำพูดของ model ──────────────────────────────────
+//
+// ปัญหาหน้าร้าน (2026-09-17): ผู้ช่วยถามตัวเลือกวนไม่จบ เพราะ resolver เดิมรับเฉพาะ
+// "ชื่อเมนูขึ้นต้น + ชื่อตัวเลือกเป๊ะ" แต่ model มักตอบกลับมาแบบ
+//   - ติดชื่อกลุ่ม "ความหวาน: หวานน้อย" / ติดคำลงท้าย "เย็นครับ" / "อเมริกาโน่ 1 แก้ว"
+//   - เรียกชื่อเมนูสั้นกว่าชื่อจริง ("คาปูชิโน่" แทน "คาปูชิโน่ (Cappuccino)") ⇒ ตัวเลือกถูกทิ้งเงียบ
+// ทุกแบบได้ needs_option ข้อความเดิมทุกรอบ model จึงถามซ้ำไม่จบ
+//
+// ทางแก้ (ไม่แตะ resolver ที่ Voice POS ใช้ร่วม): ทางเดิมผ่าน → ใช้ทางเดิม
+// ไม่ผ่าน → จับตัวเลือกทีละวลีกับ "สินค้าตัวนั้นตัวเดียว" หลังตัดชื่อกลุ่ม/คำลงท้าย
+// แล้วประกอบวลีมาตรฐาน "ชื่อเมนูจริง + ชื่อตัวเลือกจริง" และตรวจซ้ำด้วย resolver ชุดเต็ม
+// (ตัวเดียวกับที่หน้าจอใช้ตอนใส่ตะกร้า) ต้องได้สินค้าเดียวกันและเลือกครบเท่านั้นจึงอนุมัติ — ยังไม่เดา
+
+const TONE_MARKS = /[่-๋์]/g;
+const OPTION_LABEL_WORDS = ["ตัวเลือกสินค้า", "ตัวเลือก", "ขนาด", "แบบ"];
+const OPTION_FILLER_WORDS = [
+  "ครับ", "คับ", "ค่ะ", "คะ", "ค่า", "นะ", "จ้ะ", "จ้า", "จ๊ะ", "หน่อย", "ด้วย", "ละกัน", "แล้วกัน",
+  "ทั้งหมด", "ทุกแก้ว", "ทุกอัน", "แก้ว", "ที่", "อัน", "จาน", "ชิ้น", "ถ้วย", "ขวด", "กล่อง",
+  "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า", "สิบ", "เอา", "ขอ",
+].map((word) => word.replace(TONE_MARKS, ""));
+
+function stripWords(text: string, words: readonly string[]): string {
+  let out = text;
+  for (const word of [...words].sort((a, b) => b.length - a.length)) {
+    if (word) out = out.split(word).join(" ");
+  }
+  return out;
+}
+
+function optionLabels(product: Product): string[] {
+  return [...OPTION_LABEL_WORDS, ...product.modifierGroups.map((group) => group.name)];
+}
+
+/** รูปแบบวลีที่ลองจับ เรียงจาก "ตรงกับที่พูดที่สุด" ไป "ตัดคำเกินออกแล้ว" */
+function optionPhraseVariants(phrase: string, product: Product): string[] {
+  const noPunct = phrase.replace(/[:：,，;/|"'()]/g, " ");
+  const noLabel = stripWords(noPunct, optionLabels(product));
+  const noFiller = stripWords(noLabel.replace(TONE_MARKS, ""), OPTION_FILLER_WORDS).replace(/\d+/g, " ");
+  return [...new Set([phrase, noPunct, noLabel, noFiller].map((value) => value.trim()).filter(Boolean))];
+}
+
+/** จับหนึ่งวลีกับตัวเลือกของสินค้าตัวนี้ตัวเดียว (กันชื่อเมนูอื่นขึ้นต้นซ้อน) — จับไม่ครบทั้งวลี = null */
+function matchOptionPhrase(product: Product, phrase: string): string[] | null {
+  for (const candidate of optionPhraseVariants(phrase, product)) {
+    const probe = resolveVoiceProductPhrase(`${product.name} ${candidate}`, [product], []);
+    if (probe.status !== "matched") continue;
+    if (probe.selection.unknownPhrase.length === 0 && probe.selection.spokenOptionNames.length > 0) {
+      return [...probe.selection.spokenOptionNames];
+    }
+  }
+  return null;
+}
+
+/** คำที่เหลือในชื่อเมนูหลังจับตัวเลือกแล้ว เป็นแค่คำลงท้าย/จำนวน/ชื่อกลุ่มหรือเปล่า */
+function isOnlyFiller(leftover: string, product: Product): boolean {
+  if (!leftover) return true;
+  const cleaned = stripWords(stripWords(leftover.replace(TONE_MARKS, ""), OPTION_FILLER_WORDS), optionLabels(product))
+    .replace(/[\d\s:：,，()]+/g, "");
+  return cleaned.length === 0;
+}
+
+async function resolveAddCommand(
+  item: { readonly productPhrase: string; readonly quantity: number; readonly optionPhrases: readonly string[] },
+  deps: PosToolDeps,
+  context: TrustedContext,
+): Promise<z.infer<typeof CartCommandResultSchema>> {
+  const original = await resolveCartCommand(
+    { intent: "pos.add_item", productPhrase: item.productPhrase, quantity: item.quantity, optionPhrases: [...item.optionPhrases] },
+    deps,
+    context,
+  );
+  if (original.status !== "clarification" || original.reason !== "needs_option") return original;
+
+  const catalog = await deps.loadCatalog(context.storeId);
+  const base = resolveVoiceProductPhrase(item.productPhrase, catalog.products, catalog.aliases);
+  if (base.status !== "matched" || base.selection.product.outOfStock === true) return original;
+  const product = base.selection.product;
+
+  const optionNames: string[] = [...base.selection.spokenOptionNames];
+  const unmatched: string[] = [];
+  if (!isOnlyFiller(base.selection.unknownPhrase, product)) unmatched.push(item.productPhrase);
+  for (const phrase of item.optionPhrases) {
+    const matched = matchOptionPhrase(product, phrase);
+    if (matched) optionNames.push(...matched);
+    else unmatched.push(phrase);
+  }
+
+  const canonical = [product.name, ...new Set(optionNames)].join(" ");
+  const check = resolveVoiceProductPhrase(canonical, catalog.products, catalog.aliases);
+  const selection = check.status === "matched" && check.selection.product.id === product.id ? check.selection : null;
+  const missingGroups = selection
+    ? [...(selection.needsVariant ? ["ตัวเลือกสินค้า"] : []), ...selection.missingRequiredGroups]
+    : [];
+
+  if (selection && unmatched.length === 0 && missingGroups.length === 0 && selection.unknownPhrase.length === 0) {
+    return { status: "apply", intent: { type: "pos.add_item", productPhrase: canonical, quantity: item.quantity }, productName: product.name };
+  }
+
+  const allChoices = describeOptionChoices(product);
+  const missingChoices = allChoices.filter((choice) => missingGroups.includes(choice.group));
+  const choices = missingChoices.length > 0 ? missingChoices : allChoices;
+  const note = !selection
+    ? "ชื่อเมนูซ้อนกับเมนูอื่น — ให้พนักงานเลือกตัวเลือกบนหน้าจอ"
+    : unmatched.length > 0
+      ? `ไม่รู้จักตัวเลือก "${unmatched.join(", ")}" — ส่ง optionPhrases เป็นชื่อตัวเลือกตรงตาม choices เท่านั้น`
+      : `ยังต้องเลือก ${missingGroups.join(" / ")}`;
+  return {
+    status: "clarification",
+    reason: "needs_option",
+    productId: product.id,
+    productName: product.name,
+    note: note.slice(0, 200),
+    ...(choices.length > 0 ? { choices } : {}),
+    ...(missingGroups.length > 0 ? { missingGroups: missingGroups.slice(0, 8) } : {}),
+    ...(unmatched.length > 0 ? { unmatchedOptionPhrases: unmatched.slice(0, 9).map((text) => text.slice(0, 120)) } : {}),
+  };
+}
+
 /**
  * resolve ทุกรายการของคำสั่งชุดเดียว แล้วตัดสินแบบ "ครบหรือไม่เอาเลย"
  *
@@ -282,11 +404,7 @@ async function resolveBatchAddCommand(
   const pending: z.infer<typeof PendingItemSchema>[] = [];
 
   for (const item of items) {
-    const resolved = await resolveCartCommand(
-      { intent: "pos.add_item", productPhrase: item.productPhrase, quantity: item.quantity, optionPhrases: item.optionPhrases },
-      deps,
-      context,
-    );
+    const resolved = await resolveAddCommand(item, deps, context);
     if (resolved.status === "apply") {
       resolvedItems.push({ intent: resolved.intent, productName: resolved.productName });
       continue;
@@ -299,7 +417,7 @@ async function resolveBatchAddCommand(
     const product = resolved.productId
       ? catalog.products.find((candidate) => candidate.id === resolved.productId)
       : undefined;
-    const choices = product ? describeOptionChoices(product) : [];
+    const choices = resolved.choices ?? (product ? describeOptionChoices(product) : []);
     pending.push({
       productPhrase: item.productPhrase,
       reason: resolved.reason,
@@ -307,6 +425,8 @@ async function resolveBatchAddCommand(
       note: resolved.note ?? null,
       candidates: resolved.candidates ?? null,
       choices: choices.length > 0 ? choices : null,
+      ...(resolved.missingGroups?.length ? { missingGroups: resolved.missingGroups } : {}),
+      ...(resolved.unmatchedOptionPhrases?.length ? { unmatchedOptionPhrases: resolved.unmatchedOptionPhrases } : {}),
     });
   }
 
@@ -392,11 +512,7 @@ export function registerPosTools(registry: ToolRegistry, deps: PosToolDeps): voi
     execute: async (args, context, binding) => {
       requireCartBinding(args as { activeCartId: string }, binding);
       const input = args as { productPhrase: string; quantity: number; optionPhrases: string[] };
-      return resolveCartCommand(
-        { intent: "pos.add_item", productPhrase: input.productPhrase, quantity: input.quantity, optionPhrases: input.optionPhrases },
-        deps,
-        context,
-      );
+      return resolveAddCommand(input, deps, context);
     },
   });
 

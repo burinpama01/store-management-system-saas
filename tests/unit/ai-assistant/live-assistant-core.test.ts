@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MAX_REPEATED_CLARIFICATIONS,
+  clarificationSignature,
   createLiveAssistantCore,
   createLiveIdempotencyKey,
   type LiveAssistantCoreDeps,
@@ -704,6 +706,55 @@ describe("telemetry ของ core", () => {
 });
 
 // M1 — สั่งงานจริง: หลายเมนูในประโยคเดียว แล้ว "กดปุ่มคิดเงิน" ให้พนักงาน
+// หน้าร้าน 2026-09-17: ผู้ช่วยถามตัวเลือกเดิมวนไม่จบ — ต้องมีเพดานที่ไม่พึ่ง model
+describe("กันถามตัวเลือกวน", () => {
+  const pendingLatte = {
+    status: "clarification_batch",
+    readyCount: 0,
+    pending: [{ productPhrase: "ลาเต้", reason: "needs_option", productName: "ลาเต้", choices: [{ group: "ความหวาน", options: ["หวานน้อย"] }] }],
+  };
+
+  it("signature ใช้เมนู+เหตุผล ไม่ขึ้นกับคำที่ model พูด และไม่ใช่คำถาม = null", () => {
+    const again = { ...pendingLatte, pending: [{ ...pendingLatte.pending[0], productPhrase: "ลาเต้ 1 แก้ว", note: "อื่น" }] };
+    expect(clarificationSignature(pendingLatte)).toBe(clarificationSignature(again));
+    expect(clarificationSignature({ status: "apply_batch", items: [] })).toBeNull();
+    expect(clarificationSignature(null)).toBeNull();
+  });
+
+  it(`คำถามเดิมติดกัน ${MAX_REPEATED_CLARIFICATIONS} ครั้ง = ส่ง stopAsking ให้ model + บอกพนักงานเลือกบนจอ`, async () => {
+    const harness = createHarness();
+    harness.relayTool.mockResolvedValue({ ok: true, callId: "call_x", tool: "pos.add_items", outcome: { ok: true, data: pendingLatte } });
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    for (let i = 1; i <= MAX_REPEATED_CLARIFICATIONS; i += 1) {
+      harness.getHandlers().onFunctionCall({ callId: `call_rep000${i}`, tool: "pos_add_items", argsText: "{}" });
+      await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(i));
+    }
+    const outputs = harness.sendFunctionCallOutput.mock.calls.map(([, json]) => JSON.parse(String(json)) as { stopAsking?: boolean });
+    expect(outputs.slice(0, -1).every((output) => output.stopAsking === undefined)).toBe(true);
+    expect(outputs[outputs.length - 1].stopAsking).toBe(true);
+    const entries = harness.core.getState().entries;
+    expect(entries[entries.length - 1].message).toContain("เลือกเมนูนี้บนหน้าจอ");
+    expect(harness.endSession).not.toHaveBeenCalled();
+  });
+
+  it("คำถามคนละเรื่องคั่น = นับใหม่", async () => {
+    const harness = createHarness();
+    const other = { ...pendingLatte, pending: [{ ...pendingLatte.pending[0], productPhrase: "มอคค่า", productName: "มอคค่า" }] };
+    const sequence = [pendingLatte, pendingLatte, other, pendingLatte];
+    harness.relayTool.mockImplementation(async () => ({ ok: true, callId: "call_x", tool: "pos.add_items", outcome: { ok: true, data: sequence.shift() } }));
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    for (let i = 1; i <= 4; i += 1) {
+      harness.getHandlers().onFunctionCall({ callId: `call_mix000${i}`, tool: "pos_add_items", argsText: "{}" });
+      await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(i));
+    }
+    for (const [, json] of harness.sendFunctionCallOutput.mock.calls) {
+      expect((JSON.parse(String(json)) as { stopAsking?: boolean }).stopAsking).toBeUndefined();
+    }
+  });
+});
+
 describe("สั่งงานหลายรายการ + เปิดหน้าจอรับชำระ", () => {
   function batchRelay(): LiveToolRelayResponse {
     return {

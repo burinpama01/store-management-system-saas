@@ -208,6 +208,31 @@ export interface LiveAssistantCore {
   readonly subscribe: (listener: () => void) => () => void;
 }
 
+/** ได้คำถามตัวเลือกเรื่องเดิมติดกันกี่ครั้งแล้วให้หยุดถาม (ถามครั้งแรก + ให้ตอบพลาดได้อีก 2 รอบ) */
+export const MAX_REPEATED_CLARIFICATIONS = 3;
+
+/**
+ * "เรื่อง" ของคำถามตัวเลือก — ใช้เมนู + เหตุผล (ไม่ใช้ note/คำที่ model พูด เพราะเปลี่ยนทุกรอบ)
+ * ไม่ใช่คำถาม = null
+ */
+export function clarificationSignature(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const result = data as { status?: unknown; reason?: unknown; productName?: unknown; productId?: unknown; pending?: unknown };
+  if (result.status === "clarification") {
+    return `one:${String(result.productId ?? result.productName ?? "")}:${String(result.reason ?? "")}`;
+  }
+  if (result.status === "clarification_batch" && Array.isArray(result.pending)) {
+    return `batch:${result.pending
+      .map((item) => {
+        const entry = (typeof item === "object" && item !== null ? item : {}) as { productName?: unknown; productPhrase?: unknown; reason?: unknown };
+        return `${String(entry.productName ?? entry.productPhrase ?? "")}:${String(entry.reason ?? "")}`;
+      })
+      .sort()
+      .join("|")}`;
+  }
+  return null;
+}
+
 export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssistantCore {
   const now = deps.now ?? (() => Date.now());
   const schedule = deps.schedule ?? ((fn: () => void, ms: number) => {
@@ -244,6 +269,8 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
   /** call ที่รับแล้ว (กัน event ซ้ำของ provider) — จำกัดขนาดตาม cap ของเซสชัน */
   const seenCallIds = new Set<string>();
   let liveCartVersion = 0;
+  /** คำถามตัวเลือกล่าสุด + จำนวนครั้งที่ได้ซ้ำติดกัน — ตัดวงวน "ถามตัวเลือกเดิมไม่จบ" */
+  let lastClarification: { signature: string; count: number } | null = null;
   let entrySequence = 0;
   /** เวลาที่เซสชันนี้เริ่ม (ฝั่งเบราว์เซอร์) — ใช้รายงานความยาวเซสชันตอนจบ */
   let sessionStartedAtMs: number | null = null;
@@ -456,11 +483,26 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
       applied = false;
       pushEntry("error", "ผลลัพธ์จากผู้ช่วยไม่รู้จัก — ใช้หน้าจอแทนได้ตามปกติ");
     }
-    const payload = outcome.ok && (outcome.data as { status?: unknown } | null)?.status === "apply"
+    let payload = outcome.ok && (outcome.data as { status?: unknown } | null)?.status === "apply"
       ? { ...(outcome.data as Record<string, unknown>), applied }
       : outcome.ok
         ? outcome.data
         : { ok: false, code: outcome.code };
+
+    // กันถามวน: คำถามตัวเลือก "เรื่องเดิม" ติดกันถึงเพดาน = หยุดให้ model ถาม แล้วให้คนเลือกบนจอ
+    const signature = outcome.ok ? clarificationSignature(outcome.data) : null;
+    if (signature === null) {
+      lastClarification = null;
+    } else {
+      const count = lastClarification?.signature === signature ? lastClarification.count + 1 : 1;
+      lastClarification = { signature, count };
+      if (count >= MAX_REPEATED_CLARIFICATIONS) {
+        payload = { ...(payload as Record<string, unknown>), stopAsking: true, instruction: "หยุดถามตัวเลือกนี้ บอกพนักงานสั้น ๆ ให้เลือกตัวเลือกบนหน้าจอเอง" };
+        pushEntry("error", "ผู้ช่วยยังจับตัวเลือกไม่ได้ — เลือกเมนูนี้บนหน้าจอแทนได้เลย");
+        track({ event: "cart.clarification_repeated", stage: "cart", result: "blocked", reason: `repeat_${count}` });
+        lastClarification = null;
+      }
+    }
     handle.sendFunctionCallOutput(call.callId, JSON.stringify(payload));
     setStatus("speaking");
     notify();
@@ -529,6 +571,7 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     toolCallsCap = session.caps?.toolCallsPerSession ?? null;
     toolCallsUsed = 0;
     liveCartVersion = 0;
+    lastClarification = null;
     sessionStartedAtMs = now();
 
     try {

@@ -46,7 +46,10 @@ export const LIVE_SESSION_INSTRUCTIONS = [
   "ใช้ข้อมูลที่ tool ตอบกลับเท่านั้น ห้ามเดาชื่อเมนู จำนวน ตัวเลือก หรือราคาเอง",
   "ถ้า tool ตอบ clarification_batch ให้ถามรวบครั้งเดียวจากรายการที่ค้างทั้งหมด เช่น ทั้งสามแก้วเอาร้อนหรือเย็น อย่าถามทีละรายการ",
   "อ่านตัวเลือกจากฟิลด์ choices ที่ tool ส่งมาเท่านั้น แล้วเรียก pos_add_items ใหม่พร้อม optionPhrases ของทุกรายการให้ครบ",
-  "ถ้าคำตอบกำกวมหรือไม่ครบทุกรายการ ให้ถามซ้ำจนแน่ใจ ห้ามเดาแทนผู้ใช้เด็ดขาด เพราะสั่งผิดแล้วแก้ยากกว่าถามอีกครั้ง",
+  "optionPhrases ต้องเป็นชื่อตัวเลือกตรงตามคำใน choices คำละหนึ่งช่อง เช่น [\"เย็น\", \"หวานน้อย\"] ห้ามใส่ชื่อกลุ่ม คำลงท้าย หรือจำนวน และ productPhrase ใส่แค่ชื่อเมนู",
+  "ถ้า tool ตอบ unmatchedOptionPhrases แปลว่าคำนั้นไม่ใช่ตัวเลือกจริง ให้เลือกคำที่ตรงกันจาก choices แล้วเรียกใหม่ ถ้าเทียบไม่ได้จริง ๆ ค่อยถามผู้ใช้เฉพาะกลุ่มใน missingGroups",
+  "ถ้าผู้ใช้ตอบตัวเลือกมาแล้ว ห้ามถามคำถามเดิมซ้ำ และถ้า tool ตอบ stopAsking ให้บอกพนักงานเลือกบนหน้าจอแล้วหยุดถามทันที",
+  "ถ้าคำตอบกำกวมหรือไม่ครบทุกรายการ ให้ถามเฉพาะส่วนที่ขาด ห้ามเดาแทนผู้ใช้",
   "ถ้า tool ตอบว่ากำกวม ให้บอกตัวเลือกที่มีแล้วให้ผู้ใช้เลือกหนึ่งอย่างสั้น ๆ",
   "เมื่อผู้ใช้บอกให้คิดเงิน/เก็บเงิน/จ่ายเงิน ให้เรียก pos_open_checkout เพื่อเปิดหน้าจอรับชำระให้พนักงาน",
   "คุณเปิดหน้าจอรับชำระได้เท่านั้น ห้ามยืนยันการชำระเงินเอง ห้ามบอกว่าชำระเงินสำเร็จแล้ว และห้ามบอกยอดเงิน",
@@ -103,7 +106,7 @@ export const LIVE_OPENAI_TOOLS: readonly LiveOpenAiTool[] = Object.freeze([
     parameters: objectSchema({
       productPhrase: { type: "string", description: "ชื่อเมนูที่ผู้ใช้พูด" },
       quantity: { type: "integer", description: "จำนวนแก้ว/ชิ้น (ถ้าผู้ใช้ไม่ได้พูดให้ใช้ 1)" },
-      optionPhrases: { type: "array", items: { type: "string" }, description: "ตัวเลือกที่ผู้ใช้พูด เช่น หวานน้อย ปั่น" },
+      optionPhrases: { type: "array", items: { type: "string" }, description: "ชื่อตัวเลือกตรงตาม choices คำละช่อง เช่น [\"เย็น\", \"หวานน้อย\"] ไม่ใส่ชื่อกลุ่มหรือคำลงท้าย" },
     }, ["productPhrase", "quantity"]),
   },
   {
@@ -121,7 +124,7 @@ export const LIVE_OPENAI_TOOLS: readonly LiveOpenAiTool[] = Object.freeze([
           properties: {
             productPhrase: { type: "string", description: "ชื่อเมนูที่ผู้ใช้พูด" },
             quantity: { type: "integer", description: "จำนวน (ถ้าผู้ใช้ไม่ได้พูดให้ใช้ 1)" },
-            optionPhrases: { type: "array", items: { type: "string" }, description: "ตัวเลือกที่ผู้ใช้พูด เช่น หวานน้อย ปั่น" },
+            optionPhrases: { type: "array", items: { type: "string" }, description: "ชื่อตัวเลือกตรงตาม choices คำละช่อง เช่น [\"เย็น\", \"หวานน้อย\"] ไม่ใส่ชื่อกลุ่มหรือคำลงท้าย" },
           },
           required: ["productPhrase", "quantity"],
           additionalProperties: false,
