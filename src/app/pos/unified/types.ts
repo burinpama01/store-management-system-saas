@@ -82,4 +82,10 @@ export interface UnifiedPosWorkspaceProps {
    * สิทธิ์/แพ็กเกจ/rate limit ตรวจซ้ำที่ route ทุกครั้ง ปุ่มเป็นแค่ทางเข้า
    */
   readonly aiAssistantTextEnabled?: boolean;
+  /**
+   * PR3-Live — ปุ่มเสียงสด "AI Live" (ADR-008: กดปุ่มเดียวสั่งงานด้วยเสียง, default false = ไม่มีปุ่มเลย)
+   * server คำนวณจาก kill switch (AI_ASSISTANT_LIVE_ENABLED) + แพ็กเกจ + org ใน pilot เท่านั้น;
+   * สิทธิ์/pilot/kill switch ตรวจซ้ำที่ route ทุก request ปุ่มเป็นแค่ทางเข้า
+   */
+  readonly aiAssistantLiveEnabled?: boolean;
 }
