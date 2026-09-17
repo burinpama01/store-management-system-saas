@@ -3,7 +3,9 @@ import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { createDispatcher, ToolRegistry, type CartBinding, type TrustedContext } from "@/modules/ai-assistant/foundation";
 import { MVP_TOOL_NAMES, registerPosTools } from "@/modules/ai-assistant/tools/pos-tools";
 import type { Product } from "@/modules/catalog/types";
-import type { VoiceProductAlias } from "@/modules/voice-pos/cart";
+import { applyVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
+import type { VoiceIntent } from "@/modules/voice-pos/types";
+import { emptyCart } from "@/modules/pos/cart";
 
 // PR2 — MVP tools ต้องผ่าน resolver เดิมของ Voice POS เป็นทางเดียว (ADR-009):
 // คลุมเครือ/ต้องเลือกตัวเลือก/ของหมด = clarification จาก resolver ไม่ใช่การเดา และไม่มี id จากโมเดล
@@ -143,8 +145,9 @@ describe("cart mutation tools through the shared resolver", () => {
         reason: "needs_option",
         productId: "p-black",
         productName: "กาแฟดำ",
-        note: "ยังต้องเลือกตัวเลือกสินค้า",
+        note: "ยังต้องเลือก ตัวเลือกสินค้า",
         choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }],
+        missingGroups: ["ตัวเลือกสินค้า"],
       },
     });
   });
@@ -161,7 +164,14 @@ describe("cart mutation tools through the shared resolver", () => {
     const s = setup();
     expect(await s.dispatch({ tool: "pos.add_item", args: { ...addArgs, productPhrase: "ลาเต้", optionPhrases: ["สีม่วง"] }, idempotencyKey: "a5" })).toEqual({
       ok: true,
-      data: { status: "clarification", reason: "needs_option", productId: "p-latte", productName: "ลาเต้", note: "ยังต้องเลือกตัวเลือกสินค้า" },
+      data: {
+        status: "clarification",
+        reason: "needs_option",
+        productId: "p-latte",
+        productName: "ลาเต้",
+        note: 'ไม่รู้จักตัวเลือก "สีม่วง" — ส่ง optionPhrases เป็นชื่อตัวเลือกตรงตาม choices เท่านั้น',
+        unmatchedOptionPhrases: ["สีม่วง"],
+      },
     });
   });
 
@@ -409,6 +419,92 @@ describe("pos.add_items — หลายรายการในคำสั่�
       args: { ...cartArgs, items: [{ productPhrase: "ลาเต้", quantity: 1, optionPhrases: [] }] },
       idempotencyKey: "batch-locked",
     })).toEqual({ ok: false, code: "MUTATIONS_DISABLED" });
+  });
+});
+
+// หน้าร้าน 2026-09-17: ผู้ช่วยถามตัวเลือกวนไม่จบ — model ตอบตัวเลือกกลับมาไม่ตรงรูปเป๊ะ
+describe("ตอบตัวเลือกกลับมาแล้วต้องจบ ไม่ถามวน", () => {
+  const option = (id: string, groupId: string, name: string) => ({ id, modifierGroupId: groupId, name, priceAdjustment: 0, isDefault: false, isActive: true, sortOrder: 0 });
+  const loopProducts: readonly Product[] = [
+    product({ id: "am", name: "อเมริกาโน่", variants: [variant("am-h", "am", "ร้อน"), variant("am-i", "am", "เย็น")] }),
+    product({ id: "am-orange", name: "อเมริกาโน่น้ำส้ม" }),
+    product({ id: "cp", name: "คาปูชิโน่ (Cappuccino)", variants: [variant("cp-h", "cp", "ร้อน"), variant("cp-i", "cp", "เย็น")] }),
+    product({
+      id: "lt",
+      name: "ลาเต้",
+      modifierGroups: [{
+        id: "g-sweet", productId: "lt", name: "ความหวาน", selectionType: "single", isRequired: true, minSelections: 1, maxSelections: 1, sortOrder: 0,
+        options: [option("o-less", "g-sweet", "หวานน้อย"), option("o-norm", "g-sweet", "หวานปกติ")],
+      }],
+    }),
+  ];
+
+  async function addOne(productPhrase: string, optionPhrases: string[], key: string) {
+    const s = setup({ products: loopProducts });
+    const result = await s.dispatch({ tool: "pos.add_items", args: { ...cartArgs, items: [{ productPhrase, quantity: 1, optionPhrases }] }, idempotencyKey: key });
+    expect(result).toMatchObject({ ok: true });
+    return (result as { data: Record<string, unknown> }).data as {
+      status: string;
+      items?: { intent: VoiceIntent; productName: string }[];
+      pending?: { note?: string; missingGroups?: string[]; unmatchedOptionPhrases?: string[]; choices?: { group: string }[] }[];
+    };
+  }
+
+  function addedToCart(intent: VoiceIntent) {
+    const resolution = applyVoiceCartIntent(intent, { cart: emptyCart("store"), products: loopProducts });
+    expect(resolution.status).toBe("applied");
+    if (resolution.status !== "applied") return null;
+    return resolution.cart.items[0];
+  }
+
+  it.each([
+    ["อเมริกาโน่", ["ตัวเลือกสินค้า: เย็น"], "am", "am-i"],
+    ["อเมริกาโน่", ["เย็นครับ"], "am", "am-i"],
+    ["อเมริกาโน่", ["แก้วเย็น"], "am", "am-i"],
+    ["อเมริกาโน่ 1 แก้ว", ["เย็น"], "am", "am-i"],
+    ["คาปูชิโน่", ["เย็น"], "cp", "cp-i"],
+    ["Cappuccino", ["ร้อน"], "cp", "cp-h"],
+  ])("%s + %j = ใส่ตะกร้าได้ และหน้าจอได้ตัวเลือกที่ถูกต้อง", async (phrase, options, productId, variantId) => {
+    const data = await addOne(phrase, options, `loop-case-${variantId}-${phrase.length}-${options[0].length}`);
+    expect(data.status).toBe("apply_batch");
+    const line = addedToCart(data.items![0].intent);
+    expect(line?.productId).toBe(productId);
+    expect(line?.variant?.id).toBe(variantId);
+  });
+
+  it("ติดชื่อกลุ่มของ modifier ('ความหวาน: หวานน้อย') ก็ใส่ตะกร้าได้พร้อมตัวเลือก", async () => {
+    const data = await addOne("ลาเต้", ["ความหวาน: หวานน้อย"], "loop-sweet");
+    expect(data.status).toBe("apply_batch");
+    const line = addedToCart(data.items![0].intent);
+    expect(line?.modifiers.map((m) => m.option.id)).toEqual(["o-less"]);
+  });
+
+  it("ชื่อเมนูที่ขึ้นต้นเหมือนเมนูอื่น ไม่ถูกดึงไปเป็นอีกเมนู", async () => {
+    const data = await addOne("อเมริกาโน่", ["เย็น"], "loop-prefix");
+    expect(data.status).toBe("apply_batch");
+    expect(addedToCart(data.items![0].intent)?.productId).toBe("am");
+  });
+
+  it("ตอบคำที่ไม่ใช่ตัวเลือกจริง = ยังไม่ใส่ แต่บอก model ว่าคำไหนไม่รู้จักและขาดกลุ่มไหน (ไม่ถามข้อความเดิมซ้ำ)", async () => {
+    const data = await addOne("อเมริกาโน่", ["ปั่น"], "loop-unknown");
+    expect(data.status).toBe("clarification_batch");
+    const pending = data.pending![0];
+    expect(pending.unmatchedOptionPhrases).toEqual(["ปั่น"]);
+    expect(pending.missingGroups).toEqual(["ตัวเลือกสินค้า"]);
+    expect(pending.note).toContain("ปั่น");
+    expect(pending.choices).toEqual([{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }]);
+  });
+
+  it("ยังไม่ได้ตอบ = บอกกลุ่มที่ขาดตรง ๆ", async () => {
+    const data = await addOne("ลาเต้", [], "loop-missing");
+    expect(data.status).toBe("clarification_batch");
+    expect(data.pending![0].missingGroups).toEqual(["ความหวาน"]);
+  });
+
+  it("pos.add_item ตัวเดี่ยวก็ใช้ทางเดียวกัน", async () => {
+    const s = setup({ products: loopProducts });
+    const result = await s.dispatch({ tool: "pos.add_item", args: { ...cartArgs, productPhrase: "คาปูชิโน่", quantity: 2, optionPhrases: ["เย็นค่ะ"] }, idempotencyKey: "loop-single" });
+    expect(result).toMatchObject({ ok: true, data: { status: "apply", productName: "คาปูชิโน่ (Cappuccino)", intent: { quantity: 2 } } });
   });
 });
 
