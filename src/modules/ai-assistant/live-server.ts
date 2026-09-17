@@ -9,7 +9,7 @@
 // fail-closed (UI ให้กดปุ่มใหม่) — ทางแก้ถาวรคือตาราง live session บน supabase (residual)
 
 import { ToolRegistry } from "./foundation";
-import { canUseFeature } from "@/modules/billing/types";
+import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { createAssistantSessionStore } from "./session";
@@ -125,8 +125,10 @@ export async function resolveLiveAccess(): Promise<LiveAccessResult> {
   const { ctx, user, resolved } = authz;
   if (!resolved.can("pos.use")) return { ok: false, status: 403, reason: "forbidden" };
 
-  const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? undefined;
-  if (billingState && !canUseFeature(billingState, "aiAssistant")) {
+  // อ่านแพ็กเกจไม่ได้/ยังไม่มีแถว subscription = ถือเป็นแพ็กฟรี (fail closed) ไม่ใช่ข้ามด่าน
+  // รูปแบบเดียวกับ requireFeature ใน auth/guards.ts — ของเดิมข้ามด่านเมื่อค่าเป็น null
+  const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+  if (!canUseFeature(billingState, "aiAssistant")) {
     return { ok: false, status: 403, reason: "ai_not_in_plan" };
   }
 

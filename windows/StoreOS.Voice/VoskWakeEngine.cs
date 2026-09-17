@@ -34,7 +34,8 @@ public sealed class VoskWakeEngine : IWakeWordEngine
     private Model? _model;
     private VoskRecognizer? _recognizer;
     private IWaveIn? _capture;
-    private DateTimeOffset _lastWakeAt = DateTimeOffset.MinValue;
+    /// <summary>เวลาที่ปลุกครั้งล่าสุดตามนาฬิกาเดินหน้า (null = ยังไม่เคยปลุกในรอบนี้)</summary>
+    private long? _lastWakeAtMs;
     private TimeSpan _cooldown = TimeSpan.FromMilliseconds(WakeDecider.DefaultCooldownMs);
     private double _minConfidence = WakeDecider.DefaultMinConfidence;
     private bool _disposed;
@@ -172,27 +173,21 @@ public sealed class VoskWakeEngine : IWakeWordEngine
         var text = root.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
         if (text.Length == 0) return;
 
-        var phrase = MatchWakePhrase(text, _phrases);
-        if (phrase is null) return;
+        var match = FindWakePhrase(text, _phrases);
+        if (match is null) return;
 
-        // ความมั่นใจ = คำที่แย่ที่สุดในประโยค (คำปลุกจริงทุกคำต้องชัด)
-        double confidence = 1;
-        if (root.TryGetProperty("result", out var words) && words.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var word in words.EnumerateArray())
-            {
-                if (word.TryGetProperty("conf", out var conf)) confidence = Math.Min(confidence, conf.GetDouble());
-            }
-        }
+        var confidence = ScorePhrase(root, match);
         if (confidence < _minConfidence) return;
 
         // พักหลังปลุก — กันเสียงสะท้อนหรือลำโพงร้านปลุกซ้ำทันที
-        var now = DateTimeOffset.Now;
-        if (now - _lastWakeAt < _cooldown) return;
-        _lastWakeAt = now;
+        // ใช้นาฬิกาเดินหน้า (monotonic) ไม่ใช่เวลานาฬิกาข้อมือ: ถ้าเครื่องปรับเวลาถอยหลัง
+        // (NTP/เปลี่ยนโซนเวลา) ค่าที่จดไว้จะกลายเป็น "อนาคต" แล้วคำปลุกจะตายเงียบ ๆ ยาวมาก
+        var nowMs = Environment.TickCount64;
+        if (_lastWakeAtMs is { } last && nowMs - last < _cooldown.TotalMilliseconds) return;
+        _lastWakeAtMs = nowMs;
 
         WakeDetected?.Invoke(this, new WakeDetectedEventArgs(
-            WakePhrases.VoskPhraseId(phrase), Math.Round(confidence, 2), now));
+            WakePhrases.VoskPhraseId(match.Phrase), Math.Round(confidence, 2), DateTimeOffset.Now));
     }
 
     /// <summary>
@@ -201,7 +196,17 @@ public sealed class VoskWakeEngine : IWakeWordEngine
     /// ไม่เทียบทั้งประโยคเพราะคำนอกพจนานุกรมจะกลายเป็น [unk] เสมอ
     /// ("Hello StoreOS" ถอดได้เป็น "hello store [unk]" ทุกครั้งที่วัด)
     /// </summary>
-    public static string? MatchWakePhrase(string text, IReadOnlyList<string> phrases)
+    public static string? MatchWakePhrase(string text, IReadOnlyList<string> phrases) =>
+        FindWakePhrase(text, phrases)?.Phrase;
+
+    /// <summary>ตำแหน่งของวลีคำปลุกในประโยคที่ถอดได้ — ใช้ให้คะแนนเฉพาะคำของคำปลุก</summary>
+    /// <param name="Phrase">วลีที่ตรง (ค่าเดียวกับที่อยู่ในรายการคำปลุก)</param>
+    /// <param name="StartIndex">ลำดับคำแรกของวลีในประโยค</param>
+    /// <param name="WordCount">จำนวนคำของวลี</param>
+    public sealed record WakePhraseMatch(string Phrase, int StartIndex, int WordCount);
+
+    /// <inheritdoc cref="MatchWakePhrase"/>
+    public static WakePhraseMatch? FindWakePhrase(string text, IReadOnlyList<string> phrases)
     {
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         foreach (var phrase in phrases)
@@ -216,10 +221,42 @@ public sealed class VoskWakeEngine : IWakeWordEngine
                 {
                     if (!string.Equals(words[start + i], target[i], StringComparison.OrdinalIgnoreCase)) match = false;
                 }
-                if (match) return phrase;
+                if (match) return new WakePhraseMatch(phrase, start, target.Length);
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// ความมั่นใจของคำปลุก = คำที่แย่ที่สุด "ในวลีคำปลุก" ไม่ใช่ทั้งประโยค
+    ///
+    /// ของเดิมเอาคำที่แย่ที่สุดทั้งประโยค ซึ่งพังกับสิ่งที่เราบอกผู้ใช้ให้พูดเอง:
+    /// "Hello StoreOS" ถอดได้เป็น "hello store [unk]" เสมอ และ [unk] มีค่าความมั่นใจต่ำ
+    /// คำปลุกจริงจึงถูกปัดตกทั้งที่ได้ยินครบ (อาการ "พูดแล้วไม่ติด")
+    /// คำนอกวลีไม่ใช่หลักฐานว่าคำปลุกไม่ชัด — จึงไม่ควรมีสิทธิ์ปัดตก
+    ///
+    /// ถ้ารูปทรงของ result ไม่ตรงกับจำนวนคำใน text (โมเดลคนละรุ่น) จะถอยไปใช้
+    /// เกณฑ์เดิมคือคำที่แย่ที่สุดทั้งประโยค — เข้มกว่า ปลอดภัยกว่าการเดา
+    /// </summary>
+    public static double ScorePhrase(JsonElement root, WakePhraseMatch match)
+    {
+        if (!root.TryGetProperty("result", out var words) || words.ValueKind != JsonValueKind.Array) return 1;
+
+        var confidences = new List<double>();
+        foreach (var word in words.EnumerateArray())
+        {
+            confidences.Add(word.TryGetProperty("conf", out var conf) ? conf.GetDouble() : 1);
+        }
+        if (confidences.Count == 0) return 1;
+
+        var end = match.StartIndex + match.WordCount;
+        var aligned = end <= confidences.Count;
+        var from = aligned ? match.StartIndex : 0;
+        var to = aligned ? end : confidences.Count;
+
+        double lowest = 1;
+        for (var i = from; i < to; i++) lowest = Math.Min(lowest, confidences[i]);
+        return lowest;
     }
 
     private void ReleaseResources()

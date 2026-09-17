@@ -15,7 +15,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
-import { canUseFeature } from "@/modules/billing/types";
+import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { AI_DEFAULT_MODEL, isAiEnabled } from "@/modules/ai/gateway";
 import { AI_MAX_OUTPUT_TOKENS, reserveQuota, settleUsage } from "@/modules/ai/quota";
 import { logSystemEvent } from "@/modules/system/event-log";
@@ -203,8 +203,9 @@ export async function POST(request: Request) {
   const { ctx, user, resolved } = authz;
   if (!resolved.can("pos.use")) return fail("forbidden", 403, "ต้องมีสิทธิ์ใช้ POS จึงใช้ผู้ช่วยได้");
 
-  const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? undefined;
-  if (billingState && !canUseFeature(billingState, "aiAssistant")) {
+  // อ่านแพ็กเกจไม่ได้/ยังไม่มีแถว subscription = ถือเป็นแพ็กฟรี (fail closed) ไม่ใช่ข้ามด่าน
+  const billingState = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+  if (!canUseFeature(billingState, "aiAssistant")) {
     return fail("ai_not_in_plan", 403, "แพ็กเกจนี้ยังไม่รวมผู้ช่วย AI — ใช้หน้าจอได้ตามปกติ");
   }
 

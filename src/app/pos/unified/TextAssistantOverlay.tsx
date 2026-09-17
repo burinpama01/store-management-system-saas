@@ -27,6 +27,7 @@ import {
   type LiveToolRelayResponse,
 } from "@/modules/ai-assistant/ui/live-assistant-core";
 import { connectLiveWebRtc } from "@/modules/ai-assistant/ui/live-webrtc";
+import { registerWakeTarget } from "@/modules/voice-pos/wake-routing";
 import { createAssistantCartId, ASSISTANT_CART_ID_PATTERN, TEXT_COMMAND_MAX_LENGTH } from "@/modules/ai-assistant/ui/text-assistant-ui";
 
 export interface TextAssistantOverlayProps {
@@ -213,6 +214,15 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell, liveEna
     }
     const core = coreRef.current;
     const liveCore = liveCoreRef.current;
+    // PR3-Live — คำปลุกของเครื่อง (Launcher) เปิดเซสชันเสียงสดได้เหมือนแตะปุ่มเอง
+    // ตอบทันทีเสมอ: เปิดให้แล้ว หรือกำลังคุยอยู่ (กลืนคำปลุกนั้นทิ้ง ไม่เปิดไมค์ซ้อน)
+    const unregisterWake = liveCore
+      ? registerWakeTarget(() => {
+        if (liveCore.getState().phase !== "idle") return "busy";
+        void liveCore.start();
+        return "started";
+      })
+      : null;
     const unsubscribeText = core.subscribe(() => {
       // version ไต่ขึ้นทุกครั้งที่แก้ตะกร้าสำเร็จ — จดกลับ storage ทุกจังหวะ state เปลี่ยน
       setState(core.getState());
@@ -237,6 +247,7 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell, liveEna
     return () => {
       unsubscribeText();
       unsubscribeLive?.();
+      unregisterWake?.();
     };
   }, [getCartApi, getProductAliases, notifyFocusSell, liveEnabled]);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRealtimeEvent } from "@/modules/ai-assistant/ui/live-webrtc";
+import { createRemoteAudioSink, parseRealtimeEvent } from "@/modules/ai-assistant/ui/live-webrtc";
 
 // PR3-Live (M5) — แปลง event ดิบของ OpenAI Realtime เป็นสัญญาณของ live core (pure):
 // รู้จัก = แปลงตรงรูป, ไม่รู้จัก/รูปทรงเพี้ยน = null (เมินเงียบ ๆ ไม่เดา)
@@ -45,5 +45,72 @@ describe("parseRealtimeEvent", () => {
         item: { type: "function_call", call_id: "call_badargs1", name: "pos.add_item", arguments: 7 },
       }),
     ).toEqual({ kind: "function_call", callId: "call_badargs1", tool: "pos.add_item", argsText: "" });
+  });
+});
+
+// PR3-Live (fix) — เสียงตอบของผู้ช่วยมาเป็น remote track ของ WebRTC ซึ่งไม่ดังเอง
+// ถ้าไม่มี element เสียงถือ stream ไว้ ระบบจะทำงานถูกทุกอย่างแต่ผู้ใช้ไม่ได้ยินอะไรเลย
+describe("createRemoteAudioSink", () => {
+  function fakeElement() {
+    const calls = { play: 0, pause: 0, remove: 0 };
+    const element = {
+      autoplay: false,
+      srcObject: null as MediaStream | null,
+      play: () => {
+        calls.play += 1;
+        return Promise.resolve();
+      },
+      pause: () => {
+        calls.pause += 1;
+      },
+      remove: () => {
+        calls.remove += 1;
+      },
+    };
+    return { element, calls };
+  }
+
+  it("ต่อ stream เข้า element แล้วสั่งเล่นทันที (สร้าง element ครั้งเดียว)", () => {
+    const { element, calls } = fakeElement();
+    let created = 0;
+    const sink = createRemoteAudioSink(() => {
+      created += 1;
+      return element;
+    });
+    const stream = { id: "remote" } as unknown as MediaStream;
+
+    sink.attach(stream);
+    sink.attach(stream); // event ซ้ำของ provider ต้องไม่สร้าง element ใหม่และไม่สั่งเล่นซ้ำ
+
+    expect(created).toBe(1);
+    expect(element.srcObject).toBe(stream);
+    expect(calls.play).toBe(1);
+  });
+
+  it("play ที่ถูกปฏิเสธ (autoplay policy) ต้องไม่ทำให้เซสชันล้ม", () => {
+    const { element } = fakeElement();
+    element.play = () => Promise.reject(new Error("NotAllowedError"));
+
+    const sink = createRemoteAudioSink(() => element);
+
+    expect(() => sink.attach({ id: "remote" } as unknown as MediaStream)).not.toThrow();
+  });
+
+  it("close ถอดเสียงออกทุกทางและปลอดภัยเมื่อเรียกซ้ำ/ยังไม่เคย attach", () => {
+    const { element, calls } = fakeElement();
+    const sink = createRemoteAudioSink(() => element);
+    sink.attach({ id: "remote" } as unknown as MediaStream);
+
+    sink.close();
+    sink.close();
+
+    expect(calls.pause).toBe(1);
+    expect(calls.remove).toBe(1);
+    expect(element.srcObject).toBeNull();
+    // ปิดแล้ว attach ซ้ำต้องไม่ปลุกเสียงกลับมา (เซสชันจบแล้ว)
+    sink.attach({ id: "again" } as unknown as MediaStream);
+    expect(element.srcObject).toBeNull();
+
+    expect(() => createRemoteAudioSink(() => element).close()).not.toThrow();
   });
 });

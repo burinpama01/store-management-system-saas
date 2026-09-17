@@ -20,6 +20,7 @@ import {
   type VoiceSpeechSession,
 } from "@/modules/voice-pos/speech-adapter";
 import { claimMicOwnership, releaseMicOwnership } from "@/modules/voice-pos/mic-ownership";
+import { routeWakeToLive } from "@/modules/voice-pos/wake-routing";
 import { createBrowserVoiceFeedback, type VoiceFeedback } from "@/modules/voice-pos/feedback";
 import {
   readVoiceFeedbackPreference,
@@ -407,6 +408,23 @@ export function VoiceCommandButton({
         return;
       }
       if (event.kind !== "start-listening") return;
+
+      // PR3-Live — ร้านที่เปิดโหมดเสียงสดไว้ ให้คำปลุกเปิด "AI Live" แทนการฟังคำสั่งรอบเดียว
+      // (เป้าหมายของฟีเจอร์คือลดการกดจอ คำปลุกจึงต้องไปถึงช่องทางที่คุยต่อเนื่องได้)
+      // คืนไมค์ให้ native ทันทีเพราะ watchdog ของเครื่องให้เวลารอบละไม่เกิน 20 วินาที
+      // ขณะที่เซสชันเสียงสดยาวเป็นนาที — ไมค์ของเบราว์เซอร์ถูกถือโดย AI Live ต่อเอง (ADR-008)
+      // ปุ่มเสียงเดิมกำลังฟังอยู่ = ไม่ส่งให้ Live (Live จะ claim ไมค์ไม่ได้อยู่ดี — ปล่อยให้
+      // เส้นทางเดิมตอบ tap_required ตามปกติ ไม่งั้นจะได้เสียงตอบรับที่ไม่ตรงกับสิ่งที่เกิดขึ้น)
+      if (!standbyPaused && !disabled && !sessionRef.current?.isActive()) {
+        const routed = routeWakeToLive();
+        if (routed !== "unavailable") {
+          standbySessionRef.current = null;
+          standbyHost.commandEnded(event.sessionId, routed === "started" ? "ai_live" : "ai_live_busy");
+          // ตอบรับด้วยเสียงเฉพาะตอนที่เปิดเซสชันให้จริง — "busy" คือเซสชันเดิมยังคุยอยู่
+          if (routed === "started") player.cue("wake");
+          return;
+        }
+      }
 
       // พักอยู่ / ปุ่มถูกปิด (เช่นกำลังชำระเงิน) — คืนไมค์ทันที อย่าให้ Launcher รอจนหมดเวลา
       if (standbyPaused || disabled || supported !== true || sessionRef.current?.isActive()) {

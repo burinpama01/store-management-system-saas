@@ -20,8 +20,13 @@ import {
   type VoiceHostHealth,
 } from "./standby-contract";
 
-/** ผลของรอบคำสั่งที่รายงานกลับไปให้ host รู้ว่าคืนไมค์ได้แล้ว */
-export type CommandOutcome = "completed" | "aborted" | "tap_required";
+/**
+ * ผลของรอบคำสั่งที่รายงานกลับไปให้ host รู้ว่าคืนไมค์ได้แล้ว
+ *
+ * ai_live / ai_live_busy = คำปลุกรอบนั้นถูกส่งต่อให้โหมดเสียงสด (PR3-Live) ซึ่งถือไมค์
+ * ของเบราว์เซอร์เองเป็นนาที — native จึงต้องได้ไมค์คืน "ทันที" ไม่ใช่รอ watchdog หมดเวลา
+ */
+export type CommandOutcome = "completed" | "aborted" | "tap_required" | "ai_live" | "ai_live_busy";
 
 /** ส่วนของ chrome.webview ที่เราใช้จริง (ไม่ผูกกับ type ของ WebView2 ทั้งก้อน) */
 export interface WindowsWebViewLike {

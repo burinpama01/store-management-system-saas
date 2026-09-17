@@ -11,6 +11,8 @@
 //   - onOpen มาจาก data channel เปิดจริงจังหวะเดียว — event session.* ของ provider ไม่ใช้
 //     ทริกเกอร์ซ้ำ (กันข้อความ "เริ่มฟังแล้ว" โผล่สองครั้ง)
 //   - ข้อความดิบของ provider ไม่หลุดออกนอกไฟล์ — onError เป็นสัญญาณเดียว (fail closed)
+//   - เสียงตอบของผู้ช่วยมาเป็น remote track ของ WebRTC ต้องต่อเข้า element เสียงเสมอ
+//     (ไม่ต่อ = เงียบสนิททั้งที่ทุกอย่างทำงานถูก — ดู createRemoteAudioSink)
 
 import type { LiveConnectionHandle, LiveConnectOptions } from "./live-assistant-core";
 
@@ -54,6 +56,85 @@ export function parseRealtimeEvent(raw: unknown): RealtimeSignal | null {
   }
 }
 
+// ── ปลายทางเสียงของผู้ช่วย (แยกออกมาให้เทสต์ได้โดยไม่มี DOM จริง) ──────────────────
+
+/** ส่วนของ HTMLAudioElement ที่ sink ใช้จริง — ประกาศแคบ ๆ เพื่อให้ฉีดของปลอมในเทสต์ได้ */
+export interface RemoteAudioElement {
+  autoplay: boolean;
+  srcObject: MediaStream | null;
+  play: () => Promise<void> | void;
+  pause: () => void;
+  remove: () => void;
+}
+
+export interface RemoteAudioSink {
+  /** ต่อ stream ที่ provider ส่งมาเข้าลำโพง — เรียกซ้ำด้วย stream เดิมได้ (ไม่สร้าง element ใหม่) */
+  readonly attach: (stream: MediaStream) => void;
+  /** ถอดเสียงออกทุกทาง — เรียกซ้ำได้ ปลอดภัยแม้ยังไม่เคย attach */
+  readonly close: () => void;
+}
+
+/**
+ * element เสียงเริ่มต้น: ไม่ผูกกับ layout ของหน้า (ไม่มีภาพ) และไม่ต้องให้ผู้ใช้กดเล่น
+ * เพราะเซสชันเริ่มจากการแตะปุ่ม AI Live อยู่แล้ว (มี user activation ครบ)
+ * `playsinline` จำเป็นกับ iPad/Safari ไม่งั้น WebView จะพยายามเปิดโหมดเต็มจอ
+ */
+function createDefaultAudioElement(): RemoteAudioElement {
+  const element = document.createElement("audio");
+  element.autoplay = true;
+  element.setAttribute("playsinline", "");
+  element.setAttribute("aria-hidden", "true");
+  element.style.display = "none";
+  document.body.appendChild(element);
+  return element as unknown as RemoteAudioElement;
+}
+
+/**
+ * ต่อเสียงตอบของผู้ช่วยเข้าลำโพงของเครื่อง
+ *
+ * เหตุผลที่ต้องมี: WebRTC ส่งเสียงกลับมาเป็น remote track ซึ่ง "ไม่ดังเอง" — ต้องมี
+ * element เสียงถือ stream ไว้เสมอ ถ้าลืมส่วนนี้ ระบบจะทำงานถูกทุกอย่าง (tool วิ่ง ตะกร้าเปลี่ยน)
+ * แต่ผู้ใช้ไม่ได้ยินอะไรเลย ซึ่งเป็นอาการที่ไล่สาเหตุยากที่สุดของโหมดเสียง
+ *
+ * play() ที่ถูกปฏิเสธ (autoplay policy) ไม่ทำให้เซสชันล้ม — element ตั้ง autoplay ไว้แล้ว
+ * และเสียงจะเริ่มเองเมื่อเบราว์เซอร์ยอม; เราไม่โยน error ออกไปกวนบทสนทนา
+ */
+export function createRemoteAudioSink(createElement: () => RemoteAudioElement = createDefaultAudioElement): RemoteAudioSink {
+  let element: RemoteAudioElement | null = null;
+  let closed = false;
+
+  return {
+    attach(stream: MediaStream): void {
+      if (closed) return;
+      element ??= createElement();
+      if (element.srcObject === stream) return;
+      element.srcObject = stream;
+      try {
+        void Promise.resolve(element.play()).catch(() => undefined);
+      } catch {
+        // เบราว์เซอร์บางตัวโยนแบบ sync — autoplay ของ element จะจัดการต่อเอง
+      }
+    },
+    close(): void {
+      closed = true;
+      const current = element;
+      element = null;
+      if (!current) return;
+      try {
+        current.pause();
+      } catch {
+        // หยุดไปแล้ว
+      }
+      current.srcObject = null;
+      try {
+        current.remove();
+      } catch {
+        // ถูกถอดออกจากหน้าไปแล้ว
+      }
+    },
+  };
+}
+
 // ── ตัวต่อจริง (browser เท่านั้น — ถูกเรียกตอนแตะปุ่ม AI Live) ────────────────────
 
 /**
@@ -67,11 +148,19 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
   const peer = new RTCPeerConnection();
   for (const track of tracks) peer.addTrack(track, media);
   const channel = peer.createDataChannel("oai-events");
+  const speaker = createRemoteAudioSink();
+  // เสียงของผู้ช่วยมาทาง track นี้ — ต่อเข้าลำโพงทันทีที่ provider ส่งมา
+  // (event.streams ว่างในบางเบราว์เซอร์ จึงห่อ track เป็น stream เองเป็นทางสำรอง)
+  peer.ontrack = (event: RTCTrackEvent) => {
+    const stream = event.streams[0] ?? new MediaStream([event.track]);
+    speaker.attach(stream);
+  };
 
   let closed = false;
   const stopEverything = (): void => {
     if (closed) return;
     closed = true;
+    speaker.close();
     for (const track of tracks) {
       try {
         track.stop();

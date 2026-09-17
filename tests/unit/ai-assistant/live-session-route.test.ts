@@ -16,6 +16,8 @@ async function loadRoute(options: {
   authed?: boolean;
   canUsePos?: boolean;
   planHasAi?: boolean;
+  /** null = อ่านแพ็กเกจไม่ได้/ไม่มีแถว subscription */
+  billingState?: { plan: string; status: string } | null;
   liveEnabled?: boolean;
   pilotOrg?: string;
   openaiKey?: string;
@@ -27,6 +29,7 @@ async function loadRoute(options: {
     authed = true,
     canUsePos = true,
     planHasAi = true,
+    billingState = { plan: "enterprise", status: "active" } as { plan: string; status: string } | null,
     liveEnabled = true,
     pilotOrg = "org-1",
     openaiKey = "sk-test-abcdefgh123456",
@@ -56,11 +59,12 @@ async function loadRoute(options: {
     }),
   }));
   vi.doMock("@/modules/billing/billing-service", () => ({
-    getOrganizationBillingState: vi.fn().mockResolvedValue({ plan: "enterprise", status: "active" }),
+    getOrganizationBillingState: vi.fn().mockResolvedValue(billingState),
   }));
   vi.doMock("@/modules/billing/types", async () => {
     const actual = await vi.importActual<typeof import("@/modules/billing/types")>("@/modules/billing/types");
-    return { ...actual, canUseFeature: () => planHasAi };
+    // ผูกกับแพ็กจริงด้วย เพื่อให้เคส billing = null (ตกไป DEFAULT_BILLING_STATE = free) พิสูจน์ได้
+    return { ...actual, canUseFeature: (state: { plan: string }) => planHasAi && state.plan !== "free" };
   });
   vi.doMock("@/modules/system/event-log", () => ({ logSystemEvent }));
   vi.doMock("@/modules/ai-assistant/tools/pos-tools-server", () => ({
@@ -137,6 +141,12 @@ describe("live session route — POST gates", () => {
     const noPlanResponse = await noPlan.route.POST(post(createBody));
     expect(noPlanResponse.status).toBe(403);
     expect(await noPlanResponse.json()).toMatchObject({ reason: "ai_not_in_plan" });
+
+    // อ่านแพ็กเกจไม่ได้ = ปฏิเสธ (fail closed) ไม่ใช่ข้ามด่านแพ็กเกจไปเปิดเซสชัน
+    const noBilling = await loadRoute({ billingState: null });
+    const noBillingResponse = await noBilling.route.POST(post(createBody));
+    expect(noBillingResponse.status).toBe(403);
+    expect(await noBillingResponse.json()).toMatchObject({ reason: "ai_not_in_plan" });
 
     const outsidePilot = await loadRoute();
     outsidePilot.setIdentity({ organizationId: "org-other", storeId: "store-1", userId: "user-1" });

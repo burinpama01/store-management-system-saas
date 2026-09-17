@@ -42,7 +42,10 @@ export type StandbyMessageType = (typeof STANDBY_MESSAGE_TYPES)[keyof typeof STA
  * ฝั่งเครื่องกับฝั่งเว็บอัปเดตคนละเวลาเสมอ สัญญาจึงต้องทนรหัสที่ยังไม่รู้จักได้
  */
 export const KNOWN_WAKE_PHRASE_IDS = [
+  // คู่แฝดของรายการนี้คือ WakePhrases.VoskPhraseId ใน windows/StoreOS.Voice/WakePhrases.cs
+  // (Vosk = engine ที่ใช้จริง) และ WakePhrases.All (SAPI = ทางถอย) — เพิ่มคำปลุกที่ไหนต้องเพิ่มที่นี่ด้วย
   "hello_storeos",
+  "hey_storeos",
   "hello_os",
   "hanlo_os",
   "helo_os",
