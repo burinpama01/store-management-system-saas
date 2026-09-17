@@ -159,6 +159,9 @@ export default async function PosPage() {
   const assistantConfig = readAssistantConfig(process.env);
   const aiAssistantLiveEnabled =
     assistantConfig.liveEnabled
+    // Live เป็นช่องทางหนึ่งของผู้ช่วย AI — ปิดผู้ช่วยทั้งระบบแล้วต้องไม่มีปุ่ม Live ด้วย
+    // (route ก็ตอบ ai_disabled อยู่แล้ว ปุ่มที่กดแล้วไม่ทำงานคือสิ่งที่เราไม่เอา)
+    && assistantConfig.enabled
     && canUseFeature(resolvedBillingState, "aiAssistant")
     && assistantConfig.livePilotOrgIds.includes(ctx.organizationId.toLowerCase());
   return (
@@ -188,6 +191,8 @@ export default async function PosPage() {
         )}
         aiAssistantTextEnabled={assistantConfig.enabled}
         aiAssistantLiveEnabled={aiAssistantLiveEnabled}
+        // โหมดวินิจฉัยเปิดตามร้าน (ใช้ตอนทดสอบหน้าร้าน) — ไม่เปิดก็ใช้ AI Live ได้ตามปกติ
+        aiAssistantLiveDiagnosticsEnabled={aiAssistantLiveEnabled && assistantConfig.liveDiagnosticsEnabled}
       />
       {alertNotifiers}
     </div>

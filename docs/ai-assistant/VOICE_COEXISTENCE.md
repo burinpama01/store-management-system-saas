@@ -22,14 +22,26 @@ During pilot, **three systems may coexist** but must not share a microphone capt
 4. **Standby stays optional.** AI Assistant text mode must work without Windows Standby.
 5. **Sunset decision later.** After pilot metrics, choose absorb vs keep separate — do not merge modules in MVP.
 
+6. **Wake word may open Live (amendment 2026-09-17).** คำปลุกของ Windows Standby ที่มีอยู่แล้ว
+   (`wake.detected`) เปิดเซสชัน AI Live ได้ ถือว่าเทียบเท่า "แตะปุ่มหนึ่งครั้ง" — ไม่ใช่ always-listening
+   (เครื่องยนต์คำปลุกยังเป็นตัวเดิมบนเครื่อง ไม่มีการเปิดไมค์เบราว์เซอร์ค้างไว้)
+   ข้อบังคับของเส้นทางนี้:
+   - เว็บต้องรายงาน `command.sessionEnded` (`ai_live` / `ai_live_busy`) ให้ native **ทันที**
+     เพราะ watchdog ของเครื่องให้เวลารอบละไม่เกิน 20 วินาที ขณะที่เซสชัน Live ยาวเป็นนาที
+   - เซสชัน Live เปิดอยู่แล้ว = คำปลุกถูกกลืนทิ้ง (`busy`) ห้ามเปิดไมค์ซ้อน
+   - ร้านที่ไม่ได้เปิด Live (ไม่มีปลายทางลงทะเบียน) = คำปลุกเดินเส้นทาง Voice POS เดิมทุกประการ
+   - ปุ่ม "พักคำปลุก" และสถานะ `disabled` ของ POS ยังคุมทั้งสองเส้นทางเหมือนเดิม
+
 ## Implementation checklist (PR2/PR3 UI)
 
-- [ ] Distinct AI entry control on POS
-- [ ] Mutual exclusion flag/session for mic capture
+- [x] Distinct AI entry control on POS
+- [x] Mutual exclusion flag/session for mic capture (`voice-pos/mic-ownership.ts`)
+- [x] Wake routing to Live (`voice-pos/wake-routing.ts`) + คืนไมค์ให้ native ทันที
 - [ ] Clarification/undo UI can reuse Voice POS patterns without importing Standby
 - [ ] Documented for staff: which button does what
 
 ## Non-goals
 
-- Wake word / always-listen
+- Always-listening (ไมค์เบราว์เซอร์เปิดค้างโดยไม่มีคำปลุก/การแตะปุ่ม)
+- คำปลุกตัวใหม่เฉพาะของ AI Live (ใช้ของ Windows Standby ที่มีอยู่เท่านั้น)
 - Replacing Voice POS in the same release as AI Assistant MVP

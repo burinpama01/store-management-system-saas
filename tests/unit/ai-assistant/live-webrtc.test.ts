@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseRealtimeEvent } from "@/modules/ai-assistant/ui/live-webrtc";
+import { REALTIME_CALLS_URL, createRemoteAudioSink, exchangeSdpOffer, parseRealtimeEvent } from "@/modules/ai-assistant/ui/live-webrtc";
+import { setSharedLiveTelemetry } from "@/modules/ai-assistant/ui/live-telemetry";
 
 // PR3-Live (M5) — แปลง event ดิบของ OpenAI Realtime เป็นสัญญาณของ live core (pure):
 // รู้จัก = แปลงตรงรูป, ไม่รู้จัก/รูปทรงเพี้ยน = null (เมินเงียบ ๆ ไม่เดา)
@@ -45,5 +46,189 @@ describe("parseRealtimeEvent", () => {
         item: { type: "function_call", call_id: "call_badargs1", name: "pos.add_item", arguments: 7 },
       }),
     ).toEqual({ kind: "function_call", callId: "call_badargs1", tool: "pos.add_item", argsText: "" });
+  });
+});
+
+// PR3-Live (fix) — เสียงตอบของผู้ช่วยมาเป็น remote track ของ WebRTC ซึ่งไม่ดังเอง
+// ถ้าไม่มี element เสียงถือ stream ไว้ ระบบจะทำงานถูกทุกอย่างแต่ผู้ใช้ไม่ได้ยินอะไรเลย
+describe("createRemoteAudioSink", () => {
+  function fakeElement() {
+    const calls = { play: 0, pause: 0, remove: 0 };
+    const element = {
+      autoplay: false,
+      srcObject: null as MediaStream | null,
+      play: () => {
+        calls.play += 1;
+        return Promise.resolve();
+      },
+      pause: () => {
+        calls.pause += 1;
+      },
+      remove: () => {
+        calls.remove += 1;
+      },
+    };
+    return { element, calls };
+  }
+
+  it("ต่อ stream เข้า element แล้วสั่งเล่นทันที (สร้าง element ครั้งเดียว)", () => {
+    const { element, calls } = fakeElement();
+    let created = 0;
+    const sink = createRemoteAudioSink(() => {
+      created += 1;
+      return element;
+    });
+    const stream = { id: "remote" } as unknown as MediaStream;
+
+    sink.attach(stream);
+    sink.attach(stream); // event ซ้ำของ provider ต้องไม่สร้าง element ใหม่และไม่สั่งเล่นซ้ำ
+
+    expect(created).toBe(1);
+    expect(element.srcObject).toBe(stream);
+    expect(calls.play).toBe(1);
+  });
+
+  it("play ที่ถูกปฏิเสธ (autoplay policy) ต้องไม่ทำให้เซสชันล้ม", () => {
+    const { element } = fakeElement();
+    element.play = () => Promise.reject(new Error("NotAllowedError"));
+
+    const sink = createRemoteAudioSink(() => element);
+
+    expect(() => sink.attach({ id: "remote" } as unknown as MediaStream)).not.toThrow();
+  });
+
+  it("close ถอดเสียงออกทุกทางและปลอดภัยเมื่อเรียกซ้ำ/ยังไม่เคย attach", () => {
+    const { element, calls } = fakeElement();
+    const sink = createRemoteAudioSink(() => element);
+    sink.attach({ id: "remote" } as unknown as MediaStream);
+
+    sink.close();
+    sink.close();
+
+    expect(calls.pause).toBe(1);
+    expect(calls.remove).toBe(1);
+    expect(element.srcObject).toBeNull();
+    // ปิดแล้ว attach ซ้ำต้องไม่ปลุกเสียงกลับมา (เซสชันจบแล้ว)
+    sink.attach({ id: "again" } as unknown as MediaStream);
+    expect(element.srcObject).toBeNull();
+
+    expect(() => createRemoteAudioSink(() => element).close()).not.toThrow();
+  });
+});
+
+// PR3-Live (fix) — รูปทรงของการแลก SDP ต้องตรงกับ Realtime GA เป๊ะ
+// ของเดิมยิงไป /v1/realtime?model=... (รูปแบบก่อน GA) = ต่อไม่ติดเลย และ audio sink
+// ที่แก้ไว้ก็ไม่มีโอกาสได้ทำงาน — เคสนี้จึงปักหมุด URL/method/headers/body ทั้งชุด
+describe("exchangeSdpOffer", () => {
+  it("POST /v1/realtime/calls ด้วย ephemeral token + application/sdp และไม่มี query string", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init as RequestInit });
+      return new Response("v=0 answer-sdp", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const answer = await exchangeSdpOffer({
+      ephemeralToken: "ek_test_secret_value_123",
+      offerSdp: "v=0 offer-sdp",
+      fetchImpl,
+    });
+
+    expect(answer).toBe("v=0 answer-sdp");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(REALTIME_CALLS_URL);
+    expect(calls[0].url).toBe("https://api.openai.com/v1/realtime/calls");
+    expect(calls[0].url).not.toContain("?"); // model ผูกกับ client secret แล้ว ห้ามส่งซ้ำใน URL
+    expect(calls[0].init.method).toBe("POST");
+    expect(calls[0].init.headers).toMatchObject({
+      Authorization: "Bearer ek_test_secret_value_123",
+      "Content-Type": "application/sdp",
+    });
+    expect(calls[0].init.body).toBe("v=0 offer-sdp");
+  });
+
+  it("provider ปฏิเสธ = โยน error แบบ typed ให้ core ปิดไมค์คืน (ไม่กลืนเงียบ)", async () => {
+    const fetchImpl = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
+
+    await expect(exchangeSdpOffer({ ephemeralToken: "ek_bad", offerSdp: "v=0", fetchImpl }))
+      .rejects.toThrow("realtime_sdp_401");
+  });
+});
+
+// PR3-Live (diagnostics) — เสียงไม่ดังต้องไม่หายเงียบ: ต้องมี event บอกว่าโดน autoplay บล็อก
+describe("telemetry ของเสียงตอบ", () => {
+  function spy() {
+    const events: { event: string; result: string; reason?: string }[] = [];
+    return {
+      events,
+      telemetry: { emit: (event: never) => events.push(event), flush: () => {}, recent: () => [] },
+    };
+  }
+
+  function fakeElement(play: () => Promise<void> | void) {
+    return { autoplay: false, srcObject: null as MediaStream | null, play, pause: () => {}, remove: () => {} };
+  }
+
+  it("autoplay ถูกบล็อก = audio.play_blocked (และเซสชันไม่ล้ม)", async () => {
+    const recorder = spy();
+    const unset = setSharedLiveTelemetry(recorder.telemetry as never);
+    try {
+      const error = new Error("play() failed");
+      error.name = "NotAllowedError";
+      const sink = createRemoteAudioSink(() => fakeElement(() => Promise.reject(error)));
+
+      expect(() => sink.attach({ id: "remote" } as unknown as MediaStream)).not.toThrow();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(recorder.events.map((entry) => entry.event)).toEqual([
+        "audio.attach_started",
+        "audio.play_started",
+        "audio.play_blocked",
+      ]);
+      expect(recorder.events[2].reason).toBe("autoplay_blocked");
+    } finally {
+      unset();
+    }
+  });
+
+  it("เล่นได้ = audio.play_succeeded, ปิดแล้ว = audio.closed", async () => {
+    const recorder = spy();
+    const unset = setSharedLiveTelemetry(recorder.telemetry as never);
+    try {
+      const sink = createRemoteAudioSink(() => fakeElement(() => Promise.resolve()));
+      sink.attach({ id: "remote" } as unknown as MediaStream);
+      await Promise.resolve();
+      await Promise.resolve();
+      sink.close();
+
+      expect(recorder.events.map((entry) => entry.event)).toEqual([
+        "audio.attach_started",
+        "audio.play_started",
+        "audio.play_succeeded",
+        "audio.closed",
+      ]);
+    } finally {
+      unset();
+    }
+  });
+
+  it("แลก SDP ไม่ผ่าน = webrtc.sdp_exchange_failed พร้อม httpStatus (ไม่มี token ใน event)", async () => {
+    const recorder = spy();
+    const unset = setSharedLiveTelemetry(recorder.telemetry as never);
+    try {
+      const fetchImpl = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
+
+      await expect(exchangeSdpOffer({ ephemeralToken: "ek_secret_value_1234", offerSdp: "v=0", fetchImpl }))
+        .rejects.toThrow("realtime_sdp_401");
+
+      expect(recorder.events.map((entry) => entry.event)).toEqual([
+        "webrtc.sdp_exchange_started",
+        "webrtc.sdp_exchange_failed",
+      ]);
+      expect(recorder.events[1].reason).toBe("http_401");
+      expect(JSON.stringify(recorder.events)).not.toContain("ek_secret_value_1234");
+    } finally {
+      unset();
+    }
   });
 });

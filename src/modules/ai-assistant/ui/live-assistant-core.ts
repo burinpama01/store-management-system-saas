@@ -16,6 +16,8 @@
 
 import { applyVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
 import { claimMicOwnership, releaseMicOwnership } from "@/modules/voice-pos/mic-ownership";
+import { emitLiveTelemetry, noopLiveTelemetry, type LiveTelemetry } from "./live-telemetry";
+import type { LiveStopReason } from "../live-telemetry-events";
 import type { AssistantCartBridge } from "./text-assistant-core";
 import {
   ASSISTANT_CART_ID_PATTERN,
@@ -39,6 +41,8 @@ export interface LiveConnectOptions {
   readonly ephemeralToken: string;
   readonly model: string;
   readonly handlers: LiveConnectionHandlers;
+  /** ผูก event วินิจฉัยของ WebRTC เข้ากับเซสชันเดียวกัน (ไม่ใช่ความลับ — เป็น id ที่ server ออกให้) */
+  readonly sessionId?: string;
 }
 
 export interface LiveConnectionHandle {
@@ -120,6 +124,8 @@ export interface LiveAssistantCoreDeps {
   readonly connect: (options: LiveConnectOptions) => Promise<LiveConnectionHandle>;
   readonly claimMic?: () => boolean;
   readonly releaseMic?: () => void;
+  /** ตัวส่ง event วินิจฉัย — ไม่ส่งมา = ใช้ตัวกลางของหน้า (noop ถ้าร้านนี้ปิดโหมดวินิจฉัย) */
+  readonly telemetry?: LiveTelemetry;
   readonly now?: () => number;
   /** ตั้ง timer แบบฉีดได้ (idle/expiry) — คืนฟังก์ชันยกเลิก */
   readonly schedule?: (fn: () => void, ms: number) => () => void;
@@ -129,14 +135,23 @@ export interface LiveAssistantCoreDeps {
 }
 
 /** เหตุผลการจบเซสชัน — ข้อความไทยผูกไว้ที่เดียว */
-export type LiveSessionEndReason = "user" | "idle" | "expiry" | "cap" | "page" | "error";
+/**
+ * เหตุผลการจบเซสชัน — ใช้ชุดเดียวกับ telemetry (ห้ามมี string กระจัดกระจายหลายแบบ)
+ * เพื่อให้ตอบได้จาก log ว่า "จบเพราะอะไร" โดยไม่ต้องเดาจากข้อความภาษาไทย
+ */
+export type LiveSessionEndReason = LiveStopReason;
 
 const END_MESSAGES: Record<Exclude<LiveSessionEndReason, "error">, string> = {
   user: "ปิดโหมดเสียงสดแล้ว",
   idle: "ไม่มีการสนทนาสักพัก — ปิดโหมดเสียงสดให้อัตโนมัติ",
-  expiry: "หมดเวลาของเซสชันเสียงสด — เปิดใหม่ได้เสมอ",
+  expired: "หมดเวลาของเซสชันเสียงสด — เปิดใหม่ได้เสมอ",
   cap: "ใช้จำนวนคำสั่งของเซสชันครบแล้ว — ปิดโหมดเสียงสด",
-  page: "ปิดโหมดเสียงสดแล้ว",
+  tab_close: "ปิดโหมดเสียงสดแล้ว",
+  unmount: "ปิดโหมดเสียงสดแล้ว",
+  network: "การเชื่อมต่อหลุด — เปิดโหมดเสียงสดใหม่ได้เลย",
+  provider: "ผู้ให้บริการเสียงมีปัญหา — เปิดโหมดเสียงสดใหม่อีกครั้ง",
+  webrtc: "ช่องเสียงมีปัญหา — เปิดโหมดเสียงสดใหม่อีกครั้ง",
+  access_revoked: "สิทธิ์ใช้โหมดเสียงสดถูกปิดระหว่างใช้งาน",
 };
 
 const DEFAULT_IDLE_TIMEOUT_MS = 90_000;
@@ -201,6 +216,11 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
   const maxEntries = Math.max(1, deps.maxEntries ?? 20);
   const claimMic = deps.claimMic ?? (() => claimMicOwnership("ai-live"));
   const releaseMic = deps.releaseMic ?? (() => releaseMicOwnership("ai-live"));
+  const telemetry = deps.telemetry ?? { ...noopLiveTelemetry, emit: emitLiveTelemetry };
+  /** ทุก event ของ core ผูก sessionId ปัจจุบันให้อัตโนมัติ — timeline จึงต่อกันได้ */
+  const track = (event: Parameters<LiveTelemetry["emit"]>[0]): void => {
+    telemetry.emit(sessionId ? { ...event, sessionId } : event);
+  };
 
   if (typeof deps.cartId !== "string" || !ASSISTANT_CART_ID_PATTERN.test(deps.cartId)) {
     throw new Error("Invalid live assistant cart id");
@@ -223,6 +243,8 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
   const seenCallIds = new Set<string>();
   let liveCartVersion = 0;
   let entrySequence = 0;
+  /** เวลาที่เซสชันนี้เริ่ม (ฝั่งเบราว์เซอร์) — ใช้รายงานความยาวเซสชันตอนจบ */
+  let sessionStartedAtMs: number | null = null;
 
   const listeners = new Set<() => void>();
   let snapshot: LiveAssistantState = { phase, status, entries, toolCallsUsed, toolCallsCap };
@@ -241,7 +263,9 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     cancelIdle?.();
     cancelIdle = schedule(() => {
       cancelIdle = null;
-      if (phase === "active") stop("idle");
+      if (phase !== "active") return;
+      track({ event: "live.idle_timeout", stage: "session", result: "ended" });
+      stop("idle");
     }, idleTimeoutMs);
   }
 
@@ -267,9 +291,12 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
 
   /** ผล apply ที่อนุมัติแล้ว → ตะกร้าจริงผ่าน bridge เดิม (ADR-009) — คืน false เมื่อแก้ไม่สำเร็จ */
   function applyApprovedIntent(step: Extract<AssistantTurnStep, { kind: "apply" }>): boolean {
+    // server รู้แค่ว่า tool ผ่าน — จุดนี้คือ "ลงตะกร้าจริงบนหน้าขายหรือไม่" ซึ่งเป็นคนละเรื่องกัน
+    track({ event: "cart.apply_started", stage: "cart", result: "started", cartVersion: liveCartVersion });
     const api = deps.getCartApi();
     if (!api) {
       pushEntry("error", "หน้าขายยังไม่พร้อม — แก้ตะกร้าไม่ได้ในขณะนี้");
+      track({ event: "cart.apply_failed", stage: "cart", result: "failed", reason: "cart_api_missing" });
       return false;
     }
     const snap = api.getSnapshot();
@@ -281,12 +308,31 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     });
     if (resolution.status === "blocked") {
       pushEntry("error", resolution.announcement);
+      track({
+        event: "cart.apply_failed",
+        stage: "cart",
+        result: "failed",
+        reason: snap.locked ? "cart_locked" : "resolution_blocked",
+        cartVersion: liveCartVersion,
+      });
       return false;
     }
     api.commit(resolution.cart);
+    const cartVersionBefore = liveCartVersion;
     liveCartVersion += 1;
     deps.onFocusSell?.();
     pushEntry("assistant", resolution.announcement);
+    track({
+      event: "cart.apply_succeeded",
+      stage: "cart",
+      result: "success",
+      cartVersion: liveCartVersion,
+      metadata: {
+        cartVersionBefore,
+        itemCount: resolution.cart.items.length,
+        total: resolution.cart.total,
+      },
+    });
     return true;
   }
 
@@ -368,6 +414,7 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     if (!relay.ok) {
       pushEntry("error", describeLiveRelayFailure(relay));
       if (relay.reason === "live_tool_cap_reached") {
+        track({ event: "live.cap_reached", stage: "session", result: "blocked", reason: "tool_cap" });
         stop("cap");
         return;
       }
@@ -401,14 +448,22 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
 
   const start = async (): Promise<void> => {
     if (phase !== "idle") return;
+    track({ event: "live.requested", stage: "session", result: "started" });
+    track({ event: "mic.claim_started", stage: "mic", result: "started" });
     if (!claimMic()) {
       pushEntry("error", "ปุ่มเสียงเดิมกำลังฟังอยู่ — รอรอบนั้นจบแล้วแตะ AI Live อีกครั้ง");
+      track({ event: "mic.claim_failed", stage: "mic", result: "blocked", reason: "voice_pos_busy" });
       notify();
       return;
     }
+    track({ event: "mic.claimed", stage: "mic", result: "success" });
     if (!deps.getCartApi()) {
       releaseMic();
       pushEntry("error", "หน้าขายยังไม่พร้อม — โหมดเสียงสดยังเปิดไม่ได้");
+      track({ event: "mic.released", stage: "mic", result: "ended", reason: "cart_api_missing" });
+      track({
+        event: "live.session_create_failed", stage: "session", result: "failed", reason: "cart_api_missing",
+      });
       notify();
       return;
     }
@@ -417,6 +472,8 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     pushEntry("assistant", "กำลังเชื่อมต่อโหมดเสียงสด…");
     notify();
 
+    const sessionStartedAt = now();
+    track({ event: "live.session_create_started", stage: "session", result: "started" });
     let session: LiveSessionResponse;
     try {
       session = await deps.createSession({ activeCartId: deps.cartId });
@@ -427,20 +484,38 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
       releaseMic();
       setPhase("idle");
       pushEntry("error", describeLiveSessionFailure(session));
+      // ด่านที่ปฏิเสธ (สิทธิ์/แพ็กเกจ/pilot/kill switch/rate limit) ต้องเห็นได้จาก timeline
+      track({
+        event: "live.access_denied",
+        stage: "session",
+        result: "blocked",
+        reason: session.reason ?? "unknown",
+        durationMs: now() - sessionStartedAt,
+      });
+      track({ event: "mic.released", stage: "mic", result: "ended", reason: "session_create_failed" });
       notify();
       return;
     }
+    track({ event: "live.access_granted", stage: "session", result: "success" });
 
     sessionId = session.sessionId;
     sessionToken = session.sessionToken;
+    track({
+      event: "live.session_created",
+      stage: "session",
+      result: "success",
+      durationMs: now() - sessionStartedAt,
+    });
     toolCallsCap = session.caps?.toolCallsPerSession ?? null;
     toolCallsUsed = 0;
     liveCartVersion = 0;
+    sessionStartedAtMs = now();
 
     try {
       handle = await deps.connect({
         ephemeralToken: session.ephemeralToken,
         model: session.model,
+        sessionId: session.sessionId,
         handlers: {
           onOpen: () => {
             if (phase !== "active") setPhase("active");
@@ -455,10 +530,12 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
           },
           onError: () => {
             // ข้อความจาก provider ไม่แสดงดิบ (อาจมีเนื้อหาจากเสียง) — fail closed เป็นข้อความเดิม
-            stop("error", "การเชื่อมต่อเสียงมีปัญหา — ลองเปิดโหมดเสียงสดใหม่อีกครั้ง");
+            stop("webrtc", "การเชื่อมต่อเสียงมีปัญหา — ลองเปิดโหมดเสียงสดใหม่อีกครั้ง");
           },
           onClosed: () => {
-            if (phase === "active") stop("error", "การเชื่อมต่อเสียงหลุด — เปิดโหมดเสียงสดใหม่ได้เลย");
+            if (phase !== "active") return;
+            track({ event: "live.network_lost", stage: "session", result: "failed", reason: "connection_closed" });
+            stop("network", "การเชื่อมต่อเสียงหลุด — เปิดโหมดเสียงสดใหม่ได้เลย");
           },
         },
       });
@@ -467,6 +544,9 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
       releaseMic();
       setPhase("idle");
       pushEntry("error", "เปิดช่องเสียงไม่สำเร็จ — ตรวจสิทธิ์ไมโครโฟนของเบราว์เซอร์แล้วลองใหม่");
+      // จุดนี้คือ getUserMedia ถูกปฏิเสธ หรือ SDP ต่อไม่ติด (รายละเอียดอยู่ใน event ของ webrtc)
+      track({ event: "mic.claim_failed", stage: "mic", result: "failed", reason: "media_device_error" });
+      track({ event: "live.session_create_failed", stage: "session", result: "failed", reason: "connect_failed" });
       void bestEffortEnd();
       notify();
       return;
@@ -476,7 +556,10 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     const remainingMs = Math.max(0, session.expiresAt - now());
     cancelExpiry = schedule(() => {
       cancelExpiry = null;
-      if (phase === "active" || phase === "connecting") stop("expiry");
+      if (phase === "active" || phase === "connecting") {
+        track({ event: "live.expired", stage: "session", result: "ended" });
+        stop("expired");
+      }
     }, remainingMs);
     setPhase("active");
     resetIdleTimer();
@@ -494,6 +577,8 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
   function stop(reason: LiveSessionEndReason, errorMessage?: string): void {
     if (phase === "idle" || stopping) return;
     stopping = true;
+    const startedAt = sessionStartedAtMs;
+    track({ event: "live.stop_requested", stage: "stop", result: "started", reason });
     cancelIdle?.();
     cancelIdle = null;
     cancelExpiry?.();
@@ -505,14 +590,31 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     }
     handle = null;
     releaseMic();
+    track({ event: "mic.released", stage: "mic", result: "ended", reason: "session_stopped" });
+    track({
+      event: "live.stopped",
+      stage: "stop",
+      result: "ended",
+      reason,
+      // เก็บเฉพาะค่าที่รู้จริงฝั่งนี้ — วินาทีของเซสชันฝั่ง server อยู่ใน log ของ route ปิดเซสชัน
+      metadata: {
+        sessionSeconds: startedAt === null ? null : Math.max(0, Math.round((now() - startedAt) / 1000)),
+        toolCallsUsed,
+      },
+    });
     void bestEffortEnd();
     sessionId = null;
     sessionToken = null;
+    sessionStartedAtMs = null;
     setPhase("idle");
-    // การปิดปกติ (แตะซ้ำ/idle/expiry/cap) ไม่ใช่ error — แสดงเป็นข้อความผู้ช่วยธรรมดา
+    // การปิดปกติ (แตะซ้ำ/idle/หมดเวลา/หมดเพดาน) ไม่ใช่ error — แสดงเป็นข้อความผู้ช่วยธรรมดา
+    // ส่วนการปิดเพราะมีอะไรพัง (เครือข่าย/provider/ช่องเสียง/สิทธิ์ถูกถอน) ต้องเป็นระดับ error
+    const failed = errorMessage !== undefined
+      || reason === "error" || reason === "network" || reason === "provider"
+      || reason === "webrtc" || reason === "access_revoked";
     pushEntry(
-      reason === "error" ? "error" : "assistant",
-      reason === "error" ? (errorMessage ?? "ปิดโหมดเสียงสดแล้ว") : END_MESSAGES[reason],
+      failed ? "error" : "assistant",
+      errorMessage ?? (reason === "error" ? "ปิดโหมดเสียงสดแล้ว" : END_MESSAGES[reason]),
     );
     stopping = false;
     notify();

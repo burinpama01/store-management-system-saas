@@ -11,11 +11,23 @@
 //   - onOpen มาจาก data channel เปิดจริงจังหวะเดียว — event session.* ของ provider ไม่ใช้
 //     ทริกเกอร์ซ้ำ (กันข้อความ "เริ่มฟังแล้ว" โผล่สองครั้ง)
 //   - ข้อความดิบของ provider ไม่หลุดออกนอกไฟล์ — onError เป็นสัญญาณเดียว (fail closed)
+//   - เสียงตอบของผู้ช่วยมาเป็น remote track ของ WebRTC ต้องต่อเข้า element เสียงเสมอ
+//     (ไม่ต่อ = เงียบสนิททั้งที่ทุกอย่างทำงานถูก — ดู createRemoteAudioSink)
 
 import type { LiveConnectionHandle, LiveConnectOptions } from "./live-assistant-core";
+import { emitLiveTelemetry } from "./live-telemetry";
 
-const REALTIME_SDP_URL = (model: string): string =>
-  `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+/**
+ * ปลายทางแลก SDP ของ Realtime GA — `POST /v1/realtime/calls`
+ *
+ * ของเดิมยิงไป `/v1/realtime?model=...` ซึ่งเป็นรูปแบบก่อน GA และจะต่อไม่ติดเลย
+ * (คู่กับ `/v1/realtime/sessions` ที่เราเลิกใช้ไปแล้วตอน M3 — ฝั่งสร้าง ephemeral token
+ * ย้ายไป `/v1/realtime/client_secrets` แต่ฝั่ง SDP ยังค้างรูปแบบเก่าไว้)
+ *
+ * ไม่ต้องส่ง model ใน URL เพราะ model ถูกผูกไว้กับ ephemeral client secret ตั้งแต่ตอน
+ * สร้างเซสชันฝั่ง server แล้ว (live-openai-tools.createLiveEphemeralSession)
+ */
+export const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 
 // ── สัญญาณที่ core รู้จัก (pure — เทสต์ได้โดยไม่มี WebRTC) ────────────────────────
 
@@ -54,6 +66,161 @@ export function parseRealtimeEvent(raw: unknown): RealtimeSignal | null {
   }
 }
 
+// ── ปลายทางเสียงของผู้ช่วย (แยกออกมาให้เทสต์ได้โดยไม่มี DOM จริง) ──────────────────
+
+/** ส่วนของ HTMLAudioElement ที่ sink ใช้จริง — ประกาศแคบ ๆ เพื่อให้ฉีดของปลอมในเทสต์ได้ */
+export interface RemoteAudioElement {
+  autoplay: boolean;
+  srcObject: MediaStream | null;
+  play: () => Promise<void> | void;
+  pause: () => void;
+  remove: () => void;
+}
+
+export interface RemoteAudioSink {
+  /** ต่อ stream ที่ provider ส่งมาเข้าลำโพง — เรียกซ้ำด้วย stream เดิมได้ (ไม่สร้าง element ใหม่) */
+  readonly attach: (stream: MediaStream) => void;
+  /** ถอดเสียงออกทุกทาง — เรียกซ้ำได้ ปลอดภัยแม้ยังไม่เคย attach */
+  readonly close: () => void;
+}
+
+/**
+ * element เสียงเริ่มต้น: ไม่ผูกกับ layout ของหน้า (ไม่มีภาพ) และไม่ต้องให้ผู้ใช้กดเล่น
+ * เพราะเซสชันเริ่มจากการแตะปุ่ม AI Live อยู่แล้ว (มี user activation ครบ)
+ * `playsinline` จำเป็นกับ iPad/Safari ไม่งั้น WebView จะพยายามเปิดโหมดเต็มจอ
+ */
+function createDefaultAudioElement(): RemoteAudioElement {
+  const element = document.createElement("audio");
+  element.autoplay = true;
+  element.setAttribute("playsinline", "");
+  element.setAttribute("aria-hidden", "true");
+  element.style.display = "none";
+  document.body.appendChild(element);
+  return element as unknown as RemoteAudioElement;
+}
+
+/**
+ * ต่อเสียงตอบของผู้ช่วยเข้าลำโพงของเครื่อง
+ *
+ * เหตุผลที่ต้องมี: WebRTC ส่งเสียงกลับมาเป็น remote track ซึ่ง "ไม่ดังเอง" — ต้องมี
+ * element เสียงถือ stream ไว้เสมอ ถ้าลืมส่วนนี้ ระบบจะทำงานถูกทุกอย่าง (tool วิ่ง ตะกร้าเปลี่ยน)
+ * แต่ผู้ใช้ไม่ได้ยินอะไรเลย ซึ่งเป็นอาการที่ไล่สาเหตุยากที่สุดของโหมดเสียง
+ *
+ * play() ที่ถูกปฏิเสธ (autoplay policy) ไม่ทำให้เซสชันล้ม — element ตั้ง autoplay ไว้แล้ว
+ * และเสียงจะเริ่มเองเมื่อเบราว์เซอร์ยอม; เราไม่โยน error ออกไปกวนบทสนทนา
+ */
+export function createRemoteAudioSink(
+  createElement: () => RemoteAudioElement = createDefaultAudioElement,
+  sessionId?: string,
+): RemoteAudioSink {
+  let element: RemoteAudioElement | null = null;
+  let closed = false;
+
+  return {
+    attach(stream: MediaStream): void {
+      if (closed) return;
+      emitLiveTelemetry({ event: "audio.attach_started", stage: "audio", result: "started", sessionId });
+      element ??= createElement();
+      if (element.srcObject === stream) return;
+      element.srcObject = stream;
+      emitLiveTelemetry({ event: "audio.play_started", stage: "audio", result: "started", sessionId });
+      try {
+        void Promise.resolve(element.play()).then(
+          () => emitLiveTelemetry({ event: "audio.play_succeeded", stage: "audio", result: "success", sessionId }),
+          (error: unknown) => {
+            // เสียงไม่ดังต้องไม่หายเงียบ: แยก autoplay ที่ถูกบล็อกออกจากความผิดพลาดอื่น
+            // เก็บแค่ชื่อของ error ไม่เก็บ object ดิบที่มีรายละเอียดภายในของเบราว์เซอร์
+            const name = error instanceof Error ? error.name : "";
+            const blocked = name === "NotAllowedError";
+            emitLiveTelemetry({
+              event: blocked ? "audio.play_blocked" : "audio.play_failed",
+              stage: "audio",
+              result: blocked ? "blocked" : "failed",
+              reason: blocked ? "autoplay_blocked" : (name || "unknown_audio_error"),
+              sessionId,
+            });
+          },
+        );
+      } catch {
+        // เบราว์เซอร์บางตัวโยนแบบ sync — autoplay ของ element จะจัดการต่อเอง
+        emitLiveTelemetry({
+          event: "audio.play_failed", stage: "audio", result: "failed", reason: "unknown_audio_error", sessionId,
+        });
+      }
+    },
+    close(): void {
+      closed = true;
+      const current = element;
+      element = null;
+      if (!current) return;
+      try {
+        current.pause();
+      } catch {
+        // หยุดไปแล้ว
+      }
+      current.srcObject = null;
+      emitLiveTelemetry({ event: "audio.closed", stage: "audio", result: "ended", sessionId });
+      try {
+        current.remove();
+      } catch {
+        // ถูกถอดออกจากหน้าไปแล้ว
+      }
+    },
+  };
+}
+
+// ── แลก SDP กับ provider (แยกออกมาให้เทสต์รูปทรง request ได้โดยไม่มี WebRTC) ────────
+
+/**
+ * ส่ง offer SDP ไป `/v1/realtime/calls` แล้วคืน answer SDP เป็นข้อความ
+ *
+ * ทั้งสามอย่างนี้ห้ามเพี้ยน ไม่งั้นจะต่อไม่ติดโดยไม่มีอะไรบอกสาเหตุที่ฝั่งผู้ใช้:
+ *   - method POST + `Content-Type: application/sdp` (body เป็น SDP ดิบ ไม่ใช่ JSON)
+ *   - `Authorization: Bearer <ephemeral client secret>` (ไม่ใช่ OPENAI_API_KEY — ตัวจริงอยู่ฝั่ง server)
+ *   - ไม่มี query string ใด ๆ (model ผูกกับ client secret ตั้งแต่ตอนสร้างเซสชันแล้ว)
+ */
+export async function exchangeSdpOffer(options: {
+  readonly ephemeralToken: string;
+  readonly offerSdp: string;
+  readonly fetchImpl?: typeof fetch;
+  readonly sessionId?: string;
+}): Promise<string> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const startedAt = Date.now();
+  emitLiveTelemetry({
+    event: "webrtc.sdp_exchange_started", stage: "webrtc", result: "started", sessionId: options.sessionId,
+  });
+  const response = await fetchImpl(REALTIME_CALLS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${options.ephemeralToken}`,
+      "Content-Type": "application/sdp",
+    },
+    body: options.offerSdp,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    emitLiveTelemetry({
+      event: "webrtc.sdp_exchange_failed",
+      stage: "webrtc",
+      result: "failed",
+      reason: `http_${response.status}`,
+      durationMs: Date.now() - startedAt,
+      sessionId: options.sessionId,
+      metadata: { httpStatus: response.status },
+    });
+    throw new Error(`realtime_sdp_${response.status}`);
+  }
+  emitLiveTelemetry({
+    event: "webrtc.sdp_exchange_succeeded",
+    stage: "webrtc",
+    result: "success",
+    durationMs: Date.now() - startedAt,
+    sessionId: options.sessionId,
+  });
+  return response.text();
+}
+
 // ── ตัวต่อจริง (browser เท่านั้น — ถูกเรียกตอนแตะปุ่ม AI Live) ────────────────────
 
 /**
@@ -67,11 +234,21 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
   const peer = new RTCPeerConnection();
   for (const track of tracks) peer.addTrack(track, media);
   const channel = peer.createDataChannel("oai-events");
+  const sessionId = options.sessionId;
+  const speaker = createRemoteAudioSink(undefined, sessionId);
+  // เสียงของผู้ช่วยมาทาง track นี้ — ต่อเข้าลำโพงทันทีที่ provider ส่งมา
+  // (event.streams ว่างในบางเบราว์เซอร์ จึงห่อ track เป็น stream เองเป็นทางสำรอง)
+  peer.ontrack = (event: RTCTrackEvent) => {
+    emitLiveTelemetry({ event: "audio.remote_track_received", stage: "audio", result: "success", sessionId });
+    const stream = event.streams[0] ?? new MediaStream([event.track]);
+    speaker.attach(stream);
+  };
 
   let closed = false;
   const stopEverything = (): void => {
     if (closed) return;
     closed = true;
+    speaker.close();
     for (const track of tracks) {
       try {
         track.stop();
@@ -92,7 +269,16 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
   };
 
   const handlers = options.handlers;
-  channel.onopen = () => handlers.onOpen();
+  channel.onopen = () => {
+    emitLiveTelemetry({ event: "webrtc.data_channel_open", stage: "webrtc", result: "success", sessionId });
+    handlers.onOpen();
+  };
+  channel.onerror = () => {
+    // ข้อความ error ดิบของ provider ไม่ถูกเก็บ — บันทึกแค่ว่าเกิดที่ช่องข้อมูล
+    emitLiveTelemetry({
+      event: "webrtc.data_channel_error", stage: "webrtc", result: "failed", reason: "data_channel_error", sessionId,
+    });
+  };
   channel.onmessage = (message: MessageEvent) => {
     let parsed: unknown = null;
     try {
@@ -120,25 +306,42 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
         return;
     }
   };
-  channel.onclose = () => handlers.onClosed();
+  channel.onclose = () => {
+    emitLiveTelemetry({ event: "webrtc.data_channel_closed", stage: "webrtc", result: "ended", sessionId });
+    handlers.onClosed();
+  };
   peer.onconnectionstatechange = () => {
-    if (peer.connectionState === "failed" || peer.connectionState === "disconnected") handlers.onClosed();
+    const state = peer.connectionState;
+    const lost = state === "failed" || state === "disconnected";
+    emitLiveTelemetry({
+      event: "webrtc.connection_state_changed",
+      stage: "webrtc",
+      result: lost ? "failed" : "success",
+      reason: state,
+      sessionId,
+    });
+    if (lost) handlers.onClosed();
+  };
+  peer.oniceconnectionstatechange = () => {
+    const state = peer.iceConnectionState;
+    emitLiveTelemetry({
+      event: "webrtc.ice_state_changed",
+      stage: "webrtc",
+      result: state === "failed" || state === "disconnected" ? "failed" : "success",
+      reason: state,
+      sessionId,
+    });
   };
 
   try {
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
-    const response = await fetch(REALTIME_SDP_URL(options.model), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${options.ephemeralToken}`,
-        "Content-Type": "application/sdp",
-      },
-      body: offer.sdp ?? "",
-      signal: AbortSignal.timeout(10_000),
+    emitLiveTelemetry({ event: "webrtc.offer_created", stage: "webrtc", result: "success", sessionId });
+    const answerSdp = await exchangeSdpOffer({
+      ephemeralToken: options.ephemeralToken,
+      offerSdp: offer.sdp ?? "",
+      sessionId,
     });
-    if (!response.ok) throw new Error(`realtime_sdp_${response.status}`);
-    const answerSdp = await response.text();
     await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
   } catch (error) {
     stopEverything();

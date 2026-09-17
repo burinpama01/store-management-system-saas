@@ -120,18 +120,31 @@ public static class WakePhrases
     ///
     /// ไม่ใส่คำไทย เพราะ Vosk ไม่มีโมเดลภาษาไทย และการเขียนหน่วยเสียงไทยเองบน engine
     /// ภาษาอังกฤษคือสาเหตุของการปลุกเองที่วัดได้ 10–20 ครั้งต่อ 4 นาที
+    ///
+    /// กฎการเพิ่มคำใหม่ (ห้ามข้าม):
+    ///   1. ต้องมีอย่างน้อยสองคำ — คำเดียวปลุกง่ายเกินไป (วัดแล้ว 3 ครั้ง/4 นาที)
+    ///   2. ทุกคำต้องอยู่ในพจนานุกรมของโมเดลอังกฤษ คำนอกพจนานุกรมจะเป็น [unk] และจับไม่ได้เลย
+    ///   3. เพิ่มรหัสใน <see cref="VoskPhraseId"/> ด้วยเสมอ ไม่งั้นจะกลายเป็น "unknown"
+    ///   4. รหัสใหม่ต้องไปเพิ่มที่ฝั่งเว็บด้วย (src/modules/voice-pos/standby-contract.ts)
+    ///
+    /// "hey store" เพิ่มเข้ามาเพราะพนักงานส่วนหนึ่งขึ้นต้นด้วย "เฮ้" ตามธรรมชาติมากกว่า
+    /// "ฮัลโหล" — ยังไม่ได้วัดในร้านจริง ต้องเก็บตัวเลข false wake รอบใหม่ก่อนขยายร้าน
     /// </summary>
-    public static IReadOnlyList<string> VoskPhrases { get; } = ["hello store"];
+    public static IReadOnlyList<string> VoskPhrases { get; } = ["hello store", "hey store"];
 
     /// <summary>รหัสคำปลุกสำหรับ telemetry — ต้องเป็นรหัส ไม่ใช่ข้อความที่ได้ยิน</summary>
     public static string VoskPhraseId(string phrase) => phrase switch
     {
         "hello store" => "hello_storeos",
+        "hey store" => "hey_storeos",
         _ => "unknown",
     };
 
     /// <summary>สิ่งที่ผู้ใช้ต้องพูด (แสดงบนหน้าจอ)</summary>
     public const string VoskDisplayPhrase = "Hello StoreOS";
+
+    /// <summary>คำปลุกทางเลือกที่แสดงในคู่มือ/หน้าตั้งค่า (คู่กับ <see cref="VoskPhrases"/>)</summary>
+    public static IReadOnlyList<string> VoskDisplayPhrases { get; } = ["Hello StoreOS", "Hey StoreOS"];
 
     /// <summary>
     /// "คำล่อ" — คำทักทายไทยที่ไม่ได้ตั้งใจปลุก แต่เสียงใกล้คำปลุกมาก

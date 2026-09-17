@@ -20,7 +20,7 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import { MVP_TOOL_NAMES, type MvpToolName } from "@/modules/ai-assistant/tools/pos-tools";
 import { buildLiveToolArgs, type LiveInjectedCartContext } from "@/modules/ai-assistant/live-openai-tools";
 import { resolveLiveTokenSecret, verifyLiveSessionToken } from "@/modules/ai-assistant/live-session";
-import { liveComposition, resolveLiveAccess, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
+import { liveComposition, logLiveEvent, resolveLiveAccess, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,8 @@ const SummarySchema = z.object({
 
 const BodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID_PATTERN),
-  sessionToken: z.string().min(8).max(256),
+  // token เป็น payload ที่เซ็นแล้ว (ไม่ใช่แค่ลายเซ็น) จึงยาวกว่ารุ่นก่อน — เพดานกันข้อความยาวผิดปกติ
+  sessionToken: z.string().min(8).max(2048),
   callId: z.string().regex(CALL_ID_PATTERN),
   tool: z.enum(MVP_TOOL_NAMES),
   args: z.unknown().optional(),
@@ -67,7 +68,10 @@ async function safely(action: () => Promise<unknown>): Promise<void> {
 
 export async function POST(request: Request) {
   const access = await resolveLiveAccess();
-  if (!access.ok) return fail(access.reason, access.status, ACCESS_NOTES[access.reason]);
+  if (!access.ok) {
+    await logLiveEvent({ event: "live.access_denied", stage: "tool", result: "blocked", reason: access.reason });
+    return fail(access.reason, access.status, ACCESS_NOTES[access.reason]);
+  }
   const { ctx } = access;
 
   // rate limit ที่ route layer ก่อนแตะ session/dispatcher — กันสปามกลางบทสนทนา
@@ -83,6 +87,7 @@ export async function POST(request: Request) {
       actorUserId: ctx.userId,
       context: { reason: "rate_limited", stage: "relay" },
     }));
+    await logLiveEvent({ event: "tool.rate_limited", stage: "tool", result: "blocked", reason: "rate_limited", ctx });
     return fail("rate_limited", 429, "มีคำสั่งเข้ามาถี่เกินไป — รอแป๊บเดียวแล้วพูดใหม่", {
       "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)),
     });
@@ -102,18 +107,57 @@ export async function POST(request: Request) {
   const secret = resolveLiveTokenSecret(process.env);
   if (!secret) return fail("live_unconfigured", 503, "โหมดเสียงสดยังตั้งค่าไม่ครบ — แจ้งผู้ดูแลระบบ");
 
-  // token ผูกกับ sessionId + เวลาหมดอายุของ session — ปลอม/ยืมข้ามเซสชันไม่ได้
-  if (!verifyLiveSessionToken(input.sessionToken, input.sessionId, secret)) {
+  // ตัวตนของเซสชันทั้งหมดอยู่ใน token ที่ server เซ็นไว้ (org/store/user/ตะกร้า/อายุ/เพดาน)
+  // จึงไม่ต้องหาเซสชันจากหน่วยความจำของ instance — request ที่ตกคนละ instance ยังคุยต่อได้
+  // (ของเดิมตอบ 403 live_session_invalid กลางบทสนทนาเมื่อ instance ไม่ตรงกัน)
+  await logLiveEvent({
+    event: "tool.received", stage: "tool", result: "started", ctx,
+    sessionId: input.sessionId, callId: input.callId, metadata: { tool: input.tool },
+  });
+
+  const claims = verifyLiveSessionToken(input.sessionToken, secret);
+  if (!claims || claims.sessionId !== input.sessionId) {
+    await logLiveEvent({
+      event: "tool.token_rejected", stage: "tool", result: "blocked", reason: "invalid_or_expired", ctx,
+      sessionId: input.sessionId, callId: input.callId,
+    });
+    return fail("live_session_invalid", 403, "เซสชันเสียงสดหมดอายุแล้ว — แตะปุ่ม AI Live เปิดใหม่");
+  }
+  // เซสชันต้องเป็นของ identity ผู้เรียกเท่านั้น (ระดับ org + store + user)
+  if (claims.organizationId !== ctx.organizationId || claims.storeId !== ctx.storeId || claims.userId !== ctx.userId) {
+    await logLiveEvent({
+      event: "tool.token_rejected", stage: "tool", result: "blocked", reason: "identity_mismatch", ctx,
+      sessionId: input.sessionId, callId: input.callId,
+    });
     return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
+  }
+  await logLiveEvent({
+    event: "tool.token_verified", stage: "tool", result: "success", ctx,
+    sessionId: input.sessionId, callId: input.callId,
+  });
+
+  // ปิดเซสชันไปแล้ว = ห้ามสั่งงานต่อแม้ token จะยังไม่หมดอายุ (best-effort ต่อ instance)
+  if (liveComposition.liveSessions.isRevoked(claims.sessionId)) {
+    await logLiveEvent({
+      event: "tool.token_rejected", stage: "tool", result: "blocked", reason: "session_revoked", ctx,
+      sessionId: input.sessionId, callId: input.callId,
+    });
+    return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ปิดไปแล้ว — แตะปุ่ม AI Live เปิดใหม่");
   }
 
-  const session = liveComposition.liveSessions.get(input.sessionId);
-  // หมดอายุ/TTL กวาดไปแล้ว = ปฏิเสธแบบ fail-closed (UI ต้องเปิดเซสชันใหม่)
-  if (!session) return fail("live_session_invalid", 403, "เซสชันเสียงสดหมดอายุแล้ว — แตะปุ่ม AI Live เปิดใหม่");
-  // เซสชันต้องเป็นของ identity ผู้เรียกเท่านั้น (ระดับ org + store + user)
-  if (session.organizationId !== ctx.organizationId || session.storeId !== ctx.storeId || session.userId !== ctx.userId) {
-    return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
-  }
+  // เพดาน tool call ต่อเซสชันนับที่ instance นี้ (best-effort เหมือน rate limiter) — ถ้าเซสชัน
+  // ถูกสร้างบน instance อื่น ให้รับเข้ามานับต่อจากข้อมูลใน token ที่ตรวจลายเซ็นแล้ว
+  const session = liveComposition.liveSessions.adopt({
+    id: claims.sessionId,
+    organizationId: claims.organizationId,
+    storeId: claims.storeId,
+    userId: claims.userId,
+    activeCartId: claims.activeCartId,
+    allowedTools: claims.allowedTools,
+    startedAt: Date.now(),
+    expiresAt: claims.expiresAt,
+    maxToolCalls: claims.maxToolCalls,
+  });
 
   // นับ "ความพยายามเรียก tool" รวมที่ถูกปฏิเสธ — loop ของ model ต้องหยุดที่เพดานนี้
   const budget = liveComposition.liveSessions.consumeToolCall(input.sessionId);
@@ -129,6 +173,10 @@ export async function POST(request: Request) {
         actorUserId: ctx.userId,
         context: { reason: "live_tool_cap_reached", stage: "relay", sessionId: input.sessionId, tool: input.tool },
       }));
+      await logLiveEvent({
+        event: "tool.cap_reached", stage: "tool", result: "blocked", reason: "live_tool_cap_reached", ctx,
+        sessionId: input.sessionId, callId: input.callId, metadata: { tool: input.tool },
+      });
       return fail("live_tool_cap_reached", 429, "ใช้จำนวนคำสั่งของเซสชันนี้ครบแล้ว — แตะปุ่ม AI Live เปิดเซสชันใหม่");
     }
     return fail("live_session_invalid", 403, "เซสชันเสียงสดหมดอายุแล้ว — แตะปุ่ม AI Live เปิดใหม่");
@@ -136,6 +184,10 @@ export async function POST(request: Request) {
 
   // allowlist ของเซสชันเป็นด่านกลาง (route สร้าง session ด้วย MVP set — เช็คซ้ำกันกรณี allowlist ถูกจำกัดต่อร้าน)
   if (!session.allowedTools.includes(input.tool)) {
+    await logLiveEvent({
+      event: "tool.not_allowed", stage: "tool", result: "blocked", reason: "not_in_session_allowlist", ctx,
+      sessionId: input.sessionId, callId: input.callId, metadata: { tool: input.tool },
+    });
     return fail("live_tool_not_allowed", 403, "คำสั่งนี้ยังไม่เปิดใช้ในโหมดเสียงสด");
   }
 
@@ -144,19 +196,38 @@ export async function POST(request: Request) {
   try {
     dispatch = await liveComposition.getLiveDispatch();
   } catch {
+    await logLiveEvent({
+      event: "tool.dispatch_failed", stage: "tool", result: "failed", reason: "dispatcher_unavailable", ctx,
+      sessionId: input.sessionId, callId: input.callId, metadata: { tool: input.tool },
+    });
     return fail("assistant_unavailable", 503, "ผู้ช่วยยังใช้ไม่ได้ชั่วคราว — ลองใหม่อีกครั้ง");
   }
 
   // activeCartId มาจาก session ที่ server ผูกไว้, cartVersion/summary มาจาก client เจ้าของตะกร้า
   const injected: LiveInjectedCartContext = {
-    activeCartId: session.activeCartId,
+    activeCartId: claims.activeCartId,
     cartVersion: input.cartVersion,
     ...(input.summary ? { summary: input.summary } : {}),
   };
   const toolArgs = buildLiveToolArgs(input.tool as MvpToolName, input.args, injected);
   const startedAt = Date.now();
+  await logLiveEvent({
+    event: "tool.dispatch_started", stage: "tool", result: "started", ctx,
+    sessionId: input.sessionId, callId: input.callId, metadata: { tool: input.tool },
+  });
   const result = await dispatch({ tool: input.tool, args: toolArgs, idempotencyKey: input.idempotencyKey });
   const durationMs = Date.now() - startedAt;
+  await logLiveEvent({
+    event: result.ok ? "tool.dispatch_succeeded" : "tool.dispatch_denied",
+    stage: "tool",
+    result: result.ok ? "success" : "blocked",
+    reason: result.ok ? undefined : result.code,
+    ctx,
+    sessionId: input.sessionId,
+    callId: input.callId,
+    durationMs,
+    metadata: { tool: input.tool, toolCallsUsed: budget.used, toolCallsCap: session.maxToolCalls },
+  });
 
   // metering: metadata เท่านั้น — ไม่มีข้อความผู้ใช้/transcript/args ดิบ
   await safely(() => logSystemEvent({

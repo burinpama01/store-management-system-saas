@@ -567,3 +567,122 @@ describe("ADR-008 กับสมุดจดไมค์จริง (mic-owner
     expect(mic.readMicOwnership()).toBeNull();
   });
 });
+
+// PR3-Live (diagnostics) — timeline ต้องอ่านแล้วบอกได้ว่าพังตรงไหน โดยไม่มี transcript/เสียง/args
+describe("telemetry ของ core", () => {
+  function telemetrySpy() {
+    const events: { event: string; stage: string; result: string; reason?: string; sessionId?: string; metadata?: Record<string, unknown> }[] = [];
+    return {
+      events,
+      telemetry: {
+        emit: (event: Parameters<NonNullable<LiveAssistantCoreDeps["telemetry"]>["emit"]>[0]) => events.push(event),
+        flush: () => {},
+        recent: () => [],
+      },
+      names: () => events.map((event) => event.event),
+    };
+  }
+
+  it("เส้นทางปกติ: ขอเปิด → ได้ไมค์ → สร้างเซสชัน → ลงตะกร้าสำเร็จ → ปิดเอง", async () => {
+    const spy = telemetrySpy();
+    const harness = createHarness({ telemetry: spy.telemetry });
+
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    harness.getHandlers().onFunctionCall({ callId: "call_test0001", tool: "pos.add_item", argsText: "{}" });
+    await flushAsync();
+    harness.core.stop("user");
+
+    expect(spy.names()).toEqual(expect.arrayContaining([
+      "live.requested",
+      "mic.claim_started",
+      "mic.claimed",
+      "live.session_create_started",
+      "live.access_granted",
+      "live.session_created",
+      "cart.apply_started",
+      "cart.apply_succeeded",
+      "live.stop_requested",
+      "mic.released",
+      "live.stopped",
+    ]));
+    // event ของเซสชันต้องผูก sessionId ให้ timeline ต่อกันได้
+    expect(spy.events.find((event) => event.event === "cart.apply_succeeded")?.sessionId).toBe("sess-live0001");
+    // ห้ามมีข้อความผู้ใช้/args หลุดเข้า metadata
+    const payload = JSON.stringify(spy.events);
+    expect(payload).not.toContain("ลาเต้");
+    expect(payload).not.toContain("tok-live0001");
+  });
+
+  it("ตะกร้าถูกล็อก = cart.apply_failed พร้อมเหตุผล (server รู้แค่ว่า tool ผ่าน)", async () => {
+    const spy = telemetrySpy();
+    const harness = createHarness({ telemetry: spy.telemetry });
+    harness.bridge.setLocked(true);
+
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    harness.getHandlers().onFunctionCall({ callId: "call_test0002", tool: "pos.add_item", argsText: "{}" });
+    await flushAsync();
+
+    const failed = spy.events.find((event) => event.event === "cart.apply_failed");
+    expect(failed).toBeDefined();
+    expect(failed?.reason).toBe("cart_locked");
+  });
+
+  it("หน้าขายไม่พร้อม = บอกได้ว่าไมค์ถูกคืนเพราะอะไร ไม่ใช่เงียบหาย", async () => {
+    const spy = telemetrySpy();
+    const harness = createHarness({ telemetry: spy.telemetry, getCartApi: () => null });
+
+    await harness.core.start();
+
+    expect(spy.names()).toEqual([
+      "live.requested",
+      "mic.claim_started",
+      "mic.claimed",
+      "mic.released",
+      "live.session_create_failed",
+    ]);
+    expect(spy.events[3].reason).toBe("cart_api_missing");
+  });
+
+  it("แย่งไมค์ไม่ได้ = mic.claim_failed reason=voice_pos_busy", async () => {
+    const spy = telemetrySpy();
+    const harness = createHarness({ telemetry: spy.telemetry, claimMic: () => false });
+
+    await harness.core.start();
+
+    expect(spy.names()).toEqual(["live.requested", "mic.claim_started", "mic.claim_failed"]);
+    expect(spy.events[2].reason).toBe("voice_pos_busy");
+  });
+
+  it("ด่านฝั่ง server ปฏิเสธ = live.access_denied พร้อม reason ของด่านนั้น", async () => {
+    const spy = telemetrySpy();
+    const harness = createHarness({
+      telemetry: spy.telemetry,
+      createSession: async () => ({ ok: false as const, reason: "live_pilot_only" }),
+    });
+
+    await harness.core.start();
+
+    const denied = spy.events.find((event) => event.event === "live.access_denied");
+    expect(denied?.reason).toBe("live_pilot_only");
+    expect(spy.names()).toContain("mic.released");
+  });
+
+  it("จบทุกทางมีเหตุผล normalize เดียวกัน (idle/expired/cap/network)", async () => {
+    for (const scenario of ["idle", "expired", "network"] as const) {
+      const spy = telemetrySpy();
+      const harness = createHarness({ telemetry: spy.telemetry });
+      await harness.core.start();
+      harness.getHandlers().onOpen();
+
+      if (scenario === "idle") harness.runTimers(5_000);
+      if (scenario === "expired") harness.runTimers(900_000);
+      if (scenario === "network") harness.getHandlers().onClosed();
+
+      const stopped = spy.events.find((event) => event.event === "live.stopped");
+      expect(stopped?.reason, scenario).toBe(scenario);
+      expect(stopped?.metadata?.toolCallsUsed, scenario).toBe(0);
+    }
+  });
+});

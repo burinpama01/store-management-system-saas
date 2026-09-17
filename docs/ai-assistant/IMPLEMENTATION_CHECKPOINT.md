@@ -10,6 +10,66 @@
 - หมายเหตุกระบวนการ: รอบ ZCode ถูก provider ตัดกลางทางหลายครั้ง (server error / empty / network) — ทุก milestone ถูก commit เป็นช่วงจึงไม่เสียงาน; commit M5 + verify ปิดท้ายผู้ประสานงานทำเอง; **Obsidian entry ของ PR3-Live ยังไม่ได้บันทึก (ค้าง)**
 - **วิธีปลด Live สำหรับ pilot Each Other:** merge PR → deploy production → ตั้ง env Vercel `AI_ASSISTANT_LIVE_ENABLED=true` + `AI_ASSISTANT_LIVE_PILOT_ORG_IDS=11460ba9-bd2d-48d3-bda6-c5e7ddacacc9` → verify
 - **Manual test checklist (เจ้าของร้าน, หลัง deploy):** ① แตะปุ่ม AI Live → ขอไมค์ → สถานะ "ฟังอยู่" ② พูดไทย "เพิ่มลาเต้ 2 แก้ว" → AI ยืนยันเสียง + ตะกร้าเปลี่ยน ③ พูดชื่อคลุมเครือ → AI ถามกลับ → ตอบชื่อเต็ม ④ ปุ่มเสียงเดิม (Voice POS) ระหว่าง Live = งดจับไมค์ (ข้อความแจ้ง) ⑤ จบเซสชันทุกทาง: แตะซ้ำ / นิ่ง 15 นาที / หมด caps / ปิดแท็บ → ไมค์ดับ ⑥ org/บัญชีนอก pilot = ไม่เห็นปุ่ม + API 403
+## รอบแก้จากรีวิว PR #46 — เสียงตอบ + entitlement + คำปลุก → AI Live — 2026-09-17
+- Branch: `fix/ai-live-audio-and-wake` (ตัดจาก `origin/main` = `e7e01a2`) ใน worktree `.worktrees/ai-assistant-implementation`
+- **(1) เสียงตอบของผู้ช่วยไม่ดัง (blocker ของ manual checklist ข้อ ②/③):** `ui/live-webrtc.ts` ไม่เคยต่อ remote track เข้า element เสียง — WebRTC ไม่เล่นเสียงเอง ผลคือ tool วิ่ง/ตะกร้าเปลี่ยนถูกต้องแต่ผู้ใช้ไม่ได้ยินอะไรเลย; เพิ่ม `createRemoteAudioSink` (element ซ่อน + `autoplay` + `playsinline` สำหรับ iPad/Safari) และ `peer.ontrack` ต่อ stream ให้ทันที, `close()` ถอดเสียง/ถอด element ทุกทาง (เรียกซ้ำได้), `play()` ที่ถูกปฏิเสธด้วย autoplay policy ไม่ทำให้เซสชันล้ม
+- **(2) entitlement fail-open:** `resolveLiveAccess` และ route ข้อความเดิมใช้ `if (billingState && !canUseFeature(...))` — อ่าน billing ไม่ได้/ไม่มีแถว subscription = **ข้ามด่านแพ็กเกจ**; เปลี่ยนเป็น `?? DEFAULT_BILLING_STATE` แล้วตรวจเสมอ (รูปแบบเดียวกับ `requireFeature` ใน auth/guards.ts) + test ปักหมุดทั้งสอง route
+- **(3) คำปลุก → AI Live:** เพิ่ม `voice-pos/wake-routing.ts` (สมุดจดปลายทางคำปลุกแบบเดียวกับ mic-ownership) — overlay ลงทะเบียนเมื่อร้านเปิด Live, `VoiceCommandButton` ส่งคำปลุกให้ก่อนเส้นทางเดิม; **คืนไมค์ให้ native ทันที** ด้วย `commandEnded(ai_live | ai_live_busy)` เพราะ watchdog ของเครื่องคือ 20 วินาที แต่เซสชัน Live ยาวเป็นนาที; เซสชันเปิดอยู่แล้ว = กลืนคำปลุกทิ้ง; ไม่มีปลายทาง = เส้นทาง Voice POS เดิมไม่เปลี่ยนเลย (ADR-008 amendment ใน VOICE_COEXISTENCE.md)
+- **(4) คำปลุกจับไม่ติด (Vosk):** ความมั่นใจเดิมคิดจาก "คำที่แย่ที่สุดทั้งประโยค" แต่คำที่เราบอกผู้ใช้ให้พูด ("Hello StoreOS") ถอดได้เป็น `hello store [unk]` เสมอ และ `[unk]` ความมั่นใจต่ำ → คำปลุกจริงถูกปัดตกทุกครั้ง; เปลี่ยนเป็นคิดเฉพาะคำในวลีคำปลุก (`FindWakePhrase` + `ScorePhrase`, ถอยไปเกณฑ์เดิมเมื่อรูปทรง result ไม่ตรง) และเปลี่ยน cooldown มาใช้นาฬิกาเดินหน้า (`Environment.TickCount64`) กันเวลาเครื่องถอยหลังทำให้คำปลุกตายเงียบ
+- **(5) เพิ่มคำปลุก + ซิงก์เว็บ↔native:** `VoskPhrases` เพิ่ม `"hey store"` (id `hey_storeos`), เพิ่ม id เดียวกันใน `KNOWN_WAKE_PHRASE_IDS` ฝั่งเว็บ + หมายเหตุคู่แฝด, หน้า standby แสดงคำปลุกทั้งสองแบบ, และ test ใหม่บังคับว่า **ทุกคำใน VoskPhrases ต้องมีรหัส** (ลืมแล้วจะกลายเป็น `unknown` แล้วเว็บทิ้งข้อความ = "ปลุกติดแต่ไม่ขึ้นรับคำสั่ง")
+- **Verification (รันจริงรอบนี้):** `npx vitest run tests/unit/ai-assistant tests/unit/voice-pos --project unit` = **446/446 ผ่าน** (33 ไฟล์) · `npm run typecheck` exit 0 · `npx eslint` ไฟล์ที่แตะทั้งหมด exit 0 · `dotnet test StoreOS.VoiceSpike.Tests` = **105/105** · `dotnet test StoreOS.Launcher.Tests` = **116/116**
+- **ยังไม่ได้ทำ/ต้องทำต่อ:** ยังไม่ได้รัน e2e, ยังไม่ได้ทดสอบบนเครื่องร้าน (เสียงตอบจริง/ไมค์/คำปลุก `hey store` ยังไม่มีตัวเลข false wake ของรอบใหม่) — `npm run build` รันแล้ว exit 0
+- **แก้ขั้นตอนปลด pilot (สำคัญ):** ลำดับเดิมในเอกสารนี้ระบุแค่ 2 ตัวซึ่ง **ไม่พอ** — env ที่ต้องมีครบคือ
+  1. `AI_ASSISTANT_ENABLED=true` (ฐานของผู้ช่วยทั้งระบบ — dispatcher ตอบ FEATURE_DISABLED ถ้าไม่มี; ตั้งแต่รอบนี้ route ตรวจตั้งแต่ก่อนเปิดไมค์ = `ai_disabled`)
+  2. `AI_ASSISTANT_LIVE_ENABLED=true`
+  3. `AI_ASSISTANT_LIVE_PILOT_ORG_IDS=<org id>`
+  4. `AI_ASSISTANT_MUTATIONS_ENABLED=true` (ไม่งั้นเพิ่ม/ลบ/ปรับจำนวนโดน `MUTATIONS_DISABLED` เหลือแต่ read tools)
+  และควรตั้ง `AI_ASSISTANT_LIVE_TOKEN_SECRET` แยกจาก `OPENAI_API_KEY` (ไม่งั้น rotate key = เซสชันที่เปิดอยู่ใช้ไม่ได้ทันที)
+- **residual ที่ยังค้างจากรีวิว (ยังไม่แก้ในรอบนี้):** live session store อยู่ในหน่วยความจำ instance เดียว — `/live/session` กับ `/live/tool` ตกคนละ instance = 403 `live_session_invalid` กลางบทสนทนา (ต้องมีตาราง live session บน Supabase ก่อนขยายเกินร้านนำร่อง) และเสียงจากลำโพงร้าน/เสียงผู้ช่วยเองอาจไปเข้าเครื่องยนต์คำปลุกระหว่างเซสชัน Live — ต้องเฝ้าดูตอน pilot
+
+## รอบแก้ตามรีวิว PR #47 (รอบสอง) — 2026-09-17
+- **SDP endpoint ผิดรุ่น (blocker จริง — Live จะต่อไม่ติดเลย):** `live-webrtc.ts` ยิง offer ไป
+  `https://api.openai.com/v1/realtime?model=...` ซึ่งเป็นรูปแบบก่อน GA (คู่กับ `/v1/realtime/sessions`
+  ที่เลิกใช้ไปแล้วตอน M3) — ยืนยันกับเอกสาร OpenAI ปัจจุบันแล้วว่า WebRTC GA ต้องใช้
+  `POST https://api.openai.com/v1/realtime/calls` + `Authorization: Bearer <ephemeral>` +
+  `Content-Type: application/sdp` และ **ไม่ต้องมี model ใน URL** (model ผูกกับ client secret แล้ว);
+  แยกเป็น `exchangeSdpOffer()` ให้เทสต์ปักหมุด URL/method/headers/body ได้ทั้งชุด
+- **DELETE ถูก gate ขวางจนเซสชันค้าง (major):** เดิม DELETE เรียก `resolveLiveAccess()` ทั้งชุด
+  ถ้าผู้ดูแลปิด Live กลางคัน จะตอบ `ended:false` โดยไม่ลบเซสชัน → slot ของร้านค้างจน TTL แล้วเปิดใหม่
+  เจอ `live_store_busy` ทั้งที่ไม่มีใครใช้; แยก `resolveLiveIdentity()` (auth อย่างเดียว) ให้ DELETE
+  แล้วความปลอดภัยมาจาก session token (HMAC) + org/store/user ต้องตรงกับเซสชัน — test ปักหมุดทั้ง
+  เคสปิด kill switch กลางคันและเคส org หลุด pilot
+- **Config contract (Option A):** Live เป็น sub-feature ของผู้ช่วย AI — `resolveLiveAccess` ตรวจ
+  `AI_ASSISTANT_ENABLED` ด้วย (reason ใหม่ `ai_disabled` 503) และปุ่ม AI Live บน `/pos` ซ่อนตามเงื่อนไขเดียวกัน
+  เหตุผล: tool ทุกตัวเดินผ่าน dispatcher เดิมที่ปฏิเสธด้วย FEATURE_DISABLED อยู่แล้ว — ต้องหยุดก่อนเปิดไมค์/จ่ายค่าเซสชัน
+- **BLOCKER — เซสชันหลุดกลาง instance (แก้แล้ว ด้วย signed stateless session token ตามที่เจ้าของเลือก):**
+  session token เปลี่ยนจาก "ลายเซ็นของ sessionId" เป็น **payload ที่เซ็นทั้งก้อน**
+  (`v1.<payload base64url>.<hmac>` — org/store/user/activeCartId/allowedTools/maxToolCalls/expiresAt)
+  relay จึงไม่ต้องหาเซสชันจากหน่วยความจำอีก: request ที่ตกคนละ instance คุยต่อได้ปกติ
+  (test ใหม่จำลอง instance ที่ไม่เคยเห็นเซสชันแล้ว relay ผ่าน)
+  - ด่านที่ยังอยู่ครบ: ลายเซ็น timing-safe, sessionId ใน body ต้องตรงกับใน token, org/store/user
+    ต้องตรงกับผู้ล็อกอิน, หมดอายุตามเวลาใน token (ต่ออายุเองไม่ได้), tool ต้องอยู่ใน allowlist ของ token
+  - แก้ payload แม้แต่ฟิลด์เดียว (ย้ายร้าน/ขยายเพดาน/ต่ออายุ) = ลายเซ็นไม่ผ่าน — มี test ปักหมุด
+  - **สิ่งที่เป็น best-effort ต่อ instance (ยอมรับแล้ว, รูปแบบเดียวกับ rate limiter เดิม):**
+    (ก) เพดานเซสชันพร้อมกันต่อร้าน (ข) เพดาน tool call ต่อเซสชัน — instance ใหม่ "รับเซสชันเข้ามานับต่อ"
+    จากข้อมูลใน token (adopt) worst case คือเพดานถูกนับแยกตามจำนวน instance
+    (ค) การเพิกถอนตอนกดปิด — instance ที่ไม่เคยเห็นการปิดจะยังรับคำสั่งจนกว่า token จะหมดอายุ (≤ 15 นาที)
+  - ถ้าวันหนึ่งต้องคิดเงินตามนาที/ต้องเพิกถอนทันทีทั้งระบบ ค่อยย้ายตัวนับไปตารางกลางบน Supabase
+    (ตอนนั้นรูปแบบ token ไม่ต้องเปลี่ยน — เพิ่มการตรวจสถานะจากตารางอีกชั้นเท่านั้น)
+
+## Diagnostic telemetry ของ AI Live — 2026-09-17
+> เป้าหมาย: เมื่อหน้าร้านบอกว่า "พูดแล้ว AI ไม่ตอบ" ต้องตอบได้จาก log ว่าพังตรงไหน โดยไม่เก็บเสียง/transcript/token
+
+- **taxonomy กลาง** `src/modules/ai-assistant/live-telemetry-events.ts` — ชื่อ event เป็น allowlist ปิด (wake / mic / live / provider / webrtc / audio / tool / cart), stage+result มาตรฐาน, ชุด `LiveStopReason` เดียวใช้ทั้ง core และ log, รายการคีย์ต้องห้าม และเพดานรูปทรง payload
+- **ฝั่ง browser** `ui/live-telemetry.ts` — ตัวเดียวต่อแท็บ, buffer 100 event ในหน่วยความจำ (เปิด DevTools ดู `window.StoreOSAIDiagnostics`), ส่งเป็นชุดทุก 2 วินาทีด้วย `keepalive`, ความล้มเหลวทุกแบบถูกกลืน (ห้ามทำให้ POS พัง), และมี "ตัวกลางของหน้า" ให้ปุ่มคำปลุกใน shell ใช้ร่วมกับแผงผู้ช่วยได้โดยไม่ผูก component เข้าหากัน
+- **endpoint ใหม่** `POST /api/ai-assistant/live/telemetry` — auth (identity จาก session เท่านั้น; schema strict จึงปลอม org/store/user ไม่ได้), flag `AI_ASSISTANT_LIVE_DIAGNOSTICS_ENABLED`, rate limit 120/นาที (env ปรับได้), จำกัดขนาด body 16KB / 50 event / metadata 10 คีย์, และ **ปฏิเสธทั้งก้อน** เมื่อเจอคีย์ต้องห้าม (ไม่ strip เงียบ) → เขียนลง `system_event_logs` action `liveDiag`
+- **จุดที่ติด event แล้ว:** คำปลุก (detected/route_started/live/busy/unavailable) · ไมค์ (claim_started/claimed/claim_failed/released) · เซสชัน (requested/access_granted/access_denied พร้อม reason ของทุกด่าน/create_started/created/create_failed/idle_timeout/expired/network_lost/cap_reached/stop_requested/stopped/stop_failed) · provider (client_secret_started/created/failed) · WebRTC (offer_created/sdp_exchange_*/connection_state_changed/ice_state_changed/data_channel_open|closed|error) · เสียง (remote_track_received/attach_started/play_started/play_succeeded/**play_blocked**/play_failed/closed) · tool ฝั่ง server (received/token_verified/token_rejected/rate_limited/cap_reached/not_allowed/dispatch_started/succeeded/denied/failed) · ตะกร้าบนหน้าขายจริง (apply_started/succeeded/failed พร้อม cartVersion ก่อน-หลัง)
+- **privacy:** ไม่มี transcript/เสียง/args ดิบ/token/secret ในทุกเส้นทาง — มี test ปฏิเสธ `sessionToken`/`ephemeralToken`/`apiKey`/`authorization`/`transcript`/`userText`/`rawAudio`/`audioBlob`/`args`/`rawArgs`/`modelRawResponse` และ test ที่ยืนยันว่า payload ของ core ไม่มีชื่อเมนูหรือ token ปนอยู่
+- **stop reason normalize:** `user | idle | expired | cap | network | provider | webrtc | tab_close | unmount | access_revoked | error` (เดิมเป็น string กระจัดกระจาย `expiry`/`page`)
+- **Verification:** vitest ai-assistant+voice-pos **482/482** · typecheck 0 · `npm run build` 0 · eslint ไฟล์ที่แตะทั้งหมด 0 — หมายเหตุ: `npx eslint src` ทั้งโปรเจกต์มี error 2 จุดใน `src/app/pos/PosTerminal.tsx` (react-hooks/set-state-in-effect) ซึ่ง**มีอยู่ก่อนแล้วบน origin/main** (ไฟล์เหมือนกันทุกตัวอักษร) ไม่ได้เกิดจากรอบนี้
+- **ยังไม่ได้ทำ:** manual test บน Vercel Preview (Test 1–10 ของแผน) และการทดสอบบนเครื่องร้านจริง — timeline จริงยังไม่เคยถูกอ่านด้วยตา
+- **ข้อจำกัดที่ต้องรู้:** ฝั่ง Windows Launcher ยังใช้ log เดิมของตัวเอง (ไม่ได้ทำ telemetry ซ้ำซ้อน) — event `wake.detected` ที่เห็นในระบบคือฝั่งเว็บที่ได้รับข้อความจากเครื่องแล้ว ถ้าคำปลุกไม่ถึงเว็บเลยจะไม่มี event ใด ๆ (ต้องดู log ของ Launcher แทน)
+
 # จุดรับช่วง AI Assistant
 
 ## ADR note — PR3-Live (2026-09-16, เจ้าของตัดสินใจ)

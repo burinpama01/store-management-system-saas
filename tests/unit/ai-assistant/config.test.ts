@@ -12,8 +12,18 @@ describe("trusted assistant config", () => {
       liveMaxToolCallsPerSession: 40,
       liveMaxConcurrentSessionsPerStore: 2,
       liveModel: "gpt-realtime-2.1-mini",
+      liveDiagnosticsEnabled: false,
       mutationsEnabled: false,
     });
+  });
+
+  it("โหมดวินิจฉัยต้องเปิดตรงตัวและยังอยู่ใต้ kill switch กลาง", () => {
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_DIAGNOSTICS_ENABLED: "true" }).liveDiagnosticsEnabled).toBe(true);
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_DIAGNOSTICS_ENABLED: "1" }).liveDiagnosticsEnabled).toBe(false);
+    expect(readAssistantConfig({
+      AI_ASSISTANT_LIVE_DIAGNOSTICS_ENABLED: "true",
+      AI_ASSISTANT_KILL_SWITCH: "true",
+    }).liveDiagnosticsEnabled).toBe(false);
   });
   it("requires an exact opt-in and keeps kill switch on top of every channel", () => {
     expect(readAssistantConfig({ NODE_ENV: "test", AI_ASSISTANT_ENABLED: "true" }).enabled).toBe(true);
