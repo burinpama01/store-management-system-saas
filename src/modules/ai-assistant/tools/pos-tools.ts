@@ -23,8 +23,10 @@ export const MVP_TOOL_NAMES = [
   "catalog.search",
   "pos.get_current_order",
   "pos.add_item",
+  "pos.add_items",
   "pos.remove_item",
   "pos.change_quantity",
+  "pos.open_checkout",
 ] as const;
 
 export type MvpToolName = (typeof MVP_TOOL_NAMES)[number];
@@ -63,8 +65,27 @@ const CartIntentSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("pos.remove_item"), productPhrase: z.string().min(1) }).strict(),
 ]);
 
+/** จำนวนรายการสูงสุดต่อหนึ่งประโยค — พูดยาวกว่านี้ในร้านจริงแทบไม่มี และกัน args บวม */
+export const MAX_BATCH_ITEMS = 10;
+
 const CartCommandResultSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("apply"), intent: CartIntentSchema, productName: z.string().min(1) }).strict(),
+  /**
+   * หลายรายการในประโยคเดียว — คืนเป็นชุดเดียว (client ผลักเข้าตะกร้าเรียงตามลำดับที่พูด)
+   * กติกา: ต้อง resolve ได้ครบทุกรายการเท่านั้นจึงจะคืน apply_batch
+   * ถ้ามีรายการใดกำกวม/ไม่พบ/ต้องเลือกตัวเลือก จะคืน clarification แทนทั้งชุด — ไม่ใส่ตะกร้าบางส่วน
+   * (ของครึ่ง ๆ กลาง ๆ ในตะกร้าคือสิ่งที่แก้ยากที่สุดหน้าร้าน)
+   */
+  z.object({
+    status: z.literal("apply_batch"),
+    items: z.array(z.object({ intent: CartIntentSchema, productName: z.string().min(1) }).strict()).min(1).max(MAX_BATCH_ITEMS),
+  }).strict(),
+  /** คำสั่งที่ให้หน้าจอทำต่อเอง (ไม่แตะตะกร้า/ไม่แตะเงิน) — วันนี้มีแค่เปิดหน้าจอรับชำระเดิม */
+  z.object({
+    status: z.literal("client_action"),
+    action: z.literal("open_checkout"),
+    announcement: z.string().min(1).max(200),
+  }).strict(),
   z.object({
     status: z.literal("clarification"),
     reason: z.enum(["ambiguous", "needs_option", "needs_quantity", "not_found", "unavailable", "unsupported"]),
@@ -181,6 +202,39 @@ function cartRefArgs() {
   return { activeCartId: ActiveCartIdSchema, cartVersion: CartVersionSchema };
 }
 
+/**
+ * resolve ทุกรายการของคำสั่งชุดเดียว แล้วตัดสินแบบ "ครบหรือไม่เอาเลย"
+ *
+ * เหตุผลที่ไม่ commit บางส่วน: ถ้าพูด "อเมริกาโน่สอง ลาเต้สาม" แล้วลาเต้กำกวม การใส่
+ * อเมริกาโน่ไปก่อนแล้วถามต่อ จะทำให้พนักงานไม่รู้ว่าตะกร้ามีอะไรไปแล้วบ้าง — ถามให้จบก่อนดีกว่า
+ */
+async function resolveBatchAddCommand(
+  items: readonly { productPhrase: string; quantity: number; optionPhrases: string[] }[],
+  deps: PosToolDeps,
+  context: TrustedContext,
+): Promise<z.infer<typeof CartCommandResultSchema>> {
+  const resolvedItems: { intent: z.infer<typeof CartIntentSchema>; productName: string }[] = [];
+  for (const item of items) {
+    const resolved = await resolveCartCommand(
+      { intent: "pos.add_item", productPhrase: item.productPhrase, quantity: item.quantity, optionPhrases: item.optionPhrases },
+      deps,
+      context,
+    );
+    if (resolved.status !== "apply") {
+      // บอกด้วยว่าติดที่รายการไหน ไม่งั้น model จะถามกว้าง ๆ แล้วผู้ใช้ต้องเดาเอง
+      const note = resolved.status === "clarification" && resolved.note
+        ? `${resolved.note} (รายการ "${item.productPhrase}")`
+        : `ติดที่รายการ "${item.productPhrase}"`;
+      return resolved.status === "clarification" ? { ...resolved, note: note.slice(0, 200) } : resolved;
+    }
+    resolvedItems.push({ intent: resolved.intent, productName: resolved.productName });
+  }
+  if (resolvedItems.length === 0) {
+    return { status: "clarification", reason: "unsupported", note: "ไม่มีรายการให้เพิ่ม" };
+  }
+  return { status: "apply_batch", items: resolvedItems };
+}
+
 /** ลงทะเบียน MVP tools ทั้ง 6 ตัว — registry environment คุม dev-only tool ตาม PR1 เดิม */
 export function registerPosTools(registry: ToolRegistry, deps: PosToolDeps): void {
   // 1) pos.search_product / 2) catalog.search — ค้นหาด้วย resolveVoiceProductPhrase + alias เดิม (read)
@@ -261,7 +315,29 @@ export function registerPosTools(registry: ToolRegistry, deps: PosToolDeps): voi
     },
   });
 
-  // 5) pos.remove_item
+  // 5) pos.add_items — หลายรายการในประโยคเดียว (ลด latency/tool call และไม่ใส่ตะกร้าครึ่ง ๆ กลาง ๆ)
+  registry.register({
+    name: "pos.add_items",
+    risk: "safe_write",
+    permissions: ["pos.use"],
+    requiresActiveCart: true,
+    args: z.object({
+      ...cartRefArgs(),
+      items: z.array(z.object({
+        productPhrase: PhraseSchema,
+        quantity: z.number().int().min(VOICE_MIN_QUANTITY).max(VOICE_MAX_QUANTITY),
+        optionPhrases: z.array(PhraseSchema).max(8),
+      }).strict()).min(1).max(MAX_BATCH_ITEMS),
+    }).strict(),
+    result: CartCommandResultSchema,
+    execute: async (args, context, binding) => {
+      requireCartBinding(args as { activeCartId: string }, binding);
+      const input = args as { items: { productPhrase: string; quantity: number; optionPhrases: string[] }[] };
+      return resolveBatchAddCommand(input.items, deps, context);
+    },
+  });
+
+  // 6) pos.remove_item
   registry.register({
     name: "pos.remove_item",
     risk: "safe_write",
@@ -276,7 +352,7 @@ export function registerPosTools(registry: ToolRegistry, deps: PosToolDeps): voi
     },
   });
 
-  // 6) pos.change_quantity — set/increase/decrease ผ่าน intent เดิมของ resolver
+  // 7) pos.change_quantity — set/increase/decrease ผ่าน intent เดิมของ resolver
   registry.register({
     name: "pos.change_quantity",
     risk: "safe_write",
@@ -301,4 +377,23 @@ export function registerPosTools(registry: ToolRegistry, deps: PosToolDeps): voi
       );
     },
   });
+
+  // 8) pos.open_checkout — "กดปุ่มคิดเงิน" แทนพนักงาน ไม่มากกว่านั้น
+  //
+  // ขอบเขตที่จงใจล็อกไว้ (เจ้าของสั่ง): AI ห้ามสร้าง payment / ห้ามสร้าง QR / ห้ามยืนยันชำระเงิน
+  // tool นี้จึงไม่แตะ payment ใด ๆ เลย แค่คืนคำสั่งให้หน้าจอเปิดแผงรับชำระ "ตัวเดิม" ของ POS
+  // จากนั้นทุกอย่าง (เตรียม QR / จอลูกค้า / ปุ่มยืนยัน) เป็นโค้ดเดิมที่พนักงานใช้อยู่ทุกวัน
+  registry.register({
+    name: "pos.open_checkout",
+    risk: "safe_write",
+    permissions: ["pos.use"],
+    requiresActiveCart: true,
+    args: z.object({ ...cartRefArgs() }).strict(),
+    result: CartCommandResultSchema,
+    execute: async (args, _context, binding) => {
+      requireCartBinding(args as { activeCartId: string }, binding);
+      return { status: "client_action", action: "open_checkout", announcement: "เปิดหน้าจอรับชำระให้แล้ว" };
+    },
+  });
+
 }

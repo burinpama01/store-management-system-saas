@@ -15,6 +15,7 @@
 //   - ทุกความล้มเหลว fail closed เป็นข้อความไทย ไม่ปล่อยไมค์ค้าง ไม่ throw ออกนอก core
 
 import { applyVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
+import { emitPosCommand } from "@/modules/pos/section-bus";
 import { claimMicOwnership, releaseMicOwnership } from "@/modules/voice-pos/mic-ownership";
 import { emitLiveTelemetry, noopLiveTelemetry, type LiveTelemetry } from "./live-telemetry";
 import type { LiveStopReason } from "../live-telemetry-events";
@@ -348,6 +349,14 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
       }
       if (step.kind === "message") {
         pushEntry(step.level, step.message);
+        continue;
+      }
+      if (step.kind === "open_checkout") {
+        // "กดปุ่ม" ให้เท่านั้น — ไม่มีการสร้าง payment/QR ที่นี่ และพนักงานยังเป็นคนยืนยัน
+        deps.onFocusSell?.();
+        emitPosCommand("open-checkout");
+        pushEntry("assistant", step.message);
+        track({ event: "cart.checkout_opened", stage: "cart", result: "success" });
         continue;
       }
       // clear_search/open_product เป็นขั้นของโหมดข้อความ (ต้องมีคนอยู่หน้าจอ) — โหมดเสียง

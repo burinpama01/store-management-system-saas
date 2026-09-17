@@ -18,6 +18,8 @@ export interface AssistantCandidate {
 
 export type ParsedAssistantToolResult =
   | { readonly kind: "apply"; readonly intent: Record<string, unknown>; readonly productName: string }
+  | { readonly kind: "apply_batch"; readonly items: readonly { intent: Record<string, unknown>; productName: string }[] }
+  | { readonly kind: "open_checkout"; readonly announcement: string }
   | {
       readonly kind: "clarification";
       readonly reason: string;
@@ -58,6 +60,21 @@ export function parseAssistantToolResult(result: unknown): ParsedAssistantToolRe
   const status = asString(record.status);
   if (status === "apply" && asString(record.productName) && asRecord(record.intent)?.type) {
     return { kind: "apply", intent: asRecord(record.intent)!, productName: asString(record.productName)! };
+  }
+  if (status === "apply_batch" && Array.isArray(record.items)) {
+    // ทุกรายการต้องครบรูปทรง ไม่งั้นถือว่าผลลัพธ์เสียหาย (ห้ามใส่ตะกร้าบางส่วน)
+    const items: { intent: Record<string, unknown>; productName: string }[] = [];
+    for (const entry of record.items) {
+      const item = asRecord(entry);
+      const intent = asRecord(item?.intent);
+      const productName = asString(item?.productName);
+      if (!intent || !intent.type || !productName) return null;
+      items.push({ intent, productName });
+    }
+    return items.length > 0 ? { kind: "apply_batch", items } : null;
+  }
+  if (status === "client_action" && asString(record.action) === "open_checkout") {
+    return { kind: "open_checkout", announcement: asString(record.announcement) ?? "เปิดหน้าจอรับชำระให้แล้ว" };
   }
   if (status === "clarification" && asString(record.reason)) {
     return {
@@ -182,7 +199,9 @@ export type AssistantTurnStep =
       readonly candidates?: readonly AssistantCandidate[];
     }
   | { readonly kind: "clear_search"; readonly note?: string }
-  | { readonly kind: "open_product"; readonly productId: string };
+  | { readonly kind: "open_product"; readonly productId: string }
+  /** เปิดแผงรับชำระเดิมของ POS (ไม่มีการสร้าง payment/QR ที่นี่) */
+  | { readonly kind: "open_checkout"; readonly message: string };
 
 /** outcome 1 รายการจาก route — รูปทรงไม่ครบ = ข้อความ fail-closed ไม่ใช่การเดา */
 function stepsForOutcome(rawOutcome: unknown): AssistantTurnStep[] {
@@ -213,6 +232,11 @@ function stepsForOutcome(rawOutcome: unknown): AssistantTurnStep[] {
   switch (parsed.kind) {
     case "apply":
       return [{ kind: "apply", intent: parsed.intent, productName: parsed.productName }];
+    case "apply_batch":
+      // เรียงตามลำดับที่ผู้ใช้พูดเสมอ — ห้ามสลับ
+      return parsed.items.map((item) => ({ kind: "apply", intent: item.intent, productName: item.productName }));
+    case "open_checkout":
+      return [{ kind: "open_checkout", message: parsed.announcement }];
     case "clarification": {
       const candidates = parsed.candidates;
       const steps: AssistantTurnStep[] = [

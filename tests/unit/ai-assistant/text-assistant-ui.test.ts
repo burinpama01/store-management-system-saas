@@ -246,3 +246,57 @@ describe("planAssistantTurn", () => {
     if (steps[0].kind === "message") expect(steps[0].message).toBe("อธิบายจาก server");
   });
 });
+
+// M1 — ผลลัพธ์ชุดใหม่: หลายรายการในครั้งเดียว และคำสั่งเปิดหน้าจอรับชำระ
+describe("planAssistantTurn — apply_batch / open_checkout", () => {
+  const batchResult = {
+    status: "apply_batch",
+    items: [
+      { intent: { type: "pos.add_item", productPhrase: "อเมริกาโน่", quantity: 2 }, productName: "อเมริกาโน่" },
+      { intent: { type: "pos.add_item", productPhrase: "ลาเต้", quantity: 3 }, productName: "ลาเต้" },
+    ],
+  };
+
+  it("แตกเป็นขั้น apply ทีละรายการ เรียงตามที่ผู้ใช้พูด", () => {
+    const steps = planAssistantTurn([{ kind: "tool", ok: true, tool: "pos.add_items", result: batchResult }]);
+
+    expect(steps).toEqual([
+      { kind: "apply", intent: { type: "pos.add_item", productPhrase: "อเมริกาโน่", quantity: 2 }, productName: "อเมริกาโน่" },
+      { kind: "apply", intent: { type: "pos.add_item", productPhrase: "ลาเต้", quantity: 3 }, productName: "ลาเต้" },
+    ]);
+  });
+
+  it("รายการในชุดรูปทรงไม่ครบ = ไม่ใส่ตะกร้าบางส่วน แต่ตอบข้อความ fail closed", () => {
+    const steps = planAssistantTurn([{
+      kind: "tool",
+      ok: true,
+      tool: "pos.add_items",
+      result: { status: "apply_batch", items: [{ intent: { type: "pos.add_item" }, productName: "" }] },
+    }]);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0].kind).toBe("message");
+  });
+
+  it("คำสั่งเปิดหน้าจอรับชำระกลายเป็นขั้น open_checkout (ไม่ใช่การจ่ายเงิน)", () => {
+    const steps = planAssistantTurn([{
+      kind: "tool",
+      ok: true,
+      tool: "pos.open_checkout",
+      result: { status: "client_action", action: "open_checkout", announcement: "เปิดหน้าจอรับชำระให้แล้ว" },
+    }]);
+
+    expect(steps).toEqual([{ kind: "open_checkout", message: "เปิดหน้าจอรับชำระให้แล้ว" }]);
+  });
+
+  it("client_action ที่ไม่รู้จักต้องไม่กลายเป็นคำสั่งอะไรเลย", () => {
+    const steps = planAssistantTurn([{
+      kind: "tool",
+      ok: true,
+      tool: "pos.open_checkout",
+      result: { status: "client_action", action: "confirm_payment" },
+    }]);
+
+    expect(steps.every((step) => step.kind === "message")).toBe(true);
+  });
+});

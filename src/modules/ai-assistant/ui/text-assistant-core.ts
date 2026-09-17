@@ -12,6 +12,7 @@
 //   - cartVersion คือตัวนับฝั่ง client ที่ไต่ขึ้นเท่านั้น (server ผูกใบเดียวต่อ session และห้าม version ย้อนหลัง)
 
 import { applyVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-pos/cart";
+import { emitPosCommand } from "@/modules/pos/section-bus";
 import type { VoiceIntent } from "@/modules/voice-pos/types";
 import {
   consumeVoiceUndoToken,
@@ -231,6 +232,13 @@ export function createTextAssistantCore(deps: TextAssistantCoreDeps): TextAssist
         case "open_product": {
           // dialog ตัวเลือกเป็นของหน้าขาย — เปิดไม่ได้ = ข้อความ clarification ที่แสดงไปแล้วเป็นทางออก
           if (api.openProduct?.(step.productId)) deps.onFocusSell?.();
+          break;
+        }
+        case "open_checkout": {
+          // "กดปุ่มคิดเงิน" ให้เท่านั้น — แผงรับชำระ/QR/การยืนยันเป็นโค้ดเดิมและเป็นหน้าที่ของคน
+          deps.onFocusSell?.();
+          emitPosCommand("open-checkout");
+          pushEntry("assistant", step.message);
           break;
         }
         case "apply": {

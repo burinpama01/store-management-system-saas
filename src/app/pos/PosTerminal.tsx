@@ -2914,6 +2914,13 @@ export function PosTerminal({
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  // ผู้ช่วย AI "กดปุ่มคิดเงิน" แทนพนักงาน — เส้นทางเดียวกับปุ่ม onCheckout เป๊ะ ๆ
+  // (เปิดแผงรับชำระตัวเดิมเท่านั้น: เตรียม QR / จอลูกค้า / การยืนยัน ยังเป็นโค้ดเดิมและเป็นหน้าที่ของคน)
+  useEffect(() => onPosCommand((command) => {
+    if (command !== "open-checkout") return;
+    setPhase("payment");
+    setOrderPanelOpen(true);
+  }), []);
   const [printerConnectionOpen, setPrinterConnectionOpen] = useState(false);
   const [preferredPrinterId, setPreferredPrinterId] = useState<string | null>(null);
   const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
