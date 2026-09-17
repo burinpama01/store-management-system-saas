@@ -42,8 +42,20 @@
 - **Config contract (Option A):** Live เป็น sub-feature ของผู้ช่วย AI — `resolveLiveAccess` ตรวจ
   `AI_ASSISTANT_ENABLED` ด้วย (reason ใหม่ `ai_disabled` 503) และปุ่ม AI Live บน `/pos` ซ่อนตามเงื่อนไขเดียวกัน
   เหตุผล: tool ทุกตัวเดินผ่าน dispatcher เดิมที่ปฏิเสธด้วย FEATURE_DISABLED อยู่แล้ว — ต้องหยุดก่อนเปิดไมค์/จ่ายค่าเซสชัน
-- **ยังค้าง (blocker ของรีวิว):** live session store ยังอยู่ในหน่วยความจำ instance เดียว — รอเจ้าของเลือกแนวทาง
-  (durable table บน Supabase พร้อม atomic cap ⟷ signed stateless session token + caps แบบ best-effort)
+- **BLOCKER — เซสชันหลุดกลาง instance (แก้แล้ว ด้วย signed stateless session token ตามที่เจ้าของเลือก):**
+  session token เปลี่ยนจาก "ลายเซ็นของ sessionId" เป็น **payload ที่เซ็นทั้งก้อน**
+  (`v1.<payload base64url>.<hmac>` — org/store/user/activeCartId/allowedTools/maxToolCalls/expiresAt)
+  relay จึงไม่ต้องหาเซสชันจากหน่วยความจำอีก: request ที่ตกคนละ instance คุยต่อได้ปกติ
+  (test ใหม่จำลอง instance ที่ไม่เคยเห็นเซสชันแล้ว relay ผ่าน)
+  - ด่านที่ยังอยู่ครบ: ลายเซ็น timing-safe, sessionId ใน body ต้องตรงกับใน token, org/store/user
+    ต้องตรงกับผู้ล็อกอิน, หมดอายุตามเวลาใน token (ต่ออายุเองไม่ได้), tool ต้องอยู่ใน allowlist ของ token
+  - แก้ payload แม้แต่ฟิลด์เดียว (ย้ายร้าน/ขยายเพดาน/ต่ออายุ) = ลายเซ็นไม่ผ่าน — มี test ปักหมุด
+  - **สิ่งที่เป็น best-effort ต่อ instance (ยอมรับแล้ว, รูปแบบเดียวกับ rate limiter เดิม):**
+    (ก) เพดานเซสชันพร้อมกันต่อร้าน (ข) เพดาน tool call ต่อเซสชัน — instance ใหม่ "รับเซสชันเข้ามานับต่อ"
+    จากข้อมูลใน token (adopt) worst case คือเพดานถูกนับแยกตามจำนวน instance
+    (ค) การเพิกถอนตอนกดปิด — instance ที่ไม่เคยเห็นการปิดจะยังรับคำสั่งจนกว่า token จะหมดอายุ (≤ 15 นาที)
+  - ถ้าวันหนึ่งต้องคิดเงินตามนาที/ต้องเพิกถอนทันทีทั้งระบบ ค่อยย้ายตัวนับไปตารางกลางบน Supabase
+    (ตอนนั้นรูปแบบ token ไม่ต้องเปลี่ยน — เพิ่มการตรวจสถานะจากตารางอีกชั้นเท่านั้น)
 
 # จุดรับช่วง AI Assistant
 

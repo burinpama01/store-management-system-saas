@@ -41,7 +41,8 @@ const SummarySchema = z.object({
 
 const BodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID_PATTERN),
-  sessionToken: z.string().min(8).max(256),
+  // token เป็น payload ที่เซ็นแล้ว (ไม่ใช่แค่ลายเซ็น) จึงยาวกว่ารุ่นก่อน — เพดานกันข้อความยาวผิดปกติ
+  sessionToken: z.string().min(8).max(2048),
   callId: z.string().regex(CALL_ID_PATTERN),
   tool: z.enum(MVP_TOOL_NAMES),
   args: z.unknown().optional(),
@@ -102,18 +103,36 @@ export async function POST(request: Request) {
   const secret = resolveLiveTokenSecret(process.env);
   if (!secret) return fail("live_unconfigured", 503, "โหมดเสียงสดยังตั้งค่าไม่ครบ — แจ้งผู้ดูแลระบบ");
 
-  // token ผูกกับ sessionId + เวลาหมดอายุของ session — ปลอม/ยืมข้ามเซสชันไม่ได้
-  if (!verifyLiveSessionToken(input.sessionToken, input.sessionId, secret)) {
+  // ตัวตนของเซสชันทั้งหมดอยู่ใน token ที่ server เซ็นไว้ (org/store/user/ตะกร้า/อายุ/เพดาน)
+  // จึงไม่ต้องหาเซสชันจากหน่วยความจำของ instance — request ที่ตกคนละ instance ยังคุยต่อได้
+  // (ของเดิมตอบ 403 live_session_invalid กลางบทสนทนาเมื่อ instance ไม่ตรงกัน)
+  const claims = verifyLiveSessionToken(input.sessionToken, secret);
+  if (!claims || claims.sessionId !== input.sessionId) {
+    return fail("live_session_invalid", 403, "เซสชันเสียงสดหมดอายุแล้ว — แตะปุ่ม AI Live เปิดใหม่");
+  }
+  // เซสชันต้องเป็นของ identity ผู้เรียกเท่านั้น (ระดับ org + store + user)
+  if (claims.organizationId !== ctx.organizationId || claims.storeId !== ctx.storeId || claims.userId !== ctx.userId) {
     return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
   }
 
-  const session = liveComposition.liveSessions.get(input.sessionId);
-  // หมดอายุ/TTL กวาดไปแล้ว = ปฏิเสธแบบ fail-closed (UI ต้องเปิดเซสชันใหม่)
-  if (!session) return fail("live_session_invalid", 403, "เซสชันเสียงสดหมดอายุแล้ว — แตะปุ่ม AI Live เปิดใหม่");
-  // เซสชันต้องเป็นของ identity ผู้เรียกเท่านั้น (ระดับ org + store + user)
-  if (session.organizationId !== ctx.organizationId || session.storeId !== ctx.storeId || session.userId !== ctx.userId) {
-    return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
+  // ปิดเซสชันไปแล้ว = ห้ามสั่งงานต่อแม้ token จะยังไม่หมดอายุ (best-effort ต่อ instance)
+  if (liveComposition.liveSessions.isRevoked(claims.sessionId)) {
+    return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ปิดไปแล้ว — แตะปุ่ม AI Live เปิดใหม่");
   }
+
+  // เพดาน tool call ต่อเซสชันนับที่ instance นี้ (best-effort เหมือน rate limiter) — ถ้าเซสชัน
+  // ถูกสร้างบน instance อื่น ให้รับเข้ามานับต่อจากข้อมูลใน token ที่ตรวจลายเซ็นแล้ว
+  const session = liveComposition.liveSessions.adopt({
+    id: claims.sessionId,
+    organizationId: claims.organizationId,
+    storeId: claims.storeId,
+    userId: claims.userId,
+    activeCartId: claims.activeCartId,
+    allowedTools: claims.allowedTools,
+    startedAt: Date.now(),
+    expiresAt: claims.expiresAt,
+    maxToolCalls: claims.maxToolCalls,
+  });
 
   // นับ "ความพยายามเรียก tool" รวมที่ถูกปฏิเสธ — loop ของ model ต้องหยุดที่เพดานนี้
   const budget = liveComposition.liveSessions.consumeToolCall(input.sessionId);
@@ -149,7 +168,7 @@ export async function POST(request: Request) {
 
   // activeCartId มาจาก session ที่ server ผูกไว้, cartVersion/summary มาจาก client เจ้าของตะกร้า
   const injected: LiveInjectedCartContext = {
-    activeCartId: session.activeCartId,
+    activeCartId: claims.activeCartId,
     cartVersion: input.cartVersion,
     ...(input.summary ? { summary: input.summary } : {}),
   };

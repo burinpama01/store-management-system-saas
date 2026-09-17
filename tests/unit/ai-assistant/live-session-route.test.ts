@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLiveSessionToken, resolveLiveTokenSecret } from "@/modules/ai-assistant/live-session";
+import { resolveLiveTokenSecret, verifyLiveSessionToken } from "@/modules/ai-assistant/live-session";
 
 // PR3-Live (M3) — route gate test ของ POST/DELETE /api/ai-assistant/live/session
 // ทุกเคส mock auth/billing/provider (global fetch) จึงไม่มี network และไม่แตะ Supabase
@@ -244,7 +244,16 @@ describe("live session route — POST success shape", () => {
 
     const secret = resolveLiveTokenSecret(process.env);
     expect(secret).not.toBeNull();
-    expect(body.sessionToken).toBe(createLiveSessionToken(body.sessionId, body.expiresAt, secret as string));
+    // token พก identity ของเซสชันครบ — relay บน instance อื่นจึงทำงานต่อได้โดยไม่ต้องมี state ร่วม
+    expect(verifyLiveSessionToken(body.sessionToken, secret as string)).toMatchObject({
+      sessionId: body.sessionId,
+      organizationId: "org-1",
+      storeId: "store-1",
+      userId: "user-1",
+      activeCartId: CART,
+      maxToolCalls: 40,
+      expiresAt: body.expiresAt,
+    });
     expect(route.liveSessions.size()).toBe(1);
     expect(route.providerCalls).toHaveLength(1);
     expect(route.providerCalls[0]?.url).toBe("https://api.openai.com/v1/realtime/client_secrets");
@@ -286,6 +295,8 @@ describe("live session route — DELETE end", () => {
     const again = await route.route.DELETE(del({ sessionId: created.sessionId, sessionToken: created.sessionToken }));
     expect(again.status).toBe(200);
     expect(await again.json()).toMatchObject({ ok: true, ended: false });
+    // เพิกถอนแล้วต้องไม่มีทางกลับมาใช้ token เดิมสั่งงานต่อบน instance นี้
+    expect(route.liveSessions.isRevoked(created.sessionId)).toBe(true);
   });
 
   it("refuses to end a session owned by another store of the same pilot org", async () => {

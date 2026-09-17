@@ -297,18 +297,60 @@ describe("live tool route — shared gates", () => {
 });
 
 describe("live tool route — session binding", () => {
+  // หัวใจของรอบแก้ตามรีวิว PR #47: บน Vercel คำขอถัดไปไม่การันตีว่าจะวิ่งเข้า process เดิม
+  // ของเดิมเซสชันอยู่ในหน่วยความจำ instance เดียว → พูดคำสั่งแรกแล้วเจอ 403 กลางบทสนทนา
+  // ตอนนี้ตัวตนของเซสชันอยู่ใน token ที่เซ็นแล้ว จึงต้องคุยต่อได้บน instance ที่ไม่เคยเห็นเซสชันนี้
+  it("relay ทำงานต่อได้บน instance ใหม่ที่ไม่เคยเห็นเซสชัน (ไม่หลุดกลางบทสนทนา)", async () => {
+    const created = await createSession();
+    const base = { sessionId: created.sessionId, sessionToken: created.sessionToken };
+
+    // จำลอง instance ใหม่: โหลด module ใหม่ทั้งชุด (composition/หน่วยความจำคนละก้อน)
+    const otherInstance = await loadRoute();
+    expect(otherInstance.liveSessions.size()).toBe(0);
+
+    const response = await otherInstance.toolRoute.POST(postTool({ ...base, ...relayBody }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, tool: "pos.search_product", outcome: { ok: true } });
+    // instance ใหม่รับเซสชันเข้ามานับเพดาน tool call ต่อจาก token (best-effort ต่อ instance)
+    expect(otherInstance.liveSessions.size()).toBe(1);
+  });
+
   it("refuses an invalid or forged session token", async () => {
     const created = await createSession();
     const forged = await created.route.toolRoute.POST(postTool({ sessionId: created.sessionId, sessionToken: "1234567890.deadbeef", ...relayBody }));
     expect(forged.status).toBe(403);
     expect(await forged.json()).toMatchObject({ reason: "live_session_invalid" });
 
-    // token ของเซสชันหนึ่ง ยกไปใช้กับอีก sessionId ไม่ได้ (HMAC ผูก id) — token ถูกต้อง
-    // แต่ชี้เซสชันที่ไม่มีจริง = ปฏิเสธแบบ fail-closed เหมือนกัน
+    // token ที่เซ็นด้วยความลับอื่น = ปฏิเสธ (ลายเซ็นคือสิ่งเดียวที่ทำให้ token มีผล)
+    const foreign = createLiveSessionToken({
+      sessionId: created.sessionId,
+      organizationId: "org-1",
+      storeId: "store-1",
+      userId: "user-1",
+      activeCartId: CART,
+      allowedTools: ["pos.search_product"],
+      maxToolCalls: 40,
+      expiresAt: Date.now() + 600_000,
+    }, "someone-elses-secret-0123456789");
+    const foreignResponse = await created.route.toolRoute.POST(postTool({ sessionId: created.sessionId, sessionToken: foreign, ...relayBody }));
+    expect(foreignResponse.status).toBe(403);
+    expect(await foreignResponse.json()).toMatchObject({ reason: "live_session_invalid" });
+
+    // token ที่ id ใน body ไม่ตรงกับ id ใน token = ปฏิเสธ (ผูกกันตายตัว)
     const secret = resolveLiveTokenSecret(process.env);
     expect(secret).not.toBeNull();
-    const otherToken = createLiveSessionToken("sess-00000000-0000", 1_900_000_000_000, secret as string);
-    const swapped = await created.route.toolRoute.POST(postTool({ sessionId: "sess-00000000-0000", sessionToken: otherToken, ...relayBody }));
+    const otherToken = createLiveSessionToken({
+      sessionId: "sess-00000000-0000",
+      organizationId: "org-1",
+      storeId: "store-1",
+      userId: "user-1",
+      activeCartId: CART,
+      allowedTools: ["pos.search_product"],
+      maxToolCalls: 40,
+      expiresAt: 1_900_000_000_000,
+    }, secret as string);
+    const swapped = await created.route.toolRoute.POST(postTool({ sessionId: created.sessionId, sessionToken: otherToken, ...relayBody }));
     expect(swapped.status).toBe(403);
     expect(await swapped.json()).toMatchObject({ reason: "live_session_invalid" });
   });
@@ -351,7 +393,16 @@ describe("live tool route — session binding", () => {
     if (!created.ok) return;
     const secret = resolveLiveTokenSecret(process.env);
     expect(secret).not.toBeNull();
-    const sessionToken = createLiveSessionToken(created.session.id, created.session.expiresAt, secret as string);
+    const sessionToken = createLiveSessionToken({
+      sessionId: created.session.id,
+      organizationId: created.session.organizationId,
+      storeId: created.session.storeId,
+      userId: created.session.userId,
+      activeCartId: created.session.activeCartId,
+      allowedTools: created.session.allowedTools,
+      maxToolCalls: created.session.maxToolCalls,
+      expiresAt: created.session.expiresAt,
+    }, secret as string);
     const response = await route.toolRoute.POST(postTool({
       sessionId: created.session.id, sessionToken,
       callId, tool: "pos.add_item", args: { productPhrase: "ลาเต้", quantity: 1 }, cartVersion: 0, idempotencyKey: "live-call_ABCDEFGHIJ",

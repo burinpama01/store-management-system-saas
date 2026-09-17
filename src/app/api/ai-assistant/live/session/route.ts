@@ -63,7 +63,8 @@ const CreateSchema = z.object({
 
 const EndSchema = z.object({
   sessionId: z.string().regex(SESSION_ID_PATTERN),
-  sessionToken: z.string().min(8).max(256),
+  // token เป็น payload ที่เซ็นแล้ว (ไม่ใช่แค่ลายเซ็น) จึงยาวกว่ารุ่นก่อน — เพดานกันข้อความยาวผิดปกติ
+  sessionToken: z.string().min(8).max(2048),
 }).strict();
 
 export async function POST(request: Request) {
@@ -177,7 +178,18 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     sessionId: created.session.id,
-    sessionToken: createLiveSessionToken(created.session.id, created.session.expiresAt, secret),
+    // token ถือข้อมูลเซสชันครบ (org/store/user/ตะกร้า/อายุ/เพดาน) — relay จึงไม่ต้องพึ่ง state
+    // ของ instance ใด instance หนึ่ง (แก้อาการหลุดกลางบทสนทนาเมื่อ request ตกคนละ instance)
+    sessionToken: createLiveSessionToken({
+      sessionId: created.session.id,
+      organizationId: created.session.organizationId,
+      storeId: created.session.storeId,
+      userId: created.session.userId,
+      activeCartId: created.session.activeCartId,
+      allowedTools: created.session.allowedTools,
+      maxToolCalls: created.session.maxToolCalls,
+      expiresAt: created.session.expiresAt,
+    }, secret),
     /** client secret ชั่วคราวสำหรับ WebRTC — อายุสั้นตาม provider */
     ephemeralToken: provider.ephemeralToken,
     openaiSessionId: provider.openaiSessionId,
@@ -220,17 +232,18 @@ export async function DELETE(request: Request) {
   const secret = resolveLiveTokenSecret(process.env);
   if (!secret) return fail("live_unconfigured", 503, "โหมดเสียงสดยังตั้งค่าไม่ครบ — แจ้งผู้ดูแลระบบ");
 
-  if (!verifyLiveSessionToken(parsed.data.sessionToken, parsed.data.sessionId, secret)) {
+  // ตัวตนของเซสชันมาจาก token ที่เซ็นแล้ว (ไม่พึ่ง state ของ instance) — id ใน body ต้องตรงกันด้วย
+  const claims = verifyLiveSessionToken(parsed.data.sessionToken, secret);
+  if (!claims || claims.sessionId !== parsed.data.sessionId) {
+    return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
+  }
+  // เซสชันต้องเป็นของผู้เรียกจริง ๆ (ระดับ org + store + user)
+  if (claims.organizationId !== ctx.organizationId || claims.storeId !== ctx.storeId || claims.userId !== ctx.userId) {
     return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
   }
 
-  const session = liveComposition.liveSessions.get(parsed.data.sessionId);
-  // หมดอายุ/TTL เก็บไปแล้ว = ถือว่าจบแล้ว (idempotent close ไม่ใช่ error)
-  if (!session) return NextResponse.json({ ok: true, ended: false }, { headers: NO_STORE });
-  if (session.organizationId !== ctx.organizationId || session.storeId !== ctx.storeId || session.userId !== ctx.userId) {
-    return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
-  }
-
+  // เพิกถอน token ที่ยังไม่หมดอายุ (กันสั่งงานต่อหลังปิด) แล้วคืน slot ของ instance นี้ถ้ามี
+  liveComposition.liveSessions.revoke(claims.sessionId, claims.expiresAt);
   const summary = liveComposition.liveSessions.end(parsed.data.sessionId);
   if (summary) {
     await safely(() => logSystemEvent({
@@ -251,8 +264,10 @@ export async function DELETE(request: Request) {
     }));
   }
   return NextResponse.json({
+    // ended = instance นี้มีเซสชันให้ปิดจริงหรือไม่ (ปิดซ้ำ/เซสชันอยู่ instance อื่น = false)
+    // ไม่ว่าค่าไหน token ก็ถูกเพิกถอนบน instance นี้แล้ว และ UI ปิดไมค์ในเครื่องเสมอ
     ok: true,
-    ended: true,
+    ended: summary !== null,
     toolCallsUsed: summary?.toolCallsUsed ?? 0,
     sessionSeconds: summary?.sessionSeconds ?? 0,
   }, { headers: NO_STORE });
