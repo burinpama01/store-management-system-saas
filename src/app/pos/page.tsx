@@ -153,6 +153,14 @@ export default async function PosPage() {
   const voiceAliasesResult = voiceEnabled
     ? await listVoiceAliases(ctx.storeId)
     : { data: [], error: null };
+  // PR3-Live — ปุ่มเสียงสดโชว์เฉพาะ: kill switch เปิด (AI_ASSISTANT_LIVE_ENABLED) + แพ็กเกจรองรับ
+  // + org ใน pilot (เทียบแบบไม่สนตัวพิมพ์เหมือน resolveLiveAccess ที่ route) — รูปแบบเดียวกับ
+  // aiAssistantTextEnabled; route ตรวจซ้ำทุก request ปุ่มเป็นแค่ทางเข้า
+  const assistantConfig = readAssistantConfig(process.env);
+  const aiAssistantLiveEnabled =
+    assistantConfig.liveEnabled
+    && canUseFeature(resolvedBillingState, "aiAssistant")
+    && assistantConfig.livePilotOrgIds.includes(ctx.organizationId.toLowerCase());
   return (
     <div style={themeStyle} className="h-dvh overflow-hidden">
       <UnifiedPosWorkspace
@@ -178,7 +186,8 @@ export default async function PosPage() {
         voiceCommands={DASHBOARD_COMMANDS.filter((command) =>
           resolved.can(command.permission as PermissionKey),
         )}
-        aiAssistantTextEnabled={readAssistantConfig(process.env).enabled}
+        aiAssistantTextEnabled={assistantConfig.enabled}
+        aiAssistantLiveEnabled={aiAssistantLiveEnabled}
       />
       {alertNotifiers}
     </div>

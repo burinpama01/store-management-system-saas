@@ -19,6 +19,7 @@ import {
   type VoiceSpeechAdapter,
   type VoiceSpeechSession,
 } from "@/modules/voice-pos/speech-adapter";
+import { claimMicOwnership, releaseMicOwnership } from "@/modules/voice-pos/mic-ownership";
 import { createBrowserVoiceFeedback, type VoiceFeedback } from "@/modules/voice-pos/feedback";
 import {
   readVoiceFeedbackPreference,
@@ -66,6 +67,9 @@ export interface VoiceResultContext {
   readonly origin: VoiceActivationOrigin;
   readonly sessionId: string | null;
 }
+
+/** PR3-Live (ADR-008) — โหมดเสียงสด (AI Live) ถือไมค์อยู่ = ปุ่มเสียงเดิมต้องงดจับ ไม่แย่งกัน */
+const LIVE_MIC_BUSY_MESSAGE = "โหมดเสียงสด (AI Live) กำลังใช้ไมค์อยู่ — แตะปุ่ม AI Live เพื่อปิดก่อนใช้ไมค์เดิม";
 
 export interface VoiceResultResponse {
   readonly message: string;
@@ -210,6 +214,7 @@ export function VoiceCommandButton({
       sessionRef.current?.cancel();
       sessionRef.current = null;
       setInterim("");
+      releaseMicOwnership("voice-pos");
       if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
     };
   }, []);
@@ -247,6 +252,14 @@ export function VoiceCommandButton({
   );
 
   const startListening = useCallback((options?: { keepMessage?: boolean }) => {
+    // ADR-008 — ไมค์ผู้เดียวต่อหน้าจอ: โหมดเสียงสดถือไมค์อยู่ = งดจับทันที (fail closed ไม่แย่ง)
+    // voice-pos claim ซ้ำได้เสมอ (idempotent) เส้นทางเดิมทั้งหมดจึงเหมือนเดิมทุกอย่าง
+    if (!claimMicOwnership("voice-pos")) {
+      showMessage(LIVE_MIC_BUSY_MESSAGE);
+      player.cue("error");
+      endStandbySession("tap_required");
+      return;
+    }
     // เปิดไมค์ต่อเองต้องไม่ลบข้อความที่เพิ่งบอกไป — มันคือคำสั่งที่ผู้ใช้กำลังจะทำตาม
     // (เช่น "ยังต้องเลือก ระดับการคั่ว") ส่วนการกดปุ่มเองคือเริ่มคำสั่งใหม่ จึงล้างได้
     if (!options?.keepMessage) showMessage("");
@@ -262,6 +275,7 @@ export function VoiceCommandButton({
         if (next === "idle" || next === "error") {
           sessionRef.current = null;
           setInterim("");
+          releaseMicOwnership("voice-pos");
         }
       },
       onInterim: (text) => {
@@ -271,6 +285,8 @@ export function VoiceCommandButton({
         // final ซ้ำของการกดเดียวกันต้องถูกทิ้ง (ไม่สั่งงานสองครั้ง)
         if (settledRef.current) return;
         settledRef.current = true;
+        // รอบจับไมค์จบที่ final — คืนไมค์ทันที (resolving ไม่ได้จับเสียงแล้ว)
+        releaseMicOwnership("voice-pos");
         const result = parseVoiceCommand(transcript, { recognitionConfidence: confidence });
         // ล้าง transcript ทันทีหลัง parse — ห้ามค้างใน state หรือ ref
         setInterim("");
@@ -339,6 +355,7 @@ export function VoiceCommandButton({
     setInterim("");
     setState("idle");
     player.stop();
+    releaseMicOwnership("voice-pos");
     endStandbySession("aborted");
     showMessage("ยกเลิกการฟังแล้ว");
   }, [endStandbySession, player, showMessage]);

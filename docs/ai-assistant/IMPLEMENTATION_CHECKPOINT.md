@@ -1,4 +1,22 @@
+
+## เป้าหมายผู้ใช้ (เจ้าของร้าน) — 2026-09-16
+> เป้าหมายฟีเจอร์นี้เพื่อให้พนักงานลดการกดจอ โดยสั่ง AI ด้วยเสียง
+- แปลว่า: ขั้นสุดท้ายที่ต้องการคือ **เสียงก่อน จอเป็นรอง** — ข้อความ (PR2) เป็นฐานที่พิสูจน์ท่อ tool/dispatcher/audit/idempotency แล้ว ขั้นถัดไปคือทางเข้าแบบไมค์ (PTT) ที่ยิงเข้าท่อเดิม
+- ข้อบังคับเดิมยังใช้: ADR-005 (MVP = Push-to-Talk เท่านั้น ไม่ always-listening), ADR-008 (ไม่แย่งไมค์ Voice POS), ADR-003 (เสียง+ข้อความใช้ dispatcher เดียวกัน)
+## สถานะล่าสุด — PR3-Live เสร็จครบ M1–M5 (commit + verify ปิดท้ายโดยผู้ประสานงาน) — 2026-09-17
+- Commits บน branch `feat/ai-assistant-voice-goal`: M1 PoC `4e6a3a2` · M2 config `0c0c5f3` · M3 session route `e94723f`+`974902e` · M4 tool relay `a0197f2` · M5 UI one-press Live (commit ล่าสุด) — ยังไม่ push
+- **M5:** `ui/live-assistant-core.ts` (state machine + relay client), `ui/live-webrtc.ts` (WebRTC → OpenAI Realtime ผ่าน ephemeral token เท่านั้น — browser ห้าม execute tool, function_call ถูก relay ไป server), `voice-pos/mic-ownership.ts` (ADR-008 สมุดจดเจ้าของไมค์), overlay ปุ่ม AI Live + `page.tsx` คุม liveEnabled/entitlement/pilot org ฝั่ง server, `VoiceCommandButton` งดจับไมค์เมื่อ Live ถือ (fail-closed)
+- **Verify (ผู้ประสานงานรันเอง):** targeted tests **274/274 exit 0** · typecheck 0 · e2e text path **6/6** · build 0
+- หมายเหตุกระบวนการ: รอบ ZCode ถูก provider ตัดกลางทางหลายครั้ง (server error / empty / network) — ทุก milestone ถูก commit เป็นช่วงจึงไม่เสียงาน; commit M5 + verify ปิดท้ายผู้ประสานงานทำเอง; **Obsidian entry ของ PR3-Live ยังไม่ได้บันทึก (ค้าง)**
+- **วิธีปลด Live สำหรับ pilot Each Other:** merge PR → deploy production → ตั้ง env Vercel `AI_ASSISTANT_LIVE_ENABLED=true` + `AI_ASSISTANT_LIVE_PILOT_ORG_IDS=11460ba9-bd2d-48d3-bda6-c5e7ddacacc9` → verify
+- **Manual test checklist (เจ้าของร้าน, หลัง deploy):** ① แตะปุ่ม AI Live → ขอไมค์ → สถานะ "ฟังอยู่" ② พูดไทย "เพิ่มลาเต้ 2 แก้ว" → AI ยืนยันเสียง + ตะกร้าเปลี่ยน ③ พูดชื่อคลุมเครือ → AI ถามกลับ → ตอบชื่อเต็ม ④ ปุ่มเสียงเดิม (Voice POS) ระหว่าง Live = งดจับไมค์ (ข้อความแจ้ง) ⑤ จบเซสชันทุกทาง: แตะซ้ำ / นิ่ง 15 นาที / หมด caps / ปิดแท็บ → ไมค์ดับ ⑥ org/บัญชีนอก pilot = ไม่เห็นปุ่ม + API 403
 # จุดรับช่วง AI Assistant
+
+## ADR note — PR3-Live (2026-09-16, เจ้าของตัดสินใจ)
+- **เจ้าของ override ADR-005**: จากเดิม "MVP = Push-to-Talk เท่านั้น" → เปลี่ยนเป็น **one-press Live conversation mode** บนท่อ OpenAI Realtime (แตะปุ่มเดียวเปิดเซสชันเสียงสด พูดหลายประโยค AI ตอบเสียง + execute tools ผ่าน dispatcher เดิม; จบเซสชันด้วยการแตะปุ่มซ้ำ / idle timeout / หมด caps) — **Whisper PTT เลื่อนออก**
+- **pilot เฉพาะ org "Each Other"** (`11460ba9-bd2d-48d3-bda6-c5e7ddacacc9`, enterprise) — คนนอก pilot โดน 403 `live_pilot_only` เสมอ
+- kill switch `AI_ASSISTANT_LIVE_ENABLED` (default **false** = production พฤติกรรมเดิม 100%) + kill switch กลาง `AI_ASSISTANT_KILL_SWITCH` ยังคุมทุกช่องทาง
+- ADR-008 (ไม่แย่งไมค์ Voice POS) และ ADR-003 (dispatcher ชุดเดียว) ยังบังคับครบ — Live ใช้ session-bound signed tool channel ตาม plan v2 §11: OPENAI_API_KEY server เท่านั้น, hard caps (นาที/เซสชัน, tool calls/เซสชัน, concurrent/ร้าน), metering เฉพาะ metadata
 
 ## สถานะล่าสุด — ปลด mutation รอบสุดท้าย: wire durable store เข้า route + e2e text path เสร็จ 2026-09-16
 - Branch: `feat/ai-assistant-text-e2e` (ตัดจาก `origin/main` = `644b538` ที่รวม PR1+PR2+PR3a แล้ว) ใน worktree `.worktrees/ai-assistant-implementation` — commits: `f87bbaa` (Task A: wiring) → `6d36920` (Task B: e2e spec) → docs หัวข้อนี้; **ยังไม่ push ตามคำสั่ง — ผู้ประสานงาน verify แล้ว push/PR เอง**
