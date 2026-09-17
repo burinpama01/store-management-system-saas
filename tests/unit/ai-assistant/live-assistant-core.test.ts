@@ -707,6 +707,47 @@ describe("telemetry ของ core", () => {
 
 // M1 — สั่งงานจริง: หลายเมนูในประโยคเดียว แล้ว "กดปุ่มคิดเงิน" ให้พนักงาน
 // หน้าร้าน 2026-09-17: ผู้ช่วยถามตัวเลือกเดิมวนไม่จบ — ต้องมีเพดานที่ไม่พึ่ง model
+describe("ส่งบทสนทนาไปเก็บ", () => {
+  it("server เปิดเก็บ = ส่งทุกประโยคพร้อมลำดับ (itemId แปลกถูกทิ้ง)", async () => {
+    const recordTranscript = vi.fn(async () => null);
+    const harness = createHarness({
+      recordTranscript,
+      createSession: vi.fn(async () => ({ ...OK_SESSION, transcriptsEnabled: true })),
+    });
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    harness.getHandlers().onTranscript?.({ role: "user", itemId: "item_1", text: "ลาเต้เย็น" });
+    harness.getHandlers().onTranscript?.({ role: "assistant", itemId: "bad id!", text: "ได้เลยค่ะ" });
+    expect(recordTranscript).toHaveBeenCalledTimes(2);
+    const bodies = recordTranscript.mock.calls.map((call) => (call as unknown as [{ turns: unknown[]; sessionId: string }])[0]);
+    expect(bodies[0]).toMatchObject({ sessionId: OK_SESSION.sessionId, turns: [{ role: "user", text: "ลาเต้เย็น", seq: 0, itemId: "item_1" }] });
+    expect(bodies[1]?.turns).toEqual([{ role: "assistant", text: "ได้เลยค่ะ", seq: 1 }]);
+  });
+
+  it("server ไม่เปิดเก็บ = ข้อความไม่ออกจากเครื่อง", async () => {
+    const recordTranscript = vi.fn(async () => null);
+    const harness = createHarness({ recordTranscript });
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    harness.getHandlers().onTranscript?.({ role: "user", itemId: null, text: "ลาเต้เย็น" });
+    expect(recordTranscript).not.toHaveBeenCalled();
+  });
+
+  it("ส่งไม่สำเร็จ = บทสนทนาเดินต่อ ไม่ขึ้น error", async () => {
+    const harness = createHarness({
+      recordTranscript: vi.fn(async () => { throw new Error("offline"); }),
+      createSession: vi.fn(async () => ({ ...OK_SESSION, transcriptsEnabled: true })),
+    });
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+    const before = harness.core.getState().entries.length;
+    harness.getHandlers().onTranscript?.({ role: "user", itemId: null, text: "ลาเต้เย็น" });
+    await Promise.resolve();
+    expect(harness.core.getState().phase).toBe("active");
+    expect(harness.core.getState().entries.length).toBe(before);
+  });
+});
+
 describe("กันถามตัวเลือกวน", () => {
   const pendingLatte = {
     status: "clarification_batch",

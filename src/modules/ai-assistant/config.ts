@@ -7,6 +7,14 @@ function readPositiveInt(raw: string | undefined, fallback: number, minimum: num
   return parsed;
 }
 
+/** ทศนิยมในช่วงที่กำหนดจาก env — ค่าผิดรูป/นอกช่วง = ค่าเริ่มต้น */
+function readNumberInRange(raw: string | undefined, fallback: number, min: number, max: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return fallback;
+  return parsed;
+}
+
 /** รับเฉพาะ environment จาก server composition root ห้ามรับจาก request */
 export function readAssistantConfig(env: Readonly<Record<string, string | undefined>>) {
   const environment: Environment = env.NODE_ENV === "development" || env.NODE_ENV === "test" ? env.NODE_ENV : "production";
@@ -31,6 +39,15 @@ export function readAssistantConfig(env: Readonly<Record<string, string | undefi
       && env.AI_ASSISTANT_KILL_SWITCH !== "true",
     // model ที่ PoC พิสูจน์ tool round-trip กับ API จริงแล้ว (artifacts/realtime-tool-poc.log)
     liveModel: env.AI_ASSISTANT_LIVE_MODEL?.trim() || "gpt-realtime-2.1-mini",
+    // ความเร็วเสียงพูดของผู้ช่วย (provider รับ 0.25–1.5) — ร้านนำร่องบอกว่า 1.0 เร็วเกินจนฟังภาษาไทยไม่ทัน
+    liveSpeechSpeed: readNumberInRange(env.AI_ASSISTANT_LIVE_SPEECH_SPEED, 0.85, 0.25, 1.5),
+    // เก็บบทสนทนา (คำพูดพนักงาน / คำตอบผู้ช่วย / tool ที่เรียก) ลง ai_live_conversation_turns
+    // ปิดเป็นค่าเริ่มต้น เปิดเฉพาะช่วงทดสอบ — ในเสียงอาจมีชื่อ/เบอร์ลูกค้า
+    liveTranscriptsEnabled: env.AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED === "true"
+      && env.AI_ASSISTANT_KILL_SWITCH !== "true",
+    liveTranscriptRetentionDays: readPositiveInt(env.AI_ASSISTANT_LIVE_TRANSCRIPT_RETENTION_DAYS, 30, 1),
+    // ตัวถอดเสียงฝั่งผู้ใช้ (เปิดเฉพาะตอนเก็บบทสนทนา — model หลักฟังเสียงตรงอยู่แล้ว ไม่ต้องพึ่งข้อความนี้)
+    liveTranscribeModel: env.AI_ASSISTANT_LIVE_TRANSCRIBE_MODEL?.trim() || "gpt-4o-mini-transcribe",
     // PR3 — mutation ปลดได้เฉพาะ env เป็น "true" แบบตรงตัว แต่ใน production ยังต้องผ่าน
     // เกต durable store ของ dispatcher อีกชั้น (env เดียวไม่พอ — ดู checkpoint หัวข้อปลด mutation)
     mutationsEnabled: env.AI_ASSISTANT_MUTATIONS_ENABLED === "true",

@@ -24,6 +24,7 @@ import {
   type LiveAssistantState,
   type LiveSessionResponse,
   type LiveToolRequestBody,
+  type LiveTranscriptRequestBody,
   type LiveToolRelayResponse,
 } from "@/modules/ai-assistant/ui/live-assistant-core";
 import { connectLiveWebRtc } from "@/modules/ai-assistant/ui/live-webrtc";
@@ -164,6 +165,21 @@ async function endLiveSession(body: { sessionId: string; sessionToken: string })
   return null;
 }
 
+/** ส่งบทสนทนาไปเก็บ (เฉพาะเมื่อ server เปิด) — keepalive ให้ประโยคสุดท้ายถึงแม้ปิดแท็บ */
+async function recordLiveTranscript(body: LiveTranscriptRequestBody): Promise<unknown> {
+  try {
+    await fetch("/api/ai-assistant/live/transcript", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      keepalive: true,
+    });
+  } catch {
+    // เก็บเพื่อวิเคราะห์เท่านั้น — ล้มเหลวไม่กระทบบทสนทนา
+  }
+  return null;
+}
+
 export function TextAssistantOverlay({
   productAliases = [],
   onFocusSell,
@@ -218,6 +234,7 @@ export function TextAssistantOverlay({
           createSession: createLiveSession,
           relayTool: relayLiveTool,
           endSession: endLiveSession,
+          recordTranscript: recordLiveTranscript,
           connect: connectLiveWebRtc,
         });
       }

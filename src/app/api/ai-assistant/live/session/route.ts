@@ -18,9 +18,10 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import { MVP_TOOL_NAMES } from "@/modules/ai-assistant/tools/pos-tools";
 import {
   LIVE_OPENAI_TOOLS,
-  LIVE_SESSION_INSTRUCTIONS,
+  buildLiveSessionInstructions,
   createLiveEphemeralSession,
 } from "@/modules/ai-assistant/live-openai-tools";
+import { buildMenuInstructions, buildTranscriptionPrompt } from "@/modules/ai-assistant/menu-context";
 import {
   createLiveSessionToken,
   resolveLiveTokenSecret,
@@ -151,17 +152,60 @@ export async function POST(request: Request) {
 
   // session config ทั้งก้อน (instructions ไทย + voice + tools ตาม allowlist) ถูกส่งไปตอนสร้าง
   // ephemeral secret — browser ได้แค่ token ชั่วคราว ไม่เคยเห็น OPENAI_API_KEY
+  //
+  // เมนูจริงของร้าน (ชื่อ/ตัวเลือก/ค่าเริ่มต้น) ต่อท้าย instructions ให้ model รู้ตั้งแต่เริ่มคุย —
+  // โหลดไม่ได้ = เปิดเซสชันต่อโดยไม่มีรายการเมนู (tool ค้นหายังตอบตัวเลือกได้) ไม่ปิดโหมดทั้งหมด
+  let products: Awaited<ReturnType<typeof liveComposition.loadCatalog>>["products"] = [];
+  try {
+    products = (await liveComposition.loadCatalog(ctx.storeId)).products;
+  } catch {
+    products = [];
+  }
+  const menuInstructions = buildMenuInstructions(products);
   const providerStartedAt = Date.now();
   await logLiveEvent({
     event: "provider.client_secret_started", stage: "provider", result: "started", ctx,
-    sessionId: created.session.id, metadata: { model: config.liveModel },
+    sessionId: created.session.id,
+    metadata: {
+      model: config.liveModel,
+      speechSpeed: config.liveSpeechSpeed,
+      menuChars: menuInstructions?.length ?? 0,
+      transcripts: config.liveTranscriptsEnabled,
+    },
   });
-  const provider = await createLiveEphemeralSession({
+  const providerBase = {
     apiKey,
     model: config.liveModel,
-    instructions: LIVE_SESSION_INSTRUCTIONS,
+    instructions: buildLiveSessionInstructions(menuInstructions),
     tools: LIVE_OPENAI_TOOLS,
+  };
+  let provider = await createLiveEphemeralSession({
+    ...providerBase,
+    speechSpeed: config.liveSpeechSpeed,
+    // ถอดเสียงผู้ใช้เฉพาะตอนเก็บบทสนทนา (มีค่าใช้จ่ายต่อนาที และ model หลักฟังเสียงตรงอยู่แล้ว)
+    ...(config.liveTranscriptsEnabled
+      ? { transcription: { model: config.liveTranscribeModel, language: "th", prompt: buildTranscriptionPrompt(products) } }
+      : {}),
   });
+  if (!provider.ok && provider.reason === "provider_rejected") {
+    // บทเรียน PR #49: config ที่ provider ไม่รับทำให้ Live ล่มทั้งระบบ — ถ้าส่วนเสียง (ความเร็ว/ถอดเสียง)
+    // ถูกปฏิเสธ ให้เปิดแบบเดิมไปก่อน (ร้านยังใช้ได้) แล้วทิ้งร่องรอยไว้ให้แก้
+    await logLiveEvent({
+      event: "provider.client_secret_failed", stage: "provider", result: "failed", reason: "audio_config_rejected", ctx,
+      sessionId: created.session.id,
+    });
+    await safely(() => logSystemEvent({
+      level: "warn",
+      source: "ai.assistant",
+      action: "liveSession",
+      message: "provider ไม่รับการตั้งค่าเสียง (ความเร็ว/ถอดเสียง) — เปิดเซสชันแบบไม่มีการตั้งค่าเสียงแทน",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: ctx.userId,
+      context: { reason: "audio_config_rejected", stage: "provider" },
+    }));
+    provider = await createLiveEphemeralSession(providerBase);
+  }
   if (!provider.ok) {
     // provider ปฏิเสธ/ล่ม = คืน slot ทันที ไม่งั้นร้านเปิดใหม่ไม่ได้จนกว่า TTL จะหมดเอง
     liveComposition.liveSessions.end(created.session.id);
@@ -232,6 +276,8 @@ export async function POST(request: Request) {
     /** epoch ms ฝั่ง server — UI ใช้ตั้ง idle/expiry timer ให้ตรงกับที่ server บังคับ */
     expiresAt: created.session.expiresAt,
     allowedTools: [...MVP_TOOL_NAMES],
+    /** เครื่องส่งข้อความบทสนทนามาที่ /live/transcript เฉพาะเมื่อ server เปิดเก็บ */
+    transcriptsEnabled: config.liveTranscriptsEnabled,
     caps: {
       sessionMinutes: config.liveMaxSessionMinutes,
       toolCallsPerSession: config.liveMaxToolCallsPerSession,

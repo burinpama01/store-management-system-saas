@@ -21,6 +21,8 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { MVP_TOOL_NAMES, registerPosTools } from "./tools/pos-tools";
 import { createServerPosToolDeps } from "./tools/pos-tools-server";
 import { createFixedWindowRateLimiter } from "./rate-limit";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordLiveTranscriptTurns, type LiveTranscriptIdentity, type LiveTranscriptTurn } from "./live-transcripts";
 import { logSystemEvent } from "@/modules/system/event-log";
 import type {
   LiveTelemetryEventName,
@@ -48,7 +50,8 @@ function readLiveTelemetryRateLimitPerMinute(): number {
 const config = readAssistantConfig(process.env);
 
 const registry = new ToolRegistry(config.environment);
-registerPosTools(registry, createServerPosToolDeps());
+const posToolDeps = createServerPosToolDeps();
+registerPosTools(registry, posToolDeps);
 
 /** session ชั้น dispatcher (identity จาก auth cookie) — แยกจาก text route เพื่อไม่แตะโค้ดเดิม */
 const assistantSessions = createAssistantSessionStore({ allowedTools: [...MVP_TOOL_NAMES] });
@@ -104,8 +107,32 @@ function getLiveDispatch(): Promise<LiveDispatcher> {
   return dispatchPromise;
 }
 
+let serviceClientPromise: ReturnType<typeof createSupabaseServiceClient> | null = null;
+
+/**
+ * บันทึกบทสนทนา (เปิดเฉพาะ AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED) — ปิดอยู่ = ไม่แตะ DB เลย
+ * ล้มเหลวต้องเงียบ: การบันทึกเพื่อวิเคราะห์ห้ามทำให้บทสนทนาหน้าร้านสะดุด
+ */
+async function recordTranscript(identity: LiveTranscriptIdentity, turns: readonly LiveTranscriptTurn[]): Promise<number> {
+  const current = readAssistantConfig(process.env);
+  if (!current.liveTranscriptsEnabled || turns.length === 0) return 0;
+  try {
+    serviceClientPromise ??= createSupabaseServiceClient();
+    const client = await serviceClientPromise;
+    return await recordLiveTranscriptTurns(client as unknown as SupabaseClient, identity, turns, {
+      retentionDays: current.liveTranscriptRetentionDays,
+    });
+  } catch {
+    serviceClientPromise = null;
+    return 0;
+  }
+}
+
 export const liveComposition = {
   registry,
+  /** เมนูจริงของร้าน (ชุดเดียวกับที่ tool ใช้) — ใช้สรุปเมนูให้ model ตอนเปิดเซสชัน */
+  loadCatalog: (storeId: string) => posToolDeps.loadCatalog(storeId),
+  recordTranscript,
   liveSessions,
   sessionRateLimiter,
   toolRateLimiter,

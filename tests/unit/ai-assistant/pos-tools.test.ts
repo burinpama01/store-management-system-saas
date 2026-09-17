@@ -88,7 +88,7 @@ describe("pos search tools through the shared resolver", () => {
     const s = setup();
     expect(await s.dispatch({ tool: "pos.search_product", args: { query: "ลาเต้" }, idempotencyKey: "s1" })).toEqual({
       ok: true,
-      data: { status: "matched", product: { id: "p-latte", name: "ลาเต้" }, price: 55, outOfStock: false, note: null },
+      data: { status: "matched", product: { id: "p-latte", name: "ลาเต้" }, price: 55, outOfStock: false, note: null, options: [] },
     });
   });
 
@@ -96,7 +96,7 @@ describe("pos search tools through the shared resolver", () => {
     const s = setup({ aliases: [{ aliasText: "มัจฉะ", productId: "p-latte" }] });
     expect(await s.dispatch({ tool: "pos.search_product", args: { query: "มัจฉะ" }, idempotencyKey: "s2" })).toEqual({
       ok: true,
-      data: { status: "matched", product: { id: "p-latte", name: "ลาเต้" }, price: 55, outOfStock: false, note: null },
+      data: { status: "matched", product: { id: "p-latte", name: "ลาเต้" }, price: 55, outOfStock: false, note: null, options: [] },
     });
   });
 
@@ -505,6 +505,35 @@ describe("ตอบตัวเลือกกลับมาแล้วต้�
     const s = setup({ products: loopProducts });
     const result = await s.dispatch({ tool: "pos.add_item", args: { ...cartArgs, productPhrase: "คาปูชิโน่", quantity: 2, optionPhrases: ["เย็นค่ะ"] }, idempotencyKey: "loop-single" });
     expect(result).toMatchObject({ ok: true, data: { status: "apply", productName: "คาปูชิโน่ (Cappuccino)", intent: { quantity: 2 } } });
+  });
+});
+
+describe("ค้นหาเมนูต้องบอกตัวเลือกและค่าเริ่มต้น", () => {
+  it("variant บังคับเลือก + กลุ่มที่มีค่าเริ่มต้น (model จะได้ไม่ถามกลุ่มนั้น)", async () => {
+    const opt = (id: string, name: string, isDefault = false) => ({ id, modifierGroupId: "g", name, priceAdjustment: 0, isDefault, isActive: true, sortOrder: 0 });
+    const s = setup({
+      products: [product({
+        id: "p-lt",
+        name: "ลาเต้",
+        variants: [variant("h", "p-lt", "ร้อน"), variant("i", "p-lt", "เย็น")],
+        modifierGroups: [
+          { id: "g1", productId: "p-lt", name: "ความหวาน", selectionType: "single", isRequired: true, minSelections: 1, maxSelections: 1, sortOrder: 0, options: [opt("o1", "หวานน้อย"), opt("o2", "หวานปกติ", true)] },
+          { id: "g2", productId: "p-lt", name: "ท็อปปิ้ง", selectionType: "multiple", isRequired: false, minSelections: 0, maxSelections: 3, sortOrder: 1, options: [opt("o3", "ไข่มุก")] },
+        ],
+      })],
+    });
+    const result = await s.dispatch({ tool: "pos.search_product", args: { query: "ลาเต้" }, idempotencyKey: "search-options" });
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        status: "matched",
+        options: [
+          { group: "ตัวเลือกสินค้า", required: true, multiple: false, options: ["ร้อน", "เย็น"], defaults: [] },
+          { group: "ความหวาน", required: true, multiple: false, options: ["หวานน้อย", "หวานปกติ"], defaults: ["หวานปกติ"] },
+          { group: "ท็อปปิ้ง", required: false, multiple: true, options: ["ไข่มุก"], defaults: [] },
+        ],
+      },
+    });
   });
 });
 
