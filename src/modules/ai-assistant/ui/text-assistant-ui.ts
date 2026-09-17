@@ -18,6 +18,20 @@ export interface AssistantCandidate {
 
 export type ParsedAssistantToolResult =
   | { readonly kind: "apply"; readonly intent: Record<string, unknown>; readonly productName: string }
+  | { readonly kind: "apply_batch"; readonly items: readonly { intent: Record<string, unknown>; productName: string }[] }
+  | {
+      readonly kind: "clarification_batch";
+      readonly pending: readonly {
+        productPhrase: string;
+        reason: string;
+        productName?: string;
+        note?: string;
+        choices?: readonly { group: string; options: readonly string[] }[];
+        candidates?: readonly AssistantCandidate[];
+      }[];
+      readonly readyCount: number;
+    }
+  | { readonly kind: "open_checkout"; readonly announcement: string }
   | {
       readonly kind: "clarification";
       readonly reason: string;
@@ -25,6 +39,8 @@ export type ParsedAssistantToolResult =
       readonly productName?: string;
       readonly note?: string;
       readonly candidates?: readonly AssistantCandidate[];
+      /** ตัวเลือกที่มีจริงของสินค้า — ให้ถามได้ตรง ๆ ว่า "ร้อนหรือเย็น" */
+      readonly choices?: readonly { group: string; options: readonly string[] }[];
     }
   | { readonly kind: "matched"; readonly productName?: string; readonly price?: number | null; readonly outOfStock?: boolean; readonly note?: string | null }
   | { readonly kind: "ambiguous"; readonly candidates: readonly AssistantCandidate[] }
@@ -37,6 +53,20 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function asChoices(value: unknown): { group: string; options: string[] }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const choices: { group: string; options: string[] }[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const group = asString(record?.group);
+    const options = Array.isArray(record?.options)
+      ? (record!.options as unknown[]).map((option) => asString(option)).filter((option): option is string => Boolean(option))
+      : [];
+    if (group && options.length > 0) choices.push({ group, options });
+  }
+  return choices.length > 0 ? choices : undefined;
 }
 
 function asCandidates(value: unknown): AssistantCandidate[] | undefined {
@@ -59,6 +89,21 @@ export function parseAssistantToolResult(result: unknown): ParsedAssistantToolRe
   if (status === "apply" && asString(record.productName) && asRecord(record.intent)?.type) {
     return { kind: "apply", intent: asRecord(record.intent)!, productName: asString(record.productName)! };
   }
+  if (status === "apply_batch" && Array.isArray(record.items)) {
+    // ทุกรายการต้องครบรูปทรง ไม่งั้นถือว่าผลลัพธ์เสียหาย (ห้ามใส่ตะกร้าบางส่วน)
+    const items: { intent: Record<string, unknown>; productName: string }[] = [];
+    for (const entry of record.items) {
+      const item = asRecord(entry);
+      const intent = asRecord(item?.intent);
+      const productName = asString(item?.productName);
+      if (!intent || !intent.type || !productName) return null;
+      items.push({ intent, productName });
+    }
+    return items.length > 0 ? { kind: "apply_batch", items } : null;
+  }
+  if (status === "client_action" && asString(record.action) === "open_checkout") {
+    return { kind: "open_checkout", announcement: asString(record.announcement) ?? "เปิดหน้าจอรับชำระให้แล้ว" };
+  }
   if (status === "clarification" && asString(record.reason)) {
     return {
       kind: "clarification",
@@ -67,6 +112,30 @@ export function parseAssistantToolResult(result: unknown): ParsedAssistantToolRe
       productName: asString(record.productName),
       note: asString(record.note),
       candidates: asCandidates(record.candidates),
+      choices: asChoices(record.choices),
+    };
+  }
+  if (status === "clarification_batch" && Array.isArray(record.pending)) {
+    const pending: Extract<ParsedAssistantToolResult, { kind: "clarification_batch" }>["pending"][number][] = [];
+    for (const entry of record.pending) {
+      const item = asRecord(entry);
+      const productPhrase = asString(item?.productPhrase);
+      const reason = asString(item?.reason);
+      if (!productPhrase || !reason) return null;
+      pending.push({
+        productPhrase,
+        reason,
+        productName: asString(item?.productName),
+        note: asString(item?.note),
+        choices: asChoices(item?.choices),
+        candidates: asCandidates(item?.candidates),
+      });
+    }
+    if (pending.length === 0) return null;
+    return {
+      kind: "clarification_batch",
+      pending,
+      readyCount: typeof record.readyCount === "number" ? record.readyCount : 0,
     };
   }
   if (status === "matched") {
@@ -125,6 +194,31 @@ export function describeDenialCode(code: string): string {
 }
 
 /** ข้อความของ clarification จาก resolver เดิม — ห้ามเดาแทนผู้ใช้ */
+/** "ตัวเลือกสินค้า: ร้อน / เย็น / ปั่น · ความหวาน: ปกติ / น้อย" */
+export function describeChoices(
+  choices: readonly { group: string; options: readonly string[] }[] | undefined,
+): string | null {
+  if (!choices || choices.length === 0) return null;
+  return choices.map((choice) => `${choice.group}: ${choice.options.join(" / ")}`).join(" · ");
+}
+
+/** สรุปของที่ยังขาดทั้งชุดเป็นข้อความเดียว — ถามรวบรอบเดียวแทนการถามทีละรายการ */
+export function describePendingBatch(
+  parsed: Extract<ParsedAssistantToolResult, { kind: "clarification_batch" }>,
+): string {
+  const lines = parsed.pending.map((item) => {
+    const name = item.productName ?? item.productPhrase;
+    const choices = describeChoices(item.choices);
+    if (choices) return `${name}: เลือก ${choices}`;
+    if (item.reason === "ambiguous" && item.candidates) {
+      return `${name}: หมายถึง ${item.candidates.map((candidate) => candidate.name).join(" / ")}`;
+    }
+    if (item.reason === "needs_quantity") return `${name}: กี่ที่`;
+    return `${name}: ${item.note ?? "ยังสั่งไม่ได้"}`;
+  });
+  return `ยังต้องเลือกก่อน ${parsed.pending.length} รายการ — ${lines.join(" · ")}`;
+}
+
 export function describeClarification(clarification: Extract<ParsedAssistantToolResult, { kind: "clarification" }>): string {
   switch (clarification.reason) {
     case "needs_quantity":
@@ -137,8 +231,12 @@ export function describeClarification(clarification: Extract<ParsedAssistantTool
       return clarification.note ?? "ไม่พบสินค้านี้ในเมนู";
     case "unsupported":
       return clarification.note ?? "คำสั่งนี้ยังไม่รองรับในโหมดข้อความ";
-    case "needs_option":
-      return `${clarification.productName ?? "สินค้า"}: ${clarification.note ?? "ยังต้องเลือกตัวเลือกสินค้า"}`;
+    case "needs_option": {
+      const name = clarification.productName ?? "สินค้า";
+      const choices = describeChoices(clarification.choices);
+      // มีตัวเลือกจริง = บอกไปเลยว่าเลือกอะไรได้บ้าง (พูดตอบได้ ไม่ต้องไปกดหาเอง)
+      return choices ? `${name}: เลือก ${choices}` : `${name}: ${clarification.note ?? "ยังต้องเลือกตัวเลือกสินค้า"}`;
+    }
     case "ambiguous":
       return "หลายรายการตรงกัน — เลือกจากรายการด้านล่าง";
     default:
@@ -182,7 +280,9 @@ export type AssistantTurnStep =
       readonly candidates?: readonly AssistantCandidate[];
     }
   | { readonly kind: "clear_search"; readonly note?: string }
-  | { readonly kind: "open_product"; readonly productId: string };
+  | { readonly kind: "open_product"; readonly productId: string }
+  /** เปิดแผงรับชำระเดิมของ POS (ไม่มีการสร้าง payment/QR ที่นี่) */
+  | { readonly kind: "open_checkout"; readonly message: string };
 
 /** outcome 1 รายการจาก route — รูปทรงไม่ครบ = ข้อความ fail-closed ไม่ใช่การเดา */
 function stepsForOutcome(rawOutcome: unknown): AssistantTurnStep[] {
@@ -213,6 +313,14 @@ function stepsForOutcome(rawOutcome: unknown): AssistantTurnStep[] {
   switch (parsed.kind) {
     case "apply":
       return [{ kind: "apply", intent: parsed.intent, productName: parsed.productName }];
+    case "apply_batch":
+      // เรียงตามลำดับที่ผู้ใช้พูดเสมอ — ห้ามสลับ
+      return parsed.items.map((item) => ({ kind: "apply", intent: item.intent, productName: item.productName }));
+    case "open_checkout":
+      return [{ kind: "open_checkout", message: parsed.announcement }];
+    case "clarification_batch":
+      // ยังไม่ใส่ตะกร้าแม้แต่รายการเดียว — ถามให้ครบก่อน (กันตะกร้าครึ่ง ๆ กลาง ๆ)
+      return [{ kind: "message", level: "error", message: describePendingBatch(parsed) }];
     case "clarification": {
       const candidates = parsed.candidates;
       const steps: AssistantTurnStep[] = [

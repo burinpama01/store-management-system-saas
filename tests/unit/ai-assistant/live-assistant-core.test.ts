@@ -686,3 +686,72 @@ describe("telemetry ของ core", () => {
     }
   });
 });
+
+// M1 — สั่งงานจริง: หลายเมนูในประโยคเดียว แล้ว "กดปุ่มคิดเงิน" ให้พนักงาน
+describe("สั่งงานหลายรายการ + เปิดหน้าจอรับชำระ", () => {
+  function batchRelay(): LiveToolRelayResponse {
+    return {
+      ok: true,
+      callId: "call_batch0001",
+      tool: "pos.add_items",
+      outcome: {
+        ok: true,
+        data: {
+          status: "apply_batch",
+          items: [
+            { intent: { type: "pos.add_item", productPhrase: "ลาเต้", quantity: 2 }, productName: "ลาเต้" },
+            { intent: { type: "pos.add_item", productPhrase: "ชาเขียว", quantity: 1 }, productName: "ชาเขียว" },
+          ],
+        },
+      },
+      toolCallsUsed: 1,
+      toolCallsCap: 40,
+    };
+  }
+
+  it("หนึ่ง tool call = ใส่ตะกร้าครบทุกรายการตามลำดับ และ cartVersion ไต่ตามจำนวนที่ใส่จริง", async () => {
+    const relayTool = vi.fn(async () => batchRelay());
+    const harness = createHarness({ relayTool });
+    await harness.core.start();
+    harness.getHandlers().onOpen();
+
+    harness.getHandlers().onFunctionCall({ callId: "call_batch0001", tool: "pos.add_items", argsText: "{}" });
+    await flushAsync();
+
+    expect(harness.bridge.commits).toHaveLength(2);
+    expect(harness.bridge.cart.items.map((item) => item.productName)).toEqual(["ลาเต้", "ชาเขียว"]);
+    expect(harness.bridge.cart.items.map((item) => item.quantity)).toEqual([2, 1]);
+    // relay ครั้งเดียวเท่านั้น (นี่คือเหตุผลของ pos.add_items)
+    expect(relayTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("open_checkout = ยิงคำสั่งเปิดแผงรับชำระของ POS ไม่แตะตะกร้าและไม่มีการจ่ายเงิน", async () => {
+    const commands: string[] = [];
+    const listener = (event: Event) => commands.push(String((event as CustomEvent).detail));
+    const target = { addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: (event: Event) => { listener(event); return true; } };
+    vi.stubGlobal("window", target);
+    vi.stubGlobal("CustomEvent", class { detail: unknown; type: string; constructor(type: string, init?: { detail?: unknown }) { this.type = type; this.detail = init?.detail; } } as never);
+    try {
+      const harness = createHarness({
+        relayTool: vi.fn(async () => ({
+          ok: true as const,
+          callId: "call_checkout01",
+          tool: "pos.open_checkout",
+          outcome: { ok: true as const, data: { status: "client_action", action: "open_checkout", announcement: "เปิดหน้าจอรับชำระให้แล้ว" } },
+        })),
+      });
+      await harness.core.start();
+      harness.getHandlers().onOpen();
+
+      harness.getHandlers().onFunctionCall({ callId: "call_checkout01", tool: "pos.open_checkout", argsText: "{}" });
+      await flushAsync();
+
+      expect(commands).toEqual(["open-checkout"]);
+      expect(harness.bridge.commits).toHaveLength(0);
+      const entries = harness.core.getState().entries;
+      expect(entries[entries.length - 1].message).toContain("เปิดหน้าจอรับชำระ");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

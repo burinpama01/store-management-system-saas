@@ -134,11 +134,18 @@ describe("cart mutation tools through the shared resolver", () => {
     });
   });
 
-  it("maps missing variant to needs_option clarification", async () => {
+  it("ต้องเลือกตัวเลือก = คืน 'ตัวเลือกที่มีจริง' มาด้วย (ผู้ช่วยจะได้ถามว่าร้อนหรือเย็น ไม่ใช่ให้ไปกดจอ)", async () => {
     const s = setup();
     expect(await s.dispatch({ tool: "pos.add_item", args: { ...addArgs, productPhrase: "กาแฟดำ" }, idempotencyKey: "a3" })).toEqual({
       ok: true,
-      data: { status: "clarification", reason: "needs_option", productId: "p-black", productName: "กาแฟดำ", note: "ยังต้องเลือกตัวเลือกสินค้า" },
+      data: {
+        status: "clarification",
+        reason: "needs_option",
+        productId: "p-black",
+        productName: "กาแฟดำ",
+        note: "ยังต้องเลือกตัวเลือกสินค้า",
+        choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }],
+      },
     });
   });
 
@@ -231,5 +238,198 @@ describe("policy and idempotency through the real dispatcher", () => {
     s.ctx.can = () => false;
     expect(await s.dispatch({ tool: "pos.search_product", args: { query: "ลาเต้" }, idempotencyKey: "d2" })).toEqual({ ok: false, code: "PERMISSION_DENIED" });
     expect(s.loadCatalog).not.toHaveBeenCalled();
+  });
+});
+
+// M1 — สั่งหลายเมนูในประโยคเดียว + "กดปุ่มคิดเงิน" ให้พนักงาน
+describe("pos.add_items — หลายรายการในคำสั่งเดียว", () => {
+  it("resolve ได้ครบทุกรายการ = คืนชุดเดียวเรียงตามที่พูด", async () => {
+    const s = setup();
+
+    const result = await s.dispatch({
+      tool: "pos.add_items",
+      args: {
+        ...cartArgs,
+        items: [
+          { productPhrase: "ลาเต้", quantity: 2, optionPhrases: [] },
+          { productPhrase: "ชาเขียว", quantity: 3, optionPhrases: [] },
+        ],
+      },
+      idempotencyKey: "batch-ok-1",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        status: "apply_batch",
+        items: [
+          { intent: { type: "pos.add_item", productPhrase: "ลาเต้", quantity: 2 }, productName: "ลาเต้" },
+          { intent: { type: "pos.add_item", productPhrase: "ชาเขียว", quantity: 3 }, productName: "ชาเขียว" },
+        ],
+      },
+    });
+  });
+
+  it("มีรายการกำกวม = ถามก่อน และไม่ใส่ตะกร้าแม้แต่รายการเดียว", async () => {
+    const s = setup();
+
+    const result = await s.dispatch({
+      tool: "pos.add_items",
+      args: {
+        ...cartArgs,
+        items: [
+          { productPhrase: "ลาเต้", quantity: 2, optionPhrases: [] },
+          { productPhrase: "ชา", quantity: 1, optionPhrases: [] },
+        ],
+      },
+      idempotencyKey: "batch-ambiguous-1",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as {
+      status: string;
+      readyCount?: number;
+      pending?: { productPhrase: string; reason: string; candidates?: { name: string }[] }[];
+      items?: unknown;
+    };
+    expect(data.status).toBe("clarification_batch");
+    expect(data.readyCount).toBe(1);
+    expect(data.pending).toHaveLength(1);
+    expect(data.pending?.[0].productPhrase).toBe("ชา");
+    expect(data.pending?.[0].candidates?.map((c) => c.name)).toEqual(["ชาเขียว", "ชาไทย"]);
+    // ห้ามมี items หลุดออกไป ไม่งั้น client จะใส่ตะกร้าบางส่วน
+    expect(data.items).toBeUndefined();
+  });
+
+  it("สามรายการที่ต้องเลือกตัวเลือกทั้งหมด = ถามรวบครั้งเดียว พร้อมตัวเลือกของแต่ละตัว", async () => {
+    // เคสจริงหน้าร้าน: "อเมริกาโน่หนึ่ง ลาเต้หนึ่ง คาปูชิโน่หนึ่ง" ที่ทุกตัวต้องเลือกร้อน/เย็น
+    const hotIced = (id: string, name: string) => product({
+      id,
+      name,
+      variants: [variant(`${id}-hot`, id, "ร้อน"), variant(`${id}-iced`, id, "เย็น")],
+    });
+    const s = setup({ products: [hotIced("p-am", "อเมริกาโน่"), hotIced("p-lt", "ลาเต้"), hotIced("p-cp", "คาปูชิโน่")] });
+
+    const result = await s.dispatch({
+      tool: "pos.add_items",
+      args: {
+        ...cartArgs,
+        items: [
+          { productPhrase: "อเมริกาโน่", quantity: 1, optionPhrases: [] },
+          { productPhrase: "ลาเต้", quantity: 1, optionPhrases: [] },
+          { productPhrase: "คาปูชิโน่", quantity: 1, optionPhrases: [] },
+        ],
+      },
+      idempotencyKey: "batch-three-options",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as {
+      status: string;
+      readyCount: number;
+      pending: { productPhrase: string; reason: string; choices?: { group: string; options: string[] }[] }[];
+    };
+    expect(data.status).toBe("clarification_batch");
+    expect(data.readyCount).toBe(0);
+    // ถามครั้งเดียวได้ครบทั้งสามรายการ ไม่ใช่ถามทีละตัว
+    expect(data.pending.map((item) => item.productPhrase)).toEqual(["อเมริกาโน่", "ลาเต้", "คาปูชิโน่"]);
+    for (const item of data.pending) {
+      expect(item.reason).toBe("needs_option");
+      expect(item.choices).toEqual([{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }]);
+    }
+  });
+
+  it("ตอบตัวเลือกกลับมาครบ = ใส่ตะกร้าได้ทั้งชุดในรอบเดียว", async () => {
+    const hotIced = (id: string, name: string) => product({
+      id,
+      name,
+      variants: [variant(`${id}-hot`, id, "ร้อน"), variant(`${id}-iced`, id, "เย็น")],
+    });
+    const s = setup({ products: [hotIced("p-am", "อเมริกาโน่"), hotIced("p-lt", "ลาเต้")] });
+
+    const result = await s.dispatch({
+      tool: "pos.add_items",
+      args: {
+        ...cartArgs,
+        items: [
+          { productPhrase: "อเมริกาโน่", quantity: 1, optionPhrases: ["เย็น"] },
+          { productPhrase: "ลาเต้", quantity: 1, optionPhrases: ["เย็น"] },
+        ],
+      },
+      idempotencyKey: "batch-three-answered",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as { status: string; items: { productName: string }[] };
+    expect(data.status).toBe("apply_batch");
+    expect(data.items.map((item) => item.productName)).toEqual(["อเมริกาโน่", "ลาเต้"]);
+  });
+
+  it("ของหมดในชุด = ทั้งชุดไม่ผ่าน (ไม่ใส่ของที่เหลือไปก่อน)", async () => {
+    const s = setup();
+
+    const result = await s.dispatch({
+      tool: "pos.add_items",
+      args: {
+        ...cartArgs,
+        items: [
+          { productPhrase: "โกโก้", quantity: 1, optionPhrases: [] },
+          { productPhrase: "ลาเต้", quantity: 1, optionPhrases: [] },
+        ],
+      },
+      idempotencyKey: "batch-oos-1",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as { status: string; pending: { productPhrase: string; reason: string }[]; items?: unknown };
+    expect(data.status).toBe("clarification_batch");
+    expect(data.pending).toEqual([expect.objectContaining({ productPhrase: "โกโก้", reason: "unavailable" })]);
+    expect(data.items).toBeUndefined();
+  });
+
+  it("เกินเพดานจำนวนรายการ/รายการว่าง = ปฏิเสธที่ schema", async () => {
+    const s = setup();
+    const many = Array.from({ length: 11 }, () => ({ productPhrase: "ลาเต้", quantity: 1, optionPhrases: [] }));
+
+    expect(await s.dispatch({ tool: "pos.add_items", args: { ...cartArgs, items: many }, idempotencyKey: "batch-max" }))
+      .toEqual({ ok: false, code: "INVALID_ARGS" });
+    expect(await s.dispatch({ tool: "pos.add_items", args: { ...cartArgs, items: [] }, idempotencyKey: "batch-empty" }))
+      .toEqual({ ok: false, code: "INVALID_ARGS" });
+  });
+
+  it("ปิด mutation อยู่ = ถูกปฏิเสธเหมือน tool เขียนตัวอื่น", async () => {
+    const s = setup({ mutations: false });
+
+    expect(await s.dispatch({
+      tool: "pos.add_items",
+      args: { ...cartArgs, items: [{ productPhrase: "ลาเต้", quantity: 1, optionPhrases: [] }] },
+      idempotencyKey: "batch-locked",
+    })).toEqual({ ok: false, code: "MUTATIONS_DISABLED" });
+  });
+});
+
+describe("pos.open_checkout — กดปุ่มคิดเงินแทนพนักงาน", () => {
+  it("คืนคำสั่งให้หน้าจอเปิดแผงรับชำระ โดยไม่แตะ payment ใด ๆ", async () => {
+    const s = setup();
+
+    const result = await s.dispatch({ tool: "pos.open_checkout", args: cartArgs, idempotencyKey: "checkout-1" });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { status: "client_action", action: "open_checkout", announcement: "เปิดหน้าจอรับชำระให้แล้ว" },
+    });
+    // ไม่มีการอ่าน catalog หรือคำนวณยอดใด ๆ ที่นี่
+    expect(s.loadCatalog).not.toHaveBeenCalled();
+  });
+
+  it("ต้องมีตะกร้าที่ server ผูกไว้ (ปลอม activeCartId ไม่ได้)", async () => {
+    const s = setup({ binding: null });
+
+    expect(await s.dispatch({ tool: "pos.open_checkout", args: cartArgs, idempotencyKey: "checkout-2" }))
+      .toEqual({ ok: false, code: "CONTEXT_UNAVAILABLE" });
   });
 });
