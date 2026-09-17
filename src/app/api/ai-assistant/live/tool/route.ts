@@ -10,9 +10,10 @@
 //   → นับ tool call ของเซสชัน (นับ attempt รวมที่ถูกปฏิเสธ — กัน loop) → tool อยู่ใน allowedTools
 //   → dispatcher เดิม (durable idempotency) → ตอบ result/typed code
 //
-// สิ่งที่ห้ามหลุดออกจากไฟล์นี้: ข้อความ/เสียง/transcript ของผู้ใช้ (route ไม่รับทั้งคู่อยู่แล้ว —
-// รับแค่ชื่อ tool + args ที่ model สร้าง) และ OPENAI_API_KEY (อยู่ฝั่ง server เท่านั้น)
+// สิ่งที่ห้ามหลุดออกจากไฟล์นี้: เสียงของผู้ใช้ (route ไม่รับอยู่แล้ว — รับแค่ชื่อ tool + args
+// ที่ model สร้าง) และ OPENAI_API_KEY (อยู่ฝั่ง server เท่านั้น)
 // metering ลง logSystemEvent ได้เฉพาะ metadata: callId (opaque), tool, outcome code, duration
+// args + ผลลัพธ์เต็มลง ai_live_conversation_turns เท่านั้น และเฉพาะเมื่อเปิด AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -20,6 +21,7 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import { MVP_TOOL_NAMES, type MvpToolName } from "@/modules/ai-assistant/tools/pos-tools";
 import { buildLiveToolArgs, type LiveInjectedCartContext } from "@/modules/ai-assistant/live-openai-tools";
 import { resolveLiveTokenSecret, verifyLiveSessionToken } from "@/modules/ai-assistant/live-session";
+import { stringifyForTranscript } from "@/modules/ai-assistant/live-transcripts";
 import { liveComposition, logLiveEvent, resolveLiveAccess, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
     await logLiveEvent({ event: "live.access_denied", stage: "tool", result: "blocked", reason: access.reason });
     return fail(access.reason, access.status, ACCESS_NOTES[access.reason]);
   }
-  const { ctx } = access;
+  const { ctx, config } = access;
 
   // rate limit ที่ route layer ก่อนแตะ session/dispatcher — กันสปามกลางบทสนทนา
   const limit = liveComposition.toolRateLimiter.check(`${ctx.organizationId}|${ctx.storeId}|${ctx.userId}`);
@@ -249,6 +251,27 @@ export async function POST(request: Request) {
       toolCallsUsed: budget.used,
     },
   }));
+
+  // บทสนทนาเพื่อวิเคราะห์ (เปิดเฉพาะช่วงทดสอบ): args ที่ model ส่งมาจริง + ผลที่ระบบตอบ
+  // ใช้ input.args (ก่อนฉีด cartRef/summary) — ของที่ server ฉีดไม่ใช่สิ่งที่ model ตัดสินใจ
+  if (config.liveTranscriptsEnabled) {
+    const outcomeText = stringifyForTranscript(result, 3000);
+    await liveComposition.recordTranscript(
+      { organizationId: claims.organizationId, storeId: claims.storeId, userId: claims.userId, sessionId: claims.sessionId },
+      [{
+        role: "tool",
+        tool: input.tool,
+        providerItemId: input.callId,
+        content: `${input.tool} ${stringifyForTranscript(input.args ?? {}, 3800)}`,
+        metadata: {
+          callId: input.callId,
+          durationMs,
+          toolCallsUsed: budget.used,
+          outcome: outcomeText.length < 3000 ? result : outcomeText,
+        },
+      }],
+    );
+  }
 
   // ตอบ 200 เสมอเมื่อถึง dispatcher แล้ว — ผลของ tool (สำเร็จหรือ code) ต้องถึง model
   // เพื่อให้ผู้ใช้ได้ยินคำอธิบายที่ตรงจริง; non-200 สงวนไว้ให้ gate ที่ไม่มีผล tool

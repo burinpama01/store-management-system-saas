@@ -16,6 +16,7 @@ import { resolveVoiceProductPhrase, type VoiceProductAlias } from "@/modules/voi
 import type { VoiceIntent } from "@/modules/voice-pos/types";
 import type { Product } from "@/modules/catalog/types";
 import { VOICE_MAX_QUANTITY, VOICE_MIN_QUANTITY } from "@/modules/voice-pos/parser";
+import { describeProductOptions } from "../menu-context";
 
 /** ชื่อ tool ของ MVP — ใช้เป็น allowedTools ของ assistant session */
 export const MVP_TOOL_NAMES = [
@@ -54,6 +55,14 @@ const SearchResultSchema = z.object({
   outOfStock: z.boolean().nullish(),
   candidates: z.array(ProductRefSchema).max(5).nullish(),
   note: z.string().max(200).nullish(),
+  /** ตัวเลือกจริงของเมนู + ค่าเริ่มต้น — model จะได้ไม่ถามกลุ่มที่ระบบใส่ให้เองอยู่แล้ว */
+  options: z.array(z.object({
+    group: z.string().min(1).max(60),
+    required: z.boolean(),
+    multiple: z.boolean(),
+    options: z.array(z.string().min(1).max(60)).max(12),
+    defaults: z.array(z.string().min(1).max(60)).max(12),
+  }).strict()).max(20).nullish(),
 }).strict();
 
 /**
@@ -460,6 +469,11 @@ export function registerPosTools(registry: ToolRegistry, deps: PosToolDeps): voi
       price: product.basePrice,
       outOfStock: product.outOfStock === true,
       note: product.outOfStock === true ? "สินค้านี้ของหมดอยู่ในขณะนี้" : null,
+      options: describeProductOptions(product).slice(0, 20).map((group) => ({
+        ...group,
+        options: [...group.options],
+        defaults: [...group.defaults],
+      })),
     };
   };
   const searchArgs = z.object({ query: PhraseSchema }).strict();

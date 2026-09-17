@@ -172,8 +172,9 @@ async function loadRoute(options: Options = {}) {
 
   const sessionRoute = await import("@/app/api/ai-assistant/live/session/route");
   const toolRoute = await import("@/app/api/ai-assistant/live/tool/route");
+  const transcriptRoute = await import("@/app/api/ai-assistant/live/transcript/route");
   const liveServer = await import("@/modules/ai-assistant/live-server");
-  return { sessionRoute, toolRoute, liveServer, liveSessions: liveServer.liveComposition.liveSessions, logSystemEvent, loadCatalog, db, setIdentity, setGates };
+  return { sessionRoute, toolRoute, transcriptRoute, liveServer, liveSessions: liveServer.liveComposition.liveSessions, logSystemEvent, loadCatalog, db, setIdentity, setGates };
 }
 
 interface Options {
@@ -415,6 +416,7 @@ describe("live tool route — session binding", () => {
 describe("live tool route — dispatcher results and arg injection", () => {
   it("relays a read tool through the dispatcher with server-injected nothing and returns the tool result", async () => {
     const created = await createSession();
+    created.route.loadCatalog.mockClear(); // เปิดเซสชันโหลดเมนูไปสรุปให้ model แล้วหนึ่งครั้ง
     const response = await created.route.toolRoute.POST(postTool({ sessionId: created.sessionId, sessionToken: created.sessionToken, ...relayBody }));
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -477,6 +479,7 @@ describe("live tool route — dispatcher results and arg injection", () => {
 
   it("replays the same idempotency key without executing twice", async () => {
     const created = await createSession();
+    created.route.loadCatalog.mockClear(); // เปิดเซสชันโหลดเมนูไปสรุปให้ model แล้วหนึ่งครั้ง
     const base = { sessionId: created.sessionId, sessionToken: created.sessionToken };
     const first = await created.route.toolRoute.POST(postTool({ ...base, ...relayBody, idempotencyKey: "live-call_ABCDEFGHIJ" }));
     expect(first.status).toBe(200);
@@ -497,5 +500,76 @@ describe("live tool route — dispatcher results and arg injection", () => {
     const second = await created.route.toolRoute.POST(postTool({ ...base, ...relayBody, callId: "call_YYYYYYYYYY" }));
     expect(second.status).toBe(200);
     expect((await second.json())).toMatchObject({ outcome: { ok: true } });
+  });
+});
+
+// 2026-09-17 — เก็บบทสนทนาไว้วิเคราะห์ (เปิดเฉพาะ AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED)
+describe("live transcript — บันทึกบทสนทนา", () => {
+  const postTranscript = (body: unknown) =>
+    new Request("http://localhost/api/ai-assistant/live/transcript", { method: "POST", body: JSON.stringify(body) });
+
+  it("ปิดอยู่ (ค่าเริ่มต้น) = ไม่บันทึกอะไรเลย ทั้งข้อความและ tool", async () => {
+    const created = await createSession();
+    const record = vi.spyOn(created.route.liveServer.liveComposition, "recordTranscript");
+    const response = await created.route.transcriptRoute.POST(postTranscript({
+      sessionId: created.sessionId, sessionToken: created.sessionToken, turns: [{ role: "user", text: "ลาเต้เย็นหนึ่งแก้ว", seq: 0 }],
+    }));
+    expect(await response.json()).toEqual({ ok: true, stored: 0, enabled: false });
+    await created.route.toolRoute.POST(postTool({ sessionId: created.sessionId, sessionToken: created.sessionToken, ...relayBody }));
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("เปิดอยู่ = บันทึกคำพูดด้วย identity จาก token และบันทึก tool พร้อม args + ผลลัพธ์จากฝั่ง server", async () => {
+    const created = await createSession();
+    vi.stubEnv("AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED", "true");
+    const record = vi.spyOn(created.route.liveServer.liveComposition, "recordTranscript").mockResolvedValue(1);
+
+    const response = await created.route.transcriptRoute.POST(postTranscript({
+      sessionId: created.sessionId,
+      sessionToken: created.sessionToken,
+      turns: [{ role: "user", text: "ลาเต้เย็นหนึ่งแก้ว", seq: 0, itemId: "item_abc" }],
+    }));
+    expect(response.status).toBe(200);
+    expect(record).toHaveBeenCalledWith(
+      { organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: created.sessionId },
+      [{ role: "user", content: "ลาเต้เย็นหนึ่งแก้ว", clientSeq: 0, providerItemId: "item_abc" }],
+    );
+
+    await created.route.toolRoute.POST(postTool({ sessionId: created.sessionId, sessionToken: created.sessionToken, ...relayBody }));
+    const toolTurn = record.mock.calls[1]?.[1][0];
+    expect(toolTurn).toMatchObject({ role: "tool", tool: "pos.search_product", providerItemId: callId });
+    expect(toolTurn?.content).toContain("ลาเต้");
+    expect(toolTurn?.metadata).toMatchObject({ outcome: { ok: true, data: { status: "matched" } } });
+    // ข้อความไม่หลุดไป system_event_logs (ผู้ดูแลทุกคนเห็น)
+    expect(JSON.stringify(created.route.logSystemEvent.mock.calls)).not.toContain("ลาเต้เย็นหนึ่งแก้ว");
+  });
+
+  it("token ปลอม/ของคนอื่น = 403 และไม่บันทึก", async () => {
+    const created = await createSession();
+    vi.stubEnv("AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED", "true");
+    const record = vi.spyOn(created.route.liveServer.liveComposition, "recordTranscript");
+    const forged = await created.route.transcriptRoute.POST(postTranscript({
+      sessionId: created.sessionId, sessionToken: `${created.sessionToken}x`, turns: [{ role: "user", text: "สวัสดี" }],
+    }));
+    expect(forged.status).toBe(403);
+    created.route.setIdentity({ organizationId: "org-1", storeId: "store-2", userId: "user-1" });
+    const otherStore = await created.route.transcriptRoute.POST(postTranscript({
+      sessionId: created.sessionId, sessionToken: created.sessionToken, turns: [{ role: "user", text: "สวัสดี" }],
+    }));
+    expect(otherStore.status).toBe(403);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("body ผิดรูป (role แปลก/ยาวเกิน) = 400", async () => {
+    const created = await createSession();
+    vi.stubEnv("AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED", "true");
+    const bad = await created.route.transcriptRoute.POST(postTranscript({
+      sessionId: created.sessionId, sessionToken: created.sessionToken, turns: [{ role: "tool", text: "x" }],
+    }));
+    expect(bad.status).toBe(400);
+    const long = await created.route.transcriptRoute.POST(postTranscript({
+      sessionId: created.sessionId, sessionToken: created.sessionToken, turns: [{ role: "user", text: "ก".repeat(4001) }],
+    }));
+    expect(long.status).toBe(400);
   });
 });

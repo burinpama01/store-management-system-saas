@@ -13,8 +13,25 @@ describe("trusted assistant config", () => {
       liveMaxConcurrentSessionsPerStore: 2,
       liveModel: "gpt-realtime-2.1-mini",
       liveDiagnosticsEnabled: false,
+      liveSpeechSpeed: 0.85,
+      liveTranscriptsEnabled: false,
+      liveTranscriptRetentionDays: 30,
+      liveTranscribeModel: "gpt-4o-mini-transcribe",
       mutationsEnabled: false,
     });
+  });
+
+  it("ความเร็วเสียงพูดรับเฉพาะช่วงที่ provider รองรับ ค่าผิด = 0.85", () => {
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_SPEECH_SPEED: "0.7" }).liveSpeechSpeed).toBe(0.7);
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_SPEECH_SPEED: "2" }).liveSpeechSpeed).toBe(0.85);
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_SPEECH_SPEED: "abc" }).liveSpeechSpeed).toBe(0.85);
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_SPEECH_SPEED: "0.1" }).liveSpeechSpeed).toBe(0.85);
+  });
+
+  it("เก็บบทสนทนาต้องเปิดตรงตัว และปิดตาม kill switch กลาง", () => {
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED: "true" }).liveTranscriptsEnabled).toBe(true);
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED: "1" }).liveTranscriptsEnabled).toBe(false);
+    expect(readAssistantConfig({ AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED: "true", AI_ASSISTANT_KILL_SWITCH: "true" }).liveTranscriptsEnabled).toBe(false);
   });
 
   it("โหมดวินิจฉัยต้องเปิดตรงตัวและยังอยู่ใต้ kill switch กลาง", () => {

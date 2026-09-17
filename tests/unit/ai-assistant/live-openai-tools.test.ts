@@ -4,6 +4,8 @@ import {
   LIVE_OPENAI_TOOLS,
   LIVE_OPENAI_TOOL_NAMES,
   LIVE_SESSION_INSTRUCTIONS,
+  buildLiveAudioConfig,
+  buildLiveSessionInstructions,
   buildLiveToolArgs,
   fromOpenAiToolName,
   toOpenAiToolName,
@@ -167,6 +169,34 @@ describe("createLiveEphemeralSession", () => {
     expect(body.session).toMatchObject({ type: "realtime", model: base.model, tool_choice: "auto" });
     expect(body.session.instructions).toBe(base.instructions);
     expect(body.session.tools).toHaveLength(LIVE_OPENAI_TOOLS.length);
+  });
+
+  it("ส่งความเร็วเสียงพูด + ถอดเสียงไทยพร้อมคำเฉพาะของร้านใน session.audio (GA)", async () => {
+    const fetchImpl = vi.fn(async () => okResponse());
+    await createLiveEphemeralSession({
+      ...base,
+      speechSpeed: 0.85,
+      transcription: { model: "gpt-4o-mini-transcribe", language: "th", prompt: "คำที่อาจได้ยิน: ลาเต้" },
+      fetchImpl,
+    });
+    const calls = fetchImpl.mock.calls as unknown as Array<[string | URL, RequestInit]>;
+    const body = JSON.parse(String(calls[0]![1].body));
+    expect(body.session.audio).toEqual({
+      input: { transcription: { model: "gpt-4o-mini-transcribe", language: "th", prompt: "คำที่อาจได้ยิน: ลาเต้" } },
+      output: { speed: 0.85 },
+    });
+  });
+
+  it("ไม่ตั้งค่าเสียง = ไม่ส่ง session.audio เลย และความเร็วถูกบีบให้อยู่ในช่วงของ provider", () => {
+    expect(buildLiveAudioConfig({})).toEqual({});
+    expect(buildLiveAudioConfig({ speechSpeed: 3 })).toEqual({ audio: { output: { speed: 1.5 } } });
+    expect(buildLiveAudioConfig({ transcription: { model: "m", language: "th", prompt: null } }))
+      .toEqual({ audio: { input: { transcription: { model: "m", language: "th" } } } });
+  });
+
+  it("instructions ต่อท้ายด้วยรายการเมนูเมื่อมี", () => {
+    expect(buildLiveSessionInstructions(null)).toBe(LIVE_SESSION_INSTRUCTIONS);
+    expect(buildLiveSessionInstructions("เมนู: ลาเต้").endsWith("\n\nเมนู: ลาเต้")).toBe(true);
   });
 
   it("maps provider rejections and outages to typed failures without throwing", async () => {

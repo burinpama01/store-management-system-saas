@@ -133,6 +133,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("live session route — เมนูและบทสนทนา", () => {
+  it("เปิดเก็บบทสนทนา = ถอดเสียงภาษาไทย และบอกเครื่องให้ส่งข้อความมา", async () => {
+    const route = await loadRoute();
+    vi.stubEnv("AI_ASSISTANT_LIVE_TRANSCRIPTS_ENABLED", "true");
+    vi.stubEnv("AI_ASSISTANT_LIVE_SPEECH_SPEED", "0.75");
+    const response = await route.route.POST(post(createBody));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.transcriptsEnabled).toBe(true);
+    const providerBody = JSON.parse(String(route.providerCalls[0]?.init.body));
+    expect(providerBody.session.audio).toMatchObject({
+      input: { transcription: { model: "gpt-4o-mini-transcribe", language: "th" } },
+      output: { speed: 0.75 },
+    });
+  });
+});
+
+describe("live session route — provider ไม่รับการตั้งค่าเสียง", () => {
+  it("ถูกปฏิเสธรอบแรก = เปิดใหม่แบบไม่มี session.audio ร้านยังใช้ Live ได้ และมีร่องรอยใน log", async () => {
+    const route = await loadRoute({ providerStatuses: [400, 200] });
+    const response = await route.route.POST(post(createBody));
+    expect(response.status).toBe(200);
+    expect(route.providerCalls).toHaveLength(2);
+    expect(JSON.parse(String(route.providerCalls[0]?.init.body)).session.audio).toBeDefined();
+    expect(JSON.parse(String(route.providerCalls[1]?.init.body)).session.audio).toBeUndefined();
+    expect(route.logSystemEvent).toHaveBeenCalledWith(expect.objectContaining({
+      context: expect.objectContaining({ reason: "audio_config_rejected" }),
+    }));
+  });
+});
+
 describe("live session route — POST gates", () => {
   it("requires auth, pos.use, plan entitlement, pilot membership, and the live kill switch", async () => {
     const unauth = await loadRoute({ authed: false });
@@ -257,6 +288,11 @@ describe("live session route — POST success shape", () => {
     expect(route.liveSessions.size()).toBe(1);
     expect(route.providerCalls).toHaveLength(1);
     expect(route.providerCalls[0]?.url).toBe("https://api.openai.com/v1/realtime/client_secrets");
+
+    // ความเร็วเสียงพูดค่าเริ่มต้น 0.85; ไม่เปิดเก็บบทสนทนา = ไม่ถอดเสียง (ไม่เสียค่าถอดเสียงเปล่า ๆ)
+    const providerBody = JSON.parse(String(route.providerCalls[0]?.init.body));
+    expect(providerBody.session.audio).toEqual({ output: { speed: 0.85 } });
+    expect(body.transcriptsEnabled).toBe(false);
 
     // metering: มีแต่ metadata — ไม่มีข้อความผู้ใช้/transcript หลุดเข้า log
     expect(route.logSystemEvent).toHaveBeenCalledWith(expect.objectContaining({

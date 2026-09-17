@@ -35,13 +35,26 @@ export type RealtimeSignal =
   | { readonly kind: "user_speech_started" }
   | { readonly kind: "function_call"; readonly callId: string; readonly tool: string; readonly argsText: string }
   | { readonly kind: "assistant_response_done" }
+  /** ข้อความถอดเสียงที่จบประโยคแล้ว — ใช้บันทึกบทสนทนาเท่านั้น (ไม่แสดง ไม่ตัดสินใจอะไรจากข้อความนี้) */
+  | { readonly kind: "transcript"; readonly role: "user" | "assistant"; readonly itemId: string | null; readonly text: string }
   | { readonly kind: "error" };
 
 /** แปลง event ดิบของ provider → สัญญาณที่ core รู้จัก; ไม่รู้จัก/รูปทรงเพี้ยน = null (เมินเงียบ ๆ) */
 export function parseRealtimeEvent(raw: unknown): RealtimeSignal | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const event = raw as { type?: unknown; item?: unknown };
+  const event = raw as { type?: unknown; item?: unknown; item_id?: unknown; transcript?: unknown };
   switch (event.type) {
+    // GA: ข้อความของผู้พูด (ต้องเปิด audio.input.transcription ตอนสร้างเซสชัน) และของเสียงตอบ
+    case "conversation.item.input_audio_transcription.completed":
+    case "response.output_audio_transcript.done": {
+      if (typeof event.transcript !== "string" || event.transcript.trim().length === 0) return null;
+      return {
+        kind: "transcript",
+        role: event.type === "response.output_audio_transcript.done" ? "assistant" : "user",
+        itemId: typeof event.item_id === "string" ? event.item_id : null,
+        text: event.transcript.trim(),
+      };
+    }
     case "input_audio_buffer.speech_started":
       return { kind: "user_speech_started" };
     case "response.output_item.done": {
@@ -297,6 +310,9 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
         return;
       case "assistant_response_done":
         handlers.onAssistantResponseDone();
+        return;
+      case "transcript":
+        handlers.onTranscript?.({ role: signal.role, itemId: signal.itemId, text: signal.text });
         return;
       case "error":
         // ห้ามโชว์ข้อความดิบของ provider — core ใช้ข้อความไทย fail closed ของตัวเอง

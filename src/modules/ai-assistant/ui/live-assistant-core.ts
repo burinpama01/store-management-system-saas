@@ -35,6 +35,8 @@ export interface LiveConnectionHandlers {
   /** call จาก model — argsText คือ JSON string ดิบจาก data channel (parse ที่ core เท่านั้น) */
   readonly onFunctionCall: (call: { readonly callId: string; readonly tool: string; readonly argsText: string }) => void;
   readonly onAssistantResponseDone: () => void;
+  /** ข้อความถอดเสียงจบประโยค (ผู้พูด/ผู้ช่วย) — ใช้บันทึกบทสนทนาเมื่อ server เปิดเก็บ */
+  readonly onTranscript?: (turn: LiveTranscriptTurnInput) => void;
   readonly onError: (message: string) => void;
   readonly onClosed: () => void;
 }
@@ -57,6 +59,19 @@ export interface LiveConnectionHandle {
 // ── รูปทรงของช่องทาง HTTP (route จริงที่ M3/M4 นิยาม) ─────────────────────────────
 
 /** ผลตอบของ POST /api/ai-assistant/live/session — parse แบบทนทานที่ core เสมอ */
+export interface LiveTranscriptTurnInput {
+  readonly role: "user" | "assistant";
+  readonly itemId: string | null;
+  readonly text: string;
+}
+
+/** body ของ POST /api/ai-assistant/live/transcript */
+export interface LiveTranscriptRequestBody {
+  readonly sessionId: string;
+  readonly sessionToken: string;
+  readonly turns: readonly { readonly role: "user" | "assistant"; readonly text: string; readonly itemId?: string; readonly seq: number }[];
+}
+
 export type LiveSessionResponse =
   | {
     readonly ok: true;
@@ -66,6 +81,8 @@ export type LiveSessionResponse =
     readonly model: string;
     readonly expiresAt: number;
     readonly caps: { readonly toolCallsPerSession: number };
+    /** server เปิดเก็บบทสนทนา — false/ไม่มี = ไม่ส่งข้อความออกจากเครื่อง */
+    readonly transcriptsEnabled?: boolean;
   }
   | { readonly ok: false; readonly reason?: string; readonly manualPath?: string };
 
@@ -123,6 +140,8 @@ export interface LiveAssistantCoreDeps {
   readonly relayTool: (body: LiveToolRequestBody) => Promise<LiveToolRelayResponse>;
   /** best-effort — core ไม่รอผลและไม่ให้ความล้มเหลวของการปิดบน server กระทบ UI */
   readonly endSession: (body: { readonly sessionId: string; readonly sessionToken: string }) => Promise<unknown>;
+  /** ส่งบทสนทนาไปเก็บ (best-effort) — ไม่ส่งมา = ไม่บันทึก */
+  readonly recordTranscript?: (body: LiveTranscriptRequestBody) => Promise<unknown>;
   readonly connect: (options: LiveConnectOptions) => Promise<LiveConnectionHandle>;
   readonly claimMic?: () => boolean;
   readonly releaseMic?: () => void;
@@ -269,6 +288,8 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
   /** call ที่รับแล้ว (กัน event ซ้ำของ provider) — จำกัดขนาดตาม cap ของเซสชัน */
   const seenCallIds = new Set<string>();
   let liveCartVersion = 0;
+  let transcriptsEnabled = false;
+  let transcriptSeq = 0;
   /** คำถามตัวเลือกล่าสุด + จำนวนครั้งที่ได้ซ้ำติดกัน — ตัดวงวน "ถามตัวเลือกเดิมไม่จบ" */
   let lastClarification: { signature: string; count: number } | null = null;
   let entrySequence = 0;
@@ -572,6 +593,8 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     toolCallsUsed = 0;
     liveCartVersion = 0;
     lastClarification = null;
+    transcriptsEnabled = session.transcriptsEnabled === true && typeof deps.recordTranscript === "function";
+    transcriptSeq = 0;
     sessionStartedAtMs = now();
 
     try {
@@ -587,6 +610,17 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
           },
           onUserSpeechStarted: () => setStatus("listening"),
           onAssistantResponseDone: () => setStatus("listening"),
+          onTranscript: (turn) => {
+            if (!transcriptsEnabled || !deps.recordTranscript || !sessionId || !sessionToken) return;
+            const itemId = turn.itemId && /^[A-Za-z0-9_-]{1,128}$/.test(turn.itemId) ? turn.itemId : undefined;
+            const body: LiveTranscriptRequestBody = {
+              sessionId,
+              sessionToken,
+              turns: [{ role: turn.role, text: turn.text.slice(0, 4000), seq: transcriptSeq++, ...(itemId ? { itemId } : {}) }],
+            };
+            // เก็บเพื่อวิเคราะห์เท่านั้น — ล้มเหลวต้องไม่กระทบบทสนทนา
+            void deps.recordTranscript(body).catch(() => undefined);
+          },
           onFunctionCall: (call) => {
             // เรียงคิวให้คำสั่งเดินทีละคำสั่ง (apply ตะกร้าต้องไม่แย่ง snapshot กัน)
             relayChain = relayChain.then(() => handleFunctionCall(call)).catch(() => undefined);
