@@ -260,7 +260,7 @@ describe("start — เส้นทางปกติและสถานะส
     const handlers = harness.getHandlers();
     handlers.onOpen();
     expect(harness.core.getState().status).toBe("listening");
-    handlers.onFunctionCall({ callId: "call_status001", tool: "pos.add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_status001", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.core.getState().status).toBe("working"));
     releaseRelay(relayOk(ADD_APPLY_RESULT, { used: 1, cap: 40 }));
     await vi.waitFor(() => expect(harness.core.getState().status).toBe("speaking"));
@@ -274,11 +274,11 @@ describe("start — เส้นทางปกติและสถานะส
     const harness = createHarness();
     await harness.core.start();
     const handlers = harness.getHandlers();
-    handlers.onFunctionCall({ callId: "call_count001", tool: "pos.add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_count001", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.core.getState().toolCallsUsed).toBe(3));
     // relay ล้มเหลว (ไม่มี field นับ) = ตัวเลขเดิมคงอยู่
     harness.relayTool.mockResolvedValueOnce({ ok: false, reason: "rate_limited" });
-    handlers.onFunctionCall({ callId: "call_count002", tool: "pos.add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_count002", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(2));
     expect(harness.core.getState().toolCallsUsed).toBe(3);
   });
@@ -296,7 +296,7 @@ describe("function call → relay → ตะกร้า", () => {
     harness.getHandlers().onOpen();
     harness.getHandlers().onFunctionCall({
       callId: "call_apply001",
-      tool: "pos.add_item",
+      tool: "pos_add_item",
       argsText: '{"productPhrase":"ลาเต้","quantity":2}',
     });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(1));
@@ -319,7 +319,7 @@ describe("function call → relay → ตะกร้า", () => {
     expect(output.applied).toBe(true);
     expect(output.status).toBe("apply");
     // คำสั่งถัดไปได้ cartVersion ที่ไต่ขึ้น (server ห้าม version ย้อนหลัง)
-    harness.getHandlers().onFunctionCall({ callId: "call_apply002", tool: "pos.add_item", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_apply002", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(relayBodies.length).toBe(2));
     expect(relayBodies[1].cartVersion).toBe(1);
     expect(relayBodies[1].summary?.itemCount).toBe(1);
@@ -334,7 +334,7 @@ describe("function call → relay → ตะกร้า", () => {
       outcome: { ok: false, code: "MUTATIONS_DISABLED" },
     });
     await harness.core.start();
-    harness.getHandlers().onFunctionCall({ callId: "call_denied01", tool: "pos.add_item", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_denied01", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(1));
     const entries = harness.core.getState().entries;
     expect(entries[entries.length - 1].level).toBe("error");
@@ -356,7 +356,7 @@ describe("function call → relay → ตะกร้า", () => {
       outcome: { ok: true, data: { status: "ambiguous", candidates: [{ id: "p-1", name: "ชาเย็น" }, { id: "p-2", name: "ชาดำ" }] } },
     });
     await harness.core.start();
-    harness.getHandlers().onFunctionCall({ callId: "call_ambig001", tool: "pos.search_product", argsText: '{"query":"ชา"}' });
+    harness.getHandlers().onFunctionCall({ callId: "call_ambig001", tool: "pos_search_product", argsText: '{"query":"ชา"}' });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(1));
     const entries = harness.core.getState().entries;
     expect(entries[entries.length - 1].message).toContain("หลายรายการตรงกัน");
@@ -372,7 +372,7 @@ describe("function call → relay → ตะกร้า", () => {
     const harness = createHarness();
     harness.relayTool.mockResolvedValueOnce({ ok: false, reason: "live_tool_not_allowed" });
     await harness.core.start();
-    harness.getHandlers().onFunctionCall({ callId: "call_notallow", tool: "pos.clear_search", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_notallow", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(1));
     const entries = harness.core.getState().entries;
     expect(entries[entries.length - 1].message).toBe("คำสั่งนี้ยังไม่เปิดใช้ในโหมดเสียงสด");
@@ -382,11 +382,27 @@ describe("function call → relay → ตะกร้า", () => {
     expect(harness.endSession).not.toHaveBeenCalled();
   });
 
+  it("ชื่อ tool ที่ model ส่งมาต้องแปลงกลับเป็นชื่อจริงก่อน relay — ชื่อไม่รู้จัก/มีจุด = ไม่ relay", async () => {
+    const harness = createHarness();
+    harness.relayTool.mockResolvedValue(relayOk(ADD_APPLY_RESULT));
+    await harness.core.start();
+    harness.getHandlers().onFunctionCall({ callId: "call_unknown1", tool: "pos_clear_search", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_dotname1", tool: "pos.add_item", argsText: "" });
+    await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(2));
+    expect(harness.relayTool).not.toHaveBeenCalled();
+    for (const [, json] of harness.sendFunctionCallOutput.mock.calls) {
+      expect(JSON.parse(String(json))).toEqual({ ok: false, reason: "unknown_tool" });
+    }
+    harness.getHandlers().onFunctionCall({ callId: "call_wirename", tool: "pos_add_item", argsText: "" });
+    await vi.waitFor(() => expect(harness.relayTool).toHaveBeenCalledTimes(1));
+    expect(harness.relayTool.mock.calls[0][0].tool).toBe("pos.add_item");
+  });
+
   it("relayTool โยน (เครือข่ายล่มกลางบทสนทนา) = network_error ทั้งข้อความและ output", async () => {
     const harness = createHarness();
     harness.relayTool.mockRejectedValueOnce(new Error("down"));
     await harness.core.start();
-    harness.getHandlers().onFunctionCall({ callId: "call_netfail", tool: "pos.add_item", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_netfail", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(1));
     const entries = harness.core.getState().entries;
     expect(entries[entries.length - 1].message).toBe("ส่งคำสั่งไม่สำเร็จ — พูดใหม่อีกครั้ง");
@@ -397,7 +413,7 @@ describe("function call → relay → ตะกร้า", () => {
   it("args ที่ไม่ใช่ JSON = ส่ง invalid_args กลับให้ model พูดแก้ตัว ไม่เดิน relay", async () => {
     const harness = createHarness();
     await harness.core.start();
-    harness.getHandlers().onFunctionCall({ callId: "call_badargs", tool: "pos.add_item", argsText: "{not json" });
+    harness.getHandlers().onFunctionCall({ callId: "call_badargs", tool: "pos_add_item", argsText: "{not json" });
     await vi.waitFor(() => expect(harness.sendFunctionCallOutput).toHaveBeenCalledTimes(1));
     expect(harness.relayTool).not.toHaveBeenCalled();
     const [, badArgsJson] = harness.sendFunctionCallOutput.mock.calls[0];
@@ -408,8 +424,8 @@ describe("function call → relay → ตะกร้า", () => {
     const harness = createHarness();
     await harness.core.start();
     const handlers = harness.getHandlers();
-    handlers.onFunctionCall({ callId: "call_dup0001", tool: "pos.add_item", argsText: "" });
-    handlers.onFunctionCall({ callId: "call_dup0001", tool: "pos.add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_dup0001", tool: "pos_add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_dup0001", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.relayTool).toHaveBeenCalledTimes(1));
   });
 
@@ -417,7 +433,7 @@ describe("function call → relay → ตะกร้า", () => {
     const harness = createHarness();
     await harness.core.start();
     harness.core.stop("user");
-    harness.getHandlers().onFunctionCall({ callId: "call_afterend", tool: "pos.add_item", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_afterend", tool: "pos_add_item", argsText: "" });
     await flushAsync();
     expect(harness.relayTool).not.toHaveBeenCalled();
     expect(harness.sendFunctionCallOutput).not.toHaveBeenCalled();
@@ -429,7 +445,7 @@ describe("หมด cap — ปิดเซสชันทันที", () => {
     const harness = createHarness();
     harness.relayTool.mockResolvedValueOnce({ ok: false, reason: "live_tool_cap_reached" });
     await harness.core.start();
-    harness.getHandlers().onFunctionCall({ callId: "call_cap0001", tool: "pos.add_item", argsText: "" });
+    harness.getHandlers().onFunctionCall({ callId: "call_cap0001", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(harness.core.getState().phase).toBe("idle"));
     expect(harness.closeHandle).toHaveBeenCalledTimes(1);
     expect(harness.releaseMic).toHaveBeenCalledTimes(1);
@@ -540,8 +556,8 @@ describe("การจัดคิวคำสั่ง — apply ตะกร�
     });
     await harness.core.start();
     const handlers = harness.getHandlers();
-    handlers.onFunctionCall({ callId: "call_seq0001", tool: "pos.add_item", argsText: "" });
-    handlers.onFunctionCall({ callId: "call_seq0002", tool: "pos.add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_seq0001", tool: "pos_add_item", argsText: "" });
+    handlers.onFunctionCall({ callId: "call_seq0002", tool: "pos_add_item", argsText: "" });
     await vi.waitFor(() => expect(order).toHaveLength(2));
     expect(order).toEqual(["call_seq0001", "call_seq0002"]);
   });
@@ -589,7 +605,7 @@ describe("telemetry ของ core", () => {
 
     await harness.core.start();
     harness.getHandlers().onOpen();
-    harness.getHandlers().onFunctionCall({ callId: "call_test0001", tool: "pos.add_item", argsText: "{}" });
+    harness.getHandlers().onFunctionCall({ callId: "call_test0001", tool: "pos_add_item", argsText: "{}" });
     await flushAsync();
     harness.core.stop("user");
 
@@ -621,7 +637,7 @@ describe("telemetry ของ core", () => {
 
     await harness.core.start();
     harness.getHandlers().onOpen();
-    harness.getHandlers().onFunctionCall({ callId: "call_test0002", tool: "pos.add_item", argsText: "{}" });
+    harness.getHandlers().onFunctionCall({ callId: "call_test0002", tool: "pos_add_item", argsText: "{}" });
     await flushAsync();
 
     const failed = spy.events.find((event) => event.event === "cart.apply_failed");
@@ -715,7 +731,7 @@ describe("สั่งงานหลายรายการ + เปิดห�
     await harness.core.start();
     harness.getHandlers().onOpen();
 
-    harness.getHandlers().onFunctionCall({ callId: "call_batch0001", tool: "pos.add_items", argsText: "{}" });
+    harness.getHandlers().onFunctionCall({ callId: "call_batch0001", tool: "pos_add_items", argsText: "{}" });
     await flushAsync();
 
     expect(harness.bridge.commits).toHaveLength(2);
@@ -743,7 +759,7 @@ describe("สั่งงานหลายรายการ + เปิดห�
       await harness.core.start();
       harness.getHandlers().onOpen();
 
-      harness.getHandlers().onFunctionCall({ callId: "call_checkout01", tool: "pos.open_checkout", argsText: "{}" });
+      harness.getHandlers().onFunctionCall({ callId: "call_checkout01", tool: "pos_open_checkout", argsText: "{}" });
       await flushAsync();
 
       expect(commands).toEqual(["open-checkout"]);
