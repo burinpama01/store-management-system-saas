@@ -19,6 +19,7 @@ import { emitPosCommand } from "@/modules/pos/section-bus";
 import { claimMicOwnership, releaseMicOwnership } from "@/modules/voice-pos/mic-ownership";
 import { emitLiveTelemetry, noopLiveTelemetry, type LiveTelemetry } from "./live-telemetry";
 import type { LiveStopReason } from "../live-telemetry-events";
+import { fromOpenAiToolName } from "../live-openai-tools";
 import type { AssistantCartBridge } from "./text-assistant-core";
 import {
   ASSISTANT_CART_ID_PATTERN,
@@ -375,6 +376,16 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
       if (first) seenCallIds.delete(first);
     }
 
+    // ชื่อ tool ฝั่ง provider ห้ามมีจุด (`pos_add_item`) — แปลงกลับเป็นชื่อจริงของระบบก่อนเสมอ
+    // ไม่รู้จัก = ไม่ relay (model อาจเรียกชื่อที่เราไม่ได้ให้ไว้)
+    const tool = fromOpenAiToolName(call.tool);
+    if (!tool) {
+      pushEntry("error", "คำสั่งนี้ยังไม่เปิดใช้ในโหมดเสียงสด");
+      handle.sendFunctionCallOutput(call.callId, JSON.stringify({ ok: false, reason: "unknown_tool" }));
+      setStatus("speaking");
+      return;
+    }
+
     setStatus("working");
     let args: unknown = {};
     let argsValid = true;
@@ -408,7 +419,7 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
         sessionId,
         sessionToken,
         callId: call.callId,
-        tool: call.tool,
+        tool,
         args,
         idempotencyKey: createLiveIdempotencyKey(call.callId),
         cartVersion: liveCartVersion,
@@ -440,7 +451,7 @@ export function createLiveAssistantCore(deps: LiveAssistantCoreDeps): LiveAssist
     const outcome = relay.outcome;
     let applied = true;
     try {
-      applied = runOutcomeSteps(outcome, call.tool);
+      applied = runOutcomeSteps(outcome, tool);
     } catch {
       applied = false;
       pushEntry("error", "ผลลัพธ์จากผู้ช่วยไม่รู้จัก — ใช้หน้าจอแทนได้ตามปกติ");

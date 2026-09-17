@@ -5,6 +5,8 @@ import {
   LIVE_OPENAI_TOOL_NAMES,
   LIVE_SESSION_INSTRUCTIONS,
   buildLiveToolArgs,
+  fromOpenAiToolName,
+  toOpenAiToolName,
   createLiveEphemeralSession,
 } from "@/modules/ai-assistant/live-openai-tools";
 import { MVP_TOOL_NAMES, registerPosTools } from "@/modules/ai-assistant/tools/pos-tools";
@@ -16,7 +18,21 @@ import { ToolRegistry } from "@/modules/ai-assistant/foundation";
 
 describe("live openai tools schema", () => {
   it("mirrors the MVP tool set exactly — drift of pos-tools must fail loudly", () => {
-    expect([...LIVE_OPENAI_TOOL_NAMES]).toEqual([...MVP_TOOL_NAMES]);
+    expect([...LIVE_OPENAI_TOOL_NAMES]).toEqual(MVP_TOOL_NAMES.map(toOpenAiToolName));
+  });
+
+  it("ชื่อ tool ที่ส่งให้ OpenAI ต้องไม่มีจุด (API ปฏิเสธทั้ง session ด้วย 400) และแปลงกลับได้ครบ", () => {
+    for (const name of LIVE_OPENAI_TOOL_NAMES) {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]+$/);
+      expect(fromOpenAiToolName(name)).not.toBeNull();
+    }
+    for (const canonical of MVP_TOOL_NAMES) {
+      expect(fromOpenAiToolName(toOpenAiToolName(canonical))).toBe(canonical);
+    }
+    expect(fromOpenAiToolName("pos.add_item")).toBeNull();
+    expect(fromOpenAiToolName("pos_clear_search")).toBeNull();
+    expect(fromOpenAiToolName(undefined)).toBeNull();
+    expect(fromOpenAiToolName("")).toBeNull();
   });
 
   it("keeps every tool a strict object schema without server-injected fields", () => {
@@ -33,7 +49,7 @@ describe("live openai tools schema", () => {
         expect(propertyKeys).toContain(required);
       }
       // ทุก tool ต้องเป็นชื่อเดียวกับที่ registry ลงทะเบียน (MVP set)
-      expect(MVP_TOOL_NAMES).toContain(tool.name);
+      expect(fromOpenAiToolName(tool.name)).not.toBeNull();
     }
   });
 
@@ -41,7 +57,7 @@ describe("live openai tools schema", () => {
     expect(LIVE_SESSION_INSTRUCTIONS.length).toBeGreaterThan(40);
     expect(LIVE_SESSION_INSTRUCTIONS).toContain("StoreOS");
     // เปลี่ยนจากเดิมที่ห้ามพูดเรื่องชำระเงินทั้งหมด — ตอนนี้ "กดปุ่มคิดเงิน" ให้ได้
-    expect(LIVE_SESSION_INSTRUCTIONS).toContain("pos.open_checkout");
+    expect(LIVE_SESSION_INSTRUCTIONS).toContain("pos_open_checkout");
     expect(LIVE_SESSION_INSTRUCTIONS).toContain("ห้ามยืนยันการชำระเงินเอง");
     expect(LIVE_SESSION_INSTRUCTIONS).toContain("ห้ามบอกว่าชำระเงินสำเร็จแล้ว");
     expect(LIVE_SESSION_INSTRUCTIONS).toContain("ห้ามบอกยอดเงิน");
@@ -49,8 +65,8 @@ describe("live openai tools schema", () => {
   });
 
   it("สั่งหลายเมนูในประโยคเดียวต้องใช้ pos.add_items ครั้งเดียว (ลด latency/tool call)", () => {
-    expect(LIVE_SESSION_INSTRUCTIONS).toContain("pos.add_items");
-    const batch = LIVE_OPENAI_TOOLS.find((tool) => tool.name === "pos.add_items");
+    expect(LIVE_SESSION_INSTRUCTIONS).toContain("pos_add_items");
+    const batch = LIVE_OPENAI_TOOLS.find((tool) => tool.name === "pos_add_items");
     expect(batch?.parameters.required).toEqual(["items"]);
     expect(batch?.parameters.properties.items).toMatchObject({ type: "array", maxItems: 10 });
   });
