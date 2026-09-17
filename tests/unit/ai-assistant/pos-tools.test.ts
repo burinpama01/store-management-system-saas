@@ -134,11 +134,18 @@ describe("cart mutation tools through the shared resolver", () => {
     });
   });
 
-  it("maps missing variant to needs_option clarification", async () => {
+  it("ต้องเลือกตัวเลือก = คืน 'ตัวเลือกที่มีจริง' มาด้วย (ผู้ช่วยจะได้ถามว่าร้อนหรือเย็น ไม่ใช่ให้ไปกดจอ)", async () => {
     const s = setup();
     expect(await s.dispatch({ tool: "pos.add_item", args: { ...addArgs, productPhrase: "กาแฟดำ" }, idempotencyKey: "a3" })).toEqual({
       ok: true,
-      data: { status: "clarification", reason: "needs_option", productId: "p-black", productName: "กาแฟดำ", note: "ยังต้องเลือกตัวเลือกสินค้า" },
+      data: {
+        status: "clarification",
+        reason: "needs_option",
+        productId: "p-black",
+        productName: "กาแฟดำ",
+        note: "ยังต้องเลือกตัวเลือกสินค้า",
+        choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }],
+      },
     });
   });
 
@@ -280,35 +287,85 @@ describe("pos.add_items — หลายรายการในคำสั่�
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const data = result.data as { status: string; reason?: string; candidates?: { name: string }[]; items?: unknown };
-    expect(data.status).toBe("clarification");
-    expect(data.reason).toBe("ambiguous");
-    expect(data.candidates?.map((c) => c.name)).toEqual(["ชาเขียว", "ชาไทย"]);
+    const data = result.data as {
+      status: string;
+      readyCount?: number;
+      pending?: { productPhrase: string; reason: string; candidates?: { name: string }[] }[];
+      items?: unknown;
+    };
+    expect(data.status).toBe("clarification_batch");
+    expect(data.readyCount).toBe(1);
+    expect(data.pending).toHaveLength(1);
+    expect(data.pending?.[0].productPhrase).toBe("ชา");
+    expect(data.pending?.[0].candidates?.map((c) => c.name)).toEqual(["ชาเขียว", "ชาไทย"]);
     // ห้ามมี items หลุดออกไป ไม่งั้น client จะใส่ตะกร้าบางส่วน
     expect(data.items).toBeUndefined();
   });
 
-  it("รายการที่ต้องเลือกตัวเลือก = บอกด้วยว่าติดที่รายการไหน", async () => {
-    const s = setup();
+  it("สามรายการที่ต้องเลือกตัวเลือกทั้งหมด = ถามรวบครั้งเดียว พร้อมตัวเลือกของแต่ละตัว", async () => {
+    // เคสจริงหน้าร้าน: "อเมริกาโน่หนึ่ง ลาเต้หนึ่ง คาปูชิโน่หนึ่ง" ที่ทุกตัวต้องเลือกร้อน/เย็น
+    const hotIced = (id: string, name: string) => product({
+      id,
+      name,
+      variants: [variant(`${id}-hot`, id, "ร้อน"), variant(`${id}-iced`, id, "เย็น")],
+    });
+    const s = setup({ products: [hotIced("p-am", "อเมริกาโน่"), hotIced("p-lt", "ลาเต้"), hotIced("p-cp", "คาปูชิโน่")] });
 
     const result = await s.dispatch({
       tool: "pos.add_items",
       args: {
         ...cartArgs,
         items: [
+          { productPhrase: "อเมริกาโน่", quantity: 1, optionPhrases: [] },
           { productPhrase: "ลาเต้", quantity: 1, optionPhrases: [] },
-          { productPhrase: "กาแฟดำ", quantity: 1, optionPhrases: [] },
+          { productPhrase: "คาปูชิโน่", quantity: 1, optionPhrases: [] },
         ],
       },
-      idempotencyKey: "batch-option-1",
+      idempotencyKey: "batch-three-options",
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const data = result.data as { status: string; reason?: string; note?: string };
-    expect(data.status).toBe("clarification");
-    expect(data.reason).toBe("needs_option");
-    expect(data.note).toContain("กาแฟดำ");
+    const data = result.data as {
+      status: string;
+      readyCount: number;
+      pending: { productPhrase: string; reason: string; choices?: { group: string; options: string[] }[] }[];
+    };
+    expect(data.status).toBe("clarification_batch");
+    expect(data.readyCount).toBe(0);
+    // ถามครั้งเดียวได้ครบทั้งสามรายการ ไม่ใช่ถามทีละตัว
+    expect(data.pending.map((item) => item.productPhrase)).toEqual(["อเมริกาโน่", "ลาเต้", "คาปูชิโน่"]);
+    for (const item of data.pending) {
+      expect(item.reason).toBe("needs_option");
+      expect(item.choices).toEqual([{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }]);
+    }
+  });
+
+  it("ตอบตัวเลือกกลับมาครบ = ใส่ตะกร้าได้ทั้งชุดในรอบเดียว", async () => {
+    const hotIced = (id: string, name: string) => product({
+      id,
+      name,
+      variants: [variant(`${id}-hot`, id, "ร้อน"), variant(`${id}-iced`, id, "เย็น")],
+    });
+    const s = setup({ products: [hotIced("p-am", "อเมริกาโน่"), hotIced("p-lt", "ลาเต้")] });
+
+    const result = await s.dispatch({
+      tool: "pos.add_items",
+      args: {
+        ...cartArgs,
+        items: [
+          { productPhrase: "อเมริกาโน่", quantity: 1, optionPhrases: ["เย็น"] },
+          { productPhrase: "ลาเต้", quantity: 1, optionPhrases: ["เย็น"] },
+        ],
+      },
+      idempotencyKey: "batch-three-answered",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const data = result.data as { status: string; items: { productName: string }[] };
+    expect(data.status).toBe("apply_batch");
+    expect(data.items.map((item) => item.productName)).toEqual(["อเมริกาโน่", "ลาเต้"]);
   });
 
   it("ของหมดในชุด = ทั้งชุดไม่ผ่าน (ไม่ใส่ของที่เหลือไปก่อน)", async () => {
@@ -328,7 +385,10 @@ describe("pos.add_items — หลายรายการในคำสั่�
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect((result.data as { status: string; reason?: string }).reason).toBe("unavailable");
+    const data = result.data as { status: string; pending: { productPhrase: string; reason: string }[]; items?: unknown };
+    expect(data.status).toBe("clarification_batch");
+    expect(data.pending).toEqual([expect.objectContaining({ productPhrase: "โกโก้", reason: "unavailable" })]);
+    expect(data.items).toBeUndefined();
   });
 
   it("เกินเพดานจำนวนรายการ/รายการว่าง = ปฏิเสธที่ schema", async () => {

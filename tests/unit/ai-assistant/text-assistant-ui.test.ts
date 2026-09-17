@@ -300,3 +300,60 @@ describe("planAssistantTurn — apply_batch / open_checkout", () => {
     expect(steps.every((step) => step.kind === "message")).toBe(true);
   });
 });
+
+// M1.1 — ถามรวบครั้งเดียวเมื่อหลายรายการต้องเลือกตัวเลือก (ลดการกดจอของพนักงาน)
+describe("clarification_batch — ถามครั้งเดียวพร้อมตัวเลือกจริง", () => {
+  const pendingResult = {
+    status: "clarification_batch",
+    readyCount: 0,
+    pending: [
+      { productPhrase: "อเมริกาโน่", reason: "needs_option", productName: "อเมริกาโน่", choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }] },
+      { productPhrase: "ลาเต้", reason: "needs_option", productName: "ลาเต้", choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }] },
+      { productPhrase: "คาปูชิโน่", reason: "needs_option", productName: "คาปูชิโน่", choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }] },
+    ],
+  };
+
+  it("สรุปของที่ค้างทั้งหมดเป็นข้อความเดียว และไม่มีขั้น apply ใด ๆ", () => {
+    const steps = planAssistantTurn([{ kind: "tool", ok: true, tool: "pos.add_items", result: pendingResult }]);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0].kind).toBe("message");
+    const message = (steps[0] as { message: string }).message;
+    expect(message).toContain("3 รายการ");
+    expect(message).toContain("อเมริกาโน่");
+    expect(message).toContain("ลาเต้");
+    expect(message).toContain("คาปูชิโน่");
+    expect(message).toContain("ร้อน / เย็น");
+    expect(steps.some((step) => step.kind === "apply")).toBe(false);
+  });
+
+  it("รายการเดี่ยวที่ต้องเลือกตัวเลือกก็บอกตัวเลือกที่มีจริง", () => {
+    const steps = planAssistantTurn([{
+      kind: "tool",
+      ok: true,
+      tool: "pos.add_item",
+      result: {
+        status: "clarification",
+        reason: "needs_option",
+        productId: "p-black",
+        productName: "กาแฟดำ",
+        note: "ยังต้องเลือกตัวเลือกสินค้า",
+        choices: [{ group: "ตัวเลือกสินค้า", options: ["ร้อน", "เย็น"] }],
+      },
+    }]);
+
+    expect((steps[0] as { message: string }).message).toContain("ร้อน / เย็น");
+  });
+
+  it("pending ที่รูปทรงไม่ครบ = ไม่เดา ตอบ fail closed", () => {
+    const steps = planAssistantTurn([{
+      kind: "tool",
+      ok: true,
+      tool: "pos.add_items",
+      result: { status: "clarification_batch", readyCount: 0, pending: [{ reason: "needs_option" }] },
+    }]);
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0].kind).toBe("message");
+  });
+});

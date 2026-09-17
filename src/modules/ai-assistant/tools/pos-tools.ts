@@ -56,6 +56,25 @@ const SearchResultSchema = z.object({
   note: z.string().max(200).nullish(),
 }).strict();
 
+/**
+ * ตัวเลือกที่ "มีจริง" ของสินค้า เพื่อให้ผู้ช่วยถามได้ตรง ๆ ว่า "ร้อนหรือเย็น"
+ * แทนที่จะบอกลอย ๆ ว่าต้องเลือกตัวเลือก แล้วพนักงานต้องไปกดดูเอาเองบนจอ
+ */
+const OptionChoiceSchema = z.object({
+  group: z.string().min(1).max(60),
+  options: z.array(z.string().min(1).max(60)).min(1).max(12),
+}).strict();
+
+/** รายการที่ยังสั่งไม่ได้ พร้อมเหตุผลและตัวเลือกที่ต้องถาม */
+const PendingItemSchema = z.object({
+  productPhrase: z.string().min(1).max(120),
+  reason: z.enum(["ambiguous", "needs_option", "needs_quantity", "not_found", "unavailable", "unsupported"]),
+  productName: z.string().min(1).max(120).nullish(),
+  note: z.string().max(200).nullish(),
+  candidates: z.array(ProductRefSchema).max(5).nullish(),
+  choices: z.array(OptionChoiceSchema).max(4).nullish(),
+}).strict();
+
 /** intent ตะกร้าที่ resolver เดิมคืน — ต้อง serialize ได้และตรงกับ VoiceIntent จริง */
 const CartIntentSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("pos.add_item"), productPhrase: z.string().min(1), quantity: z.number().int() }).strict(),
@@ -80,6 +99,19 @@ const CartCommandResultSchema = z.discriminatedUnion("status", [
     status: z.literal("apply_batch"),
     items: z.array(z.object({ intent: CartIntentSchema, productName: z.string().min(1) }).strict()).min(1).max(MAX_BATCH_ITEMS),
   }).strict(),
+  /**
+   * ทั้งชุดยังสั่งไม่ได้ — คืน "ของที่ยังขาดทั้งหมด" ในครั้งเดียว ไม่ใช่ทีละรายการ
+   *
+   * เหตุผล: พูดสามแก้วที่ต้องเลือกตัวเลือกทั้งสาม ถ้าถามทีละแก้วจะกลายเป็นถาม 3 รอบ
+   * ยิง tool 4 ครั้ง และตะกร้าว่างจนรอบสุดท้าย — ช้ากว่าพนักงานกดเอง
+   * คืนพร้อมกันแล้วให้ผู้ช่วยถามรวบครั้งเดียว ("ทั้งสามแก้ว ร้อนหรือเย็น")
+   */
+  z.object({
+    status: z.literal("clarification_batch"),
+    pending: z.array(PendingItemSchema).min(1).max(MAX_BATCH_ITEMS),
+    /** รายการที่ผ่านแล้ว — บอกไว้ให้ผู้ช่วยพูดได้ว่าเหลือถามอะไร (ยังไม่ถูกใส่ตะกร้า) */
+    readyCount: z.number().int().min(0).max(MAX_BATCH_ITEMS),
+  }).strict(),
   /** คำสั่งที่ให้หน้าจอทำต่อเอง (ไม่แตะตะกร้า/ไม่แตะเงิน) — วันนี้มีแค่เปิดหน้าจอรับชำระเดิม */
   z.object({
     status: z.literal("client_action"),
@@ -93,6 +125,7 @@ const CartCommandResultSchema = z.discriminatedUnion("status", [
     productName: z.string().min(1).nullish(),
     note: z.string().max(200).nullish(),
     candidates: z.array(ProductRefSchema).max(5).nullish(),
+    choices: z.array(OptionChoiceSchema).max(4).nullish(),
   }).strict(),
 ]);
 
@@ -146,8 +179,19 @@ async function resolveCartCommand(
       }
       return { status: "apply", intent: resolved.intent, productName: resolved.productName };
     }
-    case "needs_option":
-      return { status: "clarification", reason: "needs_option", productId: resolved.productId, productName: resolved.productName, note: resolved.note };
+    case "needs_option": {
+      // เดิมบอกแค่ "ยังต้องเลือกตัวเลือก" แล้วให้ไปกดบนจอ — โหมดเสียงต้องถามได้เองว่ามีอะไรบ้าง
+      const product = catalog.products.find((candidate) => candidate.id === resolved.productId);
+      const choices = product ? describeOptionChoices(product) : [];
+      return {
+        status: "clarification",
+        reason: "needs_option",
+        productId: resolved.productId,
+        productName: resolved.productName,
+        note: resolved.note,
+        ...(choices.length > 0 ? { choices } : {}),
+      };
+    }
     case "needs_quantity":
       return { status: "clarification", reason: "needs_quantity", productName: resolved.productName };
     case "ambiguous":
@@ -187,15 +231,35 @@ async function resolveRemoveCommand(
   }
   if (needsVariant || missingRequiredGroups.length > 0 || unknownPhrase) {
     const missing = [...(needsVariant ? ["ตัวเลือกสินค้า"] : []), ...missingRequiredGroups].join(" / ");
+    const choices = describeOptionChoices(product);
     return {
       status: "clarification",
       reason: "needs_option",
       productId: product.id,
       productName: product.name,
       note: missing ? `ยังต้องเลือก ${missing}` : "ยังต้องเลือกตัวเลือกสินค้า",
+      ...(choices.length > 0 ? { choices } : {}),
     };
   }
   return { status: "apply", intent: { type: "pos.remove_item", productPhrase }, productName: product.name };
+}
+
+/**
+ * ตัวเลือกที่ต้องถามของสินค้าหนึ่งตัว: ตัวเลือกสินค้า (variant) + กลุ่มที่บังคับเลือก
+ * เอาเฉพาะที่ยัง active และตัดจำนวนไว้ ไม่งั้นผู้ช่วยจะอ่านรายการยาวเป็นพรืดให้ลูกค้าฟัง
+ */
+function describeOptionChoices(product: Product): z.infer<typeof OptionChoiceSchema>[] {
+  const choices: z.infer<typeof OptionChoiceSchema>[] = [];
+  const variants = product.variants.filter((variant) => variant.isActive).map((variant) => variant.name);
+  if (variants.length > 0) choices.push({ group: "ตัวเลือกสินค้า", options: variants.slice(0, 12) });
+  for (const group of product.modifierGroups) {
+    if (!group.isRequired) continue;
+    const options = group.options.filter((option) => option.isActive).map((option) => option.name);
+    if (options.length === 0) continue;
+    choices.push({ group: group.name, options: options.slice(0, 12) });
+    if (choices.length >= 4) break;
+  }
+  return choices;
 }
 
 function cartRefArgs() {
@@ -213,21 +277,42 @@ async function resolveBatchAddCommand(
   deps: PosToolDeps,
   context: TrustedContext,
 ): Promise<z.infer<typeof CartCommandResultSchema>> {
+  const catalog = await deps.loadCatalog(context.storeId);
   const resolvedItems: { intent: z.infer<typeof CartIntentSchema>; productName: string }[] = [];
+  const pending: z.infer<typeof PendingItemSchema>[] = [];
+
   for (const item of items) {
     const resolved = await resolveCartCommand(
       { intent: "pos.add_item", productPhrase: item.productPhrase, quantity: item.quantity, optionPhrases: item.optionPhrases },
       deps,
       context,
     );
-    if (resolved.status !== "apply") {
-      // บอกด้วยว่าติดที่รายการไหน ไม่งั้น model จะถามกว้าง ๆ แล้วผู้ใช้ต้องเดาเอง
-      const note = resolved.status === "clarification" && resolved.note
-        ? `${resolved.note} (รายการ "${item.productPhrase}")`
-        : `ติดที่รายการ "${item.productPhrase}"`;
-      return resolved.status === "clarification" ? { ...resolved, note: note.slice(0, 200) } : resolved;
+    if (resolved.status === "apply") {
+      resolvedItems.push({ intent: resolved.intent, productName: resolved.productName });
+      continue;
     }
-    resolvedItems.push({ intent: resolved.intent, productName: resolved.productName });
+    if (resolved.status !== "clarification") {
+      pending.push({ productPhrase: item.productPhrase, reason: "unsupported" });
+      continue;
+    }
+    // แนบ "ตัวเลือกที่มีจริง" ไปด้วยเมื่อรู้ว่าเป็นสินค้าตัวไหน — ผู้ช่วยจะได้ถามตรงคำถาม
+    const product = resolved.productId
+      ? catalog.products.find((candidate) => candidate.id === resolved.productId)
+      : undefined;
+    const choices = product ? describeOptionChoices(product) : [];
+    pending.push({
+      productPhrase: item.productPhrase,
+      reason: resolved.reason,
+      productName: resolved.productName ?? null,
+      note: resolved.note ?? null,
+      candidates: resolved.candidates ?? null,
+      choices: choices.length > 0 ? choices : null,
+    });
+  }
+
+  // ถามทุกอย่างที่ยังขาดในครั้งเดียว แล้วให้ผู้ช่วยถามรวบรอบเดียว
+  if (pending.length > 0) {
+    return { status: "clarification_batch", pending, readyCount: resolvedItems.length };
   }
   if (resolvedItems.length === 0) {
     return { status: "clarification", reason: "unsupported", note: "ไม่มีรายการให้เพิ่ม" };
