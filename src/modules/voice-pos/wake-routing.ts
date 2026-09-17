@@ -12,6 +12,8 @@
 //   - ปลายทางต้องตอบ "ทันที" (ไม่ใช่ Promise) เพราะฝั่งคำปลุกต้องตัดสินใจคืนไมค์ให้ native
 //     ภายในหน้าต่าง watchdog ของเครื่อง (StandbySession: รอบละไม่เกิน 20 วินาที)
 
+import type { LiveTelemetryEvent } from "@/modules/ai-assistant/ui/live-telemetry";
+
 /** ผลการส่งคำปลุกให้ปลายทางเสียงสด */
 export type WakeRouteOutcome = "started" | "busy" | "unavailable";
 
@@ -38,4 +40,16 @@ export function routeWakeToLive(): WakeRouteOutcome {
     // ปลายทางพังต้องไม่ทำให้คำปลุกทั้งระบบตาย — ถอยไปเส้นทางเดิม
     return "unavailable";
   }
+}
+
+// ── telemetry ของคำปลุก (แยกเป็นฟังก์ชันล้วนเพื่อให้เทสต์ได้โดยไม่ต้อง render ปุ่ม) ──
+
+
+/** แปลงผลการส่งคำปลุก → event ที่ต้องบันทึก (ชื่อ/ผล/เหตุผลต้องตรงกับ taxonomy กลาง) */
+export function wakeRouteTelemetry(outcome: WakeRouteOutcome): LiveTelemetryEvent {
+  if (outcome === "started") return { event: "wake.route_live", stage: "wake", result: "success" };
+  if (outcome === "busy") {
+    return { event: "wake.route_busy", stage: "wake", result: "blocked", reason: "live_already_active" };
+  }
+  return { event: "wake.route_unavailable", stage: "wake", result: "blocked", reason: "live_not_enabled" };
 }

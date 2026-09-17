@@ -51,6 +51,7 @@ export function UnifiedPosWorkspace({
   voiceAdapter,
   aiAssistantTextEnabled = false,
   aiAssistantLiveEnabled = false,
+  aiAssistantLiveDiagnosticsEnabled = false,
 }: UnifiedPosWorkspaceProps) {
   /** null = ปิด dialog (เห็นหน้าขายเต็มจอ) */
   const [openSection, setOpenSection] = useState<SectionId | null>(null);
@@ -167,6 +168,7 @@ export function UnifiedPosWorkspace({
               productAliases={voiceProductAliases}
               onFocusSell={() => selectTab("sell")}
               liveEnabled={aiAssistantLiveEnabled}
+              diagnosticsEnabled={aiAssistantLiveDiagnosticsEnabled}
             />
           ) : null}
 

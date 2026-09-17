@@ -57,6 +57,19 @@
   - ถ้าวันหนึ่งต้องคิดเงินตามนาที/ต้องเพิกถอนทันทีทั้งระบบ ค่อยย้ายตัวนับไปตารางกลางบน Supabase
     (ตอนนั้นรูปแบบ token ไม่ต้องเปลี่ยน — เพิ่มการตรวจสถานะจากตารางอีกชั้นเท่านั้น)
 
+## Diagnostic telemetry ของ AI Live — 2026-09-17
+> เป้าหมาย: เมื่อหน้าร้านบอกว่า "พูดแล้ว AI ไม่ตอบ" ต้องตอบได้จาก log ว่าพังตรงไหน โดยไม่เก็บเสียง/transcript/token
+
+- **taxonomy กลาง** `src/modules/ai-assistant/live-telemetry-events.ts` — ชื่อ event เป็น allowlist ปิด (wake / mic / live / provider / webrtc / audio / tool / cart), stage+result มาตรฐาน, ชุด `LiveStopReason` เดียวใช้ทั้ง core และ log, รายการคีย์ต้องห้าม และเพดานรูปทรง payload
+- **ฝั่ง browser** `ui/live-telemetry.ts` — ตัวเดียวต่อแท็บ, buffer 100 event ในหน่วยความจำ (เปิด DevTools ดู `window.StoreOSAIDiagnostics`), ส่งเป็นชุดทุก 2 วินาทีด้วย `keepalive`, ความล้มเหลวทุกแบบถูกกลืน (ห้ามทำให้ POS พัง), และมี "ตัวกลางของหน้า" ให้ปุ่มคำปลุกใน shell ใช้ร่วมกับแผงผู้ช่วยได้โดยไม่ผูก component เข้าหากัน
+- **endpoint ใหม่** `POST /api/ai-assistant/live/telemetry` — auth (identity จาก session เท่านั้น; schema strict จึงปลอม org/store/user ไม่ได้), flag `AI_ASSISTANT_LIVE_DIAGNOSTICS_ENABLED`, rate limit 120/นาที (env ปรับได้), จำกัดขนาด body 16KB / 50 event / metadata 10 คีย์, และ **ปฏิเสธทั้งก้อน** เมื่อเจอคีย์ต้องห้าม (ไม่ strip เงียบ) → เขียนลง `system_event_logs` action `liveDiag`
+- **จุดที่ติด event แล้ว:** คำปลุก (detected/route_started/live/busy/unavailable) · ไมค์ (claim_started/claimed/claim_failed/released) · เซสชัน (requested/access_granted/access_denied พร้อม reason ของทุกด่าน/create_started/created/create_failed/idle_timeout/expired/network_lost/cap_reached/stop_requested/stopped/stop_failed) · provider (client_secret_started/created/failed) · WebRTC (offer_created/sdp_exchange_*/connection_state_changed/ice_state_changed/data_channel_open|closed|error) · เสียง (remote_track_received/attach_started/play_started/play_succeeded/**play_blocked**/play_failed/closed) · tool ฝั่ง server (received/token_verified/token_rejected/rate_limited/cap_reached/not_allowed/dispatch_started/succeeded/denied/failed) · ตะกร้าบนหน้าขายจริง (apply_started/succeeded/failed พร้อม cartVersion ก่อน-หลัง)
+- **privacy:** ไม่มี transcript/เสียง/args ดิบ/token/secret ในทุกเส้นทาง — มี test ปฏิเสธ `sessionToken`/`ephemeralToken`/`apiKey`/`authorization`/`transcript`/`userText`/`rawAudio`/`audioBlob`/`args`/`rawArgs`/`modelRawResponse` และ test ที่ยืนยันว่า payload ของ core ไม่มีชื่อเมนูหรือ token ปนอยู่
+- **stop reason normalize:** `user | idle | expired | cap | network | provider | webrtc | tab_close | unmount | access_revoked | error` (เดิมเป็น string กระจัดกระจาย `expiry`/`page`)
+- **Verification:** vitest ai-assistant+voice-pos **482/482** · typecheck 0 · `npm run build` 0 · eslint ไฟล์ที่แตะทั้งหมด 0 — หมายเหตุ: `npx eslint src` ทั้งโปรเจกต์มี error 2 จุดใน `src/app/pos/PosTerminal.tsx` (react-hooks/set-state-in-effect) ซึ่ง**มีอยู่ก่อนแล้วบน origin/main** (ไฟล์เหมือนกันทุกตัวอักษร) ไม่ได้เกิดจากรอบนี้
+- **ยังไม่ได้ทำ:** manual test บน Vercel Preview (Test 1–10 ของแผน) และการทดสอบบนเครื่องร้านจริง — timeline จริงยังไม่เคยถูกอ่านด้วยตา
+- **ข้อจำกัดที่ต้องรู้:** ฝั่ง Windows Launcher ยังใช้ log เดิมของตัวเอง (ไม่ได้ทำ telemetry ซ้ำซ้อน) — event `wake.detected` ที่เห็นในระบบคือฝั่งเว็บที่ได้รับข้อความจากเครื่องแล้ว ถ้าคำปลุกไม่ถึงเว็บเลยจะไม่มี event ใด ๆ (ต้องดู log ของ Launcher แทน)
+
 # จุดรับช่วง AI Assistant
 
 ## ADR note — PR3-Live (2026-09-16, เจ้าของตัดสินใจ)

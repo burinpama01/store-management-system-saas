@@ -26,7 +26,7 @@ import {
   resolveLiveTokenSecret,
   verifyLiveSessionToken,
 } from "@/modules/ai-assistant/live-session";
-import { liveComposition, resolveLiveAccess, resolveLiveIdentity, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
+import { liveComposition, logLiveEvent, resolveLiveAccess, resolveLiveIdentity, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
 
 export const dynamic = "force-dynamic";
 
@@ -69,8 +69,13 @@ const EndSchema = z.object({
 
 export async function POST(request: Request) {
   const access = await resolveLiveAccess();
-  if (!access.ok) return fail(access.reason, access.status, ACCESS_NOTES[access.reason]);
+  if (!access.ok) {
+    // ทุกด่านที่ปฏิเสธต้องมีร่องรอย ไม่ใช่ 403 เงียบ ๆ (identity อาจไม่มีเลยเมื่อยังไม่ล็อกอิน)
+    await logLiveEvent({ event: "live.access_denied", stage: "session", result: "blocked", reason: access.reason });
+    return fail(access.reason, access.status, ACCESS_NOTES[access.reason]);
+  }
   const { ctx, config } = access;
+  await logLiveEvent({ event: "live.access_granted", stage: "session", result: "success", ctx });
 
   // rate limit ที่ route layer ก่อนแตะ provider/slot — กันสปามสร้างเซสชันซ้ำ
   const limit = liveComposition.sessionRateLimiter.check(`${ctx.organizationId}|${ctx.storeId}|${ctx.userId}`);
@@ -85,6 +90,7 @@ export async function POST(request: Request) {
       actorUserId: ctx.userId,
       context: { reason: "rate_limited", stage: "create" },
     }));
+    await logLiveEvent({ event: "live.access_denied", stage: "session", result: "blocked", reason: "rate_limited", ctx });
     return fail("rate_limited", 429, "เปิดโหมดเสียงสดถี่เกินไป — รอแป๊บเดียวแล้วลองใหม่", {
       "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)),
     });
@@ -103,8 +109,13 @@ export async function POST(request: Request) {
   const secret = resolveLiveTokenSecret(process.env);
   const apiKey = readProviderKey(process.env);
   if (!secret || !apiKey) {
+    await logLiveEvent({
+      event: "live.session_create_failed", stage: "session", result: "failed", reason: "live_unconfigured", ctx,
+    });
     return fail("live_unconfigured", 503, "โหมดเสียงสดยังตั้งค่าไม่ครบ — แจ้งผู้ดูแลระบบ");
   }
+
+  await logLiveEvent({ event: "live.session_create_started", stage: "session", result: "started", ctx });
 
   // concurrent cap ต่อร้านถูกบังคับที่ store เอง (ไม่ใช่ check-then-set)
   const created = liveComposition.liveSessions.create(
@@ -127,13 +138,24 @@ export async function POST(request: Request) {
         actorUserId: ctx.userId,
         context: { reason: "live_store_busy", stage: "create" },
       }));
+      await logLiveEvent({
+        event: "live.session_create_failed", stage: "session", result: "blocked", reason: "live_store_busy", ctx,
+      });
       return fail("live_store_busy", 429, "ร้านนี้เปิดโหมดเสียงสดอยู่ครบจำนวนแล้ว — ปิดเซสชันเดิมก่อน");
     }
+    await logLiveEvent({
+      event: "live.session_create_failed", stage: "session", result: "failed", reason: created.reason, ctx,
+    });
     return fail("invalid_body", 400);
   }
 
   // session config ทั้งก้อน (instructions ไทย + voice + tools ตาม allowlist) ถูกส่งไปตอนสร้าง
   // ephemeral secret — browser ได้แค่ token ชั่วคราว ไม่เคยเห็น OPENAI_API_KEY
+  const providerStartedAt = Date.now();
+  await logLiveEvent({
+    event: "provider.client_secret_started", stage: "provider", result: "started", ctx,
+    sessionId: created.session.id, metadata: { model: config.liveModel },
+  });
   const provider = await createLiveEphemeralSession({
     apiKey,
     model: config.liveModel,
@@ -153,8 +175,21 @@ export async function POST(request: Request) {
       actorUserId: ctx.userId,
       context: { reason: provider.reason, stage: "provider" },
     }));
+    await logLiveEvent({
+      event: "provider.client_secret_failed", stage: "provider", result: "failed", reason: provider.reason, ctx,
+      sessionId: created.session.id, durationMs: Date.now() - providerStartedAt,
+    });
     return fail("live_provider_error", 502, "เชื่อมต่อผู้ให้บริการเสียงไม่สำเร็จ — ลองใหม่อีกครั้ง");
   }
+
+  await logLiveEvent({
+    event: "provider.client_secret_created", stage: "provider", result: "success", ctx,
+    sessionId: created.session.id, durationMs: Date.now() - providerStartedAt,
+  });
+  await logLiveEvent({
+    event: "live.session_created", stage: "session", result: "success", ctx, sessionId: created.session.id,
+    metadata: { model: config.liveModel, sessionMinutes: config.liveMaxSessionMinutes },
+  });
 
   // metering: metadata เท่านั้น (ไม่มีข้อความ/เสียง/transcript ทุกกรณี)
   await safely(() => logSystemEvent({
@@ -235,8 +270,13 @@ export async function DELETE(request: Request) {
   // ตัวตนของเซสชันมาจาก token ที่เซ็นแล้ว (ไม่พึ่ง state ของ instance) — id ใน body ต้องตรงกันด้วย
   const claims = verifyLiveSessionToken(parsed.data.sessionToken, secret);
   if (!claims || claims.sessionId !== parsed.data.sessionId) {
+    await logLiveEvent({
+      event: "live.stop_failed", stage: "stop", result: "failed", reason: "live_session_invalid", ctx,
+      sessionId: parsed.data.sessionId,
+    });
     return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
   }
+  await logLiveEvent({ event: "live.stop_requested", stage: "stop", result: "started", ctx, sessionId: claims.sessionId });
   // เซสชันต้องเป็นของผู้เรียกจริง ๆ (ระดับ org + store + user)
   if (claims.organizationId !== ctx.organizationId || claims.storeId !== ctx.storeId || claims.userId !== ctx.userId) {
     return fail("live_session_invalid", 403, "เซสชันเสียงสดนี้ไม่ถูกต้อง — เปิดใหม่จากปุ่ม AI Live");
@@ -263,6 +303,15 @@ export async function DELETE(request: Request) {
       },
     }));
   }
+  await logLiveEvent({
+    event: "live.stopped", stage: "stop", result: "ended", ctx, sessionId: claims.sessionId,
+    reason: summary ? "closed" : "already_closed",
+    // เก็บเฉพาะค่าที่ instance นี้รู้จริง — ข้าม instance จะไม่มีตัวเลข ห้ามปั้นค่า
+    metadata: summary
+      ? { sessionSeconds: summary.sessionSeconds, toolCallsUsed: summary.toolCallsUsed }
+      : {},
+  });
+
   return NextResponse.json({
     // ended = instance นี้มีเซสชันให้ปิดจริงหรือไม่ (ปิดซ้ำ/เซสชันอยู่ instance อื่น = false)
     // ไม่ว่าค่าไหน token ก็ถูกเพิกถอนบน instance นี้แล้ว และ UI ปิดไมค์ในเครื่องเสมอ

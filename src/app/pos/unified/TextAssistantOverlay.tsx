@@ -28,6 +28,7 @@ import {
 } from "@/modules/ai-assistant/ui/live-assistant-core";
 import { connectLiveWebRtc } from "@/modules/ai-assistant/ui/live-webrtc";
 import { registerWakeTarget } from "@/modules/voice-pos/wake-routing";
+import { createLiveTelemetry, setSharedLiveTelemetry, type LiveTelemetry } from "@/modules/ai-assistant/ui/live-telemetry";
 import { createAssistantCartId, ASSISTANT_CART_ID_PATTERN, TEXT_COMMAND_MAX_LENGTH } from "@/modules/ai-assistant/ui/text-assistant-ui";
 
 export interface TextAssistantOverlayProps {
@@ -37,6 +38,8 @@ export interface TextAssistantOverlayProps {
   readonly onFocusSell?: () => void;
   /** PR3-Live (ADR-008) — ปุ่มเสียงสด "AI Live" (server เปิดให้เฉพาะ liveEnabled + org ใน pilot) */
   readonly liveEnabled?: boolean;
+  /** ส่ง event วินิจฉัยขึ้น server หรือไม่ (ค่าจาก server — ไม่ใช่ค่าที่ browser ตั้งเอง) */
+  readonly diagnosticsEnabled?: boolean;
 }
 
 function readReason(payload: unknown): string | null {
@@ -161,7 +164,12 @@ async function endLiveSession(body: { sessionId: string; sessionToken: string })
   return null;
 }
 
-export function TextAssistantOverlay({ productAliases = [], onFocusSell, liveEnabled = false }: TextAssistantOverlayProps) {
+export function TextAssistantOverlay({
+  productAliases = [],
+  onFocusSell,
+  liveEnabled = false,
+  diagnosticsEnabled = false,
+}: TextAssistantOverlayProps) {
   const getCartApi = useVoiceCartApi();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -170,6 +178,8 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell, liveEna
   // ต่อ session การสร้างใหม่กลางทาง = binding ถูกปฏิเสธ) — deps ที่ค่าเปลี่ยนได้ตาม render
   // อ่านผ่าน ref ที่หุ้มด้วย useCallback คงตัว และตัว core เองถูกแตะเฉพาะใน event/effect
   const coreRef = useRef<TextAssistantCore | null>(null);
+  // telemetry ตัวเดียวต่อแท็บ — สร้างครั้งแรกแล้วใช้ตลอด (ค่า enabled มาจาก server)
+  const telemetryRef = useRef<LiveTelemetry>(createLiveTelemetry({ enabled: diagnosticsEnabled }));
   const liveCoreRef = useRef<LiveAssistantCore | null>(null);
   // ข้อความค้างของเซสชันเสียงสดตอนปิดแล้ว (หรือความล้มเหลวตอนเริ่ม) — ตั้งจาก subscription
   // (event-driven ไม่ใช่ effect) แล้วล้างเองหลัง 8 วินาที กัน "ปิดเซสชันแล้วหายเงียบ"
@@ -214,6 +224,9 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell, liveEna
     }
     const core = coreRef.current;
     const liveCore = liveCoreRef.current;
+    // ตัวกลาง telemetry ของทั้งหน้า: ปุ่มคำปลุก (shell) กับแผงนี้อยู่คนละต้นไม้ component
+    // flag ปิด = จด buffer ในเครื่องอย่างเดียว (เปิด DevTools ดู StoreOSAIDiagnostics ได้)
+    const unsetTelemetry = liveCore ? setSharedLiveTelemetry(telemetryRef.current) : null;
     // PR3-Live — คำปลุกของเครื่อง (Launcher) เปิดเซสชันเสียงสดได้เหมือนแตะปุ่มเอง
     // ตอบทันทีเสมอ: เปิดให้แล้ว หรือกำลังคุยอยู่ (กลืนคำปลุกนั้นทิ้ง ไม่เปิดไมค์ซ้อน)
     const unregisterWake = liveCore
@@ -248,18 +261,23 @@ export function TextAssistantOverlay({ productAliases = [], onFocusSell, liveEna
       unsubscribeText();
       unsubscribeLive?.();
       unregisterWake?.();
+      unsetTelemetry?.();
     };
   }, [getCartApi, getProductAliases, notifyFocusSell, liveEnabled]);
 
   // PR3-Live — ปิดแท็บ/ย้ายหน้า/unmount = ปิดเซสชันเสียงสดทุกท่อน (ไมค์ห้ามรอดข้าม mount ตาม ADR-008)
   // effect แยก mount-only เพื่อไม่ให้ cleanup ของ effect หลัก (ที่ re-run ได้) ไปปิดเซสชันที่กำลังเปิด
   useEffect(() => {
-    const onPageHide = () => liveCoreRef.current?.stop("page");
+    const onPageHide = () => {
+      liveCoreRef.current?.stop("tab_close");
+      // ส่ง event ที่ค้างก่อนแท็บหาย (fetch ใช้ keepalive อยู่แล้ว)
+      telemetryRef.current.flush();
+    };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-      liveCoreRef.current?.stop("page");
+      liveCoreRef.current?.stop("unmount");
     };
   }, []);
 

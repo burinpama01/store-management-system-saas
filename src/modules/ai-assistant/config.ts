@@ -25,6 +25,10 @@ export function readAssistantConfig(env: Readonly<Record<string, string | undefi
     liveMaxSessionMinutes: readPositiveInt(env.AI_ASSISTANT_LIVE_MAX_SESSION_MINUTES, 15, 1),
     liveMaxToolCallsPerSession: readPositiveInt(env.AI_ASSISTANT_LIVE_MAX_TOOL_CALLS_PER_SESSION, 40, 1),
     liveMaxConcurrentSessionsPerStore: readPositiveInt(env.AI_ASSISTANT_LIVE_MAX_CONCURRENT_SESSIONS_PER_STORE, 2, 1),
+    // โหมดวินิจฉัย (diagnostics) — เปิดเฉพาะร้านที่กำลังทดสอบหน้าร้าน ไม่ใช่ทุก org
+    // ปิดอยู่ = ไม่มี event ละเอียดของ WebRTC/เสียง/ตะกร้าขึ้น server (audit เดิมยังครบเหมือนเดิม)
+    liveDiagnosticsEnabled: env.AI_ASSISTANT_LIVE_DIAGNOSTICS_ENABLED === "true"
+      && env.AI_ASSISTANT_KILL_SWITCH !== "true",
     // model ที่ PoC พิสูจน์ tool round-trip กับ API จริงแล้ว (artifacts/realtime-tool-poc.log)
     liveModel: env.AI_ASSISTANT_LIVE_MODEL?.trim() || "gpt-realtime-2.1-mini",
     // PR3 — mutation ปลดได้เฉพาะ env เป็น "true" แบบตรงตัว แต่ใน production ยังต้องผ่าน

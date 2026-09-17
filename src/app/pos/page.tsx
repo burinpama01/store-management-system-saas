@@ -191,6 +191,8 @@ export default async function PosPage() {
         )}
         aiAssistantTextEnabled={assistantConfig.enabled}
         aiAssistantLiveEnabled={aiAssistantLiveEnabled}
+        // โหมดวินิจฉัยเปิดตามร้าน (ใช้ตอนทดสอบหน้าร้าน) — ไม่เปิดก็ใช้ AI Live ได้ตามปกติ
+        aiAssistantLiveDiagnosticsEnabled={aiAssistantLiveEnabled && assistantConfig.liveDiagnosticsEnabled}
       />
       {alertNotifiers}
     </div>

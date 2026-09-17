@@ -4,9 +4,9 @@
 // ต้อง "เห็น live session store ก้อนเดียวกัน" บน instance เดียวกัน — module-level singleton
 // ต่อ process (รูปแบบเดียวกับ composition ใน text-command route)
 //
-// ข้อจำกัด MVP (บันทึกใน checkpoint): store ทั้งหมดอยู่ในหน่วยความจำของ instance เดียว
-// ถ้า provider สลับไป instance อื่นกลางเซสชัน browser จะโดน 403 live_session_invalid แบบ
-// fail-closed (UI ให้กดปุ่มใหม่) — ทางแก้ถาวรคือตาราง live session บน supabase (residual)
+// ความถูกต้องของเซสชัน "ไม่" ขึ้นกับหน่วยความจำของ instance แล้ว (ดู live-session.ts):
+// ตัวตนของเซสชันอยู่ใน session token ที่เซ็นด้วย HMAC — ที่เหลือในไฟล์นี้คือเพดานการใช้งาน
+// (เซสชันพร้อมกันต่อร้าน / tool call ต่อเซสชัน / rate limit) ซึ่งเป็น best-effort ต่อ instance
 
 import { ToolRegistry } from "./foundation";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
@@ -21,6 +21,12 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { MVP_TOOL_NAMES, registerPosTools } from "./tools/pos-tools";
 import { createServerPosToolDeps } from "./tools/pos-tools-server";
 import { createFixedWindowRateLimiter } from "./rate-limit";
+import { logSystemEvent } from "@/modules/system/event-log";
+import type {
+  LiveTelemetryEventName,
+  LiveTelemetryResult,
+  LiveTelemetryStage,
+} from "./live-telemetry-events";
 
 function readLiveSessionRateLimitPerMinute(): number {
   const raw = Number(process.env.AI_ASSISTANT_LIVE_SESSION_RATE_LIMIT_PER_MINUTE);
@@ -31,6 +37,12 @@ function readLiveSessionRateLimitPerMinute(): number {
 function readLiveToolRateLimitPerMinute(): number {
   const raw = Number(process.env.AI_ASSISTANT_LIVE_TOOL_RATE_LIMIT_PER_MINUTE);
   return Number.isSafeInteger(raw) && raw >= 1 ? Math.round(raw) : 60;
+}
+
+/** จำนวนคำขอ telemetry ต่อนาทีต่อผู้ใช้ — ปรับได้ด้วย env รูปแบบเดียวกับช่องอื่น */
+function readLiveTelemetryRateLimitPerMinute(): number {
+  const raw = Number(process.env.AI_ASSISTANT_LIVE_TELEMETRY_RATE_LIMIT_PER_MINUTE);
+  return Number.isSafeInteger(raw) && raw >= 1 ? Math.round(raw) : 120;
 }
 
 const config = readAssistantConfig(process.env);
@@ -55,6 +67,15 @@ const sessionRateLimiter = createFixedWindowRateLimiter({
 /** rate limit ของ relay tool (แยกจากช่องสร้างเซสชัน) — กันโดนสปามกลางบทสนทนา */
 const toolRateLimiter = createFixedWindowRateLimiter({
   limitPerWindow: readLiveToolRateLimitPerMinute(),
+  windowMs: 60_000,
+});
+
+/**
+ * rate limit ของ telemetry — สูงกว่าช่องอื่นเพราะ event วินิจฉัยมาถี่โดยธรรมชาติ
+ * (browser ส่งเป็นชุดทุก 2 วินาที) แต่ยังมีเพดานกันแท็บที่พังยิงรัว
+ */
+const telemetryRateLimiter = createFixedWindowRateLimiter({
+  limitPerWindow: readLiveTelemetryRateLimitPerMinute(),
   windowMs: 60_000,
 });
 
@@ -88,6 +109,7 @@ export const liveComposition = {
   liveSessions,
   sessionRateLimiter,
   toolRateLimiter,
+  telemetryRateLimiter,
   getLiveDispatch,
 } as const;
 
@@ -95,6 +117,51 @@ export const liveComposition = {
 // auth → pos.use → entitlement aiAssistant → pilot org → kill switch (liveEnabled)
 // ต่างจากข้อความตรงที่ "pilot มาก่อน kill switch" ตาม spec M3: คนนอก pilot ต้องเจอ
 // 403 live_pilot_only เสมอ ไม่ว่าระบบจะเปิดหรือปิด (กันเดาสาเหตุจาก env ข้างนอก)
+
+/**
+ * เขียน event วินิจฉัยฝั่ง server ด้วยคำศัพท์ชุดเดียวกับฝั่ง browser
+ *
+ * ต่างจาก log เดิม (liveSession/liveTool) ตรงที่ชื่อ event เป็น taxonomy กลาง — ทำให้
+ * timeline ของทั้งเส้นทาง (คำปลุก → ไมค์ → เซสชัน → provider → WebRTC → tool → ตะกร้า)
+ * อ่านต่อกันได้ใน /system/logs โดยกรองจาก action เดียว
+ *
+ * ล้มเหลวต้องเงียบเสมอ: telemetry ห้ามเปลี่ยนผลลัพธ์ของ request (observability เท่านั้น)
+ */
+export async function logLiveEvent(input: {
+  readonly event: LiveTelemetryEventName;
+  readonly stage: LiveTelemetryStage;
+  readonly result: LiveTelemetryResult;
+  readonly ctx?: LiveAccessContext | null;
+  readonly reason?: string;
+  readonly sessionId?: string;
+  readonly callId?: string;
+  readonly durationMs?: number;
+  readonly metadata?: Record<string, string | number | boolean | null>;
+}): Promise<void> {
+  try {
+    await logSystemEvent({
+      level: input.result === "failed" || input.result === "blocked" ? "warn" : "info",
+      source: "ai.assistant",
+      action: "liveDiag",
+      message: `เสียงสด: ${input.event}`,
+      organizationId: input.ctx?.organizationId,
+      storeId: input.ctx?.storeId,
+      actorUserId: input.ctx?.userId,
+      context: {
+        event: input.event,
+        stage: input.stage,
+        result: input.result,
+        ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.callId ? { callId: input.callId } : {}),
+        ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+        ...(input.metadata ?? {}),
+      },
+    });
+  } catch {
+    // infra ล่ม — เส้นทางหลักตอบ typed reason ของตัวเองอยู่แล้ว
+  }
+}
 
 export interface LiveAccessContext {
   readonly organizationId: string;

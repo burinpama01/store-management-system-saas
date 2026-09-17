@@ -15,6 +15,7 @@
 //     (ไม่ต่อ = เงียบสนิททั้งที่ทุกอย่างทำงานถูก — ดู createRemoteAudioSink)
 
 import type { LiveConnectionHandle, LiveConnectOptions } from "./live-assistant-core";
+import { emitLiveTelemetry } from "./live-telemetry";
 
 /**
  * ปลายทางแลก SDP ของ Realtime GA — `POST /v1/realtime/calls`
@@ -108,20 +109,43 @@ function createDefaultAudioElement(): RemoteAudioElement {
  * play() ที่ถูกปฏิเสธ (autoplay policy) ไม่ทำให้เซสชันล้ม — element ตั้ง autoplay ไว้แล้ว
  * และเสียงจะเริ่มเองเมื่อเบราว์เซอร์ยอม; เราไม่โยน error ออกไปกวนบทสนทนา
  */
-export function createRemoteAudioSink(createElement: () => RemoteAudioElement = createDefaultAudioElement): RemoteAudioSink {
+export function createRemoteAudioSink(
+  createElement: () => RemoteAudioElement = createDefaultAudioElement,
+  sessionId?: string,
+): RemoteAudioSink {
   let element: RemoteAudioElement | null = null;
   let closed = false;
 
   return {
     attach(stream: MediaStream): void {
       if (closed) return;
+      emitLiveTelemetry({ event: "audio.attach_started", stage: "audio", result: "started", sessionId });
       element ??= createElement();
       if (element.srcObject === stream) return;
       element.srcObject = stream;
+      emitLiveTelemetry({ event: "audio.play_started", stage: "audio", result: "started", sessionId });
       try {
-        void Promise.resolve(element.play()).catch(() => undefined);
+        void Promise.resolve(element.play()).then(
+          () => emitLiveTelemetry({ event: "audio.play_succeeded", stage: "audio", result: "success", sessionId }),
+          (error: unknown) => {
+            // เสียงไม่ดังต้องไม่หายเงียบ: แยก autoplay ที่ถูกบล็อกออกจากความผิดพลาดอื่น
+            // เก็บแค่ชื่อของ error ไม่เก็บ object ดิบที่มีรายละเอียดภายในของเบราว์เซอร์
+            const name = error instanceof Error ? error.name : "";
+            const blocked = name === "NotAllowedError";
+            emitLiveTelemetry({
+              event: blocked ? "audio.play_blocked" : "audio.play_failed",
+              stage: "audio",
+              result: blocked ? "blocked" : "failed",
+              reason: blocked ? "autoplay_blocked" : (name || "unknown_audio_error"),
+              sessionId,
+            });
+          },
+        );
       } catch {
         // เบราว์เซอร์บางตัวโยนแบบ sync — autoplay ของ element จะจัดการต่อเอง
+        emitLiveTelemetry({
+          event: "audio.play_failed", stage: "audio", result: "failed", reason: "unknown_audio_error", sessionId,
+        });
       }
     },
     close(): void {
@@ -135,6 +159,7 @@ export function createRemoteAudioSink(createElement: () => RemoteAudioElement = 
         // หยุดไปแล้ว
       }
       current.srcObject = null;
+      emitLiveTelemetry({ event: "audio.closed", stage: "audio", result: "ended", sessionId });
       try {
         current.remove();
       } catch {
@@ -158,8 +183,13 @@ export async function exchangeSdpOffer(options: {
   readonly ephemeralToken: string;
   readonly offerSdp: string;
   readonly fetchImpl?: typeof fetch;
+  readonly sessionId?: string;
 }): Promise<string> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const startedAt = Date.now();
+  emitLiveTelemetry({
+    event: "webrtc.sdp_exchange_started", stage: "webrtc", result: "started", sessionId: options.sessionId,
+  });
   const response = await fetchImpl(REALTIME_CALLS_URL, {
     method: "POST",
     headers: {
@@ -169,7 +199,25 @@ export async function exchangeSdpOffer(options: {
     body: options.offerSdp,
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) throw new Error(`realtime_sdp_${response.status}`);
+  if (!response.ok) {
+    emitLiveTelemetry({
+      event: "webrtc.sdp_exchange_failed",
+      stage: "webrtc",
+      result: "failed",
+      reason: `http_${response.status}`,
+      durationMs: Date.now() - startedAt,
+      sessionId: options.sessionId,
+      metadata: { httpStatus: response.status },
+    });
+    throw new Error(`realtime_sdp_${response.status}`);
+  }
+  emitLiveTelemetry({
+    event: "webrtc.sdp_exchange_succeeded",
+    stage: "webrtc",
+    result: "success",
+    durationMs: Date.now() - startedAt,
+    sessionId: options.sessionId,
+  });
   return response.text();
 }
 
@@ -186,10 +234,12 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
   const peer = new RTCPeerConnection();
   for (const track of tracks) peer.addTrack(track, media);
   const channel = peer.createDataChannel("oai-events");
-  const speaker = createRemoteAudioSink();
+  const sessionId = options.sessionId;
+  const speaker = createRemoteAudioSink(undefined, sessionId);
   // เสียงของผู้ช่วยมาทาง track นี้ — ต่อเข้าลำโพงทันทีที่ provider ส่งมา
   // (event.streams ว่างในบางเบราว์เซอร์ จึงห่อ track เป็น stream เองเป็นทางสำรอง)
   peer.ontrack = (event: RTCTrackEvent) => {
+    emitLiveTelemetry({ event: "audio.remote_track_received", stage: "audio", result: "success", sessionId });
     const stream = event.streams[0] ?? new MediaStream([event.track]);
     speaker.attach(stream);
   };
@@ -219,7 +269,16 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
   };
 
   const handlers = options.handlers;
-  channel.onopen = () => handlers.onOpen();
+  channel.onopen = () => {
+    emitLiveTelemetry({ event: "webrtc.data_channel_open", stage: "webrtc", result: "success", sessionId });
+    handlers.onOpen();
+  };
+  channel.onerror = () => {
+    // ข้อความ error ดิบของ provider ไม่ถูกเก็บ — บันทึกแค่ว่าเกิดที่ช่องข้อมูล
+    emitLiveTelemetry({
+      event: "webrtc.data_channel_error", stage: "webrtc", result: "failed", reason: "data_channel_error", sessionId,
+    });
+  };
   channel.onmessage = (message: MessageEvent) => {
     let parsed: unknown = null;
     try {
@@ -247,17 +306,41 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
         return;
     }
   };
-  channel.onclose = () => handlers.onClosed();
+  channel.onclose = () => {
+    emitLiveTelemetry({ event: "webrtc.data_channel_closed", stage: "webrtc", result: "ended", sessionId });
+    handlers.onClosed();
+  };
   peer.onconnectionstatechange = () => {
-    if (peer.connectionState === "failed" || peer.connectionState === "disconnected") handlers.onClosed();
+    const state = peer.connectionState;
+    const lost = state === "failed" || state === "disconnected";
+    emitLiveTelemetry({
+      event: "webrtc.connection_state_changed",
+      stage: "webrtc",
+      result: lost ? "failed" : "success",
+      reason: state,
+      sessionId,
+    });
+    if (lost) handlers.onClosed();
+  };
+  peer.oniceconnectionstatechange = () => {
+    const state = peer.iceConnectionState;
+    emitLiveTelemetry({
+      event: "webrtc.ice_state_changed",
+      stage: "webrtc",
+      result: state === "failed" || state === "disconnected" ? "failed" : "success",
+      reason: state,
+      sessionId,
+    });
   };
 
   try {
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
+    emitLiveTelemetry({ event: "webrtc.offer_created", stage: "webrtc", result: "success", sessionId });
     const answerSdp = await exchangeSdpOffer({
       ephemeralToken: options.ephemeralToken,
       offerSdp: offer.sdp ?? "",
+      sessionId,
     });
     await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
   } catch (error) {

@@ -88,4 +88,9 @@ export interface UnifiedPosWorkspaceProps {
    * สิทธิ์/pilot/kill switch ตรวจซ้ำที่ route ทุก request ปุ่มเป็นแค่ทางเข้า
    */
   readonly aiAssistantLiveEnabled?: boolean;
+  /**
+   * PR3-Live (diagnostics) — ส่ง event วินิจฉัยของโหมดเสียงสดขึ้น server หรือไม่
+   * (default false = จดไว้ในเครื่องให้เปิด DevTools ดูได้เท่านั้น ไม่มีอะไรขึ้น server)
+   */
+  readonly aiAssistantLiveDiagnosticsEnabled?: boolean;
 }

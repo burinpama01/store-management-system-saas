@@ -20,7 +20,8 @@ import {
   type VoiceSpeechSession,
 } from "@/modules/voice-pos/speech-adapter";
 import { claimMicOwnership, releaseMicOwnership } from "@/modules/voice-pos/mic-ownership";
-import { routeWakeToLive } from "@/modules/voice-pos/wake-routing";
+import { routeWakeToLive, wakeRouteTelemetry } from "@/modules/voice-pos/wake-routing";
+import { emitLiveTelemetry } from "@/modules/ai-assistant/ui/live-telemetry";
 import { createBrowserVoiceFeedback, type VoiceFeedback } from "@/modules/voice-pos/feedback";
 import {
   readVoiceFeedbackPreference,
@@ -415,8 +416,17 @@ export function VoiceCommandButton({
       // ขณะที่เซสชันเสียงสดยาวเป็นนาที — ไมค์ของเบราว์เซอร์ถูกถือโดย AI Live ต่อเอง (ADR-008)
       // ปุ่มเสียงเดิมกำลังฟังอยู่ = ไม่ส่งให้ Live (Live จะ claim ไมค์ไม่ได้อยู่ดี — ปล่อยให้
       // เส้นทางเดิมตอบ tap_required ตามปกติ ไม่งั้นจะได้เสียงตอบรับที่ไม่ตรงกับสิ่งที่เกิดขึ้น)
+      // timeline ของคำปลุกต้องเห็นได้ว่า "ได้ยินแล้วไปไหนต่อ" — ไม่เก็บเสียงหรือข้อความที่ได้ยิน
+      emitLiveTelemetry({
+        event: "wake.detected",
+        stage: "wake",
+        result: "success",
+        metadata: { wakePhraseId: event.phraseId, source: "windows_standby" },
+      });
       if (!standbyPaused && !disabled && !sessionRef.current?.isActive()) {
+        emitLiveTelemetry({ event: "wake.route_started", stage: "wake", result: "started" });
         const routed = routeWakeToLive();
+        emitLiveTelemetry(wakeRouteTelemetry(routed));
         if (routed !== "unavailable") {
           standbySessionRef.current = null;
           standbyHost.commandEnded(event.sessionId, routed === "started" ? "ai_live" : "ai_live_busy");
