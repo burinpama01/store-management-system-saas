@@ -18,9 +18,32 @@
 - **(4) คำปลุกจับไม่ติด (Vosk):** ความมั่นใจเดิมคิดจาก "คำที่แย่ที่สุดทั้งประโยค" แต่คำที่เราบอกผู้ใช้ให้พูด ("Hello StoreOS") ถอดได้เป็น `hello store [unk]` เสมอ และ `[unk]` ความมั่นใจต่ำ → คำปลุกจริงถูกปัดตกทุกครั้ง; เปลี่ยนเป็นคิดเฉพาะคำในวลีคำปลุก (`FindWakePhrase` + `ScorePhrase`, ถอยไปเกณฑ์เดิมเมื่อรูปทรง result ไม่ตรง) และเปลี่ยน cooldown มาใช้นาฬิกาเดินหน้า (`Environment.TickCount64`) กันเวลาเครื่องถอยหลังทำให้คำปลุกตายเงียบ
 - **(5) เพิ่มคำปลุก + ซิงก์เว็บ↔native:** `VoskPhrases` เพิ่ม `"hey store"` (id `hey_storeos`), เพิ่ม id เดียวกันใน `KNOWN_WAKE_PHRASE_IDS` ฝั่งเว็บ + หมายเหตุคู่แฝด, หน้า standby แสดงคำปลุกทั้งสองแบบ, และ test ใหม่บังคับว่า **ทุกคำใน VoskPhrases ต้องมีรหัส** (ลืมแล้วจะกลายเป็น `unknown` แล้วเว็บทิ้งข้อความ = "ปลุกติดแต่ไม่ขึ้นรับคำสั่ง")
 - **Verification (รันจริงรอบนี้):** `npx vitest run tests/unit/ai-assistant tests/unit/voice-pos --project unit` = **446/446 ผ่าน** (33 ไฟล์) · `npm run typecheck` exit 0 · `npx eslint` ไฟล์ที่แตะทั้งหมด exit 0 · `dotnet test StoreOS.VoiceSpike.Tests` = **105/105** · `dotnet test StoreOS.Launcher.Tests` = **116/116**
-- **ยังไม่ได้ทำ/ต้องทำต่อ:** ยังไม่ได้ build Next, ยังไม่ได้รัน e2e, ยังไม่ได้ทดสอบบนเครื่องร้าน (เสียงตอบจริง/ไมค์/คำปลุก `hey store` ยังไม่มีตัวเลข false wake ของรอบใหม่), ยังไม่ push/merge/deploy
-- **แก้ขั้นตอนปลด pilot (สำคัญ):** ลำดับเดิมในเอกสารนี้ระบุแค่ `AI_ASSISTANT_LIVE_ENABLED` + `AI_ASSISTANT_LIVE_PILOT_ORG_IDS` ซึ่ง **ไม่พอ** — relay เดินผ่าน dispatcher เดิมที่ยังต้อง `AI_ASSISTANT_MUTATIONS_ENABLED=true` ไม่งั้นเพิ่ม/ลบ/ปรับจำนวนจะโดน `MUTATIONS_DISABLED` (เหลือแต่ read tools) และควรตั้ง `AI_ASSISTANT_LIVE_TOKEN_SECRET` แยกจาก `OPENAI_API_KEY` ก่อนเปิดใช้ (ไม่งั้น rotate key = เซสชันที่เปิดอยู่ใช้ไม่ได้ทันที)
+- **ยังไม่ได้ทำ/ต้องทำต่อ:** ยังไม่ได้รัน e2e, ยังไม่ได้ทดสอบบนเครื่องร้าน (เสียงตอบจริง/ไมค์/คำปลุก `hey store` ยังไม่มีตัวเลข false wake ของรอบใหม่) — `npm run build` รันแล้ว exit 0
+- **แก้ขั้นตอนปลด pilot (สำคัญ):** ลำดับเดิมในเอกสารนี้ระบุแค่ 2 ตัวซึ่ง **ไม่พอ** — env ที่ต้องมีครบคือ
+  1. `AI_ASSISTANT_ENABLED=true` (ฐานของผู้ช่วยทั้งระบบ — dispatcher ตอบ FEATURE_DISABLED ถ้าไม่มี; ตั้งแต่รอบนี้ route ตรวจตั้งแต่ก่อนเปิดไมค์ = `ai_disabled`)
+  2. `AI_ASSISTANT_LIVE_ENABLED=true`
+  3. `AI_ASSISTANT_LIVE_PILOT_ORG_IDS=<org id>`
+  4. `AI_ASSISTANT_MUTATIONS_ENABLED=true` (ไม่งั้นเพิ่ม/ลบ/ปรับจำนวนโดน `MUTATIONS_DISABLED` เหลือแต่ read tools)
+  และควรตั้ง `AI_ASSISTANT_LIVE_TOKEN_SECRET` แยกจาก `OPENAI_API_KEY` (ไม่งั้น rotate key = เซสชันที่เปิดอยู่ใช้ไม่ได้ทันที)
 - **residual ที่ยังค้างจากรีวิว (ยังไม่แก้ในรอบนี้):** live session store อยู่ในหน่วยความจำ instance เดียว — `/live/session` กับ `/live/tool` ตกคนละ instance = 403 `live_session_invalid` กลางบทสนทนา (ต้องมีตาราง live session บน Supabase ก่อนขยายเกินร้านนำร่อง) และเสียงจากลำโพงร้าน/เสียงผู้ช่วยเองอาจไปเข้าเครื่องยนต์คำปลุกระหว่างเซสชัน Live — ต้องเฝ้าดูตอน pilot
+
+## รอบแก้ตามรีวิว PR #47 (รอบสอง) — 2026-09-17
+- **SDP endpoint ผิดรุ่น (blocker จริง — Live จะต่อไม่ติดเลย):** `live-webrtc.ts` ยิง offer ไป
+  `https://api.openai.com/v1/realtime?model=...` ซึ่งเป็นรูปแบบก่อน GA (คู่กับ `/v1/realtime/sessions`
+  ที่เลิกใช้ไปแล้วตอน M3) — ยืนยันกับเอกสาร OpenAI ปัจจุบันแล้วว่า WebRTC GA ต้องใช้
+  `POST https://api.openai.com/v1/realtime/calls` + `Authorization: Bearer <ephemeral>` +
+  `Content-Type: application/sdp` และ **ไม่ต้องมี model ใน URL** (model ผูกกับ client secret แล้ว);
+  แยกเป็น `exchangeSdpOffer()` ให้เทสต์ปักหมุด URL/method/headers/body ได้ทั้งชุด
+- **DELETE ถูก gate ขวางจนเซสชันค้าง (major):** เดิม DELETE เรียก `resolveLiveAccess()` ทั้งชุด
+  ถ้าผู้ดูแลปิด Live กลางคัน จะตอบ `ended:false` โดยไม่ลบเซสชัน → slot ของร้านค้างจน TTL แล้วเปิดใหม่
+  เจอ `live_store_busy` ทั้งที่ไม่มีใครใช้; แยก `resolveLiveIdentity()` (auth อย่างเดียว) ให้ DELETE
+  แล้วความปลอดภัยมาจาก session token (HMAC) + org/store/user ต้องตรงกับเซสชัน — test ปักหมุดทั้ง
+  เคสปิด kill switch กลางคันและเคส org หลุด pilot
+- **Config contract (Option A):** Live เป็น sub-feature ของผู้ช่วย AI — `resolveLiveAccess` ตรวจ
+  `AI_ASSISTANT_ENABLED` ด้วย (reason ใหม่ `ai_disabled` 503) และปุ่ม AI Live บน `/pos` ซ่อนตามเงื่อนไขเดียวกัน
+  เหตุผล: tool ทุกตัวเดินผ่าน dispatcher เดิมที่ปฏิเสธด้วย FEATURE_DISABLED อยู่แล้ว — ต้องหยุดก่อนเปิดไมค์/จ่ายค่าเซสชัน
+- **ยังค้าง (blocker ของรีวิว):** live session store ยังอยู่ในหน่วยความจำ instance เดียว — รอเจ้าของเลือกแนวทาง
+  (durable table บน Supabase พร้อม atomic cap ⟷ signed stateless session token + caps แบบ best-effort)
 
 # จุดรับช่วง AI Assistant
 

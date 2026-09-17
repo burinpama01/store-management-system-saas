@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRemoteAudioSink, parseRealtimeEvent } from "@/modules/ai-assistant/ui/live-webrtc";
+import { REALTIME_CALLS_URL, createRemoteAudioSink, exchangeSdpOffer, parseRealtimeEvent } from "@/modules/ai-assistant/ui/live-webrtc";
 
 // PR3-Live (M5) — แปลง event ดิบของ OpenAI Realtime เป็นสัญญาณของ live core (pure):
 // รู้จัก = แปลงตรงรูป, ไม่รู้จัก/รูปทรงเพี้ยน = null (เมินเงียบ ๆ ไม่เดา)
@@ -112,5 +112,43 @@ describe("createRemoteAudioSink", () => {
     expect(element.srcObject).toBeNull();
 
     expect(() => createRemoteAudioSink(() => element).close()).not.toThrow();
+  });
+});
+
+// PR3-Live (fix) — รูปทรงของการแลก SDP ต้องตรงกับ Realtime GA เป๊ะ
+// ของเดิมยิงไป /v1/realtime?model=... (รูปแบบก่อน GA) = ต่อไม่ติดเลย และ audio sink
+// ที่แก้ไว้ก็ไม่มีโอกาสได้ทำงาน — เคสนี้จึงปักหมุด URL/method/headers/body ทั้งชุด
+describe("exchangeSdpOffer", () => {
+  it("POST /v1/realtime/calls ด้วย ephemeral token + application/sdp และไม่มี query string", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init as RequestInit });
+      return new Response("v=0 answer-sdp", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const answer = await exchangeSdpOffer({
+      ephemeralToken: "ek_test_secret_value_123",
+      offerSdp: "v=0 offer-sdp",
+      fetchImpl,
+    });
+
+    expect(answer).toBe("v=0 answer-sdp");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(REALTIME_CALLS_URL);
+    expect(calls[0].url).toBe("https://api.openai.com/v1/realtime/calls");
+    expect(calls[0].url).not.toContain("?"); // model ผูกกับ client secret แล้ว ห้ามส่งซ้ำใน URL
+    expect(calls[0].init.method).toBe("POST");
+    expect(calls[0].init.headers).toMatchObject({
+      Authorization: "Bearer ek_test_secret_value_123",
+      "Content-Type": "application/sdp",
+    });
+    expect(calls[0].init.body).toBe("v=0 offer-sdp");
+  });
+
+  it("provider ปฏิเสธ = โยน error แบบ typed ให้ core ปิดไมค์คืน (ไม่กลืนเงียบ)", async () => {
+    const fetchImpl = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
+
+    await expect(exchangeSdpOffer({ ephemeralToken: "ek_bad", offerSdp: "v=0", fetchImpl }))
+      .rejects.toThrow("realtime_sdp_401");
   });
 });

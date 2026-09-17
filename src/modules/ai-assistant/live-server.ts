@@ -107,7 +107,7 @@ export type LiveAccessResult =
   | {
       readonly ok: false;
       readonly status: 401 | 403 | 503;
-      readonly reason: "unauthorized" | "forbidden" | "ai_not_in_plan" | "live_pilot_only" | "live_disabled";
+      readonly reason: "unauthorized" | "forbidden" | "ai_not_in_plan" | "live_pilot_only" | "live_disabled" | "ai_disabled";
     };
 
 /** ข้อความบอกทางออก (ภาษาไทย) ของด่านร่วม — route ทั้งสองใช้ชุดเดียวกัน ไม่โชว์ code ดิบ */
@@ -117,7 +117,27 @@ export const LIVE_ACCESS_NOTES: Record<Extract<LiveAccessResult, { ok: false }>[
   ai_not_in_plan: "แพ็กเกจนี้ยังไม่รวมผู้ช่วย AI — ใช้หน้าจอได้ตามปกติ",
   live_pilot_only: "โหมดเสียงสดเปิดให้เฉพาะร้านที่เข้าร่วมทดลอง — ใช้ปุ่มเสียงหรือหน้าจอได้ตามปกติ",
   live_disabled: "โหมดเสียงสดยังปิดใช้งาน",
+  ai_disabled: "ผู้ช่วย AI ปิดใช้งานอยู่ — แจ้งผู้ดูแลระบบ",
 };
+
+/**
+ * ตัวตนของผู้เรียก (auth อย่างเดียว) — ใช้กับ "การปิดเซสชัน" เท่านั้น
+ *
+ * เหตุผลที่แยกจาก resolveLiveAccess: การคืนทรัพยากรที่ถูกสร้างไปแล้วต้องทำได้เสมอ
+ * ถ้าผูกการปิดไว้กับ kill switch / pilot / แพ็กเกจ แล้วผู้ดูแลปิด Live ระหว่างที่ร้าน
+ * ยังคุยอยู่ เซสชันจะค้างกินสิทธิ์ของร้าน (live_store_busy) จน TTL หมดเองทั้งที่ไม่มีใครใช้
+ * ความปลอดภัยของเส้นทางนี้มาจาก session token (HMAC) + ตรวจ org/store/user ให้ตรงกับเซสชัน
+ */
+export type LiveIdentityResult =
+  | { readonly ok: true; readonly ctx: LiveAccessContext }
+  | { readonly ok: false; readonly status: 401; readonly reason: "unauthorized" };
+
+export async function resolveLiveIdentity(): Promise<LiveIdentityResult> {
+  const authz = await getResolvedCurrentPermissions();
+  if (!authz) return { ok: false, status: 401, reason: "unauthorized" };
+  const { ctx, user } = authz;
+  return { ok: true, ctx: { organizationId: ctx.organizationId, storeId: ctx.storeId, userId: user.id } };
+}
 
 export async function resolveLiveAccess(): Promise<LiveAccessResult> {
   const authz = await getResolvedCurrentPermissions();
@@ -137,6 +157,10 @@ export async function resolveLiveAccess(): Promise<LiveAccessResult> {
     return { ok: false, status: 403, reason: "live_pilot_only" };
   }
   if (!config.liveEnabled) return { ok: false, status: 503, reason: "live_disabled" };
+  // Live เป็น "ช่องทางหนึ่ง" ของผู้ช่วย AI ไม่ใช่ระบบแยก — tool ทุกตัวเดินผ่าน dispatcher เดิม
+  // ซึ่งปฏิเสธด้วย FEATURE_DISABLED เมื่อ AI_ASSISTANT_ENABLED ไม่ใช่ "true"
+  // ถ้าไม่ตรวจตรงนี้ ผู้ใช้จะเปิดไมค์/จ่ายค่าเซสชันกับ provider ได้ แล้วทุกคำสั่งพังทีหลัง
+  if (!config.enabled) return { ok: false, status: 503, reason: "ai_disabled" };
   return {
     ok: true,
     ctx: { organizationId: ctx.organizationId, storeId: ctx.storeId, userId: user.id },

@@ -26,7 +26,7 @@ import {
   resolveLiveTokenSecret,
   verifyLiveSessionToken,
 } from "@/modules/ai-assistant/live-session";
-import { liveComposition, resolveLiveAccess, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
+import { liveComposition, resolveLiveAccess, resolveLiveIdentity, LIVE_ACCESS_NOTES } from "@/modules/ai-assistant/live-server";
 
 export const dynamic = "force-dynamic";
 
@@ -195,22 +195,18 @@ export async function POST(request: Request) {
 
 /**
  * ปิดเซสชัน (metering + คืน slot) — UI เรียกตอนแตะซ้ำ/ปิดแท็บ/จบก่อนกำหนด
- * จงใจไม่เช็ค pilot/kill switch ที่นี่: การปิดต้องทำได้เสมอแม้ผู้ดูแลเพิ่งปิดโหมด
- * (ไม่งั้นเซสชัน/ไมค์ที่ค้างจะปิดผ่านเส้นทางนี้ไม่ได้) — ความเป็นเจ้าของยังต้องผ่านครบ
+ *
+ * ด่านของ DELETE ต่างจาก POST โดยตั้งใจ: ตรวจแค่ "ล็อกอินอยู่" + session token (HMAC)
+ * + เซสชันเป็นของ org/store/user นี้จริง — ไม่ผ่าน pilot / kill switch / แพ็กเกจ
+ *
+ * เหตุผล (เคสจริงที่รอบก่อนยังพลาด): ถ้าผู้ดูแลปิด AI_ASSISTANT_LIVE_ENABLED ระหว่างที่ร้าน
+ * เปิดเซสชันอยู่ เส้นทางเดิมจะตอบ ended:false โดยไม่ลบเซสชันจริง → slot ของร้านค้างจนหมด TTL
+ * แล้วเปิดใหม่เจอ live_store_busy ทั้งที่ไม่มีใครใช้ การคืนทรัพยากรที่สร้างไปแล้วจึงต้องทำได้เสมอ
  */
 export async function DELETE(request: Request) {
-  const access = await resolveLiveAccess();
-  // ปิดเซสชันไม่ใช่สิทธิ์พิเศษ: ต้องมี pilot + kill switch เหมือนเส้นทางอื่นเพื่อไม่ให้
-  // route นี้กลายเป็นช่องที่คนนอก pilot เรียกได้ — ผู้ใช้ที่เปิดเซสชันไว้จะยังปิดได้เพราะ
-  // สถานะ pilot/kill switch ถูกตรวจ ณ เวลาเปิด (และปิดในเครื่องได้เสมอแม้ API ปฏิเสธ)
-  if (!access.ok) {
-    if (access.reason === "live_disabled" || access.reason === "live_pilot_only") {
-      // ปิดฝั่ง client ได้อยู่แล้ว — ตอบ 200 แบบไม่มีอะไรให้ปิด เพื่อไม่ให้ UI ค้างสถานะ error
-      return NextResponse.json({ ok: true, ended: false, reason: access.reason }, { headers: NO_STORE });
-    }
-    return fail(access.reason, access.status, ACCESS_NOTES[access.reason]);
-  }
-  const { ctx } = access;
+  const identity = await resolveLiveIdentity();
+  if (!identity.ok) return fail(identity.reason, identity.status, ACCESS_NOTES[identity.reason]);
+  const { ctx } = identity;
 
   let body: unknown;
   try {

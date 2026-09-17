@@ -16,6 +16,8 @@ async function loadRoute(options: {
   authed?: boolean;
   canUsePos?: boolean;
   planHasAi?: boolean;
+  /** AI_ASSISTANT_ENABLED — Live เป็นช่องทางหนึ่งของผู้ช่วย ไม่ใช่ระบบแยก */
+  assistantEnabled?: boolean;
   /** null = อ่านแพ็กเกจไม่ได้/ไม่มีแถว subscription */
   billingState?: { plan: string; status: string } | null;
   liveEnabled?: boolean;
@@ -29,6 +31,7 @@ async function loadRoute(options: {
     authed = true,
     canUsePos = true,
     planHasAi = true,
+    assistantEnabled = true,
     billingState = { plan: "enterprise", status: "active" } as { plan: string; status: string } | null,
     liveEnabled = true,
     pilotOrg = "org-1",
@@ -72,6 +75,7 @@ async function loadRoute(options: {
   }));
   vi.doMock("@/server/integrations/supabase/server", () => ({ createSupabaseServiceClient: serviceClient }));
 
+  vi.stubEnv("AI_ASSISTANT_ENABLED", assistantEnabled ? "true" : "");
   vi.stubEnv("AI_ASSISTANT_LIVE_ENABLED", liveEnabled ? "true" : "");
   vi.stubEnv("AI_ASSISTANT_LIVE_PILOT_ORG_IDS", pilotOrg);
   vi.stubEnv("OPENAI_API_KEY", openaiKey);
@@ -158,6 +162,13 @@ describe("live session route — POST gates", () => {
     const disabledResponse = await disabled.route.POST(post(createBody));
     expect(disabledResponse.status).toBe(503);
     expect(await disabledResponse.json()).toMatchObject({ reason: "live_disabled" });
+
+    // ผู้ช่วยปิดทั้งระบบ = เปิด Live ไม่ได้ (tool ทุกตัวเดินผ่าน dispatcher เดียวกันซึ่งจะตอบ
+    // FEATURE_DISABLED อยู่ดี — ต้องหยุดก่อนเปิดไมค์/จ่ายค่าเซสชันกับ provider)
+    const aiOff = await loadRoute({ assistantEnabled: false });
+    const aiOffResponse = await aiOff.route.POST(post(createBody));
+    expect(aiOffResponse.status).toBe(503);
+    expect(await aiOffResponse.json()).toMatchObject({ reason: "ai_disabled" });
   });
 
   it("rejects malformed bodies", async () => {
@@ -286,14 +297,28 @@ describe("live session route — DELETE end", () => {
     expect(route.liveSessions.size()).toBe(1);
   });
 
-  it("still reports a clean no-op end when the live mode is switched off mid-session", async () => {
+  it("ปิดเซสชันได้จริงแม้ผู้ดูแลเพิ่งปิด Live กลางคัน — slot ต้องถูกคืน ไม่ค้างจน TTL", async () => {
     const route = await loadRoute();
     const created = await (await route.route.POST(post(createBody))).json();
+
     vi.stubEnv("AI_ASSISTANT_LIVE_ENABLED", "");
     const response = await route.route.DELETE(del({ sessionId: created.sessionId, sessionToken: created.sessionToken }));
+
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, ended: false, reason: "live_disabled" });
-    // เซสชันยังอยู่ใน store — จะหมดอายุเองตาม TTL (ปิดจริงบนเบราว์เซอร์แล้ว)
-    expect(route.liveSessions.size()).toBe(1);
+    expect(await response.json()).toMatchObject({ ok: true, ended: true });
+    // ของเดิมตอบ ended:false แล้วทิ้งเซสชันไว้ — ร้านจะเจอ live_store_busy ทั้งที่ไม่มีใครใช้
+    expect(route.liveSessions.size()).toBe(0);
+  });
+
+  it("ปิดเซสชันได้แม้ org หลุดจาก pilot ไปแล้ว (คืนทรัพยากรที่สร้างไปแล้วต้องทำได้เสมอ)", async () => {
+    const route = await loadRoute();
+    const created = await (await route.route.POST(post(createBody))).json();
+
+    vi.stubEnv("AI_ASSISTANT_LIVE_PILOT_ORG_IDS", "org-someone-else");
+    const response = await route.route.DELETE(del({ sessionId: created.sessionId, sessionToken: created.sessionToken }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, ended: true });
+    expect(route.liveSessions.size()).toBe(0);
   });
 });

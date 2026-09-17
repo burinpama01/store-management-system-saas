@@ -16,8 +16,17 @@
 
 import type { LiveConnectionHandle, LiveConnectOptions } from "./live-assistant-core";
 
-const REALTIME_SDP_URL = (model: string): string =>
-  `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+/**
+ * ปลายทางแลก SDP ของ Realtime GA — `POST /v1/realtime/calls`
+ *
+ * ของเดิมยิงไป `/v1/realtime?model=...` ซึ่งเป็นรูปแบบก่อน GA และจะต่อไม่ติดเลย
+ * (คู่กับ `/v1/realtime/sessions` ที่เราเลิกใช้ไปแล้วตอน M3 — ฝั่งสร้าง ephemeral token
+ * ย้ายไป `/v1/realtime/client_secrets` แต่ฝั่ง SDP ยังค้างรูปแบบเก่าไว้)
+ *
+ * ไม่ต้องส่ง model ใน URL เพราะ model ถูกผูกไว้กับ ephemeral client secret ตั้งแต่ตอน
+ * สร้างเซสชันฝั่ง server แล้ว (live-openai-tools.createLiveEphemeralSession)
+ */
+export const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 
 // ── สัญญาณที่ core รู้จัก (pure — เทสต์ได้โดยไม่มี WebRTC) ────────────────────────
 
@@ -135,6 +144,35 @@ export function createRemoteAudioSink(createElement: () => RemoteAudioElement = 
   };
 }
 
+// ── แลก SDP กับ provider (แยกออกมาให้เทสต์รูปทรง request ได้โดยไม่มี WebRTC) ────────
+
+/**
+ * ส่ง offer SDP ไป `/v1/realtime/calls` แล้วคืน answer SDP เป็นข้อความ
+ *
+ * ทั้งสามอย่างนี้ห้ามเพี้ยน ไม่งั้นจะต่อไม่ติดโดยไม่มีอะไรบอกสาเหตุที่ฝั่งผู้ใช้:
+ *   - method POST + `Content-Type: application/sdp` (body เป็น SDP ดิบ ไม่ใช่ JSON)
+ *   - `Authorization: Bearer <ephemeral client secret>` (ไม่ใช่ OPENAI_API_KEY — ตัวจริงอยู่ฝั่ง server)
+ *   - ไม่มี query string ใด ๆ (model ผูกกับ client secret ตั้งแต่ตอนสร้างเซสชันแล้ว)
+ */
+export async function exchangeSdpOffer(options: {
+  readonly ephemeralToken: string;
+  readonly offerSdp: string;
+  readonly fetchImpl?: typeof fetch;
+}): Promise<string> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(REALTIME_CALLS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${options.ephemeralToken}`,
+      "Content-Type": "application/sdp",
+    },
+    body: options.offerSdp,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`realtime_sdp_${response.status}`);
+  return response.text();
+}
+
 // ── ตัวต่อจริง (browser เท่านั้น — ถูกเรียกตอนแตะปุ่ม AI Live) ────────────────────
 
 /**
@@ -217,17 +255,10 @@ export async function connectLiveWebRtc(options: LiveConnectOptions): Promise<Li
   try {
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
-    const response = await fetch(REALTIME_SDP_URL(options.model), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${options.ephemeralToken}`,
-        "Content-Type": "application/sdp",
-      },
-      body: offer.sdp ?? "",
-      signal: AbortSignal.timeout(10_000),
+    const answerSdp = await exchangeSdpOffer({
+      ephemeralToken: options.ephemeralToken,
+      offerSdp: offer.sdp ?? "",
     });
-    if (!response.ok) throw new Error(`realtime_sdp_${response.status}`);
-    const answerSdp = await response.text();
     await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
   } catch (error) {
     stopEverything();
