@@ -67,10 +67,25 @@ export interface YouTubeSearchResult {
   channelTitle?: string;
 }
 
+/** YouTube's "Music" video category — restricts search to songs, not vlogs/reviews/how-tos. */
+export const YOUTUBE_MUSIC_CATEGORY_ID = "10";
+
+/** Clips shorter than this are Shorts/teasers, not a song to play. */
+const MIN_SONG_SECONDS = 60;
+
+export interface PlayableFilterOptions {
+  /** Keep only the Music category and drop Shorts-length clips (default true). */
+  musicOnly?: boolean;
+  /** Keep live/upcoming streams (default false — a request that never ends blocks the queue). */
+  allowLive?: boolean;
+}
+
 interface RawYouTubeVideo {
   id?: string;
   snippet?: {
     title?: string;
+    categoryId?: string;
+    liveBroadcastContent?: string;
     channelTitle?: string;
     thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
   };
@@ -80,20 +95,30 @@ interface RawYouTubeVideo {
 
 /**
  * Pure: maps a YouTube videos.list response to playable results — drops
- * non-embeddable videos and anything longer than maxDurationSeconds.
+ * non-embeddable videos, anything longer than maxDurationSeconds, and (by
+ * default) non-music videos, Shorts-length clips and live streams.
  */
 export function mapPlayableYouTubeVideos(
   items: RawYouTubeVideo[],
   maxDurationSeconds: number,
+  opts: PlayableFilterOptions = {},
 ): YouTubeSearchResult[] {
+  const musicOnly = opts.musicOnly ?? true;
+  const allowLive = opts.allowLive ?? false;
   const out: YouTubeSearchResult[] = [];
   for (const it of items ?? []) {
     if (!it.id) continue;
     if (it.status?.embeddable === false) continue;
+    const live = it.snippet?.liveBroadcastContent;
+    if (!allowLive && (live === "live" || live === "upcoming")) continue;
+    if (musicOnly && it.snippet?.categoryId && it.snippet.categoryId !== YOUTUBE_MUSIC_CATEGORY_ID) {
+      continue;
+    }
     const dur = it.contentDetails?.duration
       ? parseIso8601Duration(it.contentDetails.duration)
       : null;
     if (dur != null && dur > maxDurationSeconds) continue;
+    if (musicOnly && dur != null && dur < MIN_SONG_SECONDS) continue;
     out.push({
       videoId: it.id,
       title: it.snippet?.title ?? it.id,
@@ -106,12 +131,13 @@ export function mapPlayableYouTubeVideos(
 }
 
 /**
- * Searches YouTube (Data API v3) for embeddable videos within the duration cap.
- * The API key stays server-side. Returns a friendly error on quota/network fail.
+ * Searches YouTube (Data API v3) for embeddable songs (Music category by default)
+ * within the duration cap. The API key stays server-side. Returns a friendly
+ * error on quota/network fail.
  */
 export async function searchYouTube(
   query: string,
-  opts: { maxDurationSeconds?: number; limit?: number } = {},
+  opts: { maxDurationSeconds?: number; limit?: number } & PlayableFilterOptions = {},
 ): Promise<{ results: YouTubeSearchResult[]; error: string | null }> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return { results: [], error: "ยังไม่ได้ตั้งค่า YouTube API" };
@@ -119,11 +145,14 @@ export async function searchYouTube(
   if (!q) return { results: [], error: null };
   const maxDuration = opts.maxDurationSeconds ?? 600;
   const limit = Math.min(Math.max(opts.limit ?? 10, 1), 20);
+  const musicOnly = opts.musicOnly ?? true;
 
   try {
     const searchUrl =
       `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video` +
-      `&videoEmbeddable=true&maxResults=${limit}&q=${encodeURIComponent(q)}&key=${key}`;
+      `&videoEmbeddable=true&maxResults=${limit}` +
+      (musicOnly ? `&videoCategoryId=${YOUTUBE_MUSIC_CATEGORY_ID}` : "") +
+      `&q=${encodeURIComponent(q)}&key=${key}`;
     const sr = await fetch(searchUrl);
     if (!sr.ok) return { results: [], error: "ค้นหา YouTube ไม่สำเร็จ" };
     const sj = (await sr.json()) as { items?: { id?: { videoId?: string } }[] };
@@ -138,7 +167,13 @@ export async function searchYouTube(
     const vr = await fetch(videosUrl);
     if (!vr.ok) return { results: [], error: "ค้นหา YouTube ไม่สำเร็จ" };
     const vj = (await vr.json()) as { items?: RawYouTubeVideo[] };
-    return { results: mapPlayableYouTubeVideos(vj.items ?? [], maxDuration), error: null };
+    return {
+      results: mapPlayableYouTubeVideos(vj.items ?? [], maxDuration, {
+        musicOnly,
+        allowLive: opts.allowLive,
+      }),
+      error: null,
+    };
   } catch {
     return { results: [], error: "เชื่อมต่อ YouTube ไม่สำเร็จ" };
   }
