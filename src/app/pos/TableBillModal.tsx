@@ -26,6 +26,13 @@ interface Props {
   onSettled: (tableId: string) => void;
   /** กด "เพิ่มรายการ" ในบิลโต๊ะ → ให้ POS เข้าโหมดเพิ่มรายการผูกโต๊ะ */
   onAddItems?: (tableId: string, tableNumber: string) => void;
+  /**
+   * ชำระผ่านหน้าจ่ายเงินปกติของ POS (รวมบิลเป็นออเดอร์เดียว — นโยบาย Beam/เงินสดเดียวกับ POS)
+   * มีค่า = ซ่อนการเก็บเงินในหน้าต่างนี้ (เงินสด/พร้อมเพย์แบบติ๊กยืนยันเอง)
+   */
+  onCheckout?: (tableId: string, tableNumber: string) => void;
+  /** ร้านใช้ Beam เป็น QR หลัก — ใบแจ้งยอดไม่พิมพ์ QR พร้อมเพย์ */
+  hidePromptPayQr?: boolean;
 }
 
 type TableBillPrintMode =
@@ -43,6 +50,7 @@ function buildTableBillReceipt(
   settings: ReceiptSettings | null,
   storeName: string,
   mode: TableBillPrintMode,
+  hidePromptPayQr = false,
 ): ReceiptData {
   const items = [
     ...bill.qrOrders.flatMap((order) =>
@@ -94,8 +102,8 @@ function buildTableBillReceipt(
     logoUrl: settings?.logoUrl,
     footerImageUrl: settings?.footerImageUrl,
     // ใบแจ้งยอด: โชว์ QR PromptPay ล็อกยอดให้ลูกค้าสแกนจ่ายที่โต๊ะ; ใบเสร็จรับเงิน: ไม่ต้อง
-    showQrPayment: unpaid,
-    promptpayId: settings?.promptpayId,
+    showQrPayment: unpaid && !hidePromptPayQr,
+    promptpayId: hidePromptPayQr ? undefined : settings?.promptpayId,
     paperWidth: settings?.paperWidth ?? "80mm",
     printCopies: unpaid ? 1 : settings?.printCopies ?? 1,
     printedAt: new Date().toISOString(),
@@ -118,6 +126,8 @@ export function TableBillModal({
   onClose,
   onSettled,
   onAddItems,
+  onCheckout,
+  hidePromptPayQr = false,
 }: Props) {
   const [bills, setBills] = useState<TableBill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,7 +184,7 @@ export function TableBillModal({
     setPrintMsg(null);
     setIsPrinting(true);
     try {
-      const data = buildTableBillReceipt(bill, receiptSettings, storeName, mode);
+      const data = buildTableBillReceipt(bill, receiptSettings, storeName, mode, hidePromptPayQr);
       await printReceiptWithFallback({
         printers,
         preferredPrinterId,
@@ -289,7 +299,7 @@ export function TableBillModal({
                 disabled={isPending || isPrinting}
                 className="w-full min-h-11 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 active:bg-gray-50 disabled:opacity-50"
               >
-                {isPrinting ? "กำลังพิมพ์..." : "🖨️ พิมพ์ใบแจ้งยอด (มี QR ให้สแกนจ่าย)"}
+                {isPrinting ? "กำลังพิมพ์..." : hidePromptPayQr ? "🖨️ พิมพ์ใบตรวจรายการ (ให้ลูกค้าเช็คก่อนจ่าย)" : "🖨️ พิมพ์ใบแจ้งยอด (มี QR ให้สแกนจ่าย)"}
               </button>
 
               {onAddItems && (
@@ -302,6 +312,26 @@ export function TableBillModal({
                 </button>
               )}
 
+              {onCheckout ? (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => { setSelectedTableId(null); setError(null); resetPay(); }}
+                    disabled={isPending}
+                    className="btn-secondary min-h-11 flex-1 text-sm"
+                  >
+                    ย้อนกลับ
+                  </button>
+                  <Button
+                    variant="primary"
+                    onClick={() => onCheckout(selected.tableId, selected.tableNumber)}
+                    disabled={isPending}
+                    className="min-h-11 flex-1 text-sm"
+                  >
+                    ชำระเงินทั้งโต๊ะ
+                  </Button>
+                </div>
+              ) : (
+              <>
               <div className="flex gap-2">
                 {(["cash", "qr_promptpay"] as const).map((m) => (
                   <button
@@ -374,6 +404,8 @@ export function TableBillModal({
                   ชำระรวมทั้งโต๊ะ
                 </Button>
               </div>
+              </>
+              )}
             </div>
           ) : loading ? (
             <p className="py-8 text-center text-sm text-gray-400">กำลังโหลด...</p>
