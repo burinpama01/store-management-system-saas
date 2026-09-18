@@ -44,6 +44,7 @@ export function mapStore(row: StoreRow): Store {
     musicLicenseNote: undefined,
     dineInDurationMinutes: row.dine_in_duration_minutes,
     dineInNoExpiry: row.dine_in_no_expiry,
+    tableOpenAutoTicket: row.table_open_auto_ticket ?? true,
     themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
     themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,
     themePrimaryStrongColor: row.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,

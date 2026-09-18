@@ -1322,6 +1322,7 @@ export interface Database {
           music_license_note: string | null;
           qr_service_buttons: Json;
           dine_in_no_expiry: boolean;
+          table_open_auto_ticket: boolean;
           setup_profile: Json;
           print_hub_token_hash: string | null;
           print_hub_last_seen: string | null;
@@ -1364,6 +1365,7 @@ export interface Database {
           music_license_note?: string | null;
           qr_service_buttons?: Json;
           dine_in_no_expiry?: boolean;
+          table_open_auto_ticket?: boolean;
           setup_profile?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
@@ -1406,6 +1408,7 @@ export interface Database {
           music_license_note?: string | null;
           qr_service_buttons?: Json;
           dine_in_no_expiry?: boolean;
+          table_open_auto_ticket?: boolean;
           setup_profile?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;

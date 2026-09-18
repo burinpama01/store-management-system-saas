@@ -46,6 +46,8 @@ export interface Store {
   dineInDurationMinutes: number;
   /** เปิดโต๊ะแบบไม่จับเวลาโดยดีฟอลต์ */
   dineInNoExpiry: boolean;
+  /** เปิดโต๊ะที่ POS แล้วเปิดตั๋วของโต๊ะรอไว้ (ออเดอร์ QR แสดงในตั๋ว) */
+  tableOpenAutoTicket: boolean;
   themePresetId: string;
   themePrimaryColor: string;
   themePrimaryStrongColor: string;
