@@ -9,7 +9,7 @@
 //   - ข้อความของผู้ใช้ไม่ถูกแสดงซ้ำใน log ของแผง (เดินตามข้อตกลงความเป็นส่วนตัวของเสียง)
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useVoiceCartApi } from "./voice-cart-bridge";
+import { useVoiceCartApi, useVoiceCartReady } from "./voice-cart-bridge";
 import type { VoiceProductAlias } from "@/modules/voice-pos/cart";
 import {
   createTextAssistantCore,
@@ -308,7 +308,7 @@ export function TextAssistantOverlay({
   }, [state.undo]);
 
   const remainingUndoMs = state.undo ? state.undo.expiresAt - now : 0;
-  const ready = getCartApi() !== null;
+  const ready = useVoiceCartReady();
   const undoVisible = state.undo !== null && remainingUndoMs > 0;
   const liveActive = liveState.phase !== "idle";
   // โหมดเสียงสดเปิด = ล็อกการพิมพ์/ย้อนกลับ (cartVersion ของสองช่องทางแยกกัน — สลับกันกลางทางไม่ได้)
