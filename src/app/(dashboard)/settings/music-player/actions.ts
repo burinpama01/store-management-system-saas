@@ -44,6 +44,7 @@ export async function updateMusicPlayerSettingsAction(
 
     const autoApprove = formData.get("autoApprove") === "1";
     const donationEnabled = formData.get("donationEnabled") === "1";
+    const interruptBaseOnRequest = formData.get("interruptBaseOnRequest") === "1";
 
     const minRaw = parseFloat((formData.get("minDonation") as string | null) ?? "");
     const minDonation = Number.isFinite(minRaw) && minRaw >= 0 ? Math.round(minRaw * 100) / 100 : 10;
@@ -64,6 +65,7 @@ export async function updateMusicPlayerSettingsAction(
       donationEnabled,
       minDonation,
       playNowPrice,
+      interruptBaseOnRequest,
       maxDurationSeconds,
       basePlaylist,
       licensingAcknowledged,

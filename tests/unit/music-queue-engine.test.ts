@@ -3,6 +3,7 @@ import {
   orderQueue,
   selectNextTrack,
   previewDonationPosition,
+  resolvePlayerInterrupt,
   type QueueItem,
 } from "@/modules/music-requests/queue-engine";
 import type { PlaylistTrack } from "@/modules/music-requests/types";
@@ -72,6 +73,96 @@ describe("selectNextTrack", () => {
 
   it("returns null when nothing is playable", () => {
     expect(selectNextTrack([], [], null)).toBeNull();
+  });
+
+  it("resumes the store song a request cut off, before cycling the playlist", () => {
+    const resume = { youtubeVideoId: "live0000001", title: "Live radio" };
+    expect(selectNextTrack([], base, "base0000001", resume)).toMatchObject({
+      source: "base",
+      youtubeVideoId: "live0000001",
+      title: "Live radio",
+    });
+  });
+
+  it("resumes a cut-off store song that is not in the base playlist", () => {
+    const resume = { youtubeVideoId: "live0000001", title: "Live radio" };
+    expect(selectNextTrack([], [], null, resume)).toMatchObject({
+      source: "base",
+      youtubeVideoId: "live0000001",
+    });
+  });
+
+  it("still plays requests first while a store song waits to resume", () => {
+    const resume = { youtubeVideoId: "live0000001", title: "Live radio" };
+    expect(selectNextTrack([item({ id: "x" })], base, null, resume)).toMatchObject({
+      source: "request",
+      requestId: "x",
+    });
+  });
+});
+
+describe("resolvePlayerInterrupt — cut into the store's own song", () => {
+  it("cuts in on a store song when the store enabled it", () => {
+    expect(
+      resolvePlayerInterrupt({
+        queue: [item({ id: "x" })],
+        currentSource: "base",
+        interruptBaseOnRequest: true,
+      }),
+    ).toEqual({ interrupt: true, reason: "base_cut_in", waitingOnBase: false });
+  });
+
+  it("waits for the store song when the store disabled it (client handles live)", () => {
+    expect(
+      resolvePlayerInterrupt({
+        queue: [item({ id: "x" })],
+        currentSource: "base",
+        interruptBaseOnRequest: false,
+      }),
+    ).toEqual({ interrupt: false, reason: null, waitingOnBase: true });
+  });
+
+  it("never cuts off another customer's request", () => {
+    expect(
+      resolvePlayerInterrupt({
+        queue: [item({ id: "x" })],
+        currentRequestId: "playing",
+        currentSource: "request",
+        interruptBaseOnRequest: true,
+      }),
+    ).toEqual({ interrupt: false, reason: null, waitingOnBase: false });
+  });
+
+  it("does not interrupt a store song with an empty queue", () => {
+    expect(
+      resolvePlayerInterrupt({
+        queue: [],
+        currentSource: "base",
+        interruptBaseOnRequest: true,
+      }),
+    ).toEqual({ interrupt: false, reason: null, waitingOnBase: false });
+  });
+
+  it("a play-now donation interrupts even with cut-in off", () => {
+    expect(
+      resolvePlayerInterrupt({
+        queue: [item({ id: "now", donationStatus: "verified", playNow: true })],
+        currentRequestId: "playing",
+        currentSource: "request",
+        interruptBaseOnRequest: false,
+      }),
+    ).toEqual({ interrupt: true, reason: "play_now", waitingOnBase: false });
+  });
+
+  it("the play-now track already playing does not re-interrupt itself", () => {
+    expect(
+      resolvePlayerInterrupt({
+        queue: [item({ id: "now", donationStatus: "verified", playNow: true })],
+        currentRequestId: "now",
+        currentSource: "request",
+        interruptBaseOnRequest: true,
+      }),
+    ).toEqual({ interrupt: false, reason: null, waitingOnBase: false });
   });
 });
 

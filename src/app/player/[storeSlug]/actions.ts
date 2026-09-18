@@ -16,7 +16,11 @@ import {
   type PlayHistoryItem,
 } from "@/modules/music-requests/repository";
 import { searchYouTube } from "@/modules/music-requests/youtube";
-import { orderQueue, type NextTrack } from "@/modules/music-requests/queue-engine";
+import {
+  orderQueue,
+  resolvePlayerInterrupt,
+  type NextTrack,
+} from "@/modules/music-requests/queue-engine";
 import type { NowPlaying, PlaylistTrack } from "@/modules/music-requests/types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,7 +52,14 @@ export async function getPlayerStateAction(): Promise<{
   nowPlaying: NowPlaying | null;
   upcoming: PlayerQueueItem[];
   basePlaylist: PlayerBaseTrack[];
+  /** Cut the current track off now (play-now donation, or the store's cut-in setting). */
   interrupt: boolean;
+  /**
+   * A request is waiting behind a store song that the store wants played to the
+   * end. The player still cuts in when that song never ends (a live stream).
+   */
+  waitingOnBase: boolean;
+  interruptBaseOnRequest: boolean;
   error: string | null;
 }> {
   try {
@@ -70,22 +81,42 @@ export async function getPlayerStateAction(): Promise<{
       videoId: t.videoId,
       title: t.title,
     }));
-    // A "play now" donation that isn't already the current track must interrupt.
-    const currentId = npRes.data?.musicRequestId ?? null;
-    const interrupt = ordered.some((q) => q.playNow && q.id !== currentId);
-    return { nowPlaying: npRes.data, upcoming, basePlaylist, interrupt, error: null };
+    const interruptBaseOnRequest = settingsRes.data?.interruptBaseOnRequest ?? true;
+    const decision = resolvePlayerInterrupt({
+      queue,
+      currentRequestId: npRes.data?.musicRequestId ?? null,
+      currentSource: npRes.data?.source ?? null,
+      interruptBaseOnRequest,
+    });
+    return {
+      nowPlaying: npRes.data,
+      upcoming,
+      basePlaylist,
+      interrupt: decision.interrupt,
+      waitingOnBase: decision.waitingOnBase,
+      interruptBaseOnRequest,
+      error: null,
+    };
   } catch (e) {
     return {
       nowPlaying: null,
       upcoming: [],
       basePlaylist: [],
       interrupt: false,
+      waitingOnBase: false,
+      interruptBaseOnRequest: true,
       error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
     };
   }
 }
 
-export async function advancePlayerAction(): Promise<{
+/**
+ * Loads the next track. `interrupted` means the current track was cut off mid-play
+ * (a request jumping the store's song), so that store song is resumed afterwards.
+ */
+export async function advancePlayerAction(
+  opts: { interrupted?: boolean } = {},
+): Promise<{
   next: NextTrack | null;
   error: string | null;
 }> {
@@ -96,7 +127,9 @@ export async function advancePlayerAction(): Promise<{
     if (!settingsRes.data?.playerEnabled) {
       return { next: null, error: "เครื่องเล่นเพลงยังไม่เปิดใช้งาน" };
     }
-    const res = await advanceNowPlaying(ctx.storeId, settingsRes.data);
+    const res = await advanceNowPlaying(ctx.storeId, settingsRes.data, {
+      interruptedCurrent: opts.interrupted === true,
+    });
     if (res.error) return { next: null, error: res.error.userMessage };
     return { next: res.data, error: null };
   } catch (e) {
@@ -227,6 +260,7 @@ async function saveBasePlaylist(
     donationEnabled: s.donationEnabled,
     minDonation: s.minDonation,
     playNowPrice: s.playNowPrice,
+    interruptBaseOnRequest: s.interruptBaseOnRequest,
     maxDurationSeconds: s.maxDurationSeconds,
     basePlaylist: tracks,
     licensingAcknowledged: Boolean(s.licensingAcknowledgedAt),

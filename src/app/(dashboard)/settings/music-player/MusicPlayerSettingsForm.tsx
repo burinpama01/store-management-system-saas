@@ -47,6 +47,25 @@ export function MusicPlayerSettingsForm({ settings, storeSlug, canEdit }: Props)
           <input type="checkbox" name="autoApprove" value="1" defaultChecked={settings.autoApprove} disabled={!canEdit} className="rounded border-gray-300" />
           <span className="text-sm font-medium">อนุมัติคำขอเพลงอัตโนมัติ (เข้าคิวเล่นทันที ไม่ต้องให้พนักงานกด)</span>
         </label>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            name="interruptBaseOnRequest"
+            value="1"
+            defaultChecked={settings.interruptBaseOnRequest}
+            disabled={!canEdit}
+            className="mt-1 rounded border-gray-300"
+          />
+          <span className="text-sm">
+            <span className="font-medium">แทรกเพลงที่ลูกค้าขอทันที (ตัดเพลงของร้านที่กำลังเล่น)</span>
+            <span className="mt-0.5 block text-xs text-[var(--muted)]">
+              มีคำขอเพลงเข้ามาแต่ยังไม่มีคิว = ตัดเพลงของร้านที่เปิดอยู่ แล้วเล่นเพลงที่ขอเลย
+              (เพลงของร้านจะกลับมาเล่นต่อเมื่อคิวคำขอหมด) · จำเป็นถ้าร้านเปิดเพลงแบบ live
+              ที่ไม่มีวันจบเพลง · ปิดไว้ = รอให้เพลงของร้านจบก่อน แต่ถ้าเป็นเพลง live
+              ระบบจะแทรกให้เองเพื่อไม่ให้คำขอค้างคิว · คำขอของลูกค้าจะไม่ถูกตัดกลางเพลง
+            </span>
+          </span>
+        </label>
         <div className="max-w-xs">
           <label className="field-label" htmlFor="maxDurationSeconds">ความยาวเพลงสูงสุด (วินาที)</label>
           <input id="maxDurationSeconds" type="number" name="maxDurationSeconds" min={60} max={1800} defaultValue={settings.maxDurationSeconds} disabled={!canEdit} className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm" />

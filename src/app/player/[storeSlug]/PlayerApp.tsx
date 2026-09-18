@@ -22,6 +22,8 @@ import {
 interface YTPlayer {
   loadVideoById: (id: string) => void;
   playVideo: () => void;
+  getDuration?: () => number;
+  getCurrentTime?: () => number;
   destroy?: () => void;
 }
 interface YTNamespace {
@@ -51,6 +53,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const [history, setHistory] = useState<PlayHistoryItem[]>([]);
   const [basePlaylist, setBasePlaylist] = useState<PlayerBaseTrack[]>([]);
   const [panel, setPanel] = useState<"queue" | "base" | "search" | "history">("queue");
+  const [interruptBase, setInterruptBase] = useState(true);
   const [busy, setBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlayerSearchResult[]>([]);
@@ -60,13 +63,19 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const readyRef = useRef(false);
   const playingRef = useRef(false);
   const advancingRef = useRef(false);
-  const advanceRef = useRef<() => Promise<void>>(async () => {});
+  const atEndPollsRef = useRef(0);
+  const advanceRef = useRef<(opts?: { interrupted?: boolean }) => Promise<void>>(async () => {});
 
-  const advance = useCallback(async () => {
+  /**
+   * `interrupted` = the current track is being cut off mid-play (a request jumping
+   * the store's song); the server then resumes that store song once the queue empties.
+   */
+  const advance = useCallback(async (opts: { interrupted?: boolean } = {}) => {
     if (advancingRef.current) return;
     advancingRef.current = true;
+    atEndPollsRef.current = 0;
     try {
-      const res = await advancePlayerAction();
+      const res = await advancePlayerAction({ interrupted: opts.interrupted === true });
       if (res.error) {
         setError(res.error);
         playingRef.current = false;
@@ -103,15 +112,43 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     advanceRef.current = advance;
   }, [advance]);
 
+  /**
+   * True when the current track has no end for the player to wait for: a live
+   * stream (YouTube reports its duration as the elapsed stream time, so the
+   * playhead sits at the very end) or metadata that never resolves. Without this
+   * a request queued behind a live store song would never get its turn.
+   */
+  const currentTrackNeverEnds = useCallback(() => {
+    const p = playerRef.current;
+    if (!readyRef.current || !p?.getDuration || !p.getCurrentTime) return false;
+    const duration = p.getDuration();
+    const position = p.getCurrentTime();
+    if (!Number.isFinite(duration) || duration <= 0) return position > 30;
+    // A normal song can sit in its last seconds on one poll and then end by
+    // itself — only a playhead pinned to the end on consecutive polls is live.
+    // Otherwise the nearly-finished song would be flagged as cut off and replayed.
+    if (position < duration - 2) {
+      atEndPollsRef.current = 0;
+      return false;
+    }
+    atEndPollsRef.current += 1;
+    return atEndPollsRef.current >= 2;
+  }, []);
+
   const refreshState = useCallback(async () => {
     const res = await getPlayerStateAction();
     if (res.error) return;
     setUpcoming(res.upcoming);
     setBasePlaylist(res.basePlaylist);
-    // A "play now" donation interrupts immediately; otherwise start when idle.
-    if (res.interrupt) void advanceRef.current();
+    setInterruptBase(res.interruptBaseOnRequest);
+    // A "play now" donation — or the store's cut-in setting — interrupts at once.
+    if (res.interrupt) void advanceRef.current({ interrupted: true });
     else if (!playingRef.current && res.upcoming.length > 0) void advanceRef.current();
-  }, []);
+    // Cut-in off, but the store song never ends (live) — play the request anyway.
+    else if (res.waitingOnBase && currentTrackNeverEnds()) {
+      void advanceRef.current({ interrupted: true });
+    }
+  }, [currentTrackNeverEnds]);
 
   const loadHistory = useCallback(async () => {
     const res = await getPlayHistoryAction();
@@ -501,6 +538,15 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
         ) : (
           <>
             <p className="text-sm font-semibold text-white/80">คิวเพลงที่ถูกขอ ({upcoming.length})</p>
+            <p className="mt-1 text-xs text-white/40">
+              {interruptBase
+                ? "เพลงที่ลูกค้าขอจะแทรกเพลงของร้านทันที แล้วกลับไปเล่นเพลงของร้านต่อเมื่อคิวหมด"
+                : "รอให้เพลงของร้านจบก่อนแล้วเล่นคิวถัดไป (ถ้าเป็นเพลง live ระบบจะแทรกให้เอง)"}
+              {" · "}
+              <a href="/settings/music-player" target="_blank" rel="noopener noreferrer" className="underline">
+                ตั้งค่า
+              </a>
+            </p>
             <ul className="mt-3 space-y-2">
               {upcoming.map((q, i) => (
                 <li
