@@ -1304,6 +1304,9 @@ function PosUtilitySheet({
         ref={sheetRef}
         data-pos-utility-sheet="true"
         className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] w-full max-w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[420px] sm:max-w-[calc(100vw-1.5rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+        // เพดานความสูงแบบ inline กัน class arbitrary ถูก tree-shake (เคยเกิดกับ Tailwind v4 ในโปรเจกต์นี้)
+        // ระบบตั๋วบนจอโน้ตบุ๊กร้านล้นจนปุ่มล่างหายใต้ taskbar — ต้องไม่สูงเกินจอเสมอ
+        style={{ maxHeight: "min(88dvh, calc(100vh - 1.5rem))" }}
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <p className="text-sm font-semibold text-gray-900">{title}</p>
@@ -1316,7 +1319,8 @@ function PosUtilitySheet({
             ปิด
           </button>
         </div>
-        <div className="min-w-0 overflow-x-hidden overflow-y-auto p-4">
+        {/* min-h-0 + flex-1: ให้ส่วนเนื้อหาหดแล้วเลื่อนในแผ่นเอง แทนที่จะสูงเท่าเนื้อหาจนล้นจอ */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-4">
           {children}
         </div>
       </div>
