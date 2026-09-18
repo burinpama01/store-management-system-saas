@@ -22,7 +22,8 @@ interface Props {
   /** เลขโต๊ะของ initialTableId (ถ้ารู้ — ใช้ตอนโต๊ะยังไม่มีบิล) */
   initialTableNumber?: string | null;
   onClose: () => void;
-  onSettled: () => void;
+  /** เช็คบิลโต๊ะสำเร็จ (ส่ง tableId เพื่อให้ POS ลบตั๋วของโต๊ะออกจากเครื่อง) */
+  onSettled: (tableId: string) => void;
   /** กด "เพิ่มรายการ" ในบิลโต๊ะ → ให้ POS เข้าโหมดเพิ่มรายการผูกโต๊ะ */
   onAddItems?: (tableId: string, tableNumber: string) => void;
 }
@@ -207,7 +208,7 @@ export function TableBillModal({
         load();
         return;
       }
-      onSettled();
+      onSettled(selected.tableId);
       setSelectedTableId(null);
       resetPay();
       setNotice(

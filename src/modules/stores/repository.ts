@@ -46,6 +46,7 @@ function mapStore(row: StoreRow): Store {
     musicLicenseNote: row.music_license_note ?? undefined,
     dineInDurationMinutes: row.dine_in_duration_minutes,
     dineInNoExpiry: row.dine_in_no_expiry,
+    tableOpenAutoTicket: row.table_open_auto_ticket ?? true,
     themePresetId: row.theme_preset_id ?? DEFAULT_THEME.presetId,
     themePrimaryColor: row.theme_primary_color ?? DEFAULT_THEME.primaryColor,
     themePrimaryStrongColor: row.theme_primary_strong_color ?? DEFAULT_THEME.primaryStrongColor,
@@ -187,6 +188,7 @@ export interface UpdateStoreInput {
   musicRequestEnabled?: boolean;
   dineInDurationMinutes?: number;
   dineInNoExpiry?: boolean;
+  tableOpenAutoTicket?: boolean;
   themePresetId?: string;
   themePrimaryColor?: string;
   themePrimaryStrongColor?: string;
@@ -230,6 +232,7 @@ export async function updateStore(storeId: string, organizationId: string, input
       music_request_enabled: input.musicRequestEnabled,
       dine_in_duration_minutes: input.dineInDurationMinutes,
       dine_in_no_expiry: input.dineInNoExpiry,
+      table_open_auto_ticket: input.tableOpenAutoTicket,
       theme_preset_id: input.themePresetId,
       theme_primary_color: input.themePrimaryColor,
       theme_primary_strong_color: input.themePrimaryStrongColor,

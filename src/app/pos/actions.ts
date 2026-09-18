@@ -36,6 +36,7 @@ import {
 import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
+import { buildTableTicket, isEmptyTicket } from "@/modules/pos/table-ticket";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables, listPrinters } from "@/modules/stores/repository";
 import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
 import { submitQrOrderAction, type QrOrderItem } from "@/app/qr/[storeSlug]/[tableId]/actions";
@@ -1143,6 +1144,40 @@ export async function listTablesForOpenAction(): Promise<{
   }
 }
 
+/**
+ * เปิดตั๋วของโต๊ะรอไว้หลังเปิดโต๊ะ (ถ้าโต๊ะมีตั๋วอยู่แล้วใช้ใบเดิม) — ความล้มเหลวไม่ทำให้
+ * การเปิดโต๊ะล้ม: โต๊ะเปิดแล้ว ออเดอร์ QR ยังเช็คบิลผ่าน "เช็คบิลโต๊ะ" ได้เหมือนเดิม
+ */
+async function ensureTableTicket(
+  ctx: { organizationId: string; storeId: string; userId: string },
+  tableId: string,
+  tableLabel: string,
+  timeZone: string,
+): Promise<SavedOrderTicket | null> {
+  const logBase = { source: "pos.table", action: "openTableTicket", organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: ctx.userId };
+  try {
+    const existing = await listSavedTickets(ctx.storeId);
+    if (existing.error) throw new Error(existing.error.userMessage);
+    const current = (existing.data ?? []).find((t) => t.tableId === tableId);
+    if (current) {
+      await logSystemEvent({ ...logBase, level: "info", message: `โต๊ะ ${tableLabel} มีตั๋วอยู่แล้ว ใช้ใบเดิม`, context: { tableId, ticketId: current.id } });
+      return current;
+    }
+    const saved = await saveSavedTicket({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      userId: ctx.userId,
+      ticket: buildTableTicket({ id: randomUUID(), storeId: ctx.storeId, tableId, tableLabel, now: new Date(), timeZone }),
+    });
+    if (saved.error || !saved.data) throw new Error(saved.error?.userMessage ?? "บันทึกตั๋วไม่สำเร็จ");
+    await logSystemEvent({ ...logBase, level: "info", message: `เปิดตั๋ว ${saved.data.ticketNumber} รอไว้สำหรับโต๊ะ ${tableLabel}`, context: { tableId, ticketId: saved.data.id } });
+    return saved.data;
+  } catch (e) {
+    await logSystemEvent({ ...logBase, level: "warn", message: `เปิดโต๊ะแล้วแต่เปิดตั๋วไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`, context: { tableId } });
+    return null;
+  }
+}
+
 /** Open an à la carte table session using the store's default duration. Returns the slug + expiry for the receipt. */
 export async function openTableAction(
   tableId: string,
@@ -1153,8 +1188,10 @@ export async function openTableAction(
   storeSlug: string | null;
   qrMode: QrOrderingMode | null;
   qrUrl: string | null;
+  /** ตั๋วของโต๊ะที่เปิดรอไว้ (ร้านเปิด table_open_auto_ticket) — null = ไม่ได้สร้าง */
+  ticket: SavedOrderTicket | null;
 }> {
-  const empty = { expiresAt: null, storeSlug: null, qrMode: null, qrUrl: null };
+  const empty = { expiresAt: null, storeSlug: null, qrMode: null, qrUrl: null, ticket: null };
   try {
     await requirePermission("pos.use");
     const { ctx } = await getStoreContext();
@@ -1200,6 +1237,10 @@ export async function openTableAction(
       }
     }
 
+    const ticket = store?.tableOpenAutoTicket
+      ? await ensureTableTicket(ctx, tableId, tableLabel, store.timezone)
+      : null;
+
     revalidatePath("/pos", "page");
     return {
       error: null,
@@ -1207,6 +1248,7 @@ export async function openTableAction(
       storeSlug: store?.slug ?? null,
       qrMode,
       qrUrl,
+      ticket,
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", ...empty };
@@ -1268,6 +1310,16 @@ export async function getTableQrSlipAction(tableId: string): Promise<{
   }
 }
 
+/** ลบตั๋วว่างของโต๊ะ (ตั๋วที่เปิดรอไว้แต่ไม่มีรายการ) ตอนปิดโต๊ะ — ตั๋วที่มีรายการไม่แตะ */
+async function deleteEmptyTableTickets(storeId: string, tableId: string, tickets?: SavedOrderTicket[]) {
+  const list = tickets ?? (await listSavedTickets(storeId)).data ?? [];
+  for (const ticket of list) {
+    if (ticket.tableId === tableId && isEmptyTicket(ticket)) {
+      await deleteSavedTicket(ticket.id, storeId);
+    }
+  }
+}
+
 export async function closeTableAction(tableId: string): Promise<{ error: string | null }> {
   try {
     await requirePermission("pos.use");
@@ -1275,6 +1327,7 @@ export async function closeTableAction(tableId: string): Promise<{ error: string
     if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง" };
     const res = await closeTableSession(ctx.storeId, tableId);
     if (res.error) return { error: res.error.userMessage };
+    await deleteEmptyTableTickets(ctx.storeId, tableId);
     revalidatePath("/pos", "page");
     return { error: null };
   } catch (e) {
@@ -1390,7 +1443,8 @@ export async function listTableBillsAction(): Promise<{ bills: TableBill[]; erro
       bill.qrTotal += order.total;
     }
     for (const ticket of ticketsRes.data ?? []) {
-      if (!ticket.tableId) continue;
+      // ตั๋วว่าง (เปิดรอไว้ตอนเปิดโต๊ะ) ไม่ใช่บิลค้าง
+      if (!ticket.tableId || isEmptyTicket(ticket)) continue;
       const bill = ensure(ticket.tableId, ticket.tableNumber ?? "-");
       bill.tickets.push({
         id: ticket.id,
@@ -1461,7 +1515,9 @@ export async function settleWholeTableAction(
     if (ticketsRes.error) return fail(ticketsRes.error.userMessage);
 
     const qrOrders = (ordersRes.data ?? []).filter((o) => o.tableId === tableId);
-    const tickets = (ticketsRes.data ?? []).filter((t) => t.tableId === tableId);
+    const tableTickets = (ticketsRes.data ?? []).filter((t) => t.tableId === tableId);
+    // ตั๋วว่างไม่มีอะไรให้คิดเงิน (checkout ตะกร้าว่าง = error) → ลบทิ้งตอนปิดโต๊ะ
+    const tickets = tableTickets.filter((t) => !isEmptyTicket(t));
     if (qrOrders.length === 0 && tickets.length === 0) {
       return fail("โต๊ะนี้ไม่มีบิลค้างชำระ");
     }
@@ -1507,6 +1563,7 @@ export async function settleWholeTableAction(
         if (settled.error.code === "up_not_found") {
           // โต๊ะไม่มีบิล QR เปิดอยู่ (มีแต่ตั๋ว) → ปิด session ตามพฤติกรรม legacy
           const close = await closeTableSession(ctx.storeId, tableId);
+          await deleteEmptyTableTickets(ctx.storeId, tableId, tableTickets);
           revalidatePath("/pos", "page");
           return { error: null, settledCount, total, closed: !close.error };
         }
@@ -1514,6 +1571,7 @@ export async function settleWholeTableAction(
       }
       settledCount += settled.result.order_ids.length;
       total += settled.result.grand_total;
+      if (settled.result.table_closed) await deleteEmptyTableTickets(ctx.storeId, tableId, tableTickets);
       revalidatePath("/pos", "page");
       return { error: null, settledCount, total, closed: settled.result.table_closed };
     }
@@ -1558,8 +1616,9 @@ export async function settleWholeTableAction(
       total += ticket.cart.total;
     }
 
-    // 3) ปิดโต๊ะ (คืนโต๊ะว่าง)
+    // 3) ปิดโต๊ะ (คืนโต๊ะว่าง) + ลบตั๋วว่างที่เปิดรอไว้
     const close = await closeTableSession(ctx.storeId, tableId);
+    await deleteEmptyTableTickets(ctx.storeId, tableId, tableTickets);
     revalidatePath("/pos", "page");
     return { error: null, settledCount, total, closed: !close.error };
   } catch (e) {
