@@ -1,3 +1,5 @@
+import type { Role } from "@/modules/tenants/types";
+
 export type NotificationChannel = "line" | "telegram" | "push";
 
 export type NotificationType =
@@ -52,3 +54,25 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
 ];
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram", "push"];
+
+/**
+ * ประเภทแจ้งเตือนเชิงปฏิบัติการหน้าร้าน (ออเดอร์เข้า/ยกเลิก/เรียกพนักงาน) ที่ push
+ * ต้องถึงมือทุก role ของสาขา รวมแคชเชียร์/สตาฟ — ประเภทอื่น (ยอดขาย, สรุปยอด,
+ * ลงเวลา, สต็อก, billing) ส่งเฉพาะผู้บริหารร้าน เพื่อไม่ให้ข้อมูลธุรกิจรั่วไปมือถือพนักงาน
+ */
+export const STAFF_PUSH_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new Set([
+  "new_pos_order",
+  "new_qr_order",
+  "new_buffet_order",
+  "order_cancelled",
+  "buffet_expiring",
+  "service_request",
+  "test",
+]);
+
+const MANAGEMENT_PUSH_ROLES: readonly Role[] = ["super_admin", "owner", "admin", "manager"];
+
+export function isPushRecipientRole(type: NotificationType, role: Role): boolean {
+  if (STAFF_PUSH_NOTIFICATION_TYPES.has(type)) return true;
+  return MANAGEMENT_PUSH_ROLES.includes(role);
+}

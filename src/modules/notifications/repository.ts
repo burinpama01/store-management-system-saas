@@ -5,6 +5,8 @@ import {
 import { mapError } from "@/shared/utils/error";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
 import type { NotificationChannel, NotificationType } from "./types";
+import { isPushRecipientRole } from "./types";
+import type { Role } from "@/modules/tenants/types";
 
 type NotificationSettingRow = Database["public"]["Tables"]["notification_settings"]["Row"];
 type NotificationTargetRow = Database["public"]["Tables"]["notification_targets"]["Row"];
@@ -232,28 +234,50 @@ export async function listOrganizationPushTokens(organizationId: string) {
 }
 
 /**
+ * user_id ของ membership แถวที่ครอบสาขาของอีเวนต์ (org-wide หรือผูกสาขาเดียวกัน)
+ * และผ่านเกณฑ์ role ของประเภทแจ้งเตือน — user ที่มีหลาย membership คนละสาขา
+ * จะได้รับตาม role ของแถวที่ครอบสาขานั้นเท่านั้น (รวมเป็นเซตเดียว)
+ *
+ * Precondition: rows ต้องกรอง membership ที่ยังไม่ join (joined_at เป็น null)
+ * ออกแล้วที่ฝั่ง query — ฟังก์ชันนี้ไม่ตรวจ joined_at เอง
+ */
+export function filterPushEligibleUserIds(
+  rows: readonly { user_id: string; store_id: string | null; role: Role }[],
+  storeId: string,
+  type: NotificationType,
+): Set<string> {
+  return new Set(
+    rows
+      .filter((m) => (m.store_id === null || m.store_id === storeId) && isPushRecipientRole(type, m.role))
+      .map((m) => m.user_id),
+  );
+}
+
+/**
  * Push tokens ที่ควรได้รับอีเวนต์ของสาขาหนึ่ง: อุปกรณ์ของ user ที่ membership
  * ครอบสาขานั้น (org-wide เช่น owner/admin หรือผูกกับสาขาเดียวกัน) —
  * กันแจ้งเตือนข้ามสาขา (เครื่องพนักงานสาขา A ต้องไม่เด้งออเดอร์ของสาขา B)
+ * และกรองตาม role ของประเภทแจ้งเตือน: อีเวนต์หน้าร้านถึงทุก role ส่วน
+ * อีเวนต์เชิงธุรกิจ/HR (ยอดขาย สรุปยอด ลงเวลา สต็อก billing) เฉพาะผู้บริหารร้าน
  */
-export async function listStorePushTokens(organizationId: string, storeId: string) {
+export async function listStorePushTokens(
+  organizationId: string,
+  storeId: string,
+  type: NotificationType,
+) {
   const supabase = await createSupabaseServiceClient();
   const [tokensRes, memsRes] = await Promise.all([
     supabase.from("device_push_tokens").select("*").eq("organization_id", organizationId),
     supabase
       .from("memberships")
-      .select("user_id, store_id")
+      .select("user_id, store_id, role")
       .eq("organization_id", organizationId)
       .not("joined_at", "is", null),
   ]);
   if (tokensRes.error) return { data: null, error: mapError(tokensRes.error) };
   if (memsRes.error) return { data: null, error: mapError(memsRes.error) };
 
-  const allowedUserIds = new Set(
-    (memsRes.data ?? [])
-      .filter((m) => m.store_id === null || m.store_id === storeId)
-      .map((m) => m.user_id),
-  );
+  const allowedUserIds = filterPushEligibleUserIds(memsRes.data ?? [], storeId, type);
   return {
     data: (tokensRes.data ?? [])
       .filter((row) => allowedUserIds.has(row.user_id))

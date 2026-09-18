@@ -8,7 +8,8 @@ import {
   buildServiceAccountJwt,
   parseServiceAccount,
 } from "@/modules/notifications/push";
-import { NOTIFICATION_CHANNELS } from "@/modules/notifications/types";
+import { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES, STAFF_PUSH_NOTIFICATION_TYPES, isPushRecipientRole } from "@/modules/notifications/types";
+import { filterPushEligibleUserIds } from "@/modules/notifications/repository";
 
 const root = process.cwd();
 const readMigrationContaining = (needle: string) => {
@@ -119,5 +120,68 @@ describe("push notification channel", () => {
     expect(migration).toContain("enable row level security");
     expect(migration).toContain("user_id = auth.uid()");
     expect(migration).toContain("check (channel in ('line', 'telegram', 'push'))");
+  });
+
+  it("pushes operational notifications to cashier/staff devices", () => {
+    for (const type of STAFF_PUSH_NOTIFICATION_TYPES) {
+      expect(isPushRecipientRole(type, "cashier")).toBe(true);
+      expect(isPushRecipientRole(type, "staff")).toBe(true);
+      expect(isPushRecipientRole(type, "owner")).toBe(true);
+    }
+  });
+
+  it("keeps business/HR notifications off cashier/staff devices", () => {
+    const managementOnly = NOTIFICATION_TYPES.filter((type) => !STAFF_PUSH_NOTIFICATION_TYPES.has(type));
+    // ประเภทใหม่ที่ยังไม่ถูกจัดกลุ่มต้อง default เป็น "ผู้บริหารเท่านั้น" ไม่ใช่รั่วไปพนักงาน
+    expect(managementOnly).toEqual([
+      "payment",
+      "new_table",
+      "stock_alert",
+      "attendance_clock_in",
+      "attendance_clock_out",
+      "approval",
+      "activation_nudge",
+      "subscription_expiring",
+      "daily_summary",
+    ]);
+    for (const type of managementOnly) {
+      expect(isPushRecipientRole(type, "cashier")).toBe(false);
+      expect(isPushRecipientRole(type, "staff")).toBe(false);
+      expect(isPushRecipientRole(type, "manager")).toBe(true);
+      expect(isPushRecipientRole(type, "admin")).toBe(true);
+      expect(isPushRecipientRole(type, "owner")).toBe(true);
+      expect(isPushRecipientRole(type, "super_admin")).toBe(true);
+    }
+  });
+
+  it("wires role filter into store push token lookup", () => {
+    const repository = readFileSync(join(root, "src/modules/notifications/repository.ts"), "utf8").replace(/\r\n/g, "\n");
+    const dispatcher = readFileSync(join(root, "src/modules/notifications/dispatcher.ts"), "utf8").replace(/\r\n/g, "\n");
+
+    expect(repository).toContain("filterPushEligibleUserIds(memsRes.data ?? [], storeId, type)");
+    expect(dispatcher).toContain("listStorePushTokens(input.organizationId, input.storeId, input.type)");
+  });
+
+  it("combines store scope and role per membership row for push eligibility", () => {
+    // user เดียวมี 2 membership: cashier ประจำสาขา A + manager ประจำสาขา B
+    const rows = [
+      { user_id: "dual", store_id: "store-a", role: "cashier" as const },
+      { user_id: "dual", store_id: "store-b", role: "manager" as const },
+      { user_id: "org-owner", store_id: null, role: "owner" as const },
+      { user_id: "org-cashier", store_id: null, role: "cashier" as const },
+      { user_id: "other-branch", store_id: "store-c", role: "owner" as const },
+    ];
+
+    // อีเวนต์ธุรกิจ (เช่น daily_summary) ที่สาขา A: dual ไม่ได้ (แถว cashier ไม่ผ่าน role),
+    // ที่สาขา B: dual ได้ผ่านแถว manager — ไม่มีสิทธิ์รั่วข้ามแถว/ข้ามสาขา
+    expect(filterPushEligibleUserIds(rows, "store-a", "daily_summary")).toEqual(new Set(["org-owner"]));
+    expect(filterPushEligibleUserIds(rows, "store-b", "daily_summary")).toEqual(new Set(["dual", "org-owner"]));
+
+    // อีเวนต์หน้าร้าน (เช่น new_qr_order) ถึงทุก role ที่ครอบสาขา รวม org-wide cashier
+    expect(filterPushEligibleUserIds(rows, "store-a", "new_qr_order")).toEqual(
+      new Set(["dual", "org-owner", "org-cashier"]),
+    );
+    // สาขา C ไม่เกี่ยวกับอีเวนต์ของสาขา A แม้เป็น owner ของอีกสาขา
+    expect(filterPushEligibleUserIds(rows, "store-a", "new_qr_order").has("other-branch")).toBe(false);
   });
 });
