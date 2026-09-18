@@ -2735,6 +2735,8 @@ function PaymentPanel({
  */
 /** เวลาที่ใช้ขึ้นคำเตือนเมื่อ QR รับแต้มช้า — ไม่ปลดล็อกการพิมพ์จนกว่าจะรู้ผล */
 const AUTO_PRINT_CLAIM_WAIT_MS = 4000;
+/** Receipt screen returns to a fresh order by itself when nobody touches it. */
+const AUTO_NEW_ORDER_SECONDS = 10;
 
 function claimReceiptAutoPrint(orderNumber: string): boolean {
   if (typeof window === "undefined") return true;
@@ -2771,10 +2773,18 @@ function ReceiptPanel({
   const [printError, setPrintError] = useState<string | null>(null);
   const [printNotice, setPrintNotice] = useState<string | null>(null);
   const autoPrintedRef = useRef(false);
+  const [autoNewOrderCancelled, setAutoNewOrderCancelled] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(AUTO_NEW_ORDER_SECONDS);
+  const onNewOrderRef = useRef(onNewOrder);
+  useEffect(() => {
+    onNewOrderRef.current = onNewOrder;
+  }, [onNewOrder]);
 
   async function handlePrint() {
     setPrintError(null);
     setPrintNotice(null);
+    // The countdown restarts in full once this print finishes.
+    setSecondsLeft(AUTO_NEW_ORDER_SECONDS);
     if (order.loyaltyClaimPending) {
       setPrintError("กำลังรอ QR รับแต้มจากระบบ กรุณารอสักครู่");
       return;
@@ -2913,6 +2923,30 @@ function ReceiptPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.loyaltyClaimPending, order.loyaltyClaimError, claimWaitElapsed]);
 
+  // Countdown to a fresh order. Paused while a print is running or the auto-print
+  // is still waiting for the loyalty QR (leaving early would skip that print);
+  // stopped for good when there is an error the cashier must read, or on request.
+  // Each resume starts a full AUTO_NEW_ORDER_SECONDS again.
+  const autoNewOrderPaused =
+    isPrinting || (Boolean(receiptSettings?.autoPrintReceipt) && Boolean(order.loyaltyClaimPending));
+  const autoNewOrderStopped =
+    autoNewOrderCancelled || Boolean(printError) || Boolean(order.loyaltyClaimError);
+  const autoNewOrderRunning = !autoNewOrderPaused && !autoNewOrderStopped;
+  useEffect(() => {
+    if (!autoNewOrderRunning) return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const left = AUTO_NEW_ORDER_SECONDS - Math.floor((Date.now() - startedAt) / 1000);
+      if (left <= 0) {
+        window.clearInterval(timer);
+        onNewOrderRef.current();
+        return;
+      }
+      setSecondsLeft(left);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [autoNewOrderRunning]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-gray-100 text-center">
@@ -3008,8 +3042,20 @@ function ReceiptPanel({
           onClick={onNewOrder}
           className="btn-primary w-full"
         >
-          ออร์เดอร์ใหม่
+          {autoNewOrderRunning ? `ออร์เดอร์ใหม่ (${secondsLeft})` : "ออร์เดอร์ใหม่"}
         </button>
+        {autoNewOrderRunning ? (
+          <p className="text-center text-xs text-gray-500" role="status" aria-live="polite">
+            เริ่มออร์เดอร์ใหม่อัตโนมัติใน {secondsLeft} วินาที ·{" "}
+            <button
+              type="button"
+              onClick={() => setAutoNewOrderCancelled(true)}
+              className="min-h-11 font-semibold text-gray-700 underline"
+            >
+              อยู่หน้านี้ต่อ
+            </button>
+          </p>
+        ) : null}
       </div>
     </div>
   );
