@@ -234,12 +234,18 @@ describe("live session route — POST gates", () => {
     expect(route.logSystemEvent).toHaveBeenCalledWith(expect.objectContaining({ context: expect.objectContaining({ reason: "rate_limited" }) }));
   });
 
-  it("enforces the concurrent cap per store and reports live_store_busy", async () => {
+  it("ร้านครบจำนวน = เปิดใหม่ได้เลยโดยแทนที่เซสชันเก่า (token เก่าถูกเพิกถอน) และมีร่องรอยใน log", async () => {
     const route = await loadRoute({ concurrentCap: 1 });
-    expect((await route.route.POST(post(createBody))).status).toBe(200);
-    const busy = await route.route.POST(post(createBody));
-    expect(busy.status).toBe(429);
-    expect(await busy.json()).toMatchObject({ reason: "live_store_busy" });
+    const first = await (await route.route.POST(post(createBody))).json();
+    const second = await route.route.POST(post(createBody));
+    expect(second.status).toBe(200);
+    const body = await second.json();
+    expect(body.sessionId).not.toBe(first.sessionId);
+    expect(route.liveSessions.size()).toBe(1);
+    expect(route.liveSessions.isRevoked(first.sessionId)).toBe(true);
+    expect(route.logSystemEvent).toHaveBeenCalledWith(expect.objectContaining({
+      context: expect.objectContaining({ reason: "replaced_oldest", replacedSessionId: first.sessionId, sameUser: true }),
+    }));
   });
 
   it("returns live_provider_error and releases the slot when the provider fails", async () => {

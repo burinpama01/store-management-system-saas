@@ -46,23 +46,45 @@ describe("live session store", () => {
     expect(store.create(IDENTITY, { ttlMs: 1000, activeCartId: CART, allowedTools: [""] })).toMatchObject({ ok: false, reason: "invalid_options" });
   });
 
-  it("enforces the concurrent cap per store and frees the slot on end/expiry", () => {
+  it("ร้านเต็ม = เซสชันใหม่แทนที่ตัวเก่าอัตโนมัติ (ตัวเก่าถูกเพิกถอน) และคืน slot เมื่อปิด/หมดอายุ", () => {
     const { store, advance } = createStore({ maxConcurrentPerStore: 1 });
     const first = store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS });
-    expect(first.ok).toBe(true);
-    expect(store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS })).toMatchObject({ ok: false, reason: "store_busy" });
+    expect(first).toMatchObject({ ok: true, replaced: null });
+    const firstId = (first as { session: { id: string } }).session.id;
+    const second = store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS });
+    expect(second).toMatchObject({ ok: true, replaced: { id: firstId } });
+    expect(store.get(firstId)).toBeNull();
+    expect(store.isRevoked(firstId)).toBe(true);
+    expect(store.size()).toBe(1);
+    // เซสชันใหม่ต้องใช้ต่อได้ตามปกติ ไม่โดนเพิกถอน
+    expect(store.isRevoked((second as { session: { id: string } }).session.id)).toBe(false);
 
     // ร้านอื่นไม่โดน cap ของร้านนี้
     expect(store.create({ ...IDENTITY, storeId: "store-2" }, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS })).toMatchObject({ ok: true });
 
-    // ปิดเซสชันเดิมแล้วเปิดใหม่ได้
-    const ended = store.end((first as { session: { id: string } }).session.id);
+    // ปิดเซสชันเดิมแล้วเปิดใหม่ได้ (ไม่ต้องแทนที่ใคร)
+    const ended = store.end((second as { session: { id: string } }).session.id);
     expect(ended).not.toBeNull();
     expect(store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS })).toMatchObject({ ok: true });
 
     // หมดอายุ = slot ถูกคืนเอง
     advance(60_001);
     expect(store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS })).toMatchObject({ ok: true });
+  });
+
+  it("แทนที่ของ \"คนเดิม\" ก่อน ไม่ไปตัดเซสชันของพนักงานอีกคน — ถ้าไม่มีของคนเดิมค่อยแทนตัวที่เก่าที่สุด", () => {
+    const { store, advance } = createStore({ maxConcurrentPerStore: 2 });
+    const other = store.create({ ...IDENTITY, userId: "user-other" }, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS });
+    advance(1_000);
+    const mine = store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS });
+    advance(1_000);
+    const again = store.create(IDENTITY, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS });
+    expect(again).toMatchObject({ ok: true, replaced: { id: (mine as { session: { id: string } }).session.id } });
+    expect(store.get((other as { session: { id: string } }).session.id)).not.toBeNull();
+
+    advance(1_000);
+    const third = store.create({ ...IDENTITY, userId: "user-new" }, { ttlMs: 60_000, activeCartId: CART, allowedTools: TOOLS });
+    expect(third).toMatchObject({ ok: true, replaced: { id: (other as { session: { id: string } }).session.id } });
   });
 
   it("drops expired sessions on read and never extends their life", () => {
