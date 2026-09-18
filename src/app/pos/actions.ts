@@ -52,6 +52,16 @@ import {
   prepareTrueMoneyManualQr,
 } from "@/modules/payments/service";
 import { getEnabledTrueMoneyManualConfig } from "@/modules/payments/repository";
+import {
+  cancelBeamQrPayment,
+  claimBeamPaymentForOrder,
+  createBeamQrPayment,
+  finalizeBeamPaymentForOrder,
+  isBeamReadyForStore,
+  refreshBeamPayment,
+  releaseBeamPaymentClaim,
+} from "@/modules/payments/beam-service";
+import type { BeamQrForPos, GatewayPaymentStatus } from "@/modules/payments/types";
 import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
@@ -567,8 +577,15 @@ async function createPosOrderCore(
 export async function collectPaymentAction(
   orderId: string,
   payment: AddPaymentInput,
-  opts?: { idempotencyKey?: string | null; trueMoney?: { confirmReason?: string | null } | null },
+  opts?: {
+    idempotencyKey?: string | null;
+    trueMoney?: { confirmReason?: string | null } | null;
+    /** Beam QR already confirmed paid by Beam — the server re-checks before closing. */
+    beam?: { gatewayPaymentId: string } | null;
+  },
 ): Promise<{ order: Order | null; error: string | null }> {
+  let beamClaim: { storeId: string; gatewayPaymentId: string; orderId: string } | null = null;
+  let beamClosed = false;
   try {
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
     if (!resolved.can("pos.use")) return { order: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
@@ -616,6 +633,27 @@ export async function collectPaymentAction(
         method: "other",
         amount,
         reference: `TM:${pending.payment.id}`,
+      };
+    }
+
+    if (opts?.beam) {
+      await requireFeature("byoPaymentGateway");
+      const orderFull = await getOrder(orderId);
+      if (orderFull.error || !orderFull.data) {
+        return { order: null, error: orderFull.error?.userMessage ?? "ไม่พบออร์เดอร์" };
+      }
+      const claimed = await claimBeamPaymentForOrder({
+        storeId: ctx.storeId,
+        gatewayPaymentId: opts.beam.gatewayPaymentId,
+        orderId,
+        expectedAmount: orderFull.data.total,
+      });
+      if (!claimed.ok) return { order: null, error: claimed.error };
+      beamClaim = { storeId: ctx.storeId, gatewayPaymentId: opts.beam.gatewayPaymentId, orderId };
+      workingPayment = {
+        method: "other",
+        amount: claimed.amount,
+        reference: `BEAM:${opts.beam.gatewayPaymentId}`,
       };
     }
 
@@ -696,18 +734,31 @@ export async function collectPaymentAction(
       }
     }
 
+    if (beamClaim) {
+      beamClosed = true;
+      await finalizeBeamPaymentForOrder({
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        gatewayPaymentId: beamClaim.gatewayPaymentId,
+        orderId,
+        posPaymentId: paymentId,
+        actorUserId: user.id,
+      });
+    }
+
     notifyOwnerSafely({
       type: "payment",
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "ชำระเงินแล้ว",
-      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${trueMoneyGatewayId ? "TrueMoney" : paidMethod}`,
+      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${trueMoneyGatewayId ? "TrueMoney" : beamClaim ? "Beam" : paidMethod}`,
       metadata: {
         orderId,
         paymentId,
         amount: paidAmount,
-        method: trueMoneyGatewayId ? "TrueMoney" : paidMethod,
+        method: trueMoneyGatewayId ? "TrueMoney" : beamClaim ? "Beam" : paidMethod,
         trueMoneyGatewayId,
+        beamGatewayId: beamClaim?.gatewayPaymentId ?? null,
       },
     });
     notifyLowStockAfterSaleSafely(
@@ -718,6 +769,9 @@ export async function collectPaymentAction(
     return { order: paidOrder, error: null };
   } catch (e) {
     return { order: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  } finally {
+    // Closing failed after the Beam payment was reserved → free it for the retry.
+    if (beamClaim && !beamClosed) await releaseBeamPaymentClaim(beamClaim);
   }
 }
 
@@ -750,10 +804,13 @@ export async function checkoutAndPayAction(
     idempotencyKey?: string | null;
     paymentIdempotencyKey?: string | null;
     trueMoney?: { confirmReason?: string | null } | null;
+    beam?: { gatewayPaymentId: string } | null;
   },
 ): Promise<CheckoutAndPayResult> {
   let createdOrderId: string | null = null;
   let createdOrderNumber: string | null = null;
+  let beamClaim: { storeId: string; gatewayPaymentId: string; orderId: string } | null = null;
+  let beamClosed = false;
   try {
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
     if (!resolved.can("pos.use")) {
@@ -778,6 +835,26 @@ export async function checkoutAndPayAction(
     if (opts?.trueMoney) {
       await requireFeature("byoPaymentGateway");
       // Slip checkbox is the cashier gate; confirm_reason defaults server-side for audit.
+    }
+    if (opts?.beam) {
+      await requireFeature("byoPaymentGateway");
+      // Don't create an order for a QR Beam hasn't confirmed yet.
+      const beamState = await refreshBeamPayment({
+        storeId: ctx.storeId,
+        gatewayPaymentId: opts.beam.gatewayPaymentId,
+      });
+      if (!beamState.ok) {
+        return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: beamState.error };
+      }
+      if (beamState.status !== "PAID") {
+        return {
+          orderId: null,
+          orderNumber: null,
+          order: null,
+          failedStage: "order",
+          error: "Beam ยังไม่ยืนยันว่าได้รับเงิน — รอลูกค้าสแกนจ่ายก่อน",
+        };
+      }
     }
 
     const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
@@ -822,6 +899,44 @@ export async function checkoutAndPayAction(
         method: "other",
         amount,
         reference: `TM:${pending.payment.id}`,
+      };
+    }
+
+    if (opts?.beam) {
+      const orderFull = await getOrder(created.orderId);
+      if (orderFull.error || !orderFull.data) {
+        return {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          order: null,
+          failedStage: "payment",
+          error: orderFull.error?.userMessage ?? "ไม่พบออร์เดอร์",
+        };
+      }
+      const claimed = await claimBeamPaymentForOrder({
+        storeId: ctx.storeId,
+        gatewayPaymentId: opts.beam.gatewayPaymentId,
+        orderId: created.orderId,
+        expectedAmount: orderFull.data.total,
+      });
+      if (!claimed.ok) {
+        return {
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          order: null,
+          failedStage: "payment",
+          error: claimed.error,
+        };
+      }
+      beamClaim = {
+        storeId: ctx.storeId,
+        gatewayPaymentId: opts.beam.gatewayPaymentId,
+        orderId: created.orderId,
+      };
+      workingPayment = {
+        method: "other",
+        amount: claimed.amount,
+        reference: `BEAM:${opts.beam.gatewayPaymentId}`,
       };
     }
 
@@ -913,18 +1028,32 @@ export async function checkoutAndPayAction(
       }
     }
 
+    if (beamClaim) {
+      beamClosed = true;
+      await finalizeBeamPaymentForOrder({
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        gatewayPaymentId: beamClaim.gatewayPaymentId,
+        orderId: created.orderId,
+        posPaymentId: paymentId,
+        actorUserId: user.id,
+      });
+    }
+
+    const methodLabel = trueMoneyGatewayId ? "TrueMoney" : beamClaim ? "Beam" : paidMethod;
     notifyOwnerSafely({
       type: "payment",
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "ชำระเงินแล้ว",
-      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${trueMoneyGatewayId ? "TrueMoney" : paidMethod}`,
+      message: `รับชำระเงิน ${paidAmount.toFixed(2)} ผ่าน ${methodLabel}`,
       metadata: {
         orderId: created.orderId,
         paymentId,
         amount: paidAmount,
-        method: trueMoneyGatewayId ? "TrueMoney" : paidMethod,
+        method: methodLabel,
         trueMoneyGatewayId,
+        beamGatewayId: beamClaim?.gatewayPaymentId ?? null,
       },
     });
     notifyLowStockAfterSaleSafely(
@@ -941,6 +1070,8 @@ export async function checkoutAndPayAction(
       failedStage: createdOrderId ? "payment" : "order",
       error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
     };
+  } finally {
+    if (beamClaim && !beamClosed) await releaseBeamPaymentClaim(beamClaim);
   }
 }
 
@@ -1670,5 +1801,67 @@ export async function prepareTrueMoneyQrAction(
     return { payload: prepared.injectedPayload, error: null };
   } catch (e) {
     return { payload: null, error: e instanceof Error ? e.message : "สร้าง QR ไม่สำเร็จ" };
+  }
+}
+
+/** Whether the POS should offer "Beam QR" (plan feature + store has Beam keys enabled). */
+export async function getBeamPosStatusAction(): Promise<{ enabled: boolean }> {
+  try {
+    const { ctx } = await getResolvedCurrentPermissions();
+    const billing =
+      (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    if (!canUseFeature(billing, "byoPaymentGateway")) return { enabled: false };
+    return { enabled: await isBeamReadyForStore(ctx.storeId) };
+  } catch {
+    return { enabled: false };
+  }
+}
+
+export async function prepareBeamQrAction(
+  amount: number,
+  clientRequestId: string,
+): Promise<{ qr: BeamQrForPos | null; error: string | null }> {
+  try {
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { qr: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    if (!UUID_RE.test(clientRequestId)) return { qr: null, error: "คำขอไม่ถูกต้อง" };
+    await requireFeature("byoPaymentGateway");
+    const res = await createBeamQrPayment({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      amountMajor: amount,
+      clientRequestId,
+      actorUserId: user.id,
+    });
+    if (!res.ok) return { qr: null, error: res.error };
+    return { qr: res.qr, error: null };
+  } catch (e) {
+    return { qr: null, error: e instanceof Error ? e.message : "สร้าง QR Beam ไม่สำเร็จ" };
+  }
+}
+
+export async function getBeamPaymentStatusAction(
+  gatewayPaymentId: string,
+): Promise<{ status: GatewayPaymentStatus | null; error: string | null }> {
+  try {
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { status: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    if (!UUID_RE.test(gatewayPaymentId)) return { status: null, error: "คำขอไม่ถูกต้อง" };
+    const res = await refreshBeamPayment({ storeId: ctx.storeId, gatewayPaymentId });
+    if (!res.ok) return { status: null, error: res.error };
+    return { status: res.status, error: null };
+  } catch (e) {
+    return { status: null, error: e instanceof Error ? e.message : "ตรวจสถานะ Beam ไม่สำเร็จ" };
+  }
+}
+
+export async function cancelBeamQrAction(gatewayPaymentId: string): Promise<{ error: string | null }> {
+  try {
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    if (!UUID_RE.test(gatewayPaymentId)) return { error: null };
+    return await cancelBeamQrPayment({ storeId: ctx.storeId, gatewayPaymentId, actorUserId: user.id });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "ยกเลิก QR ไม่สำเร็จ" };
   }
 }

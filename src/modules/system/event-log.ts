@@ -31,7 +31,7 @@ export interface SystemLogInput {
 }
 
 /** คีย์ที่ห้ามบันทึกเด็ดขาด — ตัดทิ้งทุกชั้นของ context */
-const SECRET_KEY_PATTERN = /(token|secret|password|passwd|api[-_]?key|authorization|cookie|session|otp|pin|credentials|static.?emv|webhook.?secret)/i;
+const SECRET_KEY_PATTERN = /(token|secret|password|passwd|api[-_]?key|authorization|cookie|session|otp|pin|credentials|static.?emv|webhook.?secret|hmac)/i;
 
 /** ค่าที่ยาวเกินนี้จะถูกตัด (log ไม่ใช่ที่เก็บ payload) */
 const MAX_STRING = 300;

@@ -1,9 +1,14 @@
+import { beamOpenApiAdapter } from "./adapters/beam-openapi";
 import { trueMoneyManualAdapter } from "./adapters/truemoney-manual";
 import { trueMoneyOpenApiAdapter } from "./adapters/truemoney-openapi";
 import type { PaymentProviderAdapter } from "./provider-contract";
 import type { PaymentProviderKey, PaymentProviderMode } from "./types";
 
-const adapters: PaymentProviderAdapter[] = [trueMoneyManualAdapter, trueMoneyOpenApiAdapter];
+const adapters: PaymentProviderAdapter[] = [
+  trueMoneyManualAdapter,
+  trueMoneyOpenApiAdapter,
+  beamOpenApiAdapter,
+];
 
 export function getPaymentProviderAdapter(
   key: PaymentProviderKey,

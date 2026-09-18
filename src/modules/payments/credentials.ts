@@ -1,5 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
-import type { TrueMoneyManualCredentials, TrueMoneyOpenApiCredentials } from "./types";
+import type {
+  BeamCredentials,
+  TrueMoneyManualCredentials,
+  TrueMoneyOpenApiCredentials,
+} from "./types";
 
 /**
  * Phase A credential codec.
@@ -54,47 +58,71 @@ export function maskSecret(secret: string | null | undefined, visible = 4): stri
   return `${"•".repeat(Math.min(12, s.length - visible))}${s.slice(-visible)}`;
 }
 
-export function encodeTrueMoneyOpenApiCredentials(creds: TrueMoneyOpenApiCredentials): string {
-  const webhookSecret = creds.webhookSecret.trim();
-  if (!webhookSecret) throw new Error("webhook secret ว่าง");
-  const payload = JSON.stringify({
-    webhookSecret,
-    apiKey: creds.apiKey?.trim() || null,
-  });
+function encryptJson(value: unknown): string {
   const key = resolvePaymentsKek();
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  const packed = Buffer.concat([iv, tag, ciphertext]);
-  return V1_AES_PREFIX + packed.toString("base64");
+  return V1_AES_PREFIX + Buffer.concat([iv, tag, ciphertext]).toString("base64");
 }
 
-export function decodeTrueMoneyOpenApiCredentials(
-  encrypted: string | null | undefined,
-): TrueMoneyOpenApiCredentials | null {
-  if (!encrypted) return null;
-  if (!encrypted.startsWith(V1_AES_PREFIX)) return null;
+function decryptJson(encrypted: string | null | undefined): unknown {
+  if (!encrypted || !encrypted.startsWith(V1_AES_PREFIX)) return null;
   try {
     const packed = Buffer.from(encrypted.slice(V1_AES_PREFIX.length), "base64");
     if (packed.length < 12 + 16 + 1) return null;
     const iv = packed.subarray(0, 12);
     const tag = packed.subarray(12, 28);
     const ciphertext = packed.subarray(28);
-    const key = resolvePaymentsKek();
-    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    const decipher = createDecipheriv("aes-256-gcm", resolvePaymentsKek(), iv);
     decipher.setAuthTag(tag);
     const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
-    const parsed = JSON.parse(plain) as { webhookSecret?: unknown; apiKey?: unknown };
-    if (typeof parsed.webhookSecret !== "string" || !parsed.webhookSecret.trim()) return null;
-    return {
-      webhookSecret: parsed.webhookSecret.trim(),
-      apiKey:
-        typeof parsed.apiKey === "string" && parsed.apiKey.trim() ? parsed.apiKey.trim() : null,
-    };
+    return JSON.parse(plain) as unknown;
   } catch {
     return null;
   }
+}
+
+export function encodeTrueMoneyOpenApiCredentials(creds: TrueMoneyOpenApiCredentials): string {
+  const webhookSecret = creds.webhookSecret.trim();
+  if (!webhookSecret) throw new Error("webhook secret ว่าง");
+  return encryptJson({ webhookSecret, apiKey: creds.apiKey?.trim() || null });
+}
+
+export function decodeTrueMoneyOpenApiCredentials(
+  encrypted: string | null | undefined,
+): TrueMoneyOpenApiCredentials | null {
+  const parsed = decryptJson(encrypted) as { webhookSecret?: unknown; apiKey?: unknown } | null;
+  if (!parsed || typeof parsed.webhookSecret !== "string" || !parsed.webhookSecret.trim()) return null;
+  return {
+    webhookSecret: parsed.webhookSecret.trim(),
+    apiKey: typeof parsed.apiKey === "string" && parsed.apiKey.trim() ? parsed.apiKey.trim() : null,
+  };
+}
+
+export function encodeBeamCredentials(creds: BeamCredentials): string {
+  const merchantId = creds.merchantId.trim();
+  const apiKey = creds.apiKey.trim();
+  if (!merchantId || !apiKey) throw new Error("Merchant ID / API key ว่าง");
+  return encryptJson({ merchantId, apiKey, webhookHmacKey: creds.webhookHmacKey?.trim() || null });
+}
+
+export function decodeBeamCredentials(encrypted: string | null | undefined): BeamCredentials | null {
+  const parsed = decryptJson(encrypted) as
+    | { merchantId?: unknown; apiKey?: unknown; webhookHmacKey?: unknown }
+    | null;
+  if (!parsed) return null;
+  if (typeof parsed.merchantId !== "string" || !parsed.merchantId.trim()) return null;
+  if (typeof parsed.apiKey !== "string" || !parsed.apiKey.trim()) return null;
+  return {
+    merchantId: parsed.merchantId.trim(),
+    apiKey: parsed.apiKey.trim(),
+    webhookHmacKey:
+      typeof parsed.webhookHmacKey === "string" && parsed.webhookHmacKey.trim()
+        ? parsed.webhookHmacKey.trim()
+        : null,
+  };
 }
 
 /** encryption_key_version for Open API AES-GCM rows */
