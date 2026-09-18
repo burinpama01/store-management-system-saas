@@ -12,6 +12,7 @@ import { listMusicRequestsAction, decideMusicRequestAction } from "./actions";
 interface Props {
   initialRequests: MusicRequest[];
   musicEnabled: boolean;
+  storeSlug: string;
 }
 
 const STATUS_STYLE: Record<MusicRequest["status"], string> = {
@@ -32,7 +33,7 @@ function fmt(iso: string): string {
   });
 }
 
-export function MusicRequestsBoard({ initialRequests, musicEnabled }: Props) {
+export function MusicRequestsBoard({ initialRequests, musicEnabled, storeSlug }: Props) {
   const [requests, setRequests] = useState<MusicRequest[]>(initialRequests);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -78,9 +79,21 @@ export function MusicRequestsBoard({ initialRequests, musicEnabled }: Props) {
             <p className="text-xs text-amber-600">การขอเพลงถูกปิดอยู่ ลูกค้าจะส่งคำขอใหม่ไม่ได้</p>
           )}
         </div>
-        <Button variant="secondary" onClick={refresh} className="min-h-9 text-sm">
-          รีเฟรช
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* ทางเข้าเครื่องเล่นสำหรับคนที่จัดการคิวเพลงได้ (รวมแคชเชียร์) — เดิมมีแค่ในหน้าตั้งค่า
+              ที่เห็นเฉพาะเจ้าของ/แอดมิน ทั้งที่หน้าเครื่องเล่นใช้สิทธิ์เดียวกับหน้านี้ */}
+          <a
+            href={`/player/${storeSlug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary min-h-9 text-sm"
+          >
+            เปิดเครื่องเล่นเพลง
+          </a>
+          <Button variant="secondary" onClick={refresh} className="min-h-9 text-sm">
+            รีเฟรช
+          </Button>
+        </div>
       </div>
 
       {error && (
