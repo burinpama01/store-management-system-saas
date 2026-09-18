@@ -29,6 +29,8 @@ import { verifySlipByImageBase64, isSlip2goConfigured } from "@/modules/billing/
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { nowMs } from "@/shared/utils/time";
 import { logSystemEvent } from "@/modules/system/event-log";
+import { createBeamQrPayment, isBeamReadyForStore, refreshBeamPayment } from "@/modules/payments/beam-service";
+import type { BeamQrForPos } from "@/modules/payments/types";
 
 export interface MusicTrackInput {
   videoId: string;
@@ -50,6 +52,8 @@ interface MusicContext {
   donationEnabled: boolean;
   minDonation: number;
   playNowPrice: number;
+  /** แพ็กเกจมี Payment Gateway (BYO) — ร้านที่เปิด Beam ใช้ Beam แทนสลิป */
+  beamAllowed: boolean;
 }
 
 /** Re-resolves the music gate server-side; never trust client-provided flags. */
@@ -82,6 +86,7 @@ async function resolveMusicContext(
     .eq("store_id", storeId)
     .maybeSingle();
   const playerSettings = {
+    beamAllowed: features.byoPaymentGateway,
     maxDurationSeconds: settings?.max_duration_seconds ?? 600,
     donationEnabled: settings?.donation_enabled ?? false,
     minDonation: settings?.min_donation ?? 10,
@@ -332,6 +337,8 @@ export async function startMusicDonationAction(
   promptpayId: string | null;
   amount: number | null;
   free?: boolean;
+  /** ร้านเปิด Beam: สแกนจ่ายแล้วระบบยืนยันเอง (ไม่ต้องแนบสลิป) */
+  beam?: BeamQrForPos | null;
   error: string | null;
 }> {
   const empty = { requestId: null, promptPayPayload: null, promptpayId: null, amount: null };
@@ -340,7 +347,7 @@ export async function startMusicDonationAction(
 
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { ...empty, error: resolved.reason };
-  const { eligibility, donationEnabled, minDonation, playNowPrice, maxDurationSeconds } = resolved.ctx;
+  const { eligibility, donationEnabled, minDonation, playNowPrice, maxDurationSeconds, beamAllowed, organizationId } = resolved.ctx;
   if (!eligibility.canSubmitRequest) return { ...empty, error: eligibility.reason ?? "ขอเพลงไม่ได้" };
   if (!donationEnabled) return { ...empty, error: "ร้านนี้ยังไม่เปิดรับโดเนท" };
   // Store-configured prices: play-now is a fixed-price tier; queue-jump has a minimum.
@@ -359,9 +366,13 @@ export async function startMusicDonationAction(
   // Store priced this tier at 0 → free path: no PromptPay needed at all.
   const isFree = amount <= 0;
 
+  // ร้านที่เปิด Beam (และแพ็กเกจมี BYO gateway) → จ่ายผ่าน Beam ยืนยันอัตโนมัติ ไม่ต้องใช้สลิป
+  const service = await createSupabaseServiceClient();
+  const useBeam = !isFree && beamAllowed && (await isBeamReadyForStore(storeId, service));
+
   let promptpayId: string | null = null;
-  if (!isFree) {
-    const supabase = await createSupabaseServiceClient();
+  if (!isFree && !useBeam) {
+    const supabase = service;
     const { data: rs } = await supabase
       .from("receipt_settings")
       .select("promptpay_id")
@@ -391,6 +402,48 @@ export async function startMusicDonationAction(
     return { requestId: res.data, promptPayPayload: null, promptpayId: null, amount: 0, free: true, error: null };
   }
 
+  if (useBeam && res.data) {
+    const beam = await createBeamQrPayment({
+      organizationId,
+      storeId,
+      amountMajor: amount,
+      // 1 คำขอ = 1 รายการชำระ (retry ได้ QR เดิม)
+      clientRequestId: `music-${res.data}`,
+      actorUserId: null,
+      musicRequestId: res.data,
+      client: service,
+    });
+    if (!beam.ok) {
+      // สร้าง QR ไม่ได้ → ปิดคำขอที่ค้างจ่าย ไม่ให้ลอยอยู่ในระบบ
+      await service
+        .from("music_requests")
+        .update({ donation_status: "rejected", status: "rejected", updated_at: new Date().toISOString() })
+        .eq("id", res.data)
+        .eq("store_id", storeId)
+        .eq("donation_status", "pending");
+      await logSystemEvent({
+        level: "warn",
+        source: "music.donation",
+        action: "beamQrCreate",
+        message: `สร้าง QR Beam สำหรับขอเพลงไม่สำเร็จ: ${beam.error}`,
+        organizationId,
+        storeId,
+        context: { requestId: res.data, amount },
+      }).catch(() => undefined);
+      return { ...empty, error: beam.error };
+    }
+    await logSystemEvent({
+      level: "info",
+      source: "music.donation",
+      action: "beamQrCreate",
+      message: `สร้าง QR Beam ขอเพลง ฿${amount}`,
+      organizationId,
+      storeId,
+      context: { requestId: res.data, gatewayPaymentId: beam.qr.gatewayPaymentId, playNow },
+    }).catch(() => undefined);
+    return { requestId: res.data, promptPayPayload: null, promptpayId: null, amount, beam: beam.qr, error: null };
+  }
+
   let payload: string;
   try {
     payload = buildPromptPayPayload({ recipientId: promptpayId!, amount });
@@ -398,6 +451,40 @@ export async function startMusicDonationAction(
     return { ...empty, error: "PromptPay ของร้านไม่ถูกต้อง" };
   }
   return { requestId: res.data, promptPayPayload: payload, promptpayId, amount, error: null };
+}
+
+/**
+ * ลูกค้ารอหน้า QR Beam: ถามสถานะการจ่าย (webhook อัปเดตให้อยู่แล้ว ถ้ายังไม่มาจะถาม Beam ตรง)
+ * PAID → trigger ใน DB ยืนยันคำขอเพลงให้ (ยอดต้องตรง) — คืนผลว่าคำขอเข้าคิวแล้วหรือยัง
+ */
+export async function checkMusicDonationPaymentAction(
+  storeId: string,
+  requestId: string,
+): Promise<{ status: string | null; verified: boolean; error: string | null }> {
+  if (!isUUID(storeId) || !isUUID(requestId)) return { status: null, verified: false, error: "Invalid request" };
+  const service = await createSupabaseServiceClient();
+  const { data: payment } = await service
+    .from("gateway_payments")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("music_request_id", requestId)
+    .maybeSingle();
+  if (!payment) return { status: null, verified: false, error: "ไม่พบรายการชำระ" };
+
+  const refreshed = await refreshBeamPayment({ storeId, gatewayPaymentId: payment.id, client: service });
+  const status = refreshed.ok ? refreshed.status : null;
+
+  const { data: request } = await service
+    .from("music_requests")
+    .select("donation_status")
+    .eq("id", requestId)
+    .eq("store_id", storeId)
+    .maybeSingle();
+  const verified = request?.donation_status === "verified";
+  if (status === "PAID" && !verified) {
+    return { status, verified, error: "ได้รับเงินแล้ว แต่ยอดไม่ตรงกับที่ขอ — แจ้งพนักงานเพื่อตรวจสอบ" };
+  }
+  return { status, verified, error: refreshed.ok ? null : refreshed.error };
 }
 
 /** Verifies the uploaded slip and promotes the donation into the queue. */
