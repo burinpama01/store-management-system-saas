@@ -56,6 +56,7 @@ function row(overrides: Partial<SettingsRow> = {}): SettingsRow {
     donation_enabled: false,
     min_donation: 10,
     play_now_price: 100,
+    interrupt_base_on_request: true,
     max_duration_seconds: 600,
     base_playlist: [],
     licensing_acknowledged_at: null,
@@ -71,6 +72,7 @@ describe("mapMusicPlayerSettings", () => {
     expect(s.autoApprove).toBe(true);
     expect(s.minDonation).toBe(10);
     expect(s.playNowPrice).toBe(100);
+    expect(s.interruptBaseOnRequest).toBe(true);
     expect(s.basePlaylist).toEqual([]);
     expect(s.licensingAcknowledgedAt).toBeUndefined();
   });
@@ -91,5 +93,11 @@ describe("mapMusicPlayerSettings", () => {
     expect(s.basePlaylist).toHaveLength(1);
     expect(s.basePlaylist[0].videoId).toBe("dQw4w9WgXcQ");
     expect(s.licensingAcknowledgedAt).toBe("2026-06-29T01:00:00Z");
+  });
+
+  it("maps the cut-in toggle when the store turned it off", () => {
+    expect(mapMusicPlayerSettings(row({ interrupt_base_on_request: false })).interruptBaseOnRequest).toBe(
+      false,
+    );
   });
 });

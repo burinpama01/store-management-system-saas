@@ -3660,6 +3660,7 @@ export interface Database {
           donation_enabled: boolean;
           min_donation: number;
           play_now_price: number;
+          interrupt_base_on_request: boolean;
           max_duration_seconds: number;
           base_playlist: Json;
           licensing_acknowledged_at: string | null;
@@ -3673,6 +3674,7 @@ export interface Database {
           donation_enabled?: boolean;
           min_donation?: number;
           play_now_price?: number;
+          interrupt_base_on_request?: boolean;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;
@@ -3684,6 +3686,7 @@ export interface Database {
           donation_enabled?: boolean;
           min_donation?: number;
           play_now_price?: number;
+          interrupt_base_on_request?: boolean;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;
@@ -3699,6 +3702,8 @@ export interface Database {
           youtube_video_id: string | null;
           title: string | null;
           duration_seconds: number | null;
+          resume_base_video_id: string | null;
+          resume_base_title: string | null;
           started_at: string;
           updated_at: string;
         };
@@ -3709,6 +3714,8 @@ export interface Database {
           youtube_video_id?: string | null;
           title?: string | null;
           duration_seconds?: number | null;
+          resume_base_video_id?: string | null;
+          resume_base_title?: string | null;
           started_at?: string;
           updated_at?: string;
         };
@@ -3718,6 +3725,8 @@ export interface Database {
           youtube_video_id?: string | null;
           title?: string | null;
           duration_seconds?: number | null;
+          resume_base_video_id?: string | null;
+          resume_base_title?: string | null;
           started_at?: string;
           updated_at?: string;
         };

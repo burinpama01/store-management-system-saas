@@ -26,6 +26,12 @@ export interface MusicPlayerSettings {
   minDonation: number;
   /** Price (THB) of the "play now" tier — store adjustable. */
   playNowPrice: number;
+  /**
+   * Cut into the store's own song as soon as a request is queued, instead of
+   * waiting for it to end. Required for stores playing a live stream — a live
+   * video never ends, so a waiting request would otherwise never play.
+   */
+  interruptBaseOnRequest: boolean;
   maxDurationSeconds: number;
   basePlaylist: PlaylistTrack[];
   licensingAcknowledgedAt?: string;

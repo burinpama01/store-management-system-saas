@@ -13,7 +13,12 @@ import type {
   PlaylistTrack,
   NowPlaying,
 } from "./types";
-import { selectNextTrack, type QueueItem, type NextTrack } from "./queue-engine";
+import {
+  selectNextTrack,
+  type QueueItem,
+  type NextTrack,
+  type ResumeBaseTrack,
+} from "./queue-engine";
 import { validateDonationSlip, DONATION_SLIP_ERROR_MESSAGE } from "./donation-check";
 
 type MusicRequestRow = Database["public"]["Tables"]["music_requests"]["Row"];
@@ -344,6 +349,7 @@ export function mapMusicPlayerSettings(row: PlayerSettingsRow): MusicPlayerSetti
     donationEnabled: row.donation_enabled,
     minDonation: row.min_donation,
     playNowPrice: row.play_now_price ?? 100,
+    interruptBaseOnRequest: row.interrupt_base_on_request ?? true,
     maxDurationSeconds: row.max_duration_seconds,
     basePlaylist: Array.isArray(row.base_playlist)
       ? (row.base_playlist as unknown as PlaylistTrack[])
@@ -366,6 +372,7 @@ export function defaultMusicPlayerSettings(
     donationEnabled: false,
     minDonation: 10,
     playNowPrice: 100,
+    interruptBaseOnRequest: true,
     maxDurationSeconds: 600,
     basePlaylist: [],
     licensingAcknowledgedAt: undefined,
@@ -393,6 +400,7 @@ export interface UpdateMusicPlayerSettingsInput {
   donationEnabled: boolean;
   minDonation: number;
   playNowPrice: number;
+  interruptBaseOnRequest: boolean;
   maxDurationSeconds: number;
   basePlaylist: PlaylistTrack[];
   licensingAcknowledged: boolean;
@@ -423,6 +431,7 @@ export async function upsertMusicPlayerSettings(
       donation_enabled: input.donationEnabled,
       min_donation: input.minDonation,
       play_now_price: input.playNowPrice,
+      interrupt_base_on_request: input.interruptBaseOnRequest,
       max_duration_seconds: input.maxDurationSeconds,
       base_playlist: input.basePlaylist as unknown as Json,
       licensing_acknowledged_at: ackAt,
@@ -511,6 +520,7 @@ export async function isVideoQueued(storeId: string, youtubeVideoId: string) {
 export async function advanceNowPlaying(
   storeId: string,
   settings: MusicPlayerSettings,
+  opts: { interruptedCurrent?: boolean } = {},
 ): Promise<{ data: NextTrack | null; error: ReturnType<typeof mapError> | null }> {
   const supabase = await createSupabaseServiceClient();
   const now = new Date().toISOString();
@@ -533,7 +543,26 @@ export async function advanceNowPlaying(
   const queue = await listPlayableQueue(storeId, settings.autoApprove);
   const lastBaseVideoId =
     current?.source === "base" ? current.youtube_video_id ?? null : null;
-  const next = selectNextTrack(queue, settings.basePlaylist, lastBaseVideoId);
+  // A store song that a request cut off mid-play is remembered and resumed once
+  // the queue empties (carried over while further requests play).
+  const pendingResume: ResumeBaseTrack | null = current?.resume_base_video_id
+    ? {
+        youtubeVideoId: current.resume_base_video_id,
+        title: current.resume_base_title ?? current.resume_base_video_id,
+      }
+    : null;
+  const next = selectNextTrack(queue, settings.basePlaylist, lastBaseVideoId, pendingResume);
+
+  // Only a cut-in leaves a store song unfinished — a song that ended (or that
+  // staff skipped) must never come back.
+  const cutOffBase =
+    opts.interruptedCurrent && current?.source === "base" && current.youtube_video_id
+      ? {
+          youtubeVideoId: current.youtube_video_id,
+          title: current.title ?? current.youtube_video_id,
+        }
+      : null;
+  const resume = next?.source === "base" ? null : cutOffBase ?? pendingResume;
 
   // A request that becomes "now playing" leaves the queue (and the รอตรวจ list)
   // immediately — mark it played the moment it starts.
@@ -553,6 +582,8 @@ export async function advanceNowPlaying(
       youtube_video_id: next?.youtubeVideoId ?? null,
       title: next?.title ?? null,
       duration_seconds: next?.durationSeconds ?? null,
+      resume_base_video_id: resume?.youtubeVideoId ?? null,
+      resume_base_title: resume?.title ?? null,
       started_at: now,
       updated_at: now,
     },
@@ -599,7 +630,7 @@ export async function playRequestNow(
 
   const { data: current } = await supabase
     .from("store_now_playing")
-    .select("music_request_id")
+    .select("music_request_id, source, youtube_video_id, title, resume_base_video_id, resume_base_title")
     .eq("store_id", storeId)
     .maybeSingle();
   if (current?.music_request_id && current.music_request_id !== requestId) {
@@ -618,6 +649,20 @@ export async function playRequestNow(
     durationSeconds: req.duration_seconds ?? undefined,
   };
 
+  // Staff cutting a request in over a store song — resume that song afterwards.
+  const resume =
+    current?.source === "base" && current.youtube_video_id
+      ? {
+          youtubeVideoId: current.youtube_video_id,
+          title: current.title ?? current.youtube_video_id,
+        }
+      : current?.resume_base_video_id
+        ? {
+            youtubeVideoId: current.resume_base_video_id,
+            title: current.resume_base_title ?? current.resume_base_video_id,
+          }
+        : null;
+
   await supabase
     .from("music_requests")
     .update({ status: "played", played_at: now, decided_at: now, updated_at: now })
@@ -632,6 +677,8 @@ export async function playRequestNow(
       youtube_video_id: next.youtubeVideoId,
       title: next.title,
       duration_seconds: next.durationSeconds ?? null,
+      resume_base_video_id: resume?.youtubeVideoId ?? null,
+      resume_base_title: resume?.title ?? null,
       started_at: now,
       updated_at: now,
     },
@@ -686,6 +733,8 @@ export async function playBaseTrackNow(
       youtube_video_id: youtubeVideoId,
       title,
       duration_seconds: null,
+      resume_base_video_id: null,
+      resume_base_title: null,
       started_at: now,
       updated_at: now,
     },
@@ -766,6 +815,8 @@ export async function playPreviousTrack(
       youtube_video_id: track.youtubeVideoId,
       title: track.title,
       duration_seconds: null,
+      resume_base_video_id: null,
+      resume_base_title: null,
       started_at: now,
       updated_at: now,
     },
