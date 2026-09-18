@@ -63,6 +63,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const readyRef = useRef(false);
   const playingRef = useRef(false);
   const advancingRef = useRef(false);
+  const atEndPollsRef = useRef(0);
   const advanceRef = useRef<(opts?: { interrupted?: boolean }) => Promise<void>>(async () => {});
 
   /**
@@ -72,6 +73,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const advance = useCallback(async (opts: { interrupted?: boolean } = {}) => {
     if (advancingRef.current) return;
     advancingRef.current = true;
+    atEndPollsRef.current = 0;
     try {
       const res = await advancePlayerAction({ interrupted: opts.interrupted === true });
       if (res.error) {
@@ -122,7 +124,15 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     const duration = p.getDuration();
     const position = p.getCurrentTime();
     if (!Number.isFinite(duration) || duration <= 0) return position > 30;
-    return position >= duration - 2;
+    // A normal song can sit in its last seconds on one poll and then end by
+    // itself — only a playhead pinned to the end on consecutive polls is live.
+    // Otherwise the nearly-finished song would be flagged as cut off and replayed.
+    if (position < duration - 2) {
+      atEndPollsRef.current = 0;
+      return false;
+    }
+    atEndPollsRef.current += 1;
+    return atEndPollsRef.current >= 2;
   }, []);
 
   const refreshState = useCallback(async () => {
