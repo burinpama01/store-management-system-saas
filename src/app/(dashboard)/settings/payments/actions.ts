@@ -16,7 +16,13 @@ import {
   testTrueMoneyManualConnection,
   testTrueMoneyOpenApiConnection,
 } from "@/modules/payments/service";
+import {
+  disableBeamConfigForStore,
+  saveBeamConfigForStore,
+  testBeamConnection,
+} from "@/modules/payments/beam-service";
 import type {
+  BeamTestResult,
   TrueMoneyManualTestResult,
   TrueMoneyOpenApiTestResult,
 } from "@/modules/payments/types";
@@ -282,3 +288,65 @@ export async function disableTrueMoneyOpenApiConfigAction(): Promise<{ error: st
   }
 }
 
+
+export async function saveBeamConfigAction(
+  _prev: { error: string | null; ok?: boolean },
+  formData: FormData,
+): Promise<{ error: string | null; ok?: boolean }> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { user, ctx } = await getStoreContext();
+    const environment = formData.get("environment") === "test" ? "test" : "live";
+    const result = await saveBeamConfigForStore({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      merchantId: ((formData.get("merchantId") as string | null) ?? "").trim(),
+      apiKey: ((formData.get("apiKey") as string | null) ?? "").trim() || null,
+      webhookHmacKey: ((formData.get("webhookHmacKey") as string | null) ?? "").trim() || null,
+      environment,
+      isEnabled: formData.get("isEnabled") === "1",
+      actorUserId: user.id,
+    });
+    if (result.error) return { error: result.error };
+    revalidatePath("/settings/payments");
+    revalidatePath("/pos");
+    return { error: null, ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function testBeamConnectionAction(formData: FormData): Promise<BeamTestResult> {
+  try {
+    await requirePermission("settings.manage_store");
+    await requireFeature("byoPaymentGateway");
+    const { ctx } = await getStoreContext();
+    return await testBeamConnection({
+      storeId: ctx.storeId,
+      merchantId: ((formData.get("merchantId") as string | null) ?? "").trim() || null,
+      apiKey: ((formData.get("apiKey") as string | null) ?? "").trim() || null,
+      environment: formData.get("environment") === "test" ? "test" : "live",
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export async function disableBeamConfigAction(): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("settings.manage_store");
+    const { user, ctx } = await getStoreContext();
+    const result = await disableBeamConfigForStore({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+    });
+    if (result.error) return result;
+    revalidatePath("/settings/payments");
+    revalidatePath("/pos");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}

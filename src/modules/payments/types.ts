@@ -52,6 +52,9 @@ export interface PaymentProviderConfigPublic {
   /** Open API: masked webhook secret only — never full secret. */
   webhookSecretMasked: string | null;
   hasWebhookSecret: boolean;
+  /** Beam: masked merchant id + whether an API key is stored (never the key itself). */
+  merchantIdMasked?: string | null;
+  hasApiKey?: boolean;
   updatedAt: string;
 }
 
@@ -130,3 +133,32 @@ export type TrueMoneyOpenApiTestResult =
     }
   | { ok: false; error: string };
 
+
+export interface BeamCredentials {
+  merchantId: string;
+  apiKey: string;
+  /** Base64 HMAC key from Lighthouse → Developers → Webhooks. */
+  webhookHmacKey: string | null;
+}
+
+export type BeamTestResult =
+  | {
+      ok: true;
+      providerKey: "beam";
+      environment: PaymentEnvironment;
+      merchantIdMasked: string | null;
+      hasWebhookKey: boolean;
+      webhookUrl: string;
+      message: string;
+    }
+  | { ok: false; error: string };
+
+/** What the POS needs to render a Beam QR and poll it. */
+export interface BeamQrForPos {
+  gatewayPaymentId: string;
+  amount: number;
+  status: GatewayPaymentStatus;
+  qrPayload: string | null;
+  qrImageBase64: string | null;
+  expiresAt: string | null;
+}

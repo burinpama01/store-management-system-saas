@@ -37,6 +37,9 @@ import {
   voidOrderAction,
   addItemsToTableAction,
   prepareTrueMoneyQrAction,
+  prepareBeamQrAction,
+  getBeamPaymentStatusAction,
+  cancelBeamQrAction,
   type RewardProductLine,
 } from "./actions";
 import { useSearchParams } from "next/navigation";
@@ -65,6 +68,19 @@ import {
 // ─── Types ────────────────────────────────────────────────────────
 
 type Phase = "ordering" | "payment" | "receipt";
+type PayMethodChoice = "cash" | "qr_promptpay" | "truemoney" | "beam";
+type PayConfirmOpts = {
+  qrPaymentVerified?: boolean;
+  trueMoneyConfirmReason?: string;
+  beamGatewayPaymentId?: string;
+};
+type BeamQrView = {
+  gatewayPaymentId: string;
+  status: string;
+  qrPayload: string | null;
+  qrImageBase64: string | null;
+};
+const BEAM_OPEN_STATUSES = new Set(["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING"]);
 type TicketDraft = Pick<SavedOrderTicket, "tableId" | "tableNumber" | "customerName" | "note" | "buffetSessionId">;
 type DiscountDraft = { mode: DiscountType; amount: string; percentage: string; note: string };
 type HistoryRangeMode = "today" | "7d" | "30d" | "custom";
@@ -130,6 +146,7 @@ interface Props {
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
   trueMoneyEnabled?: boolean;
+  beamEnabled?: boolean;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -1845,6 +1862,8 @@ function paymentMethodLabel(method: string) {
   if (method === "qr_promptpay") return "QR พร้อมเพย์";
   if (method === "credit_card") return "บัตรเครดิต";
   if (method === "bank_transfer") return "โอนธนาคาร";
+  if (method === "truemoney") return "TrueMoney";
+  if (method === "beam") return "Beam QR";
   return method;
 }
 
@@ -2244,13 +2263,10 @@ function PaymentPanel({
   customerDisplayUnavailableMessage,
   cashSessionRequired,
   trueMoneyEnabled,
+  beamEnabled,
 }: {
   cart: Cart;
-  onConfirm: (
-    method: "cash" | "qr_promptpay" | "truemoney",
-    received?: number,
-    opts?: { qrPaymentVerified?: boolean; trueMoneyConfirmReason?: string },
-  ) => void;
+  onConfirm: (method: PayMethodChoice, received?: number, opts?: PayConfirmOpts) => void;
   onBack: () => void;
   onShowPromptPayOnCustomerDisplay: (payment: CustomerDisplayPayment) => void;
   isPending: boolean;
@@ -2261,14 +2277,24 @@ function PaymentPanel({
   customerDisplayUnavailableMessage: string | null;
   cashSessionRequired: boolean;
   trueMoneyEnabled?: boolean;
+  beamEnabled?: boolean;
 }) {
-  const [method, setMethod] = useState<"cash" | "qr_promptpay" | "truemoney">("cash");
+  const [method, setMethod] = useState<PayMethodChoice>("cash");
   const [received, setReceived] = useState<string>("");
   const [qrPaymentVerified, setQrPaymentVerified] = useState(false);
   const [customerDisplayNotice, setCustomerDisplayNotice] = useState<string | null>(null);
   const [trueMoneyPayload, setTrueMoneyPayload] = useState<string | null>(null);
   const [trueMoneyError, setTrueMoneyError] = useState<string | null>(null);
   const [trueMoneyLoading, setTrueMoneyLoading] = useState(false);
+  const [beamAttempt, setBeamAttempt] = useState(0);
+  // One QR per (amount, attempt); results are keyed so a stale response never shows.
+  const beamKey = method === "beam" && beamEnabled && cart.total > 0 ? `${cart.total}|${beamAttempt}` : null;
+  const [beamResult, setBeamResult] = useState<{ key: string; qr: BeamQrView | null; error: string | null } | null>(null);
+  const beamCurrent = beamKey && beamResult?.key === beamKey ? beamResult : null;
+  const beamQr = beamCurrent?.qr ?? null;
+  const beamError = beamCurrent?.error ?? null;
+  const beamLoading = Boolean(beamKey) && !beamCurrent;
+  const beamAutoConfirmedRef = useRef<string | null>(null);
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
@@ -2278,6 +2304,9 @@ function PaymentPanel({
   const trueMoneyReady =
     method !== "truemoney" ||
     (!!trueMoneyPayload && qrPaymentVerified);
+  // Beam: the server confirms payment with Beam itself — no staff checkbox.
+  const beamPaid = beamQr?.status === "PAID";
+  const beamReady = method !== "beam" || beamPaid;
 
   let promptPayPayload: string | null = null;
   if (method === "qr_promptpay" && promptpayId && cart.total > 0) {
@@ -2322,9 +2351,85 @@ function PaymentPanel({
     setCustomerDisplayNotice("ส่ง QR ไปจอลูกค้าแล้ว");
   }, [method, trueMoneyPayload, customerDisplayEnabled, cart.total, onShowPromptPayOnCustomerDisplay]);
 
-  const methodOptions: Array<"cash" | "qr_promptpay" | "truemoney"> = trueMoneyEnabled
-    ? ["cash", "qr_promptpay", "truemoney"]
-    : ["cash", "qr_promptpay"];
+  // Beam: one QR (charge) per method/amount/attempt; abandoning it cancels the charge row
+  // so a payment that still lands shows up as LATE_PAID instead of silently closing a bill.
+  useEffect(() => {
+    if (!beamKey) return;
+    const amount = Number(beamKey.split("|")[0]);
+    let cancelled = false;
+    let createdId: string | null = null;
+    void prepareBeamQrAction(amount, createTicketId()).then((res) => {
+      if (cancelled) {
+        if (res.qr) void cancelBeamQrAction(res.qr.gatewayPaymentId);
+        return;
+      }
+      if (res.error || !res.qr) {
+        setBeamResult({ key: beamKey, qr: null, error: res.error ?? "สร้าง QR Beam ไม่สำเร็จ" });
+        return;
+      }
+      createdId = res.qr.gatewayPaymentId;
+      setBeamResult({
+        key: beamKey,
+        error: null,
+        qr: {
+          gatewayPaymentId: res.qr.gatewayPaymentId,
+          status: res.qr.status,
+          qrPayload: res.qr.qrPayload,
+          qrImageBase64: res.qr.qrImageBase64,
+        },
+      });
+    });
+    return () => {
+      cancelled = true;
+      // No-op on the server once the charge is PAID.
+      if (createdId) void cancelBeamQrAction(createdId);
+    };
+  }, [beamKey]);
+
+  const beamPollId = beamQr && BEAM_OPEN_STATUSES.has(beamQr.status) ? beamQr.gatewayPaymentId : null;
+  useEffect(() => {
+    if (!beamPollId) return;
+    let stopped = false;
+    const timer = window.setInterval(() => {
+      void getBeamPaymentStatusAction(beamPollId).then((res) => {
+        if (stopped || !res.status) return;
+        setBeamResult((current) =>
+          current?.qr && current.qr.gatewayPaymentId === beamPollId
+            ? { ...current, qr: { ...current.qr, status: res.status as string } }
+            : current,
+        );
+      });
+    }, 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [beamPollId]);
+
+  // Paid on Beam → close the bill without waiting for the cashier to press anything.
+  useEffect(() => {
+    if (method !== "beam" || !beamQr || beamQr.status !== "PAID" || isPending) return;
+    if (beamAutoConfirmedRef.current === beamQr.gatewayPaymentId) return;
+    beamAutoConfirmedRef.current = beamQr.gatewayPaymentId;
+    onConfirm("beam", undefined, { beamGatewayPaymentId: beamQr.gatewayPaymentId });
+  }, [method, beamQr, isPending, onConfirm]);
+
+  const beamQrPayload = method === "beam" ? beamQr?.qrPayload ?? null : null;
+  useEffect(() => {
+    if (!beamQrPayload || !customerDisplayEnabled) return;
+    onShowPromptPayOnCustomerDisplay({
+      method: "qr_promptpay",
+      amount: cart.total,
+      promptPayPayload: beamQrPayload,
+    });
+  }, [beamQrPayload, customerDisplayEnabled, cart.total, onShowPromptPayOnCustomerDisplay]);
+
+  const methodOptions: PayMethodChoice[] = [
+    "cash",
+    "qr_promptpay",
+    ...(trueMoneyEnabled ? (["truemoney"] as const) : []),
+    ...(beamEnabled ? (["beam"] as const) : []),
+  ];
 
   return (
     <div className="flex flex-col h-full">
@@ -2350,7 +2455,11 @@ function PaymentPanel({
 
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-600">วิธีชำระ</p>
-          <div className={`grid gap-2 ${methodOptions.length > 2 ? "grid-cols-3" : "grid-cols-2"}`}>
+          <div
+            className={`grid gap-2 ${
+              methodOptions.length > 3 ? "grid-cols-2 sm:grid-cols-4" : methodOptions.length > 2 ? "grid-cols-3" : "grid-cols-2"
+            }`}
+          >
             {methodOptions.map((m) => (
               <button
                 key={m}
@@ -2366,7 +2475,7 @@ function PaymentPanel({
                     : "border-gray-300 text-gray-700 hover:border-gray-500"
                 }`}
               >
-                {m === "cash" ? "เงินสด" : m === "qr_promptpay" ? "QR พร้อมเพย์" : "TrueMoney"}
+                {m === "cash" ? "เงินสด" : m === "qr_promptpay" ? "QR พร้อมเพย์" : m === "beam" ? "Beam QR" : "TrueMoney"}
               </button>
             ))}
           </div>
@@ -2510,6 +2619,66 @@ function PaymentPanel({
           </div>
         )}
 
+        {method === "beam" && (
+          <div className="flex flex-col items-center gap-2 py-4">
+            {beamLoading ? (
+              <p className="text-xs text-gray-500">กำลังสร้าง QR ผ่าน Beam...</p>
+            ) : beamQr && (BEAM_OPEN_STATUSES.has(beamQr.status) || beamQr.status === "PAID") ? (
+              <>
+                {beamQr.qrPayload ? (
+                  <QrCode value={beamQr.qrPayload} size={200} />
+                ) : beamQr.qrImageBase64 ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`data:image/png;base64,${beamQr.qrImageBase64}`}
+                    alt="QR ชำระเงินผ่าน Beam"
+                    width={200}
+                    height={200}
+                    className="h-[200px] w-[200px]"
+                  />
+                ) : null}
+                <p className="text-sm font-semibold text-gray-700">
+                  ให้ลูกค้าสแกนชำระ {priceStr(cart.total)}
+                </p>
+                {beamPaid ? (
+                  <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700" role="status">
+                    Beam ยืนยันรับเงินแล้ว — กำลังปิดบิล
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 text-center" role="status">
+                    รอ Beam ยืนยันการชำระ… ระบบจะปิดบิลให้อัตโนมัติ ไม่ต้องตรวจสลิป
+                  </p>
+                )}
+                {customerDisplayEnabled && beamQr.qrPayload ? (
+                  <p className="text-xs text-gray-400 text-center">แสดง QR บนจอลูกค้าแล้ว</p>
+                ) : null}
+              </>
+            ) : (
+              <div className="w-full space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-center text-xs text-amber-700">
+                <p>
+                  {beamError ??
+                    (beamQr?.status === "EXPIRED"
+                      ? "QR หมดอายุแล้ว"
+                      : beamQr?.status === "FAILED"
+                        ? "Beam แจ้งว่าชำระไม่สำเร็จ"
+                        : beamQr
+                          ? "QR นี้ใช้ต่อไม่ได้"
+                          : "ยังไม่ได้ตั้งค่า Beam — ไปที่ ตั้งค่า › ชำระเงินลูกค้า")}
+                </p>
+                {beamEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setBeamAttempt((n) => n + 1)}
+                    className="min-h-11 rounded-lg border border-amber-300 bg-white px-3 font-semibold text-amber-800"
+                  >
+                    สร้าง QR ใหม่
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
+
         {error && (
           <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
             {error}
@@ -2531,6 +2700,7 @@ function PaymentPanel({
             !cashReady ||
             !qrReady ||
             !trueMoneyReady ||
+            !beamReady ||
             (method === "qr_promptpay" && !promptPayPayload) ||
             (method === "truemoney" && !trueMoneyPayload)
           }
@@ -2543,6 +2713,7 @@ function PaymentPanel({
                   method === "qr_promptpay" || method === "truemoney"
                     ? qrPaymentVerified
                     : undefined,
+                beamGatewayPaymentId: method === "beam" ? beamQr?.gatewayPaymentId : undefined,
               },
             )
           }
@@ -2869,6 +3040,7 @@ export function PosTerminal({
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
   trueMoneyEnabled = false,
+  beamEnabled = false,
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -3604,7 +3776,7 @@ export function PosTerminal({
     }
   }
 
-  function handleConfirmPayment(method: "cash" | "qr_promptpay" | "truemoney", received?: number, opts?: { qrPaymentVerified?: boolean; trueMoneyConfirmReason?: string }) {
+  function handleConfirmPayment(method: PayMethodChoice, received?: number, opts?: PayConfirmOpts) {
     setPayError(null);
     if (couponCode.trim() && !appliedCoupon) {
       setPayError("กรุณากดใช้คูปองก่อนชำระเงิน");
@@ -3612,8 +3784,16 @@ export function PosTerminal({
     }
     startTransition(async () => {
       const isTrueMoney = method === "truemoney";
+      const isBeam = method === "beam";
+      if (isBeam && !opts?.beamGatewayPaymentId) {
+        setPayError("ยังไม่มี QR Beam ที่ชำระแล้ว");
+        return;
+      }
+      const beamOpts = isBeam && opts?.beamGatewayPaymentId
+        ? { gatewayPaymentId: opts.beamGatewayPaymentId }
+        : null;
       const paymentInput = {
-        method: isTrueMoney ? ("other" as const) : method,
+        method: isTrueMoney || isBeam ? ("other" as const) : method,
         amount: displayCart.total,
         receivedAmount: received,
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
@@ -3644,6 +3824,7 @@ export function PosTerminal({
           idempotencyKey: checkoutIdempotencyKey,
           paymentIdempotencyKey: createTicketId(),
           trueMoney: trueMoneyOpts,
+          beam: beamOpts,
         });
         if (result.error) {
           // Order persisted but payment failed — remember it so retry only pays.
@@ -3665,6 +3846,7 @@ export function PosTerminal({
         const payResult = await collectPaymentAction(order.orderId, paymentInput, {
           idempotencyKey: createTicketId(),
           trueMoney: trueMoneyOpts,
+          beam: beamOpts,
         });
         if (payResult.error) {
           setPayError(payResult.error);
@@ -4029,6 +4211,7 @@ export function PosTerminal({
             customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
             cashSessionRequired={!cashSession}
             trueMoneyEnabled={trueMoneyEnabled}
+            beamEnabled={beamEnabled}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -4280,6 +4463,7 @@ export function PosTerminal({
             customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
             cashSessionRequired={!cashSession}
             trueMoneyEnabled={trueMoneyEnabled}
+            beamEnabled={beamEnabled}
           />
         )}
         {phase === "receipt" && receipt && (

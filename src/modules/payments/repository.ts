@@ -91,6 +91,8 @@ function toPublic(
       ? (config.publicConfig as {
           webhookSecretMasked?: string | null;
           hasWebhookSecret?: boolean;
+          merchantIdMasked?: string | null;
+          hasApiKey?: boolean;
         })
       : {};
   return {
@@ -111,6 +113,8 @@ function toPublic(
     hasWebhookSecret: Boolean(
       opts?.hasWebhookSecret ?? fromPublic.hasWebhookSecret ?? false,
     ),
+    merchantIdMasked: fromPublic.merchantIdMasked ?? null,
+    hasApiKey: Boolean(fromPublic.hasApiKey),
     updatedAt: config.updatedAt,
   };
 }

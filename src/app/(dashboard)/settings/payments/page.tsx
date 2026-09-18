@@ -7,6 +7,8 @@ import {
   buildTrueMoneyWebhookUrl,
   listTrueMoneyManualPaymentsForStore,
 } from "@/modules/payments/service";
+import { buildBeamWebhookUrl, listBeamPaymentsForStore } from "@/modules/payments/beam-service";
+import { BeamIntegrationCard } from "./BeamIntegrationCard";
 import { PaymentIntegrationsManager } from "./PaymentIntegrationsManager";
 
 export const dynamic = "force-dynamic";
@@ -32,16 +34,26 @@ export default async function PaymentsSettingsPage() {
     );
   }
 
-  const [configsRes, paymentsRes] = await Promise.all([
+  const [configsRes, paymentsRes, beamHistory] = await Promise.all([
     listProviderConfigsPublic(ctx.storeId),
     listTrueMoneyManualPaymentsForStore(ctx.storeId, { limit: 30 }),
+    listBeamPaymentsForStore(ctx.storeId, 30),
   ]);
+  const configs = configsRes.data ?? [];
+  const beamConfig = configs.find((c) => c.providerKey === "beam" && c.mode === "open_api") ?? null;
   return (
-    <PaymentIntegrationsManager
-      configs={configsRes.data ?? []}
-      recentPayments={paymentsRes.data ?? []}
-      storeId={ctx.storeId}
-      webhookUrl={buildTrueMoneyWebhookUrl(ctx.storeId)}
-    />
+    <div className="space-y-4">
+      <BeamIntegrationCard
+        config={beamConfig}
+        webhookUrl={buildBeamWebhookUrl(ctx.storeId)}
+        history={beamHistory}
+      />
+      <PaymentIntegrationsManager
+        configs={configs}
+        recentPayments={paymentsRes.data ?? []}
+        storeId={ctx.storeId}
+        webhookUrl={buildTrueMoneyWebhookUrl(ctx.storeId)}
+      />
+    </div>
   );
 }

@@ -60,6 +60,9 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/api/launcher/logs" ||
     // StoreOS Connect: webhook ขาเข้าจาก JDC (auth ด้วย HMAC ใน handler ไม่ใช้ session)
     request.nextUrl.pathname.startsWith("/api/connect/v1/webhooks/") ||
+    // BYO payment gateways (Beam / TrueMoney): webhook ขาเข้า — auth ด้วย HMAC/JWT
+    // ต่อร้านใน handler ไม่มี session ผู้ใช้
+    request.nextUrl.pathname.startsWith("/api/payments/webhooks/") ||
     // StoreOS Connect: cron reconcile (auth ด้วย CRON_SECRET ใน handler)
     request.nextUrl.pathname.startsWith("/api/connect/cron/") ||
     // แจ้งเตือนบุฟเฟต์ใกล้หมดเวลา: cron (auth ด้วย CRON_SECRET ใน handler)
