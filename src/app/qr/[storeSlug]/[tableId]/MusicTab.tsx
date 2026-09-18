@@ -12,6 +12,7 @@ import {
   startMusicDonationAction,
   verifyMusicDonationAction,
   checkMusicDonationPaymentAction,
+  cancelMusicDonationPaymentAction,
 } from "./music-actions";
 import type { PlayedTrack } from "@/modules/music-requests/repository";
 import {
@@ -76,7 +77,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   const [payInfo, setPayInfo] = useState<{ promptpayId: string; amount: number } | null>(null);
   const [donationRequestId, setDonationRequestId] = useState<string | null>(null);
   // Beam: QR ที่ระบบยืนยันเอง (ไม่ต้องแนบสลิป)
-  const [beamPay, setBeamPay] = useState<{ payload: string | null; image: string | null; amount: number } | null>(null);
+  const [beamPay, setBeamPay] = useState<{ payload: string | null; image: string | null; amount: number; token: string } | null>(null);
 
   const load = useCallback(async () => {
     const [res, history] = await Promise.all([
@@ -252,12 +253,13 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
         void load();
         return;
       }
-      if (!res.error && res.requestId && res.beam) {
+      if (!res.error && res.requestId && res.beam && res.paymentToken) {
         setDonationRequestId(res.requestId);
         setBeamPay({
           payload: res.beam.qrPayload,
           image: res.beam.qrImageBase64,
           amount: res.beam.amount,
+          token: res.paymentToken,
         });
         return;
       }
@@ -275,11 +277,11 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
 
   // Beam: ถามสถานะทุก 3 วิ จนระบบยืนยัน (webhook/lookup) — ไม่ต้องแนบสลิป
   useEffect(() => {
-    if (!beamPay || !donationRequestId) return;
+    if (!beamPay) return;
     let cancelled = false;
-    const requestId = donationRequestId;
+    const token = beamPay.token;
     const timer = window.setInterval(() => {
-      void checkMusicDonationPaymentAction(storeId, requestId).then((res) => {
+      void checkMusicDonationPaymentAction(token).then((res) => {
         if (cancelled) return;
         if (res.verified) {
           window.clearInterval(timer);
@@ -296,7 +298,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
           window.clearInterval(timer);
           setErrMsg("QR หมดอายุหรือชำระไม่สำเร็จ — กดขอใหม่อีกครั้ง");
           setBeamPay(null);
-        } else if (res.error && res.status === "PAID") {
+        } else if (res.status === "LATE_PAID" || res.status === "REVIEW_REQUIRED") {
           window.clearInterval(timer);
           setErrMsg(res.error);
         }
@@ -306,7 +308,17 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [beamPay, donationRequestId, storeId, load]);
+  }, [beamPay, load]);
+
+  /** ยกเลิกที่หน้า QR Beam: ยกเลิกฝั่ง server ด้วย (เงินที่เข้าหลังจากนี้ร้านตรวจคืน ไม่เข้าคิว) */
+  function cancelBeamDonation() {
+    const token = beamPay?.token;
+    resetTrack();
+    if (!token) return;
+    void cancelMusicDonationPaymentAction(token).then((res) => {
+      if (res.error) setErrMsg(res.error);
+    });
+  }
 
   function onSlipSelected(file: File | undefined) {
     if (!file || !donationRequestId) return;
@@ -421,7 +433,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
               <p className="text-xs text-violet-700" aria-live="polite">
                 จ่ายแล้วรอสักครู่ ระบบยืนยันให้อัตโนมัติ ไม่ต้องแนบสลิป
               </p>
-              <button onClick={resetTrack} className="text-xs text-gray-400">
+              <button onClick={cancelBeamDonation} className="text-xs text-gray-400">
                 ยกเลิก
               </button>
             </div>

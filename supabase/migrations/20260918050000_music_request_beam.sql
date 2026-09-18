@@ -1,9 +1,10 @@
 -- ขอเพลง (โดเนท) จ่ายด้วย Beam QR — ร้านที่เปิด Beam: ไม่ต้องแนบสลิป
 --
 -- gateway_payments.music_request_id ผูกรายการชำระ Beam กับคำขอเพลง (1:1)
--- trigger: เมื่อ Beam ยืนยัน PAID (webhook หรือ lookup ผ่าน API — จุดเดียวไม่ว่าทางไหน)
---          และยอดตรงกับยอดโดเนท → คำขอเพลง verified + approved เข้าคิวทันที
---          ยอดไม่ตรง → ไม่ยืนยันอัตโนมัติ (ร้านตรวจเองที่ประวัติ Beam)
+-- trigger (BEFORE UPDATE → PAID) — จุดเดียวไม่ว่า PAID มาจาก webhook หรือ lookup ผ่าน API:
+--   คำขอยังรอจ่าย (donation pending + status pending) และยอดตรง → คำขอ verified + approved เข้าคิว
+--   คำขอถูกยกเลิก/ปฏิเสธ/หมดอายุไปแล้ว → รายการชำระเป็น LATE_PAID (ไม่เอาเพลงเข้าคิว ร้านคืนเงิน)
+--   ยอดไม่ตรง → REVIEW_REQUIRED (ร้านตรวจเอง)
 -- ร้านที่ไม่มี Beam ใช้ PromptPay + ตรวจสลิปเดิม
 -- additive
 
@@ -13,6 +14,8 @@ alter table public.gateway_payments
 create unique index if not exists gateway_payments_music_request_unique
   on public.gateway_payments (music_request_id)
   where music_request_id is not null;
+
+drop trigger if exists promote_music_request_on_gateway_paid on public.gateway_payments;
 
 create or replace function public.promote_music_request_on_gateway_paid()
 returns trigger
@@ -30,11 +33,25 @@ begin
     and store_id = new.store_id
   for update;
 
-  if not found or v_req.donation_status = 'verified' then
+  if not found then
+    new.status := 'REVIEW_REQUIRED';
+    new.failure_message := 'ไม่พบคำขอเพลงของรายการชำระนี้ — ตรวจสอบแล้วคืนเงิน';
+    return new;
+  end if;
+
+  if v_req.donation_status = 'verified' then
+    return new;
+  end if;
+
+  if v_req.donation_status is distinct from 'pending' or v_req.status is distinct from 'pending' then
+    new.status := 'LATE_PAID';
+    new.failure_message := 'เงินเข้าหลังคำขอเพลงถูกยกเลิก/ปฏิเสธ/หมดอายุ — ตรวจแล้วคืนเงินลูกค้า';
     return new;
   end if;
 
   if round(v_req.donation_amount, 2) is distinct from round(new.amount, 2) then
+    new.status := 'REVIEW_REQUIRED';
+    new.failure_message := 'ยอดที่จ่ายไม่ตรงกับยอดขอเพลง — ตรวจสอบก่อนเปิดเพลง';
     return new;
   end if;
 
@@ -53,9 +70,8 @@ $$;
 revoke all on function public.promote_music_request_on_gateway_paid() from public;
 revoke execute on function public.promote_music_request_on_gateway_paid() from anon, authenticated;
 
-drop trigger if exists promote_music_request_on_gateway_paid on public.gateway_payments;
 create trigger promote_music_request_on_gateway_paid
-  after update of status on public.gateway_payments
+  before update of status on public.gateway_payments
   for each row
   when (new.music_request_id is not null and new.status = 'PAID' and old.status is distinct from 'PAID')
   execute function public.promote_music_request_on_gateway_paid();

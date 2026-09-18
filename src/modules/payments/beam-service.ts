@@ -394,7 +394,9 @@ export async function createBeamQrPayment(input: {
       return { ok: false, error: "ยอดเปลี่ยนไปจาก QR เดิม — กรุณาสร้าง QR ใหม่" };
     }
     if (!OPEN_STATUSES.includes(row.status as GatewayPaymentStatus)) {
-      return { ok: true, qr: toPosView(row, null) };
+      // จ่ายแล้ว = คืนสถานะ PAID · หมดอายุ/ล้ม/ยกเลิก = ไม่มี QR ที่ใช้ได้ ต้องเริ่มรายการใหม่
+      if (row.status === "PAID") return { ok: true, qr: toPosView(row, null) };
+      return { ok: false, error: "QR นี้หมดอายุหรือถูกยกเลิกแล้ว — กรุณาสร้างรายการใหม่" };
     }
   } else {
     const expiresAt = new Date(Date.now() + QR_TTL_MS).toISOString();
@@ -515,6 +517,11 @@ export async function refreshBeamPayment(input: {
   storeId: string;
   gatewayPaymentId: string;
   client?: BeamDb;
+  /**
+   * ถาม Beam API ได้ไม่ถี่กว่านี้ (อิง metadata.lastLookupAt) — webhook คือทางหลัก
+   * ช่วงที่ยังไม่ครบ = คืนสถานะจาก DB (หน้าลูกค้า poll ถี่ได้โดยไม่ยิง provider)
+   */
+  minLookupIntervalMs?: number;
 }): Promise<{ ok: true; status: GatewayPaymentStatus; amount: number } | { ok: false; error: string }> {
   const supabase = input.client ?? (await createSupabaseServerClient());
   const { data } = await supabase
@@ -532,6 +539,12 @@ export async function refreshBeamPayment(input: {
   if (!row.provider_payment_id) return { ok: true, status, amount };
   if (Date.now() - new Date(row.created_at).getTime() < LOOKUP_AFTER_MS) {
     return { ok: true, status, amount };
+  }
+  if (input.minLookupIntervalMs) {
+    const last = typeof row.metadata?.lastLookupAt === "string" ? Date.parse(row.metadata.lastLookupAt) : NaN;
+    if (Number.isFinite(last) && Date.now() - last < input.minLookupIntervalMs) {
+      return { ok: true, status, amount };
+    }
   }
 
   const config = await getBeamConfig(input.storeId, input.client);
@@ -607,6 +620,14 @@ export async function refreshBeamPayment(input: {
   }
 
   const expiresAt = typeof row.metadata?.expiresAt === "string" ? Date.parse(row.metadata.expiresAt) : NaN;
+  if (!(Number.isFinite(expiresAt) && Date.now() > expiresAt + 60_000)) {
+    // ยังรอจ่าย: จดเวลาที่ถาม Beam ล่าสุดไว้ให้ throttle
+    await supabase
+      .from("gateway_payments")
+      .update({ metadata: metadata as Json, updated_at: now })
+      .eq("id", row.id)
+      .in("status", OPEN_STATUSES);
+  }
   if (Number.isFinite(expiresAt) && Date.now() > expiresAt + 60_000) {
     await supabase
       .from("gateway_payments")
@@ -622,13 +643,15 @@ export async function refreshBeamPayment(input: {
 export async function cancelBeamQrPayment(input: {
   storeId: string;
   gatewayPaymentId: string;
-  actorUserId: string;
+  actorUserId: string | null;
+  client?: BeamDb;
+  reason?: string;
 }): Promise<{ error: string | null }> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   const now = new Date().toISOString();
   const { data } = await supabase
     .from("gateway_payments")
-    .update({ status: "CANCELLED", failure_message: "ยกเลิก QR ที่ POS", updated_at: now })
+    .update({ status: "CANCELLED", failure_message: input.reason ?? "ยกเลิก QR ที่ POS", updated_at: now })
     .eq("id", input.gatewayPaymentId)
     .eq("store_id", input.storeId)
     .eq("provider_key", "beam")
@@ -640,7 +663,7 @@ export async function cancelBeamQrPayment(input: {
       level: "info",
       source: "payments.cancel",
       action: "BEAM_QR_CANCELLED",
-      message: "ยกเลิก QR Beam ที่ POS",
+      message: input.reason ?? "ยกเลิก QR Beam ที่ POS",
       organizationId: (data as { organization_id: string }).organization_id,
       storeId: input.storeId,
       actorUserId: input.actorUserId,

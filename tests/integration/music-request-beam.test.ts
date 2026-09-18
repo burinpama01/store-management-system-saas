@@ -109,11 +109,36 @@ describe.skipIf(!envReady)("music request paid via Beam (local supabase)", () =>
     expect(await request(id)).toEqual({ donation_status: "verified", status: "approved", donation_ref: `BEAM:${pay}` });
   });
 
-  it("an amount mismatch is not auto-verified", async () => {
+  async function paymentStatus(id: string) {
+    const { data } = await service.from("gateway_payments").select("status").eq("id", id).single();
+    return (data as { status: string }).status;
+  }
+
+  it("an amount mismatch is not auto-verified and the payment goes to review", async () => {
     const id = await pendingDonation(100);
     const pay = await beamPayment(id, 50);
     await service.from("gateway_payments").update({ status: "PAID" }).eq("id", pay);
     expect(await request(id)).toMatchObject({ donation_status: "pending", status: "pending" });
+    expect(await paymentStatus(pay)).toBe("REVIEW_REQUIRED");
+  });
+
+  it("money arriving after staff rejected the song never revives it (LATE_PAID)", async () => {
+    const id = await pendingDonation(100);
+    const pay = await beamPayment(id, 100);
+    await service.from("music_requests").update({ status: "rejected" }).eq("id", id);
+    await service.from("gateway_payments").update({ status: "PAID" }).eq("id", pay);
+    expect(await request(id)).toMatchObject({ donation_status: "pending", status: "rejected" });
+    expect(await paymentStatus(pay)).toBe("LATE_PAID");
+  });
+
+  it("money arriving after the customer cancelled / the QR expired is LATE_PAID too", async () => {
+    const id = await pendingDonation(100);
+    const pay = await beamPayment(id, 100);
+    await service.from("music_requests").update({ donation_status: "rejected", status: "expired" }).eq("id", id);
+    await service.from("gateway_payments").update({ status: "CANCELLED" }).eq("id", pay);
+    await service.from("gateway_payments").update({ status: "PAID" }).eq("id", pay);
+    expect(await request(id)).toMatchObject({ donation_status: "rejected", status: "expired" });
+    expect(await paymentStatus(pay)).toBe("LATE_PAID");
   });
 
   it("one payment per request", async () => {

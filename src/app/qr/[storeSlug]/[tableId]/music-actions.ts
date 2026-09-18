@@ -29,7 +29,13 @@ import { verifySlipByImageBase64, isSlip2goConfigured } from "@/modules/billing/
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { nowMs } from "@/shared/utils/time";
 import { logSystemEvent } from "@/modules/system/event-log";
-import { createBeamQrPayment, isBeamReadyForStore, refreshBeamPayment } from "@/modules/payments/beam-service";
+import { cancelBeamQrPayment, createBeamQrPayment, isBeamReadyForStore, refreshBeamPayment } from "@/modules/payments/beam-service";
+import {
+  allowMusicPaymentPoll,
+  createMusicPaymentToken,
+  resolveMusicPaymentTokenSecret,
+  verifyMusicPaymentToken,
+} from "@/modules/music-requests/payment-token";
 import type { BeamQrForPos } from "@/modules/payments/types";
 
 export interface MusicTrackInput {
@@ -339,6 +345,8 @@ export async function startMusicDonationAction(
   free?: boolean;
   /** ร้านเปิด Beam: สแกนจ่ายแล้วระบบยืนยันเอง (ไม่ต้องแนบสลิป) */
   beam?: BeamQrForPos | null;
+  /** สิทธิ์ของลูกค้าในการถามสถานะ/ยกเลิกรายการนี้ (เซ็นโดย server, มีวันหมดอายุ) */
+  paymentToken?: string | null;
   error: string | null;
 }> {
   const empty = { requestId: null, promptPayPayload: null, promptpayId: null, amount: null };
@@ -368,7 +376,9 @@ export async function startMusicDonationAction(
 
   // ร้านที่เปิด Beam (และแพ็กเกจมี BYO gateway) → จ่ายผ่าน Beam ยืนยันอัตโนมัติ ไม่ต้องใช้สลิป
   const service = await createSupabaseServiceClient();
-  const useBeam = !isFree && beamAllowed && (await isBeamReadyForStore(storeId, service));
+  const tokenSecret = resolveMusicPaymentTokenSecret(process.env);
+  // ไม่มี secret สำหรับ token = ถามสถานะแบบปลอดภัยไม่ได้ → ไม่ใช้ Beam (กลับไปใช้สลิป)
+  const useBeam = !isFree && beamAllowed && Boolean(tokenSecret) && (await isBeamReadyForStore(storeId, service));
 
   let promptpayId: string | null = null;
   if (!isFree && !useBeam) {
@@ -441,7 +451,11 @@ export async function startMusicDonationAction(
       storeId,
       context: { requestId: res.data, gatewayPaymentId: beam.qr.gatewayPaymentId, playNow },
     }).catch(() => undefined);
-    return { requestId: res.data, promptPayPayload: null, promptpayId: null, amount, beam: beam.qr, error: null };
+    const paymentToken = createMusicPaymentToken(
+      { storeId, requestId: res.data, gatewayPaymentId: beam.qr.gatewayPaymentId },
+      tokenSecret!,
+    );
+    return { requestId: res.data, promptPayPayload: null, promptpayId: null, amount, beam: beam.qr, paymentToken, error: null };
   }
 
   let payload: string;
@@ -453,38 +467,99 @@ export async function startMusicDonationAction(
   return { requestId: res.data, promptPayPayload: payload, promptpayId, amount, error: null };
 }
 
+/** ตรวจ token ของลูกค้า — UUID ของคำขอไม่ใช่สิทธิ์ (ไม่มี token ที่ server เซ็น = ปฏิเสธ) */
+function verifyPaymentCapability(token: string) {
+  const secret = resolveMusicPaymentTokenSecret(process.env);
+  if (!secret) return null;
+  return verifyMusicPaymentToken(token, secret);
+}
+
+const TERMINAL_UNPAID = new Set(["FAILED", "EXPIRED", "CANCELLED"]);
+
 /**
- * ลูกค้ารอหน้า QR Beam: ถามสถานะการจ่าย (webhook อัปเดตให้อยู่แล้ว ถ้ายังไม่มาจะถาม Beam ตรง)
- * PAID → trigger ใน DB ยืนยันคำขอเพลงให้ (ยอดต้องตรง) — คืนผลว่าคำขอเข้าคิวแล้วหรือยัง
+ * ลูกค้ารอหน้า QR Beam: ถามสถานะการจ่าย — webhook คือทางหลัก; ถาม Beam ตรงไม่ถี่กว่า 10 วินาที
+ * PAID → trigger ใน DB ยืนยันคำขอให้ (เฉพาะคำขอที่ยังรอจ่าย + ยอดตรง)
+ * QR หมดอายุ/ล้ม/ยกเลิก → ปิดคำขอที่ค้างจ่าย ไม่ให้เข้าคิวภายหลัง
  */
 export async function checkMusicDonationPaymentAction(
-  storeId: string,
-  requestId: string,
+  paymentToken: string,
 ): Promise<{ status: string | null; verified: boolean; error: string | null }> {
-  if (!isUUID(storeId) || !isUUID(requestId)) return { status: null, verified: false, error: "Invalid request" };
+  const claims = verifyPaymentCapability(paymentToken);
+  if (!claims) return { status: null, verified: false, error: "สิทธิ์ตรวจสถานะหมดอายุ — ขอเพลงใหม่อีกครั้ง" };
+  if (!allowMusicPaymentPoll(claims.requestId)) {
+    return { status: null, verified: false, error: null };
+  }
   const service = await createSupabaseServiceClient();
-  const { data: payment } = await service
-    .from("gateway_payments")
-    .select("id")
-    .eq("store_id", storeId)
-    .eq("music_request_id", requestId)
-    .maybeSingle();
-  if (!payment) return { status: null, verified: false, error: "ไม่พบรายการชำระ" };
-
-  const refreshed = await refreshBeamPayment({ storeId, gatewayPaymentId: payment.id, client: service });
+  const refreshed = await refreshBeamPayment({
+    storeId: claims.storeId,
+    gatewayPaymentId: claims.gatewayPaymentId,
+    client: service,
+    minLookupIntervalMs: 10_000,
+  });
   const status = refreshed.ok ? refreshed.status : null;
 
   const { data: request } = await service
     .from("music_requests")
-    .select("donation_status")
-    .eq("id", requestId)
-    .eq("store_id", storeId)
+    .select("donation_status, status")
+    .eq("id", claims.requestId)
+    .eq("store_id", claims.storeId)
     .maybeSingle();
   const verified = request?.donation_status === "verified";
-  if (status === "PAID" && !verified) {
-    return { status, verified, error: "ได้รับเงินแล้ว แต่ยอดไม่ตรงกับที่ขอ — แจ้งพนักงานเพื่อตรวจสอบ" };
+
+  if (status && TERMINAL_UNPAID.has(status) && request?.donation_status === "pending") {
+    await service
+      .from("music_requests")
+      .update({ donation_status: "rejected", status: "expired", updated_at: new Date().toISOString() })
+      .eq("id", claims.requestId)
+      .eq("store_id", claims.storeId)
+      .eq("donation_status", "pending");
+  }
+  if (status === "LATE_PAID" || status === "REVIEW_REQUIRED") {
+    return { status, verified, error: "ได้รับเงินแล้ว แต่ร้านต้องตรวจสอบก่อน — แจ้งพนักงาน" };
   }
   return { status, verified, error: refreshed.ok ? null : refreshed.error };
+}
+
+/**
+ * ลูกค้ากด "ยกเลิก" ที่หน้า QR Beam: ยกเลิกรายการชำระ + ปิดคำขอเพลงฝั่ง server
+ * เงินที่เข้ามาหลังจากนี้ = LATE_PAID (trigger) ไม่เข้าคิว ร้านคืนเงิน
+ */
+export async function cancelMusicDonationPaymentAction(paymentToken: string): Promise<{ error: string | null }> {
+  const claims = verifyPaymentCapability(paymentToken);
+  if (!claims) return { error: "สิทธิ์ยกเลิกหมดอายุ" };
+  const service = await createSupabaseServiceClient();
+  const { data: request } = await service
+    .from("music_requests")
+    .select("donation_status, organization_id")
+    .eq("id", claims.requestId)
+    .eq("store_id", claims.storeId)
+    .maybeSingle();
+  if (!request) return { error: "ไม่พบคำขอเพลง" };
+  if (request.donation_status === "verified") return { error: "ชำระแล้ว เพลงเข้าคิวแล้ว" };
+
+  await cancelBeamQrPayment({
+    storeId: claims.storeId,
+    gatewayPaymentId: claims.gatewayPaymentId,
+    actorUserId: null,
+    client: service,
+    reason: "ลูกค้ายกเลิกการขอเพลง",
+  });
+  await service
+    .from("music_requests")
+    .update({ donation_status: "rejected", status: "rejected", updated_at: new Date().toISOString() })
+    .eq("id", claims.requestId)
+    .eq("store_id", claims.storeId)
+    .eq("donation_status", "pending");
+  await logSystemEvent({
+    level: "info",
+    source: "music.donation",
+    action: "customerCancel",
+    message: "ลูกค้ายกเลิกการจ่ายค่าขอเพลง (Beam)",
+    organizationId: request.organization_id,
+    storeId: claims.storeId,
+    context: { requestId: claims.requestId, gatewayPaymentId: claims.gatewayPaymentId },
+  }).catch(() => undefined);
+  return { error: null };
 }
 
 /** Verifies the uploaded slip and promotes the donation into the queue. */
