@@ -1253,3 +1253,59 @@ $$;
 
 revoke all on function public.qr_menu_pool_availability(uuid) from public;
 grant execute on function public.qr_menu_pool_availability(uuid) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- ครัวปฏิเสธทั้งออเดอร์ใน transaction เดียว — ปฏิเสธทุกรายการผ่าน void_qr_order_item
+-- (คืนยอดจอง/สต๊อกตามสถานะ + recompute + ยกเลิกออเดอร์เมื่อไม่เหลือรายการ)
+-- รายการไหนล้ม = ย้อนทั้งหมด ไม่มีปฏิเสธครึ่งออเดอร์ · ออเดอร์ที่ยกเลิกแล้ว = สำเร็จ (retry ได้)
+-- ---------------------------------------------------------------------------
+create or replace function public.reject_qr_order(
+  p_store_id uuid,
+  p_order_id uuid,
+  p_reason text default null
+) returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item record;
+  v_count integer := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'ต้องเข้าสู่ระบบก่อน';
+  end if;
+
+  select * into v_order
+  from public.orders
+  where id = p_order_id and store_id = p_store_id
+  for update;
+  if not found then
+    raise exception 'ไม่พบออเดอร์';
+  end if;
+  if not public.auth_user_role_in_store(v_order.organization_id, p_store_id, 'cashier') then
+    raise exception 'ไม่มีสิทธิ์จัดการออเดอร์';
+  end if;
+  if v_order.status = 'cancelled' then
+    return 0;
+  end if;
+  if not coalesce(v_order.qr_order_source, false) or v_order.status <> 'open' then
+    raise exception 'ออเดอร์นี้ปฏิเสธไม่ได้';
+  end if;
+
+  for v_item in
+    select id from public.order_items
+    where order_id = p_order_id and coalesce(voided, false) = false
+    order by id
+  loop
+    perform public.void_qr_order_item(p_store_id, p_order_id, v_item.id, p_reason);
+    v_count := v_count + 1;
+  end loop;
+
+  return v_count;
+end;
+$$;
+
+revoke all on function public.reject_qr_order(uuid, uuid, text) from public, anon;
+grant execute on function public.reject_qr_order(uuid, uuid, text) to authenticated;

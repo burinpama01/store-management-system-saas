@@ -129,16 +129,18 @@ function CategoryTabs({
   );
 }
 
-/** เหลือกี่ชิ้นรวมทุกตัวเลือก (undefined = ไม่ติดตามสต๊อก) — ยอดพร้อมขายหักยอดจองของโต๊ะอื่นแล้ว */
-function productSellableUnits(product: Product): number | undefined {
-  if (product.variants.length === 0) return undefined;
-  let total = 0;
-  for (const variant of product.variants) {
-    const units = sellableVariantUnits(variant);
-    if (units === undefined) return undefined;
-    total += units;
-  }
-  return total;
+/**
+ * สถานะสต๊อกระดับการ์ดสินค้า (ยอดพร้อมขาย หักยอดจองแล้ว)
+ * - ทุกตัวเลือกหมด = "หมด"
+ * - แสดง "เหลือ n" เฉพาะสินค้าที่มีตัวเลือกเดียว — หลายตัวเลือกอาจแชร์ Stock Pool เดียวกัน
+ *   การบวกรวมจะได้ตัวเลขที่ขายไม่ได้จริง จึงแสดงจำนวนที่ระดับตัวเลือกในหน้ารายละเอียดแทน
+ */
+function productStockHint(product: Product): { soldOut: boolean; units: number | undefined } {
+  if (product.variants.length === 0) return { soldOut: false, units: undefined };
+  const perVariant = product.variants.map((variant) => sellableVariantUnits(variant));
+  const soldOut = perVariant.every((units) => units === 0);
+  const units = product.variants.length === 1 ? perVariant[0] : undefined;
+  return { soldOut, units };
 }
 
 const LOW_STOCK_HINT = 5;
@@ -152,8 +154,7 @@ function ProductCard({
   currency: string;
   onTap: () => void;
 }) {
-  const units = productSellableUnits(product);
-  const soldOut = units === 0;
+  const { soldOut, units } = productStockHint(product);
   return (
     <button
       onClick={onTap}

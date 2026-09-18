@@ -239,7 +239,7 @@ export function QrOrdersBoard({
     if (!ok) return;
     setError(null);
     startTransition(async () => {
-      const res = await rejectQrOrderAction(order.id, itemIds, "ครัวปฏิเสธออเดอร์");
+      const res = await rejectQrOrderAction(order.id, "ครัวปฏิเสธออเดอร์");
       if (res.error) setError(res.error);
       router.refresh();
     });

@@ -71,4 +71,21 @@ describe("reservation wiring", () => {
     expect(board).toContain('new: { next: "preparing", label: "รับออเดอร์" }');
     expect(board).toContain("rejectQrOrderAction");
   });
+
+  it("whole-order reject is one DB transaction and kitchen logging is best-effort (review #63)", () => {
+    const actions = read("src/app/(dashboard)/qr-orders/actions.ts");
+    const reject = actions.slice(actions.indexOf("export async function rejectQrOrderAction"));
+    expect(reject).toContain("rejectQrOrder(ctx.storeId, orderId, trimmed)");
+    expect(reject).not.toContain("for (const itemId");
+    expect(actions).not.toContain("await logSystemEvent(");
+    expect(actions).toContain(".catch(() => undefined)");
+    const migration = read("supabase/migrations/20260918030000_qr_stock_reservation.sql");
+    expect(migration).toContain("create or replace function public.reject_qr_order(");
+  });
+
+  it("product cards never add up variants that may share one Stock Pool", () => {
+    const app = read("src/app/qr/[storeSlug]/[tableId]/QrOrderingApp.tsx");
+    expect(app).toContain("const units = product.variants.length === 1 ? perVariant[0] : undefined;");
+    expect(app).not.toContain("total += units");
+  });
 });

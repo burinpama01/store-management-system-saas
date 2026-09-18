@@ -264,6 +264,71 @@ describe.skipIf(!envReady)("QR stock reservation (local supabase)", () => {
     expect(await pool()).toEqual(before);
   });
 
+  it("rejecting a whole order is atomic: one failing line rolls every line back", async () => {
+    const created = await order([coffee(1), latte(1)]);
+    expect(created.error, created.error?.message).toBeNull();
+    const accept = await owner.from("orders").update({ prep_status: "preparing" }).eq("id", created.id!);
+    expect(accept.error, accept.error?.message).toBeNull();
+    const variantBefore = await variant();
+    const poolBefore = await pool();
+
+    // ทำ provenance ของรายการ Pool ให้เพี้ยน (ยอดตัดไม่ตรง snapshot) → void รายการนั้นต้องล้ม
+    const { data: sale } = await service
+      .from("stock_movements")
+      .select("id, before_quantity, after_quantity")
+      .eq("reference_id", created.id!)
+      .eq("movement_type", "sale")
+      .single();
+    const saleRow = sale as { id: string; before_quantity: number; after_quantity: number };
+    const corrupt = await service
+      .from("stock_movements")
+      .update({ quantity_delta: -3, before_quantity: saleRow.after_quantity + 3 })
+      .eq("id", saleRow.id);
+    expect(corrupt.error, corrupt.error?.message).toBeNull();
+    const failed = await owner.rpc("reject_qr_order", { p_store_id: STORE_A, p_order_id: created.id, p_reason: "ของหมด" });
+    expect(failed.error).not.toBeNull();
+    const { data: lines } = await service.from("order_items").select("voided").eq("order_id", created.id!);
+    expect((lines as { voided: boolean }[]).every((l) => !l.voided)).toBe(true);
+    expect(await variant()).toEqual(variantBefore);
+    expect(await pool()).toEqual(poolBefore);
+    expect((await orderRow(created.id!)).status).toBe("open");
+
+    // provenance ถูกต้อง → ปฏิเสธครบทุกรายการ + ยกเลิกออเดอร์; เรียกซ้ำ = สำเร็จ (0)
+    await service
+      .from("stock_movements")
+      .update({ quantity_delta: -2, before_quantity: saleRow.before_quantity })
+      .eq("id", saleRow.id);
+    const ok = await owner.rpc("reject_qr_order", { p_store_id: STORE_A, p_order_id: created.id, p_reason: "ของหมด" });
+    expect(ok.error, ok.error?.message).toBeNull();
+    expect(ok.data).toBe(2);
+    expect((await orderRow(created.id!)).status).toBe("cancelled");
+    expect(await variant()).toEqual({ ...variantBefore, stock_quantity: variantBefore.stock_quantity + 1 });
+    const again = await owner.rpc("reject_qr_order", { p_store_id: STORE_A, p_order_id: created.id, p_reason: "ของหมด" });
+    expect(again.data).toBe(0);
+  });
+
+  it("kitchen accept racing a customer cancel ends in exactly one consistent outcome", async () => {
+    for (let round = 0; round < 3; round += 1) {
+      const before = await variant();
+      const created = await order([coffee(1)]);
+      expect(created.error, created.error?.message).toBeNull();
+      await Promise.all([
+        owner.from("orders").update({ prep_status: "preparing" }).eq("id", created.id!),
+        service.rpc("cancel_qr_order_by_customer", { p_store_id: STORE_A, p_table_id: TABLE_1, p_order_id: created.id }),
+      ]);
+      const row = await orderRow(created.id!);
+      const after = await variant();
+      expect(after.reserved_quantity).toBe(before.reserved_quantity);
+      if (row.stock_state === "committed") {
+        expect(row.status).toBe("open");
+        expect(after.stock_quantity).toBe(before.stock_quantity - 1);
+      } else {
+        expect(row).toMatchObject({ status: "cancelled", stock_state: "released" });
+        expect(after.stock_quantity).toBe(before.stock_quantity);
+      }
+    }
+  });
+
   it("paying an order the kitchen never accepted commits the reservation", async () => {
     const before = await variant();
     const created = await order([coffee(1)]);

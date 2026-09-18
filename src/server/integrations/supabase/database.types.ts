@@ -4679,6 +4679,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      reject_qr_order: {
+        Args: { p_store_id: string; p_order_id: string; p_reason?: string | null };
+        Returns: number;
+      };
       qr_menu_pool_availability: {
         Args: { p_store_id: string };
         Returns: { variant_id: string; sellable_units: number }[];
