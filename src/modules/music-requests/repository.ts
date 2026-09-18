@@ -57,7 +57,8 @@ export function toPublicMusicRequest(row: MusicRequestRow): PublicMusicRequest {
 
 export interface SubmitMusicRequestInput {
   storeId: string;
-  tableId: string;
+  /** null = ขอจาก QR ขอเพลงของร้าน (ไม่ผูกโต๊ะ — ร้านที่ไม่ได้เปิด QR Order) */
+  tableId: string | null;
   sessionId: string | null;
   songTitle: string;
   artistName?: string;
@@ -78,7 +79,8 @@ export async function submitMusicRequest(input: SubmitMusicRequestInput) {
   const supabase = await createSupabaseServiceClient();
   const { data, error } = await supabase.rpc("create_music_request", {
     p_store_id: input.storeId,
-    p_table_id: input.tableId,
+    // null = QR ขอเพลงของร้าน — RPC รับ null ตั้งแต่ migration 20260918000000 (types ที่ gen ไว้ยังเป็น string)
+    p_table_id: input.tableId as string,
     p_session_id: input.sessionId,
     p_song_title: input.songTitle,
     p_artist_name: input.artistName ?? null,
@@ -113,7 +115,8 @@ export async function submitMusicDonationRequest(
   const supabase = await createSupabaseServiceClient();
   const { data, error } = await supabase.rpc("create_music_request", {
     p_store_id: input.storeId,
-    p_table_id: input.tableId,
+    // null = QR ขอเพลงของร้าน — RPC รับ null ตั้งแต่ migration 20260918000000 (types ที่ gen ไว้ยังเป็น string)
+    p_table_id: input.tableId as string,
     p_session_id: input.sessionId,
     p_song_title: input.songTitle,
     p_artist_name: input.artistName ?? null,
@@ -284,20 +287,21 @@ export async function listRecentlyPlayed(storeId: string, limit = 12) {
  */
 export async function hasRecentDuplicateRequest(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   songTitle: string,
   withinSeconds = 60,
 ) {
   const supabase = await createSupabaseServiceClient();
   const since = new Date(Date.now() - withinSeconds * 1000).toISOString();
-  const { data, error } = await supabase
+  let query = supabase
     .from("music_requests")
     .select("id")
     .eq("store_id", storeId)
-    .eq("table_id", tableId)
     .eq("song_title", songTitle)
-    .gte("requested_at", since)
-    .limit(1);
+    .gte("requested_at", since);
+  // QR ของร้าน (ไม่มีโต๊ะ) = กันกดซ้ำระดับร้าน
+  query = tableId ? query.eq("table_id", tableId) : query.is("table_id", null);
+  const { data, error } = await query.limit(1);
   if (error) return { duplicate: false, error: mapError(error) };
   return { duplicate: (data ?? []).length > 0, error: null };
 }
@@ -778,4 +782,39 @@ export async function playPreviousTrack(
     played_at: now,
   });
   return { data: track, error: null };
+}
+
+/** ข้อมูลร้านขั้นต่ำสำหรับหน้า QR ขอเพลงของร้าน (สาธารณะ) */
+export interface PublicMusicStore {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly musicRequestEnabled: boolean;
+  readonly musicLicenseStatus: string;
+}
+
+/**
+ * หาร้านจาก slug สำหรับหน้า /music/[storeSlug] — ใช้ service client เพราะ RLS ของ anon
+ * อ่านได้เฉพาะร้านที่เปิด QR Order (ร้านกลุ่มนี้คือร้านที่ไม่ได้เปิด) จึงเลือกเฉพาะคอลัมน์ที่หน้าใช้
+ * แทนการขยาย policy ให้ anon อ่านตาราง stores กว้างขึ้น
+ */
+export async function getPublicMusicStoreBySlug(slug: string): Promise<PublicMusicStore | null> {
+  if (!slug || slug.length > 100) return null;
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("stores")
+    .select("id, organization_id, name, slug, is_active, music_request_enabled, music_license_status")
+    .eq("slug", slug)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id,
+    organizationId: data.organization_id,
+    name: data.name,
+    slug: data.slug,
+    musicRequestEnabled: Boolean(data.music_request_enabled),
+    musicLicenseStatus: String(data.music_license_status ?? "not_requested"),
+  };
 }

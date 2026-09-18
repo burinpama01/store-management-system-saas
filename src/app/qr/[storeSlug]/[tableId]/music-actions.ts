@@ -38,6 +38,9 @@ export interface MusicTrackInput {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (s: string) => UUID_RE.test(s);
+/** tableId = null คือ QR ขอเพลงของร้าน (ไม่ผูกโต๊ะ) */
+const isValidTarget = (storeId: string, tableId: string | null) =>
+  isUUID(storeId) && (tableId === null || isUUID(tableId));
 
 interface MusicContext {
   organizationId: string;
@@ -51,7 +54,7 @@ interface MusicContext {
 /** Re-resolves the music gate server-side; never trust client-provided flags. */
 async function resolveMusicContext(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
 ): Promise<{ ok: false; reason: string } | { ok: true; ctx: MusicContext }> {
   const supabase = await createSupabaseServiceClient();
@@ -63,13 +66,40 @@ async function resolveMusicContext(
     )
     .eq("id", storeId)
     .single();
-  if (storeErr || !store || !store.is_active || !store.qr_ordering_enabled) {
+  // QR ขอเพลงของร้าน (tableId = null) ไม่ต้องเปิด QR Order — ร้านที่ไม่รับออร์เดอร์ผ่าน QR ก็ให้ขอเพลงได้
+  if (storeErr || !store || !store.is_active || (tableId !== null && !store.qr_ordering_enabled)) {
     return { ok: false, reason: "ร้านไม่พร้อมรับคำขอ" };
   }
 
   const billingState =
     (await getOrganizationBillingState(store.organization_id)) ?? DEFAULT_BILLING_STATE;
   const features = getPlanFeatures(billingState);
+
+  const { data: settings } = await supabase
+    .from("store_music_player_settings")
+    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price")
+    .eq("store_id", storeId)
+    .maybeSingle();
+  const playerSettings = {
+    maxDurationSeconds: settings?.max_duration_seconds ?? 600,
+    donationEnabled: settings?.donation_enabled ?? false,
+    minDonation: settings?.min_donation ?? 10,
+    playNowPrice: settings?.play_now_price ?? 100,
+  };
+
+  if (tableId === null) {
+    // ไม่มีโต๊ะ/รอบบิล — ใช้กติกาเดียวกับ table_bound (ขอเพลงได้โดยไม่ต้องเปิดโต๊ะ)
+    const eligibility = resolveQrMusicEligibility({
+      qrMode: "table_bound",
+      querySessionId: null,
+      currentSessionId: null,
+      sessionActive: false,
+      isEnterprise: features.musicRequest,
+      musicLicenseStatus: store.music_license_status,
+      musicRequestEnabled: store.music_request_enabled,
+    });
+    return { ok: true, ctx: { organizationId: store.organization_id, eligibility, ...playerSettings } };
+  }
 
   const { data: table, error: tableErr } = await supabase
     .from("tables")
@@ -96,28 +126,12 @@ async function resolveMusicContext(
     musicRequestEnabled: store.music_request_enabled,
   });
 
-  const { data: settings } = await supabase
-    .from("store_music_player_settings")
-    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price")
-    .eq("store_id", storeId)
-    .maybeSingle();
-
-  return {
-    ok: true,
-    ctx: {
-      organizationId: store.organization_id,
-      eligibility,
-      maxDurationSeconds: settings?.max_duration_seconds ?? 600,
-      donationEnabled: settings?.donation_enabled ?? false,
-      minDonation: settings?.min_donation ?? 10,
-      playNowPrice: settings?.play_now_price ?? 100,
-    },
-  };
+  return { ok: true, ctx: { organizationId: store.organization_id, eligibility, ...playerSettings } };
 }
 
 export async function listMusicQueueAction(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
 ): Promise<{
   queue: PublicMusicRequest[];
@@ -128,7 +142,7 @@ export async function listMusicQueueAction(
   playNowPrice?: number;
   error: string | null;
 }> {
-  if (!isUUID(storeId) || !isUUID(tableId)) {
+  if (!isValidTarget(storeId, tableId)) {
     return { queue: [], expired: false, error: "Invalid request" };
   }
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
@@ -157,10 +171,10 @@ export async function listMusicQueueAction(
 /** รายการเพลงที่เคยเล่นไปแล้ว (ให้ลูกค้ากด "ขอเล่นอีกครั้ง") */
 export async function listPlayedHistoryAction(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
 ): Promise<{ tracks: PlayedTrack[]; canRequest: boolean; error: string | null }> {
-  if (!isUUID(storeId) || !isUUID(tableId)) {
+  if (!isValidTarget(storeId, tableId)) {
     return { tracks: [], canRequest: false, error: "Invalid request" };
   }
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
@@ -178,11 +192,11 @@ export async function listPlayedHistoryAction(
 
 export async function searchMusicAction(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
   query: string,
 ): Promise<{ results: YouTubeSearchResult[]; error: string | null }> {
-  if (!isUUID(storeId) || !isUUID(tableId)) return { results: [], error: "Invalid request" };
+  if (!isValidTarget(storeId, tableId)) return { results: [], error: "Invalid request" };
   const q = (query ?? "").trim();
   if (q.length < 2) return { results: [], error: null };
 
@@ -197,12 +211,12 @@ export async function searchMusicAction(
 
 export async function submitMusicRequestAction(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
   input: MusicRequestSubmitInput,
   track?: MusicTrackInput,
 ): Promise<{ error: string | null }> {
-  if (!isUUID(storeId) || !isUUID(tableId)) return { error: "Invalid request" };
+  if (!isValidTarget(storeId, tableId)) return { error: "Invalid request" };
 
   const validated = validateMusicRequestInput(input);
   if (!validated.ok) return { error: MUSIC_INPUT_ERROR_MESSAGE[validated.error] };
@@ -267,11 +281,11 @@ export async function submitMusicRequestAction(
  */
 export async function previewDonationPositionAction(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
   amount: number,
 ): Promise<{ position: number; minDonation: number; error: string | null }> {
-  if (!isUUID(storeId) || !isUUID(tableId)) {
+  if (!isValidTarget(storeId, tableId)) {
     return { position: 0, minDonation: 0, error: "Invalid request" };
   }
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
@@ -294,7 +308,7 @@ export async function previewDonationPositionAction(
  */
 export async function startMusicDonationAction(
   storeId: string,
-  tableId: string,
+  tableId: string | null,
   querySessionId: string | null,
   track: MusicTrackInput,
   requesterLabel: string | undefined,
@@ -309,7 +323,7 @@ export async function startMusicDonationAction(
   error: string | null;
 }> {
   const empty = { requestId: null, promptPayPayload: null, promptpayId: null, amount: null };
-  if (!isUUID(storeId) || !isUUID(tableId)) return { ...empty, error: "Invalid request" };
+  if (!isValidTarget(storeId, tableId)) return { ...empty, error: "Invalid request" };
   if (!track?.videoId) return { ...empty, error: "กรุณาเลือกเพลงก่อน" };
 
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);

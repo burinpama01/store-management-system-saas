@@ -8,11 +8,15 @@ import {
   type MusicDecisionAction,
 } from "@/modules/music-requests/types";
 import { listMusicRequestsAction, decideMusicRequestAction } from "./actions";
+import { StoreMusicQrCard } from "./StoreMusicQrCard";
 
 interface Props {
   initialRequests: MusicRequest[];
   musicEnabled: boolean;
   storeSlug: string;
+  storeName: string;
+  /** ลิงก์ QR ขอเพลงของร้าน (ไม่ผูกโต๊ะ) */
+  storeMusicUrl: string;
 }
 
 const STATUS_STYLE: Record<MusicRequest["status"], string> = {
@@ -33,7 +37,7 @@ function fmt(iso: string): string {
   });
 }
 
-export function MusicRequestsBoard({ initialRequests, musicEnabled, storeSlug }: Props) {
+export function MusicRequestsBoard({ initialRequests, musicEnabled, storeSlug, storeName, storeMusicUrl }: Props) {
   const [requests, setRequests] = useState<MusicRequest[]>(initialRequests);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -99,6 +103,8 @@ export function MusicRequestsBoard({ initialRequests, musicEnabled, storeSlug }:
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
       )}
+
+      <StoreMusicQrCard url={storeMusicUrl} storeName={storeName} />
 
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-gray-500">รอคิว ({pending.length})</h2>
