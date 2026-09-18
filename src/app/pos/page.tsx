@@ -9,7 +9,7 @@ import { buildThemeStyle } from "@/modules/theme/presets";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
 import { getEnabledTrueMoneyManualConfig } from "@/modules/payments/repository";
-import { isBeamReadyForStore } from "@/modules/payments/beam-service";
+import { getBeamPosOptions } from "@/modules/payments/beam-service";
 import { PosTerminal } from "./PosTerminal";
 import { resolveUnifiedPosSurface, toUnifiedTableSummaries } from "./unified/types";
 import { UnifiedPosWorkspace } from "./unified/UnifiedPosWorkspace";
@@ -85,7 +85,9 @@ export default async function PosPage() {
   const trueMoneyEnabled = Boolean(
     byoPaymentGatewayEnabled && trueMoneyConfig.data?.staticEmvPayload,
   );
-  const beamEnabled = byoPaymentGatewayEnabled ? await isBeamReadyForStore(ctx.storeId) : false;
+  const { beamEnabled, hidePromptPayQr } = byoPaymentGatewayEnabled
+    ? await getBeamPosOptions(ctx.storeId)
+    : { beamEnabled: false, hidePromptPayQr: false };
 
   // U9 — gate เดียวจาก stores.unified_pos_enabled (default false = พฤติกรรมเดิมทุกอย่าง)
   const surface = resolveUnifiedPosSurface(storeResult.data);
@@ -132,6 +134,7 @@ export default async function PosPage() {
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
       trueMoneyEnabled={trueMoneyEnabled}
       beamEnabled={beamEnabled}
+      hidePromptPayQr={hidePromptPayQr}
     />
   );
 

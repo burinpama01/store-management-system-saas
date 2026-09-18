@@ -47,6 +47,7 @@ export function BeamIntegrationCard({
   const [state, formAction, saving] = useActionState(saveBeamConfigAction, { error: null });
   const [environment, setEnvironment] = useState<"test" | "live">(config?.environment ?? "test");
   const [enabled, setEnabled] = useState(config?.isEnabled ?? false);
+  const [hidePromptPay, setHidePromptPay] = useState(config?.hidePromptPayQr ?? false);
   const [testResult, setTestResult] = useState<BeamTestResult | null>(null);
   const [testing, startTest] = useTransition();
   const [disabling, startDisable] = useTransition();
@@ -210,6 +211,22 @@ export function BeamIntegrationCard({
             onChange={(e) => setEnabled(e.target.checked)}
           />
           เปิดใช้ &quot;Beam QR&quot; ที่หน้า POS
+        </label>
+        <label className="flex min-h-11 items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            name="hidePromptPayQr"
+            value="1"
+            checked={hidePromptPay}
+            onChange={(e) => setHidePromptPay(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-semibold">ซ่อน &quot;QR พร้อมเพย์&quot; (แบบตรวจสลิป) ที่ POS — แสดงแค่ Beam QR</span>
+            <span className="block text-[11px] text-[var(--color-text-muted)]">
+              กันพนักงานเลือก QR ที่ต้องตรวจสลิปเอง · ถ้าปิดใช้ Beam ปุ่ม QR พร้อมเพย์จะกลับมาเอง
+            </span>
+          </span>
         </label>
 
         {state.error ? (

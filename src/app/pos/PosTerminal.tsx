@@ -147,6 +147,8 @@ interface Props {
   customerDisplayUnavailableMessage: string | null;
   trueMoneyEnabled?: boolean;
   beamEnabled?: boolean;
+  /** Beam is the store's only QR — hide the slip-checked PromptPay option. */
+  hidePromptPayQr?: boolean;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -2264,6 +2266,7 @@ function PaymentPanel({
   cashSessionRequired,
   trueMoneyEnabled,
   beamEnabled,
+  hidePromptPayQr,
 }: {
   cart: Cart;
   onConfirm: (method: PayMethodChoice, received?: number, opts?: PayConfirmOpts) => void;
@@ -2278,6 +2281,7 @@ function PaymentPanel({
   cashSessionRequired: boolean;
   trueMoneyEnabled?: boolean;
   beamEnabled?: boolean;
+  hidePromptPayQr?: boolean;
 }) {
   const [method, setMethod] = useState<PayMethodChoice>("cash");
   const [received, setReceived] = useState<string>("");
@@ -2426,7 +2430,7 @@ function PaymentPanel({
 
   const methodOptions: PayMethodChoice[] = [
     "cash",
-    "qr_promptpay",
+    ...(hidePromptPayQr && beamEnabled ? [] : (["qr_promptpay"] as const)),
     ...(trueMoneyEnabled ? (["truemoney"] as const) : []),
     ...(beamEnabled ? (["beam"] as const) : []),
   ];
@@ -3087,6 +3091,7 @@ export function PosTerminal({
   customerDisplayUnavailableMessage,
   trueMoneyEnabled = false,
   beamEnabled = false,
+  hidePromptPayQr = false,
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -4258,6 +4263,7 @@ export function PosTerminal({
             cashSessionRequired={!cashSession}
             trueMoneyEnabled={trueMoneyEnabled}
             beamEnabled={beamEnabled}
+            hidePromptPayQr={hidePromptPayQr}
           />
         )}
         {phase === "receipt" && receipt && (
@@ -4510,6 +4516,7 @@ export function PosTerminal({
             cashSessionRequired={!cashSession}
             trueMoneyEnabled={trueMoneyEnabled}
             beamEnabled={beamEnabled}
+            hidePromptPayQr={hidePromptPayQr}
           />
         )}
         {phase === "receipt" && receipt && (

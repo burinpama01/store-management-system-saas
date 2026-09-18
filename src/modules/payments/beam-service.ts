@@ -77,6 +77,8 @@ export interface BeamConfig {
   environment: PaymentEnvironment;
   isEnabled: boolean;
   creds: BeamCredentials | null;
+  /** Store chose Beam as its only QR: hide the slip-checked PromptPay QR at the POS. */
+  hidePromptPayQr: boolean;
 }
 
 function toEnvironment(v: string | null | undefined): PaymentEnvironment {
@@ -93,6 +95,7 @@ function configPublic(row: BeamConfigRow): PaymentProviderConfigPublic {
     hasApiKey?: boolean;
     webhookSecretMasked?: string | null;
     hasWebhookSecret?: boolean;
+    hidePromptPayQr?: boolean;
   };
   return {
     id: row.id,
@@ -109,6 +112,7 @@ function configPublic(row: BeamConfigRow): PaymentProviderConfigPublic {
     hasWebhookSecret: Boolean(pub.hasWebhookSecret),
     merchantIdMasked: pub.merchantIdMasked ?? null,
     hasApiKey: Boolean(pub.hasApiKey),
+    hidePromptPayQr: Boolean(pub.hidePromptPayQr),
     updatedAt: row.updated_at,
   };
 }
@@ -139,6 +143,7 @@ export async function getBeamConfig(storeId: string): Promise<BeamConfig | null>
     environment: toEnvironment(row.environment),
     isEnabled: row.is_enabled && !row.disabled_at,
     creds: decodeBeamCredentials(row.credentials_encrypted),
+    hidePromptPayQr: row.public_config?.hidePromptPayQr === true,
   };
 }
 
@@ -146,6 +151,18 @@ export async function getBeamConfig(storeId: string): Promise<BeamConfig | null>
 export async function isBeamReadyForStore(storeId: string): Promise<boolean> {
   const config = await getBeamConfig(storeId);
   return Boolean(config?.isEnabled && config.creds);
+}
+
+/**
+ * What the POS payment panel offers. PromptPay is only ever hidden while Beam is
+ * actually usable — switching Beam off brings the plain PromptPay QR back.
+ */
+export async function getBeamPosOptions(
+  storeId: string,
+): Promise<{ beamEnabled: boolean; hidePromptPayQr: boolean }> {
+  const config = await getBeamConfig(storeId);
+  const beamEnabled = Boolean(config?.isEnabled && config.creds);
+  return { beamEnabled, hidePromptPayQr: beamEnabled && Boolean(config?.hidePromptPayQr) };
 }
 
 /**
@@ -160,6 +177,7 @@ export async function saveBeamConfigForStore(input: {
   webhookHmacKey?: string | null;
   environment: PaymentEnvironment;
   isEnabled: boolean;
+  hidePromptPayQr?: boolean;
   actorUserId: string;
 }): Promise<{ data: PaymentProviderConfigPublic | null; error: string | null }> {
   const existing = await getBeamConfig(input.storeId);
@@ -205,6 +223,7 @@ export async function saveBeamConfigForStore(input: {
           hasApiKey: true,
           hasWebhookSecret: Boolean(webhookHmacKey),
           webhookSecretMasked: maskSecret(webhookHmacKey),
+          hidePromptPayQr: Boolean(input.hidePromptPayQr),
         },
         updated_by: input.actorUserId,
         created_by: input.actorUserId,
@@ -242,6 +261,7 @@ export async function saveBeamConfigForStore(input: {
       environment: input.environment,
       isEnabled: input.isEnabled,
       hasWebhookKey: Boolean(webhookHmacKey),
+      hidePromptPayQr: Boolean(input.hidePromptPayQr),
       configId: (data as BeamConfigRow).id,
     },
   });
