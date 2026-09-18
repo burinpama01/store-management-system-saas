@@ -95,15 +95,17 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems,
 
   async function close(t: OpenTableStatus) {
     setError(null);
+    // 1 โต๊ะ = 1 บิล: ปิดโต๊ะได้เมื่อเช็คบิลแล้วเท่านั้น (server ตรวจซ้ำรวมถึงตั๋วที่มีรายการ)
     if (t.unpaidCount > 0) {
-      const ok = await confirm({
-        title: `ปิดโต๊ะ ${t.label ?? t.number} ทั้งที่มีบิลค้าง`,
-        message: `ยังมีบิลค้าง ${t.unpaidCount} รายการ รวม ${new Intl.NumberFormat("th-TH").format(t.unpaidTotal)} บาท — ปิดโต๊ะโดยยังไม่เก็บเงิน? (ออร์เดอร์ยังเช็คบิลได้ภายหลังที่ "เช็คบิลโต๊ะ")`,
-        confirmLabel: "ปิดโต๊ะ",
-        danger: true,
-      });
-      if (!ok) return;
+      setError(`โต๊ะ ${t.label ?? t.number} ยังมีบิลค้าง ${t.unpaidCount} รายการ — กด "เปิดบิล/เพิ่มรายการ" แล้วชำระเงินทั้งโต๊ะก่อนปิด`);
+      return;
     }
+    const ok = await confirm({
+      title: `ปิดโต๊ะ ${t.label ?? t.number}`,
+      message: "ปิดโต๊ะและคืนโต๊ะว่าง?",
+      confirmLabel: "ปิดโต๊ะ",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await closeTableAction(t.id);
       if (res.error) setError(res.error);

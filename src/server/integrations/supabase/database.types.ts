@@ -4715,6 +4715,8 @@ export interface Database {
           p_table_bill_key: string;
           p_order_number: string;
           p_pos_order_id?: string | null;
+          p_ticket_id?: string | null;
+          p_ticket_updated_at?: string | null;
         };
         Returns: string;
       };

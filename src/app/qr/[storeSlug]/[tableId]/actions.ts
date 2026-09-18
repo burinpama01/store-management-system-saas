@@ -11,6 +11,7 @@ import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import { loadVariantStockPools } from "@/modules/catalog/repository";
 import { availablePoolUnits } from "@/modules/catalog/types";
+import { findTableUnpaidContext } from "@/modules/pos/table-unpaid";
 import { getCurrentUser } from "@/modules/auth/session";
 import {
   computeRequestHash,
@@ -165,6 +166,11 @@ async function submitTableOrder(
       store.qr_ordering_mode === "table_bound" && store.table_open_policy === "customer_self";
     if (!canSelfOpen) {
       return { orderId: null, orderNumber: null, error: "หมดเวลาสั่งอาหารของโต๊ะนี้แล้ว กรุณาแจ้งพนักงาน" };
+    }
+    // รอบโต๊ะใหม่ต้องไม่ติดบิลของลูกค้ารอบก่อน — มีบิลค้าง/อ่านไม่ได้ = ให้พนักงานเช็คบิลก่อน
+    const unpaid = await findTableUnpaidContext(supabase, storeId, tableId);
+    if (!unpaid.ok || unpaid.hasUnpaid) {
+      return { orderId: null, orderNumber: null, error: "โต๊ะนี้ยังมีบิลค้างจากรอบก่อน กรุณาแจ้งพนักงาน" };
     }
     if (!store.unified_pos_enabled) {
       // เส้นทางเดิม (v1): เปิด session แยกก่อนสร้าง order — เส้นทาง v2 จะ auto-open

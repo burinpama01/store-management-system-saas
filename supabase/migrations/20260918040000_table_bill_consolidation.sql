@@ -169,7 +169,9 @@ create or replace function public.consolidate_table_bill(
   p_table_id uuid,
   p_table_bill_key text,
   p_order_number text,
-  p_pos_order_id uuid default null
+  p_pos_order_id uuid default null,
+  p_ticket_id uuid default null,
+  p_ticket_updated_at timestamptz default null
 ) returns uuid
 language plpgsql
 security definer
@@ -184,6 +186,7 @@ declare
   v_sources uuid[];
   v_qr_sources uuid[];
   v_pos public.orders%rowtype;
+  v_ticket public.pos_saved_tickets%rowtype;
   v_prep text;
   v_discount numeric := 0;
   v_subtotal numeric;
@@ -220,6 +223,24 @@ begin
   for update;
   if not found then
     raise exception 'โต๊ะไม่ถูกต้อง';
+  end if;
+
+  -- ตั๋วของโต๊ะถูก "ใช้" ใน transaction เดียวกับการรวมบิล: ล็อก + ตรวจเวอร์ชัน (กันสองเครื่อง
+  -- เช็คบิลตั๋วเดียวกันซ้ำ) แล้วล้างรายการท้าย function — ล้มตรงไหนย้อนทั้งหมด
+  if p_pos_order_id is not null and p_ticket_id is null then
+    raise exception 'รายการจากตั๋วต้องระบุตั๋ว';
+  end if;
+  if p_ticket_id is not null then
+    select * into v_ticket
+    from public.pos_saved_tickets
+    where id = p_ticket_id and store_id = p_store_id
+    for update;
+    if not found or v_ticket.table_id is distinct from p_table_id then
+      raise exception 'ตั๋วของโต๊ะไม่ถูกต้อง';
+    end if;
+    if p_ticket_updated_at is null or v_ticket.updated_at is distinct from p_ticket_updated_at then
+      raise exception 'ตั๋วถูกแก้ไขระหว่างเช็คบิล — กดชำระอีกครั้ง';
+    end if;
   end if;
 
   -- ออเดอร์ QR ที่เปิดอยู่ของโต๊ะ (ล็อกไว้กันลูกค้าสั่ง/ยกเลิกแทรก)
@@ -329,12 +350,21 @@ begin
       updated_at = now()
   where id = v_target;
 
+  if p_ticket_id is not null then
+    update public.pos_saved_tickets
+    set cart_snapshot = jsonb_build_object(
+          'storeId', p_store_id, 'items', '[]'::jsonb, 'subtotal', 0, 'discount', 0, 'total', 0
+        ),
+        updated_by_user_id = v_actor
+    where id = p_ticket_id;
+  end if;
+
   return v_target;
 end;
 $$;
 
-revoke all on function public.consolidate_table_bill(uuid, uuid, text, text, uuid) from public, anon;
-grant execute on function public.consolidate_table_bill(uuid, uuid, text, text, uuid) to authenticated;
+revoke all on function public.consolidate_table_bill(uuid, uuid, text, text, uuid, uuid, timestamptz) from public, anon;
+grant execute on function public.consolidate_table_bill(uuid, uuid, text, text, uuid, uuid, timestamptz) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- ออเดอร์ที่ sale movement ของออเดอร์นี้อาจอ้างถึง: ตัวมันเอง + ออเดอร์ที่ถูกรวมเข้ามา

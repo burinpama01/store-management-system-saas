@@ -3885,18 +3885,25 @@ export function PosTerminal({
    * 1 โต๊ะ = 1 บิล = 1 การจ่าย: รวมออเดอร์ QR ทั้งโต๊ะ + รายการในตั๋ว เป็นออเดอร์เดียว (server)
    * แล้วเข้าหน้าจ่ายเงินปกติ (เงินสด/Beam ตามนโยบาย POS) — จ่ายสำเร็จ → ปิดโต๊ะ
    */
-  function startTableBillPayment(tableId: string, ticket: SavedOrderTicket | null, billCart: Cart | null) {
+  function startTableBillPayment(tableId: string, ticket: SavedOrderTicket | null) {
     if (pendingOrder) {
       setTicketMessage("มีบิลที่สร้างแล้วรอชำระอยู่ กรุณาชำระให้จบก่อน");
       return;
     }
     startTicketTransition(async () => {
+      // ตั๋วที่เปิดอยู่: บันทึกขึ้น server ก่อน — server รวมบิลจากรายการในตั๋วบน DB เท่านั้น
+      if (ticket && ticket.id === activeTicketId) {
+        const saved = await syncCurrentTicket();
+        if (saved.error) {
+          setTicketMessage(`บันทึกตั๋วขึ้นระบบไม่สำเร็จ ยังเช็คบิลไม่ได้: ${saved.error}`);
+          return;
+        }
+      }
       const operationKey = tableBillKeyRef.current ?? createTicketId();
       tableBillKeyRef.current = operationKey;
       const result = await consolidateTableBillAction({
         tableId,
         ticketId: ticket?.id ?? null,
-        cart: billCart && billCart.items.length > 0 ? billCart : null,
         operationKey,
       });
       if (result.error || !result.order || !result.cart) {
@@ -3928,7 +3935,7 @@ export function PosTerminal({
   function handleSettleTableFromTicket() {
     const ticket = activeTicket;
     if (!ticket?.tableId) return;
-    startTableBillPayment(ticket.tableId, ticket, cart);
+    startTableBillPayment(ticket.tableId, ticket);
   }
 
   /** เปิดหน้ารายการทั้งโต๊ะ (พิมพ์ใบตรวจรายการให้ลูกค้าเช็ค) — บันทึกตั๋วก่อนให้ยอดตรง */
@@ -3967,7 +3974,7 @@ export function PosTerminal({
     setBillTableId(null);
     setBillTableNumber(null);
     if (activeTicket?.tableId === tableId) {
-      startTableBillPayment(tableId, activeTicket, cart);
+      startTableBillPayment(tableId, activeTicket);
       return;
     }
     if (cart.items.length > 0) {
@@ -3980,7 +3987,7 @@ export function PosTerminal({
       setTicketMessage("โต๊ะนี้มีตั๋วหลายใบ — เรียกตั๋วที่ต้องการแล้วกดชำระจากตั๋ว");
       return;
     }
-    startTableBillPayment(tableId, ticket, ticket?.cart ?? null);
+    startTableBillPayment(tableId, ticket);
   }
 
   async function handleVoidTableQrItem(order: QrOrderView, itemId: string, name: string) {
@@ -4201,6 +4208,8 @@ export function PosTerminal({
         : null;
       let order = pendingOrder;
       let paidOrder: Order | null = null;
+      // บิลรวมโต๊ะ: server ปิดโต๊ะให้ใน request ชำระเงินเดียวกัน
+      let tableBillFinish: { closed: boolean; notice: string | null; error: string | null } | null | undefined;
       if (!order) {
         // Pay-now path: one server round trip creates the order and closes the bill.
         const checkoutTicketContext = {
@@ -4249,6 +4258,7 @@ export function PosTerminal({
           return;
         }
         paidOrder = payResult.order;
+        tableBillFinish = payResult.tableBill;
       }
       paidDisplayCartRef.current = displayCart;
       paidCustomerNameRef.current = selectedCustomer?.name;
@@ -4314,7 +4324,7 @@ export function PosTerminal({
       if (paidTableBill) {
         tableBillRef.current = null;
         void (async () => {
-          const finish = await finishTableBillAction(paidTableBill.tableId, order.orderId).catch(() => null);
+          const finish = tableBillFinish ?? (await finishTableBillAction(order.orderId).catch(() => null));
           if (!finish || finish.error) {
             setTicketMessage(`ชำระแล้ว แต่ปิดโต๊ะไม่สำเร็จ: ${finish?.error ?? "เชื่อมต่อไม่ได้"} — ปิดโต๊ะเองที่ "เปิดโต๊ะ"`);
             return;

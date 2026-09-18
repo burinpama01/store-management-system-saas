@@ -157,11 +157,31 @@ describe.skipIf(!envReady)("table bill consolidation (local supabase)", () => {
     return data!.id as string;
   }
 
-  async function consolidate(key: string, pos: string | null = null) {
+  /** ตั๋วของโต๊ะ (มีรายการ) — คืน id + updated_at ที่ RPC ใช้ตรวจเวอร์ชัน */
+  async function tableTicket() {
+    const { data, error } = await service
+      .from("pos_saved_tickets")
+      .insert({
+        organization_id: ORG_A, store_id: STORE_A, ticket_number: `T-${seq}`, label: "โต๊ะ 1",
+        cart_snapshot: { storeId: STORE_A, items: [{ key: "x" }], subtotal: 0, discount: 0, total: 0 },
+        created_by_user_id: OWNER_ID, updated_by_user_id: OWNER_ID, table_id: TABLE_1, table_number: "1",
+      })
+      .select("id, updated_at")
+      .single();
+    expect(error, error?.message).toBeNull();
+    return data as { id: string; updated_at: string };
+  }
+
+  async function consolidate(
+    key: string,
+    pos: string | null = null,
+    ticket: { id: string; updated_at: string } | null = null,
+  ) {
     seq += 1;
     const res = await owner.rpc("consolidate_table_bill", {
       p_store_id: STORE_A, p_table_id: TABLE_1, p_table_bill_key: key,
       p_order_number: `TB-BILL-${Date.now()}-${seq}`, p_pos_order_id: pos,
+      p_ticket_id: ticket?.id ?? null, p_ticket_updated_at: ticket?.updated_at ?? null,
     });
     if (res.data) orderIds.push(res.data as string);
     return res as { data: string | null; error: { message: string } | null };
@@ -209,13 +229,14 @@ describe.skipIf(!envReady)("table bill consolidation (local supabase)", () => {
     const qrA = await qrOrder([coffee(2)]);
     const qrB = await qrOrder([coffee(1)]);
     const pos = await posOrder(3, 10);
+    const ticket = await tableTicket();
     const afterAccept = await variant();
     expect(afterAccept.stock_quantity).toBe(start.stock_quantity - 3); // QR ตัดตอนครัวรับ
 
     const key = `key-${randomUUID()}`;
-    const bill = await consolidate(key, pos);
+    const bill = await consolidate(key, pos, ticket);
     expect(bill.error, bill.error?.message).toBeNull();
-    const again = await consolidate(key, pos);
+    const again = await consolidate(key, pos, ticket);
     expect(again.data).toBe(bill.data); // idempotent
 
     expect((await variant()).stock_quantity).toBe(start.stock_quantity - 6); // ตั๋วตัดตอนรวมบิล
@@ -234,6 +255,9 @@ describe.skipIf(!envReady)("table bill consolidation (local supabase)", () => {
     }
     const { count } = await service.from("order_items").select("id", { count: "exact", head: true }).eq("order_id", bill.data!);
     expect(count).toBe(3);
+    // ตั๋วถูกใช้ใน transaction เดียวกับการรวมบิล
+    const { data: consumed } = await service.from("pos_saved_tickets").select("cart_snapshot").eq("id", ticket.id).single();
+    expect((consumed as { cart_snapshot: { items: unknown[] } }).cart_snapshot.items).toEqual([]);
 
     const paid = await owner.rpc("close_pos_order_payment", {
       p_order_id: bill.data, p_store_id: STORE_A, p_processed_by_user_id: OWNER_ID,
@@ -291,6 +315,29 @@ describe.skipIf(!envReady)("table bill consolidation (local supabase)", () => {
     });
     expect(v.error, v.error?.message).toBeNull();
     expect(await pool()).toEqual({ quantity: start.quantity - 4, reserved_units: 0 });
+  });
+
+  it("a stale ticket version rolls the whole consolidation back (two devices / edited ticket)", async () => {
+    await clearTable();
+    await qrOrder([coffee(1)]);
+    const pos = await posOrder(1);
+    const ticket = await tableTicket();
+    const stockBefore = await variant();
+    const res = await consolidate(`key-${randomUUID()}`, pos, { id: ticket.id, updated_at: "2020-01-01T00:00:00Z" });
+    expect(res.error?.message).toContain("ตั๋วถูกแก้ไข");
+    // ไม่มีอะไรเปลี่ยน: ตั๋วยังมีรายการ, ออเดอร์ POS ยังไม่ตัดสต๊อก/ไม่ถูกรวม
+    const { data: t } = await service.from("pos_saved_tickets").select("cart_snapshot").eq("id", ticket.id).single();
+    expect((t as { cart_snapshot: { items: unknown[] } }).cart_snapshot.items).toHaveLength(1);
+    expect(await variant()).toEqual(stockBefore);
+    const { data: p } = await service.from("orders").select("status, merged_into_order_id").eq("id", pos).single();
+    expect(p).toMatchObject({ status: "pending_payment", merged_into_order_id: null });
+  });
+
+  it("items from a ticket require the ticket", async () => {
+    await clearTable();
+    const pos = await posOrder(1);
+    const res = await consolidate(`key-${randomUUID()}`, pos, null);
+    expect(res.error?.message).toContain("ต้องระบุตั๋ว");
   });
 
   it("refuses an empty table", async () => {

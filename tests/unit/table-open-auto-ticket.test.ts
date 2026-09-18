@@ -74,7 +74,7 @@ describe("table bill wiring (review PR #62)", () => {
     expect(start).toContain("setPendingOrder(result.order)");
     expect(start).toContain('setPhase("payment")');
     // หลังจ่าย: ปิดโต๊ะผ่าน server
-    expect(pos).toContain("finishTableBillAction(paidTableBill.tableId, order.orderId)");
+    expect(pos).toContain("tableBillFinish ?? (await finishTableBillAction(order.orderId)");
   });
 
   it("the table bill modal hands payment to the POS panel and hides PromptPay for Beam stores", () => {
@@ -85,15 +85,41 @@ describe("table bill wiring (review PR #62)", () => {
     expect(modal).toContain("{onCheckout ? (");
   });
 
-  it("consolidation refuses kitchen-pending orders and finishing verifies the bill was paid", () => {
-    const consolidate = slice(actions, "export async function consolidateTableBillAction", "export async function finishTableBillAction");
+  it("consolidation refuses kitchen-pending orders and reads the ticket from the server, not the client cart", () => {
+    const consolidate = slice(actions, "export async function consolidateTableBillAction", "export interface TableBillFinish");
     expect(consolidate).toContain('o.prepStatus === "new"');
-    expect(consolidate).toContain('rpc("consolidate_table_bill"');
-    const finish = slice(actions, "export async function finishTableBillAction", "export async function voidTableQrItemAction");
-    expect(finish).toContain('bill.status !== "paid"');
-    expect(finish).toContain("closeTableSession(ctx.storeId, tableId)");
+    expect(consolidate).toContain("getSavedTicket(input.ticketId, ctx.storeId)");
+    expect(consolidate).toContain("p_ticket_updated_at: ticketUpdatedAt");
+    expect(consolidate).not.toContain("input.cart");
+    // ตั๋วถูกล้างใน RPC (transaction เดียว) ไม่ใช่ update แยกหลังรวมบิล
+    expect(consolidate).not.toContain('.from("pos_saved_tickets")');
     const migration = read("supabase/migrations/20260918040000_table_bill_consolidation.sql");
     expect(migration).toContain("ยังมีออเดอร์ที่ครัวยังไม่รับ");
+    expect(migration).toContain("ตั๋วถูกแก้ไขระหว่างเช็คบิล");
     expect(migration).toContain("on conflict (store_id, table_id) where ticket_source = 'table_auto' do nothing");
+  });
+
+  it("finishing is server-side, fail-closed and part of the payment request (review #64)", () => {
+    const finish = slice(actions, "async function finishTableBillIfConsolidated(", "export async function finishTableBillAction");
+    expect(finish).toContain('bill.status !== "paid"');
+    expect(finish).toContain("if (!unpaid.ok)");
+    expect(finish.indexOf("if (!unpaid.ok)")).toBeLessThan(finish.indexOf("closeTableSession(ctx.storeId, tableId)"));
+    const collect = slice(actions, "export async function collectPaymentAction", "export interface CheckoutAndPayResult");
+    expect(collect).toContain("finishTableBillIfConsolidated(");
+    expect(pos).toContain("tableBillFinish = payResult.tableBill;");
+  });
+
+  it("a table cannot be closed or reopened while it still has an unpaid bill (session boundary)", () => {
+    const helper = read("src/modules/pos/table-unpaid.ts");
+    expect(helper).toContain('ok: false, error: "ตรวจบิลค้างของโต๊ะไม่สำเร็จ');
+    const open = slice(actions, "export async function openTableAction", "export async function getTableQrSlipAction");
+    expect(open).toContain("findTableUnpaidContext(");
+    expect(open.indexOf("findTableUnpaidContext(")).toBeLessThan(open.indexOf("openTableSession("));
+    const close = slice(actions, "export async function closeTableAction", "/** Open QR orders");
+    expect(close.indexOf("findTableUnpaidContext(")).toBeLessThan(close.indexOf("closeTableSession("));
+    const del = slice(actions, "export async function deleteSavedTicketAction", "export async function listTodayOrdersAction");
+    expect(del).toContain("excludeTicketId: ticketId");
+    const qr = read("src/app/qr/[storeSlug]/[tableId]/actions.ts");
+    expect(qr.indexOf("findTableUnpaidContext(supabase, storeId, tableId)")).toBeLessThan(qr.indexOf('rpc("open_table_session_self"'));
   });
 });
