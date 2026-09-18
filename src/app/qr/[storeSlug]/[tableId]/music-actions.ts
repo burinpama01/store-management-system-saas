@@ -28,6 +28,7 @@ import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { verifySlipByImageBase64, isSlip2goConfigured } from "@/modules/billing/slip2go";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { nowMs } from "@/shared/utils/time";
+import { logSystemEvent } from "@/modules/system/event-log";
 
 export interface MusicTrackInput {
   videoId: string;
@@ -206,7 +207,18 @@ export async function searchMusicAction(
     return { results: [], error: resolved.ctx.eligibility.reason ?? "ขอเพลงไม่ได้ในขณะนี้" };
   }
 
-  return searchYouTube(q, { maxDurationSeconds: resolved.ctx.maxDurationSeconds, limit: 10 });
+  const res = await searchYouTube(q, { maxDurationSeconds: resolved.ctx.maxDurationSeconds, limit: 10 });
+  if (res.error) {
+    await logSystemEvent({
+      level: "warn",
+      source: "music-request.search",
+      action: "searchMusicAction",
+      message: res.error,
+      storeId,
+      organizationId: resolved.ctx.organizationId,
+    });
+  }
+  return res;
 }
 
 export async function submitMusicRequestAction(

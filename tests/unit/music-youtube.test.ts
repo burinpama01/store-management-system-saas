@@ -50,4 +50,33 @@ describe("mapPlayableYouTubeVideos", () => {
     expect(out[0].title).toBe("x1234567890");
     expect(mapPlayableYouTubeVideos([], 600)).toEqual([]);
   });
+
+  it("keeps only songs by default: Music category, not Shorts, not live", () => {
+    const base = { status: { embeddable: true }, contentDetails: { duration: "PT3M" } };
+    const out = mapPlayableYouTubeVideos(
+      [
+        { ...base, id: "music111111", snippet: { title: "เพลง", categoryId: "10", liveBroadcastContent: "none" } },
+        { ...base, id: "howto222222", snippet: { title: "ซ่อมหม้อหุงข้าว", categoryId: "26" } },
+        { ...base, id: "short333333", snippet: { categoryId: "10" }, contentDetails: { duration: "PT45S" } },
+        { ...base, id: "live4444444", snippet: { categoryId: "10", liveBroadcastContent: "live" }, contentDetails: { duration: "P0D" } },
+        { ...base, id: "nocat555555", snippet: { title: "ไม่มีหมวด" } },
+      ],
+      600,
+    );
+    expect(out.map((v) => v.videoId)).toEqual(["music111111", "nocat555555"]);
+  });
+
+  it("lets staff search keep live streams and other categories when asked", () => {
+    const base = { status: { embeddable: true } };
+    const items = [
+      { ...base, id: "live4444444", snippet: { categoryId: "10", liveBroadcastContent: "live" }, contentDetails: { duration: "P0D" } },
+      { ...base, id: "howto222222", snippet: { categoryId: "26" }, contentDetails: { duration: "PT3M" } },
+    ];
+    expect(mapPlayableYouTubeVideos(items, 600, { allowLive: true }).map((v) => v.videoId)).toEqual([
+      "live4444444",
+    ]);
+    expect(
+      mapPlayableYouTubeVideos(items, 600, { allowLive: true, musicOnly: false }).map((v) => v.videoId),
+    ).toEqual(["live4444444", "howto222222"]);
+  });
 });

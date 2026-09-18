@@ -231,7 +231,11 @@ export async function searchPlayerMusicAction(
   try {
     await requirePermission("orders.manage_qr");
     await getStoreContext();
-    const { results, error } = await searchYouTube(query, { limit: 10 });
+    const { results, error } = await searchYouTube(query, {
+      limit: 10,
+      // Store staff may pick a live stream as background music.
+      allowLive: true,
+    });
     return {
       results: results.map((r) => ({
         videoId: r.videoId,
