@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import type { Store, Table } from "@/modules/stores/types";
-import type { Category, Product, ModifierGroup } from "@/modules/catalog/types";
+import { sellableVariantUnits, type Category, type Product, type ModifierGroup } from "@/modules/catalog/types";
 import {
   emptyCart,
   addToCart,
@@ -129,6 +129,20 @@ function CategoryTabs({
   );
 }
 
+/** เหลือกี่ชิ้นรวมทุกตัวเลือก (undefined = ไม่ติดตามสต๊อก) — ยอดพร้อมขายหักยอดจองของโต๊ะอื่นแล้ว */
+function productSellableUnits(product: Product): number | undefined {
+  if (product.variants.length === 0) return undefined;
+  let total = 0;
+  for (const variant of product.variants) {
+    const units = sellableVariantUnits(variant);
+    if (units === undefined) return undefined;
+    total += units;
+  }
+  return total;
+}
+
+const LOW_STOCK_HINT = 5;
+
 function ProductCard({
   product,
   currency,
@@ -138,11 +152,20 @@ function ProductCard({
   currency: string;
   onTap: () => void;
 }) {
+  const units = productSellableUnits(product);
+  const soldOut = units === 0;
   return (
     <button
       onClick={onTap}
-      className="flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden text-left active:scale-95 transition-transform"
+      disabled={soldOut}
+      aria-disabled={soldOut}
+      className="relative flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden text-left active:scale-95 transition-transform disabled:active:scale-100"
     >
+      {soldOut && (
+        <span className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 text-base font-bold text-gray-700">
+          หมด
+        </span>
+      )}
       {product.imageUrl ? (
         <Image
           src={product.imageUrl}
@@ -163,6 +186,9 @@ function ProductCard({
         <p className="text-sm text-orange-600 font-medium mt-0.5">
           {formatPrice(product.basePrice, currency)}
         </p>
+        {units !== undefined && units > 0 && units <= LOW_STOCK_HINT && (
+          <p className="mt-0.5 text-[11px] font-medium text-red-500">เหลือ {units}</p>
+        )}
       </div>
     </button>
   );
@@ -281,10 +307,15 @@ function ProductModal({
                  ขนาด / ตัวเลือก <span className="text-red-500">*</span>
               </p>
               <div className="space-y-1">
-                {product.variants.map((v) => (
+                {product.variants.map((v) => {
+                  const units = sellableVariantUnits(v);
+                  const soldOut = units === 0;
+                  return (
                   <label
                     key={v.id}
-                    className={`min-h-11 flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                    className={`min-h-11 flex items-center justify-between px-3 py-2 rounded-lg border transition-colors ${
+                      soldOut ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                    } ${
                       modal.selectedVariantId === v.id
                         ? "border-orange-400 bg-orange-50"
                         : "border-gray-200 bg-white"
@@ -294,10 +325,16 @@ function ProductModal({
                       <input
                         type="radio"
                         checked={modal.selectedVariantId === v.id}
+                        disabled={soldOut}
                         onChange={() => onChange({ selectedVariantId: v.id })}
                         className="accent-orange-500"
                       />
                       <span className="text-sm text-gray-800">{v.name}</span>
+                      {soldOut ? (
+                        <span className="text-xs font-semibold text-gray-500">หมด</span>
+                      ) : units !== undefined && units <= LOW_STOCK_HINT ? (
+                        <span className="text-xs font-medium text-red-500">เหลือ {units}</span>
+                      ) : null}
                     </div>
                     {v.priceAdjustment !== 0 && (
                       <span className="text-xs text-gray-500">
@@ -306,7 +343,8 @@ function ProductModal({
                       </span>
                     )}
                   </label>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

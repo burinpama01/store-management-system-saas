@@ -95,6 +95,7 @@ function mapVariant(row: VariantRow): ProductVariant {
     priceAdjustment: row.price_adjustment,
     sku: row.sku ?? undefined,
     stockQuantity: row.stock_quantity ?? undefined,
+    reservedQuantity: row.reserved_quantity ?? 0,
     trackStock: row.track_stock,
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -272,6 +273,20 @@ export async function listPublicMenu(storeId: string) {
   const products = routableProductRows.map((row) =>
     mapProduct(row, variantsRes.data ?? [], groupsRes.data ?? [], optionsRes.data ?? []),
   );
+
+  // variant ที่ผูก Stock Pool: ขายได้อีกกี่ชิ้น (หักยอดจองแล้ว) ผ่าน RPC ที่คืนเฉพาะตัวเลข
+  // ของเมนู QR (anon อ่านตาราง Pool ตรงไม่ได้) — ล้มเหลว = ไม่แสดงสต๊อก Pool (RPC สั่งออเดอร์ยังกันขายเกิน)
+  const poolRes = await supabase.rpc("qr_menu_pool_availability", { p_store_id: storeId });
+  if (!poolRes.error) {
+    const sellable = new Map((poolRes.data ?? []).map((row) => [row.variant_id, row.sellable_units]));
+    for (const product of products) {
+      for (const variant of product.variants) {
+        const units = sellable.get(variant.id);
+        if (units === undefined) continue;
+        variant.stockPool = { poolId: "", poolName: "", unitLabel: "", quantity: units, reservedUnits: 0, consumptionQuantity: 1 };
+      }
+    }
+  }
 
   return { data: { categories, products }, error: null };
 }

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บิลรวมโต๊ะ v2</title>
+<style>
+  :root { --bg:#f7f6f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e4e2da; --accent:#b45309; --bad:#b91c1c; --ok:#0f766e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --bad:#f87171; --ok:#2dd4bf; } }
+  :root[data-theme="dark"] { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --bad:#f87171; --ok:#2dd4bf; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 "Sarabun","Noto Sans Thai",system-ui,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:20px; margin:32px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  h3 { font-size:16px; margin:18px 0 6px; }
+  .meta { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:12px 0; }
+  .warn { border-left:4px solid var(--accent); } .stop { border-left:4px solid var(--bad); }
+  code { background:rgba(127,127,127,.12); padding:1px 5px; border-radius:4px; font-size:14px; }
+  ol li, ul li { margin:5px 0; } table { width:100%; border-collapse:collapse; font-size:14px; }
+  .scroll { overflow-x:auto; }
+  th, td { text-align:left; border-bottom:1px solid var(--line); padding:6px 8px; vertical-align:top; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; font-size:13px; line-height:1.5; }
+</style>
+</head>
+<body><main>
+<h1>บิลรวมโต๊ะ: 1 โต๊ะ = 1 บิล = 1 การจ่าย</h1>
+<p class="meta">แผน v2 · 2026-09-18 · ต่อจาก v1 (PR #62) + ผลรีวิว <code>storeos_pr62_review.md</code> · สถานะ: <b>รออนุมัติ</b></p>
+
+<h2>1. สิ่งที่เปลี่ยนจาก v1</h2>
+<div class="card warn">
+v1 ให้ตั๋วโต๊ะ <i>ผูก</i> กับออเดอร์ QR แล้วตอนจ่ายเก็บเงินแยกทีละออเดอร์ (หลายรายการจ่าย) — ผู้ใช้ยืนยันว่า <b>ไม่ต้องการแบ่งเงิน</b>:
+ลูกค้าจ่ายก้อนเดียว ต้องไล่ตรวจเงินย้อนหลังได้ว่าก้อนนี้มาจากรายการไหน ก่อนจ่ายพนักงานต้อง <b>พิมพ์รายการให้ลูกค้าเช็ค</b> และ <b>แก้ไขได้ก่อนกดชำระจริง</b>
+<br><br>v2 จึงเปลี่ยนเป็น <b>รวมเป็นบิลเดียวตอนชำระ</b> แล้วจ่ายผ่านหน้าจ่ายเงินปกติของ POS (เงินสด / Beam / TrueMoney / พร้อมเพย์ ตามนโยบายเดียวกับ POS)
+</div>
+
+<h2>2. Flow ใหม่ (มุมพนักงาน)</h2>
+<ol>
+<li><b>เปิดโต๊ะ</b> → พิมพ์ QR + ระบบเปิดตั๋วโต๊ะรอไว้ (เหมือน v1 แต่สร้างแบบ atomic)</li>
+<li>ลูกค้าสั่ง QR → เข้าครัวตามปกติ → โผล่ในตั๋วโต๊ะ (เหมือน v1)</li>
+<li>พนักงานเพิ่มรายการในตั๋วได้</li>
+<li><b>พิมพ์ใบตรวจรายการ</b> (ยังไม่ชำระ) — รวมรายการ QR + รายการหน้าร้าน + ยอดรวมทั้งโต๊ะ ให้ลูกค้าเช็ค</li>
+<li><b>แก้ไขก่อนจ่าย</b>: รายการหน้าร้านแก้ในตะกร้าตามปกติ · รายการ QR กด "ยกเลิกรายการ" (ใช้ <code>void_qr_order_item</code> ที่มีอยู่ ต้องใส่เหตุผล มี log)</li>
+<li>กด <b>ชำระเงิน</b> → server <b>รวมบิลโต๊ะ</b> เป็นออเดอร์เดียว → เข้าหน้าจ่ายเงินปกติของ POS ด้วยยอดทั้งโต๊ะ</li>
+<li>จ่ายสำเร็จ (Beam ยืนยัน PAID ฝั่ง server / เงินสด) → ใบเสร็จใบเดียว → ปิดโต๊ะ + ลบตั๋ว</li>
+</ol>
+
+<h2>3. การรวมบิล (หัวใจของ v2)</h2>
+<p>RPC ใหม่ <code>consolidate_table_bill</code> (security definer, เช็คสิทธิ์ cashier ในร้าน, idempotent ด้วย operation key) ทำใน transaction เดียว:</p>
+<pre>lock โต๊ะ + ออเดอร์ QR ที่เปิดอยู่ของโต๊ะ (for update)
+สร้างออเดอร์บิลรวม 1 ใบ (ผูกโต๊ะ, channel = table_bill)
+ย้าย order_items ของทุกออเดอร์ QR ของโต๊ะ → ออเดอร์บิลรวม   (สถานะครัวรายรายการคงเดิม)
+เพิ่มรายการจากตั๋ว (ราคาจาก catalog ฝั่ง server) + ตัดสต็อกรายการเหล่านี้ทันที
+ออเดอร์ QR เดิม → cancelled + merged_into_order_id  (ไม่คืนสต็อก เพราะรายการย้ายไปแล้ว)
+คำนวณยอดใหม่ + ส่วนลดท้ายบิลของตั๋ว (ผ่าน discount policy เดิม)</pre>
+<p>จากนั้นใช้ <code>collectPaymentAction</code> เดิมกับออเดอร์บิลรวม → Beam ยังเป็น 1 การจ่าย : 1 ออเดอร์ ตามโมเดลเดิม ไม่ต้องแก้ระบบ Beam</p>
+
+<h3>ทำไมออกแบบแบบนี้</h3>
+<ul>
+<li>สต็อกคิดระดับออเดอร์ (<code>qr_order_source</code>): ออเดอร์ QR ตัดตอนสั่ง ออเดอร์ POS ตัดตอนจ่าย — บิลรวมตั้ง <code>qr_order_source = true</code> (จ่ายแล้วไม่ตัดซ้ำ) และตัดสต็อกรายการจากตั๋วตอนรวมบิล จึงไม่ต้องแก้ RPC ชำระเงิน 3 ตัว (<code>close_pos_order_payment</code>, stock pool, unified)</li>
+<li>ย้าย order_items (ไม่คัดลอก) → ประวัติครัว/สถานะรายรายการ/stock pool snapshot ติดไปด้วย ตรวจย้อนหลังได้ว่ารายการมาจาก QR ออเดอร์ไหน (<code>merged_into_order_id</code>)</li>
+<li>ถ้ามีออเดอร์ QR เข้ามา <i>หลัง</i> รวมบิล → ยังเป็นออเดอร์เปิดของโต๊ะ ระบบจะไม่ปิดโต๊ะและแจ้งให้เก็บเพิ่ม</li>
+</ul>
+
+<h2>4. แก้ตามรีวิว PR #62</h2>
+<div class="scroll"><table>
+<tr><th>ข้อรีวิว</th><th>ทางแก้ใน v2</th></tr>
+<tr><td>🔴 Table Bill ใช้ PromptPay manual แทน Beam</td><td>ชำระผ่านหน้าจ่ายเงินปกติของ POS → นโยบายเดียวกัน (ซ่อนพร้อมเพย์เมื่อร้านใช้ Beam, Beam ต้อง PAID ฝั่ง server) · TableBillModal เดิมในเส้นทางตั๋วโต๊ะไม่ใช้แล้ว (เมนู "เช็คบิลโต๊ะ" เดิมยังอยู่สำหรับโต๊ะเก่า — จะปรับให้ส่งเข้าเส้นทางเดียวกัน)</td></tr>
+<tr><td>🔴 จ่ายตั๋วอย่างเดียวแล้วโต๊ะยัง occupied</td><td>ตั๋วโต๊ะทุกใบจ่ายผ่านเส้นทางบิลรวมเสมอ (ไม่มี QR ก็ใช้เส้นทางเดียวกัน) → จ่ายแล้วปิดโต๊ะ + ลบตั๋ว ฝั่ง server</td></tr>
+<tr><td>🔴 สร้างตั๋วไม่ atomic + query limit 30</td><td>คอลัมน์ <code>ticket_source</code> (manual | table_auto) + unique index บางส่วน "1 ตั๋วอัตโนมัติต่อโต๊ะ" + RPC <code>ensure_table_auto_ticket</code> (insert … on conflict do nothing แล้วคืนใบเดิม) · query ตั๋วตามโต๊ะแยก ไม่มี limit (UI ยัง limit 30 ได้)</td></tr>
+<tr><td>🟠 log ล้มแล้วเปลี่ยนผลเปิดโต๊ะ</td><td><code>logSystemEvent</code> ไม่ throw อยู่แล้ว (มี try/catch ภายใน) แต่จะห่อ <code>safeLog</code> ให้ชัดเจน + test</td></tr>
+<tr><td>🟡 ลบตั๋วว่างไม่มี audit</td><td>log tableId / ticketId / สำเร็จ-ล้ม / เหตุผล</td></tr>
+<tr><td>🟠 test เป็น source-string</td><td>ย้ายตรรกะเป็น service รับ dependency → unit test พฤติกรรมจริง + SQL integration test (ต้องเปิด Docker + <code>supabase start</code>) สำหรับ concurrency / >30 ตั๋ว / รวมบิล / สต็อกไม่ตัดซ้ำ</td></tr>
+</table></div>
+
+<h2>5. Migration (additive ทั้งหมด)</h2>
+<ul>
+<li><code>pos_saved_tickets.ticket_source text default 'manual'</code> + unique index บางส่วน</li>
+<li><code>orders.merged_into_order_id uuid</code> (nullable, FK orders)</li>
+<li>RPC <code>ensure_table_auto_ticket</code>, <code>consolidate_table_bill</code></li>
+<li><code>stores.table_open_auto_ticket</code> (จาก v1)</li>
+</ul>
+
+<h2>6. ความเสี่ยง / ต้องยอมรับ</h2>
+<div class="card stop">
+<ul>
+<li><b>ระบบเงิน + สต็อก + DB ตัวเดียวกับ prod</b> — RPC รวมบิลต้องทดสอบบน Supabase local ก่อน apply</li>
+<li><b>รายงาน QR vs POS</b>: บิลรวมนับเป็นช่องทาง "บิลรวมโต๊ะ" — รายงานที่แยกด้วย <code>qr_order_source</code> ต้องปรับให้เห็นช่องทางนี้</li>
+<li><b>ครัว</b>: ย้ายรายการตอนจ่าย ปกติอาหารเสิร์ฟแล้ว ถ้ายังมีรายการครัวทำไม่เสร็จ จะเตือนก่อนรวมบิล (สถานะรายรายการคงเดิม)</li>
+<li>ร้าน Unified POS (นำร่อง 3 ร้าน) ไม่ใช้ PosTerminal จึงไม่กระทบ</li>
+<li>ขนาดงานใหญ่กว่า v1 มาก — ประเมิน 1–2 วันทำงาน รวม test</li>
+</ul>
+</div>
+
+<h2>7. ลำดับงาน</h2>
+<ol>
+<li>Migration + RPC + SQL integration test บน Supabase local</li>
+<li>Service ฝั่ง TS (ensure ticket, consolidate, finish table) + unit test พฤติกรรม</li>
+<li>POS: พิมพ์ใบตรวจรายการรวม QR · ยกเลิกรายการ QR · ปุ่มชำระ → รวมบิล → หน้าจ่ายเงินปกติ</li>
+<li>ปรับรายงานช่องทาง</li>
+<li>Verify ครบ (tsc / test / lint / build / Supabase local e2e) → อัปเดต PR #62</li>
+</ol>
+</main></body>
+</html>
