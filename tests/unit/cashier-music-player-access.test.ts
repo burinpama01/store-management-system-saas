@@ -29,3 +29,19 @@ describe("แคชเชียร์เข้าถึงเครื่อง�
     expect(readFileSync("src/app/(dashboard)/settings/music-player/page.tsx", "utf8")).toContain('canEdit={resolved.can("settings.manage_store")}');
   });
 });
+
+describe("QR ขอเพลงของร้าน — เส้นทางสาธารณะ", () => {
+  it("/music/ เป็น public แต่ /music-requests ของพนักงานยังต้องล็อกอิน", () => {
+    const mw = readFileSync("src/server/integrations/supabase/middleware.ts", "utf8");
+    expect(mw).toContain('request.nextUrl.pathname.startsWith("/music/")');
+    expect(mw).not.toContain('startsWith("/music")');
+  });
+
+  it("migration ยอมรับ p_table_id = null โดยยังคงด่าน Enterprise/ใบอนุญาต/สวิตช์ร้าน", () => {
+    const sql = readFileSync("supabase/migrations/20260918000000_store_level_music_request.sql", "utf8");
+    expect(sql).toContain("(p_table_id is null or qr_ordering_enabled = true)");
+    expect(sql).toContain("ฟีเจอร์ขอเพลงสำหรับแพ็กเกจ Enterprise เท่านั้น");
+    expect(sql).toContain("v_music_enabled is not true or v_license_status <> 'approved'");
+    expect(sql).toContain("if p_table_id is not null then");
+  });
+});

@@ -31,7 +31,8 @@ function fileToBase64(file: File): Promise<string> {
 
 interface Props {
   storeId: string;
-  tableId: string;
+  /** null = หน้า QR ขอเพลงของร้าน (ไม่ผูกโต๊ะ) */
+  tableId: string | null;
   querySessionId: string | null;
   eligibility: QrMusicEligibility;
 }

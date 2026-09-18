@@ -42,6 +42,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/" ||
     request.nextUrl.pathname === "/qr" ||
     request.nextUrl.pathname.startsWith("/qr/") ||
+    // QR ขอเพลงของร้าน (ลูกค้าไม่ได้ล็อกอิน) — ระวัง: "/music-requests" ของพนักงานไม่ขึ้นต้น "/music/"
+    request.nextUrl.pathname.startsWith("/music/") ||
     request.nextUrl.pathname === "/member" ||
     request.nextUrl.pathname.startsWith("/member/") ||
     request.nextUrl.pathname === "/pricing" ||

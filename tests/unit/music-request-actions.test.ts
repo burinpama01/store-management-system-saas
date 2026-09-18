@@ -39,6 +39,7 @@ function fakeClient({ store, table, rpcResult }: FakeRows) {
       const builder: Record<string, (...args: unknown[]) => unknown> = {
         select: () => builder,
         eq: () => builder,
+        is: () => builder,
         in: () => builder,
         gte: () => builder,
         order: () => builder,
@@ -131,6 +132,54 @@ describe("submitMusicRequestAction — enforcement", () => {
       "create_music_request",
       expect.objectContaining({ p_song_title: "เพลงรัก", p_store_id: STORE }),
     );
+  });
+});
+
+// 2026-09-18 — QR ขอเพลงของร้าน (tableId = null) สำหรับร้านที่ไม่ได้เปิด QR Order
+describe("QR ขอเพลงของร้าน (ไม่ผูกโต๊ะ)", () => {
+  it("ร้านไม่ได้เปิด QR Order ก็ขอเพลงได้ และส่ง p_table_id = null ให้ RPC", async () => {
+    const client = setup({ store: storeRow({ qr_ordering_enabled: false }), table: null }, "enterprise");
+    const res = await submitMusicRequestAction(STORE, null, null, { songTitle: "เพลงรัก" });
+    expect(res.error).toBeNull();
+    expect(client.rpc).toHaveBeenCalledWith(
+      "create_music_request",
+      expect.objectContaining({ p_store_id: STORE, p_table_id: null, p_session_id: null, p_song_title: "เพลงรัก" }),
+    );
+  });
+
+  it("ด่านเดิมยังบังคับ: ไม่ใช่ Enterprise / ใบอนุญาตไม่ approved / ปิดขอเพลง = ขอไม่ได้", async () => {
+    let client = setup({ store: storeRow({ qr_ordering_enabled: false }), table: null }, "premium");
+    expect((await submitMusicRequestAction(STORE, null, null, { songTitle: "เพลงรัก" })).error).toContain("Enterprise");
+    expect(client.rpc).not.toHaveBeenCalled();
+
+    client = setup({ store: storeRow({ qr_ordering_enabled: false, music_license_status: "pending" }), table: null }, "enterprise");
+    expect((await submitMusicRequestAction(STORE, null, null, { songTitle: "เพลงรัก" })).error).not.toBeNull();
+    expect(client.rpc).not.toHaveBeenCalled();
+
+    client = setup({ store: storeRow({ qr_ordering_enabled: false, music_request_enabled: false }), table: null }, "enterprise");
+    expect((await submitMusicRequestAction(STORE, null, null, { songTitle: "เพลงรัก" })).error).not.toBeNull();
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it("QR โต๊ะยังต้องเปิด QR Order เหมือนเดิม", async () => {
+    const client = setup({ store: storeRow({ qr_ordering_enabled: false }), table: tableRow() }, "enterprise");
+    const res = await submitMusicRequestAction(STORE, TABLE, null, { songTitle: "เพลงรัก" });
+    expect(res.error).not.toBeNull();
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it("tableId ที่ไม่ใช่ uuid ถูกปฏิเสธก่อนแตะฐานข้อมูล", async () => {
+    const client = setup({ store: storeRow(), table: tableRow() }, "enterprise");
+    const res = await submitMusicRequestAction(STORE, "not-a-uuid", null, { songTitle: "เพลงรัก" });
+    expect(res.error).toBe("Invalid request");
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it("ดูคิวได้โดยไม่ต้องมีโต๊ะ", async () => {
+    setup({ store: storeRow({ qr_ordering_enabled: false }), table: null }, "enterprise");
+    const res = await listMusicQueueAction(STORE, null, null);
+    expect(res.expired).toBe(false);
+    expect(res.error === null || typeof res.error === "string").toBe(true);
   });
 });
 
