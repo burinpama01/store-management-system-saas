@@ -110,6 +110,8 @@ export const LIVE_TELEMETRY_EVENTS = [
   "cart.checkout_opened",
   // ผู้ช่วยได้คำถามตัวเลือกเดิมซ้ำจนถึงเพดาน — ตัดวงวนแล้วให้พนักงานเลือกบนจอ
   "cart.clarification_repeated",
+  // ร้านครบจำนวนเซสชัน → เซสชันใหม่แทนที่ตัวเก่าอัตโนมัติ
+  "live.session_replaced",
 ] as const;
 export type LiveTelemetryEventName = (typeof LIVE_TELEMETRY_EVENTS)[number];
 

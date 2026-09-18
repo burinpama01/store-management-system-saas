@@ -149,6 +149,29 @@ export async function POST(request: Request) {
     });
     return fail("invalid_body", 400);
   }
+  if (created.replaced) {
+    // ร้านเต็ม → แทนที่เซสชันเก่าอัตโนมัติ (ส่วนใหญ่คือแท็บที่ปิด/รีเฟรชไปโดยไม่ได้กดปิด)
+    await safely(() => logSystemEvent({
+      level: "info",
+      source: "ai.assistant",
+      action: "liveSession",
+      message: "เปิดเซสชันเสียงสดใหม่แทนเซสชันเก่า (ร้านครบจำนวน)",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: ctx.userId,
+      context: {
+        reason: "replaced_oldest",
+        stage: "create",
+        sessionId: created.session.id,
+        replacedSessionId: created.replaced?.id ?? null,
+        sameUser: created.replaced?.userId === ctx.userId,
+      },
+    }));
+    await logLiveEvent({
+      event: "live.session_replaced", stage: "session", result: "success", ctx, sessionId: created.session.id,
+      reason: created.replaced.userId === ctx.userId ? "same_user" : "other_user",
+    });
+  }
 
   // session config ทั้งก้อน (instructions ไทย + voice + tools ตาม allowlist) ถูกส่งไปตอนสร้าง
   // ephemeral secret — browser ได้แค่ token ชั่วคราว ไม่เคยเห็น OPENAI_API_KEY

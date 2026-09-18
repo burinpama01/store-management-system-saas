@@ -59,7 +59,10 @@ export interface LiveSessionStore {
   readonly create: (
     identity: LiveSessionIdentity,
     options: { ttlMs: number; activeCartId: string; allowedTools: readonly string[] },
-  ) => { ok: true; session: LiveSession } | { ok: false; reason: "invalid_identity" | "invalid_cart" | "invalid_options" | "store_busy" };
+  ) =>
+    /** replaced = เซสชันเก่าที่ถูกแทนที่เพราะร้านเต็ม (ถูกเพิกถอนแล้ว) */
+    | { ok: true; session: LiveSession; replaced: LiveSession | null }
+    | { ok: false; reason: "invalid_identity" | "invalid_cart" | "invalid_options" | "store_busy" };
   /**
    * รับเซสชันที่ instance อื่นเป็นคนสร้างเข้ามานับต่อ (ข้อมูลมาจาก session token ที่ตรวจลายเซ็นแล้ว)
    * ไม่ตรวจ concurrent cap เพราะ slot ถูกให้ไปตั้งแต่ตอนสร้างแล้ว — ที่นี่แค่เปิดตัวนับ tool call
@@ -108,6 +111,13 @@ export function createLiveSessionStore(options: LiveSessionStoreOptions): LiveSe
     }
   }
 
+  function revokeUntil(sessionId: string, expiresAt: number, now: number): void {
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    for (const [id, until] of revoked) if (until <= now) revoked.delete(id);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return;
+    revoked.set(sessionId, expiresAt);
+  }
+
   function drop(sessionId: string): void {
     const record = sessions.get(sessionId);
     if (!record) return;
@@ -130,7 +140,20 @@ export function createLiveSessionStore(options: LiveSessionStoreOptions): LiveSe
       evictExpired(now);
       const key = storeKey(identity);
       const active = perStore.get(key);
-      if (active && active.size >= options.maxConcurrentPerStore) return { ok: false, reason: "store_busy" };
+      // ร้านเต็ม = แทนที่เซสชันเก่าอัตโนมัติ (หน้าร้านจริง: ปิดแท็บ/รีเฟรช/เครื่องค้างโดยไม่ได้กดปิด
+      // ทำให้ slot ค้างจน TTL หมด แล้วกด AI Live ใหม่ไม่ได้ 15 นาที) — เลือกของ "คนเดิม" ก่อน
+      // แล้วค่อยเป็นเซสชันที่เก่าที่สุดของร้าน; ตัวที่ถูกแทนที่ถูกเพิกถอน สั่งงานต่อไม่ได้อีก
+      let replaced: LiveSession | null = null;
+      if (active && active.size >= options.maxConcurrentPerStore) {
+        const candidates = [...active]
+          .map((id) => sessions.get(id)?.session)
+          .filter((session): session is LiveSession => Boolean(session))
+          .sort((a, b) => a.startedAt - b.startedAt);
+        replaced = candidates.find((session) => session.userId === identity.userId) ?? candidates[0] ?? null;
+        if (!replaced) return { ok: false, reason: "store_busy" };
+        drop(replaced.id);
+        revokeUntil(replaced.id, replaced.expiresAt, now);
+      }
 
       const session: LiveSession = Object.freeze({
         id: randomUUID(),
@@ -147,7 +170,7 @@ export function createLiveSessionStore(options: LiveSessionStoreOptions): LiveSe
       const set = perStore.get(key) ?? new Set<string>();
       set.add(session.id);
       perStore.set(key, set);
-      return { ok: true, session };
+      return { ok: true, session, replaced };
     },
     adopt(session) {
       const existing = sessions.get(session.id);
@@ -189,11 +212,7 @@ export function createLiveSessionStore(options: LiveSessionStoreOptions): LiveSe
       return { session: record.session, toolCallsUsed: record.toolCallsUsed, sessionSeconds: seconds };
     },
     revoke(sessionId, expiresAt) {
-      if (typeof sessionId !== "string" || sessionId.length === 0) return;
-      const now = clock();
-      for (const [id, until] of revoked) if (until <= now) revoked.delete(id);
-      if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return;
-      revoked.set(sessionId, expiresAt);
+      revokeUntil(sessionId, expiresAt, clock());
     },
     isRevoked(sessionId) {
       const until = revoked.get(sessionId);
