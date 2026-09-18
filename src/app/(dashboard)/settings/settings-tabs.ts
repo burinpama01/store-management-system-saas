@@ -22,11 +22,15 @@ export function buildSettingsTabs(
       { href: "/settings/voice", label: "สั่งงานด้วยเสียง" },
       { href: "/settings/buffet", label: "บุฟเฟต์" },
       { href: "/settings/customer-display", label: "จอลูกค้า", featureKey: "customerDisplay" },
-      { href: "/settings/music-player", label: "เครื่องเล่นเพลง", featureKey: "musicRequest" },
       { href: "/settings/payments", label: "ชำระเงินลูกค้า", featureKey: "byoPaymentGateway" },
       { href: "/settings/integrations", label: "API", featureKey: "apiIntegration" },
       { href: "/settings/connect", label: "เดลิเวอรี (JDC)", featureKey: "apiIntegration" },
     );
+  }
+  // เครื่องเล่นเพลง: คนที่จัดการคิวเพลงได้ (orders.manage_qr — รวมแคชเชียร์) เปิดหน้านี้ได้
+  // แก้ค่าได้เฉพาะ settings.manage_store (หน้าเช็คเอง) ส่วนคนอื่นเห็นปุ่มเปิดเครื่องเล่นอย่างเดียว
+  if (resolved.can("settings.manage_store") || resolved.can("orders.manage_qr")) {
+    tabs.push({ href: "/settings/music-player", label: "เครื่องเล่นเพลง", featureKey: "musicRequest" });
   }
   if (resolved.can("settings.manage_store") || resolved.can("settings.manage_printer")) {
     tabs.push({ href: "/settings/receipt", label: "เครื่องพิมพ์" });

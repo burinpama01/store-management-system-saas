@@ -29,6 +29,7 @@ export default async function MusicRequestsPage() {
     <MusicRequestsBoard
       initialRequests={res.data ?? []}
       musicEnabled={store.musicRequestEnabled}
+      storeSlug={store.slug}
     />
   );
 }
