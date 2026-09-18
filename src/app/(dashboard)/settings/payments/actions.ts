@@ -306,6 +306,7 @@ export async function saveBeamConfigAction(
       webhookHmacKey: ((formData.get("webhookHmacKey") as string | null) ?? "").trim() || null,
       environment,
       isEnabled: formData.get("isEnabled") === "1",
+      hidePromptPayQr: formData.get("hidePromptPayQr") === "1",
       actorUserId: user.id,
     });
     if (result.error) return { error: result.error };

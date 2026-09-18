@@ -55,6 +55,8 @@ export interface PaymentProviderConfigPublic {
   /** Beam: masked merchant id + whether an API key is stored (never the key itself). */
   merchantIdMasked?: string | null;
   hasApiKey?: boolean;
+  /** Beam: POS hides the slip-checked PromptPay QR (Beam is the only QR). */
+  hidePromptPayQr?: boolean;
   updatedAt: string;
 }
 

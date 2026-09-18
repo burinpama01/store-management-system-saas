@@ -93,6 +93,7 @@ function toPublic(
           hasWebhookSecret?: boolean;
           merchantIdMasked?: string | null;
           hasApiKey?: boolean;
+          hidePromptPayQr?: boolean;
         })
       : {};
   return {
@@ -115,6 +116,7 @@ function toPublic(
     ),
     merchantIdMasked: fromPublic.merchantIdMasked ?? null,
     hasApiKey: Boolean(fromPublic.hasApiKey),
+    hidePromptPayQr: Boolean(fromPublic.hidePromptPayQr),
     updatedAt: config.updatedAt,
   };
 }
