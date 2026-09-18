@@ -7,7 +7,7 @@
 //   - เสียงห้ามมีตะกร้าเป็นของตัวเอง — อ่าน/เขียนผ่าน API ที่หน้าขายลงทะเบียนไว้เท่านั้น
 //   - ไม่มี provider (เส้นทาง legacy) = hook ทั้งหมดเป็น no-op ไม่พังและไม่เปลี่ยนพฤติกรรมเดิม
 
-import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { Cart } from "@/modules/pos/types";
 import type { Product } from "@/modules/catalog/types";
 
@@ -54,18 +54,31 @@ export interface VoiceCartApi {
 interface VoiceCartBridgeValue {
   readonly register: (api: VoiceCartApi | null) => void;
   readonly getApi: () => VoiceCartApi | null;
+  /** แจ้งเมื่อหน้าขายลงทะเบียน/ถอนตะกร้า — ปุ่มที่ขึ้นกับ "ตะกร้าพร้อมไหม" ต้อง render ใหม่ตาม */
+  readonly subscribe: (listener: () => void) => () => void;
 }
 
 const VoiceCartBridgeContext = createContext<VoiceCartBridgeValue | null>(null);
 
 export function VoiceCartBridgeProvider({ children }: { readonly children: ReactNode }) {
   const apiRef = useRef<VoiceCartApi | null>(null);
+  const listenersRef = useRef(new Set<() => void>());
   const value = useMemo<VoiceCartBridgeValue>(
     () => ({
       register: (api) => {
+        if (apiRef.current === api) return;
         apiRef.current = api;
+        // เดิมเปลี่ยนแค่ ref เงียบ ๆ: ปุ่ม AI Live/ผู้ช่วยอ่านค่าตอน render ก่อนหน้าขายลงทะเบียน
+        // แล้วค้างเป็นสีเทา ("หน้าขายยังไม่พร้อม") จนกว่าจะมีอะไรอื่นมาทำให้ render ใหม่
+        for (const listener of listenersRef.current) listener();
       },
       getApi: () => apiRef.current,
+      subscribe: (listener) => {
+        listenersRef.current.add(listener);
+        return () => {
+          listenersRef.current.delete(listener);
+        };
+      },
     }),
     [],
   );
@@ -86,4 +99,14 @@ export function useRegisterVoiceCart(api: VoiceCartApi | null): void {
 export function useVoiceCartApi(): () => VoiceCartApi | null {
   const bridge = useContext(VoiceCartBridgeContext);
   return useMemo(() => () => bridge?.getApi() ?? null, [bridge]);
+}
+
+const noopSubscribe = () => () => {};
+
+/** ตะกร้าของหน้าขายพร้อมให้ผู้ช่วยใช้หรือยัง — render ใหม่เองเมื่อหน้าขายลงทะเบียน/ถอน */
+export function useVoiceCartReady(): boolean {
+  const bridge = useContext(VoiceCartBridgeContext);
+  const subscribe = useCallback((listener: () => void) => bridge?.subscribe(listener) ?? noopSubscribe(), [bridge]);
+  const getSnapshot = useCallback(() => (bridge?.getApi() ?? null) !== null, [bridge]);
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
