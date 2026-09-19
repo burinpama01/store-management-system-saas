@@ -7,6 +7,7 @@ import { selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
 import { enqueueReceiptPrintJob } from "@/modules/printing/network-print-client";
 import { buildTableQrReceiptData } from "@/modules/printing/table-qr-slip";
 import { Button, useConfirm } from "@/shared/components/ui";
+import type { SavedOrderTicket } from "@/modules/pos/types";
 
 interface Props {
   onClose: () => void;
@@ -15,6 +16,10 @@ interface Props {
   onOpenBill?: (tableId: string, tableLabel: string) => void;
   /** เพิ่มรายการเข้าโต๊ะทันที (ส่งครัว) — ใช้ได้แม้โต๊ะยังไม่มีบิล เช่น ลูกค้าไม่สะดวกสแกน QR */
   onAddItems?: (tableId: string, tableLabel: string) => void;
+  /** โต๊ะเปิดแล้ว + ระบบเปิดตั๋วของโต๊ะรอไว้ (ร้านเปิด table_open_auto_ticket) */
+  onTicketOpened?: (ticket: SavedOrderTicket) => void;
+  /** ปิดโต๊ะแล้ว — ตั๋วว่างของโต๊ะถูกลบฝั่ง server */
+  onTableClosed?: (tableId: string) => void;
 }
 
 function remaining(expiresAt: string | null): string {
@@ -24,7 +29,7 @@ function remaining(expiresAt: string | null): string {
   return `เหลือ ${mins} นาที`;
 }
 
-export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems }: Props) {
+export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems, onTicketOpened, onTableClosed }: Props) {
   const [tables, setTables] = useState<OpenTableStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +65,8 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems 
         return;
       }
       const label = t.label ?? t.number;
+      if (res.ticket) onTicketOpened?.(res.ticket);
+      const ticketNote = res.ticket ? ` · เปิดตั๋ว ${res.ticket.ticketNumber} รอไว้` : "";
       try {
         const slipRes = await getTableQrSlipAction(t.id);
         const hubPrinter = slipRes.slip ? selectHubReceiptPrinter(slipRes.printers) : null;
@@ -69,10 +76,11 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems 
           const { hubOnline } = await enqueueReceiptPrintJob(hubPrinter.id, receipt);
           setNotice(
             hubOnline === false
-              ? `เปิดโต๊ะ ${label} แล้ว · ส่ง QR เข้าคิว แต่ Hub ออฟไลน์ จะพิมพ์เมื่อเปิดเครื่องแคชเชียร์`
-              : `เปิดโต๊ะ ${label} + พิมพ์ QR ผ่าน Hub แล้ว`,
+              ? `เปิดโต๊ะ ${label} แล้ว${ticketNote} · ส่ง QR เข้าคิว แต่ Hub ออฟไลน์ จะพิมพ์เมื่อเปิดเครื่องแคชเชียร์`
+              : `เปิดโต๊ะ ${label} + พิมพ์ QR ผ่าน Hub แล้ว${ticketNote}`,
           );
         } else {
+          if (ticketNote) setNotice(`เปิดโต๊ะ ${label} แล้ว${ticketNote}`);
           // No Hub printer configured — open the printable page (browser print).
           window.open(`/table-receipt?tableId=${t.id}`, "_blank", "noopener,noreferrer");
         }
@@ -87,19 +95,24 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems 
 
   async function close(t: OpenTableStatus) {
     setError(null);
+    // 1 โต๊ะ = 1 บิล: ปิดโต๊ะได้เมื่อเช็คบิลแล้วเท่านั้น (server ตรวจซ้ำรวมถึงตั๋วที่มีรายการ)
     if (t.unpaidCount > 0) {
-      const ok = await confirm({
-        title: `ปิดโต๊ะ ${t.label ?? t.number} ทั้งที่มีบิลค้าง`,
-        message: `ยังมีบิลค้าง ${t.unpaidCount} รายการ รวม ${new Intl.NumberFormat("th-TH").format(t.unpaidTotal)} บาท — ปิดโต๊ะโดยยังไม่เก็บเงิน? (ออร์เดอร์ยังเช็คบิลได้ภายหลังที่ "เช็คบิลโต๊ะ")`,
-        confirmLabel: "ปิดโต๊ะ",
-        danger: true,
-      });
-      if (!ok) return;
+      setError(`โต๊ะ ${t.label ?? t.number} ยังมีบิลค้าง ${t.unpaidCount} รายการ — กด "เปิดบิล/เพิ่มรายการ" แล้วชำระเงินทั้งโต๊ะก่อนปิด`);
+      return;
     }
+    const ok = await confirm({
+      title: `ปิดโต๊ะ ${t.label ?? t.number}`,
+      message: "ปิดโต๊ะและคืนโต๊ะว่าง?",
+      confirmLabel: "ปิดโต๊ะ",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await closeTableAction(t.id);
       if (res.error) setError(res.error);
-      else load();
+      else {
+        onTableClosed?.(t.id);
+        load();
+      }
     });
   }
 

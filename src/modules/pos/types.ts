@@ -75,6 +75,8 @@ export interface SavedOrderTicket {
   customerName?: string;
   note?: string;
   buffetSessionId?: string;
+  /** table_auto = ตั๋วที่ระบบเปิดรอไว้ตอนเปิดโต๊ะ (1 ใบต่อโต๊ะ) */
+  ticketSource?: "manual" | "table_auto";
   syncState?: "synced" | "local" | "sync_failed";
   lastSyncedAt?: string;
   createdAt: string;

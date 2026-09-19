@@ -72,6 +72,8 @@ export interface VariantStockPool {
   unitLabel: string;
   /** ยอดคงเหลือของ Pool (หน่วยของ Pool) */
   quantity: number;
+  /** ยอดที่จองไว้ให้ออเดอร์ QR ที่ครัวยังไม่รับ — ขายได้จริง = quantity − reservedUnits */
+  reservedUnits: number;
   /** ขาย variant นี้ 1 หน่วยฐาน ตัดจาก Pool กี่หน่วย */
   consumptionQuantity: number;
 }
@@ -83,11 +85,39 @@ export interface ProductVariant {
   barcode?: string;
   priceAdjustment: number;
   sku?: string;
+  /** สต๊อกจริง (หน้าจัดการสต๊อกแก้ค่านี้) — ตัดสินว่าขายได้ไหมให้ใช้ availableVariantStock() */
   stockQuantity?: number;
+  /** ยอดจองของออเดอร์ QR ที่ครัวยังไม่รับ */
+  reservedQuantity?: number;
   trackStock: boolean;
   isActive: boolean;
   sortOrder: number;
   stockPool?: VariantStockPool;
+}
+
+/** ยอดพร้อมขาย = สต๊อกจริง − ยอดจอง (undefined = ไม่ได้ติดตามสต๊อก) */
+export function availableVariantStock(variant: Pick<ProductVariant, "trackStock" | "stockQuantity" | "reservedQuantity">): number | undefined {
+  if (!variant.trackStock || typeof variant.stockQuantity !== "number") return undefined;
+  return variant.stockQuantity - (variant.reservedQuantity ?? 0);
+}
+
+/** ยอดพร้อมขายของ Pool (หน่วยของ Pool) */
+export function availablePoolUnits(pool: Pick<VariantStockPool, "quantity" | "reservedUnits">): number {
+  return pool.quantity - (pool.reservedUnits ?? 0);
+}
+
+/**
+ * ขาย variant นี้ได้อีกกี่ชิ้น (Pool มาก่อน — Pool คือแหล่งความจริงเดียวเมื่อผูกอยู่)
+ * undefined = ไม่ได้ติดตามสต๊อก (ขายได้ไม่จำกัด)
+ */
+export function sellableVariantUnits(variant: ProductVariant): number | undefined {
+  if (variant.stockPool) {
+    const consumption = variant.stockPool.consumptionQuantity;
+    if (!(consumption > 0)) return undefined;
+    return Math.max(0, Math.floor(availablePoolUnits(variant.stockPool) / consumption));
+  }
+  const available = availableVariantStock(variant);
+  return available === undefined ? undefined : Math.max(0, available);
 }
 
 export interface VariantTemplate {

@@ -33,11 +33,23 @@ import {
   changeOrderPaymentMethod,
   voidOrder,
 } from "@/modules/pos/order-repository";
-import { listSavedTickets, saveSavedTicket, deleteSavedTicket, deleteSavedTicketAndCloseTable } from "@/modules/pos/saved-ticket-repository";
+import {
+  listSavedTickets,
+  listTableSavedTickets,
+  ensureTableAutoTicket,
+  saveSavedTicket,
+  deleteSavedTicket,
+  deleteSavedTicketAndCloseTable,
+  getSavedTicket,
+} from "@/modules/pos/saved-ticket-repository";
+import { generateOrderNumber } from "@/modules/pos/order-number";
+import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
+import { buildTableTicket, isEmptyTicket } from "@/modules/pos/table-ticket";
+import { describeTableUnpaid, findTableUnpaidContext } from "@/modules/pos/table-unpaid";
 import { openTableSession, closeTableSession, getStore, getTable, listManagedTables, listPrinters } from "@/modules/stores/repository";
-import { listActiveQrOrders } from "@/modules/qr-ordering/repository";
+import { listActiveQrOrders, voidQrOrderItem } from "@/modules/qr-ordering/repository";
 import { submitQrOrderAction, type QrOrderItem } from "@/app/qr/[storeSlug]/[tableId]/actions";
 import { buildTableQrUrl } from "@/modules/qr-ordering/printed-qr";
 import { getUnifiedPosStoreFlag, settleOrdersGoverned } from "@/modules/unified-pos/settlement";
@@ -68,6 +80,15 @@ import type { QrOrderView } from "@/modules/qr-ordering/types";
 import type { Printer, QrOrderingMode } from "@/modules/stores/types";
 import { buildLoyaltyClaimUrl, ensureLoyaltyClaimCode } from "@/modules/loyalty/claim-repository";
 import { generateMemberPortalLink } from "@/modules/customers/member-repository";
+
+/** log แบบ best-effort — ระบบ log ล่มต้องไม่เปลี่ยนผลของงานหลัก (เปิดโต๊ะ/เช็คบิล) */
+function safeLog(input: Parameters<typeof logSystemEvent>[0]): Promise<void> {
+  try {
+    return logSystemEvent(input).catch(() => undefined);
+  } catch {
+    return Promise.resolve();
+  }
+}
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -159,6 +180,20 @@ export async function deleteSavedTicketAction(ticketId: string, opts?: { closeRe
   try {
     await requirePermission("pos.use");
     const { ctx } = await getStoreContext();
+    if (opts?.closeRelatedTableSession) {
+      // ลบตั๋วแล้วเคลียร์โต๊ะได้เฉพาะเมื่อโต๊ะไม่มีบิลอื่นค้าง (ออเดอร์ QR / ตั๋วอื่น)
+      const ticket = await getSavedTicket(ticketId, ctx.storeId);
+      if (ticket.error) return { error: ticket.error.userMessage };
+      if (ticket.data?.tableId) {
+        const unpaid = await findTableUnpaidContext(await createSupabaseServerClient(), ctx.storeId, ticket.data.tableId, {
+          excludeTicketId: ticketId,
+        });
+        if (!unpaid.ok) return { error: unpaid.error };
+        if (unpaid.hasUnpaid) {
+          return { error: `โต๊ะยังมีบิลค้าง (${describeTableUnpaid(unpaid)}) — ลบตั๋วอย่างเดียว หรือเช็คบิลก่อน` };
+        }
+      }
+    }
     const result = opts?.closeRelatedTableSession
       ? await deleteSavedTicketAndCloseTable(ticketId, ctx.storeId)
       : await deleteSavedTicket(ticketId, ctx.storeId);
@@ -583,7 +618,10 @@ export async function collectPaymentAction(
     /** Beam QR already confirmed paid by Beam — the server re-checks before closing. */
     beam?: { gatewayPaymentId: string } | null;
   },
-): Promise<{ order: Order | null; error: string | null }> {
+): Promise<{ order: Order | null; error: string | null } & {
+  /** บิลรวมโต๊ะ: ผลการปิดโต๊ะหลังจ่าย (ทำฝั่ง server ใน request เดียวกัน ไม่พึ่งหน่วยความจำของเครื่อง) */
+  tableBill?: TableBillFinish | null;
+}> {
   let beamClaim: { storeId: string; gatewayPaymentId: string; orderId: string } | null = null;
   let beamClosed = false;
   try {
@@ -766,7 +804,16 @@ export async function collectPaymentAction(
       ctx.storeId,
       orderId,
     );
-    return { order: paidOrder, error: null };
+    // บิลรวมโต๊ะ: เงินเข้าแล้ว → ปิดโต๊ะทันทีฝั่ง server (idempotent — refresh/เน็ตหลุดไม่ค้าง)
+    // ความล้มเหลวตรงนี้ไม่ย้อนการชำระ แค่แจ้งให้ปิดโต๊ะเอง
+    let tableBill: TableBillFinish | null = null;
+    if (paidOrder?.tableId) {
+      tableBill = await finishTableBillIfConsolidated(
+        { storeId: ctx.storeId, organizationId: ctx.organizationId, userId: user.id },
+        orderId,
+      ).catch(() => ({ closed: false, notice: null, error: "ปิดโต๊ะหลังชำระไม่สำเร็จ" }));
+    }
+    return { order: paidOrder, error: null, tableBill };
   } catch (e) {
     return { order: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   } finally {
@@ -1143,6 +1190,36 @@ export async function listTablesForOpenAction(): Promise<{
   }
 }
 
+/**
+ * เปิดตั๋วของโต๊ะรอไว้หลังเปิดโต๊ะ (ถ้าโต๊ะมีตั๋วอยู่แล้วใช้ใบเดิม) — ความล้มเหลวไม่ทำให้
+ * การเปิดโต๊ะล้ม: โต๊ะเปิดแล้ว ออเดอร์ QR ยังเช็คบิลผ่าน "เช็คบิลโต๊ะ" ได้เหมือนเดิม
+ */
+async function ensureTableTicket(
+  ctx: { organizationId: string; storeId: string; userId: string },
+  tableId: string,
+  tableLabel: string,
+  timeZone: string,
+): Promise<SavedOrderTicket | null> {
+  const logBase = { source: "pos.table", action: "openTableTicket", organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: ctx.userId };
+  try {
+    // atomic ใน DB (unique 1 ตั๋วอัตโนมัติต่อโต๊ะ) — เปิดโต๊ะพร้อมกันหลายเครื่องได้ใบเดียว
+    const draft = buildTableTicket({ id: randomUUID(), storeId: ctx.storeId, tableId, tableLabel, now: new Date(), timeZone });
+    const saved = await ensureTableAutoTicket({ organizationId: ctx.organizationId, storeId: ctx.storeId, ticket: draft });
+    if (saved.error || !saved.data) throw new Error(saved.error?.userMessage ?? "บันทึกตั๋วไม่สำเร็จ");
+    const reused = saved.data.id !== draft.id;
+    await safeLog({
+      ...logBase,
+      level: "info",
+      message: reused ? `โต๊ะ ${tableLabel} มีตั๋วอยู่แล้ว ใช้ใบเดิม` : `เปิดตั๋ว ${saved.data.ticketNumber} รอไว้สำหรับโต๊ะ ${tableLabel}`,
+      context: { tableId, ticketId: saved.data.id, reused },
+    });
+    return saved.data;
+  } catch (e) {
+    await safeLog({ ...logBase, level: "warn", message: `เปิดโต๊ะแล้วแต่เปิดตั๋วไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`, context: { tableId } });
+    return null;
+  }
+}
+
 /** Open an à la carte table session using the store's default duration. Returns the slug + expiry for the receipt. */
 export async function openTableAction(
   tableId: string,
@@ -1153,12 +1230,24 @@ export async function openTableAction(
   storeSlug: string | null;
   qrMode: QrOrderingMode | null;
   qrUrl: string | null;
+  /** ตั๋วของโต๊ะที่เปิดรอไว้ (ร้านเปิด table_open_auto_ticket) — null = ไม่ได้สร้าง */
+  ticket: SavedOrderTicket | null;
 }> {
-  const empty = { expiresAt: null, storeSlug: null, qrMode: null, qrUrl: null };
+  const empty = { expiresAt: null, storeSlug: null, qrMode: null, qrUrl: null, ticket: null };
   try {
     await requirePermission("pos.use");
     const { ctx } = await getStoreContext();
     if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง", ...empty };
+
+    // รอบโต๊ะใหม่ต้องไม่ติดบิลของลูกค้ารอบก่อน (1 โต๊ะ = 1 บิล) — อ่านไม่ได้ = ไม่เปิด
+    const unpaid = await findTableUnpaidContext(await createSupabaseServerClient(), ctx.storeId, tableId);
+    if (!unpaid.ok) return { error: unpaid.error, ...empty };
+    if (unpaid.hasUnpaid) {
+      return {
+        error: `โต๊ะนี้ยังมีบิลค้างจากรอบก่อน (${describeTableUnpaid(unpaid)}) — เช็คบิลก่อนเปิดโต๊ะใหม่`,
+        ...empty,
+      };
+    }
 
     const storeRes = await getStore(ctx.storeId);
     // noExpiry (จาก modal) มาก่อน; ถ้าไม่ได้ส่งมาให้ใช้ค่าเริ่มต้นของร้าน
@@ -1200,6 +1289,10 @@ export async function openTableAction(
       }
     }
 
+    const ticket = store?.tableOpenAutoTicket
+      ? await ensureTableTicket(ctx, tableId, tableLabel, store.timezone)
+      : null;
+
     revalidatePath("/pos", "page");
     return {
       error: null,
@@ -1207,6 +1300,7 @@ export async function openTableAction(
       storeSlug: store?.slug ?? null,
       qrMode,
       qrUrl,
+      ticket,
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", ...empty };
@@ -1268,13 +1362,44 @@ export async function getTableQrSlipAction(tableId: string): Promise<{
   }
 }
 
+/** ลบตั๋วว่างของโต๊ะ (ตั๋วที่เปิดรอไว้แต่ไม่มีรายการ) ตอนปิดโต๊ะ — ตั๋วที่มีรายการไม่แตะ */
+async function deleteEmptyTableTickets(
+  ctx: { storeId: string; organizationId: string; userId?: string },
+  tableId: string,
+  reason: string,
+  tickets?: SavedOrderTicket[],
+) {
+  const list = tickets ?? (await listTableSavedTickets(ctx.storeId, tableId)).data ?? [];
+  for (const ticket of list) {
+    if (ticket.tableId !== tableId || !isEmptyTicket(ticket)) continue;
+    const res = await deleteSavedTicket(ticket.id, ctx.storeId);
+    await safeLog({
+      level: res.error ? "warn" : "info",
+      source: "pos.table",
+      action: "deleteEmptyTableTicket",
+      message: res.error ? `ลบตั๋วว่างของโต๊ะไม่สำเร็จ: ${res.error.userMessage}` : "ลบตั๋วว่างของโต๊ะ",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: ctx.userId,
+      context: { tableId, ticketId: ticket.id, reason, ok: !res.error },
+    });
+  }
+}
+
 export async function closeTableAction(tableId: string): Promise<{ error: string | null }> {
   try {
     await requirePermission("pos.use");
     const { ctx } = await getStoreContext();
     if (!UUID_RE.test(tableId)) return { error: "โต๊ะไม่ถูกต้อง" };
+    // ปิดโต๊ะทั้งที่มีบิลค้าง = รายการของลูกค้ารอบนี้จะปนกับรอบหน้า → ต้องเช็คบิลก่อน
+    const unpaid = await findTableUnpaidContext(await createSupabaseServerClient(), ctx.storeId, tableId);
+    if (!unpaid.ok) return { error: unpaid.error };
+    if (unpaid.hasUnpaid) {
+      return { error: `ยังมีบิลค้าง (${describeTableUnpaid(unpaid)}) — ชำระเงินทั้งโต๊ะก่อนปิดโต๊ะ` };
+    }
     const res = await closeTableSession(ctx.storeId, tableId);
     if (res.error) return { error: res.error.userMessage };
+    await deleteEmptyTableTickets(ctx, tableId, "closeTable");
     revalidatePath("/pos", "page");
     return { error: null };
   } catch (e) {
@@ -1329,6 +1454,268 @@ export async function addItemsToTableAction(
   }
 }
 
+// --- บิลรวมโต๊ะ: 1 โต๊ะ = 1 บิล = 1 การจ่าย (consolidate_table_bill) ---
+
+function orderToBillCart(order: Order): Cart {
+  return {
+    storeId: order.storeId,
+    items: order.items.map((item) => ({
+      key: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      categoryId: "",
+      variant: item.variantId ? { id: item.variantId, name: item.variantName ?? "", priceAdjustment: 0 } : null,
+      unit: item.unitId ? { id: item.unitId, name: item.unitName ?? "", quantity: item.unitQuantity ?? 1 } : null,
+      modifiers: item.modifiers,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice,
+      note: item.note,
+    })),
+    subtotal: order.subtotal,
+    discount: order.discount,
+    total: order.total,
+  };
+}
+
+/**
+ * กดชำระที่ตั๋วโต๊ะ: รวมทุกออเดอร์ QR ที่เปิดอยู่ของโต๊ะ + รายการในตั๋ว เป็นออเดอร์เดียว
+ * แล้วคืนออเดอร์นั้นให้หน้าจ่ายเงินปกติของ POS เก็บเงินครั้งเดียว (collectPaymentAction —
+ * นโยบาย Beam/เงินสดเดียวกับ POS)
+ * - ห้ามรวมถ้ามีออเดอร์ที่ครัวยังไม่รับ (DB ตรวจซ้ำ)
+ * - รายการในตั๋วสร้างเป็นออเดอร์ POS (ราคาจาก catalog ฝั่ง server) แล้วถูกรวม + ตัดสต๊อกใน RPC
+ * - operationKey เดิม = replay (กดซ้ำ/เน็ตหลุดไม่เกิดบิลซ้ำ)
+ */
+export async function consolidateTableBillAction(input: {
+  tableId: string;
+  /** ตั๋วของโต๊ะ — server อ่านรายการจาก DB เอง (ไม่เชื่อตะกร้าในเครื่อง) และ RPC ใช้ตั๋วใน transaction เดียว */
+  ticketId?: string | null;
+  operationKey: string;
+}): Promise<{ order: { orderId: string; orderNumber: string } | null; cart: Cart | null; error: string | null }> {
+  const fail = (error: string) => ({ order: null, cart: null, error });
+  try {
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return fail("ไม่มีสิทธิ์ใช้งาน POS");
+    if (!UUID_RE.test(input.tableId)) return fail("โต๊ะไม่ถูกต้อง");
+    if (!/^[A-Za-z0-9-]{8,80}$/.test(input.operationKey)) return fail("คำขอไม่ถูกต้อง");
+    if (input.ticketId && !UUID_RE.test(input.ticketId)) return fail("ตั๋วไม่ถูกต้อง");
+
+    const tableRes = await getTable(input.tableId, ctx.storeId);
+    if (!tableRes.data) return fail("ไม่พบโต๊ะ");
+    const tableLabel = tableRes.data.label ?? String(tableRes.data.number);
+
+    const openRes = await listActiveQrOrders(ctx.storeId);
+    if (openRes.error) return fail(openRes.error.userMessage);
+    const waiting = (openRes.data ?? []).filter((o) => o.tableId === input.tableId && o.prepStatus === "new");
+    if (waiting.length > 0) {
+      return fail(`ยังมีออเดอร์ที่ครัวยังไม่รับ (${waiting.map((o) => `#${o.orderNumber}`).join(", ")}) — ให้ครัวรับหรือปฏิเสธก่อนเช็คบิล`);
+    }
+
+    let ticketUpdatedAt: string | null = null;
+    let cart: Cart | null = null;
+    if (input.ticketId) {
+      const ticketRes = await getSavedTicket(input.ticketId, ctx.storeId);
+      if (ticketRes.error) return fail(ticketRes.error.userMessage);
+      const ticket = ticketRes.data;
+      if (!ticket || ticket.tableId !== input.tableId) return fail("ตั๋วของโต๊ะไม่ถูกต้อง");
+      ticketUpdatedAt = ticket.updatedAt;
+      cart = ticket.cart.items.length > 0 ? ticket.cart : null;
+    }
+
+    let posOrderId: string | null = null;
+    if (cart) {
+      if (cart.storeId !== ctx.storeId) return fail("ตะกร้าไม่ตรงกับร้าน");
+      const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
+      const created = await createPosOrderCore(user, ctx, canDiscount, cart, {
+        tableId: input.tableId,
+        tableNumber: tableLabel,
+        // ผูกกับเวอร์ชันของตั๋ว: ตั๋วเปลี่ยน = ออเดอร์ใหม่ (RPC ตรวจเวอร์ชันซ้ำอีกชั้น)
+        idempotencyKey: `tblpos-${input.operationKey}-${Date.parse(ticketUpdatedAt ?? "") || 0}`,
+      });
+      if (created.error || !created.orderId) return fail(created.error ?? "สร้างรายการจากตั๋วไม่สำเร็จ");
+      posOrderId = created.orderId;
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { data: billId, error: rpcError } = await supabase.rpc("consolidate_table_bill", {
+      p_store_id: ctx.storeId,
+      p_table_id: input.tableId,
+      p_table_bill_key: `tbl-${input.operationKey}`,
+      p_order_number: generateOrderNumber({ timeZone: ctx.storeTimezone }),
+      p_pos_order_id: posOrderId,
+      p_ticket_id: input.ticketId ?? null,
+      p_ticket_updated_at: ticketUpdatedAt,
+    });
+    if (rpcError || !billId) {
+      // ออเดอร์ POS จากตั๋วยังไม่ถูกรวม/ตัดสต๊อก → ยกเลิกทิ้ง ไม่ให้ค้างเป็นบิลลอย
+      if (posOrderId) {
+        await supabase
+          .from("orders")
+          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .eq("id", posOrderId)
+          .eq("store_id", ctx.storeId)
+          .in("status", ["open", "pending_payment"])
+          .is("merged_into_order_id", null);
+      }
+      const message = rpcError?.message ?? "รวมบิลไม่สำเร็จ";
+      await safeLog({
+        level: "warn",
+        source: "pos.table_bill",
+        action: "consolidate",
+        message: `รวมบิลโต๊ะ ${tableLabel} ไม่สำเร็จ: ${message}`,
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        actorUserId: user.id,
+        context: { tableId: input.tableId, posOrderId },
+      });
+      return fail(message);
+    }
+
+    const orderRes = await getOrder(billId);
+    if (orderRes.error || !orderRes.data) return fail(orderRes.error?.userMessage ?? "อ่านบิลรวมไม่สำเร็จ");
+    const order = orderRes.data;
+    await safeLog({
+      level: "info",
+      source: "pos.table_bill",
+      action: "consolidate",
+      message: `รวมบิลโต๊ะ ${tableLabel} เป็น #${order.orderNumber} ยอด ${order.total.toFixed(2)}`,
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      context: { tableId: input.tableId, billOrderId: billId, posOrderId, itemCount: order.items.length },
+    });
+    revalidatePath("/pos", "page");
+    return { order: { orderId: order.id, orderNumber: order.orderNumber }, cart: orderToBillCart(order), error: null };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
+  }
+}
+
+export interface TableBillFinish {
+  closed: boolean;
+  notice: string | null;
+  error: string | null;
+}
+
+/**
+ * หลังเก็บเงินบิลรวมสำเร็จ: ปิดโต๊ะ + ลบตั๋วว่างของโต๊ะ
+ * - เฉพาะออเดอร์ที่เป็นบิลรวม (table_bill_key) และจ่ายแล้วจริง
+ * - มีออเดอร์/ตั๋วค้างใหม่ = ไม่ปิดโต๊ะ · อ่านไม่ได้ = ไม่ปิด (fail closed)
+ * - idempotent: เรียกซ้ำได้ (โต๊ะปิดแล้วก็ปิดซ้ำได้)
+ */
+async function finishTableBillIfConsolidated(
+  ctx: { storeId: string; organizationId: string; userId: string },
+  orderId: string,
+): Promise<TableBillFinish | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data: bill, error: billError } = await supabase
+    .from("orders")
+    .select("id, status, table_id, table_bill_key")
+    .eq("id", orderId)
+    .eq("store_id", ctx.storeId)
+    .maybeSingle();
+  if (billError) return { closed: false, notice: null, error: "อ่านบิลรวมไม่สำเร็จ — ปิดโต๊ะเองที่ \"เปิดโต๊ะ\"" };
+  if (!bill?.table_bill_key || !bill.table_id) return null;
+  if (bill.status !== "paid") return { closed: false, notice: null, error: "บิลโต๊ะยังไม่ได้ชำระ" };
+  const tableId = bill.table_id;
+
+  const unpaid = await findTableUnpaidContext(supabase, ctx.storeId, tableId);
+  if (!unpaid.ok) {
+    await safeLog({
+      level: "warn",
+      source: "pos.table_bill",
+      action: "finish",
+      message: `ชำระบิลรวมแล้ว แต่ตรวจบิลค้างไม่ได้ — ไม่ปิดโต๊ะ`,
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: ctx.userId,
+      context: { tableId, orderId },
+    });
+    return { closed: false, notice: null, error: `${unpaid.error} — โต๊ะยังเปิดอยู่` };
+  }
+  if (unpaid.hasUnpaid) {
+    await safeLog({
+      level: "warn",
+      source: "pos.table_bill",
+      action: "finish",
+      message: `ชำระบิลรวมแล้ว แต่โต๊ะยังมีบิลค้าง (${describeTableUnpaid(unpaid)}) — ไม่ปิดโต๊ะ`,
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: ctx.userId,
+      context: { tableId, orderId, openOrders: unpaid.openOrders, nonEmptyTickets: unpaid.nonEmptyTickets },
+    });
+    // โต๊ะยังใช้งานต่อ → เก็บตั๋วอัตโนมัติไว้ให้ออเดอร์ใหม่แสดงในตั๋วเดิม
+    return {
+      closed: false,
+      notice: `ลูกค้าสั่งเพิ่มระหว่างเช็คบิล (${describeTableUnpaid(unpaid)}) — โต๊ะยังเปิดอยู่`,
+      error: null,
+    };
+  }
+
+  const close = await closeTableSession(ctx.storeId, tableId);
+  await deleteEmptyTableTickets(ctx, tableId, "tableBillPaid");
+  await safeLog({
+    level: close.error ? "warn" : "info",
+    source: "pos.table_bill",
+    action: "finish",
+    message: close.error ? `ชำระบิลรวมแล้ว แต่ปิดโต๊ะไม่สำเร็จ: ${close.error.userMessage}` : "ชำระบิลรวมแล้ว ปิดโต๊ะ",
+    organizationId: ctx.organizationId,
+    storeId: ctx.storeId,
+    actorUserId: ctx.userId,
+    context: { tableId, orderId },
+  });
+  revalidatePath("/pos", "page");
+  return close.error
+    ? { closed: false, notice: null, error: close.error.userMessage }
+    : { closed: true, notice: null, error: null };
+}
+
+/** ปิดโต๊ะหลังเก็บเงินบิลรวม (สำรอง/สั่งซ้ำด้วยมือ — ปกติ collectPaymentAction ทำให้แล้ว) */
+export async function finishTableBillAction(orderId: string): Promise<TableBillFinish> {
+  try {
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { closed: false, notice: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    if (!UUID_RE.test(orderId)) return { closed: false, notice: null, error: "ข้อมูลไม่ถูกต้อง" };
+    const result = await finishTableBillIfConsolidated(
+      { storeId: ctx.storeId, organizationId: ctx.organizationId, userId: user.id },
+      orderId,
+    );
+    return result ?? { closed: false, notice: null, error: "ออเดอร์นี้ไม่ใช่บิลรวมโต๊ะ" };
+  } catch (e) {
+    return { closed: false, notice: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** แก้ไขก่อนจ่าย: ยกเลิกรายการ QR ของโต๊ะจากหน้า POS (คืนสต๊อก/ยอดจอง ผ่าน void_qr_order_item) */
+export async function voidTableQrItemAction(
+  orderId: string,
+  itemId: string,
+  reason?: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("pos.use")) return { error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    if (!UUID_RE.test(orderId) || !UUID_RE.test(itemId)) return { error: "รายการไม่ถูกต้อง" };
+    const trimmed = reason?.trim().slice(0, 100) || "แก้ไขก่อนชำระ";
+    const res = await voidQrOrderItem(ctx.storeId, orderId, itemId, trimmed);
+    await safeLog({
+      level: res.error ? "warn" : "info",
+      source: "pos.table_bill",
+      action: "voidQrItem",
+      message: res.error ? `ยกเลิกรายการ QR ไม่สำเร็จ: ${res.error.userMessage}` : "ยกเลิกรายการ QR ก่อนชำระ",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      context: { orderId, itemId, reason: trimmed },
+    });
+    if (res.error) return { error: res.error.userMessage };
+    revalidatePath("/pos", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
 // --- Unified table bill: รวมออร์เดอร์ QR + ตั๋ว POS ที่พักไว้ ต่อโต๊ะ เป็นบิลเดียว ---
 
 export interface TableBillTicketItem {
@@ -1368,7 +1755,7 @@ export async function listTableBillsAction(): Promise<{ bills: TableBill[]; erro
     const { ctx } = await getStoreContext();
     const [ordersRes, ticketsRes] = await Promise.all([
       listActiveQrOrders(ctx.storeId),
-      listSavedTickets(ctx.storeId),
+      listTableSavedTickets(ctx.storeId),
     ]);
     if (ordersRes.error) return { bills: [], error: ordersRes.error.userMessage };
     if (ticketsRes.error) return { bills: [], error: ticketsRes.error.userMessage };
@@ -1390,7 +1777,8 @@ export async function listTableBillsAction(): Promise<{ bills: TableBill[]; erro
       bill.qrTotal += order.total;
     }
     for (const ticket of ticketsRes.data ?? []) {
-      if (!ticket.tableId) continue;
+      // ตั๋วว่าง (เปิดรอไว้ตอนเปิดโต๊ะ) ไม่ใช่บิลค้าง
+      if (!ticket.tableId || isEmptyTicket(ticket)) continue;
       const bill = ensure(ticket.tableId, ticket.tableNumber ?? "-");
       bill.tickets.push({
         id: ticket.id,
@@ -1455,13 +1843,15 @@ export async function settleWholeTableAction(
 
     const [ordersRes, ticketsRes] = await Promise.all([
       listActiveQrOrders(ctx.storeId),
-      listSavedTickets(ctx.storeId),
+      listTableSavedTickets(ctx.storeId, tableId),
     ]);
     if (ordersRes.error) return fail(ordersRes.error.userMessage);
     if (ticketsRes.error) return fail(ticketsRes.error.userMessage);
 
     const qrOrders = (ordersRes.data ?? []).filter((o) => o.tableId === tableId);
-    const tickets = (ticketsRes.data ?? []).filter((t) => t.tableId === tableId);
+    const tableTickets = (ticketsRes.data ?? []).filter((t) => t.tableId === tableId);
+    // ตั๋วว่างไม่มีอะไรให้คิดเงิน (checkout ตะกร้าว่าง = error) → ลบทิ้งตอนปิดโต๊ะ
+    const tickets = tableTickets.filter((t) => !isEmptyTicket(t));
     if (qrOrders.length === 0 && tickets.length === 0) {
       return fail("โต๊ะนี้ไม่มีบิลค้างชำระ");
     }
@@ -1507,6 +1897,7 @@ export async function settleWholeTableAction(
         if (settled.error.code === "up_not_found") {
           // โต๊ะไม่มีบิล QR เปิดอยู่ (มีแต่ตั๋ว) → ปิด session ตามพฤติกรรม legacy
           const close = await closeTableSession(ctx.storeId, tableId);
+          await deleteEmptyTableTickets(ctx, tableId, "settleWholeTable", tableTickets);
           revalidatePath("/pos", "page");
           return { error: null, settledCount, total, closed: !close.error };
         }
@@ -1514,6 +1905,7 @@ export async function settleWholeTableAction(
       }
       settledCount += settled.result.order_ids.length;
       total += settled.result.grand_total;
+      if (settled.result.table_closed) await deleteEmptyTableTickets(ctx, tableId, "settleWholeTable", tableTickets);
       revalidatePath("/pos", "page");
       return { error: null, settledCount, total, closed: settled.result.table_closed };
     }
@@ -1558,8 +1950,9 @@ export async function settleWholeTableAction(
       total += ticket.cart.total;
     }
 
-    // 3) ปิดโต๊ะ (คืนโต๊ะว่าง)
+    // 3) ปิดโต๊ะ (คืนโต๊ะว่าง) + ลบตั๋วว่างที่เปิดรอไว้
     const close = await closeTableSession(ctx.storeId, tableId);
+    await deleteEmptyTableTickets(ctx, tableId, "settleWholeTable", tableTickets);
     revalidatePath("/pos", "page");
     return { error: null, settledCount, total, closed: !close.error };
   } catch (e) {

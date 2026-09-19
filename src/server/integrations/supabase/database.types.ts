@@ -1325,6 +1325,7 @@ export interface Database {
           music_license_note: string | null;
           qr_service_buttons: Json;
           dine_in_no_expiry: boolean;
+          table_open_auto_ticket: boolean;
           setup_profile: Json;
           print_hub_token_hash: string | null;
           print_hub_last_seen: string | null;
@@ -1367,6 +1368,7 @@ export interface Database {
           music_license_note?: string | null;
           qr_service_buttons?: Json;
           dine_in_no_expiry?: boolean;
+          table_open_auto_ticket?: boolean;
           setup_profile?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
@@ -1409,6 +1411,7 @@ export interface Database {
           music_license_note?: string | null;
           qr_service_buttons?: Json;
           dine_in_no_expiry?: boolean;
+          table_open_auto_ticket?: boolean;
           setup_profile?: Json;
           print_hub_token_hash?: string | null;
           print_hub_last_seen?: string | null;
@@ -1979,6 +1982,7 @@ export interface Database {
           price_adjustment: number;
           sku: string | null;
           stock_quantity: number | null;
+          reserved_quantity: number;
           track_stock: boolean;
           is_active: boolean;
           sort_order: number;
@@ -1992,6 +1996,7 @@ export interface Database {
           price_adjustment?: number;
           sku?: string | null;
           stock_quantity?: number | null;
+          reserved_quantity?: number;
           track_stock?: boolean;
           is_active?: boolean;
           sort_order?: number;
@@ -2005,6 +2010,7 @@ export interface Database {
           price_adjustment?: number;
           sku?: string | null;
           stock_quantity?: number | null;
+          reserved_quantity?: number;
           track_stock?: boolean;
           is_active?: boolean;
           sort_order?: number;
@@ -2019,6 +2025,7 @@ export interface Database {
           name: string;
           unit_label: string;
           quantity: number;
+          reserved_units: number;
           low_stock_threshold: number;
           is_active: boolean;
           created_at: string;
@@ -2031,6 +2038,7 @@ export interface Database {
           name: string;
           unit_label: string;
           quantity?: number;
+          reserved_units?: number;
           low_stock_threshold?: number;
           is_active?: boolean;
           created_at?: string;
@@ -2043,6 +2051,7 @@ export interface Database {
           name?: string;
           unit_label?: string;
           quantity?: number;
+          reserved_units?: number;
           low_stock_threshold?: number;
           is_active?: boolean;
           created_at?: string;
@@ -2378,6 +2387,7 @@ export interface Database {
           customer_name: string | null;
           note: string | null;
           buffet_session_id: string | null;
+          ticket_source: string;
           created_by_user_id: string;
           updated_by_user_id: string;
           created_at: string;
@@ -2395,6 +2405,7 @@ export interface Database {
           customer_name?: string | null;
           note?: string | null;
           buffet_session_id?: string | null;
+          ticket_source?: string;
           created_by_user_id: string;
           updated_by_user_id: string;
           created_at?: string;
@@ -2412,6 +2423,7 @@ export interface Database {
           customer_name?: string | null;
           note?: string | null;
           buffet_session_id?: string | null;
+          ticket_source?: string;
           created_by_user_id?: string;
           updated_by_user_id?: string;
           created_at?: string;
@@ -3042,6 +3054,9 @@ export interface Database {
           total: number;
           note: string | null;
           qr_order_source: boolean;
+          stock_state: "reserved" | "committed" | "released" | null;
+          merged_into_order_id: string | null;
+          table_bill_key: string | null;
           prep_status: "new" | "preparing" | "ready" | "served" | "done";
           revision: number;
           created_at: string;
@@ -3073,6 +3088,9 @@ export interface Database {
           total?: number;
           note?: string | null;
           qr_order_source?: boolean;
+          stock_state?: "reserved" | "committed" | "released" | null;
+          merged_into_order_id?: string | null;
+          table_bill_key?: string | null;
           prep_status?: "new" | "preparing" | "ready" | "served" | "done";
           revision?: number;
           created_at?: string;
@@ -3104,6 +3122,9 @@ export interface Database {
           total?: number;
           note?: string | null;
           qr_order_source?: boolean;
+          stock_state?: "reserved" | "committed" | "released" | null;
+          merged_into_order_id?: string | null;
+          table_bill_key?: string | null;
           prep_status?: "new" | "preparing" | "ready" | "served" | "done";
           revision?: number;
           created_at?: string;
@@ -4673,6 +4694,39 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      reject_qr_order: {
+        Args: { p_store_id: string; p_order_id: string; p_reason?: string | null };
+        Returns: number;
+      };
+      ensure_table_auto_ticket: {
+        Args: {
+          p_ticket_id: string;
+          p_organization_id: string;
+          p_store_id: string;
+          p_table_id: string;
+          p_ticket_number: string;
+          p_label: string;
+          p_table_number: string;
+          p_cart: Json;
+        };
+        Returns: Database["public"]["Tables"]["pos_saved_tickets"]["Row"][];
+      };
+      consolidate_table_bill: {
+        Args: {
+          p_store_id: string;
+          p_table_id: string;
+          p_table_bill_key: string;
+          p_order_number: string;
+          p_pos_order_id?: string | null;
+          p_ticket_id?: string | null;
+          p_ticket_updated_at?: string | null;
+        };
+        Returns: string;
+      };
+      qr_menu_pool_availability: {
+        Args: { p_store_id: string };
+        Returns: { variant_id: string; sellable_units: number }[];
+      };
 
       /** v3 — เคลมงานพิมพ์แบบ atomic (FOR UPDATE SKIP LOCKED) */
       claim_print_jobs: {

@@ -452,6 +452,23 @@ function StoreSettingsDialog({
           </p>
         </div>
 
+        <div className="max-w-md">
+          <label className="flex items-center gap-2 text-sm text-[var(--ink)]">
+            <input
+              type="checkbox"
+              name="tableOpenAutoTicket"
+              value="1"
+              defaultChecked={store.tableOpenAutoTicket}
+              disabled={!canEdit}
+              className="h-4 w-4 rounded border-[var(--border)]"
+            />
+            เปิดโต๊ะแล้วเปิดตั๋วของโต๊ะรอไว้ที่ POS
+          </label>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            ติ๊กไว้ = กด “เปิดโต๊ะ” ที่ POS จะสร้างตั๋ว “โต๊ะ X” ให้ทันที ออเดอร์ที่ลูกค้าสแกน QR สั่งจะเข้าครัวตามปกติและแสดงในตั๋วนี้ กดชำระที่ตั๋วเพื่อเช็คบิลทั้งโต๊ะได้เลย
+          </p>
+        </div>
+
         <div className="max-w-xs">
           <label className="field-label" htmlFor="qrOrderingMode">
             รูปแบบ QR ของโต๊ะ

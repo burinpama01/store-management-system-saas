@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เปิดโต๊ะ = เปิดตั๋ว</title>
+<style>
+  :root { --bg:#f7f6f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e4e2da; --accent:#b45309; --ok:#0f766e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --ok:#2dd4bf; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 "Sarabun","Noto Sans Thai",system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:20px; margin:32px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  .meta { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:12px 0; }
+  code { background:rgba(127,127,127,.12); padding:1px 5px; border-radius:4px; font-size:14px; }
+  ol.flow li { margin:6px 0; } table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; border-bottom:1px solid var(--line); padding:6px 8px; vertical-align:top; }
+  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:rgba(180,83,9,.12); color:var(--accent); }
+  .ok { color:var(--ok); }
+</style>
+</head>
+<body><main>
+<h1>เปิดโต๊ะ = เปิดตั๋วรอไว้ (QR Order ลงตั๋ว POS)</h1>
+<p class="meta">แผน v1 · 2026-09-18 · branch <code>feat/table-open-auto-ticket</code> · หน้าจอ POS ปกติ (<code>/pos</code>)</p>
+
+<h2>1. โจทย์</h2>
+<div class="card">
+ลูกค้าสแกน QR สั่ง → ออเดอร์เข้าครัวตามปกติ แต่หน้าร้านต้องเห็นออเดอร์นั้น <b>อยู่ในตั๋วของโต๊ะ</b> บนหน้าจอ POS
+พนักงานเปิดโต๊ะก่อน + พิมพ์ QR ให้ลูกค้า → ระบบ <b>เปิดตั๋วของโต๊ะรอไว้ทันที</b>
+</div>
+
+<h2>2. การตัดสินใจ (ผู้ใช้เลือกแล้ว)</h2>
+<table>
+<tr><th>เรื่อง</th><th>เลือก</th><th>เหตุผล</th></tr>
+<tr><td>รายการ QR อยู่ในตั๋วแบบไหน</td><td>ผูกตั๋ว-โต๊ะ</td><td>ตั๋วแสดงรายการ QR เป็นบรรทัดล็อก "ส่งครัวแล้ว"; ไม่คัดลอกเข้าตะกร้า → ไม่มียอดซ้ำ ไม่แตะบัญชี/สต็อก/ครัวเดิม</td></tr>
+<tr><td>ขอบเขต</td><td>ตั้งค่าได้ต่อร้าน</td><td>คอลัมน์ใหม่ <code>stores.table_open_auto_ticket</code> ค่าเริ่มต้น <b>เปิด</b></td></tr>
+<tr><td>หน้าจอ</td><td>POS ปกติ</td><td>Unified POS (ร้านนำร่อง) ไม่แตะ</td></tr>
+</table>
+
+<h2>3. Flow ใหม่</h2>
+<ol class="flow">
+<li>พนักงานกด "เปิดโต๊ะ" ใน POS → <code>openTableAction</code> เปิด session + (ถ้าร้านเปิดตั้งค่า และโต๊ะยังไม่มีตั๋ว) สร้างตั๋วว่าง "โต๊ะ X" ผูก <code>table_id</code> → พิมพ์ QR เหมือนเดิม</li>
+<li>ตั๋วโผล่ในรายการ "ตั๋ว" ของ POS ทันที (ไม่บังคับโหลดทับออเดอร์ที่ทำอยู่)</li>
+<li>ลูกค้าสั่งผ่าน QR → เข้าครัว/ตัดสต็อกเหมือนเดิม 100% (<code>submitQrOrderAction</code> ไม่แก้)</li>
+<li>POS ดึงออเดอร์ QR ที่เปิดอยู่ทุก ~20 วินาที (เฉพาะตอนแท็บมองเห็น) → ตั๋วโต๊ะแสดงรายการ QR เป็นบรรทัดล็อก + ป้ายยอด QR ในรายการตั๋ว</li>
+<li>พนักงานเพิ่มรายการในตั๋วได้ตามปกติ</li>
+<li>กดชำระที่ตั๋วโต๊ะที่มีรายการ QR → ปุ่มเปลี่ยนเป็น "เช็คบิลทั้งโต๊ะ ฿รวม" → บันทึกตั๋ว แล้วเปิด <code>TableBillModal</code> (เส้นทางชำระรวมที่มีอยู่แล้ว) → ปิดโต๊ะ + ลบตั๋ว</li>
+</ol>
+
+<h2>4. งานที่ต้องแก้</h2>
+<table>
+<tr><th>ไฟล์</th><th>สิ่งที่ทำ</th></tr>
+<tr><td><code>supabase/migrations/20260918020000_table_open_auto_ticket.sql</code></td><td>add column <code>table_open_auto_ticket boolean not null default true</code> <span class="tag">ต้อง apply prod</span></td></tr>
+<tr><td>stores types/repository/public-repository, database.types</td><td>map <code>tableOpenAutoTicket</code></td></tr>
+<tr><td>settings/store form + action</td><td>checkbox "เปิดโต๊ะแล้วเปิดตั๋วรอไว้ที่ POS"</td></tr>
+<tr><td><code>src/modules/pos/table-ticket.ts</code> (ใหม่)</td><td>ฟังก์ชันล้วน: สร้างตั๋วว่างของโต๊ะ, เลขตั๋วตามเวลาร้าน, ตั๋วว่างหรือไม่</td></tr>
+<tr><td><code>src/app/pos/actions.ts</code></td><td>openTableAction สร้างตั๋ว + ส่งกลับ; listTableBills/settleWholeTable ข้ามตั๋วว่าง (ลบทิ้งตอนปิดโต๊ะ); closeTableAction ลบตั๋วว่างของโต๊ะ; log ลง system_event_logs</td></tr>
+<tr><td><code>TableOpenModal.tsx</code></td><td>callback <code>onTableOpened(ticket)</code></td></tr>
+<tr><td><code>PosTerminal.tsx</code></td><td>รับตั๋วใหม่เข้า list; poll QR orders; CartPanel แสดงบรรทัด QR + ยอดรวมโต๊ะ + ปุ่มเช็คบิลทั้งโต๊ะ; onSettled ลบตั๋วโต๊ะออกจากเครื่อง; merge ตั๋วไม่คืนชีพตั๋ว synced ที่ server ลบไปแล้ว</td></tr>
+</table>
+
+<h2>5. ความเสี่ยง / ข้อควรระวัง</h2>
+<div class="card">
+<ul>
+<li>ตั๋วว่าง ห้ามเข้า <code>checkoutAndPayAction</code> (ตะกร้าว่าง = error) → กรองทิ้งทุกเส้นทางชำระ</li>
+<li>ชำระตั๋วโต๊ะแบบปกติ (เฉพาะตะกร้า) จะทิ้งบิล QR ค้าง → เมื่อมีรายการ QR บังคับไปเส้นทางเช็คบิลทั้งโต๊ะ</li>
+<li>โต๊ะที่เปิดก่อน deploy ไม่มีตั๋ว → ยังเช็คบิลผ่าน "เช็คบิลโต๊ะ" ได้เหมือนเดิม</li>
+<li>Migration ต้อง apply ขึ้น prod (remote = prod) ก่อน deploy โค้ด — รออนุมัติ</li>
+</ul>
+</div>
+
+<h2>6. Verify</h2>
+<p>typecheck · unit test ใหม่ (table-ticket helper + source assertion) · full test suite · lint · build</p>
+</main></body>
+</html>

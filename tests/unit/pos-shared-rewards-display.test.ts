@@ -70,7 +70,7 @@ describe("normal POS shared coupon loyalty and display", () => {
     expect(actions).toContain("buildGroceryCheckoutCart");
     expect(actions).toContain("createPosOrderWithCustomerRewards");
     expect(actions).toContain("closePosOrderPaymentWithRewards");
-    expect(actions).toContain("Promise<{ order: Order | null; error: string | null }>");
+    expect(actions).toContain("Promise<{ order: Order | null; error: string | null } & {");
     expect(actions).toContain("customerId?: string | null");
     expect(actions).toContain("couponCode?: string | null");
     expect(submitSource).toContain("!opts?.idempotencyKey?.trim()");

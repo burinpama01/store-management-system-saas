@@ -16,6 +16,7 @@ function mapSavedTicket(row: PosSavedTicketRow): SavedOrderTicket {
     customerName: row.customer_name ?? undefined,
     note: row.note ?? undefined,
     buffetSessionId: row.buffet_session_id ?? undefined,
+    ticketSource: row.ticket_source === "table_auto" ? "table_auto" : "manual",
     syncState: "synced",
     lastSyncedAt: row.updated_at,
     createdAt: row.created_at,
@@ -39,6 +40,52 @@ export async function listSavedTickets(storeId: string) {
       .filter((ticket) => ticket.cart.storeId === storeId && Array.isArray(ticket.cart.items)),
     error: null,
   };
+}
+
+/**
+ * ตั๋วที่ผูกโต๊ะทั้งหมดของร้าน — ใช้กับตรรกะเงิน/บิล (ไม่ติด limit 30 ของรายการตั๋วใน UI)
+ * tableId = เฉพาะโต๊ะนั้น
+ */
+export async function listTableSavedTickets(storeId: string, tableId?: string) {
+  const supabase = await createSupabaseServerClient();
+  let query = supabase
+    .from("pos_saved_tickets")
+    .select("*")
+    .eq("store_id", storeId)
+    .not("table_id", "is", null);
+  if (tableId) query = query.eq("table_id", tableId);
+  const { data, error } = await query.order("created_at", { ascending: true });
+
+  if (error) return { data: null, error: mapError(error) };
+  return {
+    data: (data ?? [])
+      .map(mapSavedTicket)
+      .filter((ticket) => ticket.cart.storeId === storeId && Array.isArray(ticket.cart.items)),
+    error: null,
+  };
+}
+
+/** ตั๋วอัตโนมัติของโต๊ะ: สร้างถ้ายังไม่มี / คืนใบเดิม (atomic ใน DB — เปิดโต๊ะพร้อมกันได้ 1 ใบ) */
+export async function ensureTableAutoTicket(input: {
+  organizationId: string;
+  storeId: string;
+  ticket: SavedOrderTicket;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("ensure_table_auto_ticket", {
+    p_ticket_id: input.ticket.id,
+    p_organization_id: input.organizationId,
+    p_store_id: input.storeId,
+    p_table_id: input.ticket.tableId ?? "",
+    p_ticket_number: input.ticket.ticketNumber,
+    p_label: input.ticket.label,
+    p_table_number: input.ticket.tableNumber ?? "",
+    p_cart: input.ticket.cart as unknown as Json,
+  });
+  if (error) return { data: null, error: mapError(error) };
+  const row = (data ?? [])[0];
+  if (!row) return { data: null, error: mapError(new Error("เปิดตั๋วของโต๊ะไม่สำเร็จ")) };
+  return { data: mapSavedTicket(row), error: null };
 }
 
 export async function getSavedTicket(ticketId: string, storeId: string) {
