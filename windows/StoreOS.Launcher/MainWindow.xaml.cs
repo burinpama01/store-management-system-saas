@@ -70,6 +70,7 @@ public partial class MainWindow : Window
             // สวิตช์บนหน้าตั้งค่าของเว็บต้องถูกจำไว้ในไฟล์ตั้งค่าของเครื่อง
             persistEnabled: PersistVoiceStandby);
         _voice.Attach(_suspendSignals);
+        InitDeviceFeatures();
         Loaded += OnLoaded;
         Closing += OnClosing;
         // ปิดหน้าต่างทางไหนก็ตาม ต้องคืนไมโครโฟนก่อนแล้วค่อยปล่อยคิว log
@@ -153,6 +154,8 @@ public partial class MainWindow : Window
             _logs.Enqueue("error", "pos_url_rejected", "ค่า PosUrl ในไฟล์ตั้งค่าใช้ไม่ได้ กลับไปใช้ที่อยู่มาตรฐาน");
         }
         Web.Source = new Uri(posUrl);
+        // ลำโพงแจ้งเตือน/เพลง + อัปเดตตัวเอง (MainWindow.Devices.cs)
+        StartDeviceFeatures(posUrl, settings.Channel);
 
         Log("info", "launcher_started", "เปิด StoreOS Launcher", new Dictionary<string, object>
         {
@@ -216,6 +219,8 @@ public partial class MainWindow : Window
     /// </summary>
     private async void OnNavigationCompletedAsync(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        MarkHealthyAfterUpdate(e.IsSuccess);
+
         // navigation แรกคือ "หน้าล็อกอิน" ซึ่งยังไม่มี session — ถ้าเลิกถามตั้งแต่ครั้งนั้น
         // เครื่องที่ token เพี้ยนจะค้าง 401 ตลอดไป (เครื่องร้านเจอจริง 2026-09-05)
         // จึงลองใหม่ทุกครั้งที่โหลดหน้าเสร็จ จนกว่าจะได้คำตอบชี้ขาดจาก server
@@ -245,6 +250,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        // ช่อง storeos.device (ลำโพง/เสียงแจ้งเตือน/อัปเดต) เป็นข้อความ object — provision เป็น string
+        if (TryHandleDeviceMessage(e)) return;
+
         string? message;
         try
         {

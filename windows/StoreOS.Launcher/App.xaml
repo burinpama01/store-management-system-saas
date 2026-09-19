@@ -1,4 +1,5 @@
+<!-- ไม่ใช้ StartupUri: WPF จะสร้าง MainWindow แม้เราสั่ง Shutdown ใน OnStartup แล้ว (โหมดติดตั้งอัปเดต/เปิดซ้ำ)
+     App.OnStartup สร้างหน้าต่างเองเฉพาะเส้นทางเปิดปกติ -->
 <Application x:Class="StoreOS.Launcher.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml" />
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" />

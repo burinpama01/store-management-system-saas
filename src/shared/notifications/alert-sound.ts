@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { initLauncherDevice, playAlertViaLauncher } from "@/modules/launcher/device-host";
 import {
   cancelAnnouncement,
   primeVoices,
@@ -93,6 +94,7 @@ function playOrderBuffer(): boolean {
 export function ensureAudioUnlocked() {
   if (unlockBound || typeof window === "undefined") return;
   unlockBound = true;
+  initLauncherDevice();
   const resume = () => {
     const ctx = getCtx();
     if (ctx && ctx.state === "suspended") void ctx.resume();
@@ -123,6 +125,9 @@ export function alertPatternForTypes(types: readonly string[]): AlertPattern {
 
 /** เล่นเสียงเตือนหนึ่งชุด (เสียงสูงต่ำต่างกันตามชนิดออเดอร์) */
 export function playAlertChime(pattern: AlertPattern) {
+  // ใน Launcher 0.5.0+: ให้ Launcher เล่นเองออก "ลำโพงเสียงแจ้งเตือน" ที่เลือก (แยกจากลำโพงเพลง)
+  // และไม่ติดกติกา autoplay — เบราว์เซอร์ปกติ/Launcher รุ่นเก่าได้ false แล้วเล่นเองตามเดิม
+  if (playAlertViaLauncher(pattern)) return;
   if (pattern === "order") {
     if (playOrderBuffer()) return;
     // ไฟล์ยังไม่พร้อม — โหลดไว้สำหรับรอบถัดไป แล้ว beep รอบนี้ (ไม่มีทางเงียบ)
