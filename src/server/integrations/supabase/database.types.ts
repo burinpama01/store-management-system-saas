@@ -365,6 +365,7 @@ export interface Database {
           organization_id: string
           store_id: string
           order_id: string | null
+          music_request_id: string | null
           provider_config_id: string
           provider_key: string
           mode: string
@@ -391,6 +392,7 @@ export interface Database {
           organization_id: string
           store_id: string
           order_id?: string | null
+          music_request_id?: string | null
           provider_config_id: string
           provider_key: string
           mode: string
@@ -417,6 +419,7 @@ export interface Database {
           organization_id?: string
           store_id?: string
           order_id?: string | null
+          music_request_id?: string | null
           provider_config_id?: string
           provider_key?: string
           mode?: string

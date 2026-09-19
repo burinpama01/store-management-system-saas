@@ -297,6 +297,7 @@ export function BeamIntegrationCard({
               <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="tabular-nums">
                   {formatTime(p.createdAt)} · ฿{formatThb(p.amount)}
+                  {p.musicRequestId ? " · ขอเพลง" : ""}
                   {p.environment === "test" ? " · ทดสอบ" : ""}
                 </span>
                 <span className="flex items-center gap-2">
