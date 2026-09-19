@@ -52,7 +52,11 @@ import type { CustomerProfile } from "@/modules/customers/types";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
-import { describeStationPrintResult, dispatchOrderStationTickets } from "@/modules/printing/station-print-client";
+import {
+  describeStationPrintResult,
+  dispatchOrderStationTickets,
+  stationPrintNeedsAttention,
+} from "@/modules/printing/station-print-client";
 import type { StationRoutingStation } from "@/modules/printing/station-routing";
 import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers";
 import { CashSessionPanel } from "./CashSessionPanel";
@@ -3393,7 +3397,7 @@ export function PosTerminal({
       stations: stationPrinters,
     })
       .then((res) => {
-        if (res && res.failed.length > 0) setTicketMessage(describeStationPrintResult(res));
+        if (res && stationPrintNeedsAttention(res)) setTicketMessage(describeStationPrintResult(res));
       })
       .catch((e: unknown) => {
         setTicketMessage(`ส่งตั๋วครัวไม่สำเร็จ: ${e instanceof Error ? e.message : "เชื่อมต่อไม่ได้"}`);
