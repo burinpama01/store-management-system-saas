@@ -107,6 +107,8 @@ export interface Order {
   payments: Payment[];
   note?: string;
   qrOrderSource?: boolean;
+  /** บิลรวมโต๊ะ (ออเดอร์ QR + รายการหน้าร้านของโต๊ะรวมเป็นบิลเดียว) — รายงานนับในช่องทาง QR */
+  tableBill?: boolean;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
