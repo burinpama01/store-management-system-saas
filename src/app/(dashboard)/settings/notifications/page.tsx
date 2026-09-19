@@ -41,6 +41,7 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   new_table: "เปิดโต๊ะใหม่",
   new_pos_order: "ออร์เดอร์ POS ใหม่",
   new_qr_order: "ออร์เดอร์ QR",
+  new_delivery_order: "ออร์เดอร์เดลิเวอรี",
   new_buffet_order: "ออร์เดอร์บุฟเฟต์",
   kitchen_order: "ออร์เดอร์ครัว",
   buffet_expiring: "บุฟเฟต์ใกล้หมดเวลา",

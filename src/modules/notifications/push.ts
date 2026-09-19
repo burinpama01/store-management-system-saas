@@ -107,11 +107,27 @@ async function getAccessToken(account: FirebaseServiceAccount): Promise<string |
   return json.access_token;
 }
 
+/**
+ * ช่องแจ้งเตือน Android ของออเดอร์ใหม่ — สร้างใน MainActivity (แอป 1.0.2+) พร้อมเสียง
+ * res/raw/alert_new_order.mp3; แอปเวอร์ชันเก่าที่ไม่มีช่องนี้ Android ใช้ช่องสำรองของ FCM เอง
+ * (เปลี่ยนไฟล์เสียงในอนาคต = ต้องใช้ id ใหม่ เพราะ Android ล็อกเสียงของช่องไว้)
+ */
+export const ORDER_ALERT_ANDROID_CHANNEL = "storeos_orders";
+export const ORDER_ALERT_ANDROID_SOUND = "alert_new_order";
+const ORDER_PUSH_TYPES: ReadonlySet<NotificationPayload["type"]> = new Set([
+  "new_qr_order",
+  "new_buffet_order",
+  "new_delivery_order",
+]);
+
 export interface FcmMessageBody {
   message: {
     token: string;
     notification: { title: string; body: string };
-    android: { priority: "high" | "normal" };
+    android: {
+      priority: "high" | "normal";
+      notification?: { channel_id: string; sound: string; default_vibrate_timings: boolean };
+    };
     apns: { payload: { aps: { sound: string } } };
     data?: Record<string, string>;
   };
@@ -125,7 +141,16 @@ export function buildFcmMessage(deviceToken: string, input: NotificationPayload)
         title: input.title?.trim() || "StoreOS",
         body: input.message.trim(),
       },
-      android: { priority: "high" },
+      android: ORDER_PUSH_TYPES.has(input.type)
+        ? {
+            priority: "high",
+            notification: {
+              channel_id: ORDER_ALERT_ANDROID_CHANNEL,
+              sound: ORDER_ALERT_ANDROID_SOUND,
+              default_vibrate_timings: true,
+            },
+          }
+        : { priority: "high" },
       apns: { payload: { aps: { sound: "default" } } },
       data: {
         type: input.type,

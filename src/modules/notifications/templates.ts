@@ -16,6 +16,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
   new_pos_order: { title: "มีออเดอร์ POS ใหม่", message: "ออเดอร์ {orderNumber} ยอด {total}" },
   new_qr_order: { title: "มีออเดอร์ QR ใหม่", message: "ออเดอร์ {orderNumber} ยอด {total}" },
   new_buffet_order: { title: "มีออเดอร์บุฟเฟต์ใหม่", message: "ออเดอร์ {orderNumber} ยอด {total}" },
+  new_delivery_order: { title: "มีออเดอร์เดลิเวอรีใหม่", message: "{platform} ออเดอร์ {orderNumber} ยอด {total}" },
   kitchen_order: { title: "มีออเดอร์เข้าครัว", message: "ออเดอร์ {orderNumber} เข้าครัวแล้ว" },
   buffet_expiring: {
     title: "บุฟเฟต์ใกล้หมดเวลา",
@@ -55,6 +56,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   new_pos_order: ["store", "orderNumber", "total"],
   new_qr_order: ["store", "orderNumber", "total"],
   new_buffet_order: ["store", "orderNumber", "total"],
+  new_delivery_order: ["store", "platform", "orderNumber", "total"],
   kitchen_order: ["store", "orderNumber"],
   buffet_expiring: ["store", "tableLabel", "minutesLeft"],
   stock_alert: ["store", "productName", "stockQuantity"],

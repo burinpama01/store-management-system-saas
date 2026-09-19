@@ -54,7 +54,7 @@ export function DeliveryGlobalNotifier({
   const current = orders[0] ?? null;
   // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออเดอร์ Connect/เดลิเวอรี
   // ประโยคที่พูดต้องไม่มีข้อมูลลูกค้าหรือยอดเงิน — ลำโพงอยู่หน้าร้าน ลูกค้าได้ยินด้วย
-  useRepeatingAlert(Boolean(current), "connect", {
+  useRepeatingAlert(Boolean(current), "order", {
     announcement: current ? deliveryAnnouncement(orders.length) : null,
     voiceEnabledByStore: voiceEnabled,
   });
