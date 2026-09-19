@@ -15,6 +15,7 @@ import {
 import { autoPrintReceipt, selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
 import { buildStationTicketJobs } from "@/modules/printing/station-routing";
 import { enqueueStationTickets } from "@/modules/printing/station-print-client";
+import { isNewKitchenQrOrderEvent } from "@/modules/qr-ordering/incoming-order";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
@@ -26,7 +27,7 @@ const AUTO_PRINT_KEY = "qrOrderAutoPrintEnabled";
 
 type OrderInsertPayload = Pick<
   Database["public"]["Tables"]["orders"]["Row"],
-  "id" | "order_number" | "qr_order_source" | "table_number" | "total" | "created_at"
+  "id" | "order_number" | "qr_order_source" | "table_bill_key" | "table_number" | "total" | "created_at"
 >;
 
 type OrderItemRow = Pick<
@@ -271,7 +272,8 @@ export function QrOrderGlobalNotifier({
       table: "orders",
       filter: `store_id=eq.${storeId}`,
       onEvent: (payload) => {
-        if (payload.eventType !== "INSERT" || !payload.new?.qr_order_source) return;
+        // ข้ามบิลรวมโต๊ะ (table_bill_key) — รายการเป็นของรอบที่ครัวทำไปแล้ว ห้ามเด้ง/พิมพ์ซ้ำ
+        if (!isNewKitchenQrOrderEvent(payload) || !payload.new) return;
         const order = payload.new;
         if (seenOrderIds.current.has(order.id)) return;
         seenOrderIds.current.add(order.id);
