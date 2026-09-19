@@ -368,6 +368,45 @@ describe.skipIf(!envReady)("unified-pos-printing integration (U11, local supabas
     expect(stationJobs[0]!.job_kind).toBe("station_ticket");
   });
 
+  it("รอบที่ออกตั๋วตอนส่งเข้าครัวแล้ว (station_ticket:<order>:<station>) → settle ไม่ออกตั๋วครัวซ้ำ", async () => {
+    const { buildStationTicketSourceKey } = await import("@/modules/printing/station-routing");
+    const orderId = await submitQrOrder(`U11-${runId}-SENT`);
+    // จำลองจอที่ส่งตั๋วเข้า Hub ตอนออเดอร์เข้า/ส่งเข้าครัว (enqueue route ใส่ key นี้)
+    const sentKey = buildStationTicketSourceKey(orderId, stationId!);
+    trackReference(sentKey);
+    const { error: sentErr } = await service.from("print_jobs").insert({
+      organization_id: ORG_A,
+      store_id: STORE_A,
+      printer_id: printerId,
+      target_kind: "ip",
+      target_host: "192.168.1.250",
+      target_port: 9100,
+      payload_b64: "AA==",
+      status: "pending",
+      source_key: sentKey,
+      job_kind: "station_ticket",
+    });
+    expect(sentErr, `insert ตั๋วที่ส่งแล้วต้องสำเร็จ: ${sentErr?.message}`).toBeNull();
+
+    const { response, operationKey } = await settleFacel({ orderIds: [orderId], amount: 45 });
+    expect(response.ok).toBe(true);
+    if (!response.ok) return;
+    const intent = await resolveSettlementPrintIntent({
+      organizationId: ORG_A,
+      storeId: STORE_A,
+      actorUserId: OWNER_ID,
+      settlement: response.result,
+      operationKey,
+      replayed: response.replayed,
+    });
+    trackReference(intent.reference);
+
+    expect(intent.receiptJobId).not.toBeNull();
+    expect(intent.stationJobIds).toEqual([]);
+    expect(await countExactSourceKey(buildStationJobSourceKey(intent.reference, stationId!))).toBe(0);
+    expect(await countExactSourceKey(sentKey)).toBe(1);
+  });
+
   it("replay คีย์เดิม → intent คืน job id ชุดเดิม ไม่มี duplicate (receipt + station)", async () => {
     const orderId = await submitQrOrder(`U11-${runId}-REPLAY`);
     const first = await settleFacel({ orderIds: [orderId], amount: 45 });

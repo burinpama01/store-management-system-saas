@@ -132,6 +132,37 @@ export async function enqueuePrintJob(input: {
   return { data: { id: data.id }, error: null };
 }
 
+/**
+ * ตรวจคีย์ตั๋วสถานีจาก client ก่อนใช้ dedupe: ออเดอร์+สถานีต้องเป็นของร้านนี้
+ * และไม่ใช่บิลรวมโต๊ะ (รายการในบิลรวมครัวทำไปแล้ว ห้ามออกตั๋วซ้ำ)
+ */
+export async function checkStationTicketSource(
+  storeId: string,
+  orderId: string,
+  stationId: string,
+): Promise<"ok" | "not_found" | "table_bill"> {
+  const supabase = await createSupabaseServiceClient();
+  const [{ data: order }, { data: station }] = await Promise.all([
+    supabase.from("orders").select("id, table_bill_key").eq("id", orderId).eq("store_id", storeId).maybeSingle(),
+    supabase.from("kitchen_stations").select("id").eq("id", stationId).eq("store_id", storeId).maybeSingle(),
+  ]);
+  if (!order || !station) return "not_found";
+  if (order.table_bill_key) return "table_bill";
+  return "ok";
+}
+
+/** ตั๋วสถานีที่มีงานพิมพ์อยู่แล้ว (จากคีย์ที่ขอ) — ใช้ให้ settlement ข้ามตั๋วที่ออกตอนส่งเข้าครัว */
+export async function listExistingPrintJobSourceKeys(storeId: string, sourceKeys: string[]): Promise<Set<string>> {
+  if (sourceKeys.length === 0) return new Set();
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("print_jobs")
+    .select("source_key")
+    .eq("store_id", storeId)
+    .in("source_key", sourceKeys);
+  return new Set((data ?? []).map((row) => row.source_key).filter((key): key is string => Boolean(key)));
+}
+
 /** U11 — หา id ของ job ที่มี source key นี้ในร้าน (null ถ้าไม่มี) */
 export async function findPrintJobIdBySourceKey(storeId: string, sourceKey: string): Promise<string | null> {
   const supabase = await createSupabaseServiceClient();

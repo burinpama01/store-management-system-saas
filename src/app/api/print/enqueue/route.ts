@@ -7,13 +7,34 @@ import {
   validatePrintPayloadBase64,
   validatePrintTarget,
 } from "@/modules/printing/print-hub";
-import { enqueuePrintJob, getHubStatus } from "@/modules/printing/print-hub-repository";
+import { checkStationTicketSource, enqueuePrintJob, getHubStatus } from "@/modules/printing/print-hub-repository";
+import { parseStationTicketSourceKey } from "@/modules/printing/station-routing";
+import { logSystemEvent } from "@/modules/system/event-log";
 import { getPrinter } from "@/modules/stores/repository";
 
 /** True when the store's Print Hub has polled recently (else jobs wait in queue). */
 async function isHubOnline(storeId: string): Promise<boolean> {
   const status = await getHubStatus(storeId);
   return summarizeHubStatus(status.data?.lastSeen ?? null).online;
+}
+
+/** log ตั๋วสถานีทุกใบ (รวมเส้นทางสำเร็จ/ถูก dedupe) — ไม่ log ใบเสร็จทั่วไปเพื่อไม่ให้ท่วม */
+function logStationTicket(
+  ctx: { organizationId: string; storeId: string; userId: string },
+  sourceKey: string | null,
+  job: { id: string; deduped?: boolean },
+) {
+  if (!sourceKey) return;
+  void logSystemEvent({
+    level: "info",
+    source: "printing.station-ticket",
+    action: job.deduped ? "deduped" : "enqueued",
+    message: job.deduped ? "ตั๋วสถานีถูกส่งจากจออื่นแล้ว (ใช้งานเดิม)" : "ส่งตั๋วสถานีเข้าคิว Hub",
+    organizationId: ctx.organizationId,
+    storeId: ctx.storeId,
+    actorUserId: ctx.userId,
+    context: { sourceKey, jobId: job.id },
+  });
 }
 
 /**
@@ -38,7 +59,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { printerId?: string; printJobBase64?: string };
+  let body: { printerId?: string; printJobBase64?: string; sourceKey?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -49,6 +70,34 @@ export async function POST(req: NextRequest) {
   if (!printerId) {
     return NextResponse.json({ error: "Missing printer ID" }, { status: 400 });
   }
+
+  // ตั๋วสถานี: คีย์ (ออเดอร์, สถานี) → enqueue ซ้ำจากจออื่นได้ job เดิม (print_jobs_source_key_uq)
+  let sourceKey: string | null = null;
+  if (body.sourceKey !== undefined && body.sourceKey !== null) {
+    const parsed = parseStationTicketSourceKey(body.sourceKey);
+    if (!parsed) {
+      return NextResponse.json({ error: "Invalid source key" }, { status: 400 });
+    }
+    const check = await checkStationTicketSource(ctx.storeId, parsed.orderId, parsed.stationId);
+    if (check === "not_found") {
+      return NextResponse.json({ error: "ไม่พบออเดอร์หรือสถานีครัวของร้านนี้" }, { status: 404 });
+    }
+    if (check === "table_bill") {
+      void logSystemEvent({
+        level: "info",
+        source: "printing.station-ticket",
+        action: "skip_table_bill",
+        message: "ข้ามตั๋วสถานีของบิลรวมโต๊ะ",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        actorUserId: ctx.userId,
+        context: { orderId: parsed.orderId, stationId: parsed.stationId },
+      });
+      return NextResponse.json({ ok: true, jobId: null, deduped: true, skipped: "table_bill" });
+    }
+    sourceKey = `station_ticket:${parsed.orderId}:${parsed.stationId}`;
+  }
+  const dedupeFields = sourceKey ? { sourceKey, jobKind: "station_ticket" as const } : {};
 
   const payloadCheck = validatePrintPayloadBase64(printJobBase64);
   if (payloadCheck.error || !payloadCheck.payload) {
@@ -83,11 +132,18 @@ export async function POST(req: NextRequest) {
       kind: "bt",
       device: btCheck.device,
       payloadB64: payloadCheck.payload,
+      ...dedupeFields,
     });
     if (enqueuedBt.error || !enqueuedBt.data) {
       return NextResponse.json({ error: enqueuedBt.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, jobId: enqueuedBt.data.id, hubOnline: await isHubOnline(ctx.storeId) });
+    logStationTicket(ctx, sourceKey, enqueuedBt.data);
+    return NextResponse.json({
+      ok: true,
+      jobId: enqueuedBt.data.id,
+      deduped: Boolean(enqueuedBt.data.deduped),
+      hubOnline: await isHubOnline(ctx.storeId),
+    });
   }
 
   // เครื่องพิมพ์ USB ที่เสียบกับพีซีแคชเชียร์: พิมพ์ผ่าน Hub เข้า Windows spooler
@@ -106,11 +162,18 @@ export async function POST(req: NextRequest) {
       // null = ให้ Hub ตรวจจับเครื่องพิมพ์ USB ที่เสียบอยู่เอง
       device: usbCheck.device ?? null,
       payloadB64: payloadCheck.payload,
+      ...dedupeFields,
     });
     if (enqueuedUsb.error || !enqueuedUsb.data) {
       return NextResponse.json({ error: enqueuedUsb.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, jobId: enqueuedUsb.data.id, hubOnline: await isHubOnline(ctx.storeId) });
+    logStationTicket(ctx, sourceKey, enqueuedUsb.data);
+    return NextResponse.json({
+      ok: true,
+      jobId: enqueuedUsb.data.id,
+      deduped: Boolean(enqueuedUsb.data.deduped),
+      hubOnline: await isHubOnline(ctx.storeId),
+    });
   }
 
   if (printer.type !== "ip" && printer.type !== "escpos") {
@@ -133,10 +196,17 @@ export async function POST(req: NextRequest) {
     host: targetCheck.target.host,
     port: targetCheck.target.port,
     payloadB64: payloadCheck.payload,
+    ...dedupeFields,
   });
   if (enqueued.error || !enqueued.data) {
     return NextResponse.json({ error: enqueued.error?.userMessage ?? "Failed to enqueue print job" }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, jobId: enqueued.data.id, hubOnline: await isHubOnline(ctx.storeId) });
+  logStationTicket(ctx, sourceKey, enqueued.data);
+    return NextResponse.json({
+      ok: true,
+      jobId: enqueued.data.id,
+      deduped: Boolean(enqueued.data.deduped),
+      hubOnline: await isHubOnline(ctx.storeId),
+    });
 }

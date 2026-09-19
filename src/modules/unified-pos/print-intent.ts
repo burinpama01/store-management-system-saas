@@ -38,7 +38,9 @@ import {
   countPrintJobsBySourceKeyPrefix,
   enqueuePrintJob,
   findPrintJobIdBySourceKey,
+  listExistingPrintJobSourceKeys,
 } from "@/modules/printing/print-hub-repository";
+import { buildStationTicketSourceKey } from "@/modules/printing/station-routing";
 import { isValidOperationKey } from "./envelope";
 import { normalizePrintCopies } from "@/modules/printing/types";
 import { parseModifierNames } from "./bill-repository";
@@ -443,6 +445,18 @@ export async function resolveSettlementPrintIntent(
         .in("id", stationIds);
       stations = (stationRows ?? []) as Pick<KitchenStationRow, "id" | "name" | "printer_id">[];
     }
+    // รอบที่ส่งเข้าครัวแล้วออกตั๋วไปตั้งแต่ตอนส่ง (station_ticket:{order}:{station}) — ข้าม
+    // ไม่งั้นครัวได้ตั๋วซ้ำตอนเช็คบิล
+    const alreadyTicketed = await listExistingPrintJobSourceKeys(
+      storeId,
+      [
+        ...new Set(
+          items
+            .filter((item) => item.kitchen_station_id)
+            .map((item) => buildStationTicketSourceKey(item.order_id, item.kitchen_station_id as string)),
+        ),
+      ],
+    );
     const itemsByStation = new Map<string, SettledItemRow[]>();
     let unroutedItemCount = 0;
     for (const item of items) {
@@ -450,6 +464,7 @@ export async function resolveSettlementPrintIntent(
         unroutedItemCount += item.quantity;
         continue;
       }
+      if (alreadyTicketed.has(buildStationTicketSourceKey(item.order_id, item.kitchen_station_id))) continue;
       const list = itemsByStation.get(item.kitchen_station_id) ?? [];
       list.push(item);
       itemsByStation.set(item.kitchen_station_id, list);
