@@ -40,6 +40,7 @@ function row(overrides: Partial<StoreRow> = {}): StoreRow {
     music_license_note: null,
     qr_service_buttons: [],
     dine_in_no_expiry: false,
+    table_open_auto_ticket: true,
     print_hub_token_hash: null,
     print_hub_last_seen: null,
     print_hub_devices: null,
