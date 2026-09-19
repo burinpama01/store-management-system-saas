@@ -38,7 +38,10 @@ import {
   countPrintJobsBySourceKeyPrefix,
   enqueuePrintJob,
   findPrintJobIdBySourceKey,
+  listPrintJobStatusesBySourceKeys,
 } from "@/modules/printing/print-hub-repository";
+import { buildStationTicketSourceKey } from "@/modules/printing/station-routing";
+import { decidePriorStationTicket } from "@/modules/printing/station-ticket-status";
 import { isValidOperationKey } from "./envelope";
 import { normalizePrintCopies } from "@/modules/printing/types";
 import { parseModifierNames } from "./bill-repository";
@@ -443,6 +446,28 @@ export async function resolveSettlementPrintIntent(
         .in("id", stationIds);
       stations = (stationRows ?? []) as Pick<KitchenStationRow, "id" | "name" | "printer_id">[];
     }
+    // รอบที่ส่งเข้าครัวแล้วออกตั๋วไปตั้งแต่ตอนส่ง (station_ticket:{order}:{station}) — ตัดสินตาม
+    // สถานะงานเดิม: ออก/กำลังออก = ข้าม, failed = ออกใหม่ตอนนี้, unknown = ไม่ออกเองแต่แจ้งให้ตรวจ
+    const priorTickets = await listPrintJobStatusesBySourceKeys(
+      storeId,
+      [
+        ...new Set(
+          items
+            .filter((item) => item.kitchen_station_id)
+            .map((item) => buildStationTicketSourceKey(item.order_id, item.kitchen_station_id as string)),
+        ),
+      ],
+    );
+    if (priorTickets.error || !priorTickets.data) {
+      // อ่านสถานะตั๋วเดิมไม่ได้ → fail closed: ไม่สร้างตั๋วครัว (namespace คีย์ต่างกัน สร้างไปอาจซ้ำ)
+      return empty({
+        receiptJobId,
+        receiptNotice,
+        stationJobIds: [],
+        stationNotice: "อ่านสถานะตั๋วครัวเดิมไม่สำเร็จ — ไม่สร้างตั๋วครัวอัตโนมัติเพื่อกันพิมพ์ซ้ำ (สั่งพิมพ์เองได้)",
+      });
+    }
+    const uncertainTicketKeys = new Set<string>();
     const itemsByStation = new Map<string, SettledItemRow[]>();
     let unroutedItemCount = 0;
     for (const item of items) {
@@ -450,6 +475,10 @@ export async function resolveSettlementPrintIntent(
         unroutedItemCount += item.quantity;
         continue;
       }
+      const priorKey = buildStationTicketSourceKey(item.order_id, item.kitchen_station_id);
+      const decision = decidePriorStationTicket(priorTickets.data.get(priorKey));
+      if (decision === "uncertain") uncertainTicketKeys.add(priorKey);
+      if (decision !== "print") continue;
       const list = itemsByStation.get(item.kitchen_station_id) ?? [];
       list.push(item);
       itemsByStation.set(item.kitchen_station_id, list);
@@ -495,9 +524,16 @@ export async function resolveSettlementPrintIntent(
       });
       if (enqueued.data?.id) stationJobIds.push(enqueued.data.id);
     }
+    const notices: string[] = [];
     if (unroutedItemCount > 0) {
-      stationNotice = `รายการ ${unroutedItemCount} ชิ้นไม่ได้ผูกสถานีครัว/เครื่องพิมพ์ — ไม่สร้างตั๋วครัวให้`;
+      notices.push(`รายการ ${unroutedItemCount} ชิ้นไม่ได้ผูกสถานีครัว/เครื่องพิมพ์ — ไม่สร้างตั๋วครัวให้`);
     }
+    if (uncertainTicketKeys.size > 0) {
+      notices.push(
+        `ตั๋วครัว ${uncertainTicketKeys.size} ใบที่ส่งไปก่อนหน้าสถานะไม่แน่ชัด — ตรวจที่เครื่องพิมพ์/แถบคิวพิมพ์ ไม่ได้พิมพ์ซ้ำให้อัตโนมัติ`,
+      );
+    }
+    stationNotice = notices.length > 0 ? notices.join(" · ") : null;
   } else {
     stationNotice = "การพิมพ์ตั๋วครัวอัตโนมัติปิดอยู่";
   }

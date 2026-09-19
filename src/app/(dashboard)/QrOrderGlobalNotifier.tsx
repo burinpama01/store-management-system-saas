@@ -13,8 +13,7 @@ import {
   isUsbPrinterConnected,
 } from "@/modules/printing/usb-client";
 import { autoPrintReceipt, selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
-import { buildStationTicketJobs } from "@/modules/printing/station-routing";
-import { enqueueStationTickets } from "@/modules/printing/station-print-client";
+import { describeStationPrintResult, dispatchOrderStationTickets } from "@/modules/printing/station-print-client";
 import { isNewKitchenQrOrderEvent } from "@/modules/qr-ordering/incoming-order";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
@@ -283,14 +282,14 @@ export function QrOrderGlobalNotifier({
 
           // Multi-printer routing: split the order into per-station tickets and
           // enqueue each to its station's network printer via the Print Hub.
-          // Only the all-station (manager) view drives this to avoid each staff
-          // client double-enqueuing the same order.
-          if (autoPrintStationTickets && canViewEveryKitchenStation && stationPrinters.some((s) => s.printerId)) {
-            const { jobs } = buildStationTicketJobs({
+          // ทุกจอยิงได้ — คีย์ (ออเดอร์, สถานี) ทำให้ server ออกตั๋วใบเดียว
+          if (autoPrintStationTickets && stationPrinters.some((s) => s.printerId)) {
+            setPrintStatus("กำลังส่งตั๋วครัว");
+            void dispatchOrderStationTickets({
+              orderId: visibleOrder.id,
               orderNumber: visibleOrder.orderNumber,
               tableNumber: visibleOrder.tableNumber,
               paperWidth: receiptPaperWidth,
-              printedAt: visibleOrder.createdAt,
               items: visibleOrder.items.map((item) => ({
                 name: item.productName,
                 variantName: item.variantName,
@@ -300,17 +299,9 @@ export function QrOrderGlobalNotifier({
                 kitchenStationId: item.kitchenStationId,
               })),
               stations: stationPrinters,
+            }).then((res) => {
+              if (res) setPrintStatus(describeStationPrintResult(res));
             });
-            if (jobs.length > 0) {
-              setPrintStatus(`กำลังพิมพ์ตั๋ว ${jobs.length} สถานี`);
-              void enqueueStationTickets(jobs).then((res) => {
-                setPrintStatus(
-                  res.failed.length === 0
-                    ? `พิมพ์ตั๋วครัว ${res.printed} สถานีแล้ว`
-                    : `พิมพ์ตั๋ว ${res.printed} สำเร็จ, ล้มเหลว ${res.failed.length}`,
-                );
-              });
-            }
           }
 
           if (!readAutoPrintPreference()) return;

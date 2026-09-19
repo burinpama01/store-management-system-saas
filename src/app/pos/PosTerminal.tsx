@@ -52,6 +52,12 @@ import type { CustomerProfile } from "@/modules/customers/types";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
+import {
+  describeStationPrintResult,
+  dispatchOrderStationTickets,
+  stationPrintNeedsAttention,
+} from "@/modules/printing/station-print-client";
+import type { StationRoutingStation } from "@/modules/printing/station-routing";
 import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers";
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
@@ -154,6 +160,8 @@ interface Props {
   beamEnabled?: boolean;
   /** Beam is the store's only QR — hide the slip-checked PromptPay option. */
   hidePromptPayQr?: boolean;
+  /** สถานีครัว/บาร์ที่ผูกเครื่องพิมพ์ — ใช้ออกตั๋วครัวตอนจ่ายทันที/ส่งเข้าครัว */
+  stationPrinters?: StationRoutingStation[];
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -3249,6 +3257,7 @@ export function PosTerminal({
   trueMoneyEnabled = false,
   beamEnabled = false,
   hidePromptPayQr = false,
+  stationPrinters = [],
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -3360,6 +3369,40 @@ export function PosTerminal({
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
+
+  // ตั๋วครัวจาก POS: สถานีของแต่ละรายการมาจากสินค้า (order_items ได้ค่าเดียวกันจาก trigger)
+  const productStationById = useMemo(
+    () => new Map(products.map((product) => [product.id, product.kitchenStationId])),
+    [products],
+  );
+  const stationTicketsEnabled =
+    Boolean(receiptSettings?.autoPrintStationTickets) && stationPrinters.some((station) => station.printerId);
+
+  /** ส่งตั๋วครัวของรอบนี้เข้า Hub — ไม่บล็อกการขาย; คีย์ (ออเดอร์, สถานี) กันซ้ำกับจออื่น */
+  function sendStationTickets(order: { orderId: string; orderNumber: string }, items: CartItem[], tableNumber?: string) {
+    if (!stationTicketsEnabled || items.length === 0) return;
+    void dispatchOrderStationTickets({
+      orderId: order.orderId,
+      orderNumber: order.orderNumber,
+      tableNumber,
+      paperWidth: receiptSettings?.paperWidth === "58mm" ? "58mm" : "80mm",
+      items: items.map((item) => ({
+        name: item.productName,
+        variantName: item.variant?.name || undefined,
+        modifierNames: item.modifiers.map((modifier) => modifier.option.name),
+        quantity: item.quantity,
+        note: item.note,
+        kitchenStationId: productStationById.get(item.productId),
+      })),
+      stations: stationPrinters,
+    })
+      .then((res) => {
+        if (res && stationPrintNeedsAttention(res)) setTicketMessage(describeStationPrintResult(res));
+      })
+      .catch((e: unknown) => {
+        setTicketMessage(`ส่งตั๋วครัวไม่สำเร็จ: ${e instanceof Error ? e.message : "เชื่อมต่อไม่ได้"}`);
+      });
+  }
   const qrByTable = useMemo(() => summarizeTableQr(openQrOrders), [openQrOrders]);
   const activeTableQr: TableQrSummary | null = activeTicket?.tableId
     ? (qrByTable.get(activeTicket.tableId) ?? { orders: [], total: 0 })
@@ -3798,6 +3841,7 @@ export function PosTerminal({
   function handleSendToKitchen() {
     if (!dineInTable || cart.items.length === 0) return;
     const table = dineInTable;
+    const sentItems = cart.items;
     const qrItems = cart.items.map((item) => ({
       productId: item.productId,
       variantId: item.variant?.id,
@@ -3810,6 +3854,9 @@ export function PosTerminal({
       if (res.error) {
         setTicketMessage(res.error);
         return;
+      }
+      if (res.orderId && res.orderNumber) {
+        sendStationTickets({ orderId: res.orderId, orderNumber: res.orderNumber }, sentItems, table.number);
       }
       commitCart(emptyCart(storeId), { resetItemDiscountForms: true });
       setDineInTable(null);
@@ -4246,6 +4293,10 @@ export function PosTerminal({
         }
         order = { orderId: result.orderId, orderNumber: result.orderNumber };
         paidOrder = result.order;
+        // ขายจ่ายทันที → ครัวต้องทำ; ตั๋วที่พักไว้ (activeTicket) ถือว่าเสิร์ฟแล้ว ไม่ออกตั๋วครัว (D2)
+        if (!activeTicket) {
+          sendStationTickets(order, displayCart.items, checkoutTicketContext.tableNumber);
+        }
       } else {
         // Retry path: the order already exists from a failed payment attempt.
         const payResult = await collectPaymentAction(order.orderId, paymentInput, {
