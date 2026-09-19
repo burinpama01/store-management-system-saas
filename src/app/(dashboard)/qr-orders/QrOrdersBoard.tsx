@@ -298,6 +298,9 @@ export function QrOrdersBoard({
             <p className="font-bold text-gray-900">โต๊ะ {order.tableNumber ?? "-"}</p>
             <p className="text-xs text-gray-400">
               #{order.orderNumber} · {timeAgo(order.createdAt)}
+              {order.tableBill && (
+                <span className="ml-1 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold text-sky-800">บิลรวมโต๊ะ</span>
+              )}
             </p>
           </div>
           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${PREP_BADGE[order.prepStatus]}`}>

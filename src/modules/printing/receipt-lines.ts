@@ -214,6 +214,7 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     lines.push({ text: div });
   }
   lines.push({ text: `ออร์เดอร์: ${data.orderNumber}` });
+  if (data.billLabel) lines.push({ text: data.billLabel, bold: true });
   if (data.tableNumber) lines.push({ text: `โต๊ะ: ${data.tableNumber}` });
   lines.push({
     text: new Date(data.printedAt).toLocaleString("th-TH", {

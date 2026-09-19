@@ -63,6 +63,9 @@ export function ReportsManager({
     rows.push(`สรุป,ยอดขายรวม,${salesSummary.orderCount},${salesSummary.revenue}`);
     rows.push(`ช่องทางขาย,POS,${salesSummary.posOrderCount},${salesSummary.posRevenue}`);
     rows.push(`ช่องทางขาย,QR,${salesSummary.qrOrderCount},${salesSummary.qrRevenue}`);
+    if (salesSummary.tableBillCount > 0) {
+      rows.push(`ช่องทางขาย,QR — ในนั้นเป็นบิลรวมโต๊ะ,${salesSummary.tableBillCount},${salesSummary.tableBillRevenue}`);
+    }
     rows.push(`ช่องทางขาย,เดลิเวอรี (JDC),${salesSummary.deliveryOrderCount},${salesSummary.deliveryRevenue}`);
     for (const m of paymentMethods) rows.push(`ช่องทางชำระเงิน,${m.method},${m.count},${m.totalAmount}`);
     for (const d of dailySales) rows.push(`รายวัน,${d.date},${d.orderCount},${d.revenue}`);
@@ -126,7 +129,16 @@ export function ReportsManager({
           <>
             <SummaryCard label="ค่าเฉลี่ย/ออร์เดอร์" value={`฿${fmt(salesSummary.avgOrderValue)}`} color="text-gray-700" />
             <SummaryCard label="POS" value={String(salesSummary.posOrderCount)} sub={`฿${fmt(salesSummary.posRevenue)}`} color="text-blue-600" />
-            <SummaryCard label="QR Orders" value={String(salesSummary.qrOrderCount)} sub={`฿${fmt(salesSummary.qrRevenue)}`} color="text-purple-600" />
+            <SummaryCard
+              label="QR Orders"
+              value={String(salesSummary.qrOrderCount)}
+              sub={
+                salesSummary.tableBillCount > 0
+                  ? `฿${fmt(salesSummary.qrRevenue)} · บิลรวมโต๊ะ ${salesSummary.tableBillCount} บิล ฿${fmt(salesSummary.tableBillRevenue)}`
+                  : `฿${fmt(salesSummary.qrRevenue)}`
+              }
+              color="text-purple-600"
+            />
             <SummaryCard label="เดลิเวอรี (JDC)" value={String(salesSummary.deliveryOrderCount)} sub={`฿${fmt(salesSummary.deliveryRevenue)}`} color="text-orange-600" />
           </>
         )}

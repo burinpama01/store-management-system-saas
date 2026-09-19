@@ -40,6 +40,8 @@ export interface ReceiptData {
   showTaxId: boolean;
   orderNumber: string;
   tableNumber?: string;
+  /** ป้ายบอกชนิดบิล เช่น "บิลรวมโต๊ะ · โต๊ะ 5" — พิมพ์ใต้เลขออร์เดอร์ */
+  billLabel?: string;
   items: ReceiptLineItem[];
   subtotal: number;
   discount: number;

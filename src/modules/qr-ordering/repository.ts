@@ -51,6 +51,7 @@ function mapOrder(row: OrderRow, items: QrOrderLine[]): QrOrderView {
     items,
     createdAt: row.created_at,
     paidAt: row.paid_at ?? undefined,
+    tableBill: Boolean(row.table_bill_key),
   };
 }
 
