@@ -201,7 +201,7 @@ export function QrOrderGlobalNotifier({
   const currentOrder = orders[0] ?? null;
   // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออร์เดอร์ QR
   // ประโยคที่พูดต้องไม่มีข้อมูลลูกค้าหรือยอดเงิน — ลำโพงอยู่หน้าร้าน ลูกค้าได้ยินด้วย
-  useRepeatingAlert(Boolean(currentOrder), "qr", {
+  useRepeatingAlert(Boolean(currentOrder), "order", {
     announcement: currentOrder ? qrOrderAnnouncement(currentOrder.tableNumber, orders.length) : null,
     voiceEnabledByStore: voiceEnabled,
   });

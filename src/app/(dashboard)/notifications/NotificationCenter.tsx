@@ -22,6 +22,7 @@ const TYPE_META: Record<string, { label: string; emoji: string; tone: string }> 
   new_table: { label: "เปิดโต๊ะ", emoji: "🪑", tone: "bg-sky-50 text-sky-700 border-sky-200" },
   new_pos_order: { label: "ออร์เดอร์ POS", emoji: "🧾", tone: "bg-indigo-50 text-indigo-700 border-indigo-200" },
   new_qr_order: { label: "ออร์เดอร์ QR", emoji: "📱", tone: "bg-orange-50 text-orange-700 border-orange-200" },
+  new_delivery_order: { label: "ออร์เดอร์เดลิเวอรี", emoji: "🛵", tone: "bg-orange-50 text-orange-700 border-orange-200" },
   new_buffet_order: { label: "ออร์เดอร์บุฟเฟต์", emoji: "🍲", tone: "bg-amber-50 text-amber-700 border-amber-200" },
   kitchen_order: { label: "ครัว", emoji: "👨‍🍳", tone: "bg-slate-50 text-slate-700 border-slate-200" },
   buffet_expiring: { label: "บุฟเฟต์ใกล้หมดเวลา", emoji: "⏰", tone: "bg-rose-50 text-rose-700 border-rose-200" },
