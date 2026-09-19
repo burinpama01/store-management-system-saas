@@ -94,7 +94,15 @@ export function StockManager({
                     <tr key={variant.id} className="border-b border-[var(--border)] last:border-0">
                       <td className="px-4 py-2 font-bold text-[var(--ink)]">{productName}</td>
                       <td className="px-4 py-2 text-[var(--ink-2)]">{variant.name}</td>
-                      <td className={`px-4 py-2 text-right font-mono ${tone}`}>{qty ?? "—"}</td>
+                      <td className={`px-4 py-2 text-right font-mono ${tone}`}>
+                        {qty ?? "—"}
+                        {/* ยอดที่ลูกค้าสั่ง QR แล้วแต่ครัวยังไม่รับ — ยังไม่ตัดจากคงเหลือ แต่ขายซ้ำไม่ได้ */}
+                        {(variant.reservedQuantity ?? 0) > 0 && (
+                          <span className="block text-[11px] font-normal text-amber-600">
+                            จอง {variant.reservedQuantity} · พร้อมขาย {(qty ?? 0) - (variant.reservedQuantity ?? 0)}
+                          </span>
+                        )}
+                      </td>
                       {canManageStock && (
                         <td className="px-4 py-2">
                           <StockRow variantId={variant.id} current={qty ?? 0} />

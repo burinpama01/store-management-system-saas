@@ -12,7 +12,7 @@ import {
   type PrepStatus,
   type ServiceRequest,
 } from "@/modules/qr-ordering/types";
-import { updatePrepStatusAction, resolveServiceRequestAction, voidQrOrderItemAction } from "./actions";
+import { updatePrepStatusAction, resolveServiceRequestAction, voidQrOrderItemAction, rejectQrOrderAction } from "./actions";
 import { Button, useConfirm } from "@/shared/components/ui";
 
 interface Props {
@@ -45,7 +45,8 @@ function timeAgo(iso: string): string {
 // 'done' ระบบ derive จากการชำระ/ยกเลิก — ร้านที่เปิด unified_pos_enabled ปุ่มนี้
 // จะได้ข้อความอธิบายจาก governed backend (ร้านปิด flag คงเขียนตรงตาม legacy)
 const PREP_FLOW: Record<PrepStatus, { next: PrepStatus; label: string } | null> = {
-  new: { next: "preparing", label: "เริ่มเตรียม" },
+  // รับออเดอร์ = ตัดสต๊อกที่ลูกค้าจองไว้จริง (ก่อนรับ ลูกค้ายังยกเลิกเองได้)
+  new: { next: "preparing", label: "รับออเดอร์" },
   preparing: { next: "ready", label: "พร้อมเสิร์ฟ" },
   ready: { next: "served", label: "เสิร์ฟแล้ว" },
   served: { next: "done", label: "เสร็จสิ้น" },
@@ -226,6 +227,24 @@ export function QrOrdersBoard({
     });
   }
 
+  async function rejectOrder(order: QrOrderView) {
+    const itemIds = order.items.filter((item) => !item.voided).map((item) => item.id);
+    if (itemIds.length === 0) return;
+    const ok = await confirm({
+      title: `ปฏิเสธออเดอร์ #${order.orderNumber}`,
+      message: "ปฏิเสธทุกรายการในออเดอร์นี้? ระบบจะคืนสต็อกที่จองไว้และยกเลิกออเดอร์ ลูกค้าจะเห็นว่าถูกปฏิเสธ",
+      confirmLabel: "ปฏิเสธออเดอร์",
+      danger: true,
+    });
+    if (!ok) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await rejectQrOrderAction(order.id, "ครัวปฏิเสธออเดอร์");
+      if (res.error) setError(res.error);
+      router.refresh();
+    });
+  }
+
   function renderOrderCard(order: QrOrderView) {
     const flow = PREP_FLOW[order.prepStatus];
     const visibleItems = order.items.filter((item) =>
@@ -308,6 +327,16 @@ export function QrOrdersBoard({
         <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
           <span className="text-sm font-bold text-gray-900">{fmt(order.total, currency)}</span>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {order.prepStatus === "new" && order.status === "open" && canAdvanceOrder && (
+              <Button
+                variant="secondary"
+                onClick={() => rejectOrder(order)}
+                disabled={isPending}
+                className="min-h-11 px-3 text-xs text-red-600"
+              >
+                ปฏิเสธออเดอร์
+              </Button>
+            )}
             {flow && canAdvanceOrder ? (
               <Button
                 variant="primary"
