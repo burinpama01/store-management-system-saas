@@ -932,3 +932,81 @@ export async function provisionHubDeviceToken(input: {
 
   return { data: { rotated: true, token }, error: null };
 }
+
+/**
+ * สัญญาณว่าร้าน "มีคนอยู่" สำหรับตัดสินจังหวะ poll ของ Hub
+ * (ดูเหตุผลเต็มใน `hub-poll-pacing.ts` — ย่อ: Hub poll 1.5 วิ ตลอด 24 ชม.
+ * กินโควตา Vercel เกือบหมดคนเดียว)
+ *
+ * แคชต่อ instance 60 วินาที เพราะ Hub ยิงทุกไม่กี่วินาที การถาม DB ทุกครั้ง
+ * จะย้ายภาระจาก Vercel ไปกอง Supabase แทน ซึ่งไม่ได้แก้อะไร ค่าที่ช้าไป 60 วิ
+ * ไม่มีผลกับการพิมพ์ เพราะงานที่เข้าคิวจริงจะถูกเคลมในรอบ poll ปกติอยู่แล้ว
+ * และ claimedJobs > 0 ดึงจังหวะกลับมาถี่ทันทีโดยไม่ผ่านแคชนี้
+ */
+const hubActivityCache = new Map<string, { at: number; value: StoreActivitySignals }>();
+const HUB_ACTIVITY_CACHE_MS = 60_000;
+
+export interface StoreActivitySignals {
+  staffOnDuty: boolean;
+  cashSessionOpen: boolean;
+  recentOrder: boolean;
+  /** true เมื่อถาม DB ไม่สำเร็จ — ผู้เรียกต้องถือว่าร้านเปิด (fail-safe) */
+  signalsUnavailable: boolean;
+}
+
+export async function getStoreActivitySignals(
+  storeId: string,
+  options: { now?: Date; recentOrderWindowMs?: number; staffShiftMaxMs?: number } = {},
+): Promise<StoreActivitySignals> {
+  const now = options.now ?? new Date();
+  const cached = hubActivityCache.get(storeId);
+  if (cached && now.getTime() - cached.at < HUB_ACTIVITY_CACHE_MS) {
+    return cached.value;
+  }
+
+  const windowMs = options.recentOrderWindowMs ?? 30 * 60 * 1000;
+  const since = new Date(now.getTime() - windowMs).toISOString();
+  // ไม่มี auto clock-out ในระบบ — แถวที่ลืมกดออกงานค้างเป็น active ถาวร ถ้าไม่จำกัด
+  // อายุไว้ staffOnDuty จะจริงตลอดกาลและ Hub จะไม่เข้าโหมดร้านปิดอีกเลย
+  const shiftMaxMs = options.staffShiftMaxMs ?? 16 * 60 * 60 * 1000;
+  const shiftSince = new Date(now.getTime() - shiftMaxMs).toISOString();
+  const supabase = await createSupabaseServiceClient();
+
+  const [staff, cash, order] = await Promise.all([
+    supabase
+      .from("attendance_records")
+      .select("id")
+      .eq("store_id", storeId)
+      .is("clock_out_at", null)
+      .eq("status", "active")
+      .gte("clock_in_at", shiftSince)
+      .limit(1),
+    supabase.from("cash_sessions").select("id").eq("store_id", storeId).eq("status", "open").limit(1),
+    supabase.from("orders").select("id").eq("store_id", storeId).gte("created_at", since).limit(1),
+  ]);
+
+  // ถามไม่ได้แม้ข้อเดียว = ไม่รู้ว่าร้านเปิดไหม ต้องถือว่าเปิด ห้ามเดาว่าปิด
+  if (staff.error || cash.error || order.error) {
+    const value: StoreActivitySignals = {
+      staffOnDuty: false,
+      cashSessionOpen: false,
+      recentOrder: false,
+      signalsUnavailable: true,
+    };
+    return value; // ไม่แคชผลที่ล้มเหลว จะได้ลองใหม่รอบหน้า
+  }
+
+  const value: StoreActivitySignals = {
+    staffOnDuty: (staff.data?.length ?? 0) > 0,
+    cashSessionOpen: (cash.data?.length ?? 0) > 0,
+    recentOrder: (order.data?.length ?? 0) > 0,
+    signalsUnavailable: false,
+  };
+  hubActivityCache.set(storeId, { at: now.getTime(), value });
+  return value;
+}
+
+/** เคลียร์แคชสัญญาณ (ใช้ในเทสเท่านั้น) */
+export function __clearHubActivityCache(): void {
+  hubActivityCache.clear();
+}

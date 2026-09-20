@@ -11,12 +11,18 @@ import {
   expireOldPrintJobs,
   getPrinterIdsForJobs,
   authenticateHubRequest,
+  getStoreActivitySignals,
   getUsbBindings,
   reconcileStalePrintJobs,
   saveHubDevices,
   touchHubHeartbeat,
   type HubUsbBinding,
 } from "@/modules/printing/print-hub-repository";
+import {
+  RECENT_ORDER_WINDOW_MS,
+  STAFF_SHIFT_MAX_MS,
+  resolveHubPollPacing,
+} from "@/modules/printing/hub-poll-pacing";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 /**
@@ -156,11 +162,32 @@ export async function POST(req: NextRequest) {
         }
       : {}),
   }));
+  // จังหวะ poll รอบถัดไป — server สั่งจากสัญญาณว่าร้านเปิดจริงไหม เพื่อไม่ให้
+  // Hub ยิงทุก 1.5 วินาทีข้ามคืนจนกินโควตา Vercel หมด (ดู hub-poll-pacing.ts)
+  // agent เก่าที่ไม่รู้จัก field นี้จะเมินไปเอง = พฤติกรรมเดิมทุกอย่าง
+  const activity =
+    jobs.length > 0
+      ? null
+      : await getStoreActivitySignals(storeId, {
+          recentOrderWindowMs: RECENT_ORDER_WINDOW_MS,
+          staffShiftMaxMs: STAFF_SHIFT_MAX_MS,
+        }).catch(() => null);
+  const pacing = resolveHubPollPacing({
+    claimedJobs: jobs.length,
+    staffOnDuty: activity?.staffOnDuty ?? false,
+    cashSessionOpen: activity?.cashSessionOpen ?? false,
+    recentOrder: activity?.recentOrder ?? false,
+    // jobs > 0 ไม่ต้องถามสัญญาณ (ถี่อยู่แล้ว); ถ้าถามแล้วล้ม ต้องถือว่าร้านเปิด
+    signalsUnavailable: jobs.length === 0 && (activity === null || activity.signalsUnavailable),
+  });
+
   return NextResponse.json({
     ok: true,
     jobs,
     protocolVersion: PRINT_HUB_PROTOCOL_VERSION,
     minProtocolVersion: PRINT_HUB_MIN_PROTOCOL_VERSION,
     leaseSeconds: PRINT_JOB_LEASE_SECONDS,
+    nextPollMs: pacing.nextPollMs,
+    pollReason: pacing.reason,
   });
 }

@@ -12,6 +12,7 @@ import {
   DEFAULT_POLL_INTERVAL_MS,
   BUSY_POLL_INTERVAL_MS,
   ERROR_BACKOFF_MS,
+  MAX_SERVER_POLL_INTERVAL_MS,
   AGENT_VERSION,
 } from "../../scripts/print-hub.mjs";
 
@@ -340,6 +341,66 @@ describe("print hub agent — poll delay knobs (speed)", () => {
         lastJobAt: 1_000,
         pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
         processed: 0,
+      }),
+    ).toBe(DEFAULT_POLL_INTERVAL_MS);
+  });
+
+  it("ยืดจังหวะตามที่เซิร์ฟเวอร์สั่งเมื่อร้านปิดและไม่มีงานค้าง", () => {
+    expect(
+      nextPollDelayMs({
+        now: 200_000,
+        lastJobAt: 1_000,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 0,
+        serverPollMs: 60_000,
+      }),
+    ).toBe(60_000);
+  });
+
+  it("ไม่ยอมให้เซิร์ฟเวอร์ยืดเกินเพดาน แม้ส่งค่าพังมา", () => {
+    expect(
+      nextPollDelayMs({
+        now: 200_000,
+        lastJobAt: 1_000,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 0,
+        serverPollMs: 3_600_000,
+      }),
+    ).toBe(MAX_SERVER_POLL_INTERVAL_MS);
+  });
+
+  it("เซิร์ฟเวอร์เร่งให้ถี่กว่าค่าที่ร้านตั้งไม่ได้ — ค่าที่ร้านตั้งคือเพดานความถี่", () => {
+    expect(
+      nextPollDelayMs({
+        now: 200_000,
+        lastJobAt: 1_000,
+        pollIntervalMs: 5_000,
+        processed: 0,
+        serverPollMs: 100,
+      }),
+    ).toBe(5_000);
+  });
+
+  it("busy window ชนะค่าที่เซิร์ฟเวอร์สั่ง — เพิ่งมีงานต้องถี่ไว้ก่อน", () => {
+    expect(
+      nextPollDelayMs({
+        now: 10_000,
+        lastJobAt: 9_500,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 0,
+        serverPollMs: 60_000,
+      }),
+    ).toBe(BUSY_POLL_INTERVAL_MS);
+  });
+
+  it("server รุ่นเก่าไม่ส่ง nextPollMs = พฤติกรรมเดิมทุกอย่าง", () => {
+    expect(
+      nextPollDelayMs({
+        now: 200_000,
+        lastJobAt: 1_000,
+        pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+        processed: 0,
+        serverPollMs: null,
       }),
     ).toBe(DEFAULT_POLL_INTERVAL_MS);
   });

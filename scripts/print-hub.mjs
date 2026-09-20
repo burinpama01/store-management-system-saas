@@ -27,6 +27,11 @@ const SEND_TIMEOUT_MS = 30000;
 // claim we re-poll immediately (0ms) so receipt+kitchen batches drain without an
 // extra half-second gap. Reliability unchanged — claim tokens / lease still gate duplicates.
 export const DEFAULT_POLL_INTERVAL_MS = 1500;
+/**
+ * เพดานที่ยอมให้เซิร์ฟเวอร์ยืดจังหวะ poll ได้ — กันค่าพังจากฝั่ง server
+ * (ถ้า server ส่ง 3600000 มาเพราะบั๊ก ร้านต้องไม่เงียบไปหนึ่งชั่วโมง)
+ */
+export const MAX_SERVER_POLL_INTERVAL_MS = 60_000;
 export const ERROR_BACKOFF_MS = 8000;
 export const BUSY_POLL_INTERVAL_MS = 250;
 export const BUSY_WINDOW_MS = 90_000;
@@ -661,12 +666,20 @@ export function nextPollDelayMs({
   authFailed = false,
   outdated = false,
   degraded = false,
+  serverPollMs = /** @type {number | null} */ (null),
 } = {}) {
   if (authFailed || degraded) return ERROR_BACKOFF_MS;
   if (outdated) return Math.max(ERROR_BACKOFF_MS * 4, pollIntervalMs);
   if (processed > 0) return 0;
   const busy = now - lastJobAt < BUSY_WINDOW_MS;
-  return busy ? Math.min(BUSY_POLL_INTERVAL_MS, pollIntervalMs) : pollIntervalMs;
+  if (busy) return Math.min(BUSY_POLL_INTERVAL_MS, pollIntervalMs);
+  // เซิร์ฟเวอร์รู้ว่าร้านเปิดหรือปิดจริง (พนักงานลงเวลา/รอบเงินสด/ออเดอร์ล่าสุด)
+  // จึงยืดจังหวะได้เฉพาะตอนไม่มีงาน — ยืดอย่างเดียว ห้ามเร่งให้ถี่กว่าค่าที่ร้านตั้ง
+  // เพราะค่าที่ร้านตั้งคือเพดานความถี่ที่เจ้าของเครื่องยอมรับไว้แล้ว
+  if (typeof serverPollMs === "number" && Number.isFinite(serverPollMs) && serverPollMs > pollIntervalMs) {
+    return Math.min(serverPollMs, MAX_SERVER_POLL_INTERVAL_MS);
+  }
+  return pollIntervalMs;
 }
 
 export async function runPollCycle({ config, fetchImpl, printJob, listDevices = listWindowsPrinters }) {
@@ -718,6 +731,8 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
 
   const body = await pollRes.json();
   const jobs = Array.isArray(body?.jobs) ? body.jobs : [];
+  // จังหวะที่เซิร์ฟเวอร์แนะนำ (server รุ่นเก่าไม่ส่ง = null = ใช้ค่าเดิมของเครื่อง)
+  const serverPollMs = typeof body?.nextPollMs === "number" ? body.nextPollMs : null;
 
   let processed = 0;
   // พิมพ์ทีละงาน (เครื่องพิมพ์รับพร้อมกันไม่ไหว) แต่ยิง ack พร้อมกันหลังพิมพ์ครบ —
@@ -782,7 +797,12 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
     processed += 1;
   }
   if (ackTasks.length > 0) await Promise.all(ackTasks);
-  return { ok: true, processed, printersSeen: Array.isArray(devices) ? devices.length : null };
+  return {
+    ok: true,
+    processed,
+    printersSeen: Array.isArray(devices) ? devices.length : null,
+    serverPollMs,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1095,7 @@ async function main() {
           lastJobAt,
           pollIntervalMs: config.pollIntervalMs,
           processed: result.processed,
+          serverPollMs: result.serverPollMs ?? null,
         });
       } else {
         runtime.update({ state: "degraded", lastPollAt: pollAt, lastErrorCode: `http_${result.status ?? "error"}`, storeId: config.storeId });
