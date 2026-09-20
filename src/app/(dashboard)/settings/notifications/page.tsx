@@ -32,6 +32,7 @@ import { NotificationSettingToggle } from "./NotificationSettingToggle";
 import { NotificationTemplateEditor } from "./NotificationTemplateEditor";
 import { LineAccountLinkPanel } from "./LineAccountLinkPanel";
 import { VoiceAnnouncementPanel } from "./VoiceAnnouncementPanel";
+import { LauncherSpeakerPanel } from "./LauncherSpeakerPanel";
 import { DailySummaryEmailPanel } from "./DailySummaryEmailPanel";
 
 export const dynamic = "force-dynamic";
@@ -137,6 +138,8 @@ export default async function NotificationSettingsPage() {
       </header>
 
       <VoiceAnnouncementPanel storeEnabled={notificationVoiceEnabled} canManage={canManage} />
+
+      <LauncherSpeakerPanel />
 
       <DailySummaryEmailPanel storeEnabled={dailySummaryEmailEnabled} canManage={canManage} />
 

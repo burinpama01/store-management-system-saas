@@ -7,6 +7,7 @@ import { listPrinters } from "@/modules/stores/repository";
 import { QrOrderGlobalNotifier } from "@/app/(dashboard)/QrOrderGlobalNotifier";
 import { DeliveryGlobalNotifier } from "@/app/(dashboard)/DeliveryGlobalNotifier";
 import { NotificationGlobalNotifier } from "@/app/(dashboard)/NotificationGlobalNotifier";
+import { LauncherUpdateBanner } from "./LauncherUpdateBanner";
 
 interface Props {
   storeId: string;
@@ -67,6 +68,7 @@ export async function StoreAlertNotifiers({
 
   return (
     <>
+      <LauncherUpdateBanner />
       {canViewNotifications && (
         <NotificationGlobalNotifier storeId={storeId} voiceEnabled={voiceEnabled} />
       )}

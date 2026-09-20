@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ลำโพงแจ้งเตือน + อัปเดต Launcher</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f7f6f3;--card:#fff;--ink:#1d1d1b;--muted:#6b6a66;--line:#e4e2dc;--accent:#b4531f;--accent-soft:#fbeee6;--ok:#2f7a4a;--ok-soft:#e6f3ea;--warn:#a36a00;--warn-soft:#fdf3dc;--code:#f1efea}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#161614;--card:#1f1f1c;--ink:#ecebe6;--muted:#a3a19a;--line:#34332f;--accent:#e58a55;--accent-soft:#3a261a;--ok:#6cc48d;--ok-soft:#1c2e22;--warn:#e0b050;--warn-soft:#33291a;--code:#2a2926}}
+:root[data-theme="dark"]{--bg:#161614;--card:#1f1f1c;--ink:#ecebe6;--muted:#a3a19a;--line:#34332f;--accent:#e58a55;--accent-soft:#3a261a;--ok:#6cc48d;--ok-soft:#1c2e22;--warn:#e0b050;--warn-soft:#33291a;--code:#2a2926}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;line-height:1.7}
+main{max-width:940px;margin:0 auto;padding:32px 16px 72px}
+h1{font-size:28px;margin:0 0 6px}h2{font-size:21px;margin:38px 0 10px;padding-top:10px;border-top:1px solid var(--line)}h3{font-size:17px;margin:20px 0 6px}
+.meta{color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:12px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft)}
+.warn{border-left:4px solid var(--warn);background:var(--warn-soft)}
+.ok{border-left:4px solid var(--ok);background:var(--ok-soft)}
+code{background:var(--code);padding:1px 6px;border-radius:5px;font-size:13.5px;word-break:break-word}
+pre{background:var(--code);padding:12px 14px;border-radius:10px;overflow-x:auto;font-size:13px}
+.tbl{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14.5px;background:var(--card)}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:var(--code)}
+ul,ol{padding-left:22px}li{margin:3px 0}
+.diagram{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;overflow-x:auto}
+svg text{font-family:"IBM Plex Sans Thai",system-ui,sans-serif}
+</style>
+</head>
+<body>
+<main>
+<h1>ลำโพงแจ้งเตือนแยก + Launcher อัปเดตตัวเอง v1</h1>
+<p class="meta">StoreOS · 2026-09-19 · Launcher 0.4.1 → <b>0.5.0</b> · สถานะ: รออนุมัติ · แทรกก่อนเฟส 3 ของแผนพิมพ์ตั๋วครัว</p>
+
+<div class="card callout">
+<p><b>โจทย์:</b> พีซีแคชเชียร์ต่อลำโพง 2 ตัว — ตัวหนึ่งเล่นเพลงร้าน (เครื่องเล่นเพลงเปิดใน Launcher) อีกตัวรับเสียงแจ้งเตือนจาก POS · และตั้งแต่เวอร์ชันนี้ Launcher ต้องแจ้งและอัปเดตตัวเองได้เมื่อมีรุ่นใหม่</p>
+<p><b>ทำไมแยกด้วย Windows ไม่ได้:</b> เพลง (<code>/player</code>) และเสียง POS อยู่ในโปรแกรมเดียวกัน (WebView2 ของ Launcher) — Windows เลือกลำโพงได้ทีละโปรแกรม</p>
+</div>
+
+<h2>ส่วน A — Launcher เล่นเสียงแจ้งเตือนเองผ่านลำโพงที่เลือก</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 880 250" width="100%" role="img" aria-label="เส้นทางเสียง">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+<g font-size="13" fill="var(--ink)">
+<rect x="10" y="20" width="250" height="210" rx="10" fill="var(--code)" stroke="var(--line)"/>
+<text x="135" y="44" text-anchor="middle" font-weight="700">Launcher (WebView2)</text>
+<rect x="25" y="60" width="220" height="60" rx="8" fill="var(--card)" stroke="var(--line)"/>
+<text x="135" y="84" text-anchor="middle">หน้า /pos — ออเดอร์เข้า</text>
+<text x="135" y="104" text-anchor="middle" font-size="12">postMessage alert.play</text>
+<rect x="25" y="140" width="220" height="60" rx="8" fill="var(--card)" stroke="var(--line)"/>
+<text x="135" y="164" text-anchor="middle">หน้า /player — เพลงร้าน</text>
+<text x="135" y="184" text-anchor="middle" font-size="12">เสียงเว็บปกติ</text>
+<rect x="330" y="60" width="220" height="60" rx="8" fill="var(--accent-soft)" stroke="var(--accent)"/>
+<text x="440" y="84" text-anchor="middle" font-weight="700">AlertPlayer (C#, NAudio)</text>
+<text x="440" y="104" text-anchor="middle" font-size="12">WASAPI → อุปกรณ์ที่เลือก</text>
+<rect x="640" y="60" width="220" height="60" rx="8" fill="var(--card)" stroke="var(--line)"/>
+<text x="750" y="94" text-anchor="middle">🔊 ลำโพง 2 (แจ้งเตือน)</text>
+<rect x="640" y="140" width="220" height="60" rx="8" fill="var(--card)" stroke="var(--line)"/>
+<text x="750" y="174" text-anchor="middle">🔊 ลำโพง 1 (ค่าหลักของ Windows)</text>
+<line x1="245" y1="90" x2="328" y2="90" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="550" y1="90" x2="638" y2="90" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="245" y1="170" x2="638" y2="170" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#a)"/>
+</g>
+</svg>
+</div>
+
+<h3>A1. Launcher (C#)</h3>
+<ul>
+<li>เพิ่มแพ็กเกจ <b>NAudio</b> (MIT) — <code>MMDeviceEnumerator</code> ลิสต์ลำโพงของ Windows (ชื่อจริง ไม่ต้องขอสิทธิ์ไมค์แบบเว็บ) + <code>WasapiOut</code> เล่นออกอุปกรณ์ที่ระบุ</li>
+<li><code>Services/AlertPlayer.cs</code>: ฝังไฟล์ <code>AlertNewOrder.mp3</code> + สังเคราะห์ beep 2 แบบ (qr/connect) ในหน่วยความจำ · เล่นซ้อนได้ไม่ค้าง · ลำโพงที่เลือกถูกถอด → ใช้ลำโพงหลักของ Windows แทน + log + แจ้งหน้าเว็บ</li>
+<li><code>launcher.json</code> เพิ่ม <code>AlertOutputDeviceId</code> (null = ตามลำโพงหลักของ Windows) + <code>AlertVolume</code> (0–100)</li>
+<li>ข้อความผ่านสะพาน <code>chrome.webview</code> (รับเฉพาะจาก origin ของ StoreOS แบบเดียวกับ provision):</li>
+</ul>
+<pre>เว็บ → Launcher   {type:"alert.play", sound:"order"|"qr"|"connect"}
+เว็บ → Launcher   {type:"alert.devices.get"}
+เว็บ → Launcher   {type:"alert.config.set", deviceId|null, volume}
+เว็บ → Launcher   {type:"alert.test"}
+Launcher → เว็บ   {type:"alert.devices", devices:[{id,name,isDefault}], selectedId, volume}
+Launcher → เว็บ   {type:"launcher.hello", version, capabilities:["alert-player","self-update",...]}</pre>
+
+<h3>A2. หน้าเว็บ</h3>
+<ul>
+<li><code>windows-host.ts</code>: รู้ว่ารันใน Launcher ที่รองรับ <code>alert-player</code> หรือไม่ (จาก <code>launcher.hello</code>)</li>
+<li><code>alert-sound.ts</code>: ถ้ามี <code>alert-player</code> → ส่ง <code>alert.play</code> แทนการเล่นด้วย Web Audio (ทั้งเสียงออเดอร์และ beep) · ไม่มี (เบราว์เซอร์ปกติ/ Launcher รุ่นเก่า) → เล่นเองเหมือนเดิม</li>
+<li>การ์ด <b>"ลำโพงเสียงแจ้งเตือน (เครื่องนี้)"</b> แสดงเฉพาะตอนเปิดใน Launcher: เลือกลำโพง · ปรับความดัง · ปุ่ม "ทดสอบเสียง" — วางในหน้า ตั้งค่า → การแจ้งเตือน (และลิงก์จากแถบสถานะ POS)</li>
+<li>ได้ของแถม: เสียงดังตั้งแต่เปิดเครื่องโดยไม่ต้องมีคนแตะจอ (Launcher เล่นเองไม่ติดกติกา autoplay)</li>
+</ul>
+
+<div class="card warn"><b>ข้อจำกัด:</b> เสียงพูดประกาศออเดอร์ (speechSynthesis ของเบราว์เซอร์) ยังออกลำโพงหลัก — ถ้าต้องการให้ย้ายตามด้วย ทำต่อได้โดยให้ Launcher พูดเอง (Windows TTS → ลำโพงที่เลือก) เป็นงานรอบถัดไป</div>
+
+<h2>ส่วน B — Launcher อัปเดตตัวเอง (ตั้งแต่ 0.5.0)</h2>
+
+<h3>B1. ฝั่งเซิร์ฟเวอร์</h3>
+<ul>
+<li><code>GET /api/launcher/latest?channel=prod</code> (public) คืน <code>{version, url, sha256, size, notes, publishedAt}</code> จาก <code>src/modules/launcher/version.ts</code> (เพิ่ม <code>LAUNCHER_SHA256</code>, <code>LAUNCHER_SIZE</code>, <code>LAUNCHER_NOTES</code> — เทสต์บังคับเลขตรง csproj และรูปแบบ sha256)</li>
+<li>url ชี้ GitHub Releases <code>launcher-v&lt;ver&gt;/storeos-launcher-&lt;ver&gt;.zip</code> เหมือนลิงก์ดาวน์โหลดเดิม</li>
+</ul>
+
+<h3>B2. ฝั่ง Launcher</h3>
+<ol>
+<li><b>ตรวจ:</b> ตอนเปิดโปรแกรม + ทุก 6 ชม. + ตอนเครื่องตื่นจาก sleep → เทียบ SemVer</li>
+<li><b>แจ้ง:</b> มีรุ่นใหม่ → แถบสถานะของ Launcher ขึ้น "มีอัปเดต 0.5.1 — [อัปเดตตอนนี้] [ภายหลัง]" + ส่ง <code>launcher.update-available</code> ให้หน้าเว็บโชว์แบนเนอร์เล็ก</li>
+<li><b>ดาวน์โหลดเบื้องหลัง</b> ไป <code>%LOCALAPPDATA%\StoreOS\Launcher-updates\</code> · รับเฉพาะ URL ของ repo เรา (allowlist) · ตรวจ SHA-256 จากเซิร์ฟเวอร์ (ไม่ตรง = ทิ้ง + log) · แตกไฟล์ไปโฟลเดอร์ staging</li>
+<li><b>ติดตั้ง:</b> กด "อัปเดตตอนนี้" (ยืนยันก่อน — ไม่ปิดกลางการขาย) หรือ <b>ติดตั้งเองตอนเปิดโปรแกรมครั้งถัดไป</b> ก่อนโหลดหน้า POS → ตัวช่วยอัปเดต (<code>StoreOS.Updater.exe</code> เล็ก ๆ ในชุด) รอ Launcher ปิด → ย้ายโฟลเดอร์เดิมเป็น <code>previous\</code> → วางรุ่นใหม่ → เปิด Launcher</li>
+<li><b>ย้อนกลับอัตโนมัติ:</b> รุ่นใหม่ต้องเขียน "เปิดสำเร็จ" ภายใน 90 วิ ไม่งั้นตัวช่วยคืน <code>previous\</code> แล้วเปิดรุ่นเดิม + log <code>update_rolled_back</code></li>
+<li>ทุกขั้น log ผ่าน <code>LauncherLogShipper</code> ขึ้นหน้า /system/logs (ตรวจ/ดาวน์โหลด/ไม่ตรง sha/ติดตั้ง/ย้อนกลับ)</li>
+</ol>
+<p class="meta">ไม่แตะของนอกโฟลเดอร์โปรแกรม: <code>launcher.json</code> (<code>%LOCALAPPDATA%\StoreOSLauncher</code>), โปรไฟล์ WebView2, config Print Hub, scheduled task — อยู่ที่เดิมทั้งหมด</p>
+
+<div class="card warn"><b>รุ่นแรกต้องลงเองหนึ่งครั้ง:</b> 0.4.1 ยังไม่มีตัวอัปเดต ร้านต้องดาวน์โหลด 0.5.0 มาติดตั้งเองครั้งเดียว (หน้า POS จะเห็นว่ารันใน Launcher รุ่นเก่าแล้วขึ้นแบนเนอร์ชวนดาวน์โหลด) · หลังจากนั้นอัปเดตเองทั้งหมด</div>
+
+<h2>ข้อตัดสินใจ (ค่าที่แนะนำ)</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>คำถาม</th><th>แนะนำ</th></tr>
+<tr><td>L1</td><td>ส่งเสียงไหนไปลำโพงแจ้งเตือน</td><td>ทุกเสียงแจ้งเตือนของ POS (ออเดอร์ + beep อื่น) — เสียงพูดยังลำโพงหลัก (รอบหน้า)</td></tr>
+<tr><td>L2</td><td>อัปเดตเมื่อไหร่</td><td>ดาวน์โหลดเบื้องหลังทันที · ติดตั้งเมื่อกด "อัปเดตตอนนี้" หรืออัตโนมัติตอนเปิดโปรแกรมครั้งถัดไป — <b>ไม่ปิดโปรแกรมเองกลางวัน</b></td></tr>
+<tr><td>L3</td><td>รุ่นที่บังคับอัปเดต</td><td>ยังไม่มี (เพิ่ม <code>minVersion</code> ใน manifest ไว้ใช้ภายหลัง)</td></tr>
+<tr><td>L4</td><td>ขนาดชุดอัปเดต (~115 MB เพราะฝังโมเดลเสียง)</td><td>รอบนี้ส่งทั้งชุด · ถ้าเน็ตร้านช้า แยกโมเดลเสียงออกเป็นแพ็กต่างหากทีหลัง</td></tr>
+</table></div>
+
+<h2>ทดสอบ</h2>
+<ul>
+<li>C# unit (StoreOS.Launcher.Tests): เลือกอุปกรณ์/ถอยไปลำโพงหลัก · เทียบเวอร์ชัน · allowlist URL · sha256 ไม่ตรงต้องทิ้ง · ตัวช่วยอัปเดตย้อนกลับเมื่อรุ่นใหม่ไม่รายงาน</li>
+<li>เว็บ unit: alert-sound ส่ง <code>alert.play</code> เมื่อมี capability / เล่นเองเมื่อไม่มี · manifest API ตรง csproj</li>
+<li>build <code>build-launcher.ps1</code> ผ่าน + ลองอัปเดตจริงบนเครื่องนี้ (0.5.0 → 0.5.0-test ด้วย manifest ทดลอง) รวมเคสย้อนกลับ</li>
+<li><b>ที่ร้าน (ผู้ใช้):</b> ต่อลำโพง 2 ตัว → เพลงออกตัวหลัก เสียงออเดอร์ออกตัวที่เลือก · ถอดลำโพงแจ้งเตือน → ยังได้ยินจากตัวหลัก</li>
+</ul>
+
+<h2>ลำดับส่งงาน</h2>
+<ol>
+<li>PR เดียว: Launcher 0.5.0 (AlertPlayer + Updater) + เว็บ (bridge, การ์ดตั้งค่า, manifest API) — ไม่มี migration</li>
+<li>merge → Vercel (เว็บพร้อมรองรับ แต่ Launcher เก่ายังเล่นเสียงเองเหมือนเดิม)</li>
+<li>สร้าง GitHub Release <code>launcher-v0.5.0</code> + ขยับ <code>LAUNCHER_VERSION</code>/sha256 (ขออนุญาตก่อนเผยแพร่)</li>
+<li>ร้านติดตั้ง 0.5.0 เองครั้งแรก → รุ่นถัดไปอัปเดตเอง</li>
+<li>ต่อด้วยเฟส 3 ของแผนพิมพ์ตั๋วครัว</li>
+</ol>
+</main>
+</body>
+</html>
