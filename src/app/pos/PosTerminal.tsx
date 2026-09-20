@@ -50,6 +50,7 @@ import { useSearchParams } from "next/navigation";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
+import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import {
@@ -99,6 +100,8 @@ type BillHistoryRange = { mode: HistoryRangeMode; fromDate: string; toDate: stri
 type AppliedCoupon = { couponId: string; code: string; discount: number };
 type ReceiptOrder = {
   orderNumber: string;
+  /** "บิลรวมโต๊ะ · โต๊ะ X" — ใบเสร็จของบิลรวมโต๊ะ */
+  billLabel?: string;
   items: CartItem[];
   subtotal: number;
   discount: number;
@@ -1858,7 +1861,14 @@ function BillHistoryPanel({
             <li key={order.id} className="rounded-lg border border-gray-200 bg-white p-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-gray-800">{order.orderNumber}</p>
+                  <p className="truncate text-xs font-semibold text-gray-800">
+                    {order.orderNumber}
+                    {order.tableBill && (
+                      <span className="ml-1 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold text-sky-800">
+                        {TABLE_BILL_LABEL}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-[11px] text-gray-500">
                     {order.tableNumber ? `โต๊ะ ${order.tableNumber} · ` : ""}{historyPaymentLabel(order)} · {priceStr(order.total)}
                   </p>
@@ -2063,7 +2073,12 @@ function BillDetailModal({
         : "bg-amber-50 text-amber-700";
 
   return (
-    <ModalDialog open title={`บิล ${order.orderNumber}`} onClose={onClose} size="md">
+    <ModalDialog
+      open
+      title={order.tableBill ? `บิล ${order.orderNumber} · ${tableBillLabel(order.tableNumber)}` : `บิล ${order.orderNumber}`}
+      onClose={onClose}
+      size="md"
+    >
       <div className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-gray-500">{dateLabel}</span>
@@ -2986,6 +3001,7 @@ function ReceiptPanel({
         taxId: settings.taxId,
         showTaxId: settings.showTaxId,
         orderNumber: order.orderNumber,
+        billLabel: order.billLabel,
         items: order.items.map((item) => ({
           name: item.productName,
           variantName: item.variant?.name,
@@ -3038,6 +3054,7 @@ function ReceiptPanel({
           phone: receiptData.phone,
           headerText: receiptData.headerText,
           orderNumber: receiptData.orderNumber,
+          billLabel: receiptData.billLabel,
           items: receiptData.items.map((it) => ({
             name: it.name,
             variantName: it.variantName,
@@ -3125,6 +3142,11 @@ function ReceiptPanel({
         <div className="text-center">
           <p className="text-xs text-gray-400">เลขออร์เดอร์</p>
           <p className="text-lg font-mono font-bold text-gray-900">{order.orderNumber}</p>
+          {order.billLabel && (
+            <span className="mt-1 inline-block rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+              {order.billLabel}
+            </span>
+          )}
         </div>
         <ul className="divide-y divide-gray-50 text-sm">
           {order.items.map((item) => (
@@ -4329,8 +4351,10 @@ export function PosTerminal({
           customer: paidCustomerRef.current,
         });
       }
+      const isTableBillPayment = tableBillRef.current?.orderId === order.orderId;
       setReceipt({
         orderNumber: order.orderNumber,
+        billLabel: isTableBillPayment ? tableBillLabel(paidOrder?.tableNumber ?? ticketDraft.tableNumber) : undefined,
         items: displayCart.items,
         subtotal: displayCart.subtotal,
         discount: displayCart.discount,
@@ -4477,6 +4501,7 @@ export function PosTerminal({
       showTaxId: settings.showTaxId,
       headerText: settings.headerText,
       orderNumber: order.orderNumber,
+      billLabel: order.tableBill ? tableBillLabel(order.tableNumber) : undefined,
       items: order.items.map((item) => ({
         name: item.productName,
         variantName: item.variantName,

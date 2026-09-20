@@ -122,6 +122,8 @@ export interface EscPosReceiptInput {
   headerText?: string;
   orderNumber: string;
   tableNumber?: string;
+  /** ป้ายชนิดบิล เช่น "บิลรวมโต๊ะ · โต๊ะ 5" */
+  billLabel?: string;
   items: LineItem[];
   subtotal: number;
   discount: number;
@@ -180,6 +182,7 @@ export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
 
   // Order meta
   push(encodeText(`Order: ${receipt.orderNumber}\n`));
+  if (receipt.billLabel) push(encodeText(`${receipt.billLabel}\n`));
   if (receipt.tableNumber) push(encodeText(`Table: ${receipt.tableNumber}\n`));
   const dateStr = new Date(receipt.printedAt).toLocaleString("th-TH", {
     year: "2-digit", month: "2-digit", day: "2-digit",

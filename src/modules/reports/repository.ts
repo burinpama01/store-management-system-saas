@@ -32,7 +32,18 @@ type DashboardOrderRow = {
   total: number | string | null;
   qr_order_source: boolean | null;
   order_number: string | null;
+  table_bill_key?: string | null;
 };
+
+/** บิลรวมโต๊ะในชุดออเดอร์ที่จ่ายแล้ว (นับอยู่ในยอด QR อยู่แล้ว — ใช้ระบุ ไม่ใช่แยกช่องทาง) */
+function withTableBills(summary: SalesSummary, rows: DashboardOrderRow[]): SalesSummary {
+  const bills = rows.filter((row) => Boolean(row.table_bill_key));
+  return {
+    ...summary,
+    tableBillCount: bills.length,
+    tableBillRevenue: round2(bills.reduce((sum, row) => sum + toNumber(row.total), 0)),
+  };
+}
 
 type ReportOrderRow = DashboardOrderRow & {
   paid_at: string | null;
@@ -100,6 +111,8 @@ function mapSalesSummary(
     qrRevenue: toNumber(row?.qr_revenue),
     posRevenue: toNumber(row?.pos_revenue),
     deliveryRevenue: toNumber(row?.delivery_revenue),
+    tableBillCount: 0,
+    tableBillRevenue: 0,
   };
 }
 
@@ -139,6 +152,8 @@ function mapDashboardSalesFallback(
     qrRevenue: revenues.qr,
     posRevenue: revenues.pos,
     deliveryRevenue: revenues.delivery,
+    tableBillCount: 0,
+    tableBillRevenue: 0,
   };
 }
 
@@ -327,7 +342,7 @@ export async function getReportData(
     }),
     supabase
       .from("orders")
-      .select("id, total, qr_order_source, order_number, paid_at")
+      .select("id, total, qr_order_source, order_number, paid_at, table_bill_key")
       .eq("store_id", storeId)
       .eq("status", "paid")
       .gte("paid_at", dateFrom)
@@ -341,9 +356,12 @@ export async function getReportData(
     throw new Error("Unable to load report order ids");
   }
 
-  const salesSummary = summaryResult.error
-    ? mapReportSalesFallback(reportOrders, dateFrom, dateTo)
-    : mapSalesSummary(summaryResult.data?.[0] as SalesAggregateRow | undefined, dateFrom, dateTo);
+  const salesSummary = withTableBills(
+    summaryResult.error
+      ? mapReportSalesFallback(reportOrders, dateFrom, dateTo)
+      : mapSalesSummary(summaryResult.data?.[0] as SalesAggregateRow | undefined, dateFrom, dateTo),
+    reportOrders,
+  );
   const dailySales = dailyResult.error
     ? mapDailySalesFallback(reportOrders)
     : mapDailySales(dailyResult.data as DailySalesAggregateRow[] | null | undefined);
@@ -436,7 +454,7 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
     }),
     supabase
       .from("orders")
-      .select("id, total, qr_order_source, order_number")
+      .select("id, total, qr_order_source, order_number, table_bill_key")
       .eq("store_id", storeId)
       .eq("status", "paid")
       .gte("paid_at", today)
@@ -456,9 +474,12 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
   if (countResult.error) {
     throw new Error("Unable to load dashboard pending orders");
   }
-  const todaySales = summaryResult.error
-    ? mapDashboardSalesFallback(dashboardOrders, today, today)
-    : mapSalesSummary(summaryResult.data?.[0] as SalesAggregateRow | undefined, today, today);
+  const todaySales = withTableBills(
+    summaryResult.error
+      ? mapDashboardSalesFallback(dashboardOrders, today, today)
+      : mapSalesSummary(summaryResult.data?.[0] as SalesAggregateRow | undefined, today, today),
+    dashboardOrders,
+  );
 
   const pendingOrderCount = countResult.count ?? 0;
 

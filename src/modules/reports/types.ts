@@ -11,6 +11,12 @@ export interface SalesSummary {
   qrRevenue: number;
   posRevenue: number;
   deliveryRevenue: number;
+  /**
+   * บิลรวมโต๊ะ (ออเดอร์ QR + รายการหน้าร้านของโต๊ะ รวมจ่ายบิลเดียว) — นับอยู่ในยอด QR แล้ว
+   * ไม่ใช่ช่องทางแยก แค่ระบุให้เห็นว่ายอด QR มีบิลรวมกี่บิล
+   */
+  tableBillCount: number;
+  tableBillRevenue: number;
 }
 
 export interface PaymentMethodSummary {

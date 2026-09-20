@@ -6,6 +6,16 @@ import type { SavedOrderTicket } from "./types";
  * แต่ผูกกันด้วย tableId แล้วแสดงในตั๋วเป็นรายการ "ส่งครัวแล้ว" (ยอดไม่ซ้ำ ไม่แตะครัว/สต็อก)
  */
 
+/**
+ * ป้ายของบิลที่รวมทั้งโต๊ะ (consolidate_table_bill) — ในรายงานนับรวมช่องทาง QR ไม่แยกช่องทาง
+ * แต่ทุกที่ที่บิลนี้ปรากฏต้องบอกชัดว่าเป็นบิลรวม (ออเดอร์ QR + รายการหน้าร้านของโต๊ะ)
+ */
+export const TABLE_BILL_LABEL = "บิลรวมโต๊ะ";
+
+export function tableBillLabel(tableNumber?: string | null): string {
+  return tableNumber ? `${TABLE_BILL_LABEL} · โต๊ะ ${tableNumber}` : TABLE_BILL_LABEL;
+}
+
 /** เลขตั๋วแบบเดียวกับที่ POS สร้าง (Thhmm-xxxx) แต่ใช้เวลาของร้าน ไม่ใช่เวลาเซิร์ฟเวอร์ */
 export function createTableTicketNumber(date: Date, timeZone: string): string {
   let hh = String(date.getUTCHours()).padStart(2, "0");

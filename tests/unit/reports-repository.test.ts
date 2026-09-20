@@ -24,7 +24,7 @@ describe("reports repository store anchors", () => {
     expect(repository).toContain('rpc("get_report_sales_summary"');
     expect(repository).toContain('rpc("get_report_daily_sales"');
     expect(repository).not.toContain("throw new Error(\"Unable to load report sales summary\")");
-    expect(repository).toContain('select("id, total, qr_order_source, order_number, paid_at")');
+    expect(repository).toContain('select("id, total, qr_order_source, order_number, paid_at, table_bill_key")');
     expect(repository).toContain("summaryResult.error");
     expect(repository).toContain("mapReportSalesFallback(reportOrders, dateFrom, dateTo)");
     expect(repository).toContain("mapDailySalesFallback(reportOrders)");
@@ -146,7 +146,7 @@ describe("reports repository dashboard behavior", () => {
     const { getDashboardData } = await import("@/modules/reports/repository");
     const dashboard = await getDashboardData("store-1");
 
-    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, order_number");
+    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, order_number, table_bill_key");
     expect(paymentsQuery.select).toHaveBeenCalledWith("method, amount, orders!inner(store_id)");
     expect(dashboard.todaySales).toMatchObject({
       orderCount: 3,
@@ -230,7 +230,7 @@ describe("reports repository dashboard behavior", () => {
 
     const report = await getReportData("store-1", "2026-06-05", "2026-06-05");
 
-    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, order_number, paid_at");
+    expect(paidOrdersQuery.select).toHaveBeenCalledWith("id, total, qr_order_source, order_number, paid_at, table_bill_key");
     expect(report.salesSummary).toMatchObject({
       orderCount: 2,
       revenue: 200,

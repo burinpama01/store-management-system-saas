@@ -78,6 +78,7 @@ function mapOrder(row: OrderRow, items: OrderItem[], payments: Payment[], loyalt
     payments,
     note: row.note ?? undefined,
     qrOrderSource: row.qr_order_source,
+    tableBill: Boolean(row.table_bill_key),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     paidAt: row.paid_at ?? undefined,
