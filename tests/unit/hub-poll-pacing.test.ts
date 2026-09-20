@@ -3,6 +3,7 @@ import {
   HUB_POLL_ACTIVE_MS,
   HUB_POLL_CLOSED_MS,
   HUB_POLL_IDLE_MS,
+  STAFF_SHIFT_MAX_MS,
   resolveHubPollPacing,
 } from "@/modules/printing/hub-poll-pacing";
 
@@ -63,5 +64,14 @@ describe("hub poll pacing — server บอกจังหวะ poll จาก�
   it("จังหวะร้านปิดต้องยาวกว่าร้านเปิด และร้านเปิดต้องยาวกว่าตอนมีงาน", () => {
     expect(HUB_POLL_CLOSED_MS).toBeGreaterThan(HUB_POLL_IDLE_MS);
     expect(HUB_POLL_IDLE_MS).toBeGreaterThan(HUB_POLL_ACTIVE_MS);
+  });
+});
+
+describe("อายุของการลงเวลา — กันเคสพนักงานลืมกดออกงาน", () => {
+  it("STAFF_SHIFT_MAX_MS ต้องยาวพอสำหรับกะจริง แต่สั้นกว่าหนึ่งวันเต็ม", () => {
+    // ระบบไม่มี auto clock-out แถวที่ลืมกดออกค้างถาวร ถ้าเพดานนี้ >= 24 ชม.
+    // staffOnDuty จะจริงตลอดกาลและ Hub จะไม่เข้าโหมดร้านปิดอีกเลย
+    expect(STAFF_SHIFT_MAX_MS).toBeGreaterThanOrEqual(12 * 60 * 60 * 1000);
+    expect(STAFF_SHIFT_MAX_MS).toBeLessThan(24 * 60 * 60 * 1000);
   });
 });

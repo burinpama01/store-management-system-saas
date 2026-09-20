@@ -20,6 +20,7 @@ import {
 } from "@/modules/printing/print-hub-repository";
 import {
   RECENT_ORDER_WINDOW_MS,
+  STAFF_SHIFT_MAX_MS,
   resolveHubPollPacing,
 } from "@/modules/printing/hub-poll-pacing";
 import { logSystemEvent } from "@/modules/system/event-log";
@@ -167,9 +168,10 @@ export async function POST(req: NextRequest) {
   const activity =
     jobs.length > 0
       ? null
-      : await getStoreActivitySignals(storeId, { recentOrderWindowMs: RECENT_ORDER_WINDOW_MS }).catch(
-          () => null,
-        );
+      : await getStoreActivitySignals(storeId, {
+          recentOrderWindowMs: RECENT_ORDER_WINDOW_MS,
+          staffShiftMaxMs: STAFF_SHIFT_MAX_MS,
+        }).catch(() => null);
   const pacing = resolveHubPollPacing({
     claimedJobs: jobs.length,
     staffOnDuty: activity?.staffOnDuty ?? false,

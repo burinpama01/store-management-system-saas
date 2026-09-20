@@ -956,7 +956,7 @@ export interface StoreActivitySignals {
 
 export async function getStoreActivitySignals(
   storeId: string,
-  options: { now?: Date; recentOrderWindowMs?: number } = {},
+  options: { now?: Date; recentOrderWindowMs?: number; staffShiftMaxMs?: number } = {},
 ): Promise<StoreActivitySignals> {
   const now = options.now ?? new Date();
   const cached = hubActivityCache.get(storeId);
@@ -966,6 +966,10 @@ export async function getStoreActivitySignals(
 
   const windowMs = options.recentOrderWindowMs ?? 30 * 60 * 1000;
   const since = new Date(now.getTime() - windowMs).toISOString();
+  // ไม่มี auto clock-out ในระบบ — แถวที่ลืมกดออกงานค้างเป็น active ถาวร ถ้าไม่จำกัด
+  // อายุไว้ staffOnDuty จะจริงตลอดกาลและ Hub จะไม่เข้าโหมดร้านปิดอีกเลย
+  const shiftMaxMs = options.staffShiftMaxMs ?? 16 * 60 * 60 * 1000;
+  const shiftSince = new Date(now.getTime() - shiftMaxMs).toISOString();
   const supabase = await createSupabaseServiceClient();
 
   const [staff, cash, order] = await Promise.all([
@@ -975,6 +979,7 @@ export async function getStoreActivitySignals(
       .eq("store_id", storeId)
       .is("clock_out_at", null)
       .eq("status", "active")
+      .gte("clock_in_at", shiftSince)
       .limit(1),
     supabase.from("cash_sessions").select("id").eq("store_id", storeId).eq("status", "open").limit(1),
     supabase.from("orders").select("id").eq("store_id", storeId).gte("created_at", since).limit(1),

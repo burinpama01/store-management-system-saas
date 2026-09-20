@@ -26,6 +26,18 @@ export const HUB_POLL_CLOSED_MS = 60_000;
 /** ถือว่า "เพิ่งมีออเดอร์" ภายในกี่มิลลิวินาที */
 export const RECENT_ORDER_WINDOW_MS = 30 * 60 * 1000;
 
+/**
+ * อายุสูงสุดของการลงเวลาที่ยังนับว่า "คนนั้นอยู่ที่ร้านจริง"
+ *
+ * ระบบไม่มี auto clock-out (ไม่มี cron ปิดกะสิ้นวัน) แถวที่พนักงานลืมกดออกงาน
+ * จึงค้าง clock_out_at = null ถาวร ถ้านับตรง ๆ staffOnDuty จะเป็น true ตลอดกาล
+ * และ Hub จะไม่เข้าโหมดร้านปิดอีกเลย — ดีไซน์พังเงียบโดยไม่มีใครรู้
+ *
+ * 16 ชั่วโมงเผื่อกะยาวสุดที่เป็นไปได้จริง (เปิดร้านถึงปิดร้าน + ปิดยอด) ไว้เต็มที่แล้ว
+ * เกินกว่านี้แปลว่าลืมกด ไม่ใช่ยังทำงานอยู่
+ */
+export const STAFF_SHIFT_MAX_MS = 16 * 60 * 60 * 1000;
+
 export type HubActivityReason = "jobs" | "staff" | "cashSession" | "recentOrder" | "idle";
 
 export interface HubActivitySignals {
