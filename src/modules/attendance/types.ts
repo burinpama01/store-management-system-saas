@@ -1,5 +1,9 @@
 export type ClockActionType = "clock_in" | "clock_out";
-export type AttendanceStatus = "active" | "completed" | "backdated" | "adjusted";
+/**
+ * `abandoned` = ลืมกดออกงาน ระบบปิดแถวให้ตอนพนักงานคนนั้นกดเข้างานวันใหม่
+ * (นับขาดเหมือน in_no_out ของ payroll จนกว่าจะขอย้อนหลังแล้วผู้จัดการอนุมัติ)
+ */
+export type AttendanceStatus = "active" | "completed" | "backdated" | "adjusted" | "abandoned";
 
 export interface AttendanceRecord {
   id: string;

@@ -9,6 +9,7 @@ import {
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
+  abandonStaleActiveRecords,
   getActiveRecordToday,
   clockIn,
   clockOut,
@@ -220,6 +221,21 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
 
     const now = new Date();
     const today = getStoreLocalDate(ctx.storeTimezone, now);
+
+    // ลืมกดออกงานของวันก่อน ๆ = ปิดให้เป็นขาดงานตรงนี้ จังหวะเดียวที่รู้แน่ว่ากะเก่า
+    // จบไปแล้ว (ระบบไม่มี auto clock-out) ถ้าพลาดจริงยังขอย้อนหลังให้ผู้จัดการแก้ได้
+    const abandoned = await abandonStaleActiveRecords(user.id, ctx.organizationId, today);
+    if (abandoned.count > 0) {
+      void logSystemEvent({
+        level: "warn",
+        source: "attendance.clock",
+        action: "abandonStaleRecords",
+        message: "ปิดรายการลงเวลาที่ลืมกดออกงานเป็นขาดงาน",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        context: { userId: user.id, abandoned: abandoned.count, today },
+      });
+    }
 
     // Org-wide: already having an open record at ANY branch blocks a second clock-in
     // (a completed earlier shift does not — allows a genuine second shift).

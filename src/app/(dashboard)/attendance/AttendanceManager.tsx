@@ -788,7 +788,9 @@ export function AttendanceManager({
                                 ? "bg-green-100 text-green-700"
                                 : r.status === "completed"
                                   ? "bg-gray-100 text-gray-600"
-                                  : "bg-yellow-100 text-yellow-700"
+                                  : r.status === "abandoned"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-yellow-100 text-yellow-700"
                             }`}
                           >
                             {r.status === "active"
@@ -799,7 +801,9 @@ export function AttendanceManager({
                                   ? "เพิ่มย้อนหลัง"
                                   : r.status === "adjusted"
                                     ? "แก้ไขแล้ว"
-                                    : r.status}
+                                    : r.status === "abandoned"
+                                      ? "ลืมกดออกงาน (นับขาด)"
+                                      : r.status}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">

@@ -3950,7 +3950,7 @@ export interface Database {
           clock_out_lat: number | null;
           clock_out_lng: number | null;
           clock_out_location_label: string | null;
-          status: "active" | "completed" | "backdated" | "adjusted";
+          status: "active" | "completed" | "backdated" | "adjusted" | "abandoned";
           note: string | null;
           adjusted_by_user_id: string | null;
           created_at: string;
@@ -3971,7 +3971,7 @@ export interface Database {
           clock_out_lat?: number | null;
           clock_out_lng?: number | null;
           clock_out_location_label?: string | null;
-          status?: "active" | "completed" | "backdated" | "adjusted";
+          status?: "active" | "completed" | "backdated" | "adjusted" | "abandoned";
           note?: string | null;
           adjusted_by_user_id?: string | null;
           created_at?: string;
@@ -3992,7 +3992,7 @@ export interface Database {
           clock_out_lat?: number | null;
           clock_out_lng?: number | null;
           clock_out_location_label?: string | null;
-          status?: "active" | "completed" | "backdated" | "adjusted";
+          status?: "active" | "completed" | "backdated" | "adjusted" | "abandoned";
           note?: string | null;
           adjusted_by_user_id?: string | null;
           created_at?: string;
