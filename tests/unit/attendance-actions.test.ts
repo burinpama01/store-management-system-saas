@@ -627,6 +627,29 @@ describe("attendance manager actions", () => {
     }
   });
 
+  it("ปิดแถวเก่าไม่สำเร็จ ต้องไม่กันคนเข้างาน แต่ต้องบันทึกไว้ไม่ให้พังเงียบ", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z"));
+    // เคสจริง: migration ยังไม่ขึ้น constraint เดิมจึงปฏิเสธค่า abandoned
+    mocks.abandonStaleActiveRecords.mockResolvedValue({
+      count: 0,
+      error: { userMessage: "อัปเดตไม่สำเร็จ" },
+    });
+    const { clockInAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockInAction(fd({}));
+
+      expect(result.error).toBeNull();
+      expect(mocks.clockIn).toHaveBeenCalledTimes(1);
+      expect(mocks.logSystemEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ level: "error", action: "abandonStaleRecordsFailed" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("กดเข้างานซ้ำในวันเดียวกันยังถูกปฏิเสธเหมือนเดิม", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z"));

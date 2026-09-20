@@ -235,6 +235,18 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
         storeId: ctx.storeId,
         context: { userId: user.id, abandoned: abandoned.count, today },
       });
+    } else if (abandoned.error) {
+      // ปิดแถวเก่าไม่สำเร็จไม่ควรกันคนเข้างาน (เช่น migration ยังไม่ขึ้น constraint
+      // จะปฏิเสธค่า abandoned) แต่ต้องไม่เงียบ ไม่งั้นแถวค้างจะสะสมโดยไม่มีใครรู้
+      void logSystemEvent({
+        level: "error",
+        source: "attendance.clock",
+        action: "abandonStaleRecordsFailed",
+        message: "ปิดรายการลงเวลาที่ค้างไม่สำเร็จ — ปล่อยให้เข้างานต่อได้",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        context: { userId: user.id, today, error: abandoned.error.userMessage },
+      });
     }
 
     // Org-wide: already having an open record at ANY branch blocks a second clock-in
