@@ -11,19 +11,37 @@ import {
   expireOldPrintJobs,
   getPrinterIdsForJobs,
   authenticateHubRequest,
-  getStoreActivitySignals,
+  hasPendingPrintJobs,
   getUsbBindings,
   reconcileStalePrintJobs,
   saveHubDevices,
   touchHubHeartbeat,
   type HubUsbBinding,
 } from "@/modules/printing/print-hub-repository";
-import {
-  RECENT_ORDER_WINDOW_MS,
-  STAFF_SHIFT_MAX_MS,
-  resolveHubPollPacing,
-} from "@/modules/printing/hub-poll-pacing";
+import { resolveHubPollPacing, sanitizeHubIdleMs } from "@/modules/printing/hub-poll-pacing";
 import { logSystemEvent } from "@/modules/system/event-log";
+
+/** ความถี่ในการถามว่ามีงานเข้ามาหรือยัง ระหว่างที่คำขอ long-poll ค้างรอ */
+const LONGPOLL_CHECK_INTERVAL_MS = 1_000;
+
+/**
+ * เพดานเวลาที่ยอมค้างคำขอไว้
+ *
+ * ตัวกลางระหว่างทาง (proxy/CDN) มักตัดการเชื่อมต่อที่เงียบเกิน 30 วินาที และ
+ * ฟังก์ชันเองก็มีเพดานเวลาทำงาน — 25 วินาทีจึงเป็นขอบที่ปลอดภัย
+ */
+const MAX_LONGPOLL_WAIT_MS = 25_000;
+
+/** ฟังก์ชันนี้ค้างรองานได้ จึงต้องขอเวลาทำงานมากกว่าค่าเริ่มต้นของเส้นทาง API ปกติ */
+export const maxDuration = 60;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+/** ค่าที่ agent ขอมา — ปฏิเสธค่าที่ใช้ไม่ได้ และไม่ยอมให้เกินเพดาน */
+function sanitizeWaitMs(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(Math.floor(value), MAX_LONGPOLL_WAIT_MS);
+}
 
 /**
  * Called by the StoreOS Print Hub agent running on the store's cashier PC.
@@ -40,6 +58,10 @@ export async function POST(req: NextRequest) {
     agentVersion?: unknown;
     /** v3 — protocol ที่ agent พูดได้ (agent เก่าไม่ส่ง = legacy) */
     protocolVersion?: unknown;
+    /** Hub ว่างมานานกี่มิลลิวินาทีแล้ว (agent เก่าไม่ส่ง) */
+    idleMs?: unknown;
+    /** ขอให้ค้างคำขอไว้รองานกี่มิลลิวินาที (agent เก่าไม่ส่ง = ตอบทันทีแบบเดิม) */
+    waitMs?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -114,10 +136,31 @@ export async function POST(req: NextRequest) {
   const agentVersion = sanitizeAgentVersion(body.agentVersion);
   const limit = Number.isInteger(body.limit) && body.limit! > 0 ? Math.min(body.limit!, 20) : 5;
   // Claim does not wait on device inventory write — that finishes before we respond.
-  const claimed = await claimPendingPrintJobs(storeId, limit, {
-    leaseSeconds: PRINT_JOB_LEASE_SECONDS,
-    agentVersion,
-  });
+  const claim = () =>
+    claimPendingPrintJobs(storeId, limit, { leaseSeconds: PRINT_JOB_LEASE_SECONDS, agentVersion });
+  let claimed = await claim();
+
+  // long-poll: ถ้าไม่มีงานและ agent ขอให้รอ ก็ค้างคำขอไว้แทนที่จะให้มันยิงถามใหม่
+  // ทุกสองวินาที — ลดจำนวนครั้งที่ฟังก์ชันถูกเรียกราว 10 เท่า และใบเสร็จออกเร็วขึ้น
+  // เพราะตอบทันทีที่มีงานเข้าคิว ไม่ต้องรอรอบถัดไปของ agent
+  //
+  // ระหว่างรอใช้การถามแบบเบา (hasPendingPrintJobs) ไม่ใช่ claim เต็ม เพื่อไม่ให้
+  // การรอกลายเป็นภาระของฐานข้อมูลแทน
+  const waitMs = sanitizeWaitMs(body.waitMs);
+  if (!claimed.error && claimed.data?.length === 0 && waitMs > 0) {
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline) {
+      const remaining = deadline - Date.now();
+      await sleep(Math.min(LONGPOLL_CHECK_INTERVAL_MS, remaining));
+      if (!(await hasPendingPrintJobs(storeId))) continue;
+      const retry = await claim();
+      if (retry.error) break;
+      if (retry.data && retry.data.length > 0) {
+        claimed = retry;
+        break;
+      }
+    }
+  }
   if (claimed.error || !claimed.data) {
     await saveDevicesPromise.catch(() => null);
     return NextResponse.json({ error: claimed.error?.userMessage ?? "Failed to claim jobs" }, { status: 500 });
@@ -162,23 +205,12 @@ export async function POST(req: NextRequest) {
         }
       : {}),
   }));
-  // จังหวะ poll รอบถัดไป — server สั่งจากสัญญาณว่าร้านเปิดจริงไหม เพื่อไม่ให้
-  // Hub ยิงทุก 1.5 วินาทีข้ามคืนจนกินโควตา Vercel หมด (ดู hub-poll-pacing.ts)
-  // agent เก่าที่ไม่รู้จัก field นี้จะเมินไปเอง = พฤติกรรมเดิมทุกอย่าง
-  const activity =
-    jobs.length > 0
-      ? null
-      : await getStoreActivitySignals(storeId, {
-          recentOrderWindowMs: RECENT_ORDER_WINDOW_MS,
-          staffShiftMaxMs: STAFF_SHIFT_MAX_MS,
-        }).catch(() => null);
+  // จังหวะ poll รอบถัดไป — คิดจากสิ่งที่ Hub ส่งมาเองเท่านั้น ไม่แตะ DB เพิ่ม
+  // (รุ่นก่อนถาม DB 3 ครั้งต่อ poll เพื่อดูว่าร้านเปิดไหม จน Active CPU ของทั้ง
+  // โปรเจคทะลุเพดานและโดนระงับบริการ — ดู hub-poll-pacing.ts)
   const pacing = resolveHubPollPacing({
     claimedJobs: jobs.length,
-    staffOnDuty: activity?.staffOnDuty ?? false,
-    cashSessionOpen: activity?.cashSessionOpen ?? false,
-    recentOrder: activity?.recentOrder ?? false,
-    // jobs > 0 ไม่ต้องถามสัญญาณ (ถี่อยู่แล้ว); ถ้าถามแล้วล้ม ต้องถือว่าร้านเปิด
-    signalsUnavailable: jobs.length === 0 && (activity === null || activity.signalsUnavailable),
+    idleMs: sanitizeHubIdleMs(body.idleMs),
   });
 
   return NextResponse.json({
