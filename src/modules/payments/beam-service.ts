@@ -1,5 +1,5 @@
 import type { Json } from "@/server/integrations/supabase/database.types";
-import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { createBeamQrCharge, getBeamCharge, pingBeamCredentials } from "./beam-client";
 import { isPlausibleBeamHmacKey } from "./beam-signature";
@@ -32,6 +32,14 @@ const QR_TTL_MS = 10 * 60 * 1000;
 /** Give the webhook a head start before asking Beam directly. */
 const LOOKUP_AFTER_MS = 6_000;
 const OPEN_STATUSES: GatewayPaymentStatus[] = ["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING"];
+
+/**
+ * client ของ Supabase ที่ใช้ — ค่าเริ่มต้นคือ session ของพนักงาน (RLS) ; หน้าลูกค้า (ขอเพลง)
+ * ไม่มี session จึงส่ง service client เข้ามา (ใช้เฉพาะเส้นทางที่ตรวจสิทธิ์ของร้านแล้ว)
+ */
+type BeamDb =
+  | Awaited<ReturnType<typeof createSupabaseServerClient>>
+  | Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 
 const CONFIG_COLUMNS =
   "id, organization_id, store_id, environment, display_name, is_enabled, is_default, disabled_at, credentials_encrypted, public_config, updated_at";
@@ -125,8 +133,8 @@ export function buildBeamWebhookUrl(storeId: string): string {
   return `${base}/api/payments/webhooks/beam?storeId=${encodeURIComponent(storeId)}`;
 }
 
-export async function getBeamConfig(storeId: string): Promise<BeamConfig | null> {
-  const supabase = await createSupabaseServerClient();
+export async function getBeamConfig(storeId: string, client?: BeamDb): Promise<BeamConfig | null> {
+  const supabase = client ?? (await createSupabaseServerClient());
   const { data } = await supabase
     .from("payment_provider_configs")
     .select(CONFIG_COLUMNS)
@@ -148,8 +156,8 @@ export async function getBeamConfig(storeId: string): Promise<BeamConfig | null>
 }
 
 /** Ready = enabled and holding a merchant id + API key (the webhook key is optional; lookup covers it). */
-export async function isBeamReadyForStore(storeId: string): Promise<boolean> {
-  const config = await getBeamConfig(storeId);
+export async function isBeamReadyForStore(storeId: string, client?: BeamDb): Promise<boolean> {
+  const config = await getBeamConfig(storeId, client);
   return Boolean(config?.isEnabled && config.creds);
 }
 
@@ -356,17 +364,21 @@ export async function createBeamQrPayment(input: {
   storeId: string;
   amountMajor: number;
   clientRequestId: string;
-  actorUserId: string;
+  /** null = ลูกค้าเป็นผู้เริ่ม (ขอเพลง) */
+  actorUserId: string | null;
+  /** ผูกรายการชำระกับคำขอเพลง — PAID แล้ว trigger ยืนยันคำขอให้ */
+  musicRequestId?: string | null;
+  client?: BeamDb;
 }): Promise<{ ok: true; qr: BeamQrForPos } | { ok: false; error: string }> {
   const amount = roundMajorThb(input.amountMajor);
   if (!(amount >= 1)) return { ok: false, error: "ยอดชำระผ่าน Beam ต้องอย่างน้อย 1 บาท" };
 
-  const config = await getBeamConfig(input.storeId);
+  const config = await getBeamConfig(input.storeId, input.client);
   if (!config?.isEnabled || !config.creds) {
     return { ok: false, error: "ร้านยังไม่ได้เปิดใช้ Beam (ตั้งค่าที่ ตั้งค่า → การชำระเงิน)" };
   }
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   const reference = `beam:${input.clientRequestId}`;
 
   let row: BeamGatewayRow | null = null;
@@ -382,7 +394,9 @@ export async function createBeamQrPayment(input: {
       return { ok: false, error: "ยอดเปลี่ยนไปจาก QR เดิม — กรุณาสร้าง QR ใหม่" };
     }
     if (!OPEN_STATUSES.includes(row.status as GatewayPaymentStatus)) {
-      return { ok: true, qr: toPosView(row, null) };
+      // จ่ายแล้ว = คืนสถานะ PAID · หมดอายุ/ล้ม/ยกเลิก = ไม่มี QR ที่ใช้ได้ ต้องเริ่มรายการใหม่
+      if (row.status === "PAID") return { ok: true, qr: toPosView(row, null) };
+      return { ok: false, error: "QR นี้หมดอายุหรือถูกยกเลิกแล้ว — กรุณาสร้างรายการใหม่" };
     }
   } else {
     const expiresAt = new Date(Date.now() + QR_TTL_MS).toISOString();
@@ -392,6 +406,7 @@ export async function createBeamQrPayment(input: {
         organization_id: input.organizationId,
         store_id: input.storeId,
         order_id: null,
+        music_request_id: input.musicRequestId ?? null,
         provider_config_id: config.id,
         provider_key: "beam",
         mode: "open_api",
@@ -404,6 +419,7 @@ export async function createBeamQrPayment(input: {
           environment: config.environment,
           expiresAt,
           createdBy: input.actorUserId,
+          ...(input.musicRequestId ? { purpose: "music_request" } : {}),
         } as Json,
       })
       .select(GATEWAY_COLUMNS)
@@ -500,8 +516,14 @@ export async function createBeamQrPayment(input: {
 export async function refreshBeamPayment(input: {
   storeId: string;
   gatewayPaymentId: string;
+  client?: BeamDb;
+  /**
+   * ถาม Beam API ได้ไม่ถี่กว่านี้ (อิง metadata.lastLookupAt) — webhook คือทางหลัก
+   * ช่วงที่ยังไม่ครบ = คืนสถานะจาก DB (หน้าลูกค้า poll ถี่ได้โดยไม่ยิง provider)
+   */
+  minLookupIntervalMs?: number;
 }): Promise<{ ok: true; status: GatewayPaymentStatus; amount: number } | { ok: false; error: string }> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   const { data } = await supabase
     .from("gateway_payments")
     .select(GATEWAY_COLUMNS)
@@ -518,8 +540,14 @@ export async function refreshBeamPayment(input: {
   if (Date.now() - new Date(row.created_at).getTime() < LOOKUP_AFTER_MS) {
     return { ok: true, status, amount };
   }
+  if (input.minLookupIntervalMs) {
+    const last = typeof row.metadata?.lastLookupAt === "string" ? Date.parse(row.metadata.lastLookupAt) : NaN;
+    if (Number.isFinite(last) && Date.now() - last < input.minLookupIntervalMs) {
+      return { ok: true, status, amount };
+    }
+  }
 
-  const config = await getBeamConfig(input.storeId);
+  const config = await getBeamConfig(input.storeId, input.client);
   if (!config?.creds) return { ok: true, status, amount };
   const charge = await getBeamCharge({
     environment: config.environment,
@@ -592,6 +620,14 @@ export async function refreshBeamPayment(input: {
   }
 
   const expiresAt = typeof row.metadata?.expiresAt === "string" ? Date.parse(row.metadata.expiresAt) : NaN;
+  if (!(Number.isFinite(expiresAt) && Date.now() > expiresAt + 60_000)) {
+    // ยังรอจ่าย: จดเวลาที่ถาม Beam ล่าสุดไว้ให้ throttle
+    await supabase
+      .from("gateway_payments")
+      .update({ metadata: metadata as Json, updated_at: now })
+      .eq("id", row.id)
+      .in("status", OPEN_STATUSES);
+  }
   if (Number.isFinite(expiresAt) && Date.now() > expiresAt + 60_000) {
     await supabase
       .from("gateway_payments")
@@ -607,13 +643,15 @@ export async function refreshBeamPayment(input: {
 export async function cancelBeamQrPayment(input: {
   storeId: string;
   gatewayPaymentId: string;
-  actorUserId: string;
+  actorUserId: string | null;
+  client?: BeamDb;
+  reason?: string;
 }): Promise<{ error: string | null }> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   const now = new Date().toISOString();
   const { data } = await supabase
     .from("gateway_payments")
-    .update({ status: "CANCELLED", failure_message: "ยกเลิก QR ที่ POS", updated_at: now })
+    .update({ status: "CANCELLED", failure_message: input.reason ?? "ยกเลิก QR ที่ POS", updated_at: now })
     .eq("id", input.gatewayPaymentId)
     .eq("store_id", input.storeId)
     .eq("provider_key", "beam")
@@ -625,7 +663,7 @@ export async function cancelBeamQrPayment(input: {
       level: "info",
       source: "payments.cancel",
       action: "BEAM_QR_CANCELLED",
-      message: "ยกเลิก QR Beam ที่ POS",
+      message: input.reason ?? "ยกเลิก QR Beam ที่ POS",
       organizationId: (data as { organization_id: string }).organization_id,
       storeId: input.storeId,
       actorUserId: input.actorUserId,
@@ -729,7 +767,10 @@ export interface BeamPaymentHistoryItem {
   amount: number;
   status: GatewayPaymentStatus;
   orderId: string | null;
+  /** ผูกกับบิล POS หรือคำขอเพลงแล้ว (ไม่ต้องตรวจเพิ่ม) */
   attached: boolean;
+  /** รายการนี้เป็นค่าขอเพลง (ไม่ใช่บิลขาย) */
+  musicRequestId: string | null;
   environment: PaymentEnvironment;
   failureMessage: string | null;
   createdAt: string;
@@ -741,7 +782,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("gateway_payments")
-    .select("id, amount, status, order_id, pos_payment_id, failure_message, metadata, created_at, paid_at")
+    .select("id, amount, status, order_id, pos_payment_id, music_request_id, failure_message, metadata, created_at, paid_at")
     .eq("store_id", storeId)
     .eq("provider_key", "beam")
     .order("created_at", { ascending: false })
@@ -752,6 +793,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     status: string;
     order_id: string | null;
     pos_payment_id: string | null;
+    music_request_id: string | null;
     failure_message: string | null;
     metadata: Record<string, unknown> | null;
     created_at: string;
@@ -761,7 +803,8 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     amount: typeof r.amount === "string" ? Number(r.amount) : r.amount,
     status: r.status as GatewayPaymentStatus,
     orderId: r.order_id,
-    attached: Boolean(r.pos_payment_id),
+    attached: Boolean(r.pos_payment_id || r.music_request_id),
+    musicRequestId: r.music_request_id,
     environment: toEnvironment(typeof r.metadata?.environment === "string" ? r.metadata.environment : "live"),
     failureMessage: r.failure_message,
     createdAt: r.created_at,

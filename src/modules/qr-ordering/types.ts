@@ -86,6 +86,8 @@ export interface QrOrderView {
   items: QrOrderLine[];
   createdAt: string;
   paidAt?: string;
+  /** บิลรวมโต๊ะ (รวมออเดอร์ของโต๊ะเป็นบิลเดียวตอนเช็คบิล) */
+  tableBill?: boolean;
 }
 
 export interface ServiceRequest {

@@ -1,4 +1,4 @@
-import type { Product, ProductUnit, ProductVariant, ModifierOption } from "@/modules/catalog/types";
+import { availablePoolUnits, availableVariantStock, type Product, type ProductUnit, type ProductVariant, type ModifierOption } from "@/modules/catalog/types";
 import type { Cart, CartItem, DiscountType, SelectedModifier } from "./types";
 import { buildCartItemKey } from "./types";
 import { resolveTierBasePrice, resolveUnitTierPrice, type PriceTier } from "./pricing";
@@ -189,7 +189,7 @@ function addVariantStockDemand(
   if (pool) {
     const current = requestedStockByVariant.get(`pool:${pool.poolId}`) ?? {
       requested: 0,
-      available: pool.quantity,
+      available: availablePoolUnits(pool),
     };
     current.requested += quantity * pool.consumptionQuantity;
     requestedStockByVariant.set(`pool:${pool.poolId}`, current);
@@ -199,13 +199,15 @@ function addVariantStockDemand(
     return;
   }
 
-  if (!variant.trackStock || typeof variant.stockQuantity !== "number") {
+  const available = availableVariantStock(variant);
+  if (available === undefined) {
     return;
   }
 
+  // ยอดที่จองให้ออเดอร์ QR (ครัวยังไม่รับ) ขายซ้ำที่ POS ไม่ได้
   const current = requestedStockByVariant.get(variant.id) ?? {
     requested: 0,
-    available: variant.stockQuantity,
+    available,
   };
   current.requested += quantity;
   requestedStockByVariant.set(variant.id, current);

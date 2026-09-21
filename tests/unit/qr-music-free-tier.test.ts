@@ -16,8 +16,8 @@ describe("music zero-price tier = free (store's choice)", () => {
   it("donation action skips PromptPay entirely on the free path", () => {
     const action = read("src/app/qr/[storeSlug]/[tableId]/music-actions.ts");
     expect(action).toContain("const isFree = amount <= 0");
-    // PromptPay config is only required for paid donations.
-    expect(action).toContain("if (!isFree) {");
+    // PromptPay config is only required for paid donations that don't go through Beam.
+    expect(action).toContain("if (!isFree && !useBeam) {");
     expect(action).toContain("free: true");
   });
 

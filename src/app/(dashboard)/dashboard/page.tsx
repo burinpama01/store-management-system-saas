@@ -99,7 +99,7 @@ export default async function DashboardPage() {
         <KpiCard
           label="ค่าเฉลี่ย/ออร์เดอร์"
           value={`฿${fmt(todaySales.avgOrderValue)}`}
-          sub={`QR ${todaySales.qrOrderCount} / POS ${todaySales.posOrderCount} / JDC ${todaySales.deliveryOrderCount}`}
+          sub={`QR ${todaySales.qrOrderCount}${todaySales.tableBillCount > 0 ? ` (บิลรวมโต๊ะ ${todaySales.tableBillCount})` : ""} / POS ${todaySales.posOrderCount} / JDC ${todaySales.deliveryOrderCount}`}
           accent="var(--cat-tea)"
           spark={[30, 33, 37, 34, 40, 39, 43, 42]}
         />
@@ -153,7 +153,11 @@ export default async function DashboardPage() {
             <span className="badge badge-success">พร้อมขาย</span>
           </div>
           <div className="space-y-3">
-            <StatusRow label="QR Order" value={`${todaySales.qrOrderCount} รายการ`} color="var(--cat-cold)" />
+            <StatusRow
+              label="QR Order"
+              value={`${todaySales.qrOrderCount} รายการ${todaySales.tableBillCount > 0 ? ` (บิลรวมโต๊ะ ${todaySales.tableBillCount})` : ""}`}
+              color="var(--cat-cold)"
+            />
             <StatusRow label="POS" value={`${todaySales.posOrderCount} รายการ`} color="var(--tenant-primary)" />
             <StatusRow label="เดลิเวอรี (JDC)" value={`${todaySales.deliveryOrderCount} รายการ`} color="var(--cat-bakery)" />
             <StatusRow label="ยอดขายเงินสด" value={`฿${fmt(cashSalesToday)}`} color="var(--cat-tea)" />

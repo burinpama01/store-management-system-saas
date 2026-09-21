@@ -8,4 +8,4 @@
  * agent ไม่อัปเดตตัวเองอัตโนมัติ ดังนั้นทุกครั้งที่แก้ scripts/print-hub.mjs แบบที่
  * ร้านต้องลงใหม่ ให้ขยับเลขนี้พร้อมกัน แล้วรัน `npm run build:print-hub-zip`
  */
-export const PRINT_HUB_VERSION = "1.3.1";
+export const PRINT_HUB_VERSION = "1.4.0";

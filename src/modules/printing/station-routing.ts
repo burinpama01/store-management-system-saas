@@ -1,5 +1,25 @@
 import type { ReceiptData } from "./types";
 
+export const STATION_TICKET_SOURCE_PREFIX = "station_ticket:";
+
+const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const STATION_TICKET_SOURCE_RE = new RegExp(`^station_ticket:(${UUID_PATTERN}):(${UUID_PATTERN})$`, "i");
+
+/**
+ * คีย์ของตั๋วสถานี 1 ใบ = (ออเดอร์รอบนั้น, สถานี) — ทุกจอ/ทุกช่องทางที่สั่งพิมพ์ตั๋วเดียวกัน
+ * ได้คีย์เดียวกัน → print_jobs_source_key_uq ทำให้ออกครั้งเดียว
+ */
+export function buildStationTicketSourceKey(orderId: string, stationId: string): string {
+  return `${STATION_TICKET_SOURCE_PREFIX}${orderId.toLowerCase()}:${stationId.toLowerCase()}`;
+}
+
+export function parseStationTicketSourceKey(key: unknown): { orderId: string; stationId: string } | null {
+  if (typeof key !== "string") return null;
+  const match = STATION_TICKET_SOURCE_RE.exec(key);
+  if (!match) return null;
+  return { orderId: match[1].toLowerCase(), stationId: match[2].toLowerCase() };
+}
+
 /** One order line as far as station routing cares (no pricing needed). */
 export interface StationRoutingItem {
   name: string;
@@ -18,6 +38,8 @@ export interface StationRoutingStation {
 }
 
 export interface StationRoutingInput {
+  /** orders.id ของรอบนี้ — ใส่แล้วตั๋วจะมี sourceKey กันพิมพ์ซ้ำข้ามจอ */
+  orderId?: string;
   orderNumber: string;
   tableNumber?: string;
   paperWidth: "58mm" | "80mm";
@@ -28,6 +50,8 @@ export interface StationRoutingInput {
 }
 
 export interface StationTicketJob {
+  /** station_ticket:{orderId}:{stationId} — server dedupe ด้วย print_jobs.source_key */
+  sourceKey?: string;
   printerId: string;
   stationId: string;
   stationName: string;
@@ -102,6 +126,7 @@ export function buildStationTicketJobs(input: StationRoutingInput): StationRouti
     const items = itemsByStation.get(station.id);
     if (!items || items.length === 0 || !station.printerId) continue;
     jobs.push({
+      sourceKey: input.orderId ? buildStationTicketSourceKey(input.orderId, station.id) : undefined,
       printerId: station.printerId,
       stationId: station.id,
       stationName: station.name,

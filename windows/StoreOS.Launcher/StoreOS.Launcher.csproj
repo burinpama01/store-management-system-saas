@@ -21,13 +21,17 @@
     <Platforms>x64</Platforms>
     <AssemblyName>StoreOS.Launcher</AssemblyName>
     <RootNamespace>StoreOS.Launcher</RootNamespace>
-    <Version>0.4.1</Version>
+    <Version>0.5.0</Version>
     <!-- ไอคอนของไฟล์ .exe และของทางลัดบนเดสก์ท็อป (สร้างด้วย scripts/windows-launcher/build-icon.ps1) -->
     <ApplicationIcon>Assets\storeos.ico</ApplicationIcon>
+    <!-- ProcessAudioRouter เรียก vtable ของนโยบายเสียง Windows ตรง ๆ (ไม่พึ่ง WinRT marshalling ที่ .NET 5+ ถอดออก) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <!-- เสียงแจ้งเตือนออกลำโพงที่เลือก (WASAPI) + ลิสต์ลำโพงของ Windows — MIT -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,6 +41,8 @@
   <ItemGroup>
     <!-- ต้องเป็น Resource ด้วย ไม่ใช่แค่ ApplicationIcon เพราะหน้าต่างอ้างไฟล์นี้ตอนรัน -->
     <Resource Include="Assets\storeos.ico" />
+    <!-- เสียงออเดอร์ใหม่ (ไฟล์เดียวกับ assets/AlertNewOrder.mp3 ของเว็บ) — AlertPlayer อ่านจาก assembly -->
+    <EmbeddedResource Include="Assets\alert_new_order.mp3" LogicalName="StoreOS.Launcher.alert_new_order.mp3" />
   </ItemGroup>
 
 </Project>

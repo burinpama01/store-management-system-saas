@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { managedRealtimeSubscription } from "@/shared/realtime/realtime-client";
-import { ensureAudioUnlocked, playAlertOrSpeak } from "@/shared/notifications/alert-sound";
+import { alertPatternForTypes, ensureAudioUnlocked, playAlertOrSpeak } from "@/shared/notifications/alert-sound";
 import { primeVoices } from "@/shared/notifications/announce";
 import { toastAnnouncement } from "@/shared/notifications/announcement-text";
 import { metaFor } from "./notifications/NotificationCenter";
@@ -17,7 +17,8 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
 
 /** ประเภทที่มี dialog + เสียงของตัวเองอยู่แล้ว (QrOrderGlobalNotifier) — ข้ามเมื่อ realtime ทำงาน */
-const QR_DIALOG_TYPES = new Set(["new_qr_order", "new_buffet_order"]);
+// ชนิดที่มี dialog + เสียงซ้ำของตัวเอง (QrOrderGlobalNotifier / DeliveryGlobalNotifier)
+const QR_DIALOG_TYPES = new Set(["new_qr_order", "new_buffet_order", "new_delivery_order"]);
 
 const POLL_INTERVAL_MS = 25_000;
 const TOAST_TTL_MS = 10_000;
@@ -67,7 +68,7 @@ export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Pr
     for (const item of fresh) seenIds.current.add(item.id);
     setToasts((prev) => [...prev, ...fresh.map((item) => ({ ...item, shownAt: Date.now() }))].slice(-MAX_TOASTS));
     playAlertOrSpeak(
-      "connect",
+      alertPatternForTypes(fresh.map((item) => item.type)),
       toastAnnouncement(metaFor(fresh[0].type).label, fresh.length),
       voiceEnabledRef.current,
     );

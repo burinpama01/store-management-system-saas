@@ -1,6 +1,5 @@
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
-import { buildStationTicketJobs } from "@/modules/printing/station-routing";
-import { enqueueStationTickets } from "@/modules/printing/station-print-client";
+import { describeStationPrintResult, dispatchOrderStationTickets } from "@/modules/printing/station-print-client";
 import { autoPrintReceipt } from "@/modules/printing/receipt-printer";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
@@ -61,11 +60,12 @@ export async function printKitchenForOrder(
 
   // มีครัว + สินค้าผูกสถานี → แยกตั๋วตามสถานี ส่งเข้า Print Hub
   if (hasStations && itemsHaveStation) {
-    const { jobs } = buildStationTicketJobs({
+    // คีย์ผูก orderId → ตอนออเดอร์เข้า (หลายจอ) กับตอนกดรับ ไม่ออกตั๋วซ้ำ
+    const res = await dispatchOrderStationTickets({
+      orderId: internalOrderId,
       orderNumber: opts.billNumber,
       tableNumber: "เดลิเวอรี",
       paperWidth: opts.paperWidth,
-      printedAt: new Date().toISOString(),
       items: items.map((i) => ({
         name: i.name,
         variantName: i.variantName,
@@ -76,12 +76,7 @@ export async function printKitchenForOrder(
       })),
       stations: opts.stationPrinters,
     });
-    if (jobs.length > 0) {
-      const res = await enqueueStationTickets(jobs);
-      return res.failed.length === 0
-        ? `พิมพ์ตั๋วครัว ${res.printed} สถานีแล้ว`
-        : `พิมพ์ตั๋ว ${res.printed} สำเร็จ, ล้มเหลว ${res.failed.length}`;
-    }
+    if (res) return describeStationPrintResult(res);
   }
 
   // ไม่มีครัว/ไม่ผูกสถานี → พิมพ์ตั๋วรวมทั้งบิล (Hub → BT/USB/PDF)

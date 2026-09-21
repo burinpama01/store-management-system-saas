@@ -10,6 +10,8 @@ import { generateOrderNumber } from "@/modules/pos/order-number";
 import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { notifyLowStockAfterSaleSafely } from "@/modules/stock/notify";
 import { loadVariantStockPools } from "@/modules/catalog/repository";
+import { availablePoolUnits } from "@/modules/catalog/types";
+import { findTableUnpaidContext } from "@/modules/pos/table-unpaid";
 import { getCurrentUser } from "@/modules/auth/session";
 import {
   computeRequestHash,
@@ -165,6 +167,11 @@ async function submitTableOrder(
     if (!canSelfOpen) {
       return { orderId: null, orderNumber: null, error: "หมดเวลาสั่งอาหารของโต๊ะนี้แล้ว กรุณาแจ้งพนักงาน" };
     }
+    // รอบโต๊ะใหม่ต้องไม่ติดบิลของลูกค้ารอบก่อน — มีบิลค้าง/อ่านไม่ได้ = ให้พนักงานเช็คบิลก่อน
+    const unpaid = await findTableUnpaidContext(supabase, storeId, tableId);
+    if (!unpaid.ok || unpaid.hasUnpaid) {
+      return { orderId: null, orderNumber: null, error: "โต๊ะนี้ยังมีบิลค้างจากรอบก่อน กรุณาแจ้งพนักงาน" };
+    }
     if (!store.unified_pos_enabled) {
       // เส้นทางเดิม (v1): เปิด session แยกก่อนสร้าง order — เส้นทาง v2 จะ auto-open
       // ใน RPC เองแบบ atomic (lock table row + เปิด session + สร้าง order ใน transaction เดียว)
@@ -227,6 +234,7 @@ async function submitTableOrder(
     name: string;
     price_adjustment: number;
     stock_quantity: number | null;
+    reserved_quantity: number | null;
     track_stock: boolean;
     is_active: boolean;
   }>();
@@ -236,13 +244,14 @@ async function submitTableOrder(
     name: string;
     price_adjustment: number;
     stock_quantity: number | null;
+    reserved_quantity: number | null;
     track_stock: boolean;
     is_active: boolean;
   }>>();
   {
     const { data: variantRows, error: varErr } = await supabase
       .from("product_variants")
-      .select("id, product_id, name, price_adjustment, stock_quantity, track_stock, is_active")
+      .select("id, product_id, name, price_adjustment, stock_quantity, reserved_quantity, track_stock, is_active")
       .in("product_id", productIds)
       .eq("is_active", true);
     if (varErr) return { orderId: null, orderNumber: null, error: "Failed to verify variants" };
@@ -332,7 +341,7 @@ async function submitTableOrder(
         // หลาย variant แชร์ Pool เดียวกันได้ → รวมยอดที่ระดับ Pool
         const current = requestedStockByVariant.get(`pool:${pool.poolId}`) ?? {
           requested: 0,
-          available: pool.quantity,
+          available: availablePoolUnits(pool),
         };
         current.requested += item.quantity * pool.consumptionQuantity;
         requestedStockByVariant.set(`pool:${pool.poolId}`, current);
@@ -340,9 +349,10 @@ async function submitTableOrder(
           return { orderId: null, orderNumber: null, error: `สต๊อก ${pool.poolName} เหลือไม่พอ` };
         }
       } else if (variant.track_stock && typeof variant.stock_quantity === "number") {
+        // ยอดพร้อมขาย = สต๊อกจริง − ยอดจองของออเดอร์ QR ที่ครัวยังไม่รับ (RPC ตรวจซ้ำอีกชั้น)
         const current = requestedStockByVariant.get(variant.id) ?? {
           requested: 0,
-          available: variant.stock_quantity,
+          available: variant.stock_quantity - (variant.reserved_quantity ?? 0),
         };
         current.requested += item.quantity;
         requestedStockByVariant.set(variant.id, current);

@@ -75,6 +75,8 @@ export interface SavedOrderTicket {
   customerName?: string;
   note?: string;
   buffetSessionId?: string;
+  /** table_auto = ตั๋วที่ระบบเปิดรอไว้ตอนเปิดโต๊ะ (1 ใบต่อโต๊ะ) */
+  ticketSource?: "manual" | "table_auto";
   syncState?: "synced" | "local" | "sync_failed";
   lastSyncedAt?: string;
   createdAt: string;
@@ -105,6 +107,8 @@ export interface Order {
   payments: Payment[];
   note?: string;
   qrOrderSource?: boolean;
+  /** บิลรวมโต๊ะ (ออเดอร์ QR + รายการหน้าร้านของโต๊ะรวมเป็นบิลเดียว) — รายงานนับในช่องทาง QR */
+  tableBill?: boolean;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;

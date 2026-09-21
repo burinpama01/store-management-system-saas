@@ -111,10 +111,11 @@ export async function loadStoreDailySummary(
       total: number | string | null;
       qr_order_source: boolean | null;
       order_number: string | null;
+      table_bill_key: string | null;
     }>((from, to) =>
       supabase
         .from("orders")
-        .select("id, total, qr_order_source, order_number")
+        .select("id, total, qr_order_source, order_number, table_bill_key")
         .eq("organization_id", input.organizationId)
         .eq("store_id", input.storeId)
         .eq("status", "paid")
@@ -139,9 +140,11 @@ export async function loadStoreDailySummary(
   const revenue = round2(orders.reduce((sum, row) => sum + toNumber(row.total), 0));
   let posOrderCount = 0;
   let qrOrderCount = 0;
+  let tableBillCount = 0;
   let deliveryOrderCount = 0;
   for (const order of orders) {
     // ช่องทางเดียวกับที่หน้ารายงานใช้: QR = qr_order_source, เดลิเวอรี = เลขบิล JDC-
+    if (order.table_bill_key) tableBillCount += 1;
     if (order.qr_order_source === true) qrOrderCount += 1;
     else if (order.order_number?.startsWith("JDC-")) deliveryOrderCount += 1;
     else posOrderCount += 1;
@@ -195,6 +198,7 @@ export async function loadStoreDailySummary(
     avgOrderValue: round2(revenue / orders.length),
     posOrderCount,
     qrOrderCount,
+    tableBillCount,
     deliveryOrderCount,
     voidedCount: requireExactCount(voidedRes),
     paymentMethods: aggregatePaymentMethods(paymentRows),

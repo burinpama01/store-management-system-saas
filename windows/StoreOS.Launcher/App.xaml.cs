@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 
 using StoreOS.Launcher.Services;
+using StoreOS.Launcher.Services.Update;
 
 namespace StoreOS.Launcher;
 
@@ -15,8 +16,22 @@ public partial class App : Application
 {
     private SingleInstanceGuard? _guard;
 
+    /// <summary>ตัวนี้ถูกเปิดโดยตัวติดตั้งหลังอัปเดต — ต้องเขียนไฟล์ healthy เมื่อเปิดหน้า POS ได้</summary>
+    public static string? PostUpdateVersion { get; private set; }
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // โหมดติดตั้งอัปเดต (0.5.0+): รันจาก exe รุ่นใหม่ในโฟลเดอร์ staging — ไม่มีหน้าต่าง
+        // และไม่จับ single-instance (ตัวเดิมยังถือไว้จนกว่าจะปิด ตัวติดตั้งรอมันเอง)
+        var apply = UpdateApplier.ParseArgs(e.Args);
+        if (apply is not null)
+        {
+            var result = UpdateApplier.Run(apply, UpdatePaths.Default(), new SystemUpdateProcessOps());
+            Shutdown(result.Outcome == "installed" ? 0 : 1);
+            return;
+        }
+        PostUpdateVersion = ArgValue(e.Args, "--post-update");
+
         var settings = LauncherSettings.Load();
         _guard = SingleInstanceGuard.TryAcquire(settings.Channel);
         if (_guard is null)
@@ -27,7 +42,44 @@ public partial class App : Application
             return;
         }
 
+        // มีรุ่นใหม่ดาวน์โหลด+ตรวจไว้แล้วตั้งแต่รอบก่อน → ติดตั้งตอนนี้ ก่อนหน้าต่างขึ้น
+        // (ไม่ทำตอนเพิ่งอัปเดต/เพิ่งย้อนกลับ กันวนติดตั้งซ้ำ)
+        if (PostUpdateVersion is null && ArgValue(e.Args, "--update-rolled-back") is null && TryInstallPendingUpdate())
+        {
+            _guard.Dispose();
+            _guard = null;
+            Shutdown(0);
+            return;
+        }
+
         base.OnStartup(e);
+        new MainWindow().Show();
+    }
+
+    private static bool TryInstallPendingUpdate()
+    {
+        try
+        {
+            var version = typeof(App).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
+            var coordinator = new LauncherUpdateCoordinator(
+                version,
+                AppContext.BaseDirectory,
+                UpdatePaths.Default(),
+                new System.Net.Http.HttpClient(),
+                (_, _, message) => UpdatePaths.Default().AppendLog(message));
+            return coordinator.TryStartInstall(new SystemUpdateProcessOps(), Environment.ProcessId);
+        }
+        catch (Exception)
+        {
+            // ติดตั้งไม่ได้ = เปิดรุ่นเดิมตามปกติ ร้านต้องขายของได้ก่อน
+            return false;
+        }
+    }
+
+    private static string? ArgValue(string[] args, string name)
+    {
+        var index = Array.IndexOf(args, name);
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
     }
 
     protected override void OnExit(ExitEventArgs e)

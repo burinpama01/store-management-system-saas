@@ -30,6 +30,21 @@ public sealed class LauncherSettings
     /// </summary>
     public bool VoiceStandbyEnabled { get; init; }
 
+    /// <summary>
+    /// ลำโพงของเสียงแจ้งเตือน POS (MMDevice id ของ Windows) — null = ลำโพงหลักของ Windows
+    /// Launcher เล่นเสียงแจ้งเตือนเอง (AlertPlayer) จึงแยกจากเพลงที่เล่นใน WebView2 ได้
+    /// </summary>
+    public string? AlertOutputDeviceId { get; init; }
+
+    /// <summary>ความดังเสียงแจ้งเตือน 0–100 (คูณกับความดังของลำโพงใน Windows อีกชั้น)</summary>
+    public int AlertVolume { get; init; } = 100;
+
+    /// <summary>
+    /// ลำโพงของเสียงจากหน้าเว็บ (เพลงจาก /player) — null = ลำโพงหลักของ Windows (ค่าเริ่มต้น ไม่แตะอะไร)
+    /// ตั้งผ่านนโยบายเสียงต่อ process ของ Windows ให้ process ของ WebView2 (ดู ProcessAudioRouter)
+    /// </summary>
+    public string? MusicOutputDeviceId { get; init; }
+
     /// <summary>โฮสต์ที่ยอมให้ Launcher เปิดได้ — กัน config ที่ถูกแก้ให้ชี้ไปเว็บอื่น</summary>
     private static readonly string[] AllowedHosts =
     [
@@ -75,13 +90,54 @@ public sealed class LauncherSettings
     }
 
     /// <summary>สำเนาของค่าตั้งเดิมที่เปลี่ยนเฉพาะสวิตช์คำปลุก (คลาสนี้เป็น init-only ทั้งหมด)</summary>
-    public LauncherSettings WithVoiceStandby(bool enabled) => new()
+    public LauncherSettings WithVoiceStandby(bool enabled) => Copy(voiceStandbyEnabled: enabled);
+
+    /// <summary>สำเนาที่เปลี่ยนเฉพาะค่าลำโพง — ค่าอื่นต้องคงเดิม (ไม่งั้นบันทึกลำโพงแล้วคำปลุกดับ)</summary>
+    public LauncherSettings WithSpeakers(string? alertDeviceId, int alertVolume, string? musicDeviceId) => Copy(
+        alertDeviceId: Optional.Of(NormalizeDeviceId(alertDeviceId)),
+        alertVolume: Math.Clamp(alertVolume, 0, 100),
+        musicDeviceId: Optional.Of(NormalizeDeviceId(musicDeviceId)));
+
+    /// <summary>ค่าว่าง/ช่องว่าง = ลำโพงหลักของ Windows; id ยาวผิดปกติถูกตัดทิ้ง (ไฟล์นี้โปรแกรมอื่นเขียนได้)</summary>
+    public static string? NormalizeDeviceId(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        var trimmed = id.Trim();
+        return trimmed.Length > 512 ? null : trimmed;
+    }
+
+    private LauncherSettings Copy(
+        bool? voiceStandbyEnabled = null,
+        Optional<string?> alertDeviceId = default,
+        int? alertVolume = null,
+        Optional<string?> musicDeviceId = default) => new()
     {
         PosUrl = PosUrl,
         AllowDevTools = AllowDevTools,
         Channel = Channel,
-        VoiceStandbyEnabled = enabled,
+        VoiceStandbyEnabled = voiceStandbyEnabled ?? VoiceStandbyEnabled,
+        AlertOutputDeviceId = alertDeviceId.HasValue ? alertDeviceId.Value : AlertOutputDeviceId,
+        AlertVolume = alertVolume ?? AlertVolume,
+        MusicOutputDeviceId = musicDeviceId.HasValue ? musicDeviceId.Value : MusicOutputDeviceId,
     };
+
+    /// <summary>แยก "ไม่ได้ส่งมา" ออกจาก "ส่ง null มา" (null = กลับไปใช้ลำโพงหลัก)</summary>
+    private readonly struct Optional<T>
+    {
+        public bool HasValue { get; }
+        public T Value { get; }
+        private Optional(T value)
+        {
+            HasValue = true;
+            Value = value;
+        }
+        public static Optional<T> Of(T value) => new(value);
+    }
+
+    private static class Optional
+    {
+        public static Optional<T> Of<T>(T value) => Optional<T>.Of(value);
+    }
 
     /// <summary>เส้นทางไฟล์ตั้งค่าของเครื่องนี้</summary>
     public static string FilePath(string localAppData) =>

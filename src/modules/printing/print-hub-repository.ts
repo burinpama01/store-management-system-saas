@@ -3,6 +3,13 @@ import type { Json } from "@/server/integrations/supabase/database.types";
 import { mapError, type AppError } from "@/shared/utils/error";
 import { shouldRetargetToUsb } from "@/modules/printing/usb-fallback";
 import {
+  USB_RETARGET_NOTE,
+  isRetargetedToUsb,
+  type PrintJobStatus,
+} from "@/modules/printing/station-ticket-status";
+
+export { USB_RETARGET_NOTE, isRetargetedToUsb, type PrintJobStatus };
+import {
   generateHubToken,
   hashHubToken,
   PRINT_JOB_LEASE_SECONDS,
@@ -97,12 +104,19 @@ export async function enqueuePrintJob(input: {
   sourceKey?: string | null;
   /** U11 — ชนิดงาน (receipt / station_ticket) */
   jobKind?: PrintJobKind | null;
-}): Result<{ id: string; deduped?: boolean }> {
+  /**
+   * ตั๋วสถานี: ถ้างานของคีย์นี้ "failed" (Hub ยืนยันว่าพิมพ์ไม่ออก) ให้ส่งแถวเดิมกลับเข้าคิว
+   * ด้วย payload/เครื่องปัจจุบัน — unknown ไม่ retry เอง (อาจออกไปแล้ว ต้องให้คนตัดสิน)
+   */
+  requeueFailed?: boolean;
+  actorUserId?: string | null;
+}): Result<EnqueuedPrintJob> {
   const supabase = await createSupabaseServiceClient();
   if (input.sourceKey) {
     // replay path: คีย์เดิม → คืน job เดิม (ไม่ duplicate ใบเสร็จ/ตั๋ว)
-    const existing = await findPrintJobIdBySourceKey(input.storeId, input.sourceKey);
-    if (existing) return { data: { id: existing, deduped: true }, error: null };
+    const existing = await findPrintJobBySourceKey(input.storeId, input.sourceKey);
+    if (existing.error) return { data: null, error: existing.error };
+    if (existing.data) return settleExistingSourceJob(input, existing.data);
   }
   const { data, error } = await supabase
     .from("print_jobs")
@@ -122,14 +136,148 @@ export async function enqueuePrintJob(input: {
     .select("id")
     .single();
   if (error) {
-    // race กับ enqueue คีย์เดิมพร้อมกัน → unique violation → อ่าน id ของผู้ชนะ
+    // race กับ enqueue คีย์เดิมพร้อมกัน → unique violation → อ่านงานของผู้ชนะ
     if (input.sourceKey && (error as { code?: string }).code === "23505") {
-      const existing = await findPrintJobIdBySourceKey(input.storeId, input.sourceKey);
-      if (existing) return { data: { id: existing, deduped: true }, error: null };
+      const existing = await findPrintJobBySourceKey(input.storeId, input.sourceKey);
+      if (existing.error) return { data: null, error: existing.error };
+      if (existing.data) return settleExistingSourceJob(input, existing.data);
     }
     return { data: null, error: mapError(error) };
   }
-  return { data: { id: data.id }, error: null };
+  return { data: { id: data.id, status: "pending" }, error: null };
+}
+
+export interface EnqueuedPrintJob {
+  id: string;
+  /** สถานะของงาน ณ ตอนตอบ (งานเดิมที่ถูก dedupe อาจเป็น printed/unknown/failed) */
+  status: PrintJobStatus;
+  /** ใช้งานเดิมของคีย์นี้ ไม่ได้สร้างหรือส่งใหม่ */
+  deduped?: boolean;
+  /** งานเดิมที่ failed ถูกส่งกลับเข้าคิว (แถวเดิม) */
+  requeued?: boolean;
+}
+
+export interface ExistingSourceJob {
+  id: string;
+  status: PrintJobStatus;
+  error: string | null;
+}
+
+async function settleExistingSourceJob(
+  input: Parameters<typeof enqueuePrintJob>[0],
+  existing: ExistingSourceJob,
+): Result<EnqueuedPrintJob> {
+  if (!input.requeueFailed || existing.status !== "failed" || isRetargetedToUsb(existing)) {
+    return { data: { id: existing.id, status: existing.status, deduped: true }, error: null };
+  }
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+  // conditional update (status ยัง failed) — สองจอ requeue พร้อมกัน ได้แถวเดียวเข้าคิวครั้งเดียว
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .update({
+      status: "pending",
+      printer_id: input.printerId,
+      target_kind: input.kind ?? "ip",
+      target_host: input.host ?? null,
+      target_port: input.port ?? 9100,
+      target_device: input.device ?? null,
+      payload_b64: input.payloadB64,
+      error: null,
+      claim_token: null,
+      claimed_at: null,
+      lease_expires_at: null,
+      resolution: "retried",
+      resolved_at: now,
+      resolved_by: input.actorUserId ?? null,
+    })
+    .eq("id", existing.id)
+    .eq("store_id", input.storeId)
+    .eq("status", "failed")
+    .select("id");
+  if (error) return { data: null, error: mapError(error) };
+  if ((data ?? []).length > 0) {
+    return { data: { id: existing.id, status: "pending", requeued: true }, error: null };
+  }
+  // จออื่น requeue ไปก่อน → อ่านสถานะล่าสุดแล้วถือเป็นงานเดิม
+  const latest = await findPrintJobBySourceKey(input.storeId, input.sourceKey as string);
+  if (latest.error) return { data: null, error: latest.error };
+  return {
+    data: { id: existing.id, status: latest.data?.status ?? existing.status, deduped: true },
+    error: null,
+  };
+}
+
+async function findPrintJobBySourceKey(storeId: string, sourceKey: string): Result<ExistingSourceJob> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .select("id, status, error")
+    .eq("store_id", storeId)
+    .eq("source_key", sourceKey)
+    .maybeSingle();
+  if (error) return { data: null, error: mapError(error) };
+  return { data: data ? { id: data.id, status: data.status, error: data.error } : null, error: null };
+}
+
+export type StationTicketSource =
+  | { status: "ok"; printerId: string }
+  | { status: "not_found" | "table_bill" | "no_items" | "no_printer" };
+
+/**
+ * ตรวจคีย์ตั๋วสถานีจาก client และหาเครื่องพิมพ์ฝั่ง server — ไม่เชื่อ printerId ของ client
+ * (จอที่ค้าง config เก่าต้องไม่ล็อกคีย์ไว้กับเครื่องผิด):
+ *   - ออเดอร์ + สถานีเป็นของร้านนี้, ไม่ใช่บิลรวมโต๊ะ (ครัวทำไปแล้ว)
+ *   - ออเดอร์มีรายการ (ไม่ void) ของสถานีนี้จริง
+ *   - เครื่องพิมพ์ = kitchen_stations.printer_id ปัจจุบัน
+ */
+export async function resolveStationTicketSource(
+  storeId: string,
+  orderId: string,
+  stationId: string,
+): Result<StationTicketSource> {
+  const supabase = await createSupabaseServiceClient();
+  const [orderRes, stationRes, itemRes] = await Promise.all([
+    supabase.from("orders").select("id, table_bill_key").eq("id", orderId).eq("store_id", storeId).maybeSingle(),
+    supabase.from("kitchen_stations").select("id, printer_id").eq("id", stationId).eq("store_id", storeId).maybeSingle(),
+    supabase
+      .from("order_items")
+      .select("id")
+      .eq("order_id", orderId)
+      .eq("kitchen_station_id", stationId)
+      .eq("voided", false)
+      .limit(1),
+  ]);
+  const failed = orderRes.error ?? stationRes.error ?? itemRes.error;
+  if (failed) return { data: null, error: mapError(failed) };
+  if (!orderRes.data || !stationRes.data) return { data: { status: "not_found" }, error: null };
+  if (orderRes.data.table_bill_key) return { data: { status: "table_bill" }, error: null };
+  if ((itemRes.data ?? []).length === 0) return { data: { status: "no_items" }, error: null };
+  if (!stationRes.data.printer_id) return { data: { status: "no_printer" }, error: null };
+  return { data: { status: "ok", printerId: stationRes.data.printer_id }, error: null };
+}
+
+/**
+ * สถานะงานพิมพ์ของคีย์ที่ขอ (ใช้ให้ settlement ตัดสินว่าจะออกตั๋วครัวซ้ำหรือไม่)
+ * คืน error เมื่ออ่านไม่ได้ — ผู้เรียกต้อง fail closed (ห้ามตีความว่า "ยังไม่มีตั๋ว")
+ */
+export async function listPrintJobStatusesBySourceKeys(
+  storeId: string,
+  sourceKeys: string[],
+): Result<Map<string, ExistingSourceJob>> {
+  if (sourceKeys.length === 0) return { data: new Map(), error: null };
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .select("id, source_key, status, error")
+    .eq("store_id", storeId)
+    .in("source_key", sourceKeys);
+  if (error) return { data: null, error: mapError(error) };
+  const map = new Map<string, ExistingSourceJob>();
+  for (const row of data ?? []) {
+    if (row.source_key) map.set(row.source_key, { id: row.id, status: row.status, error: row.error });
+  }
+  return { data: map, error: null };
 }
 
 /** U11 — หา id ของ job ที่มี source key นี้ในร้าน (null ถ้าไม่มี) */
@@ -366,7 +514,7 @@ export async function retargetFailedJobToUsb(
     await supabase
       .from("print_jobs")
       .update({
-        error: `${job.error ?? "พิมพ์ไม่สำเร็จ"} — ส่งใบนี้ออกที่เครื่องพิมพ์ USB ที่เสียบอยู่แทนแล้ว`.slice(0, 500),
+        error: `${(job.error ?? "พิมพ์ไม่สำเร็จ").slice(0, 400)} — ${USB_RETARGET_NOTE}`,
       })
       .eq("id", jobId)
       .eq("store_id", storeId);
@@ -783,4 +931,26 @@ export async function provisionHubDeviceToken(input: {
   if (inserted.error) return { data: null, error: mapError(inserted.error) };
 
   return { data: { rotated: true, token }, error: null };
+}
+
+
+/**
+ * มีงานรอพิมพ์ค้างอยู่ไหม — คำถามที่เบาที่สุดที่ตอบได้ว่า "ควรเคลมไหม"
+ *
+ * ใช้ระหว่างที่คำขอ long-poll ค้างรอ: ถามซ้ำทุกไม่กี่วินาทีด้วยราคาถูก ๆ แล้วค่อย
+ * เรียก claim (ซึ่งเป็น RPC ที่ล็อกแถวจริง) เมื่อรู้แน่ว่ามีของ
+ *
+ * ผิดพลาดเมื่อไหร่ให้ถือว่า "มี" ไว้ก่อน — ผู้เรียกจะไปเคลมแล้วพบว่าไม่มีงาน
+ * ซึ่งไม่เสียหาย ตรงข้ามกับการตอบว่าไม่มีทั้งที่มี ซึ่งทำให้ใบเสร็จค้างคิว
+ */
+export async function hasPendingPrintJobs(storeId: string): Promise<boolean> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("status", "pending")
+    .limit(1);
+  if (error) return true;
+  return (data?.length ?? 0) > 0;
 }

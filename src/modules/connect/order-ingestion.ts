@@ -1,5 +1,6 @@
 // บริการรับออเดอร์จาก JDC → สร้าง order + order_items ใน StoreOS (Flow 2)
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { applyPosStatus } from "./status-sync";
 import {
   applyDeliveryStockDelta,
@@ -60,6 +61,15 @@ function toModifiers(options: InboundOrderItem["options"]): { option: { name: st
  *   (เก็บ kitchen_station + ตัวเลือกยิบย่อย) แล้ว auto_accept ถ้าตั้งไว้
  * - ออเดอร์จะขึ้น "ชำระแล้ว" ตอนคนขับกดรับอาหาร (ดู status-sync.applyInboundStatus)
  */
+/** เลขออเดอร์ภายในของเดลิเวอรี (orders.order_number) — ใช้ทั้งตอนสร้างและในแจ้งเตือน */
+export function deliveryOrderNumber(bookingId: string): string {
+  return `JDC-${bookingId.replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+}
+
+function deliveryPlatformLabel(channel: string): string {
+  return channel.toLowerCase() === "jdc" ? "JDC" : channel;
+}
+
 export async function processInboundOrder(
   link: ChannelLink,
   payload: InboundOrderPayload,
@@ -118,7 +128,7 @@ export async function processInboundOrder(
       .insert({
         organization_id: link.organizationId,
         store_id: link.storeId,
-        order_number: `JDC-${payload.booking_id.replace(/-/g, "").slice(0, 12).toUpperCase()}`,
+        order_number: deliveryOrderNumber(payload.booking_id),
         status: "open",
         cashier_id: null,
         subtotal: merchantTotal,
@@ -198,6 +208,23 @@ export async function processInboundOrder(
     topic: "order.created",
     payload: { booking_id: payload.booking_id, mapped: mapped.length, unmapped: unmapped.length },
     status: "sent",
+  });
+
+  // push ออเดอร์เดลิเวอรีใหม่ (เสียงช่องออเดอร์บนแอป Android) — ยิงครั้งเดียวต่อ booking:
+  // JDC ส่งซ้ำจะถูกตัดที่ getConnectOrder ด้านบนก่อนถึงตรงนี้; ไม่ throw ไม่บล็อกการรับออเดอร์
+  notifyOwnerSafely({
+    type: "new_delivery_order",
+    organizationId: link.organizationId,
+    storeId: link.storeId,
+    title: "มีออเดอร์เดลิเวอรีใหม่",
+    message: `${deliveryPlatformLabel(link.channel)} ออเดอร์ ${deliveryOrderNumber(payload.booking_id)} ยอด ${merchantTotal.toFixed(2)}`,
+    metadata: {
+      orderId: internalOrderId,
+      orderNumber: deliveryOrderNumber(payload.booking_id),
+      platform: deliveryPlatformLabel(link.channel),
+      total: merchantTotal,
+      source: "delivery",
+    },
   });
 
   // auto-accept: รับออเดอร์ทันที + แจ้ง JDC ว่ากำลังเตรียม

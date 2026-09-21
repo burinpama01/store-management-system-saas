@@ -33,6 +33,8 @@ export interface StoreDailySummary {
   readonly avgOrderValue: number;
   readonly posOrderCount: number;
   readonly qrOrderCount: number;
+  /** บิลรวมโต๊ะ — นับอยู่ใน qrOrderCount แล้ว ใช้ระบุ */
+  readonly tableBillCount?: number;
   readonly deliveryOrderCount: number;
   /** บิลที่ถูกยกเลิก/คืนเงินในวันนั้น — ตัวเลขที่เจ้าของอยากเห็นรองจากยอดขาย */
   readonly voidedCount: number;
@@ -101,7 +103,13 @@ function escapeHtml(value: string): string {
 function channelLine(store: StoreDailySummary): string {
   const parts: string[] = [];
   if (store.posOrderCount > 0) parts.push(`POS ${store.posOrderCount}`);
-  if (store.qrOrderCount > 0) parts.push(`QR ${store.qrOrderCount}`);
+  if (store.qrOrderCount > 0) {
+    parts.push(
+      store.tableBillCount && store.tableBillCount > 0
+        ? `QR ${store.qrOrderCount} (บิลรวมโต๊ะ ${store.tableBillCount})`
+        : `QR ${store.qrOrderCount}`,
+    );
+  }
   if (store.deliveryOrderCount > 0) parts.push(`เดลิเวอรี ${store.deliveryOrderCount}`);
   return parts.join(" · ");
 }

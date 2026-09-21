@@ -97,6 +97,14 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 /**
+ * ชื่อรายการวาดใหญ่กว่าบรรทัดปกติกี่เท่า
+ *
+ * ใช้ร่วมกันระหว่างตัวตัดความยาวชื่อ (ที่นี่) กับตัววาดจริง (raster/HTML) —
+ * ถ้าสองที่ไม่ตรงกัน ชื่อเมนูยาว ๆ จะถูกตัดผิดจุดหรือทับกับราคา
+ */
+export const ITEM_NAME_SCALE = 1.3;
+
+/**
  * Canonical plain-text receipt lines — single source of truth shared by the
  * browser (HTML) and the image/raster ESC/POS renderer. Each entry is one line;
  * `align` hints centering for the raster renderer (browser uses left + pre).
@@ -117,6 +125,21 @@ export interface ReceiptLine {
    * กรอบ + ป้ายกำกับทำให้ลูกค้าเห็นว่า "อันนี้เป็นชุดเดียวกับข้อความนี้" ไม่สแกนผิดอัน
    */
   framed?: boolean;
+  /**
+   * ข้อความที่ต้องชิดขวาในบรรทัดเดียวกับ `text`
+   *
+   * ใช้แทนการเติมช่องว่างให้ครบคอลัมน์ (padLine) เมื่อบรรทัดนั้นใช้ฟอนต์ขนาดอื่น —
+   * การเติมช่องว่างคิดจากจำนวนตัวอักษรต่อบรรทัดของฟอนต์ปกติ พอฟอนต์เปลี่ยนขนาด
+   * ตัวเลขนั้นก็ใช้ไม่ได้ ผู้วาดจึงต้องจัดตำแหน่งเองจากความกว้างจริงของข้อความ
+   */
+  right?: string;
+  /**
+   * บรรทัดนี้คือชื่อรายการที่ลูกค้าสั่ง — วาดใหญ่กว่าบรรทัดอื่น
+   *
+   * หน้าร้านอ่านชื่อเมนูจากใบเสร็จไม่ทันเพราะตัวเล็กเกินไป ส่วนรายละเอียดของรายการ
+   * (ตัวเลือก/หมายเหตุ/ส่วนลด) ยังคงขนาดเดิม เพื่อให้ชื่อเมนูเด่นออกมาจริง ๆ
+   */
+  emphasis?: "item";
 }
 
 /**
@@ -214,6 +237,7 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     lines.push({ text: div });
   }
   lines.push({ text: `ออร์เดอร์: ${data.orderNumber}` });
+  if (data.billLabel) lines.push({ text: data.billLabel, bold: true });
   if (data.tableNumber) lines.push({ text: `โต๊ะ: ${data.tableNumber}` });
   lines.push({
     text: new Date(data.printedAt).toLocaleString("th-TH", {
@@ -226,10 +250,11 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     const suffix = item.unitName ?? item.variantName;
     const displayName = suffix ? `${item.name} (${suffix})` : item.name;
     const priceField = `x${item.quantity} ${priceStr(item.totalPrice)}`;
-    const nameWidth = cols - priceField.length - 1;
-    const name =
-      displayName.length > nameWidth ? displayName.slice(0, nameWidth - 1) + "…" : displayName.padEnd(nameWidth);
-    lines.push({ text: `${name} ${priceField}` });
+    // ชื่อเมนูวาดด้วยฟอนต์ใหญ่กว่าบรรทัดอื่น จึงตัดความยาวตามสัดส่วนคอลัมน์ที่เหลือ
+    // หลังหักที่ของราคา แล้วให้ผู้วาดจัดราคาชิดขวาเอง (ดู `right` ใน ReceiptLine)
+    const nameWidth = Math.floor((cols - priceField.length - 1) / ITEM_NAME_SCALE);
+    const name = displayName.length > nameWidth ? displayName.slice(0, nameWidth - 1) + "…" : displayName;
+    lines.push({ text: name, right: priceField, emphasis: "item" });
     // Department-store style: show the multiplication when the line is more than 1 unit.
     if (item.quantity > 1) {
       lines.push({ text: `  ${item.quantity} x ${priceStr(item.unitPrice)}` });

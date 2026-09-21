@@ -51,6 +51,7 @@ function mapOrder(row: OrderRow, items: QrOrderLine[]): QrOrderView {
     items,
     createdAt: row.created_at,
     paidAt: row.paid_at ?? undefined,
+    tableBill: Boolean(row.table_bill_key),
   };
 }
 
@@ -298,6 +299,18 @@ export async function updateOrderPrepStatus(
     .eq("qr_order_source", true);
   if (error) return { ok: false, error: mapError(error) };
   return { ok: true, error: null };
+}
+
+/** ครัวปฏิเสธทั้งออเดอร์ใน transaction เดียว (RPC reject_qr_order) — คืนจำนวนรายการที่ปฏิเสธ */
+export async function rejectQrOrder(storeId: string, orderId: string, reason: string | null) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("reject_qr_order", {
+    p_store_id: storeId,
+    p_order_id: orderId,
+    p_reason: reason,
+  });
+  if (error) return { rejected: 0, error: mapError(error) };
+  return { rejected: typeof data === "number" ? data : 0, error: null };
 }
 
 /** Kitchen voids one QR order line (e.g. out of stock) — restores stock + recomputes total. */

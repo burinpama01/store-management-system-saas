@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR Order ครบวงจร v4</title>
+<style>
+  :root { --bg:#f7f6f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e4e2da; --accent:#b45309; --ok:#0f766e; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --ok:#2dd4bf; --bad:#f87171; } }
+  :root[data-theme="dark"] { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --ok:#2dd4bf; --bad:#f87171; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 "Sarabun","Noto Sans Thai",system-ui,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:20px; margin:32px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  .meta { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:12px 0; }
+  .done { border-left:4px solid var(--ok); } .next { border-left:4px solid var(--accent); }
+  code { background:rgba(127,127,127,.12); padding:1px 5px; border-radius:4px; font-size:14px; }
+  li { margin:5px 0; }
+</style>
+</head>
+<body><main>
+<h1>QR Order ครบวงจร: จองสต็อก · บิลรวมโต๊ะ · ขอเพลงด้วย Beam</h1>
+<p class="meta">แผน v4 · 2026-09-18 · ต่อจาก v3 + คำตอบผู้ใช้ (ลูกค้ายกเลิกรวมใน PR A, ขอเพลงด้วย Beam แยก PR C) · อนุมัติแล้ว ("ลุยเลย")</p>
+
+<h2>PR A: จองสต็อกจนครัวรับออเดอร์</h2>
+<div class="card done">
+<b>สถานะ: ทำเสร็จ · branch <code>feat/qr-stock-reservation</code></b>
+<ul>
+<li>ลูกค้าสั่ง = จอง (<code>reserved_quantity</code> / <code>reserved_units</code>) · ยอดพร้อมขาย = สต็อก − จอง</li>
+<li>ครัวกด <b>รับออเดอร์</b> (แทน "เริ่มเตรียม") = ตัดจริง · ชำระเงินโดยครัวไม่เคยรับ = ตัดจริง</li>
+<li>ลูกค้ายกเลิก / ครัวปฏิเสธรายการ / <b>ปฏิเสธทั้งออเดอร์</b> ก่อนรับ = คืนยอดจอง · ปฏิเสธหลังรับ = คืนสต็อกจริง (provenance เดิม)</li>
+<li>จุดเดียวที่ตัด/คืน: trigger <code>qr_order_stock_lifecycle</code> บน orders — ครอบทุกเส้นทาง</li>
+<li>POS/Stock Pool/QR ตรวจยอดพร้อมขาย · หน้าลูกค้าขึ้น "หมด / เหลือ n" (RPC <code>qr_menu_pool_availability</code> ให้ anon ไม่เปิดตาราง Pool) · หน้าสต็อกโชว์ "จอง n · พร้อมขาย n"</li>
+<li>ออเดอร์เก่าที่เปิดค้าง (<code>stock_state</code> ว่าง) ทำงานแบบเดิม 100% · Unified POS ไม่เปลี่ยน</li>
+</ul>
+</div>
+
+<h2>PR B: บิลรวมโต๊ะ (แทน PR #62)</h2>
+<div class="card next">
+<b>สถานะ: ถัดไป</b> — ตามแผน v2/v3: ตั๋วโต๊ะ atomic (<code>ticket_source</code> + unique index + RPC) · query ตามโต๊ะไม่ติด limit 30 · ใบตรวจรายการ · แก้ก่อนจ่าย ·
+<code>consolidate_table_bill</code> รวมเป็นออเดอร์เดียว → หน้าจ่ายเงินปกติของ POS (Beam 1:1) → ใบเสร็จใบเดียว → ปิดโต๊ะ ·
+<b>ห้ามรวมบิลถ้ามีรายการรอครัวรับ</b> (<code>stock_state = reserved</code>) · safe log + audit · test พฤติกรรม<br>
+หมายเหตุ: migration ของ PR #62 (<code>20260918020000</code>) ต้องเปลี่ยนเลขเวลาให้อยู่หลัง PR A
+</div>
+
+<h2>PR C: ขอเพลงจ่ายด้วย Beam</h2>
+<div class="card next">
+<b>สถานะ: หลัง PR B</b> — ร้านที่มี Beam: สร้าง Beam QR ตามราคาขอเพลง → webhook ยืนยัน PAID → คิวเพลงทันที (ไม่ต้องแนบสลิป) ·
+ผูก <code>gateway_payments</code> กับคำขอเพลง · ร้านไม่มี Beam ใช้สลิป + slip2go เดิม
+</div>
+</main></body>
+</html>

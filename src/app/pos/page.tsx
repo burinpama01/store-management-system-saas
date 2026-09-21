@@ -4,6 +4,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
 import { listCategories, listProducts } from "@/modules/catalog/repository";
 import { getReceiptSettings, getStore, listPrinters, listStoreTables } from "@/modules/stores/repository";
+import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { getOpenCashSession, getCashSalesSince, getCashMovementSince } from "@/modules/cashflow/repository";
 import { buildThemeStyle } from "@/modules/theme/presets";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
@@ -40,7 +41,7 @@ export default async function PosPage() {
     redirect(firstHomeRoute(resolved.can) ?? "/dashboard");
   }
 
-  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult, printersResult, billingState] =
+  const [categoriesResult, productsResult, receiptSettingsResult, storeResult, cashSessionResult, printersResult, billingState, stationsResult] =
     await Promise.all([
       listCategories(ctx.storeId),
       listProducts(ctx.storeId, { includeInactive: false }),
@@ -49,6 +50,7 @@ export default async function PosPage() {
       getOpenCashSession(ctx.storeId),
       listPrinters(ctx.storeId, ctx.organizationId),
       getOrganizationBillingState(ctx.organizationId),
+      listKitchenStations(ctx.storeId),
     ]);
 
   const cashSession = cashSessionResult.data ?? null;
@@ -126,6 +128,9 @@ export default async function PosPage() {
       storeTimezone={ctx.storeTimezone}
       printers={printersResult.data ?? []}
       printerLoadError={printersResult.error?.userMessage ?? null}
+      stationPrinters={(stationsResult.data ?? [])
+        .filter((station) => station.printerId)
+        .map((station) => ({ id: station.id, name: station.name, printerId: station.printerId }))}
       couponEnabled={couponEnabled}
       couponUnavailableMessage={couponUnavailableMessage}
       loyaltyEnabled={loyaltyEnabled}

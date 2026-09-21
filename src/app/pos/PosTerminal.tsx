@@ -36,6 +36,10 @@ import {
   changeOrderPaymentMethodAction,
   voidOrderAction,
   addItemsToTableAction,
+  listOpenQrOrdersAction,
+  consolidateTableBillAction,
+  finishTableBillAction,
+  voidTableQrItemAction,
   prepareTrueMoneyQrAction,
   prepareBeamQrAction,
   getBeamPaymentStatusAction,
@@ -45,8 +49,16 @@ import {
 import { useSearchParams } from "next/navigation";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
+import type { QrOrderView } from "@/modules/qr-ordering/types";
+import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
+import {
+  describeStationPrintResult,
+  dispatchOrderStationTickets,
+  stationPrintNeedsAttention,
+} from "@/modules/printing/station-print-client";
+import type { StationRoutingStation } from "@/modules/printing/station-routing";
 import { buildDefaultModifierSelections } from "@/modules/pos/default-modifiers";
 import { CashSessionPanel } from "./CashSessionPanel";
 import type { CashSession } from "@/modules/cashflow/types";
@@ -88,6 +100,8 @@ type BillHistoryRange = { mode: HistoryRangeMode; fromDate: string; toDate: stri
 type AppliedCoupon = { couponId: string; code: string; discount: number };
 type ReceiptOrder = {
   orderNumber: string;
+  /** "บิลรวมโต๊ะ · โต๊ะ X" — ใบเสร็จของบิลรวมโต๊ะ */
+  billLabel?: string;
   items: CartItem[];
   subtotal: number;
   discount: number;
@@ -149,6 +163,8 @@ interface Props {
   beamEnabled?: boolean;
   /** Beam is the store's only QR — hide the slip-checked PromptPay option. */
   hidePromptPayQr?: boolean;
+  /** สถานีครัว/บาร์ที่ผูกเครื่องพิมพ์ — ใช้ออกตั๋วครัวตอนจ่ายทันที/ส่งเข้าครัว */
+  stationPrinters?: StationRoutingStation[];
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -389,6 +405,104 @@ function mergeSavedTickets(...groups: SavedOrderTicket[][]) {
   return [...tickets.values()]
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     .slice(0, 30);
+}
+
+/**
+ * รวมตั๋วจาก server กับตั๋วในเครื่อง — ตั๋วที่เคย sync แล้วแต่ไม่อยู่บน server แปลว่าถูกปิด/ลบ
+ * ไปแล้ว (เช่น เช็คบิลทั้งโต๊ะ หรือเครื่องอื่นลบ) จึงไม่เอากลับมา ส่วนตั๋วที่ยังไม่ sync เก็บไว้
+ */
+function mergeServerTickets(serverTickets: SavedOrderTicket[], localTickets: SavedOrderTicket[]) {
+  const serverIds = new Set(serverTickets.map((ticket) => ticket.id));
+  // ตั๋วที่แก้ในเครื่องแต่ยัง sync ไม่สำเร็จต้องชนะฉบับบน server (ไม่งั้นรายการที่แก้จะหาย)
+  const unsynced = localTickets.filter((ticket) => ticket.syncState !== "synced");
+  return mergeSavedTickets(
+    unsynced,
+    serverTickets,
+    localTickets.filter((ticket) => serverIds.has(ticket.id)),
+  );
+}
+
+/** ลายเซ็นสั้น ๆ ไว้เช็คว่ารายการเปลี่ยนจริงก่อน setState (กัน re-render ทุกรอบ poll) */
+function ticketListSignature(tickets: SavedOrderTicket[]) {
+  return tickets.map((ticket) => `${ticket.id}:${ticket.updatedAt}:${ticket.syncState ?? ""}`).join("|");
+}
+
+function qrOrdersSignature(orders: QrOrderView[]) {
+  return orders.map((order) => `${order.id}:${order.total}:${order.items.length}:${order.prepStatus}`).join("|");
+}
+
+/** ออเดอร์ QR ที่เปิดอยู่ของโต๊ะ — แสดงในตั๋วของโต๊ะเป็นรายการ "ส่งครัวแล้ว" (ไม่อยู่ในตะกร้า) */
+interface TableQrSummary {
+  orders: QrOrderView[];
+  total: number;
+}
+
+function summarizeTableQr(orders: QrOrderView[]) {
+  const byTable = new Map<string, TableQrSummary>();
+  for (const order of orders) {
+    if (!order.tableId) continue;
+    const current = byTable.get(order.tableId) ?? { orders: [], total: 0 };
+    current.orders.push(order);
+    current.total += order.total;
+    byTable.set(order.tableId, current);
+  }
+  return byTable;
+}
+
+function TableQrLines({
+  tableQr,
+  onVoidItem,
+}: {
+  tableQr: TableQrSummary;
+  /** แก้ไขก่อนจ่าย: ยกเลิกรายการ QR (คืนสต๊อก) */
+  onVoidItem?: (order: QrOrderView, itemId: string, name: string) => void;
+}) {
+  return (
+    <div className="border-b border-sky-100 bg-sky-50/60 px-3 py-2">
+      <p className="text-[11px] font-semibold text-sky-800">
+        ออเดอร์จากลูกค้า (QR) · {priceStr(tableQr.total)}
+      </p>
+      <ul className="mt-1 space-y-1">
+        {tableQr.orders.flatMap((order) =>
+          order.items
+            .filter((line) => !line.voided)
+            .map((line) => {
+              const detail = [line.variantName, ...line.modifiers.map((m) => m.option.name)].filter(Boolean).join(", ");
+              return (
+                <li key={line.id} className="flex items-start justify-between gap-2 text-xs text-sky-900">
+                  <span className="min-w-0">
+                    <span className="font-medium">{line.quantity}× {line.productName}</span>
+                    {detail && <span className="block truncate text-[11px] text-sky-700">{detail}</span>}
+                    {line.note && <span className="block truncate text-[11px] text-sky-700">หมายเหตุ: {line.note}</span>}
+                    <span className="block text-[10px] text-sky-600">
+                      QR #{order.orderNumber}
+                      {order.prepStatus === "new" ? (
+                        <span className="ml-1 rounded bg-amber-100 px-1 font-semibold text-amber-800">รอครัวรับ</span>
+                      ) : (
+                        <span className="ml-1 text-sky-500">· ครัวรับแล้ว</span>
+                      )}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 flex-col items-end gap-0.5">
+                    <span className="tabular-nums">{priceStr(line.totalPrice)}</span>
+                    {onVoidItem && (
+                      <button
+                        type="button"
+                        onClick={() => onVoidItem(order, line.id, line.productName)}
+                        className="min-h-8 rounded px-1.5 text-[11px] font-semibold text-red-500 hover:bg-red-50"
+                        aria-label={`ยกเลิก ${line.productName}`}
+                      >
+                        ยกเลิก
+                      </button>
+                    )}
+                  </span>
+                </li>
+              );
+            }),
+        )}
+      </ul>
+    </div>
+  );
 }
 
 function ticketMetaLabel(ticket: SavedOrderTicket) {
@@ -720,6 +834,10 @@ function CartPanel({
   onOpenTickets,
   onOpenBillHistory,
   onClose,
+  tableQr = null,
+  onSettleTable,
+  onReviewTable,
+  onVoidQrItem,
 }: {
   cart: Cart;
   displayCart?: Cart;
@@ -746,8 +864,19 @@ function CartPanel({
   onOpenTickets: () => void;
   onOpenBillHistory: () => void;
   onClose?: () => void;
+  /** ตั๋วของโต๊ะ: ออเดอร์ QR ที่เปิดอยู่ของโต๊ะนั้น (null = ไม่ใช่ตั๋วโต๊ะ) */
+  tableQr?: TableQrSummary | null;
+  /** ชำระทั้งโต๊ะ: รวมบิลเป็นออเดอร์เดียวแล้วเข้าหน้าจ่ายเงินปกติ (แทนการชำระเฉพาะตะกร้า) */
+  onSettleTable?: () => void;
+  /** ตรวจ/พิมพ์รายการทั้งโต๊ะให้ลูกค้าเช็คก่อนจ่าย */
+  onReviewTable?: () => void;
+  onVoidQrItem?: (order: QrOrderView, itemId: string, name: string) => void;
 }) {
   const summaryCart = displayCart ?? cart;
+  // ตั๋วของโต๊ะ: ปุ่มชำระ = เช็คบิลทั้งโต๊ะเสมอ (มีหรือไม่มีออเดอร์ QR) → จ่ายแล้วปิดโต๊ะ
+  const settleWholeTable = !!tableQr && !!onSettleTable;
+  const kitchenWaiting = tableQr ? tableQr.orders.filter((order) => order.prepStatus === "new").length : 0;
+  const tableHasItems = !!tableQr && (tableQr.orders.length > 0 || cart.items.length > 0);
 
   return (
     <div className="flex flex-col h-full">
@@ -831,9 +960,14 @@ function CartPanel({
         )}
       </div>
       <div className="flex-1 overflow-y-auto">
+        {tableQr && tableQr.orders.length > 0 && <TableQrLines tableQr={tableQr} onVoidItem={onVoidQrItem} />}
         {cart.items.length === 0 ? (
-          <div className="flex items-center justify-center h-24 text-xs text-gray-400">
-            ยังไม่มีรายการ
+          <div className="flex items-center justify-center h-24 px-3 text-center text-xs text-gray-400">
+            {tableQr
+              ? tableQr.orders.length > 0
+                ? "เพิ่มรายการจากหน้าร้านได้ตามปกติ"
+                : "รอออเดอร์จากลูกค้า (QR) หรือเพิ่มรายการได้เลย"
+              : "ยังไม่มีรายการ"}
           </div>
         ) : (
           <ul className="divide-y divide-gray-50 px-3 py-1">
@@ -914,16 +1048,42 @@ function CartPanel({
           </div>
         )}
         <div className="flex justify-between text-sm font-semibold text-gray-900 pt-1 border-t border-gray-100">
-          <span>รวมทั้งหมด</span>
+          <span>{settleWholeTable ? "รวมตั๋วนี้" : "รวมทั้งหมด"}</span>
           <span className="tabular-nums">{priceStr(summaryCart.total)}</span>
         </div>
+        {settleWholeTable && tableQr && tableQr.orders.length > 0 && (
+          <>
+            <div className="flex justify-between text-xs text-sky-700">
+              <span>ออเดอร์ QR (ส่งครัวแล้ว)</span>
+              <span className="tabular-nums">{priceStr(tableQr.total)}</span>
+            </div>
+            <div className="flex justify-between text-sm font-semibold text-gray-900">
+              <span>รวมทั้งโต๊ะ</span>
+              <span className="tabular-nums">{priceStr(cart.total + tableQr.total)}</span>
+            </div>
+          </>
+        )}
+        {settleWholeTable && kitchenWaiting > 0 && (
+          <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] font-medium text-amber-800">
+            รอครัวรับ {kitchenWaiting} ออเดอร์ — ให้ครัวรับหรือปฏิเสธก่อนเช็คบิล
+          </p>
+        )}
+        {settleWholeTable && onReviewTable && tableHasItems && (
+          <button
+            type="button"
+            onClick={onReviewTable}
+            className="min-h-11 w-full rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            ตรวจ / พิมพ์รายการทั้งโต๊ะให้ลูกค้าเช็ค
+          </button>
+        )}
         <button
           type="button"
-          disabled={cart.items.length === 0}
-          onClick={onCheckout}
+          disabled={settleWholeTable ? !tableHasItems || kitchenWaiting > 0 : cart.items.length === 0}
+          onClick={settleWholeTable ? onSettleTable : onCheckout}
           className="btn-primary mt-2 w-full disabled:cursor-not-allowed disabled:opacity-40"
         >
-          ชำระเงิน
+          {settleWholeTable && tableQr ? `ชำระเงินทั้งโต๊ะ ${priceStr(cart.total + tableQr.total)}` : "ชำระเงิน"}
         </button>
       </div>
     </div>
@@ -1363,6 +1523,7 @@ function TicketPanel({
   onLoadTicket,
   onDeleteTicket,
   onTicketDraftChange,
+  qrByTable,
 }: {
   cart: Cart;
   savedTickets: SavedOrderTicket[];
@@ -1378,6 +1539,8 @@ function TicketPanel({
   onPrintTicket: (ticket?: SavedOrderTicket) => void;
   onLoadTicket: (ticket: SavedOrderTicket) => void;
   onDeleteTicket: (ticketId: string) => void;
+  /** ออเดอร์ QR ที่เปิดอยู่ต่อโต๊ะ — โชว์ป้ายยอด QR บนตั๋วของโต๊ะ */
+  qrByTable?: Map<string, TableQrSummary>;
   onTicketDraftChange: (patch: Partial<TicketDraft>) => void;
 }) {
   const [ticketSearch, setTicketSearch] = useState("");
@@ -1526,6 +1689,11 @@ function TicketPanel({
                   <span className="mt-1 block text-[11px] text-gray-500">
                     {ticket.cart.items.length} รายการ · {priceStr(ticket.cart.total)}
                   </span>
+                  {ticket.tableId && qrByTable?.get(ticket.tableId) && (
+                    <span className="mt-0.5 block text-[11px] font-medium text-sky-700">
+                      QR {qrByTable.get(ticket.tableId)!.orders.length} ออเดอร์ · {priceStr(qrByTable.get(ticket.tableId)!.total)} (ส่งครัวแล้ว)
+                    </span>
+                  )}
                   <span className="mt-0.5 block truncate text-[11px] leading-relaxed text-gray-600">
                     {ticketItemSummary(ticket)}
                   </span>
@@ -1693,7 +1861,14 @@ function BillHistoryPanel({
             <li key={order.id} className="rounded-lg border border-gray-200 bg-white p-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-gray-800">{order.orderNumber}</p>
+                  <p className="truncate text-xs font-semibold text-gray-800">
+                    {order.orderNumber}
+                    {order.tableBill && (
+                      <span className="ml-1 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold text-sky-800">
+                        {TABLE_BILL_LABEL}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-[11px] text-gray-500">
                     {order.tableNumber ? `โต๊ะ ${order.tableNumber} · ` : ""}{historyPaymentLabel(order)} · {priceStr(order.total)}
                   </p>
@@ -1898,7 +2073,12 @@ function BillDetailModal({
         : "bg-amber-50 text-amber-700";
 
   return (
-    <ModalDialog open title={`บิล ${order.orderNumber}`} onClose={onClose} size="md">
+    <ModalDialog
+      open
+      title={order.tableBill ? `บิล ${order.orderNumber} · ${tableBillLabel(order.tableNumber)}` : `บิล ${order.orderNumber}`}
+      onClose={onClose}
+      size="md"
+    >
       <div className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-gray-500">{dateLabel}</span>
@@ -2821,6 +3001,7 @@ function ReceiptPanel({
         taxId: settings.taxId,
         showTaxId: settings.showTaxId,
         orderNumber: order.orderNumber,
+        billLabel: order.billLabel,
         items: order.items.map((item) => ({
           name: item.productName,
           variantName: item.variant?.name,
@@ -2873,6 +3054,7 @@ function ReceiptPanel({
           phone: receiptData.phone,
           headerText: receiptData.headerText,
           orderNumber: receiptData.orderNumber,
+          billLabel: receiptData.billLabel,
           items: receiptData.items.map((it) => ({
             name: it.name,
             variantName: it.variantName,
@@ -2960,6 +3142,11 @@ function ReceiptPanel({
         <div className="text-center">
           <p className="text-xs text-gray-400">เลขออร์เดอร์</p>
           <p className="text-lg font-mono font-bold text-gray-900">{order.orderNumber}</p>
+          {order.billLabel && (
+            <span className="mt-1 inline-block rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+              {order.billLabel}
+            </span>
+          )}
         </div>
         <ul className="divide-y divide-gray-50 text-sm">
           {order.items.map((item) => (
@@ -3092,6 +3279,7 @@ export function PosTerminal({
   trueMoneyEnabled = false,
   beamEnabled = false,
   hidePromptPayQr = false,
+  stationPrinters = [],
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -3154,6 +3342,8 @@ export function PosTerminal({
   const [billHistoryPanelOpen, setBillHistoryPanelOpen] = useState(false);
   const [customerToolsOpen, setCustomerToolsOpen] = useState(false);
   const [savedTickets, setSavedTickets] = useState<SavedOrderTicket[]>([]);
+  // ออเดอร์ QR ที่เปิดอยู่ (ทุกโต๊ะ) — ใช้แสดงในตั๋วของโต๊ะ
+  const [openQrOrders, setOpenQrOrders] = useState<QrOrderView[]>([]);
   const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
   const [ticketDraft, setTicketDraft] = useState<TicketDraft>(EMPTY_TICKET_DRAFT);
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
@@ -3180,6 +3370,9 @@ export function PosTerminal({
   const [isTicketSyncPending, startTicketTransition] = useTransition();
   const historyRequestIdRef = useRef(0);
   const checkoutIdempotencyKeyRef = useRef<string | null>(null);
+  // บิลรวมโต๊ะที่กำลังเก็บเงิน (หลังจ่ายสำเร็จ → ปิดโต๊ะ) + คีย์ idempotency ของการรวมบิล
+  const tableBillRef = useRef<{ tableId: string; orderId: string } | null>(null);
+  const tableBillKeyRef = useRef<string | null>(null);
   const cartRef = useRef(cart);
   const paidDisplayCartRef = useRef<Cart | null>(null);
   const paidCustomerNameRef = useRef<string | undefined>(undefined);
@@ -3198,6 +3391,44 @@ export function PosTerminal({
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
+
+  // ตั๋วครัวจาก POS: สถานีของแต่ละรายการมาจากสินค้า (order_items ได้ค่าเดียวกันจาก trigger)
+  const productStationById = useMemo(
+    () => new Map(products.map((product) => [product.id, product.kitchenStationId])),
+    [products],
+  );
+  const stationTicketsEnabled =
+    Boolean(receiptSettings?.autoPrintStationTickets) && stationPrinters.some((station) => station.printerId);
+
+  /** ส่งตั๋วครัวของรอบนี้เข้า Hub — ไม่บล็อกการขาย; คีย์ (ออเดอร์, สถานี) กันซ้ำกับจออื่น */
+  function sendStationTickets(order: { orderId: string; orderNumber: string }, items: CartItem[], tableNumber?: string) {
+    if (!stationTicketsEnabled || items.length === 0) return;
+    void dispatchOrderStationTickets({
+      orderId: order.orderId,
+      orderNumber: order.orderNumber,
+      tableNumber,
+      paperWidth: receiptSettings?.paperWidth === "58mm" ? "58mm" : "80mm",
+      items: items.map((item) => ({
+        name: item.productName,
+        variantName: item.variant?.name || undefined,
+        modifierNames: item.modifiers.map((modifier) => modifier.option.name),
+        quantity: item.quantity,
+        note: item.note,
+        kitchenStationId: productStationById.get(item.productId),
+      })),
+      stations: stationPrinters,
+    })
+      .then((res) => {
+        if (res && stationPrintNeedsAttention(res)) setTicketMessage(describeStationPrintResult(res));
+      })
+      .catch((e: unknown) => {
+        setTicketMessage(`ส่งตั๋วครัวไม่สำเร็จ: ${e instanceof Error ? e.message : "เชื่อมต่อไม่ได้"}`);
+      });
+  }
+  const qrByTable = useMemo(() => summarizeTableQr(openQrOrders), [openQrOrders]);
+  const activeTableQr: TableQrSummary | null = activeTicket?.tableId
+    ? (qrByTable.get(activeTicket.tableId) ?? { orders: [], total: 0 })
+    : null;
   const utilitySheetOpen =
     ticketPanelOpen || billHistoryPanelOpen || customerToolsOpen || discountFormOpen || tableMenuOpen;
   const displayCart = useMemo(
@@ -3302,10 +3533,47 @@ export function PosTerminal({
         setTicketMessage(`ใช้ตั๋วในเครื่องนี้อยู่: ${result.error}`);
         return;
       }
-      persistSavedTickets(mergeSavedTickets(result.tickets, readSavedTickets(storeId)));
+      persistSavedTickets(mergeServerTickets(result.tickets, readSavedTickets(storeId)));
     });
     return () => {
       cancelled = true;
+    };
+  }, [persistSavedTickets, storeId]);
+
+  // ตั๋วโต๊ะ + ออเดอร์ QR: ดึงใหม่ทุก 20 วินาทีเฉพาะตอนหน้าจอมองเห็น เพื่อให้ออเดอร์ที่ลูกค้า
+  // สแกนสั่งโผล่ในตั๋วของโต๊ะ และตั๋วที่เปิดจากเครื่องอื่นเข้ามาในรายการ
+  const ticketSyncPendingRef = useRef(false);
+  useEffect(() => {
+    ticketSyncPendingRef.current = isTicketSyncPending;
+  }, [isTicketSyncPending]);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const [qrResult, ticketResult] = await Promise.all([
+        listOpenQrOrdersAction().catch(() => null),
+        listSavedTicketsAction().catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (qrResult && !qrResult.error) {
+        setOpenQrOrders((current) =>
+          qrOrdersSignature(current) === qrOrdersSignature(qrResult.orders) ? current : qrResult.orders,
+        );
+      }
+      if (ticketResult && !ticketResult.error && !ticketSyncPendingRef.current) {
+        const local = readSavedTickets(storeId);
+        const merged = mergeServerTickets(ticketResult.tickets, local);
+        if (ticketListSignature(merged) !== ticketListSignature(local)) persistSavedTickets(merged);
+      }
+    };
+    void tick();
+    const interval = window.setInterval(() => void tick(), 20_000);
+    const onVisible = () => void tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [persistSavedTickets, storeId]);
 
@@ -3595,6 +3863,7 @@ export function PosTerminal({
   function handleSendToKitchen() {
     if (!dineInTable || cart.items.length === 0) return;
     const table = dineInTable;
+    const sentItems = cart.items;
     const qrItems = cart.items.map((item) => ({
       productId: item.productId,
       variantId: item.variant?.id,
@@ -3608,6 +3877,9 @@ export function PosTerminal({
         setTicketMessage(res.error);
         return;
       }
+      if (res.orderId && res.orderNumber) {
+        sendStationTickets({ orderId: res.orderId, orderNumber: res.orderNumber }, sentItems, table.number);
+      }
       commitCart(emptyCart(storeId), { resetItemDiscountForms: true });
       setDineInTable(null);
       setTicketMessage(`ส่งเข้าครัวแล้ว — โต๊ะ ${table.number}${res.orderNumber ? ` (ออเดอร์ ${res.orderNumber})` : ""}`);
@@ -3617,12 +3889,8 @@ export function PosTerminal({
     });
   }
 
-  function handleSaveTicket() {
-    if (cart.items.length === 0) {
-      setTicketMessage("ยังไม่มีรายการให้บันทึกตั๋ว");
-      return;
-    }
-
+  /** ประกอบตั๋วจากตะกร้าปัจจุบัน (ตั๋วที่เรียกอยู่ = บันทึกทับใบเดิม) */
+  function buildCurrentTicket() {
     const now = new Date();
     const nowIso = now.toISOString();
     const existing = activeTicketId ? savedTickets.find((ticket) => ticket.id === activeTicketId) : null;
@@ -3645,27 +3913,180 @@ export function PosTerminal({
       createdAt: existing?.createdAt ?? nowIso,
       updatedAt: nowIso,
     };
+    return { ticket, existing };
+  }
 
+  /** บันทึกตั๋วขึ้น server + เครื่องนี้ — คืน error ของ server (null = sync สำเร็จ) */
+  async function syncCurrentTicket(): Promise<{ error: string | null }> {
+    const { ticket, existing } = buildCurrentTicket();
+    const result = await saveSavedTicketAction(ticket);
+    const savedTicket: SavedOrderTicket = {
+      ...(result.ticket ?? ticket),
+      syncState: result.error ? "sync_failed" : "synced",
+      lastSyncedAt: result.error ? ticket.lastSyncedAt : new Date().toISOString(),
+    };
+    const next = existing
+      ? savedTickets.map((item) => (item.id === savedTicket.id ? savedTicket : item))
+      : [savedTicket, ...savedTickets].slice(0, 30);
+
+    if (persistSavedTickets(next)) {
+      setActiveTicketId(savedTicket.id);
+      setTicketMessage(
+        result.error
+          ? `บันทึกในเครื่องแล้ว แต่ยัง sync server ไม่สำเร็จ: ${result.error}`
+          : `${existing ? "บันทึกกลับไปใหม่" : "บันทึกตั๋ว"} ${savedTicket.ticketNumber} แล้ว`,
+      );
+    }
+    return { error: result.error };
+  }
+
+  function handleSaveTicket() {
+    if (cart.items.length === 0) {
+      setTicketMessage("ยังไม่มีรายการให้บันทึกตั๋ว");
+      return;
+    }
     startTicketTransition(async () => {
-      const result = await saveSavedTicketAction(ticket);
-      const savedTicket: SavedOrderTicket = {
-        ...(result.ticket ?? ticket),
-        syncState: result.error ? "sync_failed" : "synced",
-        lastSyncedAt: result.error ? ticket.lastSyncedAt : new Date().toISOString(),
-      };
-      const next = existing
-        ? savedTickets.map((item) => (item.id === savedTicket.id ? savedTicket : item))
-        : [savedTicket, ...savedTickets].slice(0, 30);
-
-      if (persistSavedTickets(next)) {
-        setActiveTicketId(savedTicket.id);
-        setTicketMessage(
-          result.error
-            ? `บันทึกในเครื่องแล้ว แต่ยัง sync server ไม่สำเร็จ: ${result.error}`
-            : `${existing ? "บันทึกกลับไปใหม่" : "บันทึกตั๋ว"} ${savedTicket.ticketNumber} แล้ว`,
-        );
-      }
+      await syncCurrentTicket();
     });
+  }
+
+  /**
+   * 1 โต๊ะ = 1 บิล = 1 การจ่าย: รวมออเดอร์ QR ทั้งโต๊ะ + รายการในตั๋ว เป็นออเดอร์เดียว (server)
+   * แล้วเข้าหน้าจ่ายเงินปกติ (เงินสด/Beam ตามนโยบาย POS) — จ่ายสำเร็จ → ปิดโต๊ะ
+   */
+  function startTableBillPayment(tableId: string, ticket: SavedOrderTicket | null) {
+    if (pendingOrder) {
+      setTicketMessage("มีบิลที่สร้างแล้วรอชำระอยู่ กรุณาชำระให้จบก่อน");
+      return;
+    }
+    startTicketTransition(async () => {
+      // ตั๋วที่เปิดอยู่: บันทึกขึ้น server ก่อน — server รวมบิลจากรายการในตั๋วบน DB เท่านั้น
+      if (ticket && ticket.id === activeTicketId) {
+        const saved = await syncCurrentTicket();
+        if (saved.error) {
+          setTicketMessage(`บันทึกตั๋วขึ้นระบบไม่สำเร็จ ยังเช็คบิลไม่ได้: ${saved.error}`);
+          return;
+        }
+      }
+      const operationKey = tableBillKeyRef.current ?? createTicketId();
+      tableBillKeyRef.current = operationKey;
+      const result = await consolidateTableBillAction({
+        tableId,
+        ticketId: ticket?.id ?? null,
+        operationKey,
+      });
+      if (result.error || !result.order || !result.cart) {
+        setTicketMessage(result.error ?? "รวมบิลโต๊ะไม่สำเร็จ");
+        return;
+      }
+      tableBillKeyRef.current = null;
+      tableBillRef.current = { tableId, orderId: result.order.orderId };
+      if (ticket) {
+        // server ล้างรายการในตั๋วแล้ว (ย้ายเข้าบิล) — ให้เครื่องนี้ตรงกัน
+        persistSavedTickets(
+          savedTickets.map((item) => (item.id === ticket.id ? { ...item, cart: emptyCart(storeId) } : item)),
+        );
+        setActiveTicketId(ticket.id);
+      }
+      setOpenQrOrders((current) => current.filter((order) => order.tableId !== tableId));
+      setAppliedCoupon(null);
+      setCouponCode("");
+      setSelectedCustomer(null);
+      commitCart(result.cart, { resetItemDiscountForms: true });
+      setPendingOrder(result.order);
+      setPayError(null);
+      setPhase("payment");
+      setOrderPanelOpen(true);
+      setTicketMessage(`รวมบิลโต๊ะเป็น #${result.order.orderNumber} แล้ว — เลือกวิธีชำระ`);
+    });
+  }
+
+  function handleSettleTableFromTicket() {
+    const ticket = activeTicket;
+    if (!ticket?.tableId) return;
+    startTableBillPayment(ticket.tableId, ticket);
+  }
+
+  /** เปิดหน้ารายการทั้งโต๊ะ (พิมพ์ใบตรวจรายการให้ลูกค้าเช็ค) — บันทึกตั๋วก่อนให้ยอดตรง */
+  function handleReviewTableBill() {
+    const ticket = activeTicket;
+    if (!ticket?.tableId) return;
+    const tableId = ticket.tableId;
+    const tableNumber = ticket.tableNumber ?? ticketDraft.tableNumber ?? "-";
+    startTicketTransition(async () => {
+      if (cart.items.length > 0 || ticket.cart.items.length > 0) {
+        const result = await syncCurrentTicket();
+        if (result.error) {
+          setTicketMessage(`บันทึกตั๋วขึ้นระบบไม่สำเร็จ ยังเช็คบิลไม่ได้: ${result.error}`);
+          return;
+        }
+      }
+      setBillTableId(tableId);
+      setBillTableNumber(tableNumber);
+      setShowTableBill(true);
+    });
+  }
+
+  /** ชำระ: ตั๋วที่ผูกโต๊ะ = เช็คบิลทั้งโต๊ะเสมอ (จ่ายแล้วปิดโต๊ะ) · ตั๋วทั่วไป = ชำระตะกร้าตามเดิม */
+  function handleCartCheckout() {
+    if (activeTicket?.tableId) {
+      handleSettleTableFromTicket();
+      return;
+    }
+    setPhase("payment");
+    setOrderPanelOpen(true);
+  }
+
+  /** เช็คบิลจากหน้ารายการโต๊ะ (TableBillModal) → ใช้ตั๋วของโต๊ะนั้น แล้วเข้าหน้าจ่ายเงินปกติ */
+  function handleCheckoutTableFromBill(tableId: string) {
+    setShowTableBill(false);
+    setBillTableId(null);
+    setBillTableNumber(null);
+    if (activeTicket?.tableId === tableId) {
+      startTableBillPayment(tableId, activeTicket);
+      return;
+    }
+    if (cart.items.length > 0) {
+      setTicketMessage("มีรายการในตะกร้าที่ยังไม่ได้เก็บ — กด \"เก็บตั๋ว\" หรือล้างก่อนเช็คบิลโต๊ะ");
+      return;
+    }
+    const tableTickets = savedTickets.filter((ticket) => ticket.tableId === tableId);
+    const ticket = tableTickets.find((item) => item.ticketSource === "table_auto") ?? tableTickets[0] ?? null;
+    if (tableTickets.length > 1) {
+      setTicketMessage("โต๊ะนี้มีตั๋วหลายใบ — เรียกตั๋วที่ต้องการแล้วกดชำระจากตั๋ว");
+      return;
+    }
+    startTableBillPayment(tableId, ticket);
+  }
+
+  async function handleVoidTableQrItem(order: QrOrderView, itemId: string, name: string) {
+    const ok = await confirm({
+      title: "ยกเลิกรายการ",
+      message: `ยกเลิก "${name}" จากออเดอร์ QR #${order.orderNumber}? ระบบคืนสต็อกและหักออกจากยอดโต๊ะ`,
+      confirmLabel: "ยกเลิกรายการ",
+      danger: true,
+    });
+    if (!ok) return;
+    startTicketTransition(async () => {
+      const res = await voidTableQrItemAction(order.id, itemId, "แก้ไขก่อนชำระ");
+      if (res.error) {
+        setTicketMessage(`ยกเลิกรายการไม่สำเร็จ: ${res.error}`);
+        return;
+      }
+      const latest = await listOpenQrOrdersAction().catch(() => null);
+      if (latest && !latest.error) setOpenQrOrders(latest.orders);
+      setTicketMessage(`ยกเลิก "${name}" แล้ว`);
+    });
+  }
+
+  function handleTableSettled(tableId: string) {
+    persistSavedTickets(savedTickets.filter((ticket) => ticket.tableId !== tableId));
+    setOpenQrOrders((current) => current.filter((order) => order.tableId !== tableId));
+    if (activeTicket?.tableId === tableId) {
+      commitCart(emptyCart(storeId), { resetItemDiscountForms: true });
+      setActiveTicketId(null);
+      setTicketDraft(EMPTY_TICKET_DRAFT);
+    }
   }
 
   function handleLoadTicket(ticket: SavedOrderTicket) {
@@ -3856,6 +4277,8 @@ export function PosTerminal({
         : null;
       let order = pendingOrder;
       let paidOrder: Order | null = null;
+      // บิลรวมโต๊ะ: server ปิดโต๊ะให้ใน request ชำระเงินเดียวกัน
+      let tableBillFinish: { closed: boolean; notice: string | null; error: string | null } | null | undefined;
       if (!order) {
         // Pay-now path: one server round trip creates the order and closes the bill.
         const checkoutTicketContext = {
@@ -3892,6 +4315,10 @@ export function PosTerminal({
         }
         order = { orderId: result.orderId, orderNumber: result.orderNumber };
         paidOrder = result.order;
+        // ขายจ่ายทันที → ครัวต้องทำ; ตั๋วที่พักไว้ (activeTicket) ถือว่าเสิร์ฟแล้ว ไม่ออกตั๋วครัว (D2)
+        if (!activeTicket) {
+          sendStationTickets(order, displayCart.items, checkoutTicketContext.tableNumber);
+        }
       } else {
         // Retry path: the order already exists from a failed payment attempt.
         const payResult = await collectPaymentAction(order.orderId, paymentInput, {
@@ -3904,6 +4331,7 @@ export function PosTerminal({
           return;
         }
         paidOrder = payResult.order;
+        tableBillFinish = payResult.tableBill;
       }
       paidDisplayCartRef.current = displayCart;
       paidCustomerNameRef.current = selectedCustomer?.name;
@@ -3923,8 +4351,10 @@ export function PosTerminal({
           customer: paidCustomerRef.current,
         });
       }
+      const isTableBillPayment = tableBillRef.current?.orderId === order.orderId;
       setReceipt({
         orderNumber: order.orderNumber,
+        billLabel: isTableBillPayment ? tableBillLabel(paidOrder?.tableNumber ?? ticketDraft.tableNumber) : undefined,
         items: displayCart.items,
         subtotal: displayCart.subtotal,
         discount: displayCart.discount,
@@ -3964,7 +4394,27 @@ export function PosTerminal({
           );
         })();
       }
-      if (activeTicketId) {
+      const paidTableBill =
+        tableBillRef.current && tableBillRef.current.orderId === order.orderId ? tableBillRef.current : null;
+      if (paidTableBill) {
+        tableBillRef.current = null;
+        void (async () => {
+          const finish = tableBillFinish ?? (await finishTableBillAction(order.orderId).catch(() => null));
+          if (!finish || finish.error) {
+            setTicketMessage(`ชำระแล้ว แต่ปิดโต๊ะไม่สำเร็จ: ${finish?.error ?? "เชื่อมต่อไม่ได้"} — ปิดโต๊ะเองที่ "เปิดโต๊ะ"`);
+            return;
+          }
+          if (finish.closed) {
+            persistSavedTickets(
+              savedTickets.filter((ticket) => ticket.tableId !== paidTableBill.tableId || ticket.cart.items.length > 0),
+            );
+            setActiveTicketId(null);
+            setTicketMessage("เก็บเงินบิลรวมแล้ว ปิดโต๊ะเรียบร้อย");
+          } else if (finish.notice) {
+            setTicketMessage(finish.notice);
+          }
+        })();
+      } else if (activeTicketId) {
         void (async () => {
           const deleteResult = await deleteSavedTicketAction(activeTicketId);
           if (deleteResult.error) {
@@ -4051,6 +4501,7 @@ export function PosTerminal({
       showTaxId: settings.showTaxId,
       headerText: settings.headerText,
       orderNumber: order.orderNumber,
+      billLabel: order.tableBill ? tableBillLabel(order.tableNumber) : undefined,
       items: order.items.map((item) => ({
         name: item.productName,
         variantName: item.variantName,
@@ -4216,10 +4667,11 @@ export function PosTerminal({
             onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
-            onCheckout={() => {
-              setPhase("payment");
-              setOrderPanelOpen(true);
-            }}
+            onCheckout={handleCartCheckout}
+            tableQr={activeTableQr}
+            onSettleTable={handleSettleTableFromTicket}
+            onReviewTable={handleReviewTableBill}
+            onVoidQrItem={handleVoidTableQrItem}
             onClear={() => clearCurrentOrder()}
             onApplyItemDiscount={handleApplyItemDiscount}
             onClearItemDiscount={handleClearItemDiscount}
@@ -4469,10 +4921,11 @@ export function PosTerminal({
             onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
-            onCheckout={() => {
-              setPhase("payment");
-              setOrderPanelOpen(true);
-            }}
+            onCheckout={handleCartCheckout}
+            tableQr={activeTableQr}
+            onSettleTable={handleSettleTableFromTicket}
+            onReviewTable={handleReviewTableBill}
+            onVoidQrItem={handleVoidTableQrItem}
             onClear={() => clearCurrentOrder()}
             onApplyItemDiscount={handleApplyItemDiscount}
             onClearItemDiscount={handleClearItemDiscount}
@@ -4626,6 +5079,7 @@ export function PosTerminal({
           }}
           onDeleteTicket={handleDeleteTicket}
           onTicketDraftChange={handleTicketDraftChange}
+          qrByTable={qrByTable}
         />
       </PosUtilitySheet>
 
@@ -4711,6 +5165,15 @@ export function PosTerminal({
             setShowTableBill(true);
           }}
           onAddItems={(tableId, tableLabel) => startDineInAdd(tableId, tableLabel)}
+          onTicketOpened={(ticket) => {
+            persistSavedTickets(mergeSavedTickets([ticket], savedTickets));
+            setTicketMessage(`เปิดตั๋ว ${ticket.ticketNumber} ของ${ticket.label} รอไว้แล้ว — ออเดอร์ QR จะแสดงในตั๋วนี้`);
+          }}
+          onTableClosed={(tableId) => {
+            persistSavedTickets(
+              savedTickets.filter((ticket) => ticket.tableId !== tableId || ticket.cart.items.length > 0),
+            );
+          }}
         />
       )}
 
@@ -4726,7 +5189,9 @@ export function PosTerminal({
           initialTableId={billTableId}
           initialTableNumber={billTableNumber}
           onClose={() => { setShowTableBill(false); setBillTableId(null); setBillTableNumber(null); }}
-          onSettled={() => {}}
+          onSettled={handleTableSettled}
+          onCheckout={(tableId) => handleCheckoutTableFromBill(tableId)}
+          hidePromptPayQr={hidePromptPayQr && beamEnabled}
           onAddItems={(tableId, tableNumber) => startDineInAdd(tableId, tableNumber)}
         />
       )}

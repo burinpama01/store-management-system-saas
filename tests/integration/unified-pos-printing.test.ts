@@ -368,6 +368,94 @@ describe.skipIf(!envReady)("unified-pos-printing integration (U11, local supabas
     expect(stationJobs[0]!.job_kind).toBe("station_ticket");
   });
 
+  it("รอบที่ออกตั๋วตอนส่งเข้าครัวแล้ว (station_ticket:<order>:<station>) → settle ไม่ออกตั๋วครัวซ้ำ", async () => {
+    const { buildStationTicketSourceKey } = await import("@/modules/printing/station-routing");
+    const orderId = await submitQrOrder(`U11-${runId}-SENT`);
+    // จำลองจอที่ส่งตั๋วเข้า Hub ตอนออเดอร์เข้า/ส่งเข้าครัว (enqueue route ใส่ key นี้)
+    const sentKey = buildStationTicketSourceKey(orderId, stationId!);
+    trackReference(sentKey);
+    const { error: sentErr } = await service.from("print_jobs").insert({
+      organization_id: ORG_A,
+      store_id: STORE_A,
+      printer_id: printerId,
+      target_kind: "ip",
+      target_host: "192.168.1.250",
+      target_port: 9100,
+      payload_b64: "AA==",
+      status: "pending",
+      source_key: sentKey,
+      job_kind: "station_ticket",
+    });
+    expect(sentErr, `insert ตั๋วที่ส่งแล้วต้องสำเร็จ: ${sentErr?.message}`).toBeNull();
+
+    const { response, operationKey } = await settleFacel({ orderIds: [orderId], amount: 45 });
+    expect(response.ok).toBe(true);
+    if (!response.ok) return;
+    const intent = await resolveSettlementPrintIntent({
+      organizationId: ORG_A,
+      storeId: STORE_A,
+      actorUserId: OWNER_ID,
+      settlement: response.result,
+      operationKey,
+      replayed: response.replayed,
+    });
+    trackReference(intent.reference);
+
+    expect(intent.receiptJobId).not.toBeNull();
+    expect(intent.stationJobIds).toEqual([]);
+    expect(await countExactSourceKey(buildStationJobSourceKey(intent.reference, stationId!))).toBe(0);
+    expect(await countExactSourceKey(sentKey)).toBe(1);
+  });
+
+  it("enqueue ตั๋วสถานีคีย์เดิม: failed → ส่งแถวเดิมกลับเข้าคิว, unknown/ย้ายไป USB → ไม่ส่งซ้ำ", async () => {
+    const { buildStationTicketSourceKey } = await import("@/modules/printing/station-routing");
+    const { enqueuePrintJob, USB_RETARGET_NOTE } = await import("@/modules/printing/print-hub-repository");
+    const orderId = await submitQrOrder(`U11-${runId}-RQ`);
+    const key = buildStationTicketSourceKey(orderId, stationId!);
+    trackReference(key);
+    const enqueue = () =>
+      enqueuePrintJob({
+        organizationId: ORG_A,
+        storeId: STORE_A,
+        printerId,
+        kind: "ip",
+        host: "192.168.1.250",
+        port: 9100,
+        payloadB64: "BBBB",
+        sourceKey: key,
+        jobKind: "station_ticket",
+        requeueFailed: true,
+        actorUserId: OWNER_ID,
+      });
+
+    const first = await enqueue();
+    expect(first.error).toBeNull();
+    expect(first.data).toMatchObject({ status: "pending" });
+    const jobId = first.data!.id;
+
+    // pending → จออื่นยิงซ้ำ = งานเดิม ไม่สร้างแถวใหม่
+    expect((await enqueue()).data).toMatchObject({ id: jobId, deduped: true, status: "pending" });
+
+    // failed (Hub ยืนยันว่าไม่ออก) → แถวเดิมกลับเข้าคิว
+    await service.from("print_jobs").update({ status: "failed", error: "Connection timed out" }).eq("id", jobId);
+    const requeued = await enqueue();
+    expect(requeued.data).toMatchObject({ id: jobId, requeued: true, status: "pending" });
+    const { data: row } = await service.from("print_jobs").select("status, error, resolution, claim_token").eq("id", jobId).single();
+    expect(row).toMatchObject({ status: "pending", error: null, resolution: "retried", claim_token: null });
+
+    // unknown → ไม่ส่งซ้ำเอง (อาจออกไปแล้ว) คืนสถานะจริงให้ client แจ้งตรวจ
+    await service.from("print_jobs").update({ status: "unknown" }).eq("id", jobId);
+    expect((await enqueue()).data).toMatchObject({ id: jobId, deduped: true, status: "unknown" });
+    const { data: stillUnknown } = await service.from("print_jobs").select("status").eq("id", jobId).single();
+    expect(stillUnknown!.status).toBe("unknown");
+
+    // failed แต่ Hub ย้ายไปออกเครื่อง USB แล้ว → ห้าม requeue (จะออก 2 ใบ)
+    await service.from("print_jobs").update({ status: "failed", error: `timeout — ${USB_RETARGET_NOTE}` }).eq("id", jobId);
+    expect((await enqueue()).data).toMatchObject({ id: jobId, deduped: true, status: "failed" });
+
+    expect(await countExactSourceKey(key)).toBe(1);
+  });
+
   it("replay คีย์เดิม → intent คืน job id ชุดเดิม ไม่มี duplicate (receipt + station)", async () => {
     const orderId = await submitQrOrder(`U11-${runId}-REPLAY`);
     const first = await settleFacel({ orderIds: [orderId], amount: 45 });

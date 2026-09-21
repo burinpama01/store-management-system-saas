@@ -13,8 +13,8 @@ import {
   isUsbPrinterConnected,
 } from "@/modules/printing/usb-client";
 import { autoPrintReceipt, selectHubReceiptPrinter } from "@/modules/printing/receipt-printer";
-import { buildStationTicketJobs } from "@/modules/printing/station-routing";
-import { enqueueStationTickets } from "@/modules/printing/station-print-client";
+import { describeStationPrintResult, dispatchOrderStationTickets } from "@/modules/printing/station-print-client";
+import { isNewKitchenQrOrderEvent } from "@/modules/qr-ordering/incoming-order";
 import type { EscPosReceiptInput } from "@/modules/printing/escpos";
 import type { ReceiptData } from "@/modules/printing/types";
 import type { Printer } from "@/modules/stores/types";
@@ -26,7 +26,7 @@ const AUTO_PRINT_KEY = "qrOrderAutoPrintEnabled";
 
 type OrderInsertPayload = Pick<
   Database["public"]["Tables"]["orders"]["Row"],
-  "id" | "order_number" | "qr_order_source" | "table_number" | "total" | "created_at"
+  "id" | "order_number" | "qr_order_source" | "table_bill_key" | "table_number" | "total" | "created_at"
 >;
 
 type OrderItemRow = Pick<
@@ -201,7 +201,7 @@ export function QrOrderGlobalNotifier({
   const currentOrder = orders[0] ?? null;
   // เสียงเตือนดังซ้ำจนกว่าจะปิด dialog ออร์เดอร์ QR
   // ประโยคที่พูดต้องไม่มีข้อมูลลูกค้าหรือยอดเงิน — ลำโพงอยู่หน้าร้าน ลูกค้าได้ยินด้วย
-  useRepeatingAlert(Boolean(currentOrder), "qr", {
+  useRepeatingAlert(Boolean(currentOrder), "order", {
     announcement: currentOrder ? qrOrderAnnouncement(currentOrder.tableNumber, orders.length) : null,
     voiceEnabledByStore: voiceEnabled,
   });
@@ -271,7 +271,8 @@ export function QrOrderGlobalNotifier({
       table: "orders",
       filter: `store_id=eq.${storeId}`,
       onEvent: (payload) => {
-        if (payload.eventType !== "INSERT" || !payload.new?.qr_order_source) return;
+        // ข้ามบิลรวมโต๊ะ (table_bill_key) — รายการเป็นของรอบที่ครัวทำไปแล้ว ห้ามเด้ง/พิมพ์ซ้ำ
+        if (!isNewKitchenQrOrderEvent(payload) || !payload.new) return;
         const order = payload.new;
         if (seenOrderIds.current.has(order.id)) return;
         seenOrderIds.current.add(order.id);
@@ -281,14 +282,14 @@ export function QrOrderGlobalNotifier({
 
           // Multi-printer routing: split the order into per-station tickets and
           // enqueue each to its station's network printer via the Print Hub.
-          // Only the all-station (manager) view drives this to avoid each staff
-          // client double-enqueuing the same order.
-          if (autoPrintStationTickets && canViewEveryKitchenStation && stationPrinters.some((s) => s.printerId)) {
-            const { jobs } = buildStationTicketJobs({
+          // ทุกจอยิงได้ — คีย์ (ออเดอร์, สถานี) ทำให้ server ออกตั๋วใบเดียว
+          if (autoPrintStationTickets && stationPrinters.some((s) => s.printerId)) {
+            setPrintStatus("กำลังส่งตั๋วครัว");
+            void dispatchOrderStationTickets({
+              orderId: visibleOrder.id,
               orderNumber: visibleOrder.orderNumber,
               tableNumber: visibleOrder.tableNumber,
               paperWidth: receiptPaperWidth,
-              printedAt: visibleOrder.createdAt,
               items: visibleOrder.items.map((item) => ({
                 name: item.productName,
                 variantName: item.variantName,
@@ -298,17 +299,9 @@ export function QrOrderGlobalNotifier({
                 kitchenStationId: item.kitchenStationId,
               })),
               stations: stationPrinters,
+            }).then((res) => {
+              if (res) setPrintStatus(describeStationPrintResult(res));
             });
-            if (jobs.length > 0) {
-              setPrintStatus(`กำลังพิมพ์ตั๋ว ${jobs.length} สถานี`);
-              void enqueueStationTickets(jobs).then((res) => {
-                setPrintStatus(
-                  res.failed.length === 0
-                    ? `พิมพ์ตั๋วครัว ${res.printed} สถานีแล้ว`
-                    : `พิมพ์ตั๋ว ${res.printed} สำเร็จ, ล้มเหลว ${res.failed.length}`,
-                );
-              });
-            }
           }
 
           if (!readAutoPrintPreference()) return;

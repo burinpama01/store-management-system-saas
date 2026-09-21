@@ -11,6 +11,8 @@ import {
   previewDonationPositionAction,
   startMusicDonationAction,
   verifyMusicDonationAction,
+  checkMusicDonationPaymentAction,
+  cancelMusicDonationPaymentAction,
 } from "./music-actions";
 import type { PlayedTrack } from "@/modules/music-requests/repository";
 import {
@@ -74,6 +76,8 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   const [payPayload, setPayPayload] = useState<string | null>(null);
   const [payInfo, setPayInfo] = useState<{ promptpayId: string; amount: number } | null>(null);
   const [donationRequestId, setDonationRequestId] = useState<string | null>(null);
+  // Beam: QR ที่ระบบยืนยันเอง (ไม่ต้องแนบสลิป)
+  const [beamPay, setBeamPay] = useState<{ payload: string | null; image: string | null; amount: number; token: string } | null>(null);
 
   const load = useCallback(async () => {
     const [res, history] = await Promise.all([
@@ -217,6 +221,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
     setPayPayload(null);
     setPayInfo(null);
     setDonationRequestId(null);
+    setBeamPay(null);
   }
 
   function startDonation(tierOverride?: "queue" | "now", amountOverride?: number) {
@@ -248,6 +253,16 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
         void load();
         return;
       }
+      if (!res.error && res.requestId && res.beam && res.paymentToken) {
+        setDonationRequestId(res.requestId);
+        setBeamPay({
+          payload: res.beam.qrPayload,
+          image: res.beam.qrImageBase64,
+          amount: res.beam.amount,
+          token: res.paymentToken,
+        });
+        return;
+      }
       if (res.error || !res.requestId || !res.promptPayPayload) {
         setErrMsg(res.error ?? "เริ่มโดเนทไม่สำเร็จ");
         return;
@@ -257,6 +272,51 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       if (res.promptpayId && res.amount != null) {
         setPayInfo({ promptpayId: res.promptpayId, amount: res.amount });
       }
+    });
+  }
+
+  // Beam: ถามสถานะทุก 3 วิ จนระบบยืนยัน (webhook/lookup) — ไม่ต้องแนบสลิป
+  useEffect(() => {
+    if (!beamPay) return;
+    let cancelled = false;
+    const token = beamPay.token;
+    const timer = window.setInterval(() => {
+      void checkMusicDonationPaymentAction(token).then((res) => {
+        if (cancelled) return;
+        if (res.verified) {
+          window.clearInterval(timer);
+          setOkMsg("ได้รับเงินแล้ว 🎉 เพลงของคุณจะได้แซงคิว");
+          setBeamPay(null);
+          setDonationRequestId(null);
+          setSelected(null);
+          setDonateTier(null);
+          setAmount("");
+          setQuery("");
+          setResults([]);
+          void load();
+        } else if (res.status === "FAILED" || res.status === "EXPIRED" || res.status === "CANCELLED") {
+          window.clearInterval(timer);
+          setErrMsg("QR หมดอายุหรือชำระไม่สำเร็จ — กดขอใหม่อีกครั้ง");
+          setBeamPay(null);
+        } else if (res.status === "LATE_PAID" || res.status === "REVIEW_REQUIRED") {
+          window.clearInterval(timer);
+          setErrMsg(res.error);
+        }
+      });
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [beamPay, load]);
+
+  /** ยกเลิกที่หน้า QR Beam: ยกเลิกฝั่ง server ด้วย (เงินที่เข้าหลังจากนี้ร้านตรวจคืน ไม่เข้าคิว) */
+  function cancelBeamDonation() {
+    const token = beamPay?.token;
+    resetTrack();
+    if (!token) return;
+    void cancelMusicDonationPaymentAction(token).then((res) => {
+      if (res.error) setErrMsg(res.error);
     });
   }
 
@@ -358,7 +418,26 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
           {errMsg && <p className="text-xs text-red-500">{errMsg}</p>}
           {okMsg && <p className="text-xs text-green-600">{okMsg}</p>}
 
-          {payPayload ? (
+          {beamPay ? (
+            <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-center">
+              <p className="text-sm font-semibold text-violet-900">สแกนจ่ายเพื่อโดเนท</p>
+              <div className="flex justify-center">
+                {beamPay.payload ? (
+                  <QrCode value={beamPay.payload} size={200} />
+                ) : beamPay.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`data:image/png;base64,${beamPay.image}`} alt="QR ชำระเงิน" className="h-[200px] w-[200px]" />
+                ) : null}
+              </div>
+              <p className="text-xs text-gray-600">฿{beamPay.amount.toLocaleString("th-TH")}</p>
+              <p className="text-xs text-violet-700" aria-live="polite">
+                จ่ายแล้วรอสักครู่ ระบบยืนยันให้อัตโนมัติ ไม่ต้องแนบสลิป
+              </p>
+              <button onClick={cancelBeamDonation} className="text-xs text-gray-400">
+                ยกเลิก
+              </button>
+            </div>
+          ) : payPayload ? (
             <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-center">
               <p className="text-sm font-semibold text-violet-900">สแกนจ่ายเพื่อโดเนท</p>
               <div className="flex justify-center">

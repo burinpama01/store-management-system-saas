@@ -8,6 +8,7 @@ export type NotificationType =
   | "new_pos_order"
   | "new_qr_order"
   | "new_buffet_order"
+  | "new_delivery_order"
   | "kitchen_order"
   | "buffet_expiring"
   | "stock_alert"
@@ -40,6 +41,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "new_pos_order",
   "new_qr_order",
   "new_buffet_order",
+  "new_delivery_order",
   "buffet_expiring",
   "stock_alert",
   "order_cancelled",

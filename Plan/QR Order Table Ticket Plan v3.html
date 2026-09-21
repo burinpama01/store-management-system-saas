@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บิลรวมโต๊ะ + จองสต็อก v3</title>
+<style>
+  :root { --bg:#f7f6f2; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e4e2da; --accent:#b45309; --bad:#b91c1c; --ok:#0f766e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --bad:#f87171; --ok:#2dd4bf; } }
+  :root[data-theme="dark"] { --bg:#171716; --card:#222220; --ink:#eeede8; --muted:#a3a29c; --line:#3a3935; --accent:#f59e0b; --bad:#f87171; --ok:#2dd4bf; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 "Sarabun","Noto Sans Thai",system-ui,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; } h2 { font-size:20px; margin:32px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  h3 { font-size:16px; margin:18px 0 6px; }
+  .meta { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:12px 0; }
+  .warn { border-left:4px solid var(--accent); } .stop { border-left:4px solid var(--bad); } .good { border-left:4px solid var(--ok); }
+  code { background:rgba(127,127,127,.12); padding:1px 5px; border-radius:4px; font-size:14px; }
+  ol li, ul li { margin:5px 0; } .scroll { overflow-x:auto; } table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; border-bottom:1px solid var(--line); padding:6px 8px; vertical-align:top; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; font-size:13px; line-height:1.5; }
+</style>
+</head>
+<body><main>
+<h1>บิลรวมโต๊ะ + จองสต็อกจนครัวรับออเดอร์</h1>
+<p class="meta">แผน v3 · 2026-09-18 · ต่อจาก v2 + ความต้องการใหม่เรื่องสต็อก · สถานะ: <b>รออนุมัติ</b> · ใช้กับ POS ปกติ <code>/pos</code> + บอร์ด QR เดิม (ไม่แตะ Unified POS)</p>
+
+<h2>1. ความต้องการใหม่ (เพิ่มจาก v2)</h2>
+<div class="card warn">
+ลูกค้ากดสั่งผ่าน QR → <b>สต็อกที่แสดงบนหน้าจอลูกค้าลดลงทันที</b> (จองไว้) → ออเดอร์เด้งเข้าครัว →
+<b>ครัวกด "รับออเดอร์" จึงตัดสต็อกจริง</b> → ถ้าครัว <b>ปฏิเสธ คืนสต็อก</b>
+</div>
+<p>ข้อเท็จจริงตอนนี้: ระบบ <b>ตัดสต็อกจริงทันทีที่ลูกค้าสั่ง</b> · บอร์ดครัวไม่มีปุ่มรับออเดอร์ (มีแค่ "เริ่มเตรียม") · ปฏิเสธรายละรายการได้แล้ว (คืนสต็อก) · หน้าลูกค้ายังไม่แสดงสต็อกเลย</p>
+
+<h2>2. โมเดลสต็อกใหม่: "จอง" แยกจาก "ตัดจริง"</h2>
+<pre>สต็อกจริง (หลังร้าน/รายงาน)      = stock_quantity                  ← ลดตอนครัวรับเท่านั้น
+ยอดจอง                            = reserved_quantity               ← เพิ่มตอนลูกค้าสั่ง
+พร้อมขาย (หน้าลูกค้า/POS/เช็คของ) = stock_quantity − reserved_quantity</pre>
+<div class="scroll"><table>
+<tr><th>เหตุการณ์</th><th>stock_quantity</th><th>reserved_quantity</th><th>stock_movements</th></tr>
+<tr><td>ลูกค้ากดสั่ง</td><td>—</td><td>+ จำนวน (ถ้าพร้อมขายไม่พอ = สั่งไม่ได้)</td><td>reserve</td></tr>
+<tr><td>ครัวกด <b>รับออเดอร์</b></td><td>− จำนวน</td><td>− จำนวน</td><td>sale (ตัดจริง)</td></tr>
+<tr><td>ครัว <b>ปฏิเสธ</b> (ทั้งออเดอร์หรือรายรายการ)</td><td>—</td><td>− จำนวน</td><td>release</td></tr>
+<tr><td>ปฏิเสธรายการที่ <i>รับไปแล้ว</i></td><td>+ จำนวน (คืนเหมือนเดิม)</td><td>—</td><td>return</td></tr>
+<tr><td>ปิดโต๊ะ/ยกเลิกออเดอร์ที่ยังไม่รับ</td><td>—</td><td>− จำนวน</td><td>release</td></tr>
+</table></div>
+<p>ทำเหมือนกันกับ <b>Stock Pool</b> (<code>stock_pools.reserved_units</code>) เพราะออเดอร์ QR ใช้ pool ได้ · ทุกจุดที่เช็ค "ของพอไหม" (POS, QR, เดลิเวอรี, AI) เปลี่ยนไปใช้ยอด <i>พร้อมขาย</i></p>
+
+<h3>ครัวรับออเดอร์</h3>
+<ul>
+<li>บอร์ด QR: ออเดอร์สถานะ "ใหม่" มีปุ่ม <b>รับออเดอร์</b> (แทน "เริ่มเตรียม") และ <b>ปฏิเสธ</b></li>
+<li>ร้านที่มีหลายสถานีครัว: แต่ละสถานีกดรับเฉพาะรายการของสถานีตัวเอง (ตัดสต็อกเฉพาะรายการนั้น) — ออเดอร์ขยับเป็น "กำลังเตรียม" เมื่อทุกสถานีรับแล้ว</li>
+<li>รายการจากตั๋วหน้าร้าน (POS) ไม่ผ่านการจอง — ตัดสต็อกตอนรวมบิล/ชำระตามเดิม</li>
+</ul>
+
+<h3>หน้าจอลูกค้า</h3>
+<ul>
+<li>เมนูที่ติดตามสต็อก: แสดง "หมด" เมื่อพร้อมขาย ≤ 0 · (ตัวเลือก) แสดง "เหลือ n" เมื่อใกล้หมด</li>
+<li>ตรวจซ้ำฝั่ง DB ตอนสั่งเสมอ (ล็อกแถว) — กันลูกค้าสองโต๊ะแย่งชิ้นสุดท้าย</li>
+</ul>
+
+<h2>3. บิลรวมโต๊ะ (จาก v2 คงเดิม)</h2>
+<ol>
+<li>เปิดโต๊ะ → เปิดตั๋วโต๊ะแบบ atomic (1 ตั๋วอัตโนมัติต่อโต๊ะ)</li>
+<li>ออเดอร์ QR โผล่ในตั๋ว พร้อมสถานะ <b>รอครัวรับ / รับแล้ว / ปฏิเสธ</b></li>
+<li>พิมพ์ใบตรวจรายการ (ยังไม่ชำระ) ให้ลูกค้าเช็ค · แก้ก่อนจ่ายได้</li>
+<li>กดชำระ → server รวมทุกออเดอร์ของโต๊ะเป็น <b>บิลเดียว</b> → หน้าจ่ายเงินปกติของ POS (เงินสด/Beam/TrueMoney ตามนโยบายเดียวกัน) → ใบเสร็จใบเดียว → ปิดโต๊ะ</li>
+<li><b>ใหม่:</b> ถ้ายังมีรายการที่ครัว <i>ยังไม่รับ</i> → ห้ามรวมบิล แจ้ง "รอครัวรับ/ปฏิเสธก่อน" (ไม่เก็บเงินของที่ยังไม่ยืนยันว่ามี)</li>
+</ol>
+<p>บิลรวมตั้ง <code>qr_order_source = true</code> (จ่ายแล้วไม่ตัดซ้ำ) · รายการ QR ถูกตัดจริงแล้วตอนครัวรับ · รายการตั๋วหน้าร้านตัดตอนรวมบิล</p>
+
+<h2>4. แก้ตามรีวิว PR #62 (คงจาก v2)</h2>
+<ul>
+<li>ชำระผ่านหน้าจ่ายเงิน POS → นโยบาย Beam/พร้อมเพย์เดียวกัน · Beam ยัง 1 การจ่าย : 1 ออเดอร์</li>
+<li>ตั๋วโต๊ะจ่ายแล้วปิดโต๊ะเสมอ (มีหรือไม่มี QR)</li>
+<li><code>ticket_source</code> + unique index + RPC <code>ensure_table_auto_ticket</code> · query ตั๋วตามโต๊ะไม่ติด limit 30</li>
+<li>safe logging + audit การลบตั๋วว่าง · test พฤติกรรม + SQL integration</li>
+</ul>
+
+<h2>5. Migration (additive)</h2>
+<ul>
+<li><code>product_variants.reserved_quantity</code>, <code>stock_pools.reserved_units</code> (default 0, check ≥ 0)</li>
+<li><code>order_items.stock_state</code>: reserved | committed | released (+ รายการเก่า = committed)</li>
+<li>แก้ RPC: <code>create_qr_order_with_items</code> (จองแทนตัด), <code>void_qr_order_item</code>, <code>cancel_qr_order</code> (คืนตามสถานะ) · ใหม่: <code>accept_qr_order_items</code></li>
+<li>จาก v2: <code>pos_saved_tickets.ticket_source</code>, <code>orders.merged_into_order_id</code>, <code>ensure_table_auto_ticket</code>, <code>consolidate_table_bill</code>, <code>stores.table_open_auto_ticket</code></li>
+</ul>
+
+<h2>6. ความเสี่ยง</h2>
+<div class="card stop">
+<ul>
+<li><b>ออเดอร์ที่เปิดค้างอยู่ตอน deploy</b> ตัดสต็อกไปแล้ว → migration ตั้ง <code>stock_state = committed</code> ทั้งหมด (ไม่จองซ้ำ ไม่คืนผิด)</li>
+<li>ถ้าครัวไม่กดรับเลย สต็อกค้างจอง → แสดงยอดจองค้างในหน้าสต็อก + ปล่อยคืนอัตโนมัติเมื่อปิดโต๊ะ/ยกเลิก</li>
+<li>ทุกจุดที่เช็คสต็อก (POS ปกติ, ขายส่ง, เดลิเวอรี, Stock Pool, Unified) ต้องเปลี่ยนไปใช้ "พร้อมขาย" — ถ้าหลุดจุดเดียว = ขายเกิน · จะมี test ครอบทุกจุด</li>
+<li>ร้าน Unified POS (นำร่อง) มีระบบครัว/รับ-ปฏิเสธของตัวเอง — รอบนี้ <b>ไม่เปลี่ยนจังหวะตัดสต็อกของ Unified</b> (แต่ให้เช็คยอดพร้อมขายด้วย)</li>
+<li>ระบบเงิน + สต็อก + DB เดียวกับ prod → ทดสอบบน Supabase local (Docker) ก่อน apply</li>
+<li>ขนาดงาน: ประมาณ 3–4 วันทำงาน → แนะนำแบ่ง 2 PR</li>
+</ul>
+</div>
+
+<h2>7. แบ่งงาน 2 PR</h2>
+<div class="card good">
+<b>PR A — จองสต็อก + ครัวรับ/ปฏิเสธ</b> (ใช้ได้ทันทีแม้ยังไม่มีบิลรวม)<br>
+reserved columns · RPC จอง/รับ/ปฏิเสธ/ยกเลิก · ปุ่มรับออเดอร์บนบอร์ด · หน้าลูกค้าแสดงหมด · ทุกจุดเช็คพร้อมขาย · test<br><br>
+<b>PR B — บิลรวมโต๊ะ</b> (แทน PR #62 เดิม)<br>
+ตั๋วโต๊ะ atomic · ใบตรวจรายการ · รวมบิล · จ่ายผ่านหน้าจ่าย POS · ปิดโต๊ะ · ห้ามรวมบิลถ้ายังมีรายการรอครัวรับ · test
+</div>
+</main></body>
+</html>

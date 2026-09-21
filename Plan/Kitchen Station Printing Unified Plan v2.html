@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แผนพิมพ์ตั๋วครัว v2</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f7f6f3;--card:#fff;--ink:#1d1d1b;--muted:#6b6a66;--line:#e4e2dc;--accent:#b4531f;--accent-soft:#fbeee6;--ok:#2f7a4a;--ok-soft:#e6f3ea;--warn:#a36a00;--warn-soft:#fdf3dc;--code:#f1efea}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#161614;--card:#1f1f1c;--ink:#ecebe6;--muted:#a3a19a;--line:#34332f;--accent:#e58a55;--accent-soft:#3a261a;--ok:#6cc48d;--ok-soft:#1c2e22;--warn:#e0b050;--warn-soft:#33291a;--code:#2a2926}}
+:root[data-theme="dark"]{--bg:#161614;--card:#1f1f1c;--ink:#ecebe6;--muted:#a3a19a;--line:#34332f;--accent:#e58a55;--accent-soft:#3a261a;--ok:#6cc48d;--ok-soft:#1c2e22;--warn:#e0b050;--warn-soft:#33291a;--code:#2a2926}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;line-height:1.7}
+main{max-width:920px;margin:0 auto;padding:32px 16px 72px}
+h1{font-size:28px;margin:0 0 6px}h2{font-size:21px;margin:36px 0 10px;padding-top:10px;border-top:1px solid var(--line)}
+.meta{color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:12px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft)}
+.ok{border-left:4px solid var(--ok);background:var(--ok-soft)}
+.warn{border-left:4px solid var(--warn);background:var(--warn-soft)}
+code{background:var(--code);padding:1px 6px;border-radius:5px;font-size:13.5px;word-break:break-word}
+.tbl{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14.5px;background:var(--card)}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:var(--code)}
+.pill{display:inline-block;font-size:12.5px;padding:1px 9px;border-radius:99px;font-weight:600}
+.p-ok{background:var(--ok-soft);color:var(--ok)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{padding-left:22px}li{margin:3px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>แผนพิมพ์ตั๋วครัว/บาร์แบบรวม v2</h1>
+<p class="meta">StoreOS · 2026-09-19 · ต่อจาก <code>Plan/Kitchen Station Printing Unified Plan v1.html</code> (รายละเอียดเฟส 3–5 ยังตาม v1)</p>
+
+<div class="card callout"><b>สิ่งที่เปลี่ยนจาก v1:</b> แทรก <b>เฟส 2.5 — เสียงแจ้งเตือนออเดอร์เข้า (QR + เดลิเวอรี)</b> ก่อนเริ่มเฟส 3 ใช้ไฟล์ <code>assets/AlertNewOrder.mp3</code> (1.6 วินาที) เน้นแอป Android ก่อน</div>
+
+<h2>สถานะเฟส</h2>
+<div class="tbl"><table>
+<tr><th>เฟส</th><th>งาน</th><th>สถานะ</th></tr>
+<tr><td>0</td><td>บิลรวมโต๊ะไม่เด้ง/ไม่พิมพ์ครัวซ้ำ</td><td><span class="pill p-ok">DEPLOYED</span> PR #67</td></tr>
+<tr><td>1+2</td><td>ตั๋วครัวใบเดียวทุกจอ + POS ออกตั๋วครัว (ไม่มี migration — ใช้ <code>print_jobs.source_key</code>)</td><td><span class="pill p-ok">DEPLOYED</span> PR #68</td></tr>
+<tr><td><b>2.5</b></td><td><b>เสียงแจ้งเตือนออเดอร์เข้า</b></td><td><span class="pill p-acc">กำลังทำ</span></td></tr>
+<tr><td>3</td><td>มือถือครัวพิมพ์ BLE (โหมด device)</td><td><span class="pill p-warn">รอ</span></td></tr>
+<tr><td>4–5</td><td>แอปทำงานตอนล็อกจอ / หลาย Hub / dispatch ฝั่ง server</td><td><span class="pill p-warn">รอ</span></td></tr>
+</table></div>
+
+<h2>เฟส 2.5 — เสียงแจ้งเตือนออเดอร์เข้า</h2>
+<p><b>ข้อตัดสินใจของผู้ใช้ (2026-09-19):</b> เพิ่ม push เดลิเวอรี (มี migration) · เสียงใหม่ใช้ทุกที่ (แอป + เบราว์เซอร์) · ออก APK + AAB เวอร์ชัน 1.0.2</p>
+
+<div class="tbl"><table>
+<tr><th>สถานการณ์</th><th>ตอนนี้</th><th>หลังเฟส 2.5</th></tr>
+<tr><td>เปิดแอป/หน้าเว็บค้างไว้ — ออเดอร์ QR เข้า</td><td>beep สังเคราะห์ (3 โทน) ซ้ำทุก 3.5 วิ</td><td>เล่น <code>AlertNewOrder</code> ซ้ำทุก 3.5 วิ จนกดรับ/ปิด (เปิดเสียงพูดไว้ = พูดเหมือนเดิม)</td></tr>
+<tr><td>เปิดค้าง — ออเดอร์เดลิเวอรีเข้า</td><td>beep 2 โทน</td><td>เล่น <code>AlertNewOrder</code> ซ้ำเหมือน QR</td></tr>
+<tr><td>แอป Android พับ/ล็อกจอ — QR</td><td>push เสียง default ของเครื่อง</td><td>push ช่อง "ออเดอร์ใหม่" เสียง <code>AlertNewOrder</code> (ความสำคัญสูง เด้งบนจอ)</td></tr>
+<tr><td>แอป Android พับ/ล็อกจอ — เดลิเวอรี</td><td><b>ไม่มี push เลย</b></td><td>push ชนิดใหม่ <code>new_delivery_order</code> ช่องเดียวกัน เสียงเดียวกัน (ร้านปิดได้ใน Notification Matrix)</td></tr>
+<tr><td>แจ้งเตือนอื่น (สต็อก, ลงเวลา ฯลฯ)</td><td>beep</td><td>beep เหมือนเดิม — เสียงออเดอร์ใช้เฉพาะออเดอร์ใหม่</td></tr>
+</table></div>
+
+<h3>งาน</h3>
+<ol>
+<li><b>เว็บ (ทุกที่):</b> <code>public/sounds/alert-new-order.mp3</code> · <code>alert-sound.ts</code> เพิ่ม pattern <code>"order"</code> ถอดรหัสไฟล์ด้วย AudioContext ที่ปลดล็อกแล้ว (โหลดล่วงหน้าตอนแตะจอครั้งแรก) ถ้ายังโหลดไม่เสร็จ/ล้ม ใช้ beep เดิมแทน (ไม่มีทางเงียบ) · QR + เดลิเวอรี + toast ของออเดอร์ใหม่ใช้ <code>"order"</code> · proxy matcher ยกเว้น <code>.mp3</code> (ไม่ redirect ไป login)</li>
+<li><b>Android native:</b> <code>res/raw/alert_new_order.mp3</code> · <code>MainActivity</code> สร้าง notification channel <code>storeos_orders</code> (IMPORTANCE_HIGH, เสียงไฟล์นี้, สั่น) · versionCode 3 / versionName 1.0.2 · build APK (ลิงก์ดาวน์โหลด) + AAB (Play Console)</li>
+<li><b>Push:</b> <code>buildFcmMessage</code> ใส่ <code>android.notification.channel_id=storeos_orders</code> + <code>sound</code> สำหรับ <code>new_qr_order</code>, <code>new_buffet_order</code>, <code>new_delivery_order</code> — แอปเวอร์ชันเก่า (ไม่มีช่องนี้) Android ใช้ช่องสำรองของ FCM อัตโนมัติ ไม่พัง</li>
+<li><b>Push เดลิเวอรี:</b> migration ขยาย check constraint <code>notification_settings</code> + <code>notification_templates</code> เพิ่ม <code>new_delivery_order</code> · types/templates/หน้า settings/Notification Center · <code>processInboundOrder</code> เรียก <code>notifyOwnerSafely</code> หลังบันทึกออเดอร์ใหม่ (ไม่ยิงซ้ำตอน JDC ส่งซ้ำ) · toast ของ Notification Center ข้าม type นี้เมื่อ realtime ทำงาน (DeliveryGlobalNotifier มี dialog+เสียงอยู่แล้ว)</li>
+<li><b>Log:</b> ความล้มเหลวของ push ถูก log โดย dispatcher อยู่แล้ว · การโหลดไฟล์เสียงล้ม log console (ฝั่ง client)</li>
+</ol>
+
+<h3>ลำดับ deploy</h3>
+<ol>
+<li>apply migration ขึ้น prod <b>ก่อน</b> merge (ขออนุญาตก่อน)</li>
+<li>merge → Vercel deploy (เว็บได้เสียงใหม่ทันที, push มี channel_id)</li>
+<li>ติดตั้ง APK 1.0.2 ที่มือถือ / อัปโหลด AAB ขึ้น Play Console (ผู้ใช้ทำ)</li>
+</ol>
+
+<h3>ทดสอบ</h3>
+<ul>
+<li>unit: FCM message ของออเดอร์ใหม่มี channel_id/sound, ของประเภทอื่นไม่มี · pattern ของ toast เลือก "order" เฉพาะออเดอร์ · ingestion เรียกแจ้งเตือนครั้งเดียว</li>
+<li>build Android ผ่าน (assembleRelease + bundleRelease) · ตรวจว่ามี <code>res/raw/alert_new_order.mp3</code> ใน APK</li>
+<li><b>ที่ร้าน/มือถือจริง (ผู้ใช้):</b> ล็อกจอ → สั่ง QR → ได้ยินเสียงใหม่ · ออเดอร์เดลิเวอรีเข้า → ได้ยินเสียงใหม่ · เปิดแอปค้าง → เสียงวนจนกดรับ</li>
+</ul>
+
+<div class="card warn"><b>ข้อจำกัด:</b> Android ล็อกเสียงของช่องแจ้งเตือนไว้ตั้งแต่สร้างครั้งแรก — ถ้าต่อไปจะเปลี่ยนไฟล์เสียงต้องใช้ channel id ใหม่ · ผู้ใช้ปิดเสียง/ลดความสำคัญของช่องในตั้งค่าเครื่องได้เอง · iOS ยังไม่มีแอป</div>
+</main>
+</body>
+</html>

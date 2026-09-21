@@ -9,6 +9,7 @@ import {
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import {
+  abandonStaleActiveRecords,
   getActiveRecordToday,
   clockIn,
   clockOut,
@@ -220,6 +221,33 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
 
     const now = new Date();
     const today = getStoreLocalDate(ctx.storeTimezone, now);
+
+    // ลืมกดออกงานของวันก่อน ๆ = ปิดให้เป็นขาดงานตรงนี้ จังหวะเดียวที่รู้แน่ว่ากะเก่า
+    // จบไปแล้ว (ระบบไม่มี auto clock-out) ถ้าพลาดจริงยังขอย้อนหลังให้ผู้จัดการแก้ได้
+    const abandoned = await abandonStaleActiveRecords(user.id, ctx.organizationId, today);
+    if (abandoned.count > 0) {
+      void logSystemEvent({
+        level: "warn",
+        source: "attendance.clock",
+        action: "abandonStaleRecords",
+        message: "ปิดรายการลงเวลาที่ลืมกดออกงานเป็นขาดงาน",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        context: { userId: user.id, abandoned: abandoned.count, today },
+      });
+    } else if (abandoned.error) {
+      // ปิดแถวเก่าไม่สำเร็จไม่ควรกันคนเข้างาน (เช่น migration ยังไม่ขึ้น constraint
+      // จะปฏิเสธค่า abandoned) แต่ต้องไม่เงียบ ไม่งั้นแถวค้างจะสะสมโดยไม่มีใครรู้
+      void logSystemEvent({
+        level: "error",
+        source: "attendance.clock",
+        action: "abandonStaleRecordsFailed",
+        message: "ปิดรายการลงเวลาที่ค้างไม่สำเร็จ — ปล่อยให้เข้างานต่อได้",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        context: { userId: user.id, today, error: abandoned.error.userMessage },
+      });
+    }
 
     // Org-wide: already having an open record at ANY branch blocks a second clock-in
     // (a completed earlier shift does not — allows a genuine second shift).

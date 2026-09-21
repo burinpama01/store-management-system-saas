@@ -52,6 +52,7 @@ function mapVariant(row: VariantRow, pools?: VariantStockPoolMap): ProductVarian
     priceAdjustment: row.price_adjustment,
     sku: row.sku ?? undefined,
     stockQuantity: row.stock_quantity ?? undefined,
+    reservedQuantity: row.reserved_quantity ?? 0,
     trackStock: row.track_stock,
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -91,13 +92,14 @@ export async function loadVariantStockPools(
 
   const poolsRes = await client
     .from("stock_pools")
-    .select("id, name, unit_label, quantity")
+    .select("id, name, unit_label, quantity, reserved_units")
     .in("id", [...new Set(links.map((link) => link.stock_pool_id))]);
   const poolRows = (poolsRes.data ?? []) as Array<{
     id: string;
     name: string;
     unit_label: string;
     quantity: number;
+    reserved_units: number | null;
   }>;
   if (poolsRes.error) return new Map();
 
@@ -111,6 +113,7 @@ export async function loadVariantStockPools(
       poolName: pool.name,
       unitLabel: pool.unit_label,
       quantity: pool.quantity,
+      reservedUnits: pool.reserved_units ?? 0,
       consumptionQuantity: link.consumption_quantity,
     });
   }

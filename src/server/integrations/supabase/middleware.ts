@@ -58,6 +58,8 @@ export async function updateSession(request: NextRequest) {
     // StoreOS Launcher บนเครื่องแคชเชียร์ส่ง log กลับมา (auth ด้วย Hub token ใน handler
     // ไม่มี session ผู้ใช้ เพราะโปรแกรมทำงานตั้งแต่ก่อนใครล็อกอินเข้าเว็บ)
     request.nextUrl.pathname === "/api/launcher/logs" ||
+    // Launcher 0.5.0+ ตรวจรุ่นใหม่ตั้งแต่ก่อนมีใครล็อกอิน (ข้อมูลเดียวกับลิงก์ดาวน์โหลดที่ public อยู่แล้ว)
+    request.nextUrl.pathname === "/api/launcher/latest" ||
     // StoreOS Connect: webhook ขาเข้าจาก JDC (auth ด้วย HMAC ใน handler ไม่ใช้ session)
     request.nextUrl.pathname.startsWith("/api/connect/v1/webhooks/") ||
     // BYO payment gateways (Beam / TrueMoney): webhook ขาเข้า — auth ด้วย HMAC/JWT

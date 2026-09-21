@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แผนพิมพ์ตั๋วครัว/บาร์ v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f7f6f3;--card:#ffffff;--ink:#1d1d1b;--muted:#6b6a66;--line:#e4e2dc;
+  --accent:#b4531f;--accent-soft:#fbeee6;--ok:#2f7a4a;--ok-soft:#e6f3ea;
+  --warn:#a36a00;--warn-soft:#fdf3dc;--bad:#b3261e;--bad-soft:#fbe7e5;--code:#f1efea;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614;--card:#1f1f1c;--ink:#ecebe6;--muted:#a3a19a;--line:#34332f;
+    --accent:#e58a55;--accent-soft:#3a261a;--ok:#6cc48d;--ok-soft:#1c2e22;
+    --warn:#e0b050;--warn-soft:#33291a;--bad:#f08a80;--bad-soft:#3a1f1c;--code:#2a2926;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614;--card:#1f1f1c;--ink:#ecebe6;--muted:#a3a19a;--line:#34332f;
+  --accent:#e58a55;--accent-soft:#3a261a;--ok:#6cc48d;--ok-soft:#1c2e22;
+  --warn:#e0b050;--warn-soft:#33291a;--bad:#f08a80;--bad-soft:#3a1f1c;--code:#2a2926;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Thai",system-ui,sans-serif;line-height:1.7;font-size:16px}
+main{max-width:960px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:30px;line-height:1.3;margin:0 0 6px}
+h2{font-size:22px;margin:44px 0 12px;padding-top:12px;border-top:1px solid var(--line)}
+h3{font-size:17px;margin:24px 0 8px}
+p{margin:8px 0}
+.meta{color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:12px 0}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft)}
+.bad{border-left:4px solid var(--bad);background:var(--bad-soft)}
+.ok{border-left:4px solid var(--ok);background:var(--ok-soft)}
+.warn{border-left:4px solid var(--warn);background:var(--warn-soft)}
+code{background:var(--code);padding:1px 6px;border-radius:5px;font-size:13.5px;word-break:break-word}
+pre{background:var(--code);padding:12px 14px;border-radius:10px;overflow-x:auto;font-size:13px;line-height:1.55}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14.5px;background:var(--card)}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--code);font-weight:600}
+.pill{display:inline-block;font-size:12.5px;padding:1px 9px;border-radius:99px;font-weight:600}
+.p-bad{background:var(--bad-soft);color:var(--bad)}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-acc{background:var(--accent-soft);color:var(--accent)}
+ul,ol{padding-left:22px;margin:6px 0}
+li{margin:3px 0}
+.phase{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.phase .tag{font-weight:700;color:var(--accent)}
+svg text{font-family:"IBM Plex Sans Thai",system-ui,sans-serif}
+.diagram{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;overflow-x:auto}
+.check li{list-style:"☐  "}
+</style>
+</head>
+<body>
+<main>
+
+<h1>แผนพิมพ์ตั๋วครัว/บาร์แบบรวม v1</h1>
+<p class="meta">StoreOS · 2026-09-19 · สถานะ: <span class="pill p-warn">รออนุมัติ</span> · branch ปัจจุบัน <code>feat/table-bill-label</code></p>
+
+<div class="card callout">
+<p><b>เป้าหมาย:</b> ทุกออเดอร์ที่มีรายการครัว/บาร์ ต้องออกตั๋วที่สถานีของมัน <b>ครั้งเดียวพอดี</b> ไม่ว่าเปิดกี่จอ, ไม่ว่ามาจาก QR / POS จ่ายทันที / ส่งเข้าครัว / เดลิเวอรี — และรองรับ <b>ครัวที่ใช้มือถือ (แอป Android) ต่อเครื่องพิมพ์ Bluetooth</b> ได้ทั้งแบบอยู่วงแลนเดียวกับบาร์และคนละวง</p>
+</div>
+
+<h2>1. สถานการณ์ตั้งต้น (ที่ต้องทำให้ได้)</h2>
+<div class="card">
+<ul>
+<li><b>บาร์:</b> พีซี/แท็บเล็ตเปิด POS ค้างไว้ ล็อกอินแคชเชียร์ · เครื่องพิมพ์บาร์ 1 เครื่อง (IP/USB ผ่าน Print Hub)</li>
+<li><b>ครัว:</b> แคชเชียร์อีกคนพกมือถือ (แอป Android) · เครื่องพิมพ์ครัว 1 เครื่อง — <b>ต่อ Bluetooth กับมือถือ</b> หรือเป็น IP ในแลนเดียวกับ Hub</li>
+<li>ครัวอาจอยู่ <b>วงแลนเดียวกัน หรือคนละวง</b> (คนละเราเตอร์/ใช้ 4G) ก็ต้องใช้ได้</li>
+</ul>
+</div>
+
+<h2>2. สภาพปัจจุบัน + ปัญหาที่พบ</h2>
+<div class="tbl"><table>
+<tr><th>ช่องทาง</th><th>ตอนนี้</th><th>ปัญหา</th></tr>
+<tr><td>ลูกค้าสั่ง QR</td><td>จอ dashboard/POS ที่ role ≠ staff แตกตั๋วต่อสถานี → <code>/api/print/enqueue</code> → Hub</td><td><span class="pill p-bad">ซ้ำ</span> ทุกจอที่เป็นแคชเชียร์/ผู้จัดการ enqueue ของตัวเอง (enqueue ไม่ส่ง source_key)</td></tr>
+<tr><td>POS "ส่งเข้าครัว" (ร้านปกติ)</td><td>ผ่าน pipeline QR → ได้ตั๋วแบบเดียวกัน</td><td><span class="pill p-bad">ซ้ำ</span> เหมือนด้านบน</td></tr>
+<tr><td>POS "ส่งเข้าครัว" (Unified POS)</td><td><code>add_items_to_table_v2</code> → <code>qr_order_source=false</code> → notifier ไม่เห็น</td><td><span class="pill p-warn">ช้า</span> ตั๋วออกตอนเช็คบิล (print-intent)</td></tr>
+<tr><td>POS ขาย-จ่ายทันที</td><td><code>autoPrintStationTickets: false</code> (<code>PosTerminal.tsx:4131</code>)</td><td><span class="pill p-bad">ไม่ออก</span></td></tr>
+<tr><td>เดลิเวอรีเข้า</td><td><code>printKitchenForOrder</code> → Hub</td><td><span class="pill p-bad">ซ้ำ</span> หลายจอ</td></tr>
+<tr><td>มือถือครัว + BLE</td><td>สวิตช์ "พิมพ์อัตโนมัติ" QR พิมพ์ <b>ทั้งออเดอร์</b> (รวมรายการบาร์ แบบใบเสร็จ) ผ่าน BLE</td><td><span class="pill p-bad">ผิดสถานี</span> + หลับจอ = ไม่พิมพ์ + ไม่ย้อนพิมพ์</td></tr>
+<tr><td>สถานีผูกเครื่องพิมพ์ที่ Hub พิมพ์ไม่ได้</td><td>dropdown แสดงทุกเครื่อง</td><td><span class="pill p-warn">ล้มเงียบ</span></td></tr>
+<tr><td>หลาย Hub (ครัวคนละแลน มีพีซีของตัวเอง)</td><td>1 ร้าน = 1 token, claim ทั้งร้าน</td><td><span class="pill p-bad">สุ่มหาย</span> Hub ผิดตัวดึงงานไป</td></tr>
+</table></div>
+
+<div class="card bad">
+<p><b>⚠️ บั๊กที่น่าจะเกิดอยู่บน prod ตอนนี้ (ขึ้นวันนี้กับ PR#64):</b> RPC <code>consolidate_table_bill</code> INSERT ออเดอร์บิลรวมด้วย <code>qr_order_source=true</code> แล้วย้าย order_items เข้ามาใน transaction เดียว → realtime ส่ง INSERT ให้ <code>QrOrderGlobalNotifier</code> ซึ่งกรองแค่ <code>qr_order_source</code> → <b>เด้งแจ้งเตือน "ออเดอร์ QR ใหม่" + พิมพ์ตั๋วครัวทั้งโต๊ะซ้ำ + auto-print</b> ทุกครั้งที่เช็คบิลรวม. แก้ใน Phase 0 (ยังไม่ได้ทดสอบยืนยันด้วยตา — ต้องลองบน local ก่อน)</p>
+</div>
+
+<h2>3. สถาปัตยกรรมใหม่</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 900 330" width="100%" role="img" aria-label="แผนภาพการส่งตั๋วสถานี">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+  <g font-size="13" fill="var(--ink)">
+    <rect x="10" y="20" width="170" height="130" rx="10" fill="var(--code)" stroke="var(--line)"/>
+    <text x="95" y="44" text-anchor="middle" font-weight="700">ต้นทางออเดอร์</text>
+    <text x="24" y="70">• QR ลูกค้า</text><text x="24" y="92">• POS จ่ายทันที</text>
+    <text x="24" y="114">• POS ส่งเข้าครัว</text><text x="24" y="136">• เดลิเวอรี</text>
+
+    <rect x="260" y="40" width="220" height="90" rx="10" fill="var(--accent-soft)" stroke="var(--accent)"/>
+    <text x="370" y="66" text-anchor="middle" font-weight="700">station_ticket_dispatches</text>
+    <text x="370" y="88" text-anchor="middle">1 แถว / (ออเดอร์, สถานี)</text>
+    <text x="370" y="110" text-anchor="middle">claim ก่อนพิมพ์ = ออกครั้งเดียว</text>
+
+    <rect x="560" y="10" width="330" height="120" rx="10" fill="var(--card)" stroke="var(--line)"/>
+    <text x="725" y="34" text-anchor="middle" font-weight="700">โหมด hub (บาร์)</text>
+    <text x="575" y="58">จอใดก็ได้ claim → enqueue (source_key)</text>
+    <text x="575" y="80">→ Hub พีซีบาร์ → เครื่องพิมพ์ IP/USB/BT-COM</text>
+    <text x="575" y="102">กรณีหลาย Hub: งานผูก hub_id ของเครื่องพิมพ์</text>
+
+    <rect x="560" y="160" width="330" height="140" rx="10" fill="var(--card)" stroke="var(--line)"/>
+    <text x="725" y="184" text-anchor="middle" font-weight="700">โหมด device (ครัว = มือถือ)</text>
+    <text x="575" y="208">เฉพาะมือถือที่ผูกสถานี claim + พิมพ์ BLE</text>
+    <text x="575" y="230">ใช้แค่อินเทอร์เน็ต (แลนเดียวกัน/4G ก็ได้)</text>
+    <text x="575" y="252">จอไม่ดับ + ย้อนพิมพ์ที่พลาดตอนตื่น</text>
+    <text x="575" y="274">heartbeat → หน้าตั้งค่าเห็นออนไลน์/ออฟไลน์</text>
+
+    <line x1="180" y1="85" x2="258" y2="85" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="480" y1="75" x2="558" y2="70" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="480" y1="105" x2="558" y2="220" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#a)"/>
+  </g>
+</svg>
+</div>
+
+<h3>3.1 หลักการ</h3>
+<ol>
+<li><b>สถานีมี "โหมดพิมพ์"</b> — <code>kitchen_stations.print_mode</code> = <code>hub</code> (เครื่องพิมพ์ผ่าน Hub เหมือนเดิม) | <code>device</code> (มือถือในแอปที่ผูกไว้พิมพ์ BLE) | <code>none</code></li>
+<li><b>ทุกตั๋วต้อง claim ก่อนพิมพ์</b> ในตารางใหม่ <code>station_ticket_dispatches</code> unique <code>(order_id, station_id)</code> — ผู้ชนะ claim คนเดียวที่ได้พิมพ์ → จบปัญหาซ้ำทุกช่องทาง/ทุกจอ. เก็บสถานะ <code>claimed → printed | failed</code> สำหรับย้อนพิมพ์ + audit</li>
+<li><b>ยังเรนเดอร์ตั๋วในเบราว์เซอร์ (raster)</b> เหมือนเดิม — ภาษาไทยคมชัด (text ESC/POS ฝั่ง server เคยทำไทยเพี้ยน) ย้ายไป server-side เป็นงานระยะยาว (Phase 5 ทางเลือก)</li>
+<li><b>ตั๋ว 1 ใบ = รายการของ "รอบนั้น"</b> — ทุกรอบสั่ง (QR submit / ส่งเข้าครัว / POS checkout) เป็น orders แถวใหม่อยู่แล้ว จึงใช้ order_id เป็นคีย์ได้. ออเดอร์บิลรวม (<code>table_bill_key</code> ไม่ว่าง) <b>ไม่ออกตั๋วครัวเด็ดขาด</b></li>
+<li><b>ทุกเส้นทางมี log</b> ลง <code>system_event_logs</code> รวมเส้นทางสำเร็จแบบเงียบ (กฎถาวรของโปรเจกต์)</li>
+</ol>
+
+<h3>3.2 ใครเป็นคนสั่งพิมพ์ (dispatcher)</h3>
+<div class="tbl"><table>
+<tr><th>โหมดสถานี</th><th>ใครพยายาม claim</th><th>เมื่อไหร่</th></tr>
+<tr><td>hub</td><td>ทุกจอ dashboard/POS ที่มีสิทธิ์ <code>orders.manage_qr</code> หรือจอ POS ที่สร้างออเดอร์นั้นเอง — แข่งกัน claim, คนแพ้ข้าม</td><td>ทันทีหลังออเดอร์เข้า (realtime) / หลัง action POS สำเร็จ (ไม่ต้องรอ realtime)</td></tr>
+<tr><td>device</td><td>เฉพาะมือถือที่ผูกกับสถานีนั้น (<code>localStorage</code> + heartbeat ในตาราง)</td><td>realtime + ตอนเปิดจอ/เน็ตกลับ (catch-up)</td></tr>
+</table></div>
+<p class="meta">ข้อดี: ไม่ต้องกำหนด "จอหลัก" — จอไหนเปิดอยู่ก็พิมพ์ได้ แต่ออกใบเดียว. ข้อจำกัดที่ยังเหลือ: ถ้า <b>ไม่มีจอไหนเปิดเลย</b> ตั๋ว hub ไม่ออก (แก้จริงคือ Phase 5 server-side)</p>
+
+<h2>4. ฐานข้อมูล (migration ใหม่ 1 ไฟล์)</h2>
+<pre>-- 2026092000xxxx_station_ticket_dispatch.sql (ชื่อจริงตั้งตอนทำ, เช็ค timestamp ไม่ชน)
+alter table kitchen_stations
+  add column print_mode text not null default 'hub'
+    check (print_mode in ('hub','device','none')),
+  add column device_label text,            -- ชื่อมือถือที่ผูก (แสดงในตั้งค่า)
+  add column device_last_seen timestamptz; -- heartbeat
+
+create table station_ticket_dispatches (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid not null references stores(id),
+  order_id uuid not null references orders(id) on delete cascade,
+  station_id uuid not null references kitchen_stations(id) on delete cascade,
+  channel text not null check (channel in ('hub','device')),
+  status text not null default 'claimed' check (status in ('claimed','printed','failed')),
+  print_job_id uuid references print_jobs(id),
+  claimed_by uuid,             -- user id
+  device_key text,             -- สำหรับ device mode
+  error text,
+  attempts int not null default 1,
+  claimed_at timestamptz not null default now(),
+  printed_at timestamptz,
+  unique (order_id, station_id)
+);
+-- RLS: อ่าน/เขียนเฉพาะสมาชิกร้าน (user_has_permission_in_store)
+
+-- RPC claim_station_ticket(p_order_id, p_station_id, p_channel, p_device_key)
+--   insert ... on conflict do nothing → คืน true ถ้าชนะ
+--   ยอม re-claim ได้ถ้า status='failed' หรือ 'claimed' ค้างเกิน 2 นาที (lease) → กันตั๋วหายเมื่อจอที่ชนะปิดไปกลางทาง
+--   ปฏิเสธออเดอร์ที่ table_bill_key ไม่ว่าง / status cancelled
+-- RPC finish_station_ticket(p_id, p_status, p_print_job_id, p_error)
+-- RPC station_ticket_backlog(p_station_id, p_since) → ออเดอร์ที่มีรายการของสถานีนี้แต่ยังไม่ printed (สำหรับ catch-up)</pre>
+<p class="meta">ต้อง apply prod ก่อน deploy โค้ด (โค้ดต้องทนคอลัมน์ไม่มี: default ถือเป็น <code>hub</code>). apply ผ่าน <code>npx supabase db push --db-url</code> ตามรอบก่อน</p>
+
+<h2>5. เฟสงาน</h2>
+
+<div class="card bad">
+<div class="phase"><span class="tag">Phase 0</span><b>Hotfix: บิลรวมโต๊ะไม่ออกตั๋วครัว/ไม่เด้งซ้ำ</b> <span class="pill p-bad">ด่วน</span> <span class="pill p-acc">web-only · ไม่มี migration</span></div>
+<ul>
+<li>ยืนยันบั๊กบน local (<code>dev-local-db</code>): เปิดโต๊ะ → สั่ง QR → ครัวรับ → เช็คบิลรวม → ดูว่า notifier เด้ง/พิมพ์หรือไม่</li>
+<li><code>QrOrderGlobalNotifier</code>: ข้าม INSERT ที่ <code>table_bill_key</code> ไม่ว่าง (เพิ่มใน <code>OrderInsertPayload</code>) + เช็คซ้ำตอน <code>fetchVisibleOrder</code></li>
+<li>ตรวจ <code>DeliveryGlobalNotifier</code>/บอร์ด QR ว่าไม่นับบิลรวมเป็นออเดอร์ครัวใหม่</li>
+<li>เทสต์: source-assertion ว่ากรอง table_bill_key + unit test ฟังก์ชันตัดสินใจ</li>
+<li>ส่งเป็น PR เล็กแยก merge ได้ทันที</li>
+</ul>
+</div>
+
+<div class="card">
+<div class="phase"><span class="tag">Phase 1</span><b>กันตั๋วซ้ำ (dispatch table + claim)</b> <span class="pill p-acc">migration</span></div>
+<ul>
+<li>migration ตามข้อ 4</li>
+<li>โมดูลใหม่ <code>src/modules/printing/station-dispatch.ts</code> — <code>dispatchStationTickets({ order, stations, paperWidth })</code>: แตกตั๋ว (reuse <code>buildStationTicketJobs</code>) → ต่อสถานีโหมด hub: <code>claim</code> → render → enqueue พร้อม <code>sourceKey = station:{orderId}:{stationId}</code> → <code>finish</code></li>
+<li><code>/api/print/enqueue</code>: รับ <code>sourceKey</code> (validate รูปแบบ + order เป็นของร้าน) ส่งต่อ <code>enqueuePrintJob</code> ซึ่ง dedupe ด้วย unique index อยู่แล้ว — กันซ้ำชั้นที่สอง</li>
+<li>เปลี่ยน QR notifier + <code>print-kitchen.ts</code> (เดลิเวอรี) ให้เรียก <code>dispatchStationTickets</code>; เลิกเงื่อนไข "เฉพาะ canViewEveryKitchenStation" (claim กันซ้ำแทน)</li>
+<li><code>print-intent.ts</code> (Unified settlement): ข้ามสถานีที่มี dispatch <code>printed</code> ของออเดอร์ต้นทางแล้ว</li>
+<li>log: <code>station_ticket.claimed / printed / failed / skipped_lost_claim</code></li>
+</ul>
+</div>
+
+<div class="card">
+<div class="phase"><span class="tag">Phase 2</span><b>POS ออกตั๋วครัวทุกเส้นทาง</b> <span class="pill p-acc">web-only</span></div>
+<ul>
+<li>POS จ่ายทันที (<code>PosTerminal</code> + <code>GroceryPosTerminal</code> หลัง <code>checkoutAndPayAction</code> สำเร็จ) → <code>dispatchStationTickets</code> — gate ด้วย <code>auto_print_station_tickets</code> (ร้านขายปลีกไม่มีสถานี = ไม่มีผล)</li>
+<li>"ส่งเข้าครัว" (<code>handleSendToKitchen</code>) → dispatch ทันทีหลัง action สำเร็จ ทั้งร้านปกติและ Unified (v2 path) — ไม่รอ realtime</li>
+<li>server action คืนรายการพร้อม <code>kitchen_station_id</code> ให้ client (หรือ client ดึงจาก order_items) เพื่อแตกตั๋ว</li>
+<li>บิลรวมโต๊ะ: รายการที่ค้างในตั๋วโต๊ะแล้วไปสร้างตอนเช็คบิล → <b>ไม่ออกตั๋ว</b> (ดูข้อตัดสินใจ D2)</li>
+</ul>
+</div>
+
+<div class="card">
+<div class="phase"><span class="tag">Phase 3</span><b>มือถือครัว = เครื่องพิมพ์สถานี (BLE)</b> <span class="pill p-acc">web-only ส่วนใหญ่</span></div>
+<ul>
+<li>ตั้งค่า → ครัว: เลือกโหมดสถานี <code>hub</code>/<code>device</code>/<code>none</code>; dropdown เครื่องพิมพ์ของโหมด hub <b>กรองเฉพาะเครื่องที่ Hub พิมพ์ได้</b> (ใช้ <code>toHubRoutableTarget</code>/<code>isHubReceiptPrinter</code>)</li>
+<li>ในแอป (<code>isNativePlatform</code>) หน้าใหม่/การ์ด "เครื่องนี้พิมพ์ตั๋วสถานี: [ครัว]" → เก็บ <code>localStorage</code> + ส่ง heartbeat ทุก 60 วิ (<code>device_label</code>, <code>device_last_seen</code>)</li>
+<li>มือถือที่ผูกสถานี: รับ realtime orders → claim (channel device) → พิมพ์ตั๋วครัว (ticketMode kitchen, <b>เฉพาะรายการสถานีนั้น</b>) ผ่าน <code>native-print-client</code> → finish</li>
+<li><b>Catch-up:</b> ตอน <code>visibilitychange</code>/<code>online</code>/เปิดแอป → <code>station_ticket_backlog</code> ย้อนหลัง 3 ชม. → พิมพ์ที่ยังไม่ printed (ใส่หัว "ตั๋วตกค้าง")</li>
+<li><b>จอไม่ดับ:</b> Wake Lock API ในหน้าครัว (WebView รองรับ) + ปุ่มเปิด/ปิด + เตือนถ้าแบต &lt; 20%</li>
+<li>ปิดสวิตช์ "พิมพ์อัตโนมัติทั้งออเดอร์" เดิมอัตโนมัติเมื่อเครื่องนี้ผูกสถานีแล้ว (กันพิมพ์ทั้งใบซ้อน)</li>
+<li>หน้าตั้งค่าครัวโชว์ "มือถือครัว: ออนไลน์ 1 นาทีที่แล้ว / ออฟไลน์" + เตือนบนจอบาร์เมื่อสถานี device ออฟไลน์เกิน 2 นาที และมีตั๋วค้าง</li>
+<li>(ทางเลือก) fallback: ถ้าสถานี device ออฟไลน์ &gt; N นาที ให้ส่งตั๋วไปเครื่องพิมพ์ hub สำรองที่ตั้งไว้</li>
+</ul>
+<p class="meta">ใช้ได้ทั้งแลนเดียวกันและคนละวง เพราะมือถือคุยกับ cloud ผ่านเน็ตอย่างเดียว ไม่ต้องมี Hub ที่ครัว</p>
+</div>
+
+<div class="card">
+<div class="phase"><span class="tag">Phase 4</span><b>แอป Android พิมพ์ได้ตอนล็อกจอ</b> <span class="pill p-warn">ต้องออก APK/AAB ใหม่</span></div>
+<ul>
+<li>Android foreground service (แจ้งเตือนถาวร "StoreOS กำลังรับตั๋วครัว") ให้ WebView/realtime ไม่ถูกพัก หรือ native: รับ FCM data message → เปิดแอปมาพิมพ์</li>
+<li>ตั้งค่าขอยกเว้น battery optimization + คู่มือสำหรับ Xiaomi/OPPO/Vivo ที่ฆ่าแอปพื้นหลัง</li>
+<li>ต้องอัปเดต Play Store (declaration foreground service type) — ทำหลัง Phase 3 ใช้งานจริงแล้วเห็นว่าจำเป็น</li>
+</ul>
+</div>
+
+<div class="card">
+<div class="phase"><span class="tag">Phase 5</span><b>ระยะยาว (ทางเลือก)</b></div>
+<ul>
+<li><b>หลาย Hub ต่อร้าน:</b> ตาราง <code>print_hubs</code> (token ต่อ Hub) + <code>printers.hub_id</code> + <code>claim_print_jobs</code> กรองตาม hub — สำหรับครัวคนละแลนที่มีพีซีของตัวเอง</li>
+<li><b>Dispatch ฝั่ง server:</b> สร้างตั๋ว hub ทันทีที่ออเดอร์ commit (trigger/after-action) ไม่ต้องมีจอเปิด — ต้องแก้เรนเดอร์ไทยฝั่ง server (raster ด้วย font ใน Node) ก่อน</li>
+</ul>
+</div>
+
+<h2>6. ข้อตัดสินใจที่ต้องการจากผู้ใช้</h2>
+<div class="tbl"><table>
+<tr><th>#</th><th>คำถาม</th><th>แนะนำ</th></tr>
+<tr><td>D1</td><td>POS ขายจ่ายทันที ออกตั๋วครัวอัตโนมัติไหม</td><td>ใช่ — ใช้สวิตช์ <code>auto_print_station_tickets</code> ตัวเดิม</td></tr>
+<tr><td>D2</td><td>รายการที่คีย์เก็บไว้ในตั๋วโต๊ะ (ไม่กดส่งเข้าครัว) ควรออกตั๋วครัวตอนเช็คบิลไหม</td><td>ไม่ — ถือว่าเสิร์ฟแล้ว; ถ้าจะให้ครัวทำต้องกด "ส่งเข้าครัว"</td></tr>
+<tr><td>D3</td><td>สถานี device ออฟไลน์ ให้ fallback ไปเครื่องพิมพ์ hub ไหม</td><td>มีเป็นตัวเลือกต่อสถานี ปิดไว้เป็นค่าเริ่มต้น</td></tr>
+<tr><td>D4</td><td>ตั๋วตกค้าง (catch-up) ย้อนหลังกี่ชั่วโมง</td><td>3 ชม. และไม่ข้ามรอบเที่ยงคืนร้าน</td></tr>
+<tr><td>D5</td><td>ทำ Phase 4 (APK) เลยหรือรอดูผล Phase 3 ที่ร้านก่อน</td><td>รอดูผลก่อน</td></tr>
+<tr><td>D6</td><td>Phase 5 หลาย Hub จำเป็นไหม (มีร้านที่ครัวมีพีซีแยกคนละแลน?)</td><td>ยังไม่ทำ — Phase 3 ครอบกรณีคนละแลนด้วยมือถือแล้ว</td></tr>
+</table></div>
+
+<h2>7. ทดสอบ / ยืนยัน</h2>
+<ul class="check">
+<li>Unit: <code>claim</code> ชนกัน 2 client → พิมพ์ครั้งเดียว; lease หมดแล้ว re-claim ได้; บิลรวมถูกปฏิเสธ</li>
+<li>Unit: แตกตั๋ว device กรองเฉพาะสถานีของเครื่อง; dropdown กรองเครื่องที่ Hub พิมพ์ได้</li>
+<li>Integration (local Supabase): RPC claim/finish/backlog + RLS คนนอกร้านอ่านไม่ได้</li>
+<li>Source-assertion: POS checkout / ส่งเข้าครัว เรียก dispatch; notifier ข้าม table_bill_key</li>
+<li>Browser (local <code>dev-local-db</code>): เปิด 2 แท็บเป็นแคชเชียร์ → สั่ง QR → print_jobs ได้ 1 แถว/สถานี</li>
+<li>typecheck + eslint + full suite (ตัด <code>.codex-temp</code>/<code>.worktrees</code>)</li>
+<li><b>ฮาร์ดแวร์ที่ร้าน:</b> บาร์ (Hub+IP) + มือถือครัว BLE ทั้งแบบแลนเดียวกันและ 4G; ล็อกจอ 5 นาทีแล้วเปิด → ตั๋วตกค้างออกครบไม่ซ้ำ</li>
+</ul>
+
+<h2>8. ความเสี่ยง</h2>
+<ul>
+<li><b>ไม่มีจอไหนเปิด</b> → ตั๋ว hub ไม่ออก (เหมือนเดิม) — ลดด้วยคำเตือนในตั้งค่า, แก้จริง Phase 5</li>
+<li><b>มือถือหลับ/ถูกฆ่าแอป</b> → ตั๋ว device ช้า (catch-up ช่วยได้เมื่อตื่น) — Phase 4</li>
+<li><b>BLE หลุดกลางงาน</b> → dispatch = failed → retry อัตโนมัติ 1 ครั้ง + ปุ่ม "พิมพ์ซ้ำ" บนมือถือ</li>
+<li><b>Migration ต้องขึ้นก่อนโค้ด</b> — โค้ดต้องทนตารางยังไม่มี (fallback เป็นพฤติกรรมเดิม)</li>
+<li>Tests ส่วนใหญ่เป็น source-assertion → grep ก่อนแก้ไฟล์ POS</li>
+</ul>
+
+<h2>9. ลำดับส่งงาน</h2>
+<ol>
+<li>PR-A: Phase 0 hotfix (merge ได้ทันที)</li>
+<li>PR-B: Phase 1 + 2 (migration + กันซ้ำ + POS ออกตั๋ว)</li>
+<li>PR-C: Phase 3 (มือถือครัว BLE) — ต่อจาก PR-B</li>
+<li>ทดสอบที่ร้าน → ตัดสิน Phase 4/5</li>
+</ol>
+
+</main>
+</body>
+</html>
