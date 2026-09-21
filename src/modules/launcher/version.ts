@@ -9,16 +9,16 @@
  * ปล่อยรุ่นใหม่ = สร้าง release + ใส่ SHA-256/ขนาดของ zip ที่อัปโหลดจริงให้ตรงทุกไบต์
  * (Launcher ทิ้งไฟล์ที่ hash ไม่ตรง — ค่าผิดแปลว่าทุกร้านอัปเดตไม่ได้ ไม่ใช่ติดตั้งของผิด)
  */
-export const LAUNCHER_VERSION = "0.5.0";
+export const LAUNCHER_VERSION = "0.6.0";
 
 /** SHA-256 (hex ตัวเล็ก) ของ storeos-launcher-<LAUNCHER_VERSION>.zip ที่อยู่บน release จริง */
-export const LAUNCHER_SHA256 = "d43ea845b265add7dcdbe5f5a3c19160870ddc4e097b61f82b4c79df0f95b4bd";
+export const LAUNCHER_SHA256 = "5ec7de72f3956a69e6eec0fb97c92aa34e93b915404351466e4f48064fe86668";
 
 /** ขนาดไฟล์ zip เป็นไบต์ (Launcher ตรวจซ้ำระหว่างดาวน์โหลด) */
-export const LAUNCHER_SIZE_BYTES = 120_392_677;
+export const LAUNCHER_SIZE_BYTES = 120_392_990;
 
 /** ข้อความสั้น ๆ ของรุ่นนี้ (โชว์ในแถบอัปเดตของ Launcher/หน้าเว็บ) */
-export const LAUNCHER_NOTES = "เลือกลำโพงเสียงแจ้งเตือนและเพลงแยกกันได้ + Launcher อัปเดตตัวเอง";
+export const LAUNCHER_NOTES = "อัปเดต Print Hub ที่เครื่องร้านให้อัตโนมัติ";
 
 export const LAUNCHER_RELEASE_BASE =
   "https://github.com/burinpama01/store-management-system-saas/releases/download";
