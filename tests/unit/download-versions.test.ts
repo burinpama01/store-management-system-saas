@@ -10,6 +10,15 @@ import {
   PRINT_HUB_VERSION,
 } from "@/modules/printing/hub-version";
 import { LAUNCHER_VERSION } from "@/modules/launcher/version";
+import {
+  ANDROID_SHA256,
+  ANDROID_SIZE_BYTES,
+  ANDROID_VERSION_CODE,
+  ANDROID_VERSION_NAME,
+  isAndroidApp,
+  isOutdated,
+  parseAppVersionName,
+} from "@/modules/mobile/android-version";
 
 const read = (relative: string) => readFileSync(join(process.cwd(), relative), "utf8");
 
@@ -53,5 +62,54 @@ describe("เวอร์ชันชุดติดตั้งที่หน�
     const source = read("src/app/download/windows-launcher/route.ts");
     expect(source).toContain("launcher-v${LAUNCHER_VERSION}");
     expect(source).not.toContain("storage/v1/object/public/app/storeos-launcher.zip");
+  });
+
+  it("แอป Android ตรงกับ versionName/versionCode ใน build.gradle", () => {
+    const gradle = read("mobile/android/app/build.gradle");
+    expect(gradle).toContain(`versionName "${ANDROID_VERSION_NAME}"`);
+    expect(gradle).toContain(`versionCode ${ANDROID_VERSION_CODE}`);
+  });
+
+  it("User-Agent ของแอปต้องพ่วงเวอร์ชันเดียวกัน ไม่งั้นเว็บแยกรุ่นไม่ออก", () => {
+    // ไม่มีเลขใน UA = เตือนอัปเดตไม่ได้เลย เพราะเซิร์ฟเวอร์ไม่รู้ว่าเครื่องไหนรุ่นอะไร
+    // และต้องคง substring "StoreOSApp" ไว้ เพราะ middleware/browser-capability เช็คตัวนี้
+    const config = read("mobile/capacitor.config.ts");
+    expect(config).toContain(`appendUserAgent: "StoreOSApp/${ANDROID_VERSION_NAME}"`);
+  });
+
+  it("SHA-256 และขนาดของ APK เป็นค่าที่ใช้ตรวจไฟล์ได้จริง", () => {
+    expect(ANDROID_SHA256).toMatch(/^[0-9a-f]{64}$/);
+    expect(ANDROID_SIZE_BYTES).toBeGreaterThan(0);
+  });
+});
+
+describe("อ่านรุ่นแอปจาก User-Agent", () => {
+  const androidUa = (suffix: string) =>
+    `Mozilla/5.0 (Linux; Android 13; SM-A135F) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 ${suffix}`;
+
+  it("เบราว์เซอร์ปกติไม่ใช่แอป", () => {
+    expect(parseAppVersionName("Mozilla/5.0 (Windows NT 10.0) Chrome/120")).toBeNull();
+    expect(isAndroidApp("Mozilla/5.0 (Windows NT 10.0) Chrome/120")).toBe(false);
+  });
+
+  it("แอปรุ่นเก่าที่ยังไม่มีเลขใน UA ถือเป็นรุ่น 0 จึงเห็นแบนเนอร์ได้ทันที", () => {
+    expect(parseAppVersionName(androidUa("StoreOSApp"))).toBe("0");
+    expect(isOutdated("0", ANDROID_VERSION_NAME)).toBe(true);
+  });
+
+  it("แอปที่พ่วงเลขเวอร์ชันมาอ่านได้ และรุ่นล่าสุดต้องไม่ถูกเตือน", () => {
+    expect(parseAppVersionName(androidUa(`StoreOSApp/${ANDROID_VERSION_NAME}`))).toBe(
+      ANDROID_VERSION_NAME,
+    );
+    expect(isOutdated(ANDROID_VERSION_NAME, ANDROID_VERSION_NAME)).toBe(false);
+    expect(isOutdated("1.0.1", "1.0.2")).toBe(true);
+    expect(isOutdated("1.0.10", "1.0.2")).toBe(false);
+    expect(isOutdated("0.9.9", "1.0.0")).toBe(true);
+  });
+
+  it("แอป iOS ใช้ UA เดียวกันแต่ต้องไม่ถูกชวนโหลด APK", () => {
+    const iosUa = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari StoreOSApp/1.0.2";
+    expect(parseAppVersionName(iosUa)).toBe("1.0.2");
+    expect(isAndroidApp(iosUa)).toBe(false);
   });
 });
