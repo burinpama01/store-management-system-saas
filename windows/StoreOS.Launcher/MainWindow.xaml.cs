@@ -483,6 +483,24 @@ public partial class MainWindow : Window
         _childWindows.Clear();
     }
 
+    /// <summary>
+    /// เวอร์ชัน agent ที่ติดตั้งอยู่บนเครื่องนี้ อ่านจาก health.json ที่ agent เขียนเอง
+    ///
+    /// อ่านไม่ได้ = ไม่รู้ = คืน null แล้วให้ผู้เรียกข้ามรอบนั้นไป ห้ามเดาแล้วเขียนทับ
+    /// </summary>
+    private string? ReadInstalledHubVersion()
+    {
+        try
+        {
+            if (!File.Exists(_healthPath)) return null;
+            return PrintHubReadiness.Parse(File.ReadAllText(_healthPath))?.AgentVersion;
+        }
+        catch (IOException)
+        {
+            return null; // agent กำลังเขียนไฟล์อยู่พอดี — รอบหน้าค่อยอ่านใหม่
+        }
+    }
+
     private void Refresh()
     {
         string? json = null;

@@ -60,6 +60,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/api/launcher/logs" ||
     // Launcher 0.5.0+ ตรวจรุ่นใหม่ตั้งแต่ก่อนมีใครล็อกอิน (ข้อมูลเดียวกับลิงก์ดาวน์โหลดที่ public อยู่แล้ว)
     request.nextUrl.pathname === "/api/launcher/latest" ||
+    // Launcher อ่านรุ่นล่าสุดของ Print Hub เพื่ออัปเดต agent ให้ — เหตุผลเดียวกับด้านบน
+    request.nextUrl.pathname === "/api/print/hub/agent-latest" ||
     // StoreOS Connect: webhook ขาเข้าจาก JDC (auth ด้วย HMAC ใน handler ไม่ใช้ session)
     request.nextUrl.pathname.startsWith("/api/connect/v1/webhooks/") ||
     // BYO payment gateways (Beam / TrueMoney): webhook ขาเข้า — auth ด้วย HMAC/JWT
