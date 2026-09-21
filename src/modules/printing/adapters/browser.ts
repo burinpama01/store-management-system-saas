@@ -33,7 +33,13 @@ function renderReceiptLine(line: ReceiptLine, paperWidth: ReceiptData["paperWidt
     "receipt-line",
     line.align === "center" ? "is-center" : "",
     line.bold ? "is-bold" : "",
+    line.emphasis === "item" ? "is-item" : "",
+    line.right ? "is-split" : "",
   ].filter(Boolean).join(" ");
+  if (line.right) {
+    // ชื่อชิดซ้าย ราคาชิดขวา — ให้ตรงกับที่ raster วาด (ดู `right` ใน ReceiptLine)
+    return `<div class="${classes}"><span>${escapeHtml(line.text) || "&nbsp;"}</span><span class="receipt-right">${escapeHtml(line.right)}</span></div>`;
+  }
   return `<div class="${classes}">${escapeHtml(line.text) || "&nbsp;"}</div>`;
 }
 
@@ -102,6 +108,10 @@ function buildReceiptHtml(data: ReceiptData): string {
   .receipt-line { min-height: 1.25em; white-space: pre-wrap; line-height: 1.25; }
   .receipt-line.is-center { text-align: center; }
   .receipt-line.is-bold { font-weight: 700; }
+  .receipt-line.is-item { font-size: 1.3em; font-weight: 700; line-height: 1.25; }
+  .receipt-line.is-split { display: flex; align-items: baseline; gap: 0.5em; }
+  .receipt-line.is-split > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .receipt-right { flex: 0 0 auto; font-size: 0.77em; font-weight: 600; white-space: pre; }
   .promptpay-qr { display: flex; justify-content: center; padding: 2mm 0 1mm; }
   .promptpay-qr-image { display: block; background: #fff; image-rendering: pixelated; }
   .receipt-image { display: flex; justify-content: center; }

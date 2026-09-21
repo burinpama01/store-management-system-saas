@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { buildPromptPayPayload } from "@/modules/printing/promptpay-qr";
 import { buildEscPosReceipt, CMD } from "@/modules/printing/escpos";
 import { renderReceiptRaster } from "@/modules/printing/receipt-raster-client";
-import { buildReceiptLines } from "@/modules/printing/receipt-lines";
+import { buildReceiptLines, ITEM_NAME_SCALE, RECEIPT_COLS } from "@/modules/printing/receipt-lines";
 import { buildTableQrReceiptData } from "@/modules/printing/table-qr-slip";
 import { floydSteinbergMono } from "@/modules/printing/escpos-raster";
 import { browserAdapter } from "@/modules/printing/adapters/browser";
@@ -296,6 +296,64 @@ describe("buildReceiptLines", () => {
     expect(text).not.toContain("รับเงิน");
     expect(text).toContain("เงินทอน");
     expect(text).toContain("55.00");
+  });
+
+  it("วางชื่อเมนูเป็นบรรทัดตัวใหญ่ โดยราคาอยู่ชิดขวาแยกจากชื่อ", () => {
+    const { lines } = buildReceiptLines({
+      storeName: "Test Cafe",
+      orderNumber: "260620-232241",
+      showTaxId: false,
+      items: [
+        {
+          name: "นมริกาโน่",
+          modifierNames: ["ระดับความหวาน: 100%", "ประเภท: เย็น (+5)"],
+          quantity: 1,
+          unitPrice: 45,
+          totalPrice: 45,
+        },
+      ],
+      subtotal: 45,
+      discount: 0,
+      total: 45,
+      payments: [{ method: "cash", amount: 45 }],
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printedAt: "2026-06-20T16:24:00.000Z",
+    });
+
+    const itemLine = lines.find((line) => line.emphasis === "item");
+    expect(itemLine?.text).toBe("นมริกาโน่");
+    expect(itemLine?.right).toBe("x1 45.00");
+    // ชื่อต้องไม่ถูกเติมช่องว่างท้ายอีกต่อไป — ราคาไปอยู่ฝั่งขวาแทน
+    expect(itemLine?.text.endsWith(" ")).toBe(false);
+
+    // ตัวเลือกของรายการยังเป็นบรรทัดปกติ ไม่ถูกขยายตาม
+    const modifierLine = lines.find((line) => line.text.includes("ระดับความหวาน"));
+    expect(modifierLine?.emphasis).toBeUndefined();
+    expect(modifierLine?.right).toBeUndefined();
+  });
+
+  it("ตัดชื่อเมนูที่ยาวเกินตามสัดส่วนฟอนต์ที่ใหญ่ขึ้น ไม่ให้ชนกับราคา", () => {
+    const longName = "ก".repeat(80);
+    const { lines } = buildReceiptLines({
+      storeName: "Test Cafe",
+      orderNumber: "260620-232241",
+      showTaxId: false,
+      items: [{ name: longName, modifierNames: [], quantity: 1, unitPrice: 45, totalPrice: 45 }],
+      subtotal: 45,
+      discount: 0,
+      total: 45,
+      payments: [{ method: "cash", amount: 45 }],
+      showQrPayment: false,
+      paperWidth: "80mm",
+      printedAt: "2026-06-20T16:24:00.000Z",
+    });
+
+    const itemLine = lines.find((line) => line.emphasis === "item");
+    const priceWidth = "x1 45.00".length;
+    const maxNameWidth = Math.floor((RECEIPT_COLS["80mm"] - priceWidth - 1) / ITEM_NAME_SCALE);
+    expect(itemLine?.text.length).toBeLessThanOrEqual(maxNameWidth);
+    expect(itemLine?.text.endsWith("…")).toBe(true);
   });
 
   it("places the store logo at the top and the footer image at the very bottom", () => {

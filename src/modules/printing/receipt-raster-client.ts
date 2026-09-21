@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReceiptData } from "./types";
-import { buildReceiptLines, type ReceiptLine } from "./receipt-lines";
+import { buildReceiptLines, ITEM_NAME_SCALE, type ReceiptLine } from "./receipt-lines";
 import { RASTER_WIDTH, floydSteinbergMono, packEscPosRaster, rgbaToMono, wrapRasterJob } from "./escpos-raster";
 import { getReceiptQrMetrics } from "./receipt-qr";
 
@@ -103,6 +103,10 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
   //   80mm: 48 × 0.6 × 19 = 547 ≤ 560   ·   58mm: 32 × 0.6 × 19 = 365 ≤ 368
   const fontPx = 19;
   const lineH = Math.round(fontPx * 1.25);
+  // ชื่อเมนูวาดใหญ่กว่าบรรทัดอื่น — ความสูงบรรทัดต้องโตตามด้วย ไม่งั้นตัวอักษร
+  // แถวถัดไปจะซ้อนขึ้นมาทับส่วนล่างของชื่อ
+  const itemFontPx = Math.round(fontPx * ITEM_NAME_SCALE);
+  const itemLineH = Math.round(itemFontPx * 1.25);
   const padX = 8;
   const padY = 8;
   const qrGap = Math.round(lineH * 0.6);
@@ -140,7 +144,7 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
       const prep = prepared.get(line);
       return prep ? sum + prep.drawH + imageGap : sum;
     }
-    if (!line.qrPayload) return sum + lineH;
+    if (!line.qrPayload) return sum + (line.emphasis === "item" ? itemLineH : lineH);
     return sum + getReceiptQrMetrics(line.qrPayload, data.paperWidth).drawDots + qrGap;
   }, 0);
 
@@ -248,16 +252,36 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
       continue;
     }
 
-    ctx.font = line.bold ? `700 ${baseFont}` : `600 ${baseFont}`;
+    const emphasised = line.emphasis === "item";
+    const font = emphasised
+      ? `${itemFontPx}px "Courier New", "Sarabun", monospace`
+      : baseFont;
+    ctx.font = line.bold || emphasised ? `700 ${font}` : `600 ${font}`;
     const text = line.text ?? "";
-    if (line.align === "center") {
+    if (line.right) {
+      // ราคาชิดขวา ชื่อชิดซ้าย — จัดจากความกว้างจริงของข้อความ ไม่ใช่จำนวนตัวอักษร
+      // เพราะสองฝั่งอาจใช้ฟอนต์คนละขนาดกัน
+      ctx.textAlign = "right";
+      const prevFont = ctx.font;
+      ctx.font = `600 ${baseFont}`;
+      // Courier กว้างราว 0.6 เท่าของขนาดฟอนต์ — ใช้เป็นค่าประมาณเมื่อ canvas
+      // ตัวที่รันอยู่ไม่มี measureText (เช่น canvas จำลองในเทส)
+      const rightWidth =
+        typeof ctx.measureText === "function"
+          ? ctx.measureText(line.right).width
+          : line.right.length * fontPx * 0.6;
+      drawText(line.right, width - padX, y + (emphasised ? itemFontPx - fontPx : 0), width - padX * 2);
+      ctx.font = prevFont;
+      ctx.textAlign = "left";
+      drawText(text, padX, y, width - padX * 2 - rightWidth - padX);
+    } else if (line.align === "center") {
       ctx.textAlign = "center";
       drawText(text, width / 2, y, width - padX * 2);
     } else {
       ctx.textAlign = "left";
       drawText(text, padX, y, width - padX * 2);
     }
-    y += lineH;
+    y += emphasised ? itemLineH : lineH;
   }
 
   const img = ctx.getImageData(0, 0, width, height);
