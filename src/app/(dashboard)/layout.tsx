@@ -10,6 +10,13 @@ import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
 import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
+import { AppUpdateNotice } from "./AppUpdateNotice";
+import {
+  ANDROID_VERSION_NAME,
+  isAndroidApp,
+  isOutdated,
+  parseAppVersionName,
+} from "@/modules/mobile/android-version";
 import { PushTokenRegistrar } from "./PushTokenRegistrar";
 import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
@@ -23,7 +30,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (!storeContext) redirect("/login");
   // super_admin is a platform operator with no store dashboard.
   if (storeContext.role === "super_admin") redirect("/system");
-  const path = (await headers()).get("x-pathname") ?? "";
+  const requestHeaders = await headers();
+  const path = requestHeaders.get("x-pathname") ?? "";
+  // รุ่นแอปที่ติดตั้งอยู่ อ่านจาก User-Agent ที่ Capacitor พ่วงมา — คำนวณฝั่ง server
+  // เพื่อไม่ให้ markup ต่างกันตอน hydrate และให้เบราว์เซอร์ปกติ/iOS ไม่โหลดแบนเนอร์เลย
+  const userAgent = requestHeaders.get("user-agent") ?? "";
+  const installedAppVersion = isAndroidApp(userAgent) ? parseAppVersionName(userAgent) : null;
+  const outdatedAppVersion =
+    installedAppVersion && isOutdated(installedAppVersion, ANDROID_VERSION_NAME)
+      ? installedAppVersion
+      : null;
   if (path !== "/attendance" && (await shouldStartAtAttendance({ user, ctx: storeContext, resolved }))) {
     redirect("/attendance");
   }
@@ -170,6 +186,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </div>
       <CommandPalette commands={commandItems} />
       <PushTokenRegistrar />
+      {/* แอปมือถือไม่ได้อยู่บน Store จึงไม่มี auto-update — เว็บเป็นคนบอกว่ามีรุ่นใหม่ */}
+      {outdatedAppVersion && <AppUpdateNotice installedVersion={outdatedAppVersion} />}
       {/* ตัวเด้งชุดเดียวกับหน้า POS — โหลดสถานีครัว/เครื่องพิมพ์ข้างในตัวเอง */}
       <Suspense fallback={null}>
         <StoreAlertNotifiers
