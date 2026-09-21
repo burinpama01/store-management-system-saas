@@ -381,4 +381,16 @@ describe("ฟีเจอร์ AI ปิดขายในแผน business", 
     for (const key of aiKeys) expect(enterprise[key]).toBe(true);
     expect(enterprise.qrOrdering).toBe(true);
   });
+
+  // การปิดขายฝั่ง business ต้องไม่กระทบร้าน enterprise แม้แต่น้อย — เส้นทางจริงที่
+  // แอปใช้ตัดสินสิทธิ์คือ canUseFeature ไม่ใช่ getPlanDefinition จึงเช็คตรงนั้นด้วย
+  // สถานะที่ใช้คือสถานะจริงบน production (2026-09-21: enterprise 9 ร้าน = trialing 6 / active 3)
+  it.each(["active", "trialing"] as const)(
+    "ร้าน enterprise สถานะ %s ใช้ AI ได้ครบทุกตัว",
+    (status) => {
+      const enterprise = state("enterprise", status);
+      for (const key of aiKeys) expect(canUseFeature(enterprise, key)).toBe(true);
+      expect(canUseFeature(enterprise, "qrOrdering")).toBe(true);
+    },
+  );
 });
