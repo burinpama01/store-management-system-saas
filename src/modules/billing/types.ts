@@ -110,8 +110,14 @@ export const PLAN_LABELS: Record<BillingPlan, string> = {
   enterprise: "Enterprise",
 };
 
-/** Boolean features a Business tenant can toggle on individually. */
-export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "maxMembers">[] = [
+/**
+ * Boolean features a Business tenant can toggle on individually.
+ *
+ * นี่คือแหล่งความจริงแหล่งเดียวของ "ฟีเจอร์ที่ขายแบบ build-your-own ได้" —
+ * ราคา ป้ายชื่อ ตัวเลือกในหน้าเลือกแพ็ก และชนิด BusinessComponent อนุมานจากรายการนี้
+ * ทั้งหมด ถอดรายการไหนออกจากที่นี่ = ถอดออกจากทุกที่พร้อมกัน ไม่มีที่ตกหล่น
+ */
+export const BUSINESS_SELECTABLE_FEATURES = [
   "groceryPos",
   "couponManagement",
   "loyaltyPoints",
@@ -129,10 +135,12 @@ export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "ma
   "apiIntegration",
   "byoPaymentGateway",
   "musicRequest",
-  "aiAssistant",
+  // aiAssistant ไม่อยู่ที่นี่โดยตั้งใจ — ผู้ช่วย AI เป็นของแพ็ก enterprise อย่างเดียว
+  // กติกา: ร้านที่มี AI ต้องมีฟีเจอร์อื่นครบอยู่แล้ว (AI เป็นชั้นบนสุด ไม่ใช่ของซื้อแยก)
+  // ถ้าจะเอากลับมาขายแบบ build-your-own ต้องบังคับให้ติ๊กฟีเจอร์ที่เหลือครบพร้อมกัน
   "aiVision",
   "aiForecast",
-];
+] as const satisfies readonly Exclude<FeatureKey, "maxStores" | "maxMembers">[];
 
 /** Builds the effective feature set for a Business config (pure). */
 export function businessConfigToPlanFeatures(config: BusinessPlanConfig): PlanFeatures {
@@ -142,7 +150,7 @@ export function businessConfigToPlanFeatures(config: BusinessPlanConfig): PlanFe
     maxMembers: Math.max(1, config.seats),
   };
   for (const key of config.features) {
-    if ((BUSINESS_SELECTABLE_FEATURES as FeatureKey[]).includes(key)) {
+    if ((BUSINESS_SELECTABLE_FEATURES as readonly FeatureKey[]).includes(key)) {
       features[key as Exclude<FeatureKey, "maxStores" | "maxMembers">] = true;
     }
   }

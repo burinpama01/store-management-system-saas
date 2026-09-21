@@ -6,7 +6,11 @@ import {
   isAccessAllowed,
   getPlanFeatures,
   canUseFeature,
+  getPlanDefinition,
+  businessConfigToPlanFeatures,
+  BUSINESS_SELECTABLE_FEATURES,
 } from "@/modules/billing/types";
+import { normalizeBusinessConfig } from "@/modules/billing/business-plan";
 import type { BillingState, PlanFeatures } from "@/modules/billing/types";
 
 function state(plan: BillingState["plan"], status: BillingState["status"]): BillingState {
@@ -330,5 +334,30 @@ describe("feature labels and limits", () => {
     expect(explainFeatureLock(state("free", "active"), "qrOrdering")).toContain("Free");
     expect(explainFeatureLock(state("premium", "active"), "qrOrdering")).toBeNull();
     expect(explainFeatureLock(state("free", "active"), "maxStores")).toBeNull();
+  });
+});
+
+describe("ผู้ช่วย AI เป็นของ enterprise อย่างเดียว", () => {
+  // กติกา: ร้านที่มี AI ต้องมีฟีเจอร์อื่นครบอยู่แล้ว — AI เป็นชั้นบนสุด ไม่ใช่ของซื้อแยก
+  // ถ้าเทสนี้แดง แปลว่ามีคนเอา aiAssistant กลับเข้าไปขายแบบ build-your-own
+  // โดยไม่ได้บังคับให้ติ๊กฟีเจอร์ที่เหลือครบพร้อมกัน
+  it("ซื้อ aiAssistant แยกชิ้นในแผน business ไม่ได้", () => {
+    expect(BUSINESS_SELECTABLE_FEATURES).not.toContain("aiAssistant");
+  });
+
+  it("ต่อให้ยัด aiAssistant เข้ามาใน config ก็ต้องไม่ได้สิทธิ์", () => {
+    const config = normalizeBusinessConfig({
+      seats: 5,
+      stores: 1,
+      features: ["qrOrdering", "aiAssistant"],
+    });
+    expect(config?.features).not.toContain("aiAssistant");
+    expect(businessConfigToPlanFeatures(config!).aiAssistant).toBe(false);
+  });
+
+  it("แผน enterprise ยังเปิด aiAssistant พร้อมฟีเจอร์อื่นครบ", () => {
+    const enterprise = getPlanDefinition("enterprise");
+    expect(enterprise.aiAssistant).toBe(true);
+    expect(enterprise.qrOrdering).toBe(true);
   });
 });

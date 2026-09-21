@@ -3,7 +3,6 @@ import {
   BUSINESS_SELECTABLE_FEATURES,
   FEATURE_LABELS,
   type BusinessPlanConfig,
-  type FeatureKey,
 } from "./types";
 
 /**
@@ -12,7 +11,12 @@ import {
  * are super-admin editable (business_plan_prices), these are the seeded defaults.
  */
 
-export type BusinessFeatureComponent = Exclude<FeatureKey, "maxStores" | "maxMembers">;
+/**
+ * อนุมานจากรายการที่ขายจริง ไม่ใช่จาก FeatureKey ทั้งหมด — ฟีเจอร์ที่ไม่ได้ขายแบบ
+ * build-your-own (เช่น aiAssistant ที่เป็นของ enterprise อย่างเดียว) จะไม่มีช่องราคา
+ * และ tsc จะฟ้องทันทีถ้าใครใส่กลับเข้ามาข้างเดียวโดยไม่แก้อีกฝั่ง
+ */
+export type BusinessFeatureComponent = (typeof BUSINESS_SELECTABLE_FEATURES)[number];
 export type BusinessComponent = "base" | "perSeat" | "perStore" | BusinessFeatureComponent;
 
 export const BUSINESS_COMPONENTS: BusinessComponent[] = [
@@ -62,7 +66,6 @@ function buildDefaultPrices(): BusinessPriceMap {
     apiIntegration: 300,
     byoPaymentGateway: 300,
     musicRequest: 200,
-    aiAssistant: 200,
     aiVision: 150,
     aiForecast: 150,
   };
