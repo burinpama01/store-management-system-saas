@@ -2,68 +2,54 @@
  * จังหวะการ poll ของ Print Hub — server เป็นคนสั่ง ไม่ใช่เครื่องร้านตั้งเอง
  *
  * ที่มา: Hub เดิม poll ทุก 1.5 วินาทีตลอด 24 ชม. ไม่ว่าร้านจะเปิดหรือปิด คิดเป็น
- * ~1.7 ล้าน request/เดือน ต่อเครื่องเดียว ซึ่งทะลุโควตา Vercel free tier (1M)
- * และโดน pause ทั้งโปรเจค = ทุกร้านใช้งานไม่ได้
+ * ~1.7 ล้าน request/เดือน ต่อเครื่องเดียว
  *
- * แนวคิด: ส่ง `nextPollMs` กลับไปกับ response ของ /api/print/hub/poll ที่ Hub
- * เรียกอยู่แล้ว (ไม่เปลือง request เพิ่มแม้แต่ครั้งเดียว) โดยดูจากสัญญาณว่าร้าน
- * "มีคนอยู่" จริงไหม — พนักงานลงเวลาเข้างานค้างอยู่ / รอบเงินสดเปิดอยู่ /
- * เพิ่งมีออเดอร์
+ * รุ่นแรกของไฟล์นี้ตัดสินจากสัญญาณใน DB (พนักงานลงเวลา / รอบเงินสด / ออเดอร์ล่าสุด)
+ * ซึ่งต้อง query 3 ครั้งต่อการ poll หนึ่งครั้ง แคชต่อ instance แทบไม่ช่วยเพราะ
+ * serverless สร้าง instance ใหม่บ่อย ผลคือ Active CPU ของทั้งโปรเจคพุ่งจนโดน
+ * ระงับบริการ (12 ชม. จากเพดาน 4 ชม.) — การรู้ว่า "ร้านเปิดไหม" ไม่คุ้มกับราคานั้น
  *
- * กติกาที่ห้ามพัง: การพิมพ์ต้องไม่ขึ้นกับการลงเวลา ถ้าพนักงานลืมลงเวลาหรือ query
- * ล้ม ต้องคืนค่า ACTIVE (ถี่) เสมอ — อย่างแย่ที่สุดคือเปลือง request ไม่ใช่
- * ใบเสร็จไม่ออก ฝั่ง Hub ยังมี busy window ของตัวเองที่ดึงกลับมา 250ms ทันที
- * ที่มีงานจริง ค่านี้จึงกระทบแค่ "ตอนไม่มีอะไรให้พิมพ์"
+ * รุ่นนี้ตัดสินจากสิ่งที่ Hub ส่งมาเองในคำขอ (ไม่แตะ DB เลย): เพิ่งได้งานไปพิมพ์ไหม
+ * และว่างมานานแค่ไหนแล้ว ซึ่งเป็นตัวแทนของ "ร้านกำลังขายอยู่ไหม" ที่ดีพอ ๆ กัน
+ * และมีราคาเป็นศูนย์
  */
 
-/** ร้านเปิดและมีงานเข้าอยู่ — เท่ากับพฤติกรรมเดิมทุกประการ */
+/** ร้านกำลังขายอยู่ — เท่ากับพฤติกรรมเดิมทุกประการ */
 export const HUB_POLL_ACTIVE_MS = 1_500;
 /**
- * ร้านเปิดอยู่แต่คิวว่าง
+ * คิวว่างแต่เพิ่งมีงานไม่นาน
  *
- * เคยตั้งไว้ 10 วินาที ด้วยเหตุผลว่า "ว่างแปลว่าไม่มีใครรอ" ซึ่งผิด และที่ร้านเจอจริง
- * ว่าพิมพ์ช้ากว่าปกติมาก: ใบที่ออกหลังเงียบเกิน BUSY_WINDOW_MS (90 วิ) คือใบที่
- * ลูกค้ายืนรออยู่ตรงหน้าเคาน์เตอร์พอดี ไม่ใช่ใบที่ไม่มีใครสน ค่านี้จึงต้องอยู่ในระดับ
- * ที่คนหน้าร้านไม่ทันสังเกต ไม่ใช่ระดับที่ "ยอมรับได้ในทางทฤษฎี"
+ * เคยตั้งไว้ 10 วินาทีด้วยเหตุผลว่า "ว่างแปลว่าไม่มีใครรอ" ซึ่งผิด และที่ร้านเจอจริง
+ * ว่าพิมพ์ช้ากว่าปกติมาก: ใบที่ออกหลังคิวว่างคือใบที่ลูกค้ายืนรออยู่ตรงหน้าเคาน์เตอร์
+ * พอดี ค่านี้จึงต้องอยู่ในระดับที่คนหน้าร้านไม่ทันสังเกต
  */
 export const HUB_POLL_IDLE_MS = 2_000;
 /**
- * ไม่มีสัญญาณว่าร้านเปิด (นอกเวลาทำการ)
+ * เงียบมานานจนถือว่าร้านปิดแล้ว
  *
- * 60 วินาทีเดิมยาวเกินไปเมื่อสัญญาณอ่านผิด — ร้านที่ไม่ได้ใช้ระบบลงเวลาและไม่เปิด
- * รอบเงินสดจะถูกมองว่าปิดทั้งที่กำลังขายอยู่ แล้วใบเสร็จรอนานเป็นนาที ค่านี้คือค่าที่
- * ทำงานตอนเราเดาผิด จึงต้อง "แย่แต่ไม่พัง"
+ * 60 วินาทีเดิมยาวเกินไปเมื่ออ่านสถานะผิด ค่านี้คือค่าที่ทำงานตอนเราเดาผิด
+ * จึงต้อง "แย่แต่ไม่พัง"
  */
 export const HUB_POLL_CLOSED_MS = 15_000;
 
-/** ถือว่า "เพิ่งมีออเดอร์" ภายในกี่มิลลิวินาที */
-export const RECENT_ORDER_WINDOW_MS = 30 * 60 * 1000;
-
 /**
- * อายุสูงสุดของการลงเวลาที่ยังนับว่า "คนนั้นอยู่ที่ร้านจริง"
+ * เงียบเกินเท่าไรจึงถือว่าร้านปิด
  *
- * ระบบไม่มี auto clock-out (ไม่มี cron ปิดกะสิ้นวัน) แถวที่พนักงานลืมกดออกงาน
- * จึงค้าง clock_out_at = null ถาวร ถ้านับตรง ๆ staffOnDuty จะเป็น true ตลอดกาล
- * และ Hub จะไม่เข้าโหมดร้านปิดอีกเลย — ดีไซน์พังเงียบโดยไม่มีใครรู้
- *
- * 16 ชั่วโมงเผื่อกะยาวสุดที่เป็นไปได้จริง (เปิดร้านถึงปิดร้าน + ปิดยอด) ไว้เต็มที่แล้ว
- * เกินกว่านี้แปลว่าลืมกด ไม่ใช่ยังทำงานอยู่
+ * 2 ชั่วโมงไม่มีงานพิมพ์สักใบ = ไม่ใช่ช่วงพักระหว่างลูกค้าแล้ว ถ้าเดาผิดก็แค่
+ * ใบแรกของวันช้าไป 15 วินาที ซึ่ง busy window ฝั่ง Hub ดึงกลับมาทันทีหลังจากนั้น
  */
-export const STAFF_SHIFT_MAX_MS = 16 * 60 * 60 * 1000;
+export const HUB_QUIET_UNTIL_CLOSED_MS = 2 * 60 * 60 * 1000;
 
-export type HubActivityReason = "jobs" | "staff" | "cashSession" | "recentOrder" | "idle";
+export type HubActivityReason = "jobs" | "recent" | "quiet";
 
-export interface HubActivitySignals {
+export interface HubPacingInput {
   /** poll รอบนี้เคลมงานได้กี่ใบ */
   claimedJobs: number;
-  /** มีพนักงานลงเวลาเข้างานแล้วยังไม่ออก */
-  staffOnDuty: boolean;
-  /** มีรอบเงินสดที่เปิดอยู่ */
-  cashSessionOpen: boolean;
-  /** มีออเดอร์ภายใน RECENT_ORDER_WINDOW_MS */
-  recentOrder: boolean;
-  /** query สัญญาณล้มเหลว — ต้อง fail-safe เป็น ACTIVE */
-  signalsUnavailable?: boolean;
+  /**
+   * Hub ว่างมากี่มิลลิวินาทีแล้ว (นับจากงานที่มันพิมพ์ล่าสุด)
+   * Hub รุ่นเก่าไม่ส่งค่านี้ = null = ไม่รู้ ต้องถือว่าร้านเปิดไว้ก่อน
+   */
+  idleMs: number | null;
 }
 
 export interface HubPollPacing {
@@ -72,26 +58,22 @@ export interface HubPollPacing {
 }
 
 /**
- * แปลงสัญญาณเป็นจังหวะ poll รอบถัดไป
+ * แปลงสถานะที่ Hub รายงานมาเป็นจังหวะ poll รอบถัดไป
  *
- * ลำดับความสำคัญ: มีงานพิมพ์ > มีคนอยู่ที่ร้าน > ปิด
- * `signalsUnavailable` ชนะทุกอย่าง เพราะไม่รู้ = ต้องถือว่าร้านเปิด
+ * ไม่รู้ = ถือว่าร้านเปิด เสมอ — พลาดทางนี้แค่เปลือง request ส่วนพลาดอีกทางคือ
+ * ใบเสร็จออกช้าต่อหน้าลูกค้า
  */
-export function resolveHubPollPacing(signals: HubActivitySignals): HubPollPacing {
-  if (signals.signalsUnavailable) {
-    return { nextPollMs: HUB_POLL_ACTIVE_MS, reason: "jobs" };
+export function resolveHubPollPacing(input: HubPacingInput): HubPollPacing {
+  if (input.claimedJobs > 0) return { nextPollMs: HUB_POLL_ACTIVE_MS, reason: "jobs" };
+  if (input.idleMs === null) return { nextPollMs: HUB_POLL_IDLE_MS, reason: "recent" };
+  if (input.idleMs >= HUB_QUIET_UNTIL_CLOSED_MS) {
+    return { nextPollMs: HUB_POLL_CLOSED_MS, reason: "quiet" };
   }
-  if (signals.claimedJobs > 0) {
-    return { nextPollMs: HUB_POLL_ACTIVE_MS, reason: "jobs" };
-  }
-  if (signals.staffOnDuty) {
-    return { nextPollMs: HUB_POLL_IDLE_MS, reason: "staff" };
-  }
-  if (signals.cashSessionOpen) {
-    return { nextPollMs: HUB_POLL_IDLE_MS, reason: "cashSession" };
-  }
-  if (signals.recentOrder) {
-    return { nextPollMs: HUB_POLL_IDLE_MS, reason: "recentOrder" };
-  }
-  return { nextPollMs: HUB_POLL_CLOSED_MS, reason: "idle" };
+  return { nextPollMs: HUB_POLL_IDLE_MS, reason: "recent" };
+}
+
+/** ค่า idleMs ที่ Hub ส่งมา — ปฏิเสธค่าที่ใช้ไม่ได้แทนการเดา */
+export function sanitizeHubIdleMs(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return Math.min(value, Number.MAX_SAFE_INTEGER);
 }
