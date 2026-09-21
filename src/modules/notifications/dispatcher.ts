@@ -322,8 +322,10 @@ async function dispatchPushNotification(input: NotificationPayload): Promise<Not
   }
 
   // ส่งเฉพาะอุปกรณ์ที่สิทธิ์ครอบสาขาของอีเวนต์นี้ (org-wide หรือผูกสาขาเดียวกัน)
-  // — เครื่องพนักงานสาขาอื่นต้องไม่เด้งออเดอร์ข้ามสาขา
-  const tokensResult = await listStorePushTokens(input.organizationId, input.storeId);
+  // — เครื่องพนักงานสาขาอื่นต้องไม่เด้งออเดอร์ข้ามสาขา และกรองตาม role:
+  // อีเวนต์หน้าร้าน (ออเดอร์/เรียกพนักงาน) ถึงแคชเชียร์/สตาฟด้วย ส่วนอีเวนต์
+  // เชิงธุรกิจ/HR เฉพาะผู้บริหาร (ดู STAFF_PUSH_NOTIFICATION_TYPES)
+  const tokensResult = await listStorePushTokens(input.organizationId, input.storeId, input.type);
   if (tokensResult.error) {
     return { ok: true, skipped: true, message: tokensResult.error.userMessage };
   }
@@ -488,6 +490,11 @@ async function renderOwnerNotification(input: NotificationPayload): Promise<Noti
 async function runOwnerNotificationDeliveries(input: NotificationPayload): Promise<boolean> {
   // เตรียมข้อความ (ชื่อร้าน/template) พร้อมกันกับการ fan-out ช่องทาง เพื่อไม่ให้
   // การ resolve ข้อความไปหน่วงการส่งแบบขนานของแต่ละช่องทาง
+  //
+  // หมายเหตุ destination: LINE/Telegram ส่งถึง target ระดับองค์กรของ owner
+  // เสมอ ส่วน push fan-out ตาม role ของประเภทแจ้งเตือน (อีเวนต์หน้าร้าน
+  // เช่น ออเดอร์เข้า ถึงแคชเชียร์/สตาฟด้วย — ดู STAFF_PUSH_NOTIFICATION_TYPES)
+  // ค่า destination จึงไม่ได้ถูกใช้ตัดสิน routing จริงของ push
   const renderedPromise = renderOwnerNotification(input);
   const channels = input.channel ? [input.channel] : NOTIFICATION_CHANNELS;
 
