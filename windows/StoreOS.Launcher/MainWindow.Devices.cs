@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
@@ -281,8 +281,52 @@ public partial class MainWindow
 
     private async Task CheckForUpdatesAsync()
     {
+        await CheckPrintHubAgentUpdateAsync();
         if (_updates is null || !_updates.Enabled) return;
         await _updates.CheckAndDownloadAsync(_updatePosUrl, _updateChannel, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// อัปเดตไฟล์ agent ของ Print Hub ให้เครื่องนี้ (agent อัปเดตตัวเองไม่ได้)
+    ///
+    /// เกาะไปกับรอบตรวจอัปเดตของ Launcher ที่มีอยู่แล้ว ไม่เพิ่มตัวจับเวลาใหม่ ล้มเหลว
+    /// ทุกกรณีต้องไม่กระทบการทำงานของ Launcher — แย่ที่สุดคือรอบนี้ไม่ได้อัปเดต
+    /// แล้วรอบหน้าค่อยลองใหม่ ส่วน agent ตัวเดิมยังพิมพ์ได้ตามปกติ
+    /// </summary>
+    private async Task CheckPrintHubAgentUpdateAsync()
+    {
+        try
+        {
+            var installed = ReadInstalledHubVersion();
+            if (string.IsNullOrWhiteSpace(installed)) return;
+
+            var manifestUrl = new Uri(new Uri(_updatePosUrl), "/api/print/hub/agent-latest").ToString();
+            var updater = new PrintHubAgentUpdater(
+                UpdateHttp.Value,
+                timeout => _tasks.StopAndWait(timeout),
+                () => _tasks.Start(),
+                PrintHubAgentUpdater.DefaultInstallRoot(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)));
+
+            var result = await updater.EnsureLatestAsync(installed, manifestUrl, CancellationToken.None);
+            if (result.Outcome == PrintHubUpdateOutcome.UpToDate) return;
+
+            Log(
+                result.Outcome == PrintHubUpdateOutcome.Updated ? "info" : "warn",
+                "printHubAgentUpdate",
+                result.Message,
+                new Dictionary<string, object>
+                {
+                    ["installed"] = installed,
+                    ["outcome"] = result.Outcome.ToString(),
+                    ["version"] = result.Version ?? "",
+                });
+        }
+        catch (Exception ex)
+        {
+            // ห้ามให้การอัปเดต agent ทำให้หน้าต่างหลักหรือรอบอัปเดตของ Launcher พัง
+            Log("warn", "printHubAgentUpdate", $"ตรวจรุ่น Print Hub ไม่สำเร็จ: {ex.Message}");
+        }
     }
 
     private void PostUpdateStatus()

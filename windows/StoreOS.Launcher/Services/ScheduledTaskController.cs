@@ -74,6 +74,26 @@ public sealed class ScheduledTaskController
         return Start();
     }
 
+    /// <summary>
+    /// สั่งหยุด task แล้วรอให้โปรเซสปิดจริง
+    ///
+    /// ต้องรอจริง ๆ ก่อนไปเขียนทับไฟล์ agent ไม่งั้น Windows ล็อกไฟล์ไว้ (หรือแย่กว่า:
+    /// เขียนทับสำเร็จตอนที่ node ยังอ่านไฟล์เดิมค้างอยู่) /End คืนผลทันทีโดยไม่รอปิด
+    /// จึงต้องวนดูสถานะเอง
+    /// </summary>
+    public bool StopAndWait(TimeSpan timeout, Action<int>? sleep = null)
+    {
+        var wait = sleep ?? (ms => Thread.Sleep(ms));
+        _run("schtasks.exe", $"/End /TN \"{TaskName}\"");
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (Query() != ScheduledTaskState.Running) return true;
+            wait(500);
+        }
+        return Query() != ScheduledTaskState.Running;
+    }
+
     private static (int, string) RunProcess(string fileName, string arguments)
     {
         var psi = new ProcessStartInfo(fileName, arguments)

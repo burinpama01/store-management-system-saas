@@ -1,9 +1,14 @@
 // เลขเวอร์ชันที่โชว์ข้างปุ่มดาวน์โหลดต้องตรงกับของจริงที่แจกอยู่ ไม่งั้นร้านเช็คไม่ได้
 // ว่าเครื่องแคชเชียร์ลงตัวใหม่หรือยัง (ทั้ง Launcher และ Print Hub ไม่อัปเดตตัวเอง)
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PRINT_HUB_VERSION } from "@/modules/printing/hub-version";
+import {
+  PRINT_HUB_SHA256,
+  PRINT_HUB_SIZE_BYTES,
+  PRINT_HUB_VERSION,
+} from "@/modules/printing/hub-version";
 import { LAUNCHER_VERSION } from "@/modules/launcher/version";
 
 const read = (relative: string) => readFileSync(join(process.cwd(), relative), "utf8");
@@ -12,6 +17,14 @@ describe("เวอร์ชันชุดติดตั้งที่หน�
   it("Print Hub ตรงกับ AGENT_VERSION ในตัว agent จริง", () => {
     const agent = read("scripts/print-hub.mjs");
     expect(agent).toContain(`export const AGENT_VERSION = "${PRINT_HUB_VERSION}";`);
+  });
+
+  it("SHA-256 และขนาดของ Print Hub ตรงกับไฟล์ zip ที่แจกอยู่จริง", () => {
+    // Launcher ทิ้งแพ็กเกจที่ hash ไม่ตรง ค่าผิดในไฟล์นี้จึงแปลว่า "ทุกร้านอัปเดตไม่ได้"
+    // และไม่มีใครรู้จนกว่าจะมีคนไปดูที่เครื่องร้าน — เทสนี้จับตอน build แทน
+    const zip = readFileSync(join(process.cwd(), "public/downloads/storeos-print-hub.zip"));
+    expect(createHash("sha256").update(zip).digest("hex")).toBe(PRINT_HUB_SHA256);
+    expect(zip.length).toBe(PRINT_HUB_SIZE_BYTES);
   });
 
   it("Launcher ตรงกับ <Version> ใน csproj", () => {
