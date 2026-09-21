@@ -65,6 +65,9 @@ export async function updateSession(request: NextRequest) {
     // BYO payment gateways (Beam / TrueMoney): webhook ขาเข้า — auth ด้วย HMAC/JWT
     // ต่อร้านใน handler ไม่มี session ผู้ใช้
     request.nextUrl.pathname.startsWith("/api/payments/webhooks/") ||
+    // Beam webhook สำหรับ "ค่าแพ็กเกจ" ของแพลตฟอร์ม — auth ด้วย HMAC key ใน handler
+    // (ไม่มี session ผู้ใช้; ต้อง public ไม่งั้น Beam โดนเด้งไป /login เหมือน PR #58)
+    request.nextUrl.pathname === "/api/billing/beam/webhook" ||
     // StoreOS Connect: cron reconcile (auth ด้วย CRON_SECRET ใน handler)
     request.nextUrl.pathname.startsWith("/api/connect/cron/") ||
     // แจ้งเตือนบุฟเฟต์ใกล้หมดเวลา: cron (auth ด้วย CRON_SECRET ใน handler)

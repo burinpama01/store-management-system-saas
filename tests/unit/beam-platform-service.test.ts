@@ -142,3 +142,17 @@ describe("platform billing service boundaries", () => {
     await expect(verifyPlatformBillingSlip(fixture().id, "org-a", "image", "image/png")).rejects.toThrow("ปิดแล้ว");
   });
 });
+
+describe("Beam billing webhook route must stay public (HMAC auth in handler)", () => {
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { resolve } = require("node:path") as typeof import("node:path");
+  it("middleware allows /api/billing/beam/webhook without a session", () => {
+    const middleware = readFileSync(resolve(process.cwd(), "src/server/integrations/supabase/middleware.ts"), "utf8");
+    expect(middleware).toContain('request.nextUrl.pathname === "/api/billing/beam/webhook"');
+  });
+  it("handler rejects requests without a signature before doing any work", () => {
+    const route = readFileSync(resolve(process.cwd(), "src/app/api/billing/beam/webhook/route.ts"), "utf8");
+    expect(route).toContain('x-beam-signature');
+    expect(route).toContain('status: 401');
+  });
+});
