@@ -708,10 +708,20 @@ export interface Database {
         };
         Relationships: [];
       };
+      platform_billing_orders: {
+        Row: import("@/modules/billing/beam-billing-types").PlatformBillingOrder;
+        Insert: Omit<import("@/modules/billing/beam-billing-types").PlatformBillingOrder, "created_at" | "paid_at" | "new_expiry"> & { created_at?: string; paid_at?: string | null; new_expiry?: string | null };
+        Update: Partial<import("@/modules/billing/beam-billing-types").PlatformBillingOrder>;
+        Relationships: [];
+      };
       platform_settings: {
         Row: {
           id: string;
-          billing_provider: "promptpay" | "stripe";
+          billing_provider: "promptpay" | "stripe" | "beam";
+          beam_environment: "test" | "live";
+          beam_credentials_encrypted: string | null;
+          beam_fallback_enabled: boolean;
+          beam_fallback_account: string | null;
           promptpay_id: string | null;
           promptpay_name: string | null;
           promptpay_static_payload: string | null;
@@ -728,7 +738,11 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          billing_provider?: "promptpay" | "stripe";
+          billing_provider?: "promptpay" | "stripe" | "beam";
+          beam_environment?: "test" | "live";
+          beam_credentials_encrypted?: string | null;
+          beam_fallback_enabled?: boolean;
+          beam_fallback_account?: string | null;
           promptpay_id?: string | null;
           promptpay_name?: string | null;
           promptpay_static_payload?: string | null;
@@ -745,7 +759,11 @@ export interface Database {
         };
         Update: {
           id?: string;
-          billing_provider?: "promptpay" | "stripe";
+          billing_provider?: "promptpay" | "stripe" | "beam";
+          beam_environment?: "test" | "live";
+          beam_credentials_encrypted?: string | null;
+          beam_fallback_enabled?: boolean;
+          beam_fallback_account?: string | null;
           promptpay_id?: string | null;
           promptpay_name?: string | null;
           promptpay_static_payload?: string | null;
@@ -4694,6 +4712,10 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      settle_platform_billing_order: {
+        Args: { p_order_id: string; p_method: string; p_ref: string; p_amount: number };
+        Returns: Json;
+      };
       reject_qr_order: {
         Args: { p_store_id: string; p_order_id: string; p_reason?: string | null };
         Returns: number;

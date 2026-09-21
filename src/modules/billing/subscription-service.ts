@@ -14,6 +14,7 @@ import {
   type Slip2goVerification,
 } from "./slip2go";
 import type { PaidTier } from "./pricing";
+import { getPendingPlatformBillingOrder } from "./beam-billing";
 
 export interface PaymentEvaluation {
   ok: boolean;
@@ -99,6 +100,9 @@ export async function submitPromptPayPayment(
   const expected = quote.finalAmount;
 
   const settings = await getPlatformSettings();
+  if (settings.billingProvider === "beam" || await getPendingPlatformBillingOrder(input.organizationId)) {
+    return { status: "rejected", reason: "กรุณาสร้างรายการชำระแพ็กเกจ และแนบสลิปกับรายการช่องทางสำรอง", newExpiry: null };
+  }
 
   const verification = input.slipImageBase64
     ? await verifySlipByImageBase64(input.slipImageBase64, input.slipImageContentType)

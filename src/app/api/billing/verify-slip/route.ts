@@ -7,6 +7,7 @@ import {
 import { isPaidTier, type BillingDuration, type PaidTier } from "@/modules/billing/pricing";
 import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
 import { submitPromptPayPayment } from "@/modules/billing/subscription-service";
+import { verifyPlatformBillingSlip } from "@/modules/billing/beam-billing";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,18 @@ export async function POST(req: Request) {
     const plan = form.get("plan");
     const duration = form.get("duration");
     const slip = form.get("slip");
+    if (!(slip instanceof File) || slip.size === 0 || slip.size > 5 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp"].includes(slip.type)) {
+      return NextResponse.json({ error: "กรุณาแนบภาพ PNG, JPEG หรือ WebP ไม่เกิน 5 MB" }, { status: 400 });
+    }
+    const billingOrderId = form.get("billingOrderId");
+    if (typeof billingOrderId === "string") {
+      try {
+        const order = await verifyPlatformBillingSlip(billingOrderId, perms.ctx.organizationId, Buffer.from(await slip.arrayBuffer()).toString("base64"), slip.type);
+        return NextResponse.json({ ok: order.status === "paid" || order.status === "test_paid", order });
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof Error ? e.message : "ตรวจสลิปไม่สำเร็จ" }, { status: 400 });
+      }
+    }
     const discountCodeRaw = form.get("discountCode");
     const discountCode = typeof discountCodeRaw === "string" ? discountCodeRaw : undefined;
 

@@ -13,6 +13,8 @@
 
 export interface Slip2goVerification {
   ok: boolean;
+  /** Set only after a successful response to an explicit provider receiver condition. */
+  receiverVerified?: boolean;
   amount: number | null;
   receiverName: string | null;
   receiverAccount: string | null;
@@ -185,6 +187,7 @@ async function callSlip2goImage(
   path: string,
   bytes: Uint8Array,
   contentType: string,
+  billingCondition?: { receiverAccount: string; amount: number },
 ): Promise<Slip2goVerification> {
   const cfg = getConfig();
   if (!cfg) {
@@ -203,10 +206,17 @@ async function callSlip2goImage(
     const form = new FormData();
     const ext = contentType.includes("png") ? "png" : "jpg";
     form.set("file", new Blob([bytes as BlobPart], { type: contentType || "image/jpeg" }), `slip.${ext}`);
+    if (billingCondition) form.set("payload", JSON.stringify({
+      checkReceiver: [{ accountNumber: billingCondition.receiverAccount }],
+      checkAmount: { type: "eq", amount: String(billingCondition.amount) },
+      // Local unique slip_ref is the durable dedupe; provider duplicate flags can reject a safe retry.
+      checkDuplicate: false,
+    }));
     const res = await fetch(`${cfg.baseUrl}${path}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}` },
       body: form,
+      signal: AbortSignal.timeout(15_000),
     });
     const json = await res.json().catch(() => ({}));
     // slip2go returns 2xx with a structured body even for fraud; only treat
@@ -225,7 +235,11 @@ async function callSlip2goImage(
         error: msg,
       };
     }
-    return parseSlip2goResponse(json);
+    const parsed = parseSlip2goResponse(json);
+    if (!billingCondition) return parsed;
+    const confirmed = json?.code === "200000" && parsed.ok;
+    return { ...parsed, ok: confirmed, receiverVerified: confirmed,
+      error: confirmed ? null : "Slip2Go ยืนยันเงื่อนไขบัญชีผู้รับและยอดเงินไม่สำเร็จ" };
   } catch (e) {
     return {
       ok: false,
@@ -242,6 +256,12 @@ async function callSlip2goImage(
 
 export function isSlip2goConfigured(): boolean {
   return Boolean(process.env.SLIP2GO_API_KEY);
+}
+
+/** Strict provider conditions for platform checkout; legacy callers retain their contract. */
+export function verifyBillingSlipByImage(imageBase64: string, contentType: string, receiverAccount: string, amount: number) {
+  if (!/^\d{6,20}$/.test(receiverAccount) || !Number.isFinite(amount) || amount <= 0) throw new Error("เงื่อนไขตรวจสลิปไม่ถูกต้อง");
+  return callSlip2goImage("/api/verify-slip/qr-image/info", Buffer.from(imageBase64, "base64"), contentType, { receiverAccount, amount });
 }
 
 export function verifySlipByPayload(payload: string): Promise<Slip2goVerification> {

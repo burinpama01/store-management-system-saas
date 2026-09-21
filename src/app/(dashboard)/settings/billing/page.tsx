@@ -12,6 +12,8 @@ import { getAiUsageSummary } from "@/modules/ai/quota";
 import { listCreditPacks, listTopupHistory } from "@/modules/ai/credits";
 import { BillingManager } from "./BillingManager";
 import { AiUsagePanel } from "./AiUsagePanel";
+import { getPlatformBeamPublicSettings } from "@/modules/billing/beam-settings";
+import { getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,8 @@ export default async function BillingSettingsPage() {
   const billingState =
     (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
   const settings = await getPlatformSettings();
+  const beam = settings.billingProvider === "beam" ? await getPlatformBeamPublicSettings() : null;
+  const beamOrder = resolved.can("billing.manage") ? await getPendingPlatformBillingOrder(ctx.organizationId) : null;
   const prices = await listBillingPrices();
   const businessPrices = await getBusinessPriceMap();
   const freeTrial = await getFreeTrialEligibility(ctx.organizationId, user.id);
@@ -53,7 +57,10 @@ export default async function BillingSettingsPage() {
       businessPrices={businessPrices}
       currentBusiness={billingState.business ?? null}
       canManage={resolved.can("billing.manage")}
-      paymentConfigured={Boolean(settings.promptpayId || settings.promptpayStaticPayload)}
+      paymentConfigured={Boolean(beamOrder || beam?.configured || settings.promptpayId || settings.promptpayStaticPayload)}
+      beamEnabled={Boolean(beam?.enabled || beamOrder)}
+      beamFallbackEnabled={Boolean(beam?.fallbackEnabled && beam.environment === "live")}
+      beamOrder={beamOrder}
       recipientName={settings.promptpayName}
       slipVerificationReady={isSlip2goConfigured()}
       promoTrial={billingState.promoTrial === true}

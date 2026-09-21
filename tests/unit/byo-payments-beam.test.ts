@@ -76,6 +76,7 @@ describe("Beam response parsing", () => {
     expect(parseBeamCharge(JSON.parse(DOC_BODY))).toEqual({
       chargeId: "ch_30GtUweMWec7r2hHIsV5xxQeJKp",
       status: "SUCCEEDED",
+      currency: "THB",
       amountSatang: 3000000,
       referenceId: "order#10001",
       failureCode: null,
