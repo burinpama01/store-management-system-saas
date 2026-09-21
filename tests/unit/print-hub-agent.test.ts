@@ -311,6 +311,48 @@ describe("print hub agent — แยก timeout ตอนต่อ ออกจ�
 });
 
 
+describe("print hub agent — long-poll และรายงานเวลาว่าง", () => {
+  it("ส่ง idleMs และ waitMs ไปกับคำขอเมื่อขอให้เซิร์ฟเวอร์ค้างรอ", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: { body: string }) => {
+      void init;
+      return { ok: true, status: 200, json: async () => ({ ok: true, jobs: [] }) };
+    });
+
+    await runPollCycle({
+      config: { serverUrl: "https://example.test", storeId: "s1", hubToken: "t1" },
+      fetchImpl: fetchImpl as never,
+      printJob: async () => ({}),
+      listDevices: async () => [],
+      idleMs: 120_000,
+      waitMs: 20_000,
+    });
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.idleMs).toBe(120_000);
+    expect(body.waitMs).toBe(20_000);
+  });
+
+  it("ไม่ส่ง waitMs เมื่อไม่ได้ขอให้ค้างรอ — เซิร์ฟเวอร์ต้องตอบทันทีแบบเดิม", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: { body: string }) => {
+      void init;
+      return { ok: true, status: 200, json: async () => ({ ok: true, jobs: [] }) };
+    });
+
+    await runPollCycle({
+      config: { serverUrl: "https://example.test", storeId: "s1", hubToken: "t1" },
+      fetchImpl: fetchImpl as never,
+      printJob: async () => ({}),
+      listDevices: async () => [],
+      idleMs: null,
+      waitMs: 0,
+    });
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty("waitMs");
+    expect(body).not.toHaveProperty("idleMs");
+  });
+});
+
 describe("print hub agent — poll delay knobs (speed)", () => {
   it("drains immediately after a non-empty claim cycle", () => {
     expect(

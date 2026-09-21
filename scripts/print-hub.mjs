@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 // เวอร์ชันของ agent ตัวนี้ + protocol ที่คุยกับเซิร์ฟเวอร์ (แผน v3 Task 3).
 // ส่งไปกับทุก poll เพื่อให้เซิร์ฟเวอร์รู้ว่าร้านไหนยังรัน Hub รุ่นเก่า -- เดิมไม่มีเลย
 // จึงไล่ปัญหา "ร้านนี้พิมพ์ไม่ออก" ไม่ได้ว่าเป็นเพราะ agent เก่าหรือของอย่างอื่น
-export const AGENT_VERSION = "1.3.1";
+export const AGENT_VERSION = "1.4.0";
 export const PROTOCOL_VERSION = 1;
 
 const MAX_PRINT_JOB_BYTES = 256 * 1024;
@@ -32,6 +32,20 @@ export const DEFAULT_POLL_INTERVAL_MS = 1500;
  * (ถ้า server ส่ง 3600000 มาเพราะบั๊ก ร้านต้องไม่เงียบไปหนึ่งชั่วโมง)
  */
 export const MAX_SERVER_POLL_INTERVAL_MS = 60_000;
+
+/**
+ * ขอให้เซิร์ฟเวอร์ค้างคำขอไว้รองานนานแค่ไหน (long-poll)
+ *
+ * แทนที่จะยิงถามทุก 2 วินาทีแล้วได้คำตอบว่า "ยังไม่มีงาน" เกือบทุกครั้ง ให้ถามครั้งเดียว
+ * แล้วค้างไว้ เซิร์ฟเวอร์จะตอบทันทีที่มีงานเข้าคิว ใบเสร็จจึงออกเร็วกว่าเดิมด้วยซ้ำ
+ * (ไม่ต้องรอรอบถัดไป) และจำนวนครั้งที่เรียกฟังก์ชันลดลงราว 10 เท่า
+ *
+ * 20 วินาทีเพราะตัวกลางระหว่างทาง (proxy/CDN) มักตัดการเชื่อมต่อที่เงียบเกิน 30 วินาที
+ */
+export const LONGPOLL_WAIT_MS = clampInt(process.env.STOREOS_HUB_LONGPOLL_MS, 20_000);
+
+/** เผื่อเวลาให้ฝั่งเรารอนานกว่าที่ขอให้เซิร์ฟเวอร์ค้าง ก่อนจะถือว่าสายหลุด */
+const LONGPOLL_SLACK_MS = 10_000;
 export const ERROR_BACKOFF_MS = 8000;
 export const BUSY_POLL_INTERVAL_MS = 250;
 export const BUSY_WINDOW_MS = 90_000;
@@ -682,7 +696,14 @@ export function nextPollDelayMs({
   return pollIntervalMs;
 }
 
-export async function runPollCycle({ config, fetchImpl, printJob, listDevices = listWindowsPrinters }) {
+export async function runPollCycle({
+  config,
+  fetchImpl,
+  printJob,
+  listDevices = listWindowsPrinters,
+  idleMs = /** @type {number | null} */ (null),
+  waitMs = 0,
+}) {
   const { serverUrl, storeId, hubToken } = config;
   // Production path: never block claim on WMI/PowerShell — send last cached scan
   // (omit devices on cold start so saveHubDevices does not wipe Settings with []).
@@ -711,8 +732,14 @@ export async function runPollCycle({ config, fetchImpl, printJob, listDevices = 
       hubToken,
       agentVersion: AGENT_VERSION,
       protocolVersion: PROTOCOL_VERSION,
+      // ว่างมานานแค่ไหนแล้ว — เซิร์ฟเวอร์ใช้ตัดสินจังหวะรอบถัดไปโดยไม่ต้องถาม DB
+      ...(typeof idleMs === "number" ? { idleMs } : {}),
+      // ขอให้เซิร์ฟเวอร์ค้างคำขอไว้รองานแทนที่จะตอบว่างทันที (long-poll)
+      ...(waitMs > 0 ? { waitMs } : {}),
       ...(devices ? { devices } : {}),
     }),
+    // ต้องรอนานกว่าที่ขอให้เซิร์ฟเวอร์ค้างไว้ ไม่งั้นฝั่งเราตัดสายก่อนมันตอบ
+    signal: waitMs > 0 ? AbortSignal.timeout(waitMs + LONGPOLL_SLACK_MS) : undefined,
   });
 
   if (pollRes.status === 401) return { ok: false, authFailed: true, processed: 0 };
@@ -1056,6 +1083,10 @@ async function main() {
       const result = await runPollCycle({
         config,
         fetchImpl: fetch,
+        idleMs: lastJobAt > 0 ? Date.now() - lastJobAt : null,
+        // ค้างรอเฉพาะตอนไม่มีอะไรให้ทำ — ช่วงกำลังขายยังยิงถี่ตามเดิม
+        waitMs:
+          LONGPOLL_WAIT_MS > 0 && Date.now() - lastJobAt >= BUSY_WINDOW_MS ? LONGPOLL_WAIT_MS : 0,
         printJob: async (target, bytes) => {
           if (target.kind === "bt") return sendToComPort(target.device, bytes);
           if (target.kind === "usb") {

@@ -3,75 +3,51 @@ import {
   HUB_POLL_ACTIVE_MS,
   HUB_POLL_CLOSED_MS,
   HUB_POLL_IDLE_MS,
-  STAFF_SHIFT_MAX_MS,
+  HUB_QUIET_UNTIL_CLOSED_MS,
   resolveHubPollPacing,
+  sanitizeHubIdleMs,
 } from "@/modules/printing/hub-poll-pacing";
 
-const base = {
-  claimedJobs: 0,
-  staffOnDuty: false,
-  cashSessionOpen: false,
-  recentOrder: false,
-};
-
-describe("hub poll pacing — server บอกจังหวะ poll จากสัญญาณว่าร้านเปิดจริงไหม", () => {
-  it("มีงานพิมพ์ = จังหวะเดิม ไม่ยืดเด็ดขาด", () => {
-    const pacing = resolveHubPollPacing({ ...base, claimedJobs: 1 });
+describe("hub poll pacing — คิดจากสิ่งที่ Hub ส่งมาเอง ไม่แตะฐานข้อมูล", () => {
+  it("เพิ่งเคลมงานไปพิมพ์ = จังหวะเดิม ไม่ยืดเด็ดขาด", () => {
+    const pacing = resolveHubPollPacing({ claimedJobs: 1, idleMs: HUB_QUIET_UNTIL_CLOSED_MS * 10 });
     expect(pacing.nextPollMs).toBe(HUB_POLL_ACTIVE_MS);
     expect(pacing.reason).toBe("jobs");
   });
 
-  it("พนักงานลงเวลาเข้างานค้างอยู่ = ร้านเปิด ใช้จังหวะ idle", () => {
-    const pacing = resolveHubPollPacing({ ...base, staffOnDuty: true });
+  it("คิวว่างแต่เพิ่งมีงานไม่นาน = จังหวะที่หน้าร้านไม่ทันสังเกต", () => {
+    const pacing = resolveHubPollPacing({ claimedJobs: 0, idleMs: 60_000 });
     expect(pacing.nextPollMs).toBe(HUB_POLL_IDLE_MS);
-    expect(pacing.reason).toBe("staff");
+    expect(pacing.reason).toBe("recent");
   });
 
-  it("ไม่มีใครลงเวลาแต่รอบเงินสดเปิดอยู่ = ยังถือว่าร้านเปิด", () => {
-    const pacing = resolveHubPollPacing({ ...base, cashSessionOpen: true });
-    expect(pacing.nextPollMs).toBe(HUB_POLL_IDLE_MS);
-    expect(pacing.reason).toBe("cashSession");
-  });
-
-  it("ไม่มีใครลงเวลา ไม่มีรอบเงินสด แต่เพิ่งมีออเดอร์ = ยังถือว่าร้านเปิด", () => {
-    const pacing = resolveHubPollPacing({ ...base, recentOrder: true });
-    expect(pacing.nextPollMs).toBe(HUB_POLL_IDLE_MS);
-    expect(pacing.reason).toBe("recentOrder");
-  });
-
-  it("ไม่มีสัญญาณใดเลย = ร้านปิด ยืดยาวสุด", () => {
-    const pacing = resolveHubPollPacing(base);
+  it("เงียบเกินเกณฑ์ = ถือว่าร้านปิด ยืดยาวสุด", () => {
+    const pacing = resolveHubPollPacing({ claimedJobs: 0, idleMs: HUB_QUIET_UNTIL_CLOSED_MS });
     expect(pacing.nextPollMs).toBe(HUB_POLL_CLOSED_MS);
-    expect(pacing.reason).toBe("idle");
+    expect(pacing.reason).toBe("quiet");
   });
 
-  it("ถามสัญญาณไม่ได้ = ต้องถือว่าร้านเปิด (fail-safe) ห้ามเดาว่าปิด", () => {
-    const pacing = resolveHubPollPacing({ ...base, signalsUnavailable: true });
-    expect(pacing.nextPollMs).toBe(HUB_POLL_ACTIVE_MS);
+  it("Hub รุ่นเก่าที่ไม่บอกว่าว่างมานานแค่ไหน = ต้องถือว่าร้านเปิด", () => {
+    const pacing = resolveHubPollPacing({ claimedJobs: 0, idleMs: null });
+    expect(pacing.nextPollMs).toBe(HUB_POLL_IDLE_MS);
+    expect(pacing.reason).toBe("recent");
   });
 
-  it("signalsUnavailable ชนะสัญญาณอื่นทุกตัว แม้ค่าที่อ่านมาจะบอกว่าปิด", () => {
-    const pacing = resolveHubPollPacing({
-      claimedJobs: 0,
-      staffOnDuty: false,
-      cashSessionOpen: false,
-      recentOrder: false,
-      signalsUnavailable: true,
-    });
-    expect(pacing.nextPollMs).toBe(HUB_POLL_ACTIVE_MS);
-  });
-
-  it("จังหวะร้านปิดต้องยาวกว่าร้านเปิด และร้านเปิดต้องยาวกว่าตอนมีงาน", () => {
+  it("จังหวะร้านปิดต้องยาวกว่าคิวว่าง และคิวว่างต้องยาวกว่าตอนมีงาน", () => {
     expect(HUB_POLL_CLOSED_MS).toBeGreaterThan(HUB_POLL_IDLE_MS);
     expect(HUB_POLL_IDLE_MS).toBeGreaterThan(HUB_POLL_ACTIVE_MS);
   });
-});
 
-describe("อายุของการลงเวลา — กันเคสพนักงานลืมกดออกงาน", () => {
-  it("STAFF_SHIFT_MAX_MS ต้องยาวพอสำหรับกะจริง แต่สั้นกว่าหนึ่งวันเต็ม", () => {
-    // ระบบไม่มี auto clock-out แถวที่ลืมกดออกค้างถาวร ถ้าเพดานนี้ >= 24 ชม.
-    // staffOnDuty จะจริงตลอดกาลและ Hub จะไม่เข้าโหมดร้านปิดอีกเลย
-    expect(STAFF_SHIFT_MAX_MS).toBeGreaterThanOrEqual(12 * 60 * 60 * 1000);
-    expect(STAFF_SHIFT_MAX_MS).toBeLessThan(24 * 60 * 60 * 1000);
+  describe("sanitizeHubIdleMs — ค่าที่ใช้ไม่ได้ต้องกลายเป็น null ไม่ใช่เดา", () => {
+    it("ตัวเลขปกติผ่าน", () => {
+      expect(sanitizeHubIdleMs(1234)).toBe(1234);
+      expect(sanitizeHubIdleMs(0)).toBe(0);
+    });
+
+    it("ค่าติดลบ ไม่ใช่ตัวเลข หรือไม่มีค่า = null (ถือว่าร้านเปิด)", () => {
+      for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, "5000", null, undefined, {}]) {
+        expect(sanitizeHubIdleMs(bad)).toBeNull();
+      }
+    });
   });
 });
