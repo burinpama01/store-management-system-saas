@@ -41,79 +41,10 @@ export function planRasterBands(height: number, breaks: number[] = []): Array<{ 
 }
 
 /**
- * ความยาวขั้นต่ำของช่วงแถวขาวล้วนที่จะถูกแทนด้วยคำสั่งเลื่อนกระดาษ
- *
- * ที่มา: ใบเสร็จจริงของหน้าร้าน 94KB มีแถวขาวล้วน 44% ของภาพ (599 จาก 1,338 แถว)
- * ซึ่งถูกส่งเป็นข้อมูลรูปแถวละ 72 ไบต์ ทั้งที่ ESC J เลื่อนกระดาษได้ผลเท่ากันด้วย
- * 3 ไบต์ ยิ่งข้อมูลน้อย เวลาส่งผ่าน WiFi ไปเครื่องพิมพ์ยิ่งสั้น (ที่ร้านวัดได้
- * 4-23 วินาทีต่อใบ ซึ่งเกือบทั้งหมดคือเวลาส่ง ไม่ใช่เวลาพิมพ์)
- *
- * 12 แถว = 1.5 มม. เลือกจากการวัดใบเสร็จจริงสามใบ: เกณฑ์ 12 ลดขนาดได้ 31-35%
- * โดยจำนวนแถบเพิ่มจาก 6 เป็น 15-17 ส่วนเกณฑ์ 8 ลดได้ 38-42% แต่แถบพุ่งเป็น 25-28
- * ซึ่งแลกไม่คุ้ม เพราะทุกรอยต่อแถบคือจังหวะที่มอเตอร์หยุดแล้วออกตัวใหม่
- *
- * สั้นกว่านี้ยังไม่คุ้มอีกทางหนึ่งด้วย เพราะการปิด/เปิดแถบมี overhead 8 ไบต์
- */
-const MIN_BLANK_RUN_ROWS = 12;
-
-/** ESC J เลื่อนกระดาษได้สูงสุด 255 จุดต่อคำสั่ง */
-const MAX_FEED_DOTS = 255;
-
-type RasterSegment =
-  | { kind: "content"; top: number; height: number }
-  | { kind: "feed"; dots: number };
-
-/** แถวนี้ขาวล้วน (ไม่มีจุดดำสักจุด) หรือไม่ */
-function isBlankRow(pixels: Uint8Array, width: number, y: number): boolean {
-  const start = y * width;
-  for (let x = 0; x < width; x += 1) {
-    if (pixels[start + x]) return false;
-  }
-  return true;
-}
-
-/**
- * แบ่งภาพเป็นช่วงที่มีเนื้อหา คั่นด้วยช่วงขาวที่ยาวพอจะแทนด้วยการเลื่อนกระดาษ
- *
- * ช่วงขาวที่สั้นกว่าเกณฑ์จะถูกปล่อยไว้ในภาพตามเดิม เพื่อให้ระยะห่างระหว่างบรรทัด
- * ยังมาจากตัวภาพ ไม่ต้องพึ่งความแม่นของการเลื่อนกระดาษในระยะสั้น ๆ
- */
-export function planRasterSegments(
-  width: number,
-  height: number,
-  pixels: Uint8Array,
-  minBlankRun: number = MIN_BLANK_RUN_ROWS,
-): RasterSegment[] {
-  const segments: RasterSegment[] = [];
-  let contentTop = 0;
-  let y = 0;
-  while (y < height) {
-    if (!isBlankRow(pixels, width, y)) {
-      y += 1;
-      continue;
-    }
-    let runEnd = y;
-    while (runEnd < height && isBlankRow(pixels, width, runEnd)) runEnd += 1;
-    const run = runEnd - y;
-    if (run >= minBlankRun) {
-      if (y > contentTop) segments.push({ kind: "content", top: contentTop, height: y - contentTop });
-      segments.push({ kind: "feed", dots: run });
-      contentTop = runEnd;
-    }
-    y = runEnd;
-  }
-  if (height > contentTop) segments.push({ kind: "content", top: contentTop, height: height - contentTop });
-  return segments;
-}
-
-/**
  * Packs a 1-byte-per-pixel monochrome bitmap (1 = black dot, 0 = white) into an
  * ESC/POS GS v 0 raster bit-image command. width must match the row stride of
  * `pixels` (length = width * height). `breaks` are y positions where splitting
  * the image into a new band is safe (see planRasterBands).
- *
- * ช่วงขาวยาว ๆ ถูกส่งเป็นคำสั่งเลื่อนกระดาษแทนข้อมูลรูป ผลที่ออกมาบนกระดาษ
- * เหมือนเดิมทุกจุด แต่ข้อมูลที่ต้องส่งลดลง 31-35% เมื่อวัดกับใบเสร็จจริงของหน้าร้าน
  */
 export function packEscPosRaster(
   width: number,
@@ -122,43 +53,16 @@ export function packEscPosRaster(
   breaks: number[] = [],
 ): Uint8Array {
   const bytesPerRow = Math.ceil(width / 8);
-  const segments = planRasterSegments(width, height, pixels);
-  const bands: Array<{ top: number; height: number } | { feed: number }> = [];
-  for (const segment of segments) {
-    if (segment.kind === "feed") {
-      let left = segment.dots;
-      while (left > 0) {
-        const step = Math.min(left, MAX_FEED_DOTS);
-        bands.push({ feed: step });
-        left -= step;
-      }
-      continue;
-    }
-    // breaks ของผู้เรียกอยู่ในพิกัดของภาพเต็ม ต้องเลื่อนให้เป็นพิกัดภายในช่วงนี้
-    const localBreaks = breaks
-      .filter((value) => value > segment.top && value < segment.top + segment.height)
-      .map((value) => value - segment.top);
-    for (const band of planRasterBands(segment.height, localBreaks)) {
-      bands.push({ top: segment.top + band.top, height: band.height });
-    }
-  }
-
+  const bands = planRasterBands(height, breaks);
   let totalLength = 0;
   for (const band of bands) {
-    totalLength += "feed" in band ? 3 : 8 + bytesPerRow * band.height;
+    totalLength += 8 + bytesPerRow * band.height;
   }
 
   const body = new Uint8Array(totalLength);
   let p = 0;
 
   for (const band of bands) {
-    if ("feed" in band) {
-      // ESC J n — พิมพ์บัฟเฟอร์แล้วเลื่อนกระดาษ n จุด ให้ผลเท่ากับพิมพ์แถวขาว n แถว
-      body[p++] = ESC;
-      body[p++] = 0x4a; // 'J'
-      body[p++] = band.feed & 0xff;
-      continue;
-    }
     const bandTop = band.top;
     const bandHeight = band.height;
 
