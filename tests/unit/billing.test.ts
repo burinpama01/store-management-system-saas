@@ -6,7 +6,18 @@ import {
   isAccessAllowed,
   getPlanFeatures,
   canUseFeature,
+  getPlanDefinition,
+  businessConfigToPlanFeatures,
+  BUSINESS_SELECTABLE_FEATURES,
+  BUSINESS_FEATURE_COMPONENTS,
+  BUSINESS_UNAVAILABLE_FEATURES,
 } from "@/modules/billing/types";
+import {
+  normalizeBusinessConfig,
+  computeBusinessPrice,
+  BUSINESS_DEFAULT_PRICES,
+  BUSINESS_COMPONENT_LABELS,
+} from "@/modules/billing/business-plan";
 import type { BillingState, PlanFeatures } from "@/modules/billing/types";
 
 function state(plan: BillingState["plan"], status: BillingState["status"]): BillingState {
@@ -331,4 +342,55 @@ describe("feature labels and limits", () => {
     expect(explainFeatureLock(state("premium", "active"), "qrOrdering")).toBeNull();
     expect(explainFeatureLock(state("free", "active"), "maxStores")).toBeNull();
   });
+});
+
+describe("ฟีเจอร์ AI ปิดขายในแผน business", () => {
+  // กติกา: ร้านที่มี AI ต้องมีฟีเจอร์อื่นครบอยู่แล้ว — AI เป็นชั้นบนสุด ไม่ใช่ของซื้อแยก
+  // ถ้าเทสนี้แดง แปลว่ามีคนเปิดขายกลับโดยไม่ได้บังคับให้ติ๊กฟีเจอร์ที่เหลือครบพร้อมกัน
+  const aiKeys = ["aiAssistant", "aiVision", "aiForecast"] as const;
+
+  it.each(aiKeys)("ซื้อ %s แยกชิ้นในแผน business ไม่ได้", (key) => {
+    expect(BUSINESS_SELECTABLE_FEATURES).not.toContain(key);
+    expect(BUSINESS_UNAVAILABLE_FEATURES[key]).toBeTruthy();
+  });
+
+  it.each(aiKeys)("ต่อให้ยัด %s เข้ามาใน config ก็ต้องไม่ได้สิทธิ์", (key) => {
+    const config = normalizeBusinessConfig({ seats: 5, stores: 1, features: ["qrOrdering", key] });
+    expect(config?.features).not.toContain(key);
+    expect(businessConfigToPlanFeatures(config!)[key]).toBe(false);
+  });
+
+  it("ปิดไว้ ไม่ได้ถอดออก — ราคายังอยู่ครบเพื่อให้เปิดกลับได้ทันที", () => {
+    for (const key of aiKeys) {
+      expect(BUSINESS_FEATURE_COMPONENTS).toContain(key);
+      expect(BUSINESS_DEFAULT_PRICES[key]["30d"]).toBeGreaterThan(0);
+      expect(BUSINESS_COMPONENT_LABELS[key]).toBeTruthy();
+    }
+  });
+
+  it("ราคาที่คิดต้องไม่รวมฟีเจอร์ที่ปิดขาย", () => {
+    const config = normalizeBusinessConfig({ seats: 1, stores: 1, features: ["aiAssistant"] })!;
+    const bare = normalizeBusinessConfig({ seats: 1, stores: 1, features: [] })!;
+    expect(computeBusinessPrice(config, BUSINESS_DEFAULT_PRICES, "30d")).toBe(
+      computeBusinessPrice(bare, BUSINESS_DEFAULT_PRICES, "30d"),
+    );
+  });
+
+  it("แผน enterprise ยังเปิด AI ครบพร้อมฟีเจอร์อื่น", () => {
+    const enterprise = getPlanDefinition("enterprise");
+    for (const key of aiKeys) expect(enterprise[key]).toBe(true);
+    expect(enterprise.qrOrdering).toBe(true);
+  });
+
+  // การปิดขายฝั่ง business ต้องไม่กระทบร้าน enterprise แม้แต่น้อย — เส้นทางจริงที่
+  // แอปใช้ตัดสินสิทธิ์คือ canUseFeature ไม่ใช่ getPlanDefinition จึงเช็คตรงนั้นด้วย
+  // สถานะที่ใช้คือสถานะจริงบน production (2026-09-21: enterprise 9 ร้าน = trialing 6 / active 3)
+  it.each(["active", "trialing"] as const)(
+    "ร้าน enterprise สถานะ %s ใช้ AI ได้ครบทุกตัว",
+    (status) => {
+      const enterprise = state("enterprise", status);
+      for (const key of aiKeys) expect(canUseFeature(enterprise, key)).toBe(true);
+      expect(canUseFeature(enterprise, "qrOrdering")).toBe(true);
+    },
+  );
 });

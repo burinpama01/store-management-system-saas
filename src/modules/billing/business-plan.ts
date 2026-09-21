@@ -1,9 +1,10 @@
 import type { BillingDuration } from "./pricing";
 import {
+  BUSINESS_FEATURE_COMPONENTS,
   BUSINESS_SELECTABLE_FEATURES,
   FEATURE_LABELS,
+  type BusinessFeatureKey,
   type BusinessPlanConfig,
-  type FeatureKey,
 } from "./types";
 
 /**
@@ -12,14 +13,19 @@ import {
  * are super-admin editable (business_plan_prices), these are the seeded defaults.
  */
 
-export type BusinessFeatureComponent = Exclude<FeatureKey, "maxStores" | "maxMembers">;
+/**
+ * อนุมานจากรายการฟีเจอร์ทั้งหมดที่ระบบรู้จัก ไม่ใช่จาก FeatureKey ทั้งหมด —
+ * ฟีเจอร์ที่ปิดขายอยู่ยังมีช่องราคาและป้ายชื่อของตัวเอง (ดู BUSINESS_UNAVAILABLE_FEATURES)
+ * เพราะปิดไว้ ไม่ได้ถอดออก เปิดกลับเมื่อไรก็ใช้ราคาเดิมต่อได้ทันที
+ */
+export type BusinessFeatureComponent = BusinessFeatureKey;
 export type BusinessComponent = "base" | "perSeat" | "perStore" | BusinessFeatureComponent;
 
 export const BUSINESS_COMPONENTS: BusinessComponent[] = [
   "base",
   "perSeat",
   "perStore",
-  ...BUSINESS_SELECTABLE_FEATURES,
+  ...BUSINESS_FEATURE_COMPONENTS,
 ];
 
 export function isBusinessComponent(value: string): value is BusinessComponent {
@@ -31,7 +37,7 @@ export const BUSINESS_COMPONENT_LABELS: Record<BusinessComponent, string> = {
   perSeat: "ต่อที่นั่ง (สมาชิก)",
   perStore: "ต่อสาขา",
   ...(Object.fromEntries(
-    BUSINESS_SELECTABLE_FEATURES.map((key) => [key, FEATURE_LABELS[key]]),
+    BUSINESS_FEATURE_COMPONENTS.map((key) => [key, FEATURE_LABELS[key]]),
   ) as Record<BusinessFeatureComponent, string>),
 };
 
@@ -62,6 +68,7 @@ function buildDefaultPrices(): BusinessPriceMap {
     apiIntegration: 300,
     byoPaymentGateway: 300,
     musicRequest: 200,
+    // สามตัวนี้ปิดขายอยู่ (BUSINESS_UNAVAILABLE_FEATURES) — ราคายังอยู่เพื่อให้เปิดกลับได้ทันที
     aiAssistant: 200,
     aiVision: 150,
     aiForecast: 150,

@@ -110,8 +110,14 @@ export const PLAN_LABELS: Record<BillingPlan, string> = {
   enterprise: "Enterprise",
 };
 
-/** Boolean features a Business tenant can toggle on individually. */
-export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "maxMembers">[] = [
+/**
+ * ฟีเจอร์ทุกตัวที่ระบบ build-your-own รู้จัก — รวมตัวที่ "ปิดขายอยู่" ด้วย
+ *
+ * เก็บครบไว้โดยตั้งใจ เพราะราคาที่ซูเปอร์แอดมินเคยแก้ไว้ (business_plan_prices)
+ * และป้ายชื่อผูกกับคีย์พวกนี้ ลบออกจากรายการ = ข้อมูลราคาเดิมกลายเป็นขยะที่ไม่มีใคร
+ * อ้างถึงและเปิดขายกลับไม่ได้โดยไม่ตั้งใหม่หมด
+ */
+export const BUSINESS_FEATURE_COMPONENTS = [
   "groceryPos",
   "couponManagement",
   "loyaltyPoints",
@@ -132,7 +138,39 @@ export const BUSINESS_SELECTABLE_FEATURES: Exclude<FeatureKey, "maxStores" | "ma
   "aiAssistant",
   "aiVision",
   "aiForecast",
-];
+] as const satisfies readonly Exclude<FeatureKey, "maxStores" | "maxMembers">[];
+
+export type BusinessFeatureKey = (typeof BUSINESS_FEATURE_COMPONENTS)[number];
+
+/**
+ * ฟีเจอร์ที่ "ปิดขาย" อยู่ตอนนี้ พร้อมเหตุผล — ยังอยู่ในระบบ เปิดกลับได้ด้วยการลบ
+ * รายการออกจากที่นี่ที่เดียว
+ *
+ * กติกา: ร้านที่มี AI ต้องมีฟีเจอร์อื่นครบอยู่แล้ว — AI เป็นชั้นบนสุด ไม่ใช่ของที่
+ * ซื้อแยกมาใช้กับแพ็กเกจที่ขาดฟีเจอร์
+ *
+ * ตอนนี้เลือก "ปิดไว้ก่อน" เพราะยังไม่มีร้านไหนใช้แผน business (ตรวจ prod 2026-09-21:
+ * premium 7 / enterprise 9 / business 0) จึงยังไม่คุ้มที่จะสร้างกลไกบังคับ dependency
+ *
+ * ***ห้ามลบรายการออกจากที่นี่เฉย ๆ เพื่อเปิดขายกลับ*** — วันที่เปิด ต้องทำกลไกบังคับ
+ * ให้ติ๊กฟีเจอร์ที่เหลือครบพร้อมกัน (และถอดไม่ได้ตราบที่ยังมี AI) มาพร้อมกันในรอบเดียว
+ * ไม่งั้นจะกลับไปขายสถานะที่กติกาบอกว่าเป็นไปไม่ได้ และผู้ช่วย AI หลังร้านจะต้อง
+ * รับมือเคส "แพ็กเกจไม่รองรับฟีเจอร์ที่กำลังจะสั่ง" กลางคำสั่งงานอีกครั้ง
+ */
+export const BUSINESS_UNAVAILABLE_FEATURES: Partial<Record<BusinessFeatureKey, string>> = {
+  aiAssistant: "ผู้ช่วย AI มีเฉพาะแพ็กเกจ Enterprise",
+  aiVision: "AI สแกนเมนู มีเฉพาะแพ็กเกจ Enterprise",
+  aiForecast: "AI พยากรณ์ มีเฉพาะแพ็กเกจ Enterprise",
+};
+
+/**
+ * ฟีเจอร์ที่ร้าน build-your-own เลือกซื้อได้จริงตอนนี้
+ *
+ * เป็นแหล่งความจริงของหน้าเลือกแพ็กและของ normalizeBusinessConfig — ฟีเจอร์ที่ปิดขาย
+ * จะถูกกรองทิ้งจาก config ที่ส่งเข้ามา ต่อให้ยัดมาตรง ๆ ก็ไม่ได้สิทธิ์
+ */
+export const BUSINESS_SELECTABLE_FEATURES: readonly BusinessFeatureKey[] =
+  BUSINESS_FEATURE_COMPONENTS.filter((key) => !(key in BUSINESS_UNAVAILABLE_FEATURES));
 
 /** Builds the effective feature set for a Business config (pure). */
 export function businessConfigToPlanFeatures(config: BusinessPlanConfig): PlanFeatures {
@@ -142,7 +180,7 @@ export function businessConfigToPlanFeatures(config: BusinessPlanConfig): PlanFe
     maxMembers: Math.max(1, config.seats),
   };
   for (const key of config.features) {
-    if ((BUSINESS_SELECTABLE_FEATURES as FeatureKey[]).includes(key)) {
+    if ((BUSINESS_SELECTABLE_FEATURES as readonly FeatureKey[]).includes(key)) {
       features[key as Exclude<FeatureKey, "maxStores" | "maxMembers">] = true;
     }
   }
