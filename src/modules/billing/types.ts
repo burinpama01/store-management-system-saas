@@ -111,13 +111,13 @@ export const PLAN_LABELS: Record<BillingPlan, string> = {
 };
 
 /**
- * Boolean features a Business tenant can toggle on individually.
+ * ฟีเจอร์ทุกตัวที่ระบบ build-your-own รู้จัก — รวมตัวที่ "ปิดขายอยู่" ด้วย
  *
- * นี่คือแหล่งความจริงแหล่งเดียวของ "ฟีเจอร์ที่ขายแบบ build-your-own ได้" —
- * ราคา ป้ายชื่อ ตัวเลือกในหน้าเลือกแพ็ก และชนิด BusinessComponent อนุมานจากรายการนี้
- * ทั้งหมด ถอดรายการไหนออกจากที่นี่ = ถอดออกจากทุกที่พร้อมกัน ไม่มีที่ตกหล่น
+ * เก็บครบไว้โดยตั้งใจ เพราะราคาที่ซูเปอร์แอดมินเคยแก้ไว้ (business_plan_prices)
+ * และป้ายชื่อผูกกับคีย์พวกนี้ ลบออกจากรายการ = ข้อมูลราคาเดิมกลายเป็นขยะที่ไม่มีใคร
+ * อ้างถึงและเปิดขายกลับไม่ได้โดยไม่ตั้งใหม่หมด
  */
-export const BUSINESS_SELECTABLE_FEATURES = [
+export const BUSINESS_FEATURE_COMPONENTS = [
   "groceryPos",
   "couponManagement",
   "loyaltyPoints",
@@ -135,12 +135,35 @@ export const BUSINESS_SELECTABLE_FEATURES = [
   "apiIntegration",
   "byoPaymentGateway",
   "musicRequest",
-  // aiAssistant ไม่อยู่ที่นี่โดยตั้งใจ — ผู้ช่วย AI เป็นของแพ็ก enterprise อย่างเดียว
-  // กติกา: ร้านที่มี AI ต้องมีฟีเจอร์อื่นครบอยู่แล้ว (AI เป็นชั้นบนสุด ไม่ใช่ของซื้อแยก)
-  // ถ้าจะเอากลับมาขายแบบ build-your-own ต้องบังคับให้ติ๊กฟีเจอร์ที่เหลือครบพร้อมกัน
+  "aiAssistant",
   "aiVision",
   "aiForecast",
 ] as const satisfies readonly Exclude<FeatureKey, "maxStores" | "maxMembers">[];
+
+export type BusinessFeatureKey = (typeof BUSINESS_FEATURE_COMPONENTS)[number];
+
+/**
+ * ฟีเจอร์ที่ "ปิดขาย" อยู่ตอนนี้ พร้อมเหตุผล — ยังอยู่ในระบบ เปิดกลับได้ด้วยการลบ
+ * รายการออกจากที่นี่ที่เดียว
+ *
+ * กติกา: ร้านที่มี AI ต้องมีฟีเจอร์อื่นครบอยู่แล้ว — AI เป็นชั้นบนสุด ไม่ใช่ของที่
+ * ซื้อแยกมาใช้กับแพ็กเกจที่ขาดฟีเจอร์ ถ้าจะเปิดขายแบบ build-your-own อีกครั้ง
+ * ต้องบังคับให้ติ๊กฟีเจอร์ที่เหลือครบพร้อมกัน ไม่ใช่แค่เอารายการออกจากที่นี่
+ */
+export const BUSINESS_UNAVAILABLE_FEATURES: Partial<Record<BusinessFeatureKey, string>> = {
+  aiAssistant: "ผู้ช่วย AI มีเฉพาะแพ็กเกจ Enterprise",
+  aiVision: "AI สแกนเมนู มีเฉพาะแพ็กเกจ Enterprise",
+  aiForecast: "AI พยากรณ์ มีเฉพาะแพ็กเกจ Enterprise",
+};
+
+/**
+ * ฟีเจอร์ที่ร้าน build-your-own เลือกซื้อได้จริงตอนนี้
+ *
+ * เป็นแหล่งความจริงของหน้าเลือกแพ็กและของ normalizeBusinessConfig — ฟีเจอร์ที่ปิดขาย
+ * จะถูกกรองทิ้งจาก config ที่ส่งเข้ามา ต่อให้ยัดมาตรง ๆ ก็ไม่ได้สิทธิ์
+ */
+export const BUSINESS_SELECTABLE_FEATURES: readonly BusinessFeatureKey[] =
+  BUSINESS_FEATURE_COMPONENTS.filter((key) => !(key in BUSINESS_UNAVAILABLE_FEATURES));
 
 /** Builds the effective feature set for a Business config (pure). */
 export function businessConfigToPlanFeatures(config: BusinessPlanConfig): PlanFeatures {
