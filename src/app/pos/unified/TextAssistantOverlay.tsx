@@ -53,10 +53,42 @@ function readReason(payload: unknown): string | null {
 // server ยังผูก session เดิมให้ (session ผูกตะกร้า 1 ใบตลอดอายุ และปฏิเสธ version ย้อนหลัง)
 // ถ้า version เคาะกลับมา 0 ทุก mount ผู้ช่วยจะโดน CONTEXT_UNAVAILABLE จนครบ TTL 30 นาที (M4 review)
 const CART_ID_STORAGE_KEY = "ai-assistant:active-cart-binding";
+/** sessionStorage = แยกต่อแท็บอยู่แล้ว จึงได้ "หนึ่งแท็บ หนึ่งเครื่อง" โดยไม่ต้องทำอะไรเพิ่ม */
+const DEVICE_ID_STORAGE_KEY = "ai-assistant:device-id";
 
 interface StoredCartBinding {
   readonly cartId: string;
   readonly cartVersion: number;
+}
+
+/**
+ * id ของ "เครื่อง/แท็บ" นี้ — เก็บใน sessionStorage จึงแยกกันต่อแท็บโดยอัตโนมัติ
+ *
+ * เซิร์ฟเวอร์ใช้ค่านี้แยก session ของผู้ช่วยต่อแท็บ ทำให้เปิดสองแท็บแล้วแต่ละแท็บผูก
+ * ตะกร้าของตัวเองได้ (ก่อนหน้านี้หนึ่งผู้ใช้มี session เดียว แท็บที่สองจึงโดนปฏิเสธ)
+ *
+ * ไม่ใช่ข้อมูลยืนยันตัวตน — ปลอมได้อย่างมากก็ไปใช้ session ของแท็บอื่นของตัวเอง
+ * สร้างไม่ได้/เก็บไม่ได้ = ไม่ส่ง header แล้วเซิร์ฟเวอร์ถือเป็นเครื่องเดียวต่อผู้ใช้ตามเดิม
+ */
+function readDeviceId(): string | null {
+  try {
+    const existing = sessionStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    if (typeof existing === "string" && ASSISTANT_CART_ID_PATTERN.test(existing)) return existing;
+    const created = `dev-${crypto.randomUUID().replace(/-/g, "")}`;
+    sessionStorage.setItem(DEVICE_ID_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return null;
+  }
+}
+
+/** header ของทุกคำขอผู้ช่วย — ชื่อเดียวกับ ASSISTANT_DEVICE_HEADER ฝั่ง server */
+function assistantHeaders(): Record<string, string> {
+  const deviceId = readDeviceId();
+  return {
+    "Content-Type": "application/json",
+    ...(deviceId ? { "x-storeos-assistant-device": deviceId } : {}),
+  };
 }
 
 function readStoredBinding(): StoredCartBinding | null {
@@ -89,7 +121,7 @@ async function sendTextCommand(body: TextCommandRequestBody): Promise<TextComman
   try {
     response = await fetch("/api/ai-assistant/text-command", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: assistantHeaders(),
       body: JSON.stringify(body),
     });
   } catch {
@@ -113,7 +145,7 @@ async function createLiveSession(body: { activeCartId: string }): Promise<LiveSe
   try {
     response = await fetch("/api/ai-assistant/live/session", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: assistantHeaders(),
       body: JSON.stringify(body),
     });
   } catch {
@@ -134,7 +166,7 @@ async function relayLiveTool(body: LiveToolRequestBody): Promise<LiveToolRelayRe
   try {
     response = await fetch("/api/ai-assistant/live/tool", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: assistantHeaders(),
       body: JSON.stringify(body),
     });
   } catch {
@@ -155,7 +187,7 @@ async function endLiveSession(body: { sessionId: string; sessionToken: string })
   try {
     await fetch("/api/ai-assistant/live/session", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: assistantHeaders(),
       body: JSON.stringify(body),
       keepalive: true,
     });
@@ -170,7 +202,7 @@ async function recordLiveTranscript(body: LiveTranscriptRequestBody): Promise<un
   try {
     await fetch("/api/ai-assistant/live/transcript", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: assistantHeaders(),
       body: JSON.stringify(body),
       keepalive: true,
     });

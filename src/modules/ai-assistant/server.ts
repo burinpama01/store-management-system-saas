@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { logSystemEvent } from "@/modules/system/event-log";
@@ -9,6 +10,14 @@ export interface AssistantIdentity {
   readonly organizationId: string;
   readonly storeId: string;
   readonly userId: string;
+  /**
+   * เครื่อง/แท็บที่ยิงคำสั่งมา (opaque id ที่ client สร้างและเก็บไว้เอง)
+   *
+   * มีเพื่อให้ session store แยก session ต่อเครื่องได้ — คนเดียวเปิดสองแท็บต้องผูก
+   * ตะกร้าคนละใบได้ ไม่ใช่แท็บที่สองโดนปฏิเสธ ไม่ส่งมา = ถือเป็นเครื่องเดียวต่อผู้ใช้
+   * (พฤติกรรมเดิมก่อนมี registry)
+   */
+  readonly deviceId?: string;
 }
 
 /** session ฝั่ง server ที่ resolver เชื่อถือได้คืน ต้องเป็นของ identity เดียวกันเสมอ */
@@ -51,6 +60,24 @@ export async function writeAssistantAudit(metadata: AuditMetadata): Promise<void
   });
 }
 
+/** header ที่ client ใส่ id ของเครื่อง/แท็บมา — ชื่อเดียวกับที่ฝั่ง UI ส่ง */
+export const ASSISTANT_DEVICE_HEADER = "x-storeos-assistant-device";
+
+/**
+ * อ่าน device id จาก header — อ่านไม่ได้ (นอก request scope / ไม่ได้ส่งมา) = undefined
+ *
+ * ค่าที่อ่านมาไม่ได้รับความเชื่อถือในเชิงสิทธิ์เลย มันเป็นแค่ตัวแบ่ง session ภายใน
+ * identity เดิมที่ auth เป็นคนกำหนด — ปลอมค่าได้อย่างมากก็ไปใช้ session ของเครื่องอื่น
+ * ของตัวเอง ซึ่งไม่ข้ามเขตไปหาใคร
+ */
+async function readDeviceId(): Promise<string | undefined> {
+  try {
+    return (await headers()).get(ASSISTANT_DEVICE_HEADER) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveServerContext(options: ServerAssistantDispatcherOptions): Promise<TrustedContext> {
   // ปฏิเสธ browser runtime ก่อนแตะ auth เสมอ
   if (typeof window !== "undefined") throw new Error("Assistant requires a server runtime");
@@ -58,7 +85,14 @@ async function resolveServerContext(options: ServerAssistantDispatcherOptions): 
   const { organizationId, storeId, can } = auth.resolved;
   const userId = auth.user.id;
   if (!organizationId || !storeId || !userId) throw new Error("Assistant identity incomplete");
-  const identity: AssistantIdentity = { organizationId, storeId, userId };
+  // device id มาจาก header ของ request (ไม่ใช่ body) — เป็นข้อมูลของ "เครื่อง" ไม่ใช่ของคำสั่ง
+  // และอ่านที่นี่ทำให้ dispatcher ซึ่งเป็น singleton ต่อ process ไม่ต้องรับค่าต่อ request
+  const identity: AssistantIdentity = {
+    organizationId,
+    storeId,
+    userId,
+    deviceId: await readDeviceId(),
+  };
   const session = await options.resolveSession(identity);
   // session ต้องเป็นของ identity เดียวกันเสมอ ป้องกัน cross-tenant session injection
   if (!session || session.organizationId !== identity.organizationId

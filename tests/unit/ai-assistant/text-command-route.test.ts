@@ -44,12 +44,17 @@ type FakeRow = {
 
 function createFakeActionsDb() {
   const rows: FakeRow[] = [];
-  type Filter = { op: "eq" | "lte" | "in"; col: string; val: unknown };
+  type Filter = { op: "eq" | "lte" | "in" | "gt" | "is"; col: string; val: unknown };
   const cell = (row: FakeRow, col: string): unknown => (row as unknown as Record<string, unknown>)[col];
   const matches = (row: FakeRow, filters: Filter[]): boolean => filters.every((filter) => {
     if (filter.op === "eq") return cell(row, filter.col) === filter.val;
     if (filter.op === "in") return Array.isArray(filter.val) && (filter.val as unknown[]).includes(cell(row, filter.col));
-    return Date.parse(String(cell(row, filter.col))) <= Date.parse(String(filter.val));
+    if (filter.op === "is") return cell(row, filter.col) === null;
+    if (filter.op === "gt") return Date.parse(String(cell(row, filter.col))) > Date.parse(String(filter.val));
+    // lte ใช้กับทั้ง timestamp (expires_at) และตัวเลข (last_cart_version)
+    const left = cell(row, filter.col);
+    if (typeof left === "number" || typeof filter.val === "number") return Number(left) <= Number(filter.val);
+    return Date.parse(String(left)) <= Date.parse(String(filter.val));
   });
   function makeChain(state: { op: "select" | "insert" | "update" | "delete"; values?: Partial<FakeRow>; filters: Filter[]; selected: boolean; single: boolean; maybeSingle: boolean; limitCount?: number }) {
     const run = async (): Promise<{ data: unknown; error: { code?: string; message: string } | null }> => {
@@ -58,12 +63,14 @@ function createFakeActionsDb() {
         if (rows.some((row) => row.organization_id === values.organization_id && row.idempotency_key === values.idempotency_key)) {
           return { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } };
         }
-        rows.push({ ...values });
-        return { data: null, error: null };
+        const inserted = { ...values };
+        rows.push(inserted);
+        return { data: state.selected ? inserted : null, error: null };
       }
       if (state.op === "update") {
-        for (const row of rows) if (matches(row, state.filters)) Object.assign(row, state.values);
-        return { data: null, error: null };
+        const hit = rows.filter((row) => matches(row, state.filters));
+        for (const row of hit) Object.assign(row, state.values);
+        return { data: state.selected ? (hit[0] ?? null) : null, error: null };
       }
       if (state.op === "delete") {
         const doomed = rows.filter((row) => matches(row, state.filters));
@@ -81,6 +88,8 @@ function createFakeActionsDb() {
       eq: (col: string, val: unknown) => { state.filters.push({ op: "eq", col, val }); return chain; },
       lte: (col: string, val: unknown) => { state.filters.push({ op: "lte", col, val }); return chain; },
       in: (col: string, val: unknown[]) => { state.filters.push({ op: "in", col, val }); return chain; },
+      gt: (col: string, val: unknown) => { state.filters.push({ op: "gt", col, val }); return chain; },
+      is: (col: string, val: unknown) => { state.filters.push({ op: "is", col, val }); return chain; },
       limit: (n: number) => { state.limitCount = n; return chain; },
       single: () => { state.single = true; return chain; },
       maybeSingle: () => { state.maybeSingle = true; return chain; },
@@ -89,8 +98,12 @@ function createFakeActionsDb() {
     };
     return chain;
   }
+  // P0 — route ผูก DurableAssistantSessionStore ด้วย จึงต้องรองรับตาราง session ด้วย
+  // unique ของแต่ละตารางต่างกัน: actions = (org, key), sessions = (org, store, user, device)
+  const sessionRows: Record<string, unknown>[] = [];
   const client = {
     from(table: string) {
+      if (table === "ai_assistant_sessions") return makeSessionChain();
       if (table !== "ai_assistant_actions") throw Error(`fake db: unexpected table ${table}`);
       const state: { op: "select" | "insert" | "update" | "delete"; values: Partial<FakeRow> | undefined; filters: Filter[]; selected: boolean; single: boolean; maybeSingle: boolean; limitCount: number | undefined } = { op: "select", values: undefined, filters: [], selected: false, single: false, maybeSingle: false, limitCount: undefined };
       const chain = makeChain(state);
@@ -102,7 +115,53 @@ function createFakeActionsDb() {
       };
     },
   };
-  return { rows, client };
+  function makeSessionChain() {
+    const state: { op: "select" | "insert" | "update" | "delete"; values: Record<string, unknown> | undefined; filters: Filter[]; selected: boolean } =
+      { op: "select", values: undefined, filters: [], selected: false };
+    const hit = () => sessionRows.filter((row) => matches(row as unknown as FakeRow, state.filters));
+    const run = async (): Promise<{ data: unknown; error: { code?: string; message: string } | null }> => {
+      if (state.op === "insert") {
+        const v = state.values as Record<string, unknown>;
+        const clash = sessionRows.some((r) =>
+          r.organization_id === v.organization_id && r.store_id === v.store_id
+          && r.user_id === v.user_id && r.device_id === v.device_id);
+        if (clash) return { data: null, error: { code: "23505", message: "duplicate terminal" } };
+        const row = { id: `sess-${sessionRows.length + 1}`, bound_cart_id: null, last_cart_version: 0, created_at: new Date().toISOString(), ...v };
+        sessionRows.push(row);
+        return { data: row, error: null };
+      }
+      if (state.op === "delete") {
+        for (const row of hit()) sessionRows.splice(sessionRows.indexOf(row), 1);
+        return { data: null, error: null };
+      }
+      if (state.op === "update") {
+        const rows2 = hit();
+        for (const row of rows2) Object.assign(row, state.values);
+        return { data: rows2[0] ?? null, error: null };
+      }
+      return { data: hit()[0] ?? null, error: null };
+    };
+    const chain: Record<string, unknown> = {
+      select: () => { state.selected = true; return chain; },
+      insert: (values: Record<string, unknown>) => { state.op = "insert"; state.values = values; return chain; },
+      update: (values: Record<string, unknown>) => { state.op = "update"; state.values = values; return chain; },
+      delete: () => { state.op = "delete"; return chain; },
+      eq: (col: string, val: unknown) => { state.filters.push({ op: "eq", col, val }); return chain; },
+      gt: (col: string, val: unknown) => { state.filters.push({ op: "gt", col, val }); return chain; },
+      lt: (col: string, val: unknown) => { state.filters.push({ op: "lte", col, val }); return chain; },
+      lte: (col: string, val: unknown) => { state.filters.push({ op: "lte", col, val }); return chain; },
+      is: (col: string, val: unknown) => { state.filters.push({ op: "is", col, val }); return chain; },
+      in: (col: string, val: unknown[]) => { state.filters.push({ op: "in", col, val }); return chain; },
+      limit: () => chain,
+      single: () => chain,
+      maybeSingle: () => chain,
+      then: (onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+        Promise.resolve().then(run).then(onFulfilled, onRejected),
+    };
+    return chain;
+  }
+
+  return { rows, sessionRows, client };
 }
 
 async function loadRoute(options: Options = {}) {
