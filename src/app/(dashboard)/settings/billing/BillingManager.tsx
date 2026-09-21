@@ -22,6 +22,8 @@ import type { SubscriptionQr } from "@/modules/billing/promptpay-provider";
 import { ModalDialog, ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
 import { claimFreeTrialAction, getPaymentQrAction } from "./actions";
+import { BeamPackagePayment } from "./BeamPackagePayment";
+import type { BillingOrderView } from "@/modules/billing/beam-billing-types";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -68,6 +70,9 @@ export function BillingManager({
   enterpriseRequest = null,
   promoTrial = false,
   expires = true,
+  beamEnabled = false,
+  beamFallbackEnabled = false,
+  beamOrder = null,
 }: {
   orgName: string;
   plan: BillingPlan;
@@ -87,6 +92,9 @@ export function BillingManager({
   promoTrial?: boolean;
   /** ผลของ isExpiringState() ฝั่งเซิร์ฟเวอร์ — false = สัญญาไม่มีวันหมดอายุ */
   expires?: boolean;
+  beamEnabled?: boolean;
+  beamFallbackEnabled?: boolean;
+  beamOrder?: BillingOrderView | null;
 }) {
   // ตรรกะการแสดงสถานะอยู่ใน modules/billing/status-display.ts (ทดสอบแยกได้)
   const display = describeSubscriptionDisplay({ plan, isActive, promoTrial, expires, currentPeriodEnd });
@@ -273,7 +281,7 @@ export function BillingManager({
       <div className="page-header">
         <div>
           <h1 className="page-title">การเรียกเก็บเงิน & แพ็กเกจ</h1>
-          <p className="page-kicker">{orgName} · ชำระผ่าน PromptPay ยืนยันอัตโนมัติด้วย slip2go</p>
+          <p className="page-kicker">{orgName} · {beamEnabled ? "ชำระผ่าน Beam ยืนยันเงินเข้าอัตโนมัติ" : "ชำระผ่าน PromptPay ยืนยันอัตโนมัติด้วย slip2go"}</p>
         </div>
         <span className={`badge ${enterpriseActive || isTrial ? "badge-brand" : isActive ? "badge-success" : "badge-warning"}`}>
           {enterpriseActive ? "Enterprise contract" : subscriptionStatusLabel(display)}
@@ -559,16 +567,17 @@ export function BillingManager({
             </p>
           )}
 
-          <button
+          {beamEnabled && <BeamPackagePayment plan={selectedPlan} duration={duration} businessConfigJson={isBusinessSelected ? JSON.stringify(businessConfig) : undefined} discountCode={discountCode} fallbackEnabled={beamFallbackEnabled} initialOrder={beamOrder} />}
+          {!beamEnabled && <button
             type="button"
             onClick={generateQr}
             disabled={busy || !paymentConfigured}
             className="btn-primary mt-4 disabled:opacity-40"
           >
             {busy ? "กำลังสร้าง..." : "สร้าง QR ชำระเงิน"}
-          </button>
+          </button>}
 
-          {qr && (
+          {!beamEnabled && qr && (
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
               <p className="mb-2 text-sm font-bold text-[var(--ink)]">
                 โอน {amount?.toLocaleString()} บาท ไปยัง {recipientName ?? "บัญชีผู้รับ"}

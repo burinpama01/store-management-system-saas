@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+/artifacts/beam-platform-release/
 .pnp
 .pnp.js
 

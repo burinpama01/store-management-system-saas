@@ -11,6 +11,7 @@ import {
 } from "@/modules/billing/pricing-repository";
 import { describeDiscountRejection } from "@/modules/billing/discount-code";
 import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
+import { getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
 import {
   claimFreeTrial,
   submitPromptPayPayment,
@@ -78,6 +79,9 @@ export async function getPaymentQrAction(
       return { ...base, error: describeDiscountRejection(quote.discountRejection) };
     }
     const settings = await getPlatformSettings();
+    if (settings.billingProvider === "beam" || await getPendingPlatformBillingOrder(ctx.organizationId)) {
+      return { ...base, error: "กรุณาใช้รายการชำระแพ็กเกจ Beam หรือช่องทางสำรองที่ผูกกับรายการ" };
+    }
     return {
       ok: true,
       amount: quote.finalAmount,

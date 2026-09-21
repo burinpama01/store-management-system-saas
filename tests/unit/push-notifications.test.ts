@@ -136,6 +136,7 @@ describe("push notification channel", () => {
     expect(managementOnly).toEqual([
       "payment",
       "new_table",
+      "new_delivery_order",
       "stock_alert",
       "attendance_clock_in",
       "attendance_clock_out",

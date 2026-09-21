@@ -26,6 +26,7 @@ export interface BeamQrCharge {
 
 export interface BeamCharge {
   chargeId: string;
+  currency?: string | null;
   status: BeamChargeStatus | string;
   amountSatang: number | null;
   referenceId: string | null;
@@ -124,6 +125,7 @@ export function parseBeamCharge(body: unknown): BeamCharge | null {
   return {
     chargeId,
     status: str(b.status) ?? "PENDING",
+    currency: str(b.currency),
     amountSatang: typeof b.amount === "number" && Number.isFinite(b.amount) ? b.amount : null,
     referenceId: str(b.referenceId),
     failureCode: str(b.failureCode),
@@ -180,6 +182,15 @@ export async function getBeamCharge(input: {
 }
 
 /** Cheapest authenticated call — proves the merchant id / API key / environment pair. */
+export async function checkBeamAvailability(input: {
+  environment: PaymentEnvironment;
+  creds: BeamCredentials;
+}): Promise<BeamResult<true>> {
+  // Read-only preflight: never create a charge to test availability. Only 2xx is ready.
+  const res = await beamRequest({ ...input, method: "GET", path: "/api/v1/charges?limit=1" });
+  return res.ok ? { ok: true, data: true } : res;
+}
+
 export async function pingBeamCredentials(input: {
   environment: PaymentEnvironment;
   creds: BeamCredentials;

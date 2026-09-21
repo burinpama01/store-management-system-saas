@@ -4,7 +4,7 @@ import { mapError } from "@/shared/utils/error";
 import type { FreeTrialCampaign } from "./free-trial";
 
 export interface PlatformPromptPaySettings {
-  billingProvider: "promptpay" | "stripe";
+  billingProvider: "promptpay" | "stripe" | "beam";
   promptpayId: string | null;
   promptpayName: string | null;
   /** EMVCo payload decoded from an uploaded QR image (for accounts w/o a PromptPay id). */

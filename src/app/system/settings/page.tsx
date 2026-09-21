@@ -3,12 +3,15 @@ import { requireSystemAccess } from "@/modules/auth/guards";
 import { getPlatformSettings } from "@/modules/billing/platform-settings";
 import { isSlip2goConfigured } from "@/modules/billing/slip2go";
 import { SystemSettingsForm } from "./SystemSettingsForm";
+import { BeamBillingSettings } from "./BeamBillingSettings";
+import { getPlatformBeamPublicSettings } from "@/modules/billing/beam-settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function SystemSettingsPage() {
   await requireSystemAccess();
   const settings = await getPlatformSettings();
+  const beam = await getPlatformBeamPublicSettings();
 
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
@@ -23,6 +26,7 @@ export default async function SystemSettingsPage() {
           <p className="page-kicker">ช่องทางรับชำระเงินค่าสมาชิก SaaS และอีเมลผู้ส่งคำขอ Enterprise</p>
         </div>
       </div>
+      <BeamBillingSettings settings={beam} webhookUrl={host ? `${proto}://${host}/api/billing/beam/webhook` : "/api/billing/beam/webhook"} />
       <SystemSettingsForm
         settings={settings}
         slipReady={isSlip2goConfigured()}

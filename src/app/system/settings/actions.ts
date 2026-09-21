@@ -44,12 +44,16 @@ export async function updatePlatformSettingsAction(
     throw e;
   }
 
-  const billingProvider = formData.get("billingProvider") === "stripe" ? "stripe" : "promptpay";
+  const providerInput = formData.get("billingProvider");
+  const billingProvider = providerInput === "beam" ? "beam" : providerInput === "stripe" ? "stripe" : "promptpay";
   const promptpayId = ((formData.get("promptpayId") as string | null) ?? "").trim() || null;
   const promptpayName = ((formData.get("promptpayName") as string | null) ?? "").trim() || null;
 
   // Preserve the decoded static payload (uploaded separately) unless explicitly cleared.
   const existing = await getPlatformSettings();
+  if (billingProvider === "beam" && existing.billingProvider !== "beam") {
+    return { ok: false, error: "กรุณาเปิดใช้ Beam ในส่วนตั้งค่า Beam ด้านบนก่อน" };
+  }
   const staticPayload =
     formData.get("clearStaticPayload") === "1" ? null : existing.promptpayStaticPayload;
 

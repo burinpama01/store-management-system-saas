@@ -127,6 +127,7 @@ export function SystemSettingsForm({
           <label className="field-label">ผู้ให้บริการชำระเงิน</label>
           <select name="billingProvider" defaultValue={settings.billingProvider} className="form-input">
             <option value="promptpay">PromptPay (slip2go)</option>
+            <option value="beam">Beam (ตั้งค่าที่ส่วน Beam ด้านบน)</option>
             <option value="stripe">Stripe (ปิดใช้งานชั่วคราว)</option>
           </select>
         </div>
