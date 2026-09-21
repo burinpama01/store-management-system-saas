@@ -932,3 +932,25 @@ export async function provisionHubDeviceToken(input: {
 
   return { data: { rotated: true, token }, error: null };
 }
+
+
+/**
+ * มีงานรอพิมพ์ค้างอยู่ไหม — คำถามที่เบาที่สุดที่ตอบได้ว่า "ควรเคลมไหม"
+ *
+ * ใช้ระหว่างที่คำขอ long-poll ค้างรอ: ถามซ้ำทุกไม่กี่วินาทีด้วยราคาถูก ๆ แล้วค่อย
+ * เรียก claim (ซึ่งเป็น RPC ที่ล็อกแถวจริง) เมื่อรู้แน่ว่ามีของ
+ *
+ * ผิดพลาดเมื่อไหร่ให้ถือว่า "มี" ไว้ก่อน — ผู้เรียกจะไปเคลมแล้วพบว่าไม่มีงาน
+ * ซึ่งไม่เสียหาย ตรงข้ามกับการตอบว่าไม่มีทั้งที่มี ซึ่งทำให้ใบเสร็จค้างคิว
+ */
+export async function hasPendingPrintJobs(storeId: string): Promise<boolean> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("print_jobs")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("status", "pending")
+    .limit(1);
+  if (error) return true;
+  return (data?.length ?? 0) > 0;
+}

@@ -3,7 +3,17 @@ import { buildPromptPayPayload } from "./promptpay-qr";
 import type { ReceiptData } from "./types";
 
 const QUIET_MODULES = 4;
-const MAX_QR_DOTS: Record<"58mm" | "80mm", number> = { "58mm": 192, "80mm": 224 };
+/**
+ * ความกว้างสูงสุดของบล็อก QR บนกระดาษ (หน่วยเป็นจุดของหัวพิมพ์ 203 dpi)
+ *
+ * ลดจาก 192/224 ลงมาเพราะ QR สองอันท้ายใบ (รับแต้ม + อ่านนิยาย) กินความยาว
+ * กระดาษมากกว่าเนื้อหาบิลจริงเสียอีก ทำให้ใบยาวเกินจำเป็นและข้อมูลที่ต้องส่ง
+ * ไปเครื่องพิมพ์ผ่าน WiFi ใหญ่ตาม
+ *
+ * ตัวคูณขนาดโมดูลมีพื้นขั้นต่ำ 3 จุด (0.37 มม.) อยู่แล้วใน getReceiptQrMetrics
+ * ซึ่งยังเกินขั้นต่ำที่กล้องมือถือสแกนติดในระยะปกติ
+ */
+const MAX_QR_DOTS: Record<"58mm" | "80mm", number> = { "58mm": 152, "80mm": 168 };
 
 export interface ReceiptPromptPayQr {
   payload: string;
@@ -53,7 +63,7 @@ export function getReceiptQrMetrics(payload: string, paperWidth: "58mm" | "80mm"
 export function renderReceiptQrSvg(payload: string, paperWidth: "58mm" | "80mm"): string {
   const { matrix, quietModules } = getReceiptQrMetrics(payload, paperWidth);
   const viewSize = matrix.size + quietModules * 2;
-  const sizePx = paperWidth === "58mm" ? 160 : 190;
+  const sizePx = paperWidth === "58mm" ? 128 : 144;
   const rects: string[] = [];
 
   for (let row = 0; row < matrix.size; row += 1) {
