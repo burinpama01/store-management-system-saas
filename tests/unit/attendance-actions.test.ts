@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   listStoreMemberships: vi.fn(),
   addPayrollAdjustment: vi.fn(),
   addManualAttendance: vi.fn(),
+  abandonStaleActiveRecords: vi.fn(),
   getActiveRecordToday: vi.fn(),
   clockIn: vi.fn(),
   clockOut: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock("@/modules/hr/repository", () => ({
 }));
 
 vi.mock("@/modules/attendance/repository", () => ({
+  abandonStaleActiveRecords: mocks.abandonStaleActiveRecords,
   getActiveRecordToday: mocks.getActiveRecordToday,
   clockIn: mocks.clockIn,
   clockOut: mocks.clockOut,
@@ -125,6 +127,7 @@ describe("attendance manager actions", () => {
     mocks.addPayrollAdjustment.mockResolvedValue({ ok: true, error: null });
     mocks.addManualAttendance.mockResolvedValue({ ok: true, error: null });
     mocks.getActiveRecordToday.mockResolvedValue(null);
+    mocks.abandonStaleActiveRecords.mockResolvedValue({ count: 0, error: null });
     mocks.clockIn.mockResolvedValue({ data: null, error: null });
     mocks.clockOut.mockResolvedValue({ data: null, error: null });
     mocks.notifyOwnerNow.mockResolvedValue(true);
@@ -564,5 +567,102 @@ describe("attendance manager actions", () => {
         employeeName: "staff@example.com",
       }),
     );
+  });
+
+  it("เรียกปิดรายการค้างด้วยวันที่ตามเวลาร้าน ก่อนเช็คว่ากดเข้างานซ้ำไหม", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z")); // 09:15 ตามเวลาไทย
+    mocks.abandonStaleActiveRecords.mockResolvedValue({ count: 1, error: null });
+    mocks.clockIn.mockResolvedValue({
+      data: {
+        id: "att-9",
+        userId: MANAGER_ID,
+        organizationId: "org-1",
+        storeId: "store-1",
+        employeeName: "manager@example.com",
+        date: "2026-06-20",
+        clockInAt: "2026-06-20T02:15:00.000Z",
+        clockOutAt: null,
+        status: "active",
+        createdAt: "2026-06-20T02:15:00.000Z",
+        updatedAt: "2026-06-20T02:15:00.000Z",
+      },
+      error: null,
+    });
+    const { clockInAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockInAction(fd({}));
+
+      expect(result.error).toBeNull();
+      expect(mocks.abandonStaleActiveRecords).toHaveBeenCalledWith(MANAGER_ID, "org-1", "2026-06-20");
+      // ต้องบันทึกไว้ว่าปิดให้กี่รายการ ไม่งั้นพนักงานงงว่าวันเก่าหายไปไหน
+      expect(mocks.logSystemEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "attendance.clock",
+          action: "abandonStaleRecords",
+          context: expect.objectContaining({ abandoned: 1, userId: MANAGER_ID }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ไม่มีรายการค้าง = ไม่ต้องบันทึก log อะไร", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z"));
+    mocks.abandonStaleActiveRecords.mockResolvedValue({ count: 0, error: null });
+    const { clockInAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      await clockInAction(fd({}));
+
+      expect(mocks.abandonStaleActiveRecords).toHaveBeenCalledTimes(1);
+      expect(mocks.logSystemEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: "abandonStaleRecords" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ปิดแถวเก่าไม่สำเร็จ ต้องไม่กันคนเข้างาน แต่ต้องบันทึกไว้ไม่ให้พังเงียบ", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z"));
+    // เคสจริง: migration ยังไม่ขึ้น constraint เดิมจึงปฏิเสธค่า abandoned
+    mocks.abandonStaleActiveRecords.mockResolvedValue({
+      count: 0,
+      error: { userMessage: "อัปเดตไม่สำเร็จ" },
+    });
+    const { clockInAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockInAction(fd({}));
+
+      expect(result.error).toBeNull();
+      expect(mocks.clockIn).toHaveBeenCalledTimes(1);
+      expect(mocks.logSystemEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ level: "error", action: "abandonStaleRecordsFailed" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("กดเข้างานซ้ำในวันเดียวกันยังถูกปฏิเสธเหมือนเดิม", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-20T02:15:00.000Z"));
+    mocks.getActiveRecordToday.mockResolvedValue({ id: "att-today", status: "active" });
+    const { clockInAction } = await import("@/app/(dashboard)/attendance/actions");
+
+    try {
+      const result = await clockInAction(fd({}));
+
+      expect(result.error).toBe("คุณได้ลงชื่อเข้างานแล้ว");
+      expect(mocks.clockIn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

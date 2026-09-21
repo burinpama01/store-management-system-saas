@@ -2,7 +2,7 @@ import {
   createSupabaseServerClient,
   createSupabaseServiceClient,
 } from "@/server/integrations/supabase/server";
-import { mapError } from "@/shared/utils/error";
+import { mapError, type AppError } from "@/shared/utils/error";
 import type { AttendanceRecord, AttendanceSettings, PayrollSummary } from "./types";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
@@ -91,6 +91,38 @@ export async function getActiveRecordToday(
     .limit(1)
     .maybeSingle();
   return data ? mapRecord(data) : null;
+}
+
+/**
+ * ปิดรายการที่ค้างจากวันก่อน ๆ ของพนักงานคนนี้ให้เป็น "ขาดงาน" (ลืมกดออกงาน)
+ *
+ * ระบบไม่มี auto clock-out จังหวะเดียวที่รู้แน่ว่ากะเก่าจบไปแล้วคือตอนคนเดิม
+ * กดเข้างานวันใหม่ — ถ้าไม่ปิดตรงนี้ แถวเก่าจะค้าง active ตลอดกาล และทุกที่ที่ถามว่า
+ * "มีใครอยู่ที่ร้านไหม" จะได้คำตอบผิดไปเรื่อย ๆ
+ *
+ * ปิดเฉพาะ date < today เท่านั้น กะที่กำลังทำงานอยู่จริงวันนี้ห้ามแตะ (กันเคสกดเข้า
+ * งานซ้ำในวันเดียวกัน ซึ่ง clockInAction กันไว้ด้วย getActiveRecordToday อยู่แล้ว)
+ *
+ * ไม่กระทบเงินเดือน: payroll คิดจาก clock_out_at ซึ่งยังเป็น null เหมือนเดิม
+ * วันนั้นจึงยังเป็น in_no_out (นับขาด ไม่จ่าย) เท่าที่เคยเป็น
+ */
+export async function abandonStaleActiveRecords(
+  userId: string,
+  organizationId: string,
+  today: string,
+): Promise<{ count: number; error: AppError | null }> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("attendance_records")
+    .update({ status: "abandoned", updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("organization_id", organizationId)
+    .eq("status", "active")
+    .is("clock_out_at", null)
+    .lt("date", today)
+    .select("id");
+  if (error) return { count: 0, error: mapError(error) };
+  return { count: data?.length ?? 0, error: null };
 }
 
 export async function getAttendanceSettings(storeId: string, organizationId: string) {
