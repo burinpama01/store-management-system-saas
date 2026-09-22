@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { Product } from "@/modules/catalog/types";
 import type { ToolRegistry } from "../foundation";
 import type { Prerequisite, ProposalDraft } from "../proposal";
+import { BACK_OFFICE_ASSISTANT_PERMISSION } from "./back-office-access";
 
 export interface CatalogCategoryRef {
   readonly id: string;
@@ -99,7 +100,7 @@ export function registerCatalogTools(registry: ToolRegistry, deps: CatalogToolDe
   registry.register({
     name: "catalog.get_product",
     risk: "read",
-    permissions: ["catalog.manage"],
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
     args: ProductRefArgs,
     result: z.object({
       product: z.object({
@@ -135,7 +136,7 @@ export function registerCatalogTools(registry: ToolRegistry, deps: CatalogToolDe
   registry.register({
     name: "catalog.update_price",
     risk: "sensitive",
-    permissions: ["catalog.manage"],
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
     args: UpdatePriceArgs,
     result: z.object({ id: z.string(), name: z.string(), price: z.number() }).strict(),
 
@@ -179,7 +180,7 @@ export function registerCatalogTools(registry: ToolRegistry, deps: CatalogToolDe
   registry.register({
     name: "catalog.set_availability",
     risk: "safe_write",
-    permissions: ["catalog.manage"],
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
     args: AvailabilityArgs,
     result: z.object({ id: z.string(), name: z.string(), state: z.string() }).strict(),
 

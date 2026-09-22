@@ -47,19 +47,43 @@ export interface ServerAssistantDispatcherOptions {
 }
 
 /** Audit เขียนผ่าน logSystemEvent เฉพาะ allowlist metadata ไม่มี args/result/error/raw text */
+const AUDIT_MESSAGES: Record<string, string> = {
+  success: "เรียกใช้สำเร็จ",
+  proposed: "เสนอรายการรอยืนยัน (ยังไม่เขียนข้อมูล)",
+  refined: "เสนอรายการใหม่หลังผู้ใช้เลือกข้อมูลที่ขาด (ยังไม่เขียนข้อมูล)",
+};
+
+/**
+ * บันทึกทุกเส้นทางที่ออกจาก dispatcher รวมเส้นทางที่สำเร็จแบบเงียบ ๆ
+ *
+ * แยกระดับ log ตามว่า "ข้อมูลของร้านถูกแก้จริงหรือยัง" ไม่ใช่ตามว่า request สำเร็จไหม —
+ * การ์ดที่เสนอไปแล้วไม่มีใครกดยืนยันเป็นเรื่องปกติ ไม่ใช่ปัญหา จึงเป็น info เหมือนกัน
+ * แต่ต้องแยกออกจากการเขียนจริงให้ได้ ไม่งั้นตอบคำถาม "AI ไปแก้อะไรของร้านบ้างเมื่อวาน"
+ * ไม่ได้เลย
+ *
+ * context เก็บเฉพาะ allowlist — ไม่มี args/ผลลัพธ์/ข้อความดิบของผู้ใช้
+ */
 export async function writeAssistantAudit(metadata: AuditMetadata): Promise<void> {
+  const informational = metadata.outcome === "success" || metadata.outcome === "proposed" || metadata.outcome === "refined";
+  const wrote = metadata.outcome === "success";
   await logSystemEvent({
-    level: metadata.outcome === "success" ? "info" : "warn",
+    level: informational ? "info" : "warn",
     source: "ai.assistant",
-    action: "toolDispatch",
-    message: metadata.outcome === "success"
-      ? `AI assistant เรียก tool ${metadata.tool} สำเร็จ`
-      : `AI assistant เรียก tool ${metadata.tool} ถูกปฏิเสธ`,
-    errorCode: metadata.outcome === "success" ? null : metadata.outcome,
+    action: wrote && metadata.confirmed ? "toolCommitted" : wrote ? "toolDispatch" : informational ? "toolProposed" : "toolRejected",
+    message: `AI assistant · ${metadata.tool} · ${AUDIT_MESSAGES[metadata.outcome] ?? "ถูกปฏิเสธ"}`,
+    errorCode: informational ? null : metadata.outcome,
     organizationId: metadata.organizationId,
     storeId: metadata.storeId,
     actorUserId: metadata.actorUserId,
-    context: { tool: metadata.tool, risk: metadata.risk, outcome: metadata.outcome },
+    context: {
+      tool: metadata.tool,
+      risk: metadata.risk,
+      outcome: metadata.outcome,
+      /** ตอบได้ทันทีว่าแถวนี้ทำให้ข้อมูลของร้านเปลี่ยนไปหรือไม่ */
+      dataChanged: wrote,
+      ...(metadata.confirmed ? { confirmed: true } : {}),
+      ...(metadata.proposalId ? { proposalId: metadata.proposalId } : {}),
+    },
   });
 }
 
@@ -86,6 +110,7 @@ async function resolveServerContext(options: ServerAssistantDispatcherOptions): 
   if (typeof window !== "undefined") throw new Error("Assistant requires a server runtime");
   const auth = await getResolvedCurrentPermissions();
   const { organizationId, storeId, can } = auth.resolved;
+  const role = auth.ctx.role;
   const userId = auth.user.id;
   if (!organizationId || !storeId || !userId) throw new Error("Assistant identity incomplete");
   // device id มาจาก header ของ request (ไม่ใช่ body) — เป็นข้อมูลของ "เครื่อง" ไม่ใช่ของคำสั่ง
@@ -107,6 +132,7 @@ async function resolveServerContext(options: ServerAssistantDispatcherOptions): 
     storeId: session.storeId,
     userId: session.userId,
     sessionId: session.id,
+    role,
     expiresAt: session.expiresAt,
     allowedTools: session.allowedTools,
     billing,

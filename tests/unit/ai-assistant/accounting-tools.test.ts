@@ -29,7 +29,7 @@ const txn = (categoryId: string, categoryName: string, note: string, amount: num
 });
 
 const ctx = (): TrustedContext => ({
-  organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1",
+  organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1", role: "owner",
   expiresAt: Date.now() + 30 * 60 * 1000,
   allowedTools: ["accounting.create_transaction", "accounting.suggest_category", "accounting.list_categories"],
   billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" },

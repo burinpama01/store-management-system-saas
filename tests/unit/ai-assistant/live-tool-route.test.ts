@@ -135,7 +135,7 @@ async function loadRoute(options: Options = {}) {
     getResolvedCurrentPermissions: vi.fn(async () => {
       if (!authed || !identity) return null;
       return {
-        ctx: { organizationId: identity.organizationId, storeId: identity.storeId, userId: identity.userId },
+        ctx: { organizationId: identity.organizationId, storeId: identity.storeId, userId: identity.userId, role: "owner" },
         user: { id: identity.userId },
         resolved: { can: () => canUsePosNow, organizationId: identity.organizationId, storeId: identity.storeId },
       };

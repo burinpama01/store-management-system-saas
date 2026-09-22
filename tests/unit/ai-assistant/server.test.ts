@@ -21,7 +21,7 @@ function setup(resolveSession = vi.fn(async () => session())) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NODE_ENV", "test"); vi.stubEnv("AI_ASSISTANT_ENABLED", "true"); vi.stubEnv("AI_ASSISTANT_KILL_SWITCH", "false");
-  mocks.auth.mockResolvedValue({ user: { id: identity.userId }, ctx: { organizationId: identity.organizationId, storeId: identity.storeId }, resolved: { organizationId: identity.organizationId, storeId: identity.storeId, can: () => true } });
+  mocks.auth.mockResolvedValue({ user: { id: identity.userId }, ctx: { organizationId: identity.organizationId, storeId: identity.storeId, role: "owner" }, resolved: { organizationId: identity.organizationId, storeId: identity.storeId, can: () => true } });
   mocks.billing.mockResolvedValue({ ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" });
   mocks.log.mockResolvedValue(undefined);
 });
@@ -40,8 +40,32 @@ describe("server assistant adapter", () => {
   it("writes only allowlisted audit metadata", async () => {
     await writeAssistantAudit({ ...identity, actorUserId: "user", tool: "test.read", risk: "read", outcome: "success", args: { password: "secret" }, result: "raw", error: "private" } as never);
     const log = mocks.log.mock.calls[0][0];
-    expect(log.context).toEqual({ tool: "test.read", risk: "read", outcome: "success" });
+    expect(log.context).toEqual({ tool: "test.read", risk: "read", outcome: "success", dataChanged: true });
     expect(JSON.stringify(log)).not.toMatch(/password|secret|private|raw/);
+  });
+
+  // การ์ดที่เสนอไปแล้วไม่มีใครกดยืนยันเป็นเรื่องปกติ ไม่ใช่ปัญหา — แต่ต้องแยกออกจาก
+  // การเขียนจริงให้ได้ ไม่งั้นตอบไม่ได้ว่า "AI ไปแก้อะไรของร้านบ้างเมื่อวาน"
+  it("แยกการ์ดที่ยังไม่เขียนข้อมูล ออกจากการเขียนจริง", async () => {
+    await writeAssistantAudit({ ...identity, actorUserId: "user", tool: "catalog.update_price", risk: "sensitive", outcome: "proposed", proposalId: "prop-1" });
+    const proposed = mocks.log.mock.calls[0][0];
+    expect(proposed.level).toBe("info");
+    expect(proposed.action).toBe("toolProposed");
+    expect(proposed.context).toMatchObject({ dataChanged: false, proposalId: "prop-1" });
+
+    mocks.log.mockClear();
+    await writeAssistantAudit({ ...identity, actorUserId: "user", tool: "catalog.update_price", risk: "sensitive", outcome: "success", proposalId: "prop-1", confirmed: true });
+    const committed = mocks.log.mock.calls[0][0];
+    expect(committed.action).toBe("toolCommitted");
+    expect(committed.context).toMatchObject({ dataChanged: true, confirmed: true, proposalId: "prop-1" });
+  });
+
+  it("ถูกปฏิเสธ = warn พร้อมรหัส และผูกกับการ์ดใบที่เกี่ยวข้อง", async () => {
+    await writeAssistantAudit({ ...identity, actorUserId: "user", tool: "catalog.update_price", risk: "sensitive", outcome: "PROPOSAL_STALE", proposalId: "prop-1" });
+    const log = mocks.log.mock.calls[0][0];
+    expect(log.level).toBe("warn");
+    expect(log.errorCode).toBe("PROPOSAL_STALE");
+    expect(log.context).toMatchObject({ dataChanged: false, proposalId: "prop-1" });
   });
   it("swallows audit failure without changing replay", async () => { const s = setup(); mocks.log.mockRejectedValue(Error("failure")); expect((await s.dispatch(request)).ok).toBe(true); expect((await s.dispatch(request)).ok).toBe(true); expect(s.execute).toHaveBeenCalledTimes(1); });
 });

@@ -11,6 +11,14 @@ import { StoreSwitcher } from "@/shared/components/store-switcher";
 import { SideNav } from "@/shared/components/SideNav";
 import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
 import { AppUpdateNotice } from "./AppUpdateNotice";
+import { BackOfficeAssistant } from "./BackOfficeAssistant";
+import {
+  ACCOUNTING_ASSISTANT_ROLES,
+  BACK_OFFICE_ASSISTANT_PERMISSION,
+  CASHIER_ASSISTANT_PATH_PREFIX,
+} from "@/modules/ai-assistant/tools/back-office-access";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { canUseFeature } from "@/modules/billing/types";
 import {
   ANDROID_VERSION_NAME,
   isAndroidApp,
@@ -57,6 +65,20 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
+  // ผู้ช่วยหลังร้านอยู่หลัง entitlement เดียวกับผู้ช่วย AI ตัวอื่น — แพ็กเกจที่ไม่มีต้องไม่เห็นปุ่ม
+  const assistantBilling = await getOrganizationBillingState(storeContext.organizationId);
+  const assistantEnabled = assistantBilling ? canUseFeature(assistantBilling, "aiAssistant") : false;
+  const cashierAssistantAllowed = ACCOUNTING_ASSISTANT_ROLES.includes(
+    storeContext.role as (typeof ACCOUNTING_ASSISTANT_ROLES)[number],
+  );
+  // ขอบเขตของปุ่ม: full = ทุกเรื่อง, accounting = เฉพาะลงรายรับ-รายจ่าย, null = ไม่มีปุ่ม
+  const assistantScope = !assistantEnabled
+    ? null
+    : can(BACK_OFFICE_ASSISTANT_PERMISSION)
+      ? ("full" as const)
+      : cashierAssistantAllowed && path.startsWith(CASHIER_ASSISTANT_PATH_PREFIX)
+        ? ("accounting" as const)
+        : null;
   // ค่าเริ่มต้นเสียงพูดของร้าน — แต่ละเครื่องปรับทับได้เองที่หน้าตั้งค่าแจ้งเตือน
   const notificationVoiceEnabled = Boolean(currentStoreRow?.notification_voice_enabled);
   // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
@@ -186,6 +208,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </div>
       <CommandPalette commands={commandItems} />
       <PushTokenRegistrar />
+      {/* ผู้ช่วย — เจ้าของ/ผู้จัดการได้ทุกหน้าและทุกเรื่อง, แคชเชียร์ได้เฉพาะหน้าบัญชี
+          และเฉพาะเรื่องลงรายรับ-รายจ่าย (ฝั่ง server กั้นซ้ำที่ tool ทุกตัวด้วย
+          permission + บทบาท ปุ่มที่หลุดมาก็สั่งนอกขอบเขตไม่ได้) */}
+      {assistantScope ? <BackOfficeAssistant scope={assistantScope} /> : null}
+
       {/* แอปมือถือไม่ได้อยู่บน Store จึงไม่มี auto-update — เว็บเป็นคนบอกว่ามีรุ่นใหม่ */}
       {outdatedAppVersion && <AppUpdateNotice installedVersion={outdatedAppVersion} />}
       {/* ตัวเด้งชุดเดียวกับหน้า POS — โหลดสถานีครัว/เครื่องพิมพ์ข้างในตัวเอง */}

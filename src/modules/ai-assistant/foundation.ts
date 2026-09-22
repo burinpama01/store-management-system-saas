@@ -10,7 +10,7 @@ import {
   type ProposalDraft,
   type ProposalStore,
 } from "./proposal";
-import type { PermissionKey } from "@/modules/tenants/types";
+import type { PermissionKey, Role } from "@/modules/tenants/types";
 
 export type Environment = "development" | "test" | "production";
 export type Risk = "read" | "safe_write" | "sensitive" | "critical";
@@ -36,6 +36,11 @@ export interface TrustedContext {
   storeId: string;
   userId: string;
   sessionId: string;
+  /**
+   * บทบาทของผู้ใช้ — มีไว้เพราะบาง tool ต้องแยก "แคชเชียร์" ออกจาก "พนักงาน"
+   * ซึ่งสิทธิ์แยกไม่ได้ (สองบทบาทนี้ถือ permission ชุดเดียวกันเกือบทั้งหมด)
+   */
+  role: Role;
   expiresAt: number;
   allowedTools: readonly string[];
   billing: BillingState;
@@ -54,6 +59,13 @@ export interface ToolDefinition {
   name: string;
   risk: Risk;
   permissions: readonly PermissionKey[];
+  /**
+   * จำกัดบทบาทเพิ่มจาก permissions — ไม่ใส่ = ตัดสินด้วย permissions อย่างเดียว
+   *
+   * ใช้เมื่อสิทธิ์อย่างเดียวแยกไม่ออก เช่นแคชเชียร์กับพนักงานต่างมี cashflow.record
+   * แต่นโยบายให้เฉพาะแคชเชียร์สั่งลงบัญชีผ่านผู้ช่วยได้
+   */
+  roles?: readonly Role[];
   args: z.ZodType;
   result: z.ZodType;
   developmentOnly?: boolean;
@@ -102,7 +114,19 @@ export interface AuditMetadata {
   actorUserId: string;
   tool: string;
   risk: Risk;
-  outcome: "success" | ErrorCode;
+  /**
+   * `success` = เขียนข้อมูลจริงแล้ว · `proposed` = เสนอการ์ด ยังไม่เขียนอะไร
+   * · `refined` = ออกการ์ดใบใหม่หลังผู้ใช้ตอบสิ่งที่ขาด · ที่เหลือคือรหัสที่ถูกปฏิเสธ
+   *
+   * แยก proposed/refined ออกจาก success เพราะไม่งั้น log จะตอบคำถาม
+   * "AI ไปแก้อะไรของร้านบ้างเมื่อวาน" ไม่ได้ — การ์ดที่ไม่มีใครกดยืนยันจะดูเหมือน
+   * การเขียนที่สำเร็จทุกประการ
+   */
+  outcome: "success" | "proposed" | "refined" | ErrorCode;
+  /** ผูกการ์ดกับผลลัพธ์ — ใบไหนนำไปสู่การเขียนอะไร และใบไหนถูกทิ้ง */
+  proposalId?: string;
+  /** true เฉพาะเส้นทางที่ผ่านการกดยืนยันของคน */
+  confirmed?: boolean;
 }
 interface DispatcherOptions {
   registry: ToolRegistry;
@@ -259,17 +283,32 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
     try {
       ctx = await options.resolveContext();
       if (!ctx || ![ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId].every(id => typeof id === "string" && id.length > 0 && id.length <= 128)
-        || !Number.isFinite(ctx.expiresAt) || ctx.expiresAt <= Date.now() || !Array.isArray(ctx.allowedTools) || typeof ctx.can !== "function" || !ctx.billing) return fail("CONTEXT_UNAVAILABLE");
+        || typeof ctx.role !== "string" || ctx.role.length === 0 || !Number.isFinite(ctx.expiresAt) || ctx.expiresAt <= Date.now() || !Array.isArray(ctx.allowedTools) || typeof ctx.can !== "function" || !ctx.billing) return fail("CONTEXT_UNAVAILABLE");
     } catch { return fail("CONTEXT_UNAVAILABLE"); }
     const tool = options.registry.get(parsed.data.tool);
     if (!tool) return fail("UNKNOWN_TOOL");
-    const audit = async (result: Result) => {
-      try { await options.audit({ organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: ctx.userId, tool: tool.name, risk: tool.risk, outcome: result.ok ? "success" : result.code }); } catch { /* audit outage ไม่เปลี่ยน execution result */ }
+    // ทุกเส้นทางที่ออกจาก dispatcher ต้องผ่านตัวนี้ รวมเส้นทางที่สำเร็จแบบเงียบ ๆ
+    // (กฎถาวรของโปรเจค: ฟีเจอร์ใหม่ต้องมี log ครบทุกทาง ไม่ใช่เฉพาะตอนพัง)
+    const audit = async (result: Result, meta: { proposalId?: string; confirmed?: boolean; outcome?: AuditMetadata["outcome"] } = {}) => {
+      try {
+        await options.audit({
+          organizationId: ctx.organizationId,
+          storeId: ctx.storeId,
+          actorUserId: ctx.userId,
+          tool: tool.name,
+          risk: tool.risk,
+          outcome: meta.outcome ?? (result.ok ? "success" : result.code),
+          ...(meta.proposalId ? { proposalId: meta.proposalId } : {}),
+          ...(meta.confirmed ? { confirmed: true } : {}),
+        });
+      } catch { /* audit outage ไม่เปลี่ยน execution result */ }
       return result;
     };
     try {
       if (!canUseFeature(ctx.billing, "aiAssistant")) return audit(fail("FEATURE_DISABLED"));
       if (!ctx.allowedTools.includes(tool.name) || !tool.permissions.every(permission => ctx.can(permission))) return audit(fail("PERMISSION_DENIED"));
+      // ด่านบทบาท (ถ้า tool ประกาศไว้) — มาหลัง permission เพื่อให้เหตุผลการปฏิเสธเป็นตัวเดียวกัน
+      if (tool.roles && !tool.roles.includes(ctx.role)) return audit(fail("PERMISSION_DENIED"));
       if (options.environment === "production" && (tool.developmentOnly || tool.name === "system.echo")) return audit(fail("RISK_BLOCKED"));
       // P1 — sensitive/critical เปิดได้เฉพาะ tool ที่มีชั้นยืนยัน: ไม่มี plan() หรือไม่มีที่เก็บ
       // proposal = ปฏิเสธ ไม่ใช่ปล่อยให้ทำทันที (ชั้นยืนยันคือเหตุผลเดียวที่ยอมให้ระดับนี้ผ่าน)
@@ -293,6 +332,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       //                          เคลียร์ prerequisite ครบ, แล้วจึงใช้ args ที่เก็บไว้ไปทำจริง
       let executeArgs: unknown = args.data;
       let confirmedAnswers: PrerequisiteAnswers = {};
+      let confirmedProposalId: string | undefined;
       if (needsConfirmation) {
         const proposals = options.proposals!;
         const confirm = parsed.data.confirm;
@@ -314,7 +354,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
               expiresAt,
             });
           } catch { return audit(fail("PROPOSAL_UNAVAILABLE")); }
-          return audit({ ok: true, kind: "proposal", proposal: { ...draft, id, tool: tool.name, expiresAt } });
+          return audit({ ok: true, kind: "proposal", proposal: { ...draft, id, tool: tool.name, expiresAt } }, { proposalId: id, outcome: "proposed" });
         }
 
         const answers: PrerequisiteAnswers = confirm.answers ?? {};
@@ -323,7 +363,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
         // หมดอายุ / ไม่ใช่ของ session นี้ / ยืนยันข้าม tool = ปฏิเสธด้วยรหัสเดียวกัน
         // ไม่บอกว่าแพ้ข้อไหน เพราะผู้เรียกทำอย่างเดียวกันหมด (เสนอใหม่) และไม่คายว่ามี id นี้อยู่จริง
         if (!record || record.tool !== tool.name || record.expiresAt <= Date.now()
-          || !belongsToContext(record, ctx)) return audit(fail("PROPOSAL_NOT_FOUND"));
+          || !belongsToContext(record, ctx)) return audit(fail("PROPOSAL_NOT_FOUND"), { proposalId: confirm.proposalId });
 
         let draft: ProposalDraft;
         try { draft = await tool.plan!(record.args, ctx, answers); } catch { return audit(fail("EXECUTION_FAILED")); }
@@ -349,21 +389,22 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
                 expiresAt: refinedExpiry,
               });
             } catch { return audit(fail("PROPOSAL_UNAVAILABLE")); }
-            return audit({ ok: true, kind: "proposal", proposal: { ...draft, id: refinedId, tool: tool.name, expiresAt: refinedExpiry } });
+            return audit({ ok: true, kind: "proposal", proposal: { ...draft, id: refinedId, tool: tool.name, expiresAt: refinedExpiry } }, { proposalId: refinedId, outcome: "refined" });
           }
           // ไม่มีคำตอบแนบมาแต่ภาพเปลี่ยน = มีคนอื่นแก้ข้อมูลระหว่างที่การ์ดค้างอยู่
-          return audit(fail("PROPOSAL_STALE"));
+          return audit(fail("PROPOSAL_STALE"), { proposalId: record.id });
         }
         // "ไม่มีให้เพิ่ม ไม่ใช่ข้าม": เหลือสิ่งที่ขาดแม้ข้อเดียวก็ commit ไม่ได้
         if (unresolvedPrerequisites(draft.prerequisites, answers).length > 0) {
-          return audit(fail("PREREQUISITE_REQUIRED"));
+          return audit(fail("PREREQUISITE_REQUIRED"), { proposalId: record.id });
         }
         // ใช้ครั้งเดียว — กดยืนยันรัวไม่ทำให้ทำงานสองรอบ (idempotency key ยังกันอีกชั้น)
         let consumed = false;
         try { consumed = await proposals.consume(record.id); } catch { consumed = false; }
-        if (!consumed) return audit(fail("PROPOSAL_NOT_FOUND"));
+        if (!consumed) return audit(fail("PROPOSAL_NOT_FOUND"), { proposalId: record.id });
         executeArgs = record.args;
         confirmedAnswers = answers;
+        confirmedProposalId = record.id;
       }
       // ───────────────────────────────────────────────────────────────────────
 
@@ -391,7 +432,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
           return output.success ? { ok: true, data: structuredClone(output.data) } : fail("EXECUTION_FAILED");
         } catch { return fail("EXECUTION_FAILED"); }
       });
-      return audit(result);
+      return audit(result, { proposalId: confirmedProposalId, confirmed: confirmedProposalId !== undefined });
     } catch { return audit(fail("CONTEXT_UNAVAILABLE")); }
   };
 }

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // ทุกเคส mock ผู้ให้บริการ AI + repository จึงไม่มี network และไม่แตะ Supabase
 
 const user = { id: "user-1" };
-const ctx = { userId: "user-1", organizationId: "org-1", storeId: "store-1" };
+const ctx = { userId: "user-1", organizationId: "org-1", storeId: "store-1", role: "owner" as const };
 
 const envelope = {
   version: 1,
