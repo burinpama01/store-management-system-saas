@@ -1,5 +1,5 @@
 import {
-  listAssignedKitchenStationIdsForUser,
+  resolveKitchenStationScope,
   listKitchenStations,
 } from "@/modules/qr-ordering/kitchen-stations";
 import { getReceiptSettings } from "@/modules/settings/repository";
@@ -43,10 +43,11 @@ export async function StoreAlertNotifiers({
   canViewNotifications,
   voiceEnabled,
 }: Props) {
-  const assignedKitchenStationIds =
-    canManageQr && qrOrderingEnabled && role === "staff"
-      ? (await listAssignedKitchenStationIdsForUser(storeId, userId)).data ?? []
-      : [];
+  const kitchenScope =
+    canManageQr && qrOrderingEnabled
+      ? await resolveKitchenStationScope(storeId, userId, role)
+      : { canSeeAll: role !== "staff", stationIds: [] };
+  const assignedKitchenStationIds = kitchenScope.stationIds;
 
   const [stationsForPrinting, receiptSettingsForPrinting, printersForPrinting] = canManageQr
     ? await Promise.all([
@@ -77,7 +78,7 @@ export async function StoreAlertNotifiers({
         storeName={storeName}
         qrOrderingEnabled={qrOrderingEnabled}
         canManageQr={canManageQr}
-        canViewEveryKitchenStation={role !== "staff"}
+        canViewEveryKitchenStation={kitchenScope.canSeeAll}
         assignedKitchenStationIds={assignedKitchenStationIds}
         stationPrinters={stationPrinters}
         autoPrintStationTickets={autoPrintStationTickets}

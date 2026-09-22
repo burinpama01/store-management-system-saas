@@ -47,12 +47,13 @@ describe("QR kitchen staff routing and notifications", () => {
     expect(qrRepo).toContain("allowedStationIds.has(item.kitchenStationId");
   });
 
-  it("restricts staff QR order board to assigned kitchens while owner can see all grouped by table", () => {
+  it("restricts assigned members' QR order board to their kitchens while owner can see all grouped by table", () => {
     const page = read("src/app/(dashboard)/qr-orders/page.tsx");
-    expect(page).toContain("ctx.role === \"staff\"");
-    expect(page).toContain("listAssignedKitchenStationIdsForUser");
+    expect(page).toContain("resolveKitchenStationScope(ctx.storeId, user.id, ctx.role)");
     expect(page).toContain("filterQrOrdersForStations");
-    expect(page).toContain("canSeeAllKitchenStations={ctx.role !== \"staff\"}");
+    expect(page).toContain("canSeeAllKitchenStations={scope.canSeeAll}");
+    const notifiers = read("src/shared/notifications/StoreAlertNotifiers.tsx");
+    expect(notifiers).toContain("canViewEveryKitchenStation={kitchenScope.canSeeAll}");
 
     const board = read("src/app/(dashboard)/qr-orders/QrOrdersBoard.tsx");
     expect(board).toContain("canSeeAllKitchenStations");
@@ -62,7 +63,7 @@ describe("QR kitchen staff routing and notifications", () => {
     expect(board).toContain("เลือก All stations เพื่อเปลี่ยนสถานะทั้งออร์เดอร์");
 
     const actions = read("src/app/(dashboard)/qr-orders/actions.ts");
-    expect(actions).toContain("ctx.role === \"staff\"");
+    expect(actions).toContain("resolveKitchenStationScope(ctx.storeId, user.id, ctx.role)).canSeeAll");
     expect(actions).toContain("พนักงานครัวไม่สามารถเปลี่ยนสถานะทั้งออร์เดอร์");
   });
 

@@ -23,6 +23,16 @@ import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
 import { qrOrderAnnouncement } from "@/shared/notifications/announcement-text";
 
 const AUTO_PRINT_KEY = "qrOrderAutoPrintEnabled";
+const QR_PENDING_POLL_MS = 15_000;
+
+/** แถวจาก /api/qr/pending (กรองสถานีครัวฝั่งเซิร์ฟเวอร์แล้ว) */
+interface PendingQrOrder {
+  id: string;
+  orderNumber: string;
+  tableNumber: string | null;
+  createdAt: string;
+  items: OrderItemRow[];
+}
 
 type OrderInsertPayload = Pick<
   Database["public"]["Tables"]["orders"]["Row"],
@@ -263,6 +273,58 @@ export function QrOrderGlobalNotifier({
     };
   }, [allowedStationIds, assignedKitchenStationIds, canViewEveryKitchenStation]);
 
+  // เด้ง dialog + ส่งตั๋วครัว/พิมพ์อัตโนมัติ — ใช้ร่วมกันทั้งทาง realtime และ polling
+  // (seenOrderIds กันเด้งซ้ำเมื่อทั้งสองทางเจอออเดอร์เดียวกัน)
+  const announceOrder = useCallback(async (visibleOrder: IncomingQrOrder) => {
+    setOrders((prev) => [...prev, visibleOrder]);
+
+    // Multi-printer routing: split the order into per-station tickets and
+    // enqueue each to its station's network printer via the Print Hub.
+    // ทุกจอยิงได้ — คีย์ (ออเดอร์, สถานี) ทำให้ server ออกตั๋วใบเดียว
+    if (autoPrintStationTickets && stationPrinters.some((s) => s.printerId)) {
+      setPrintStatus("กำลังส่งตั๋วครัว");
+      void dispatchOrderStationTickets({
+        orderId: visibleOrder.id,
+        orderNumber: visibleOrder.orderNumber,
+        tableNumber: visibleOrder.tableNumber,
+        paperWidth: receiptPaperWidth,
+        items: visibleOrder.items.map((item) => ({
+          name: item.productName,
+          variantName: item.variantName,
+          modifierNames: item.modifierNames,
+          quantity: item.quantity,
+          note: item.note,
+          kitchenStationId: item.kitchenStationId,
+        })),
+        stations: stationPrinters,
+      }).then((res) => {
+        if (res) setPrintStatus(describeStationPrintResult(res));
+      });
+    }
+
+    if (!readAutoPrintPreference()) return;
+    const hubPrinter = selectHubReceiptPrinter(receiptPrinters);
+    const latestPrinterState = getPrinterState();
+    setPrinterState(latestPrinterState);
+    if (!hubPrinter && !latestPrinterState.connected) {
+      setPrintStatus("เปิดพิมพ์อัตโนมัติอยู่ แต่ยังไม่มีเครื่องพิมพ์ (ตั้งเครื่องพิมพ์หลักในตั้งค่า หรือเชื่อม BT/USB)");
+      return;
+    }
+    try {
+      setPrintStatus("กำลังสั่งพิมพ์ออร์เดอร์ QR");
+      const printResult = await printQrKitchenOrder(storeName, visibleOrder, receiptPrinters);
+      setPrintStatus(
+        printResult.hubOnline === false
+          ? "ส่งเข้าคิวแล้ว แต่ Hub (เครื่องแคชเชียร์) ออฟไลน์ — จะพิมพ์เมื่อเปิดเครื่อง"
+          : hubPrinter
+            ? "ส่งออร์เดอร์ QR เข้าคิว Hub แล้ว"
+            : "สั่งพิมพ์ออร์เดอร์ QR แล้ว",
+      );
+    } catch (error) {
+      setPrintStatus(error instanceof Error ? error.message : "สั่งพิมพ์ไม่สำเร็จ");
+    }
+  }, [autoPrintStationTickets, receiptPaperWidth, receiptPrinters, stationPrinters, storeName]);
+
   useEffect(() => {
     if (!qrOrderingEnabled || !canManageQr) return;
     const client = getSupabaseBrowserClient();
@@ -276,72 +338,55 @@ export function QrOrderGlobalNotifier({
         const order = payload.new;
         if (seenOrderIds.current.has(order.id)) return;
         seenOrderIds.current.add(order.id);
-        void fetchVisibleOrder(order).then(async (visibleOrder) => {
-          if (!visibleOrder) return;
-          setOrders((prev) => [...prev, visibleOrder]);
-
-          // Multi-printer routing: split the order into per-station tickets and
-          // enqueue each to its station's network printer via the Print Hub.
-          // ทุกจอยิงได้ — คีย์ (ออเดอร์, สถานี) ทำให้ server ออกตั๋วใบเดียว
-          if (autoPrintStationTickets && stationPrinters.some((s) => s.printerId)) {
-            setPrintStatus("กำลังส่งตั๋วครัว");
-            void dispatchOrderStationTickets({
-              orderId: visibleOrder.id,
-              orderNumber: visibleOrder.orderNumber,
-              tableNumber: visibleOrder.tableNumber,
-              paperWidth: receiptPaperWidth,
-              items: visibleOrder.items.map((item) => ({
-                name: item.productName,
-                variantName: item.variantName,
-                modifierNames: item.modifierNames,
-                quantity: item.quantity,
-                note: item.note,
-                kitchenStationId: item.kitchenStationId,
-              })),
-              stations: stationPrinters,
-            }).then((res) => {
-              if (res) setPrintStatus(describeStationPrintResult(res));
-            });
-          }
-
-          if (!readAutoPrintPreference()) return;
-          const hubPrinter = selectHubReceiptPrinter(receiptPrinters);
-          const latestPrinterState = getPrinterState();
-          setPrinterState(latestPrinterState);
-          if (!hubPrinter && !latestPrinterState.connected) {
-            setPrintStatus("เปิดพิมพ์อัตโนมัติอยู่ แต่ยังไม่มีเครื่องพิมพ์ (ตั้งเครื่องพิมพ์หลักในตั้งค่า หรือเชื่อม BT/USB)");
-            return;
-          }
-          try {
-            setPrintStatus("กำลังสั่งพิมพ์ออร์เดอร์ QR");
-            const printResult = await printQrKitchenOrder(storeName, visibleOrder, receiptPrinters);
-            setPrintStatus(
-              printResult.hubOnline === false
-                ? "ส่งเข้าคิวแล้ว แต่ Hub (เครื่องแคชเชียร์) ออฟไลน์ — จะพิมพ์เมื่อเปิดเครื่อง"
-                : hubPrinter
-                  ? "ส่งออร์เดอร์ QR เข้าคิว Hub แล้ว"
-                  : "สั่งพิมพ์ออร์เดอร์ QR แล้ว",
-            );
-          } catch (error) {
-            setPrintStatus(error instanceof Error ? error.message : "สั่งพิมพ์ไม่สำเร็จ");
-          }
+        void fetchVisibleOrder(order).then((visibleOrder) => {
+          if (visibleOrder) void announceOrder(visibleOrder);
         });
       },
     });
     return unsubscribe;
-  }, [
-    allowedStationIds,
-    autoPrintStationTickets,
-    canManageQr,
-    canViewEveryKitchenStation,
-    fetchVisibleOrder,
-    qrOrderingEnabled,
-    receiptPaperWidth,
-    receiptPrinters,
-    stationPrinters,
-    storeId,
-    storeName,
-  ]);
+  }, [announceOrder, canManageQr, fetchVisibleOrder, qrOrderingEnabled, storeId]);
+
+  // ทางสำรองแบบเดียวกับเดลิเวอรี: poll ออเดอร์ที่ครัวยังไม่รับ — realtime ของ orders ไม่ส่งเหตุการณ์
+  // ในบางจอ (เช่น POS) ทำให้ dialog ไม่เด้ง; รอบแรกตั้ง baseline ไม่เด้งของที่ค้างอยู่ก่อนเปิดหน้า
+  const pollBaselined = useRef(false);
+  const pollPending = useCallback(async () => {
+    let list: PendingQrOrder[];
+    try {
+      const res = await fetch("/api/qr/pending", { cache: "no-store" });
+      if (!res.ok) return;
+      list = ((await res.json()) as { orders?: PendingQrOrder[] }).orders ?? [];
+    } catch {
+      return;
+    }
+    const fresh = list.filter((order) => !seenOrderIds.current.has(order.id));
+    for (const order of fresh) seenOrderIds.current.add(order.id);
+    if (!pollBaselined.current) {
+      pollBaselined.current = true;
+      return;
+    }
+    for (const order of fresh) {
+      const items = mapIncomingItems(order.items);
+      void announceOrder({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        tableNumber: order.tableNumber ?? undefined,
+        total: items.reduce((sum, item) => sum + item.totalPrice, 0),
+        createdAt: order.createdAt,
+        items,
+      });
+    }
+  }, [announceOrder]);
+
+  useEffect(() => {
+    if (!qrOrderingEnabled || !canManageQr) return;
+    void pollPending();
+    const id = window.setInterval(() => {
+      // แท็บ/แอปอยู่เบื้องหลังไม่ต้อง poll (push ของแอปดูแลแทน) — ประหยัดโควตา Vercel/Supabase
+      if (document.visibilityState === "hidden") return;
+      void pollPending();
+    }, QR_PENDING_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [canManageQr, pollPending, qrOrderingEnabled]);
 
   if (!qrOrderingEnabled || !canManageQr) return null;
 
