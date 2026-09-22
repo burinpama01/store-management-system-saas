@@ -9,19 +9,19 @@
  * ค่าพวกนี้ต้องตรงกับ `mobile/android/app/build.gradle` และไฟล์ APK ที่อัปโหลดไว้จริง
  * — `tests/unit/download-versions.test.ts` ล็อกไว้ ค่าผิดแปลว่าทุกเครื่องเห็นแบนเนอร์ผิดรุ่น
  */
-export const ANDROID_VERSION_NAME = "1.0.5";
+export const ANDROID_VERSION_NAME = "1.0.6";
 
 /** versionCode ของ Android — ตัวที่ใช้เทียบว่าใหม่กว่าจริงไหม (versionName เป็นแค่ข้อความ) */
-export const ANDROID_VERSION_CODE = 6;
+export const ANDROID_VERSION_CODE = 7;
 
 /** SHA-256 (hex ตัวเล็ก) ของ APK ที่อยู่บน Supabase storage `app/storeos-android.apk` */
-export const ANDROID_SHA256 = "e0efc1bfa992b25cafc891427af4d2cb7532ed407cbe3f580e26b3cbe5e87190";
+export const ANDROID_SHA256 = "082899563428feb02136574cdb5a4dbe6f5d3585064dab4c2dd09464a6cac8d7";
 
 /** ขนาดไฟล์ APK เป็นไบต์ */
-export const ANDROID_SIZE_BYTES = 5_074_238;
+export const ANDROID_SIZE_BYTES = 5_076_671;
 
 /** ข้อความสั้น ๆ ของรุ่นนี้ (โชว์ในแบนเนอร์แจ้งอัปเดต) */
-export const ANDROID_NOTES = "สั่งงานด้วยเสียงในแอปได้ + เก็บ log การแจ้งเตือน";
+export const ANDROID_NOTES = "สั่งงานด้วยเสียงและพูดตอบเป็นภาษาไทยในแอปได้ + เก็บ log การแจ้งเตือน";
 
 /** ลิงก์ดาวน์โหลดสาธารณะ — redirect ไป Supabase storage (path เดิมเสมอ) */
 export const ANDROID_DOWNLOAD_PATH = "/download/android";
