@@ -52,4 +52,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Push notification (Android 13+ ต้องขอ runtime ด้วย — plugin จัดการให้) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- ไมโครโฟน: ปุ่มสั่งเสียง (ตัวแปลงเสียงของเครื่อง) + ผู้ช่วยหลังร้าน/AI Live (getUserMedia ใน WebView)
+         ไม่ประกาศ = WebView ปฏิเสธไมค์เงียบ ๆ ใช้เสียงในแอปไม่ได้เลย -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>
