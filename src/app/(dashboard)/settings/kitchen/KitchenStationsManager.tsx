@@ -267,14 +267,14 @@ export function KitchenStationsManager({
                     >
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          Staff assigned to this kitchen
+                          ผู้รับผิดชอบครัวนี้
                         </p>
                         <p className="mt-1 text-xs text-gray-500">
-                          Only staff linked here will see QR order items for this kitchen.
+                          เลือก Staff, Cashier หรือ Manager ได้หลายคนต่อครัว โดย Staff จะเห็นเฉพาะครัวที่ได้รับมอบหมาย
                         </p>
                       </div>
                       {staffMembers.length === 0 ? (
-                        <p className="text-sm text-gray-500">No staff role members found.</p>
+                        <p className="text-sm text-gray-500">ไม่พบสมาชิก Staff, Cashier หรือ Manager ที่เข้าร่วมร้านแล้ว</p>
                       ) : (
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                           {staffMembers.map((member) => (
@@ -295,7 +295,7 @@ export function KitchenStationsManager({
                         </div>
                       )}
                       <Button type="submit" variant="secondary" className="min-h-11 px-3 text-xs" loading={isPending}>
-                        Save staff routing
+                        บันทึกผู้รับผิดชอบครัว
                       </Button>
                     </form>
                   )}
