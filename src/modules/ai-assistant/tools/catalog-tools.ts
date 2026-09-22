@@ -33,6 +33,13 @@ export interface CatalogToolDeps {
     storeId: string,
     patch: { name?: string; basePrice?: number; isActive?: boolean; outOfStock?: boolean },
   ) => Promise<void>;
+  createProduct: (input: {
+    storeId: string;
+    organizationId: string;
+    categoryId: string;
+    name: string;
+    basePrice: number;
+  }) => Promise<{ id: string }>;
 }
 
 const thb = (value: number) => `${value.toLocaleString("th-TH")} บาท`;
@@ -42,6 +49,11 @@ const ProductRefArgs = z.object({ product: z.string().min(1).max(120) }).strict(
 const UpdatePriceArgs = z.object({
   product: z.string().min(1).max(120),
   price: z.number().positive().max(1_000_000),
+}).strict();
+
+const CreateProductArgs = z.object({
+  name: z.string().min(1).max(120),
+  price: z.number().nonnegative().max(1_000_000).optional(),
 }).strict();
 
 const AvailabilityArgs = z.object({
@@ -130,6 +142,85 @@ export function registerCatalogTools(registry: ToolRegistry, deps: CatalogToolDe
           ? resolution.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name }))
           : [],
       };
+    },
+  });
+
+  registry.register({
+    name: "catalog.create_product",
+    risk: "sensitive",
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
+    args: CreateProductArgs,
+    result: z.object({ id: z.string(), name: z.string(), price: z.number() }).strict(),
+
+    /**
+     * "เพิ่มเมนู X" ในแผงหลังร้าน = เพิ่มรายการเข้าระบบ ไม่ใช่เพิ่มลงตะกร้า
+     * (การเพิ่มลงตะกร้าเป็นงานของหน้า POS — ตัวแปลคำสั่งตีเส้นนี้ไว้ก่อนถึงที่นี่)
+     */
+    plan: async (rawArgs, context, answers): Promise<ProposalDraft> => {
+      const args = rawArgs as z.infer<typeof CreateProductArgs>;
+      const [categories, existing] = await Promise.all([
+        deps.listCategories(context.storeId),
+        deps.resolveProduct(context.storeId, args.name),
+      ]);
+
+      const prerequisites: Prerequisite[] = [];
+      const chosen = categories.find((category) => category.id === answers.category);
+      if (categories.length === 0) {
+        prerequisites.push({
+          kind: "create",
+          need: "หมวดเมนู",
+          createTool: "catalog.create_category",
+          reason: "ร้านยังไม่มีหมวดเมนูสักหมวด เมนูใหม่ต้องอยู่ในหมวด",
+        });
+      } else if (!chosen) {
+        prerequisites.push({
+          kind: "choose",
+          need: "หมวดเมนู",
+          subjects: [{ id: "category", label: args.name }],
+          options: categories.map((category) => ({ id: category.id, label: category.name })),
+        });
+      }
+
+      const warnings: string[] = [];
+      // กันสร้างซ้ำ — ชื่อชนของเดิมเป็นเรื่องที่เกิดง่ายมากเวลาสั่งด้วยเสียง
+      if (existing.status === "found") {
+        warnings.push(`มีเมนูชื่อ “${existing.product.name}” อยู่แล้ว — สร้างใหม่จะได้สองรายการ`);
+      } else if (existing.status === "ambiguous") {
+        warnings.push(`มีเมนูชื่อใกล้เคียงอยู่แล้ว ${existing.candidates.length} รายการ`);
+      }
+      if (args.price === undefined) {
+        warnings.push("ยังไม่ได้ตั้งราคา — จะสร้างเป็น 0 บาท แก้ทีหลังได้ที่หน้าเมนู หรือพูดใหม่พร้อมราคา");
+      }
+
+      return {
+        summary: `เพิ่มเมนูใหม่ “${args.name}”`,
+        // เมนูใหม่ไม่มีสถานะเดิม before จึงเป็น null ทุกช่อง (ต่างจากการแก้ของที่มีอยู่)
+        changes: [
+          { label: "ชื่อเมนู", before: null, after: args.name },
+          { label: "หมวด", before: null, after: chosen?.name ?? "— ยังไม่ได้เลือก —" },
+          { label: "ราคา", before: null, after: thb(args.price ?? 0) },
+          { label: "ช่องทางขาย", before: null, after: "หน้าร้าน (POS) — เปิด QR ทีหลังได้" },
+        ],
+        affectedCount: 1,
+        warnings,
+        prerequisites,
+      };
+    },
+
+    execute: async (rawArgs, context, _cartBinding, answers) => {
+      const args = rawArgs as z.infer<typeof CreateProductArgs>;
+      const categories = await deps.listCategories(context.storeId);
+      const chosen = categories.find((category) => category.id === answers.category);
+      // ถึงตรงนี้แล้วยังไม่มีหมวด = prerequisite ถูกข้ามมาได้ ซึ่งไม่ควรเกิด
+      if (!chosen) throw new Error("Catalog category unresolved");
+      const created = await deps.createProduct({
+        storeId: context.storeId,
+        organizationId: context.organizationId,
+        categoryId: chosen.id,
+        name: args.name,
+        basePrice: args.price ?? 0,
+      });
+      return { id: created.id, name: args.name, price: args.price ?? 0 };
     },
   });
 
@@ -226,6 +317,7 @@ export function registerCatalogTools(registry: ToolRegistry, deps: CatalogToolDe
 
 export const CATALOG_TOOL_NAMES = [
   "catalog.get_product",
+  "catalog.create_product",
   "catalog.update_price",
   "catalog.set_availability",
 ] as const;

@@ -55,6 +55,7 @@ describe("tool เมนู", () => {
       getProduct: async (productId) => products.find((item) => item.id === productId) ?? null,
       listCategories: async () => [{ id: "cat-1", name: "เครื่องดื่ม" }],
       updateProduct: async (id, _storeId, patch) => { updates.push({ id, patch }); },
+      createProduct: async () => ({ id: "new-1" }),
     };
     const registry = new ToolRegistry("test");
     registerCatalogTools(registry, deps);
@@ -201,5 +202,80 @@ describe("tool เมนู", () => {
     const data = (result as { data: { product: unknown; candidates: unknown[] } }).data;
     expect(data.product).toBeNull();
     expect(data.candidates).toHaveLength(2);
+  });
+});
+
+describe("เพิ่มเมนูใหม่เข้าระบบ", () => {
+  // "เพิ่มเมนู X" ในแผงหลังร้าน = เพิ่มรายการเข้าระบบ ไม่ใช่เพิ่มลงตะกร้า
+  let categories: { id: string; name: string }[];
+  let created: unknown[];
+  let found: Product[];
+  let dispatch: (request: unknown) => Promise<Result>;
+
+  beforeEach(() => {
+    categories = [{ id: "cat-1", name: "เครื่องดื่ม" }, { id: "cat-2", name: "อาหาร" }];
+    created = [];
+    found = [];
+    const registry = new ToolRegistry("test");
+    registerCatalogTools(registry, {
+      resolveProduct: async (_storeId, query) => {
+        const hit = found.find((item) => item.name.includes(query));
+        return hit ? { status: "found", product: hit } : { status: "not_found" };
+      },
+      getProduct: async () => null,
+      listCategories: async () => categories,
+      updateProduct: async () => {},
+      createProduct: async (input) => { created.push(input); return { id: "new-1" }; },
+    });
+    dispatch = createDispatcher({
+      registry, enabled: true, mutationsEnabled: true, environment: "test",
+      resolveContext: async () => ({ ...ctx(), allowedTools: ["catalog.create_product"] }),
+      audit: async () => {}, proposals: memoryProposals(), newProposalId: () => "prop-1",
+    });
+  });
+
+  const create = (extra: Record<string, unknown> = {}) => ({
+    tool: "catalog.create_product",
+    args: { name: "อาหารต้ม" },
+    idempotencyKey: "c1",
+    ...extra,
+  });
+
+  it("ไม่ได้บอกหมวด = ให้เลือกก่อน ไม่เดาให้", async () => {
+    const result = await dispatch(create());
+    const proposal = (result as unknown as { proposal: { prerequisites: { kind: string; options: { id: string }[] }[] } }).proposal;
+    expect(proposal.prerequisites[0].kind).toBe("choose");
+    expect(proposal.prerequisites[0].options.map((option) => option.id)).toEqual(["cat-1", "cat-2"]);
+    expect(created).toEqual([]);
+  });
+
+  it("เลือกหมวดแล้วสร้างจริง และสร้างเป็นเมนูหน้าร้านก่อน", async () => {
+    await dispatch(create());
+    const refined = await dispatch(create({ idempotencyKey: "c2", confirm: { proposalId: "prop-1", answers: { category: "cat-2" } } }));
+    // ตอบหมวดแล้ว "หมวด" ใน changes เปลี่ยน แต่ before ยังเป็น null ทุกช่อง จึงยืนยันได้เลย
+    expect(refined).toMatchObject({ ok: true });
+    expect(created[0]).toMatchObject({ categoryId: "cat-2", name: "อาหารต้ม", basePrice: 0 });
+  });
+
+  it("ร้านยังไม่มีหมวดเลย = เสนอสร้างหมวดก่อน", async () => {
+    categories = [];
+    const result = await dispatch(create());
+    const proposal = (result as unknown as { proposal: { prerequisites: { kind: string; createTool: string }[] } }).proposal;
+    expect(proposal.prerequisites[0].kind).toBe("create");
+    expect(proposal.prerequisites[0].createTool).toBe("catalog.create_category");
+  });
+
+  it("ชื่อชนของเดิม = เตือนว่าจะได้สองรายการ", async () => {
+    found = [product("p-old", "อาหารต้ม", 50)];
+    const result = await dispatch(create());
+    const proposal = (result as unknown as { proposal: { warnings: string[] } }).proposal;
+    expect(proposal.warnings.some((warning) => warning.includes("อยู่แล้ว"))).toBe(true);
+  });
+
+  it("ไม่บอกราคา = เตือนว่าจะเป็น 0 บาท แต่ไม่บล็อก", async () => {
+    const result = await dispatch(create());
+    const proposal = (result as unknown as { proposal: { warnings: string[]; changes: { label: string; after: string }[] } }).proposal;
+    expect(proposal.warnings.some((warning) => warning.includes("0 บาท"))).toBe(true);
+    expect(proposal.changes.find((change) => change.label === "ราคา")?.after).toBe("0 บาท");
   });
 });

@@ -47,6 +47,7 @@ describe("ด่านของผู้ช่วยหลังร้าน", (
     registerCatalogTools(registry, {
       resolveProduct: async () => ({ status: "not_found" }), getProduct: async () => null,
       listCategories: async () => [], updateProduct: noop as never,
+      createProduct: noop as never,
     });
     registerQrTools(registry, {
       listProducts: async () => [], listStations: async () => [], setProductQrVisibility: noop as never,
