@@ -174,6 +174,12 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
           }
           continue;
         }
+        if (outcome?.kind === "skipped") {
+          // คำสั่งที่แปลไม่ได้ หรือเป็นงานของหน้า POS — ต้องบอกเหตุผลให้ชัด
+          // ไม่ใช่เงียบหรือรายงานว่าสำเร็จ
+          push("error", typeof outcome.note === "string" ? outcome.note : "ยังไม่รองรับคำสั่งนี้");
+          continue;
+        }
         if (outcome?.kind === "error") {
           const code = typeof outcome.code === "string" ? outcome.code : "";
           push("error", CODE_TEXT[code] ?? `ทำรายการไม่สำเร็จ (${code || "ไม่ทราบสาเหตุ"})`);
@@ -195,7 +201,7 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
     sequence.current += 1;
     setProposal(null);
     push("user", trimmed);
-    await call({ requestId: newRequestId(sequence.current), text: trimmed });
+    await call({ requestId: newRequestId(sequence.current), text: trimmed, scope: "back_office" });
   }, [busy, call, push]);
 
   const submit = useCallback(async () => {

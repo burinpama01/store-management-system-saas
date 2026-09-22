@@ -4,7 +4,7 @@
 // ถ้า tool หลังร้านใช้ตัวหาเมนูคนละตัว พนักงานจะเจอว่าคำเดียวกันใช้ได้ที่หนึ่งแต่ไม่ได้
 // อีกที่หนึ่ง ซึ่งอธิบายไม่ได้เลยจากมุมคนหน้าร้าน
 
-import { getProduct, listCategories, listProducts, updateProduct } from "@/modules/catalog/repository";
+import { createProduct, getProduct, listCategories, listProducts, updateProduct } from "@/modules/catalog/repository";
 import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
 import { resolveVoiceProductPhrase } from "@/modules/voice-pos/cart";
 import type { CatalogToolDeps } from "./catalog-tools";
@@ -44,6 +44,21 @@ export function createServerCatalogToolDeps(): CatalogToolDeps {
     async updateProduct(productId, storeId, patch) {
       const result = await updateProduct(productId, storeId, patch);
       if (result.error) throw new Error("Assistant catalog write failed");
+    },
+    async createProduct(input) {
+      // สร้างเป็นเมนูขายหน้าร้านก่อนเสมอ ไม่เปิด QR ให้เอง — การเปิด QR ต้องผูกสถานีครัว
+      // ซึ่งเป็นการตัดสินใจของคน สั่งแยกทีหลังได้ด้วย "เปิด QR ทุกเมนู"
+      const result = await createProduct({
+        storeId: input.storeId,
+        organizationId: input.organizationId,
+        categoryId: input.categoryId,
+        name: input.name,
+        basePrice: input.basePrice,
+        availableForPos: true,
+        availableForQr: false,
+      });
+      if (result.error || !result.data) throw new Error("Assistant catalog create failed");
+      return { id: result.data.id };
     },
   };
 }

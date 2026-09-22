@@ -28,6 +28,7 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { DurableAssistantSessionStore } from "@/modules/ai-assistant/durable-session";
 import { DurableProposalStore } from "@/modules/ai-assistant/durable-proposal";
 import { ACCOUNTING_TOOL_NAMES, registerAccountingTools } from "@/modules/ai-assistant/tools/accounting-tools";
+import { parseBackOfficeCommand } from "@/modules/ai-assistant/back-office-intent";
 import { createServerAccountingToolDeps } from "@/modules/ai-assistant/tools/accounting-tools-server";
 import { CATALOG_TOOL_NAMES, registerCatalogTools } from "@/modules/ai-assistant/tools/catalog-tools";
 import { createServerCatalogToolDeps } from "@/modules/ai-assistant/tools/catalog-tools-server";
@@ -123,6 +124,12 @@ const BodySchema = z.object({
   args: z.unknown().optional(),
   activeCartId: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/).optional(),
   cartVersion: z.number().int().min(0).optional(),
+  /**
+   * แผงผู้ช่วยหลังร้านตั้งค่านี้ — คำสั่งจะถูกแปลด้วยตัวแปลหลังร้านเท่านั้น
+   * และ **ไม่ตกไปที่ orchestrator ของหน้าขายเด็ดขาด** เพราะ planner ของหน้าขายรู้จักแค่
+   * `pos.*` ⇒ "เพิ่มเมนูอาหารต้ม" เคยถูกตีเป็น "เพิ่มสินค้าลงตะกร้า" แล้วล้มเพราะไม่มีตะกร้า
+   */
+  scope: z.literal("back_office").optional(),
   /**
    * P2 — กดยืนยันการ์ด: ส่งแค่ชื่อ tool + proposalId (+ คำตอบของสิ่งที่ขาด)
    *
@@ -337,6 +344,33 @@ export async function POST(request: Request) {
       requestId: input.requestId,
     }),
   });
+  // ── แผงหลังร้าน: แปลด้วยตัวแปลของตัวเอง ไม่แตะ orchestrator ของหน้าขาย ──────
+  if (input.scope === "back_office") {
+    const intent = parseBackOfficeCommand(input.text!);
+    if (intent.kind === "pos_command") {
+      return NextResponse.json({
+        ok: true, requestId: input.requestId,
+        outcomes: [{ kind: "skipped" as const, ok: false, note: intent.hint }],
+      }, { headers: NO_STORE });
+    }
+    if (intent.kind === "unsupported") {
+      return NextResponse.json({
+        ok: true, requestId: input.requestId,
+        outcomes: [{
+          kind: "skipped" as const, ok: false,
+          note: "ยังไม่รองรับคำสั่งนี้ — ลองพูดแบบ “ลงค่าน้ำแข็ง 450”, “แก้ราคาลาเต้เป็น 60”, “เพิ่มเมนูชาเย็น”, “เปิด QR ทุกเมนู” หรือ “ปรับสต็อกข้าวผัดเป็น 25”",
+        }],
+      }, { headers: NO_STORE });
+    }
+    const result = await dispatch({ tool: intent.tool, args: intent.args, idempotencyKey: input.requestId });
+    const outcome = result.ok && "kind" in result
+      ? { kind: "proposal" as const, ok: true, tool: intent.tool, proposal: result.proposal }
+      : result.ok
+        ? { kind: "tool" as const, ok: true, tool: intent.tool, result: result.data }
+        : { kind: "error" as const, ok: false, tool: intent.tool, code: result.code };
+    return NextResponse.json({ ok: true, requestId: input.requestId, outcomes: [outcome] }, { headers: NO_STORE });
+  }
+
   const run = await runTextCommand(input.text!, { interpret, dispatch, cart, requestId: input.requestId });
   if (!run.ok) {
     // ความล้มเหลวระดับเนื้อหา (คำต้องห้าม/AI ล่ม/โควตาหมด) = 200 พร้อมเหตุผล เพื่อให้ UI แนะนำทางออกได้

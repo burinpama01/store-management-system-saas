@@ -105,14 +105,62 @@ async function readDeviceId(): Promise<string | undefined> {
   }
 }
 
+/**
+ * ขั้นตอนที่ล้มระหว่างสร้าง context — ลง log เป็นรหัส ไม่ใช่ข้อความ error ดิบ
+ *
+ * ทำไมต้องมี: ทุกความล้มเหลวที่นี่กลายเป็น `CONTEXT_UNAVAILABLE` ก้อนเดียวที่หน้าร้าน
+ * และ audit ของ dispatcher ยังไม่มี ctx ให้เขียน ⇒ **ไม่มี log สักแถว** ตอนทดสอบจริงที่ร้าน
+ * จึงได้แค่ "เซสชันหมดอายุ" โดยไม่มีใครรู้ว่าล้มตรงไหน ต้องไล่เดาจากโค้ด
+ */
+type ContextFailureStep =
+  | "auth_unavailable"
+  | "identity_incomplete"
+  | "session_unavailable"
+  | "session_identity_mismatch"
+  | "billing_unavailable";
+
+/**
+ * บันทึกว่าล้มขั้นไหน — เก็บเฉพาะรหัสขั้นตอนกับ id ของร้าน/ผู้ใช้เท่าที่รู้ ณ ตอนนั้น
+ * ไม่มีข้อความคำสั่งของผู้ใช้ และไม่มีข้อความ error ดิบ (อาจพารายละเอียดภายในออกมา)
+ */
+async function logContextFailure(
+  step: ContextFailureStep,
+  scope: { organizationId?: string | null; storeId?: string | null; actorUserId?: string | null },
+): Promise<void> {
+  try {
+    await logSystemEvent({
+      level: "warn",
+      source: "ai.assistant",
+      action: "contextUnavailable",
+      message: `ผู้ช่วย AI สร้างบริบทไม่สำเร็จ (${step})`,
+      errorCode: "CONTEXT_UNAVAILABLE",
+      organizationId: scope.organizationId ?? null,
+      storeId: scope.storeId ?? null,
+      actorUserId: scope.actorUserId ?? null,
+      context: { step },
+    });
+  } catch {
+    // log ล้มไม่เปลี่ยนผลลัพธ์ของ request
+  }
+}
+
 async function resolveServerContext(options: ServerAssistantDispatcherOptions): Promise<TrustedContext> {
   // ปฏิเสธ browser runtime ก่อนแตะ auth เสมอ
   if (typeof window !== "undefined") throw new Error("Assistant requires a server runtime");
-  const auth = await getResolvedCurrentPermissions();
+  let auth: Awaited<ReturnType<typeof getResolvedCurrentPermissions>>;
+  try {
+    auth = await getResolvedCurrentPermissions();
+  } catch (error) {
+    await logContextFailure("auth_unavailable", {});
+    throw error;
+  }
   const { organizationId, storeId, can } = auth.resolved;
   const role = auth.ctx.role;
   const userId = auth.user.id;
-  if (!organizationId || !storeId || !userId) throw new Error("Assistant identity incomplete");
+  if (!organizationId || !storeId || !userId || !role) {
+    await logContextFailure("identity_incomplete", { organizationId, storeId, actorUserId: userId });
+    throw new Error("Assistant identity incomplete");
+  }
   // device id มาจาก header ของ request (ไม่ใช่ body) — เป็นข้อมูลของ "เครื่อง" ไม่ใช่ของคำสั่ง
   // และอ่านที่นี่ทำให้ dispatcher ซึ่งเป็น singleton ต่อ process ไม่ต้องรับค่าต่อ request
   const identity: AssistantIdentity = {
@@ -121,12 +169,25 @@ async function resolveServerContext(options: ServerAssistantDispatcherOptions): 
     userId,
     deviceId: await readDeviceId(),
   };
-  const session = await options.resolveSession(identity);
+  const scope = { organizationId, storeId, actorUserId: userId };
+  let session: Awaited<ReturnType<typeof options.resolveSession>>;
+  try {
+    session = await options.resolveSession(identity);
+  } catch (error) {
+    await logContextFailure("session_unavailable", scope);
+    throw error;
+  }
   // session ต้องเป็นของ identity เดียวกันเสมอ ป้องกัน cross-tenant session injection
   if (!session || session.organizationId !== identity.organizationId
-    || session.storeId !== identity.storeId || session.userId !== identity.userId) throw new Error("Assistant session identity mismatch");
+    || session.storeId !== identity.storeId || session.userId !== identity.userId) {
+    await logContextFailure("session_identity_mismatch", scope);
+    throw new Error("Assistant session identity mismatch");
+  }
   const billing = await getOrganizationBillingState(identity.organizationId);
-  if (!billing) throw new Error("Assistant billing unavailable");
+  if (!billing) {
+    await logContextFailure("billing_unavailable", scope);
+    throw new Error("Assistant billing unavailable");
+  }
   return {
     organizationId: session.organizationId,
     storeId: session.storeId,
