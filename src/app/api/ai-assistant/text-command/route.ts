@@ -31,6 +31,9 @@ import { ACCOUNTING_TOOL_NAMES, registerAccountingTools } from "@/modules/ai-ass
 import { createServerAccountingToolDeps } from "@/modules/ai-assistant/tools/accounting-tools-server";
 import { CATALOG_TOOL_NAMES, registerCatalogTools } from "@/modules/ai-assistant/tools/catalog-tools";
 import { createServerCatalogToolDeps } from "@/modules/ai-assistant/tools/catalog-tools-server";
+import { QR_TOOL_NAMES, registerQrTools } from "@/modules/ai-assistant/tools/qr-tools";
+import { STOCK_TOOL_NAMES, registerStockTools } from "@/modules/ai-assistant/tools/stock-tools";
+import { createServerQrToolDeps, createServerStockToolDeps } from "@/modules/ai-assistant/tools/qr-stock-tools-server";
 import { createFixedWindowRateLimiter } from "@/modules/ai-assistant/rate-limit";
 import { createTextInterpreter, runTextCommand, type TextFailureReason } from "@/modules/ai-assistant/orchestrator";
 import { interpretTextIntent } from "@/modules/ai-assistant/text-intent";
@@ -59,9 +62,17 @@ registerPosTools(registry, createServerPosToolDeps());
 // live-openai-tools ยืนยันว่าต้องตรงกันเป๊ะ การเพิ่มที่นั่นจะทำให้ Live พังทันที)
 registerAccountingTools(registry, createServerAccountingToolDeps());
 registerCatalogTools(registry, createServerCatalogToolDeps());
+registerQrTools(registry, createServerQrToolDeps());
+registerStockTools(registry, createServerStockToolDeps());
 
 /** tool ที่ session ของเส้นทางข้อความใช้ได้ — POS เดิม + งานหลังร้าน */
-const TEXT_TOOL_NAMES = [...MVP_TOOL_NAMES, ...ACCOUNTING_TOOL_NAMES, ...CATALOG_TOOL_NAMES] as const;
+const TEXT_TOOL_NAMES = [
+  ...MVP_TOOL_NAMES,
+  ...ACCOUNTING_TOOL_NAMES,
+  ...CATALOG_TOOL_NAMES,
+  ...QR_TOOL_NAMES,
+  ...STOCK_TOOL_NAMES,
+] as const;
 const rateLimiter = createFixedWindowRateLimiter({
   limitPerWindow: readRateLimitPerMinute(),
   windowMs: 60_000,

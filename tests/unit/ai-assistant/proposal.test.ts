@@ -258,6 +258,38 @@ describe("ชั้นยืนยัน (P1)", () => {
     expect(await d(command())).toEqual({ ok: false, code: "MUTATIONS_DISABLED" });
   });
 
+  it("ทุกจังหวะของการ์ดถูกบันทึกแยกกัน รวมจังหวะที่ยังไม่เขียนอะไร", async () => {
+    const audited: { outcome: string; proposalId?: string; confirmed?: boolean }[] = [];
+    const d = createDispatcher({
+      registry, enabled: true, mutationsEnabled: true, environment: "test",
+      resolveContext: async () => ctx(),
+      audit: async (metadata) => { audited.push({ outcome: metadata.outcome, proposalId: metadata.proposalId, confirmed: metadata.confirmed }); },
+      proposals, newProposalId: () => "prop-log",
+    });
+    await d(command());
+    await d(command({ idempotencyKey: "key-2", confirm: { proposalId: "prop-log" } }));
+    // เสนอ = ยังไม่เขียน / ยืนยัน = เขียนแล้วและผ่านมือคน — สองแถวนี้ต้องแยกกันได้
+    expect(audited).toEqual([
+      { outcome: "proposed", proposalId: "prop-log", confirmed: undefined },
+      { outcome: "success", proposalId: "prop-log", confirmed: true },
+    ]);
+  });
+
+  it("การ์ดที่ถูกปฏิเสธก็ถูกบันทึกพร้อม id ของใบนั้น", async () => {
+    const audited: { outcome: string; proposalId?: string }[] = [];
+    const d = createDispatcher({
+      registry, enabled: true, mutationsEnabled: true, environment: "test",
+      resolveContext: async () => ctx(),
+      audit: async (metadata) => { audited.push({ outcome: metadata.outcome, proposalId: metadata.proposalId }); },
+      proposals, newProposalId: () => "prop-log",
+    });
+    draft = baseDraft([{ kind: "blocked", need: "QR Ordering", feature: "qrOrdering" }]);
+    await d(command());
+    await d(command({ idempotencyKey: "key-2", confirm: { proposalId: "prop-log" } }));
+    expect(audited.map((entry) => entry.outcome)).toEqual(["proposed", "PREREQUISITE_REQUIRED"]);
+    expect(audited[1].proposalId).toBe("prop-log");
+  });
+
   it("ลายนิ้วมือนับสภาพของโลก ไม่นับสิ่งที่ผู้ใช้เลือก", () => {
     const base = baseDraft();
     // โลกเปลี่ยน = ต้องต่าง
