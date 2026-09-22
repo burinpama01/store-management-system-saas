@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { AccountingCategory, Transaction, TransactionType } from "@/modules/accounting/types";
 import type { ToolRegistry, TrustedContext } from "../foundation";
 import type { Prerequisite, ProposalDraft } from "../proposal";
+import { BACK_OFFICE_ASSISTANT_PERMISSION } from "./back-office-access";
 
 export interface AccountingToolDeps {
   listCategories: (storeId: string) => Promise<readonly AccountingCategory[]>;
@@ -105,7 +106,7 @@ export function registerAccountingTools(registry: ToolRegistry, deps: Accounting
   registry.register({
     name: "accounting.list_categories",
     risk: "read",
-    permissions: ["cashflow.record"],
+    permissions: ["cashflow.record", BACK_OFFICE_ASSISTANT_PERMISSION],
     args: z.object({ type: z.enum(["income", "expense"]).optional() }).strict(),
     result: z.object({
       categories: z.array(z.object({ id: z.string(), name: z.string(), type: z.string() })),
@@ -124,7 +125,7 @@ export function registerAccountingTools(registry: ToolRegistry, deps: Accounting
   registry.register({
     name: "accounting.suggest_category",
     risk: "read",
-    permissions: ["cashflow.record"],
+    permissions: ["cashflow.record", BACK_OFFICE_ASSISTANT_PERMISSION],
     args: z.object({ type: z.enum(["income", "expense"]), note: z.string().min(1).max(200) }).strict(),
     result: z.object({
       suggestion: z.object({
@@ -149,7 +150,7 @@ export function registerAccountingTools(registry: ToolRegistry, deps: Accounting
   registry.register({
     name: "accounting.create_transaction",
     risk: "safe_write",
-    permissions: ["cashflow.record"],
+    permissions: ["cashflow.record", BACK_OFFICE_ASSISTANT_PERMISSION],
     args: TransactionArgs,
     result: z.object({ id: z.string(), categoryId: z.string(), categoryName: z.string() }).strict(),
 

@@ -10,6 +10,7 @@
 import { z } from "zod";
 import type { ToolRegistry } from "../foundation";
 import type { Prerequisite, ProposalDraft } from "../proposal";
+import { BACK_OFFICE_ASSISTANT_PERMISSION } from "./back-office-access";
 
 export interface StockVariantRef {
   readonly variantId: string;
@@ -80,7 +81,7 @@ export function registerStockTools(registry: ToolRegistry, deps: StockToolDeps):
   registry.register({
     name: "stock.check",
     risk: "read",
-    permissions: ["catalog.manage"],
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
     args: CheckArgs,
     result: z.object({
       variants: z.array(z.object({
@@ -106,7 +107,7 @@ export function registerStockTools(registry: ToolRegistry, deps: StockToolDeps):
   registry.register({
     name: "stock.adjust",
     risk: "sensitive",
-    permissions: ["catalog.manage"],
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
     args: AdjustArgs,
     result: z.object({ variantId: z.string(), quantity: z.number() }).strict(),
 

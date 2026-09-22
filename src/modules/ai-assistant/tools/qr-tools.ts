@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { Product } from "@/modules/catalog/types";
 import type { ToolRegistry } from "../foundation";
 import type { Prerequisite, ProposalDraft } from "../proposal";
+import { BACK_OFFICE_ASSISTANT_PERMISSION } from "./back-office-access";
 
 export interface QrStationRef {
   readonly id: string;
@@ -48,7 +49,7 @@ export function registerQrTools(registry: ToolRegistry, deps: QrToolDeps): void 
   registry.register({
     name: "qr.bulk_set_visibility",
     risk: "sensitive",
-    permissions: ["catalog.manage"],
+    permissions: [BACK_OFFICE_ASSISTANT_PERMISSION],
     args: BulkArgs,
     result: z.object({
       changed: z.number(),
