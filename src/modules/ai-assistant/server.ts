@@ -110,6 +110,7 @@ async function resolveServerContext(options: ServerAssistantDispatcherOptions): 
   if (typeof window !== "undefined") throw new Error("Assistant requires a server runtime");
   const auth = await getResolvedCurrentPermissions();
   const { organizationId, storeId, can } = auth.resolved;
+  const role = auth.ctx.role;
   const userId = auth.user.id;
   if (!organizationId || !storeId || !userId) throw new Error("Assistant identity incomplete");
   // device id มาจาก header ของ request (ไม่ใช่ body) — เป็นข้อมูลของ "เครื่อง" ไม่ใช่ของคำสั่ง
@@ -131,6 +132,7 @@ async function resolveServerContext(options: ServerAssistantDispatcherOptions): 
     storeId: session.storeId,
     userId: session.userId,
     sessionId: session.id,
+    role,
     expiresAt: session.expiresAt,
     allowedTools: session.allowedTools,
     billing,

@@ -16,7 +16,7 @@ const variant = (
 ): StockVariantRef => ({ variantId, productId: `p-${variantId}`, productName, variantName, available, trackStock });
 
 const ctx = (): TrustedContext => ({
-  organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1",
+  organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1", role: "owner",
   expiresAt: Date.now() + 30 * 60 * 1000,
   allowedTools: ["stock.check", "stock.adjust"],
   billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" },

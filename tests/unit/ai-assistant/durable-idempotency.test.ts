@@ -246,7 +246,7 @@ describe("DurableIdempotencyStore", () => {
 // PR3 — wiring ของ dispatcher: production safe_write ปลดได้เฉพาะเมื่อ wire durable store
 // และเปิด mutation switch เท่านั้น — ค่า default (memory) ยังติด DURABLE_STORAGE_REQUIRED เหมือนเดิม
 describe("dispatcher wired with durable idempotency", () => {
-  const context = (): TrustedContext => ({ organizationId: "org", storeId: "store", userId: "user", sessionId: "session", expiresAt: Date.now() + 60000, allowedTools: ["test.write"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true });
+  const context = (): TrustedContext => ({ organizationId: "org", storeId: "store", userId: "user", sessionId: "session", role: "owner", expiresAt: Date.now() + 60000, allowedTools: ["test.write"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true });
   const write = (idempotencyKey = "key1") => ({ tool: "test.write", args: { value: "hello" }, idempotencyKey });
   function setup(overrides: { mutationsEnabled?: boolean } = {}) {
     const db = createFakeDb();

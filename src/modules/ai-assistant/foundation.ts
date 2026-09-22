@@ -10,7 +10,7 @@ import {
   type ProposalDraft,
   type ProposalStore,
 } from "./proposal";
-import type { PermissionKey } from "@/modules/tenants/types";
+import type { PermissionKey, Role } from "@/modules/tenants/types";
 
 export type Environment = "development" | "test" | "production";
 export type Risk = "read" | "safe_write" | "sensitive" | "critical";
@@ -36,6 +36,11 @@ export interface TrustedContext {
   storeId: string;
   userId: string;
   sessionId: string;
+  /**
+   * บทบาทของผู้ใช้ — มีไว้เพราะบาง tool ต้องแยก "แคชเชียร์" ออกจาก "พนักงาน"
+   * ซึ่งสิทธิ์แยกไม่ได้ (สองบทบาทนี้ถือ permission ชุดเดียวกันเกือบทั้งหมด)
+   */
+  role: Role;
   expiresAt: number;
   allowedTools: readonly string[];
   billing: BillingState;
@@ -54,6 +59,13 @@ export interface ToolDefinition {
   name: string;
   risk: Risk;
   permissions: readonly PermissionKey[];
+  /**
+   * จำกัดบทบาทเพิ่มจาก permissions — ไม่ใส่ = ตัดสินด้วย permissions อย่างเดียว
+   *
+   * ใช้เมื่อสิทธิ์อย่างเดียวแยกไม่ออก เช่นแคชเชียร์กับพนักงานต่างมี cashflow.record
+   * แต่นโยบายให้เฉพาะแคชเชียร์สั่งลงบัญชีผ่านผู้ช่วยได้
+   */
+  roles?: readonly Role[];
   args: z.ZodType;
   result: z.ZodType;
   developmentOnly?: boolean;
@@ -271,7 +283,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
     try {
       ctx = await options.resolveContext();
       if (!ctx || ![ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId].every(id => typeof id === "string" && id.length > 0 && id.length <= 128)
-        || !Number.isFinite(ctx.expiresAt) || ctx.expiresAt <= Date.now() || !Array.isArray(ctx.allowedTools) || typeof ctx.can !== "function" || !ctx.billing) return fail("CONTEXT_UNAVAILABLE");
+        || typeof ctx.role !== "string" || ctx.role.length === 0 || !Number.isFinite(ctx.expiresAt) || ctx.expiresAt <= Date.now() || !Array.isArray(ctx.allowedTools) || typeof ctx.can !== "function" || !ctx.billing) return fail("CONTEXT_UNAVAILABLE");
     } catch { return fail("CONTEXT_UNAVAILABLE"); }
     const tool = options.registry.get(parsed.data.tool);
     if (!tool) return fail("UNKNOWN_TOOL");
@@ -295,6 +307,8 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
     try {
       if (!canUseFeature(ctx.billing, "aiAssistant")) return audit(fail("FEATURE_DISABLED"));
       if (!ctx.allowedTools.includes(tool.name) || !tool.permissions.every(permission => ctx.can(permission))) return audit(fail("PERMISSION_DENIED"));
+      // ด่านบทบาท (ถ้า tool ประกาศไว้) — มาหลัง permission เพื่อให้เหตุผลการปฏิเสธเป็นตัวเดียวกัน
+      if (tool.roles && !tool.roles.includes(ctx.role)) return audit(fail("PERMISSION_DENIED"));
       if (options.environment === "production" && (tool.developmentOnly || tool.name === "system.echo")) return audit(fail("RISK_BLOCKED"));
       // P1 — sensitive/critical เปิดได้เฉพาะ tool ที่มีชั้นยืนยัน: ไม่มี plan() หรือไม่มีที่เก็บ
       // proposal = ปฏิเสธ ไม่ใช่ปล่อยให้ทำทันที (ชั้นยืนยันคือเหตุผลเดียวที่ยอมให้ระดับนี้ผ่าน)

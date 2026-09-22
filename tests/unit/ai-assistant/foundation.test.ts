@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createDispatcher, MemoryIdempotencyStore, registerDevelopmentEcho, ToolRegistry, type IdempotencyClaimMeta, type Result, type TrustedContext, type ToolDefinition } from "@/modules/ai-assistant/foundation";
 import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 
-const context = (): TrustedContext => ({ organizationId: "org", storeId: "store", userId: "user", sessionId: "session", expiresAt: Date.now() + 60000, allowedTools: ["test.read", "test.write", "test.other"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true });
+const context = (): TrustedContext => ({ organizationId: "org", storeId: "store", userId: "user", sessionId: "session", role: "owner", expiresAt: Date.now() + 60000, allowedTools: ["test.read", "test.write", "test.other"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true });
 const request = (tool = "test.read", args = { value: "hello" }) => ({ tool, args, idempotencyKey: "key" });
 function setup(overrides: Partial<ToolDefinition> = {}, options: { production?: boolean; capacity?: number } = {}) {
   const ctx = context();
@@ -105,7 +105,7 @@ describe("assistant idempotency capacity", () => {
   });
   it("keeps the global backstop across sessions but evicts expired entries before failing", async () => {
     const s = capacitySetup({ capacity: 2, scopeCapacity: 10 });
-    s.actAs({ ...context(), sessionId: "soon", expiresAt: Date.now() + 200 });
+    s.actAs({ ...context(), sessionId: "soon", role: "owner", expiresAt: Date.now() + 200 });
     expect((await s.dispatch(req("k1"))).ok).toBe(true);
     await new Promise(resolve => setTimeout(resolve, 300));
     const live = { ...context(), sessionId: "live" };

@@ -15,7 +15,7 @@ import {
 const request = (args = { value: "hello" }) => ({ tool: "test.cart", args, idempotencyKey: "key" });
 
 function setup(options: { binding?: CartBinding | null; withResolver?: boolean } = {}) {
-  const ctx: TrustedContext = { organizationId: "org", storeId: "store", userId: "user", sessionId: "session", expiresAt: Date.now() + 60000, allowedTools: ["test.read", "test.cart"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true };
+  const ctx: TrustedContext = { organizationId: "org", storeId: "store", userId: "user", sessionId: "session", role: "owner", expiresAt: Date.now() + 60000, allowedTools: ["test.read", "test.cart"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true };
   const execute = vi.fn(async (_args: unknown, _context: TrustedContext, binding: CartBinding | null) => ({ bound: binding?.activeCartId ?? null }));
   const audit = vi.fn(async (metadata: AuditMetadata) => { void metadata; });
   const registry = new ToolRegistry("test");
@@ -96,7 +96,7 @@ describe("foundation cart binding gate (PR2)", () => {
   });
 
   it("does not record cart binding for safe_write commands the mutation gate denies (M4 review)", async () => {
-    const ctx: TrustedContext = { organizationId: "org", storeId: "store", userId: "user", sessionId: "session", expiresAt: Date.now() + 60000, allowedTools: ["test.write"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true };
+    const ctx: TrustedContext = { organizationId: "org", storeId: "store", userId: "user", sessionId: "session", role: "owner", expiresAt: Date.now() + 60000, allowedTools: ["test.write"], billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" }, can: () => true };
     const bindingCalls = vi.fn(async (): Promise<CartBinding | null> => ({ activeCartId: "cart-12345678", cartVersion: 1 }));
     const execute = vi.fn(async () => ({ ok: true }));
     const registry = new ToolRegistry("test");

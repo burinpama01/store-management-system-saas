@@ -24,7 +24,7 @@ const ctx = (): TrustedContext => ({
   organizationId: "org-1",
   storeId: "store-1",
   userId: "user-1",
-  sessionId: "sess-1",
+  sessionId: "sess-1", role: "owner",
   expiresAt: Date.now() + 30 * 60 * 1000,
   allowedTools: ["catalog.update_product"],
   billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" },

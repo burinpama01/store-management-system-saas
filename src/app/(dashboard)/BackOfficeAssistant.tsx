@@ -73,7 +73,29 @@ function newRequestId(sequence: number): string {
   return `bo${sequence.toString(36)}${random}`.slice(0, 64);
 }
 
-export function BackOfficeAssistant() {
+/**
+ * ขอบเขตของผู้ช่วยที่ผู้ใช้คนนี้เรียกได้
+ *
+ * `accounting` = แคชเชียร์บนหน้าบัญชี — ข้อความช่วยและป้ายปุ่มต้องบอกขอบเขตให้ตรง
+ * ไม่งั้นเขาจะพิมพ์ "แก้ราคาลาเต้" แล้วโดนปฏิเสธโดยไม่รู้ว่าเพราะอะไร
+ */
+export type AssistantScope = "full" | "accounting";
+
+const SCOPE_COPY: Record<AssistantScope, { label: string; hint: string; placeholder: string }> = {
+  full: {
+    label: "ผู้ช่วยหลังร้าน",
+    hint: "พิมพ์สิ่งที่อยากทำ เช่น “ลงค่าน้ำแข็ง 450”, “แก้ราคาอเมริกาโน่เย็นเป็น 60”, “เปิด QR ให้ทุกเมนู” — ระบบจะสรุปให้ดูก่อนเสมอ ยังไม่แก้อะไรจนกว่าจะกดยืนยัน",
+    placeholder: "พิมพ์คำสั่ง…",
+  },
+  accounting: {
+    label: "ผู้ช่วยลงบัญชี",
+    hint: "พิมพ์รายการที่จะลง เช่น “ลงค่าน้ำแข็ง 450” หรือ “รายรับอื่น 500 ค่าจัดเลี้ยง” — ระบบจะสรุปให้ดูก่อนเสมอ ยังไม่บันทึกจนกว่าจะกดยืนยัน (บัญชีนี้ใช้ได้เฉพาะเรื่องรายรับ-รายจ่าย)",
+    placeholder: "พิมพ์รายการรายรับ-รายจ่าย…",
+  },
+};
+
+export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope }) {
+  const copy = SCOPE_COPY[scope];
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -170,25 +192,25 @@ export function BackOfficeAssistant() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="เปิดผู้ช่วยหลังร้าน"
+        aria-label={`เปิด${copy.label}`}
         className="fixed right-4 bottom-4 z-40 flex min-h-12 min-w-12 items-center gap-2 rounded-full bg-orange-600 px-4 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-orange-700 motion-reduce:transition-none"
         style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
       >
         <span aria-hidden>✨</span>
         {/* ข้อความซ่อนบนจอแคบเพื่อไม่ให้ปุ่มบังเนื้อหา แต่ตัวปุ่มยังอยู่ทุกขนาดจอ */}
-        <span className="hidden sm:inline">ผู้ช่วยหลังร้าน</span>
+        <span className="hidden sm:inline">{copy.label}</span>
       </button>
     );
   }
 
   return (
     <section
-      aria-label="ผู้ช่วยหลังร้าน"
+      aria-label={copy.label}
       className="fixed inset-x-0 bottom-0 z-40 flex max-h-[85vh] flex-col rounded-t-2xl border border-gray-200 bg-white shadow-2xl sm:inset-x-auto sm:right-4 sm:bottom-4 sm:max-h-[80vh] sm:w-96 sm:rounded-2xl"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       <header className="flex items-center justify-between gap-2 border-b border-gray-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-gray-900">ผู้ช่วยหลังร้าน</h2>
+        <h2 className="text-sm font-semibold text-gray-900">{copy.label}</h2>
         <button
           type="button"
           onClick={() => setOpen(false)}
@@ -202,8 +224,7 @@ export function BackOfficeAssistant() {
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {entries.length === 0 ? (
           <p className="text-xs text-gray-500">
-            พิมพ์สิ่งที่อยากทำ เช่น “ลงค่าน้ำแข็ง 450”, “แก้ราคาอเมริกาโน่เย็นเป็น 60”,
-            “เปิด QR ให้ทุกเมนู” — ระบบจะสรุปให้ดูก่อนเสมอ ยังไม่แก้อะไรจนกว่าจะกดยืนยัน
+            {copy.hint}
           </p>
         ) : (
           entries.map((entry) => (
@@ -235,8 +256,8 @@ export function BackOfficeAssistant() {
           onChange={(event) => setText(event.target.value)}
           maxLength={200}
           disabled={busy}
-          placeholder="พิมพ์คำสั่ง…"
-          aria-label="พิมพ์คำสั่งสำหรับผู้ช่วยหลังร้าน"
+          placeholder={copy.placeholder}
+          aria-label={`พิมพ์คำสั่งสำหรับ${copy.label}`}
           className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-300 px-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-orange-400 focus:outline-none disabled:bg-gray-100"
         />
         <button

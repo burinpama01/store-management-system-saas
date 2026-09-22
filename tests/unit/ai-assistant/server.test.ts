@@ -21,7 +21,7 @@ function setup(resolveSession = vi.fn(async () => session())) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NODE_ENV", "test"); vi.stubEnv("AI_ASSISTANT_ENABLED", "true"); vi.stubEnv("AI_ASSISTANT_KILL_SWITCH", "false");
-  mocks.auth.mockResolvedValue({ user: { id: identity.userId }, ctx: { organizationId: identity.organizationId, storeId: identity.storeId }, resolved: { organizationId: identity.organizationId, storeId: identity.storeId, can: () => true } });
+  mocks.auth.mockResolvedValue({ user: { id: identity.userId }, ctx: { organizationId: identity.organizationId, storeId: identity.storeId, role: "owner" }, resolved: { organizationId: identity.organizationId, storeId: identity.storeId, can: () => true } });
   mocks.billing.mockResolvedValue({ ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" });
   mocks.log.mockResolvedValue(undefined);
 });

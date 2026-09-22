@@ -6,8 +6,10 @@
 
 import { describe, it, expect } from "vitest";
 import { ROLE_DEFAULT_PERMISSIONS } from "@/modules/tenants/types";
-import { ToolRegistry } from "@/modules/ai-assistant/foundation";
-import { BACK_OFFICE_ASSISTANT_PERMISSION } from "@/modules/ai-assistant/tools/back-office-access";
+import { createDispatcher, ToolRegistry } from "@/modules/ai-assistant/foundation";
+import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
+import type { Role } from "@/modules/tenants/types";
+import { ACCOUNTING_ASSISTANT_ROLES, BACK_OFFICE_ASSISTANT_PERMISSION } from "@/modules/ai-assistant/tools/back-office-access";
 import { registerAccountingTools, ACCOUNTING_TOOL_NAMES } from "@/modules/ai-assistant/tools/accounting-tools";
 import { registerCatalogTools, CATALOG_TOOL_NAMES } from "@/modules/ai-assistant/tools/catalog-tools";
 import { registerQrTools, QR_TOOL_NAMES } from "@/modules/ai-assistant/tools/qr-tools";
@@ -28,6 +30,14 @@ describe("ด่านของผู้ช่วยหลังร้าน", (
     }
   });
 
+  it("แคชเชียร์ลงบัญชีได้ แต่พนักงานทั่วไปไม่ได้", () => {
+    // สองบทบาทนี้ถือสิทธิ์เกือบชุดเดียวกัน จึงต้องแยกด้วยบทบาท ไม่ใช่สิทธิ์
+    expect(ACCOUNTING_ASSISTANT_ROLES).toContain("cashier");
+    expect(ACCOUNTING_ASSISTANT_ROLES).not.toContain("staff");
+    expect(ACCOUNTING_ASSISTANT_ROLES).toContain("owner");
+    expect(ACCOUNTING_ASSISTANT_ROLES).toContain("manager");
+  });
+
   it("tool หลังร้านทุกตัวใส่ด่านไว้ครบ", () => {
     const registry = new ToolRegistry("test");
     const noop = async () => { throw new Error("not called"); };
@@ -46,12 +56,44 @@ describe("ด่านของผู้ช่วยหลังร้าน", (
       findVariants: async () => [], getVariant: async () => null, setVariantStock: noop as never,
     });
 
-    const names = [...ACCOUNTING_TOOL_NAMES, ...CATALOG_TOOL_NAMES, ...QR_TOOL_NAMES, ...STOCK_TOOL_NAMES];
-    expect(names.length).toBeGreaterThan(0);
-    for (const name of names) {
+    // tool ที่ไม่ใช่บัญชี = เจ้าของ/ผู้จัดการเท่านั้น (ด่านที่สิทธิ์)
+    for (const name of [...CATALOG_TOOL_NAMES, ...QR_TOOL_NAMES, ...STOCK_TOOL_NAMES]) {
       const tool = registry.get(name);
       expect(tool, `ไม่พบ tool ${name}`).toBeDefined();
       expect(tool!.permissions, `tool ${name} ไม่ได้ใส่ด่านหลังร้าน`).toContain(BACK_OFFICE_ASSISTANT_PERMISSION);
     }
+    // tool บัญชี = ด่านที่บทบาท เพราะสิทธิ์แยกแคชเชียร์ออกจากพนักงานไม่ได้
+    for (const name of ACCOUNTING_TOOL_NAMES) {
+      const tool = registry.get(name);
+      expect(tool, `ไม่พบ tool ${name}`).toBeDefined();
+      expect(tool!.roles, `tool ${name} ไม่ได้ใส่ด่านบทบาท`).toBeDefined();
+      expect(tool!.roles).not.toContain("staff");
+    }
+  });
+
+  it("พนักงานทั่วไปสั่งลงบัญชีไม่ได้จริงตอนวิ่งผ่าน dispatcher", async () => {
+    const registry = new ToolRegistry("test");
+    let wrote = false;
+    registerAccountingTools(registry, {
+      listCategories: async () => [],
+      listRecentTransactions: async () => [],
+      createTransaction: async () => { wrote = true; return { id: "x" }; },
+    });
+    const dispatchFor = (role: Role) => createDispatcher({
+      registry, enabled: true, mutationsEnabled: true, environment: "test",
+      audit: async () => {},
+      proposals: { save: async () => {}, load: async () => null, consume: async () => false },
+      resolveContext: async () => ({
+        organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1", role,
+        expiresAt: Date.now() + 60_000,
+        allowedTools: [...ACCOUNTING_TOOL_NAMES],
+        billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" },
+        can: () => true,
+      }),
+    });
+    const command = { tool: "accounting.create_transaction", args: { type: "expense", amount: 50, note: "น้ำแข็ง" }, idempotencyKey: "k" };
+    expect(await dispatchFor("staff")(command)).toEqual({ ok: false, code: "PERMISSION_DENIED" });
+    expect(await dispatchFor("cashier")(command)).not.toEqual({ ok: false, code: "PERMISSION_DENIED" });
+    expect(wrote).toBe(false);
   });
 });

@@ -18,7 +18,7 @@ const product = (id: string, name: string, extra: Partial<Product> = {}): Produc
 } as Product);
 
 const ctx = (): TrustedContext => ({
-  organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1",
+  organizationId: "org-1", storeId: "store-1", userId: "user-1", sessionId: "sess-1", role: "owner",
   expiresAt: Date.now() + 30 * 60 * 1000,
   allowedTools: ["qr.bulk_set_visibility"],
   billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" },

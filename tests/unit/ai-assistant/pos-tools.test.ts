@@ -61,7 +61,7 @@ function setup(options: { products?: readonly Product[]; aliases?: readonly Voic
     organizationId: "org",
     storeId: "store",
     userId: "user",
-    sessionId: "session",
+    sessionId: "session", role: "owner",
     expiresAt: Date.now() + 60000,
     allowedTools: [...MVP_TOOL_NAMES],
     billing: { ...DEFAULT_BILLING_STATE, plan: "enterprise", status: "active" },
