@@ -1,5 +1,7 @@
 "use client";
 
+import { installNativeSpeechSynthesis } from "./native-speech-synthesis";
+
 /**
  * เสียงพูดแจ้งเตือน (TTS ภาษาไทย) — ใช้คู่กับเสียง beep เดิมใน alert-sound.ts
  *
@@ -73,6 +75,8 @@ interface SpeechWindowLike {
 function resolveWindow(override?: SpeechWindowLike | null): SpeechWindowLike | null {
   if (override !== undefined) return override;
   if (typeof window === "undefined") return null;
+  // แอป Android: WebView ไม่มี speechSynthesis — ติดตั้งตัวที่ใช้ TTS ของเครื่องก่อนใช้ครั้งแรก
+  installNativeSpeechSynthesis(window);
   return window as unknown as SpeechWindowLike;
 }
 
