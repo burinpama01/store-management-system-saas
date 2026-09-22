@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { dispatchNotification } from "@/modules/notifications/dispatcher";
 import {
+  INSISTENT_ORDER_ALERT,
   buildFcmMessage,
   buildServiceAccountJwt,
   parseServiceAccount,
@@ -93,10 +94,39 @@ describe("push notification channel", () => {
       storeId: "store-1",
     });
     expect(body.message.token).toBe("device-token-1");
-    expect(body.message.notification.title).toBe("StoreOS");
-    expect(body.message.notification.body).toBe("ออเดอร์ใหม่โต๊ะ 5");
+    expect(body.message.notification?.title).toBe("StoreOS");
+    expect(body.message.notification?.body).toBe("ออเดอร์ใหม่โต๊ะ 5");
     expect(body.message.android.priority).toBe("high");
     expect(body.message.data).toMatchObject({ type: "new_qr_order", storeId: "store-1" });
+  });
+
+  it("Android 1.0.3+ gets new orders as data-only so the app can ring until opened", () => {
+    const order = { type: "new_qr_order" as const, title: "ออเดอร์ใหม่", message: "โต๊ะ 5", storeId: "store-1" };
+    const insistent = buildFcmMessage({ token: "t", platform: "android", appVersion: "1.0.3" }, order);
+    expect(insistent.message.notification).toBeUndefined();
+    expect(insistent.message.android).toEqual({ priority: "high" });
+    expect(insistent.message.data).toMatchObject({
+      type: "new_qr_order",
+      alert: INSISTENT_ORDER_ALERT,
+      title: "ออเดอร์ใหม่",
+      body: "โต๊ะ 5",
+    });
+
+    // รุ่นเก่า / ไม่รู้รุ่น / iOS / แจ้งเตือนที่ไม่ใช่ออเดอร์ ต้องได้ notification block ตามเดิม
+    for (const device of [
+      { token: "t", platform: "android" as const, appVersion: "1.0.2" },
+      { token: "t", platform: "android" as const, appVersion: "0" },
+      { token: "t", platform: "android" as const, appVersion: null },
+      { token: "t", platform: "ios" as const, appVersion: "1.0.3" },
+    ]) {
+      expect(buildFcmMessage(device, order).message.notification).toBeDefined();
+    }
+    const nonOrder = buildFcmMessage(
+      { token: "t", platform: "android", appVersion: "1.0.3" },
+      { type: "service_request", message: "เรียกพนักงาน" },
+    );
+    expect(nonOrder.message.notification).toBeDefined();
+    expect(nonOrder.message.data?.alert).toBeUndefined();
   });
 
   it("skips push delivery when service account is not configured", async () => {

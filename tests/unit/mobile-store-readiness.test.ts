@@ -8,6 +8,11 @@ function source(relativePath: string) {
 }
 
 describe("mobile store submission readiness", () => {
+  it("reserves native system-bar space even on Android before API 35", async () => {
+    const { default: config } = await import("../../mobile/capacitor.config");
+    // auto only activates on Android 15+: older WebViews may expose zero CSS insets.
+    expect(config.android?.adjustMarginsForEdgeToEdge).toBe("force");
+  });
   it("targets Android 16 with a compatible Android Gradle plugin", () => {
     const variables = source("mobile/android/variables.gradle");
     const gradle = source("mobile/android/build.gradle");
@@ -17,16 +22,16 @@ describe("mobile store submission readiness", () => {
     expect(gradle).toContain("com.android.tools.build:gradle:8.9.1");
   });
 
-  it("uses a new native release version on both platforms", () => {
+  it("keeps Android candidate metadata consistent while iOS stays at its released version", () => {
     const android = source("mobile/android/app/build.gradle");
     const ios = source("mobile/ios/App/App.xcodeproj/project.pbxproj");
     const mobilePackage = JSON.parse(source("mobile/package.json")) as { version: string };
 
-    expect(android).toMatch(/versionCode\s+3/);
-    expect(android).toMatch(/versionName\s+["']1\.0\.2["']/);
+    expect(android).toMatch(/versionCode\s+4/);
+    expect(android).toMatch(/versionName\s+["']1\.0\.3["']/);
     expect(ios.match(/CURRENT_PROJECT_VERSION = 3;/g)).toHaveLength(2);
     expect(ios.match(/MARKETING_VERSION = 1\.0\.2;/g)).toHaveLength(2);
-    expect(mobilePackage.version).toBe("1.0.2");
+    expect(mobilePackage.version).toBe("1.0.3");
   });
 
   it("declares iOS camera and remote-notification capabilities", () => {

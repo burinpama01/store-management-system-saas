@@ -64,17 +64,23 @@ describe("เวอร์ชันชุดติดตั้งที่หน�
     expect(source).not.toContain("storage/v1/object/public/app/storeos-launcher.zip");
   });
 
-  it("แอป Android ตรงกับ versionName/versionCode ใน build.gradle", () => {
+  it("รุ่น Android ที่เผยแพร่ต้องไม่ใหม่กว่า native candidate", () => {
     const gradle = read("mobile/android/app/build.gradle");
-    expect(gradle).toContain(`versionName "${ANDROID_VERSION_NAME}"`);
-    expect(gradle).toContain(`versionCode ${ANDROID_VERSION_CODE}`);
+    const candidateName = gradle.match(/versionName "([^"]+)"/)?.[1];
+    const candidateCode = Number(gradle.match(/versionCode (\d+)/)?.[1]);
+    expect(candidateName).toBeTruthy();
+    expect(candidateCode).toBeGreaterThanOrEqual(ANDROID_VERSION_CODE);
+    expect(isOutdated(candidateName!, ANDROID_VERSION_NAME)).toBe(false);
+    if (candidateCode === ANDROID_VERSION_CODE) expect(candidateName).toBe(ANDROID_VERSION_NAME);
   });
 
   it("User-Agent ของแอปต้องพ่วงเวอร์ชันเดียวกัน ไม่งั้นเว็บแยกรุ่นไม่ออก", () => {
     // ไม่มีเลขใน UA = เตือนอัปเดตไม่ได้เลย เพราะเซิร์ฟเวอร์ไม่รู้ว่าเครื่องไหนรุ่นอะไร
     // และต้องคง substring "StoreOSApp" ไว้ เพราะ middleware/browser-capability เช็คตัวนี้
     const config = read("mobile/capacitor.config.ts");
-    expect(config).toContain(`appendUserAgent: "StoreOSApp/${ANDROID_VERSION_NAME}"`);
+    const candidateName = read("mobile/android/app/build.gradle").match(/versionName "([^"]+)"/)?.[1];
+    expect(candidateName).toBeTruthy();
+    expect(config).toContain(`appendUserAgent: "StoreOSApp/${candidateName}"`);
   });
 
   it("SHA-256 และขนาดของ APK เป็นค่าที่ใช้ตรวจไฟล์ได้จริง", () => {

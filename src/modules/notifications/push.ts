@@ -1,4 +1,5 @@
 import { createSign } from "node:crypto";
+import { isOutdated } from "@/modules/mobile/android-version";
 import type { NotificationPayload } from "./types";
 
 /**
@@ -120,10 +121,32 @@ const ORDER_PUSH_TYPES: ReadonlySet<NotificationPayload["type"]> = new Set([
   "new_delivery_order",
 ]);
 
+/**
+ * แอป Android ตั้งแต่รุ่นนี้มี OrderAlertMessagingService: รับออเดอร์ใหม่แบบ data-only แล้วสร้าง
+ * แจ้งเตือนเสียงดังวน (FLAG_INSISTENT) จนกว่าจะแตะ/เปิดแอป — แจ้งเตือนที่ระบบแสดงเองดังได้รอบเดียว
+ * รุ่นเก่าต้องได้ notification block ตามเดิม ไม่งั้นข้อความ data-only จะหายเงียบตอนแอปอยู่เบื้องหลัง
+ */
+export const ANDROID_INSISTENT_ORDER_ALERT_MIN_VERSION = "1.0.3";
+export const INSISTENT_ORDER_ALERT = "order_insistent";
+
+export interface PushDeviceTarget {
+  readonly token: string;
+  readonly platform: "android" | "ios";
+  readonly appVersion: string | null;
+}
+
+export function supportsInsistentOrderAlert(device: PushDeviceTarget): boolean {
+  return (
+    device.platform === "android" &&
+    Boolean(device.appVersion) &&
+    !isOutdated(device.appVersion!, ANDROID_INSISTENT_ORDER_ALERT_MIN_VERSION)
+  );
+}
+
 export interface FcmMessageBody {
   message: {
     token: string;
-    notification: { title: string; body: string };
+    notification?: { title: string; body: string };
     android: {
       priority: "high" | "normal";
       notification?: { channel_id: string; sound: string; default_vibrate_timings: boolean };
@@ -133,14 +156,35 @@ export interface FcmMessageBody {
   };
 }
 
-export function buildFcmMessage(deviceToken: string, input: NotificationPayload): FcmMessageBody {
+export function buildFcmMessage(
+  device: string | PushDeviceTarget,
+  input: NotificationPayload,
+): FcmMessageBody {
+  const target: PushDeviceTarget =
+    typeof device === "string" ? { token: device, platform: "android", appVersion: null } : device;
+  const title = input.title?.trim() || "StoreOS";
+  const body = input.message.trim();
+  const data: Record<string, string> = {
+    type: input.type,
+    ...(input.storeId ? { storeId: input.storeId } : {}),
+  };
+
+  if (ORDER_PUSH_TYPES.has(input.type) && supportsInsistentOrderAlert(target)) {
+    // data-only: ห้ามมี notification block ไม่งั้น Android แสดงเองและไม่ส่งเข้าแอป
+    return {
+      message: {
+        token: target.token,
+        android: { priority: "high" },
+        apns: { payload: { aps: { sound: "default" } } },
+        data: { ...data, alert: INSISTENT_ORDER_ALERT, title, body },
+      },
+    };
+  }
+
   return {
     message: {
-      token: deviceToken,
-      notification: {
-        title: input.title?.trim() || "StoreOS",
-        body: input.message.trim(),
-      },
+      token: target.token,
+      notification: { title, body },
       android: ORDER_PUSH_TYPES.has(input.type)
         ? {
             priority: "high",
@@ -152,10 +196,7 @@ export function buildFcmMessage(deviceToken: string, input: NotificationPayload)
           }
         : { priority: "high" },
       apns: { payload: { aps: { sound: "default" } } },
-      data: {
-        type: input.type,
-        ...(input.storeId ? { storeId: input.storeId } : {}),
-      },
+      data,
     },
   };
 }
@@ -165,7 +206,7 @@ export type PushSendOutcome = "sent" | "unregistered" | "failed";
 /** ส่งหา 1 device; "unregistered" = token ตายแล้ว ผู้เรียกควรลบทิ้ง */
 export async function sendFcmToDevice(
   account: FirebaseServiceAccount,
-  deviceToken: string,
+  device: string | PushDeviceTarget,
   input: NotificationPayload,
 ): Promise<PushSendOutcome> {
   const accessToken = await getAccessToken(account);
@@ -181,7 +222,7 @@ export async function sendFcmToDevice(
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildFcmMessage(deviceToken, input)),
+        body: JSON.stringify(buildFcmMessage(device, input)),
       },
     );
   } catch {

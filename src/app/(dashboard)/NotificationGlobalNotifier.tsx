@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { managedRealtimeSubscription } from "@/shared/realtime/realtime-client";
-import { alertPatternForTypes, ensureAudioUnlocked, playAlertOrSpeak } from "@/shared/notifications/alert-sound";
+import {
+  alertPatternForTypes,
+  ensureAudioUnlocked,
+  ORDER_ALERT_TYPES,
+  playAlertOrSpeak,
+  useRepeatingAlert,
+} from "@/shared/notifications/alert-sound";
 import { primeVoices } from "@/shared/notifications/announce";
 import { toastAnnouncement } from "@/shared/notifications/announcement-text";
 import { metaFor } from "./notifications/NotificationCenter";
@@ -67,6 +73,8 @@ export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Pr
     if (fresh.length === 0) return;
     for (const item of fresh) seenIds.current.add(item.id);
     setToasts((prev) => [...prev, ...fresh.map((item) => ({ ...item, shownAt: Date.now() }))].slice(-MAX_TOASTS));
+    // ออเดอร์ใหม่ดังซ้ำผ่าน useRepeatingAlert ด้านล่างจนกว่าจะปิด toast — ไม่ต้องเล่นซ้อนตรงนี้
+    if (fresh.some((item) => ORDER_ALERT_TYPES.has(item.type))) return;
     playAlertOrSpeak(
       alertPatternForTypes(fresh.map((item) => item.type)),
       toastAnnouncement(metaFor(fresh[0].type).label, fresh.length),
@@ -124,12 +132,22 @@ export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Pr
     };
   }, [pushToasts]);
 
-  // Auto-dismiss toast ที่ค้างเกินอายุ
+  // ออเดอร์ใหม่ที่เด้งทาง polling (realtime ล่ม) ต้องดังวนเหมือน dialog จนกว่าจะมีคนกดปิด/กดดู
+  // ไม่งั้นดังครั้งเดียวแล้วเงียบ พนักงานพลาดออเดอร์ได้
+  const orderToast = toasts.find((toast) => ORDER_ALERT_TYPES.has(toast.type));
+  useRepeatingAlert(Boolean(orderToast), "order", {
+    announcement: orderToast ? toastAnnouncement(metaFor(orderToast.type).label, 1) : null,
+    voiceEnabledByStore: voiceEnabled,
+  });
+
+  // Auto-dismiss toast ที่ค้างเกินอายุ (ยกเว้นออเดอร์ใหม่ — ค้างจนกว่าจะปิดเอง)
   useEffect(() => {
     if (toasts.length === 0) return;
     const id = window.setInterval(() => {
       const now = Date.now();
-      setToasts((prev) => prev.filter((toast) => now - toast.shownAt < TOAST_TTL_MS));
+      setToasts((prev) =>
+        prev.filter((toast) => ORDER_ALERT_TYPES.has(toast.type) || now - toast.shownAt < TOAST_TTL_MS),
+      );
     }, 1_000);
     return () => window.clearInterval(id);
   }, [toasts.length]);

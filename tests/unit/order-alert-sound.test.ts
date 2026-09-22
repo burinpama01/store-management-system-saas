@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   ORDER_ALERT_ANDROID_CHANNEL,
   ORDER_ALERT_ANDROID_SOUND,
+  ANDROID_INSISTENT_ORDER_ALERT_MIN_VERSION,
+  INSISTENT_ORDER_ALERT,
   buildFcmMessage,
 } from "@/modules/notifications/push";
+import { isOutdated } from "@/modules/mobile/android-version";
 import { NOTIFICATION_TYPES } from "@/modules/notifications/types";
 import { NOTIFICATION_TEMPLATE_VARS, renderNotificationTemplate } from "@/modules/notifications/templates";
 import {
@@ -44,8 +47,22 @@ describe("order alert push (Android channel + sound)", () => {
     expect(activity).toContain(`R.raw.${ORDER_ALERT_ANDROID_SOUND}`);
     expect(activity).toContain("IMPORTANCE_HIGH");
     const gradle = read("mobile/android/app/build.gradle");
-    expect(gradle).toContain("versionCode 3");
-    expect(gradle).toContain('versionName "1.0.2"');
+    // ช่องเสียงออเดอร์เริ่มมีใน 1.0.2 (versionCode 3) — รุ่นถัดไปต้องไม่ต่ำกว่านี้
+    expect(Number(gradle.match(/versionCode (\d+)/)?.[1])).toBeGreaterThanOrEqual(3);
+  });
+
+  it("the Android app rings data-only order pushes until opened (1.0.3+)", () => {
+    const service = read("mobile/android/app/src/main/java/com/storeos/app/OrderAlertMessagingService.java");
+    expect(service).toContain(`INSISTENT_ALERT = "${INSISTENT_ORDER_ALERT}"`);
+    expect(service).toContain("Notification.FLAG_INSISTENT");
+    expect(service).toContain("super.onMessageReceived(remoteMessage)");
+    // service ของ plugin ต้องถูกถอด ไม่งั้น Firebase อาจส่งข้อความไปหาตัวนั้นแทน
+    const manifest = read("mobile/android/app/src/main/AndroidManifest.xml");
+    expect(manifest).toMatch(/firebase\.messaging\.MessagingService"\s+tools:node="remove"/);
+    expect(manifest).toContain('android:name=".OrderAlertMessagingService"');
+    const gradle = read("mobile/android/app/build.gradle");
+    const versionName = gradle.match(/versionName "([^"]+)"/)?.[1] ?? "0";
+    expect(isOutdated(versionName, ANDROID_INSISTENT_ORDER_ALERT_MIN_VERSION)).toBe(false);
   });
 });
 
