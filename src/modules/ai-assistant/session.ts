@@ -69,13 +69,19 @@ export interface AssistantSessionStore {
     context: AssistantSessionContext,
     activeCartId: unknown,
     cartVersion: unknown,
-  ) => CartBinding | null;
+  ) => CartBinding | null | Promise<CartBinding | null>;
+  /** เพดานในหน่วยความจำของ store นี้ — store ที่เก็บใน DB ไม่มีตัวเลขนี้ให้รายงาน */
+  readonly size?: () => number;
+}
+
+/** store ในหน่วยความจำรู้จำนวน session ของตัวเองเสมอ — เทสใช้ตัวเลขนี้ตรวจเพดาน/การ evict */
+export interface MemoryAssistantSessionStore extends AssistantSessionStore {
   readonly size: () => number;
 }
 
 export function createAssistantSessionStore(
   options: AssistantSessionStoreOptions = {},
-): AssistantSessionStore {
+): MemoryAssistantSessionStore {
   const ttlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
   const maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
   const allowedTools = Object.freeze([...(options.allowedTools ?? [])]);

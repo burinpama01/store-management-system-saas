@@ -25,7 +25,7 @@ import { ToolRegistry } from "@/modules/ai-assistant/foundation";
 import { createServerAssistantDispatcher } from "@/modules/ai-assistant/server";
 import { DurableIdempotencyStore } from "@/modules/ai-assistant/durable-idempotency";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
-import { createAssistantSessionStore } from "@/modules/ai-assistant/session";
+import { DurableAssistantSessionStore } from "@/modules/ai-assistant/durable-session";
 import { createFixedWindowRateLimiter } from "@/modules/ai-assistant/rate-limit";
 import { createTextInterpreter, runTextCommand, type TextFailureReason } from "@/modules/ai-assistant/orchestrator";
 import { interpretTextIntent } from "@/modules/ai-assistant/text-intent";
@@ -50,7 +50,6 @@ function readRateLimitPerMinute(): number {
 // ต้องมีชีวิตยาวกว่า 1 request เพื่อให้ replay ข้าม request ยังเดดูพลิเคตได้
 const registry = new ToolRegistry(readAssistantConfig(process.env).environment);
 registerPosTools(registry, createServerPosToolDeps());
-const sessions = createAssistantSessionStore({ allowedTools: [...MVP_TOOL_NAMES] });
 const rateLimiter = createFixedWindowRateLimiter({
   limitPerWindow: readRateLimitPerMinute(),
   windowMs: 60_000,
@@ -67,8 +66,12 @@ type TextCommandDispatcher = ReturnType<typeof createServerAssistantDispatcher>;
 let dispatchPromise: Promise<TextCommandDispatcher> | null = null;
 function getDispatch(): Promise<TextCommandDispatcher> {
   dispatchPromise ??= createSupabaseServiceClient()
-    .then((client) =>
-      createServerAssistantDispatcher({
+    .then((client) => {
+      // P0 — session/terminal registry แบบ durable: อยู่รอดข้าม instance และแยกต่อเครื่อง
+      // (ของเดิมอยู่ในหน่วยความจำ process เดียว + หนึ่ง user หนึ่ง session ⇒ เปิดสองแท็บ
+      // แท็บที่สองผูกตะกร้าไม่ได้ และ replay ข้าม instance โดน IDEMPOTENCY_CONFLICT)
+      const sessions = new DurableAssistantSessionStore(client, { allowedTools: [...MVP_TOOL_NAMES] });
+      return createServerAssistantDispatcher({
         registry,
         resolveSession: (identity) => sessions.resolve(identity),
         resolveCartBinding: async (context, args) => {
@@ -77,8 +80,8 @@ function getDispatch(): Promise<TextCommandDispatcher> {
           return sessions.bindCart(context, parsed.activeCartId, parsed.cartVersion);
         },
         idempotencyStore: new DurableIdempotencyStore(client),
-      }),
-    )
+      });
+    })
     // สร้างไม่สำเร็จ = คืนโอกาสให้ request ถัดไปลองใหม่ (ไม่ memoize rejection ตลอดอายุ process)
     .catch((error: unknown) => {
       dispatchPromise = null;
