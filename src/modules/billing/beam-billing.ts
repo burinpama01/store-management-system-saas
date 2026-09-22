@@ -7,6 +7,7 @@ import { getPlatformBeamSettings } from "./beam-settings";
 import { getPlatformSettings } from "./platform-settings";
 import { getBusinessUpgradeQuote, getUpgradeQuote } from "./pricing-repository";
 import { describeDiscountRejection } from "./discount-code";
+import { getPayableEnterpriseOffer } from "./enterprise-offer-repository";
 import { resolveSubscriptionQr } from "./promptpay-provider";
 import { evaluateBeamBillingCharge, evaluateBillingSlip } from "./beam-billing-policy";
 import { isSlip2goConfigured, verifyBillingSlipByImage } from "./slip2go";
@@ -35,11 +36,17 @@ export async function createPlatformBillingOrder(input: SubmitPaymentInput) {
   if (pending) return pending; // Existing payment takes precedence over a new readiness check.
   const config = await getPlatformBeamSettings();
   if (config.billing_provider !== "beam") throw new Error("ยังไม่ได้เปิด Beam สำหรับแพ็กเกจ");
-  const quote = input.plan === "business"
-    ? await getBusinessUpgradeQuote(input.organizationId, input.businessConfig!, input.duration, input.discountCode)
-    : await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
-  if (!quote || quote.discountRejection) throw new Error(quote?.discountRejection ? describeDiscountRejection(quote.discountRejection) : "ไม่พบราคาแพ็กเกจ");
-  if (!Number.isFinite(quote.finalAmount) || quote.finalAmount <= 0) throw new Error("ยอดชำระต้องมากกว่า 0 บาท กรุณาติดต่อผู้ดูแล");
+  // Enterprise ใช้ยอดและอายุจากข้อเสนอรายบัญชีที่แอดมินตั้งไว้ ไม่ใช่ราคากลาง
+  const offer = input.plan === "enterprise" ? await getPayableEnterpriseOffer(input.organizationId) : null;
+  if (input.plan === "enterprise" && !offer) throw new Error("ไม่มีข้อเสนอต่ออายุ Enterprise ที่เปิดอยู่สำหรับบัญชีนี้");
+  const quote = offer
+    ? null
+    : input.plan === "business"
+      ? await getBusinessUpgradeQuote(input.organizationId, input.businessConfig!, input.duration, input.discountCode)
+      : await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
+  if (!offer && (!quote || quote.discountRejection)) throw new Error(quote?.discountRejection ? describeDiscountRejection(quote.discountRejection) : "ไม่พบราคาแพ็กเกจ");
+  const amount = offer ? offer.amount : quote!.finalAmount;
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("ยอดชำระต้องมากกว่า 0 บาท กรุณาติดต่อผู้ดูแล");
   const readiness = config.creds?.webhookHmacKey
     ? await checkBeamAvailability({ environment: config.beam_environment, creds: config.creds })
     : { ok: false as const };
@@ -49,9 +56,11 @@ export async function createPlatformBillingOrder(input: SubmitPaymentInput) {
   const now = new Date();
   const order: PlatformBillingOrder = {
     id: randomUUID(), organization_id: input.organizationId, submitted_by: input.submittedByUserId,
-    plan: input.plan, duration: input.duration, amount: quote.finalAmount, discount_code_id: quote.discountCode?.id ?? null,
-    discount_amount: quote.discount, business_seats: input.businessConfig?.seats ?? null,
+    plan: input.plan, duration: offer ? "custom" : input.duration, amount, discount_code_id: quote?.discountCode?.id ?? null,
+    discount_amount: quote?.discount ?? 0, business_seats: input.businessConfig?.seats ?? null,
     business_stores: input.businessConfig?.stores ?? null, business_features: input.businessConfig?.features ?? [],
+    term_days: offer?.term.kind === "days" ? offer.term.days : null,
+    term_ends_at: offer?.term.kind === "until" ? offer.term.endsAt : null,
     method, environment: config.beam_environment,
     credentials_encrypted: config.beam_credentials_encrypted, receiver_account: config.beam_fallback_account,
     qr_payload: null, qr_image: null, charge_id: null, creation_attempted: false, status: method === "beam" ? "creating" : "pending",

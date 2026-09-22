@@ -15,6 +15,8 @@ import {
 } from "./slip2go";
 import type { PaidTier } from "./pricing";
 import { getPendingPlatformBillingOrder } from "./beam-billing";
+import { computeOfferExpiry } from "./enterprise-offer";
+import { getPayableEnterpriseOffer, setEnterpriseOfferActive } from "./enterprise-offer-repository";
 
 export interface PaymentEvaluation {
   ok: boolean;
@@ -44,7 +46,8 @@ export function evaluatePaymentVerification(
 
 export interface SubmitPaymentInput {
   organizationId: string;
-  plan: PaidTier | "business";
+  /** "enterprise" ซื้อได้เฉพาะเมื่อองค์กรมีข้อเสนอต่ออายุที่แอดมินตั้งไว้ */
+  plan: PaidTier | "business" | "enterprise";
   duration: BillingDuration;
   submittedByUserId: string;
   /** Required when plan = "business" (already normalized by the caller). */
@@ -83,21 +86,30 @@ export async function submitPromptPayPayment(
 ): Promise<SubmitPaymentResult> {
   const supabase = await createSupabaseServiceClient();
   const isBusiness = input.plan === "business";
+  const isEnterprise = input.plan === "enterprise";
   if (isBusiness && !input.businessConfig) {
     return { status: "rejected", reason: "กรุณาเลือกที่นั่ง/สาขา/ฟีเจอร์ของแพ็กเกจ Business", newExpiry: null };
   }
-  const quote = isBusiness
+  // ยอดของ Enterprise มาจากข้อเสนอรายบัญชีที่แอดมินตั้งไว้ ไม่ใช่ราคากลาง
+  // และไม่รับโค้ดส่วนลด เพราะเป็นราคาที่ตกลงกันเฉพาะรายอยู่แล้ว
+  const offer = isEnterprise ? await getPayableEnterpriseOffer(input.organizationId) : null;
+  if (isEnterprise && !offer) {
+    return { status: "rejected", reason: "ไม่มีข้อเสนอต่ออายุ Enterprise ที่เปิดอยู่สำหรับบัญชีนี้", newExpiry: null };
+  }
+  const quote = isEnterprise
+    ? null
+    : isBusiness
     ? await getBusinessUpgradeQuote(input.organizationId, input.businessConfig!, input.duration, input.discountCode)
-    : await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
-  if (!quote) {
+      : await getUpgradeQuote(input.organizationId, input.plan, input.duration, input.discountCode);
+  if (!quote && !offer) {
     return { status: "rejected", reason: "แพ็กเกจนี้ชำระผ่าน PromptPay ไม่ได้", newExpiry: null };
   }
   // A supplied code that no longer applies (expired, limit reached, etc.) is
   // rejected before charging so the tenant is not quietly billed the full price.
-  if (quote.discountRejection) {
+  if (quote?.discountRejection) {
     return { status: "rejected", reason: describeDiscountRejection(quote.discountRejection), newExpiry: null };
   }
-  const expected = quote.finalAmount;
+  const expected = offer ? offer.amount : quote!.finalAmount;
 
   const settings = await getPlatformSettings();
   if (settings.billingProvider === "beam" || await getPendingPlatformBillingOrder(input.organizationId)) {
@@ -131,8 +143,8 @@ export async function submitPromptPayPayment(
   const now = new Date();
   const { error: claimErr } = await supabase.from("payment_submissions").insert({
     organization_id: input.organizationId,
-    plan: input.plan,
-    duration: input.duration,
+    plan: input.plan as never,
+    duration: submissionDuration(input) as never,
     amount_expected: expected,
     verified_amount: verification.amount,
     slip_ref: verification.transRef,
@@ -140,8 +152,8 @@ export async function submitPromptPayPayment(
     status: "verified",
     reason: null,
     submitted_by: input.submittedByUserId,
-    discount_code_id: quote.discountCode?.id ?? null,
-    discount_amount: quote.discount,
+    discount_code_id: quote?.discountCode?.id ?? null,
+    discount_amount: quote?.discount ?? 0,
     business_seats: input.businessConfig?.seats ?? null,
     business_stores: input.businessConfig?.stores ?? null,
     business_features: (input.businessConfig?.features ?? []) as never,
@@ -158,13 +170,17 @@ export async function submitPromptPayPayment(
     .select("current_period_end")
     .eq("organization_id", input.organizationId)
     .maybeSingle();
-  const newExpiry = computeNewExpiry(current?.current_period_end ?? null, input.duration, now);
+  const newExpiry = offer
+    ? computeOfferExpiry(offer.term, current?.current_period_end ?? null, now)
+    : computeNewExpiry(current?.current_period_end ?? null, input.duration, now);
 
   const { error: subErr } = await supabase.from("subscriptions").upsert(
     {
       organization_id: input.organizationId,
-      plan: input.plan,
+      plan: input.plan as never,
       status: "active",
+      // สำคัญ: ไม่ตั้งธงนี้ = ระบบอ่านว่าเป็นสัญญา Enterprise ไม่มีวันหมดอายุ (ใช้ฟรีตลอดชีพ)
+      enterprise_limited: isEnterprise,
       current_period_start: now.toISOString(),
       current_period_end: newExpiry,
       cancel_at_period_end: false,
@@ -181,6 +197,11 @@ export async function submitPromptPayPayment(
   );
   if (subErr) {
     return { status: "rejected", reason: "บันทึก subscription ไม่สำเร็จ", newExpiry: null };
+  }
+
+  // ข้อเสนอแบบ "ถึงวันที่" ใช้ได้ครั้งเดียว — จ่ายซ้ำแล้วได้วันเดิมคือเก็บเงินฟรี
+  if (offer?.term.kind === "until") {
+    await setEnterpriseOfferActive(input.organizationId, false);
   }
 
   await supabase.from("audit_logs").insert({
@@ -210,7 +231,7 @@ export async function submitPromptPayPayment(
     message: `ต่ออายุสำเร็จ ${input.plan}/${input.duration} ถึง ${newExpiry}`,
     organizationId: input.organizationId,
     actorUserId: input.submittedByUserId,
-    context: { amount: expected, discount: quote.discount, slipRef: verification.transRef },
+    context: { amount: expected, discount: quote?.discount ?? 0, slipRef: verification.transRef },
   });
 
   return { status: "verified", reason: null, newExpiry };
@@ -265,6 +286,11 @@ export async function claimFreeTrial(
   return { status: "claimed", reason: null, newExpiry: row.new_expiry };
 }
 
+/** enterprise ใช้อายุจากข้อเสนอรายบัญชี จึงเก็บ duration เป็น "custom" */
+function submissionDuration(input: SubmitPaymentInput): string {
+  return input.plan === "enterprise" ? "custom" : input.duration;
+}
+
 async function recordSubmission(
   supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
   input: SubmitPaymentInput,
@@ -275,8 +301,8 @@ async function recordSubmission(
 ) {
   await supabase.from("payment_submissions").insert({
     organization_id: input.organizationId,
-    plan: input.plan,
-    duration: input.duration,
+    plan: input.plan as never,
+    duration: submissionDuration(input) as never,
     amount_expected: expected,
     verified_amount: verification.amount,
     slip_ref: verification.transRef ?? null,

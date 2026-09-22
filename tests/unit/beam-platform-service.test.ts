@@ -34,7 +34,7 @@ vi.mock("@/server/integrations/supabase/server", () => ({ createSupabaseServiceC
 
 import { createPlatformBillingOrder, getPendingPlatformBillingOrder, processPlatformBeamWebhook, refreshPlatformBillingOrder, verifyPlatformBillingSlip } from "@/modules/billing/beam-billing";
 
-const fixture = (): PlatformBillingOrder => ({ id: "11111111-1111-4111-8111-111111111111", organization_id: "org-a", submitted_by: "actor", plan: "starter", duration: "30d", amount: 690, discount_code_id: null, discount_amount: 0, business_seats: null, business_stores: null, business_features: [], method: "beam", environment: "live", credentials_encrypted: "secret-snapshot", receiver_account: "1234567890", qr_payload: null, qr_image: null, charge_id: "ch_1", creation_attempted: false, status: "pending", created_at: "2026-09-21T00:00:00Z", expires_at: "2026-09-21T00:15:00Z", paid_at: null, new_expiry: null });
+const fixture = (): PlatformBillingOrder => ({ id: "11111111-1111-4111-8111-111111111111", organization_id: "org-a", submitted_by: "actor", plan: "starter", duration: "30d", amount: 690, discount_code_id: null, discount_amount: 0, business_seats: null, business_stores: null, business_features: [], term_days: null, term_ends_at: null, method: "beam", environment: "live", credentials_encrypted: "secret-snapshot", receiver_account: "1234567890", qr_payload: null, qr_image: null, charge_id: "ch_1", creation_attempted: false, status: "pending", created_at: "2026-09-21T00:00:00Z", expires_at: "2026-09-21T00:15:00Z", paid_at: null, new_expiry: null });
 const input = { organizationId: "org-a", submittedByUserId: "actor", plan: "starter" as const, duration: "30d" as const };
 beforeEach(() => {
   vi.clearAllMocks(); m.rows = [fixture()];

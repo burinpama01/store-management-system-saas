@@ -81,7 +81,7 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
     </div>}
     {order && <>
       {order.method === "slip" && <p role="status" className="rounded bg-amber-50 p-3 text-amber-800">Beam ไม่พร้อมตอนตรวจระบบก่อนเริ่มรายการ จึงใช้ PromptPay แทน กรุณาแนบสลิปหลังโอน</p>}
-      <p className="font-semibold">{PLAN_LABELS[order.plan]} · {DURATION_LABELS[order.duration]} · {order.amount.toLocaleString()} บาท</p>
+      <p className="font-semibold">{PLAN_LABELS[order.plan]} · {order.duration === "custom" ? "ตามข้อตกลง" : DURATION_LABELS[order.duration]} · {order.amount.toLocaleString()} บาท</p>
       {order.environment === "test" && <p className="rounded bg-amber-50 p-3 text-amber-800">โหมดทดสอบ — ไม่เปิดสิทธิ์แพ็กเกจจริง {order.method === "slip" && "อย่าโอนเงินจริงเข้าบัญชีสำรองในโหมดนี้"}</p>}
       <p role="status" aria-live="polite">{order.status === "paid" ? `ชำระสำเร็จ ใช้งานได้ถึง ${new Date(order.new_expiry!).toLocaleDateString("th-TH")}` : order.status === "test_paid" ? "ทดสอบชำระสำเร็จ ไม่มีการต่ออายุจริง" : order.status === "failed" ? "รายการไม่สำเร็จหรือปิดแล้ว หากโอนแล้วติดต่อผู้ดูแลก่อนจ่ายใหม่" : "รอยืนยันการชำระเงิน"}</p>
       {active && <>

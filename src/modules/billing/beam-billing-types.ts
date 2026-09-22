@@ -2,14 +2,18 @@ export type PlatformBillingOrder = {
   id: string;
   organization_id: string;
   submitted_by: string;
-  plan: "starter" | "standard" | "premium" | "business";
-  duration: "30d" | "1y";
+  plan: "starter" | "standard" | "premium" | "business" | "enterprise";
+  /** "custom" = Enterprise ตามข้อเสนอรายบัญชี อายุอยู่ใน term_days/term_ends_at */
+  duration: "30d" | "1y" | "custom";
   amount: number;
   discount_code_id: string | null;
   discount_amount: number;
   business_seats: number | null;
   business_stores: number | null;
   business_features: string[];
+  /** อายุที่แอดมินกำหนดให้บัญชีนี้ (null ทั้งคู่ = แพ็กเกจปกติ ใช้ duration) */
+  term_days: number | null;
+  term_ends_at: string | null;
   method: "beam" | "slip";
   environment: "test" | "live";
   credentials_encrypted: string | null;

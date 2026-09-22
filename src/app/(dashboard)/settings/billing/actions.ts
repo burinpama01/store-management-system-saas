@@ -12,6 +12,8 @@ import {
 import { describeDiscountRejection } from "@/modules/billing/discount-code";
 import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
 import { getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
+import { getPayableEnterpriseOffer } from "@/modules/billing/enterprise-offer-repository";
+import { describeOffer } from "@/modules/billing/enterprise-offer";
 import {
   claimFreeTrial,
   submitPromptPayPayment,
@@ -19,8 +21,11 @@ import {
   type SubmitPaymentResult,
 } from "@/modules/billing/subscription-service";
 
-function parsePlan(value: unknown): PaidTier | "business" | null {
+function parsePlan(value: unknown): PaidTier | "business" | "enterprise" | null {
   if (value === "business") return "business";
+  // enterprise ผ่านด่านนี้ได้เสมอ แต่ผ่านต่อไม่ได้ถ้าไม่มีข้อเสนอที่เปิดอยู่จริง
+  // (ผู้เรียกทุกทางต้องตรวจกับ DB ซ้ำ — ห้ามเชื่อค่าจาก client)
+  if (value === "enterprise") return "enterprise";
   return typeof value === "string" && isPaidTier(value as never) ? (value as PaidTier) : null;
 }
 function parseDuration(value: unknown): BillingDuration | null {
@@ -67,6 +72,26 @@ export async function getPaymentQrAction(
     const businessConfig = p === "business" ? parseBusinessConfigJson(businessConfigJson) : null;
     if (p === "business" && !businessConfig) {
       return { ...base, error: "กรุณาเลือกที่นั่ง/สาขา/ฟีเจอร์ของแพ็กเกจ Business" };
+    }
+
+    if (p === "enterprise") {
+      const offer = await getPayableEnterpriseOffer(ctx.organizationId);
+      if (!offer) return { ...base, error: "ไม่มีข้อเสนอต่ออายุ Enterprise ที่เปิดอยู่สำหรับบัญชีนี้" };
+      const settings = await getPlatformSettings();
+      if (settings.billingProvider === "beam" || await getPendingPlatformBillingOrder(ctx.organizationId)) {
+        return { ...base, error: "กรุณาใช้รายการชำระแพ็กเกจ Beam หรือช่องทางสำรองที่ผูกกับรายการ" };
+      }
+      return {
+        ok: true,
+        amount: offer.amount,
+        basePrice: offer.amount,
+        credit: 0,
+        promotionLabel: describeOffer(offer, null),
+        discount: 0,
+        discountLabel: null,
+        qr: resolveSubscriptionQr(settings, offer.amount),
+        error: null,
+      };
     }
 
     const quote =
@@ -122,7 +147,8 @@ export async function submitPaymentAction(input: {
       return { ok: false, status: "rejected", reason: null, newExpiry: null, error: "ไม่มีสิทธิ์จัดการการชำระเงิน" };
     }
     const p = parsePlan(input.plan);
-    const d = parseDuration(input.duration);
+    // enterprise ใช้อายุจากข้อเสนอรายบัญชี ไม่ใช่ระยะเวลามาตรฐาน
+    const d = p === "enterprise" ? ("30d" as const) : parseDuration(input.duration);
     if (!p || !d) {
       return { ok: false, status: "rejected", reason: null, newExpiry: null, error: "แพ็กเกจหรือระยะเวลาไม่ถูกต้อง" };
     }
