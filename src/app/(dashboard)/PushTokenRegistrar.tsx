@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { registerPushTokenAction } from "./push-actions";
+import { registerPushTokenAction, reportPushRegistrationIssueAction } from "./push-actions";
 
 /**
  * ลงทะเบียน FCM token เมื่อเปิดผ่านแอปมือถือ (Capacitor injects window.Capacitor
@@ -33,7 +33,10 @@ export function PushTokenRegistrar() {
     const capacitor = window.Capacitor;
     if (!capacitor?.isNativePlatform?.()) return;
     const messaging = capacitor.Plugins?.FirebaseMessaging;
-    if (!messaging) return;
+    if (!messaging) {
+      void reportPushRegistrationIssueAction({ stage: "plugin_missing" }).catch(() => {});
+      return;
+    }
     const platform = capacitor.getPlatform?.();
     if (platform !== "android" && platform !== "ios") return;
 
@@ -42,9 +45,17 @@ export function PushTokenRegistrar() {
     (async () => {
       try {
         const permission = await messaging.requestPermissions();
-        if (cancelled || permission.receive !== "granted") return;
+        if (cancelled) return;
+        if (permission.receive !== "granted") {
+          void reportPushRegistrationIssueAction({ stage: "permission_denied", detail: permission.receive }).catch(() => {});
+          return;
+        }
         const { token } = await messaging.getToken();
-        if (cancelled || !token) return;
+        if (cancelled) return;
+        if (!token) {
+          void reportPushRegistrationIssueAction({ stage: "no_token" }).catch(() => {});
+          return;
+        }
 
         // กันยิงซ้ำทุกครั้งที่เปิดหน้า: ข้ามถ้า token เดิม รุ่นแอปเดิม และเพิ่งลงทะเบียนไป
         // (อัปเดตแอปแล้วต้องลงทะเบียนใหม่ทันที — เซิร์ฟเวอร์เลือกรูปแบบ push ตามรุ่นแอป)
@@ -62,8 +73,12 @@ export function PushTokenRegistrar() {
         if (result.ok) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, at: Date.now(), ua }));
         }
-      } catch {
-        // permission ถูกปฏิเสธหรือ plugin ล้มเหลว — เงียบไว้ ไม่กระทบการใช้งาน
+      } catch (error) {
+        // plugin ล้มเหลว — ไม่กระทบการใช้งาน แต่ต้องรายงานให้ไล่ปัญหาได้
+        void reportPushRegistrationIssueAction({
+          stage: "client_error",
+          detail: error instanceof Error ? error.message : String(error),
+        }).catch(() => {});
       }
     })();
 

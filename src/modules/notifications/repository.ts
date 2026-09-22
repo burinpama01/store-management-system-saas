@@ -198,7 +198,10 @@ export async function upsertDevicePushToken(input: {
   token: string;
   appVersion: string | null;
 }) {
-  const supabase = await createSupabaseServerClient();
+  // service client: ผู้เรียก (registerPushTokenAction) ยืนยันตัวตนแล้ว — ถ้าใช้ RLS แถว token
+  // ที่เจ้าของเดิมเป็นคนอื่น (เครื่องร้านเดียวกันสลับบัญชี) จะ update ไม่ได้ token จึงค้างอยู่กับ
+  // บัญชีเก่า/รุ่นแอปเก่าตลอด; token = เครื่องนี้ ต้องผูกกับคนที่ใช้เครื่องอยู่ตอนนี้
+  const supabase = await createSupabaseServiceClient();
   const { error } = await supabase.from("device_push_tokens").upsert(
     {
       user_id: input.userId,
