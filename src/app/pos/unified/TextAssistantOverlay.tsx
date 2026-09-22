@@ -240,7 +240,7 @@ export function TextAssistantOverlay({
   });
   const getProductAliases = useCallback(() => liveProps.current.productAliases, []);
   const notifyFocusSell = useCallback(() => liveProps.current.onFocusSell?.(), []);
-  const [state, setState] = useState<TextAssistantState>({ entries: [], busy: false, undo: null, cartVersion: 0 });
+  const [state, setState] = useState<TextAssistantState>({ entries: [], busy: false, undo: null, cartVersion: 0, proposal: null });
   const [liveState, setLiveState] = useState<LiveAssistantState>({ phase: "idle", status: null, entries: [], toolCallsUsed: 0, toolCallsCap: null });
   useEffect(() => {
     if (!coreRef.current) {
@@ -456,6 +456,15 @@ export function TextAssistantOverlay({
             )}
           </div>
 
+          {state.proposal ? (
+            <ProposalCard
+              proposal={state.proposal}
+              busy={state.busy}
+              onConfirm={(answers) => void coreRef.current?.confirmProposal(answers)}
+              onCancel={() => coreRef.current?.dismissProposal()}
+            />
+          ) : null}
+
           {state.busy ? (
             <p role="status" className="text-xs text-gray-500">
               กำลังประมวลผล…
@@ -588,5 +597,131 @@ export function TextAssistantOverlay({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * การ์ดยืนยัน — จอเป็นด่านสุดท้ายก่อนข้อมูลจริงของร้านถูกแก้
+ *
+ * เสียงใช้ "สั่ง" ไม่ใช่ "ยืนยัน": ASR ฟังตัวเลขผิดได้ในร้านเสียงดัง และ dialog เลือก
+ * สถานี/หมวดหลายรายการทำด้วยเสียงล้วนไม่ไหวอยู่แล้ว — การให้ตาเห็นก่อนกดคือด่านกัน
+ * ความผิดพลาดที่ถูกที่สุดที่เรามี
+ *
+ * ปุ่มยืนยันถูกปิดจนกว่าสิ่งที่ขาดจะถูกตอบครบ (แบบ create/blocked ตอบไม่ได้เลย)
+ * ซึ่งสะท้อนกติกาเดียวกับฝั่ง server ไม่ใช่ตรวจซ้ำแบบหลวม ๆ
+ */
+function ProposalCard({
+  proposal,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  proposal: NonNullable<TextAssistantState["proposal"]>;
+  busy: boolean;
+  onConfirm: (answers: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const chooses = proposal.prerequisites.filter((prerequisite) => prerequisite.kind === "choose");
+  const blockers = proposal.prerequisites.filter((prerequisite) => prerequisite.kind !== "choose");
+  const answeredAll = chooses.every((prerequisite) =>
+    prerequisite.subjects.every((subject) => {
+      const picked = answers[subject.id];
+      return picked !== undefined && prerequisite.options.some((option) => option.id === picked);
+    }),
+  );
+  const canConfirm = !busy && blockers.length === 0 && answeredAll;
+
+  return (
+    <section aria-label="ยืนยันก่อนลงมือ" className="rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm">
+      <p className="font-semibold text-gray-900">{proposal.summary}</p>
+
+      <dl className="mt-2 space-y-0.5">
+        {proposal.changes.map((change) => (
+          <div key={change.label} className="flex gap-2">
+            <dt className="shrink-0 text-gray-500">{change.label}</dt>
+            <dd className="text-gray-900">
+              {change.before === null ? change.after : `${change.before} → ${change.after}`}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {proposal.affectedCount > 1 ? (
+        <p className="mt-2 font-medium text-gray-700">กระทบทั้งหมด {proposal.affectedCount} รายการ</p>
+      ) : null}
+
+      {proposal.warnings.map((warning) => (
+        <p key={warning} className="mt-2 text-amber-800">⚠ {warning}</p>
+      ))}
+
+      {blockers.map((prerequisite) => (
+        <p key={prerequisite.need} className="mt-2 text-red-700">
+          {prerequisite.kind === "create"
+            ? `ต้องสร้าง${prerequisite.need}ก่อน — ${prerequisite.reason}`
+            : `แพ็กเกจยังไม่รองรับ${prerequisite.need} — ติดต่อผู้ดูแลระบบ`}
+        </p>
+      ))}
+
+      {chooses.map((prerequisite) => (
+        <div key={prerequisite.need} className="mt-3">
+          <p className="text-gray-700">เลือก{prerequisite.need}ให้ {prerequisite.subjects.length} รายการ</p>
+          {prerequisite.subjects.length > 1 ? (
+            <label className="mt-1 flex items-center gap-2">
+              <span className="shrink-0 text-xs text-gray-500">ใช้ค่าเดียวกันทั้งหมด</span>
+              <select
+                className="min-h-11 flex-1 rounded-lg border border-gray-300 px-2 text-sm"
+                value=""
+                onChange={(event) => {
+                  const picked = event.target.value;
+                  if (!picked) return;
+                  setAnswers((previous) => ({
+                    ...previous,
+                    ...Object.fromEntries(prerequisite.subjects.map((subject) => [subject.id, picked])),
+                  }));
+                }}
+              >
+                <option value="">— เลือก —</option>
+                {prerequisite.options.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+            {prerequisite.subjects.map((subject) => (
+              <label key={subject.id} className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-gray-800">{subject.label}</span>
+                <select
+                  aria-label={`${prerequisite.need}ของ ${subject.label}`}
+                  className="min-h-11 w-40 rounded-lg border border-gray-300 px-2 text-sm"
+                  value={answers[subject.id] ?? ""}
+                  onChange={(event) => setAnswers((previous) => ({ ...previous, [subject.id]: event.target.value }))}
+                >
+                  <option value="">— เลือก —</option>
+                  {prerequisite.options.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={!canConfirm}
+          onClick={() => onConfirm(answers)}
+          className="min-h-11 rounded-lg bg-orange-600 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          ยืนยัน
+        </button>
+        <button type="button" onClick={onCancel} className="min-h-11 rounded-lg px-3 text-sm text-gray-700">
+          ยกเลิก
+        </button>
+      </div>
+    </section>
   );
 }
