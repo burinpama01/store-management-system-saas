@@ -9,6 +9,7 @@
 //   - permission denied / offline / abort / timeout ต้องกลับมาสถานะที่กู้คืนได้เสมอ
 
 import type { VoiceErrorCode, VoiceRecognitionState } from "./types";
+import { createNativeSpeechAdapter, getNativeSpeechPlugin } from "./native-speech-adapter";
 
 export interface VoiceSpeechHandlers {
   readonly onState?: (state: VoiceRecognitionState) => void;
@@ -129,6 +130,17 @@ export function createBrowserSpeechAdapter(
 ): VoiceSpeechAdapter {
   const locale = options.locale ?? VOICE_DEFAULT_LOCALE;
   const timeoutMs = options.timeoutMs ?? VOICE_DEFAULT_TIMEOUT_MS;
+
+  // แอป Android: WebView ไม่มี Web Speech API → ใช้ตัวแปลงเสียงของเครื่องแทน (plugin ใน 1.0.5+)
+  // ใช้เฉพาะเมื่อไม่ได้ฉีด window มา (เทสต์ฉีดเสมอ) และเบราว์เซอร์ไม่มี Web Speech เอง
+  if (options.window === undefined) {
+    const globalWindow = globalThis as unknown as SpeechRecognitionWindowLike | undefined;
+    const nativePlugin = getNativeSpeechPlugin(globalThis);
+    if (nativePlugin && !resolveConstructor(globalWindow)) {
+      return createNativeSpeechAdapter(nativePlugin, { locale, timeoutMs });
+    }
+  }
+
   const getWindow = (): SpeechRecognitionWindowLike | null =>
     options.window !== undefined
       ? options.window
