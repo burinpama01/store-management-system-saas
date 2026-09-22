@@ -5,6 +5,11 @@ import type { PermissionKey } from "@/modules/tenants/types";
 import { getDashboardData } from "@/modules/reports/repository";
 import type { PaymentMethodSummary } from "@/modules/reports/types";
 import { getCurrentCashDrawer } from "@/modules/cashflow/repository";
+import { countPaidOrders, getReadinessSnapshot } from "@/modules/onboarding/repository";
+import { getStoreReadiness } from "@/modules/onboarding/readiness";
+import { getStepCopy } from "@/modules/onboarding/step-copy";
+import { getStore } from "@/modules/stores/repository";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +49,10 @@ export default async function DashboardPage() {
     getCurrentCashDrawer(ctx.storeId),
   ]);
 
+  // การ์ดเตรียมร้าน: ประตูราคาถูกก่อน — ร้านที่ปิดบิลจริงแล้วไม่ต้องโหลด snapshot เต็ม
+  // และแสดงเฉพาะคนที่แก้ไขการตั้งค่าร้านได้ เพื่อไม่ให้พนักงานเห็นงานที่ทำไม่ได้
+  const setupPrompt = resolved.can("settings.manage_store") ? await loadSetupPrompt(ctx.storeId, ctx.organizationId) : null;
+
   const { todaySales, pendingOrderCount, paymentMethodsToday, topProductsToday } = dashData;
   const cashSalesToday = sumPaymentMethods(paymentMethodsToday, "cash");
   const transferSalesToday = sumPaymentMethods(paymentMethodsToday, TRANSFER_PAYMENT_METHODS);
@@ -60,6 +69,24 @@ export default async function DashboardPage() {
           <span className="badge">กะเช้า 08:00</span>
         </div>
       </div>
+
+      {setupPrompt ? (
+        <Link
+          href="/onboarding"
+          className="flex items-center gap-4 rounded-[var(--radius-lg)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-4 transition-opacity hover:opacity-90"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--tenant-primary)] text-sm font-extrabold text-white tabular-nums">
+            {setupPrompt.completed}/{setupPrompt.total}
+          </span>
+          <span className="min-w-0">
+            <span className="block font-bold text-[var(--ink)]">
+              เตรียมร้านให้พร้อมขาย — ขั้นต่อไป: {setupPrompt.title}
+            </span>
+            <span className="block text-sm text-[var(--ink-2)]">{setupPrompt.desc}</span>
+          </span>
+          <span className="badge badge-brand ml-auto hidden shrink-0 sm:inline-flex">ทำต่อ</span>
+        </Link>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <KpiCard
@@ -209,6 +236,27 @@ function KpiCard({
       </div>
     </div>
   );
+}
+
+/**
+ * สถานะความพร้อมเปิดขายแบบย่อสำหรับการ์ดบนแดชบอร์ด — คืน null เมื่อไม่ต้องรบกวน
+ * (ขายจริงแล้ว, ครบทุกขั้น หรืออ่านสถานะไม่ได้)
+ */
+async function loadSetupPrompt(storeId: string, organizationId: string) {
+  if ((await countPaidOrders(storeId, organizationId)) > 0) return null;
+
+  const [snapshotRes, storeRes] = await Promise.all([
+    getReadinessSnapshot(storeId, organizationId),
+    getStore(storeId),
+  ]);
+  if (!snapshotRes.data) return null;
+
+  const profile = storeRes.data?.setupProfile ?? null;
+  const readiness = getStoreReadiness(snapshotRes.data, profile ?? { usesTables: true, needsPrinting: true });
+  if (!readiness.nextStep) return null;
+
+  const copy = getStepCopy(readiness.nextStep, profile?.businessMode ?? null);
+  return { completed: readiness.completed, total: readiness.steps.length, title: copy.title, desc: copy.desc };
 }
 
 function StatusRow({ label, value, color }: { label: string; value: string; color: string }) {

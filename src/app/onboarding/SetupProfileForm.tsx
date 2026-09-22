@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { recommendedAnswers } from "@/modules/onboarding/step-copy";
+import type { BusinessMode } from "@/modules/onboarding/setup-profile";
 import { saveSetupProfileAction } from "./actions";
-
-type BusinessMode = "retail" | "restaurant" | "service";
 
 const MODES: Array<{ value: BusinessMode; label: string; desc: string }> = [
   { value: "restaurant", label: "ร้านอาหาร/เครื่องดื่ม", desc: "มีโต๊ะ เสิร์ฟหน้าร้าน" },
@@ -26,6 +26,17 @@ export function SetupProfileForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // เลือกประเภทร้าน = เติมคำตอบแนะนำของอีก 2 ข้อให้ทันที (ผู้ใช้กดเปลี่ยนเองต่อได้)
+  // ทำเฉพาะตอนเปลี่ยนประเภทจริง ๆ เพื่อไม่ให้ทับคำตอบที่ร้านตั้งใจเลือกไว้แล้ว
+  function pickMode(mode: BusinessMode) {
+    if (mode === businessMode) return;
+    setBusinessMode(mode);
+    const suggested = recommendedAnswers(mode);
+    setUsesTables(suggested.usesTables);
+    setNeedsPrinting(suggested.needsPrinting);
+    setSaved(false);
+  }
 
   function save() {
     setError(null);
@@ -56,7 +67,7 @@ export function SetupProfileForm({
               key={mode.value}
               type="button"
               disabled={!canManage || isPending}
-              onClick={() => setBusinessMode(mode.value)}
+              onClick={() => pickMode(mode.value)}
               className={`min-h-11 rounded-[var(--radius-md)] border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 businessMode === mode.value
                   ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)]"
