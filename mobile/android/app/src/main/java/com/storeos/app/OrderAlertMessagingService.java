@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat;
 import com.google.firebase.messaging.RemoteMessage;
 import io.capawesome.capacitorjs.plugins.firebase.messaging.MessagingService;
 import java.util.Map;
+import org.json.JSONObject;
 
 /**
  * รับ push ของ FCM แทนตัวของ plugin (ต่อยอด ไม่ได้ตัดทิ้ง — ยังส่งต่อให้ plugin ทุกข้อความ)
@@ -30,10 +31,45 @@ public class OrderAlertMessagingService extends MessagingService {
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
-        if (INSISTENT_ALERT.equals(data.get("alert")) && !MainActivity.isInForeground()) {
-            showInsistentOrderAlert(data);
+        boolean insistent = INSISTENT_ALERT.equals(data.get("alert"));
+        JSONObject detail = DeviceLog.deviceState(this);
+        try {
+            detail.put("type", data.get("type"));
+            detail.put("alert", data.get("alert"));
+            // true = ระบบแสดงเองแบบเดิม (ดังรอบเดียว) — เซิร์ฟเวอร์ยังไม่รู้ว่าเครื่องนี้เป็น 1.0.3+
+            detail.put("hasNotificationBlock", remoteMessage.getNotification() != null);
+            detail.put("priority", remoteMessage.getPriority());
+            detail.put("originalPriority", remoteMessage.getOriginalPriority());
+        } catch (Exception ignored) {
+            // เก็บเท่าที่ได้
+        }
+        DeviceLog.send(this, "push_received", detail);
+
+        if (insistent) {
+            if (MainActivity.isInForeground()) {
+                DeviceLog.send(this, "insistent_skipped", detail);
+            } else {
+                try {
+                    showInsistentOrderAlert(data);
+                    DeviceLog.send(this, "insistent_shown", detail);
+                } catch (Throwable error) {
+                    try {
+                        detail.put("error", String.valueOf(error));
+                    } catch (Exception ignored) {
+                        // เก็บเท่าที่ได้
+                    }
+                    DeviceLog.send(this, "insistent_failed", detail);
+                }
+            }
         }
         super.onMessageReceived(remoteMessage);
+    }
+
+    @Override
+    public void onNewToken(@NonNull String token) {
+        super.onNewToken(token);
+        // ไม่ส่งตัว token — แค่บอกว่ามีการเปลี่ยน (ต้องให้หน้าเว็บลงทะเบียนใหม่รอบหน้าที่เปิดแอป)
+        DeviceLog.send(this, "token_refreshed", DeviceLog.deviceState(this));
     }
 
     private void showInsistentOrderAlert(Map<String, String> data) {
@@ -74,8 +110,21 @@ public class OrderAlertMessagingService extends MessagingService {
     static void cancelOrderAlerts(Context context) {
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
+        int cancelled = 0;
         for (StatusBarNotification active : manager.getActiveNotifications()) {
-            if (NOTIFICATION_TAG.equals(active.getTag())) manager.cancel(NOTIFICATION_TAG, active.getId());
+            if (NOTIFICATION_TAG.equals(active.getTag())) {
+                manager.cancel(NOTIFICATION_TAG, active.getId());
+                cancelled++;
+            }
+        }
+        if (cancelled > 0) {
+            JSONObject detail = DeviceLog.deviceState(context);
+            try {
+                detail.put("cancelled", cancelled);
+            } catch (Exception ignored) {
+                // เก็บเท่าที่ได้
+            }
+            DeviceLog.send(context, "order_alerts_cancelled", detail);
         }
     }
 }
