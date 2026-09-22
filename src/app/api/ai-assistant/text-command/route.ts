@@ -27,6 +27,8 @@ import { DurableIdempotencyStore } from "@/modules/ai-assistant/durable-idempote
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { DurableAssistantSessionStore } from "@/modules/ai-assistant/durable-session";
 import { DurableProposalStore } from "@/modules/ai-assistant/durable-proposal";
+import { ACCOUNTING_TOOL_NAMES, registerAccountingTools } from "@/modules/ai-assistant/tools/accounting-tools";
+import { createServerAccountingToolDeps } from "@/modules/ai-assistant/tools/accounting-tools-server";
 import { createFixedWindowRateLimiter } from "@/modules/ai-assistant/rate-limit";
 import { createTextInterpreter, runTextCommand, type TextFailureReason } from "@/modules/ai-assistant/orchestrator";
 import { interpretTextIntent } from "@/modules/ai-assistant/text-intent";
@@ -51,6 +53,12 @@ function readRateLimitPerMinute(): number {
 // ต้องมีชีวิตยาวกว่า 1 request เพื่อให้ replay ข้าม request ยังเดดูพลิเคตได้
 const registry = new ToolRegistry(readAssistantConfig(process.env).environment);
 registerPosTools(registry, createServerPosToolDeps());
+// P2 — tool หลังร้านชุดแรก อยู่เฉพาะเส้นทางข้อความ ยังไม่เข้า Live (MVP_TOOL_NAMES ถูก
+// live-openai-tools ยืนยันว่าต้องตรงกันเป๊ะ การเพิ่มที่นั่นจะทำให้ Live พังทันที)
+registerAccountingTools(registry, createServerAccountingToolDeps());
+
+/** tool ที่ session ของเส้นทางข้อความใช้ได้ — POS เดิม + งานหลังร้าน */
+const TEXT_TOOL_NAMES = [...MVP_TOOL_NAMES, ...ACCOUNTING_TOOL_NAMES] as const;
 const rateLimiter = createFixedWindowRateLimiter({
   limitPerWindow: readRateLimitPerMinute(),
   windowMs: 60_000,
@@ -71,7 +79,7 @@ function getDispatch(): Promise<TextCommandDispatcher> {
       // P0 — session/terminal registry แบบ durable: อยู่รอดข้าม instance และแยกต่อเครื่อง
       // (ของเดิมอยู่ในหน่วยความจำ process เดียว + หนึ่ง user หนึ่ง session ⇒ เปิดสองแท็บ
       // แท็บที่สองผูกตะกร้าไม่ได้ และ replay ข้าม instance โดน IDEMPOTENCY_CONFLICT)
-      const sessions = new DurableAssistantSessionStore(client, { allowedTools: [...MVP_TOOL_NAMES] });
+      const sessions = new DurableAssistantSessionStore(client, { allowedTools: [...TEXT_TOOL_NAMES] });
       return createServerAssistantDispatcher({
         registry,
         resolveSession: (identity) => sessions.resolve(identity),
@@ -101,7 +109,22 @@ const BodySchema = z.object({
   args: z.unknown().optional(),
   activeCartId: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/).optional(),
   cartVersion: z.number().int().min(0).optional(),
-}).strict().refine((body) => (body.text ? 1 : 0) + (body.tool ? 1 : 0) === 1, { message: "ต้องส่ง text หรือ tool อย่างใดอย่างหนึ่ง" });
+  /**
+   * P2 — กดยืนยันการ์ด: ส่งแค่ชื่อ tool + proposalId (+ คำตอบของสิ่งที่ขาด)
+   *
+   * ไม่จำกัดชื่อ tool ด้วย enum เหมือนเส้นทางอ่าน เพราะ dispatcher เป็นคนตัดสินอยู่แล้ว
+   * (allowedTools ของ session + permission + ชั้นยืนยัน) และการ์ดจะถูกปฏิเสธถ้า
+   * proposal ไม่ใช่ของ tool นั้นหรือไม่ใช่ของ session นี้
+   */
+  confirm: z.object({
+    tool: z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/).max(80),
+    proposalId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/),
+    answers: z.record(z.string().max(128), z.string().max(128)).optional(),
+  }).strict().optional(),
+}).strict().refine(
+  (body) => (body.text ? 1 : 0) + (body.tool ? 1 : 0) + (body.confirm ? 1 : 0) === 1,
+  { message: "ต้องส่ง text, tool หรือ confirm อย่างใดอย่างหนึ่ง" },
+);
 
 function fail(reason: string, status: number, manualPath?: string, headers: Record<string, string> = {}) {
   return NextResponse.json({ ok: false, reason, manualPath }, { status, headers: { ...NO_STORE, ...headers } });
@@ -257,6 +280,23 @@ export async function POST(request: Request) {
   }
 
   // ── โหมด read-tool: เรียก tool อ่านตรง (search / current order) ผ่าน dispatcher เดิมทุกด่าน ──
+  if (input.confirm) {
+    const { tool, proposalId, answers } = input.confirm;
+    const result = await dispatch({
+      tool,
+      // args ไม่ถูกใช้ตอนยืนยัน — commit ใช้ชุดที่เก็บไว้ฝั่ง server เสมอ
+      args: {},
+      idempotencyKey: input.requestId,
+      confirm: { proposalId, answers },
+    });
+    const outcome = result.ok && "kind" in result
+      ? { kind: "proposal" as const, ok: true, tool, proposal: result.proposal }
+      : result.ok
+        ? { kind: "tool" as const, ok: true, tool, result: result.data }
+        : { kind: "error" as const, ok: false, tool, code: result.code };
+    return NextResponse.json({ ok: true, requestId: input.requestId, outcomes: [outcome] }, { headers: NO_STORE });
+  }
+
   if (input.tool) {
     const result = await dispatch({ tool: input.tool, args: input.args ?? {}, idempotencyKey: input.requestId });
     // เส้นทางนี้เป็น read tool ล้วน (DIRECT_READ_TOOLS) จึงไม่มีการ์ดรอยืนยัน — แต่เขียนให้ครบ

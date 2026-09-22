@@ -6,6 +6,7 @@ import {
   fingerprintDraft,
   unresolvedPrerequisites,
   PROPOSAL_TTL_MS,
+  type PrerequisiteAnswers,
   type ProposalDraft,
   type ProposalStore,
 } from "./proposal";
@@ -63,8 +64,12 @@ export interface ToolDefinition {
    * ต้องคำนวณผลที่จะเกิดโดย **ไม่เขียนอะไรเลย** และคืน prerequisite ให้ครบในรอบเดียว
    * tool ที่ไม่มี plan() ทำงานทันทีเหมือนเดิม (เส้นทางหน้าขายที่ต้องเร็วยังไม่ถูกแตะ)
    */
-  plan?: (args: unknown, context: TrustedContext) => Promise<ProposalDraft>;
-  execute: (args: unknown, context: TrustedContext, cartBinding: CartBinding | null) => Promise<unknown>;
+  plan?: (args: unknown, context: TrustedContext, answers: PrerequisiteAnswers) => Promise<ProposalDraft>;
+  /**
+   * `answers` คือคำตอบของ prerequisite ที่ผู้ใช้เลือกในการ์ด (เช่นหมวดบัญชี/สถานีครัว)
+   * tool ที่ไม่มี plan() ไม่เคยได้รับค่านี้ จึงประกาศพารามิเตอร์นี้หรือไม่ก็ได้
+   */
+  execute: (args: unknown, context: TrustedContext, cartBinding: CartBinding | null, answers: PrerequisiteAnswers) => Promise<unknown>;
 }
 const nameSchema = z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/).max(80);
 const envelope = z.object({
@@ -287,12 +292,13 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       // จังหวะที่ 2 (มี confirm): โหลด proposal, plan() ใหม่เทียบว่าโลกยังเหมือนเดิม,
       //                          เคลียร์ prerequisite ครบ, แล้วจึงใช้ args ที่เก็บไว้ไปทำจริง
       let executeArgs: unknown = args.data;
+      let confirmedAnswers: PrerequisiteAnswers = {};
       if (needsConfirmation) {
         const proposals = options.proposals!;
         const confirm = parsed.data.confirm;
         if (!confirm) {
           let draft: ProposalDraft;
-          try { draft = await tool.plan!(args.data, ctx); } catch { return audit(fail("EXECUTION_FAILED")); }
+          try { draft = await tool.plan!(args.data, ctx, {}); } catch { return audit(fail("EXECUTION_FAILED")); }
           const id = (options.newProposalId ?? randomUUID)();
           const expiresAt = Math.min(Date.now() + PROPOSAL_TTL_MS, ctx.expiresAt);
           try {
@@ -311,6 +317,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
           return audit({ ok: true, kind: "proposal", proposal: { ...draft, id, tool: tool.name, expiresAt } });
         }
 
+        const answers: PrerequisiteAnswers = confirm.answers ?? {};
         let record: Awaited<ReturnType<ProposalStore["load"]>>;
         try { record = await proposals.load(confirm.proposalId); } catch { return audit(fail("PROPOSAL_UNAVAILABLE")); }
         // หมดอายุ / ไม่ใช่ของ session นี้ / ยืนยันข้าม tool = ปฏิเสธด้วยรหัสเดียวกัน
@@ -319,11 +326,11 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
           || !belongsToContext(record, ctx)) return audit(fail("PROPOSAL_NOT_FOUND"));
 
         let draft: ProposalDraft;
-        try { draft = await tool.plan!(record.args, ctx); } catch { return audit(fail("EXECUTION_FAILED")); }
+        try { draft = await tool.plan!(record.args, ctx, answers); } catch { return audit(fail("EXECUTION_FAILED")); }
         // โลกเปลี่ยนไประหว่างที่ผู้ใช้ดูการ์ดอยู่ — ห้ามเขียนทับเงียบ ๆ ให้เสนอใหม่
         if (fingerprintDraft(draft) !== record.draftFingerprint) return audit(fail("PROPOSAL_STALE"));
         // "ไม่มีให้เพิ่ม ไม่ใช่ข้าม": เหลือสิ่งที่ขาดแม้ข้อเดียวก็ commit ไม่ได้
-        if (unresolvedPrerequisites(draft.prerequisites, confirm.answers ?? {}).length > 0) {
+        if (unresolvedPrerequisites(draft.prerequisites, answers).length > 0) {
           return audit(fail("PREREQUISITE_REQUIRED"));
         }
         // ใช้ครั้งเดียว — กดยืนยันรัวไม่ทำให้ทำงานสองรอบ (idempotency key ยังกันอีกชั้น)
@@ -331,6 +338,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
         try { consumed = await proposals.consume(record.id); } catch { consumed = false; }
         if (!consumed) return audit(fail("PROPOSAL_NOT_FOUND"));
         executeArgs = record.args;
+        confirmedAnswers = answers;
       }
       // ───────────────────────────────────────────────────────────────────────
 
@@ -353,7 +361,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
         identity: { organizationId: ctx.organizationId, storeId: ctx.storeId, userId: ctx.userId, sessionId: ctx.sessionId },
       }, async (): Promise<Result> => {
         try {
-          const raw = await tool.execute(executeArgs, ctx, cartBinding);
+          const raw = await tool.execute(executeArgs, ctx, cartBinding, confirmedAnswers);
           const output = tool.result.safeParse(raw);
           return output.success ? { ok: true, data: structuredClone(output.data) } : fail("EXECUTION_FAILED");
         } catch { return fail("EXECUTION_FAILED"); }

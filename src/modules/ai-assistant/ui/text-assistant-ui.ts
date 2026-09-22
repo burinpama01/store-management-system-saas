@@ -282,7 +282,90 @@ export type AssistantTurnStep =
   | { readonly kind: "clear_search"; readonly note?: string }
   | { readonly kind: "open_product"; readonly productId: string }
   /** เปิดแผงรับชำระเดิมของ POS (ไม่มีการสร้าง payment/QR ที่นี่) */
-  | { readonly kind: "open_checkout"; readonly message: string };
+  | { readonly kind: "open_checkout"; readonly message: string }
+  /** P2 — การ์ดรอยืนยัน: ยังไม่มีอะไรถูกเขียน ผู้ใช้ต้องกดยืนยันก่อน */
+  | { readonly kind: "proposal"; readonly proposal: AssistantProposal };
+
+/** การ์ดรอยืนยันที่ผ่านการตรวจรูปแล้ว — ค่าที่ผิดรูปถูกตัดทิ้งแทนที่จะโชว์ของพัง */
+export interface AssistantProposal {
+  readonly id: string;
+  readonly tool: string;
+  readonly summary: string;
+  readonly changes: readonly { readonly label: string; readonly before: string | null; readonly after: string }[];
+  readonly affectedCount: number;
+  readonly warnings: readonly string[];
+  readonly prerequisites: readonly AssistantPrerequisite[];
+}
+
+export type AssistantPrerequisite =
+  | {
+      readonly kind: "choose";
+      readonly need: string;
+      readonly subjects: readonly { readonly id: string; readonly label: string }[];
+      readonly options: readonly { readonly id: string; readonly label: string }[];
+    }
+  | { readonly kind: "create"; readonly need: string; readonly reason: string }
+  | { readonly kind: "blocked"; readonly need: string };
+
+function parseIdLabelList(raw: unknown): { id: string; label: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    const record = asRecord(item);
+    const id = asString(record?.id);
+    const label = asString(record?.label);
+    return id && label ? [{ id, label }] : [];
+  });
+}
+
+/**
+ * อ่านการ์ดจาก payload ของ server แบบไม่เชื่อรูปร่าง
+ *
+ * การ์ดนี้เป็นสิ่งที่ผู้ใช้ใช้ตัดสินใจเรื่องข้อมูลจริงของร้าน จึงยอมให้ "ไม่แสดง" ดีกว่า
+ * "แสดงของพัง" — ขาด id/summary เมื่อไรถือว่าอ่านไม่ได้ทั้งใบ
+ */
+export function parseAssistantProposal(raw: unknown): AssistantProposal | null {
+  const record = asRecord(raw);
+  const id = asString(record?.id);
+  const tool = asString(record?.tool);
+  const summary = asString(record?.summary);
+  if (!record || !id || !tool || !summary) return null;
+  const changes = Array.isArray(record.changes)
+    ? record.changes.flatMap((item) => {
+        const change = asRecord(item);
+        const label = asString(change?.label);
+        const after = asString(change?.after);
+        if (!label || after === undefined) return [];
+        return [{ label, before: asString(change?.before) ?? null, after }];
+      })
+    : [];
+  const prerequisites = Array.isArray(record.prerequisites)
+    ? record.prerequisites.flatMap((item): AssistantPrerequisite[] => {
+        const prerequisite = asRecord(item);
+        const need = asString(prerequisite?.need) ?? "";
+        if (!need) return [];
+        if (prerequisite?.kind === "choose") {
+          const subjects = parseIdLabelList(prerequisite.subjects);
+          const options = parseIdLabelList(prerequisite.options);
+          return subjects.length > 0 && options.length > 0 ? [{ kind: "choose", need, subjects, options }] : [];
+        }
+        if (prerequisite?.kind === "create") {
+          return [{ kind: "create", need, reason: asString(prerequisite.reason) ?? "" }];
+        }
+        if (prerequisite?.kind === "blocked") return [{ kind: "blocked", need }];
+        return [];
+      })
+    : [];
+  const affected = record.affectedCount;
+  return {
+    id,
+    tool,
+    summary,
+    changes,
+    affectedCount: typeof affected === "number" && Number.isFinite(affected) ? affected : changes.length,
+    warnings: Array.isArray(record.warnings) ? record.warnings.filter((warning): warning is string => typeof warning === "string") : [],
+    prerequisites,
+  };
+}
 
 /** outcome 1 รายการจาก route — รูปทรงไม่ครบ = ข้อความ fail-closed ไม่ใช่การเดา */
 function stepsForOutcome(rawOutcome: unknown): AssistantTurnStep[] {
@@ -300,6 +383,12 @@ function stepsForOutcome(rawOutcome: unknown): AssistantTurnStep[] {
   }
   if (kind === "error") {
     return [{ kind: "message", level: "error", message: describeDenialCode(asString(outcome.code) ?? "") }];
+  }
+  if (kind === "proposal") {
+    const proposal = parseAssistantProposal(outcome.proposal);
+    return proposal
+      ? [{ kind: "proposal", proposal }]
+      : [{ kind: "message", level: "error", message: UNKNOWN_RESULT_MESSAGE }];
   }
   if (kind !== "tool" && kind !== "clarification") {
     return [{ kind: "message", level: "error", message: UNKNOWN_RESULT_MESSAGE }];

@@ -123,7 +123,8 @@ describe("ชั้นยืนยัน (P1)", () => {
 
   it("โลกเปลี่ยนระหว่างที่ผู้ใช้ดูการ์ด = PROPOSAL_STALE ไม่ใช่เขียนทับ", async () => {
     await dispatch(command());
-    draft = { ...baseDraft(), summary: "เปลี่ยนราคาอเมริกาโน่เย็น 70 → 60 บาท" };
+    // ราคาเดิมของเมนูเปลี่ยนไประหว่างที่ผู้ใช้ดูการ์ด (คนอื่นแก้) — before คือค่าจากโลก
+    draft = { ...baseDraft(), changes: [{ label: "ราคา", before: "70", after: "60" }] };
     const result = await dispatch(command({ idempotencyKey: "key-2", confirm: { proposalId: "prop-1" } }));
     expect(result).toEqual({ ok: false, code: "PROPOSAL_STALE" });
     expect(writes).toEqual([]);
@@ -257,10 +258,41 @@ describe("ชั้นยืนยัน (P1)", () => {
     expect(await d(command())).toEqual({ ok: false, code: "MUTATIONS_DISABLED" });
   });
 
-  it("ลายนิ้วมือไม่นับ warnings แต่นับ changes/affectedCount/prerequisites", () => {
+  it("ลายนิ้วมือนับสภาพของโลก ไม่นับสิ่งที่ผู้ใช้เลือก", () => {
     const base = baseDraft();
-    expect(fingerprintDraft({ ...base, warnings: ["a"] })).toBe(fingerprintDraft({ ...base, warnings: ["b"] }));
+    // โลกเปลี่ยน = ต้องต่าง
     expect(fingerprintDraft({ ...base, affectedCount: 2 })).not.toBe(fingerprintDraft(base));
-    expect(fingerprintDraft({ ...base, changes: [{ label: "ราคา", before: "55", after: "61" }] })).not.toBe(fingerprintDraft(base));
+    expect(fingerprintDraft({ ...base, changes: [{ label: "ราคา", before: "70", after: "60" }] })).not.toBe(fingerprintDraft(base));
+    // summary เป็นข้อความสำหรับคนอ่าน ขยับตามคำตอบผู้ใช้ได้ จึงไม่นับ
+    expect(fingerprintDraft({ ...base, summary: "อย่างอื่น" })).toBe(fingerprintDraft(base));
+    // ผู้ใช้เปลี่ยนใจ / เสียงรบกวนจากงานหน้าร้าน = ต้องเหมือนเดิม
+    expect(fingerprintDraft({ ...base, warnings: ["a"] })).toBe(fingerprintDraft({ ...base, warnings: ["b"] }));
+    expect(fingerprintDraft({ ...base, changes: [{ label: "ราคา", before: "55", after: "61" }] })).toBe(fingerprintDraft(base));
+    expect(fingerprintDraft(baseDraft([{ kind: "blocked", need: "x", feature: "y" }]))).toBe(fingerprintDraft(base));
+  });
+
+  it("ตอบ prerequisite แล้วค่าที่เลือกถึงมือ execute", async () => {
+    let seen: Record<string, string> | null = null;
+    const reg = new ToolRegistry("test");
+    reg.register({
+      name: "catalog.update_product",
+      risk: "sensitive",
+      permissions: [],
+      args: z.object({ productId: z.string(), price: z.number() }).strict(),
+      result: z.object({ updated: z.boolean() }).strict(),
+      plan: async (_args, _ctx, answers) => baseDraft(
+        answers.p1 ? [] : [{ kind: "choose", need: "สถานีครัว", subjects: [{ id: "p1", label: "อเมริกาโน่เย็น" }], options: [{ id: "st1", label: "บาร์" }] }],
+      ),
+      execute: async (_args, _ctx, _cart, answers) => { seen = { ...answers }; return { updated: true }; },
+    });
+    const d = createDispatcher({
+      registry: reg, enabled: true, mutationsEnabled: true, environment: "test",
+      resolveContext: async () => ctx(), audit: async () => {}, proposals,
+      newProposalId: () => "prop-x",
+    });
+    await d(command());
+    const result = await d(command({ idempotencyKey: "key-2", confirm: { proposalId: "prop-x", answers: { p1: "st1" } } }));
+    expect(result).toMatchObject({ ok: true });
+    expect(seen).toEqual({ p1: "st1" });
   });
 });

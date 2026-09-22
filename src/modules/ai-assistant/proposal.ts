@@ -88,20 +88,25 @@ export const PROPOSAL_TTL_MS = 5 * 60 * 1000;
  * commit จะ plan() ใหม่แล้วเทียบกับค่านี้ — ไม่ตรงแปลว่าระหว่างที่ผู้ใช้ดูการ์ดอยู่
  * มีคนอื่นแก้ข้อมูลไปแล้ว ต้องล้มแล้วเสนอใหม่ ห้ามเขียนทับเงียบ ๆ
  *
- * ไม่รวม warnings เข้าไปโดยตั้งใจ: คำเตือนอย่าง "เมนูนี้อยู่ในตะกร้าที่เปิดอยู่ 2 ใบ"
- * เปลี่ยนได้ทุกวินาทีตามงานหน้าร้าน ถ้านับด้วยจะไม่มีใครกดยืนยันสำเร็จเลยในร้านที่ยุ่ง
- * สิ่งที่ต้องไม่เปลี่ยนคือ "จะเปลี่ยนอะไรเป็นอะไร" และ "กระทบกี่รายการ"
+ * นับเฉพาะ "สภาพของโลกก่อนลงมือ" ไม่ใช่สิ่งที่ผู้ใช้เลือกหรือสั่ง:
+ *
+ *   นับ     affectedCount · label กับ **ค่า before** ของทุกบรรทัด
+ *   ไม่นับ  ค่า after — มาจาก args และคำตอบของผู้ใช้ การเปลี่ยนใจไม่ใช่ "โลกเปลี่ยน"
+ *   ไม่นับ  summary — เป็นข้อความสำหรับคนอ่าน ซึ่งมักอธิบายว่าเลือกอะไรเพราะอะไร
+ *           จึงขยับตามคำตอบของผู้ใช้ได้ (เจอจริงตอนทำ tool บัญชีตัวแรก)
+ *   ไม่นับ  prerequisites — มันหายไปเมื่อถูกตอบ ซึ่งเป็นเรื่องปกติ และของที่โผล่ใหม่
+ *           ถูกจับด้วย unresolvedPrerequisites อยู่แล้ว (แน่นกว่า เพราะบอกได้ว่าขาดอะไร)
+ *   ไม่นับ  warnings — คำเตือนอย่าง "เมนูนี้อยู่ในตะกร้าที่เปิดอยู่ 2 ใบ" เปลี่ยนทุกวินาที
+ *           ตามงานหน้าร้าน ถ้านับด้วยจะไม่มีใครกดยืนยันสำเร็จเลยในร้านที่ยุ่ง
+ *
+ * **สัญญาที่ tool ต้องรักษา:** ค่าจากโลกที่ผู้ใช้กำลังตัดสินใจโดยอาศัยมัน ต้องอยู่ใน
+ * `changes[].before` ทุกตัว ไม่ใช่ซ่อนอยู่ใน summary อย่างเดียว — ไม่งั้นโลกเปลี่ยนแล้ว
+ * จะไม่มีใครจับได้ (เช่นแก้ราคาเมนู ต้องใส่ราคาเดิมเป็น before เสมอ)
  */
 export function fingerprintDraft(draft: ProposalDraft): string {
   const stable = {
-    summary: draft.summary,
     affectedCount: draft.affectedCount,
-    changes: draft.changes.map((change) => [change.label, change.before, change.after]),
-    prerequisites: draft.prerequisites.map((prerequisite) =>
-      prerequisite.kind === "choose"
-        ? [prerequisite.kind, prerequisite.need, prerequisite.subjects.map((subject) => subject.id).sort()]
-        : [prerequisite.kind, prerequisite.need],
-    ),
+    before: draft.changes.map((change) => [change.label, change.before]),
   };
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }

@@ -29,6 +29,7 @@ import {
   describeFailureReason,
   planAssistantTurn,
   type AssistantCandidate,
+  type AssistantProposal,
   type AssistantTurnStep,
 } from "./text-assistant-ui";
 
@@ -50,9 +51,11 @@ export interface AssistantCartBridge {
 /** body ของ POST /api/ai-assistant/text-command (โหมดข้อความ) */
 export interface TextCommandRequestBody {
   readonly requestId: string;
-  readonly text: string;
+  readonly text?: string;
   readonly activeCartId: string;
   readonly cartVersion: number;
+  /** P2 — กดยืนยันการ์ด (ส่งแทน text) */
+  readonly confirm?: { readonly tool: string; readonly proposalId: string; readonly answers?: Record<string, string> };
 }
 
 /** ผลตอบของ route — parse แบบทนทานที่ core เสมอ (network boundary ห้ามเชื่อรูปทรงเงียบ ๆ) */
@@ -74,6 +77,8 @@ export interface TextAssistantState {
   readonly undo: { readonly label: string; readonly expiresAt: number } | null;
   /** ตัวนับ version ล่าสุด — ผู้เรียกใช้เก็บคู่กับ cartId เพื่อให้ remount ยังผูก session เดิมได้ */
   readonly cartVersion: number;
+  /** P2 — การ์ดรอยืนยันที่ค้างอยู่ (null = ไม่มี) ผู้ใช้ต้องกดยืนยันหรือยกเลิกก่อน */
+  readonly proposal: AssistantProposal | null;
 }
 
 export interface TextAssistantCoreDeps {
@@ -104,6 +109,9 @@ export interface TextAssistantCore {
   readonly cartId: string;
   readonly send: (text: string) => Promise<void>;
   readonly undo: () => void;
+  /** P2 — กดยืนยันการ์ดที่ค้างอยู่ พร้อมคำตอบของสิ่งที่ขาด (subject id → option id) */
+  readonly confirmProposal: (answers?: Record<string, string>) => Promise<void>;
+  readonly dismissProposal: () => void;
   readonly getState: () => TextAssistantState;
   readonly subscribe: (listener: () => void) => () => void;
 }
@@ -135,10 +143,11 @@ export function createTextAssistantCore(deps: TextAssistantCoreDeps): TextAssist
   let entrySequence = 0;
 
   const listeners = new Set<() => void>();
-  let snapshot: TextAssistantState = { entries, busy, undo, cartVersion };
+  let pendingProposal: AssistantProposal | null = null;
+  let snapshot: TextAssistantState = { entries, busy, undo, cartVersion, proposal: pendingProposal };
 
   function notify(): void {
-    snapshot = { entries, busy, undo, cartVersion };
+    snapshot = { entries, busy, undo, cartVersion, proposal: pendingProposal };
     for (const listener of listeners) listener();
   }
 
@@ -229,6 +238,12 @@ export function createTextAssistantCore(deps: TextAssistantCoreDeps): TextAssist
           }
           break;
         }
+        case "proposal": {
+          // การ์ดขึ้นจอ ยังไม่มีอะไรถูกเขียน — ผู้ใช้ต้องกดยืนยันหรือยกเลิกเอง
+          pendingProposal = step.proposal;
+          pushEntry("assistant", step.proposal.summary);
+          break;
+        }
         case "open_product": {
           // dialog ตัวเลือกเป็นของหน้าขาย — เปิดไม่ได้ = ข้อความ clarification ที่แสดงไปแล้วเป็นทางออก
           if (api.openProduct?.(step.productId)) deps.onFocusSell?.();
@@ -315,10 +330,58 @@ export function createTextAssistantCore(deps: TextAssistantCoreDeps): TextAssist
     notify();
   }
 
+  /**
+   * กดยืนยันการ์ด — ส่ง proposalId กลับไปอย่างเดียว ไม่ส่ง args ใหม่
+   *
+   * ผลที่ได้กลับอาจเป็นการ์ดใบใหม่ (เช่นตอบสิ่งที่ขาดยังไม่ครบ) จึงเดินผ่าน
+   * processResponse ตัวเดิม ไม่ได้สมมติว่ายืนยันแล้วต้องจบเสมอ
+   */
+  async function confirmProposal(answers: Record<string, string> = {}): Promise<void> {
+    const proposal = pendingProposal;
+    if (busy || !proposal) return;
+    const api = deps.getCartApi();
+    if (!api) {
+      pushEntry("error", CART_UNAVAILABLE_MESSAGE);
+      notify();
+      return;
+    }
+    requestSequence += 1;
+    const body: TextCommandRequestBody = {
+      requestId: createAssistantRequestId(requestSequence),
+      activeCartId,
+      cartVersion,
+      confirm: { tool: proposal.tool, proposalId: proposal.id, answers },
+    };
+    pendingProposal = null;
+    busy = true;
+    notify();
+    let response: TextCommandResponse;
+    try {
+      response = await deps.sendCommand(body);
+    } catch {
+      busy = false;
+      pushEntry("error", describeFailureReason("network_error"));
+      notify();
+      return;
+    }
+    busy = false;
+    processResponse(response, api);
+    notify();
+  }
+
+  function dismissProposal(): void {
+    if (!pendingProposal) return;
+    pendingProposal = null;
+    pushEntry("assistant", "ยกเลิกแล้ว ไม่มีอะไรถูกบันทึก");
+    notify();
+  }
+
   return {
     cartId: activeCartId,
     send,
     undo: undoLast,
+    confirmProposal,
+    dismissProposal,
     getState: (): TextAssistantState => snapshot,
     subscribe: (listener: () => void): (() => void) => {
       listeners.add(listener);

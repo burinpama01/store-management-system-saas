@@ -5,6 +5,7 @@ import {
   type TextCommandRequestBody,
   type TextCommandResponse,
 } from "@/modules/ai-assistant/ui/text-assistant-core";
+import { parseAssistantProposal, planAssistantTurn } from "@/modules/ai-assistant/ui/text-assistant-ui";
 import type { Cart } from "@/modules/pos/types";
 import type { Product } from "@/modules/catalog/types";
 import type { VoiceProductAlias } from "@/modules/voice-pos/cart";
@@ -442,5 +443,52 @@ describe("send pacing", () => {
     release({ ok: true, outcomes: [] });
     await first;
     expect(core.getState().busy).toBe(false);
+  });
+});
+
+describe("การ์ดรอยืนยันบน UI", () => {
+  // การ์ดคือด่านสุดท้ายก่อนข้อมูลจริงของร้านถูกแก้ — อ่านของพังไม่ได้ ต้อง "ไม่แสดง" แทน
+  it("อ่านการ์ดจาก payload ของ server ได้ครบ", () => {
+    const parsed = parseAssistantProposal({
+      id: "prop-1",
+      tool: "accounting.create_transaction",
+      summary: "บันทึกรายจ่าย น้ำแข็ง 450 บาท",
+      affectedCount: 1,
+      changes: [{ label: "หมวด", before: null, after: "วัตถุดิบ" }],
+      warnings: ["ยอดนี้ต่างจากที่ร้านเคยลง"],
+      prerequisites: [
+        { kind: "choose", need: "หมวดรายจ่าย", subjects: [{ id: "category", label: "น้ำแข็ง" }], options: [{ id: "c1", label: "วัตถุดิบ" }] },
+        { kind: "create", need: "หมวดรายจ่าย", createTool: "accounting.create_category", reason: "ยังไม่มีหมวด" },
+        { kind: "blocked", need: "QR Ordering", feature: "qrOrdering" },
+      ],
+    });
+    expect(parsed?.id).toBe("prop-1");
+    expect(parsed?.changes).toHaveLength(1);
+    expect(parsed?.prerequisites.map((prerequisite) => prerequisite.kind)).toEqual(["choose", "create", "blocked"]);
+  });
+
+  it("การ์ดที่ขาดข้อมูลสำคัญถือว่าอ่านไม่ได้ทั้งใบ", () => {
+    expect(parseAssistantProposal(null)).toBeNull();
+    expect(parseAssistantProposal({ id: "p", tool: "t" })).toBeNull();
+    expect(parseAssistantProposal({ id: "p", summary: "s" })).toBeNull();
+  });
+
+  it("prerequisite แบบ choose ที่ไม่มีตัวเลือกถูกตัดทิ้ง (เลือกไม่ได้ก็อย่าแสดง)", () => {
+    const parsed = parseAssistantProposal({
+      id: "p", tool: "t", summary: "s",
+      prerequisites: [{ kind: "choose", need: "หมวด", subjects: [{ id: "a", label: "a" }], options: [] }],
+    });
+    expect(parsed?.prerequisites).toEqual([]);
+  });
+
+  it("outcome kind=proposal กลายเป็น step ของการ์ด", () => {
+    const steps = planAssistantTurn([{
+      kind: "proposal",
+      ok: true,
+      tool: "accounting.create_transaction",
+      proposal: { id: "prop-1", tool: "accounting.create_transaction", summary: "สรุป", changes: [], prerequisites: [] },
+    }]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].kind).toBe("proposal");
   });
 });
