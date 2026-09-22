@@ -1,12 +1,34 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { canUseFeature, type BillingState } from "@/modules/billing/types";
+import {
+  belongsToContext,
+  fingerprintDraft,
+  unresolvedPrerequisites,
+  PROPOSAL_TTL_MS,
+  type ProposalDraft,
+  type ProposalStore,
+} from "./proposal";
 import type { PermissionKey } from "@/modules/tenants/types";
 
 export type Environment = "development" | "test" | "production";
 export type Risk = "read" | "safe_write" | "sensitive" | "critical";
-export type ErrorCode = "INVALID_REQUEST" | "UNKNOWN_TOOL" | "INVALID_ARGS" | "PERMISSION_DENIED" | "FEATURE_DISABLED" | "MUTATIONS_DISABLED" | "RISK_BLOCKED" | "CONTEXT_UNAVAILABLE" | "DURABLE_STORAGE_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "IDEMPOTENCY_PENDING" | "CAPACITY_EXCEEDED" | "EXECUTION_FAILED";
-export type Result = { ok: true; data: unknown } | { ok: false; code: ErrorCode };
+export type ErrorCode = "INVALID_REQUEST" | "UNKNOWN_TOOL" | "INVALID_ARGS" | "PERMISSION_DENIED" | "FEATURE_DISABLED" | "MUTATIONS_DISABLED" | "RISK_BLOCKED" | "CONTEXT_UNAVAILABLE" | "DURABLE_STORAGE_REQUIRED" | "IDEMPOTENCY_CONFLICT" | "IDEMPOTENCY_PENDING" | "CAPACITY_EXCEEDED" | "EXECUTION_FAILED"
+  // P1 — ชั้นยืนยัน
+  | "PROPOSAL_UNAVAILABLE" | "PROPOSAL_NOT_FOUND" | "PROPOSAL_STALE" | "PREREQUISITE_REQUIRED";
+
+/** การ์ดยืนยันที่ส่งกลับให้ผู้ใช้ดูก่อนลงมือ — ยังไม่มีอะไรถูกเขียน ณ จุดนี้ */
+export interface ProposalView extends ProposalDraft {
+  readonly id: string;
+  readonly tool: string;
+  readonly expiresAt: number;
+}
+
+export type Result =
+  | { ok: true; data: unknown }
+  /** kind แยกไว้ให้ผู้เรียกบังคับจัดการทั้งสองทาง — ลืมจัดการแล้ว tsc ฟ้อง */
+  | { ok: true; kind: "proposal"; proposal: ProposalView }
+  | { ok: false; code: ErrorCode };
 /** ส่งมาจาก server resolver เท่านั้น ห้ามสร้างจาก model/client request */
 export interface TrustedContext {
   organizationId: string;
@@ -35,10 +57,27 @@ export interface ToolDefinition {
   result: z.ZodType;
   developmentOnly?: boolean;
   requiresActiveCart?: boolean;
+  /**
+   * P1 — มี plan() = tool นี้ "ต้องยืนยันก่อนลงมือ"
+   *
+   * ต้องคำนวณผลที่จะเกิดโดย **ไม่เขียนอะไรเลย** และคืน prerequisite ให้ครบในรอบเดียว
+   * tool ที่ไม่มี plan() ทำงานทันทีเหมือนเดิม (เส้นทางหน้าขายที่ต้องเร็วยังไม่ถูกแตะ)
+   */
+  plan?: (args: unknown, context: TrustedContext) => Promise<ProposalDraft>;
   execute: (args: unknown, context: TrustedContext, cartBinding: CartBinding | null) => Promise<unknown>;
 }
 const nameSchema = z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/).max(80);
-const envelope = z.object({ tool: nameSchema, args: z.unknown(), idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/) }).strict();
+const envelope = z.object({
+  tool: nameSchema,
+  args: z.unknown(),
+  idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/),
+  // P1 — กดยืนยันส่งมาแค่ id ของ proposal (+ คำตอบของสิ่งที่ขาด) ไม่ส่ง args กลับมา
+  // เพราะ args ที่เชื่อถือได้คือชุดที่ผ่าน Zod ตอน plan และถูกเก็บไว้ฝั่ง server แล้ว
+  confirm: z.object({
+    proposalId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/),
+    answers: z.record(z.string().max(128), z.string().max(128)).optional(),
+  }).strict().optional(),
+}).strict();
 
 export class ToolRegistry {
   private readonly tools = new Map<string, Readonly<ToolDefinition>>();
@@ -77,6 +116,10 @@ interface DispatcherOptions {
    * (memory เสมอ → ติด DURABLE_STORAGE_REQUIRED เหมือนเดิม)
    */
   idempotencyStore?: IdempotencyStore;
+  /** P1 — ที่เก็บ proposal; ไม่ให้ = tool ที่ต้องยืนยันใช้ไม่ได้ (ปฏิเสธ ไม่ใช่ข้ามการยืนยัน) */
+  proposals?: ProposalStore;
+  /** P1 — ตัวสร้าง id ของ proposal (แทนที่ได้ในเทส) */
+  newProposalId?: () => string;
   /**
    * ตรวจ cart binding ให้ tool ที่ requiresActiveCart (PR2) — derive จาก session ฝั่ง server เท่านั้น
    * คืน null / throw = ปฏิเสธด้วย CONTEXT_UNAVAILABLE ก่อนถึง execute เสมอ
@@ -223,27 +266,83 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
       if (!canUseFeature(ctx.billing, "aiAssistant")) return audit(fail("FEATURE_DISABLED"));
       if (!ctx.allowedTools.includes(tool.name) || !tool.permissions.every(permission => ctx.can(permission))) return audit(fail("PERMISSION_DENIED"));
       if (options.environment === "production" && (tool.developmentOnly || tool.name === "system.echo")) return audit(fail("RISK_BLOCKED"));
-      if (tool.risk !== "read" && tool.risk !== "safe_write") return audit(fail("RISK_BLOCKED"));
+      // P1 — sensitive/critical เปิดได้เฉพาะ tool ที่มีชั้นยืนยัน: ไม่มี plan() หรือไม่มีที่เก็บ
+      // proposal = ปฏิเสธ ไม่ใช่ปล่อยให้ทำทันที (ชั้นยืนยันคือเหตุผลเดียวที่ยอมให้ระดับนี้ผ่าน)
+      const needsConfirmation = typeof tool.plan === "function";
+      if (tool.risk !== "read" && tool.risk !== "safe_write" && !needsConfirmation) return audit(fail("RISK_BLOCKED"));
+      if (needsConfirmation && !options.proposals) return audit(fail("PROPOSAL_UNAVAILABLE"));
       const args = tool.args.safeParse(parsed.data.args);
       if (!args.success) return audit(fail("INVALID_ARGS"));
       // PR2 (M4 review) — เกต mutation ต้องมาก่อนการผูกตะกร้า: คำสั่งเขียนที่ถูกปฏิเสธ
       // ต้องไม่ทำให้ session ผูก cartId (binding เป็น side effect ของ session store)
       // PR3 — production ปลดได้เฉพาะเมื่อ store ที่ wire เป็น durable (durability != "memory")
-      if (tool.risk === "safe_write" && options.environment === "production" && store.durability === "memory") return audit(fail("DURABLE_STORAGE_REQUIRED"));
-      if (tool.risk === "safe_write") {
+      if (tool.risk !== "read" && options.environment === "production" && store.durability === "memory") return audit(fail("DURABLE_STORAGE_REQUIRED"));
+      if (tool.risk !== "read") {
         let mutationsEnabled: boolean;
         try { mutationsEnabled = (typeof options.mutationsEnabled === "function" ? options.mutationsEnabled() : options.mutationsEnabled) === true; } catch { mutationsEnabled = false; }
         if (!mutationsEnabled) return audit(fail("MUTATIONS_DISABLED"));
       }
+      // ── P1 ชั้นยืนยัน ───────────────────────────────────────────────────────
+      // จังหวะที่ 1 (ไม่มี confirm): plan() แล้วคืนการ์ดให้ดู — ไม่แตะ idempotency/execute เลย
+      // จังหวะที่ 2 (มี confirm): โหลด proposal, plan() ใหม่เทียบว่าโลกยังเหมือนเดิม,
+      //                          เคลียร์ prerequisite ครบ, แล้วจึงใช้ args ที่เก็บไว้ไปทำจริง
+      let executeArgs: unknown = args.data;
+      if (needsConfirmation) {
+        const proposals = options.proposals!;
+        const confirm = parsed.data.confirm;
+        if (!confirm) {
+          let draft: ProposalDraft;
+          try { draft = await tool.plan!(args.data, ctx); } catch { return audit(fail("EXECUTION_FAILED")); }
+          const id = (options.newProposalId ?? randomUUID)();
+          const expiresAt = Math.min(Date.now() + PROPOSAL_TTL_MS, ctx.expiresAt);
+          try {
+            await proposals.save({
+              id,
+              organizationId: ctx.organizationId,
+              storeId: ctx.storeId,
+              userId: ctx.userId,
+              sessionId: ctx.sessionId,
+              tool: tool.name,
+              args: args.data,
+              draftFingerprint: fingerprintDraft(draft),
+              expiresAt,
+            });
+          } catch { return audit(fail("PROPOSAL_UNAVAILABLE")); }
+          return audit({ ok: true, kind: "proposal", proposal: { ...draft, id, tool: tool.name, expiresAt } });
+        }
+
+        let record: Awaited<ReturnType<ProposalStore["load"]>>;
+        try { record = await proposals.load(confirm.proposalId); } catch { return audit(fail("PROPOSAL_UNAVAILABLE")); }
+        // หมดอายุ / ไม่ใช่ของ session นี้ / ยืนยันข้าม tool = ปฏิเสธด้วยรหัสเดียวกัน
+        // ไม่บอกว่าแพ้ข้อไหน เพราะผู้เรียกทำอย่างเดียวกันหมด (เสนอใหม่) และไม่คายว่ามี id นี้อยู่จริง
+        if (!record || record.tool !== tool.name || record.expiresAt <= Date.now()
+          || !belongsToContext(record, ctx)) return audit(fail("PROPOSAL_NOT_FOUND"));
+
+        let draft: ProposalDraft;
+        try { draft = await tool.plan!(record.args, ctx); } catch { return audit(fail("EXECUTION_FAILED")); }
+        // โลกเปลี่ยนไประหว่างที่ผู้ใช้ดูการ์ดอยู่ — ห้ามเขียนทับเงียบ ๆ ให้เสนอใหม่
+        if (fingerprintDraft(draft) !== record.draftFingerprint) return audit(fail("PROPOSAL_STALE"));
+        // "ไม่มีให้เพิ่ม ไม่ใช่ข้าม": เหลือสิ่งที่ขาดแม้ข้อเดียวก็ commit ไม่ได้
+        if (unresolvedPrerequisites(draft.prerequisites, confirm.answers ?? {}).length > 0) {
+          return audit(fail("PREREQUISITE_REQUIRED"));
+        }
+        // ใช้ครั้งเดียว — กดยืนยันรัวไม่ทำให้ทำงานสองรอบ (idempotency key ยังกันอีกชั้น)
+        let consumed = false;
+        try { consumed = await proposals.consume(record.id); } catch { consumed = false; }
+        if (!consumed) return audit(fail("PROPOSAL_NOT_FOUND"));
+        executeArgs = record.args;
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       // PR2 — tool ที่ต้องมี active cart: ไม่มี trusted resolver หรือตรวจไม่ผ่าน = ปฏิเสธก่อน execute เสมอ
       let cartBinding: CartBinding | null = null;
       if (tool.requiresActiveCart) {
         if (!options.resolveCartBinding) return audit(fail("CONTEXT_UNAVAILABLE"));
-        try { cartBinding = await options.resolveCartBinding(ctx, args.data); } catch { cartBinding = null; }
+        try { cartBinding = await options.resolveCartBinding(ctx, executeArgs); } catch { cartBinding = null; }
         if (!cartBinding) return audit(fail("CONTEXT_UNAVAILABLE"));
       }
       let fingerprint: string;
-      try { fingerprint = createHash("sha256").update(canonical({ tool: tool.name, args: args.data })).digest("hex"); } catch { return audit(fail("INVALID_ARGS")); }
+      try { fingerprint = createHash("sha256").update(canonical({ tool: tool.name, args: executeArgs })).digest("hex"); } catch { return audit(fail("INVALID_ARGS")); }
       // tool อยู่ใน fingerprint เพื่อให้ reuse key ข้าม tool เป็น conflict; scope แยกโควตา/eviction ต่อ org|store|user|session
       const scope = JSON.stringify([ctx.organizationId, ctx.storeId, ctx.userId, ctx.sessionId]);
       const result = await store.claim(parsed.data.idempotencyKey, fingerprint, {
@@ -254,7 +353,7 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
         identity: { organizationId: ctx.organizationId, storeId: ctx.storeId, userId: ctx.userId, sessionId: ctx.sessionId },
       }, async (): Promise<Result> => {
         try {
-          const raw = await tool.execute(args.data, ctx, cartBinding);
+          const raw = await tool.execute(executeArgs, ctx, cartBinding);
           const output = tool.result.safeParse(raw);
           return output.success ? { ok: true, data: structuredClone(output.data) } : fail("EXECUTION_FAILED");
         } catch { return fail("EXECUTION_FAILED"); }

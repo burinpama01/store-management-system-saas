@@ -7,6 +7,17 @@ import { applyVoiceCartIntent, type VoiceProductAlias } from "@/modules/voice-po
 import type { VoiceIntent } from "@/modules/voice-pos/types";
 import { emptyCart } from "@/modules/pos/cart";
 
+/**
+ * ผลของ tool ที่ไม่มีชั้นยืนยัน — เทสชุดเดิมทั้งหมดใช้ tool แบบนี้
+ *
+ * มีไว้เพราะ Result มีสาขา "การ์ดรอยืนยัน" เพิ่มเข้ามาแล้ว การเข้าถึง .data ตรง ๆ จึงไม่ผ่าน
+ * ชนิดอีกต่อไป (ซึ่งเป็นเรื่องดี — มันบังคับให้โค้ดจริงเลือกว่าจะทำอะไรกับจังหวะแรก)
+ */
+function toolData(result: { ok: boolean } & Record<string, unknown>): Record<string, unknown> {
+  if (!result.ok || "kind" in result) throw new Error(`expected tool data, got ${JSON.stringify(result)}`);
+  return result.data as Record<string, unknown>;
+}
+
 // PR2 — MVP tools ต้องผ่าน resolver เดิมของ Voice POS เป็นทางเดียว (ADR-009):
 // คลุมเครือ/ต้องเลือกตัวเลือก/ของหมด = clarification จาก resolver ไม่ใช่การเดา และไม่มี id จากโมเดล
 
@@ -297,7 +308,7 @@ describe("pos.add_items — หลายรายการในคำสั่�
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const data = result.data as {
+    const data = toolData(result) as unknown as {
       status: string;
       readyCount?: number;
       pending?: { productPhrase: string; reason: string; candidates?: { name: string }[] }[];
@@ -336,7 +347,7 @@ describe("pos.add_items — หลายรายการในคำสั่�
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const data = result.data as {
+    const data = toolData(result) as unknown as {
       status: string;
       readyCount: number;
       pending: { productPhrase: string; reason: string; choices?: { group: string; options: string[] }[] }[];
@@ -373,7 +384,7 @@ describe("pos.add_items — หลายรายการในคำสั่�
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const data = result.data as { status: string; items: { productName: string }[] };
+    const data = toolData(result) as unknown as { status: string; items: { productName: string }[] };
     expect(data.status).toBe("apply_batch");
     expect(data.items.map((item) => item.productName)).toEqual(["อเมริกาโน่", "ลาเต้"]);
   });
@@ -395,7 +406,7 @@ describe("pos.add_items — หลายรายการในคำสั่�
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const data = result.data as { status: string; pending: { productPhrase: string; reason: string }[]; items?: unknown };
+    const data = toolData(result) as unknown as { status: string; pending: { productPhrase: string; reason: string }[]; items?: unknown };
     expect(data.status).toBe("clarification_batch");
     expect(data.pending).toEqual([expect.objectContaining({ productPhrase: "โกโก้", reason: "unavailable" })]);
     expect(data.items).toBeUndefined();

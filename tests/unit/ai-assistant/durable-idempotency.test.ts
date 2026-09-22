@@ -131,7 +131,7 @@ describe("DurableIdempotencyStore", () => {
     expect(db.rows).toHaveLength(1);
     expect(db.rows[0].status).toBe("completed");
     // replay ที่ได้มาแก้ไม่ได้และไม่กระทบรอบถัดไป
-    if (second.ok) (second.data as { count: number }).count = 99;
+    if (second.ok && !("kind" in second)) (second.data as { count: number }).count = 99;
     expect(await new DurableIdempotencyStore(db.client, options).claim("k1", "f1", meta(), execute)).toEqual({ ok: true, data: { count: 1 } });
     expect(execute).toHaveBeenCalledTimes(1);
   });

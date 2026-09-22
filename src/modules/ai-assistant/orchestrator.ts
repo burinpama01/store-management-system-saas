@@ -128,14 +128,16 @@ function planCartCommand(command: AiVoiceCommand, cart: CartRequestContext, quan
 export interface TextCommandOutcome {
   readonly source: "deterministic" | "ai" | "system";
   readonly intent: string;
-  /** tool = ผลจาก dispatcher, clarification = ต้องถามต่อ, client_action = ให้ UI ทำผ่าน bridge, error = dispatcher ปฏิเสธ */
-  readonly kind: "tool" | "clarification" | "client_action" | "skipped" | "error";
+  /** tool = ผลจาก dispatcher, proposal = การ์ดรอยืนยัน (ยังไม่เขียนอะไร), clarification = ต้องถามต่อ, client_action = ให้ UI ทำผ่าน bridge, error = dispatcher ปฏิเสธ */
+  readonly kind: "tool" | "proposal" | "clarification" | "client_action" | "skipped" | "error";
   readonly ok: boolean;
   readonly tool?: string;
   /** รหัสจาก dispatcher เช่น MUTATIONS_DISABLED / DURABLE_STORAGE_REQUIRED / CONTEXT_UNAVAILABLE */
   readonly code?: string;
   /** ผลลัพธ์ที่ผ่าน result schema ของ tool แล้ว (apply instruction / clarification / current order echo) */
   readonly result?: unknown;
+  /** P1 — การ์ดรอยืนยัน: UI ต้องแสดง diff แล้วให้ผู้ใช้กดยืนยันด้วย proposal.id */
+  readonly proposal?: unknown;
   readonly action?: "clear_search";
   readonly note?: string;
 }
@@ -185,7 +187,10 @@ export async function runTextCommand(text: string, deps: TextCommandDeps): Promi
     }
 
     const result = await deps.dispatch({ tool: plan.tool, args: plan.args, idempotencyKey: `${deps.requestId}-${index}` });
-    if (result.ok) {
+    if (result.ok && "kind" in result) {
+      // จังหวะแรกของชั้นยืนยัน — ส่งการ์ดให้ UI แสดง ยังไม่มีอะไรถูกเขียน
+      outcomes.push({ source, intent: command.intent, kind: "proposal", ok: true, tool: plan.tool, proposal: result.proposal });
+    } else if (result.ok) {
       outcomes.push({ source, intent: command.intent, kind: "tool", ok: true, tool: plan.tool, result: result.data });
     } else {
       outcomes.push({ source, intent: command.intent, kind: "error", ok: false, tool: plan.tool, code: result.code });

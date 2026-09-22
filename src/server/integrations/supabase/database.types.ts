@@ -4,6 +4,56 @@ export interface Database {
   public: {
 
     Tables: {
+      ai_assistant_proposals: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          session_id: string;
+          tool: string;
+          args: Json;
+          draft_fingerprint: string;
+          created_at: string;
+          expires_at: string;
+          consumed_at: string | null;
+        };
+        Insert: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          session_id: string;
+          tool: string;
+          args: Json;
+          draft_fingerprint: string;
+          created_at?: string;
+          expires_at: string;
+          consumed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          user_id?: string;
+          session_id?: string;
+          tool?: string;
+          args?: Json;
+          draft_fingerprint?: string;
+          created_at?: string;
+          expires_at?: string;
+          consumed_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ai_assistant_proposals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ];
+      };
       ai_assistant_sessions: {
         Row: {
           id: string;

@@ -26,6 +26,7 @@ import { createServerAssistantDispatcher } from "@/modules/ai-assistant/server";
 import { DurableIdempotencyStore } from "@/modules/ai-assistant/durable-idempotency";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { DurableAssistantSessionStore } from "@/modules/ai-assistant/durable-session";
+import { DurableProposalStore } from "@/modules/ai-assistant/durable-proposal";
 import { createFixedWindowRateLimiter } from "@/modules/ai-assistant/rate-limit";
 import { createTextInterpreter, runTextCommand, type TextFailureReason } from "@/modules/ai-assistant/orchestrator";
 import { interpretTextIntent } from "@/modules/ai-assistant/text-intent";
@@ -80,6 +81,9 @@ function getDispatch(): Promise<TextCommandDispatcher> {
           return sessions.bindCart(context, parsed.activeCartId, parsed.cartVersion);
         },
         idempotencyStore: new DurableIdempotencyStore(client),
+        // P1 — ชั้นยืนยัน: tool ที่มี plan() จะคืนการ์ดก่อน แล้วรอ confirm ด้วย proposalId
+        // ข้อเสนออยู่ใน DB เพราะ "เสนอ" กับ "ยืนยัน" เป็นคนละ request และอาจคนละ instance
+        proposals: new DurableProposalStore(client),
       });
     })
     // สร้างไม่สำเร็จ = คืนโอกาสให้ request ถัดไปลองใหม่ (ไม่ memoize rejection ตลอดอายุ process)
@@ -255,9 +259,13 @@ export async function POST(request: Request) {
   // ── โหมด read-tool: เรียก tool อ่านตรง (search / current order) ผ่าน dispatcher เดิมทุกด่าน ──
   if (input.tool) {
     const result = await dispatch({ tool: input.tool, args: input.args ?? {}, idempotencyKey: input.requestId });
-    const outcome = result.ok
-      ? { kind: "tool" as const, ok: true, tool: input.tool, result: result.data }
-      : { kind: "error" as const, ok: false, tool: input.tool, code: result.code };
+    // เส้นทางนี้เป็น read tool ล้วน (DIRECT_READ_TOOLS) จึงไม่มีการ์ดรอยืนยัน — แต่เขียนให้ครบ
+    // ไว้ เผื่อ allowlist โตขึ้นในอนาคตแล้วมี tool ที่ต้องยืนยันหลุดเข้ามา
+    const outcome = result.ok && "kind" in result
+      ? { kind: "proposal" as const, ok: true, tool: input.tool, proposal: result.proposal }
+      : result.ok
+        ? { kind: "tool" as const, ok: true, tool: input.tool, result: result.data }
+        : { kind: "error" as const, ok: false, tool: input.tool, code: result.code };
     return NextResponse.json({ ok: true, requestId: input.requestId, outcomes: [outcome] }, { headers: NO_STORE });
   }
 
