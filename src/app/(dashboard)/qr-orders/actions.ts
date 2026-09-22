@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { updateOrderPrepStatus, resolveServiceRequest, voidQrOrderItem, rejectQrOrder } from "@/modules/qr-ordering/repository";
+import { resolveKitchenStationScope } from "@/modules/qr-ordering/kitchen-stations";
 import type { PrepStatus } from "@/modules/qr-ordering/types";
 import { logSystemEvent } from "@/modules/system/event-log";
 
@@ -38,7 +39,8 @@ export async function updatePrepStatusAction(
     const { user, ctx } = await getStoreContext();
     if (!UUID_RE.test(orderId)) return { error: "ออร์เดอร์ไม่ถูกต้อง" };
     if (!PREP_STATUSES.includes(prepStatus)) return { error: "สถานะไม่ถูกต้อง" };
-    if (ctx.role === "staff") {
+    // ผูกสถานีครัวไว้ = ทำได้เฉพาะรายการของสถานีตัวเอง (หน้าจอซ่อนปุ่มด้วยเงื่อนไขเดียวกัน)
+    if (!(await resolveKitchenStationScope(ctx.storeId, user.id, ctx.role)).canSeeAll) {
       return { error: "พนักงานครัวไม่สามารถเปลี่ยนสถานะทั้งออร์เดอร์" };
     }
 
@@ -112,7 +114,8 @@ export async function rejectQrOrderAction(
     const { user, ctx } = await getStoreContext();
     if (!UUID_RE.test(orderId)) return { error: "รายการไม่ถูกต้อง", rejected: 0 };
     // ปุ่มนี้แสดงเฉพาะผู้ที่เห็นทุกสถานีครัว (ไม่ใช่ staff) — backend ใช้เงื่อนไขเดียวกัน
-    if (ctx.role === "staff") {
+    // ผูกสถานีครัวไว้ = ทำได้เฉพาะรายการของสถานีตัวเอง (หน้าจอซ่อนปุ่มด้วยเงื่อนไขเดียวกัน)
+    if (!(await resolveKitchenStationScope(ctx.storeId, user.id, ctx.role)).canSeeAll) {
       return { error: "พนักงานครัวไม่สามารถปฏิเสธทั้งออร์เดอร์", rejected: 0 };
     }
     const trimmed = reason?.trim().slice(0, 100) || "ครัวปฏิเสธออเดอร์";

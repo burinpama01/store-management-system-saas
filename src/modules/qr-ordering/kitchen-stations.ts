@@ -116,6 +116,39 @@ export async function listAssignedKitchenStationIdsForUser(storeId: string, user
   return { data: [...new Set((data ?? []).map((row) => row.kitchen_station_id))], error: null };
 }
 
+export interface KitchenStationScope {
+  /** true = เห็นทุกสถานีครัว (ปุ่มทั้งออเดอร์ รับ/ปฏิเสธ ใช้ได้) */
+  canSeeAll: boolean;
+  /** สถานีที่ผูกกับผู้ใช้ — ใช้กรองเมื่อ canSeeAll เป็น false */
+  stationIds: string[];
+}
+
+/**
+ * ขอบเขตสถานีครัวที่ผู้ใช้เห็นในหน้า QR Order / dialog ออเดอร์เข้า
+ *
+ * - ถูกผูกสถานีไว้ (staff / cashier / manager) → เห็นเฉพาะสถานีของตัวเอง
+ * - staff ที่ยังไม่ผูกสถานี → ไม่เห็นอะไร (เหมือนเดิม)
+ * - cashier / manager ที่ไม่ได้ผูก และ owner → เห็นทุกสถานี
+ *
+ * เดิมกรองเฉพาะ role staff ทำให้แคชเชียร์/ผู้จัดการที่ถูกผูกสถานี (เปิดให้ผูกได้ใน PR#90)
+ * ยังเห็นออเดอร์ของสถานีอื่นปนมา
+ */
+export async function resolveKitchenStationScope(
+  storeId: string,
+  userId: string,
+  role: string,
+): Promise<KitchenStationScope> {
+  if (!(KITCHEN_ASSIGNABLE_ROLES as readonly string[]).includes(role)) {
+    return { canSeeAll: true, stationIds: [] };
+  }
+  const assigned = await listAssignedKitchenStationIdsForUser(storeId, userId);
+  const stationIds = assigned.data ?? [];
+  if (role === "staff") return { canSeeAll: false, stationIds };
+  // อ่านการผูกไม่ได้ = คงสิทธิ์เดิมของแคชเชียร์/ผู้จัดการ (เห็นทั้งหมด) ไม่ให้หน้าว่างเปล่า
+  if (assigned.error || stationIds.length === 0) return { canSeeAll: true, stationIds: [] };
+  return { canSeeAll: false, stationIds };
+}
+
 export async function replaceKitchenStationStaffAssignments(
   input: ReplaceKitchenStationStaffAssignmentsInput,
 ) {
