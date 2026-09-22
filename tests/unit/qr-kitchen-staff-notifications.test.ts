@@ -40,7 +40,7 @@ describe("QR kitchen staff routing and notifications", () => {
     expect(repo).toContain("export async function replaceKitchenStationStaffAssignments");
     expect(repo).toContain("export async function listAssignedKitchenStationIdsForUser");
     expect(repo).toContain(".eq(\"user_id\", userId)");
-    expect(repo).toContain("role\", \"staff\"");
+    expect(repo).toContain('.in("role", KITCHEN_ASSIGNABLE_ROLES)');
 
     const qrRepo = read("src/modules/qr-ordering/repository.ts");
     expect(qrRepo).toContain("export function filterQrOrdersForStations");

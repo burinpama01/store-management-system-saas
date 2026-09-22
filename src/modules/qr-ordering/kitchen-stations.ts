@@ -7,6 +7,8 @@ type KitchenStationRow = Database["public"]["Tables"]["kitchen_stations"]["Row"]
 type KitchenStationStaffRow = Database["public"]["Tables"]["kitchen_station_staff"]["Row"];
 type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
+export const KITCHEN_ASSIGNABLE_ROLES: readonly Database["public"]["Tables"]["memberships"]["Row"]["role"][] = ["staff", "cashier", "manager"];
+
 export interface KitchenStation {
   id: string;
   organizationId: string;
@@ -137,7 +139,7 @@ export async function replaceKitchenStationStaffAssignments(
       .from("memberships")
       .select("user_id, role")
       .eq("organization_id", input.organizationId)
-      .eq("role", "staff")
+      .in("role", KITCHEN_ASSIGNABLE_ROLES)
       .in("user_id", userIds)
       .or(`store_id.eq.${input.storeId},store_id.is.null`)
       .not("joined_at", "is", null);
@@ -145,7 +147,7 @@ export async function replaceKitchenStationStaffAssignments(
     const validStaffIds = new Set((staffRows ?? []).map((row) => row.user_id));
     const invalidUserId = userIds.find((userId) => !validStaffIds.has(userId));
     if (invalidUserId) {
-      return { error: mapError(new Error("Kitchen station staff must use role staff")) };
+      return { error: mapError(new Error("Kitchen station members must be joined Staff, Cashier or Manager members of this store")) };
     }
   }
 

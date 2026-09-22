@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listProducts } from "@/modules/catalog/repository";
 import {
+  KITCHEN_ASSIGNABLE_ROLES,
   listKitchenStationStaffAssignments,
   listKitchenStations,
 } from "@/modules/qr-ordering/kitchen-stations";
@@ -23,7 +24,11 @@ export default async function KitchenSettingsPage() {
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listPrinters(ctx.storeId, ctx.organizationId),
   ]);
-  const staffMembers = (membersRes.data ?? []).filter((member) => member.role === "staff");
+  const staffMembers = [...new Map(
+    (membersRes.data ?? [])
+      .filter((member) => KITCHEN_ASSIGNABLE_ROLES.includes(member.role))
+      .map((member) => [member.userId, member]),
+  ).values()];
 
   return (
     <KitchenStationsManager
