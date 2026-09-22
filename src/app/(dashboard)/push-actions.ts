@@ -1,6 +1,8 @@
 "use server";
 
+import { headers } from "next/headers";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { parseAppVersionName } from "@/modules/mobile/android-version";
 import { upsertDevicePushToken } from "@/modules/notifications/repository";
 
 const FCM_TOKEN_RE = /^[A-Za-z0-9_:\-]{20,512}$/;
@@ -28,6 +30,8 @@ export async function registerPushTokenAction(input: {
     storeId: ctx.storeId ?? null,
     platform: input.platform,
     token: input.token,
+    // อ่านรุ่นจาก UA (StoreOSApp/x.y.z) ไม่รับจาก client — ใช้เลือกรูปแบบ push ที่แอปรุ่นนั้นรองรับ
+    appVersion: parseAppVersionName((await headers()).get("user-agent") ?? ""),
   });
   return { ok: result.ok };
 }

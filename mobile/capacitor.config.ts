@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   // เลขเวอร์ชันต่อท้ายเพื่อให้เว็บรู้ว่าเครื่องนี้ลงรุ่นอะไร แล้วเตือนเมื่อมีรุ่นใหม่ —
   // แอปไม่ได้อยู่บน Play Store จึงไม่มี auto-update และอัปเดตตัวเองไม่ได้
   // ต้องขึ้นเลขนี้พร้อม versionName ใน android/app/build.gradle ทุกครั้ง
-  appendUserAgent: "StoreOSApp/1.0.2",
+  appendUserAgent: "StoreOSApp/1.0.3",
   // Stub fallback page only; the app loads the production web app below.
   webDir: "www",
   server: {
@@ -19,6 +19,9 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false,
+    // Reserve actual native system-bar/cutout insets on every Android version.
+    // Older WebViews do not reliably expose these via CSS env(safe-area-inset-*).
+    adjustMarginsForEdgeToEdge: "force",
   },
 };
 

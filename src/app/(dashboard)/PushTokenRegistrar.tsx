@@ -46,19 +46,21 @@ export function PushTokenRegistrar() {
         const { token } = await messaging.getToken();
         if (cancelled || !token) return;
 
-        // กันยิงซ้ำทุกครั้งที่เปิดหน้า: ข้ามถ้า token เดิมและเพิ่งลงทะเบียนไป
+        // กันยิงซ้ำทุกครั้งที่เปิดหน้า: ข้ามถ้า token เดิม รุ่นแอปเดิม และเพิ่งลงทะเบียนไป
+        // (อัปเดตแอปแล้วต้องลงทะเบียนใหม่ทันที — เซิร์ฟเวอร์เลือกรูปแบบ push ตามรุ่นแอป)
+        const ua = navigator.userAgent;
         try {
           const cached = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as
-            | { token: string; at: number }
+            | { token: string; at: number; ua?: string }
             | null;
-          if (cached?.token === token && Date.now() - cached.at < REFRESH_INTERVAL_MS) return;
+          if (cached?.token === token && cached.ua === ua && Date.now() - cached.at < REFRESH_INTERVAL_MS) return;
         } catch {
           // cache พัง — ลงทะเบียนใหม่
         }
 
         const result = await registerPushTokenAction({ token, platform });
         if (result.ok) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, at: Date.now() }));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, at: Date.now(), ua }));
         }
       } catch {
         // permission ถูกปฏิเสธหรือ plugin ล้มเหลว — เงียบไว้ ไม่กระทบการใช้งาน

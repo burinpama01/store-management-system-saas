@@ -337,7 +337,7 @@ async function dispatchPushNotification(input: NotificationPayload): Promise<Not
   const outcomes = await Promise.all(
     tokens.map(async (device) => ({
       token: device.token,
-      outcome: await sendFcmToDevice(account, device.token, input),
+      outcome: await sendFcmToDevice(account, device, input),
     })),
   );
 

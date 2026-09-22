@@ -4471,6 +4471,7 @@ export interface Database {
           store_id: string | null;
           platform: "android" | "ios";
           token: string;
+          app_version: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -4481,6 +4482,7 @@ export interface Database {
           store_id?: string | null;
           platform: "android" | "ios";
           token: string;
+          app_version?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -4491,6 +4493,7 @@ export interface Database {
           store_id?: string | null;
           platform?: "android" | "ios";
           token?: string;
+          app_version?: string | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -186,6 +186,8 @@ export interface DevicePushToken {
   storeId: string | null;
   platform: "android" | "ios";
   token: string;
+  /** รุ่นแอปจาก User-Agent ตอนลงทะเบียน (null = แอปรุ่นเก่าที่ไม่ส่งเลขรุ่น) */
+  appVersion: string | null;
 }
 
 export async function upsertDevicePushToken(input: {
@@ -194,6 +196,7 @@ export async function upsertDevicePushToken(input: {
   storeId: string | null;
   platform: "android" | "ios";
   token: string;
+  appVersion: string | null;
 }) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("device_push_tokens").upsert(
@@ -203,6 +206,7 @@ export async function upsertDevicePushToken(input: {
       store_id: input.storeId,
       platform: input.platform,
       token: input.token,
+      app_version: input.appVersion,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "token" },
@@ -228,6 +232,7 @@ export async function listOrganizationPushTokens(organizationId: string) {
       storeId: row.store_id,
       platform: row.platform,
       token: row.token,
+      appVersion: row.app_version,
     })),
     error: null,
   };
@@ -288,6 +293,7 @@ export async function listStorePushTokens(
         storeId: row.store_id,
         platform: row.platform,
         token: row.token,
+        appVersion: row.app_version,
       })),
     error: null,
   };

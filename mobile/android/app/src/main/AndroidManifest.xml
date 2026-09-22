@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -19,6 +20,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- รับ FCM แทน service ของ plugin (subclass ส่งต่อให้ plugin ครบ) เพื่อทำเสียงออเดอร์ดังวน
+             ต้องถอดตัวเดิมออก: มี MESSAGING_EVENT สองตัว Firebase จะเลือกตัวไหนก็ได้ -->
+        <service
+            android:name="io.capawesome.capacitorjs.plugins.firebase.messaging.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".OrderAlertMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

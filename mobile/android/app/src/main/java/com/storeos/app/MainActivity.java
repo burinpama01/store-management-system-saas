@@ -3,6 +3,7 @@ package com.storeos.app;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
@@ -18,15 +19,35 @@ public class MainActivity extends BridgeActivity {
      */
     static final String ORDER_CHANNEL_ID = "storeos_orders";
 
+    /** OrderAlertMessagingService ใช้ตัดสินว่าต้องสร้างแจ้งเตือนเสียงวนไหม (แอปอยู่หน้าจอ = ไม่ต้อง) */
+    private static volatile boolean inForeground = false;
+
+    static boolean isInForeground() {
+        return inForeground;
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        createOrderNotificationChannel();
+        createOrderNotificationChannel(this);
     }
 
-    private void createOrderNotificationChannel() {
+    @Override
+    public void onResume() {
+        super.onResume();
+        inForeground = true;
+        OrderAlertMessagingService.cancelOrderAlerts(this);
+    }
+
+    @Override
+    public void onPause() {
+        inForeground = false;
+        super.onPause();
+    }
+
+    static void createOrderNotificationChannel(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationManager manager = getSystemService(NotificationManager.class);
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null || manager.getNotificationChannel(ORDER_CHANNEL_ID) != null) return;
 
         NotificationChannel channel = new NotificationChannel(
@@ -36,7 +57,7 @@ public class MainActivity extends BridgeActivity {
         );
         channel.setDescription("แจ้งเตือนเมื่อมีออเดอร์ QR หรือเดลิเวอรีเข้า");
         Uri sound = Uri.parse(
-            ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + getPackageName() + "/" + R.raw.alert_new_order
+            ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + context.getPackageName() + "/" + R.raw.alert_new_order
         );
         AudioAttributes attributes = new AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION)
