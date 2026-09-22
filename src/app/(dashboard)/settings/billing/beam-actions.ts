@@ -13,10 +13,13 @@ async function context() {
 
 export async function createBeamPackageAction(input: { plan: string; duration: string; businessConfigJson?: string; discountCode?: string }) {
   const { ctx, user } = await context();
-  if ((!isPaidTier(input.plan) && input.plan !== "business") || (input.duration !== "30d" && input.duration !== "1y")) throw new Error("ข้อมูลแพ็กเกจไม่ถูกต้อง");
+  const isEnterprise = input.plan === "enterprise";
+  // enterprise ใช้อายุจากข้อเสนอรายบัญชี (createPlatformBillingOrder ตรวจข้อเสนอซ้ำเอง)
+  const duration = isEnterprise ? "30d" : input.duration;
+  if ((!isPaidTier(input.plan) && input.plan !== "business" && !isEnterprise) || (duration !== "30d" && duration !== "1y")) throw new Error("ข้อมูลแพ็กเกจไม่ถูกต้อง");
   const businessConfig = input.plan === "business" ? parseBusinessConfigJson(input.businessConfigJson) : null;
   if (input.plan === "business" && !businessConfig) throw new Error("ข้อมูล Business ไม่ครบ");
-  return createPlatformBillingOrder({ ...input, plan: input.plan, duration: input.duration, businessConfig,
+  return createPlatformBillingOrder({ ...input, plan: input.plan as "starter" | "standard" | "premium" | "business" | "enterprise", duration, businessConfig,
     organizationId: ctx.organizationId, submittedByUserId: user.id });
 }
 

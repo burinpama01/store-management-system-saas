@@ -6,6 +6,8 @@ import { PLAN_LABELS } from "@/modules/billing/types";
 import type { BillingPlan, BillingStatus } from "@/modules/billing/types";
 import { SuspendControl } from "./SuspendControl";
 import { TenantPlanControl } from "./TenantPlanControl";
+import { EnterpriseOfferControl } from "./EnterpriseOfferControl";
+import { getEnterpriseOffer } from "@/modules/billing/enterprise-offer-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +51,7 @@ export default async function TenantDetailPage({
   if (!tenant) notFound();
   const ops = await getTenantOperations(id);
   const payments = await listTenantPayments(id);
+  const enterpriseOffer = await getEnterpriseOffer(id);
 
   return (
     <div className="space-y-5">
@@ -96,6 +99,24 @@ export default async function TenantDetailPage({
             currentPlan={(tenant.subscription?.plan ?? "free") as BillingPlan}
             currentEnterpriseLimited={tenant.subscription?.enterpriseLimited ?? false}
             currentPeriodEnd={tenant.subscription?.currentPeriodEnd ?? null}
+          />
+        </div>
+        <div className="mt-3">
+          <EnterpriseOfferControl
+            organizationId={tenant.organizationId}
+            currentPeriodEnd={tenant.subscription?.currentPeriodEnd ?? null}
+            initial={
+              enterpriseOffer
+                ? {
+                    amount: enterpriseOffer.amount,
+                    termKind: enterpriseOffer.term.kind,
+                    termDays: enterpriseOffer.term.kind === "days" ? enterpriseOffer.term.days : null,
+                    endsAt: enterpriseOffer.term.kind === "until" ? enterpriseOffer.term.endsAt : null,
+                    active: enterpriseOffer.active,
+                    note: enterpriseOffer.note,
+                  }
+                : null
+            }
           />
         </div>
       </section>

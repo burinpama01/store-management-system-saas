@@ -14,6 +14,8 @@ import { BillingManager } from "./BillingManager";
 import { AiUsagePanel } from "./AiUsagePanel";
 import { getPlatformBeamPublicSettings } from "@/modules/billing/beam-settings";
 import { getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
+import { getPayableEnterpriseOffer } from "@/modules/billing/enterprise-offer-repository";
+import { describeOffer } from "@/modules/billing/enterprise-offer";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,11 @@ export default async function BillingSettingsPage() {
   const latestEnterpriseRequest = enterpriseRequests[0] ?? null;
 
   const active = hasBillingAccess(billingState);
+
+  // ข้อเสนอต่ออายุ Enterprise ที่ซุปเปอร์แอดมินตั้งไว้ให้บัญชีนี้ (ส่วนใหญ่ไม่มี = null)
+  const offer = resolved.can("billing.manage")
+    ? await getPayableEnterpriseOffer(ctx.organizationId)
+    : null;
 
   const [aiSummary, aiPacks, aiHistory] = await Promise.all([
     getAiUsageSummary({ organizationId: ctx.organizationId }),
@@ -67,6 +74,15 @@ export default async function BillingSettingsPage() {
       expires={isExpiringState(billingState)}
       freeTrialAvailable={freeTrial.available}
       freeTrialEndsAt={freeTrial.campaignEndsAt}
+      enterpriseOffer={
+        offer
+          ? {
+              amount: offer.amount,
+              summary: describeOffer(offer, billingState.currentPeriodEnd || null),
+              note: null,
+            }
+          : null
+      }
       enterpriseRequest={
         latestEnterpriseRequest
           ? { status: latestEnterpriseRequest.status, createdAt: latestEnterpriseRequest.createdAt }

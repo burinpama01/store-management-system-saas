@@ -33,14 +33,15 @@ function formatDate(iso: string | null): string {
     : d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const TIER_DESC: Record<PaidTier | "business", string> = {
+const TIER_DESC: Record<PaidTier | "business" | "enterprise", string> = {
+  enterprise: "ต่ออายุตามข้อตกลงที่ผู้ดูแลแพลตฟอร์มกำหนดให้บัญชีนี้",
   starter: "1 สาขา / 3 สมาชิก · Basic POS, catalog, receipt",
   standard: "3 สาขา / 10 สมาชิก · + buffet, stock, advanced printing, advanced reports",
   premium: "5 สาขา / 50 สมาชิก · + QR Ordering, LINE Notify, GPS attendance, advanced permissions",
   business: "เลือกจำนวนที่นั่ง/สาขา และเปิดเฉพาะฟีเจอร์ที่ใช้ · จ่ายตามที่เลือกจริง",
 };
 
-type SelectablePlan = PaidTier | "business";
+type SelectablePlan = PaidTier | "business" | "enterprise";
 
 interface PaymentQuoteView {
   plan: SelectablePlan;
@@ -68,6 +69,7 @@ export function BillingManager({
   freeTrialAvailable,
   freeTrialEndsAt = null,
   enterpriseRequest = null,
+  enterpriseOffer = null,
   promoTrial = false,
   expires = true,
   beamEnabled = false,
@@ -88,6 +90,8 @@ export function BillingManager({
   freeTrialAvailable: boolean;
   freeTrialEndsAt?: string | null;
   enterpriseRequest?: { status: "new" | "contacted" | "closed"; createdAt: string } | null;
+  /** ข้อเสนอต่ออายุ Enterprise รายบัญชีที่ซุปเปอร์แอดมินตั้งไว้ */
+  enterpriseOffer?: { amount: number; summary: string; note: string | null } | null;
   /** true = สิทธิ์ชุดนี้มาจากโปรทดลองฟรี (subscriptions.promo_trial_code) */
   promoTrial?: boolean;
   /** ผลของ isExpiringState() ฝั่งเซิร์ฟเวอร์ — false = สัญญาไม่มีวันหมดอายุ */
@@ -127,13 +131,16 @@ export function BillingManager({
   const [uploadPercent, setUploadPercent] = useState(0);
 
   const isBusinessSelected = selectedPlan === "business";
+  const isEnterpriseSelected = selectedPlan === "enterprise";
   const businessConfig = useMemo<BusinessPlanConfig>(
     () => ({ seats, stores, features: businessFeatures }),
     [seats, stores, businessFeatures],
   );
-  const price = isBusinessSelected
-    ? computeBusinessPrice(businessConfig, businessPrices, duration)
-    : prices[selectedPlan][duration];
+  const price = isEnterpriseSelected
+    ? (enterpriseOffer?.amount ?? 0)
+    : isBusinessSelected
+      ? computeBusinessPrice(businessConfig, businessPrices, duration)
+      : prices[selectedPlan][duration];
   const displayAmount = paymentQuote?.amount ?? price;
 
   function toggleBusinessFeature(key: FeatureKey) {
@@ -370,12 +377,33 @@ export function BillingManager({
         </p>
       )}
 
+      {!isEnterpriseContract && canManage && enterpriseOffer && (
+        <section className="panel max-w-3xl border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-5">
+          <h2 className="panel-title mb-1">ต่อ Enterprise ตามข้อตกลง</h2>
+          <p className="text-sm text-[var(--ink-2)]">{enterpriseOffer.summary}</p>
+          {enterpriseOffer.note && (
+            <p className="mt-1 text-xs text-[var(--muted)]">{enterpriseOffer.note}</p>
+          )}
+          <button
+            type="button"
+            disabled={busy || !paymentConfigured}
+            onClick={() => { setSelectedPlan("enterprise"); resetGeneratedPayment(); }}
+            className="btn-primary mt-3 min-h-11 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isEnterpriseSelected ? "เลือกต่อ Enterprise แล้ว" : "เลือกต่อ Enterprise"}
+          </button>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            ไม่ต้องการต่อ Enterprise? เลือกแพ็กเกจอื่นในส่วนด้านล่างได้ตามปกติ
+          </p>
+        </section>
+      )}
+
       {!isEnterpriseContract && canManage && (paymentConfigured || trialAvailable) && (
         <section className="panel p-5">
           <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {([...PAID_TIERS, "business"] as SelectablePlan[]).map((t) => (
+            {([...PAID_TIERS, "business", ...(enterpriseOffer ? ["enterprise"] : [])] as SelectablePlan[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -390,9 +418,11 @@ export function BillingManager({
                 <p className="text-sm font-extrabold text-[var(--ink)]">{PLAN_LABELS[t]}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">{TIER_DESC[t]}</p>
               <p className="mt-2 text-xs text-[var(--ink-2)]">
-                {t === "business"
-                  ? `เริ่มต้น ${computeBusinessPrice({ seats: 1, stores: 1, features: [] }, businessPrices, "30d").toLocaleString()} / เดือน`
-                  : `${prices[t]["30d"].toLocaleString()} / เดือน`}
+                {t === "enterprise"
+                  ? `${(enterpriseOffer?.amount ?? 0).toLocaleString()} บาท ตามข้อตกลง`
+                  : t === "business"
+                    ? `เริ่มต้น ${computeBusinessPrice({ seats: 1, stores: 1, features: [] }, businessPrices, "30d").toLocaleString()} / เดือน`
+                    : `${prices[t]["30d"].toLocaleString()} / เดือน`}
               </p>
               </button>
             ))}
@@ -486,7 +516,7 @@ export function BillingManager({
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {(["30d", "1y"] as BillingDuration[]).map((d) => (
+            {(isEnterpriseSelected ? [] : (["30d", "1y"] as BillingDuration[])).map((d) => (
               <button
                 key={d}
                 type="button"
@@ -499,6 +529,9 @@ export function BillingManager({
                 {DURATION_LABELS[d]}
               </button>
             ))}
+            {isEnterpriseSelected && (
+              <p className="text-sm text-[var(--ink-2)]">{enterpriseOffer?.summary}</p>
+            )}
             <div className="ml-auto text-right">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">
                 {paymentQuote ? "ยอดที่ต้องโอน" : "ราคาแพ็กเกจ"}
