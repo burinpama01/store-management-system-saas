@@ -58,7 +58,16 @@ export async function registerPushTokenAction(input: {
   return { ok: result.ok };
 }
 
-const CLIENT_STAGES = new Set(["plugin_missing", "permission_denied", "no_token", "client_error"]);
+/** ขั้นตอนที่หน้าเว็บในแอปรายงาน — info = ผ่านไปตามปกติ, warn = ลงทะเบียนไม่ถึงเซิร์ฟเวอร์ */
+const CLIENT_STAGES: Record<string, { level: "info" | "warn"; message: string }> = {
+  start: { level: "info", message: "แอปเริ่มลงทะเบียน Push" },
+  cache_hit: { level: "info", message: "แอปข้ามการลงทะเบียน Push (ลงทะเบียนแล้วภายใน 24 ชม.)" },
+  bridge_missing: { level: "warn", message: "แอปลงทะเบียน Push ไม่ได้: bridge_missing" },
+  plugin_missing: { level: "warn", message: "แอปลงทะเบียน Push ไม่ได้: plugin_missing" },
+  permission_denied: { level: "warn", message: "แอปลงทะเบียน Push ไม่ได้: permission_denied" },
+  no_token: { level: "warn", message: "แอปลงทะเบียน Push ไม่ได้: no_token" },
+  client_error: { level: "warn", message: "แอปลงทะเบียน Push ไม่ได้: client_error" },
+};
 
 /**
  * แอปรายงานว่าลงทะเบียนไม่ถึงเซิร์ฟเวอร์เพราะอะไร (ปฏิเสธสิทธิ์แจ้งเตือน / ไม่ได้ token ฯลฯ)
@@ -68,13 +77,14 @@ export async function reportPushRegistrationIssueAction(input: {
   stage: string;
   detail?: string;
 }): Promise<void> {
-  if (!input || !CLIENT_STAGES.has(input.stage)) return;
+  const stage = input ? CLIENT_STAGES[input.stage] : undefined;
+  if (!stage) return;
   const { user, ctx } = await getResolvedCurrentPermissions();
   await logSystemEvent({
-    level: "warn",
+    level: stage.level,
     source: "notifications.push",
     action: "registerPushToken.client",
-    message: `แอปลงทะเบียน Push ไม่ได้: ${input.stage}`,
+    message: stage.message,
     organizationId: ctx?.organizationId ?? null,
     storeId: ctx?.storeId ?? null,
     actorUserId: user.id,

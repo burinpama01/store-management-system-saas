@@ -37,7 +37,13 @@ export function PushTokenRegistrar() {
 
   useEffect(() => {
     const capacitor = window.Capacitor;
-    if (!capacitor?.isNativePlatform?.()) return;
+    if (!capacitor?.isNativePlatform?.()) {
+      // เปิดในแอปแต่ไม่มี bridge ของ Capacitor = ลงทะเบียนไม่ได้แน่ ๆ — ต้องรู้ให้ได้
+      if (navigator.userAgent.includes("StoreOSApp") && attempt === 0) {
+        void reportPushRegistrationIssueAction({ stage: "bridge_missing" }).catch(() => {});
+      }
+      return;
+    }
     const messaging = capacitor.Plugins?.FirebaseMessaging;
     if (!messaging) {
       void reportPushRegistrationIssueAction({ stage: "plugin_missing" }).catch(() => {});
@@ -50,6 +56,7 @@ export function PushTokenRegistrar() {
 
     (async () => {
       try {
+        void reportPushRegistrationIssueAction({ stage: "start", detail: platform }).catch(() => {});
         const permission = await messaging.requestPermissions();
         if (cancelled) return;
         if (permission.receive !== "granted") {
@@ -73,6 +80,7 @@ export function PushTokenRegistrar() {
             | { token: string; at: number; ua?: string }
             | null;
           if (cached?.token === token && cached.ua === ua && Date.now() - cached.at < REFRESH_INTERVAL_MS) {
+            void reportPushRegistrationIssueAction({ stage: "cache_hit" }).catch(() => {});
             setProblem(null);
             return;
           }

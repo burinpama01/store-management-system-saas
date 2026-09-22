@@ -30,6 +30,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         createOrderNotificationChannel(this);
+        // สภาพเครื่องตอนเปิดแอป: ปิดแจ้งเตือน/ปิดช่องออเดอร์/โดนประหยัดแบต ไหม
+        DeviceLog.send(this, "app_open", DeviceLog.deviceState(this));
     }
 
     @Override
