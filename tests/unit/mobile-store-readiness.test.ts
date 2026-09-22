@@ -8,10 +8,11 @@ function source(relativePath: string) {
 }
 
 describe("mobile store submission readiness", () => {
-  it("reserves native system-bar space even on Android before API 35", async () => {
-    const { default: config } = await import("../../mobile/capacitor.config");
+  it("reserves native system-bar space even on Android before API 35", () => {
+    // อ่านเป็นข้อความ ห้าม import: tsconfig ของเว็บจะลาก @capacitor/cli เข้ามา
+    // แต่ Vercel ไม่ได้ติดตั้ง mobile/node_modules → next build ล้มทั้ง deploy
     // auto only activates on Android 15+: older WebViews may expose zero CSS insets.
-    expect(config.android?.adjustMarginsForEdgeToEdge).toBe("force");
+    expect(source("mobile/capacitor.config.ts")).toContain('adjustMarginsForEdgeToEdge: "force"');
   });
   it("targets Android 16 with a compatible Android Gradle plugin", () => {
     const variables = source("mobile/android/variables.gradle");
