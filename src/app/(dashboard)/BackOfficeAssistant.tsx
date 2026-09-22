@@ -6,9 +6,23 @@ import {
   parseAssistantProposal,
   type AssistantProposal,
 } from "@/modules/ai-assistant/ui/text-assistant-ui";
+import {
+  describeListeningState,
+  shouldFallBackToTyping,
+  VOICE_ERROR_TEXT,
+} from "@/modules/ai-assistant/ui/voice-command";
+import { createBrowserSpeechAdapter, type VoiceSpeechSession } from "@/modules/voice-pos/speech-adapter";
+import type { VoiceRecognitionState } from "@/modules/voice-pos/types";
 
 /**
- * ผู้ช่วยหลังร้าน — ปุ่มเดียวเรียกใช้ได้ทั้งฟีเจอร์
+ * ผู้ช่วยหลังร้าน — ปุ่มเดียว "กดแล้วพูด"
+ *
+ * เสียงเป็นทางหลัก ไม่ใช่ของแถม: ถ้าเป็นกล่องพิมพ์ มันก็เท่ากับกรอกฟอร์มเดิมที่มีอยู่แล้ว
+ * คุณค่าทั้งหมดอยู่ที่พูดประโยคเดียวแล้วจบ โดยไม่ต้องเปิดหน้า หาเมนู เลือกหมวด กรอกช่อง
+ * แล้วกดบันทึก — กดปุ่มครั้งเดียวคือเปิดแผงและเริ่มฟังทันที
+ *
+ * พิมพ์ยังมีอยู่ในฐานะทางสำรอง (เบราว์เซอร์ไม่รองรับ / ไม่ให้สิทธิ์ไมค์ / ร้านเสียงดัง)
+ * และสลับให้อัตโนมัติเมื่อเจอความล้มเหลวที่ "ลองพูดใหม่" ไม่ช่วย
  *
  * ต่างจากแผงผู้ช่วยในหน้าขายตรงที่ไม่ยุ่งกับตะกร้าเลย งานหลังร้านไม่มีตะกร้า และการ
  * ผูกเข้ากับ core ของหน้าขายจะลากเงื่อนไข "ต้องมีตะกร้าก่อน" มาโดยไม่จำเป็น
@@ -104,10 +118,19 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
   const sequence = useRef(0);
   const entryId = useRef(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [voiceState, setVoiceState] = useState<VoiceRecognitionState>("idle");
+  const [interim, setInterim] = useState("");
+  const [typing, setTyping] = useState(false);
+  const adapter = useRef<ReturnType<typeof createBrowserSpeechAdapter> | null>(null);
+  const listenSession = useRef<VoiceSpeechSession | null>(null);
+  const listening = voiceState === "listening" || voiceState === "requesting" || voiceState === "resolving";
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    if (open && typing) inputRef.current?.focus();
+  }, [open, typing]);
+
+  // ออกจากแผงระหว่างฟัง = ต้องหยุดไมค์ ไม่ใช่ปล่อยค้างไว้เบื้องหลัง
+  useEffect(() => () => listenSession.current?.cancel(), []);
 
   const push = useCallback((level: AssistantEntry["level"], value: string) => {
     entryId.current += 1;
@@ -166,15 +189,52 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
     }
   }, [push]);
 
-  const submit = useCallback(async () => {
-    const trimmed = text.trim();
+  const sendText = useCallback(async (raw: string) => {
+    const trimmed = raw.trim();
     if (!trimmed || busy) return;
     sequence.current += 1;
-    setText("");
     setProposal(null);
     push("user", trimmed);
     await call({ requestId: newRequestId(sequence.current), text: trimmed });
-  }, [busy, call, push, text]);
+  }, [busy, call, push]);
+
+  const submit = useCallback(async () => {
+    const value = text;
+    setText("");
+    await sendText(value);
+  }, [sendText, text]);
+
+  const stopListening = useCallback(() => {
+    // stop = ขอให้สรุปสิ่งที่ได้ยินแล้ว (ต่างจาก cancel ที่ทิ้งทั้งหมด)
+    listenSession.current?.stop();
+  }, []);
+
+  const startListening = useCallback(() => {
+    // สร้างตอนกดปุ่มครั้งแรก ไม่ใช่ตอน render — adapter แตะ window
+    adapter.current ??= createBrowserSpeechAdapter();
+    const engine = adapter.current;
+    if (!engine.isSupported()) {
+      setTyping(true);
+      push("error", VOICE_ERROR_TEXT.unsupported_browser);
+      return;
+    }
+    setInterim("");
+    listenSession.current = engine.start({
+      onState: setVoiceState,
+      onInterim: setInterim,
+      onFinal: (transcript) => {
+        setInterim("");
+        setVoiceState("idle");
+        void sendText(transcript);
+      },
+      onError: (code) => {
+        setInterim("");
+        setVoiceState("idle");
+        push("error", VOICE_ERROR_TEXT[code]);
+        if (shouldFallBackToTyping(code)) setTyping(true);
+      },
+    });
+  }, [push, sendText]);
 
   const confirm = useCallback(async (answers: Record<string, string>) => {
     if (!proposal || busy) return;
@@ -191,12 +251,12 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); startListening(); }}
         aria-label={`เปิด${copy.label}`}
         className="fixed right-4 bottom-4 z-40 flex min-h-12 min-w-12 items-center gap-2 rounded-full bg-orange-600 px-4 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-orange-700 motion-reduce:transition-none"
         style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
       >
-        <span aria-hidden>✨</span>
+        <span aria-hidden>🎙</span>
         {/* ข้อความซ่อนบนจอแคบเพื่อไม่ให้ปุ่มบังเนื้อหา แต่ตัวปุ่มยังอยู่ทุกขนาดจอ */}
         <span className="hidden sm:inline">{copy.label}</span>
       </button>
@@ -213,7 +273,7 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
         <h2 className="text-sm font-semibold text-gray-900">{copy.label}</h2>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={() => { listenSession.current?.cancel(); setVoiceState("idle"); setInterim(""); setOpen(false); }}
           aria-label="ปิดผู้ช่วย"
           className="min-h-11 min-w-11 rounded-lg text-gray-500 hover:text-gray-900"
         >
@@ -243,31 +303,65 @@ export function BackOfficeAssistant({ scope = "full" }: { scope?: AssistantScope
           <ProposalCard proposal={proposal} busy={busy} onConfirm={confirm} onCancel={() => setProposal(null)} />
         ) : null}
 
+        {listening ? (
+          <p role="status" className="text-xs text-gray-600">{describeListeningState(voiceState)}</p>
+        ) : null}
+
+        {/* คำที่ได้ยินชั่วคราว — ให้คนเห็นว่าระบบได้ยินอะไร ก่อนจะกลายเป็นคำสั่งจริง */}
+        {interim ? <p className="break-words text-sm text-gray-400">{interim}</p> : null}
+
         {busy ? <p role="status" className="text-xs text-gray-500">กำลังประมวลผล…</p> : null}
       </div>
 
-      <form
-        onSubmit={(event) => { event.preventDefault(); void submit(); }}
-        className="flex items-center gap-2 border-t border-gray-200 px-4 py-3"
-      >
-        <input
-          ref={inputRef}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          maxLength={200}
-          disabled={busy}
-          placeholder={copy.placeholder}
-          aria-label={`พิมพ์คำสั่งสำหรับ${copy.label}`}
-          className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-300 px-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-orange-400 focus:outline-none disabled:bg-gray-100"
-        />
+      <div className="border-t border-gray-200 px-4 py-3">
+        {typing ? (
+          <form
+            onSubmit={(event) => { event.preventDefault(); void submit(); }}
+            className="flex items-center gap-2"
+          >
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              maxLength={200}
+              disabled={busy}
+              placeholder={copy.placeholder}
+              aria-label={`พิมพ์คำสั่งสำหรับ${copy.label}`}
+              className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-300 px-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-orange-400 focus:outline-none disabled:bg-gray-100"
+            />
+            <button
+              type="submit"
+              disabled={busy || text.trim().length === 0}
+              className="min-h-11 shrink-0 rounded-lg bg-orange-600 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              ส่ง
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => (listening ? stopListening() : startListening())}
+            disabled={busy}
+            aria-pressed={listening}
+            aria-label={listening ? "พูดจบแล้ว" : "กดแล้วพูด"}
+            className={`flex min-h-14 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 ${
+              listening ? "bg-red-600" : "bg-orange-600"
+            }`}
+          >
+            <span aria-hidden className={listening ? "animate-pulse motion-reduce:animate-none" : ""}>🎙</span>
+            {listening ? "พูดจบแล้ว" : "กดแล้วพูด"}
+          </button>
+        )}
+
+        {/* ทางสำรองอยู่ตรงนี้เสมอ ไม่ใช่ทางหลัก — ร้านเสียงดังหรือต้องแก้คำที่ฟังผิด */}
         <button
-          type="submit"
-          disabled={busy || text.trim().length === 0}
-          className="min-h-11 shrink-0 rounded-lg bg-orange-600 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+          type="button"
+          onClick={() => { if (listening) listenSession.current?.cancel(); setTyping((previous) => !previous); }}
+          className="mt-2 min-h-11 w-full text-xs text-gray-500 underline"
         >
-          ส่ง
+          {typing ? "กลับไปสั่งด้วยเสียง" : "พิมพ์แทน"}
         </button>
-      </form>
+      </div>
     </section>
   );
 }
