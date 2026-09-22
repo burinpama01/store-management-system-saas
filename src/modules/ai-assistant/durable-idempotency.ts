@@ -167,7 +167,12 @@ export class DurableIdempotencyStore implements IdempotencyStore {
         .update({
           status: result.ok ? "completed" : "failed",
           // เก็บสำเนาแยกจาก object ที่คืนให้ผู้เรียก — ผู้เรียกแก้ผลหลังรับไม่กระทบของที่เก็บ
-          result: (result.ok ? { ok: true, data: structuredClone(result.data) } : { ok: false, code: result.code }) as Json,
+          // proposal (kind: "proposal") ไม่มีวันมาถึงที่นี่ — dispatcher คืนการ์ดก่อนถึงชั้น claim
+          // ถ้าวันหนึ่งมันมาถึงจริง แปลว่าลำดับใน dispatcher เปลี่ยน จึงเก็บเป็น failed ไว้ก่อน
+          // (fail-closed) ดีกว่าเก็บแถว completed ที่ไม่มีผลลัพธ์จริงให้ replay หยิบไปใช้
+          result: (result.ok && !("kind" in result)
+            ? { ok: true, data: structuredClone(result.data) }
+            : { ok: false, code: result.ok ? "EXECUTION_FAILED" : result.code }) as Json,
         })
         .eq("id", action.id as string)
         .eq("status", "pending");

@@ -4,6 +4,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { readAssistantConfig } from "./config";
 import { createDispatcher, type AuditMetadata, type CartBinding, type IdempotencyStore, type ToolRegistry, type TrustedContext } from "./foundation";
+import type { ProposalStore } from "./proposal";
 
 /** identity ที่ derive จาก server session เท่านั้น ห้ามรับจาก model หรือ caller */
 export interface AssistantIdentity {
@@ -41,6 +42,8 @@ export interface ServerAssistantDispatcherOptions {
    * ไม่ให้ = memory store เดิม และ production safe_write ยังโดน DURABLE_STORAGE_REQUIRED ตามเกตเดิม
    */
   idempotencyStore?: IdempotencyStore;
+  /** P1 — ที่เก็บข้อเสนอรอยืนยัน; ไม่ให้ = tool ที่มี plan() ถูกปฏิเสธ (ไม่ใช่ข้ามการยืนยัน) */
+  proposals?: ProposalStore;
 }
 
 /** Audit เขียนผ่าน logSystemEvent เฉพาะ allowlist metadata ไม่มี args/result/error/raw text */
@@ -123,6 +126,7 @@ export function createServerAssistantDispatcher(options: ServerAssistantDispatch
     resolveContext: () => resolveServerContext(options),
     resolveCartBinding: options.resolveCartBinding,
     idempotencyStore: options.idempotencyStore,
+    proposals: options.proposals,
     audit: writeAssistantAudit,
   });
 }
