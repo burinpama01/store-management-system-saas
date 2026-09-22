@@ -28,11 +28,11 @@ describe("mobile store submission readiness", () => {
     const ios = source("mobile/ios/App/App.xcodeproj/project.pbxproj");
     const mobilePackage = JSON.parse(source("mobile/package.json")) as { version: string };
 
-    expect(android).toMatch(/versionCode\s+6/);
-    expect(android).toMatch(/versionName\s+["']1\.0\.5["']/);
+    expect(android).toMatch(/versionCode\s+7/);
+    expect(android).toMatch(/versionName\s+["']1\.0\.6["']/);
     expect(ios.match(/CURRENT_PROJECT_VERSION = 3;/g)).toHaveLength(2);
     expect(ios.match(/MARKETING_VERSION = 1\.0\.2;/g)).toHaveLength(2);
-    expect(mobilePackage.version).toBe("1.0.5");
+    expect(mobilePackage.version).toBe("1.0.6");
   });
 
   it("declares iOS camera and remote-notification capabilities", () => {

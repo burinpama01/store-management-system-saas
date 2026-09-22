@@ -1,6 +1,6 @@
 {
   "name": "storeos-mobile",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "StoreOS mobile shell (Capacitor) — wraps the production web app with native push notifications and printer support",
   "scripts": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^7.3.2",
     "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor-community/text-to-speech": "^6.1.0",
     "@capacitor-firebase/messaging": "^7.5.0",
     "@capacitor/android": "^7.4.4",
     "@capacitor/core": "^7.4.4",

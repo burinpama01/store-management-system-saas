@@ -8,6 +8,8 @@
 // ข้อบังคับความเป็นส่วนตัว: พูดได้เฉพาะ "ข้อความผลลัพธ์ที่ระบบสร้างเอง" เท่านั้น
 // ห้ามอ่านคำพูดดิบของผู้ใช้ (transcript) ออกมาไม่ว่ากรณีใด — ตัวเรียกส่งเฉพาะ announcement
 
+import { installNativeSpeechSynthesis } from "@/shared/notifications/native-speech-synthesis";
+
 export type VoiceCueKind =
   /** ตอบรับคำปลุกทันทีที่ได้ยิน — ต้องมาก่อน "listening" เพื่อให้รู้ว่าระบบตื่นแล้ว */
   | "wake"
@@ -99,6 +101,8 @@ const NOOP_FEEDBACK: VoiceFeedback = {
 
 function resolveWindow(options: VoiceFeedbackOptions): VoiceFeedbackWindowLike | null {
   if (options.window !== undefined) return options.window;
+  // แอป Android: WebView ไม่มี speechSynthesis — ติดตั้งตัวที่ใช้ TTS ของเครื่องก่อน (ไม่งั้นไม่พูดผลลัพธ์)
+  installNativeSpeechSynthesis(globalThis);
   return (globalThis as unknown as VoiceFeedbackWindowLike | undefined) ?? null;
 }
 
