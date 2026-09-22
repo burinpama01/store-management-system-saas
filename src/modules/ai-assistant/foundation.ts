@@ -327,8 +327,33 @@ export function createDispatcher(options: DispatcherOptions): (request: unknown)
 
         let draft: ProposalDraft;
         try { draft = await tool.plan!(record.args, ctx, answers); } catch { return audit(fail("EXECUTION_FAILED")); }
-        // โลกเปลี่ยนไประหว่างที่ผู้ใช้ดูการ์ดอยู่ — ห้ามเขียนทับเงียบ ๆ ให้เสนอใหม่
-        if (fingerprintDraft(draft) !== record.draftFingerprint) return audit(fail("PROPOSAL_STALE"));
+        if (fingerprintDraft(draft) !== record.draftFingerprint) {
+          // มีคำตอบแนบมา = การ์ดใบก่อนยังไม่สมบูรณ์ (เช่นชื่อเมนูกำกวม จึงยังไม่รู้ราคาเดิม)
+          // พอตอบแล้วภาพถึงจะครบ — สิ่งที่ถูกต้องคือ **เสนอการ์ดใบใหม่ให้ดูก่อน** ไม่ใช่
+          // ตอบ error และไม่ใช่เขียนทันทีทั้งที่ผู้ใช้ยังไม่เคยเห็นค่าเดิมสักครั้ง
+          if (Object.keys(answers).length > 0) {
+            const refinedId = (options.newProposalId ?? randomUUID)();
+            const refinedExpiry = Math.min(Date.now() + PROPOSAL_TTL_MS, ctx.expiresAt);
+            try {
+              // ปิดใบเก่าก่อนเสมอ — ไม่งั้นเหลือใบค้างที่กดยืนยันได้อีกใบ
+              await proposals.consume(record.id);
+              await proposals.save({
+                id: refinedId,
+                organizationId: ctx.organizationId,
+                storeId: ctx.storeId,
+                userId: ctx.userId,
+                sessionId: ctx.sessionId,
+                tool: tool.name,
+                args: record.args,
+                draftFingerprint: fingerprintDraft(draft),
+                expiresAt: refinedExpiry,
+              });
+            } catch { return audit(fail("PROPOSAL_UNAVAILABLE")); }
+            return audit({ ok: true, kind: "proposal", proposal: { ...draft, id: refinedId, tool: tool.name, expiresAt: refinedExpiry } });
+          }
+          // ไม่มีคำตอบแนบมาแต่ภาพเปลี่ยน = มีคนอื่นแก้ข้อมูลระหว่างที่การ์ดค้างอยู่
+          return audit(fail("PROPOSAL_STALE"));
+        }
         // "ไม่มีให้เพิ่ม ไม่ใช่ข้าม": เหลือสิ่งที่ขาดแม้ข้อเดียวก็ commit ไม่ได้
         if (unresolvedPrerequisites(draft.prerequisites, answers).length > 0) {
           return audit(fail("PREREQUISITE_REQUIRED"));
