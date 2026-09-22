@@ -15,7 +15,8 @@ import {
 } from "./repository";
 import { renderNotificationTemplate } from "./templates";
 import { buildLinePushMessageRequest } from "./line";
-import { parseServiceAccount, sendFcmToDevice } from "./push";
+import { parseServiceAccount, sendFcmToDevice, supportsInsistentOrderAlert } from "./push";
+import { logSystemEvent } from "@/modules/system/event-log";
 
 export interface NotificationResult {
   ok: boolean;
@@ -349,6 +350,25 @@ async function dispatchPushNotification(input: NotificationPayload): Promise<Not
   }
 
   const sentCount = outcomes.filter((o) => o.outcome === "sent").length;
+  // เดิมไม่มี log ของ push เลย — ไล่ "แจ้งเตือนไม่มา/ไม่ดังวน" ไม่ได้ว่าส่งถึงกี่เครื่อง รูปแบบไหน
+  await logSystemEvent({
+    level: sentCount === 0 ? "warn" : "info",
+    source: "notifications.push",
+    action: "dispatchPush",
+    message: `Push ${input.type}: ส่งถึง ${sentCount}/${tokens.length} เครื่อง`,
+    organizationId: input.organizationId ?? null,
+    storeId: input.storeId ?? null,
+    context: {
+      type: input.type,
+      devices: tokens.length,
+      sent: sentCount,
+      unregistered: unregistered.length,
+      failed: outcomes.filter((o) => o.outcome === "failed").length,
+      // เครื่องที่ได้รูปแบบ data-only (เสียงวน) — 0 ทั้งที่มี Android = แอปยังไม่ได้ลงทะเบียนรุ่น 1.0.3
+      insistentCapable: tokens.filter(supportsInsistentOrderAlert).length,
+      appVersions: tokens.map((device) => `${device.platform}:${device.appVersion ?? "?"}`),
+    },
+  });
   if (sentCount === 0) {
     return { ok: false, skipped: false, message: "ส่ง Push ไม่สำเร็จ: ไม่มีอุปกรณ์ที่ส่งถึงได้" };
   }

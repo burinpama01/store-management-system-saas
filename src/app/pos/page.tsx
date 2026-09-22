@@ -19,6 +19,7 @@ import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
 import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
 import { readAssistantConfig } from "@/modules/ai-assistant/config";
 import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
+import { PushTokenRegistrar } from "@/app/(dashboard)/PushTokenRegistrar";
 
 export const dynamic = "force-dynamic";
 
@@ -96,8 +97,11 @@ export default async function PosPage() {
   // ตัวเด้งออเดอร์เดลิเวอรี/QR/แจ้งเตือน — เดิมมีแต่ในแดชบอร์ด ทำให้เครื่องที่เปิดค้างที่ POS
   // (โดยเฉพาะเครื่องที่รัน Launcher ซึ่งเปิด /pos ตายตัว) ไม่รู้เลยว่ามีออเดอร์เข้า
   // Suspense: การโหลดสถานีครัว/เครื่องพิมพ์ของตัวเด้งต้องไม่หน่วงการเปิดหน้าขาย
+  // PushTokenRegistrar: มือถือของผู้จัดการ/เจ้าของเปิดเข้า /pos ตรง ๆ (อยู่นอกแดชบอร์ด)
+  // เครื่องพวกนี้เลยไม่เคยลงทะเบียน push — ใส่ไว้ที่นี่ด้วย (บนเว็บปกติไม่ทำอะไร)
   const alertNotifiers = (
     <Suspense fallback={null}>
+      <PushTokenRegistrar />
       <StoreAlertNotifiers
         storeId={ctx.storeId}
         organizationId={ctx.organizationId}
