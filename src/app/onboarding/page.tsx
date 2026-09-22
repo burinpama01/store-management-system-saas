@@ -3,28 +3,12 @@ import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getReadinessSnapshot } from "@/modules/onboarding/repository";
 import { getStoreReadiness } from "@/modules/onboarding/readiness";
-import type { ReadinessStepId } from "@/modules/onboarding/readiness";
+import { getStepCopy } from "@/modules/onboarding/step-copy";
 import { getStore } from "@/modules/stores/repository";
 import { LineAddDialog } from "./LineAddDialog";
 import { SetupProfileForm } from "./SetupProfileForm";
 
 export const dynamic = "force-dynamic";
-
-const STEP_LINKS: Record<ReadinessStepId, { href: string; title: string; desc: string }> = {
-  "store-profile": {
-    href: "/settings/store",
-    title: "ตั้งค่าข้อมูลร้าน",
-    desc: "กรอกชื่อร้าน ที่อยู่ และเบอร์โทรให้ครบ",
-  },
-  catalog: { href: "/catalog", title: "เพิ่มเมนูสินค้า", desc: "สร้างหมวดหมู่ สินค้า ตัวเลือก และราคาเพื่อเริ่มขาย" },
-  table: { href: "/settings/tables", title: "ตั้งค่าโต๊ะ", desc: "เพิ่มโต๊ะและ QR ประจำโต๊ะสำหรับลูกค้าสั่งเอง" },
-  printer: { href: "/settings/print-hub", title: "เชื่อมเครื่องพิมพ์", desc: "ตั้งค่าเครื่องพิมพ์ใบเสร็จ/สลิปของร้าน" },
-  "first-paid-order": {
-    href: "/pos",
-    title: "ปิดบิลขายจริงบิลแรก",
-    desc: "เปิดบิลที่ POS แล้วรับเงินให้สำเร็จ 1 บิล — นับเป็นร้านที่เริ่มขายได้จริง",
-  },
-};
 
 function resolveLineAddFriendUrl() {
   if (process.env.LINE_ADD_FRIEND_URL) return process.env.LINE_ADD_FRIEND_URL;
@@ -100,7 +84,7 @@ export default async function OnboardingPage({
               ) : null}
             </div>
             {readiness.steps.map((step, i) => {
-              const link = STEP_LINKS[step.id];
+              const link = getStepCopy(step.id, profile?.businessMode ?? null);
               return (
                 <Link
                   key={step.id}

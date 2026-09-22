@@ -12,6 +12,8 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { parseSetupProfileOrNull } from "@/modules/onboarding/setup-profile";
 import { bangkokDateIso, pickActivationNudge } from "@/modules/onboarding/nudges";
+import { getStepCopy } from "@/modules/onboarding/step-copy";
+import type { Database } from "@/server/integrations/supabase/database.types";
 import { notifyOwnerNow } from "@/modules/notifications/dispatcher";
 import { runSubscriptionWatch } from "@/modules/billing/subscription-watch-runner";
 import { runDailySummaryEmails } from "@/modules/reports/daily-summary-runner";
@@ -20,17 +22,6 @@ import { logActionError, logSystemEvent, purgeOldSystemEventLogs } from "@/modul
 import { loadAllRows } from "@/modules/reports/pagination";
 
 export const dynamic = "force-dynamic";
-
-const STEP_COPY: Record<string, { title: string; message: string }> = {
-  "store-profile": {
-    title: "ตั้งค่าข้อมูลร้านให้ครบ",
-    message: "ร้านของคุณยังไม่ได้กรอกชื่อ/ที่อยู่/เบอร์โทรให้ครบ — กรอกเสร็จจะพร้อมออกใบเสร็จ เปิดที่ StoreOS > ตั้งค่า > ร้านค้า",
-  },
-  catalog: { title: "เพิ่มเมนูสินค้าแรก", message: "ยังไม่มีสินค้าในระบบ — เพิ่มเมนูแรกที่ StoreOS > เมนูสินค้า แล้วเริ่มขายได้เลย" },
-  table: { title: "ตั้งค่าโต๊ะและ QR", message: "ร้านใช้โต๊ะแต่ยังไม่มีโต๊ะในระบบ — เพิ่มโต๊ะที่ StoreOS > ตั้งค่า > โต๊ะ & QR" },
-  printer: { title: "เชื่อมเครื่องพิมพ์", message: "ยังไม่มีเครื่องพิมพ์ที่ตั้งค่า — เชื่อมได้ที่ StoreOS > ตั้งค่า > Print Hub หรืออุปกรณ์นี้" },
-  "first-paid-order": { title: "ปิดบิลแรกของวันนี้", message: "เหลือขั้นสุดท้าย! เปิดบิลที่ POS แล้วรับเงิน 1 บิล = ร้านพร้อมขายจริง" },
-};
 
 export async function GET(req: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
@@ -67,6 +58,31 @@ export async function GET(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: "โหลดรายการร้านไม่สำเร็จ" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 
+  // opt-out: ร้านที่ปิดแจ้งเตือน activation_nudge ครบทุกช่องทาง (Notification Matrix)
+  // โหลดครั้งเดียวทั้งระบบแทนการยิงรายร้าน — ไม่มีแถว = ยังไม่เคยตั้งค่า = เปิดอยู่ (DB default true)
+  const optedOutStoreIds = new Set<string>();
+  try {
+    const settingRows = await loadAllRows((from, to) =>
+      supabase
+        .from("notification_settings")
+        .select("store_id, enabled")
+        .eq(
+          "notification_type",
+          "activation_nudge" as Database["public"]["Tables"]["notification_settings"]["Row"]["notification_type"],
+        )
+        .order("store_id", { ascending: true })
+        .range(from, to),
+    );
+    const byStore = new Map<string, boolean>();
+    for (const row of settingRows) {
+      byStore.set(row.store_id, (byStore.get(row.store_id) ?? false) || row.enabled);
+    }
+    for (const [storeId, anyEnabled] of byStore) if (!anyEnabled) optedOutStoreIds.add(storeId);
+  } catch (error) {
+    // โหลดการตั้งค่าไม่ได้ = ถือว่าไม่มีใคร opt-out ไม่ได้แปลว่าห้ามส่ง
+    logActionError({ source: "cron.daily", action: "loadNudgeOptOut", error });
+  }
+
   const claimed: Array<{ storeId: string; step: string; sent: boolean }> = [];
   const skipped: Array<{ storeId: string; reason: string }> = [];
 
@@ -93,8 +109,9 @@ export async function GET(req: Request): Promise<Response> {
       .select("step")
       .eq("store_id", store.id)
       .eq("nudged_on", today);
-    const nudgedStepsToday = (nudgedTodayRes.data ?? []) as Array<string>;
+    const nudgedStepsToday = ((nudgedTodayRes.data ?? []) as Array<{ step: string }>).map((row) => row.step);
 
+    const setupProfile = parseSetupProfileOrNull(store.setup_profile);
     const nudge = pickActivationNudge({
       storeId: store.id,
       readiness: {
@@ -105,9 +122,9 @@ export async function GET(req: Request): Promise<Response> {
         members,
         paidOrders,
       },
-      profile: parseSetupProfileOrNull(store.setup_profile),
+      profile: setupProfile,
       nudgedStepsToday,
-      optedOut: false,
+      optedOut: optedOutStoreIds.has(store.id),
       now,
     });
     if (!nudge) {
@@ -119,16 +136,21 @@ export async function GET(req: Request): Promise<Response> {
       .insert({ store_id: store.id, step: nudge.step, nudged_on: today })
       .select("id");
     if (claim.error || !claim.data || (claim.data as Array<{ id: string }>).length === 0) {
-      skipped.push({ storeId: store.id, reason: claim.error ? `claim_error:${claim.error.message}` : "already_claimed" });
+      // 23505 = ชน unique (store_id, step, nudged_on) — แปลว่ามีรอบอื่นเคลมไปแล้ว ไม่ใช่ความผิดพลาด
+      const duplicate = (claim.error as { code?: string } | null)?.code === "23505";
+      skipped.push({
+        storeId: store.id,
+        reason: claim.error && !duplicate ? `claim_error:${claim.error.message}` : "already_claimed",
+      });
       continue;
     }
 
-    const copy = STEP_COPY[nudge.step] ?? { title: "ตั้งค่าร้านต่อ", message: "ทำตามขั้นตอนใน StoreOS ต่อได้เลย" };
+    const copy = getStepCopy(nudge.step, setupProfile?.businessMode ?? null);
     notifyOwnerNow({
       type: "activation_nudge",
       destination: "owner",
       title: copy.title,
-      message: `${copy.message} (ร้าน: ${store.name})`,
+      message: `${copy.nudge} (ร้าน: ${store.name})`,
       organizationId: store.organization_id,
       storeId: store.id,
       metadata: { step: nudge.step, requestId: nudge.idempotencyKey },

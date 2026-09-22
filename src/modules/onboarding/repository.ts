@@ -66,3 +66,18 @@ export async function getReadinessSnapshot(
     return { data: null, error: e instanceof Error ? e.message : "query_failed" };
   }
 }
+/**
+ * นับบิลที่ชำระแล้วอย่างเดียว (head count 1 query) — ใช้เป็นประตูราคาถูกหน้าแดชบอร์ด
+ * ร้านที่ขายจริงแล้วไม่ต้องโหลด snapshot เต็มทุกครั้งที่เปิดหน้า (ประหยัด egress)
+ */
+export async function countPaidOrders(storeId: string, organizationId: string): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const res = await supabase
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId)
+    .eq("status", "paid");
+  if (res.error) return 1; // อ่านไม่ได้ = ไม่รบกวนด้วยการ์ดเตรียมร้าน
+  return res.count ?? 0;
+}
