@@ -167,6 +167,9 @@ function Payslip({
       <div className="mb-4 rounded border border-gray-200 bg-gray-50 p-3 text-sm">
         <p className="mb-1 font-semibold">สรุปการเข้างาน</p>
         <Row label="วันที่มาทำงาน" value={`${line.totalDays} วัน`} />
+        {line.payType === "monthly" && (
+          <Row label="วันปฏิทินในงวด (รวมวันหยุด)" value={`${line.days.length} วัน`} muted />
+        )}
         {line.halfDays > 0 && (
           <Row
             label={`· เต็มวัน ${line.fullDays} วัน / ครึ่งวัน ${line.halfDays} วัน`}
@@ -201,7 +204,7 @@ function Payslip({
               ? `ค่าจ้างพื้นฐาน (${line.payableDays} วัน)`
               : line.payType === "hourly"
                 ? `ค่าจ้างพื้นฐาน (${hoursLabel(line.totalHours)})`
-                : "ค่าจ้างพื้นฐาน (เงินเดือน)"
+                : "ค่าจ้างพื้นฐาน (เงินเดือนตามช่วงวันที่)"
           }
           value={money(line.basePay, currency)}
         />

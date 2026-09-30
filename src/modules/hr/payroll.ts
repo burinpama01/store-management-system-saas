@@ -103,11 +103,12 @@ export function computeBasePay(
   profile: EmployeeProfile | undefined,
   summary: PayrollSummary,
   payableDays?: number,
+  period: Pick<PayrollSummary, "periodStart" | "periodEnd"> = summary,
 ): number {
   if (!profile) return 0;
   switch (profile.payType) {
     case "monthly":
-      return round2(profile.monthlySalary);
+      return monthlyBasePay(profile.monthlySalary, period.periodStart, period.periodEnd);
     case "daily":
       return round2(profile.dailyRate * (payableDays ?? summary.totalDays));
     case "hourly":
@@ -115,6 +116,27 @@ export function computeBasePay(
     default:
       return 0;
   }
+}
+
+/** Full monthly cycles pay a salary; remaining calendar days, including days off, use a 30-day basis. */
+function monthlyBasePay(salary: number, from: string, to: string): number {
+  const start = new Date(`${from}T12:00:00Z`);
+  const endExclusive = new Date(`${to}T12:00:00Z`);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(endExclusive.getTime()) || start >= endExclusive) return 0;
+  const anchorDay = start.getUTCDate();
+  let cursor = start;
+  let months = 0;
+  while (true) {
+    const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + months + 1, 1, 12));
+    const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+    next.setUTCDate(Math.min(anchorDay, lastDay));
+    if (next > endExclusive) break;
+    months += 1;
+    cursor = next;
+  }
+  const remainingDays = Math.round((endExclusive.getTime() - cursor.getTime()) / 86_400_000);
+  return round2(salary * (months + remainingDays / 30));
 }
 
 /** Local "HH:MM" minutes-of-day for an ISO timestamp in the given IANA timezone. */
@@ -176,10 +198,11 @@ function absentPenaltyPerDay(
   profile: EmployeeProfile,
   settings: StoreHrSettings,
   scheduledDays: number,
+  periodBasePay: number,
 ): number {
   if (profile.absentPenaltyAmount > 0) return profile.absentPenaltyAmount;
   if (profile.payType === "monthly" && profile.monthlySalary > 0) {
-    return scheduledDays > 0 ? profile.monthlySalary / scheduledDays : 0;
+    return scheduledDays > 0 ? periodBasePay / scheduledDays : 0;
   }
   return settings.absentPenaltyPerDay;
 }
@@ -298,9 +321,9 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     // ไม่มี record เลย (เช่นข้อมูลสรุปมาจากที่อื่น) ให้ใช้จำนวนวันดิบตามเดิม —
     // การหักครึ่งวัน/ตัดวันหยุดที่กะค้าง ทำได้ก็ต่อเมื่อมี record ให้ดูจริง
     const basePay = summary
-      ? computeBasePay(profile, summary, userRecords.length > 0 ? payableDays : undefined)
+      ? computeBasePay(profile, summary, userRecords.length > 0 ? payableDays : undefined, { periodStart, periodEnd })
       : profile && profile.payType === "monthly"
-        ? round2(profile.monthlySalary)
+        ? monthlyBasePay(profile.monthlySalary, periodStart, periodEnd)
         : 0;
 
     // --- Auto OT + late from records (grouped by store-local day) ---
@@ -350,6 +373,7 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
         profile,
         settings,
         scheduledDaysInPeriod(periodStart, periodEnd, profile.workingDays),
+        basePay,
       );
     }
     if (profile && profile.workingDays.length > 0 && periodStart <= absentScanEnd) {
