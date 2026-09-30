@@ -17,6 +17,7 @@ import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate, formatStoreTime } from "@/modules/attendance/date";
 import { ADJUSTMENT_LABEL, DEDUCTION_TYPES, PAY_TYPE_LABEL } from "@/modules/hr/types";
 import { PrintButton } from "./PrintButton";
+import { SaveImageButton } from "./SaveImageButton";
 
 export const dynamic = "force-dynamic";
 
@@ -330,11 +331,17 @@ export default async function PayslipPage({
   return (
     <main className="mx-auto max-w-3xl bg-white p-6 text-gray-900">
       <style>{`@media print { @page { margin: 12mm; } body { background: white; } }`}</style>
-      <div className="mb-6 flex items-center justify-between print:hidden">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <h1 className="text-xl font-bold">{mode === "summary" ? "สรุปเงินเดือนทั้งงวด" : "สลิปเงินเดือน"}</h1>
-        <PrintButton />
+        <div className="flex flex-wrap items-start gap-2">
+          <PrintButton />
+          {lines.length > 0 && (
+            <SaveImageButton fileName={`${mode === "summary" ? "payroll-summary" : "payslip"}_${dateFrom}_${dateTo}.png`} />
+          )}
+        </div>
       </div>
 
+      <div id="payslip-image-content" className="bg-white">
       {lines.length === 0 ? (
         <p className="text-center text-gray-400">ไม่มีข้อมูลในช่วงนี้</p>
       ) : mode === "summary" ? (
@@ -394,6 +401,7 @@ export default async function PayslipPage({
           />
         ))
       )}
+      </div>
     </main>
   );
 }
