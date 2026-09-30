@@ -103,6 +103,24 @@ function adj(over: Partial<PayrollAdjustment> = {}): PayrollAdjustment {
 }
 
 describe("computeBasePay", () => {
+  it("pays calendar days including Wednesdays in a partial monthly period", () => {
+    expect(computeBasePay(profile({ monthlySalary: 7000 }), summary({
+      periodStart: "2026-09-20", periodEnd: "2026-09-30", totalDays: 9,
+    }))).toBe(2566.67);
+  });
+  it.each([
+    ["2026-02-01", "2026-02-28", 7000],
+    ["2026-07-01", "2026-07-31", 7000],
+    ["2026-01-06", "2026-02-05", 7000],
+    ["2026-09-23", "2026-09-23", 233.33],
+    ["2026-09-01", "2026-10-31", 14000],
+    ["2028-02-01", "2028-02-29", 7000],
+    ["2026-01-31", "2026-02-27", 7000],
+    ["2026-01-31", "2026-03-30", 14000],
+    ["2026-09-20", "2026-09-19", 0],
+  ])("monthly calendar period %s to %s pays %s", (periodStart, periodEnd, expected) => {
+    expect(computeBasePay(profile({ monthlySalary: 7000 }), summary({ periodStart, periodEnd }))).toBe(expected);
+  });
   it("monthly = fixed salary regardless of days", () => {
     expect(computeBasePay(profile({ payType: "monthly", monthlySalary: 15000 }), summary({ totalDays: 5 }))).toBe(15000);
   });
@@ -118,6 +136,36 @@ describe("computeBasePay", () => {
 });
 
 describe("computePayrollLines", () => {
+  it("pays both Wednesday days off when the nine scheduled days are worked", () => {
+    const dates = Array.from({ length: 11 }, (_, i) => `2026-09-${20 + i}`)
+      .filter((date) => new Date(`${date}T12:00:00Z`).getUTCDay() !== 3);
+    const records = dates.map((date) => ({
+      id: date, storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice", date,
+      clockInAt: `${date}T01:00:00Z`, clockOutAt: `${date}T09:00:00Z`,
+      status: "completed" as const, createdAt: "", updatedAt: "",
+    }));
+    const line = lines({ summaries: [summary({ totalDays: 9, totalHours: 72 })], records,
+      profiles: [profile({ monthlySalary: 7000, workingDays: [0, 1, 2, 4, 5, 6], otEligible: false })],
+      periodStart: "2026-09-20", periodEnd: "2026-09-30", today: "2026-09-30" })[0];
+    expect(line.totalDays).toBe(9);
+    expect(line.days.filter((day) => day.status === "off").map((day) => day.date)).toEqual(["2026-09-23", "2026-09-30"]);
+    expect(line.absentDays).toBe(0);
+    expect(line.netPay).toBe(2566.67);
+  });
+  it("prorates a profile without attendance and scales absence to that period", () => {
+    const line = lines({ profiles: [profile({ monthlySalary: 7000, workingDays: [0, 1, 2, 4, 5, 6] })],
+      periodStart: "2026-09-20", periodEnd: "2026-09-30", today: "2026-09-30" })[0];
+    expect(line.basePay).toBe(2566.67);
+    expect(line.absentDays).toBe(9);
+    expect(line.absentPenalty).toBe(2566.67);
+    expect(line.netPay).toBe(0);
+  });
+  it("uses selected dates rather than a stale attendance summary period", () => {
+    const line = lines({ summaries: [summary()], profiles: [profile({ monthlySalary: 7000, workingDays: [] })],
+      periodStart: "2026-09-20", periodEnd: "2026-09-30" })[0];
+    expect(line.basePay).toBe(2566.67);
+    expect(line.netPay).toBe(2566.67);
+  });
   it("combines base pay, bonuses and deductions into net pay", () => {
     const result = lines({
       summaries: [summary({ totalDays: 10, totalHours: 80 })],
