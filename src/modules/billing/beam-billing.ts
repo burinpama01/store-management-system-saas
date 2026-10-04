@@ -8,6 +8,7 @@ import { getPlatformSettings } from "./platform-settings";
 import { getBusinessUpgradeQuote, getUpgradeQuote } from "./pricing-repository";
 import { describeDiscountRejection } from "./discount-code";
 import { getPayableEnterpriseOffer } from "./enterprise-offer-repository";
+import { logSystemEvent } from "@/modules/system/event-log";
 import { resolveSubscriptionQr } from "./promptpay-provider";
 import { evaluateBeamBillingCharge, evaluateBillingSlip } from "./beam-billing-policy";
 import { isSlip2goConfigured, verifyBillingSlipByImage } from "./slip2go";
@@ -109,7 +110,19 @@ async function resumePlatformBeamOrder(order: PlatformBillingOrder) {
 async function settle(order: PlatformBillingOrder, ref: string) {
   const db = await createSupabaseServiceClient();
   const { error } = await db.rpc("settle_platform_billing_order", { p_order_id: order.id, p_method: order.method, p_ref: ref, p_amount: Number(order.amount) });
-  if (error) throw new Error(error.code === "23505" ? "หลักฐานการชำระนี้ถูกใช้ไปแล้ว" : "ยืนยันแพ็กเกจไม่สำเร็จ กรุณาตรวจรายการเดิมอีกครั้ง");
+  if (error) {
+    // เงินเข้าแล้วแต่ตัดสิทธิ์ไม่ได้ = ต้องมีร่องรอยให้แอดมินตามแก้ (เดิมกลืน error เงียบ)
+    console.error("[billing.beam] settle failed", { orderId: order.id, code: error.code, message: error.message, details: error.details, hint: error.hint });
+    void logSystemEvent({
+      level: "error",
+      source: "billing.beam",
+      action: "settlePlatformBillingOrder",
+      message: `ยืนยันแพ็กเกจไม่สำเร็จหลังได้รับเงิน: ${error.message}`,
+      organizationId: order.organization_id,
+      context: { orderId: order.id, plan: order.plan, code: error.code, details: error.details },
+    });
+    throw new Error(error.code === "23505" ? "หลักฐานการชำระนี้ถูกใช้ไปแล้ว" : "ยืนยันแพ็กเกจไม่สำเร็จ กรุณาตรวจรายการเดิมอีกครั้ง");
+  }
   return billingOrderView(await readOrder(order.id));
 }
 

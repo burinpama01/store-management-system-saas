@@ -106,7 +106,9 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
           // eslint-disable-next-line @next/next/no-img-element -- provider-generated inline QR
           <img src={`data:image/png;base64,${order.qr_image}`} alt="QR ชำระค่าแพ็กเกจ" width={240} height={240} className="mx-auto max-w-full" /> : null}
         <p className="text-sm">QR ใช้ได้ถึง {new Date(order.expires_at).toLocaleString("th-TH")}</p>
-        <p className="text-sm text-amber-800">มีรายการค้างอยู่ กรุณาชำระหรือตรวจรายการนี้ก่อนสร้างรายการใหม่ หากโอนแล้วอย่าโอนซ้ำ</p>
+        {embedded
+          ? <p className="text-sm text-[var(--ink-2)]">สแกนด้วยแอปธนาคารเพื่อชำระ ระบบยืนยันเงินเข้าและต่ออายุให้อัตโนมัติ หากโอนแล้วอย่าโอนซ้ำ</p>
+          : <p className="text-sm text-amber-800">มีรายการค้างอยู่ กรุณาชำระหรือตรวจรายการนี้ก่อนสร้างรายการใหม่ หากโอนแล้วอย่าโอนซ้ำ</p>}
         {order.method === "beam" ? <button type="button" className="btn-secondary min-h-11" disabled={busy} onClick={() => void refresh()}>ตรวจสถานะอีกครั้ง</button> : <>
           <label className="block">อัปโหลดสลิปเพื่อยืนยัน<input className="block mt-2 max-w-full" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ""; }} /></label>
           {expired && <button type="button" className="btn-secondary min-h-11" disabled={busy} onClick={() => void refresh()}>ยังไม่ได้โอน — ปิดรายการหมดอายุ</button>}
