@@ -14,6 +14,7 @@ import { parseBusinessConfigJson } from "@/modules/billing/business-plan";
 import { getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
 import { getPayableEnterpriseOffer } from "@/modules/billing/enterprise-offer-repository";
 import { describeOffer } from "@/modules/billing/enterprise-offer";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import {
   claimFreeTrial,
   submitPromptPayPayment,
@@ -86,7 +87,11 @@ export async function getPaymentQrAction(
         amount: offer.amount,
         basePrice: offer.amount,
         credit: 0,
-        promotionLabel: describeOffer(offer, null),
+        // ต้องคิดจากวันหมดอายุจริง — ส่ง null ทำให้แบบ "ต่ออีก N วัน" ขึ้นวันที่สั้นกว่าที่จะได้จริง
+        promotionLabel: describeOffer(
+          offer,
+          (await getOrganizationBillingState(ctx.organizationId))?.currentPeriodEnd || null,
+        ),
         discount: 0,
         discountLabel: null,
         qr: resolveSubscriptionQr(settings, offer.amount),

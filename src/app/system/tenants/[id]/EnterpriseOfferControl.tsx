@@ -4,13 +4,14 @@ import { useMemo, useState, useTransition } from "react";
 import { describeOffer, type EnterpriseOfferTerm } from "@/modules/billing/enterprise-offer";
 import { saveEnterpriseOfferAction } from "./actions";
 
-/** input[type=date] ต้องการ "YYYY-MM-DD" ตามเวลาเครื่อง */
+const END_OF_DAY_BANGKOK = "T23:59:59+07:00";
+
+/** input[type=date] ต้องการ "YYYY-MM-DD" — แสดงตามวันไทยให้ตรงกับตอนบันทึก */
 function toDateInput(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
 }
 
 export function EnterpriseOfferControl({
@@ -49,7 +50,7 @@ export function EnterpriseOfferControl({
       const days = Number(termDays);
       if (Number.isInteger(days) && days > 0) term = { kind: "days", days };
     } else if (endsAt) {
-      const parsed = new Date(`${endsAt}T23:59:59`);
+      const parsed = new Date(`${endsAt}${END_OF_DAY_BANGKOK}`);
       if (!Number.isNaN(parsed.getTime())) term = { kind: "until", endsAt: parsed.toISOString() };
     }
     if (!term) return null;
@@ -65,7 +66,8 @@ export function EnterpriseOfferControl({
     fd.set("termKind", termKind);
     if (termKind === "days") fd.set("termDays", termDays);
     // ให้หมดอายุตอนสิ้นวันที่เลือก ไม่ใช่เที่ยงคืนต้นวัน
-    else fd.set("endsAt", endsAt ? `${endsAt}T23:59:59` : "");
+    // ระบุ +07:00 เสมอ: ไม่ใส่ เซิร์ฟเวอร์ (UTC) จะอ่านเป็น 23:59 UTC = 06:59 ของวันถัดไปเวลาไทย
+    else fd.set("endsAt", endsAt ? `${endsAt}${END_OF_DAY_BANGKOK}` : "");
     fd.set("note", note);
     fd.set("active", active ? "1" : "0");
     start(() => {

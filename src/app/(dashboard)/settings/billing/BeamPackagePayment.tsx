@@ -7,9 +7,14 @@ import { DURATION_LABELS } from "@/modules/billing/pricing";
 import type { BillingOrderView } from "@/modules/billing/beam-billing-types";
 import { createBeamPackageAction, pendingBeamPackageAction, refreshBeamPackageAction } from "./beam-actions";
 
-export function BeamPackagePayment({ plan, duration, businessConfigJson, discountCode, fallbackEnabled, initialOrder }: {
+export function BeamPackagePayment({ plan, duration, businessConfigJson, discountCode, fallbackEnabled, initialOrder, autoStart = false, embedded = false, onPaid }: {
   plan: string; duration: string; businessConfigJson?: string; discountCode?: string;
   fallbackEnabled: boolean; initialOrder: BillingOrderView | null;
+  /** สร้างรายการ+QR ทันทีที่แสดง (ไดอาล็อกต่ออายุ — ผู้ใช้กดยืนยันมาแล้วหนึ่งครั้ง) */
+  autoStart?: boolean;
+  /** อยู่ในไดอาล็อก: ไม่ต้องมีกรอบและหัวข้อซ้ำ */
+  embedded?: boolean;
+  onPaid?: (order: BillingOrderView) => void;
 }) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
@@ -17,6 +22,7 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
   const [message, setMessage] = useState("");
   const [expiredOrderId, setExpiredOrderId] = useState<string | null>(null);
   const refreshing = useRef(false);
+  const autoStarted = useRef(false);
   const active = order?.status === "pending" || order?.status === "creating";
   const paid = order?.status === "paid" || order?.status === "test_paid";
   const expired = Boolean(order && expiredOrderId === order.id);
@@ -41,6 +47,17 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
     }, 8000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [order, router]);
+
+  useEffect(() => {
+    if (order?.status === "paid") onPaid?.(order);
+  }, [order, onPaid]);
+
+  useEffect(() => {
+    if (!autoStart || autoStarted.current || initialOrder) return;
+    autoStarted.current = true; // กัน StrictMode เรียกซ้ำ (ฝั่งเซิร์ฟเวอร์ก็คืนรายการค้างเดิมอยู่แล้ว)
+    void create();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- สร้างครั้งเดียวตอนเปิด
+  }, []);
 
   async function create() {
     setBusy(true); setMessage("");
@@ -72,8 +89,8 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
     finally { setBusy(false); }
   }
 
-  return <div className="mt-4 rounded-lg border border-[var(--border)] p-4 space-y-3">
-    <h3 className="font-bold">ชำระแพ็กเกจ</h3>
+  return <div className={embedded ? "space-y-3" : "mt-4 rounded-lg border border-[var(--border)] p-4 space-y-3"}>
+    {!embedded && <h3 className="font-bold">ชำระแพ็กเกจ</h3>}
     {paid && <button type="button" className="btn-secondary min-h-11" onClick={() => { setOrder(null); setMessage(""); }}>เริ่มรายการชำระใหม่</button>}
     {!active && !paid && <div className="flex flex-wrap gap-3">
       <button type="button" className="btn-primary min-h-11" disabled={busy} onClick={() => void create()}>ชำระแพ็กเกจ</button>
@@ -89,7 +106,9 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
           // eslint-disable-next-line @next/next/no-img-element -- provider-generated inline QR
           <img src={`data:image/png;base64,${order.qr_image}`} alt="QR ชำระค่าแพ็กเกจ" width={240} height={240} className="mx-auto max-w-full" /> : null}
         <p className="text-sm">QR ใช้ได้ถึง {new Date(order.expires_at).toLocaleString("th-TH")}</p>
-        <p className="text-sm text-amber-800">มีรายการค้างอยู่ กรุณาชำระหรือตรวจรายการนี้ก่อนสร้างรายการใหม่ หากโอนแล้วอย่าโอนซ้ำ</p>
+        {embedded
+          ? <p className="text-sm text-[var(--ink-2)]">สแกนด้วยแอปธนาคารเพื่อชำระ ระบบยืนยันเงินเข้าและต่ออายุให้อัตโนมัติ หากโอนแล้วอย่าโอนซ้ำ</p>
+          : <p className="text-sm text-amber-800">มีรายการค้างอยู่ กรุณาชำระหรือตรวจรายการนี้ก่อนสร้างรายการใหม่ หากโอนแล้วอย่าโอนซ้ำ</p>}
         {order.method === "beam" ? <button type="button" className="btn-secondary min-h-11" disabled={busy} onClick={() => void refresh()}>ตรวจสถานะอีกครั้ง</button> : <>
           <label className="block">อัปโหลดสลิปเพื่อยืนยัน<input className="block mt-2 max-w-full" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ""; }} /></label>
           {expired && <button type="button" className="btn-secondary min-h-11" disabled={busy} onClick={() => void refresh()}>ยังไม่ได้โอน — ปิดรายการหมดอายุ</button>}

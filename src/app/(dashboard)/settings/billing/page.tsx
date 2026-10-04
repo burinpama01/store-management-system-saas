@@ -13,7 +13,8 @@ import { listCreditPacks, listTopupHistory } from "@/modules/ai/credits";
 import { BillingManager } from "./BillingManager";
 import { AiUsagePanel } from "./AiUsagePanel";
 import { getPlatformBeamPublicSettings } from "@/modules/billing/beam-settings";
-import { getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
+import { getLatestPlatformBillingOrder, getPendingPlatformBillingOrder } from "@/modules/billing/beam-billing";
+import { PLAN_LABELS } from "@/modules/billing/types";
 import { getPayableEnterpriseOffer } from "@/modules/billing/enterprise-offer-repository";
 import { describeOffer } from "@/modules/billing/enterprise-offer";
 
@@ -34,6 +35,10 @@ export default async function BillingSettingsPage() {
   const settings = await getPlatformSettings();
   const beam = settings.billingProvider === "beam" ? await getPlatformBeamPublicSettings() : null;
   const beamOrder = resolved.can("billing.manage") ? await getPendingPlatformBillingOrder(ctx.organizationId) : null;
+  // รายการล่าสุดล้ม = ร้านเคยพยายามจ่ายแล้วไม่สำเร็จ ต้องบอกก่อนให้เลือกใหม่
+  const latestOrder = resolved.can("billing.manage") && !beamOrder
+    ? await getLatestPlatformBillingOrder(ctx.organizationId)
+    : null;
   const prices = await listBillingPrices();
   const businessPrices = await getBusinessPriceMap();
   const freeTrial = await getFreeTrialEligibility(ctx.organizationId, user.id);
@@ -68,6 +73,11 @@ export default async function BillingSettingsPage() {
       beamEnabled={Boolean(beam?.enabled || beamOrder)}
       beamFallbackEnabled={Boolean(beam?.fallbackEnabled && beam.environment === "live")}
       beamOrder={beamOrder}
+      lastPaymentFailed={
+        latestOrder?.status === "failed"
+          ? { planLabel: PLAN_LABELS[latestOrder.plan], amount: Number(latestOrder.amount) }
+          : null
+      }
       recipientName={settings.promptpayName}
       slipVerificationReady={isSlip2goConfigured()}
       promoTrial={billingState.promoTrial === true}

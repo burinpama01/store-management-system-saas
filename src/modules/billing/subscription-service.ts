@@ -219,7 +219,7 @@ export async function submitPromptPayPayment(
     type: "subscription_expiring",
     destination: "owner",
     title: "ต่ออายุแพ็กเกจสำเร็จ",
-    message: `ชำระเงินสำเร็จ · แพ็กเกจ ${input.plan} (${input.duration}) ใช้งานได้ถึง ${formatThaiDay(newExpiry)}`,
+    message: `ชำระเงินสำเร็จ · แพ็กเกจ ${input.plan} (${submissionDuration(input)}) ใช้งานได้ถึง ${formatThaiDay(newExpiry)}`,
     organizationId: input.organizationId,
     metadata: { plan: input.plan, duration: input.duration, newExpiry },
   });
