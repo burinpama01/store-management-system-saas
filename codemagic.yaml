@@ -1,0 +1,79 @@
+# Signing identities are configured in Codemagic Team settings.
+# This workflow produces an IPA only; publishing is a separate step.
+workflows:
+  storeos-ios-ipa:
+    name: StoreOS POS iOS IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      node: "22"
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.burin.storeos.pos
+      vars:
+        BUNDLE_ID: com.burin.storeos.pos
+        APP_STORE_APP_ID: "6819038725"
+    scripts:
+      - name: Install native app dependencies
+        script: |
+          set -euo pipefail
+          test -f "$CM_BUILD_DIR/src/modules/native-pos/contracts.ts"
+          cd "$CM_BUILD_DIR/mobile/pos-native"
+          npm ci --no-audit --no-fund
+      - name: Verify native app
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile/pos-native"
+          npm run typecheck
+          npm test
+          npm run check
+      - name: Set iOS build number
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile/pos-native"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          const projectBuild = process.env.PROJECT_BUILD_NUMBER;
+          if (!projectBuild || !/^\d+$/.test(projectBuild)) {
+            throw new Error('PROJECT_BUILD_NUMBER must be provided by Codemagic');
+          }
+          if (config.expo.ios.bundleIdentifier !== process.env.BUNDLE_ID) {
+            throw new Error('Bundle identifier does not match signing configuration');
+          }
+          config.expo.ios.buildNumber = String(Number(projectBuild) + 1);
+          fs.writeFileSync('app.json', JSON.stringify(config, null, 2) + '\n');
+          NODE
+      - name: Generate native iOS project
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile/pos-native"
+          CI=1 npx --no-install expo prebuild --platform ios --no-install
+          cd ios
+          pod install
+      - name: Apply signing profiles
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile/pos-native/ios"
+          xcode-project use-profiles
+      - name: Build signed IPA
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile/pos-native"
+          shopt -s nullglob
+          workspaces=(ios/*.xcworkspace)
+          if [ "${#workspaces[@]}" -ne 1 ]; then
+            echo "Expected exactly one generated app workspace" >&2
+            exit 1
+          fi
+          workspace="${workspaces[0]}"
+          scheme="$(basename "$workspace" .xcworkspace)"
+          xcode-project build-ipa \
+            --workspace "$workspace" \
+            --scheme "$scheme" \
+            --export-options-plist /Users/builder/export_options.plist
+    artifacts:
+      - mobile/pos-native/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
