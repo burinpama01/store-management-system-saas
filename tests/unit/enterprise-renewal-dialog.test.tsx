@@ -57,6 +57,18 @@ describe("ไดอาล็อกต่ออายุ Enterprise", () => {
     expect(props.onChangePackage).not.toHaveBeenCalled();
   });
 
+  it("การชำระครั้งก่อนไม่สำเร็จ แจ้งก่อน แล้วจึงให้เลือกต่ออายุ/เปลี่ยนแพ็กเกจ", () => {
+    render(<EnterpriseRenewalDialog {...props} initialOrder={null} lastPaymentFailed={{ planLabel: "Starter", amount: 99 }} />);
+    expect(screen.getByText("รับชำระเงินไม่สำเร็จ")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Starter 99 บาท");
+    expect(screen.queryByRole("button", { name: /ต่ออายุ 4,500 บาท/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "เลือกการต่ออายุ" }));
+    expect(screen.getByText("แพ็กเกจหมดอายุ")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /ต่ออายุ 4,500 บาท/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "เปลี่ยนแพ็กเกจ" })).toBeTruthy();
+    expect(m.create).not.toHaveBeenCalled();
+  });
+
   it("จ่ายสำเร็จแล้วเปลี่ยนเป็นหน้าสำเร็จพร้อมปุ่มเริ่มใช้งานต่อ", () => {
     render(<EnterpriseRenewalDialog {...props} initialOrder={{ ...order, status: "paid", new_expiry: "2027-10-04T00:00:00Z" }} />);
     expect(screen.getByText("ต่ออายุสำเร็จ")).toBeTruthy();

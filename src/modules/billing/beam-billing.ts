@@ -32,6 +32,15 @@ export async function getPendingPlatformBillingOrder(organizationId: string) {
   return data ? billingOrderView(data) : null;
 }
 
+/** รายการล่าสุดขององค์กร (ทุกสถานะ) — ใช้บอกร้านว่าการชำระครั้งก่อนไม่สำเร็จ */
+export async function getLatestPlatformBillingOrder(organizationId: string) {
+  const db = await createSupabaseServiceClient();
+  const { data, error } = await db.from("platform_billing_orders").select("*")
+    .eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error("อ่านรายการชำระเงินไม่สำเร็จ");
+  return data ? billingOrderView(data) : null;
+}
+
 export async function createPlatformBillingOrder(input: SubmitPaymentInput) {
   const pending = await getPendingPlatformBillingOrder(input.organizationId);
   if (pending) return pending; // Existing payment takes precedence over a new readiness check.

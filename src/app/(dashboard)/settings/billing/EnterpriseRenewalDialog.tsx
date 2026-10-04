@@ -18,6 +18,7 @@ export function EnterpriseRenewalDialog({
   summary,
   fallbackEnabled,
   initialOrder,
+  lastPaymentFailed = null,
   onChangePackage,
   onClose,
 }: {
@@ -26,10 +27,14 @@ export function EnterpriseRenewalDialog({
   fallbackEnabled: boolean;
   /** รายการชำระที่ค้างอยู่ — ถ้ามี ข้ามไปขั้นจ่ายเลย เพื่อไม่ให้ร้านจ่ายซ้ำ */
   initialOrder: BillingOrderView | null;
+  /** การชำระครั้งล่าสุดไม่สำเร็จ — แจ้งก่อนเป็นหน้าแรก แล้วค่อยให้เลือก */
+  lastPaymentFailed?: { planLabel: string; amount: number } | null;
   onChangePackage: () => void;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<"choose" | "pay">(initialOrder ? "pay" : "choose");
+  const [step, setStep] = useState<"failed" | "choose" | "pay">(
+    initialOrder ? "pay" : lastPaymentFailed ? "failed" : "choose",
+  );
   const [paid, setPaid] = useState(false);
   const handlePaid = useCallback(() => setPaid(true), []);
   const price = amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
@@ -39,12 +44,31 @@ export function EnterpriseRenewalDialog({
   return (
     <ModalDialog
       open
-      title={paid ? "ต่ออายุสำเร็จ" : "แพ็กเกจหมดอายุ"}
-      description={paid ? undefined : `ต้องการต่ออายุ Enterprise ในราคา ${price} บาท หรือเปลี่ยนแพ็กเกจ?`}
+      title={paid ? "ต่ออายุสำเร็จ" : step === "failed" ? "รับชำระเงินไม่สำเร็จ" : "แพ็กเกจหมดอายุ"}
+      description={
+        paid || step === "failed" ? undefined : `ต้องการต่ออายุ Enterprise ในราคา ${price} บาท หรือเปลี่ยนแพ็กเกจ?`
+      }
       onClose={onClose}
       size="sm"
     >
-      {step === "choose" ? (
+      {step === "failed" && lastPaymentFailed ? (
+        <div className="space-y-4">
+          <div role="alert" className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-bold">การชำระเงินครั้งก่อนไม่สำเร็จ</p>
+            <p className="mt-1">
+              รายการ {lastPaymentFailed.planLabel}{" "}
+              {lastPaymentFailed.amount.toLocaleString("th-TH", { maximumFractionDigits: 2 })} บาท
+              ระบบไม่ได้รับเงิน จึงยังไม่ได้ต่ออายุแพ็กเกจให้
+            </p>
+          </div>
+          <p className="text-sm text-[var(--ink-2)]">
+            แพ็กเกจของร้านหมดอายุแล้ว กรุณาเลือกต่ออายุหรือเปลี่ยนแพ็กเกจอีกครั้ง หากถูกตัดเงินไปแล้วโปรดติดต่อผู้ดูแลพร้อมสลิปก่อนชำระซ้ำ
+          </p>
+          <button type="button" className="btn-primary min-h-11 w-full" onClick={() => setStep("choose")}>
+            เลือกการต่ออายุ
+          </button>
+        </div>
+      ) : step === "choose" ? (
         <div className="space-y-4">
           <div className="rounded-[var(--radius-md)] border border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-4">
             <p className="text-xs font-bold text-[var(--muted)]">ราคาต่ออายุตามข้อตกลง</p>

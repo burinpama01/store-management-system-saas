@@ -76,6 +76,7 @@ export function BillingManager({
   beamEnabled = false,
   beamFallbackEnabled = false,
   beamOrder = null,
+  lastPaymentFailed = null,
 }: {
   orgName: string;
   plan: BillingPlan;
@@ -100,6 +101,8 @@ export function BillingManager({
   beamEnabled?: boolean;
   beamFallbackEnabled?: boolean;
   beamOrder?: BillingOrderView | null;
+  /** รายการชำระล่าสุดไม่สำเร็จ — ไดอาล็อกต่ออายุแจ้งก่อนให้เลือก */
+  lastPaymentFailed?: { planLabel: string; amount: number } | null;
 }) {
   // ตรรกะการแสดงสถานะอยู่ใน modules/billing/status-display.ts (ทดสอบแยกได้)
   const display = describeSubscriptionDisplay({ plan, isActive, promoTrial, expires, currentPeriodEnd });
@@ -703,6 +706,7 @@ export function BillingManager({
           summary={enterpriseOffer.summary}
           fallbackEnabled={beamFallbackEnabled}
           initialOrder={beamOrder}
+          lastPaymentFailed={lastPaymentFailed}
           onChangePackage={chooseOtherPackage}
           onClose={() => setRenewDialogOpen(false)}
         />
