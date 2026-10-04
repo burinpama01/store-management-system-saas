@@ -1,4 +1,5 @@
 import { withDataClient } from "@/shared/services/data-client";
+import { formatClosingTime } from "@/modules/reports/closing-summary";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { mapError } from "@/shared/utils/error";
@@ -37,6 +38,7 @@ function mapStore(row: StoreRow): Store {
     voiceAiFallbackEnabled: row.voice_ai_fallback_enabled ?? false,
     notificationVoiceEnabled: row.notification_voice_enabled ?? false,
     dailySummaryEmailEnabled: row.daily_summary_email_enabled ?? true,
+    closingTime: formatClosingTime(row.closing_time) || undefined,
     qrOrderingMode: row.qr_ordering_mode,
     tableOpenPolicy: row.table_open_policy,
     serviceButtons: parseServiceButtons(row.qr_service_buttons),
@@ -180,6 +182,8 @@ export interface UpdateStoreInput {
   logoUrl?: string | null;
   currencyCode?: string;
   timezone?: string;
+  /** "HH:MM" หรือ null = ไม่ใช้เวลาปิดร้าน; undefined = ไม่แตะค่าเดิม */
+  closingTime?: string | null;
   locale?: string;
   buffetEnabled?: boolean;
   qrOrderingEnabled?: boolean;
@@ -224,6 +228,7 @@ export async function updateStore(storeId: string, organizationId: string, input
       logo_url: input.logoUrl,
       currency_code: input.currencyCode,
       timezone: input.timezone,
+      closing_time: input.closingTime,
       locale: input.locale,
       buffet_enabled: input.buffetEnabled,
       qr_ordering_enabled: input.qrOrderingEnabled,
