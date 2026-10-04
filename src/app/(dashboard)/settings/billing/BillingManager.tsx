@@ -23,6 +23,7 @@ import { ModalDialog, ProgressBar, QrCode } from "@/shared/components/ui";
 import { uploadWithProgress } from "@/shared/services/upload";
 import { claimFreeTrialAction, getPaymentQrAction } from "./actions";
 import { BeamPackagePayment } from "./BeamPackagePayment";
+import { EnterpriseRenewalDialog } from "./EnterpriseRenewalDialog";
 import type { BillingOrderView } from "@/modules/billing/beam-billing-types";
 
 function formatDate(iso: string | null): string {
@@ -109,8 +110,18 @@ export function BillingManager({
   const searchParams = useSearchParams();
   const expired = searchParams.get("expired") === "1";
 
-  const [selectedPlan, setSelectedPlan] = useState<SelectablePlan>(
-    plan === "business" ? "business" : "starter",
+  // ค่าเริ่มต้นคือแพ็กเกจเดิมของร้าน — เดิมตั้ง starter เสมอ ร้าน Enterprise ที่หมดอายุ
+  // กด "ชำระแพ็กเกจ" ด้านล่างทันทีจะกลายเป็นซื้อ Starter โดยไม่ตั้งใจ
+  const [selectedPlan, setSelectedPlan] = useState<SelectablePlan>(() =>
+    plan === "enterprise" && enterpriseOffer
+      ? "enterprise"
+      : plan === "business" || (PAID_TIERS as readonly string[]).includes(plan)
+        ? (plan as SelectablePlan)
+        : "starter",
+  );
+  // หมดอายุ + มีข้อเสนอต่ออายุ + ชำระผ่าน Beam ได้ = เด้งไดอาล็อกถามทันที
+  const [renewDialogOpen, setRenewDialogOpen] = useState(
+    () => canManage && !isActive && !isEnterpriseContract && Boolean(enterpriseOffer) && beamEnabled,
   );
   const [duration, setDuration] = useState<BillingDuration>("30d");
   const [seats, setSeats] = useState(currentBusiness?.seats ?? 3);
@@ -148,6 +159,16 @@ export function BillingManager({
       prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key],
     );
     resetGeneratedPayment();
+  }
+
+  function chooseOtherPackage() {
+    setRenewDialogOpen(false);
+    setSelectedPlan((current) => (current === "enterprise" ? "starter" : current));
+    resetGeneratedPayment();
+    // รอให้ไดอาล็อกปิดก่อน แล้วค่อยเลื่อนไปส่วนเลือกแพ็กเกจ
+    window.requestAnimationFrame(() =>
+      document.getElementById("billing-package-picker")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   }
 
   function resetGeneratedPayment() {
@@ -387,10 +408,15 @@ export function BillingManager({
           <button
             type="button"
             disabled={busy || !paymentConfigured}
-            onClick={() => { setSelectedPlan("enterprise"); resetGeneratedPayment(); }}
+            onClick={() => {
+              setSelectedPlan("enterprise");
+              resetGeneratedPayment();
+              // Beam ยืนยันเงินเข้าเองได้ = จ่ายในไดอาล็อกเลย; PromptPay+สลิป ใช้ฟอร์มด้านล่างเหมือนเดิม
+              if (beamEnabled) setRenewDialogOpen(true);
+            }}
             className="btn-primary mt-3 min-h-11 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {isEnterpriseSelected ? "เลือกต่อ Enterprise แล้ว" : "เลือกต่อ Enterprise"}
+            {beamEnabled ? "ต่ออายุ Enterprise" : isEnterpriseSelected ? "เลือกต่อ Enterprise แล้ว" : "เลือกต่อ Enterprise"}
           </button>
           <p className="mt-2 text-xs text-[var(--muted)]">
             ไม่ต้องการต่อ Enterprise? เลือกแพ็กเกจอื่นในส่วนด้านล่างได้ตามปกติ
@@ -399,7 +425,7 @@ export function BillingManager({
       )}
 
       {!isEnterpriseContract && canManage && (paymentConfigured || trialAvailable) && (
-        <section className="panel p-5">
+        <section id="billing-package-picker" className="panel scroll-mt-4 p-5">
           <h2 className="panel-title mb-3">ต่ออายุ / เปลี่ยนแพ็กเกจ</h2>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -542,7 +568,7 @@ export function BillingManager({
             </div>
           </div>
 
-          <div className="mt-4">
+          {!isEnterpriseSelected && <div className="mt-4">
             <label htmlFor="billing-discount-code" className="field-label">
               โค้ดส่วนลด (ถ้ามี)
             </label>
@@ -559,7 +585,7 @@ export function BillingManager({
             <p className="mt-1 text-[11px] text-[var(--muted)]">
               ส่วนลดจะถูกตรวจสอบและหักออกจากยอดเมื่อกดสร้าง QR
             </p>
-          </div>
+          </div>}
 
           {paymentQuote && (
             <div className="mt-3 rounded-md border border-[var(--border)] bg-white p-3 text-sm">
@@ -600,7 +626,8 @@ export function BillingManager({
             </p>
           )}
 
-          {beamEnabled && <BeamPackagePayment plan={selectedPlan} duration={duration} businessConfigJson={isBusinessSelected ? JSON.stringify(businessConfig) : undefined} discountCode={discountCode} fallbackEnabled={beamFallbackEnabled} initialOrder={beamOrder} />}
+          {/* ไดอาล็อกต่ออายุเปิดอยู่ = ตัวนั้นติดตามรายการเอง ไม่ต้อง poll ซ้ำสองที่ */}
+          {beamEnabled && !renewDialogOpen && <BeamPackagePayment plan={selectedPlan} duration={duration} businessConfigJson={isBusinessSelected ? JSON.stringify(businessConfig) : undefined} discountCode={isEnterpriseSelected ? undefined : discountCode} fallbackEnabled={beamFallbackEnabled} initialOrder={beamOrder} />}
           {!beamEnabled && <button
             type="button"
             onClick={generateQr}
@@ -668,6 +695,17 @@ export function BillingManager({
             </div>
           )}
         </section>
+      )}
+
+      {renewDialogOpen && enterpriseOffer && (
+        <EnterpriseRenewalDialog
+          amount={enterpriseOffer.amount}
+          summary={enterpriseOffer.summary}
+          fallbackEnabled={beamFallbackEnabled}
+          initialOrder={beamOrder}
+          onChangePackage={chooseOtherPackage}
+          onClose={() => setRenewDialogOpen(false)}
+        />
       )}
 
       {feedbackDialog && (
