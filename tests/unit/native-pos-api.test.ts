@@ -14,6 +14,7 @@ vi.mock('@/app/api/ai/voice-intent/route', () => ({ POST: vi.fn() }));
 vi.mock('@/modules/pos/order-repository', () => ({ getOrder: mocks.getOrder }));
 vi.mock('@/modules/native-pos/operation', () => ({ findNativeOrderId: mocks.find, cancelNativeOperation: mocks.cancel, nativeOperationKey: (user: string, store: string, key: string) => `${user}/${store}/${key}` }));
 import { GET, POST } from '@/app/api/mobile/pos/[operation]/route';
+import { getNativeRequestContext } from '@/modules/native-pos/request-context';
 const store = '10000000-0000-4000-8000-000000000001';
 const product = '20000000-0000-4000-8000-000000000002';
 const operation = '30000000-0000-4000-8000-000000000003';
@@ -47,6 +48,10 @@ describe('native API authorization and checkout', () => {
     expect((await request('checkout', body)).status).toBe(403); expect(mocks.checkout).not.toHaveBeenCalled();
   });
   it('accepts the mobile payload, reprices, and passes a user/store-bound durable key', async () => {
+    mocks.checkout.mockImplementationOnce(async () => {
+      expect(getNativeRequestContext()).toMatchObject({ storeId: store, user: { id: 'user' }, expectedTotalSatang: 6500 });
+      return { orderId: 'order', order: null, failedStage: null, error: null };
+    });
     expect((await request('checkout', body)).status).toBe(200);
     expect(mocks.checkout).toHaveBeenCalledWith(expect.objectContaining({ total: 65 }), expect.objectContaining({ amount: 65, receivedAmount: 100, changeAmount: 35 }), { idempotencyKey: `user/${store}/${operation}`, paymentIdempotencyKey: `user/${store}/${operation}` });
   });
