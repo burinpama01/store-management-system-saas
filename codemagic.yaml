@@ -35,18 +35,36 @@ workflows:
         script: |
           set -euo pipefail
           cd "$CM_BUILD_DIR/mobile/pos-native"
-          LATEST_TESTFLIGHT_BUILD_NUMBER="$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" --platform IOS)"
-          export LATEST_TESTFLIGHT_BUILD_NUMBER
+          BUILD_NUMBER_QUERY_LOG="/tmp/storeos-build-number-query.log"
+          if LATEST_TESTFLIGHT_BUILD_NUMBER="$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" --platform IOS 2> "$BUILD_NUMBER_QUERY_LOG")"; then
+            :
+          else
+            cat "$BUILD_NUMBER_QUERY_LOG" >&2
+            echo "Cannot query Apple build number; refusing to continue" >&2
+            exit 1
+          fi
+          export LATEST_TESTFLIGHT_BUILD_NUMBER BUILD_NUMBER_QUERY_LOG
           node <<'NODE'
           const fs = require('node:fs');
           const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
           const projectBuild = process.env.PROJECT_BUILD_NUMBER;
-          const latestBuild = process.env.LATEST_TESTFLIGHT_BUILD_NUMBER;
+          let latestBuild = process.env.LATEST_TESTFLIGHT_BUILD_NUMBER?.trim();
           if (!projectBuild || !/^\d+$/.test(projectBuild)) {
             throw new Error('PROJECT_BUILD_NUMBER must be provided by Codemagic');
           }
           if (config.expo.ios.bundleIdentifier !== process.env.BUNDLE_ID) {
             throw new Error('Bundle identifier does not match signing configuration');
+          }
+          if (latestBuild === '') {
+            const diagnostic = fs.readFileSync(process.env.BUILD_NUMBER_QUERY_LOG, 'utf8');
+            const expected = `Did not find latest build for app ${process.env.APP_STORE_APP_ID}`;
+            const confirmedNoBuild = diagnostic.split('\n').some(line =>
+              line.replace(/\x1b\[[0-9;]*m/g, '').trim() === expected);
+            if (!confirmedNoBuild) {
+              throw new Error('Empty Apple response without confirmed no-build diagnostic');
+            }
+            latestBuild = '0';
+            console.log('Apple confirmed no prior TestFlight build; using configured/counter baseline');
           }
           if (!latestBuild || !/^\d+$/.test(latestBuild)) {
             throw new Error('Apple latest build number must be a non-negative integer');
