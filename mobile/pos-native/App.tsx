@@ -12,7 +12,8 @@ import { runPrintJob } from './src/domain/printing';
 import { api, ApiError, login, savedSession, saveSession, type Session } from './src/client';
 import { createWriteQueue, canReleaseRejectedCheckout } from './src/domain/storage';
 import { demo, demoDelivery } from './src/demo';
-import { PrinterSettings } from './src/printers/PrinterSettings';
+const DeferredPrinterSettings = React.lazy(() => import('./src/printers/PrinterSettings').then(module => ({ default: module.PrinterSettings })));
+function PrinterSettings() { return <React.Suspense fallback={<Text>กำลังโหลดเครื่องพิมพ์…</Text>}><DeferredPrinterSettings /></React.Suspense>; }
 
 const money = (satang: number) => `฿${(satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const tabs = [['sale', 'ขายสินค้า', '▦'], ['delivery', 'เดลิเวอรี', '↗'], ['orders', 'บิลวันนี้', '≡'], ['printers', 'เครื่องพิมพ์', '▤'], ['settings', 'ตั้งค่า', '⚙']] as const;
