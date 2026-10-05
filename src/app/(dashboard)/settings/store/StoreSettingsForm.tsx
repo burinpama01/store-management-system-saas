@@ -98,6 +98,7 @@ export function StoreSettingsForm({
           <InfoItem label="ชื่อร้านค้า" value={store.name} />
           <InfoItem label="เบอร์โทรศัพท์" value={store.phone ?? "ยังไม่ได้ตั้งค่า"} />
           <InfoItem label="Timezone" value={store.timezone} />
+          <InfoItem label="เวลาปิดร้าน" value={store.closingTime ? `${store.closingTime} น.` : "ไม่ได้ตั้ง"} />
           <InfoItem label="สกุลเงิน" value={store.currencyCode} />
           <InfoItem label="ที่อยู่" value={store.address ?? "ยังไม่ได้ตั้งค่า"} wide />
           <InfoItem
@@ -303,6 +304,22 @@ function StoreSettingsDialog({
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="store-closing-time" className="field-label">เวลาปิดร้าน</label>
+          <input
+            id="store-closing-time"
+            type="time"
+            name="closingTime"
+            defaultValue={store.closingTime ?? ""}
+            disabled={!canEdit}
+            className={`${field} max-w-40`}
+          />
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            เลยเวลาปิด 1 ชั่วโมงแล้วยังไม่มีสรุปยอดของวัน (เช่น พนักงานคนสุดท้ายลืมกดออกงาน)
+            ระบบจะส่งสรุปยอดเข้า LINE/Telegram ให้ พร้อมบอกว่าใครยังไม่กดออกงาน · เว้นว่าง = ไม่ใช้
+          </p>
         </div>
 
         <input type="hidden" name="locale" value={store.locale} />

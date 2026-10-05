@@ -1,5 +1,6 @@
 "use server";
 
+import { parseClosingTimeInput } from "@/modules/reports/closing-summary";
 import { revalidatePath } from "next/cache";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import {
@@ -53,6 +54,8 @@ export async function updateStoreAction(
     const address = (formData.get("address") as string | null)?.trim() || undefined;
     const phone = (formData.get("phone") as string | null)?.trim() || undefined;
     const timezone = (formData.get("timezone") as string | null)?.trim() ?? "Asia/Bangkok";
+    // ฟอร์มที่ไม่มีช่องนี้ต้องไม่ล้างค่าเดิม (undefined = ไม่แตะ)
+    const closingTime = formData.has("closingTime") ? parseClosingTimeInput(formData.get("closingTime")) : undefined;
     const locale = (formData.get("locale") as string | null)?.trim() ?? "th-TH";
     const currencyCode = (formData.get("currencyCode") as string | null)?.trim() ?? "THB";
     const buffetEnabled = formData.get("buffetEnabled") === "1";
@@ -80,6 +83,7 @@ export async function updateStoreAction(
     if (address && address.length > 300) return { error: "ที่อยู่ยาวเกิน 300 ตัวอักษร" };
     if (phone && phone.length > 20) return { error: "เบอร์โทรยาวเกิน 20 ตัวอักษร" };
     if (!ALLOWED_TIMEZONES.has(timezone)) return { error: "Timezone ไม่ถูกต้อง" };
+    if (closingTime === "invalid") return { error: "เวลาปิดร้านไม่ถูกต้อง" };
     if (!ALLOWED_CURRENCIES.has(currencyCode)) return { error: "สกุลเงินไม่ถูกต้อง" };
     if (!ALLOWED_LOCALES.has(locale)) return { error: "Locale ไม่ถูกต้อง" };
     if (!theme.ok) return { error: theme.error };
@@ -119,6 +123,7 @@ export async function updateStoreAction(
       address: address ?? null,
       phone: phone ?? null,
       timezone,
+      closingTime,
       locale,
       currencyCode,
       buffetEnabled,

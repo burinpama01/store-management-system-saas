@@ -36,6 +36,8 @@ export interface Store {
   notificationVoiceEnabled?: boolean;
   /** ให้ร้านนี้อยู่ในอีเมลสรุปยอดรายวันที่ส่งถึงเจ้าขององค์กร (ค่าเริ่มต้นเปิด) */
   dailySummaryEmailEnabled?: boolean;
+  /** เวลาปิดร้าน "HH:MM" (เวลาสาขา) — เลยไป 1 ชม. ยังไม่มีสรุปยอด ระบบส่งให้เอง; ไม่ตั้ง = ไม่ใช้ */
+  closingTime?: string;
   qrOrderingMode: QrOrderingMode;
   tableOpenPolicy: TableOpenPolicy;
   serviceButtons: ServiceButtonConfig[];
