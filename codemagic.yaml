@@ -1,10 +1,12 @@
 # Signing identities are configured in Codemagic Team settings.
-# This workflow produces an IPA only; publishing is a separate step.
+# Upload to App Store Connect for internal testing; no automatic review submission.
 workflows:
   storeos-ios-ipa:
-    name: StoreOS POS iOS IPA
+    name: StoreOS POS iOS TestFlight
     max_build_duration: 120
     instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Apple Key JDC
     environment:
       node: "22"
       xcode: latest
@@ -33,17 +35,31 @@ workflows:
         script: |
           set -euo pipefail
           cd "$CM_BUILD_DIR/mobile/pos-native"
+          LATEST_TESTFLIGHT_BUILD_NUMBER="$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" --platform IOS)"
+          export LATEST_TESTFLIGHT_BUILD_NUMBER
           node <<'NODE'
           const fs = require('node:fs');
           const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
           const projectBuild = process.env.PROJECT_BUILD_NUMBER;
+          const latestBuild = process.env.LATEST_TESTFLIGHT_BUILD_NUMBER;
           if (!projectBuild || !/^\d+$/.test(projectBuild)) {
             throw new Error('PROJECT_BUILD_NUMBER must be provided by Codemagic');
           }
           if (config.expo.ios.bundleIdentifier !== process.env.BUNDLE_ID) {
             throw new Error('Bundle identifier does not match signing configuration');
           }
-          config.expo.ios.buildNumber = String(Number(projectBuild) + 1);
+          if (!latestBuild || !/^\d+$/.test(latestBuild)) {
+            throw new Error('Apple latest build number must be a non-negative integer');
+          }
+          const localBuild = config.expo.ios.buildNumber;
+          if (!/^\d+$/.test(localBuild)) {
+            throw new Error('Configured iOS build number must be a non-negative integer');
+          }
+          const nextBuild = Math.max(Number(projectBuild) + 1, Number(latestBuild) + 1, Number(localBuild));
+          if (!Number.isSafeInteger(nextBuild)) {
+            throw new Error('Next iOS build number exceeds safe integer range');
+          }
+          config.expo.ios.buildNumber = String(nextBuild);
           fs.writeFileSync('app.json', JSON.stringify(config, null, 2) + '\n');
           NODE
       - name: Generate native iOS project
@@ -77,3 +93,8 @@ workflows:
     artifacts:
       - mobile/pos-native/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false
