@@ -1574,7 +1574,9 @@ function TicketPanel({
           detail="อัปเดตเฉพาะระบบตั๋ว หน้าขายยังไม่ต้องโหลดใหม่"
         />
       )}
-      <fieldset disabled={isTicketSyncPending} aria-disabled={isTicketSyncPending} className="space-y-4 disabled:opacity-60">
+      {/* min-w-0: fieldset มีค่าเริ่มต้น min-inline-size: min-content — ข้อความ truncate ในรายการตั๋ว
+          (สรุปรายการยาว) ดันให้กว้างเกินแผ่น จนช่องลูกค้า/ปุ่มพิมพ์ใบสั่ง/ช่องค้นหาถูกตัดขวา */}
+      <fieldset disabled={isTicketSyncPending} aria-disabled={isTicketSyncPending} className="min-w-0 space-y-4 disabled:opacity-60">
       <div className="space-y-1.5">
         <div className="grid grid-cols-2 gap-2">
           <label className="text-[11px] font-semibold text-gray-500">
