@@ -1,8 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "./database.types";
+import { getNativeRequestContext } from '@/modules/native-pos/request-context';
 
 export async function createSupabaseServerClient() {
+  const native = getNativeRequestContext();
+  if (native) return native.client;
   const cookieStore = await cookies();
 
   return createServerClient<Database>(

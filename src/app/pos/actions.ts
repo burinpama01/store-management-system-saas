@@ -1,6 +1,8 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { getNativeRequestContext } from '@/modules/native-pos/request-context';
+import { createNativeOrderIds } from '@/modules/native-pos/operation';
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
@@ -497,7 +499,10 @@ async function createPosOrderCore(
     }
 
     let orderCart = finalCart;
-    const result = customerId || couponCode
+    const nativeRequest = getNativeRequestContext();
+    const result = nativeRequest && opts?.idempotencyKey
+      ? await createNativeOrderIds({ storeId: ctx.storeId, organizationId: ctx.organizationId, cashierId: user.id, storeTimezone: ctx.storeTimezone, cart: finalCart }, opts.idempotencyKey)
+      : customerId || couponCode
       ? await (async () => {
           const couponRes = couponCode
             ? await findCouponPolicyByCode(ctx.storeId, couponCode, customerId)

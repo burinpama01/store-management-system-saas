@@ -52,6 +52,7 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/terms-of-service" ||
     request.nextUrl.pathname === "/account-deletion" ||
     request.nextUrl.pathname.startsWith("/download/") ||
+    request.nextUrl.pathname.startsWith("/api/mobile/pos/") || // Handler verifies Bearer independently.
     request.nextUrl.pathname === "/api/line/webhook" ||
     request.nextUrl.pathname === "/api/print/hub/poll" ||
     request.nextUrl.pathname === "/api/print/hub/ack" ||
