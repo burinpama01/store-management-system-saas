@@ -35,6 +35,16 @@ beforeEach(() => {
   mocks.checkout.mockResolvedValue({ orderId: 'order', order: null, failedStage: null, error: null });
 });
 describe('native API authorization and checkout', () => {
+  it('allows an active subscription to bootstrap and blocks inactive or missing billing before reading products', async () => {
+    expect((await request('bootstrap')).status).toBe(200);
+    mocks.products.mockClear();
+    mocks.billing.mockResolvedValueOnce({ active: false });
+    expect((await request('bootstrap')).status).toBe(403);
+    mocks.billing.mockResolvedValueOnce(null);
+    expect((await request('bootstrap')).status).toBe(403);
+    expect(mocks.products).not.toHaveBeenCalled();
+    expect(mocks.checkout).not.toHaveBeenCalled();
+  });
   it('rejects absent or unverified Bearer tokens and inaccessible explicit stores', async () => {
     expect((await request('bootstrap', undefined, false)).status).toBe(401);
     mocks.getUser.mockResolvedValueOnce({ data: { user: null }, error: new Error('expired') });

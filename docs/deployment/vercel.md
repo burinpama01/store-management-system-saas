@@ -32,8 +32,9 @@ Before promoting a preview to production, verify all of the following:
 - [ ] Preview deployment URL is accessible and loads the dashboard
 - [ ] Login flow works (Supabase auth)
 - [ ] POS flow: create order, add items, complete payment
-- [ ] Beam ระบบ billing ปัจจุบัน: เปิด `/settings/billing` ด้วย owner และทดสอบ checkout ด้วย Playground credentials บนฐานทดสอบแยก ห้ามใช้ live credentials แทน
-- [ ] Beam webhook: ตรวจลายเซ็น ยอดเงินและ reference ต้องตรง และ settlement เกิดครั้งเดียว ใช้ order/event ของ platform billing ปัจจุบัน ไม่ใช้ Stripe `billing_events` เดิม
+- [ ] Release native API ที่ไม่แก้ platform billing runtime: ตรวจ native entitlement ด้วยร้านแพ็กเกจใช้งานได้, หมดอายุ และไม่มี billing state; ตรวจว่าไม่มีการอ่านสินค้า/checkout เมื่อไม่มีสิทธิ์ (ผู้ใช้อนุมัติขอบเขตนี้ 2026-10-05 แทนซื้อแพ็กเกจจริง)
+- [ ] หาก release แก้ platform billing runtime: ทดสอบ platform checkout/webhook, signature, amount/reference และ settlement ครั้งเดียวแยกจาก merchant POS; ใช้ Playground โดยปกติ หรือ live เฉพาะผู้ใช้อนุมัติรอบนั้น ห้ามนับบิล merchant เป็น platform test
+- [ ] Merchant POS Beam: ตรวจสร้าง QR, รับสถานะ provider และ webhook, ปิดบิลครั้งเดียว; แยกหลักฐาน polling กับ webhook และไม่เก็บ secret/สลิปส่วนตัวในรายงาน
 - [ ] TypeScript: `npx tsc --noEmit` passes with 0 errors
 - [ ] Tests: `npx vitest run --maxWorkers=2` ต้องผ่าน เก็บรายงานและแยก skipped tests ออกจาก passed tests
 - [ ] No console errors on main flows (dashboard, catalog, POS, reports)
