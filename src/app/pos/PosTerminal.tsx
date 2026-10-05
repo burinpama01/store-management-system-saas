@@ -1,6 +1,7 @@
 "use client";
 
 import { PrintQueueAlert } from "@/modules/printing/PrintQueueAlert";
+import { posPaymentLabel } from "@/modules/pos/payment-label";
 import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
@@ -586,9 +587,7 @@ function ticketPanelStatusShellClass(tones: Array<ReturnType<typeof ticketPanelM
 function historyPaymentLabel(order: Order) {
   const paid = order.payments.find((payment) => payment.status === "completed") ?? order.payments[0];
   if (!paid) return order.status === "paid" ? "ชำระแล้ว" : "ยังไม่ชำระ";
-  if (paid.method === "cash") return "เงินสด";
-  if (paid.method === "qr_promptpay") return "QR พร้อมเพย์";
-  return paid.method;
+  return posPaymentLabel(paid);
 }
 
 function modifierDetail(modifier: CartItem["modifiers"][number]) {
@@ -2144,7 +2143,7 @@ function BillDetailModal({
             {order.payments.map((payment) => (
               <div key={payment.id} className="flex justify-between text-gray-700">
                 <span>
-                  {paymentMethodLabel(payment.method)}
+                  {posPaymentLabel(payment)}
                   {payment.status !== "completed" ? ` (${payment.status})` : ""}
                 </span>
                 <span className="tabular-nums">{priceStr(payment.amount)}</span>
