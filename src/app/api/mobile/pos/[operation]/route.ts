@@ -21,7 +21,9 @@ import { getOrder } from '@/modules/pos/order-repository';
 
 export const runtime = 'nodejs';
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
-const checkoutSchema = z.object({ operationId: z.string().uuid(), expectedTotalSatang: z.number().int().min(0).max(10000000000), method: z.enum(['cash', 'bank_transfer']), receivedSatang: z.number().int().min(0).max(10000000000), lines: z.array(z.object({ productId: z.string().uuid(), variantId: z.string().uuid().nullable(), optionIds: z.array(z.string().uuid()).max(50), quantity: z.number().int().min(1).max(999), note: z.string().max(500) }).strict()).min(1).max(100) }).strict();
+// PostgreSQL UUID columns also contain legacy IDs without RFC version/variant bits.
+const databaseId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+const checkoutSchema = z.object({ operationId: z.string().uuid(), expectedTotalSatang: z.number().int().min(0).max(10000000000), method: z.enum(['cash', 'bank_transfer']), receivedSatang: z.number().int().min(0).max(10000000000), lines: z.array(z.object({ productId: databaseId, variantId: databaseId.nullable(), optionIds: z.array(databaseId).max(50), quantity: z.number().int().min(1).max(999), note: z.string().max(500) }).strict()).min(1).max(100) }).strict();
 function orderDto(order: Order): NativeOrder {
   return { id: order.id, number: order.orderNumber, status: order.status, totalSatang: satang(order.total), createdAt: order.createdAt,
     lines: order.items.map(item => ({ key: item.id, productId: item.productId, name: item.productName, quantity: item.quantity, unitSatang: satang(item.unitPrice), variantId: item.variantId ?? null, optionIds: item.modifiers.map(m => m.option.id), note: item.note ?? '' })) };
@@ -38,7 +40,7 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
   const { data, error } = await client.auth.getUser(match[1]);
   if (error || !data.user) return json({ error: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่' }, 401);
   const storeId = request.headers.get('x-store-id');
-  if (storeId && !z.string().uuid().safeParse(storeId).success) return json({ error: 'รหัสร้านไม่ถูกต้อง' }, 400);
+  if (storeId && !databaseId.safeParse(storeId).success) return json({ error: 'รหัสร้านไม่ถูกต้อง' }, 400);
   return withNativeRequestContext({ client, user: data.user, storeId }, async () => {
     try {
       const access = await getUserStores();

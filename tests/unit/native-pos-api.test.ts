@@ -35,6 +35,13 @@ beforeEach(() => {
   mocks.checkout.mockResolvedValue({ orderId: 'order', order: null, failedStage: null, error: null });
 });
 describe('native API authorization and checkout', () => {
+  it('accepts PostgreSQL legacy store UUIDs while rejecting malformed and inaccessible IDs', async () => {
+    const legacy = 'cccccccc-0000-0000-0000-000000000001';
+    mocks.stores.mockResolvedValue({ stores: [{ id: legacy, name: 'Main Branch' }] });
+    expect((await request('bootstrap', undefined, true, legacy)).status).toBe(200);
+    expect((await request('bootstrap', undefined, true, 'not-a-uuid')).status).toBe(400);
+    expect((await request('bootstrap', undefined, true, 'cccccccc-0000-0000-0000-000000000002')).status).toBe(403);
+  });
   it('allows an active subscription to bootstrap and blocks inactive or missing billing before reading products', async () => {
     expect((await request('bootstrap')).status).toBe(200);
     mocks.products.mockClear();
@@ -56,6 +63,14 @@ describe('native API authorization and checkout', () => {
     mocks.billing.mockResolvedValueOnce({ active: false }); expect((await request('checkout', body)).status).toBe(403);
     mocks.permissions.mockResolvedValueOnce({ ctx: { storeId: store, organizationId: 'org', role: 'cashier' }, resolved: { can: () => false } });
     expect((await request('checkout', body)).status).toBe(403); expect(mocks.checkout).not.toHaveBeenCalled();
+  });
+  it('accepts legacy catalog IDs but keeps operation UUID validation strict', async () => {
+    const legacyProduct = 'dddddddd-0000-0000-0000-000000000001';
+    mocks.products.mockResolvedValue({ error: null, data: [{ id: legacyProduct, storeId: store, categoryId: 'c', name: 'กาแฟ', basePrice: 65, isActive: true, availableForPos: true, variants: [], modifierGroups: [] }] });
+    expect((await request('checkout', { ...body, lines: [{ ...body.lines[0], productId: legacyProduct }] })).status).toBe(200);
+    mocks.checkout.mockClear();
+    expect((await request('checkout', { ...body, operationId: legacyProduct })).status).toBe(400);
+    expect(mocks.checkout).not.toHaveBeenCalled();
   });
   it('accepts the mobile payload, reprices, and passes a user/store-bound durable key', async () => {
     mocks.checkout.mockImplementationOnce(async () => {
