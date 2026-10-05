@@ -1,4 +1,5 @@
 import React from 'react';
+import { version } from '../package.json';
 import { ScrollView, Text, View } from 'react-native';
 
 // Store only diagnostic codes: exception messages can contain credentials or customer data.
@@ -8,7 +9,7 @@ function record(phase: string, error?: unknown): Diagnostic {
   const message = error instanceof Error ? error.message : '';
   const code = message.includes('new NativeEventEmitter()') ? 'NATIVE_EVENT_EMITTER_UNAVAILABLE'
     : message.includes('Cannot find native module') ? 'NATIVE_MODULE_UNAVAILABLE' : 'STARTUP_FAILED';
-  const diagnostic = { version: '0.1.5', phase, time: new Date().toISOString(), code };
+  const diagnostic = { version, phase, time: new Date().toISOString(), code };
   try {
     const storage = require('@react-native-async-storage/async-storage').default;
     void storage.setItem(key, JSON.stringify(diagnostic)).catch(() => undefined);
@@ -29,7 +30,7 @@ try { LoadedApp = require('../App').default; }
 catch (error) { loadFailure = record('load-app-module', error); }
 class Boundary extends React.Component<React.PropsWithChildren, { diagnostic?: Diagnostic }> {
   state: { diagnostic?: Diagnostic } = {};
-  static getDerivedStateFromError() { return { diagnostic: { version: '0.1.5', phase: 'render', time: new Date().toISOString(), code: 'STARTUP_FAILED' } }; }
+  static getDerivedStateFromError() { return { diagnostic: { version, phase: 'render', time: new Date().toISOString(), code: 'STARTUP_FAILED' } }; }
   componentDidCatch(error: Error) { this.setState({ diagnostic: record('render', error) }); }
   render() { return this.state.diagnostic ? <Failure diagnostic={this.state.diagnostic} /> : this.props.children; }
 }

@@ -2,11 +2,31 @@
   "expo": {
     "name": "StoreOS POS",
     "slug": "storeos-pos-native",
-    "version": "0.1.6",
+    "version": "0.2.0",
     "orientation": "default",
     "userInterfaceStyle": "light",
-    "ios": { "bundleIdentifier": "com.burin.storeos.pos", "buildNumber": "6", "supportsTablet": true, "infoPlist": { "NSLocalNetworkUsageDescription": "StoreOS ใช้เครือข่ายภายในร้านเพื่อส่งงานไปยังเครื่องพิมพ์ที่คุณเลือก" } },
-    "plugins": ["expo-secure-store"],
-    "web": { "bundler": "metro" }
+    "ios": {
+      "bundleIdentifier": "com.burin.storeos.pos",
+      "buildNumber": "7",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "StoreOS ใช้เครือข่ายภายในร้านเพื่อส่งงานไปยังเครื่องพิมพ์ที่คุณเลือก"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/storeos-logo.png",
+          "resizeMode": "contain",
+          "imageWidth": 220,
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "web": {
+      "bundler": "metro"
+    }
   }
 }

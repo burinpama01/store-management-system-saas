@@ -11,6 +11,7 @@ function startup(failStorage = false) {
   const source = fs.readFileSync(new URL('../src/Startup.tsx', import.meta.url), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
   vm.runInNewContext(code, { exports, Error, require: (name: string) => {
+    if (name === '../package.json') return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     if (name === 'react') return react;
     if (name === 'react-native') return { View: 'View', Text: 'Text', ScrollView: 'ScrollView' };
     if (name === '../App') throw new Error('new NativeEventEmitter() requires a non-null argument. secret-token');
@@ -24,6 +25,7 @@ it('shows a diagnostic after App import fails, without storing raw private excep
   expect(element.props.diagnostic.code).toBe('NATIVE_EVENT_EMITTER_UNAVAILABLE');
   expect(element.props.diagnostic.phase).toBe('load-app-module');
   expect(writes).toHaveLength(1);
+  expect(element.props.diagnostic.version).toBe(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
   expect(writes[0]).not.toContain('secret-token');
 });
 it('still shows diagnostic when storage module cannot load', () => {

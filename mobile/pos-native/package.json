@@ -1,6 +1,6 @@
 {
   "name": "storeos-pos-native",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -19,6 +19,7 @@
     "expo-dev-client": "~57.0.19",
     "expo-print": "~57.0.2",
     "expo-secure-store": "~57.0.4",
+    "expo-splash-screen": "~57.0.9",
     "fast-png": "^6.4.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
