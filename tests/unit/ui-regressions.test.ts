@@ -282,7 +282,6 @@ describe("UX/UI regression guards", () => {
       "Sign out",
       'label: "Dashboard"',
       ">Dashboard<",
-      "All",
       "Size / Type",
       "Note (optional)",
       "Add to Order",
@@ -305,6 +304,8 @@ describe("UX/UI regression guards", () => {
     ]) {
       expect(sources).not.toContain(phrase);
     }
+    // Match UI copy, not identifiers such as cashierAssistantAllowed.
+    expect(sources).not.toMatch(/>\s*All\s*<|["']All["']/);
   });
 
   it("login accepts Supabase invite hash tokens", () => {
