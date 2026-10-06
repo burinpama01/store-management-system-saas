@@ -93,7 +93,7 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
     {!embedded && <h3 className="font-bold">ชำระแพ็กเกจ</h3>}
     {paid && <button type="button" className="btn-secondary min-h-11" onClick={() => { setOrder(null); setMessage(""); }}>เริ่มรายการชำระใหม่</button>}
     {!active && !paid && <div className="flex flex-wrap gap-3">
-      <button type="button" className="btn-primary min-h-11" disabled={busy} onClick={() => void create()}>ชำระแพ็กเกจ</button>
+      <button type="button" className="btn-primary min-h-11" disabled={busy} onClick={() => void create()}>{order?.status === "failed" ? "สร้าง QR ใหม่" : "ชำระแพ็กเกจ"}</button>
       {fallbackEnabled && <p className="text-sm text-[var(--muted)]">ระบบตรวจ Beam ก่อนเริ่ม หากไม่พร้อมจะใช้ PromptPay และตรวจสลิปให้อัตโนมัติ</p>}
     </div>}
     {order && <>
@@ -102,7 +102,9 @@ export function BeamPackagePayment({ plan, duration, businessConfigJson, discoun
       {order.environment === "test" && <p className="rounded bg-amber-50 p-3 text-amber-800">โหมดทดสอบ — ไม่เปิดสิทธิ์แพ็กเกจจริง {order.method === "slip" && "อย่าโอนเงินจริงเข้าบัญชีสำรองในโหมดนี้"}</p>}
       <p role="status" aria-live="polite">{order.status === "paid" ? `ชำระสำเร็จ ใช้งานได้ถึง ${new Date(order.new_expiry!).toLocaleDateString("th-TH")}` : order.status === "test_paid" ? "ทดสอบชำระสำเร็จ ไม่มีการต่ออายุจริง" : order.status === "failed" ? "รายการไม่สำเร็จหรือปิดแล้ว หากโอนแล้วติดต่อผู้ดูแลก่อนจ่ายใหม่" : "รอยืนยันการชำระเงิน"}</p>
       {active && <>
-        {expired ? <p className="text-amber-800">QR หมดเวลาแล้ว หากชำระแล้วให้ตรวจรายการเดิมหรือส่งสลิป</p> : order.qr_payload ? <div className="flex justify-center"><QrCode value={order.qr_payload} /></div> : order.qr_image ?
+        {expired ? <p className="text-amber-800">{order.method === "beam"
+          ? "QR หมดเวลาแล้ว — กด \"ตรวจสถานะอีกครั้ง\" ถ้ายังไม่ได้จ่าย ระบบจะปิดรายการนี้ให้สร้าง QR ใหม่ได้"
+          : "QR หมดเวลาแล้ว หากชำระแล้วให้ตรวจรายการเดิมหรือส่งสลิป"}</p> : order.qr_payload ? <div className="flex justify-center"><QrCode value={order.qr_payload} /></div> : order.qr_image ?
           // eslint-disable-next-line @next/next/no-img-element -- provider-generated inline QR
           <img src={`data:image/png;base64,${order.qr_image}`} alt="QR ชำระค่าแพ็กเกจ" width={240} height={240} className="mx-auto max-w-full" /> : null}
         <p className="text-sm">QR ใช้ได้ถึง {new Date(order.expires_at).toLocaleString("th-TH")}</p>
