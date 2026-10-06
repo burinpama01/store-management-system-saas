@@ -26,6 +26,8 @@ interface ModalDialogProps {
   description?: string;
   size?: keyof typeof SIZE_CLASS;
   closeLabel?: string;
+  /** false = แตะพื้นหลังแล้วไม่ปิด (กันปิดพลาดตอนเลื่อนจอบนมือถือ ในไดอาล็อกที่ต้องทำต่อให้จบ) */
+  dismissOnBackdrop?: boolean;
 }
 
 export function ModalDialog({
@@ -36,6 +38,7 @@ export function ModalDialog({
   description,
   size = "md",
   closeLabel = "ปิด dialog",
+  dismissOnBackdrop = true,
 }: ModalDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -108,7 +111,7 @@ export function ModalDialog({
     >
       <div
         className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={dismissOnBackdrop ? onClose : undefined}
         aria-hidden="true"
       />
       <div

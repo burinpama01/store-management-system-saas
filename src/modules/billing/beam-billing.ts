@@ -41,8 +41,23 @@ export async function getLatestPlatformBillingOrder(organizationId: string) {
   return data ? billingOrderView(data) : null;
 }
 
+/** เผื่อเวลาหลัง QR หมดอายุ ก่อนถือว่าไม่ได้จ่าย (ธนาคารยืนยันช้า) */
+export const BEAM_EXPIRED_GRACE_MS = 2 * 60_000;
+
 export async function createPlatformBillingOrder(input: SubmitPaymentInput) {
-  const pending = await getPendingPlatformBillingOrder(input.organizationId);
+  let pending = await getPendingPlatformBillingOrder(input.organizationId);
+  // QR หมดเวลาแล้ว: ถาม Beam ก่อน — จ่ายแล้วคืนผลนั้น, ยังไม่จ่ายปิดรายการแล้วสร้างใหม่
+  // (เดิมรายการค้าง pending ตลอดไป ร้านสร้าง QR ใหม่ไม่ได้อีกเลย — proud.cafe 2026-10-06)
+  if (pending?.status === "pending" && Date.parse(pending.expires_at) + BEAM_EXPIRED_GRACE_MS < Date.now()) {
+    try {
+      const checked = await refreshPlatformBillingOrder(pending.id, input.organizationId);
+      pending = checked.status === "pending" || checked.status === "creating" || checked.status === "paid" || checked.status === "test_paid"
+        ? checked
+        : null;
+    } catch {
+      // ตรวจ Beam ไม่ได้ = ยังไม่รู้ว่าจ่ายหรือยัง ต้องคงรายการเดิมไว้ กันจ่ายซ้ำ
+    }
+  }
   if (pending) return pending; // Existing payment takes precedence over a new readiness check.
   const config = await getPlatformBeamSettings();
   if (config.billing_provider !== "beam") throw new Error("ยังไม่ได้เปิด Beam สำหรับแพ็กเกจ");
@@ -153,7 +168,20 @@ export async function refreshPlatformBillingOrder(id: string, organizationId?: s
   if (!result.ok) throw new Error("ตรวจสถานะ Beam ไม่สำเร็จ กรุณาตรวจรายการเดิม ห้ามโอนซ้ำ");
   if (evaluateBeamBillingCharge(order, result.data)) return settle(order, result.data.chargeId);
   if (result.data.chargeId !== order.charge_id || result.data.referenceId !== order.id || result.data.amountSatang !== Math.round(Number(order.amount) * 100)) throw new Error("ข้อมูลการชำระจาก Beam ไม่ตรงกับรายการ");
-  if (result.data.status === "FAILED") {
+  // Beam ไม่ปิด charge ที่ QR หมดอายุให้เอง (ค้าง PENDING) — เลยเวลาแล้วยังไม่สำเร็จถือว่าไม่ได้จ่าย
+  // ถ้าเงินเข้ามาทีหลังจริง webhook ยังตัดสิทธิ์ให้ได้ (RPC รับรายการ failed ของ Beam)
+  const expired = Date.parse(order.expires_at) + BEAM_EXPIRED_GRACE_MS < Date.now();
+  if (result.data.status === "FAILED" || (expired && result.data.status !== "SUCCEEDED")) {
+    if (result.data.status !== "FAILED") {
+      void logSystemEvent({
+        level: "info",
+        source: "billing.beam",
+        action: "expirePlatformBillingOrder",
+        message: `ปิดรายการแพ็กเกจที่ QR หมดเวลาโดยยังไม่ได้รับเงิน (${order.plan} ฿${order.amount})`,
+        organizationId: order.organization_id,
+        context: { orderId: order.id, beamStatus: result.data.status },
+      });
+    }
     const db = await createSupabaseServiceClient();
     const { error } = await db.from("platform_billing_orders").update({ status: "failed" }).eq("id", order.id).eq("status", "pending");
     if (error) throw new Error("บันทึกสถานะ Beam ไม่สำเร็จ");
