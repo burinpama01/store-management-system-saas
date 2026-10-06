@@ -18,6 +18,7 @@ import type { Order } from '@/modules/pos/types';
 import type { NativeOrder } from '@/modules/native-pos/contracts';
 import { findNativeOrderId, nativeOperationKey, cancelNativeOperation } from '@/modules/native-pos/operation';
 import { getOrder } from '@/modules/pos/order-repository';
+import { nativeWorkflow, workflowOperations } from '@/modules/native-pos/workflow';
 
 export const runtime = 'nodejs';
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -51,6 +52,19 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
       if (ctx.role !== 'super_admin') {
         const billing = await getOrganizationBillingState(ctx.organizationId);
         if (!billing || !hasBillingAccess(billing)) return json({ error: 'กรุณาตรวจสอบแพ็กเกจร้านก่อนใช้งาน' }, 403);
+      }
+      if (workflowOperations.has(operation)) {
+        if (ctx.storeId !== storeId) return json({ error: 'บริบทร้านไม่ตรงกับร้านที่เลือก' }, 403);
+        if (!resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
+        let workflowBody: unknown;
+        if (request.method === 'POST') {
+          if (Number(request.headers.get('content-length') ?? 0) > 64000) return json({ error: 'ข้อมูลใหญ่เกินขอบเขต' }, 413);
+          const raw = await request.text();
+          if (raw.length > 64000) return json({ error: 'ข้อมูลใหญ่เกินขอบเขต' }, 413);
+          try { workflowBody = JSON.parse(raw); } catch { return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400); }
+        }
+        const result = await nativeWorkflow(operation, request.method, new URL(request.url), workflowBody, { storeId, organizationId: ctx.organizationId, storeTimezone: ctx.storeTimezone, userId: data.user.id, canRecord: resolved.can('cashflow.record') });
+        if (result) return json(result.body, result.status);
       }
       if (operation === 'bootstrap' && request.method === 'GET') {
         if (!resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
