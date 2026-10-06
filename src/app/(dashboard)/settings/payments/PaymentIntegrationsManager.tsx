@@ -250,6 +250,8 @@ export function PaymentIntegrationsManager({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyBusyId, setHistoryBusyId] = useState<string | null>(null);
   const [historyPending, startHistory] = useTransition();
+  const [historyAction, setHistoryAction] = useState<{ payment: GatewayPayment; kind: "cancel" | "refund" } | null>(null);
+  const [historyReason, setHistoryReason] = useState("");
 
   async function onDisable() {
     setDisabling(true);
@@ -297,8 +299,13 @@ export function PaymentIntegrationsManager({
   }
 
   function onCancelPending(payment: GatewayPayment) {
-    const reason = window.prompt("เหตุผลที่ยกเลิกรายการนี้ (บังคับ):", "ลูกค้าไม่จ่าย / ทิ้งบิล");
-    if (reason == null) return;
+    if (historyPending) return;
+    setHistoryError(null);
+    setHistoryReason("");
+    setHistoryAction({ payment, kind: "cancel" });
+  }
+
+  function submitCancelPending(payment: GatewayPayment, reason: string) {
     if (reason.trim().length < 2) {
       setHistoryError("กรุณาระบุเหตุผลการยกเลิกอย่างน้อย 2 ตัวอักษร");
       return;
@@ -309,16 +316,18 @@ export function PaymentIntegrationsManager({
       const res = await cancelTrueMoneyPendingAction(payment.id, reason.trim());
       setHistoryBusyId(null);
       if (res.error) setHistoryError(res.error);
+      else setHistoryAction(null);
     });
   }
 
   function onExternalRefund(payment: GatewayPayment) {
-    const note = window.prompt(
-      "หมายเหตุการคืนเงินภายนอก (บังคับ)\n" +
-        "หมายเหตุ: ไม่เรียก API TrueMoney — ใช้เมื่อพนักงานคืนเงินในแอป/วอลเล็ตแล้ว",
-      "",
-    );
-    if (note == null) return;
+    if (historyPending) return;
+    setHistoryError(null);
+    setHistoryReason("");
+    setHistoryAction({ payment, kind: "refund" });
+  }
+
+  function submitExternalRefund(payment: GatewayPayment, note: string) {
     if (note.trim().length < 2) {
       setHistoryError("กรุณาระบุหมายเหตุอย่างน้อย 2 ตัวอักษร");
       return;
@@ -329,11 +338,32 @@ export function PaymentIntegrationsManager({
       const res = await recordTrueMoneyExternalRefundAction(payment.id, note.trim());
       setHistoryBusyId(null);
       if (res.error) setHistoryError(res.error);
+      else setHistoryAction(null);
     });
   }
 
   return (
     <div className="space-y-4">
+      {historyAction ? (
+        <form className="panel space-y-3 p-4" onSubmit={(event) => {
+          event.preventDefault();
+          if (historyPending) return;
+          if (historyAction.kind === "cancel") submitCancelPending(historyAction.payment, historyReason);
+          else submitExternalRefund(historyAction.payment, historyReason);
+        }}>
+          <h2 className="font-bold">{historyAction.kind === "cancel" ? "ยืนยันยกเลิกรายการ" : "บันทึกคืนเงินภายนอก"} · {shortId(historyAction.payment.id)}</h2>
+          {historyAction.kind === "refund" ? <p className="text-sm">ไม่เรียก API TrueMoney ใช้เมื่อคืนเงินในแอปหรือวอลเล็ตแล้วเท่านั้น</p> : null}
+          <label className="block text-sm">
+            {historyAction.kind === "cancel" ? "เหตุผลการยกเลิก" : "หมายเหตุการคืนเงิน"} (บังคับ)
+            <input autoFocus required minLength={2} disabled={historyPending} value={historyReason} onChange={(event) => setHistoryReason(event.target.value)} className="mt-1 w-full rounded border p-2" />
+          </label>
+          {historyError ? <p role="alert" className="text-sm text-red-600">{historyError}</p> : null}
+          <div className="flex gap-2">
+            <button type="submit" disabled={historyPending || historyReason.trim().length < 2} className="rounded border px-3 py-2 disabled:opacity-50">{historyPending ? "กำลังบันทึก..." : "ยืนยัน"}</button>
+            <button type="button" disabled={historyPending} onClick={() => setHistoryAction(null)} className="rounded border px-3 py-2">กลับ</button>
+          </div>
+        </form>
+      ) : null}
       <div className="panel p-4 space-y-2">
         <h2 className="text-sm font-bold text-[var(--color-text-primary)]">
           ชำระเงินลูกค้า (Payment Gateway)
@@ -779,7 +809,7 @@ export function PaymentIntegrationsManager({
                           {PENDING_LIKE.has(p.status) ? (
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={historyPending}
                               onClick={() => onCancelPending(p)}
                               className="min-h-9 rounded border border-gray-300 px-2 text-[11px] font-semibold text-gray-700 disabled:opacity-50"
                             >
@@ -789,7 +819,7 @@ export function PaymentIntegrationsManager({
                           {p.status === "PAID" ? (
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={historyPending}
                               onClick={() => onExternalRefund(p)}
                               className="min-h-9 rounded border border-purple-300 px-2 text-[11px] font-semibold text-purple-800 disabled:opacity-50"
                               title="ไม่เรียก API TrueMoney — บันทึกว่าคืนเงินในแอปแล้ว"

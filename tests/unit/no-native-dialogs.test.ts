@@ -22,24 +22,27 @@ describe("no native browser dialogs in app code", () => {
   // action silently does nothing and the user sees no feedback. Use useConfirm()
   // (in-app ConfirmDialog) or inline error state instead.
   const files = collectSourceFiles(join(root, "src"));
+  // Read once during collection; repeated synchronous disk scans can exceed
+  // the test timeout when the full Windows suite competes for filesystem I/O.
+  const sources = files.map((file) => ({ file, source: readFileSync(file, "utf8") }));
 
   it("finds source files to scan", () => {
     expect(files.length).toBeGreaterThan(50);
   });
 
   it("never calls window.confirm / window.alert / window.prompt", () => {
-    const offenders = files.filter((file) =>
-      /window\.(confirm|alert|prompt)\s*\(/.test(readFileSync(file, "utf8")),
+    const offenders = sources.filter(({ source }) =>
+      /window\.(confirm|alert|prompt)\s*\(/.test(source),
     );
-    expect(offenders.map((f) => f.slice(root.length + 1))).toEqual([]);
+    expect(offenders.map(({ file }) => file.slice(root.length + 1))).toEqual([]);
   });
 
   it("never calls the bare global confirm()/alert() with a message", () => {
     // useConfirm's confirm() always takes an options object, so a string or
     // template-literal argument means the native global slipped back in.
-    const offenders = files.filter((file) =>
-      /(?<![.\w])(confirm|alert|prompt)\s*\(\s*[`"']/.test(readFileSync(file, "utf8")),
+    const offenders = sources.filter(({ source }) =>
+      /(?<![.\w])(confirm|alert|prompt)\s*\(\s*[`"']/.test(source),
     );
-    expect(offenders.map((f) => f.slice(root.length + 1))).toEqual([]);
+    expect(offenders.map(({ file }) => file.slice(root.length + 1))).toEqual([]);
   });
 });

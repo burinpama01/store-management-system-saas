@@ -225,7 +225,10 @@ describe.skipIf(!envReady)("print hub queue recovery (v3 Task 1, local supabase)
 // เจอจากหน้างานจริง: Hub ออฟไลน์สองเดือน งานสะสม 861 ใบ พอเปิด Hub มันพิมพ์ย้อนหลังทันที
 // ใบเสร็จของเมื่อวานไม่มีใครรอแล้ว และบิลเก่าสั่งพิมพ์ย้อนหลังจากประวัติได้อยู่แล้ว
 describe.skipIf(!envReady)("print queue resets at store midnight (v3)", () => {
-  const service = getLocalSupabase().client;
+  let service: SupabaseClient;
+  beforeAll(() => {
+    service = getLocalSupabase().client;
+  });
   const createdIds: string[] = [];
 
   async function insert(createdAt: string): Promise<string> {

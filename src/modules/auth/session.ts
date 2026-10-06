@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { getNativeRequestContext } from '@/modules/native-pos/request-context';
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { DEFAULT_THEME } from "@/modules/theme/presets";
 import { cookies } from "next/headers";
@@ -61,6 +62,8 @@ export function filterAccessibleStores(
 // cache(): memoized per request — auth.getUser() is a network call to Supabase Auth,
 // and guards/actions resolve the same user several times within one request.
 export const getCurrentUser = cache(async () => {
+  const native = getNativeRequestContext();
+  if (native) return native.user;
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -123,11 +126,12 @@ export async function resolveCurrentStore(
 ): Promise<StoreContext | null> {
   if (stores.length === 0) return null;
 
-  const cookieStore = await cookies();
-  const selectedStoreId = cookieStore.get("selected_store_id")?.value;
+  const native = getNativeRequestContext();
+  const selectedStoreId = native ? native.storeId : (await cookies()).get("selected_store_id")?.value;
 
   const store =
-    (selectedStoreId ? stores.find((s) => s.id === selectedStoreId) : null) ?? stores[0];
+    (selectedStoreId ? stores.find((s) => s.id === selectedStoreId) : null) ?? (native ? null : stores[0]);
+  if (!store) return null;
   const org = organizations.find((o) => o.id === store.organization_id);
   if (!org) return null;
 

@@ -25,11 +25,13 @@ describe("POS ticket UX guards", () => {
 
   it("prints saved tickets as unpaid bills with PromptPay QR and paid receipts without QR blocks", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
-    const printTicketStart = source.indexOf("async function handlePrintTicket()");
+    const printTicketStart = source.indexOf("async function handlePrintTicket(");
+    expect(printTicketStart).toBeGreaterThan(-1);
     const printTicketEnd = source.indexOf("function handleConfirmPayment", printTicketStart);
     const printTicketSource = source.slice(printTicketStart, printTicketEnd);
     const receiptPanelStart = source.indexOf("function ReceiptPanel(");
-    const receiptPanelEnd = source.indexOf("//", receiptPanelStart + 1);
+    const receiptPanelEnd = source.indexOf("// ─── Main POS Terminal", receiptPanelStart + 1);
+    expect(receiptPanelEnd).toBeGreaterThan(receiptPanelStart);
     const receiptPanelSource = source.slice(receiptPanelStart, receiptPanelEnd);
     const historyStart = source.indexOf("async function handlePrintHistoryOrder");
     // ห้ามตัดที่ setPrintStatusMessage: ฟังก์ชันนี้ขึ้นต้นด้วยการรายงานสถานะอยู่แล้ว
@@ -450,8 +452,9 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("tableId: checkoutTicketContext.tableId");
     expect(source).toContain("tableNumber: checkoutTicketContext.tableNumber");
     expect(source).toContain("note: checkoutTicketContext.note");
-    expect(source).toContain("qrPaymentVerified: method === \"qr_promptpay\" ? qrPaymentVerified : undefined");
-    expect(source).toContain("ticket.syncState === \"sync_failed\"");
+    expect(source).toMatch(/qrPaymentVerified:\s*method === "qr_promptpay" \|\| method === "truemoney"\s*\? qrPaymentVerified\s*: undefined/);
+    expect(source).toContain('qrPaymentVerified: method === "qr_promptpay" ? opts?.qrPaymentVerified : undefined');
+    expect(source).toContain("ticket?.syncState === \"sync_failed\"");
     expect(source).toContain("ลบตั๋วและเคลียร์โต๊ะ");
   });
 
