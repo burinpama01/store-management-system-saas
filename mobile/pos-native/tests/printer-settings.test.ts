@@ -17,6 +17,7 @@ function settings() {
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
   vm.runInNewContext(code, { exports, Error, require: (name: string) => {
     if (name === 'react') return react;
+    if (name === '../theme') return { theme: {} };
     if (name === 'react-native') return { Platform: { OS: 'ios' }, View: 'View', Text: 'Text', TextInput: 'TextInput', ScrollView: 'ScrollView', Pressable: 'Pressable' };
     if (name === '../domain/raster') return { validateLanTarget: () => undefined };
     if (name === '../domain/printing') return {};

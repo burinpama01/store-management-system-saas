@@ -1,3 +1,4 @@
+import { theme } from '../theme';
 import React, { useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { rasterEscPos, validateLanTarget } from '../domain/raster';
@@ -8,7 +9,7 @@ export function PrinterSettings() {
   const [dots, setDots] = useState(384); const [cut, setCut] = useState(false);
   const [busy, setBusy] = useState(false); const lock = useRef(false); const [message, setMessage] = useState('');
   const preview = useRef<View>(null);
-  const button = (label: string, action: () => void, active = false) => <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={action} style={{ minHeight: 48, padding: 14, borderRadius: 10, backgroundColor: active ? '#21534b' : '#edf3e9' }}><Text style={{ color: active ? '#fff' : '#21534b' }}>{label}</Text></Pressable>;
+  const button = (label: string, action: () => void, active = false) => <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={action} style={{ minHeight: 48, padding: 14, borderRadius: 10, backgroundColor: active ? theme.primary : theme.soft }}><Text style={{ color: active ? '#fff' : theme.primary }}>{label}</Text></Pressable>;
   async function test() {
     if (lock.current) return; lock.current = true; setBusy(true); setMessage('');
     try {
@@ -28,11 +29,11 @@ export function PrinterSettings() {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'พิมพ์ทดสอบไม่สำเร็จ'); }
     finally { lock.current = false; setBusy(false); }
   }
-  return <View style={{ backgroundColor: '#fff', padding: 22, borderRadius: 16, gap: 14, borderWidth: 1, borderColor: '#e2e8dd' }}>
-    <Text style={{ color: '#2d4738', fontSize: 18, fontWeight: '600' }}>LAN / Wi-Fi · ESC/POS</Text>
-    <Text style={{ color: '#718077', lineHeight: 23 }}>ระบุ IP เครื่องพิมพ์ในเครือข่ายร้าน ภาษาไทยส่งเป็นภาพเพื่อไม่พึ่งชุดตัวอักษรในเครื่อง ยังต้องทดสอบรุ่นจริง</Text>
-    <TextInput accessibilityLabel="IP เครื่องพิมพ์ LAN" placeholder="เช่น 192.168.1.20" keyboardType="decimal-pad" value={host} onChangeText={setHost} style={{ padding: 14, minHeight: 48, borderWidth: 1, borderColor: '#dce5d5', borderRadius: 10 }} />
-    <TextInput accessibilityLabel="Port เครื่องพิมพ์" value={port} onChangeText={setPort} keyboardType="number-pad" style={{ padding: 14, minHeight: 48, borderWidth: 1, borderColor: '#dce5d5', borderRadius: 10 }} />
+  return <View style={{ backgroundColor: '#fff', padding: 22, borderRadius: 16, gap: 14, borderWidth: 1, borderColor: theme.border }}>
+    <Text style={{ color: theme.text, fontSize: 18, fontWeight: '600' }}>LAN / Wi-Fi · ESC/POS</Text>
+    <Text style={{ color: theme.muted, lineHeight: 23 }}>ระบุ IP เครื่องพิมพ์ในเครือข่ายร้าน ภาษาไทยส่งเป็นภาพเพื่อไม่พึ่งชุดตัวอักษรในเครื่อง ยังต้องทดสอบรุ่นจริง</Text>
+    <TextInput accessibilityLabel="IP เครื่องพิมพ์ LAN" placeholder="เช่น 192.168.1.20" keyboardType="decimal-pad" value={host} onChangeText={setHost} style={{ padding: 14, minHeight: 48, borderWidth: 1, borderColor: theme.border, borderRadius: 10 }} />
+    <TextInput accessibilityLabel="Port เครื่องพิมพ์" value={port} onChangeText={setPort} keyboardType="number-pad" style={{ padding: 14, minHeight: 48, borderWidth: 1, borderColor: theme.border, borderRadius: 10 }} />
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>{button('58 mm · 384 dots', () => setDots(384), dots === 384)}{button('80 mm · 576 dots', () => setDots(576), dots === 576)}{button(cut ? 'ตัดกระดาษ: เปิด' : 'ตัดกระดาษ: ปิด', () => setCut(!cut), cut)}</View>
     <ScrollView horizontal><View ref={preview} collapsable={false} style={{ width: dots, padding: 20, backgroundColor: 'white' }}>
       <Text style={{ fontSize: 28, fontWeight: '700', color: 'black', textAlign: 'center' }}>StoreOS POS</Text>
@@ -40,6 +41,6 @@ export function PrinterSettings() {
       <Text style={{ fontSize: 18, lineHeight: 28, color: 'black', textAlign: 'center', marginTop: 18 }}>เอกสารทดสอบ ไม่ใช่ใบเสร็จรับเงิน</Text>
     </View></ScrollView>
     {button(busy ? 'กำลังส่งงานพิมพ์…' : 'พิมพ์ทดสอบผ่าน LAN', () => void test(), true)}
-    {message ? <Text accessibilityRole="alert" style={{ color: '#855032', lineHeight: 23 }}>{message}</Text> : null}
+    {message ? <Text accessibilityRole="alert" style={{ color: theme.text, lineHeight: 23 }}>{message}</Text> : null}
   </View>;
 }
