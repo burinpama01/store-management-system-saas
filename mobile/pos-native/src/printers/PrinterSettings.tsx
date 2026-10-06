@@ -1,11 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { captureRef } from 'react-native-view-shot';
-import { decode } from 'fast-png';
-import { toByteArray } from 'base64-js';
 import { rasterEscPos, validateLanTarget } from '../domain/raster';
 import { runPrintJob } from '../domain/printing';
-import { sendTcp } from './tcp';
 
 export function PrinterSettings() {
   const [host, setHost] = useState(''); const [port, setPort] = useState('9100');
@@ -18,6 +14,11 @@ export function PrinterSettings() {
     try {
       if (Platform.OS === 'web') throw new Error('LAN printing ต้องเปิดจาก native development build บนอุปกรณ์จริง');
       validateLanTarget(host.trim(), Number(port));
+      // Load optional native bridges only for an explicit print request, inside the error handler.
+      const { captureRef } = await import('react-native-view-shot');
+      const { decode } = await import('fast-png');
+      const { toByteArray } = await import('base64-js');
+      const { sendTcp } = await import('./tcp');
       const base64 = await captureRef(preview, { result: 'base64', format: 'png', width: dots });
       const png = decode(toByteArray(base64));
       if (png.width !== dots || png.palette) throw new Error('ภาพทดสอบมีขนาดหรือรูปแบบไม่ตรงกับเครื่องพิมพ์');
