@@ -50,6 +50,7 @@ export function EnterpriseRenewalDialog({
       }
       onClose={onClose}
       size="sm"
+      dismissOnBackdrop={false}
     >
       {step === "failed" && lastPaymentFailed ? (
         <div className="space-y-4">

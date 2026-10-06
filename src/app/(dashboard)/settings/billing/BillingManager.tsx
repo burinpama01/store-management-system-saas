@@ -346,6 +346,33 @@ export function BillingManager({
         </p>
       )}
 
+      {/* ไว้บนสุดใต้แถบหมดอายุ: ปิดไดอาล็อกไปแล้วต้องกดเปิดกลับได้ทันที ไม่ต้องเลื่อนหา */}
+      {!isEnterpriseContract && canManage && enterpriseOffer && (
+        <section className="panel max-w-3xl border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-5">
+          <h2 className="panel-title mb-1">ต่อ Enterprise ตามข้อตกลง</h2>
+          <p className="text-sm text-[var(--ink-2)]">{enterpriseOffer.summary}</p>
+          {enterpriseOffer.note && (
+            <p className="mt-1 text-xs text-[var(--muted)]">{enterpriseOffer.note}</p>
+          )}
+          <button
+            type="button"
+            disabled={busy || !paymentConfigured}
+            onClick={() => {
+              setSelectedPlan("enterprise");
+              resetGeneratedPayment();
+              // Beam ยืนยันเงินเข้าเองได้ = จ่ายในไดอาล็อกเลย; PromptPay+สลิป ใช้ฟอร์มด้านล่างเหมือนเดิม
+              if (beamEnabled) setRenewDialogOpen(true);
+            }}
+            className="btn-primary mt-3 min-h-11 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {beamEnabled ? `ต่ออายุ Enterprise ${enterpriseOffer.amount.toLocaleString("th-TH")} บาท` : isEnterpriseSelected ? "เลือกต่อ Enterprise แล้ว" : "เลือกต่อ Enterprise"}
+          </button>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            ไม่ต้องการต่อ Enterprise? เลือกแพ็กเกจอื่นในส่วนด้านล่างได้ตามปกติ
+          </p>
+        </section>
+      )}
+
       <section className="panel max-w-3xl p-5">
         <h2 className="panel-title mb-3">แพ็กเกจปัจจุบัน</h2>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -358,7 +385,8 @@ export function BillingManager({
         </div>
       </section>
 
-      {!enterpriseActive && <EnterpriseRequestCard request={enterpriseRequest} />}
+      {/* มีข้อเสนอต่ออายุอยู่แล้ว การ์ด "ขอใช้งาน Enterprise" ทำให้ร้านเข้าใจผิดว่าต้องขอใหม่ */}
+      {!enterpriseActive && !(canManage && enterpriseOffer) && <EnterpriseRequestCard request={enterpriseRequest} />}
 
       {(result?.status === "verified" || result?.status === "claimed") && (
         <p className="rounded-[var(--radius-md)] border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
@@ -401,31 +429,6 @@ export function BillingManager({
         </p>
       )}
 
-      {!isEnterpriseContract && canManage && enterpriseOffer && (
-        <section className="panel max-w-3xl border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] p-5">
-          <h2 className="panel-title mb-1">ต่อ Enterprise ตามข้อตกลง</h2>
-          <p className="text-sm text-[var(--ink-2)]">{enterpriseOffer.summary}</p>
-          {enterpriseOffer.note && (
-            <p className="mt-1 text-xs text-[var(--muted)]">{enterpriseOffer.note}</p>
-          )}
-          <button
-            type="button"
-            disabled={busy || !paymentConfigured}
-            onClick={() => {
-              setSelectedPlan("enterprise");
-              resetGeneratedPayment();
-              // Beam ยืนยันเงินเข้าเองได้ = จ่ายในไดอาล็อกเลย; PromptPay+สลิป ใช้ฟอร์มด้านล่างเหมือนเดิม
-              if (beamEnabled) setRenewDialogOpen(true);
-            }}
-            className="btn-primary mt-3 min-h-11 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {beamEnabled ? "ต่ออายุ Enterprise" : isEnterpriseSelected ? "เลือกต่อ Enterprise แล้ว" : "เลือกต่อ Enterprise"}
-          </button>
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            ไม่ต้องการต่อ Enterprise? เลือกแพ็กเกจอื่นในส่วนด้านล่างได้ตามปกติ
-          </p>
-        </section>
-      )}
 
       {!isEnterpriseContract && canManage && (paymentConfigured || trialAvailable) && (
         <section id="billing-package-picker" className="panel scroll-mt-4 p-5">

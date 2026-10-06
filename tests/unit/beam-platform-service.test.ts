@@ -8,6 +8,7 @@ vi.mock("@/modules/payments/beam-signature", () => ({ verifyBeamSignature: m.sig
 vi.mock("@/modules/billing/beam-settings", () => ({ getPlatformBeamSettings: m.config }));
 vi.mock("@/modules/billing/platform-settings", () => ({ getPlatformSettings: async () => ({ promptpayId: "0812345678" }) }));
 vi.mock("@/modules/billing/pricing-repository", () => ({ getUpgradeQuote: m.quote, getBusinessUpgradeQuote: m.quote }));
+vi.mock("@/modules/system/event-log", () => ({ logSystemEvent: async () => {}, logActionError: () => {} }));
 vi.mock("@/modules/billing/slip2go", () => ({ verifyBillingSlipByImage: m.slip, isSlip2goConfigured: () => true }));
 vi.mock("@/server/integrations/supabase/server", () => ({ createSupabaseServiceClient: async () => ({
   rpc: m.rpc,
@@ -154,5 +155,33 @@ describe("Beam billing webhook route must stay public (HMAC auth in handler)", (
     const route = readFileSync(resolve(process.cwd(), "src/app/api/billing/beam/webhook/route.ts"), "utf8");
     expect(route).toContain('x-beam-signature');
     expect(route).toContain('status: 401');
+  });
+
+  it("QR หมดเวลาและ Beam ยังไม่ได้รับเงิน: ปิดรายการเดิมแล้วสร้าง QR ใหม่ได้ (proud.cafe 2026-10-06)", async () => {
+    m.get.mockResolvedValue({ ok: true, data: { chargeId: "ch_1", referenceId: fixture().id, status: "PENDING", currency: "THB", amountSatang: 69000 } });
+    m.create.mockResolvedValue({ ok: true, data: { chargeId: "ch_new", qrPayload: "qr-new", qrImageBase64: null } });
+    const result = await createPlatformBillingOrder(input);
+    expect(m.rows[0].status).toBe("failed");
+    expect(result.id).not.toBe(fixture().id);
+    expect(result.qr_payload).toBe("qr-new");
+    expect(m.rpc).not.toHaveBeenCalled();
+  });
+  it("QR หมดเวลาแต่ Beam ยืนยันว่าจ่ายแล้ว: ตัดสิทธิ์รายการเดิม ไม่สร้างใหม่", async () => {
+    const result = await createPlatformBillingOrder(input);
+    expect(result.status).toBe("paid");
+    expect(m.create).not.toHaveBeenCalled();
+  });
+  it("QR หมดเวลาแต่ตรวจ Beam ไม่ได้: คงรายการเดิมไว้ กันจ่ายซ้ำ", async () => {
+    m.get.mockResolvedValue({ ok: false, status: 503 });
+    const result = await createPlatformBillingOrder(input);
+    expect(result.id).toBe(fixture().id);
+    expect(result.status).toBe("pending");
+    expect(m.create).not.toHaveBeenCalled();
+  });
+  it("QR ยังไม่หมดเวลา: ไม่ถาม Beam และคืนรายการเดิม", async () => {
+    m.rows = [{ ...fixture(), expires_at: new Date(Date.now() + 600_000).toISOString() }];
+    const result = await createPlatformBillingOrder(input);
+    expect(result.id).toBe(fixture().id);
+    expect(m.get).not.toHaveBeenCalled();
   });
 });
