@@ -37,3 +37,9 @@ it('fails closed on missing migration or an unexpected cancellation result', asy
   mocks.rpc.mockResolvedValueOnce({ data: { outcome: 'unknown' }, error: null });
   await expect(withNativeRequestContext(scope, () => cancelNativeOperation(storeId, userId, operationId))).rejects.toThrow();
 });
+it('keeps customer and coupon amounts in the same guarded order RPC', async () => {
+  mocks.rpc.mockResolvedValueOnce({ data: 'order-id', error: null });
+  const discounted = { ...input, cart: { ...input.cart, discount: 10, total: 55 } };
+  await withNativeRequestContext({ ...scope, expectedTotalSatang: 5500 }, () => createNativeOrderIds(discounted, nativeOperationKey(userId, storeId, operationId), { customerId: 'customer', couponId: 'coupon', couponDiscountAmount: 10 }));
+  expect(mocks.rpc).toHaveBeenCalledWith('create_native_pos_rewards_order', expect.objectContaining({ p_customer_id: 'customer', p_coupon_id: 'coupon', p_coupon_discount_amount: 10, p_subtotal: 65, p_discount: 10, p_total: 55 }));
+});

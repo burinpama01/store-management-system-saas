@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { Database } from '@/server/integrations/supabase/database.types';
 import { getNativeRequestContext, withNativeRequestContext } from '@/modules/native-pos/request-context';
-import { authoritativeCart } from '@/modules/native-pos/catalog';
+import { authoritativeCart, nativeProduct } from '@/modules/native-pos/catalog';
 import type { Product } from '@/modules/catalog/types';
 import type { NativeCheckoutInput } from '@/modules/native-pos/contracts';
 
@@ -18,6 +18,11 @@ describe('native POS request isolation', () => {
   });
 });
 describe('native authoritative pricing', () => {
+  it('exposes HTTPS product pictures without unsafe schemes', () => {
+    expect(nativeProduct({ ...product, imageUrl: 'https://cdn.example.test/menu.jpg' }).imageUrl).toBe('https://cdn.example.test/menu.jpg');
+    expect(nativeProduct({ ...product, imageUrl: 'http://cdn.example.test/menu.jpg' }).imageUrl).toBeNull();
+    expect(nativeProduct({ ...product, imageUrl: 'https://user:pass@cdn.example.test/menu.jpg' }).imageUrl).toBeNull();
+  });
   it('calculates using server catalog and rejects cross-store or disabled products', () => {
     expect(authoritativeCart('s1', input, [product]).total).toBe(196.5);
     expect(() => authoritativeCart('s2', input, [product])).toThrow();

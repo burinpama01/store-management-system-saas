@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), stores: vi.fn(), permissions: vi.fn(), billing: vi.fn(), checkout: vi.fn(), find: vi.fn(), cancel: vi.fn(), getOrder: vi.fn(), products: vi.fn(), connectOrder: vi.fn(), link: vi.fn(), apply: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), stores: vi.fn(), permissions: vi.fn(), billing: vi.fn(), checkout: vi.fn(), find: vi.fn(), cancel: vi.fn(), getOrder: vi.fn(), products: vi.fn(), connectOrder: vi.fn(), link: vi.fn(), apply: vi.fn(), customers:vi.fn(), coupon:vi.fn(), customer:vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock('@/server/integrations/supabase/server', () => ({ createSupabaseServiceClient: vi.fn() }));
 vi.mock('@/modules/auth/session', () => ({ getUserStores: mocks.stores }));
-vi.mock('@/modules/auth/guards', () => ({ getResolvedCurrentPermissions: mocks.permissions }));
+vi.mock('@/modules/auth/guards', () => ({ getResolvedCurrentPermissions: mocks.permissions, requireFeature: async()=>{} }));
+vi.mock('@/modules/customers/repository',()=>({getCustomerById:mocks.customer}));
 vi.mock('@/modules/billing/billing-service', () => ({ getOrganizationBillingState: mocks.billing }));
 vi.mock('@/modules/billing/pricing', () => ({ hasBillingAccess: (value: { active: boolean }) => value.active }));
 vi.mock('@/modules/catalog/repository', () => ({ listProducts: mocks.products, listCategories: async () => ({ data: [], error: null }) }));
-vi.mock('@/app/pos/actions', () => ({ checkoutAndPayAction: mocks.checkout, listTodayOrdersAction: vi.fn() }));
+vi.mock('@/app/pos/actions', () => ({ checkoutAndPayAction: mocks.checkout, listTodayOrdersAction: vi.fn(),searchPosCustomersAction:mocks.customers,evaluatePosCouponAction:mocks.coupon }));
 vi.mock('@/modules/connect/repository', () => ({ getConnectOrderById: mocks.connectOrder, getChannelLinkById: mocks.link, listChannelLinksByStore: vi.fn() }));
 vi.mock('@/modules/connect/status-sync', () => ({ applyPosStatus: mocks.apply }));
 vi.mock('@/app/api/ai/voice-intent/route', () => ({ POST: vi.fn() }));
@@ -33,8 +34,30 @@ beforeEach(() => {
   mocks.find.mockResolvedValue(null);
   mocks.products.mockResolvedValue({ error: null, data: [{ id: product, storeId: store, categoryId: 'c', name: 'กาแฟ', basePrice: 65, isActive: true, availableForPos: true, variants: [], modifierGroups: [] }] });
   mocks.checkout.mockResolvedValue({ orderId: 'order', order: null, failedStage: null, error: null });
+  mocks.customers.mockResolvedValue({customers:[{id:product,name:'ลูกค้าทดสอบ',phone:'0801234567',email:'private@example.test'}],error:null});
+  mocks.customer.mockResolvedValue({data:{id:product,storeId:store,isActive:true},error:null});
+  mocks.coupon.mockResolvedValue({couponId:operation,normalizedCode:'SAVE',discount:10,error:null});
 });
 describe('native API authorization and checkout', () => {
+  it('bounds customer queries and returns only minimal masked customer DTO', async()=>{
+    expect((await request('customers')).status).toBe(400);
+    const response=await GET(new Request('https://example.test/api/mobile/pos/customers?q=test',{headers:{Authorization:'Bearer test-token','X-Store-Id':store}}),{params:Promise.resolve({operation:'customers'})});
+    expect(await response.json()).toEqual({customers:[{id:product,name:'ลูกค้าทดสอบ',phoneHint:'••••4567'}]});
+    expect(mocks.customers).toHaveBeenCalledWith('test');
+  });
+  it('quotes server coupon and manual discount, then sends authoritative net payment with rewards options',async()=>{
+    const sales={customerId:product,couponCode:'save',manualDiscountSatang:500};
+    expect(await (await request('quote',{lines:body.lines,...sales})).json()).toMatchObject({quote:{subtotalSatang:6500,manualDiscountSatang:500,couponDiscountSatang:1000,totalSatang:5000}});
+    expect((await request('checkout',{...body,...sales,expectedTotalSatang:5000})).status).toBe(200);
+    expect(mocks.checkout).toHaveBeenCalledWith(expect.objectContaining({subtotal:65,discount:5,total:60}),expect.objectContaining({amount:50,changeAmount:50}),expect.objectContaining({customerId:product,couponCode:'SAVE',clientCouponDiscountAmount:10}));
+  });
+  it('rejects manual discount permission, coupon amount changes and quote price injection before writes',async()=>{
+    mocks.permissions.mockResolvedValueOnce({ctx:{storeId:store,organizationId:'org',role:'cashier'},resolved:{can:(p:string)=>p!=='pos.discount'}});
+    expect((await request('quote',{lines:body.lines,manualDiscountSatang:100})).status).toBe(400);
+    expect((await request('quote',{lines:body.lines,couponId:operation})).status).toBe(400);
+    expect(await (await request('checkout',{...body,couponCode:'SAVE',expectedTotalSatang:6000})).json()).toMatchObject({notCreated:true});
+    expect(mocks.checkout).not.toHaveBeenCalled();
+  });
   it('accepts PostgreSQL legacy store UUIDs while rejecting malformed and inaccessible IDs', async () => {
     const legacy = 'cccccccc-0000-0000-0000-000000000001';
     mocks.stores.mockResolvedValue({ stores: [{ id: legacy, name: 'Main Branch' }] });

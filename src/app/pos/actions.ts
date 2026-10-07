@@ -501,7 +501,14 @@ async function createPosOrderCore(
     let orderCart = finalCart;
     const nativeRequest = getNativeRequestContext();
     const result = nativeRequest && opts?.idempotencyKey
-      ? await createNativeOrderIds({ storeId: ctx.storeId, organizationId: ctx.organizationId, cashierId: user.id, storeTimezone: ctx.storeTimezone, cart: finalCart }, opts.idempotencyKey)
+      ? await (async () => {
+          const couponRes = couponCode ? await findCouponPolicyByCode(ctx.storeId, couponCode, customerId) : { data: null, error: null };
+          if (couponRes.error) return { data: null, error: couponRes.error };
+          const checkout = buildGroceryCheckoutCart({ trustedCart: finalCart, coupon: couponRes.data, couponCode, customerId, clientCouponDiscountAmount });
+          if (!checkout.ok) return { data: null, error: { userMessage: checkout.error.startsWith('coupon_') ? mapGroceryCouponError(checkout.error) : checkout.error } };
+          orderCart = checkout.cart;
+          return createNativeOrderIds({ storeId: ctx.storeId, organizationId: ctx.organizationId, cashierId: user.id, storeTimezone: ctx.storeTimezone, cart: checkout.cart }, opts.idempotencyKey!, customerId || couponCode ? { customerId, couponId: checkout.couponId, couponDiscountAmount: checkout.couponDiscountAmount } : undefined);
+        })()
       : customerId || couponCode
       ? await (async () => {
           const couponRes = couponCode
