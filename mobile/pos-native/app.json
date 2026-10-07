@@ -2,12 +2,12 @@
   "expo": {
     "name": "StoreOS POS",
     "slug": "storeos-pos-native",
-  "version": "0.6.0",
+  "version": "0.6.1",
     "orientation": "default",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.burin.storeos.pos",
-      "buildNumber": "14",
+      "buildNumber": "15",
       "supportsTablet": true,
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "StoreOS ใช้เครือข่ายภายในร้านเพื่อส่งงานไปยังเครื่องพิมพ์ที่คุณเลือก"
