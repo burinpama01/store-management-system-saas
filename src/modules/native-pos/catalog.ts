@@ -2,8 +2,11 @@ import type { Product } from '@/modules/catalog/types';
 import { buildCartItemKey, type Cart } from '@/modules/pos/types';
 import type { NativeCheckoutInput, NativeProduct } from './contracts';
 export const satang = (amount: number) => Math.round(amount * 100);
+function productImage(value?: string): string | null {
+  try { const url = new URL(value ?? ''); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null; } catch { return null; }
+}
 export function nativeProduct(product: Product): NativeProduct {
-  return { id: product.id, name: product.name, categoryId: product.categoryId, priceSatang: satang(product.basePrice), available: product.isActive && product.availableForPos && !product.outOfStock,
+  return { id: product.id, name: product.name, categoryId: product.categoryId, imageUrl: productImage(product.imageUrl), priceSatang: satang(product.basePrice), available: product.isActive && product.availableForPos && !product.outOfStock,
     variants: product.variants.filter(v => v.isActive).map(v => ({ id: v.id, name: v.name, priceSatang: satang(v.priceAdjustment) })),
     groups: product.modifierGroups.map(g => ({ id: g.id, name: g.name, min: Math.max(g.isRequired ? 1 : 0, g.minSelections ?? 0), max: g.selectionType === 'single' ? 1 : g.maxSelections || g.options.length, options: g.options.filter(o => o.isActive).map(o => ({ id: o.id, name: o.name, priceSatang: satang(o.priceAdjustment) })) })) };
 }

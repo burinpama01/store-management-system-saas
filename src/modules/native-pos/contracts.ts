@@ -3,6 +3,7 @@ export interface NativeChoice { id: string; name: string; priceSatang: number }
 export interface NativeProduct {
   id: string; name: string; categoryId: string; priceSatang: number;
   available: boolean; variants: NativeChoice[];
+  imageUrl?: string | null;
   groups: { id: string; name: string; min: number; max: number; options: NativeChoice[] }[];
 }
 export interface NativeLine {
@@ -33,7 +34,13 @@ export interface NativeCheckoutInput {
   lines: Pick<NativeLine, 'productId' | 'variantId' | 'optionIds' | 'quantity' | 'note'>[];
   method: 'cash' | 'bank_transfer';
   receivedSatang: number;
+  customerId?: string | null;
+  couponCode?: string | null;
+  manualDiscountSatang?: number;
 }
+export interface NativeCustomer { id: string; name: string; phoneHint: string }
+export interface NativeSalesInput { customerId?: string | null; couponCode?: string | null; manualDiscountSatang?: number }
+export interface NativeSaleQuote { subtotalSatang: number; manualDiscountSatang: number; couponDiscountSatang: number; totalSatang: number; couponCode: string | null }
 export interface NativeCheckoutResult {
   outcome?: 'paid' | 'closed';
   closedStatus?: 'cancelled' | 'voided' | 'refunded';
