@@ -1,15 +1,17 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from './theme';
 
-export function MenuCard({ name, category, price, width, favorite, available, disabled, onAdd, onFavorite }: {
+export function MenuCard({ name, category, price, imageUrl, width, favorite, available, disabled, onAdd, onFavorite }: {
   name: string; category?: string; price: string; width: number; favorite: boolean;
-  available: boolean; disabled: boolean; onAdd: () => void; onFavorite: () => void;
+  imageUrl?: string | null; available: boolean; disabled: boolean; onAdd: () => void; onFavorite: () => void;
 }) {
+  const [failed,setFailed]=useState(false);
+  useEffect(()=>setFailed(false),[imageUrl]);
   return <View style={[styles.card, { width, maxWidth: '100%' }]}>
     <View style={styles.top}><Text style={styles.category}>{category}</Text><Pressable accessibilityRole="button" accessibilityLabel={`${favorite ? 'ลบ' : 'เพิ่ม'} ${name} ในรายการโปรด`} accessibilityState={{ selected: favorite }} onPress={onFavorite} style={styles.star}><Text style={styles.starText}>{favorite ? '★' : '☆'}</Text></Pressable></View>
     <Pressable accessibilityRole="button" accessibilityLabel={`${name} ${price}`} disabled={disabled || !available} onPress={onAdd} style={({ pressed }) => [styles.add, (disabled || !available) && { opacity: .5 }, pressed && { backgroundColor: theme.soft }]}>
-      <Text style={styles.name}>{name}</Text><View style={styles.bottom}><Text style={styles.price}>{price}</Text><Text style={styles.plus}>＋</Text></View>{!available && <Text style={styles.category}>ไม่พร้อมขาย</Text>}
+      {imageUrl&&!failed&&<Image source={{uri:imageUrl}} accessibilityLabel={`รูป ${name}`} resizeMode="cover" onError={()=>setFailed(true)} style={{width:'100%',height:90,borderRadius:10}}/>}<Text style={styles.name}>{name}</Text><View style={styles.bottom}><Text style={styles.price}>{price}</Text><Text style={styles.plus}>＋</Text></View>{!available && <Text style={styles.category}>ไม่พร้อมขาย</Text>}
     </Pressable>
   </View>;
 }
