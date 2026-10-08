@@ -22,6 +22,7 @@ import type { NativeOrder } from '@/modules/native-pos/contracts';
 import { findNativeOrderId, nativeOperationKey, cancelNativeOperation } from '@/modules/native-pos/operation';
 import { getOrder } from '@/modules/pos/order-repository';
 import { nativeWorkflow, workflowOperations } from '@/modules/native-pos/workflow';
+import {nativeLoyalty,loyaltyOperations} from '@/modules/native-pos/loyalty';
 
 export const runtime = 'nodejs';
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -60,6 +61,16 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
       if (ctx.role !== 'super_admin') {
         const billing = await getOrganizationBillingState(ctx.organizationId);
         if (!billing || !hasBillingAccess(billing)) return json({ error: 'กรุณาตรวจสอบแพ็กเกจร้านก่อนใช้งาน' }, 403);
+      }
+      if (loyaltyOperations.has(operation)) {
+        if(ctx.storeId!==storeId||!resolved.can('pos.use'))return json({error:'ไม่มีสิทธิ์ใช้งาน POS ในร้านนี้'},403);
+        let body:unknown;
+        if(request.method==='POST'){
+          const raw=await request.text();if(raw.length>4000)return json({error:'ข้อมูลใหญ่เกินขอบเขต'},413);
+          try{body=JSON.parse(raw);}catch{return json({error:'ข้อมูลไม่ถูกต้อง'},400);}
+        }
+        const result=await nativeLoyalty(operation,request.method,new URL(request.url),body,{storeId,organizationId:ctx.organizationId,canLedger:resolved.can('catalog.manage')});
+        if(result)return json(result.body,result.status);
       }
       if (workflowOperations.has(operation)) {
         if (ctx.storeId !== storeId) return json({ error: 'บริบทร้านไม่ตรงกับร้านที่เลือก' }, 403);
