@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, AppState, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
@@ -19,6 +19,7 @@ import { MenuCard } from './src/MenuCard';
 import { SalesTools } from './src/SalesTools';
 import { BeamPayment } from './src/BeamPayment';
 import { startBeam, advanceBeam, restoreBeamPending, isBeamPending, type PendingPayment } from './src/domain/beam';
+import {canAutoCheckBeam,createBeamPolling} from './src/domain/beam-polling';
 import type { NativeBeamQr } from '../../src/modules/native-pos/contracts';
 import { salesFingerprint, confirmedSale, type ConfirmedSale } from './src/domain/sales';
 import { theme } from './src/theme';
@@ -73,6 +74,23 @@ function PosApp() {
   const demoWorkflow = useRef(createDemoWorkflow());
   const workflowLocked = workflowBlocked(cart);
   const total = pending?.input.expectedTotalSatang ?? (cart && quoted?.fingerprint===salesFingerprint(cart,sales) ? quoted.quote.totalSatang : cart ? totalSatang(cart) : 0);
+  const beamScope=useRef({session,storeId:boot?.store?.id,userId:boot?.userId,operationId:pending?.operationId});
+  beamScope.current={session,storeId:boot?.store?.id,userId:boot?.userId,operationId:pending?.operationId};
+  const automaticBeam=!!session && boot?.store?.id===cart?.storeId && boot?.userId===cart?.userId && screen!=='store-picker' && canAutoCheckBeam(pending,isDemo);
+  const autoCheck=useRef<()=>Promise<void|boolean>>(async()=>{});
+  autoCheck.current=async()=>{
+    if(!automaticBeam || !canAutoCheckBeam(pending,isDemo))return false;
+    if(busyRef.current)return;
+    busyRef.current=true;setBusy(true);
+    try{await checkBeam(true);}catch(error){setMessage(`${error instanceof Error?error.message:'ตรวจ Beam ไม่สำเร็จ'} · รายการเดิมยังถูกล็อกไว้ กรุณาตรวจผลก่อนเริ่มบิลใหม่`);throw error;}
+    finally{busyRef.current=false;setBusy(false);}
+  };
+  useEffect(()=>{
+    if(!automaticBeam)return;
+    const polling=createBeamPolling(()=>autoCheck.current(),AppState.currentState==='active');
+    const subscription=AppState.addEventListener('change',state=>polling.setActive(state==='active'));
+    return ()=>{polling.stop();subscription.remove();};
+  },[automaticBeam,pending?.operationId,pending?.input.gatewayPaymentId,session?.base,boot?.store?.id,boot?.userId]);
   async function openPayment(){
     const draft=cartRef.current; if(!draft?.lines.length||pending||workflowBlocked(draft))throw new Error('ตรวจบิลเดิมก่อนรับชำระ');
     const selection={...salesRef.current}; const fingerprint=salesFingerprint(draft,selection);
@@ -194,13 +212,15 @@ function PosApp() {
     const next=await startBeam(input,p=>change(cart,p),beamPrepare);await change(cart,next);
     if(next.beam?.status==='PAID')await checkout(next);
   }
-  async function checkBeam(){
+  async function checkBeam(automatic=false){
     if(!cart||!pending||!isBeamPending(pending))return;
     // Once checkout may have created an order, reconcile that same order rather than creating another charge.
     if(pending.orderId||['sending','unknown','partial'].includes(pending.state)&&pending.input.gatewayPaymentId){await checkout(pending);return;}
+    const scope=beamScope.current;
     const qr=isDemo?{...pending.beam!,gatewayPaymentId:pending.input.operationId,totalSatang:pending.input.expectedTotalSatang,status:'PAID' as const,imageUri:null,expiresAt:null}:pending.input.gatewayPaymentId?(await workflowRequest<{qr:NativeBeamQr}>('beam-status',{operationId:pending.operationId,gatewayPaymentId:pending.input.gatewayPaymentId,expectedTotalSatang:pending.input.expectedTotalSatang})).qr:await beamPrepare(pending.input);
+    if(automatic && (beamScope.current.session!==scope.session || beamScope.current.storeId!==scope.storeId || beamScope.current.userId!==scope.userId || beamScope.current.operationId!==scope.operationId))return;
     const next=advanceBeam(pending,qr);await change(cart,next);
-    if(qr.status==='PAID')await checkout(next);else setMessage('ยังไม่ยืนยันรับเงิน · ตรวจรายการ Beam เดิมต่อ');
+    if(qr.status==='PAID')await checkout(next);else if(!automatic)setMessage('ยังไม่ยืนยันรับเงิน · ตรวจรายการ Beam เดิมต่อ');
   }
   async function checkout(paidBeam?:Pending) {
     if(isBeamPending(pending)&&!paidBeam){await checkBeam();return;}
