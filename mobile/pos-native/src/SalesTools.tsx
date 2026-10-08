@@ -3,6 +3,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import type { NativeCustomer, NativeSalesInput } from '../../../src/modules/native-pos/contracts';
 import { salesAmount } from './domain/sales';
 import { theme } from './theme';
+import {PhoneKeypad} from './PhoneKeypad';
 type Props = { value: NativeSalesInput; customer: NativeCustomer | null; disabled: boolean; demo: boolean; change: (value: NativeSalesInput, customer?: NativeCustomer | null) => void; request: <T>(operation: string, body?: unknown) => Promise<T>; perform: (work: () => Promise<void>) => Promise<void> };
 export function SalesTools({ value, customer, disabled, demo, change, request, perform }: Props) {
   const [query,setQuery] = useState(''); const [customers,setCustomers] = useState<NativeCustomer[]>([]);
@@ -14,8 +15,8 @@ export function SalesTools({ value, customer, disabled, demo, change, request, p
   const input={ borderWidth:1,borderColor:theme.border,borderRadius:12,minHeight:48,padding:12,fontSize:16,color:theme.text };
   return <View style={{gap:12}}><Text style={{color:theme.muted}}>เลือกลูกค้าและตรวจส่วนลดก่อนรับเงิน {demo?'· ข้อมูลสาธิต':''}</Text>
     <Text style={{fontWeight:'700'}}>ลูกค้า {customer ? `· ${customer.name}` : '· ไม่ระบุ'}</Text>
-    <TextInput accessibilityLabel="ค้นหาลูกค้า" editable={!disabled} value={query} maxLength={80} placeholder="ชื่อ / เบอร์โทร อย่างน้อย 2 ตัวอักษร" onChangeText={text=>{setQuery(text);setCustomers([]);setSearched(false);searchVersion.current++}} style={input}/>
-    {button('ค้นหาลูกค้า',()=>void perform(async()=>{const q=query.trim();if(q.length<2)throw new Error('ค้นหาลูกค้าอย่างน้อย 2 ตัวอักษร');const version=++searchVersion.current;const result=demo?{customers:[{id:'demo-customer',name:'ลูกค้าสาธิต',phoneHint:'••••0000'}]}:await request<{customers:NativeCustomer[]}>(`customers?q=${encodeURIComponent(q)}`);if(alive.current&&version===searchVersion.current){setCustomers(result.customers);setSearched(true)}}))}
+    <PhoneKeypad value={query} disabled={disabled} onChange={text=>{setQuery(text);setCustomers([]);setSearched(false);searchVersion.current++}}/>
+    {button('ค้นหาลูกค้า',()=>void perform(async()=>{const q=query.trim();if(q.length<2)throw new Error('กรอกเบอร์โทรอย่างน้อย 2 หลัก');const version=++searchVersion.current;const result=demo?{customers:[{id:'demo-customer',name:'ลูกค้าสาธิต',phoneHint:'••••0000'}]}:await request<{customers:NativeCustomer[]}>(`customers?q=${encodeURIComponent(q)}`);if(alive.current&&version===searchVersion.current){setCustomers(result.customers);setSearched(true)}}))}
     {customers.map(c=><View key={c.id}>{button(`${c.name} ${c.phoneHint}`,()=>{change({...value,customerId:c.id},c);setCustomers([]);setSearched(false)})}</View>)}
     {searched&&!customers.length&&<Text>ไม่พบลูกค้า</Text>}{value.customerId&&button('ไม่ระบุลูกค้า',()=>change({...value,customerId:null},null))}
     <Text style={{fontWeight:'700'}}>ส่วนลดท้ายบิล (บาท)</Text><TextInput accessibilityLabel="ส่วนลดท้ายบิล" editable={!disabled} value={discount} onChangeText={setDiscount} keyboardType="decimal-pad" style={input}/>
