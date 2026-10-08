@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+const beamMocks=vi.hoisted(()=>({prepare:vi.fn(),check:vi.fn(),feature:vi.fn(),ready:vi.fn()}));
+vi.mock('@/modules/native-pos/beam',()=>({prepareNativeBeam:beamMocks.prepare,checkNativeBeam:beamMocks.check}));
+vi.mock('@/modules/payments/beam-service',()=>({isBeamReadyForStore:beamMocks.ready}));
 const mocks = vi.hoisted(() => ({ getUser: vi.fn(), stores: vi.fn(), permissions: vi.fn(), billing: vi.fn(), checkout: vi.fn(), find: vi.fn(), cancel: vi.fn(), getOrder: vi.fn(), products: vi.fn(), connectOrder: vi.fn(), link: vi.fn(), apply: vi.fn(), customers:vi.fn(), coupon:vi.fn(), customer:vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock('@/server/integrations/supabase/server', () => ({ createSupabaseServiceClient: vi.fn() }));
 vi.mock('@/modules/auth/session', () => ({ getUserStores: mocks.stores }));
-vi.mock('@/modules/auth/guards', () => ({ getResolvedCurrentPermissions: mocks.permissions, requireFeature: async()=>{} }));
+vi.mock('@/modules/auth/guards', () => ({ getResolvedCurrentPermissions: mocks.permissions, requireFeature: beamMocks.feature }));
 vi.mock('@/modules/customers/repository',()=>({getCustomerById:mocks.customer}));
 vi.mock('@/modules/billing/billing-service', () => ({ getOrganizationBillingState: mocks.billing }));
 vi.mock('@/modules/billing/pricing', () => ({ hasBillingAccess: (value: { active: boolean }) => value.active }));
@@ -26,6 +29,9 @@ function request(name: string, payload?: unknown, token = true, selected = store
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  beamMocks.feature.mockResolvedValue(undefined);beamMocks.ready.mockResolvedValue(true);
+  beamMocks.prepare.mockResolvedValue({gatewayPaymentId:product,totalSatang:6500,status:'PENDING',imageUri:null,expiresAt:null});
+  beamMocks.check.mockResolvedValue({gatewayPaymentId:product,totalSatang:6500,status:'PAID',imageUri:null,expiresAt:null});
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co'); vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'public-test');
   mocks.getUser.mockResolvedValue({ data: { user: { id: 'user' } }, error: null });
   mocks.stores.mockResolvedValue({ stores: [{ id: store, name: 'ร้านทดสอบ' }] });
@@ -39,6 +45,33 @@ beforeEach(() => {
   mocks.coupon.mockResolvedValue({couponId:operation,normalizedCode:'SAVE',discount:10,error:null});
 });
 describe('native API authorization and checkout', () => {
+  it('prepares Beam from the server quote and blocks client prices or missing entitlement',async()=>{
+    const payload={operationId:operation,expectedTotalSatang:6500,lines:body.lines};
+    expect((await request('beam-prepare',payload)).status).toBe(200);
+    expect(beamMocks.prepare).toHaveBeenCalledWith({storeId:store,organizationId:'org',userId:'user'},operation,6500);
+    expect((await request('beam-prepare',{...payload,expectedTotalSatang:6000})).status).toBe(409);
+    expect((await request('beam-prepare',{...payload,expectedTotalSatang:1})).status).toBe(400);
+    expect((await request('beam-prepare',{...payload,amount:1})).status).toBe(400);
+    beamMocks.feature.mockRejectedValueOnce(Error('feature denied'));
+    expect((await request('beam-prepare',payload)).status).toBe(403);
+    expect(beamMocks.prepare).toHaveBeenCalledTimes(1);
+  });
+  it('requires paid bound Beam before checkout and sends the gateway to existing web settlement',async()=>{
+    const payload={...body,method:'beam',gatewayPaymentId:product};
+    beamMocks.check.mockResolvedValueOnce({gatewayPaymentId:product,totalSatang:6500,status:'PENDING'});
+    expect((await request('checkout',payload)).status).toBe(409);expect(mocks.checkout).not.toHaveBeenCalled();
+    expect((await request('checkout',payload)).status).toBe(200);
+    expect(mocks.checkout).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({method:'other',amount:65}),expect.objectContaining({beam:{gatewayPaymentId:product}}));
+    expect((await request('checkout',{...body,gatewayPaymentId:product})).status).toBe(400);
+    expect((await request('checkout',{...body,method:'beam'})).status).toBe(400);
+  });
+  it('scopes Beam status to operation and rejects no-auth, foreign stores and payload injection',async()=>{
+    const payload={operationId:operation,gatewayPaymentId:product,expectedTotalSatang:6500};
+    expect((await request('beam-status',payload)).status).toBe(200);
+    expect((await request('beam-status',payload,false)).status).toBe(401);
+    expect((await request('beam-status',payload,true,product)).status).toBe(403);
+    expect((await request('beam-status',{...payload,status:'PAID'})).status).toBe(400);
+  });
   it('bounds customer queries and returns only minimal masked customer DTO', async()=>{
     expect((await request('customers')).status).toBe(400);
     const response=await GET(new Request('https://example.test/api/mobile/pos/customers?q=test',{headers:{Authorization:'Bearer test-token','X-Store-Id':store}}),{params:Promise.resolve({operation:'customers'})});
