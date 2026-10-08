@@ -17,6 +17,7 @@ import { initialEntryScreen, homeScreen, productionBase } from './src/domain/ent
 import { useSearchKeyboard } from './src/useSearchKeyboard';
 import { MenuCard } from './src/MenuCard';
 import { SalesTools } from './src/SalesTools';
+import {Receipt} from './src/Receipt';
 import { BeamPayment } from './src/BeamPayment';
 import { startBeam, advanceBeam, restoreBeamPending, isBeamPending, type PendingPayment } from './src/domain/beam';
 import {canAutoCheckBeam,createBeamPolling} from './src/domain/beam-polling';
@@ -37,7 +38,7 @@ const tabs = [['sale', 'ขายสินค้า', '▦'], ['delivery', 'เ�
 const navTabs = tabs.filter(([id]) => ['sale', 'orders', 'delivery', 'more'].includes(id));
 type Tab = typeof tabs[number][0];
 type Pending = PendingPayment;
-type Sheet = 'product' | 'payment' | 'ai' | 'cart' | 'sales' | null;
+type Sheet = 'product' | 'payment' | 'ai' | 'cart' | 'sales' | 'receipt' | null;
 function Button({ label, onPress, secondary = false, disabled = false }: { label: string; onPress: () => void; secondary?: boolean; disabled?: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, secondary && s.secondary, disabled && s.disabled, pressed && { opacity: .7 }]}><Text style={[s.buttonText, secondary && { color: theme.primary }]}>{label}</Text></Pressable>;
 }
@@ -63,6 +64,7 @@ function PosApp() {
   const [product, setProduct] = useState<NativeProduct | null>(null); const [variantId, setVariant] = useState<string | null>(null); const [optionIds, setOptions] = useState<string[]>([]); const [note, setNote] = useState('');
   const [sales,setSales] = useState<NativeSalesInput>({}); const salesRef=useRef<NativeSalesInput>({});
   const [customer,setCustomer] = useState<NativeCustomer|null>(null); const [quoted,setQuoted]=useState<ConfirmedSale|null>(null);
+  const [receiptOrderId,setReceiptOrderId]=useState<string|null>(null);
   function changeSales(value:NativeSalesInput, selected?:NativeCustomer|null){salesRef.current=value;setSales(value);setQuoted(null);if(selected!==undefined)setCustomer(selected)}
   useEffect(()=>{changeSales({},null)},[cart?.storeId,cart?.userId]);
   useEffect(()=>{if(cart && !cart.lines.length && !pending)changeSales({},null)},[cart?.lines.length,pending]);
@@ -246,7 +248,7 @@ function PosApp() {
         return;
       }
       if (result.order) setOrders([result.order, ...orders]);
-      await change(emptyDraft(cart.storeId, cart.userId), null); setSheet(null); setMessage(`บันทึกบิล ${result.order?.number ?? result.orderId} แล้ว · พิมพ์ใบเสร็จจริงผ่าน StoreOS เดิมระหว่างรอเชื่อม QR รับแต้มบน native`);
+      await change(emptyDraft(cart.storeId, cart.userId), null); setReceiptOrderId(result.order?.id??result.orderId!);setSheet('receipt');setMessage(`บันทึกบิล ${result.order?.number ?? result.orderId} แล้ว`);
     } catch (error) { if (input.method!=='beam' && error instanceof ApiError && canReleaseRejectedCheckout(!!existing, error.notCreated)) await change(cart, null); setSheet(null); throw error; }
   }
   async function askAi() {
@@ -278,8 +280,9 @@ const cartPanel = <View style={[s.cart, wide ? { width: cartWidth, flexBasis: ca
     {tab === 'printers' && <><Text style={s.sectionTitle}>เชื่อมต่อเครื่องพิมพ์</Text><Text style={s.muted}>เลือกเส้นทางตามเครื่องจริง แต่ละรุ่นต้องทดสอบกระดาษและภาษาไทยก่อนใช้งาน</Text><View style={s.orderCard}><Text style={s.sectionTitle}>{Platform.OS === 'ios' ? 'AirPrint' : 'ระบบพิมพ์ของอุปกรณ์'}</Text><Text style={s.muted}>เปิดหน้าต่างเลือกรุ่นที่ระบบมองเห็น แล้วทดสอบเอกสารภาษาไทย</Text><Button label="เลือกเครื่องและพิมพ์ทดสอบ" disabled={busy} onPress={() => void run(printTest)} /></View><React.Suspense fallback={<Text>กำลังโหลด Bluetooth…</Text>}><DeferredBluetoothSettings /></React.Suspense><PrinterSettings />{[['Bluetooth Classic / USB / COM', 'ต้องใช้ adapter ตาม protocol และข้อจำกัดของระบบปฏิบัติการ'], ['Print Hub · เครื่องพิมพ์ผ่าน Windows', 'ต้องเชื่อมระบบคิวและการยืนยันผลก่อนเปิดใช้บน native'], ['Star / Epson / vendor SDK', 'ต้องตรวจ SDK และทดสอบรุ่นจริงก่อนประกาศรองรับ']].map(([title, text]) => <View style={s.orderCard} key={title}><Text style={s.sectionTitle}>{title}</Text><Text style={s.muted}>{text}</Text><Text style={s.small}>ยังไม่เปิดใช้งานในรุ่นนี้</Text></View>)}</>}
     {tab === 'settings' && <><Text style={s.sectionTitle}>{boot.store.name}</Text><Text style={s.muted}>React Native · iPhone / iPad · {isDemo ? 'ข้อมูลสาธิต' : session?.base}</Text><View style={s.orderCard}><Text style={s.sectionTitle}>บิลอยู่กับร้านและผู้ใช้</Text><Text style={s.muted}>การสลับหน้าและออกจากแอปจะเก็บบิลไว้ในอุปกรณ์ บิลนี้ยังไม่ใช่ออเดอร์ที่บันทึกในเซิร์ฟเวอร์จนกว่าจะรับชำระสำเร็จ</Text></View><Button label="เปลี่ยนร้าน / กลับหน้าเริ่มต้น" secondary disabled={busy} onPress={() => void run(async () => { await writes.current.idle(); setBoot(null); setCart(null); cartRef.current = null; setSheet(null); setDemo(false); if (session) setBoot(await api<NativeBootstrap>(session, null, 'bootstrap')); })} /><Button label="ออกจากระบบ" secondary disabled={busy} onPress={() => void run(async () => { await writes.current.idle(); await saveSession(null); setSession(null); setBoot(null); setCart(null); cartRef.current = null; setDemo(false); setPassword(''); })} /></>}
     </ScrollView>}</View></View></KeyboardAvoidingView>
-    <Modal visible={sheet !== null && sheet !== 'cart'} transparent animationType="fade" onRequestClose={() => !busy && setSheet(null)}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.scrim}><View style={s.modal}><View style={s.rowBetween}><Text style={s.sectionTitle}>{sheet === 'product' ? product?.name : sheet === 'payment' ? 'ตรวจสอบและรับชำระ' : sheet === 'sales' ? 'ลูกค้า / ส่วนลด / คูปอง' : 'AI ช่วยเพิ่มสินค้า'}</Text><Button secondary label="ปิด" disabled={busy} onPress={() => setSheet(null)} /></View><ScrollView keyboardShouldPersistTaps="handled">{message ? <Text style={s.error}>{message}</Text> : null}
+    <Modal visible={sheet !== null && sheet !== 'cart'} transparent animationType="fade" onRequestClose={() => !busy && setSheet(null)}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.scrim}><View style={s.modal}><View style={s.rowBetween}><Text style={s.sectionTitle}>{sheet === 'product' ? product?.name : sheet === 'payment' ? 'ตรวจสอบและรับชำระ' : sheet === 'sales' ? 'ลูกค้า / ส่วนลด / คูปอง' : sheet === 'receipt' ? 'ใบเสร็จ' : 'AI ช่วยเพิ่มสินค้า'}</Text><Button secondary label="ปิด" disabled={busy} onPress={() => setSheet(null)} /></View><ScrollView keyboardShouldPersistTaps="handled">{message ? <Text style={s.error}>{message}</Text> : null}
     {sheet === 'sales' && <SalesTools value={sales} customer={customer} disabled={busy || workflowLocked || !!pending} demo={isDemo} change={changeSales} request={workflowRequest} perform={run} />}
+    {sheet === 'receipt' && receiptOrderId && <Receipt key={`${cart.userId}.${cart.storeId}.${receiptOrderId}`} orderId={receiptOrderId} request={workflowRequest} demo={isDemo} storeName={boot.store.name}/>}
     {sheet === 'product' && product && <><Text style={s.total}>{money(product.priceSatang)}</Text>{product.variants.length > 0 && <><Text style={s.fieldLabel}>เลือกขนาด / รูปแบบ</Text><View style={s.actionRow}>{product.variants.map(v => <Button key={v.id} secondary={variantId !== v.id} label={`${v.name} ${v.priceSatang ? `+${money(v.priceSatang)}` : ''}`} onPress={() => setVariant(v.id)} />)}</View></>}{product.groups.map(group => <View key={group.id}><Text style={s.fieldLabel}>{group.name} · เลือก {group.min}–{group.max}</Text><View style={s.actionRow}>{group.options.map(option => <Button key={option.id} label={`${option.name}${option.priceSatang ? ` +${money(option.priceSatang)}` : ''}`} secondary={!optionIds.includes(option.id)} onPress={() => setOptions(ids => ids.includes(option.id) ? ids.filter(id => id !== option.id) : group.max === 1 ? [...ids.filter(id => !group.options.some(o => o.id === id)), option.id] : [...ids, option.id])} />)}</View></View>)}<Text style={s.fieldLabel}>หมายเหตุ</Text><TextInput style={s.input} accessibilityLabel="หมายเหตุสินค้า" placeholder="เช่น แยกน้ำแข็ง" maxLength={500} value={note} onChangeText={setNote} /><Button label="เพิ่มลงบิล" disabled={busy || workflowLocked} onPress={() => void run(addProduct)} /></>}
     {sheet === 'payment' && <>
       <Text style={s.small}>ส่วนลดท้ายบิล {money(quoted?.quote.manualDiscountSatang??0)} · คูปอง {money(quoted?.quote.couponDiscountSatang??0)}</Text>

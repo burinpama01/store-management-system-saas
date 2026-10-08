@@ -5,6 +5,7 @@ import type { NativeCashSession, NativeSavedTicket, NativeOrderDetail } from '..
 import type { Draft } from './domain/cart';
 import { cashAmount, workflowBlocked } from './domain/workflow';
 import { theme } from './theme';
+import {Receipt} from './Receipt';
 
 type Request = <T>(operation: string, body?: unknown) => Promise<T>;
 type Props = {
@@ -97,11 +98,15 @@ export function PosWorkflow({ mode, request, cart, pending, busy, demo, perform,
       {input('วันที่เริ่ม YYYY-MM-DD',from,setFrom)}{input('วันที่สิ้นสุด YYYY-MM-DD',date,setDate)}
       {button('ค้นหาประวัติ',refresh)}{input('ค้นหาหมายเลขบิล',search,setSearch)}
       {detail ? <View style={{backgroundColor:'#fff',padding:20,borderRadius:16,gap:10}}>
+        {detail.status!=='paid'&&<>
         <Text style={{fontSize:20,fontWeight:'700',color:theme.text}}>{detail.number}</Text><Text style={{color:theme.muted}}>{detail.status} · {new Date(detail.createdAt).toLocaleString('th-TH')}</Text>
         {detail.lines.map((line,i)=><Text key={`${line.key}-${i}`} style={{color:theme.text}}>{line.quantity} × {line.name} · {money(line.unitSatang*line.quantity)}{line.choiceLabel ? `\n${line.choiceLabel}` : ''}{line.note ? `\n${line.note}` : ''}</Text>)}
         <Text style={{color:theme.text}}>ยอดสินค้า {money(detail.subtotalSatang)} · ส่วนลด {money(detail.discountSatang)}</Text><Text style={{fontSize:22,fontWeight:'700',color:theme.text}}>รวม {money(detail.totalSatang)}</Text>
         {detail.payments.map((payment,i)=><Text key={i} style={{color:theme.text}}>{payment.method} · {payment.status} · {money(payment.amountSatang)}{payment.receivedSatang !== undefined ? `\nรับ ${money(payment.receivedSatang)} ทอน ${money(payment.changeSatang ?? 0)}` : ''}</Text>)}
-        {detail.note ? <Text style={{color:theme.text}}>{detail.note}</Text> : null}{button('ปิดรายละเอียด',async()=>setDetail(null),false,true)}
+        {detail.note ? <Text style={{color:theme.text}}>{detail.note}</Text> : null}
+        </>}
+        {detail.status==='paid'&&<Receipt key={detail.id} orderId={detail.id} request={request} demo={demo} storeName="StoreOS"/>}
+        {button('ปิดรายละเอียด',async()=>setDetail(null),false,true)}
       </View> : null}
       {orders.filter(order=>order.number.toLowerCase().includes(search.toLowerCase())).map(order=><View key={order.id} style={{backgroundColor:'#fff',padding:20,borderRadius:16,gap:10}}><Text style={{fontSize:18,fontWeight:'600',color:theme.text}}>{order.number}</Text><Text style={{color:theme.muted}}>{order.status} · {money(order.totalSatang)}</Text>{button('ดูบิล '+order.number,async()=>{const result=await request<{order:NativeOrderDetail}>(`order-detail?id=${encodeURIComponent(order.id)}`);if(alive.current)setDetail(result.order);})}</View>)}
       {!orders.length && !loading ? <Text style={{color:theme.muted}}>ไม่มีบิลในช่วงวันที่นี้</Text> : null}
