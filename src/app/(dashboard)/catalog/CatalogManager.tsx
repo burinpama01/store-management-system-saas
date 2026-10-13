@@ -1657,14 +1657,14 @@ function CatalogToolsDialogs({
   return (
     <>
       <section className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
+        <div className="flex flex-col gap-3 @6xl:flex-row @6xl:items-center @6xl:justify-between">
+          <div className="shrink-0">
             <h3 className="text-sm font-bold text-slate-900">เครื่องมือเมนูสินค้า</h3>
             <p className="text-xs text-slate-500">
               เปิดเฉพาะงานที่ต้องใช้ เพื่อให้หน้าเมนูสินค้าอ่านง่ายขึ้น
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-6">
             <a
               href="/pos/display"
               className="min-h-10 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 hover:bg-orange-100"
@@ -1901,8 +1901,8 @@ export function CatalogManager({
         </div>
       </div>
 
-      <div className="grid flex-1 gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="border-b border-slate-200 bg-white lg:border-b-0 lg:border-r">
+      <div className="grid flex-1 grid-cols-1 gap-0 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="min-w-0 border-b border-slate-200 bg-white md:border-b-0 md:border-r">
           <div className="flex items-center justify-between px-4 py-3">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">หมวดหมู่</span>
             <button
@@ -1914,11 +1914,11 @@ export function CatalogManager({
               เพิ่ม
             </button>
           </div>
-          <div className="flex gap-2 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:overflow-visible">
+          <div className="flex gap-2 overflow-x-auto px-3 pb-3 md:block md:space-y-1 md:overflow-visible">
             <button
               type="button"
               onClick={() => setSelectedCategoryId(null)}
-              className={`min-h-11 shrink-0 rounded-md px-3 text-left text-sm lg:w-full ${
+              className={`min-h-11 shrink-0 rounded-md px-3 text-left text-sm md:w-full ${
                 selectedCategoryId === null
                   ? "bg-teal-50 font-bold text-teal-800"
                   : "text-slate-600 hover:bg-slate-50"
@@ -1929,7 +1929,7 @@ export function CatalogManager({
             {categories.map((cat) => (
               <div
                 key={cat.id}
-                className={`group flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-md px-3 lg:w-full ${
+                className={`group flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-md px-3 md:w-full ${
                   cat.id === selectedCategoryId ? "bg-teal-50" : "hover:bg-slate-50"
                 }`}
               >
@@ -1941,8 +1941,9 @@ export function CatalogManager({
                   <span className="block truncate text-sm font-medium text-slate-800">{cat.name}</span>
                   <span className="text-xs text-slate-400">{categoryCount(cat.id)} สินค้า</span>
                 </button>
+                {/* จอสัมผัส (iPad) ไม่มี hover — ซ่อนปุ่มรอ hover เฉพาะอุปกรณ์ที่มีเมาส์ */}
                 {canManageCatalog && (
-                  <div className="flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100">
+                  <div className="flex gap-1 opacity-100 [@media(hover:hover)]:md:opacity-0 [@media(hover:hover)]:md:group-hover:opacity-100 [@media(hover:hover)]:md:group-focus-within:opacity-100">
                     <button
                       type="button"
                       onClick={() => openEditCategory(cat)}
@@ -1964,7 +1965,7 @@ export function CatalogManager({
           </div>
         </aside>
 
-        <section className="min-w-0 bg-slate-50 p-4">
+        <section className="@container min-w-0 bg-slate-50 p-4">
           <CatalogToolsDialogs
             products={products}
             branchStores={branchStores}
@@ -1998,7 +1999,7 @@ export function CatalogManager({
               ยังไม่มีสินค้าในหมวดนี้
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5">
               {filteredProducts.map((p) => (
                 <article key={p.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                   <div className="aspect-[4/3] overflow-hidden border-b border-slate-100">
