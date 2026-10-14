@@ -4,6 +4,7 @@ import {
   HUB_POLL_CLOSED_MS,
   HUB_POLL_IDLE_MS,
   HUB_QUIET_UNTIL_CLOSED_MS,
+  resolveHubLongPollWaitMs,
   resolveHubPollPacing,
   sanitizeHubIdleMs,
 } from "@/modules/printing/hub-poll-pacing";
@@ -36,6 +37,27 @@ describe("hub poll pacing — คิดจากสิ่งที่ Hub ส่
   it("จังหวะร้านปิดต้องยาวกว่าคิวว่าง และคิวว่างต้องยาวกว่าตอนมีงาน", () => {
     expect(HUB_POLL_CLOSED_MS).toBeGreaterThan(HUB_POLL_IDLE_MS);
     expect(HUB_POLL_IDLE_MS).toBeGreaterThan(HUB_POLL_ACTIVE_MS);
+  });
+
+  describe("resolveHubLongPollWaitMs — ร้านปิดแล้วไม่ค้างคำขอ (ประหยัด Provisioned Memory)", () => {
+    it("ร้านปิด (เงียบเกินเกณฑ์) = ตอบทันที", () => {
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 20_000, idleMs: HUB_QUIET_UNTIL_CLOSED_MS })).toBe(0);
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 20_000, idleMs: HUB_QUIET_UNTIL_CLOSED_MS * 6 })).toBe(0);
+    });
+
+    it("ร้านยังเปิด = ค้างตามที่ Hub ขอ", () => {
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 20_000, idleMs: HUB_QUIET_UNTIL_CLOSED_MS - 1 })).toBe(20_000);
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 20_000, idleMs: 0 })).toBe(20_000);
+    });
+
+    it("Hub ไม่บอกว่าว่างนานแค่ไหน = ถือว่าร้านเปิด ค้างตามที่ขอ", () => {
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 20_000, idleMs: null })).toBe(20_000);
+    });
+
+    it("Hub ไม่ขอ long-poll = ไม่ค้าง ไม่ว่ากรณีไหน", () => {
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 0, idleMs: 0 })).toBe(0);
+      expect(resolveHubLongPollWaitMs({ requestedWaitMs: 0, idleMs: null })).toBe(0);
+    });
   });
 
   describe("sanitizeHubIdleMs — ค่าที่ใช้ไม่ได้ต้องกลายเป็น null ไม่ใช่เดา", () => {
