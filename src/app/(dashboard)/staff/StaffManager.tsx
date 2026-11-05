@@ -363,7 +363,7 @@ export function StaffManager({
                       <td className="px-3 py-2 text-right text-red-600">{l.latePenalty ? `−${fmt(l.latePenalty, currency)}` : "—"}</td>
                       <td className="px-3 py-2 text-right text-yellow-700">
                         {l.halfDayDeduction ? `−${fmt(l.halfDayDeduction, currency)}` : l.halfDays ? "จ่ายครึ่ง" : "—"}
-                        <span className="block text-[10px] text-gray-400">{l.halfDays ? `${l.halfDays} วัน` : ""}</span>
+                        <span className="block text-[10px] text-gray-400">{l.halfDayDeduction ? `${l.halfDayDeductionDays} วัน` : l.halfDays ? `${l.halfDays} วัน` : ""}</span>
                       </td>
                       <td className="px-3 py-2 text-right text-red-600">{l.absentPenalty ? `−${fmt(l.absentPenalty, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.absentDays ? `${l.absentDays} วัน` : ""}</span></td>
                       <td className="px-3 py-2 text-right text-green-600">{l.bonusTotal ? `+${fmt(l.bonusTotal, currency)}` : "—"}</td>
