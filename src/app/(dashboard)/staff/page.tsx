@@ -7,7 +7,11 @@ import {
   computePayrollSummaries,
   listStoreHolidays,
 } from "@/modules/attendance/repository";
-import { computePayrollLines } from "@/modules/hr/payroll";
+// computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
+import { computeAdvancedPayrollLines } from "@/modules/hr/advanced/compute";
+import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
+import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills } from "@/modules/hr/advanced/repository";
+import { businessDate, periodContaining, recentPeriods } from "@/modules/hr/advanced/pay-cycle";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -28,8 +32,18 @@ export default async function StaffPage({
 
   const params = await searchParams;
   const today = getStoreLocalDate(ctx.storeTimezone);
-  let dateFrom = isValidDate(params.dateFrom ?? "") ? params.dateFrom! : today.slice(0, 7) + "-01";
-  let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : today;
+  const [access, storeForCycle] = await Promise.all([
+    getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId),
+    getStore(ctx.storeId),
+  ]);
+  const asw = access.settings.switches;
+  const businessToday = businessDate(new Date(), ctx.storeTimezone, storeForCycle.data?.closingTime ?? null);
+  // เปิดรอบเงินเดือน = ค่าเริ่มต้นเป็นงวดปัจจุบัน (เช่น 24–23) แทนวันที่ 1 ถึงวันนี้
+  const currentPeriod = asw.payCycle
+    ? periodContaining(businessToday, access.settings.payCycleStartDay, access.settings.payDay)
+    : null;
+  let dateFrom = isValidDate(params.dateFrom ?? "") ? params.dateFrom! : currentPeriod?.start ?? today.slice(0, 7) + "-01";
+  let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : currentPeriod?.end ?? today;
   if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
 
   const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
@@ -56,7 +70,19 @@ export default async function StaffPage({
     bankAccountMasked: maskBankAccount(bankAccountNo),
   }));
   const adjustments = adjustmentsRes.data ?? [];
-  const payrollLines = computePayrollLines({
+  const [adv, skills, skillGrants, closedRows] = await Promise.all([
+    loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo),
+    access.entitled ? listStoreSkills(ctx.storeId) : Promise.resolve([]),
+    asw.skillPay ? listEmployeeSkillGrants(ctx.storeId) : Promise.resolve(new Map()),
+    asw.payCycle ? listPayrollPeriods(ctx.storeId) : Promise.resolve([]),
+  ]);
+  const employeeSkillIds: Record<string, string[]> = {};
+  for (const [userId, grants] of skillGrants) {
+    employeeSkillIds[userId] = (grants as { skillId: string; revokedAt?: string | null }[])
+      .filter((g) => !g.revokedAt)
+      .map((g) => g.skillId);
+  }
+  const payrollLines = computeAdvancedPayrollLines({
     summaries,
     records,
     profiles,
@@ -67,7 +93,7 @@ export default async function StaffPage({
     periodEnd: dateTo,
     today,
     timezone: ctx.storeTimezone,
-  });
+  }, adv);
 
   return (
     <StaffManager
@@ -81,6 +107,16 @@ export default async function StaffPage({
       dateTo={dateTo}
       today={today}
       canAddStaff={resolved.can("users.manage")}
+      advanced={{
+        entitled: access.entitled,
+        settings: access.settings,
+        stored: access.stored,
+        skills,
+        employeeSkillIds,
+        periods: asw.payCycle ? recentPeriods(businessToday, access.settings.payCycleStartDay, access.settings.payDay, 12) : [],
+        closedRows,
+        businessToday,
+      }}
     />
   );
 }

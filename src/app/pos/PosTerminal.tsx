@@ -70,6 +70,7 @@ import { formatPoints } from "@/shared/utils/points";
 import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPanel";
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
+import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
 import { useRegisterVoiceCart, type VoiceCartApi } from "./unified/voice-cart-bridge";
 import {
   publishCustomerDisplaySnapshot,
@@ -4807,6 +4808,9 @@ export function PosTerminal({
         {/* ปุ่มบนแถบหัว: ไม่มีโลโก้/ชื่อร้านแล้ว (หน้า POS ไม่ต้องบอกว่าอยู่ร้านไหน
             ทุกวินาที และที่ตรงนั้นมีค่ากว่าถ้าให้ปุ่มสั่งงานด้วยเสียงอยู่แทน) */}
         {posActions}
+
+        {/* แถบเป้ายอดขายวันนี้ — ไม่ได้เปิดฟีเจอร์ = ไม่แสดง (ไม่กินความสูง) */}
+        <SalesTargetBar />
 
         {printerLoadError && (
           <div role="status" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">

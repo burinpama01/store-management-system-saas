@@ -72,6 +72,7 @@ function buildDefaultPrices(): BusinessPriceMap {
     aiAssistant: 200,
     aiVision: 150,
     aiForecast: 150,
+    advancedPayroll: 200,
   };
   return Object.fromEntries(
     (Object.entries(monthly) as [BusinessComponent, number][]).map(([key, amount]) => [

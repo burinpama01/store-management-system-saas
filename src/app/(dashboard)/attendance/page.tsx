@@ -17,6 +17,7 @@ import { computeDayStatuses, type DayStatus } from "@/modules/attendance/calenda
 import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser, listPayrollAdjustments } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { listBranchStores } from "@/modules/stores/repository";
+import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
 import { AttendanceManager } from "./AttendanceManager";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
 import type { PayrollAdjustment } from "@/modules/hr/types";
@@ -190,6 +191,8 @@ export default async function AttendancePage({
   }
 
   return (
+    <>
+    <SalesTargetBar className="mb-3 rounded-lg border" />
     <AttendanceManager
       todayRecord={todayRecord}
       canManage={canManage}
@@ -217,5 +220,6 @@ export default async function AttendancePage({
       branchStores={branchStores}
       branchFilter={branchFilter}
     />
+    </>
   );
 }

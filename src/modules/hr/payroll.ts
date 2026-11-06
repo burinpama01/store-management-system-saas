@@ -469,6 +469,8 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     let bonusTotal = 0;
     let deductionTotal = 0;
     for (const a of userAdj) {
+      // ภาษีกรอกเอง คิดแยกในเงินเดือนขั้นสูง (advanced/compute.ts) — ไม่ใช่โบนัส
+      if (a.type === "withholding_tax") continue;
       if (DEDUCTION_TYPES.includes(a.type)) deductionTotal += a.amount;
       else bonusTotal += a.amount;
     }

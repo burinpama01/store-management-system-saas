@@ -14,6 +14,10 @@ import {
 import { parseEmployeeIdentity } from "@/modules/hr/employee-identity";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { logSystemEvent } from "@/modules/system/event-log";
+import { getAdvancedPayrollAccess } from "@/modules/hr/advanced/store-payroll";
+import { recordPayRateChange, setEmployeeSkills, listStoreSkills } from "@/modules/hr/advanced/repository";
+import { pushPayrollNotification, formatBaht } from "@/modules/hr/advanced/notify";
+import { listEmployeeProfiles } from "@/modules/hr/repository";
 import type { PayType, AdjustmentType } from "@/modules/hr/types";
 import type { Role } from "@/modules/tenants/types";
 
@@ -21,7 +25,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const PAY_TYPES: PayType[] = ["monthly", "daily", "hourly"];
-const ADJ_TYPES: AdjustmentType[] = ["penalty", "bonus", "leave", "absent", "late"];
+const ADJ_TYPES: AdjustmentType[] = ["penalty", "bonus", "leave", "absent", "late", "withholding_tax"];
 const ASSIGNABLE_ROLES: Role[] = ["admin", "manager", "cashier", "staff"];
 
 async function getStoreContext() {
@@ -77,11 +81,30 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
       .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
     const otEligible = formData.get("otEligible") === "on";
 
-    const identityResult = parseEmployeeIdentity((key) => formData.get(key), {
-      today: getStoreLocalDate(ctx.storeTimezone),
-    });
+    const today = getStoreLocalDate(ctx.storeTimezone);
+    const identityResult = parseEmployeeIdentity((key) => formData.get(key), { today });
     if (identityResult.error !== null) return { error: identityResult.error };
     const identity = identityResult.value;
+
+    // เงินเดือนขั้นสูง (เฉพาะแพ็กที่มีสิทธิ์ + สวิตช์ที่เปิด — R32/R33)
+    const access = await getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId);
+    const sw = access.settings.switches;
+    const before = (await listEmployeeProfiles(ctx.storeId)).data?.find((p) => p.userId === userId);
+    const advanced: { ssoEnabled?: boolean; withholdingTaxRate?: number } = {};
+    if (sw.socialSecurity) advanced.ssoEnabled = formData.get("ssoEnabled") === "on";
+    if (sw.withholdingTax && access.settings.whtMode === "percent") {
+      const rate = Math.round(parseFloat(String(formData.get("withholdingTaxRate") ?? "0")) * 100) / 100;
+      if (!(rate >= 0 && rate <= 35)) return { error: "อัตราภาษีต้องอยู่ระหว่าง 0–35%" };
+      advanced.withholdingTaxRate = rate;
+    }
+    const rateEffectiveRaw = String(formData.get("rateEffectiveFrom") ?? "").trim();
+    if (rateEffectiveRaw && !DATE_RE.test(rateEffectiveRaw)) return { error: "วันที่มีผลของเรทไม่ถูกต้อง" };
+    const rateChanged =
+      !!before &&
+      (before.payType !== payType ||
+        before.monthlySalary !== monthlySalary ||
+        before.dailyRate !== dailyRate ||
+        before.hourlyRate !== hourlyRate);
 
     const result = await upsertEmployeeProfile({
       storeId: ctx.storeId,
@@ -99,6 +122,7 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
       workingDays: [...new Set(workingDays)].sort(),
       otEligible,
       identity,
+      advanced,
     });
     if (result.error) {
       if (result.error.code === "23505") return { error: "รหัสพนักงานนี้มีคนใช้แล้วในสาขานี้" };
@@ -106,6 +130,81 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
         return { error: "ข้อมูลขัดกัน: วันออกงานต้องไม่ก่อนวันเริ่มงาน (ตรวจวันเริ่มงานที่ระบบตั้งให้ด้วย) หรือข้อความยาวเกิน" };
       }
       return { error: result.error.userMessage };
+    }
+
+    // ประวัติเรท (R13): เปลี่ยนเรท + เลือกวันมีผล → งวดเก่าคิดเรทเดิม, กลางงวดคิดตามวันจริง (R29)
+    if (access.entitled && rateChanged && before) {
+      const rateResult = await recordPayRateChange({
+        storeId: ctx.storeId,
+        organizationId: ctx.organizationId,
+        userId,
+        previous: { payType: before.payType, monthlySalary: before.monthlySalary, dailyRate: before.dailyRate, hourlyRate: before.hourlyRate },
+        next: { payType, monthlySalary, dailyRate, hourlyRate },
+        effectiveFrom: rateEffectiveRaw || today,
+        actorUserId: user.id,
+      });
+      if (rateResult.error) return { error: `บันทึกประวัติเรทไม่สำเร็จ: ${rateResult.error.userMessage}` };
+    }
+
+    // ทักษะ (R11): ติ๊กได้เลย มีผลงวดถัดไป
+    let skillChanges: { granted: string[]; revoked: string[] } = { granted: [], revoked: [] };
+    if (sw.skillPay && formData.get("skillsSubmitted") === "1") {
+      const valid = new Set((await listStoreSkills(ctx.storeId)).map((s) => s.id));
+      const skillIds = formData.getAll("skillIds").map(String).filter((id) => valid.has(id));
+      const r = await setEmployeeSkills({
+        storeId: ctx.storeId,
+        organizationId: ctx.organizationId,
+        userId,
+        skillIds,
+        today,
+        actorUserId: user.id,
+      });
+      if (r.error) return { error: `บันทึกทักษะไม่สำเร็จ: ${r.error}` };
+      skillChanges = r;
+    }
+
+    // แจ้งเตือนพนักงานรายคน (R31)
+    if (sw.payrollNotifications) {
+      const notes: { kind: string; key: string; title: string; message: string }[] = [];
+      if (skillChanges.granted.length || skillChanges.revoked.length) {
+        const names = new Map((await listStoreSkills(ctx.storeId)).map((s) => [s.id, s.name]));
+        const g = skillChanges.granted.map((id) => names.get(id)).filter(Boolean).join(", ");
+        const rv = skillChanges.revoked.map((id) => names.get(id)).filter(Boolean).join(", ");
+        notes.push({
+          kind: "skill_changed",
+          key: `${userId}:${today}:${skillChanges.granted.join(",")}:${skillChanges.revoked.join(",")}`,
+          title: "ทักษะของคุณเปลี่ยน",
+          message: [g ? `ได้ทักษะ: ${g}` : "", rv ? `ถอนทักษะ: ${rv}` : "", "มีผลงวดถัดไป"].filter(Boolean).join(" · "),
+        });
+      }
+      if (before && before.employmentType !== "permanent" && identity.employmentType === "permanent") {
+        notes.push({
+          kind: "became_permanent",
+          key: `${userId}:${identity.permanentSince}`,
+          title: "คุณเป็นพนักงานประจำแล้ว",
+          message: "เริ่มได้ค่าทักษะ/ค่าอายุงาน/โบนัสยอดขาย ตามที่ร้านเปิดใช้ (เริ่มงวดถัดไป)",
+        });
+      }
+      if (rateChanged && access.entitled) {
+        const amount = payType === "monthly" ? monthlySalary : payType === "daily" ? dailyRate : hourlyRate;
+        notes.push({
+          kind: "pay_rate_changed",
+          key: `${userId}:${rateEffectiveRaw || today}:${payType}:${amount}`,
+          title: "ค่าจ้างของคุณมีการปรับ",
+          message: `ค่าจ้างใหม่ ${formatBaht(amount)} มีผล ${rateEffectiveRaw || today}`,
+        });
+      }
+      for (const n of notes) {
+        await pushPayrollNotification({
+          organizationId: ctx.organizationId,
+          storeId: ctx.storeId,
+          userIds: [userId],
+          kind: n.kind,
+          dedupeKey: n.key,
+          title: n.title,
+          message: n.message,
+        });
+      }
     }
 
     // ไม่บันทึกเลขบัญชี/ชื่อจริงลง log — บอกแค่ว่ามีหรือไม่มี
@@ -126,6 +225,10 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
         employmentEndDate: identity.employmentEndDate ?? null,
         hasEmployeeCode: !!identity.employeeCode,
         hasBankAccount: !!identity.bankAccountNo,
+        rateChanged,
+        rateEffectiveFrom: rateChanged ? rateEffectiveRaw || today : null,
+        skillsGranted: skillChanges.granted.length,
+        skillsRevoked: skillChanges.revoked.length,
       },
     });
 
@@ -268,6 +371,12 @@ export async function addAdjustmentAction(formData: FormData): Promise<{ error: 
     const employeeName = String(formData.get("employeeName") ?? "").trim().slice(0, 100) || userId;
     const type = String(formData.get("type") ?? "") as AdjustmentType;
     if (!ADJ_TYPES.includes(type)) return { error: "ประเภทไม่ถูกต้อง" };
+    if (type === "withholding_tax") {
+      const access = await getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId);
+      if (!access.settings.switches.withholdingTax || access.settings.whtMode !== "manual") {
+        return { error: "ต้องเปิดภาษีหัก ณ ที่จ่ายแบบกรอกเองก่อน" };
+      }
+    }
     const date = String(formData.get("date") ?? "").trim();
     if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
     const amount = money(formData.get("amount"));
