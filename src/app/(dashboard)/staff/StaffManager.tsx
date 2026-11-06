@@ -24,6 +24,26 @@ import {
   savePayslipIdentityAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+import type { AdvancedPayrollSettings } from "@/modules/hr/advanced/settings";
+import type { PayrollPeriodRow, StoreSkill } from "@/modules/hr/advanced/repository";
+import type { PayPeriod } from "@/modules/hr/advanced/pay-cycle";
+import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
+import { AdvancedPayrollPanel } from "./AdvancedPayrollPanel";
+import { PayrollPeriodsPanel } from "./PayrollPeriodsPanel";
+
+export interface StaffAdvancedProps {
+  entitled: boolean;
+  /** สวิตช์ที่มีผลจริง (แพ็กไม่มีสิทธิ์ = ปิดหมด) */
+  settings: AdvancedPayrollSettings;
+  /** ค่าที่ร้านตั้งไว้ (แสดงในฟอร์มตั้งค่า) */
+  stored: AdvancedPayrollSettings;
+  skills: StoreSkill[];
+  /** ทักษะที่พนักงานมีตอนนี้ (ยังไม่ถูกถอน) */
+  employeeSkillIds: Record<string, string[]>;
+  periods: PayPeriod[];
+  closedRows: PayrollPeriodRow[];
+  businessToday: string;
+}
 
 interface Props {
   members: MemberWithEmail[];
@@ -36,6 +56,7 @@ interface Props {
   dateTo: string;
   today: string;
   canAddStaff: boolean;
+  advanced: StaffAdvancedProps;
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -62,9 +83,12 @@ export function StaffManager({
   dateTo,
   today,
   canAddStaff,
+  advanced,
 }: Props) {
+  const asw = advanced.settings.switches;
+  const advLines = payrollLines as AdvancedPayrollLine[];
   const router = useRouter();
-  const [tab, setTab] = useState<"employees" | "payroll" | "policy">("employees");
+  const [tab, setTab] = useState<"employees" | "payroll" | "policy" | "features">("employees");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -122,6 +146,12 @@ export function StaffManager({
           className={`min-h-11 rounded-lg px-4 text-sm font-semibold ${tab === "policy" ? "bg-[var(--tenant-primary)] text-white" : "bg-[var(--surface-muted)] text-[var(--ink-2)]"}`}
         >
           นโยบาย HR
+        </button>
+        <button
+          onClick={() => setTab("features")}
+          className={`min-h-11 rounded-lg px-4 text-sm font-semibold ${tab === "features" ? "bg-[var(--tenant-primary)] text-white" : "bg-[var(--surface-muted)] text-[var(--ink-2)]"}`}
+        >
+          ฟีเจอร์เงินเดือน{advanced.entitled ? "" : " 🔒"}
         </button>
       </div>
 
@@ -375,6 +405,51 @@ export function StaffManager({
                           <input type="checkbox" name="otEligible" defaultChecked={profile?.otEligible ?? true} className="accent-orange-500" />
                           มีสิทธิ์ OT
                         </label>
+                        {advanced.entitled && (
+                          <label className="text-xs font-medium text-gray-600">
+                            ถ้าเปลี่ยนค่าจ้าง: มีผลตั้งแต่
+                            <input name="rateEffectiveFrom" type="date" defaultValue={today} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                            <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                              งวดก่อนวันนี้ใช้ค่าจ้างเดิม · กลางงวดคิดตามจำนวนวันจริง
+                            </span>
+                          </label>
+                        )}
+                        {asw.skillPay && (
+                          <div className="text-xs font-medium text-gray-600 sm:col-span-2 lg:col-span-3">
+                            <input type="hidden" name="skillsSubmitted" value="1" />
+                            ทักษะที่ทำได้
+                            <span className="ml-1 font-normal text-gray-400">(ได้/ถอนวันนี้ มีผลงวดถัดไป · ค่าทักษะเฉพาะพนักงานประจำ)</span>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {advanced.skills.length === 0 && (
+                                <span className="text-gray-400">ยังไม่มีรายการทักษะ — เพิ่มที่แท็บฟีเจอร์เงินเดือน</span>
+                              )}
+                              {advanced.skills.map((sk) => (
+                                <label key={sk.id} className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2 py-1.5">
+                                  <input
+                                    type="checkbox"
+                                    name="skillIds"
+                                    value={sk.id}
+                                    defaultChecked={(advanced.employeeSkillIds[m.userId] ?? []).includes(sk.id)}
+                                    className="accent-orange-500"
+                                  />
+                                  <span>{sk.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {asw.socialSecurity && (
+                          <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+                            <input type="checkbox" name="ssoEnabled" defaultChecked={profile?.ssoEnabled ?? true} className="accent-orange-500" />
+                            หักประกันสังคม
+                          </label>
+                        )}
+                        {asw.withholdingTax && advanced.settings.whtMode === "percent" && (
+                          <label className="text-xs font-medium text-gray-600">
+                            ภาษีหัก ณ ที่จ่าย (%)
+                            <input name="withholdingTaxRate" type="number" min={0} max={35} step="0.01" defaultValue={profile?.withholdingTaxRate ?? 0} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                          </label>
+                        )}
                         <div className="flex items-end lg:col-span-3">
                           <Button type="submit" variant="primary" loading={isPending} className="min-h-11 px-6 text-sm">
                             บันทึกข้อมูลพนักงาน
@@ -390,6 +465,16 @@ export function StaffManager({
         </section>
       ) : tab === "payroll" ? (
         <section className="space-y-4">
+          {asw.payCycle && (
+            <PayrollPeriodsPanel
+              periods={advanced.periods}
+              closedRows={advanced.closedRows}
+              businessToday={advanced.businessToday}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              currency={currency}
+            />
+          )}
           {/* Period picker */}
           <form
             onSubmit={(e) => {
@@ -444,7 +529,7 @@ export function StaffManager({
                     <td colSpan={13} className="px-3 py-8 text-center text-gray-400">ไม่มีข้อมูลในช่วงนี้</td>
                   </tr>
                 ) : (
-                  payrollLines.map((l) => (
+                  advLines.map((l) => (
                     <tr key={l.userId} className="border-b border-gray-50 last:border-0">
                       <td className="px-3 py-2 text-gray-800">
                         {l.employeeName}
@@ -469,8 +554,30 @@ export function StaffManager({
                         <span className="block text-[10px] text-gray-400">{l.halfDayDeduction ? `${l.halfDayDeductionDays} วัน` : l.halfDays ? `${l.halfDays} วัน` : ""}</span>
                       </td>
                       <td className="px-3 py-2 text-right text-red-600">{l.absentPenalty ? `−${fmt(l.absentPenalty, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.absentDays ? `${l.absentDays} วัน` : ""}</span></td>
-                      <td className="px-3 py-2 text-right text-green-600">{l.bonusTotal ? `+${fmt(l.bonusTotal, currency)}` : "—"}</td>
-                      <td className="px-3 py-2 text-right text-red-600">{l.deductionTotal ? `−${fmt(l.deductionTotal, currency)}` : "—"}</td>
+                      <td className="px-3 py-2 text-right text-green-600">
+                        {(() => {
+                          const extra = l.bonusTotal + (l.skillPay ?? 0) + (l.seniorityPay ?? 0) + (l.salesBonus ?? 0);
+                          return extra ? `+${fmt(extra, currency)}` : "—";
+                        })()}
+                        <span className="block text-[10px] text-gray-400">
+                          {[
+                            l.skillPay ? `ทักษะ ${l.skillPay}` : "",
+                            l.seniorityPay ? `อายุงาน ${l.seniorityPay}` : "",
+                            l.salesBonus ? `ยอดขาย ${l.salesBonus}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-red-600">
+                        {(() => {
+                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0);
+                          return ded ? `−${fmt(ded, currency)}` : "—";
+                        })()}
+                        <span className="block text-[10px] text-gray-400">
+                          {[l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "", l.withholdingTax ? `ภาษี ${l.withholdingTax}` : ""].filter(Boolean).join(" · ")}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(l.netPay, currency)}</td>
                       <td className="px-3 py-2 text-right">
                         <a
@@ -523,9 +630,11 @@ export function StaffManager({
               <label className="text-xs font-medium text-gray-600">
                 ประเภท
                 <select name="type" defaultValue="penalty" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm">
-                  {(Object.keys(ADJUSTMENT_LABEL) as Array<keyof typeof ADJUSTMENT_LABEL>).map((t) => (
-                    <option key={t} value={t}>{ADJUSTMENT_LABEL[t]}</option>
-                  ))}
+                  {(Object.keys(ADJUSTMENT_LABEL) as Array<keyof typeof ADJUSTMENT_LABEL>)
+                    .filter((t) => t !== "withholding_tax" || (asw.withholdingTax && advanced.settings.whtMode === "manual"))
+                    .map((t) => (
+                      <option key={t} value={t}>{ADJUSTMENT_LABEL[t]}</option>
+                    ))}
                 </select>
               </label>
               <label className="text-xs font-medium text-gray-600">
@@ -570,6 +679,8 @@ export function StaffManager({
             )}
           </div>
         </section>
+      ) : tab === "features" ? (
+        <AdvancedPayrollPanel entitled={advanced.entitled} settings={advanced.stored} skills={advanced.skills} />
       ) : (
         <section className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-4">

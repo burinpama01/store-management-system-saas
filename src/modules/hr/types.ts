@@ -1,7 +1,8 @@
 export type PayType = "monthly" | "daily" | "hourly";
 /** ประเภทการจ้าง — แยกจากวิธีคิดเงิน (payType): ค่าทักษะ/อายุงาน/โบนัสยอดขาย ให้เฉพาะ permanent */
 export type EmploymentType = "permanent" | "daily" | "part_time" | "temporary";
-export type AdjustmentType = "penalty" | "bonus" | "leave" | "absent" | "late";
+/** withholding_tax = ภาษีหัก ณ ที่จ่ายโหมดกรอกเอง (คิดแยกในเงินเดือนขั้นสูง ไม่นับเป็นโบนัส/รายการหัก) */
+export type AdjustmentType = "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
 
 export interface EmployeeProfile {
   id: string;
@@ -39,6 +40,10 @@ export interface EmployeeProfile {
   /** เลขบัญชีแบบปิดหลัก "••7890" สำหรับแสดงผลฝั่ง browser */
   bankAccountMasked?: string;
   bankAccountName?: string;
+  /** หักประกันสังคมคนนี้ไหม (มีผลเมื่อร้านเปิดสวิตช์ประกันสังคม) */
+  ssoEnabled?: boolean;
+  /** อัตราภาษีหัก ณ ที่จ่าย % (โหมด % คงที่ต่อคน) */
+  withholdingTaxRate?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -114,6 +119,7 @@ export const ADJUSTMENT_LABEL: Record<AdjustmentType, string> = {
   leave: "หักลา",
   absent: "หักขาดงาน",
   late: "หักมาสาย",
+  withholding_tax: "ภาษีหัก ณ ที่จ่าย",
 };
 
 /** Adjustment types that reduce pay (bonus increases). */

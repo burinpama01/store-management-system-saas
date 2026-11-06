@@ -18,7 +18,7 @@ type ProfileRow = Database["public"]["Tables"]["employee_profiles"]["Row"];
 type AdjustmentRow = Database["public"]["Tables"]["payroll_adjustments"]["Row"];
 type HrSettingsRow = Database["public"]["Tables"]["store_hr_settings"]["Row"];
 
-function mapProfile(row: ProfileRow): EmployeeProfile {
+export function mapProfile(row: ProfileRow): EmployeeProfile {
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -45,12 +45,14 @@ function mapProfile(row: ProfileRow): EmployeeProfile {
     bankName: row.bank_name ?? undefined,
     bankAccountNo: row.bank_account_no ?? undefined,
     bankAccountName: row.bank_account_name ?? undefined,
+    ssoEnabled: row.sso_enabled ?? true,
+    withholdingTaxRate: row.withholding_tax_rate ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
+export function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
   return {
     storeId: row.store_id,
     organizationId: row.organization_id,
@@ -71,7 +73,7 @@ function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
   };
 }
 
-function mapAdjustment(row: AdjustmentRow): PayrollAdjustment {
+export function mapAdjustment(row: AdjustmentRow): PayrollAdjustment {
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -114,6 +116,8 @@ export interface UpsertProfileInput {
   otEligible: boolean;
   /** ข้อมูลสำหรับสลิป — ไม่ส่ง = ไม่แตะคอลัมน์เหล่านี้ */
   identity?: EmployeeIdentityInput;
+  /** เงินเดือนขั้นสูง: ประกันสังคม/ภาษีรายคน — ไม่ส่ง = ไม่แตะ */
+  advanced?: { ssoEnabled?: boolean; withholdingTaxRate?: number };
 }
 
 export async function upsertEmployeeProfile(input: UpsertProfileInput) {
@@ -155,6 +159,10 @@ export async function upsertEmployeeProfile(input: UpsertProfileInput) {
                 : {}),
             bank_account_name: input.identity.bankAccountName ?? null,
           }
+        : {}),
+      ...(input.advanced?.ssoEnabled !== undefined ? { sso_enabled: input.advanced.ssoEnabled } : {}),
+      ...(input.advanced?.withholdingTaxRate !== undefined
+        ? { withholding_tax_rate: input.advanced.withholdingTaxRate }
         : {}),
       updated_at: new Date().toISOString(),
     },

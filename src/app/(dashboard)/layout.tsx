@@ -18,7 +18,8 @@ import {
   CASHIER_ASSISTANT_PATH_PREFIX,
 } from "@/modules/ai-assistant/tools/back-office-access";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
-import { canUseFeature } from "@/modules/billing/types";
+import { canUseFeature, getPlanFeatures } from "@/modules/billing/types";
+import { getAdvancedPayrollSettings } from "@/modules/hr/advanced/repository";
 import {
   ANDROID_VERSION_NAME,
   isAndroidApp,
@@ -79,6 +80,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       : cashierAssistantAllowed && path.startsWith(CASHIER_ASSISTANT_PATH_PREFIX)
         ? ("accounting" as const)
         : null;
+  // สลิปของฉัน (R17, R32, R33): แสดงเมนูเฉพาะร้านที่มีแพ็ก "เงินเดือนขั้นสูง" และเปิดสวิตช์
+  const myPayslipVisible =
+    can("attendance.clock") &&
+    !!assistantBilling &&
+    getPlanFeatures(assistantBilling).advancedPayroll &&
+    (await getAdvancedPayrollSettings(storeContext.storeId)).switches.myPayslip;
   // ค่าเริ่มต้นเสียงพูดของร้าน — แต่ละเครื่องปรับทับได้เองที่หน้าตั้งค่าแจ้งเตือน
   const notificationVoiceEnabled = Boolean(currentStoreRow?.notification_voice_enabled);
   // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
@@ -102,6 +109,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
+    ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
     ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(
       storeContext && canManageQr && currentStoreRow?.buffet_enabled
