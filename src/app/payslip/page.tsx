@@ -204,7 +204,7 @@ function Payslip({
             line.payType === "daily"
               ? `ค่าจ้างพื้นฐาน (${line.payableDays} วัน)`
               : line.payType === "hourly"
-                ? `ค่าจ้างพื้นฐาน (${hoursLabel(line.totalHours)})`
+                ? `ค่าจ้างพื้นฐาน (${hoursLabel(line.regularHours)})`
                 : "ค่าจ้างพื้นฐาน (เงินเดือนตามช่วงวันที่)"
           }
           value={money(line.basePay, currency)}
@@ -234,7 +234,7 @@ function Payslip({
             )}
             {line.halfDayDeduction > 0 && (
               <Row
-                label={`หักครึ่งวัน (${line.halfDays} วัน × 50% × ${money(line.absentRatePerDay, currency)})`}
+                label={`หักครึ่งวัน (${line.halfDayDeductionDays} วัน × 50% × ${money(line.absentRatePerDay, currency)})`}
                 value={`−${money(line.halfDayDeduction, currency)}`}
               />
             )}

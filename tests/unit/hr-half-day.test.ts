@@ -227,6 +227,69 @@ describe("ตารางรายวันบนสลิปเงินเด�
   });
 });
 
+describe("ISSUE-20261105-PAY-002: มาช่วยครึ่งวันในวันหยุด ต้องไม่ถูกหักเงินเดือน", () => {
+  // 2026-09-05 = เสาร์, 2026-09-07 = จันทร์ · ทำงาน จ-ศ
+  const monthly: Partial<EmployeeProfile> = { payType: "monthly", monthlySalary: 30000, dailyRate: 0, absentPenaltyAmount: 600, workingDays: [1, 2, 3, 4, 5] };
+  const period = { periodStart: "2026-09-05", periodEnd: "2026-09-07" };
+
+  it("ครึ่งวันในวันหยุดประจำของตัวเอง ไม่หัก", () => {
+    const line = run({
+      records: [record("2026-09-05", 3), record("2026-09-07", 8)],
+      profileOver: monthly,
+      settingsOver: HALF_DAY_ON,
+      ...period,
+    });
+    expect(line.halfDays).toBe(1);
+    expect(line.halfDayDeductionDays).toBe(0);
+    expect(line.halfDayDeduction).toBe(0);
+  });
+
+  it("ครึ่งวันในวันหยุดร้าน ไม่หัก", () => {
+    const line = run({
+      records: [record("2026-09-07", 3)],
+      holidays: ["2026-09-07"],
+      profileOver: monthly,
+      settingsOver: HALF_DAY_ON,
+      ...period,
+    });
+    expect(line.halfDayDeductionDays).toBe(0);
+    expect(line.halfDayDeduction).toBe(0);
+  });
+
+  it("วันที่บันทึกลาไว้แล้ว ไม่หักครึ่งวันซ้ำ", () => {
+    const line = computePayrollLines({
+      summaries: [summary({ totalDays: 1 })],
+      records: [record("2026-09-07", 3)],
+      profiles: [profile(monthly)],
+      adjustments: [
+        {
+          id: "a1", organizationId: "org-1", storeId: "store-1", userId: "u1", employeeName: "Alice",
+          date: "2026-09-07", type: "leave", amount: 600, createdByUserId: "m1", createdAt: "",
+        },
+      ],
+      settings: settings(HALF_DAY_ON),
+      holidayDates: [],
+      ...period,
+      today: "2026-09-30",
+      timezone: TZ,
+    })[0];
+    expect(line.halfDayDeductionDays).toBe(0);
+    expect(line.halfDayDeduction).toBe(0);
+    expect(line.deductionTotal).toBe(600);
+  });
+
+  it("ครึ่งวันในวันทำงานปกติ ยังหักครึ่งวันตามเดิม", () => {
+    const line = run({
+      records: [record("2026-09-07", 3)],
+      profileOver: monthly,
+      settingsOver: HALF_DAY_ON,
+      ...period,
+    });
+    expect(line.halfDayDeductionDays).toBe(1);
+    expect(line.halfDayDeduction).toBe(300); // 0.5 × 600
+  });
+});
+
 describe("สถานะรายวันในปฏิทิน", () => {
   const base = {
     month: "2026-09",
