@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
+import { getReceiptSettings } from "@/modules/settings/repository";
+import { maskBankAccount, resolvePayslipIssuer } from "@/modules/hr/employee-identity";
+import { EMPLOYMENT_TYPE_LABEL, type EmployeeProfile } from "@/modules/hr/types";
 import {
   listAttendanceRecords,
   computePayrollSummaries,
@@ -128,7 +131,8 @@ function DailyTable({ days, timeZone }: { days: PayrollDay[]; timeZone: string }
 function Payslip({
   line,
   currency,
-  storeName,
+  issuer,
+  profile,
   dateFrom,
   dateTo,
   timeZone,
@@ -136,7 +140,8 @@ function Payslip({
 }: {
   line: PayrollLine;
   currency: string;
-  storeName: string;
+  issuer: { name: string; address?: string; taxId?: string };
+  profile?: EmployeeProfile;
   dateFrom: string;
   dateTo: string;
   timeZone: string;
@@ -155,12 +160,27 @@ function Payslip({
     <section className="mb-8 break-inside-avoid rounded-lg border border-gray-300 p-6">
       <div className="mb-4 flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-bold">{storeName}</h2>
+          <h2 className="text-lg font-bold">{issuer.name}</h2>
+          {issuer.address && <p className="text-xs text-gray-500">{issuer.address}</p>}
+          {issuer.taxId && <p className="text-xs text-gray-500">เลขประจำตัวผู้เสียภาษี {issuer.taxId}</p>}
           <p className="text-sm text-gray-500">สลิปเงินเดือน · {dateFrom} ถึง {dateTo}</p>
         </div>
         <div className="text-right">
-          <p className="font-semibold">{line.employeeName}</p>
-          <p className="text-sm text-gray-500">{PAY_TYPE_LABEL[line.payType]}</p>
+          <p className="font-semibold">{profile?.fullName || line.employeeName}</p>
+          {(profile?.employeeCode || profile?.position) && (
+            <p className="text-sm text-gray-500">
+              {[profile?.employeeCode, profile?.position].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          <p className="text-sm text-gray-500">
+            {profile ? `${EMPLOYMENT_TYPE_LABEL[profile.employmentType]} · ` : ""}
+            {PAY_TYPE_LABEL[line.payType]}
+          </p>
+          {profile?.bankAccountNo && (
+            <p className="text-xs text-gray-500">
+              โอนเข้า {profile.bankName ?? ""} {maskBankAccount(profile.bankAccountNo)}
+            </p>
+          )}
         </div>
       </div>
 
@@ -293,7 +313,7 @@ export default async function PayslipPage({
   const mode = params.mode === "summary" ? "summary" : "payslip";
   const userId = params.userId && UUID_RE.test(params.userId) ? params.userId : null;
 
-  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
+  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, receiptRes] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
     // Org-wide, then narrowed to this store's roster — same scope as /staff so the slip always
@@ -303,6 +323,7 @@ export default async function PayslipPage({
     listStoreHolidays(ctx.storeId, dateFrom, dateTo),
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
+    getReceiptSettings(ctx.storeId, ctx.organizationId),
   ]);
 
   const roster = new Set(
@@ -326,6 +347,8 @@ export default async function PayslipPage({
 
   const currency = storeRes.data?.currencyCode ?? "THB";
   const storeName = ctx.storeName;
+  const issuer = resolvePayslipIssuer(hrSettings, receiptRes.data, storeName);
+  const profileByUser = new Map((profilesRes.data ?? []).map((p) => [p.userId, p]));
   const grandTotal = lines.reduce((s, l) => s + l.netPay, 0);
 
   return (
@@ -393,7 +416,8 @@ export default async function PayslipPage({
             key={l.userId}
             line={l}
             currency={currency}
-            storeName={storeName}
+            issuer={issuer}
+            profile={profileByUser.get(l.userId)}
             dateFrom={dateFrom}
             dateTo={dateTo}
             timeZone={ctx.storeTimezone}

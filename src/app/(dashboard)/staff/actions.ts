@@ -9,7 +9,11 @@ import {
   deletePayrollAdjustment,
   createStaffMember,
   upsertStoreHrSettings,
+  updateStorePayslipIdentity,
 } from "@/modules/hr/repository";
+import { parseEmployeeIdentity } from "@/modules/hr/employee-identity";
+import { getStoreLocalDate } from "@/modules/attendance/date";
+import { logSystemEvent } from "@/modules/system/event-log";
 import type { PayType, AdjustmentType } from "@/modules/hr/types";
 import type { Role } from "@/modules/tenants/types";
 
@@ -44,7 +48,7 @@ function intInRange(raw: unknown, min: number, max: number): number | null {
 export async function saveEmployeeProfileAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.manage");
-    const { ctx } = await getStoreContext();
+    const { user, ctx } = await getStoreContext();
 
     const userId = String(formData.get("userId") ?? "");
     if (!UUID_RE.test(userId)) return { error: "พนักงานไม่ถูกต้อง" };
@@ -73,6 +77,12 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
       .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
     const otEligible = formData.get("otEligible") === "on";
 
+    const identityResult = parseEmployeeIdentity((key) => formData.get(key), {
+      today: getStoreLocalDate(ctx.storeTimezone),
+    });
+    if (identityResult.error !== null) return { error: identityResult.error };
+    const identity = identityResult.value;
+
     const result = await upsertEmployeeProfile({
       storeId: ctx.storeId,
       organizationId: ctx.organizationId,
@@ -88,10 +98,39 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
       absentPenaltyAmount,
       workingDays: [...new Set(workingDays)].sort(),
       otEligible,
+      identity,
     });
-    if (result.error) return { error: result.error.userMessage };
+    if (result.error) {
+      if (result.error.code === "23505") return { error: "รหัสพนักงานนี้มีคนใช้แล้วในสาขานี้" };
+      if (result.error.code === "23514") {
+        return { error: "ข้อมูลขัดกัน: วันออกงานต้องไม่ก่อนวันเริ่มงาน (ตรวจวันเริ่มงานที่ระบบตั้งให้ด้วย) หรือข้อความยาวเกิน" };
+      }
+      return { error: result.error.userMessage };
+    }
+
+    // ไม่บันทึกเลขบัญชี/ชื่อจริงลง log — บอกแค่ว่ามีหรือไม่มี
+    await logSystemEvent({
+      level: "info",
+      source: "hr.employee-profile",
+      action: "saveEmployeeProfileAction",
+      message: "บันทึกข้อมูลพนักงานและค่าจ้าง",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      context: {
+        employeeUserId: userId,
+        payType,
+        employmentType: identity.employmentType,
+        permanentSince: identity.permanentSince ?? null,
+        seniorityStartDate: identity.seniorityStartDate ?? null,
+        employmentEndDate: identity.employmentEndDate ?? null,
+        hasEmployeeCode: !!identity.employeeCode,
+        hasBankAccount: !!identity.bankAccountNo,
+      },
+    });
 
     revalidatePath("/staff", "page");
+    revalidatePath("/payslip", "page");
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
@@ -142,6 +181,48 @@ export async function saveHrSettingsAction(formData: FormData): Promise<{ error:
     if (result.error) return { error: result.error.userMessage };
 
     revalidatePath("/staff", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** ข้อมูลนิติบุคคลบนสลิป (R30: ผู้จัดการ/เจ้าของเท่านั้น — attendance.manage) */
+export async function savePayslipIdentityAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("attendance.manage");
+    const { user, ctx } = await getStoreContext();
+    const clean = (key: string, max: number) => {
+      const v = String(formData.get(key) ?? "").replace(/\s+/g, " ").trim();
+      return v ? v.slice(0, max) : undefined;
+    };
+    const legalName = clean("payslipLegalName", 200);
+    const address = clean("payslipAddress", 400);
+    const taxIdRaw = String(formData.get("payslipTaxId") ?? "").replace(/[\s-]/g, "");
+    if (taxIdRaw && !/^\d{13}$/.test(taxIdRaw)) return { error: "เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก" };
+
+    const result = await updateStorePayslipIdentity({
+      storeId: ctx.storeId,
+      organizationId: ctx.organizationId,
+      legalName,
+      address,
+      taxId: taxIdRaw || undefined,
+    });
+    if (result.error) return { error: result.error.userMessage };
+
+    await logSystemEvent({
+      level: "info",
+      source: "hr.payslip-identity",
+      action: "savePayslipIdentityAction",
+      message: "บันทึกข้อมูลนิติบุคคลบนสลิป",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      context: { hasLegalName: !!legalName, hasAddress: !!address, hasTaxId: !!taxIdRaw },
+    });
+
+    revalidatePath("/staff", "page");
+    revalidatePath("/payslip", "page");
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

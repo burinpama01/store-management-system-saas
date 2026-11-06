@@ -34,6 +34,7 @@ const profile = (over: Partial<EmployeeProfile> = {}): EmployeeProfile => ({
   absentPenaltyAmount: 0,
   workingDays: [0, 1, 2, 3, 4, 5, 6],
   otEligible: false,
+  employmentType: "permanent",
   createdAt: "",
   updatedAt: "",
   ...over,

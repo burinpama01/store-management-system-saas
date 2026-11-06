@@ -44,6 +44,7 @@ function profile(over: Partial<EmployeeProfile> = {}): EmployeeProfile {
     absentPenaltyAmount: 0,
     workingDays: [1, 2, 3, 4, 5],
     otEligible: true,
+    employmentType: "permanent",
     createdAt: "",
     updatedAt: "",
     ...over,
