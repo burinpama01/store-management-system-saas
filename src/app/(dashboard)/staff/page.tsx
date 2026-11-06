@@ -8,6 +8,7 @@ import {
   listStoreHolidays,
 } from "@/modules/attendance/repository";
 import { computePayrollLines } from "@/modules/hr/payroll";
+import { maskBankAccount } from "@/modules/hr/employee-identity";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { StaffManager } from "./StaffManager";
@@ -49,6 +50,11 @@ export default async function StaffPage({
   const records = (recordsRes.data ?? []).filter((r) => roster.has(r.userId));
   const summaries = computePayrollSummaries(records, null, ctx.organizationId, dateFrom, dateTo);
   const profiles = profilesRes.data ?? [];
+  // เลขบัญชีเต็มห้ามไปถึง browser (RSC payload) — ส่งแค่แบบปิดหลัก
+  const clientProfiles = profiles.map(({ bankAccountNo, ...p }) => ({
+    ...p,
+    bankAccountMasked: maskBankAccount(bankAccountNo),
+  }));
   const adjustments = adjustmentsRes.data ?? [];
   const payrollLines = computePayrollLines({
     summaries,
@@ -66,7 +72,7 @@ export default async function StaffPage({
   return (
     <StaffManager
       members={members}
-      profiles={profiles}
+      profiles={clientProfiles}
       payrollLines={payrollLines}
       adjustments={adjustments}
       hrSettings={hrSettings}

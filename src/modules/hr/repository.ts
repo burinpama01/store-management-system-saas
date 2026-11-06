@@ -3,6 +3,7 @@ import {
   createSupabaseServiceClient,
 } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
+import type { EmployeeIdentityInput } from "./employee-identity";
 import type {
   EmployeeProfile,
   PayrollAdjustment,
@@ -34,6 +35,16 @@ function mapProfile(row: ProfileRow): EmployeeProfile {
     absentPenaltyAmount: row.absent_penalty_amount,
     workingDays: row.working_days ?? [],
     otEligible: row.ot_eligible,
+    employeeCode: row.employee_code ?? undefined,
+    fullName: row.full_name ?? undefined,
+    position: row.position ?? undefined,
+    employmentType: row.employment_type ?? "permanent",
+    permanentSince: row.permanent_since ?? undefined,
+    seniorityStartDate: row.seniority_start_date ?? undefined,
+    employmentEndDate: row.employment_end_date ?? undefined,
+    bankName: row.bank_name ?? undefined,
+    bankAccountNo: row.bank_account_no ?? undefined,
+    bankAccountName: row.bank_account_name ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -52,6 +63,9 @@ function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
     halfDayMaxHours: row.half_day_max_hours ?? 0,
     backdatedRightsPerMonth: row.backdated_rights_per_month,
     workingDays: row.working_days ?? [0, 1, 2, 3, 4, 5, 6],
+    payslipLegalName: row.payslip_legal_name ?? undefined,
+    payslipAddress: row.payslip_address ?? undefined,
+    payslipTaxId: row.payslip_tax_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -98,6 +112,8 @@ export interface UpsertProfileInput {
   absentPenaltyAmount: number;
   workingDays: number[];
   otEligible: boolean;
+  /** ข้อมูลสำหรับสลิป — ไม่ส่ง = ไม่แตะคอลัมน์เหล่านี้ */
+  identity?: EmployeeIdentityInput;
 }
 
 export async function upsertEmployeeProfile(input: UpsertProfileInput) {
@@ -118,6 +134,28 @@ export async function upsertEmployeeProfile(input: UpsertProfileInput) {
       absent_penalty_amount: input.absentPenaltyAmount,
       working_days: input.workingDays,
       ot_eligible: input.otEligible,
+      ...(input.identity
+        ? {
+            employee_code: input.identity.employeeCode ?? null,
+            full_name: input.identity.fullName ?? null,
+            position: input.identity.position ?? null,
+            employment_type: input.identity.employmentType,
+            permanent_since: input.identity.permanentSince ?? null,
+            // ว่าง = ไม่แตะ: ระบบตั้งให้จากการลงเวลาครั้งแรก (trigger) ไม่ควรถูกล้างด้วยฟอร์มว่าง
+            ...(input.identity.seniorityStartDate
+              ? { seniority_start_date: input.identity.seniorityStartDate }
+              : {}),
+            employment_end_date: input.identity.employmentEndDate ?? null,
+            bank_name: input.identity.bankName ?? null,
+            // ฟอร์มไม่มีเลขเต็ม (ไม่ส่งไป browser) → ว่าง = คงเลขเดิม เว้นแต่ติ๊กลบ
+            ...(input.identity.bankAccountNo
+              ? { bank_account_no: input.identity.bankAccountNo }
+              : input.identity.clearBankAccount
+                ? { bank_account_no: null }
+                : {}),
+            bank_account_name: input.identity.bankAccountName ?? null,
+          }
+        : {}),
       updated_at: new Date().toISOString(),
     },
     { onConflict: "store_id,user_id" },
@@ -174,6 +212,30 @@ export async function upsertStoreHrSettings(input: UpsertHrSettingsInput) {
       absent_penalty_per_day: input.absentPenaltyPerDay,
       half_day_max_hours: input.halfDayMaxHours,
       backdated_rights_per_month: input.backdatedRightsPerMonth,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" },
+  );
+  if (error) return { ok: false, error: mapError(error) };
+  return { ok: true, error: null };
+}
+
+/** ข้อมูลนิติบุคคลบนสลิป — ว่าง = กลับไปใช้ข้อมูลจากตั้งค่าใบเสร็จ */
+export async function updateStorePayslipIdentity(input: {
+  storeId: string;
+  organizationId: string;
+  legalName?: string;
+  address?: string;
+  taxId?: string;
+}) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("store_hr_settings").upsert(
+    {
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      payslip_legal_name: input.legalName ?? null,
+      payslip_address: input.address ?? null,
+      payslip_tax_id: input.taxId ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "store_id" },
