@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CustomerNowPlayingVideo } from "@/modules/music-requests/types";
 import { parsePlaybackBroadcast, toCustomerNowPlayingVideo } from "@/modules/music-requests/customer-screen";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
+import { useWakeLock } from "@/shared/hooks/useWakeLock";
 
 // จอลูกค้า (คาราโอเกะ): วิดีโอเดียวกับจอร้าน เล่นตรงตำแหน่งเดียวกันโดยประมาณ
 // - ตำแหน่งคิดจาก elapsedSeconds ที่เซิร์ฟเวอร์คำนวณ + เวลาที่ผ่านไปบนเครื่องนี้ (performance.now)
@@ -103,6 +104,8 @@ export function CustomerScreen({
   const [muted, setMuted] = useState(true);
   const [failed, setFailed] = useState(false);
   const [apiError, setApiError] = useState(false);
+  // เปิดจอเนื้อร้องอยู่ = กันจอมือถือดับ
+  useWakeLock(open);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);

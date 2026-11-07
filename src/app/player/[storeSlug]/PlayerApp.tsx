@@ -19,6 +19,7 @@ import {
   type PlayerBaseTrack,
   type PlayerSearchResult,
 } from "./actions";
+import { isWakeLockSupported, useWakeLock } from "@/shared/hooks/useWakeLock";
 
 interface YTPlayer {
   loadVideoById: (id: string) => void;
@@ -379,6 +380,9 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   }, [started, refreshState]);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // กันจอ iPad/มือถือดับระหว่างเปิดเพลง (จอดับ = Safari หยุดเล่นเพลง)
+  useWakeLock(started);
+  const [noWakeLock, setNoWakeLock] = useState(false);
 
   // กด "/" เพื่อไปช่องค้นหา (แบบ YouTube) — ไม่แย่งตอนกำลังพิมพ์ในช่องอื่น
   useEffect(() => {
@@ -415,7 +419,10 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
         <h1 className="mt-6 text-2xl font-bold">{storeName}</h1>
         <p className="mt-2 text-sm text-white/60">เครื่องเล่นเพลงอัตโนมัติ</p>
         <button
-          onClick={() => setStarted(true)}
+          onClick={() => {
+            setNoWakeLock(!isWakeLockSupported());
+            setStarted(true);
+          }}
           className="mt-8 rounded-full bg-white px-10 py-3.5 text-lg font-bold text-black hover:bg-white/90 active:bg-white/80"
         >
           ▶ เริ่มเล่น
@@ -479,6 +486,12 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
         </a>
       </header>
 
+      {noWakeLock && (
+        <div className="mx-4 mb-2 rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-200">
+          เครื่องนี้กันจอดับเองไม่ได้ — ตั้งค่า iPad/มือถือ: จอภาพและความสว่าง → ล็อกอัตโนมัติ → ไม่ใช้
+          (จอดับแล้วเพลงจะหยุด)
+        </div>
+      )}
       {error && (
         <div className="mx-4 mb-2 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-300" role="alert">
           {error}
