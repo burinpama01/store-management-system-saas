@@ -32,6 +32,8 @@ export interface MusicPlayerSettings {
    * video never ends, so a waiting request would otherwise never play.
    */
   interruptBaseOnRequest: boolean;
+  /** ให้ลูกค้าดูวิดีโอ/เนื้อร้องของเพลงที่กำลังเล่นบนมือถือ (คาราโอเกะ) — ค่าเริ่มต้นปิด */
+  customerScreenEnabled: boolean;
   maxDurationSeconds: number;
   basePlaylist: PlaylistTrack[];
   licensingAcknowledgedAt?: string;
@@ -46,6 +48,15 @@ export interface NowPlaying {
   title?: string;
   durationSeconds?: number;
   startedAt: string;
+}
+
+/** เพลงที่กำลังเล่น สำหรับจอลูกค้า (คาราโอเกะ) — ส่งเวลาที่เล่นไปแล้วจากฝั่งเซิร์ฟเวอร์ ไม่พึ่งนาฬิกามือถือ */
+export interface CustomerNowPlayingVideo {
+  videoId: string;
+  title: string;
+  /** วินาทีที่เพลงเล่นไปแล้ว ณ เวลาที่เซิร์ฟเวอร์ตอบ */
+  elapsedSeconds: number;
+  durationSeconds: number | null;
 }
 
 /** Statuses surfaced to customers on the public QR queue. */

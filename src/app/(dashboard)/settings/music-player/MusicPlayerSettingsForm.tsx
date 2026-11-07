@@ -66,6 +66,24 @@ export function MusicPlayerSettingsForm({ settings, storeSlug, canEdit }: Props)
             </span>
           </span>
         </label>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            name="customerScreenEnabled"
+            value="1"
+            defaultChecked={settings.customerScreenEnabled}
+            disabled={!canEdit}
+            className="mt-1 rounded border-gray-300"
+          />
+          <span className="text-sm">
+            <span className="font-medium">ให้ลูกค้าดูวิดีโอ/เนื้อร้องบนมือถือ (คาราโอเกะ)</span>
+            <span className="mt-0.5 block text-xs text-[var(--muted)]">
+              หน้าขอเพลงของลูกค้าจะมีปุ่ม &quot;🎤 ดูเนื้อร้องบนมือถือ&quot; เปิดวิดีโอเดียวกับจอร้าน
+              เล่นตรงตำแหน่งเดียวกัน (ต่างกันราว 1–3 วินาที) · ปิดเสียงเป็นค่าเริ่มต้น
+              เพราะเสียงมาจากลำโพงร้าน · ถ้าร้านกดหยุดหรือเลื่อนเพลงกลางทาง มือถือจะไม่ตาม
+            </span>
+          </span>
+        </label>
         <div className="max-w-xs">
           <label className="field-label" htmlFor="maxDurationSeconds">ความยาวเพลงสูงสุด (วินาที)</label>
           <input id="maxDurationSeconds" type="number" name="maxDurationSeconds" min={60} max={1800} defaultValue={settings.maxDurationSeconds} disabled={!canEdit} className="w-full rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-2 text-sm" />
