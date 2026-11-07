@@ -80,6 +80,17 @@ export function expectedPosition(
   return pos;
 }
 
+/**
+ * เพลงบนมือถือเล่นจบแล้ว แต่จอร้านยังไม่เปลี่ยนเพลง (ร้านช้ากว่า / มีโฆษณา / เครื่องร้านค้าง)
+ * → ห้ามเล่นซ้ำหรือเลื่อนกลับไปท้ายเพลงวนไปเรื่อย ๆ ให้รอเพลงถัดไป
+ */
+export function shouldHoldAfterEnd(endedVideoId: string | null, videoId: string): boolean {
+  return endedVideoId !== null && endedVideoId === videoId;
+}
+
+/** เรียกโหลดสถานะตอนเพลงจบได้ไม่ถี่กว่านี้ (กันยิงเซิร์ฟเวอร์รัวเมื่อเพลงจบซ้ำ ๆ) */
+export const ENDED_RELOAD_MIN_INTERVAL_MS = 10_000;
+
 export function CustomerScreen({
   storeId,
   video: polledVideo,
@@ -110,6 +121,9 @@ export function CustomerScreen({
   const playerRef = useRef<YTPlayer | null>(null);
   const readyRef = useRef(false);
   const loadedIdRef = useRef<string | null>(null);
+  // เพลงที่มือถือเล่นจบไปแล้ว — ค้างไว้จนร้านเปลี่ยนเป็นเพลงอื่น (กันลูปเล่นซ้ำ/seek ท้ายเพลง)
+  const endedIdRef = useRef<string | null>(null);
+  const lastEndedReloadRef = useRef(-Infinity);
   const videoRef = useRef(video);
   const receivedRef = useRef(receivedAtMs);
   const onEndedRef = useRef(onEnded);
@@ -177,7 +191,12 @@ export function CustomerScreen({
           },
           onStateChange: (e: { data: number }) => {
             const YTns = ytWindow().YT;
-            if (YTns && e.data === YTns.PlayerState.ENDED) onEndedRef.current();
+            if (!YTns || e.data !== YTns.PlayerState.ENDED) return;
+            endedIdRef.current = loadedIdRef.current;
+            const now = performance.now();
+            if (now - lastEndedReloadRef.current < ENDED_RELOAD_MIN_INTERVAL_MS) return;
+            lastEndedReloadRef.current = now;
+            onEndedRef.current();
           },
           // คลิปที่เจ้าของปิดการฝัง / ถูกลบ
           onError: () => setFailed(true),
@@ -192,6 +211,7 @@ export function CustomerScreen({
       playerRef.current = null;
       readyRef.current = false;
       loadedIdRef.current = null;
+      endedIdRef.current = null;
       mount.remove();
     };
   }, [open]);
@@ -203,11 +223,14 @@ export function CustomerScreen({
     const target = expectedPosition(video, receivedAtMs, performance.now());
     if (loadedIdRef.current !== video.videoId) {
       loadedIdRef.current = video.videoId;
+      endedIdRef.current = null;
       setFailed(false);
       p.loadVideoById({ videoId: video.videoId, startSeconds: Math.floor(target) });
       if (video.paused) p.pauseVideo();
       return;
     }
+    // จบไปแล้วบนมือถือ — รอจอร้านเปลี่ยนเพลง (ไม่ seek / ไม่ playVideo ซ้ำ)
+    if (shouldHoldAfterEnd(endedIdRef.current, video.videoId)) return;
     const current = p.getCurrentTime?.();
     if (video.paused) {
       // ร้านกดหยุด → หยุดตรงตำแหน่งเดียวกับร้าน
