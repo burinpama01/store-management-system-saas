@@ -38,6 +38,9 @@ async function getStoreContext() {
 export interface PlayerQueueItem {
   id: string;
   title: string;
+  /** สำหรับรูปปกในรายการ "ถัดไป" (หน้าเครื่องเล่นแบบ YouTube) */
+  videoId: string;
+  durationSeconds?: number;
   isDonation: boolean;
   playNow: boolean;
 }
@@ -74,6 +77,8 @@ export async function getPlayerStateAction(): Promise<{
     const upcoming = ordered.map((q) => ({
       id: q.id,
       title: q.title,
+      videoId: q.youtubeVideoId,
+      durationSeconds: q.durationSeconds,
       isDonation: q.donationStatus === "verified",
       playNow: Boolean(q.playNow),
     }));
