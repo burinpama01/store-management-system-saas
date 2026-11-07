@@ -63,6 +63,8 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   const [screenVideo, setScreenVideo] = useState<CustomerNowPlayingVideo | null>(null);
   const [screenEnabled, setScreenEnabled] = useState(false);
   const [screenReceivedAt, setScreenReceivedAt] = useState(0);
+  // นาฬิกา server − นาฬิกาเครื่อง (ใช้คำนวณตำแหน่งตอนได้ broadcast ว่าร้านกดหยุด/เลื่อนเพลง)
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [selected, setSelected] = useState<YouTubeSearchResult | null>(null);
@@ -96,6 +98,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       setScreenEnabled(Boolean(res.customerScreenEnabled));
       setScreenVideo(res.nowPlayingVideo ?? null);
       setScreenReceivedAt(performance.now());
+      if (typeof res.serverNowMs === "number") setClockOffsetMs(res.serverNowMs - Date.now());
       setDonationEnabled(Boolean(res.donationEnabled));
       // 0 is a valid price (free tier) — don't treat it as "missing".
       if (typeof res.minDonation === "number") setMinDonation(res.minDonation);
@@ -357,7 +360,13 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       )}
 
       {screenEnabled && (
-        <CustomerScreen video={screenVideo} receivedAtMs={screenReceivedAt} onEnded={() => void load()} />
+        <CustomerScreen
+          storeId={storeId}
+          video={screenVideo}
+          receivedAtMs={screenReceivedAt}
+          clockOffsetMs={clockOffsetMs}
+          onEnded={() => void load()}
+        />
       )}
 
       {eligibility.canSubmitRequest ? (

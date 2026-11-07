@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CustomerNowPlayingVideo } from "@/modules/music-requests/types";
+import { parsePlaybackBroadcast, toCustomerNowPlayingVideo } from "@/modules/music-requests/customer-screen";
+import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 
 // จอลูกค้า (คาราโอเกะ): วิดีโอเดียวกับจอร้าน เล่นตรงตำแหน่งเดียวกันโดยประมาณ
 // - ตำแหน่งคิดจาก elapsedSeconds ที่เซิร์ฟเวอร์คำนวณ + เวลาที่ผ่านไปบนเครื่องนี้ (performance.now)
@@ -17,11 +19,13 @@ interface YTPlayer {
   mute: () => void;
   unMute: () => void;
   playVideo: () => void;
+  pauseVideo: () => void;
+  getPlayerState?: () => number;
   destroy?: () => void;
 }
 interface YTNamespace {
   Player: new (el: HTMLElement, opts: unknown) => YTPlayer;
-  PlayerState: { ENDED: number };
+  PlayerState: { ENDED: number; PLAYING: number; BUFFERING: number };
 }
 // ไม่ใช้ declare global — หน้าเครื่องเล่นของร้านประกาศชนิด window.YT ของตัวเองไว้แล้ว
 type YTWindow = Window & { YT?: YTNamespace; onYouTubeIframeAPIReady?: () => void };
@@ -63,11 +67,12 @@ function loadYouTubeApi(): Promise<YTNamespace> {
 
 /** ตำแหน่งที่ควรเล่น ณ ตอนนี้ (วินาที) — ไม่เกินความยาวเพลง */
 export function expectedPosition(
-  video: Pick<CustomerNowPlayingVideo, "elapsedSeconds" | "durationSeconds">,
+  video: Pick<CustomerNowPlayingVideo, "elapsedSeconds" | "durationSeconds"> & { paused?: boolean },
   receivedAtMs: number,
   nowMs: number,
 ): number {
-  const pos = video.elapsedSeconds + Math.max(0, nowMs - receivedAtMs) / 1000;
+  // ร้านกดหยุดอยู่ = ตำแหน่งไม่เดิน
+  const pos = video.paused ? video.elapsedSeconds : video.elapsedSeconds + Math.max(0, nowMs - receivedAtMs) / 1000;
   if (video.durationSeconds && video.durationSeconds > 0) {
     return Math.min(pos, Math.max(0, video.durationSeconds - 1));
   }
@@ -75,15 +80,25 @@ export function expectedPosition(
 }
 
 export function CustomerScreen({
-  video,
-  receivedAtMs,
+  storeId,
+  video: polledVideo,
+  receivedAtMs: polledAt,
+  clockOffsetMs,
   onEnded,
 }: {
+  storeId: string;
   video: CustomerNowPlayingVideo | null;
   /** performance.now() ตอนได้รับ video จากเซิร์ฟเวอร์ */
   receivedAtMs: number;
+  /** นาฬิกา server − นาฬิกาเครื่องนี้ */
+  clockOffsetMs: number;
   onEnded: () => void;
 }) {
+  // สถานะสดจาก broadcast (ร้านกดหยุด/เล่นต่อ/เลื่อน/เปลี่ยนเพลง) ใช้แทนค่าจากรอบ poll ถ้าใหม่กว่า
+  const [live, setLive] = useState<{ video: CustomerNowPlayingVideo | null; at: number } | null>(null);
+  const useLive = live !== null && live.at > polledAt;
+  const video = useLive ? live.video : polledVideo;
+  const receivedAtMs = useLive ? live.at : polledAt;
   const [open, setOpen] = useState(false);
   const [muted, setMuted] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -101,6 +116,31 @@ export function CustomerScreen({
     receivedRef.current = receivedAtMs;
     onEndedRef.current = onEnded;
   }, [video, receivedAtMs, onEnded]);
+
+  const clockOffsetRef = useRef(clockOffsetMs);
+  useEffect(() => {
+    clockOffsetRef.current = clockOffsetMs;
+  }, [clockOffsetMs]);
+
+  // ฟัง Realtime broadcast เฉพาะตอนเปิดจอ (มือถือที่ไม่ได้ดูไม่ต้องต่อ realtime)
+  useEffect(() => {
+    if (!open) return;
+    const supabase = getSupabaseBrowserClient();
+    const channel = supabase
+      .channel(`music-playback:${storeId}`, { config: { private: true } })
+      .on("broadcast", { event: "playback" }, (msg: { payload?: unknown }) => {
+        const snap = parsePlaybackBroadcast(msg.payload);
+        if (!snap) return;
+        setLive({
+          video: toCustomerNowPlayingVideo(snap, Date.now() + clockOffsetRef.current),
+          at: performance.now(),
+        });
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [open, storeId]);
 
   // สร้างตัวเล่นเมื่อกดเปิดจอ (หลัง user gesture) และทำลายเมื่อปิด
   useEffect(() => {
@@ -129,7 +169,8 @@ export function CustomerScreen({
             readyRef.current = true;
             loadedIdRef.current = videoRef.current?.videoId ?? null;
             playerRef.current?.mute();
-            playerRef.current?.playVideo();
+            if (videoRef.current?.paused) playerRef.current?.pauseVideo();
+            else playerRef.current?.playVideo();
           },
           onStateChange: (e: { data: number }) => {
             const YTns = ytWindow().YT;
@@ -161,12 +202,23 @@ export function CustomerScreen({
       loadedIdRef.current = video.videoId;
       setFailed(false);
       p.loadVideoById({ videoId: video.videoId, startSeconds: Math.floor(target) });
+      if (video.paused) p.pauseVideo();
       return;
     }
     const current = p.getCurrentTime?.();
+    if (video.paused) {
+      // ร้านกดหยุด → หยุดตรงตำแหน่งเดียวกับร้าน
+      p.pauseVideo();
+      if (typeof current === "number" && Math.abs(current - target) > 1) p.seekTo(target, true);
+      return;
+    }
     if (typeof current === "number" && Math.abs(current - target) > RESYNC_THRESHOLD_SECONDS) {
       p.seekTo(target, true);
     }
+    // เล่นต่อเฉพาะเมื่อยังไม่ได้เล่นอยู่ — เรียก playVideo ซ้ำทุกรอบทำให้ iOS กระตุก/โหลดใหม่ได้
+    const YTns = ytWindow().YT;
+    const state = p.getPlayerState?.();
+    if (YTns && state !== YTns.PlayerState.PLAYING && state !== YTns.PlayerState.BUFFERING) p.playVideo();
   }, [open, video, receivedAtMs]);
 
   function toggleMute() {
@@ -223,7 +275,7 @@ export function CustomerScreen({
         >
           {muted ? "🔇 แตะเพื่อเปิดเสียง" : "🔊 ปิดเสียง"}
         </button>
-        <span className="min-w-0 flex-1 truncate">ตรงกับจอร้าน (อาจช้ากว่า 1–3 วินาที)</span>
+        <span className="min-w-0 flex-1 truncate">{video?.paused ? "⏸ ร้านหยุดเพลงไว้" : "ตรงกับจอร้าน (อาจช้ากว่า 1–3 วินาที)"}</span>
         <button
           type="button"
           onClick={() => {

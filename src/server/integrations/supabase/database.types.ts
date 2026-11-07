@@ -3850,6 +3850,9 @@ export interface Database {
         Row: {
           store_id: string;
           music_request_id: string | null;
+          playback_state: string;
+          position_at: string | null;
+          position_seconds: number | null;
           source: "request" | "base";
           youtube_video_id: string | null;
           title: string | null;
@@ -3862,6 +3865,9 @@ export interface Database {
         Insert: {
           store_id: string;
           music_request_id?: string | null;
+          playback_state?: string;
+          position_at?: string | null;
+          position_seconds?: number | null;
           source?: "request" | "base";
           youtube_video_id?: string | null;
           title?: string | null;
@@ -3873,6 +3879,9 @@ export interface Database {
         };
         Update: {
           music_request_id?: string | null;
+          playback_state?: string;
+          position_at?: string | null;
+          position_seconds?: number | null;
           source?: "request" | "base";
           youtube_video_id?: string | null;
           title?: string | null;

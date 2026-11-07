@@ -456,6 +456,9 @@ export function mapNowPlaying(row: NowPlayingRow): NowPlaying {
     title: row.title ?? undefined,
     durationSeconds: row.duration_seconds ?? undefined,
     startedAt: row.started_at,
+    playbackState: row.playback_state === "paused" ? "paused" : "playing",
+    positionSeconds: row.position_seconds ?? undefined,
+    positionAt: row.position_at ?? undefined,
   };
 }
 
@@ -468,6 +471,30 @@ export async function getNowPlaying(storeId: string) {
     .maybeSingle();
   if (error) return { data: null, error: mapError(error) };
   return { data: data ? mapNowPlaying(data) : null, error: null };
+}
+
+/**
+ * เครื่องเล่นของร้านรายงานสถานะจริง (เล่น/หยุด + ตำแหน่ง) — ใช้ให้จอลูกค้าตามตอนกดหยุด/เลื่อนเพลง
+ * อัปเดตเฉพาะเมื่อยังเป็นเพลงเดียวกัน (กันรายงานค้างของเพลงก่อนหน้าทับเพลงใหม่)
+ * trigger ใน DB จะ broadcast ไปหัวข้อ music-playback:<store_id> ให้เอง
+ */
+export async function reportNowPlayingPlayback(
+  storeId: string,
+  input: { videoId: string; state: "playing" | "paused"; positionSeconds: number },
+) {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("store_now_playing")
+    .update({
+      playback_state: input.state,
+      position_seconds: Math.round(input.positionSeconds * 100) / 100,
+      position_at: new Date().toISOString(),
+    })
+    .eq("store_id", storeId)
+    .eq("youtube_video_id", input.videoId)
+    .select("store_id");
+  if (error) return { updated: false, error: mapError(error) };
+  return { updated: (data ?? []).length > 0, error: null };
 }
 
 /** Requests eligible to play: have a YouTube id and are queued (not yet played). */
