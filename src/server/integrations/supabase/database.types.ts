@@ -3810,6 +3810,7 @@ export interface Database {
           min_donation: number;
           play_now_price: number;
           interrupt_base_on_request: boolean;
+          customer_screen_enabled: boolean;
           max_duration_seconds: number;
           base_playlist: Json;
           licensing_acknowledged_at: string | null;
@@ -3824,6 +3825,7 @@ export interface Database {
           min_donation?: number;
           play_now_price?: number;
           interrupt_base_on_request?: boolean;
+          customer_screen_enabled?: boolean;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;
@@ -3836,6 +3838,7 @@ export interface Database {
           min_donation?: number;
           play_now_price?: number;
           interrupt_base_on_request?: boolean;
+          customer_screen_enabled?: boolean;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;

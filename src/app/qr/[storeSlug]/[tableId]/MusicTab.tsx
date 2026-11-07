@@ -21,6 +21,8 @@ import {
 } from "@/modules/music-requests/types";
 import type { YouTubeSearchResult } from "@/modules/music-requests/youtube";
 import type { QrMusicEligibility } from "@/modules/music-requests/gates";
+import { CustomerScreen } from "./CustomerScreen";
+import type { CustomerNowPlayingVideo } from "@/modules/music-requests/types";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -57,6 +59,10 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   const [playedTracks, setPlayedTracks] = useState<PlayedTrack[]>([]);
   const [canReplay, setCanReplay] = useState(false);
   const [nowPlaying, setNowPlaying] = useState<string | null>(null);
+  // จอลูกค้า (คาราโอเกะ) — มีค่าเฉพาะร้านที่เปิดฟีเจอร์
+  const [screenVideo, setScreenVideo] = useState<CustomerNowPlayingVideo | null>(null);
+  const [screenEnabled, setScreenEnabled] = useState(false);
+  const [screenReceivedAt, setScreenReceivedAt] = useState(0);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [selected, setSelected] = useState<YouTubeSearchResult | null>(null);
@@ -87,6 +93,9 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
     if (!res.error) {
       setQueue(res.queue);
       setNowPlaying(res.nowPlayingTitle ?? null);
+      setScreenEnabled(Boolean(res.customerScreenEnabled));
+      setScreenVideo(res.nowPlayingVideo ?? null);
+      setScreenReceivedAt(performance.now());
       setDonationEnabled(Boolean(res.donationEnabled));
       // 0 is a valid price (free tier) — don't treat it as "missing".
       if (typeof res.minDonation === "number") setMinDonation(res.minDonation);
@@ -345,6 +354,10 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
           <p className="text-xs text-violet-500">กำลังเล่น</p>
           <p className="truncate text-sm font-semibold text-violet-900">🎵 {nowPlaying}</p>
         </div>
+      )}
+
+      {screenEnabled && (
+        <CustomerScreen video={screenVideo} receivedAtMs={screenReceivedAt} onEnded={() => void load()} />
       )}
 
       {eligibility.canSubmitRequest ? (
