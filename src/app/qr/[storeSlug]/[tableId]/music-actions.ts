@@ -37,7 +37,8 @@ import {
   verifyMusicPaymentToken,
 } from "@/modules/music-requests/payment-token";
 import type { BeamQrForPos } from "@/modules/payments/types";
-import type { CustomerNowPlayingVideo, NowPlaying } from "@/modules/music-requests/types";
+import type { CustomerNowPlayingVideo } from "@/modules/music-requests/types";
+import { toCustomerNowPlayingVideo } from "@/modules/music-requests/customer-screen";
 
 export interface MusicTrackInput {
   videoId: string;
@@ -146,24 +147,6 @@ async function resolveMusicContext(
   return { ok: true, ctx: { organizationId: store.organization_id, eligibility, ...playerSettings } };
 }
 
-const YT_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
-
-function toCustomerNowPlayingVideo(
-  np: NowPlaying | null,
-  now: number,
-): CustomerNowPlayingVideo | null {
-  if (!np?.youtubeVideoId || !YT_ID_RE.test(np.youtubeVideoId)) return null;
-  const started = Date.parse(np.startedAt);
-  const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 1000) : 0;
-  const duration = np.durationSeconds && np.durationSeconds > 0 ? np.durationSeconds : null;
-  return {
-    videoId: np.youtubeVideoId,
-    title: np.title ?? "",
-    elapsedSeconds: Math.round(elapsed * 10) / 10,
-    durationSeconds: duration,
-  };
-}
-
 export async function listMusicQueueAction(
   storeId: string,
   tableId: string | null,
@@ -174,6 +157,8 @@ export async function listMusicQueueAction(
   nowPlayingTitle?: string | null;
   /** มีค่าเฉพาะร้านที่เปิดจอลูกค้า */
   nowPlayingVideo?: CustomerNowPlayingVideo | null;
+  /** นาฬิกาฝั่ง server ตอนตอบ — มือถือใช้ชดเชยนาฬิกาเครื่องตอนได้ broadcast */
+  serverNowMs?: number;
   customerScreenEnabled?: boolean;
   donationEnabled?: boolean;
   minDonation?: number;
@@ -192,6 +177,7 @@ export async function listMusicQueueAction(
   }
 
   const [res, np] = await Promise.all([listPublicMusicQueue(storeId), getNowPlaying(storeId)]);
+  const serverNow = nowMs();
   if (res.error) return { queue: [], expired: false, error: res.error.userMessage };
   // The now-playing track is shown in its own banner — don't duplicate it in the list.
   const nowId = np.data?.musicRequestId ?? null;
@@ -199,7 +185,23 @@ export async function listMusicQueueAction(
     queue: nowId ? res.data.filter((q) => q.id !== nowId) : res.data,
     expired: false,
     nowPlayingTitle: np.data?.title ?? null,
-    nowPlayingVideo: customerScreenEnabled ? toCustomerNowPlayingVideo(np.data, nowMs()) : null,
+    nowPlayingVideo: customerScreenEnabled
+      ? toCustomerNowPlayingVideo(
+          np.data
+            ? {
+                videoId: np.data.youtubeVideoId,
+                title: np.data.title,
+                durationSeconds: np.data.durationSeconds,
+                startedAt: np.data.startedAt,
+                state: np.data.playbackState,
+                positionSeconds: np.data.positionSeconds,
+                positionAt: np.data.positionAt,
+              }
+            : null,
+          serverNow,
+        )
+      : null,
+    serverNowMs: customerScreenEnabled ? serverNow : undefined,
     customerScreenEnabled,
     donationEnabled,
     minDonation,

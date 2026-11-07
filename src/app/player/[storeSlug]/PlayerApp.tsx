@@ -11,6 +11,7 @@ import {
   playBaseTrackAction,
   removeQueueItemAction,
   getPlayHistoryAction,
+  reportPlaybackAction,
   searchPlayerMusicAction,
   addStoreSongAction,
   removeStoreSongAction,
@@ -18,17 +19,19 @@ import {
   type PlayerBaseTrack,
   type PlayerSearchResult,
 } from "./actions";
+import { isWakeLockSupported, useWakeLock } from "@/shared/hooks/useWakeLock";
 
 interface YTPlayer {
   loadVideoById: (id: string) => void;
   playVideo: () => void;
   getDuration?: () => number;
   getCurrentTime?: () => number;
+  getVideoData?: () => { video_id?: string };
   destroy?: () => void;
 }
 interface YTNamespace {
   Player: new (el: string | HTMLElement, opts: unknown) => YTPlayer;
-  PlayerState: { ENDED: number };
+  PlayerState: { ENDED: number; PLAYING: number; PAUSED: number };
 }
 declare global {
   interface Window {
@@ -65,6 +68,9 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const advancingRef = useRef(false);
   const atEndPollsRef = useRef(0);
   const advanceRef = useRef<(opts?: { interrupted?: boolean }) => Promise<void>>(async () => {});
+  // จอลูกค้า: รายงานตอนกดหยุด/เล่นต่อ/เลื่อนเพลง (เฉพาะร้านที่เปิดจอลูกค้า)
+  const customerScreenRef = useRef(false);
+  const lastReportRef = useRef<{ videoId: string; state: "playing" | "paused"; pos: number; at: number } | null>(null);
 
   /**
    * `interrupted` = the current track is being cut off mid-play (a request jumping
@@ -141,6 +147,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     setUpcoming(res.upcoming);
     setBasePlaylist(res.basePlaylist);
     setInterruptBase(res.interruptBaseOnRequest);
+    customerScreenRef.current = res.customerScreenEnabled;
     // A "play now" donation — or the store's cut-in setting — interrupts at once.
     if (res.interrupt) void advanceRef.current({ interrupted: true });
     else if (!playingRef.current && res.upcoming.length > 0) void advanceRef.current();
@@ -284,6 +291,33 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     })();
   }
 
+  /**
+   * แจ้งเซิร์ฟเวอร์ตอนร้านกดหยุด/เล่นต่อ/เลื่อนเพลง (YouTube ส่ง PLAYING หลังเลื่อนเพลงเสมอ)
+   * ข้ามถ้าเป็นการเล่นต่อเนื่องตามปกติ (สถานะเดิมและตำแหน่งตรงกับที่คาดไว้) — ไม่ยิงเซิร์ฟเวอร์ถี่
+   */
+  function reportPlayback(state: "playing" | "paused") {
+    if (!customerScreenRef.current) return;
+    const p = playerRef.current;
+    const videoId = p?.getVideoData?.().video_id;
+    const pos = p?.getCurrentTime?.();
+    if (!videoId || !VIDEO_ID_RE.test(videoId) || typeof pos !== "number" || !Number.isFinite(pos)) return;
+    const at = performance.now();
+    const last = lastReportRef.current;
+    if (last && last.videoId === videoId && last.state === state) {
+      const expected = state === "playing" ? last.pos + (at - last.at) / 1000 : last.pos;
+      if (Math.abs(expected - pos) < 2) return;
+    }
+    // เพลงเพิ่งเริ่ม (ยังไม่เคยรายงาน) และเล่นจากต้นเพลง = ตรงกับที่เซิร์ฟเวอร์รู้อยู่แล้ว
+    if (!last || last.videoId !== videoId) {
+      if (state === "playing" && pos < 3) {
+        lastReportRef.current = { videoId, state, pos, at };
+        return;
+      }
+    }
+    lastReportRef.current = { videoId, state, pos, at };
+    void reportPlaybackAction({ videoId, state, positionSeconds: pos });
+  }
+
   // Create the YouTube player after the initial user gesture (autoplay policy).
   useEffect(() => {
     if (!started) return;
@@ -302,6 +336,9 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
           },
           onStateChange: (e: { data: number }) => {
             if (window.YT && e.data === window.YT.PlayerState.ENDED) void advanceRef.current();
+            if (window.YT && (e.data === window.YT.PlayerState.PLAYING || e.data === window.YT.PlayerState.PAUSED)) {
+              reportPlayback(e.data === window.YT.PlayerState.PLAYING ? "playing" : "paused");
+            }
           },
           // Skip videos YouTube refuses to play (bad id / embed disabled / removed).
           onError: () => {
@@ -343,6 +380,9 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   }, [started, refreshState]);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // กันจอ iPad/มือถือดับระหว่างเปิดเพลง (จอดับ = Safari หยุดเล่นเพลง)
+  useWakeLock(started);
+  const [noWakeLock, setNoWakeLock] = useState(false);
 
   // กด "/" เพื่อไปช่องค้นหา (แบบ YouTube) — ไม่แย่งตอนกำลังพิมพ์ในช่องอื่น
   useEffect(() => {
@@ -379,7 +419,10 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
         <h1 className="mt-6 text-2xl font-bold">{storeName}</h1>
         <p className="mt-2 text-sm text-white/60">เครื่องเล่นเพลงอัตโนมัติ</p>
         <button
-          onClick={() => setStarted(true)}
+          onClick={() => {
+            setNoWakeLock(!isWakeLockSupported());
+            setStarted(true);
+          }}
           className="mt-8 rounded-full bg-white px-10 py-3.5 text-lg font-bold text-black hover:bg-white/90 active:bg-white/80"
         >
           ▶ เริ่มเล่น
@@ -443,6 +486,12 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
         </a>
       </header>
 
+      {noWakeLock && (
+        <div className="mx-4 mb-2 rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-200">
+          เครื่องนี้กันจอดับเองไม่ได้ — ตั้งค่า iPad/มือถือ: จอภาพและความสว่าง → ล็อกอัตโนมัติ → ไม่ใช้
+          (จอดับแล้วเพลงจะหยุด)
+        </div>
+      )}
       {error && (
         <div className="mx-4 mb-2 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-300" role="alert">
           {error}

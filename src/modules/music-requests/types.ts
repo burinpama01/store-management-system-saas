@@ -48,6 +48,10 @@ export interface NowPlaying {
   title?: string;
   durationSeconds?: number;
   startedAt: string;
+  /** สถานะจริงจากเครื่องเล่นของร้าน (จอลูกค้าใช้ตามตอนกดหยุด/เลื่อนเพลง) */
+  playbackState?: "playing" | "paused";
+  positionSeconds?: number;
+  positionAt?: string;
 }
 
 /** เพลงที่กำลังเล่น สำหรับจอลูกค้า (คาราโอเกะ) — ส่งเวลาที่เล่นไปแล้วจากฝั่งเซิร์ฟเวอร์ ไม่พึ่งนาฬิกามือถือ */
@@ -57,6 +61,8 @@ export interface CustomerNowPlayingVideo {
   /** วินาทีที่เพลงเล่นไปแล้ว ณ เวลาที่เซิร์ฟเวอร์ตอบ */
   elapsedSeconds: number;
   durationSeconds: number | null;
+  /** ร้านกดหยุดเพลงอยู่ */
+  paused: boolean;
 }
 
 /** Statuses surfaced to customers on the public QR queue. */
