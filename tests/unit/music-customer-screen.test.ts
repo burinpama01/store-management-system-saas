@@ -116,3 +116,22 @@ describe("customer screen wiring", () => {
     expect(screen).toContain("if (!cancelled) setApiError(true);");
   });
 });
+
+describe("customer screen: no replay loop after the clip ends (browser hang 2026-11-08)", () => {
+  it("holds on the same clip once it ended, resumes on a new clip", async () => {
+    const { shouldHoldAfterEnd, ENDED_RELOAD_MIN_INTERVAL_MS } = await import("@/app/qr/[storeSlug]/[tableId]/CustomerScreen");
+    expect(shouldHoldAfterEnd("dQw4w9WgXcQ", "dQw4w9WgXcQ")).toBe(true);
+    expect(shouldHoldAfterEnd("dQw4w9WgXcQ", "kJQP7kiw5Fk")).toBe(false);
+    expect(shouldHoldAfterEnd(null, "dQw4w9WgXcQ")).toBe(false);
+    expect(ENDED_RELOAD_MIN_INTERVAL_MS).toBeGreaterThanOrEqual(10_000);
+  });
+
+  it("sync effect checks the hold before seeking/playing; ENDED reload is throttled", () => {
+    const src = readFileSync("src/app/qr/[storeSlug]/[tableId]/CustomerScreen.tsx", "utf8");
+    expect(src.indexOf("if (shouldHoldAfterEnd(endedIdRef.current, video.videoId)) return;")).toBeLessThan(
+      src.indexOf("p.seekTo(target, true);\n    }\n    // เล่นต่อเฉพาะ"),
+    );
+    expect(src).toContain("if (now - lastEndedReloadRef.current < ENDED_RELOAD_MIN_INTERVAL_MS) return;");
+    expect(src).toContain("endedIdRef.current = null;\n      setFailed(false);");
+  });
+});
