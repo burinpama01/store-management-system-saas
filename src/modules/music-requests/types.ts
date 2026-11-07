@@ -95,6 +95,8 @@ export interface PublicMusicRequest {
   requesterLabel?: string;
   status: PublicMusicRequestStatus;
   requestedAt: string;
+  /** ลูกค้ากด "ขอเล่นก่อน" ได้ (ยังรอคิว และไม่ใช่เพลงเปิดทันทีที่จ่ายแล้ว) */
+  canBump?: boolean;
 }
 
 /** Full view for the staff dashboard. */

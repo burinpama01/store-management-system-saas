@@ -3709,6 +3709,7 @@ export interface Database {
           session_id: string | null;
           requester_label: string | null;
           song_title: string;
+          bump_of_request_id: string | null;
           artist_name: string | null;
           note: string | null;
           status: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
@@ -3737,6 +3738,7 @@ export interface Database {
           session_id?: string | null;
           requester_label?: string | null;
           song_title: string;
+          bump_of_request_id: string | null;
           artist_name?: string | null;
           note?: string | null;
           status?: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
@@ -3770,6 +3772,7 @@ export interface Database {
           donation_slip_url?: string | null;
           donation_ref?: string | null;
           donation_play_now?: boolean;
+          bump_of_request_id?: string | null;
           updated_at?: string;
         };
         Relationships: [];
