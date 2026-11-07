@@ -72,6 +72,27 @@ export function resolveHubPollPacing(input: HubPacingInput): HubPollPacing {
   return { nextPollMs: HUB_POLL_IDLE_MS, reason: "recent" };
 }
 
+/**
+ * ระยะเวลาที่ยอมค้างคำขอ long-poll ไว้จริง จากที่ Hub ขอมา
+ *
+ * Vercel คิดค่า Provisioned Memory ตามเวลาที่ฟังก์ชันเปิดค้าง ไม่ใช่เวลาที่ทำงาน
+ * Hub ที่ long-poll ตลอดคืนจึงทำให้ instance ค้างอยู่เกือบ 24 ชม. (รายการแพงอันดับ 2
+ * ของบิล ต.ค. 2569) และระหว่างค้างยังถาม DB ทุกวินาทีเพิ่มภาระ Supabase egress อีก
+ *
+ * ร้านปิดแล้ว (เงียบเกิน HUB_QUIET_UNTIL_CLOSED_MS) จึงตอบทันทีแล้วให้ Hub พักตาม
+ * HUB_POLL_CLOSED_MS แทน — ใบแรกของวันช้าได้ไม่เกิน 15 วินาที ซึ่งเป็นราคาเดียวกับที่
+ * ยอมรับไว้แล้วตอนตั้งจังหวะ "quiet" และ busy window ฝั่ง Hub ดึงกลับมาทันทีหลังจากนั้น
+ *
+ * ไม่รู้ว่าว่างมานานแค่ไหน (Hub รุ่นเก่า) = ถือว่าร้านเปิด ค้างตามที่ขอ
+ *
+ * requestedWaitMs ต้องผ่านเพดานของ route มาแล้ว (sanitizeWaitMs) — ฟังก์ชันนี้ตัดสินแค่
+ * "ค้างหรือไม่ค้าง" ไม่ได้ cap ค่าให้อีกชั้น
+ */
+export function resolveHubLongPollWaitMs(input: { requestedWaitMs: number; idleMs: number | null }): number {
+  if (input.idleMs !== null && input.idleMs >= HUB_QUIET_UNTIL_CLOSED_MS) return 0;
+  return input.requestedWaitMs;
+}
+
 /** ค่า idleMs ที่ Hub ส่งมา — ปฏิเสธค่าที่ใช้ไม่ได้แทนการเดา */
 export function sanitizeHubIdleMs(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
