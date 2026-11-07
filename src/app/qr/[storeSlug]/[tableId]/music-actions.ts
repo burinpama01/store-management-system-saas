@@ -37,6 +37,7 @@ import {
   verifyMusicPaymentToken,
 } from "@/modules/music-requests/payment-token";
 import type { BeamQrForPos } from "@/modules/payments/types";
+import type { CustomerNowPlayingVideo, NowPlaying } from "@/modules/music-requests/types";
 
 export interface MusicTrackInput {
   videoId: string;
@@ -60,7 +61,10 @@ interface MusicContext {
   playNowPrice: number;
   /** แพ็กเกจมี Payment Gateway (BYO) — ร้านที่เปิด Beam ใช้ Beam แทนสลิป */
   beamAllowed: boolean;
+  /** ร้านเปิดให้ลูกค้าดูวิดีโอ/เนื้อร้องบนมือถือ */
+  customerScreenEnabled: boolean;
 }
+
 
 /** Re-resolves the music gate server-side; never trust client-provided flags. */
 async function resolveMusicContext(
@@ -88,7 +92,7 @@ async function resolveMusicContext(
 
   const { data: settings } = await supabase
     .from("store_music_player_settings")
-    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price")
+    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price, customer_screen_enabled")
     .eq("store_id", storeId)
     .maybeSingle();
   const playerSettings = {
@@ -97,6 +101,7 @@ async function resolveMusicContext(
     donationEnabled: settings?.donation_enabled ?? false,
     minDonation: settings?.min_donation ?? 10,
     playNowPrice: settings?.play_now_price ?? 100,
+    customerScreenEnabled: settings?.customer_screen_enabled ?? false,
   };
 
   if (tableId === null) {
@@ -141,6 +146,24 @@ async function resolveMusicContext(
   return { ok: true, ctx: { organizationId: store.organization_id, eligibility, ...playerSettings } };
 }
 
+const YT_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+
+function toCustomerNowPlayingVideo(
+  np: NowPlaying | null,
+  now: number,
+): CustomerNowPlayingVideo | null {
+  if (!np?.youtubeVideoId || !YT_ID_RE.test(np.youtubeVideoId)) return null;
+  const started = Date.parse(np.startedAt);
+  const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 1000) : 0;
+  const duration = np.durationSeconds && np.durationSeconds > 0 ? np.durationSeconds : null;
+  return {
+    videoId: np.youtubeVideoId,
+    title: np.title ?? "",
+    elapsedSeconds: Math.round(elapsed * 10) / 10,
+    durationSeconds: duration,
+  };
+}
+
 export async function listMusicQueueAction(
   storeId: string,
   tableId: string | null,
@@ -149,6 +172,9 @@ export async function listMusicQueueAction(
   queue: PublicMusicRequest[];
   expired: boolean;
   nowPlayingTitle?: string | null;
+  /** มีค่าเฉพาะร้านที่เปิดจอลูกค้า */
+  nowPlayingVideo?: CustomerNowPlayingVideo | null;
+  customerScreenEnabled?: boolean;
   donationEnabled?: boolean;
   minDonation?: number;
   playNowPrice?: number;
@@ -160,7 +186,7 @@ export async function listMusicQueueAction(
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { queue: [], expired: false, error: resolved.reason };
 
-  const { eligibility, donationEnabled, minDonation, playNowPrice } = resolved.ctx;
+  const { eligibility, donationEnabled, minDonation, playNowPrice, customerScreenEnabled } = resolved.ctx;
   if (!eligibility.canViewQueue) {
     return { queue: [], expired: eligibility.expiredWholeQr, error: eligibility.reason };
   }
@@ -173,6 +199,8 @@ export async function listMusicQueueAction(
     queue: nowId ? res.data.filter((q) => q.id !== nowId) : res.data,
     expired: false,
     nowPlayingTitle: np.data?.title ?? null,
+    nowPlayingVideo: customerScreenEnabled ? toCustomerNowPlayingVideo(np.data, nowMs()) : null,
+    customerScreenEnabled,
     donationEnabled,
     minDonation,
     playNowPrice,

@@ -270,6 +270,7 @@ async function saveBasePlaylist(
     minDonation: s.minDonation,
     playNowPrice: s.playNowPrice,
     interruptBaseOnRequest: s.interruptBaseOnRequest,
+    customerScreenEnabled: s.customerScreenEnabled,
     maxDurationSeconds: s.maxDurationSeconds,
     basePlaylist: tracks,
     licensingAcknowledged: Boolean(s.licensingAcknowledgedAt),
