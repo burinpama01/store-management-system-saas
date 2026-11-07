@@ -20,6 +20,7 @@ import {
   hasRecentDuplicateRequest,
   isVideoQueued,
   getNowPlaying,
+  getBumpableRequest,
   type PlayedTrack,
 } from "@/modules/music-requests/repository";
 import { searchYouTube, type YouTubeSearchResult } from "@/modules/music-requests/youtube";
@@ -367,6 +368,8 @@ export async function startMusicDonationAction(
   requesterLabel: string | undefined,
   amount: number,
   playNow = false,
+  /** "⏫ ขอเล่นก่อน": ดันเพลงที่อยู่ในคิวแล้ว — ใช้เพลงจากคำขอเดิม (ไม่เชื่อ track จาก client) */
+  bumpOfRequestId: string | null = null,
 ): Promise<{
   requestId: string | null;
   promptPayPayload: string | null;
@@ -381,7 +384,8 @@ export async function startMusicDonationAction(
 }> {
   const empty = { requestId: null, promptPayPayload: null, promptpayId: null, amount: null };
   if (!isValidTarget(storeId, tableId)) return { ...empty, error: "Invalid request" };
-  if (!track?.videoId) return { ...empty, error: "กรุณาเลือกเพลงก่อน" };
+  if (bumpOfRequestId !== null && !isUUID(bumpOfRequestId)) return { ...empty, error: "Invalid request" };
+  if (!bumpOfRequestId && !track?.videoId) return { ...empty, error: "กรุณาเลือกเพลงก่อน" };
 
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { ...empty, error: resolved.reason };
@@ -397,9 +401,32 @@ export async function startMusicDonationAction(
     return { ...empty, error: `เพลงต้องยาวไม่เกิน ${Math.floor(maxDurationSeconds / 60)} นาที` };
   }
 
-  // Don't let the same video sit in the queue twice.
-  const inQueue = await isVideoQueued(storeId, track.videoId);
-  if (inQueue.queued) return { ...empty, error: "มีเพลงนี้ในคิวแล้ว" };
+  if (bumpOfRequestId) {
+    // ดันเพลงเดิมขึ้นก่อน: ต้องยังรอคิวอยู่จริง — คำขอใหม่จะแทนที่คำขอเดิมเมื่อจ่ายสำเร็จ (trigger ใน DB)
+    const original = await getBumpableRequest(storeId, bumpOfRequestId);
+    if (original.error) return { ...empty, error: original.error.userMessage };
+    if (original.busy) return { ...empty, error: "มีคนกำลังจ่ายดันเพลงนี้อยู่ ลองเพลงอื่นหรือรอสักครู่" };
+    if (!original.data) return { ...empty, error: "เพลงนี้ไม่ได้รอคิวแล้ว — รีเฟรชแล้วลองใหม่" };
+    track = {
+      videoId: original.data.youtube_video_id as string,
+      title: original.data.youtube_title ?? original.data.song_title,
+      thumbnailUrl: original.data.thumbnail_url ?? undefined,
+      durationSeconds: original.data.duration_seconds ?? undefined,
+    };
+    await logSystemEvent({
+      level: "info",
+      source: "music.donation",
+      action: "queueBump",
+      message: playNow ? "ลูกค้าขอเปิดเพลงในคิวทันที" : "ลูกค้าขอดันเพลงในคิวขึ้นก่อน",
+      organizationId,
+      storeId,
+      context: { bumpOfRequestId, amount, playNow },
+    }).catch(() => undefined);
+  } else {
+    // Don't let the same video sit in the queue twice.
+    const inQueue = await isVideoQueued(storeId, track.videoId);
+    if (inQueue.queued) return { ...empty, error: "มีเพลงนี้ในคิวแล้ว" };
+  }
 
   // Store priced this tier at 0 → free path: no PromptPay needed at all.
   const isFree = amount <= 0;
@@ -434,8 +461,14 @@ export async function startMusicDonationAction(
     durationSeconds: track.durationSeconds,
     donationAmount: isFree ? 0 : amount,
     playNow,
+    bumpOfRequestId,
   });
-  if (res.error) return { ...empty, error: res.error.userMessage };
+  if (res.error) {
+    if (bumpOfRequestId && res.error.code === "23505") {
+      return { ...empty, error: "มีคนกำลังจ่ายดันเพลงนี้อยู่ ลองเพลงอื่นหรือรอสักครู่" };
+    }
+    return { ...empty, error: res.error.userMessage };
+  }
 
   if (isFree) {
     // Verified at creation (repository) — the song is already in the priority queue.

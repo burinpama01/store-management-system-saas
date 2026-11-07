@@ -79,6 +79,13 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
   const [minDonation, setMinDonation] = useState(10);
   const [playNowPrice, setPlayNowPrice] = useState(100);
   const [donateTier, setDonateTier] = useState<"queue" | "now" | null>(null);
+  // "⏫ ขอเล่นก่อน": ดันเพลงที่อยู่ในคิวแล้ว (จ่ายโดเนทแบบเดิม)
+  const [bumpTarget, setBumpTarget] = useState<{ id: string; title: string } | null>(null);
+  const requestBoxRef = useRef<HTMLDivElement | null>(null);
+  const bumpTargetRef = useRef(bumpTarget);
+  useEffect(() => {
+    bumpTargetRef.current = bumpTarget;
+  }, [bumpTarget]);
   const [amount, setAmount] = useState("");
   const [previewPos, setPreviewPos] = useState<number | null>(null);
   const [payPayload, setPayPayload] = useState<string | null>(null);
@@ -227,6 +234,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
 
   function resetTrack() {
     setSelected(null);
+    setBumpTarget(null);
     setDonateTier(null);
     setAmount("");
     setPreviewPos(null);
@@ -255,13 +263,20 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
         requester.trim() || undefined,
         amt,
         tier === "now",
+        bumpTarget?.id ?? null,
       );
       if (res.free && res.requestId) {
         // Zero-price tier: no payment step — the song is already in.
         resetTrack();
         setQuery("");
         setResults([]);
-        setOkMsg(tier === "now" ? "ส่งเพลงแล้ว 🎉 กำลังจะเปิดทันที" : "ส่งเพลงแล้ว 🎉 เข้าคิวลำดับแรก");
+        setOkMsg(
+          bumpTarget
+            ? "ดันเพลงขึ้นก่อนแล้ว 🎉"
+            : tier === "now"
+              ? "ส่งเพลงแล้ว 🎉 กำลังจะเปิดทันที"
+              : "ส่งเพลงแล้ว 🎉 เข้าคิวลำดับแรก",
+        );
         void load();
         return;
       }
@@ -301,6 +316,7 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
           setBeamPay(null);
           setDonationRequestId(null);
           setSelected(null);
+          setBumpTarget(null);
           setDonateTier(null);
           setAmount("");
           setQuery("");
@@ -310,6 +326,13 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
           window.clearInterval(timer);
           setErrMsg("QR หมดอายุหรือชำระไม่สำเร็จ — กดขอใหม่อีกครั้ง");
           setBeamPay(null);
+          // โหมดดันเพลง: ล้างฟอร์ม ให้กด "ขอเล่นก่อน" ใหม่จากคิว (สถานะคิวอาจเปลี่ยนไปแล้ว)
+          if (bumpTargetRef.current) {
+            setBumpTarget(null);
+            setSelected(null);
+            setDonateTier(null);
+            setAmount("");
+          }
         } else if (res.status === "LATE_PAID" || res.status === "REVIEW_REQUIRED") {
           window.clearInterval(timer);
           setErrMsg(res.error);
@@ -370,8 +393,8 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
       )}
 
       {eligibility.canSubmitRequest ? (
-        <div className="space-y-3 rounded-xl border border-gray-100 bg-white p-4">
-          <p className="text-sm font-bold text-gray-900">🎵 ขอเพลง</p>
+        <div ref={requestBoxRef} className="space-y-3 rounded-xl border border-gray-100 bg-white p-4">
+          <p className="text-sm font-bold text-gray-900">{bumpTarget ? "⏫ ขอเล่นเพลงนี้ก่อน" : "🎵 ขอเพลง"}</p>
 
           {selected ? (
             <div className="flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50 p-2">
@@ -567,13 +590,15 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
                     : `โดเนทแข่งลำดับ เริ่ม ฿${minDonation.toLocaleString("th-TH")}`}
                 </span>
               </button>
-              <button
-                onClick={submit}
-                disabled={pending}
-                className="w-full min-h-11 rounded-lg py-2 text-sm text-gray-500 underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                ส่งคำขอเพลงฟรี (รอคิวปกติ)
-              </button>
+              {!bumpTarget && (
+                <button
+                  onClick={submit}
+                  disabled={pending}
+                  className="w-full min-h-11 rounded-lg py-2 text-sm text-gray-500 underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  ส่งคำขอเพลงฟรี (รอคิวปกติ)
+                </button>
+              )}
             </div>
           ) : (
             <Button
@@ -614,9 +639,27 @@ export function MusicTab({ storeId, tableId, querySessionId, eligibility }: Prop
                     </p>
                   )}
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[q.status]}`}>
-                  {MUSIC_REQUEST_STATUS_LABEL[q.status]}
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {q.canBump && donationEnabled && eligibility.canSubmitRequest && (
+                    <button
+                      onClick={() => {
+                        resetTrack();
+                        setErrMsg(null);
+                        setOkMsg(null);
+                        setBumpTarget({ id: q.id, title: q.songTitle });
+                        setSelected({ videoId: "", title: q.songTitle });
+                        requestBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      disabled={pending || Boolean(payPayload || beamPay)}
+                      className="rounded-full bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white active:opacity-90 disabled:opacity-50"
+                    >
+                      ⏫ ขอเล่นก่อน
+                    </button>
+                  )}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[q.status]}`}>
+                    {MUSIC_REQUEST_STATUS_LABEL[q.status]}
+                  </span>
+                </div>
               </li>
             ))}
           </ul>
