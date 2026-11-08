@@ -2,7 +2,7 @@
 
 import { PrintQueueAlert } from "@/modules/printing/PrintQueueAlert";
 import { posPaymentLabel } from "@/modules/pos/payment-label";
-import { memo, useCallback, useEffect, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { memo, useCallback, useEffect, useEffectEvent, useMemo, type KeyboardEvent, type ReactNode, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
@@ -28,6 +28,8 @@ import {
   collectPaymentAction,
   searchPosCustomersAction,
   evaluatePosCouponAction,
+  listPosCustomerVouchersAction,
+  registerPosCustomerAction,
   listSavedTicketsAction,
   saveSavedTicketAction,
   deleteSavedTicketAction,
@@ -48,6 +50,17 @@ import {
   type RewardProductLine,
 } from "./actions";
 import { useSearchParams } from "next/navigation";
+import {
+  availableDiscountPresets,
+  couponCartKey,
+  DISCOUNT_REASON_PRESETS,
+  isCompleteThaiMobile,
+  isRegistrablePhone,
+  pickAutoSelectCustomer,
+  shouldAutoSearchCustomer,
+  usableVouchers,
+  type PosRewardVoucher,
+} from "@/modules/pos/loyalty-coupon-ux";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
@@ -99,7 +112,14 @@ type TicketDraft = Pick<SavedOrderTicket, "tableId" | "tableNumber" | "customerN
 type DiscountDraft = { mode: DiscountType; amount: string; percentage: string; note: string };
 type HistoryRangeMode = "today" | "7d" | "30d" | "custom";
 type BillHistoryRange = { mode: HistoryRangeMode; fromDate: string; toDate: string };
-type AppliedCoupon = { couponId: string; code: string; discount: number };
+type AppliedCoupon = {
+  couponId: string;
+  code: string;
+  discount: number;
+  /** ตะกร้าตอนคำนวณยอดคูปองล่าสุด — ไม่ตรงกับตะกร้าปัจจุบัน = ต้องคำนวณใหม่ */
+  cartKey: string;
+  customerId: string | null;
+};
 type ReceiptOrder = {
   orderNumber: string;
   /** "บิลรวมโต๊ะ · โต๊ะ X" — ใบเสร็จของบิลรวมโต๊ะ */
@@ -814,6 +834,10 @@ function CartPanel({
   displayCart,
   appliedCoupon,
   selectedCustomerName,
+  memberSlot,
+  couponNotice,
+  couponRecalcPending = false,
+  onDismissCouponNotice,
   onOpenCustomerTools,
   onUpdateQty,
   onRemove,
@@ -844,6 +868,12 @@ function CartPanel({
   appliedCoupon?: AppliedCoupon | null;
   /** ชื่อลูกค้าที่ผูกกับบิลนี้ — โชว์บนปุ่มเพื่อไม่ให้ข้อมูลหายไปกับการพับ */
   selectedCustomerName?: string | null;
+  /** ช่องผูกสมาชิกสะสมแต้มแบบเร็ว (null = แพ็กเกจไม่รองรับ) */
+  memberSlot?: ReactNode;
+  /** คูปองหลุดหลังแก้ตะกร้า — โชว์ให้เห็นก่อนกดชำระ */
+  couponNotice?: string | null;
+  couponRecalcPending?: boolean;
+  onDismissCouponNotice?: () => void;
   onOpenCustomerTools: () => void;
   onUpdateQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
@@ -987,6 +1017,7 @@ function CartPanel({
       </div>
 
       <div className="border-t border-gray-100 px-4 py-3 space-y-2">
+        {memberSlot}
         {/* ลูกค้า/คูปอง/จอลูกค้า พับเป็นปุ่มเดียว — แผงเต็มกินความสูงจนช่องรายการ
             ในออร์เดอร์แคบเกินใช้งาน (ปกติแคชเชียร์แตะไม่บ่อย เพราะลูกค้ารับแต้ม
             เองผ่าน QR ท้ายใบเสร็จอยู่แล้ว) สถานะที่เลือกไว้ยังโชว์บนปุ่ม */}
@@ -1002,7 +1033,7 @@ function CartPanel({
                 ? [selectedCustomerName, appliedCoupon ? `คูปอง ${appliedCoupon.code}` : null]
                     .filter(Boolean)
                     .join(" · ")
-                : "แตะเพื่อผูกลูกค้า ใช้คูปอง หรือเปิดจอลูกค้า"}
+                : "แตะเพื่อใช้คูปอง / โค้ดแลกรางวัล หรือเปิดจอลูกค้า"}
             </span>
           </span>
           <span aria-hidden="true" className="shrink-0 text-xs text-slate-400">
@@ -1045,6 +1076,19 @@ function CartPanel({
           <div className="flex justify-between text-xs text-green-600">
             <span>คูปอง {appliedCoupon.code}</span>
             <span className="tabular-nums">-{priceStr(appliedCoupon.discount)}</span>
+          </div>
+        )}
+        {couponRecalcPending && appliedCoupon && (
+          <p aria-live="polite" className="text-[11px] text-slate-500">กำลังคำนวณคูปอง {appliedCoupon.code} ใหม่…</p>
+        )}
+        {couponNotice && (
+          <div role="status" className="flex items-start justify-between gap-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] font-medium text-amber-900">
+            <span>⚠️ {couponNotice}</span>
+            {onDismissCouponNotice && (
+              <button type="button" onClick={onDismissCouponNotice} aria-label="ปิดคำเตือนคูปอง" className="min-h-6 shrink-0 px-1 text-amber-700">
+                ✕
+              </button>
+            )}
           </div>
         )}
         <div className="flex justify-between text-sm font-semibold text-gray-900 pt-1 border-t border-gray-100">
@@ -1100,11 +1144,14 @@ function BillDiscountPanel({
   discountAmount,
   discountPercentage,
   discountNote,
+  appliedCouponCode = null,
   onDiscountDraftChange,
   onApplyDiscount,
   onClose,
 }: {
   cart: Cart;
+  /** มีคูปองอยู่ → เตือนว่าส่วนลดอาจทำให้คูปองใช้ไม่ได้ (D2) */
+  appliedCouponCode?: string | null;
   discountMode: DiscountType;
   discountAmount: string;
   discountPercentage: string;
@@ -1137,6 +1184,14 @@ function BillDiscountPanel({
     onClose();
   }
 
+  // ปุ่มลัด: แตะครั้งเดียวใช้ส่วนลดเลย (D1)
+  const presets = availableDiscountPresets(cart.subtotal);
+  function handlePreset(type: DiscountType, value: number) {
+    if (cart.items.length === 0) return;
+    onApplyDiscount(type, value, discountNote.trim() || undefined);
+    onClose();
+  }
+
   return (
     <div className="space-y-2">
       {cart.discount > 0 && (
@@ -1155,6 +1210,43 @@ function BillDiscountPanel({
         </div>
       )}
 <div className="space-y-2">
+        {appliedCouponCode && (
+          <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+            บิลนี้ใช้คูปอง {appliedCouponCode} อยู่ — ใส่ส่วนลดแล้วระบบจะคำนวณคูปองใหม่ (บางคูปองใช้ร่วมกับส่วนลดไม่ได้)
+          </p>
+        )}
+        <div className="flex flex-wrap gap-1" role="group" aria-label="เหตุผลที่ใช้บ่อย">
+          {DISCOUNT_REASON_PRESETS.map((reason) => (
+            <button
+              key={reason}
+              type="button"
+              aria-pressed={discountNote.trim() === reason}
+              disabled={cart.items.length === 0}
+              onClick={() => onDiscountDraftChange({ note: discountNote.trim() === reason ? "" : reason })}
+              className={`min-h-9 rounded-full border px-3 text-[11px] font-semibold disabled:opacity-40 ${
+                discountNote.trim() === reason
+                  ? "border-teal-700 bg-teal-700 text-white"
+                  : "border-teal-100 bg-white text-teal-800 hover:bg-teal-50"
+              }`}
+            >
+              {reason}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-1" role="group" aria-label="ส่วนลดลัด">
+          {presets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              disabled={cart.items.length === 0}
+              onClick={() => handlePreset(preset.type, preset.value)}
+              className="min-h-11 rounded-lg border border-teal-200 bg-white text-sm font-semibold tabular-nums text-teal-800 hover:bg-teal-50 disabled:opacity-40"
+            >
+              -{preset.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-teal-700">หรือกรอกเอง</p>
         <div
           role="group"
           aria-label="ประเภทส่วนลด"
@@ -1242,6 +1334,157 @@ function BillDiscountPanel({
   );
 }
 
+/**
+ * ผูกสมาชิกสะสมแต้มแบบเร็ว (L1–L3) — ใช้ทั้งท้ายแผงออร์เดอร์และใน sheet ลูกค้า
+ * - พิมพ์เบอร์/ชื่อแล้วค้นเอง · เบอร์ครบ 10 หลักเจอคนเดียวผูกให้เลย
+ * - ไม่เจอ → สมัครด้วยเบอร์นี้ได้ทันที (ชื่อไม่บังคับ)
+ * - ผูกแล้วโชว์แต้ม + โค้ดแลกรางวัลที่ยังไม่ใช้ แตะเพื่อใช้กับบิลนี้
+ */
+function MemberQuickBar({
+  compact = false,
+  selectedCustomer,
+  vouchers,
+  customerQuery,
+  customerResults,
+  searchedQuery,
+  registerName,
+  isPending,
+  onCustomerQueryChange,
+  onSearchCustomer,
+  onSelectCustomer,
+  onClearCustomer,
+  onRegisterNameChange,
+  onRegister,
+  onUseVoucher,
+}: {
+  compact?: boolean;
+  selectedCustomer: CustomerProfile | null;
+  vouchers: PosRewardVoucher[];
+  customerQuery: string;
+  customerResults: CustomerProfile[];
+  searchedQuery: string | null;
+  registerName: string;
+  isPending: boolean;
+  onCustomerQueryChange: (value: string) => void;
+  onSearchCustomer: () => void;
+  onSelectCustomer: (customer: CustomerProfile) => void;
+  onClearCustomer: () => void;
+  onRegisterNameChange: (value: string) => void;
+  onRegister: () => void;
+  onUseVoucher: (voucher: PosRewardVoucher) => void;
+}) {
+  if (selectedCustomer) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs">
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-amber-900">⭐ {selectedCustomer.name}</p>
+            <p className="text-[11px] text-amber-800">
+              {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้ม {formatPoints(selectedCustomer.pointsBalance ?? 0)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClearCustomer}
+            className="min-h-9 shrink-0 px-2 text-[11px] font-semibold text-red-500"
+          >
+            ล้าง
+          </button>
+        </div>
+        {vouchers.length > 0 && (
+          <div className="flex flex-wrap gap-1" aria-label="โค้ดแลกรางวัลของลูกค้า">
+            {vouchers.map((voucher) => (
+              <button
+                key={voucher.redemptionId}
+                type="button"
+                disabled={isPending}
+                onClick={() => onUseVoucher(voucher)}
+                title={`โค้ด ${voucher.code}`}
+                className="min-h-9 max-w-full truncate rounded-full border border-green-200 bg-green-50 px-3 text-[11px] font-semibold text-green-800 hover:bg-green-100 disabled:opacity-50"
+              >
+                {voucher.rewardType === "discount" ? "🏷️" : "🎁"} {voucher.rewardName} · แตะใช้
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const trimmed = customerQuery.trim();
+  const searchedEmpty = searchedQuery !== null && searchedQuery === trimmed && customerResults.length === 0;
+  const canRegister = searchedEmpty && isRegistrablePhone(trimmed);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        <input
+          value={customerQuery}
+          onChange={(event) => onCustomerQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onSearchCustomer();
+          }}
+          inputMode={/^[\d\s-]*$/.test(customerQuery) ? "tel" : "text"}
+          placeholder={compact ? "📱 เบอร์สมาชิก (สะสมแต้ม)" : "ค้นชื่อลูกค้าหรือเบอร์โทร"}
+          aria-label="ค้นชื่อลูกค้าหรือเบอร์โทร"
+          className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 placeholder:text-slate-400"
+        />
+        <button
+          type="button"
+          disabled={isPending || trimmed.length === 0}
+          onClick={onSearchCustomer}
+          className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ค้นหา
+        </button>
+      </div>
+      {customerResults.length > 0 && (
+        <div className={`${compact ? "max-h-24" : "max-h-28"} space-y-1 overflow-y-auto`}>
+          {customerResults.map((customer) => (
+            <button
+              key={customer.id}
+              type="button"
+              onClick={() => onSelectCustomer(customer)}
+              className="min-h-10 w-full rounded-lg border border-slate-100 bg-white px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+            >
+              <span className="block truncate font-semibold">{customer.name}</span>
+              <span className="block text-[11px] text-slate-500">
+                {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} · แต้ม {formatPoints(customer.pointsBalance ?? 0)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {canRegister && (
+        <div className="space-y-1.5 rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-2">
+          <p className="text-[11px] text-amber-900">ไม่พบสมาชิกเบอร์ {trimmed} — สมัครให้เลยไหม?</p>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <input
+              value={registerName}
+              onChange={(event) => onRegisterNameChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") onRegister();
+              }}
+              maxLength={120}
+              placeholder="ชื่อ (ไม่ใส่ก็ได้)"
+              aria-label="ชื่อสมาชิกใหม่"
+              className="min-h-10 rounded-lg border border-amber-200 bg-white px-2 text-xs text-slate-800 placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={onRegister}
+              className="min-h-10 rounded-lg bg-amber-500 px-3 text-[11px] font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              สมัครสมาชิก
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CustomerCouponPanel({
   cart,
   loyaltyEnabled,
@@ -1250,17 +1493,11 @@ function CustomerCouponPanel({
   couponUnavailableMessage,
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
-  customerQuery,
-  customerResults,
-  selectedCustomer,
+  memberSection,
   couponCode,
   appliedCoupon,
   message,
   isPending,
-  onCustomerQueryChange,
-  onSearchCustomer,
-  onSelectCustomer,
-  onClearCustomer,
   onCouponCodeChange,
   onApplyCoupon,
   onClearCoupon,
@@ -1272,17 +1509,11 @@ function CustomerCouponPanel({
   couponUnavailableMessage: string | null;
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
-  customerQuery: string;
-  customerResults: CustomerProfile[];
-  selectedCustomer: CustomerProfile | null;
+  memberSection: ReactNode;
   couponCode: string;
   appliedCoupon: AppliedCoupon | null;
   message: string | null;
   isPending: boolean;
-  onCustomerQueryChange: (value: string) => void;
-  onSearchCustomer: () => void;
-  onSelectCustomer: (customer: CustomerProfile) => void;
-  onClearCustomer: () => void;
   onCouponCodeChange: (value: string) => void;
   onApplyCoupon: () => void;
   onClearCoupon: () => void;
@@ -1311,58 +1542,7 @@ function CustomerCouponPanel({
       </div>
 
       {loyaltyEnabled ? (
-        selectedCustomer ? (
-          <div className="flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-2 text-xs">
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-slate-800">{selectedCustomer.name}</p>
-              <p className="text-[11px] text-slate-500">
-                {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้ม {formatPoints(selectedCustomer.pointsBalance)}
-              </p>
-            </div>
-            <button type="button" onClick={onClearCustomer} className="min-h-9 px-2 text-[11px] font-semibold text-red-500">
-              ล้าง
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <input
-                value={customerQuery}
-                onChange={(event) => onCustomerQueryChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") onSearchCustomer();
-                }}
-                placeholder="ค้นชื่อลูกค้าหรือเบอร์โทร"
-                className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 placeholder:text-slate-400"
-              />
-              <button
-                type="button"
-                disabled={isPending || customerQuery.trim().length === 0}
-                onClick={onSearchCustomer}
-                className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ค้นหา
-              </button>
-            </div>
-            {customerResults.length > 0 && (
-              <div className="max-h-28 space-y-1 overflow-y-auto">
-                {customerResults.map((customer) => (
-                  <button
-                    key={customer.id}
-                    type="button"
-                    onClick={() => onSelectCustomer(customer)}
-                    className="min-h-10 w-full rounded-lg border border-slate-100 bg-white px-2 py-1 text-left text-xs text-slate-700"
-                  >
-                    <span className="block truncate font-semibold">{customer.name}</span>
-                    <span className="block text-[11px] text-slate-500">
-                      {customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"} · แต้ม {formatPoints(customer.pointsBalance)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )
+        memberSection
       ) : (
         <p className="rounded-lg bg-white px-2 py-2 text-[11px] text-slate-400">
           {loyaltyUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับสะสมแต้ม"}
@@ -1387,13 +1567,14 @@ function CustomerCouponPanel({
                   if (event.key === "Enter") onApplyCoupon();
                 }}
                 disabled={cart.items.length === 0}
-                placeholder="รหัสคูปอง"
+                placeholder="รหัสคูปอง / โค้ดแลกรางวัล"
+                aria-label="รหัสคูปองหรือโค้ดแลกรางวัล"
                 className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs uppercase text-slate-800 placeholder:normal-case placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
               />
               <button
                 type="button"
                 disabled={isPending || cart.items.length === 0 || couponCode.trim().length === 0}
-                onClick={onApplyCoupon}
+                onClick={() => onApplyCoupon()}
                 className="min-h-10 rounded-lg border border-green-200 bg-white px-2 text-[11px] font-semibold text-green-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 ใช้คูปอง
@@ -3360,6 +3541,15 @@ export function PosTerminal({
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [customerCouponMessage, setCustomerCouponMessage] = useState<string | null>(null);
+  // คำค้นที่ค้นเสร็จแล้ว (ใช้ตัดสินใจโชว์ปุ่ม "สมัครด้วยเบอร์นี้" เมื่อไม่เจอ)
+  const [customerSearchedQuery, setCustomerSearchedQuery] = useState<string | null>(null);
+  const [registerName, setRegisterName] = useState("");
+  const [customerVouchers, setCustomerVouchers] = useState<{ customerId: string; vouchers: PosRewardVoucher[] } | null>(null);
+  // คูปองที่ใช้ไม่ได้แล้วหลังแก้ตะกร้า — โชว์เหนือปุ่มชำระเงินจนกว่าจะใส่คูปองใหม่/ล้างบิล
+  const [couponNotice, setCouponNotice] = useState<string | null>(null);
+  const [couponRecalcPending, setCouponRecalcPending] = useState(false);
+  const customerSearchSeqRef = useRef(0);
+  const couponRecalcSeqRef = useRef(0);
   const [billHistory, setBillHistory] = useState<Order[]>([]);
   const [historyRange, setHistoryRange] = useState<BillHistoryRange>(() => createHistoryRange("today", storeTimezone));
   const [isBillHistoryPending, setIsBillHistoryPending] = useState(false);
@@ -3443,8 +3633,7 @@ export function PosTerminal({
     cartRef.current = nextCart;
     setCart(nextCart);
     setDiscountDraft(discountDraftFromCart(nextCart));
-    setAppliedCoupon(null);
-    setCustomerCouponMessage(null);
+    // คูปองไม่ล้างทิ้งแล้ว — useEffect คำนวณใหม่ตามตะกร้า (เดิมหายเงียบ ๆ ทุกครั้งที่แก้ตะกร้า)
     if (options.resetItemDiscountForms || nextCart.items.length === 0) {
       setItemDiscountResetKey((current) => current + 1);
     }
@@ -3463,6 +3652,8 @@ export function PosTerminal({
     setActiveTicketId(null);
     setTicketDraft(EMPTY_TICKET_DRAFT);
     setCouponCode("");
+    setAppliedCoupon(null);
+    setCouponNotice(null);
     setCustomerResults([]);
     setTicketMessage(message);
   }
@@ -3762,7 +3953,27 @@ export function PosTerminal({
 
   function handleCustomerQueryChange(value: string) {
     setCustomerQuery(value);
+    setCustomerSearchedQuery(null);
     if (!value.trim()) setCustomerResults([]);
+  }
+
+  async function runCustomerSearch(query: string) {
+    const seq = ++customerSearchSeqRef.current;
+    const result = await searchPosCustomersAction(query);
+    if (seq !== customerSearchSeqRef.current) return;
+    if (result.error) {
+      setCustomerCouponMessage(result.error);
+      setCustomerResults([]);
+      return;
+    }
+    setCustomerResults(result.customers);
+    setCustomerSearchedQuery(query);
+    const auto = pickAutoSelectCustomer(query, result.customers);
+    if (auto) {
+      handleSelectCustomer(auto);
+      return;
+    }
+    setCustomerCouponMessage(result.customers.length > 0 ? null : "ไม่พบลูกค้าจากคำค้นนี้");
   }
 
   function handleSearchCustomer() {
@@ -3772,82 +3983,208 @@ export function PosTerminal({
     }
     const query = customerQuery.trim();
     if (!query) return;
-    startTransition(async () => {
-      const result = await searchPosCustomersAction(query);
-      if (result.error) {
-        setCustomerCouponMessage(result.error);
-        setCustomerResults([]);
-        return;
-      }
-      setCustomerResults(result.customers);
-      setCustomerCouponMessage(result.customers.length > 0 ? null : "ไม่พบลูกค้าจากคำค้นนี้");
-    });
+    startTransition(() => runCustomerSearch(query));
   }
+
+  // ค้นหาขณะพิมพ์ — พิมพ์เบอร์มือถือครบ 10 หลักค้นทันที เจอคนเดียวเลือกให้เลย (L1)
+  const onAutoCustomerSearch = useEffectEvent((query: string) => {
+    void runCustomerSearch(query);
+  });
+  useEffect(() => {
+    if (!loyaltyEnabled || selectedCustomer) return;
+    const query = customerQuery.trim();
+    if (!shouldAutoSearchCustomer(query)) return;
+    const timer = window.setTimeout(() => onAutoCustomerSearch(query), isCompleteThaiMobile(query) ? 0 : 350);
+    return () => window.clearTimeout(timer);
+  }, [customerQuery, loyaltyEnabled, selectedCustomer]);
 
   function handleSelectCustomer(customer: CustomerProfile) {
     checkoutIdempotencyKeyRef.current = null;
     setSelectedCustomer(customer);
     setCustomerQuery("");
     setCustomerResults([]);
-    setAppliedCoupon(null);
-    setCustomerCouponMessage(`เลือกลูกค้า ${customer.name} แล้ว`);
+    setCustomerSearchedQuery(null);
+    setRegisterName("");
+    // คูปองที่ใช้อยู่ไม่ล้างทิ้ง — ตัวคำนวณใหม่จะตรวจกับลูกค้าคนนี้ให้เอง (L4)
+    setCustomerCouponMessage(`ผูกสมาชิก ${customer.name} แล้ว`);
   }
 
   function handleClearCustomer() {
     checkoutIdempotencyKeyRef.current = null;
     setSelectedCustomer(null);
     setCustomerResults([]);
-    setAppliedCoupon(null);
+    setCustomerVouchers(null);
     setCustomerCouponMessage("ล้างลูกค้าแล้ว");
   }
 
-  function handleApplyCoupon() {
+  function handleRegisterCustomer() {
+    const phone = customerQuery.trim();
+    if (!isRegistrablePhone(phone)) {
+      setCustomerCouponMessage("พิมพ์เบอร์โทรให้ครบก่อนสมัคร (ขึ้นต้น 0 และ 9–10 หลัก)");
+      return;
+    }
+    startTransition(async () => {
+      const result = await registerPosCustomerAction({ phone, name: registerName });
+      if (result.error || !result.customer) {
+        setCustomerCouponMessage(result.error ?? "สมัครสมาชิกไม่สำเร็จ");
+        return;
+      }
+      handleSelectCustomer(result.customer);
+      setCustomerCouponMessage(
+        result.existed
+          ? `เบอร์นี้เป็นสมาชิกอยู่แล้ว — ผูก ${result.customer.name} ให้แล้ว`
+          : `สมัครสมาชิก ${result.customer.name} แล้ว · บิลนี้ได้แต้มเลย`,
+      );
+    });
+  }
+
+  // โค้ดแลกรางวัลที่ลูกค้ายังไม่ได้ใช้ — โหลดเมื่อผูกสมาชิก (L3)
+  useEffect(() => {
+    const customerId = selectedCustomer?.id;
+    if (!customerId || !loyaltyEnabled) return;
+    let cancelled = false;
+    void listPosCustomerVouchersAction(customerId).then((result) => {
+      if (cancelled) return;
+      setCustomerVouchers({ customerId, vouchers: result.error ? [] : result.vouchers });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCustomer?.id, loyaltyEnabled]);
+
+  /**
+   * ตรวจคูปอง/โค้ดแลกรางวัลกับตะกร้าปัจจุบัน — ใช้ทั้งกด "ใช้คูปอง", แตะโค้ดของลูกค้า
+   * และตอนกดชำระเงินโดยยังไม่ได้กดใช้ (C2) คืน true เมื่อพร้อมชำระ
+   */
+  async function applyCouponCode(rawCode: string): Promise<boolean> {
     if (!couponEnabled) {
       setCustomerCouponMessage(couponUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง");
-      return;
+      return false;
     }
-    if (cart.items.length === 0) {
+    const evalCart = cartRef.current;
+    if (evalCart.items.length === 0) {
       setCustomerCouponMessage("กรุณาเพิ่มสินค้าในออร์เดอร์ก่อนใช้คูปอง");
-      return;
+      return false;
     }
-    const code = couponCode.trim();
+    const code = rawCode.trim();
+    if (!code) return true;
+    const customerId = selectedCustomer?.id ?? null;
+    let result: Awaited<ReturnType<typeof evaluatePosCouponAction>>;
+    try {
+      result = await evaluatePosCouponAction(code, evalCart, customerId);
+    } catch {
+      setCustomerCouponMessage("ตรวจคูปองไม่สำเร็จ (เชื่อมต่อไม่ได้) — ลองอีกครั้ง");
+      return false;
+    }
+    if (result.rewardProduct) {
+      const next = appendRewardLine(cartRef.current, result.rewardProduct);
+      const alreadyAdded = next === cartRef.current;
+      cartRef.current = next;
+      setCart(next);
+      checkoutIdempotencyKeyRef.current = null;
+      if (couponCode.trim().toUpperCase() === code.toUpperCase()) setCouponCode("");
+      setCustomerCouponMessage(
+        alreadyAdded
+          ? `ของรางวัล ${result.rewardProduct.productName} ถูกเพิ่มไว้แล้ว`
+          : `เพิ่มของรางวัล ${result.rewardProduct.productName} (โค้ด ${result.rewardProduct.voucherCode}) ลงบิลแล้ว`,
+      );
+      return true;
+    }
+    if (result.error || !result.couponId || !result.normalizedCode) {
+      setAppliedCoupon(null);
+      setCustomerCouponMessage(result.error ?? "คูปองนี้ใช้ไม่ได้");
+      return false;
+    }
+    setAppliedCoupon({
+      couponId: result.couponId,
+      code: result.normalizedCode,
+      discount: result.discount,
+      cartKey: couponCartKey(evalCart),
+      customerId,
+    });
+    setCouponNotice(null);
+    checkoutIdempotencyKeyRef.current = null;
+    setCouponCode(result.normalizedCode);
+    setCustomerCouponMessage(`ใช้คูปอง ${result.normalizedCode} แล้ว`);
+    return true;
+  }
+
+  function handleApplyCoupon(codeOverride?: string) {
+    const code = (codeOverride ?? couponCode).trim();
     if (!code) return;
     startTransition(async () => {
-      const result = await evaluatePosCouponAction(code, cart, selectedCustomer?.id ?? null);
-      if (result.rewardProduct) {
-        const next = appendRewardLine(cartRef.current, result.rewardProduct);
-        cartRef.current = next;
-        setCart(next);
-        checkoutIdempotencyKeyRef.current = null;
-        setCouponCode("");
-        setCustomerCouponMessage(
-          next === cart
-            ? `ของรางวัล ${result.rewardProduct.productName} ถูกเพิ่มไว้แล้ว`
-            : `เพิ่มของรางวัล ${result.rewardProduct.productName} (โค้ด ${result.rewardProduct.voucherCode}) ลงบิลแล้ว`,
-        );
-        return;
-      }
-      if (result.error || !result.couponId || !result.normalizedCode) {
-        setAppliedCoupon(null);
-        setCustomerCouponMessage(result.error ?? "คูปองนี้ใช้ไม่ได้");
-        return;
-      }
-      setAppliedCoupon({
-        couponId: result.couponId,
-        code: result.normalizedCode,
-        discount: result.discount,
-      });
-      checkoutIdempotencyKeyRef.current = null;
-      setCouponCode(result.normalizedCode);
-      setCustomerCouponMessage(`ใช้คูปอง ${result.normalizedCode} แล้ว`);
+      await applyCouponCode(code);
     });
+  }
+
+  function handleUseVoucher(voucher: PosRewardVoucher) {
+    handleApplyCoupon(voucher.code);
   }
 
   function handleClearCoupon() {
     checkoutIdempotencyKeyRef.current = null;
     setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponNotice(null);
     setCustomerCouponMessage("ล้างคูปองแล้ว");
   }
+
+  /**
+   * คำนวณคูปองใหม่เมื่อตะกร้า/ส่วนลด/ลูกค้าเปลี่ยน (C1, D2, L4)
+   * เดิมแก้ตะกร้าแล้วคูปองหายเงียบ ๆ และติด "กรุณากดใช้คูปองก่อน" ตอนชำระ
+   * คืน true = คูปองยังใช้ได้
+   */
+  async function recalcAppliedCoupon(coupon: AppliedCoupon): Promise<boolean> {
+    const seq = ++couponRecalcSeqRef.current;
+    const evalCart = cartRef.current;
+    const customerId = selectedCustomer?.id ?? null;
+    if (evalCart.items.length === 0) {
+      setAppliedCoupon(null);
+      setCouponCode("");
+      return true;
+    }
+    const key = couponCartKey(evalCart);
+    setCouponRecalcPending(true);
+    let result: Awaited<ReturnType<typeof evaluatePosCouponAction>>;
+    try {
+      result = await evaluatePosCouponAction(coupon.code, evalCart, customerId, { recalc: true });
+    } catch {
+      // เน็ตหลุด — อย่าค้าง "กำลังคำนวณ" และอย่าปล่อยยอดคูปองเก่าไปชำระ
+      if (seq !== couponRecalcSeqRef.current) return false;
+      setCouponRecalcPending(false);
+      setAppliedCoupon(null);
+      setCouponCode(coupon.code);
+      setCouponNotice(`คำนวณคูปอง ${coupon.code} ใหม่ไม่สำเร็จ (เชื่อมต่อไม่ได้) — กดชำระเงินอีกครั้งเพื่อลองใหม่`);
+      return false;
+    }
+    if (seq !== couponRecalcSeqRef.current) return false;
+    setCouponRecalcPending(false);
+    if (result.error || !result.couponId || !result.normalizedCode) {
+      setAppliedCoupon(null);
+      setCouponCode("");
+      setCouponNotice(`คูปอง ${coupon.code} ใช้กับบิลนี้ไม่ได้แล้ว: ${result.error ?? "ไม่ผ่านเงื่อนไข"}`);
+      setCustomerCouponMessage(null);
+      return false;
+    }
+    checkoutIdempotencyKeyRef.current = null;
+    setAppliedCoupon({ ...coupon, couponId: result.couponId, discount: result.discount, cartKey: key, customerId });
+    if (result.discount !== coupon.discount) {
+      setCustomerCouponMessage(`คำนวณคูปอง ${coupon.code} ใหม่ — ลด ${priceStr(result.discount)}`);
+    }
+    return true;
+  }
+
+  const couponIsStale =
+    !!appliedCoupon &&
+    (appliedCoupon.cartKey !== couponCartKey(cart) || appliedCoupon.customerId !== (selectedCustomer?.id ?? null));
+  const onCouponStale = useEffectEvent((coupon: AppliedCoupon) => {
+    void recalcAppliedCoupon(coupon);
+  });
+  useEffect(() => {
+    if (!couponIsStale || !appliedCoupon) return;
+    const timer = window.setTimeout(() => onCouponStale(appliedCoupon), cart.items.length === 0 ? 0 : 450);
+    return () => window.clearTimeout(timer);
+  }, [couponIsStale, appliedCoupon, cart.items.length]);
 
   /** เข้าโหมดเพิ่มรายการเข้าโต๊ะ (ส่งครัว) — ใช้ทั้งจากบิลโต๊ะและจากหน้าเปิดโต๊ะ */
   function startDineInAdd(tableId: string, tableNumber: string) {
@@ -4035,8 +4372,27 @@ export function PosTerminal({
       handleSettleTableFromTicket();
       return;
     }
-    setPhase("payment");
-    setOrderPanelOpen(true);
+    const typedCode = couponCode.trim();
+    const needsApply = couponEnabled && typedCode.length > 0 && !appliedCoupon;
+    if (!needsApply && !couponIsStale) {
+      setPhase("payment");
+      setOrderPanelOpen(true);
+      return;
+    }
+    startTransition(async () => {
+      const ready = needsApply
+        ? await applyCouponCode(typedCode)
+        : appliedCoupon
+          ? await recalcAppliedCoupon(appliedCoupon)
+          : true;
+      if (!ready) {
+        // ยอดเปลี่ยน — ให้แคชเชียร์เห็นก่อนเข้าหน้ารับเงิน
+        setCustomerToolsOpen(needsApply);
+        return;
+      }
+      setPhase("payment");
+      setOrderPanelOpen(true);
+    });
   }
 
   /** เช็คบิลจากหน้ารายการโต๊ะ (TableBillModal) → ใช้ตั๋วของโต๊ะนั้น แล้วเข้าหน้าจ่ายเงินปกติ */
@@ -4117,6 +4473,7 @@ export function PosTerminal({
     setCustomerResults([]);
     setAppliedCoupon(null);
     setCouponCode("");
+    setCouponNotice(null);
     setCustomerCouponMessage(null);
     setOrderPanelOpen(true);
     setTicketMessage(`เรียกตั๋ว ${ticket.ticketNumber} กลับมาแล้ว`);
@@ -4446,6 +4803,7 @@ export function PosTerminal({
     setSelectedCustomer(null);
     setCouponCode("");
     setAppliedCoupon(null);
+    setCouponNotice(null);
     setCustomerCouponMessage(null);
     setTicketMessage(null);
     setPrintStatusMessage(null);
@@ -4618,6 +4976,33 @@ export function PosTerminal({
     });
   }
 
+  const visibleVouchers =
+    selectedCustomer && customerVouchers?.customerId === selectedCustomer.id
+      ? usableVouchers(customerVouchers.vouchers, cart, appliedCoupon?.code)
+      : [];
+
+  function renderMemberQuickBar(compact: boolean) {
+    return (
+      <MemberQuickBar
+        compact={compact}
+        selectedCustomer={selectedCustomer}
+        vouchers={visibleVouchers}
+        customerQuery={customerQuery}
+        customerResults={customerResults}
+        searchedQuery={customerSearchedQuery}
+        registerName={registerName}
+        isPending={isPending}
+        onCustomerQueryChange={handleCustomerQueryChange}
+        onSearchCustomer={handleSearchCustomer}
+        onSelectCustomer={handleSelectCustomer}
+        onClearCustomer={handleClearCustomer}
+        onRegisterNameChange={setRegisterName}
+        onRegister={handleRegisterCustomer}
+        onUseVoucher={handleUseVoucher}
+      />
+    );
+  }
+
   const customerCouponTools = (
     <CustomerCouponPanel
       cart={cart}
@@ -4627,17 +5012,11 @@ export function PosTerminal({
       couponUnavailableMessage={couponUnavailableMessage}
       customerDisplayEnabled={customerDisplayEnabled}
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
-      customerQuery={customerQuery}
-      customerResults={customerResults}
-      selectedCustomer={selectedCustomer}
+      memberSection={renderMemberQuickBar(false)}
       couponCode={couponCode}
       appliedCoupon={appliedCoupon}
       message={customerCouponMessage}
       isPending={isPending}
-      onCustomerQueryChange={handleCustomerQueryChange}
-      onSearchCustomer={handleSearchCustomer}
-      onSelectCustomer={handleSelectCustomer}
-      onClearCustomer={handleClearCustomer}
       onCouponCodeChange={(value) => {
         checkoutIdempotencyKeyRef.current = null;
         setCouponCode(value);
@@ -4666,6 +5045,10 @@ export function PosTerminal({
             displayCart={displayCart}
             appliedCoupon={appliedCoupon}
             selectedCustomerName={selectedCustomer?.name ?? null}
+            memberSlot={loyaltyEnabled ? renderMemberQuickBar(true) : null}
+            couponNotice={couponNotice}
+            couponRecalcPending={couponRecalcPending}
+            onDismissCouponNotice={() => setCouponNotice(null)}
             onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
@@ -4923,6 +5306,10 @@ export function PosTerminal({
             displayCart={displayCart}
             appliedCoupon={appliedCoupon}
             selectedCustomerName={selectedCustomer?.name ?? null}
+            memberSlot={loyaltyEnabled ? renderMemberQuickBar(true) : null}
+            couponNotice={couponNotice}
+            couponRecalcPending={couponRecalcPending}
+            onDismissCouponNotice={() => setCouponNotice(null)}
             onOpenCustomerTools={() => setCustomerToolsOpen(true)}
             onUpdateQty={(key, qty) => commitCart(updateQuantity(cart, key, qty))}
             onRemove={(key) => commitCart(removeFromCart(cart, key))}
@@ -5044,6 +5431,7 @@ export function PosTerminal({
           discountAmount={discountDraft.amount}
           discountPercentage={discountDraft.percentage}
           discountNote={discountDraft.note}
+          appliedCouponCode={appliedCoupon?.code ?? null}
           onDiscountDraftChange={updateDiscountDraft}
           onApplyDiscount={handleApplyDiscount}
           onClose={() => setDiscountFormOpen(false)}
