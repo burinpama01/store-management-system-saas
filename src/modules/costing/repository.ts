@@ -4,6 +4,7 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import {
+  DEFAULT_ALLOCATION,
   DEFAULT_STORE_COST_SETTINGS,
   type AllocationPcts,
   type AllocationTemplate,
@@ -35,10 +36,11 @@ const num = (value: unknown): number => (typeof value === "number" ? value : Num
 export async function loadCostingWorkspace(storeId: string): Promise<{ data: CostingWorkspace | null; error: string | null }> {
   const supabase = await createSupabaseServerClient();
   const [ingredientsRes, linesRes, productRes, templatesRes, settingsRes, channelRes] = await Promise.all([
-    supabase.from("ingredients").select("*").eq("store_id", storeId).order("name"),
-    supabase.from("recipe_lines").select("id, product_id, variant_id, ingredient_id, quantity").eq("store_id", storeId),
-    supabase.from("product_cost_settings").select("product_id, packaging_cost, target_food_cost_pct").eq("store_id", storeId),
-    supabase.from("cost_allocation_templates").select("*").eq("store_id", storeId).order("effective_from", { ascending: false }),
+    // เพดานกันข้อมูลโตไม่จำกัด (ร้านทั่วไปไม่ถึง) — C2 ทำหน้าแบ่งหน้าเมื่อจำเป็น
+    supabase.from("ingredients").select("*").eq("store_id", storeId).order("name").limit(1000),
+    supabase.from("recipe_lines").select("id, product_id, variant_id, ingredient_id, quantity").eq("store_id", storeId).limit(5000),
+    supabase.from("product_cost_settings").select("product_id, packaging_cost, target_food_cost_pct").eq("store_id", storeId).limit(2000),
+    supabase.from("cost_allocation_templates").select("*").eq("store_id", storeId).order("effective_from", { ascending: false }).limit(2000),
     supabase.from("store_cost_settings").select("*").eq("store_id", storeId).maybeSingle(),
     // เลือกเฉพาะคอลัมน์ที่ต้องใช้ — ตารางนี้มี webhook_secret
     supabase.from("connect_channel_links").select("commission_rate, status").eq("store_id", storeId).eq("status", "active"),
@@ -77,6 +79,7 @@ export async function loadCostingWorkspace(storeId: string): Promise<{ data: Cos
         id: row.id,
         productId: row.product_id,
         effectiveFrom: row.effective_from,
+        useStoreDefault: row.use_store_default,
         pcts: {
           ingredient: num(row.ingredient_pct),
           packaging: num(row.packaging_pct),
@@ -155,53 +158,28 @@ export async function deleteIngredient(storeId: string, ingredientId: string) {
 }
 
 /**
- * แทนที่สูตรของเมนูทั้งชุด — ใส่บรรทัดใหม่ก่อน แล้วค่อยลบชุดเดิม
- * (ใส่ไม่ผ่านจะไม่เสียสูตรเดิม)
+ * บันทึกสูตร + ค่าบรรจุภัณฑ์ของเมนูในธุรกรรมเดียว (RPC costing_save_menu, security invoker → ผ่าน RLS)
+ * เดิมแยก insert/delete/upsert หลายคำขอ — พังกลางทางแล้วสูตรซ้ำหรือค่าไม่ครบชุด
  */
-export async function replaceRecipe(
-  scope: StoreScope,
-  productId: string,
-  lines: Array<{ variantId: string | null; ingredientId: string; quantity: number }>,
-) {
+export async function saveMenuCosting(input: {
+  productId: string;
+  lines: Array<{ variantId: string | null; ingredientId: string; quantity: number }>;
+  packagingCost: number;
+  targetFoodCostPct: number | null;
+}) {
   const supabase = await createSupabaseServerClient();
-  const existing = await supabase.from("recipe_lines").select("id").eq("store_id", scope.storeId).eq("product_id", productId);
-  if (existing.error) return { error: mapError(existing.error).userMessage };
-  if (lines.length > 0) {
-    const inserted = await supabase.from("recipe_lines").insert(
-      lines.map((line) => ({
-        organization_id: scope.organizationId,
-        store_id: scope.storeId,
-        product_id: productId,
-        variant_id: line.variantId,
-        ingredient_id: line.ingredientId,
-        quantity: line.quantity,
-      })),
-    );
-    if (inserted.error) return { error: mapError(inserted.error).userMessage };
-  }
-  const oldIds = (existing.data ?? []).map((row) => row.id);
-  if (oldIds.length > 0) {
-    const removed = await supabase.from("recipe_lines").delete().in("id", oldIds).eq("store_id", scope.storeId);
-    if (removed.error) return { error: mapError(removed.error).userMessage };
-  }
-  return { error: null };
-}
-
-export async function saveProductCostSetting(
-  scope: StoreScope,
-  productId: string,
-  input: { packagingCost: number; targetFoodCostPct: number | null },
-) {
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("product_cost_settings").upsert({
-    product_id: productId,
-    organization_id: scope.organizationId,
-    store_id: scope.storeId,
-    packaging_cost: input.packagingCost,
-    target_food_cost_pct: input.targetFoodCostPct,
-    updated_at: new Date().toISOString(),
+  const { error } = await supabase.rpc("costing_save_menu", {
+    p_product_id: input.productId,
+    // variantId "" = ทุกตัวเลือก (SQL ใช้ nullif(el->>'variantId', '')::uuid)
+    p_lines: input.lines.map((line) => ({ variantId: line.variantId ?? "", ingredientId: line.ingredientId, quantity: line.quantity })),
+    p_packaging_cost: input.packagingCost,
+    p_target_food_cost_pct: input.targetFoodCostPct,
   });
-  return { error: error ? mapError(error).userMessage : null };
+  if (!error) return { error: null };
+  if (error.code === "23505") return { error: "วัตถุดิบในสูตรซ้ำกัน" };
+  if (error.code === "42501") return { error: "ต้องเป็นผู้จัดการขึ้นไปจึงจะแก้สูตรได้" };
+  if (error.code === "P0002") return { error: "ไม่พบเมนูนี้" };
+  return { error: mapError(error).userMessage };
 }
 
 /** สัดส่วนใหม่ = แถวใหม่ (ประวัติเดิมไม่เปลี่ยน รายงานย้อนหลังใช้ค่าที่มีผล ณ วันขาย) */
@@ -221,10 +199,24 @@ export async function insertAllocationTemplate(scope: StoreScope, productId: str
   return { error: error ? mapError(error).userMessage : null };
 }
 
-/** เลิกใช้สัดส่วนเฉพาะเมนู → กลับไปใช้ของร้าน */
-export async function clearProductAllocation(storeId: string, productId: string) {
+/**
+ * เลิกใช้สัดส่วนเฉพาะเมนู → กลับไปใช้ของร้าน
+ * ไม่ลบประวัติ: เพิ่มแถว use_store_default (ค่า % ในแถวนี้ไม่ถูกใช้ ใส่ค่าเริ่มต้นเพื่อผ่าน constraint รวม 100)
+ */
+export async function clearProductAllocation(scope: StoreScope, productId: string, userId: string) {
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("cost_allocation_templates").delete().eq("store_id", storeId).eq("product_id", productId);
+  const { error } = await supabase.from("cost_allocation_templates").insert({
+    organization_id: scope.organizationId,
+    store_id: scope.storeId,
+    product_id: productId,
+    use_store_default: true,
+    ingredient_pct: DEFAULT_ALLOCATION.ingredient,
+    packaging_pct: DEFAULT_ALLOCATION.packaging,
+    labor_pct: DEFAULT_ALLOCATION.labor,
+    overhead_pct: DEFAULT_ALLOCATION.overhead,
+    profit_pct: DEFAULT_ALLOCATION.profit,
+    created_by: userId,
+  });
   return { error: error ? mapError(error).userMessage : null };
 }
 

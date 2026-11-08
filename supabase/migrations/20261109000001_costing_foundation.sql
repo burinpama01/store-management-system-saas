@@ -191,3 +191,69 @@ create policy "cost_allocation_templates_manager" on public.cost_allocation_temp
       select 1 from public.products p where p.id = product_id and p.store_id = cost_allocation_templates.store_id
     ))
   );
+
+-- ------------------------------------------------------------
+-- กันสูตรซ้ำ: วัตถุดิบเดียวกันในตัวเลือกเดียวกันมีได้บรรทัดเดียว
+-- (NULL ไม่เท่ากันใน unique index จึงแทนด้วย uuid ศูนย์)
+-- ------------------------------------------------------------
+create unique index if not exists recipe_lines_unique_ingredient_idx
+  on public.recipe_lines (
+    store_id, product_id, coalesce(variant_id, '00000000-0000-0000-0000-000000000000'::uuid), ingredient_id
+  );
+
+-- "กลับไปใช้สัดส่วนของร้าน" = แถวใหม่ที่ use_store_default = true (ไม่ลบประวัติ — รายงานย้อนหลังต้องรู้ว่าวันไหนใช้ค่าไหน)
+alter table public.cost_allocation_templates
+  add column if not exists use_store_default boolean not null default false;
+
+-- ------------------------------------------------------------
+-- บันทึกสูตร + ค่าบรรจุภัณฑ์ของเมนูในธุรกรรมเดียว (atomic)
+-- security invoker: ทำงานด้วยสิทธิ์ผู้เรียก → RLS manager + with check ข้ามร้านยังบังคับทุกแถว
+-- ------------------------------------------------------------
+create or replace function public.costing_save_menu(
+  p_product_id uuid,
+  p_lines jsonb,
+  p_packaging_cost numeric,
+  p_target_food_cost_pct numeric
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_store uuid;
+  v_org uuid;
+begin
+  select p.store_id, s.organization_id into v_store, v_org
+    from products p
+    join stores s on s.id = p.store_id
+   where p.id = p_product_id;
+  if v_store is null then
+    raise exception 'product not found' using errcode = 'P0002';
+  end if;
+  if not auth_user_role_in_store(v_org, v_store, 'manager') then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) > 60 then
+    raise exception 'invalid lines' using errcode = '22023';
+  end if;
+
+  delete from recipe_lines where store_id = v_store and product_id = p_product_id;
+  insert into recipe_lines (organization_id, store_id, product_id, variant_id, ingredient_id, quantity)
+  select v_org, v_store, p_product_id,
+         nullif(el->>'variantId', '')::uuid,
+         (el->>'ingredientId')::uuid,
+         (el->>'quantity')::numeric
+    from jsonb_array_elements(p_lines) el;
+
+  insert into product_cost_settings (product_id, organization_id, store_id, packaging_cost, target_food_cost_pct, updated_at)
+  values (p_product_id, v_org, v_store, coalesce(p_packaging_cost, 0), p_target_food_cost_pct, now())
+  on conflict (product_id) do update
+    set packaging_cost = excluded.packaging_cost,
+        target_food_cost_pct = excluded.target_food_cost_pct,
+        updated_at = now();
+end;
+$$;
+
+revoke all on function public.costing_save_menu(uuid, jsonb, numeric, numeric) from public, anon;
+grant execute on function public.costing_save_menu(uuid, jsonb, numeric, numeric) to authenticated;

@@ -107,7 +107,10 @@ export function IngredientsManager({
       )}
 
       {canEdit && !draft && (
-        <button type="button" className="btn-primary min-h-11" onClick={() => setDraft(EMPTY)}>
+        <button type="button" className="btn-primary min-h-11" onClick={() => {
+          setMessage(null);
+          setDraft(EMPTY);
+        }}>
           + เพิ่มวัตถุดิบ
         </button>
       )}
@@ -188,7 +191,10 @@ export function IngredientsManager({
                   <td className="px-3 py-2 text-right tabular-nums">{usageCount[ingredient.id] ?? 0} เมนู</td>
                   {canEdit && (
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button type="button" className="min-h-9 px-2 text-sm font-semibold text-[var(--tenant-primary)]" onClick={() => setDraft(toDraft(ingredient))}>
+                      <button type="button" className="min-h-9 px-2 text-sm font-semibold text-[var(--tenant-primary)]" onClick={() => {
+                          setMessage(null);
+                          setDraft(toDraft(ingredient));
+                        }}>
                         แก้
                       </button>
                       <button type="button" className="min-h-9 px-2 text-sm font-semibold text-red-600" onClick={() => void remove(ingredient)}>

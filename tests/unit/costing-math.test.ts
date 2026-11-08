@@ -120,6 +120,14 @@ describe("ตรวจและเลือกสัดส่วน", () => {
     expect(effectiveAllocation(templates, "p1", new Date("2026-02-01"))?.id).toBe("store-old");
     expect(effectiveAllocation([], null)).toBeNull();
   });
+
+  it("แถว use_store_default ทำให้เมนูกลับไปใช้ค่าร้านโดยไม่ลบประวัติ", () => {
+    const store: AllocationTemplate = { id: "s", productId: null, effectiveFrom: "2026-01-01T00:00:00Z", pcts: DEFAULT_ALLOCATION };
+    const menu: AllocationTemplate = { id: "m", productId: "p1", effectiveFrom: "2026-02-01T00:00:00Z", pcts: { ...DEFAULT_ALLOCATION, overhead: 10, profit: 40 } };
+    const back: AllocationTemplate = { ...menu, id: "back", effectiveFrom: "2026-05-01T00:00:00Z", useStoreDefault: true };
+    expect(effectiveAllocation([store, menu, back], "p1", new Date("2026-03-01"))?.id).toBe("m");
+    expect(effectiveAllocation([store, menu, back], "p1", new Date("2026-06-01"))?.id).toBe("s");
+  });
 });
 
 describe("SQL ↔ TS parity และความปลอดภัยของ migration", () => {
@@ -138,6 +146,16 @@ describe("SQL ↔ TS parity และความปลอดภัยของ 
     expect(snapshot).toContain("revoke all on function public.costing_plate_cost(uuid, uuid) from public, anon, authenticated;");
     expect(snapshot).not.toMatch(/grant execute on function public\.costing_plate_cost/);
     expect(snapshot).toContain("auth_user_role_in_store(organization_id, store_id, 'manager')");
+  });
+
+  it("บันทึกสูตรเป็นธุรกรรมเดียวผ่าน RPC แบบ security invoker และกันสูตรซ้ำ", () => {
+    const fn = foundation.slice(foundation.indexOf("create or replace function public.costing_save_menu"));
+    expect(fn).toContain("security invoker");
+    expect(fn).not.toContain("security definer");
+    expect(fn).toContain("auth_user_role_in_store(v_org, v_store, 'manager')");
+    expect(foundation).toContain("recipe_lines_unique_ingredient_idx");
+    expect(foundation).toContain("use_store_default boolean not null default false");
+    expect(snapshot).toContain("if v_unit_cost is null and coalesce(v_packaging, 0) = 0 then");
   });
 
   it("ตารางต้นทุนทุกตารางเปิด RLS ระดับ manager และไม่แก้ products/order_items", () => {

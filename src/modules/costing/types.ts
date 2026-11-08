@@ -86,4 +86,6 @@ export interface AllocationTemplate {
   productId: string | null;
   pcts: AllocationPcts;
   effectiveFrom: string;
+  /** แถว "กลับไปใช้สัดส่วนของร้าน" ของเมนู — pcts ในแถวนี้ไม่ถูกใช้ */
+  useStoreDefault?: boolean;
 }

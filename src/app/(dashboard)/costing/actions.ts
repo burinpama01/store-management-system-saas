@@ -7,9 +7,8 @@ import {
   clearProductAllocation,
   deleteIngredient,
   insertAllocationTemplate,
-  replaceRecipe,
   saveIngredient,
-  saveProductCostSetting,
+  saveMenuCosting,
   saveStoreCostSettings,
 } from "@/modules/costing/repository";
 import type { AllocationPcts, IngredientInput, PriceRounding } from "@/modules/costing/types";
@@ -117,19 +116,18 @@ export async function saveMenuCostingAction(input: {
     if (!UUID_RE.test(line.ingredientId) || (line.variantId !== null && !UUID_RE.test(line.variantId))) return { error: "ข้อมูลสูตรไม่ถูกต้อง" };
     if (!finite(line.quantity) || line.quantity <= 0 || line.quantity > 1_000_000) return { error: "ปริมาณในสูตรต้องมากกว่า 0" };
   }
+  // วัตถุดิบเดียวกันในตัวเลือกเดียวกันห้ามซ้ำ (ต้นทุนจะนับสองเท่า) — DB มี unique index กันซ้ำอีกชั้น
+  const lineKeys = input.lines.map((line) => `${line.ingredientId}:${line.variantId ?? "all"}`);
+  if (new Set(lineKeys).size !== lineKeys.length) return { error: "วัตถุดิบในสูตรซ้ำกัน — รวมเป็นบรรทัดเดียว" };
   if (!finite(input.packagingCost) || input.packagingCost < 0 || input.packagingCost > 100_000) return { error: "ค่าบรรจุภัณฑ์ไม่ถูกต้อง" };
   if (input.targetFoodCostPct !== null && (!finite(input.targetFoodCostPct) || input.targetFoodCostPct <= 0 || input.targetFoodCostPct >= 100)) {
     return { error: "เป้า food cost ต้องอยู่ระหว่าง 1–99%" };
   }
 
   const scope = { organizationId: access.ctx.organizationId, storeId: access.ctx.storeId };
-  // RLS ตรวจซ้ำว่าเมนู/วัตถุดิบ/ตัวเลือกเป็นของร้านนี้ (with check ใน migration)
-  const recipe = await replaceRecipe(scope, input.productId, input.lines);
-  const settings = recipe.error ? { error: null } : await saveProductCostSetting(scope, input.productId, {
-    packagingCost: input.packagingCost,
-    targetFoodCostPct: input.targetFoodCostPct,
-  });
-  const failure = recipe.error ?? settings.error;
+  // ธุรกรรมเดียว + RLS ตรวจซ้ำว่าเมนู/วัตถุดิบ/ตัวเลือกเป็นของร้านนี้ (with check ใน migration)
+  const saved = await saveMenuCosting(input);
+  const failure = saved.error;
   await logCosting({
     action: "saveMenuCosting",
     ok: !failure,
@@ -168,7 +166,11 @@ export async function clearProductAllocationAction(productId: string): Promise<A
   const { access, error } = await requireEditor();
   if (!access) return { error };
   if (!UUID_RE.test(productId)) return { error: "ข้อมูลเมนูไม่ถูกต้อง" };
-  const result = await clearProductAllocation(access.ctx.storeId, productId);
+  const result = await clearProductAllocation(
+    { organizationId: access.ctx.organizationId, storeId: access.ctx.storeId },
+    productId,
+    access.user.id,
+  );
   await logCosting({
     action: "clearProductAllocation",
     ok: !result.error,

@@ -53,6 +53,13 @@ describe("costing wiring", () => {
     expect(actions).toContain('source: "costing"');
   });
 
+  it("สูตรซ้ำถูกปฏิเสธก่อนถึงฐานข้อมูล และกลับไปใช้ค่าร้านไม่ลบประวัติ", () => {
+    expect(actions).toContain("วัตถุดิบในสูตรซ้ำกัน");
+    expect(repo).toContain('supabase.rpc("costing_save_menu"');
+    expect(repo).not.toMatch(/from\("cost_allocation_templates"\)\.delete\(\)/);
+    expect(repo).toContain("use_store_default: true");
+  });
+
   it("เมนู sidebar ใช้ด่านเดียวกับหน้า", () => {
     expect(layout).toContain("decideCostingAccess({");
     expect(layout).toContain('{ href: "/costing", label: "ต้นทุน" }');

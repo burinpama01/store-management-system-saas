@@ -71,8 +71,8 @@ begin
   begin
     select c.unit_cost, c.packaging_cost into v_unit_cost, v_packaging
       from costing_plate_cost(new.product_id, new.variant_id) c;
-    if v_unit_cost is null and v_packaging is null then
-      return null;  -- ยังไม่มีสูตร: ไม่บันทึก
+    if v_unit_cost is null and coalesce(v_packaging, 0) = 0 then
+      return null;  -- ยังไม่มีสูตรและไม่มีค่าบรรจุภัณฑ์: ไม่บันทึก (รายงานนับเป็น "ยังไม่มีสูตร")
     end if;
     select o.organization_id, o.store_id into v_org, v_store
       from orders o where o.id = new.order_id;

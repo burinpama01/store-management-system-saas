@@ -3549,6 +3549,7 @@ export interface Database {
           effective_from: string;
           created_by: string | null;
           created_at: string;
+          use_store_default: boolean;
         };
         Insert: {
           id?: string;
@@ -3563,12 +3564,14 @@ export interface Database {
           effective_from?: string;
           created_by?: string | null;
           created_at?: string;
+          use_store_default?: boolean;
         };
         Update: {
           id?: string;
           organization_id?: string;
           store_id?: string;
           product_id?: string | null;
+          use_store_default?: boolean;
           ingredient_pct?: number;
           packaging_pct?: number;
           labor_pct?: number;
@@ -5580,6 +5583,15 @@ export interface Database {
           p_error_message?: string | null;
         };
         Returns: string;
+      };
+      costing_save_menu: {
+        Args: {
+          p_product_id: string;
+          p_lines: Json;
+          p_packaging_cost: number;
+          p_target_food_cost_pct: number | null;
+        };
+        Returns: undefined;
       };
       redeem_loyalty_reward: {
         Args: {

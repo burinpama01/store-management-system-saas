@@ -28,8 +28,9 @@ export default async function CostingMenuPage() {
   const storeTemplate = effectiveAllocation(data.templates, null);
   const productOverrides = Object.fromEntries(
     products.flatMap((product) => {
-      const t = data.templates.find((template) => template.productId === product.id);
-      return t ? [[product.id, t.pcts]] : [];
+      // ใช้กติกาเดียวกับรายงาน (effective_from ≤ ตอนนี้) · ได้แถวของเมนูเอง = มี override
+      const t = effectiveAllocation(data.templates, product.id);
+      return t && t.productId === product.id ? [[product.id, t.pcts]] : [];
     }),
   );
 

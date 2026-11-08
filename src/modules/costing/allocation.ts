@@ -34,7 +34,10 @@ export function effectiveAllocation(
     templates
       .filter((t) => t.productId === scope && new Date(t.effectiveFrom).getTime() <= atMs)
       .sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0] ?? null;
-  return (productId ? pick(productId) : null) ?? pick(null);
+  const productRow = productId ? pick(productId) : null;
+  // แถว use_store_default = เมนูนี้กลับไปใช้ค่าร้านตั้งแต่เวลานั้น
+  if (productRow && !productRow.useStoreDefault) return productRow;
+  return pick(null);
 }
 
 export interface BucketLine {
