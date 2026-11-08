@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  applyKeypadKey,
   availableDiscountPresets,
   couponCartKey,
   fallbackMemberName,
@@ -90,6 +91,7 @@ describe("discount presets (D1)", () => {
   it("hides baht presets that exceed the subtotal", () => {
     expect(availableDiscountPresets(30).map((p) => p.label)).toEqual(["5%", "10%", "20%", "฿10", "฿20"]);
     expect(availableDiscountPresets(500)).toHaveLength(6);
+    expect(availableDiscountPresets(0).map((p) => p.type)).toEqual(["percentage", "percentage", "percentage"]);
   });
 });
 
@@ -103,6 +105,25 @@ describe("usableVouchers (L3)", () => {
   it("drops vouchers already in the bill or applied as the coupon", () => {
     const withReward = cart([item("x", 1, 50), item("reward:RWA", 1, 0, { rewardVoucherCode: "RWA" })]);
     expect(usableVouchers(vouchers, withReward, "rwb").map((v) => v.code)).toEqual(["RWC"]);
+  });
+});
+
+describe("applyKeypadKey (แป้นตัวเลขบนจอ)", () => {
+  it("types phone digits up to 10 and supports back/clear", () => {
+    let v = "";
+    for (const k of ["0", "8", "1", "2", "3", "4", "5", "6", "7", "8", "9"] as const) v = applyKeypadKey(v, k, { maxLength: 10 });
+    expect(v).toBe("0812345678");
+    expect(applyKeypadKey(v, "back")).toBe("081234567");
+    expect(applyKeypadKey(v, "clear")).toBe("");
+    expect(applyKeypadKey("08", ".")).toBe("08");
+  });
+
+  it("handles decimals for discount amounts", () => {
+    expect(applyKeypadKey("", ".", { allowDecimal: true })).toBe("0.");
+    expect(applyKeypadKey("12.5", ".", { allowDecimal: true })).toBe("12.5");
+    expect(applyKeypadKey("12.55", "1", { allowDecimal: true })).toBe("12.55");
+    expect(applyKeypadKey("0", "5", { allowDecimal: true })).toBe("5");
+    expect(applyKeypadKey("0", "0", { allowDecimal: true })).toBe("0");
   });
 });
 
@@ -131,6 +152,23 @@ describe("POS wiring", () => {
   it("keeps the coupon when a member is linked (L4)", () => {
     const select = terminal.slice(terminal.indexOf("function handleSelectCustomer("), terminal.indexOf("function handleClearCustomer("));
     expect(select).not.toContain("setAppliedCoupon(null)");
+  });
+
+  it("customer and discount sheets are wide, touch-sized and keypad-enabled for desktop/iPad", () => {
+    expect(terminal).toMatch(/title="ส่วนลดท้ายบิล"\s*size="wide"/);
+    expect(terminal).toMatch(/title="ลูกค้า \/ คูปอง \/ จอลูกค้า"\s*size="wide"/);
+    expect(terminal).toContain('size === "wide" ? "sm:w-[760px]" : "sm:w-[420px]"');
+    expect(terminal).toContain('[data-autofocus="true"]');
+    const memberSheet = terminal.slice(terminal.indexOf("function MemberSheetSection("), terminal.indexOf("function MemberQuickBar("));
+    expect(memberSheet).toContain('label="แป้นเบอร์โทร"');
+    expect(memberSheet).toContain("text-base");
+    expect(memberSheet).not.toContain("text-xs text-slate-800");
+    const discount = terminal.slice(terminal.indexOf("function BillDiscountPanel("), terminal.indexOf("function NumericKeypad("));
+    expect(discount).toContain('label="แป้นตัวเลขส่วนลด"');
+    expect(discount).toContain("min-h-14");
+    // แป้นพิมพ์ทศนิยมได้: ช่องต้องเป็น text + inputMode decimal (number แสดง "0." เป็นค่าว่าง)
+    expect(discount).not.toContain('type="number"');
+    expect(terminal).toContain(".filter((element) => element.offsetParent !== null)");
   });
 
   it("labels the code field for reward vouchers too (C3)", () => {

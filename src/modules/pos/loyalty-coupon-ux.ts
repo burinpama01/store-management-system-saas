@@ -90,3 +90,30 @@ export function usableVouchers(
   const applied = appliedCouponCode?.toUpperCase() ?? null;
   return vouchers.filter((voucher) => !inCart.has(voucher.code) && voucher.code.toUpperCase() !== applied);
 }
+
+export type KeypadKey = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "." | "back" | "clear";
+
+/**
+ * ปุ่มตัวเลขบนจอ (จอสัมผัสร้าน / iPad ที่ไม่อยากเด้งคีย์บอร์ด)
+ * - allowDecimal: ส่วนลดเป็นบาท/% ทศนิยมได้ 2 ตำแหน่ง · เบอร์โทรไม่มีจุด
+ */
+export function applyKeypadKey(
+  value: string,
+  key: KeypadKey,
+  options: { allowDecimal?: boolean; maxLength?: number } = {},
+): string {
+  const maxLength = options.maxLength ?? 10;
+  if (key === "clear") return "";
+  if (key === "back") return value.slice(0, -1);
+  if (key === ".") {
+    if (!options.allowDecimal || value.includes(".")) return value;
+    return value === "" ? "0." : `${value}.`;
+  }
+  if (value.length >= maxLength) return value;
+  if (options.allowDecimal) {
+    const [, decimals] = value.split(".");
+    if (decimals !== undefined && decimals.length >= 2) return value;
+    if (value === "0") return key;
+  }
+  return value + key;
+}

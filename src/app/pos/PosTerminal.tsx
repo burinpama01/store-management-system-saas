@@ -51,6 +51,7 @@ import {
 } from "./actions";
 import { useSearchParams } from "next/navigation";
 import {
+  applyKeypadKey,
   availableDiscountPresets,
   couponCartKey,
   DISCOUNT_REASON_PRESETS,
@@ -59,6 +60,7 @@ import {
   pickAutoSelectCustomer,
   shouldAutoSearchCustomer,
   usableVouchers,
+  type KeypadKey,
   type PosRewardVoucher,
 } from "@/modules/pos/loyalty-coupon-ux";
 import { signOut } from "../(dashboard)/actions";
@@ -1192,144 +1194,384 @@ function BillDiscountPanel({
     onClose();
   }
 
+  const previewAmount = !canApplyDiscount
+    ? 0
+    : discountMode === "percentage"
+      ? percentagePreview
+      : Math.min(cart.subtotal, parsedDiscountValue);
+  const previewTotal = Math.max(0, cart.subtotal - previewAmount);
+
+  function handleKeypad(key: KeypadKey) {
+    const next = applyKeypadKey(discountInputValue, key, { allowDecimal: true, maxLength: 8 });
+    onDiscountDraftChange(discountMode === "percentage" ? { percentage: next } : { amount: next });
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {cart.discount > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-teal-50 px-3 py-2 text-xs text-teal-900">
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-teal-50 p-3 text-sm text-teal-900">
           <span className="min-w-0 truncate">
-            ลดอยู่ <span className="font-semibold tabular-nums">-{priceStr(cart.discount)}</span>
+            ลดอยู่ <span className="text-base font-semibold tabular-nums">-{priceStr(cart.discount)}</span>
             {cart.discountNote ? ` · ${cart.discountNote}` : ""}
           </span>
           <button
             type="button"
             onClick={handleClearDiscount}
-            className="min-h-9 shrink-0 rounded-lg px-2 text-[11px] font-semibold text-red-500 hover:text-red-600"
+            className="min-h-12 shrink-0 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
           >
             ล้างส่วนลด
           </button>
         </div>
       )}
-<div className="space-y-2">
-        {appliedCouponCode && (
-          <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-            บิลนี้ใช้คูปอง {appliedCouponCode} อยู่ — ใส่ส่วนลดแล้วระบบจะคำนวณคูปองใหม่ (บางคูปองใช้ร่วมกับส่วนลดไม่ได้)
-          </p>
-        )}
-        <div className="flex flex-wrap gap-1" role="group" aria-label="เหตุผลที่ใช้บ่อย">
-          {DISCOUNT_REASON_PRESETS.map((reason) => (
+      {appliedCouponCode && (
+        <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+          บิลนี้ใช้คูปอง {appliedCouponCode} อยู่ — ใส่ส่วนลดแล้วระบบจะคำนวณคูปองใหม่ (บางคูปองใช้ร่วมกับส่วนลดไม่ได้)
+        </p>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <section className="min-w-0 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-700">เหตุผล (ไม่บังคับ)</h3>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="เหตุผลที่ใช้บ่อย">
+            {DISCOUNT_REASON_PRESETS.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                aria-pressed={discountNote.trim() === reason}
+                disabled={cart.items.length === 0}
+                onClick={() => onDiscountDraftChange({ note: discountNote.trim() === reason ? "" : reason })}
+                className={`min-h-11 rounded-full border px-4 text-sm font-semibold disabled:opacity-40 ${
+                  discountNote.trim() === reason
+                    ? "border-teal-700 bg-teal-700 text-white"
+                    : "border-teal-200 bg-white text-teal-800 hover:bg-teal-50"
+                }`}
+              >
+                {reason}
+              </button>
+            ))}
+          </div>
+          <input
+            value={discountNote}
+            onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
+            placeholder="เหตุผล/โปรโมชัน"
+            aria-label="เหตุผลส่วนลด"
+            disabled={cart.items.length === 0}
+            style={{ fontSize: 16 }}
+            className="min-h-12 w-full rounded-xl border border-teal-200 bg-white px-3 text-base text-gray-800 placeholder:text-gray-400 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+          />
+          <h3 className="pt-1 text-sm font-semibold text-slate-700">ส่วนลดลัด — แตะแล้วใช้ทันที</h3>
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label="ส่วนลดลัด">
+            {presets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                disabled={cart.items.length === 0}
+                onClick={() => handlePreset(preset.type, preset.value)}
+                className="min-h-14 rounded-xl border border-teal-200 bg-white text-lg font-bold tabular-nums text-teal-800 hover:bg-teal-50 active:scale-[0.97] disabled:opacity-40 motion-reduce:active:scale-100"
+              >
+                -{preset.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="min-w-0 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-700">หรือกรอกเอง</h3>
+          <div
+            role="group"
+            aria-label="ประเภทส่วนลด"
+            className="grid grid-cols-2 gap-1 rounded-xl border border-teal-200 bg-white p-1"
+          >
             <button
-              key={reason}
               type="button"
-              aria-pressed={discountNote.trim() === reason}
-              disabled={cart.items.length === 0}
-              onClick={() => onDiscountDraftChange({ note: discountNote.trim() === reason ? "" : reason })}
-              className={`min-h-9 rounded-full border px-3 text-[11px] font-semibold disabled:opacity-40 ${
-                discountNote.trim() === reason
-                  ? "border-teal-700 bg-teal-700 text-white"
-                  : "border-teal-100 bg-white text-teal-800 hover:bg-teal-50"
+              aria-pressed={discountMode === "amount"}
+              onClick={() => onDiscountDraftChange({ mode: "amount" })}
+              className={`min-h-11 rounded-lg px-3 text-base font-semibold transition-colors ${
+                discountMode === "amount" ? "bg-teal-700 text-white" : "text-teal-800 hover:bg-teal-50"
               }`}
             >
-              {reason}
+              บาท
             </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-1" role="group" aria-label="ส่วนลดลัด">
-          {presets.map((preset) => (
             <button
-              key={preset.label}
               type="button"
-              disabled={cart.items.length === 0}
-              onClick={() => handlePreset(preset.type, preset.value)}
-              className="min-h-11 rounded-lg border border-teal-200 bg-white text-sm font-semibold tabular-nums text-teal-800 hover:bg-teal-50 disabled:opacity-40"
+              aria-pressed={discountMode === "percentage"}
+              onClick={() => onDiscountDraftChange({ mode: "percentage" })}
+              className={`min-h-11 rounded-lg px-3 text-base font-semibold transition-colors ${
+                discountMode === "percentage" ? "bg-teal-700 text-white" : "text-teal-800 hover:bg-teal-50"
+              }`}
             >
-              -{preset.label}
+              %
             </button>
-          ))}
-        </div>
-        <p className="text-[11px] text-teal-700">หรือกรอกเอง</p>
-        <div
-          role="group"
-          aria-label="ประเภทส่วนลด"
-          className="grid grid-cols-2 gap-1 rounded-lg border border-teal-100 bg-white p-1"
-        >
-          <button
-            type="button"
-            aria-pressed={discountMode === "amount"}
-            onClick={() => onDiscountDraftChange({ mode: "amount" })}
-            className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
-              discountMode === "amount"
-                ? "bg-teal-700 text-white"
-                : "text-teal-800 hover:bg-teal-50"
-            }`}
-          >
-            บาท
-          </button>
-          <button
-            type="button"
-            aria-pressed={discountMode === "percentage"}
-            onClick={() => onDiscountDraftChange({ mode: "percentage" })}
-            className={`min-h-10 rounded-md px-3 text-xs font-semibold transition-colors ${
-              discountMode === "percentage"
-                ? "bg-teal-700 text-white"
-                : "text-teal-800 hover:bg-teal-50"
-            }`}
-          >
-            %
-          </button>
-        </div>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          </div>
           {discountMode === "amount" ? (
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
+              autoComplete="off"
               min="0"
               max={cart.subtotal}
               step="0.01"
               value={discountAmount}
               onChange={(event) => onDiscountDraftChange({ amount: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleApplyDiscount();
+              }}
               placeholder="0"
               aria-label="จำนวนส่วนลด"
               disabled={cart.items.length === 0}
-              className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+              style={{ fontSize: 24 }}
+              className="min-h-14 w-full rounded-xl border border-teal-200 bg-white px-4 text-right text-2xl font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
             />
           ) : (
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
+              autoComplete="off"
               min="0"
               max="100"
               step="0.01"
               value={discountPercentage}
               onChange={(event) => onDiscountDraftChange({ percentage: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleApplyDiscount();
+              }}
               placeholder="0"
               aria-label="เปอร์เซ็นต์ส่วนลด"
               disabled={cart.items.length === 0}
-              className="min-h-11 w-full rounded-lg border border-teal-100 bg-white px-3 text-sm font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+              style={{ fontSize: 24 }}
+              className="min-h-14 w-full rounded-xl border border-teal-200 bg-white px-4 text-right text-2xl font-semibold tabular-nums text-gray-900 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
             />
           )}
+          <NumericKeypad label="แป้นตัวเลขส่วนลด" allowDecimal disabled={cart.items.length === 0} onKey={handleKeypad} />
+          <p className="text-sm text-teal-800" aria-live="polite">
+            {previewAmount > 0 ? (
+              <>
+                ลด <span className="font-semibold tabular-nums">{priceStr(previewAmount)}</span> · เหลือ{" "}
+                <span className="font-semibold tabular-nums">{priceStr(previewTotal)}</span>
+              </>
+            ) : (
+              <>ยอดรวม <span className="tabular-nums">{priceStr(cart.subtotal)}</span></>
+            )}
+          </p>
           <button
             type="button"
             disabled={!canApplyDiscount}
             onClick={handleApplyDiscount}
-            className="min-h-11 rounded-lg border border-teal-200 bg-white px-3 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+            className="min-h-14 w-full rounded-xl bg-teal-700 text-base font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            ใช้ส่วนลด
+            ใช้ส่วนลด{previewAmount > 0 ? ` ${priceStr(previewAmount)}` : ""}
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ปุ่มตัวเลขบนจอสำหรับแผงเลื่อน (จอสัมผัสร้าน / iPad) — ซ่อนบนมือถือที่มีคีย์บอร์ดอยู่แล้ว
+ */
+function NumericKeypad({
+  allowDecimal = false,
+  disabled = false,
+  label,
+  onKey,
+}: {
+  allowDecimal?: boolean;
+  disabled?: boolean;
+  label: string;
+  onKey: (key: KeypadKey) => void;
+}) {
+  const keys: KeypadKey[] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", allowDecimal ? "." : "clear", "0", "back"];
+  return (
+    <div role="group" aria-label={label} className="hidden grid-cols-3 gap-2 sm:grid">
+      {keys.map((key) => (
+        <button
+          key={key}
+          type="button"
+          disabled={disabled}
+          onClick={() => onKey(key)}
+          aria-label={key === "back" ? "ลบตัวสุดท้าย" : key === "clear" ? "ล้างทั้งหมด" : key}
+          className={`min-h-14 rounded-xl border text-xl font-semibold tabular-nums transition-colors active:scale-[0.97] disabled:opacity-40 motion-reduce:transition-none motion-reduce:active:scale-100 ${
+            key === "back" || key === "clear"
+              ? "border-slate-200 bg-slate-100 text-base text-slate-600 hover:bg-slate-200"
+              : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          {key === "back" ? "⌫" : key === "clear" ? "ล้าง" : key}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * สมาชิกสะสมแต้มในแผงเลื่อน (จอใหญ่/iPad) — ตัวอักษร ≥16px กัน Safari ซูม,
+ * ปุ่มสูง ≥48px, แป้นเบอร์โทรบนจอ, ผลค้นหา/โค้ดแลกรางวัลเป็นการ์ดแตะง่าย
+ */
+function MemberSheetSection({
+  selectedCustomer,
+  vouchers,
+  customerQuery,
+  customerResults,
+  searchedQuery,
+  registerName,
+  isPending,
+  onCustomerQueryChange,
+  onSearchCustomer,
+  onSelectCustomer,
+  onClearCustomer,
+  onRegisterNameChange,
+  onRegister,
+  onUseVoucher,
+}: {
+  selectedCustomer: CustomerProfile | null;
+  vouchers: PosRewardVoucher[];
+  customerQuery: string;
+  customerResults: CustomerProfile[];
+  searchedQuery: string | null;
+  registerName: string;
+  isPending: boolean;
+  onCustomerQueryChange: (value: string) => void;
+  onSearchCustomer: () => void;
+  onSelectCustomer: (customer: CustomerProfile) => void;
+  onClearCustomer: () => void;
+  onRegisterNameChange: (value: string) => void;
+  onRegister: () => void;
+  onUseVoucher: (voucher: PosRewardVoucher) => void;
+}) {
+  if (selectedCustomer) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-amber-900">⭐ {selectedCustomer.name}</p>
+            <p className="text-sm text-amber-800">
+              {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้มสะสม{" "}
+              <span className="font-semibold tabular-nums">{formatPoints(selectedCustomer.pointsBalance ?? 0)}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClearCustomer}
+            className="min-h-12 shrink-0 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
+          >
+            เปลี่ยนสมาชิก
           </button>
         </div>
-        {discountMode === "percentage" && percentagePreview > 0 && parsedDiscountValue <= 100 && (
-          <p className="text-[11px] text-teal-700">
-            ลดประมาณ <span className="font-semibold tabular-nums">{priceStr(percentagePreview)}</span>
-          </p>
+        {vouchers.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-slate-700">รางวัลที่แลกไว้ — แตะเพื่อใช้กับบิลนี้</p>
+            <div className="grid gap-2 sm:grid-cols-2" aria-label="โค้ดแลกรางวัลของลูกค้า">
+              {vouchers.map((voucher) => (
+                <button
+                  key={voucher.redemptionId}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onUseVoucher(voucher)}
+                  className="flex min-h-14 items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-3 text-left hover:bg-green-100 disabled:opacity-50"
+                >
+                  <span aria-hidden="true" className="text-2xl">
+                    {voucher.rewardType === "discount" ? "🏷️" : "🎁"}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-green-900">{voucher.rewardName}</span>
+                    <span className="block text-xs text-green-700">โค้ด {voucher.code} · แตะใช้</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">สมาชิกยังไม่มีรางวัลที่แลกไว้</p>
         )}
-        <input
-          value={discountNote}
-          onChange={(event) => onDiscountDraftChange({ note: event.target.value })}
-          placeholder="เหตุผล/โปรโมชัน"
-          aria-label="เหตุผลส่วนลด"
-          disabled={cart.items.length === 0}
-          className="min-h-10 w-full rounded-lg border border-teal-100 bg-white px-3 text-xs text-gray-700 placeholder:text-gray-300 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
-        />
       </div>
+    );
+  }
+
+  const trimmed = customerQuery.trim();
+  const searchedEmpty = searchedQuery !== null && searchedQuery === trimmed && customerResults.length === 0;
+  const canRegister = searchedEmpty && isRegistrablePhone(trimmed);
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="min-w-0 space-y-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <input
+            data-autofocus="true"
+            value={customerQuery}
+            onChange={(event) => onCustomerQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onSearchCustomer();
+            }}
+            inputMode={/^[\d\s-]*$/.test(customerQuery) ? "tel" : "text"}
+            placeholder="ค้นชื่อลูกค้าหรือเบอร์โทร"
+            aria-label="ค้นชื่อลูกค้าหรือเบอร์โทร"
+            style={{ fontSize: 16 }}
+            className="min-h-12 rounded-xl border border-slate-300 bg-white px-3 text-base tabular-nums text-slate-900 placeholder:text-slate-400"
+          />
+          <button
+            type="button"
+            disabled={isPending || trimmed.length === 0}
+            onClick={onSearchCustomer}
+            className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ค้นหา
+          </button>
+        </div>
+        {customerResults.length > 0 && (
+          <div className="max-h-64 space-y-2 overflow-y-auto overscroll-contain">
+            {customerResults.map((customer) => (
+              <button
+                key={customer.id}
+                type="button"
+                onClick={() => onSelectCustomer(customer)}
+                className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 text-left hover:border-amber-300 hover:bg-amber-50"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-base font-semibold text-slate-900">{customer.name}</span>
+                  <span className="block text-sm text-slate-500">{customer.phone ?? customer.email ?? "ไม่มีข้อมูลติดต่อ"}</span>
+                </span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-amber-700">
+                  {formatPoints(customer.pointsBalance ?? 0)} แต้ม
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {canRegister && (
+          <div className="space-y-2 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 p-3">
+            <p className="text-sm text-amber-900">
+              ไม่พบสมาชิกเบอร์ <span className="font-semibold tabular-nums">{trimmed}</span> — สมัครให้เลยไหม?
+            </p>
+            <input
+              value={registerName}
+              onChange={(event) => onRegisterNameChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") onRegister();
+              }}
+              maxLength={120}
+              placeholder="ชื่อ (ไม่ใส่ก็ได้)"
+              aria-label="ชื่อสมาชิกใหม่"
+              style={{ fontSize: 16 }}
+              className="min-h-12 w-full rounded-xl border border-amber-200 bg-white px-3 text-base text-slate-900 placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={onRegister}
+              className="min-h-12 w-full rounded-xl bg-amber-500 text-base font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              สมัครสมาชิก
+            </button>
+          </div>
+        )}
+        {!trimmed && <p className="text-sm text-slate-500">พิมพ์เบอร์ครบ 10 หลัก ระบบผูกสมาชิกให้อัตโนมัติ</p>}
+      </div>
+      <NumericKeypad
+        label="แป้นเบอร์โทร"
+        disabled={isPending}
+        onKey={(key) => onCustomerQueryChange(applyKeypadKey(customerQuery, key, { maxLength: 10 }))}
+      />
     </div>
   );
 }
@@ -1427,6 +1669,7 @@ function MemberQuickBar({
           inputMode={/^[\d\s-]*$/.test(customerQuery) ? "tel" : "text"}
           placeholder={compact ? "📱 เบอร์สมาชิก (สะสมแต้ม)" : "ค้นชื่อลูกค้าหรือเบอร์โทร"}
           aria-label="ค้นชื่อลูกค้าหรือเบอร์โทร"
+          style={{ fontSize: 16 }}
           className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 placeholder:text-slate-400"
         />
         <button
@@ -1468,6 +1711,7 @@ function MemberQuickBar({
               maxLength={120}
               placeholder="ชื่อ (ไม่ใส่ก็ได้)"
               aria-label="ชื่อสมาชิกใหม่"
+              style={{ fontSize: 16 }}
               className="min-h-10 rounded-lg border border-amber-200 bg-white px-2 text-xs text-slate-800 placeholder:text-slate-400"
             />
             <button
@@ -1501,6 +1745,7 @@ function CustomerCouponPanel({
   onCouponCodeChange,
   onApplyCoupon,
   onClearCoupon,
+  onDone,
 }: {
   cart: Cart;
   loyaltyEnabled: boolean;
@@ -1517,45 +1762,34 @@ function CustomerCouponPanel({
   onCouponCodeChange: (value: string) => void;
   onApplyCoupon: () => void;
   onClearCoupon: () => void;
+  onDone: () => void;
 }) {
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold text-slate-600">ลูกค้า / คูปอง / จอลูกค้า</p>
-        {customerDisplayEnabled ? (
-          <a
-            href="/pos/display"
-            target="_blank"
-            rel="noreferrer"
-            className="min-h-8 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
-          >
-            จอลูกค้า
-          </a>
+    <div className="space-y-4">
+      <section className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+        <h3 className="text-base font-semibold text-slate-900">⭐ สมาชิกสะสมแต้ม</h3>
+        {loyaltyEnabled ? (
+          memberSection
         ) : (
-          <span
-            title={customerDisplayUnavailableMessage ?? undefined}
-            className="rounded-lg border border-slate-100 bg-white px-2 py-1 text-[11px] font-semibold text-slate-300"
-          >
-            จอลูกค้า
-          </span>
+          <p className="text-sm text-slate-500">{loyaltyUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับสะสมแต้ม"}</p>
         )}
-      </div>
+      </section>
 
-      {loyaltyEnabled ? (
-        memberSection
-      ) : (
-        <p className="rounded-lg bg-white px-2 py-2 text-[11px] text-slate-400">
-          {loyaltyUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับสะสมแต้ม"}
-        </p>
-      )}
-
-      {couponEnabled ? (
-        <div className="space-y-1.5">
-          {appliedCoupon ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-green-50 px-2 py-2 text-xs text-green-700">
-              <span className="truncate font-semibold">ใช้คูปอง {appliedCoupon.code} -{priceStr(appliedCoupon.discount)}</span>
-              <button type="button" onClick={onClearCoupon} className="min-h-9 px-2 text-[11px] font-semibold text-red-500">
-                ล้าง
+      <section className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+        <h3 className="text-base font-semibold text-slate-900">🎟️ คูปอง / โค้ดแลกรางวัล</h3>
+        {couponEnabled ? (
+          appliedCoupon ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 p-3">
+              <span className="min-w-0">
+                <span className="block truncate text-base font-semibold text-green-800">ใช้คูปอง {appliedCoupon.code}</span>
+                <span className="block text-sm text-green-700 tabular-nums">ลด {priceStr(appliedCoupon.discount)}</span>
+              </span>
+              <button
+                type="button"
+                onClick={onClearCoupon}
+                className="min-h-12 shrink-0 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 hover:bg-red-50"
+              >
+                ล้างคูปอง
               </button>
             </div>
           ) : (
@@ -1567,32 +1801,62 @@ function CustomerCouponPanel({
                   if (event.key === "Enter") onApplyCoupon();
                 }}
                 disabled={cart.items.length === 0}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="รหัสคูปอง / โค้ดแลกรางวัล"
                 aria-label="รหัสคูปองหรือโค้ดแลกรางวัล"
-                className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 text-xs uppercase text-slate-800 placeholder:normal-case placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
+                style={{ fontSize: 16 }}
+                className="min-h-12 rounded-xl border border-slate-300 bg-white px-3 text-base uppercase tracking-wide text-slate-900 placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
               />
               <button
                 type="button"
                 disabled={isPending || cart.items.length === 0 || couponCode.trim().length === 0}
                 onClick={() => onApplyCoupon()}
-                className="min-h-10 rounded-lg border border-green-200 bg-white px-2 text-[11px] font-semibold text-green-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-12 rounded-xl bg-green-600 px-5 text-base font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 ใช้คูปอง
               </button>
             </div>
-          )}
-        </div>
-      ) : (
-        <p className="rounded-lg bg-white px-2 py-2 text-[11px] text-slate-400">
-          {couponUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง"}
-        </p>
-      )}
+          )
+        ) : (
+          <p className="text-sm text-slate-500">{couponUnavailableMessage ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง"}</p>
+        )}
+        {couponEnabled && cart.items.length === 0 && <p className="text-sm text-slate-500">เพิ่มสินค้าในออร์เดอร์ก่อนใช้คูปอง</p>}
+      </section>
 
       {message && (
-        <p aria-live="polite" className="text-[11px] text-slate-600">
+        <p aria-live="polite" className="rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
           {message}
         </p>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+        {customerDisplayEnabled ? (
+          <a
+            href="/pos/display"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-12 items-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            🖥️ เปิดจอลูกค้า
+          </a>
+        ) : (
+          <span
+            title={customerDisplayUnavailableMessage ?? undefined}
+            className="inline-flex min-h-12 items-center rounded-xl border border-slate-100 bg-white px-4 text-sm font-semibold text-slate-300"
+          >
+            🖥️ จอลูกค้า
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onDone}
+          className="min-h-12 rounded-xl bg-slate-900 px-6 text-base font-semibold text-white hover:bg-slate-800"
+        >
+          เสร็จ
+        </button>
+      </div>
     </div>
   );
 }
@@ -1602,11 +1866,14 @@ function PosUtilitySheet({
   title,
   onClose,
   children,
+  size = "default",
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** wide = แผงสองคอลัมน์สำหรับจอคอม/แท็บเล็ต/iPad (ลูกค้า-คูปอง, ส่วนลด) */
+  size?: "default" | "wide";
 }) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -1616,7 +1883,11 @@ function PosUtilitySheet({
     if (!open) return;
 
     previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const frame = requestAnimationFrame(() => closeButtonRef.current?.focus());
+    // โฟกัสช่องหลักของแผง (data-autofocus) ถ้ามี เช่น ช่องค้นสมาชิก — ไม่มีก็โฟกัสปุ่มปิด
+    const frame = requestAnimationFrame(() => {
+      const preferred = sheetRef.current?.querySelector<HTMLElement>('[data-autofocus="true"]');
+      (preferred ?? closeButtonRef.current)?.focus();
+    });
 
     return () => {
       cancelAnimationFrame(frame);
@@ -1638,7 +1909,8 @@ function PosUtilitySheet({
       sheetRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ) ?? [],
-    );
+      // ตัดปุ่มที่ซ่อนอยู่ (เช่น แป้นตัวเลขบนมือถือ) ไม่งั้น Tab วนรอบหลุดออกจากแผง
+    ).filter((element) => element.offsetParent !== null);
     if (focusable.length === 0) return;
 
     const first = focusable[0];
@@ -1663,13 +1935,15 @@ function PosUtilitySheet({
       <div
         ref={sheetRef}
         data-pos-utility-sheet="true"
-        className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] w-full max-w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-[420px] sm:max-w-[calc(100vw-1.5rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+        className={`absolute inset-x-0 bottom-0 flex max-h-[88dvh] w-full max-w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:max-w-[calc(100vw-1.5rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl ${
+          size === "wide" ? "sm:w-[760px]" : "sm:w-[420px]"
+        }`}
         // เพดานความสูงแบบ inline กัน class arbitrary ถูก tree-shake (เคยเกิดกับ Tailwind v4 ในโปรเจกต์นี้)
         // ระบบตั๋วบนจอโน้ตบุ๊กร้านล้นจนปุ่มล่างหายใต้ taskbar — ต้องไม่สูงเกินจอเสมอ
         style={{ maxHeight: "min(88dvh, calc(100vh - 1.5rem))" }}
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-          <p className="text-sm font-semibold text-gray-900">{title}</p>
+          <p className={`${size === "wide" ? "text-base" : "text-sm"} font-semibold text-gray-900`}>{title}</p>
           <button
             ref={closeButtonRef}
             type="button"
@@ -5012,7 +5286,24 @@ export function PosTerminal({
       couponUnavailableMessage={couponUnavailableMessage}
       customerDisplayEnabled={customerDisplayEnabled}
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
-      memberSection={renderMemberQuickBar(false)}
+      memberSection={
+        <MemberSheetSection
+          selectedCustomer={selectedCustomer}
+          vouchers={visibleVouchers}
+          customerQuery={customerQuery}
+          customerResults={customerResults}
+          searchedQuery={customerSearchedQuery}
+          registerName={registerName}
+          isPending={isPending}
+          onCustomerQueryChange={handleCustomerQueryChange}
+          onSearchCustomer={handleSearchCustomer}
+          onSelectCustomer={handleSelectCustomer}
+          onClearCustomer={handleClearCustomer}
+          onRegisterNameChange={setRegisterName}
+          onRegister={handleRegisterCustomer}
+          onUseVoucher={handleUseVoucher}
+        />
+      }
       couponCode={couponCode}
       appliedCoupon={appliedCoupon}
       message={customerCouponMessage}
@@ -5024,6 +5315,7 @@ export function PosTerminal({
       }}
       onApplyCoupon={handleApplyCoupon}
       onClearCoupon={handleClearCoupon}
+      onDone={() => setCustomerToolsOpen(false)}
     />
   );
 
@@ -5423,6 +5715,7 @@ export function PosTerminal({
       <PosUtilitySheet
         open={discountFormOpen && canDiscount}
         title="ส่วนลดท้ายบิล"
+        size="wide"
         onClose={() => setDiscountFormOpen(false)}
       >
         <BillDiscountPanel
@@ -5441,6 +5734,7 @@ export function PosTerminal({
       <PosUtilitySheet
         open={customerToolsOpen}
         title="ลูกค้า / คูปอง / จอลูกค้า"
+        size="wide"
         onClose={() => setCustomerToolsOpen(false)}
       >
         {customerCouponTools}
