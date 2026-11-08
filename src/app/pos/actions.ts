@@ -10,7 +10,9 @@ import { getResolvedCurrentPermissions, requireFeature, requirePermission } from
 import { resolveUnknownPrintJob } from "@/modules/printing/print-hub-repository";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { listProducts } from "@/modules/catalog/repository";
-import { searchCustomersForStore } from "@/modules/customers/repository";
+import { listCustomersForStore, saveCustomer, searchCustomersForStore } from "@/modules/customers/repository";
+import { fallbackMemberName, isRegistrablePhone, type PosRewardVoucher } from "@/modules/pos/loyalty-coupon-ux";
+import { normalizeCustomerPhone } from "@/shared/utils/customer-phone";
 import type { CustomerProfile } from "@/modules/customers/types";
 import { buildGroceryCheckoutCart } from "@/modules/grocery-pos/rewards";
 import { mapGroceryCouponError } from "@/modules/grocery-pos/checkout-service";
@@ -20,6 +22,7 @@ import { findCouponPolicyByCode } from "@/modules/promotions/repository";
 import {
   attachRewardVoucherOrder,
   findProductRewardVoucher,
+  listPendingRewardVouchersForCustomer,
   releaseProductRewardVoucher,
   reserveProductRewardVoucher,
 } from "@/modules/loyalty/repository";
@@ -259,6 +262,7 @@ export async function evaluatePosCouponAction(
   code: string,
   cart: Cart,
   customerId?: string | null,
+  opts?: { recalc?: boolean },
 ): Promise<{
   couponId: string | null;
   discount: number;
@@ -332,7 +336,12 @@ export async function evaluatePosCouponAction(
       code,
       customerId,
     });
-    await recordCouponAttempt({ organizationId, storeId: ctx.storeId, code, succeeded: evaluation.ok });
+    // คำนวณใหม่หลังแก้ตะกร้า: คูปองมีจริงแต่ไม่ผ่านเงื่อนไข (เช่น ยอดต่ำกว่าขั้นต่ำ) ไม่ใช่การเดาโค้ด
+    // จึงไม่นับเป็นครั้งที่ผิด — ไม่งั้นแก้ตะกร้าไม่กี่ครั้งร้านโดนบล็อกคูปองทั้งร้าน
+    // (โค้ดที่ไม่มีอยู่จริงยังนับทุกครั้ง และด่านบล็อกด้านบนยังทำงานทุกโหมด)
+    if (!(opts?.recalc && !evaluation.ok)) {
+      await recordCouponAttempt({ organizationId, storeId: ctx.storeId, code, succeeded: evaluation.ok });
+    }
 
     if (!evaluation.ok) {
       return {
@@ -351,6 +360,69 @@ export async function evaluatePosCouponAction(
     };
   } catch (e) {
     return { couponId: null, discount: 0, normalizedCode: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** โค้ดแลกรางวัลที่ลูกค้าที่ผูกบิลอยู่ยังไม่ได้ใช้ — POS แสดงให้แตะใช้ */
+export async function listPosCustomerVouchersAction(
+  customerId: string,
+): Promise<{ vouchers: PosRewardVoucher[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    await requireFeature("loyaltyPoints");
+    if (!UUID_PATTERN.test(customerId)) return { vouchers: [], error: "ข้อมูลลูกค้าไม่ถูกต้อง" };
+    const { ctx } = await getStoreContext();
+    const result = await listPendingRewardVouchersForCustomer(ctx.storeId, customerId);
+    if (result.error) return { vouchers: [], error: result.error.userMessage };
+    return { vouchers: result.data ?? [], error: null };
+  } catch (e) {
+    return { vouchers: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/**
+ * สมัครสมาชิกจาก POS ด้วยเบอร์โทร (ชื่อไม่บังคับ) แล้วผูกกับบิลทันที
+ * - ไม่ยืนยัน OTP: ลูกค้ายืนอยู่ตรงหน้าแคชเชียร์ ส่วนการเข้าหน้าสมาชิกยังต้องยืนยันเบอร์ตามเดิม
+ * - เบอร์ซ้ำ → คืนลูกค้าเดิมให้เลือกแทน (unique store_id + phone)
+ */
+export async function registerPosCustomerAction(input: {
+  phone: string;
+  name?: string;
+}): Promise<{ customer: CustomerProfile | null; existed: boolean; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    await requireFeature("loyaltyPoints");
+    const { ctx, user } = await getStoreContext();
+    const phone = normalizeCustomerPhone(input.phone);
+    if (!isRegistrablePhone(phone)) {
+      return { customer: null, existed: false, error: "เบอร์โทรไม่ถูกต้อง (ขึ้นต้น 0 และ 9–10 หลัก)" };
+    }
+    const name = (input.name ?? "").trim() || fallbackMemberName(phone);
+    if (name.length > 120) return { customer: null, existed: false, error: "ชื่อลูกค้ายาวเกินไป" };
+
+    const logBase = { source: "pos.loyalty", action: "registerPosCustomer", organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id };
+    const saved = await saveCustomer({ organizationId: ctx.organizationId, storeId: ctx.storeId, name, phone, isActive: true });
+    if (saved.error?.code === "customer_phone_taken") {
+      // unique (store_id, phone) ครอบทั้งลูกค้าที่ปิดใช้งาน — ค้นรวม inactive ด้วย
+      const existing = await listCustomersForStore(ctx.storeId, { search: phone, includeInactive: true, limit: 5 });
+      const match = (existing.data ?? []).find((customer) => normalizeCustomerPhone(customer.phone) === phone) ?? null;
+      await safeLog({ ...logBase, level: "info", message: "เบอร์นี้เป็นสมาชิกอยู่แล้ว", context: { existed: true, found: !!match, inactive: match ? !match.isActive : null } });
+      if (match && match.isActive) return { customer: match, existed: true, error: null };
+      if (match) {
+        return { customer: null, existed: true, error: "เบอร์นี้เป็นของสมาชิกที่ถูกปิดใช้งาน — เปิดใช้งานได้ที่หน้า ลูกค้า แล้วค้นหาใหม่" };
+      }
+      return { customer: null, existed: true, error: saved.error.userMessage };
+    }
+    if (saved.error || !saved.data) {
+      await safeLog({ ...logBase, level: "error", message: "สมัครสมาชิกจาก POS ไม่สำเร็จ", errorCode: saved.error?.code ?? null });
+      return { customer: null, existed: false, error: saved.error?.userMessage ?? "สมัครสมาชิกไม่สำเร็จ" };
+    }
+    await safeLog({ ...logBase, level: "info", message: "สมัครสมาชิกจาก POS", context: { customerId: saved.data.id, namedByCashier: Boolean(input.name?.trim()) } });
+    return { customer: { ...saved.data, pointsBalance: saved.data.pointsBalance ?? 0 }, existed: false, error: null };
+  } catch (e) {
+    return { customer: null, existed: false, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 
