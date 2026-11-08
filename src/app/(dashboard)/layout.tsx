@@ -31,6 +31,7 @@ import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
 import { CommandPalette } from "@/shared/components/CommandPalette";
 import type { CommandItem } from "@/modules/assistant/command-index";
+import { decideCostingAccess } from "@/modules/costing/access-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     canManageQr &&
     Boolean(currentStoreRow?.music_request_enabled) &&
     currentStoreRow?.music_license_status === "approved";
+  // ระบบต้นทุน: แพ็กเกจรายงานขั้นสูง + manager ขึ้นไป + ร้านอาหาร (หรือร้านเก่าที่ยังไม่มีโปรไฟล์)
+  const costingVisible = decideCostingAccess({
+    canViewReports: can("reports.view"),
+    canManageCatalog: can("catalog.manage"),
+    role: storeContext.role,
+    hasAdvancedReports: assistantBilling ? canUseFeature(assistantBilling, "advancedReports") : false,
+    businessMode: setupProfile?.businessMode ?? null,
+  }).allowed;
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
@@ -107,6 +116,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
+    ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
