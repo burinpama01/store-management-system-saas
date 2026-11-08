@@ -3325,6 +3325,297 @@ export interface Database {
           },
         ];
       };
+      store_cost_settings: {
+        Row: {
+          store_id: string;
+          organization_id: string;
+          open_days_per_month: number;
+          target_profit_monthly: number;
+          target_food_cost_pct: number;
+          other_variable_pct: number;
+          price_rounding: "none" | "ceil_1" | "ceil_5" | "ceil_10";
+          cash_reserve: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          store_id: string;
+          organization_id: string;
+          open_days_per_month?: number;
+          target_profit_monthly?: number;
+          target_food_cost_pct?: number;
+          other_variable_pct?: number;
+          price_rounding?: "none" | "ceil_1" | "ceil_5" | "ceil_10";
+          cash_reserve?: number | null;
+          updated_at?: string;
+        };
+        Update: {
+          store_id?: string;
+          organization_id?: string;
+          open_days_per_month?: number;
+          target_profit_monthly?: number;
+          target_food_cost_pct?: number;
+          other_variable_pct?: number;
+          price_rounding?: "none" | "ceil_1" | "ceil_5" | "ceil_10";
+          cash_reserve?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_cost_budgets: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          kind: "monthly" | "startup";
+          cost_type: string;
+          name: string;
+          amount: number;
+          useful_life_months: number | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          kind?: "monthly" | "startup";
+          cost_type: string;
+          name: string;
+          amount: number;
+          useful_life_months?: number | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          kind?: "monthly" | "startup";
+          cost_type?: string;
+          name?: string;
+          amount?: number;
+          useful_life_months?: number | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      ingredients: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          purchase_unit: string;
+          usage_unit: string;
+          usage_per_purchase: number;
+          purchase_price: number;
+          yield_pct: number;
+          stock_pool_id: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          purchase_unit: string;
+          usage_unit: string;
+          usage_per_purchase: number;
+          purchase_price: number;
+          yield_pct?: number;
+          stock_pool_id?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          purchase_unit?: string;
+          usage_unit?: string;
+          usage_per_purchase?: number;
+          purchase_price?: number;
+          yield_pct?: number;
+          stock_pool_id?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      ingredient_price_history: {
+        Row: {
+          id: string;
+          ingredient_id: string;
+          purchase_price: number;
+          recorded_by: string | null;
+          recorded_at: string;
+        };
+        Insert: {
+          id?: string;
+          ingredient_id: string;
+          purchase_price: number;
+          recorded_by?: string | null;
+          recorded_at?: string;
+        };
+        Update: {
+          id?: string;
+          ingredient_id?: string;
+          purchase_price?: number;
+          recorded_by?: string | null;
+          recorded_at?: string;
+        };
+        Relationships: [];
+      };
+      recipe_lines: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string;
+          variant_id: string | null;
+          ingredient_id: string;
+          quantity: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string;
+          variant_id?: string | null;
+          ingredient_id: string;
+          quantity: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string;
+          variant_id?: string | null;
+          ingredient_id?: string;
+          quantity?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      product_cost_settings: {
+        Row: {
+          product_id: string;
+          organization_id: string;
+          store_id: string;
+          packaging_cost: number;
+          target_food_cost_pct: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          product_id: string;
+          organization_id: string;
+          store_id: string;
+          packaging_cost?: number;
+          target_food_cost_pct?: number | null;
+          updated_at?: string;
+        };
+        Update: {
+          product_id?: string;
+          organization_id?: string;
+          store_id?: string;
+          packaging_cost?: number;
+          target_food_cost_pct?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      cost_allocation_templates: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string | null;
+          ingredient_pct: number;
+          packaging_pct: number;
+          labor_pct: number;
+          overhead_pct: number;
+          profit_pct: number;
+          effective_from: string;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          product_id?: string | null;
+          ingredient_pct: number;
+          packaging_pct: number;
+          labor_pct: number;
+          overhead_pct: number;
+          profit_pct: number;
+          effective_from?: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string | null;
+          ingredient_pct?: number;
+          packaging_pct?: number;
+          labor_pct?: number;
+          overhead_pct?: number;
+          profit_pct?: number;
+          effective_from?: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      order_item_costs: {
+        Row: {
+          order_item_id: string;
+          order_id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string | null;
+          variant_id: string | null;
+          unit_cost: number | null;
+          packaging_cost: number | null;
+          snapshot_at: string;
+        };
+        Insert: {
+          order_item_id: string;
+          order_id: string;
+          organization_id: string;
+          store_id: string;
+          product_id?: string | null;
+          variant_id?: string | null;
+          unit_cost?: number | null;
+          packaging_cost?: number | null;
+          snapshot_at?: string;
+        };
+        Update: {
+          order_item_id?: string;
+          order_id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string | null;
+          variant_id?: string | null;
+          unit_cost?: number | null;
+          packaging_cost?: number | null;
+          snapshot_at?: string;
+        };
+        Relationships: [];
+      };
       order_items: {
         Row: {
           id: string;
@@ -3480,6 +3771,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           name: string;
+          cost_type: string | null;
           type: "income" | "expense" | "cash_adjustment";
           is_default: boolean;
           sort_order: number;
@@ -3491,6 +3783,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           name: string;
+          cost_type?: string | null;
           type: "income" | "expense" | "cash_adjustment";
           is_default?: boolean;
           sort_order?: number;
@@ -3502,6 +3795,7 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           name?: string;
+          cost_type?: string | null;
           type?: "income" | "expense" | "cash_adjustment";
           is_default?: boolean;
           sort_order?: number;
