@@ -7,7 +7,7 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listEmployeeProfiles } from "@/modules/hr/repository";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
 import { lockedFields } from "@/modules/hr/self-info";
-import { getMySelfInfo } from "@/modules/hr/self-info-repository";
+import { getMyLatestSelfInfoRequest, getMySelfInfo } from "@/modules/hr/self-info-repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { MyProfileForm, type MyProfileView } from "./MyProfileForm";
 
@@ -17,7 +17,11 @@ export default async function MyProfilePage() {
   const { user, ctx, resolved } = await getResolvedCurrentPermissions();
   if (!resolved.can("attendance.clock")) redirect("/dashboard");
 
-  const [profiles, self] = await Promise.all([listEmployeeProfiles(ctx.storeId), getMySelfInfo(ctx.storeId, user.id)]);
+  const [profiles, self, request] = await Promise.all([
+    listEmployeeProfiles(ctx.storeId),
+    getMySelfInfo(ctx.storeId, user.id),
+    getMyLatestSelfInfoRequest(ctx.storeId, user.id),
+  ]);
   const own = profiles.data?.find((p) => p.userId === user.id);
   const locked = lockedFields(own);
   const mine = self.data;
@@ -44,11 +48,11 @@ export default async function MyProfilePage() {
       <div>
         <h1 className="text-xl font-bold text-[var(--ink)]">ข้อมูลของฉัน</h1>
         <p className="mt-1 text-sm text-gray-600">
-          กรอกข้อมูลของคุณให้ร้านใช้ทำสลิปเงินเดือนและติดต่อยามฉุกเฉิน · ช่องที่มีป้าย “เจ้าของร้านตั้งไว้” แก้ได้ที่ผู้จัดการเท่านั้น
+          กรอกครั้งแรกบันทึกได้ทันที · ช่องที่กรอกแล้วถ้าแก้อีกต้องรอผู้จัดการอนุมัติ · ช่องที่มีป้าย “เจ้าของร้านตั้งไว้” แก้ได้ที่ผู้จัดการเท่านั้น
         </p>
         {self.error && <p className="mt-2 text-sm text-red-600">โหลดข้อมูลไม่สำเร็จ: {self.error}</p>}
       </div>
-      <MyProfileForm view={view} today={getStoreLocalDate(ctx.storeTimezone)} />
+      <MyProfileForm view={view} today={getStoreLocalDate(ctx.storeTimezone)} request={request} />
     </section>
   );
 }

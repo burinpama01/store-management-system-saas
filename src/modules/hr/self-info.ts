@@ -5,7 +5,8 @@
  * - ช่องตัวตน/บัญชี (ชื่อจริง, ธนาคาร, เลขบัญชี, ชื่อบัญชี) — เจ้าของตั้งแล้ว = ล็อก พนักงานแก้ไม่ได้
  *   ค่าที่ใช้จริง = ค่าของเจ้าของ ถ้าไม่มีจึงใช้ค่าที่พนักงานกรอก
  * - ช่องส่วนตัว (ชื่อเล่น, เบอร์, วันเกิด, ที่อยู่, ผู้ติดต่อฉุกเฉิน) — ของพนักงาน แก้ได้เสมอ
- * DB มี trigger ล้างช่องที่ล็อกซ้ำอีกชั้น (20261109120000_employee_self_info.sql)
+ * - กรอกครั้งแรก (ช่องว่าง) บันทึกทันที · แก้/ลบช่องที่มีค่าแล้ว ต้องส่งคำขอให้ผู้จัดการอนุมัติ
+ * DB บังคับซ้ำทั้งสองข้อด้วย trigger (20261109120000_employee_self_info.sql)
  */
 import type { EmployeeProfile } from "./types";
 
@@ -155,7 +156,64 @@ export function parseSelfInfoForm(
   return { value: patch, error: null };
 }
 
-/** ชื่อช่องที่เปลี่ยน (สำหรับ log — ไม่เก็บค่าจริง) */
-export function changedFields(before: EmployeeSelfInfo | null | undefined, patch: SelfInfoPatch): string[] {
-  return (Object.keys(patch) as (keyof SelfInfoPatch)[]).filter((k) => (before?.[k] ?? null) !== (patch[k] ?? null));
+export type SelfInfoField = OwnerLockableField | PersonalField;
+
+/** ชื่อคอลัมน์ในตาราง employee_self_info */
+export const SELF_INFO_COLUMN: Record<SelfInfoField, string> = {
+  fullName: "full_name",
+  bankName: "bank_name",
+  bankAccountNo: "bank_account_no",
+  bankAccountName: "bank_account_name",
+  nickname: "nickname",
+  phone: "phone",
+  birthDate: "birth_date",
+  address: "address",
+  emergencyContactName: "emergency_contact_name",
+  emergencyContactPhone: "emergency_contact_phone",
+};
+
+const FIELD_BY_COLUMN = new Map(Object.entries(SELF_INFO_COLUMN).map(([field, column]) => [column, field as SelfInfoField]));
+
+/**
+ * แยกค่าที่ส่งมาเป็น 2 กอง
+ * - direct: ช่องที่ยังว่าง → บันทึกทันที (การกรอกครั้งแรก)
+ * - needsApproval: ช่องที่มีค่าแล้วและค่าเปลี่ยน (รวมการลบ) → ส่งคำขอ
+ * ช่องที่ค่าไม่เปลี่ยน หรือว่างแล้วยังว่าง จะไม่อยู่ในกองไหน
+ */
+export function splitSelfInfoPatch(before: EmployeeSelfInfo | null | undefined, patch: SelfInfoPatch) {
+  const direct: SelfInfoPatch = {};
+  const needsApproval: SelfInfoPatch = {};
+  for (const key of Object.keys(patch) as SelfInfoField[]) {
+    const next = patch[key];
+    if (next === undefined) continue;
+    const current = before?.[key] ?? null;
+    if ((current ?? "") === (next ?? "")) continue;
+    if (filled(current)) needsApproval[key] = next;
+    else direct[key] = next;
+  }
+  return { direct, needsApproval };
+}
+
+export interface SelfInfoChange {
+  field: SelfInfoField;
+  label: string;
+  /** ค่าที่แสดงบนหน้าจอ — เลขบัญชีปิดหลักเสมอ, null = ขอลบ */
+  value: string | null;
+}
+
+/** แปลง changes (คีย์เป็นชื่อคอลัมน์) เป็นรายการแสดงผล · เลขบัญชีเต็มห้ามไปถึง browser */
+export function describeSelfInfoChanges(changes: unknown): SelfInfoChange[] {
+  if (!changes || typeof changes !== "object" || Array.isArray(changes)) return [];
+  const out: SelfInfoChange[] = [];
+  for (const [column, raw] of Object.entries(changes as Record<string, unknown>)) {
+    const field = FIELD_BY_COLUMN.get(column);
+    if (!field) continue;
+    const value = typeof raw === "string" && raw !== "" ? raw : null;
+    out.push({
+      field,
+      label: SELF_FIELD_LABEL[field],
+      value: field === "bankAccountNo" && value ? `••${value.replace(/\D/g, "").slice(-4)}` : value,
+    });
+  }
+  return out;
 }

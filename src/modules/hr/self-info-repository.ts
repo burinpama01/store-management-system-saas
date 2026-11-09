@@ -5,7 +5,7 @@ import { createSupabaseServerClient } from "@/server/integrations/supabase/serve
 import { mapError } from "@/shared/utils/error";
 import { logSystemEvent } from "@/modules/system/event-log";
 import type { Database } from "@/server/integrations/supabase/database.types";
-import type { EmployeeSelfInfo, SelfInfoPatch } from "./self-info";
+import { SELF_INFO_COLUMN, describeSelfInfoChanges, type EmployeeSelfInfo, type SelfInfoChange, type SelfInfoField, type SelfInfoPatch } from "./self-info";
 
 type SelfRow = Database["public"]["Tables"]["employee_self_info"]["Row"];
 
@@ -59,28 +59,122 @@ export async function getMySelfInfo(storeId: string, userId: string) {
   return { data: data ? mapSelfInfo(data) : null, error: null };
 }
 
-const COLUMN: Record<keyof SelfInfoPatch, keyof SelfRow> = {
-  fullName: "full_name",
-  bankName: "bank_name",
-  bankAccountNo: "bank_account_no",
-  bankAccountName: "bank_account_name",
-  nickname: "nickname",
-  phone: "phone",
-  birthDate: "birth_date",
-  address: "address",
-  emergencyContactName: "emergency_contact_name",
-  emergencyContactPhone: "emergency_contact_phone",
-};
+function toColumns(patch: SelfInfoPatch): Record<string, string | null> {
+  const values: Record<string, string | null> = {};
+  for (const key of Object.keys(patch) as SelfInfoField[]) {
+    if (patch[key] !== undefined) values[SELF_INFO_COLUMN[key]] = patch[key] ?? null;
+  }
+  return values;
+}
 
 export async function saveMySelfInfo(scope: { organizationId: string; storeId: string; userId: string }, patch: SelfInfoPatch) {
   const supabase = await createSupabaseServerClient();
-  const values: Record<string, string | null> = {};
-  for (const key of Object.keys(patch) as (keyof SelfInfoPatch)[]) {
-    if (patch[key] !== undefined) values[COLUMN[key]] = patch[key] ?? null;
-  }
   const { error } = await supabase.from("employee_self_info").upsert(
-    { organization_id: scope.organizationId, store_id: scope.storeId, user_id: scope.userId, ...values },
+    { organization_id: scope.organizationId, store_id: scope.storeId, user_id: scope.userId, ...toColumns(patch) },
     { onConflict: "store_id,user_id" },
   );
-  return { error: error ? mapError(error).userMessage : null };
+  if (!error) return { error: null };
+  // ช่องมีค่าแล้วระหว่างที่เปิดฟอร์มค้าง (trigger ปฏิเสธ)
+  if (error.code === "42501") return { error: "ข้อมูลบางช่องถูกกรอกไปแล้ว กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง" };
+  return { error: mapError(error).userMessage };
+}
+
+/** ส่งคำขอแก้ช่องที่กรอกแล้ว (แทนที่คำขอค้างเดิม) */
+export async function submitSelfInfoRequest(storeId: string, patch: SelfInfoPatch) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("submit_employee_self_info_request", {
+    p_store_id: storeId,
+    p_changes: toColumns(patch),
+  });
+  if (!error) return { error: null };
+  // 22023 = ข้อความภาษาไทยจาก RPC ที่ตั้งใจให้ผู้ใช้อ่าน
+  if (error.code === "22023") return { error: error.message };
+  return { error: mapError(error).userMessage };
+}
+
+export async function cancelSelfInfoRequest(requestId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("cancel_employee_self_info_request", { p_request_id: requestId });
+  if (!error) return { error: null };
+  if (error.code === "P0002") return { error: "คำขอนี้ถูกดำเนินการไปแล้ว" };
+  return { error: mapError(error).userMessage };
+}
+
+export async function reviewSelfInfoRequest(requestId: string, approve: boolean, note: string | null) {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("review_employee_self_info_request", {
+    p_request_id: requestId,
+    p_approve: approve,
+    p_note: note,
+  });
+  if (!error) return { error: null };
+  if (error.code === "P0002") return { error: "คำขอนี้ถูกดำเนินการไปแล้ว" };
+  if (error.code === "42501") return { error: "ไม่มีสิทธิ์อนุมัติคำขอนี้" };
+  // ค่าในคำขอผิดรูปแบบ (เลขบัญชี/วันที่/ความยาว) — ให้ปฏิเสธคำขอแทน
+  if (error.code === "23514" || error.code === "22007" || error.code === "22008") {
+    return { error: "ข้อมูลในคำขอไม่ถูกต้อง อนุมัติไม่ได้ — กดปฏิเสธแล้วให้พนักงานส่งใหม่" };
+  }
+  return { error: mapError(error).userMessage };
+}
+
+export interface SelfInfoRequestView {
+  id: string;
+  userId: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  changes: SelfInfoChange[];
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+function mapRequest(row: Database["public"]["Tables"]["employee_self_info_requests"]["Row"]): SelfInfoRequestView {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    status: row.status as SelfInfoRequestView["status"],
+    // แปลงแล้ว: เลขบัญชีปิดหลัก ปลอดภัยที่จะส่งไป browser
+    changes: describeSelfInfoChanges(row.changes),
+    reviewNote: row.review_note,
+    reviewedAt: row.reviewed_at,
+    createdAt: row.created_at,
+  };
+}
+
+/** คำขอรออนุมัติทั้งสาขา (สำหรับผู้จัดการ) */
+export async function listPendingSelfInfoRequests(storeId: string): Promise<SelfInfoRequestView[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("employee_self_info_requests")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(200);
+  if (error) {
+    await logSystemEvent({
+      level: "warn",
+      source: "hr.self-info",
+      action: "listPendingSelfInfoRequests",
+      message: `อ่านคำขอแก้ข้อมูลไม่สำเร็จ: ${error.message}`,
+      storeId,
+      context: { code: error.code },
+    }).catch(() => undefined);
+    return [];
+  }
+  return (data ?? []).map(mapRequest);
+}
+
+/** คำขอล่าสุดของตัวเอง — เพื่อแสดงสถานะรออนุมัติ/ถูกปฏิเสธ */
+export async function getMyLatestSelfInfoRequest(storeId: string, userId: string): Promise<SelfInfoRequestView | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("employee_self_info_requests")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return mapRequest(data);
 }

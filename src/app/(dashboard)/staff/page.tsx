@@ -13,7 +13,7 @@ import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/adva
 import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills } from "@/modules/hr/advanced/repository";
 import { businessDate, periodContaining, recentPeriods } from "@/modules/hr/advanced/pay-cycle";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
-import { listEmployeeSelfInfo } from "@/modules/hr/self-info-repository";
+import { listEmployeeSelfInfo, listPendingSelfInfoRequests } from "@/modules/hr/self-info-repository";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { StaffManager } from "./StaffManager";
@@ -47,7 +47,7 @@ export default async function StaffPage({
   let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : currentPeriod?.end ?? today;
   if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
 
-  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, selfInfoMap] = await Promise.all([
+  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, selfInfoMap, selfInfoRequests] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
     // Attendance is read org-wide (null) and then narrowed to this store's roster below: a shift
@@ -59,6 +59,7 @@ export default async function StaffPage({
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
     listEmployeeSelfInfo(ctx.storeId),
+    listPendingSelfInfoRequests(ctx.storeId),
   ]);
 
   const members = membersRes.data ?? [];
@@ -106,6 +107,7 @@ export default async function StaffPage({
       members={members}
       profiles={clientProfiles}
       selfInfo={selfInfo}
+      selfInfoRequests={selfInfoRequests}
       payrollLines={payrollLines}
       adjustments={adjustments}
       hrSettings={hrSettings}

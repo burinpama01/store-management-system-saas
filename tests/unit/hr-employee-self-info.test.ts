@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { applySelfInfo, changedFields, lockedFields, parseSelfInfoForm } from "@/modules/hr/self-info";
+import { applySelfInfo, describeSelfInfoChanges, lockedFields, parseSelfInfoForm, splitSelfInfoPatch } from "@/modules/hr/self-info";
 
 const form = (values: Record<string, string>) => (key: string) => values[key] ?? null;
 const today = "2026-11-09";
@@ -79,10 +79,41 @@ describe("ค่าที่ใช้จริงบนสลิป", () => {
     expect(applySelfInfo(owner, null)).toBe(owner);
   });
 
-  it("log เก็บชื่อช่องที่เปลี่ยนเท่านั้น", () => {
-    expect(changedFields({ storeId: "s", userId: "u", phone: "0812345678" }, { phone: "0812345678", nickname: "บี", address: null })).toEqual([
-      "nickname",
+});
+
+describe("กรอกครั้งแรกบันทึกทันที · แก้ครั้งถัดไปต้องอนุมัติ", () => {
+  const before = { storeId: "s", userId: "u", phone: "0812345678", address: "บ้านเดิม", bankAccountNo: "1234567890" };
+
+  it("ช่องว่าง → บันทึกทันที · ช่องมีค่าแล้วและเปลี่ยน → ส่งคำขอ · ค่าเดิม → ไม่ทำอะไร", () => {
+    const { direct, needsApproval } = splitSelfInfoPatch(before, { phone: "0812345678", nickname: "บี", address: "บ้านใหม่" });
+    expect(direct).toEqual({ nickname: "บี" });
+    expect(needsApproval).toEqual({ address: "บ้านใหม่" });
+  });
+
+  it("ลบค่าที่มีอยู่ต้องอนุมัติ · ว่างแล้วยังว่างไม่นับ", () => {
+    const { direct, needsApproval } = splitSelfInfoPatch(before, { address: null, nickname: null });
+    expect(direct).toEqual({});
+    expect(needsApproval).toEqual({ address: null });
+  });
+
+  it("ยังไม่เคยกรอกเลย → ทุกช่องบันทึกทันที", () => {
+    const { direct, needsApproval } = splitSelfInfoPatch(null, { phone: "0812345678", address: null });
+    expect(direct).toEqual({ phone: "0812345678" });
+    expect(needsApproval).toEqual({});
+  });
+
+  it("เลขบัญชีไม่กรอก (undefined) = ไม่แตะ · เปลี่ยนเลข = ต้องอนุมัติ", () => {
+    expect(splitSelfInfoPatch(before, {}).needsApproval).toEqual({});
+    expect(splitSelfInfoPatch(before, { bankAccountNo: "9999999999" }).needsApproval).toEqual({ bankAccountNo: "9999999999" });
+  });
+
+  it("รายการแสดงผล: เลขบัญชีปิดหลัก · null = ขอลบ · คอลัมน์แปลกถูกตัด", () => {
+    expect(describeSelfInfoChanges({ bank_account_no: "1234567890", phone: null, monthly_salary: "9" })).toEqual([
+      { field: "bankAccountNo", label: "เลขบัญชี", value: "••7890" },
+      { field: "phone", label: "เบอร์โทร", value: null },
     ]);
+    expect(describeSelfInfoChanges(null)).toEqual([]);
+    expect(describeSelfInfoChanges([1])).toEqual([]);
   });
 });
 
@@ -109,6 +140,27 @@ describe("migration + wiring", () => {
     expect(sql).toContain("revoke all on function public.employee_self_info_enforce_owner_locks() from public, anon, authenticated;");
   });
 
+  it("trigger ปฏิเสธการแก้ช่องที่มีค่าแล้ว โดยแยกผู้เรียกด้วย current_user (ต้องเป็น invoker)", () => {
+    const fn = sql.slice(sql.indexOf("create or replace function public.employee_self_info_enforce_owner_locks"), sql.indexOf("revoke all on function public.employee_self_info_enforce_owner_locks"));
+    expect(fn).toContain("security invoker");
+    expect(fn).not.toContain("security definer");
+    expect(fn).toContain("if current_user in ('authenticated', 'anon') then");
+    // ตรวจก่อนล้างช่องที่เจ้าของตั้ง ไม่งั้นการล้างของ trigger เองจะถูกนับเป็นการแก้
+    expect(fn.indexOf("current_user in")).toBeLessThan(fn.indexOf("select * into v_profile"));
+  });
+
+  it("คำขอเขียนผ่าน RPC เท่านั้น และตรวจสิทธิ์ก่อนอนุมัติ", () => {
+    const requests = sql.slice(sql.indexOf("create table if not exists public.employee_self_info_requests"));
+    expect(requests).not.toMatch(/on public\.employee_self_info_requests for (insert|update|delete|all)/);
+    expect(requests).toContain("not (v_key = any (employee_self_info_allowed_columns()))");
+    // ตรวจค่าตอนส่ง ไม่ปล่อยให้คำขอค้างจนอนุมัติไม่ได้
+    expect(requests).toContain("perform v_val::date;");
+    expect(requests).toContain("ช่องนี้เจ้าของร้านตั้งไว้แล้ว");
+    expect(sql).toContain("constraint employee_self_info_phone_check");
+    expect(requests).toContain("if not auth_user_has_permission(r.organization_id, r.store_id, 'attendance.manage') then");
+    expect(requests).toContain("revoke all on function public.review_employee_self_info_request(uuid, boolean, text) from public, anon;");
+  });
+
   it("สลิป/ปิดงวดใช้ค่าที่พนักงานกรอกเมื่อร้านยังไม่ตั้ง", () => {
     expect(payroll).toContain('db.from("employee_self_info")');
     expect(payroll).toContain("applySelfInfo(p, selfByUser.get(p.userId))");
@@ -117,7 +169,7 @@ describe("migration + wiring", () => {
 
   it("เลขบัญชีเต็มไม่ไปถึง browser และ log ไม่เก็บค่าจริง", () => {
     expect(staffPage).toContain("bankAccountMasked: maskBankAccount(bankAccountNo)");
-    expect(action).toContain("changedFields: fields");
+    expect(action).toContain("savedFields: directFields, requestedFields: requestFields");
     expect(action).not.toMatch(/context:\s*\{[^}]*parsed\.value/);
     expect(action).toContain('source: "hr.self-info"');
   });

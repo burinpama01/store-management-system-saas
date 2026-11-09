@@ -14,7 +14,9 @@ import {
 } from "@/modules/hr/types";
 import { defaultEmploymentType, seniorityLabel } from "@/modules/hr/employee-identity";
 import type { EmployeeSelfInfo } from "@/modules/hr/self-info";
+import type { SelfInfoRequestView } from "@/modules/hr/self-info-repository";
 import { SelfInfoSummary } from "./SelfInfoSummary";
+import { SelfInfoRequests } from "./SelfInfoRequests";
 import type { PayrollLine } from "@/modules/hr/payroll";
 import type { Role } from "@/modules/tenants/types";
 import {
@@ -54,6 +56,8 @@ interface Props {
   profiles: EmployeeProfile[];
   /** ข้อมูลที่พนักงานกรอกเองในหน้า "ข้อมูลของฉัน" (key = userId) */
   selfInfo: Record<string, StaffSelfInfo>;
+  /** คำขอแก้ข้อมูลที่รออนุมัติ */
+  selfInfoRequests: SelfInfoRequestView[];
   payrollLines: PayrollLine[];
   adjustments: PayrollAdjustment[];
   hrSettings: StoreHrSettings;
@@ -82,6 +86,7 @@ export function StaffManager({
   members,
   profiles,
   selfInfo,
+  selfInfoRequests,
   payrollLines,
   adjustments,
   hrSettings,
@@ -167,6 +172,10 @@ export function StaffManager({
 
       {tab === "employees" ? (
         <section className="space-y-3">
+          <SelfInfoRequests
+            requests={selfInfoRequests}
+            nameOf={(userId) => profileByUser.get(userId)?.displayName || staff.find((m) => m.userId === userId)?.email || "พนักงาน"}
+          />
           {canAddStaff && (
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <button

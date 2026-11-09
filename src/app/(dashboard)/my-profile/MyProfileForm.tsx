@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { OwnerLockableField } from "@/modules/hr/self-info";
-import { saveMySelfInfoAction } from "./actions";
+import type { SelfInfoRequestView } from "@/modules/hr/self-info-repository";
+import { cancelMySelfInfoRequestAction, saveMySelfInfoAction } from "./actions";
 
 export interface MyProfileView {
   locked: OwnerLockableField[];
@@ -33,11 +34,12 @@ function OwnerBadge() {
   );
 }
 
-export function MyProfileForm({ view, today }: { view: MyProfileView; today: string }) {
+export function MyProfileForm({ view, today, request }: { view: MyProfileView; today: string; request?: SelfInfoRequestView | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const isLocked = (f: OwnerLockableField) => view.locked.includes(f);
 
   const field = (name: OwnerLockableField, label: string, value: string, extra?: { placeholder?: string; maxLength?: number }) => (
@@ -57,17 +59,68 @@ export function MyProfileForm({ view, today }: { view: MyProfileView; today: str
   );
 
   return (
+    <>
+    {request?.status === "pending" && (
+      <section className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+        <p className="text-sm font-bold text-amber-900">คำขอแก้ข้อมูลรอผู้จัดการอนุมัติ</p>
+        <ul className="mt-1 space-y-0.5 text-sm text-gray-800">
+          {request.changes.map((c) => (
+            <li key={c.field}>
+              {c.label}: <b>{c.value ?? "ขอลบค่านี้"}</b>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-xs text-amber-900">ระหว่างรออนุมัติ ระบบยังใช้ค่าเดิม · ส่งคำขอใหม่จะแทนที่คำขอนี้</p>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            setNotice(null);
+            startTransition(async () => {
+              const res = await cancelMySelfInfoRequestAction(request.id);
+              if (res.error) setError(res.error);
+              else {
+                setNotice("ยกเลิกคำขอแล้ว");
+                router.refresh();
+              }
+            });
+          }}
+          className="btn-secondary mt-2 min-h-11 px-4 text-sm"
+        >
+          ยกเลิกคำขอ
+        </button>
+      </section>
+    )}
+    {request?.status === "rejected" && (
+      <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        คำขอแก้ข้อมูลล่าสุดไม่ได้รับอนุมัติ{request.reviewNote ? `: ${request.reviewNote}` : ""}
+      </p>
+    )}
     <form
-      action={(fd) => {
+      ref={formRef}
+      // ค่าจากเซิร์ฟเวอร์เปลี่ยน (เช่น ผู้จัดการอนุมัติ) ต้องสร้างช่องใหม่ เพราะ input เป็น uncontrolled
+      key={JSON.stringify(view)}
+      // ใช้ onSubmit แทน action: action ล้างฟอร์มเองแม้กรอกผิด ผู้ใช้จะเสียค่าที่พิมพ์
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
         setError(null);
-        setSaved(false);
+        setNotice(null);
         startTransition(async () => {
           const res = await saveMySelfInfoAction(fd);
-          if (res.error) setError(res.error);
-          else {
-            setSaved(true);
-            router.refresh();
+          if (res.error) {
+            setError(res.error);
+            return;
           }
+          const parts = [
+            res.savedCount > 0 ? `บันทึกแล้ว ${res.savedCount} ช่อง` : "",
+            res.requestedCount > 0 ? `ส่งคำขอแก้ ${res.requestedCount} ช่อง รอผู้จัดการอนุมัติ` : "",
+          ].filter(Boolean);
+          setNotice(parts.join(" · ") || "ไม่มีข้อมูลที่เปลี่ยน");
+          // ช่องที่ส่งคำขอยังใช้ค่าเดิมจนกว่าจะอนุมัติ — คืนฟอร์มให้ตรงกับค่าจริง
+          formRef.current?.reset();
+          router.refresh();
         });
       }}
       className="space-y-4"
@@ -142,10 +195,11 @@ export function MyProfileForm({ view, today }: { view: MyProfileView; today: str
       </fieldset>
 
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      {saved && <p className="rounded-lg bg-green-50 p-3 text-sm text-green-700">บันทึกข้อมูลแล้ว</p>}
+      {notice && <p className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{notice}</p>}
       <button type="submit" disabled={pending} className="btn-primary min-h-11 w-full px-5 sm:w-auto">
         {pending ? "กำลังบันทึก…" : "บันทึกข้อมูล"}
       </button>
     </form>
+    </>
   );
 }

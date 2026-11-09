@@ -4217,6 +4217,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      employee_self_info_requests: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          changes: Json
+          status: string
+          review_note: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          changes: Json
+          status?: string
+          review_note?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          user_id?: string
+          changes?: Json
+          status?: string
+          review_note?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       employee_self_info: {
         Row: {
           id: string
@@ -5641,6 +5680,18 @@ export interface Database {
         };
         Returns: string;
       };
+      submit_employee_self_info_request: {
+        Args: { p_store_id: string; p_changes: Json }
+        Returns: string
+      }
+      cancel_employee_self_info_request: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
+      review_employee_self_info_request: {
+        Args: { p_request_id: string; p_approve: boolean; p_note?: string | null }
+        Returns: undefined
+      }
       costing_save_menu: {
         Args: {
           p_product_id: string;
