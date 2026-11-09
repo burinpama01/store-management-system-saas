@@ -111,7 +111,7 @@ export async function reviewSelfInfoRequest(requestId: string, approve: boolean,
   if (error.code === "P0002") return { error: "คำขอนี้ถูกดำเนินการไปแล้ว" };
   if (error.code === "42501") return { error: "ไม่มีสิทธิ์อนุมัติคำขอนี้" };
   // ค่าในคำขอผิดรูปแบบ (เลขบัญชี/วันที่/ความยาว) — ให้ปฏิเสธคำขอแทน
-  if (error.code === "23514" || error.code === "22007" || error.code === "22008") {
+  if (error.code === "23514" || error.code === "22007" || error.code === "22008" || error.code === "22P02") {
     return { error: "ข้อมูลในคำขอไม่ถูกต้อง อนุมัติไม่ได้ — กดปฏิเสธแล้วให้พนักงานส่งใหม่" };
   }
   return { error: mapError(error).userMessage };
