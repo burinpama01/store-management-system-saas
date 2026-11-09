@@ -13,6 +13,8 @@ import {
   EMPLOYMENT_TYPE_LABEL,
 } from "@/modules/hr/types";
 import { defaultEmploymentType, seniorityLabel } from "@/modules/hr/employee-identity";
+import type { EmployeeSelfInfo } from "@/modules/hr/self-info";
+import { SelfInfoSummary } from "./SelfInfoSummary";
 import type { PayrollLine } from "@/modules/hr/payroll";
 import type { Role } from "@/modules/tenants/types";
 import {
@@ -45,9 +47,13 @@ export interface StaffAdvancedProps {
   businessToday: string;
 }
 
+export type StaffSelfInfo = Omit<EmployeeSelfInfo, "bankAccountNo"> & { bankAccountMasked: string };
+
 interface Props {
   members: MemberWithEmail[];
   profiles: EmployeeProfile[];
+  /** ข้อมูลที่พนักงานกรอกเองในหน้า "ข้อมูลของฉัน" (key = userId) */
+  selfInfo: Record<string, StaffSelfInfo>;
   payrollLines: PayrollLine[];
   adjustments: PayrollAdjustment[];
   hrSettings: StoreHrSettings;
@@ -75,6 +81,7 @@ function fmt(amount: number, currency: string): string {
 export function StaffManager({
   members,
   profiles,
+  selfInfo,
   payrollLines,
   adjustments,
   hrSettings,
@@ -262,6 +269,7 @@ export function StaffManager({
                         className="mt-4 grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-3"
                       >
                         <input type="hidden" name="userId" value={m.userId} />
+                        {selfInfo[m.userId] && <SelfInfoSummary info={selfInfo[m.userId]} owner={profile} />}
                         <p className="text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">ข้อมูลพนักงาน (แสดงบนสลิป)</p>
                         <label className="text-xs font-medium text-gray-600">
                           รหัสพนักงาน

@@ -4217,6 +4217,63 @@ export interface Database {
         };
         Relationships: [];
       };
+      employee_self_info: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          full_name: string | null
+          bank_name: string | null
+          bank_account_no: string | null
+          bank_account_name: string | null
+          nickname: string | null
+          phone: string | null
+          birth_date: string | null
+          address: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          full_name?: string | null
+          bank_name?: string | null
+          bank_account_no?: string | null
+          bank_account_name?: string | null
+          nickname?: string | null
+          phone?: string | null
+          birth_date?: string | null
+          address?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          user_id?: string
+          full_name?: string | null
+          bank_name?: string | null
+          bank_account_no?: string | null
+          bank_account_name?: string | null
+          nickname?: string | null
+          phone?: string | null
+          birth_date?: string | null
+          address?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employee_profiles: {
         Row: {
           id: string;

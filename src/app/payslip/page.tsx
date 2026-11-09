@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
+import { listEmployeeSelfInfo } from "@/modules/hr/self-info-repository";
+import { applySelfInfo } from "@/modules/hr/self-info";
 import { getReceiptSettings } from "@/modules/settings/repository";
 import { maskBankAccount, resolvePayslipIssuer } from "@/modules/hr/employee-identity";
 import {
@@ -82,7 +84,7 @@ export default async function PayslipPage({
     });
     views.sort((a, b) => a.line.employeeName.localeCompare(b.line.employeeName));
   } else {
-    const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, hrSettings, receiptRes, access] = await Promise.all([
+    const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, hrSettings, receiptRes, access, selfInfo] = await Promise.all([
       listStoreMemberships(ctx.organizationId, ctx.storeId),
       listEmployeeProfiles(ctx.storeId),
       // Org-wide, then narrowed to this store's roster — same scope as /staff so the slip always
@@ -93,6 +95,7 @@ export default async function PayslipPage({
       getStoreHrSettings(ctx.storeId, ctx.organizationId),
       getReceiptSettings(ctx.storeId, ctx.organizationId),
       getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId),
+      listEmployeeSelfInfo(ctx.storeId),
     ]);
 
     const roster = new Set((membersRes.data ?? []).filter((m) => m.role !== "super_admin").map((m) => m.userId));
@@ -116,7 +119,8 @@ export default async function PayslipPage({
     );
     issuer = resolvePayslipIssuer(hrSettings, receiptRes.data, storeName);
     otMultiplier = hrSettings.otMultiplier;
-    const profileByUser = new Map((profilesRes.data ?? []).map((p) => [p.userId, p]));
+    // ชื่อจริง/บัญชี: ค่าที่เจ้าของตั้งก่อน ไม่มีจึงใช้ที่พนักงานกรอกเอง
+    const profileByUser = new Map((profilesRes.data ?? []).map((p) => [p.userId, applySelfInfo(p, selfInfo.get(p.userId))]));
     views = lines.map((line) => {
       const p = profileByUser.get(line.userId);
       return {

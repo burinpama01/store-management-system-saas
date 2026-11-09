@@ -13,6 +13,7 @@ import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/adva
 import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills } from "@/modules/hr/advanced/repository";
 import { businessDate, periodContaining, recentPeriods } from "@/modules/hr/advanced/pay-cycle";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
+import { listEmployeeSelfInfo } from "@/modules/hr/self-info-repository";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { StaffManager } from "./StaffManager";
@@ -46,7 +47,7 @@ export default async function StaffPage({
   let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : currentPeriod?.end ?? today;
   if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
 
-  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
+  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, selfInfoMap] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
     // Attendance is read org-wide (null) and then narrowed to this store's roster below: a shift
@@ -57,6 +58,7 @@ export default async function StaffPage({
     listStoreHolidays(ctx.storeId, dateFrom, dateTo),
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
+    listEmployeeSelfInfo(ctx.storeId),
   ]);
 
   const members = membersRes.data ?? [];
@@ -70,6 +72,10 @@ export default async function StaffPage({
     bankAccountMasked: maskBankAccount(bankAccountNo),
   }));
   const adjustments = adjustmentsRes.data ?? [];
+  // ข้อมูลที่พนักงานกรอกเอง — เลขบัญชีเต็มไม่ส่งไป browser เช่นกัน
+  const selfInfo = Object.fromEntries(
+    [...selfInfoMap].map(([userId, { bankAccountNo, ...rest }]) => [userId, { ...rest, bankAccountMasked: maskBankAccount(bankAccountNo) }]),
+  );
   const [adv, skills, skillGrants, closedRows] = await Promise.all([
     loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo),
     access.entitled ? listStoreSkills(ctx.storeId) : Promise.resolve([]),
@@ -99,6 +105,7 @@ export default async function StaffPage({
     <StaffManager
       members={members}
       profiles={clientProfiles}
+      selfInfo={selfInfo}
       payrollLines={payrollLines}
       adjustments={adjustments}
       hrSettings={hrSettings}
