@@ -66,10 +66,11 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
         if(ctx.storeId!==storeId||!resolved.can('pos.use'))return json({error:'ไม่มีสิทธิ์ใช้งาน POS ในร้านนี้'},403);
         let body:unknown;
         if(request.method==='POST'){
+          if(Number(request.headers.get('content-length')??0)>4000)return json({error:'ข้อมูลใหญ่เกินขอบเขต'},413);
           const raw=await request.text();if(raw.length>4000)return json({error:'ข้อมูลใหญ่เกินขอบเขต'},413);
           try{body=JSON.parse(raw);}catch{return json({error:'ข้อมูลไม่ถูกต้อง'},400);}
         }
-        const result=await nativeLoyalty(operation,request.method,new URL(request.url),body,{storeId,organizationId:ctx.organizationId,canLedger:resolved.can('catalog.manage')});
+        const result=await nativeLoyalty(operation,request.method,new URL(request.url),body,{storeId,organizationId:ctx.organizationId,canLedger:resolved.can('catalog.manage'),userId:data.user.id});
         if(result)return json(result.body,result.status);
       }
       if (workflowOperations.has(operation)) {

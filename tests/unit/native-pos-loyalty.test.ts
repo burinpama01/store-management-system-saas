@@ -1,5 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
-const m=vi.hoisted(()=>({feature:vi.fn(),save:vi.fn(),customer:vi.fn(),ledger:vi.fn(),order:vi.fn(),claim:vi.fn(),qr:vi.fn(),account:vi.fn(),lookup:vi.fn(),eq:vi.fn()}));
+const m=vi.hoisted(()=>({feature:vi.fn(),save:vi.fn(),customer:vi.fn(),ledger:vi.fn(),order:vi.fn(),claim:vi.fn(),qr:vi.fn(),account:vi.fn(),lookup:vi.fn(),eq:vi.fn(),log:vi.fn()}));
+vi.mock('@/modules/system/event-log',()=>({logSystemEvent:m.log}));
 vi.mock('@/modules/auth/guards',()=>({requireFeature:m.feature}));
 vi.mock('@/modules/customers/repository',()=>({saveCustomer:m.save,getCustomerById:m.customer}));
 vi.mock('@/modules/loyalty/repository',()=>({listLoyaltyLedgerForCustomer:m.ledger}));
@@ -9,7 +10,7 @@ vi.mock('qrcode',()=>({default:{toDataURL:m.qr}}));
 vi.mock('@/server/integrations/supabase/server',()=>({createSupabaseServerClient:async()=>({from:(table:string)=>{const q:any={select:()=>q,eq:(...args:unknown[])=>{m.eq(...args);return q},maybeSingle:table==='customers'?m.lookup:m.account};return q;}})}));
 import {nativeLoyalty} from '@/modules/native-pos/loyalty';
 const id='cccccccc-0000-0000-0000-000000000002';
-const scope={storeId:'store',organizationId:'org',canLedger:true};
+const scope={storeId:'store',organizationId:'org',canLedger:true,userId:'user-1'};
 const url=new URL('https://example.test/api/mobile/pos/customer?id='+id);
 beforeEach(()=>{vi.clearAllMocks();m.feature.mockResolvedValue(undefined);m.customer.mockResolvedValue({data:{id,storeId:'store',organizationId:'org',name:'ลูกค้า',phone:'0812345678'},error:null});m.save.mockResolvedValue({data:{id,name:'ใหม่',phone:'0812345678'},error:null});m.account.mockResolvedValue({data:{points_balance:12},error:null});m.ledger.mockResolvedValue({data:[],error:null});m.order.mockResolvedValue({data:{id,storeId:'store',organizationId:'org',status:'paid'},error:null});m.claim.mockResolvedValue({error:null,claim:{url:'https://example.test/member/shop?claim=x',code:'x',points:5,expiresAt:'2099-01-01T00:00:00Z'}});m.qr.mockResolvedValue('data:image/png;base64,AA==');});
 it('creates only digit phone customer in verified store and never updates an existing customer',async()=>{
@@ -17,7 +18,7 @@ it('creates only digit phone customer in verified store and never updates an exi
  expect(m.save).toHaveBeenCalledWith({name:'ใหม่',phone:'0812345678',storeId:'store',organizationId:'org',isActive:true});
  for(const body of [{name:'',phone:'0812345678'},{name:'a',phone:'abc'},{name:'a',phone:'0812345678',id},{name:'a',phone:'123'}])expect((await nativeLoyalty('customer-create','POST',url,body,scope))?.status).toBe(400);
  expect(m.save).toHaveBeenCalledTimes(1);
- m.save.mockResolvedValueOnce({data:null,error:{userMessage:'เบอร์ซ้ำ'}});expect((await nativeLoyalty('customer-create','POST',url,{name:'ใหม่',phone:'0812345678'},scope))?.status).toBe(409);
+ m.save.mockResolvedValueOnce({data:null,error:{code:'customer_phone_taken',userMessage:'เบอร์ซ้ำ'}});expect((await nativeLoyalty('customer-create','POST',url,{name:'ใหม่',phone:'0812345678'},scope))?.status).toBe(409);
 });
 it('looks up exactly ten phone digits within the verified active store without partial matches',async()=>{
  const phoneUrl=new URL('https://example.test/api/mobile/pos/customer-phone?phone=0812345678');
@@ -46,4 +47,41 @@ it('keeps QR failures separate from order payment and rejects external URLs',asy
  m.claim.mockResolvedValueOnce({claim:null,error:null});expect((await nativeLoyalty('receipt','POST',url,{orderId:id},scope))?.body).toEqual({orderId:id,claim:null,error:null});
  m.claim.mockResolvedValueOnce({claim:null,error:'ยังโหลดไม่ได้'});expect((await nativeLoyalty('receipt','POST',url,{orderId:id},scope))?.status).toBe(502);
  m.claim.mockResolvedValueOnce({claim:{url:'https://evil.test/x'},error:null});expect((await nativeLoyalty('receipt','POST',url,{orderId:id},scope))?.status).toBe(502);expect(m.qr).not.toHaveBeenCalled();
+});
+
+it('returns 409 only for a duplicate phone and 502 for other save failures',async()=>{
+ m.save.mockResolvedValueOnce({data:null,error:{code:'db_error',userMessage:'ระบบขัดข้อง'}});
+ const failed=await nativeLoyalty('customer-create','POST',url,{name:'ใหม่',phone:'0812345678'},scope);
+ expect(failed?.status).toBe(502);expect(failed?.body).toEqual({error:'ระบบขัดข้อง'});
+ m.save.mockResolvedValueOnce({data:null,error:null});expect((await nativeLoyalty('customer-create','POST',url,{name:'ใหม่',phone:'0812345678'},scope))?.status).toBe(502);
+});
+it('creates only phones the 10-digit lookup can find later',async()=>{
+ for(const phone of ['1234567','12345678901','9812345678','081234567','08123456789'])expect((await nativeLoyalty('customer-create','POST',url,{name:'ก',phone},scope))?.status).toBe(400);
+ expect(m.save).not.toHaveBeenCalled();
+});
+it('rejects a customer from another organization even in the same store id',async()=>{
+ m.customer.mockResolvedValueOnce({data:{id,storeId:'store',organizationId:'other-org',name:'x'},error:null});
+ expect((await nativeLoyalty('customer','GET',url,null,scope))?.status).toBe(404);expect(m.account).not.toHaveBeenCalled();
+});
+it('filters loyalty balance by store and organization and returns a numeric balance',async()=>{
+ m.account.mockResolvedValueOnce({data:{points_balance:'12.50'},error:null});
+ const result=await nativeLoyalty('customer','GET',url,null,scope);
+ expect((result?.body as any).customer.pointsBalance).toBe(12.5);
+ expect(m.eq).toHaveBeenCalledWith('organization_id','org');
+});
+it('rejects the wrong HTTP method before entitlement or data access',async()=>{
+ const result=await nativeLoyalty('customer-create','GET',url,null,scope);
+ expect(result?.status).toBe(405);expect(m.feature).not.toHaveBeenCalled();expect(m.save).not.toHaveBeenCalled();
+});
+it('logs successes and failures to system_event_logs without phone numbers',async()=>{
+ await nativeLoyalty('customer-create','POST',url,{name:'ใหม่',phone:'0812345678'},scope);
+ expect(m.log).toHaveBeenCalledWith(expect.objectContaining({level:'info',source:'native-pos.loyalty',action:'customerCreate',storeId:'store',organizationId:'org',actorUserId:'user-1',context:{customerId:id}}));
+ m.save.mockResolvedValueOnce({data:null,error:{code:'db_error',userMessage:'x'}});
+ await nativeLoyalty('customer-create','POST',url,{name:'ใหม่',phone:'0812345678'},scope);
+ expect(m.log).toHaveBeenCalledWith(expect.objectContaining({level:'error',action:'customerCreate',errorCode:'db_error'}));
+ await nativeLoyalty('receipt','POST',url,{orderId:id},scope);
+ expect(m.log).toHaveBeenCalledWith(expect.objectContaining({level:'info',action:'receiptClaim',context:{orderId:id,points:5}}));
+ m.lookup.mockResolvedValueOnce({data:null,error:null});
+ await nativeLoyalty('customer-phone','GET',new URL('https://example.test/?phone=0812345678'),null,scope);
+ expect(JSON.stringify(m.log.mock.calls)).not.toContain('0812345678');
 });
