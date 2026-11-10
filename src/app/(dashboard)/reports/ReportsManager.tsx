@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useTransition, useState } from "react";
@@ -86,6 +87,9 @@ export function ReportsManager({
           <h1 className="page-title">รายงาน</h1>
           <p className="page-kicker">เปรียบเทียบยอดขาย ช่องทางชำระเงิน และสินค้าหลักตามช่วงเวลา</p>
         </div>
+        <Link href="/reports/insights" className="btn-primary">
+          รายงานเชิงลึก + กราฟ
+        </Link>
       </div>
 
       <div className="panel flex flex-wrap items-end gap-3 p-4">
