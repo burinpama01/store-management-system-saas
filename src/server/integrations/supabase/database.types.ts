@@ -5898,6 +5898,14 @@ export interface Database {
           delivery_revenue: number;
         }[];
       };
+      get_sales_insights: {
+        Args: {
+          p_store_id: string;
+          p_date_from: string;
+          p_date_to: string;
+        };
+        Returns: Json;
+      };
       get_report_daily_sales: {
         Args: {
           p_store_id: string;
