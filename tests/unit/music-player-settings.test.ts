@@ -57,6 +57,7 @@ function row(overrides: Partial<SettingsRow> = {}): SettingsRow {
     min_donation: 10,
     play_now_price: 100,
     interrupt_base_on_request: true,
+    customer_screen_enabled: false,
     max_duration_seconds: 600,
     base_playlist: [],
     licensing_acknowledged_at: null,

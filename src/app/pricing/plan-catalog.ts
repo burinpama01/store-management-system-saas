@@ -23,6 +23,7 @@ export const COMPARISON_FEATURES: { key: Exclude<FeatureKey, "maxStores" | "maxM
   { key: "byoPaymentGateway", label: "Payment Gateway (TrueMoney)" },
   { key: "aiVision", label: "AI สแกนเมนูจากรูปภาพ" },
   { key: "aiAssistant", label: "ผู้ช่วย AI ช่วยแก้ปัญหาอุปกรณ์" },
+  { key: "advancedPayroll", label: "เงินเดือนขั้นสูง: ค่าทักษะ อายุงาน โบนัสยอดขาย ปิดงวดอัตโนมัติ สลิปให้พนักงานดูเอง" },
   // ไม่ใส่ aiForecast: มีแค่ราคา component ของ Business ยังไม่มีฟีเจอร์ให้ผู้ใช้จริง
 ];
 

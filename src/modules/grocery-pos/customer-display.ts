@@ -148,6 +148,54 @@ export function validateCustomerDisplayMessage(value: unknown): value is Custome
   );
 }
 
+/** เวลาที่จอลูกค้าโชว์ "ชำระเงินสำเร็จ" ก่อนปิดเอง */
+export const CUSTOMER_DISPLAY_PAID_FLASH_MS = 5_000;
+
+export interface CustomerDisplayPaidFlash {
+  amount: number;
+  method: CustomerDisplayPayment["method"];
+  pointsEarned?: number;
+}
+
+export interface CustomerDisplayPaymentTransition {
+  /** QR ที่กำลังโชว์อยู่บนจอ (ยังรอลูกค้าจ่าย) */
+  pendingPayment: CustomerDisplayPayment | null;
+  /** มีค่า = เพิ่งได้รับเงินจาก QR ที่โชว์อยู่ → แสดงหน้าสำเร็จ */
+  paidFlash: CustomerDisplayPaidFlash | null;
+}
+
+/**
+ * จอลูกค้า: ตัดสินว่า snapshot ใหม่ทำให้ QR ที่โชว์อยู่ "ได้รับเงินแล้ว" หรือไม่
+ * - checkout + payment → จำ QR ที่กำลังรอจ่าย
+ * - paid ขณะมี QR รอจ่าย → แสดงหน้าสำเร็จ (ครั้งเดียว — snapshot paid ซ้ำไม่เด้งใหม่)
+ * - สถานะอื่น / checkout ที่ไม่มี QR → ล้าง (แคชเชียร์ยกเลิกหรือเปลี่ยนวิธีจ่าย)
+ */
+export function resolveCustomerDisplayPaymentTransition(
+  pendingPayment: CustomerDisplayPayment | null,
+  snapshot: CustomerDisplaySnapshot,
+): CustomerDisplayPaymentTransition {
+  if (snapshot.status === "checkout") {
+    if (snapshot.payment) return { pendingPayment: snapshot.payment, paidFlash: null };
+    // POS ส่ง checkout ซ้ำโดยไม่มี QR (เช่น แคชเชียร์ผูกสมาชิกหลังโชว์ QR) — ยอดเท่าเดิม = QR เดิมยังใช้ได้
+    if (pendingPayment && Math.abs(snapshot.total - pendingPayment.amount) < 0.005) {
+      return { pendingPayment, paidFlash: null };
+    }
+    return { pendingPayment: null, paidFlash: null };
+  }
+  if (snapshot.status === "paid" && pendingPayment) {
+    const pointsEarned = snapshot.customer?.pointsEarned;
+    return {
+      pendingPayment: null,
+      paidFlash: {
+        amount: pendingPayment.amount,
+        method: pendingPayment.method,
+        ...(typeof pointsEarned === "number" && pointsEarned > 0 ? { pointsEarned } : {}),
+      },
+    };
+  }
+  return { pendingPayment: null, paidFlash: null };
+}
+
 export function resolveCustomerDisplayPublishCart(input: {
   liveCart: Cart;
   paidCart?: Cart | null;

@@ -13,6 +13,7 @@ import {
   playRequestNow,
   playBaseTrackNow,
   upsertMusicPlayerSettings,
+  reportNowPlayingPlayback,
   type PlayHistoryItem,
 } from "@/modules/music-requests/repository";
 import { searchYouTube } from "@/modules/music-requests/youtube";
@@ -38,6 +39,9 @@ async function getStoreContext() {
 export interface PlayerQueueItem {
   id: string;
   title: string;
+  /** สำหรับรูปปกในรายการ "ถัดไป" (หน้าเครื่องเล่นแบบ YouTube) */
+  videoId: string;
+  durationSeconds?: number;
   isDonation: boolean;
   playNow: boolean;
 }
@@ -60,6 +64,8 @@ export async function getPlayerStateAction(): Promise<{
    */
   waitingOnBase: boolean;
   interruptBaseOnRequest: boolean;
+  /** ร้านเปิดจอลูกค้า — เครื่องเล่นต้องรายงานตอนกดหยุด/เลื่อนเพลง */
+  customerScreenEnabled: boolean;
   error: string | null;
 }> {
   try {
@@ -74,6 +80,8 @@ export async function getPlayerStateAction(): Promise<{
     const upcoming = ordered.map((q) => ({
       id: q.id,
       title: q.title,
+      videoId: q.youtubeVideoId,
+      durationSeconds: q.durationSeconds,
       isDonation: q.donationStatus === "verified",
       playNow: Boolean(q.playNow),
     }));
@@ -95,6 +103,7 @@ export async function getPlayerStateAction(): Promise<{
       interrupt: decision.interrupt,
       waitingOnBase: decision.waitingOnBase,
       interruptBaseOnRequest,
+      customerScreenEnabled: settingsRes.data?.customerScreenEnabled ?? false,
       error: null,
     };
   } catch (e) {
@@ -105,6 +114,7 @@ export async function getPlayerStateAction(): Promise<{
       interrupt: false,
       waitingOnBase: false,
       interruptBaseOnRequest: true,
+      customerScreenEnabled: false,
       error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
     };
   }
@@ -134,6 +144,37 @@ export async function advancePlayerAction(
     return { next: res.data, error: null };
   } catch (e) {
     return { next: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+
+/**
+ * จอลูกค้า: เครื่องเล่นรายงานตอนกดหยุด/เล่นต่อ/เลื่อนเพลง (เรียกเฉพาะตอนมีเหตุการณ์ ไม่ใช่ทุกวินาที)
+ * ทำเฉพาะร้านที่เปิดจอลูกค้า — ร้านอื่นไม่ต้องเสียรอบเรียกเซิร์ฟเวอร์
+ */
+export async function reportPlaybackAction(input: {
+  videoId: string;
+  state: "playing" | "paused";
+  positionSeconds: number;
+}): Promise<{ error: string | null }> {
+  try {
+    await requirePermission("orders.manage_qr");
+    const { ctx } = await getStoreContext();
+    if (!VIDEO_ID_RE.test(input.videoId)) return { error: "เพลงไม่ถูกต้อง" };
+    if (input.state !== "playing" && input.state !== "paused") return { error: "สถานะไม่ถูกต้อง" };
+    const pos = Number(input.positionSeconds);
+    if (!Number.isFinite(pos) || pos < 0 || pos > 6 * 3600) return { error: "ตำแหน่งไม่ถูกต้อง" };
+    const settingsRes = await getMusicPlayerSettings(ctx.storeId, ctx.organizationId);
+    if (!settingsRes.data?.customerScreenEnabled) return { error: null };
+    const res = await reportNowPlayingPlayback(ctx.storeId, {
+      videoId: input.videoId,
+      state: input.state,
+      positionSeconds: pos,
+    });
+    return { error: res.error ? res.error.userMessage : null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 
@@ -265,6 +306,7 @@ async function saveBasePlaylist(
     minDonation: s.minDonation,
     playNowPrice: s.playNowPrice,
     interruptBaseOnRequest: s.interruptBaseOnRequest,
+    customerScreenEnabled: s.customerScreenEnabled,
     maxDurationSeconds: s.maxDurationSeconds,
     basePlaylist: tracks,
     licensingAcknowledged: Boolean(s.licensingAcknowledgedAt),

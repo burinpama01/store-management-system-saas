@@ -389,6 +389,55 @@ export async function findProductRewardVoucher(storeId: string, code: string) {
 }
 
 /**
+ * โค้ดแลกรางวัลที่ลูกค้ายังไม่ได้ใช้ (POS แสดงให้แตะใช้ได้ ไม่ต้องให้ลูกค้าอ่านโค้ด)
+ * - เฉพาะสถานะ pending, ยังไม่ใช้, ยังไม่หมดอายุ, มีโค้ด
+ * - โค้ดส่วนลดผูกกับลูกค้าคนนี้อยู่แล้วในตาราง coupons; โค้ดของรางวัลตรวจซ้ำตอนชำระเงิน
+ */
+export async function listPendingRewardVouchersForCustomer(storeId: string, customerId: string, limit = 10) {
+  const supabase = await createSupabaseServiceClient();
+  const nowIso = new Date().toISOString();
+  const { data: rows, error } = await supabase
+    .from("loyalty_reward_redemptions")
+    .select("id, reward_id, voucher_code, expires_at")
+    .eq("store_id", storeId)
+    .eq("customer_id", customerId)
+    .eq("status", "pending")
+    .is("used_at", null)
+    .not("voucher_code", "is", null)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(Math.floor(limit), 1), 20));
+  if (error) return { data: null, error: mapError(error) };
+  if (!rows || rows.length === 0) return { data: [], error: null };
+
+  const rewardIds = [...new Set(rows.map((row) => row.reward_id))];
+  const { data: rewards, error: rewardErr } = await supabase
+    .from("loyalty_rewards")
+    .select("id, name, reward_type")
+    .eq("store_id", storeId)
+    .in("id", rewardIds);
+  if (rewardErr) return { data: null, error: mapError(rewardErr) };
+  const byId = new Map((rewards ?? []).map((reward) => [reward.id, reward]));
+
+  return {
+    data: rows.flatMap((row) => {
+      const reward = byId.get(row.reward_id);
+      if (!reward || !row.voucher_code) return [];
+      return [
+        {
+          redemptionId: row.id,
+          code: row.voucher_code,
+          rewardName: reward.name,
+          rewardType: reward.reward_type === "discount" ? ("discount" as const) : ("product" as const),
+          expiresAt: row.expires_at,
+        },
+      ];
+    }),
+    error: null,
+  };
+}
+
+/**
  * Atomically reserve a product reward voucher BEFORE the order is created
  * (single-use guard via `used_at is null`). Returns reserved=false if another
  * checkout already used it. Pair with attachRewardVoucherOrder on success or

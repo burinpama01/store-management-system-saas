@@ -64,6 +64,8 @@ export interface PlanFeatures {
   aiAssistant: boolean;
   aiVision: boolean;
   aiForecast: boolean;
+  /** เงินเดือนขั้นสูง: ค่าทักษะ/อายุงาน/โบนัสยอดขาย/รอบ+ปิดงวด/สลิปของฉัน/ประกันสังคม-ภาษี */
+  advancedPayroll: boolean;
 }
 
 export type FeatureKey = keyof PlanFeatures;
@@ -99,6 +101,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   aiAssistant: "ผู้ช่วย AI",
   aiVision: "AI อ่านภาพ",
   aiForecast: "AI พยากรณ์",
+  advancedPayroll: "เงินเดือนขั้นสูง",
 };
 
 export const PLAN_LABELS: Record<BillingPlan, string> = {
@@ -138,6 +141,7 @@ export const BUSINESS_FEATURE_COMPONENTS = [
   "aiAssistant",
   "aiVision",
   "aiForecast",
+  "advancedPayroll",
 ] as const satisfies readonly Exclude<FeatureKey, "maxStores" | "maxMembers">[];
 
 export type BusinessFeatureKey = (typeof BUSINESS_FEATURE_COMPONENTS)[number];
@@ -211,6 +215,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiAssistant: false,
     aiVision: false,
     aiForecast: false,
+    advancedPayroll: false,
   },
   starter: {
     maxStores: 1,
@@ -235,6 +240,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiAssistant: false,
     aiVision: false,
     aiForecast: false,
+    advancedPayroll: false,
   },
   standard: {
     maxStores: 3,
@@ -259,6 +265,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiAssistant: false,
     aiVision: false,
     aiForecast: false,
+    advancedPayroll: false,
   },
   premium: {
     maxStores: 5,
@@ -283,6 +290,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiAssistant: false,
     aiVision: false,
     aiForecast: false,
+    advancedPayroll: false,
   },
   enterprise: {
     maxStores: Infinity,
@@ -307,6 +315,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiAssistant: true,
     aiVision: true,
     aiForecast: true,
+    advancedPayroll: true,
   },
 };
 

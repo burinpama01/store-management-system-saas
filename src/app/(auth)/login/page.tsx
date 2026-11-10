@@ -7,12 +7,21 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/server/integrations/supabase/client";
 import { MarketingBrand } from "@/shared/components/marketing/MarketingShell";
 import { signIn } from "./actions";
+import { RETURN_TO_PARAM, sanitizeReturnTo } from "@/modules/auth/return-to";
 import { Button } from "@/shared/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState(signIn, { error: null });
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // ?next=/player/<slug> จาก middleware — แนบตอนกดเข้าสู่ระบบ ให้ล็อกอินแล้วกลับหน้าเดิม
+  // (อ่านตอน submit แทน useSearchParams เพื่อไม่ต้องห่อ Suspense; server ตรวจซ้ำอีกชั้น)
+  const submitLogin = (formData: FormData) => {
+    const returnTo = sanitizeReturnTo(new URLSearchParams(window.location.search).get(RETURN_TO_PARAM));
+    if (returnTo) formData.set(RETURN_TO_PARAM, returnTo);
+    formAction(formData);
+  };
 
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
@@ -98,7 +107,7 @@ export default function LoginPage() {
             <p>ยินดีต้อนรับกลับมา</p>
           </div>
 
-          <form action={formAction} className="reference-login-form">
+          <form action={submitLogin} className="reference-login-form">
             {inviteError && (
               <p className="alert-danger" role="alert">
                 {inviteError}

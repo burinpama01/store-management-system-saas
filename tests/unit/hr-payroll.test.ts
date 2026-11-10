@@ -44,6 +44,7 @@ function profile(over: Partial<EmployeeProfile> = {}): EmployeeProfile {
     absentPenaltyAmount: 0,
     workingDays: [1, 2, 3, 4, 5],
     otEligible: true,
+    employmentType: "permanent",
     createdAt: "",
     updatedAt: "",
     ...over,
@@ -215,6 +216,42 @@ describe("computePayrollLines", () => {
     });
     expect(result[0].otHours).toBe(2);
     expect(result[0].otPay).toBe(180);
+    // ISSUE-20261105-PAY-001: ชั่วโมง OT ต้องไม่ถูกจ่ายซ้ำในค่าแรงปกติ
+    // 11 ชม. = OT 2 ชม. (ติดเพดาน) + ปกติ 9 ชม. × ฿60 = 540; สุทธิ 540 + 180 = 720
+    expect(result[0].regularHours).toBe(9);
+    expect(result[0].basePay).toBe(540);
+    expect(result[0].netPay).toBe(720);
+  });
+
+  it("รายชั่วโมงที่มี record แต่ไม่มี summary: ไม่จ่ายค่าแรงปกติเกิน (basePay/regularHours = 0)", () => {
+    const rec: AttendanceRecord = {
+      id: "r1", storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice",
+      date: "2026-06-02", clockInAt: "2026-06-02T01:00:00Z", clockOutAt: "2026-06-02T12:00:00Z",
+      status: "completed", createdAt: "", updatedAt: "",
+    };
+    const result = lines({
+      records: [rec],
+      profiles: [profile({ payType: "hourly", hourlyRate: 60 })],
+      settings: settings({ regularHoursPerDay: 8, otDailyCapHours: 2, otMultiplier: 1.5 }),
+    });
+    expect(result[0].basePay).toBe(0);
+    expect(result[0].regularHours).toBe(0);
+  });
+
+  it("รายชั่วโมงไม่มีสิทธิ์ OT: ค่าแรงปกติคิดทุกชั่วโมงเหมือนเดิม", () => {
+    const rec: AttendanceRecord = {
+      id: "r1", storeId: "s1", organizationId: "o1", userId: "u1", employeeName: "Alice",
+      date: "2026-06-02", clockInAt: "2026-06-02T01:00:00Z", clockOutAt: "2026-06-02T12:00:00Z",
+      status: "completed", createdAt: "", updatedAt: "",
+    };
+    const result = lines({
+      summaries: [summary({ totalDays: 1, totalHours: 11 })],
+      records: [rec],
+      profiles: [profile({ payType: "hourly", hourlyRate: 60, otEligible: false })],
+      settings: settings({ regularHoursPerDay: 8, otDailyCapHours: 2, otMultiplier: 1.5 }),
+    });
+    expect(result[0].otPay).toBe(0);
+    expect(result[0].basePay).toBe(660);
   });
 
   it("auto-computes absent penalty for scheduled working days with no record", () => {
