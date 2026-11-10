@@ -262,7 +262,31 @@ const names = (rows: { name: string }[]) => rows.map((r) => r.name).join(", ");
  * คำแนะนำแบบกฎตายตัว (อธิบายได้ ไม่ใช้ AI) — เรียงเตือนก่อน แล้วข่าวดี แล้วข้อมูล
  * ทุกกฎมีเกณฑ์ขั้นต่ำกันสัญญาณหลอกจากข้อมูลน้อย
  */
-export function buildRecommendations(raw: InsightsRaw): Recommendation[] {
+/** ข้อมูลจุดคุ้มทุนของร้าน (จากหน้า /costing/break-even) — null = ร้านยังไม่ตั้งงบหรือผู้ใช้ไม่มีสิทธิ์เห็น */
+export interface BreakEvenBasis {
+  fixedMonthly: number;
+  openDaysPerMonth: number;
+  otherVariablePct: number;
+}
+
+/**
+ * ยอดขายต่อวันที่คุ้มทุน (ฐานยอดเงิน): ต้นทุนคงที่ ÷ อัตรากำไรส่วนเกิน ÷ วันเปิดร้าน
+ * อัตรากำไรส่วนเกิน = กำไรขั้นต้นจากต้นทุนจริงตอนขาย − ต้นทุนผันแปรอื่น% · ต้องมีต้นทุนครอบคลุม ≥ 50% ของยอด
+ * ยอดจริง/วัน = ยอดช่วงนี้ ÷ วันปฏิทิน × 30 ÷ วันเปิดร้าน (ฐานเดียวกับจุดคุ้มทุน ไม่หารด้วยวันที่มียอด)
+ */
+export function breakEvenRevenuePerDay(raw: InsightsRaw, basis: BreakEvenBasis): { breakEven: number; actual: number } | null {
+  const profit = grossProfit(raw.products);
+  if (!profit || profit.coveragePct < 50) return null;
+  const ratio = (profit.marginPct - basis.otherVariablePct) / 100;
+  const calendarDays = raw.range.days;
+  if (!(ratio > 0) || !(basis.fixedMonthly > 0) || !(basis.openDaysPerMonth > 0) || calendarDays < 7 || raw.daily.length < 5) return null;
+  return {
+    breakEven: round2(basis.fixedMonthly / ratio / basis.openDaysPerMonth),
+    actual: round2(((raw.summary.revenue / calendarDays) * 30) / basis.openDaysPerMonth),
+  };
+}
+
+export function buildRecommendations(raw: InsightsRaw, basis: BreakEvenBasis | null = null): Recommendation[] {
   const out: Recommendation[] = [];
   const { summary, prevSummary } = raw;
   if (summary.orders === 0) {
@@ -442,6 +466,23 @@ export function buildRecommendations(raw: InsightsRaw): Recommendation[] {
       title: `บิลที่เป็นสมาชิกมีแค่ ${Math.round((summary.memberOrders / summary.orders) * 100)}%`,
       detail: "ชวนลูกค้าสะสมแต้มตอนจ่ายเงิน เพื่อให้ลูกค้ากลับมาซื้อซ้ำและส่งโปรหาได้",
       action: { label: "ระบบสมาชิก", href: "/customers" },
+    });
+  }
+
+  // 11) จุดคุ้มทุน (เมื่อร้านตั้งต้นทุนคงที่ไว้)
+  const be = basis ? breakEvenRevenuePerDay(raw, basis) : null;
+  if (be) {
+    const below = be.actual < be.breakEven;
+    out.push({
+      id: below ? "below-break-even" : "above-break-even",
+      tone: below ? "warning" : "positive",
+      title: below
+        ? `ยอดขายเฉลี่ย ${baht(be.actual)}/วัน ต่ำกว่าจุดคุ้มทุน ${baht(be.breakEven)}/วัน`
+        : `ยอดขายเฉลี่ย ${baht(be.actual)}/วัน เกินจุดคุ้มทุน (${baht(be.breakEven)}/วัน) แล้ว`,
+      detail: below
+        ? `ขาดอีกประมาณ ${baht(be.breakEven - be.actual)} ต่อวัน — ดูว่าต้องขายกี่ชิ้น หรือควรปรับราคา/ต้นทุนคงที่ตรงไหน`
+        : "คิดจากต้นทุนคงที่ที่ตั้งไว้และกำไรขั้นต้นจริงในช่วงนี้ (วันที่มียอดขาย)",
+      action: { label: "ดูจุดคุ้มทุน", href: "/costing/break-even" },
     });
   }
 

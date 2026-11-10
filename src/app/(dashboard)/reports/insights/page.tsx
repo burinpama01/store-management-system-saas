@@ -5,6 +5,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { canUseFeature, DEFAULT_BILLING_STATE, explainFeatureLock } from "@/modules/billing/types";
 import { bangkokToday, resolveInsightsRange } from "@/modules/reports/insights";
 import { getSalesInsights } from "@/modules/reports/insights-repository";
+import { loadBreakEvenBasis } from "@/modules/costing/break-even-repository";
 import { InsightsView } from "./InsightsView";
 
 export const dynamic = "force-dynamic";
@@ -39,11 +40,10 @@ export default async function SalesInsightsPage({ searchParams }: { searchParams
   const params = await searchParams;
   const today = bangkokToday();
   const range = resolveInsightsRange({ range: params.range, from: params.from, to: params.to }, today);
-  const result = await getSalesInsights(
-    { organizationId: ctx.organizationId, storeId: ctx.storeId, userId: user.id },
-    range.from,
-    range.to,
-  );
+  const [result, breakEven] = await Promise.all([
+    getSalesInsights({ organizationId: ctx.organizationId, storeId: ctx.storeId, userId: user.id }, range.from, range.to),
+    loadBreakEvenBasis(ctx.storeId),
+  ]);
 
   // key ผูกกับช่วงวันที่: เปลี่ยนช่วงแล้วช่องวันที่กำหนดเองต้องรีเซ็ตตามค่าใหม่ (App Router เก็บ state ของ client component ไว้)
   return (
@@ -55,6 +55,7 @@ export default async function SalesInsightsPage({ searchParams }: { searchParams
       today={today}
       data={result.data}
       error={result.error}
+      breakEven={breakEven}
     />
   );
 }
