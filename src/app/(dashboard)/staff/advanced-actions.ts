@@ -8,6 +8,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
+import { listStoreMemberships } from "@/modules/settings/repository";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { logSystemEvent } from "@/modules/system/event-log";
@@ -91,7 +92,7 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
       .getAll("salesBonusChannels")
       .map(String)
       .filter((c): c is SalesChannel => (SALES_CHANNELS as string[]).includes(c));
-    if (switches.salesBonus && channels.length === 0) return { error: "เลือกช่องทางยอดขายอย่างน้อย 1 ช่องทาง" };
+    if ((switches.salesBonus || switches.monthlySalesBonus) && channels.length === 0) return { error: "เลือกช่องทางยอดขายอย่างน้อย 1 ช่องทาง" };
 
     const skillTiers = parseTiers(String(formData.get("skillTiers") ?? ""), "count", { maxKey: 50, maxAmount: 1_000_000 });
     const seniorityTiers = parseTiers(String(formData.get("seniorityTiers") ?? ""), "months", { maxKey: 600, maxAmount: 1_000_000 });
@@ -99,6 +100,24 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
     if (switches.skillPay && skillTiers.length === 0) return { error: "ใส่ขั้นค่าทักษะอย่างน้อย 1 ขั้น เช่น 1=500, 2=1000" };
     if (switches.seniorityPay && seniorityTiers.length === 0) return { error: "ใส่ขั้นอายุงานอย่างน้อย 1 ขั้น เช่น 6=300, 12=600" };
     if (switches.salesBonus && salesBonusTiers.length === 0) return { error: "ใส่ขั้นโบนัสยอดขายอย่างน้อย 1 ขั้น เช่น 30000=100" };
+    const monthlyBonusTiers = parseTiers(String(formData.get("monthlyBonusTiers") ?? ""), "minSales", { maxKey: 1_000_000_000, maxAmount: 10_000_000 });
+    if (switches.monthlySalesBonus && monthlyBonusTiers.length === 0) return { error: "ใส่ขั้นโบนัสรายเดือนอย่างน้อย 1 ขั้น เช่น 900000=1000" };
+    const salesBonusMode = formData.get("salesBonusMode") === "split" ? "split" : "per_person";
+    const monthlyBonusMode = formData.get("monthlyBonusMode") === "split" ? "split" : "per_person";
+
+    // รายชื่อผู้ร่วมโบนัส: เลือกเอง = ต้องเป็นพนักงานของสาขานี้เท่านั้น · ไม่เลือก = พนักงานประจำทุกคน (แบบเดิม)
+    let salesBonusUserIds: string[] | null = null;
+    if (formData.get("salesBonusPickEmployees") === "on") {
+      const picked = [...new Set(formData.getAll("salesBonusUserIds").map(String))];
+      const { data: storeMembers } = await listStoreMemberships(ctx.organizationId, ctx.storeId);
+      const allowed = new Set((storeMembers ?? []).filter((m) => m.role !== "super_admin").map((m) => m.userId));
+      salesBonusUserIds = picked.filter((id) => allowed.has(id));
+      if ((switches.salesBonus || switches.monthlySalesBonus) && salesBonusUserIds.length === 0) {
+        return { error: "เลือกพนักงานที่ร่วมโบนัสยอดขายอย่างน้อย 1 คน (หรือเอาติ๊ก \"เลือกพนักงานเอง\" ออก)" };
+      }
+      // โบนัสปิดอยู่และไม่ได้เลือกใคร = กลับไปใช้ค่าเริ่มต้น (พนักงานประจำ) ไม่เก็บรายชื่อว่าง
+      if (salesBonusUserIds.length === 0) salesBonusUserIds = null;
+    }
 
     const settings: AdvancedPayrollSettings = {
       switches,
@@ -112,6 +131,10 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
       salesRecordBonus: recordBonus as number,
       salesRecordMode: formData.get("salesRecordMode") === "stack" ? "stack" : "replace",
       salesRecordBaseline: baseline as number,
+      salesBonusMode,
+      salesBonusUserIds,
+      monthlyBonusTiers: monthlyBonusTiers.length ? monthlyBonusTiers : access.stored.monthlyBonusTiers,
+      monthlyBonusMode,
       ssoRate: ssoRate as number,
       ssoWageFloor: ssoFloor as number,
       ssoWageCeiling: ssoCeiling as number,
@@ -137,7 +160,15 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       actorUserId: user.id,
-      context: { switches, payCycleStartDay: settings.payCycleStartDay, payDay: settings.payDay, whtMode: settings.whtMode },
+      context: {
+        switches,
+        payCycleStartDay: settings.payCycleStartDay,
+        payDay: settings.payDay,
+        whtMode: settings.whtMode,
+        salesBonusMode,
+        monthlyBonusMode,
+        salesBonusSelectedCount: salesBonusUserIds?.length ?? null,
+      },
     });
     done();
     return { error: null };

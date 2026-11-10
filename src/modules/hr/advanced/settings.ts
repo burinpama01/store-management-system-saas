@@ -6,6 +6,7 @@
 export const PAYROLL_FEATURE_KEYS = [
   "salesTargetBar",
   "salesBonus",
+  "monthlySalesBonus",
   "skillPay",
   "seniorityPay",
   "socialSecurity",
@@ -21,6 +22,7 @@ export type PayrollFeatureSwitches = Record<PayrollFeatureKey, boolean>;
 export const PAYROLL_FEATURE_LABEL: Record<PayrollFeatureKey, string> = {
   salesTargetBar: "แถบเป้ายอดขายวันนี้ (หน้า POS / ลงเวลา)",
   salesBonus: "โบนัสยอดขายรายวัน",
+  monthlySalesBonus: "โบนัสยอดขายรายเดือน (ตามรอบเงินเดือน)",
   skillPay: "ค่าทักษะ / หลายตำแหน่ง",
   seniorityPay: "ค่าอายุงาน",
   socialSecurity: "ประกันสังคม",
@@ -58,6 +60,9 @@ export function effectiveSwitches(entitled: boolean, stored: Partial<PayrollFeat
 export interface SkillTier { count: number; amount: number }
 export interface SeniorityTier { months: number; amount: number }
 export interface SalesBonusTier { minSales: number; amount: number }
+/** per_person = ทุกคนที่มีสิทธิ์ได้เต็มจำนวน · split = ยอดโบนัสเป็นก้อนรวม หารกันตามคนเข้างาน */
+export type BonusSplitMode = "per_person" | "split";
+export const BONUS_SPLIT_MODES: BonusSplitMode[] = ["per_person", "split"];
 export type SalesChannel = "pos" | "qr" | "delivery";
 export const SALES_CHANNELS: SalesChannel[] = ["pos", "qr", "delivery"];
 export const SALES_CHANNEL_LABEL: Record<SalesChannel, string> = {
@@ -80,6 +85,14 @@ export interface AdvancedPayrollSettings {
   salesRecordBonus: number;
   salesRecordMode: "replace" | "stack";
   salesRecordBaseline: number;
+  /** โบนัสรายวัน: ต่อคน หรือ หารตามจำนวนคนที่ทำเต็มวันวันนั้น */
+  salesBonusMode: BonusSplitMode;
+  /** พนักงานที่ร่วมโบนัสยอดขาย (รายวัน+รายเดือน) · null = พนักงานประจำทุกคน (แบบเดิม) */
+  salesBonusUserIds: string[] | null;
+  /** โบนัสรายเดือน: ยอดรวมทั้งรอบเงินเดือน=โบนัส */
+  monthlyBonusTiers: SalesBonusTier[];
+  /** โบนัสรายเดือน: ต่อคน หรือ หารตามจำนวนวันที่ทำเต็มวัน */
+  monthlyBonusMode: BonusSplitMode;
   ssoRate: number;
   ssoWageFloor: number;
   ssoWageCeiling: number;
@@ -113,6 +126,13 @@ export const DEFAULT_ADVANCED_PAYROLL_SETTINGS: AdvancedPayrollSettings = {
   salesRecordBonus: 500,
   salesRecordMode: "replace",
   salesRecordBaseline: 0,
+  salesBonusMode: "per_person",
+  salesBonusUserIds: null,
+  monthlyBonusTiers: [
+    { minSales: 900000, amount: 1000 },
+    { minSales: 1000000, amount: 2000 },
+  ],
+  monthlyBonusMode: "per_person",
   ssoRate: 5,
   ssoWageFloor: 1650,
   ssoWageCeiling: 17500,
