@@ -282,7 +282,7 @@ async function incompleteDataWarnings(
   periodStart: string,
   today: string,
 ): Promise<string[]> {
-  const [members, profiles, openShifts] = await Promise.all([
+  const [members, profiles, openShifts, selfBanks] = await Promise.all([
     listStoreMemberUserIds(organizationId, storeId),
     db.from("employee_profiles").select("user_id, bank_account_no, employment_end_date").eq("store_id", storeId),
     db
@@ -292,12 +292,25 @@ async function incompleteDataWarnings(
       .gte("date", periodStart)
       .lt("date", today)
       .is("clock_out_at", null),
+    db.from("employee_self_info").select("user_id").eq("store_id", storeId).not("bank_account_no", "is", null),
   ]);
+  // พนักงานกรอกเลขบัญชีเองแล้วก็นับว่ามี (อ่านไม่ได้ = นับเกินแบบปลอดภัย + log)
+  if (selfBanks?.error) {
+    await logSystemEvent({
+      level: "warn",
+      source: "hr.self-info",
+      action: "incompleteDataWarnings.selfInfo",
+      message: `อ่านเลขบัญชีที่พนักงานกรอกเองไม่สำเร็จ: ${selfBanks.error.message}`,
+      organizationId,
+      storeId,
+    }).catch(() => undefined);
+  }
+  const selfBankUsers = new Set(((selfBanks?.data ?? []) as { user_id: string }[]).map((r) => r.user_id));
   const rows = (profiles.data ?? []) as { user_id: string; bank_account_no: string | null; employment_end_date: string | null }[];
   const active = rows.filter((p) => !p.employment_end_date || p.employment_end_date >= periodStart);
   const withProfile = new Set(rows.map((p) => p.user_id));
   const out: string[] = [];
-  const noBank = active.filter((p) => !p.bank_account_no).length;
+  const noBank = active.filter((p) => !p.bank_account_no && !selfBankUsers.has(p.user_id)).length;
   if (noBank) out.push(`${noBank} คนยังไม่มีเลขบัญชี`);
   const noProfile = members.filter((id) => !withProfile.has(id)).length;
   if (noProfile) out.push(`${noProfile} คนยังไม่ตั้งค่าจ้าง`);

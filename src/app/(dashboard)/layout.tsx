@@ -120,6 +120,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
+    ...(can("attendance.clock") ? [{ href: "/my-profile", label: "ข้อมูลของฉัน" }] : []),
     ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(
       storeContext && canManageQr && currentStoreRow?.buffet_enabled
