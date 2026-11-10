@@ -4,13 +4,15 @@ export async function sendTcp(host: string, port: number, bytes: Uint8Array): Pr
   validateLanTarget(host, port);
   if (!bytes.length || bytes.length > 1048576) throw new Error('ขนาดงานพิมพ์เกินขอบเขต');
   return new Promise((resolve, reject) => {
-    let done = false;
+    let done = false; let connected = false;
+    const hint = (message: string) => connected ? message : `${message} · ตรวจ IP/เครื่องพิมพ์เปิดอยู่ อุปกรณ์ต่อ WiFi วงเดียวกัน และอนุญาต "เครือข่ายท้องถิ่น" ให้ StoreOS POS ใน การตั้งค่า > ความเป็นส่วนตัวและความปลอดภัย`;
     let socket: ReturnType<typeof TcpSocket.createConnection> | undefined;
-    const fail = (error: Error) => { if (done) return; done = true; clearTimeout(timer); socket?.destroy(); reject(error); };
+    const fail = (error: Error) => { if (done) return; done = true; clearTimeout(timer); socket?.destroy(); reject(new Error(hint(error.message || 'เชื่อมต่อเครื่องพิมพ์ไม่สำเร็จ'))); };
     const timer = setTimeout(() => fail(new Error('ไม่ทราบผลการพิมพ์ กรุณาตรวจเครื่องก่อนส่งซ้ำ')), 15000);
     try {
       socket = TcpSocket.createConnection({ host, port, connectTimeout: 8000 }, () => {
         if (done || !socket) return;
+        connected = true;
         // One write, no retry: a disconnect may happen after some bytes reached paper.
         socket.write(bytes, undefined, error => {
           if (error) { fail(error); return; }

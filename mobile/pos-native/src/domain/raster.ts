@@ -5,6 +5,17 @@ export function validateLanTarget(host: string, port: number) {
   if (!(a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168))) throw new Error('รองรับ IP ภายในเครือข่ายร้านเท่านั้น');
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port ไม่ถูกต้อง');
 }
+/** True when at least one pixel would print black; a blank capture must never waste paper. */
+export function hasInk(input: { width: number; height: number; channels: number; data: ArrayLike<number> }) {
+  const { width, height, channels, data } = input;
+  for (let i = 0; i < width * height; i++) {
+    const o = i * channels;
+    const alpha = channels === 2 || channels === 4 ? data[o + channels - 1] / 255 : 1;
+    const gray = channels < 3 ? data[o] : .299 * data[o] + .587 * data[o + 1] + .114 * data[o + 2];
+    if (gray * alpha + 255 * (1 - alpha) < 160) return true;
+  }
+  return false;
+}
 export function rasterEscPos(input: { width: number; height: number; channels: number; depth: number; data: ArrayLike<number> }, cut = false): Uint8Array {
   const { width, height, channels, depth, data } = input;
   if (depth !== 8 || ![1, 2, 3, 4].includes(channels) || !Number.isInteger(width) || width < 1 || width > 832 || !Number.isInteger(height) || height < 1 || height > 10000 || data.length !== width * height * channels) throw new Error('ภาพใบพิมพ์ไม่ถูกต้อง');

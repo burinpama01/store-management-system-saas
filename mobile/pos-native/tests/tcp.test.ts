@@ -13,3 +13,9 @@ it('does not resend after an uncertain timeout or error following the write', as
   await vi.advanceTimersByTimeAsync(15000); await rejection;
   state.handlers.error(new Error('late disconnect')); expect(state.write).toHaveBeenCalledTimes(1); expect(state.destroy).toHaveBeenCalledTimes(1);
 });
+
+it('adds network permission guidance when the connection fails before connecting', async () => {
+  const result = sendTcp('192.168.1.20', 9100, Uint8Array.of(27, 64));
+  state.handlers.error(new Error('ECONNREFUSED'));
+  await expect(result).rejects.toThrow('เครือข่ายท้องถิ่น'); expect(state.write).not.toHaveBeenCalled();
+});

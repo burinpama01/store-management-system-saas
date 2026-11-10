@@ -10,6 +10,7 @@ function settings() {
   const react = {
     createElement: (type: unknown, props: any, ...children: any[]) => ({ type, props, children }),
     useRef: (current: unknown) => ({ current }),
+    useEffect: () => undefined,
     useState: (initial: unknown) => [state++ === 0 ? '192.168.1.5' : initial, (value: unknown) => messages.push(value)],
   };
   const exports: Record<string, any> = {};
@@ -19,8 +20,8 @@ function settings() {
     if (name === 'react') return react;
     if (name === '../theme') return { theme: {} };
     if (name === 'react-native') return { Platform: { OS: 'ios' }, View: 'View', Text: 'Text', TextInput: 'TextInput', ScrollView: 'ScrollView', Pressable: 'Pressable' };
-    if (name === '../domain/raster') return { validateLanTarget: () => undefined };
-    if (name === '../domain/printing') return {};
+    if (name === '@react-native-async-storage/async-storage') return { default: {} };
+    if (name === '../domain/lan-printer') return { makeLanPrinter: (host: string, port: number, dots: number, cut: boolean) => ({ host, port, dots, cut }), loadLanPrinter: async () => null, lanPrinterLabel: () => '', lanPrintMessage: () => '' };
     loads.push(name);
     throw new Error('Printer native module unavailable');
   } });
@@ -37,6 +38,6 @@ it('handles printer module load failure on print without loading TCP', async () 
   button.props.onPress();
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(messages).toContain('Printer native module unavailable');
-  expect(loads).toEqual(['react-native-view-shot']);
+  expect(loads).toEqual(['./lan-print']);
   expect(messages.at(-1)).toBe(false);
 });
