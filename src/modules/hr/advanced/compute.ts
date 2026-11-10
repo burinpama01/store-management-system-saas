@@ -13,20 +13,24 @@ import type { EmployeeProfile } from "../types";
 import type { AdvancedPayrollSettings, SeniorityTier, SkillTier } from "./settings";
 import {
   activeSkillsOn,
+  computeDailySalesBonuses,
+  computeMonthlySalesBonuses,
   computeStoreSalesDays,
-  employeeSalesBonus,
   fullMonthsBetween,
   hasMultipleRates,
   isPermanentOn,
   nextTier,
   rateOn,
   rateSegments,
+  salesBonusEligible,
   seniorityPayFor,
   skillPayFor,
   socialSecurityFor,
   withholdingTaxPercent,
   type EmployeeSkillGrant,
+  type MonthlySalesBonus,
   type PayRateEntry,
+  type SalesBonusDayShare,
 } from "./income";
 import { addDays, daysInclusive } from "./pay-cycle";
 
@@ -59,7 +63,10 @@ export interface AdvancedPayrollLine extends PayrollLine {
   seniorityMonths: number;
   nextSeniorityTier: SeniorityTier | null;
   salesBonus: number;
-  salesBonusDays: { date: string; amount: number; record: boolean }[];
+  salesBonusDays: SalesBonusDayShare[];
+  /** โบนัสยอดขายรายเดือน (ตามรอบเงินเดือน) */
+  monthlySalesBonus: number;
+  monthlySalesBonusDetail: MonthlySalesBonus | null;
   socialSecurity: number;
   socialSecurityBase: number;
   withholdingTax: number;
@@ -120,6 +127,8 @@ function emptyExtras(line: PayrollLine): AdvancedPayrollLine {
     nextSeniorityTier: null,
     salesBonus: 0,
     salesBonusDays: [],
+    monthlySalesBonus: 0,
+    monthlySalesBonusDetail: null,
     socialSecurity: 0,
     socialSecurityBase: 0,
     withholdingTax: 0,
@@ -202,6 +211,34 @@ export function computeAdvancedPayrollLines(
         })
       : null;
 
+  // โบนัสยอดขาย (รายวัน/รายเดือน) ต้องคิดพร้อมกันทั้งร้าน — โหมดหารต้องรู้จำนวนคนที่เข้างาน
+  const selected = adv?.settings.salesBonusUserIds ?? null;
+  const eligible = (userId: string, date: string) => salesBonusEligible(selected, userId, profileByUser.get(userId), date);
+  const bonusEmployees = baseLines.map((l) => ({ userId: l.userId, days: l.days }));
+  const dailyBonuses =
+    adv && sw?.salesBonus && storeDays
+      ? computeDailySalesBonuses({
+          employees: bonusEmployees,
+          storeDays,
+          isEligibleOn: eligible,
+          lateMaxMinutes: adv.settings.salesBonusLateMaxMinutes,
+          mode: adv.settings.salesBonusMode,
+        })
+      : null;
+  const monthlyBonuses =
+    adv && sw?.monthlySalesBonus
+      ? computeMonthlySalesBonuses({
+          employees: bonusEmployees,
+          // ยอดเฉพาะวันในรอบนี้ (dailySales โหลดตามช่วงงวดอยู่แล้ว)
+          periodSales: [...adv.dailySales.entries()]
+            .filter(([date]) => date >= periodStart && date <= periodEnd)
+            .reduce((sum, [, v]) => sum + v, 0),
+          tiers: adv.settings.monthlyBonusTiers,
+          isEligibleOn: eligible,
+          mode: adv.settings.monthlyBonusMode,
+        })
+      : null;
+
   return baseLines.map((base) => {
     const line = emptyExtras(base);
     const profile = profileByUser.get(base.userId);
@@ -269,20 +306,20 @@ export function computeAdvancedPayrollLines(
         line.nextSeniorityTier = nextTier(line.seniorityMonths, adv.settings.seniorityTiers, "months");
         if (permanentAtStart) line.seniorityPay = seniorityPayFor(line.seniorityMonths, adv.settings.seniorityTiers);
       }
-      if (sw.salesBonus && storeDays) {
-        const bonus = employeeSalesBonus({
-          days: base.days,
-          storeDays,
-          isEligibleOn: (date) => isPermanentOn(profile, date),
-          lateMaxMinutes: adv.settings.salesBonusLateMaxMinutes,
-        });
-        line.salesBonus = bonus.total;
-        line.salesBonusDays = bonus.days;
+      const daily = dailyBonuses?.get(base.userId);
+      if (daily) {
+        line.salesBonus = daily.total;
+        line.salesBonusDays = daily.days;
+      }
+      const monthly = monthlyBonuses?.get(base.userId);
+      if (monthly) {
+        line.monthlySalesBonus = monthly.amount;
+        line.monthlySalesBonusDetail = monthly;
       }
     }
 
     line.grossEarnings = round2(
-      line.basePay + line.otPay + line.bonusTotal + line.skillPay + line.seniorityPay + line.salesBonus,
+      line.basePay + line.otPay + line.bonusTotal + line.skillPay + line.seniorityPay + line.salesBonus + line.monthlySalesBonus,
     );
     // รายได้ที่ได้จริง (ใช้เป็นฐานประกันสังคม/ภาษี) = รายได้รวม − หักขาด/ครึ่งวัน (ไม่หักค่าปรับ)
     const earned = Math.max(0, line.grossEarnings - line.absentPenalty - line.halfDayDeduction);

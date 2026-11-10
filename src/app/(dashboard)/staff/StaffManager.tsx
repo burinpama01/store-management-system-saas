@@ -573,7 +573,7 @@ export function StaffManager({
                       <td className="px-3 py-2 text-right text-red-600">{l.absentPenalty ? `−${fmt(l.absentPenalty, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.absentDays ? `${l.absentDays} วัน` : ""}</span></td>
                       <td className="px-3 py-2 text-right text-green-600">
                         {(() => {
-                          const extra = l.bonusTotal + (l.skillPay ?? 0) + (l.seniorityPay ?? 0) + (l.salesBonus ?? 0);
+                          const extra = l.bonusTotal + (l.skillPay ?? 0) + (l.seniorityPay ?? 0) + (l.salesBonus ?? 0) + (l.monthlySalesBonus ?? 0);
                           return extra ? `+${fmt(extra, currency)}` : "—";
                         })()}
                         <span className="block text-[10px] text-gray-400">
@@ -581,6 +581,7 @@ export function StaffManager({
                             l.skillPay ? `ทักษะ ${l.skillPay}` : "",
                             l.seniorityPay ? `อายุงาน ${l.seniorityPay}` : "",
                             l.salesBonus ? `ยอดขาย ${l.salesBonus}` : "",
+                            l.monthlySalesBonus ? `ยอดรายเดือน ${l.monthlySalesBonus}` : "",
                           ]
                             .filter(Boolean)
                             .join(" · ")}
@@ -697,7 +698,15 @@ export function StaffManager({
           </div>
         </section>
       ) : tab === "features" ? (
-        <AdvancedPayrollPanel entitled={advanced.entitled} settings={advanced.stored} skills={advanced.skills} />
+        <AdvancedPayrollPanel
+          entitled={advanced.entitled}
+          settings={advanced.stored}
+          skills={advanced.skills}
+          employees={staff.map((m) => {
+            const p = profileByUser.get(m.userId);
+            return { userId: m.userId, name: p?.displayName || m.email, permanent: p?.employmentType === "permanent" };
+          })}
+        />
       ) : (
         <section className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-4">

@@ -160,15 +160,21 @@ export function PayslipCard({
   const skillPay = line.skillPay ?? 0;
   const seniorityPay = line.seniorityPay ?? 0;
   const salesBonus = line.salesBonus ?? 0;
+  const monthlyBonus = line.monthlySalesBonus ?? 0;
+  const monthlyDetail = line.monthlySalesBonusDetail ?? null;
   const sso = line.socialSecurity ?? 0;
   const wht = line.withholdingTax ?? 0;
   const totalDeduction = line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal + sso + wht;
-  const totalEarning = line.basePay + line.otPay + line.bonusTotal + skillPay + seniorityPay + salesBonus;
+  // ใช้ยอดที่ระบบคำนวณ (ตรงกับ netPay) · บรรทัดแบบเดิมที่ไม่มี grossEarnings ค่อยรวมเอง
+  const totalEarning =
+    (line as { grossEarnings?: number }).grossEarnings ??
+    line.basePay + line.otPay + line.bonusTotal + skillPay + seniorityPay + salesBonus + monthlyBonus;
   const bonusByDate = new Map((line.salesBonusDays ?? []).map((d) => [d.date, d]));
   const salesDays = line.salesBonusDays ?? [];
   const recordDays = salesDays.filter((d) => d.record).length;
   const normalByAmount = new Map<number, number>();
   for (const d of salesDays) if (!d.record) normalByAmount.set(d.amount, (normalByAmount.get(d.amount) ?? 0) + 1);
+  const splitDays = salesDays.filter((d) => d.people !== undefined).length;
 
   return (
     <section className="mb-8 break-inside-avoid rounded-lg border border-gray-300 p-6">
@@ -259,13 +265,27 @@ export function PayslipCard({
         )}
         {salesBonus > 0 && (
           <Row
-            label={`โบนัสยอดขายรายวัน (${[
-              ...[...normalByAmount.entries()].map(([amount, days]) => `${days} วัน×${amount}`),
-              recordDays ? `สถิติ ${recordDays} วัน` : "",
-            ]
-              .filter(Boolean)
-              .join(" · ")})`}
+            label={`โบนัสยอดขายรายวัน (${
+              splitDays > 0
+                ? `หารตามคนเข้างาน ${splitDays} วัน${recordDays ? ` · สถิติ ${recordDays} วัน` : ""}`
+                : [
+                    ...[...normalByAmount.entries()].map(([amount, days]) => `${days} วัน×${amount}`),
+                    recordDays ? `สถิติ ${recordDays} วัน` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+            })`}
             value={`+${money(salesBonus, currency)}`}
+          />
+        )}
+        {monthlyBonus > 0 && monthlyDetail && (
+          <Row
+            label={`โบนัสยอดขายรายเดือน (ยอดรอบ ${money(monthlyDetail.periodSales, currency)}${
+              monthlyDetail.totalFullDays
+                ? ` · ก้อนรวม ${money(monthlyDetail.tierAmount, currency)} หารตามวันทำงาน ${monthlyDetail.fullDays}/${monthlyDetail.totalFullDays} วัน`
+                : ""
+            })`}
+            value={`+${money(monthlyBonus, currency)}`}
           />
         )}
         {line.otPay > 0 && <Row label={`ค่าล่วงเวลา (${line.otHours} ชม. × ${otMultiplier})`} value={`+${money(line.otPay, currency)}`} />}
