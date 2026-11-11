@@ -109,11 +109,18 @@ export function StaffManager({
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [showAddStaff, setShowAddStaff] = useState(false);
+  const [showResigned, setShowResigned] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const profileByUser = new Map(profiles.map((p) => [p.userId, p]));
   // Members scoped to actual employees (exclude platform super_admin rows).
   const staff = members.filter((m) => m.role !== "super_admin");
+  // ลาออกแล้ว = วันออกงานผ่านไปแล้ว (วันสุดท้ายยังนับว่าทำงานอยู่) — ซ่อนไว้ก่อน กดดูได้
+  const isResigned = (userId: string) => {
+    const end = profileByUser.get(userId)?.employmentEndDate;
+    return !!end && end < today;
+  };
+  const resignedCount = staff.filter((m) => isResigned(m.userId)).length;
 
   function run(action: () => Promise<{ error: string | null }>, onOk?: () => void) {
     setError(null);
@@ -224,12 +231,20 @@ export function StaffManager({
           )}
 
           <div className="space-y-2">
+            {resignedCount > 0 && (
+              <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={showResigned} onChange={(e) => setShowResigned(e.target.checked)} className="h-5 w-5 accent-orange-500" />
+                แสดงพนักงานที่ลาออกแล้ว ({resignedCount} คน)
+              </label>
+            )}
             {staff.length === 0 ? (
               <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
                 ยังไม่มีพนักงาน
               </p>
             ) : (
-              staff.map((m) => {
+              staff
+                .filter((m) => showResigned || !isResigned(m.userId))
+                .map((m) => {
                 const profile = profileByUser.get(m.userId);
                 const isEditing = editingUserId === m.userId;
                 return (
@@ -238,6 +253,9 @@ export function StaffManager({
                       <div className="min-w-0">
                         <p className="font-semibold text-gray-900 truncate">
                           {profile?.displayName || m.email}
+                          {isResigned(m.userId) && (
+                            <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">ลาออกแล้ว</span>
+                          )}
                         </p>
                         {profile && (profile.employeeCode || profile.position || profile.seniorityStartDate) && (
                           <p className="text-xs text-gray-500 truncate">
@@ -676,7 +694,8 @@ export function StaffManager({
                   }}
                 >
                   <option value="">— เลือก —</option>
-                  {staff.map((m) => {
+                  {/* คนลาออกแล้วไม่ต้องให้เลือก (ยกเว้นติ๊กแสดงคนลาออก — เผื่อปรับงวดสุดท้าย) */}
+                  {staff.filter((m) => showResigned || !isResigned(m.userId)).map((m) => {
                     const name = profileByUser.get(m.userId)?.displayName || m.email;
                     return (
                       <option key={m.userId} value={m.userId} data-name={name}>
