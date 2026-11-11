@@ -33,6 +33,8 @@ import type { PayrollPeriodRow, StoreSkill } from "@/modules/hr/advanced/reposit
 import type { PayPeriod } from "@/modules/hr/advanced/pay-cycle";
 import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { AdvancedPayrollPanel } from "./AdvancedPayrollPanel";
+import { PAY_FREQUENCIES, PAY_FREQUENCY_LABEL, type PayWeek } from "@/modules/hr/advanced/weekly";
+import { WeeklyPayoutsPanel, type WeeklyPayoutView } from "./WeeklyPayoutsPanel";
 import { PayrollPeriodsPanel } from "./PayrollPeriodsPanel";
 
 export interface StaffAdvancedProps {
@@ -47,6 +49,8 @@ export interface StaffAdvancedProps {
   periods: PayPeriod[];
   closedRows: PayrollPeriodRow[];
   businessToday: string;
+  /** จ่ายรายสัปดาห์: สัปดาห์ล่าสุด (ใหม่ → เก่า รวมสัปดาห์ปัจจุบัน) + ยอดที่บันทึกแล้ว */
+  weekly: { weeks: PayWeek[]; rows: WeeklyPayoutView[] };
 }
 
 export type StaffSelfInfo = Omit<EmployeeSelfInfo, "bankAccountNo"> & { bankAccountMasked: string };
@@ -455,6 +459,22 @@ export function StaffManager({
                             </div>
                           </div>
                         )}
+                        {asw.weeklyPay && (
+                          <label className="text-xs font-medium text-gray-600">
+                            รอบจ่าย
+                            <select
+                              name="payFrequency"
+                              defaultValue={profile?.payFrequency ?? "monthly"}
+                              className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3"
+                              style={{ fontSize: 16 }}
+                            >
+                              {PAY_FREQUENCIES.map((f) => (
+                                <option key={f} value={f}>{PAY_FREQUENCY_LABEL[f]}</option>
+                              ))}
+                            </select>
+                            <span className="mt-1 block text-[11px] font-normal text-gray-400">รายสัปดาห์ = คิดเฉพาะวันที่มา + OT + โบนัสรายวัน</span>
+                          </label>
+                        )}
                         {asw.socialSecurity && (
                           <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
                             <input type="checkbox" name="ssoEnabled" defaultChecked={profile?.ssoEnabled ?? true} className="accent-orange-500" />
@@ -490,6 +510,21 @@ export function StaffManager({
               dateFrom={dateFrom}
               dateTo={dateTo}
               currency={currency}
+            />
+          )}
+          {asw.weeklyPay && (
+            <WeeklyPayoutsPanel
+              weeks={advanced.weekly.weeks}
+              rows={advanced.weekly.rows}
+              businessToday={advanced.businessToday}
+              currency={currency}
+              weeklyStaffCount={
+                profiles.filter(
+                  (p) =>
+                    (p.payFrequency === "weekly" || p.payFrequency === "weekly_advance") &&
+                    (!p.employmentEndDate || p.employmentEndDate >= advanced.businessToday),
+                ).length
+              }
             />
           )}
           {/* Period picker */}
@@ -551,6 +586,7 @@ export function StaffManager({
                       <td className="px-3 py-2 text-gray-800">
                         {l.employeeName}
                         {!l.hasProfile && <span className="ml-1 text-xs text-amber-500">(ยังไม่ตั้งค่าจ้าง)</span>}
+                        {l.paidWeekly && <span className="block text-[10px] text-sky-600">จ่ายรายสัปดาห์ (แยกรอบ) — ไม่อยู่ในงวด/สลิปนี้</span>}
                       </td>
                       <td className="px-3 py-2 text-gray-500">{PAY_TYPE_LABEL[l.payType]}</td>
                       <td className="px-3 py-2 text-right text-gray-700">
@@ -589,14 +625,20 @@ export function StaffManager({
                       </td>
                       <td className="px-3 py-2 text-right text-red-600">
                         {(() => {
-                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0);
+                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0) + (l.weeklyAdvance ?? 0);
                           return ded ? `−${fmt(ded, currency)}` : "—";
                         })()}
                         <span className="block text-[10px] text-gray-400">
-                          {[l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "", l.withholdingTax ? `ภาษี ${l.withholdingTax}` : ""].filter(Boolean).join(" · ")}
+                          {[
+                            l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "",
+                            l.withholdingTax ? `ภาษี ${l.withholdingTax}` : "",
+                            l.weeklyAdvance ? `จ่ายล่วงหน้ารายสัปดาห์ ${l.weeklyAdvance}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(l.netPay, currency)}</td>
+                      <td className={`px-3 py-2 text-right font-bold ${l.paidWeekly ? "text-gray-400 line-through" : "text-gray-900"}`}>{fmt(l.netPay, currency)}</td>
                       <td className="px-3 py-2 text-right">
                         <a
                           href={`/payslip?userId=${l.userId}&${payslipQuery}`}

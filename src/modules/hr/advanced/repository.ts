@@ -18,6 +18,7 @@ import {
   type SalesChannel,
 } from "./settings";
 import type { EmployeeSkillGrant, PayRateEntry } from "./income";
+import { logSystemEvent } from "@/modules/system/event-log";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ตารางใหม่ยังไม่อยู่ใน database.types
 type Db = any;
@@ -48,6 +49,7 @@ export function mapAdvancedSettings(row: Record<string, unknown> | null | undefi
       payCycle: row.feat_pay_cycle === true,
       myPayslip: row.feat_my_payslip === true,
       payrollNotifications: row.feat_payroll_notifications === true,
+      weeklyPay: row.feat_weekly_pay === true,
     }),
     payCycleStartDay: n(row.pay_cycle_start_day, d.payCycleStartDay),
     payDay: row.pay_day === 0 ? 0 : n(row.pay_day, d.payDay),
@@ -74,6 +76,13 @@ export function mapAdvancedSettings(row: Record<string, unknown> | null | undefi
     ssoWageFloor: n(row.sso_wage_floor, d.ssoWageFloor),
     ssoWageCeiling: n(row.sso_wage_ceiling, d.ssoWageCeiling),
     whtMode: row.wht_mode === "percent" ? "percent" : "manual",
+    // 0 = อาทิตย์ เป็นค่าที่ถูกต้อง (n() จะแทน 0 ด้วยค่าเริ่มต้น จึงตรวจเอง)
+    weeklyStartDay:
+      Number.isInteger(Number(row.weekly_start_day)) && Number(row.weekly_start_day) >= 0 && Number(row.weekly_start_day) <= 6 && row.weekly_start_day !== null && row.weekly_start_day !== undefined
+        ? Number(row.weekly_start_day)
+        : d.weeklyStartDay,
+    weeklyRateBasis: row.weekly_rate_basis === "working_days" ? "working_days" : "profile",
+    weeklyPayEnabledAt: (row.weekly_pay_enabled_at as string | null) ?? null,
     payCycleEnabledAt: (row.pay_cycle_enabled_at as string | null) ?? null,
   };
 }
@@ -105,6 +114,10 @@ export async function saveAdvancedPayrollSettings(
       feat_pay_cycle: sw.payCycle,
       feat_my_payslip: sw.myPayslip,
       feat_payroll_notifications: sw.payrollNotifications,
+      feat_weekly_pay: sw.weeklyPay,
+      weekly_start_day: s.weeklyStartDay,
+      weekly_rate_basis: s.weeklyRateBasis,
+      weekly_pay_enabled_at: sw.weeklyPay ? s.weeklyPayEnabledAt ?? null : null,
       pay_cycle_start_day: s.payCycleStartDay,
       pay_day: s.payDay,
       skill_tiers: s.skillTiers,
@@ -140,7 +153,7 @@ export async function listStoresWithPayrollAutomation(): Promise<
   const { data, error } = await db
     .from("store_hr_settings")
     .select("*")
-    .or("feat_pay_cycle.eq.true,feat_payroll_notifications.eq.true,feat_sales_bonus.eq.true");
+    .or("feat_pay_cycle.eq.true,feat_payroll_notifications.eq.true,feat_sales_bonus.eq.true,feat_weekly_pay.eq.true");
   if (error || !data) return [];
   return (data as Record<string, unknown>[]).map((row) => ({
     storeId: String(row.store_id),
@@ -531,8 +544,142 @@ export async function listMyVisiblePayslips(storeId: string): Promise<PayslipRow
 // กันแจ้งเตือนซ้ำ
 // ---------------------------------------------------------------------------
 /** true = เพิ่งจองได้ (ส่งได้), false = เคยส่งแล้ว */
+/** เคยบันทึกเหตุการณ์นี้แล้วหรือยัง (ใช้เป็นเครื่องหมาย "ทำแล้ว" ของ cron) */
+export async function hasPayrollNotification(storeId: string, kind: string, dedupeKey: string): Promise<boolean> {
+  const db = await service();
+  const { data, error } = await db
+    .from("payroll_notification_log")
+    .select("dedupe_key")
+    .eq("store_id", storeId)
+    .eq("kind", kind)
+    .eq("dedupe_key", dedupeKey)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return !!data;
+}
+
+/** จำนวนพนักงานที่ตั้งรอบจ่ายรายสัปดาห์ (cron ข้ามสาขาที่ไม่มีโดยไม่ต้องคำนวณ) */
+export async function countWeeklyEmployees(storeId: string): Promise<number> {
+  const db = await service();
+  const { count, error } = await db
+    .from("employee_profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .in("pay_frequency", ["weekly", "weekly_advance"]);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
 export async function claimPayrollNotification(storeId: string, kind: string, dedupeKey: string): Promise<boolean> {
   const db = await service();
   const { error } = await db.from("payroll_notification_log").insert({ store_id: storeId, kind, dedupe_key: dedupeKey });
   return !error;
+}
+
+// ---------------------------------------------------------------------------
+// จ่ายรายสัปดาห์ (W7/W8) — snapshot ยอดที่บันทึกแล้ว
+// ---------------------------------------------------------------------------
+export interface WeeklyPayoutRow {
+  id: string;
+  userId: string;
+  weekStart: string;
+  weekEnd: string;
+  mode: "weekly" | "weekly_advance";
+  amount: number;
+  data: Record<string, unknown>;
+  createdAt: string;
+}
+
+function mapWeeklyPayout(r: Record<string, unknown>): WeeklyPayoutRow {
+  return {
+    id: String(r.id),
+    userId: String(r.user_id),
+    weekStart: String(r.week_start),
+    weekEnd: String(r.week_end),
+    mode: r.mode === "weekly_advance" ? "weekly_advance" : "weekly",
+    amount: Number(r.amount ?? 0),
+    data: (r.data as Record<string, unknown>) ?? {},
+    createdAt: String(r.created_at ?? ""),
+  };
+}
+
+/** ผลรวมยอดจ่ายล่วงหน้าต่อคน ของสัปดาห์ที่วันจบอยู่ในช่วง from–to (หักในงวดรายเดือน) */
+export async function loadWeeklyAdvances(storeId: string, from: string, to: string): Promise<Map<string, number>> {
+  const db = await service();
+  const { data, error } = await db
+    .from("payroll_weekly_payouts")
+    .select("user_id, amount")
+    .eq("store_id", storeId)
+    .eq("mode", "weekly_advance")
+    .gte("week_end", from)
+    .lte("week_end", to);
+  if (error) {
+    // ตารางยังไม่ถูกสร้าง (โค้ดขึ้นก่อน migration) = ยังไม่เคยมียอดล่วงหน้า → หน้าเงินเดือนทุกสาขาต้องไม่ล่ม
+    if (error.code === "42P01" || error.code === "PGRST205") {
+      await logSystemEvent({
+        level: "warn",
+        source: "hr.payroll-weekly",
+        action: "loadWeeklyAdvances",
+        message: "ยังไม่มีตาราง payroll_weekly_payouts (ยังไม่ได้ apply migration) — ถือว่าไม่มียอดจ่ายล่วงหน้า",
+        storeId,
+        context: { code: error.code },
+      }).catch(() => undefined);
+      return new Map();
+    }
+    // error อื่นต้องไม่เงียบ — งวดรายเดือนจะจ่ายซ้ำ
+    throw new Error(`อ่านยอดจ่ายล่วงหน้ารายสัปดาห์ไม่สำเร็จ: ${error.message}`);
+  }
+  const out = new Map<string, number>();
+  for (const r of (data ?? []) as { user_id: string; amount: number | string }[]) {
+    out.set(r.user_id, Math.round(((out.get(r.user_id) ?? 0) + Number(r.amount)) * 100) / 100);
+  }
+  return out;
+}
+
+/** บันทึกยอดรายสัปดาห์ — คนที่บันทึกแล้วในสัปดาห์นั้นไม่ถูกเขียนทับ (snapshot ครั้งเดียว) · คืนเฉพาะแถวที่เพิ่มใหม่ */
+export async function saveWeeklyPayouts(
+  rows: {
+    storeId: string;
+    organizationId: string;
+    userId: string;
+    weekStart: string;
+    weekEnd: string;
+    mode: "weekly" | "weekly_advance";
+    amount: number;
+    data: Record<string, unknown>;
+  }[],
+): Promise<{ inserted: WeeklyPayoutRow[]; error: string | null }> {
+  if (rows.length === 0) return { inserted: [], error: null };
+  const db = await service();
+  const { data, error } = await db
+    .from("payroll_weekly_payouts")
+    .upsert(
+      rows.map((r) => ({
+        store_id: r.storeId,
+        organization_id: r.organizationId,
+        user_id: r.userId,
+        week_start: r.weekStart,
+        week_end: r.weekEnd,
+        mode: r.mode,
+        amount: r.amount,
+        data: r.data,
+      })),
+      { onConflict: "store_id,user_id,week_start", ignoreDuplicates: true },
+    )
+    .select("*");
+  if (error) return { inserted: [], error: error.message };
+  return { inserted: ((data ?? []) as Record<string, unknown>[]).map(mapWeeklyPayout), error: null };
+}
+
+export async function listWeeklyPayouts(storeId: string, fromWeekStart: string): Promise<WeeklyPayoutRow[]> {
+  const db = await service();
+  const { data, error } = await db
+    .from("payroll_weekly_payouts")
+    .select("*")
+    .eq("store_id", storeId)
+    .gte("week_start", fromWeekStart)
+    .order("week_start", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, unknown>[]).map(mapWeeklyPayout);
 }

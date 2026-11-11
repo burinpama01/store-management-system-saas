@@ -90,8 +90,13 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
     const access = await getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId);
     const sw = access.settings.switches;
     const before = (await listEmployeeProfiles(ctx.storeId)).data?.find((p) => p.userId === userId);
-    const advanced: { ssoEnabled?: boolean; withholdingTaxRate?: number } = {};
+    const advanced: { ssoEnabled?: boolean; withholdingTaxRate?: number; payFrequency?: "monthly" | "weekly" | "weekly_advance" } = {};
     if (sw.socialSecurity) advanced.ssoEnabled = formData.get("ssoEnabled") === "on";
+    // รอบจ่ายรายสัปดาห์ — ตั้งได้เฉพาะเมื่อร้านเปิดสวิตช์ (ปิดสวิตช์ = คงค่าเดิม แต่ไม่มีผล)
+    if (sw.weeklyPay && formData.has("payFrequency")) {
+      const f = formData.get("payFrequency");
+      advanced.payFrequency = f === "weekly" || f === "weekly_advance" ? f : "monthly";
+    }
     if (sw.withholdingTax && access.settings.whtMode === "percent") {
       const rate = Math.round(parseFloat(String(formData.get("withholdingTaxRate") ?? "0")) * 100) / 100;
       if (!(rate >= 0 && rate <= 35)) return { error: "อัตราภาษีต้องอยู่ระหว่าง 0–35%" };
@@ -229,6 +234,8 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
         rateEffectiveFrom: rateChanged ? rateEffectiveRaw || today : null,
         skillsGranted: skillChanges.granted.length,
         skillsRevoked: skillChanges.revoked.length,
+        payFrequency: advanced.payFrequency ?? null,
+        payFrequencyChanged: advanced.payFrequency !== undefined && (before?.payFrequency ?? "monthly") !== advanced.payFrequency,
       },
     });
 

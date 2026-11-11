@@ -51,6 +51,8 @@ export interface AdvancedComputeContext {
   dailySales: Map<string, number>;
   /** ยอดสูงสุดต่อวันก่อนเริ่มงวด (ตัดสินทำสถิติ) */
   maxSalesBeforePeriod: number;
+  /** ยอดจ่ายล่วงหน้ารายสัปดาห์ที่บันทึกแล้ว (สัปดาห์ที่วันจบอยู่ในงวด) — หักในงวดนี้ แม้ปิดสวิตช์ไปแล้ว (เงินจ่ายไปแล้วจริง) */
+  weeklyAdvances?: Map<string, number>;
 }
 
 export interface AdvancedPayrollLine extends PayrollLine {
@@ -76,6 +78,10 @@ export interface AdvancedPayrollLine extends PayrollLine {
   totalDeductions: number;
   /** เป็นพนักงานประจำ ณ วันแรกของงวด */
   permanentAtPeriodStart: boolean;
+  /** หักจ่ายล่วงหน้ารายสัปดาห์ (รวมใน totalDeductions แล้ว) */
+  weeklyAdvance: number;
+  /** จ่ายรายสัปดาห์แบบแยกรอบ — ไม่อยู่ในงวด/สลิปรายเดือน (ปิดงวดข้ามคนนี้) */
+  paidWeekly: boolean;
 }
 
 /** สรุปชั่วโมง/วันของคนที่ลาออกกลางงวด — นับเฉพาะ record ถึงวันออกงาน */
@@ -136,6 +142,8 @@ function emptyExtras(line: PayrollLine): AdvancedPayrollLine {
     grossEarnings: round2(line.basePay + line.otPay + line.bonusTotal),
     totalDeductions: round2(line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal),
     permanentAtPeriodStart: false,
+    weeklyAdvance: 0,
+    paidWeekly: false,
   };
 }
 
@@ -341,8 +349,18 @@ export function computeAdvancedPayrollLines(
           : round2(base.adjustments.filter((a) => a.type === "withholding_tax").reduce((s, a) => s + a.amount, 0));
     }
 
+    // 5) จ่ายรายสัปดาห์ (W6/W7)
+    line.paidWeekly = !!sw?.weeklyPay && profile.payFrequency === "weekly";
+    line.weeklyAdvance = round2(adv?.weeklyAdvances?.get(base.userId) ?? 0);
+
     line.totalDeductions = round2(
-      line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal + line.socialSecurity + line.withholdingTax,
+      line.latePenalty +
+        line.absentPenalty +
+        line.halfDayDeduction +
+        line.deductionTotal +
+        line.socialSecurity +
+        line.withholdingTax +
+        line.weeklyAdvance,
     );
     line.netPay = round2(line.grossEarnings - line.totalDeductions);
     return line;

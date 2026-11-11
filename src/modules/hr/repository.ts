@@ -47,6 +47,8 @@ export function mapProfile(row: ProfileRow): EmployeeProfile {
     bankAccountName: row.bank_account_name ?? undefined,
     ssoEnabled: row.sso_enabled ?? true,
     withholdingTaxRate: row.withholding_tax_rate ?? 0,
+    payFrequency:
+      row.pay_frequency === "weekly" || row.pay_frequency === "weekly_advance" ? row.pay_frequency : "monthly",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -117,7 +119,7 @@ export interface UpsertProfileInput {
   /** ข้อมูลสำหรับสลิป — ไม่ส่ง = ไม่แตะคอลัมน์เหล่านี้ */
   identity?: EmployeeIdentityInput;
   /** เงินเดือนขั้นสูง: ประกันสังคม/ภาษีรายคน — ไม่ส่ง = ไม่แตะ */
-  advanced?: { ssoEnabled?: boolean; withholdingTaxRate?: number };
+  advanced?: { ssoEnabled?: boolean; withholdingTaxRate?: number; payFrequency?: "monthly" | "weekly" | "weekly_advance" };
 }
 
 export async function upsertEmployeeProfile(input: UpsertProfileInput) {
@@ -164,6 +166,7 @@ export async function upsertEmployeeProfile(input: UpsertProfileInput) {
       ...(input.advanced?.withholdingTaxRate !== undefined
         ? { withholding_tax_rate: input.advanced.withholdingTaxRate }
         : {}),
+      ...(input.advanced?.payFrequency !== undefined ? { pay_frequency: input.advanced.payFrequency } : {}),
       updated_at: new Date().toISOString(),
     },
     { onConflict: "store_id,user_id" },
