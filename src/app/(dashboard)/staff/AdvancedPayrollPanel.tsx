@@ -21,7 +21,8 @@ const HINT = "mt-1 block text-[11px] font-normal text-gray-400";
 
 const FEATURE_HINT: Record<PayrollFeatureKey, string> = {
   salesTargetBar: "แสดงยอดขายวันนี้ + อีกเท่าไหร่ถึงโบนัส ในหน้า POS และหน้าลงเวลา (ทุกตำแหน่ง เฉพาะวันนี้)",
-  salesBonus: "โบนัสต่อคนตามยอดขายรายวัน เฉพาะพนักงานประจำที่ทำเต็มวัน",
+  salesBonus: "โบนัสตามยอดขายรายวัน แจกรายคน หรือหารตามคนเข้างาน เฉพาะคนที่ทำเต็มวัน",
+  monthlySalesBonus: "โบนัสตามยอดขายรวมทั้งรอบเงินเดือน แจกรายคน หรือหารตามวันทำงาน",
   skillPay: "จ่ายตามจำนวนทักษะที่ทำได้ เฉพาะพนักงานประจำ (ได้ทักษะใหม่ มีผลงวดถัดไป)",
   seniorityPay: "จ่ายตามอายุงาน เฉพาะพนักงานประจำ (ครบขั้นกลางงวด มีผลงวดถัดไป)",
   socialSecurity: "หักประกันสังคมตามอัตรา/ฐานที่ตั้ง (ไม่เปิด = ไม่แสดงในสลิป)",
@@ -35,17 +36,21 @@ export function AdvancedPayrollPanel({
   entitled,
   settings,
   skills,
+  employees,
 }: {
   entitled: boolean;
   /** ค่าที่ร้านตั้งไว้ (ไม่ใช่ค่าหลังล็อกแพ็ก) — หมดแพ็กแล้วกลับมาต่ออายุ ต้องเห็นค่าเดิม */
   settings: AdvancedPayrollSettings;
   skills: StoreSkill[];
+  /** พนักงานของสาขา (ให้เลือกผู้ร่วมโบนัสยอดขาย) */
+  employees: { userId: string; name: string; permanent: boolean }[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sw, setSw] = useState(settings.switches);
+  const [pickEmployees, setPickEmployees] = useState(settings.salesBonusUserIds !== null);
   const { confirm, confirmDialog } = useConfirm();
 
   function run(action: () => Promise<{ error: string | null }>, ok?: string) {
@@ -155,10 +160,63 @@ export function AdvancedPayrollPanel({
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h2 className="text-sm font-bold text-gray-900">ผู้ร่วมโบนัสยอดขาย (รายวัน + รายเดือน)</h2>
+            <label className="mt-3 flex min-h-11 items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                name="salesBonusPickEmployees"
+                checked={pickEmployees}
+                onChange={(e) => setPickEmployees(e.target.checked)}
+                className="h-5 w-5 accent-orange-500"
+              />
+              เลือกพนักงานเอง
+            </label>
+            {!pickEmployees ? (
+              <p className="text-xs text-gray-500">ไม่ได้เลือก = พนักงานประจำทุกคน (ตั้งแต่วันที่เป็นประจำ)</p>
+            ) : (
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {employees.length === 0 && <p className="text-xs text-gray-400">ยังไม่มีพนักงานในสาขานี้</p>}
+                {employees.map((e) => (
+                  <label key={e.userId} className="flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm">
+                    <input
+                      type="checkbox"
+                      name="salesBonusUserIds"
+                      value={e.userId}
+                      defaultChecked={settings.salesBonusUserIds ? settings.salesBonusUserIds.includes(e.userId) : e.permanent}
+                      className="accent-orange-500"
+                    />
+                    <span className="min-w-0 truncate">{e.name}</span>
+                    {e.permanent && <span className="ml-auto shrink-0 text-[11px] text-gray-400">ประจำ</span>}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
             <h2 className="text-sm font-bold text-gray-900">โบนัสยอดขายรายวัน</h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <fieldset className="text-xs font-medium text-gray-600 sm:col-span-2">
+                <legend>วิธีแจก</legend>
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <label className="flex min-h-11 items-start gap-2 rounded-lg border border-gray-300 p-3">
+                    <input type="radio" name="salesBonusMode" value="per_person" defaultChecked={settings.salesBonusMode !== "split"} className="mt-0.5 accent-orange-500" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">แจกรายคน</span>
+                      <span className="block text-[11px] text-gray-500">ทุกคนที่ทำเต็มวันได้ตามขั้นเต็มจำนวน</span>
+                    </span>
+                  </label>
+                  <label className="flex min-h-11 items-start gap-2 rounded-lg border border-gray-300 p-3">
+                    <input type="radio" name="salesBonusMode" value="split" defaultChecked={settings.salesBonusMode === "split"} className="mt-0.5 accent-orange-500" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">หารตามคนเข้างาน</span>
+                      <span className="block text-[11px] text-gray-500">ขั้นโบนัส = ก้อนรวมของวัน หารเท่ากันตามจำนวนคนที่ทำเต็มวันวันนั้น</span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
               <label className="text-xs font-medium text-gray-600 sm:col-span-2">
-                ขั้นยอดขาย=โบนัสต่อคน
+                ขั้นยอดขาย=โบนัส (ต่อคน หรือก้อนรวมถ้าเลือกหาร)
                 <input name="salesBonusTiers" defaultValue={formatTiers(settings.salesBonusTiers, "minSales")} className={INPUT} />
                 <span className={HINT}>เช่น 30000=100, 35000=150, 40000=250 · วันขายตัดตามเวลาปิดร้าน (ตั้งที่ตั้งค่าร้าน)</span>
               </label>
@@ -172,14 +230,14 @@ export function AdvancedPayrollPanel({
                     </label>
                   ))}
                 </div>
-                <span className={HINT}>ยอดหลังหักส่วนลด ไม่รวมบิลยกเลิก/คืนเงิน</span>
+                <span className={HINT}>ยอดหลังหักส่วนลด ไม่รวมบิลยกเลิก/คืนเงิน · ใช้กับโบนัสรายเดือนด้วย</span>
               </div>
               <label className="text-xs font-medium text-gray-600">
                 มาสายเกิน (นาที) = ไม่ได้โบนัสวันนั้น
                 <input name="salesBonusLateMaxMinutes" type="number" min={0} max={600} defaultValue={settings.salesBonusLateMaxMinutes ?? ""} placeholder="ว่าง = มาสายไม่มีผล" className={INPUT} />
               </label>
               <label className="text-xs font-medium text-gray-600">
-                โบนัสทำสถิติยอดขายสูงสุด (ต่อคน)
+                โบนัสทำสถิติยอดขายสูงสุด (ต่อคน หรือก้อนรวมถ้าเลือกหาร)
                 <input name="salesRecordBonus" type="number" min={0} step="0.01" defaultValue={settings.salesRecordBonus} className={INPUT} />
               </label>
               <label className="text-xs font-medium text-gray-600">
@@ -194,6 +252,36 @@ export function AdvancedPayrollPanel({
                 <input name="salesRecordBaseline" type="number" min={0} step="0.01" defaultValue={settings.salesRecordBaseline} className={INPUT} />
                 <span className={HINT}>ระบบเทียบกับยอดสูงสุดในประวัติด้วย — ตั้งไว้กันช่วงแรกทำสถิติบ่อย</span>
               </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h2 className="text-sm font-bold text-gray-900">โบนัสยอดขายรายเดือน (ตามรอบเงินเดือน)</h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-medium text-gray-600 sm:col-span-2">
+                ยอดรวมทั้งรอบ=โบนัส (ต่อคน หรือก้อนรวมถ้าเลือกหาร)
+                <input name="monthlyBonusTiers" defaultValue={formatTiers(settings.monthlyBonusTiers, "minSales")} className={INPUT} />
+                <span className={HINT}>เช่น 900000=1000, 1000000=2000 · นับยอดตั้งแต่วันเริ่มรอบถึงวันจบรอบ ช่องทางเดียวกับโบนัสรายวัน · ไม่ใช้เกณฑ์มาสาย (นับทุกวันที่ทำเต็มวัน)</span>
+              </label>
+              <fieldset className="text-xs font-medium text-gray-600 sm:col-span-2">
+                <legend>วิธีแจก</legend>
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <label className="flex min-h-11 items-start gap-2 rounded-lg border border-gray-300 p-3">
+                    <input type="radio" name="monthlyBonusMode" value="per_person" defaultChecked={settings.monthlyBonusMode !== "split"} className="mt-0.5 accent-orange-500" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">แจกรายคน</span>
+                      <span className="block text-[11px] text-gray-500">ผู้ร่วมโบนัสที่ทำเต็มวันอย่างน้อย 1 วันในรอบ ได้เต็มจำนวน</span>
+                    </span>
+                  </label>
+                  <label className="flex min-h-11 items-start gap-2 rounded-lg border border-gray-300 p-3">
+                    <input type="radio" name="monthlyBonusMode" value="split" defaultChecked={settings.monthlyBonusMode === "split"} className="mt-0.5 accent-orange-500" />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-900">หารตามวันทำงาน</span>
+                      <span className="block text-[11px] text-gray-500">ก้อนรวมหารตามสัดส่วนวันที่ทำเต็มวัน (มาทำมากได้มาก)</span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
           </div>
 

@@ -29,8 +29,12 @@ import {
   skillPayFor,
   socialSecurityFor,
   withholdingTaxPercent,
+  computeDailySalesBonuses,
+  computeMonthlySalesBonuses,
+  salesBonusEligible,
 } from "@/modules/hr/advanced/income";
 import { computeAdvancedPayrollLines, type AdvancedComputeContext } from "@/modules/hr/advanced/compute";
+import { mapAdvancedSettings } from "@/modules/hr/advanced/repository";
 import { computePayrollLines, type PayrollDay } from "@/modules/hr/payroll";
 import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type PayrollAdjustment, type StoreHrSettings } from "@/modules/hr/types";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
@@ -510,5 +514,178 @@ describe("รอบแก้หลังรีวิว", () => {
       null,
     );
     expect(line.basePay).toBe(5000); // 15,000 × 10/30 (24 ต.ค.–2 พ.ย.)
+  });
+});
+
+// ---------------------------------------------------------------------------
+// โบนัสหารตามคนเข้างาน + เลือกพนักงาน + โบนัสรายเดือน (2026-11-10)
+// ---------------------------------------------------------------------------
+describe("โบนัสยอดขาย: แจกรายคน / หารตามคนเข้างาน", () => {
+  const tiers = DEFAULT_ADVANCED_PAYROLL_SETTINGS.salesBonusTiers;
+  const sales = new Map([["2026-11-01", 31000], ["2026-11-02", 41000]]);
+  const storeDays = computeStoreSalesDays({ dailySales: sales, dates: [...sales.keys()], tiers, recordBaseline: 0, maxBeforePeriod: 99999, recordBonus: 0, recordMode: "replace" });
+  const employees = [
+    { userId: "a", days: [day("2026-11-01", "full"), day("2026-11-02", "full")] },
+    { userId: "b", days: [day("2026-11-01", "full"), day("2026-11-02", "half")] },
+    { userId: "c", days: [day("2026-11-01", "full", 40), day("2026-11-02", "full")] },
+  ];
+
+  it("per_person = เท่ากับแบบเดิม (ทุกคนได้เต็มขั้น)", () => {
+    const r = computeDailySalesBonuses({ employees, storeDays, isEligibleOn: () => true, lateMaxMinutes: null, mode: "per_person" });
+    expect(r.get("a")!.total).toBe(100 + 250);
+    expect(r.get("b")!.total).toBe(100);
+    expect(r.get("c")!.total).toBe(100 + 250);
+  });
+
+  it("split: ก้อนรวมของวันหารเท่ากันตามคนที่ผ่านเกณฑ์วันนั้น (ครึ่งวัน/สายเกินเกณฑ์ไม่นับเป็นตัวหาร)", () => {
+    const r = computeDailySalesBonuses({ employees, storeDays, isEligibleOn: () => true, lateMaxMinutes: 15, mode: "split" });
+    // 1 พ.ย. ก้อน 100: a, b ผ่าน (c สาย 40 นาที) → คนละ 50 · 2 พ.ย. ก้อน 250: a, c ผ่าน (b ครึ่งวัน) → คนละ 125
+    expect(r.get("a")!.total).toBe(50 + 125);
+    expect(r.get("b")!.total).toBe(50);
+    expect(r.get("c")!.total).toBe(125);
+    expect(r.get("a")!.days[0]).toMatchObject({ pool: 100, people: 2, amount: 50 });
+  });
+
+  it("split: เฉพาะพนักงานที่เลือกเป็นตัวหาร · หารไม่ลงตัวปัด 2 ตำแหน่ง", () => {
+    const r = computeDailySalesBonuses({ employees, storeDays, isEligibleOn: (id) => id !== "b", lateMaxMinutes: null, mode: "split" });
+    expect(r.get("b")!.total).toBe(0);
+    expect(r.get("a")!.days[0]).toMatchObject({ people: 2, amount: 50 });
+    const three = computeDailySalesBonuses({
+      employees: employees.map((e) => ({ ...e, days: [day("2026-11-01", "full")] })),
+      storeDays,
+      isEligibleOn: () => true,
+      lateMaxMinutes: null,
+      mode: "split",
+    });
+    expect(three.get("a")!.total).toBe(33.33);
+  });
+
+  it("ผู้มีสิทธิ์: เลือกรายชื่อ = เฉพาะในรายชื่อ (ไม่ต้องเป็นประจำ) · ไม่เลือก = ประจำ (แบบเดิม) · ลาออกแล้วไม่ได้", () => {
+    const temp = { employmentType: "temporary" as const, permanentSince: undefined, employmentEndDate: undefined };
+    const perm = { employmentType: "permanent" as const, permanentSince: "2025-01-01", employmentEndDate: undefined };
+    expect(salesBonusEligible(["u1"], "u1", temp, "2026-11-01")).toBe(true);
+    expect(salesBonusEligible(["u1"], "u2", perm, "2026-11-01")).toBe(false);
+    expect(salesBonusEligible(null, "u2", perm, "2026-11-01")).toBe(true);
+    expect(salesBonusEligible(null, "u1", temp, "2026-11-01")).toBe(false);
+    expect(salesBonusEligible(["u1"], "u1", { ...temp, employmentEndDate: "2026-10-31" }, "2026-11-01")).toBe(false);
+  });
+});
+
+describe("โบนัสยอดขายรายเดือน (ตามรอบเงินเดือน)", () => {
+  const tiers = [{ minSales: 900000, amount: 1000 }, { minSales: 1000000, amount: 3000 }];
+  const employees = [
+    { userId: "a", days: [day("2026-11-01", "full"), day("2026-11-02", "full"), day("2026-11-03", "full")] },
+    { userId: "b", days: [day("2026-11-01", "full"), day("2026-11-02", "half")] },
+    { userId: "c", days: [day("2026-11-01", "absent")] },
+  ];
+
+  it("per_person: ทำเต็มวันอย่างน้อย 1 วันได้เต็มจำนวน · ไม่ได้ทำเต็มวันเลย = 0", () => {
+    const r = computeMonthlySalesBonuses({ employees, periodSales: 1_050_000, tiers, isEligibleOn: () => true, mode: "per_person" });
+    expect(r.get("a")!.amount).toBe(3000);
+    expect(r.get("b")!.amount).toBe(3000);
+    expect(r.get("c")!.amount).toBe(0);
+  });
+
+  it("split: ก้อนรวมหารตามสัดส่วนวันทำเต็มวัน", () => {
+    const r = computeMonthlySalesBonuses({ employees, periodSales: 950_000, tiers, isEligibleOn: () => true, mode: "split" });
+    // ก้อน 1,000 · a 3 วัน b 1 วัน → 750 / 250
+    expect(r.get("a")).toMatchObject({ amount: 750, fullDays: 3, totalFullDays: 4, tierAmount: 1000 });
+    expect(r.get("b")!.amount).toBe(250);
+  });
+
+  it("ยอดไม่ถึงขั้นแรก = 0 · คนที่ไม่ได้เลือกไม่นับวันทำงาน", () => {
+    expect(computeMonthlySalesBonuses({ employees, periodSales: 800_000, tiers, isEligibleOn: () => true, mode: "split" }).get("a")!.amount).toBe(0);
+    const r = computeMonthlySalesBonuses({ employees, periodSales: 950_000, tiers, isEligibleOn: (id) => id === "a", mode: "split" });
+    expect(r.get("a")!.amount).toBe(1000);
+    expect(r.get("b")!.amount).toBe(0);
+  });
+});
+
+describe("คำนวณทั้งงวด: โหมดหาร + รายเดือน + เลือกพนักงาน", () => {
+  const records = [rec("2026-11-01", 8, "u1"), rec("2026-11-02", 8, "u1"), rec("2026-11-01", 8, "u2")];
+  const profiles = [prof({ userId: "u1" }), prof({ id: "p2", userId: "u2", employmentType: "temporary", permanentSince: undefined })];
+  const input = {
+    summaries: [summaryFor(records, "u1"), summaryFor(records, "u2")],
+    records,
+    profiles,
+    adjustments: [],
+    settings: hr(),
+    ...PERIOD,
+  };
+  const ctx = (over: Partial<AdvancedPayrollSettings>): AdvancedComputeContext => ({
+    settings: { ...settingsWith({ salesBonus: true, monthlySalesBonus: true }), ...over },
+    employees: new Map(),
+    dailySales: new Map([["2026-11-01", 31000], ["2026-11-02", 36000], ["2026-10-20", 999999]]),
+    maxSalesBeforePeriod: 99999,
+  });
+
+  it("ไม่เลือกพนักงาน = เฉพาะประจำ (u2 ชั่วคราวไม่ได้) · รายวันแจกรายคน · รายเดือนไม่ถึงขั้น", () => {
+    const lines = computeAdvancedPayrollLines(input, ctx({}));
+    const u1 = lines.find((l) => l.userId === "u1")!;
+    const u2 = lines.find((l) => l.userId === "u2")!;
+    expect(u1.salesBonus).toBe(100 + 150);
+    expect(u2.salesBonus).toBe(0);
+    expect(u1.monthlySalesBonus).toBe(0); // 67,000 < 900,000 (วันนอกงวดไม่นับ)
+  });
+
+  it("เลือก u1+u2 + หาร: วันที่ 1 ก้อน 100 หาร 2 · รายเดือนหารตามวัน · รวมในรายได้", () => {
+    const lines = computeAdvancedPayrollLines(
+      input,
+      ctx({ salesBonusUserIds: ["u1", "u2"], salesBonusMode: "split", monthlyBonusMode: "split", monthlyBonusTiers: [{ minSales: 60000, amount: 900 }] }),
+    );
+    const u1 = lines.find((l) => l.userId === "u1")!;
+    const u2 = lines.find((l) => l.userId === "u2")!;
+    expect(u1.salesBonus).toBe(50 + 150);
+    expect(u2.salesBonus).toBe(50);
+    // ก้อน 900 · u1 2 วัน u2 1 วัน → 600 / 300
+    expect(u1.monthlySalesBonus).toBe(600);
+    expect(u2.monthlySalesBonus).toBe(300);
+    expect(u1.monthlySalesBonusDetail).toMatchObject({ periodSales: 67000, totalFullDays: 3 });
+    const plain = computeAdvancedPayrollLines(input, null).find((l) => l.userId === "u1")!;
+    expect(u1.grossEarnings).toBe(Math.round((plain.basePay + plain.otPay + plain.bonusTotal + 200 + 600) * 100) / 100);
+  });
+
+  it("ปิดสวิตช์รายเดือน = ไม่มีโบนัสรายเดือน", () => {
+    const lines = computeAdvancedPayrollLines(input, { ...ctx({}), settings: { ...settingsWith({ salesBonus: true }), monthlyBonusTiers: [{ minSales: 1, amount: 900 }] } });
+    expect(lines.every((l) => l.monthlySalesBonus === 0)).toBe(true);
+  });
+});
+
+describe("ตั้งค่า + migration โบนัสหาร/รายเดือน", () => {
+  it("ค่าเริ่มต้นตรงกับพฤติกรรมเดิม และอ่านแถวเก่าได้", () => {
+    const old = mapAdvancedSettings({ feat_sales_bonus: true });
+    expect(old.salesBonusMode).toBe("per_person");
+    expect(old.salesBonusUserIds).toBeNull();
+    expect(old.monthlyBonusMode).toBe("per_person");
+    expect(old.switches.monthlySalesBonus).toBe(false);
+    const row = mapAdvancedSettings({
+      feat_monthly_sales_bonus: true,
+      sales_bonus_mode: "split",
+      sales_bonus_user_ids: ["u1", 5],
+      monthly_bonus_tiers: [{ minSales: 500000, amount: 800 }],
+      monthly_bonus_mode: "split",
+    });
+    expect(row).toMatchObject({ salesBonusMode: "split", salesBonusUserIds: ["u1"], monthlyBonusMode: "split", monthlyBonusTiers: [{ minSales: 500000, amount: 800 }] });
+    expect(row.switches.monthlySalesBonus).toBe(true);
+  });
+
+  it("migration: คอลัมน์ใหม่ default = แบบเดิม + check โหมด", () => {
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261110130000_payroll_bonus_split_monthly.sql"), "utf8");
+    expect(sql).toContain("sales_bonus_mode text not null default 'per_person'");
+    expect(sql).toContain("feat_monthly_sales_bonus boolean not null default false");
+    expect(sql).toContain("sales_bonus_user_ids uuid[]");
+    expect(sql).toContain("monthly_bonus_mode in ('per_person', 'split')");
+  });
+
+  it("action: รายชื่อที่เลือกกรองเหลือเฉพาะพนักงานของสาขา · บันทึกครบ", () => {
+    const src = readFileSync(join(process.cwd(), "src/app/(dashboard)/staff/advanced-actions.ts"), "utf8");
+    expect(src).toContain("listStoreMemberships(ctx.organizationId, ctx.storeId)");
+    expect(src).toContain("picked.filter((id) => allowed.has(id))");
+    // โบนัสปิด + ไม่เลือกใคร → ไม่เก็บรายชื่อว่าง (กลับเป็นพนักงานประจำ)
+    expect(src).toContain("if (salesBonusUserIds.length === 0) salesBonusUserIds = null;");
+    const repo = readFileSync(join(process.cwd(), "src/modules/hr/advanced/repository.ts"), "utf8");
+    for (const col of ["feat_monthly_sales_bonus", "sales_bonus_mode", "sales_bonus_user_ids", "monthly_bonus_tiers", "monthly_bonus_mode"]) {
+      expect(repo).toContain(`${col}:`);
+    }
   });
 });

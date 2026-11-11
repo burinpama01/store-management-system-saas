@@ -49,7 +49,7 @@ export async function loadAdvancedContext(
   const [skills, rates, dailySales, maxBefore] = await Promise.all([
     sw.skillPay ? listEmployeeSkillGrants(storeId) : Promise.resolve(new Map()),
     listPayRates(storeId),
-    sw.salesBonus
+    sw.salesBonus || sw.monthlySalesBonus
       ? loadDailySales(storeId, periodStart, periodEnd, settings.salesBonusChannels)
       : Promise.resolve(new Map<string, number>()),
     sw.salesBonus

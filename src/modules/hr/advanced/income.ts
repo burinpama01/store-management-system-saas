@@ -4,7 +4,7 @@
  */
 import type { EmployeeProfile, PayType } from "../types";
 import type { PayrollDay } from "../payroll";
-import type { SalesBonusTier, SeniorityTier, SkillTier } from "./settings";
+import type { BonusSplitMode, SalesBonusTier, SeniorityTier, SkillTier } from "./settings";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -112,9 +112,18 @@ export function computeStoreSalesDays(input: {
   return out;
 }
 
+export interface SalesBonusDayShare {
+  date: string;
+  amount: number;
+  record: boolean;
+  /** โหมดหาร: ก้อนรวมของวัน และจำนวนคนที่หาร */
+  pool?: number;
+  people?: number;
+}
+
 export interface EmployeeSalesBonus {
   total: number;
-  days: { date: string; amount: number; record: boolean }[];
+  days: SalesBonusDayShare[];
 }
 
 /**
@@ -136,6 +145,113 @@ export function employeeSalesBonus(input: {
     if (input.lateMaxMinutes !== null && day.lateMinutes > input.lateMaxMinutes) continue;
     out.days.push({ date: day.date, amount: store.bonusPerPerson, record: store.isRecord });
     out.total = round2(out.total + store.bonusPerPerson);
+  }
+  return out;
+}
+
+/** ผู้ที่มีสิทธิ์โบนัสยอดขาย ณ วันหนึ่ง: เลือกรายชื่อไว้ = เฉพาะคนในรายชื่อ · ไม่เลือก = พนักงานประจำ (แบบเดิม) */
+export function salesBonusEligible(
+  selectedUserIds: string[] | null,
+  userId: string,
+  profile: Pick<EmployeeProfile, "employmentType" | "permanentSince" | "employmentEndDate"> | undefined,
+  date: string,
+): boolean {
+  if (profile?.employmentEndDate && profile.employmentEndDate < date) return false;
+  if (selectedUserIds) return selectedUserIds.includes(userId);
+  return isPermanentOn(profile, date);
+}
+
+/**
+ * โบนัสยอดขายรายวันของทั้งร้าน
+ * - per_person: ทุกคนที่ผ่านเกณฑ์ได้ "โบนัสต่อคน" เต็มจำนวน (เหมือนเดิม)
+ * - split: โบนัสของวันเป็นก้อนรวม หารเท่ากันตามจำนวนคนที่ผ่านเกณฑ์วันนั้น (ทำเต็มวัน + มีสิทธิ์ + ไม่สายเกินเกณฑ์)
+ *   ปัดเศษ 2 ตำแหน่งต่อคน (ผลรวมอาจต่างจากก้อนรวม ±0.01 ต่อวัน)
+ */
+export function computeDailySalesBonuses(input: {
+  employees: { userId: string; days: PayrollDay[] }[];
+  storeDays: Map<string, SalesDay>;
+  isEligibleOn: (userId: string, date: string) => boolean;
+  lateMaxMinutes: number | null;
+  mode: BonusSplitMode;
+}): Map<string, EmployeeSalesBonus> {
+  const qualifies = (userId: string, day: PayrollDay) =>
+    day.status === "full" &&
+    (input.storeDays.get(day.date)?.bonusPerPerson ?? 0) > 0 &&
+    input.isEligibleOn(userId, day.date) &&
+    !(input.lateMaxMinutes !== null && day.lateMinutes > input.lateMaxMinutes);
+
+  const peopleByDate = new Map<string, number>();
+  for (const emp of input.employees) {
+    for (const day of emp.days) if (qualifies(emp.userId, day)) peopleByDate.set(day.date, (peopleByDate.get(day.date) ?? 0) + 1);
+  }
+
+  const out = new Map<string, EmployeeSalesBonus>();
+  for (const emp of input.employees) {
+    const result: EmployeeSalesBonus = { total: 0, days: [] };
+    for (const day of emp.days) {
+      if (!qualifies(emp.userId, day)) continue;
+      const store = input.storeDays.get(day.date) as SalesDay;
+      if (input.mode === "split") {
+        const people = peopleByDate.get(day.date) ?? 1;
+        const amount = round2(store.bonusPerPerson / people);
+        result.days.push({ date: day.date, amount, record: store.isRecord, pool: store.bonusPerPerson, people });
+        result.total = round2(result.total + amount);
+      } else {
+        result.days.push({ date: day.date, amount: store.bonusPerPerson, record: store.isRecord });
+        result.total = round2(result.total + store.bonusPerPerson);
+      }
+    }
+    out.set(emp.userId, result);
+  }
+  return out;
+}
+
+export interface MonthlySalesBonus {
+  amount: number;
+  /** วันทำเต็มวันที่มีสิทธิ์ในรอบนี้ */
+  fullDays: number;
+  /** ยอดขายรวมของรอบ */
+  periodSales: number;
+  /** โบนัสตามขั้น (ต่อคน หรือ ก้อนรวมในโหมดหาร) */
+  tierAmount: number;
+  /** โหมดหาร: วันทำงานรวมของทุกคนที่มีสิทธิ์ */
+  totalFullDays?: number;
+}
+
+/**
+ * โบนัสยอดขายรายเดือน (ตามรอบเงินเดือน): ยอดรวมทั้งรอบ → ขั้นโบนัส
+ * - per_person: คนที่มีสิทธิ์และทำเต็มวันอย่างน้อย 1 วันในรอบ ได้เต็มจำนวน
+ * - split: ก้อนรวมหารตามสัดส่วนวันทำเต็มวันของแต่ละคน ต่อวันทำเต็มวันรวมของทุกคนที่มีสิทธิ์ทั้งรอบ
+ * เกณฑ์มาสาย (salesBonusLateMaxMinutes) ใช้กับโบนัสรายวันเท่านั้น — รายเดือนเป็นรางวัลผลยอดทั้งรอบ นับทุกวันที่ทำเต็มวัน
+ */
+export function computeMonthlySalesBonuses(input: {
+  employees: { userId: string; days: PayrollDay[] }[];
+  periodSales: number;
+  tiers: SalesBonusTier[];
+  isEligibleOn: (userId: string, date: string) => boolean;
+  mode: BonusSplitMode;
+}): Map<string, MonthlySalesBonus> {
+  const periodSales = round2(input.periodSales);
+  const tierAmount = tierAmountFor(periodSales, input.tiers);
+  const fullDays = new Map<string, number>();
+  for (const emp of input.employees) {
+    fullDays.set(emp.userId, emp.days.filter((d) => d.status === "full" && input.isEligibleOn(emp.userId, d.date)).length);
+  }
+  const totalFullDays = [...fullDays.values()].reduce((s, n) => s + n, 0);
+  const out = new Map<string, MonthlySalesBonus>();
+  for (const emp of input.employees) {
+    const days = fullDays.get(emp.userId) ?? 0;
+    let amount = 0;
+    if (tierAmount > 0 && days > 0) {
+      amount = input.mode === "split" ? round2((tierAmount * days) / totalFullDays) : tierAmount;
+    }
+    out.set(emp.userId, {
+      amount,
+      fullDays: days,
+      periodSales,
+      tierAmount,
+      ...(input.mode === "split" ? { totalFullDays } : {}),
+    });
   }
   return out;
 }

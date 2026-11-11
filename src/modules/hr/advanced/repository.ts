@@ -40,6 +40,7 @@ export function mapAdvancedSettings(row: Record<string, unknown> | null | undefi
     switches: normalizeSwitches({
       salesTargetBar: row.feat_sales_target_bar === true,
       salesBonus: row.feat_sales_bonus === true,
+      monthlySalesBonus: row.feat_monthly_sales_bonus === true,
       skillPay: row.feat_skill_pay === true,
       seniorityPay: row.feat_seniority_pay === true,
       socialSecurity: row.feat_social_security === true,
@@ -61,6 +62,14 @@ export function mapAdvancedSettings(row: Record<string, unknown> | null | undefi
     salesRecordBonus: n(row.sales_record_bonus, d.salesRecordBonus),
     salesRecordMode: row.sales_record_mode === "stack" ? "stack" : "replace",
     salesRecordBaseline: n(row.sales_record_baseline, 0),
+    salesBonusMode: row.sales_bonus_mode === "split" ? "split" : "per_person",
+    salesBonusUserIds: Array.isArray(row.sales_bonus_user_ids)
+      ? (row.sales_bonus_user_ids as unknown[]).filter((v): v is string => typeof v === "string")
+      : null,
+    monthlyBonusTiers: row.monthly_bonus_tiers
+      ? parseTiers(row.monthly_bonus_tiers, "minSales", { maxKey: 1_000_000_000, maxAmount: 10_000_000 })
+      : d.monthlyBonusTiers,
+    monthlyBonusMode: row.monthly_bonus_mode === "split" ? "split" : "per_person",
     ssoRate: n(row.sso_rate, d.ssoRate),
     ssoWageFloor: n(row.sso_wage_floor, d.ssoWageFloor),
     ssoWageCeiling: n(row.sso_wage_ceiling, d.ssoWageCeiling),
@@ -88,6 +97,7 @@ export async function saveAdvancedPayrollSettings(
       organization_id: organizationId,
       feat_sales_target_bar: sw.salesTargetBar,
       feat_sales_bonus: sw.salesBonus,
+      feat_monthly_sales_bonus: sw.monthlySalesBonus,
       feat_skill_pay: sw.skillPay,
       feat_seniority_pay: sw.seniorityPay,
       feat_social_security: sw.socialSecurity,
@@ -105,6 +115,10 @@ export async function saveAdvancedPayrollSettings(
       sales_record_bonus: s.salesRecordBonus,
       sales_record_mode: s.salesRecordMode,
       sales_record_baseline: s.salesRecordBaseline,
+      sales_bonus_mode: s.salesBonusMode,
+      sales_bonus_user_ids: s.salesBonusUserIds,
+      monthly_bonus_tiers: s.monthlyBonusTiers,
+      monthly_bonus_mode: s.monthlyBonusMode,
       sso_rate: s.ssoRate,
       sso_wage_floor: s.ssoWageFloor,
       sso_wage_ceiling: s.ssoWageCeiling,
