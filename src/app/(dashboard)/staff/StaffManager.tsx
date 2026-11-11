@@ -35,6 +35,7 @@ import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { AdvancedPayrollPanel } from "./AdvancedPayrollPanel";
 import { PAY_FREQUENCIES, PAY_FREQUENCY_LABEL, type PayWeek } from "@/modules/hr/advanced/weekly";
 import { WeeklyPayoutsPanel, type WeeklyPayoutView } from "./WeeklyPayoutsPanel";
+import { SalaryAdvancesPanel, type AdvanceView } from "./SalaryAdvancesPanel";
 import { PayrollPeriodsPanel } from "./PayrollPeriodsPanel";
 
 export interface StaffAdvancedProps {
@@ -51,6 +52,8 @@ export interface StaffAdvancedProps {
   businessToday: string;
   /** จ่ายรายสัปดาห์: สัปดาห์ล่าสุด (ใหม่ → เก่า รวมสัปดาห์ปัจจุบัน) + ยอดที่บันทึกแล้ว */
   weekly: { weeks: PayWeek[]; rows: WeeklyPayoutView[] };
+  /** คำขอเบิกเงินล่าสุด (เปิดสวิตช์เบิกเงินเท่านั้น) */
+  advances: AdvanceView[];
 }
 
 export type StaffSelfInfo = Omit<EmployeeSelfInfo, "bankAccountNo"> & { bankAccountMasked: string };
@@ -532,6 +535,14 @@ export function StaffManager({
               currency={currency}
             />
           )}
+          {asw.salaryAdvance && (
+            <SalaryAdvancesPanel
+              advances={advanced.advances}
+              employees={staff
+                .filter((m) => !isResigned(m.userId))
+                .map((m) => ({ userId: m.userId, name: profileByUser.get(m.userId)?.displayName || m.email }))}
+            />
+          )}
           {asw.weeklyPay && (
             <WeeklyPayoutsPanel
               weeks={advanced.weekly.weeks}
@@ -645,7 +656,7 @@ export function StaffManager({
                       </td>
                       <td className="px-3 py-2 text-right text-red-600">
                         {(() => {
-                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0) + (l.weeklyAdvance ?? 0);
+                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0) + (l.weeklyAdvance ?? 0) + (l.salaryAdvanceDeduction ?? 0);
                           return ded ? `−${fmt(ded, currency)}` : "—";
                         })()}
                         <span className="block text-[10px] text-gray-400">
@@ -653,6 +664,8 @@ export function StaffManager({
                             l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "",
                             l.withholdingTax ? `ภาษี ${l.withholdingTax}` : "",
                             l.weeklyAdvance ? `จ่ายล่วงหน้ารายสัปดาห์ ${l.weeklyAdvance}` : "",
+                            l.salaryAdvanceDeduction ? `เบิกล่วงหน้า ${l.salaryAdvanceDeduction}` : "",
+                            l.salaryAdvanceShortfall ? `ค้างหักงวดหน้า ${l.salaryAdvanceShortfall}` : "",
                           ]
                             .filter(Boolean)
                             .join(" · ")}

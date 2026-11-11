@@ -82,11 +82,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         ? ("accounting" as const)
         : null;
   // สลิปของฉัน (R17, R32, R33): แสดงเมนูเฉพาะร้านที่มีแพ็ก "เงินเดือนขั้นสูง" และเปิดสวิตช์
-  const myPayslipVisible =
-    can("attendance.clock") &&
-    !!assistantBilling &&
-    getPlanFeatures(assistantBilling).advancedPayroll &&
-    (await getAdvancedPayrollSettings(storeContext.storeId)).switches.myPayslip;
+  const payrollSwitches =
+    can("attendance.clock") && !!assistantBilling && getPlanFeatures(assistantBilling).advancedPayroll
+      ? (await getAdvancedPayrollSettings(storeContext.storeId)).switches
+      : null;
+  const myPayslipVisible = !!payrollSwitches?.myPayslip;
+  // เบิกเงิน (B2): แพ็กเงินเดือนขั้นสูง + เปิดสวิตช์
+  const myAdvanceVisible = !!payrollSwitches?.salaryAdvance;
   // ค่าเริ่มต้นเสียงพูดของร้าน — แต่ละเครื่องปรับทับได้เองที่หน้าตั้งค่าแจ้งเตือน
   const notificationVoiceEnabled = Boolean(currentStoreRow?.notification_voice_enabled);
   // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
@@ -120,6 +122,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
+    ...(myAdvanceVisible ? [{ href: "/my-advance", label: "เบิกเงิน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/my-profile", label: "ข้อมูลของฉัน" }] : []),
     ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(

@@ -10,7 +10,7 @@ import {
 // computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
 import { computeAdvancedPayrollLines, joinedDatesFromMembers } from "@/modules/hr/advanced/compute";
 import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
-import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills, listWeeklyPayouts } from "@/modules/hr/advanced/repository";
+import { listEmployeeSkillGrants, listPayrollPeriods, listSalaryAdvances, listStoreSkills, listWeeklyPayouts } from "@/modules/hr/advanced/repository";
 import { recentWeeks } from "@/modules/hr/advanced/weekly";
 import { businessDate, periodContaining, recentPeriods } from "@/modules/hr/advanced/pay-cycle";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
@@ -79,13 +79,16 @@ export default async function StaffPage({
     [...selfInfoMap].map(([userId, { bankAccountNo, ...rest }]) => [userId, { ...rest, bankAccountMasked: maskBankAccount(bankAccountNo) }]),
   );
   const weeks = asw.weeklyPay ? recentWeeks(businessToday, access.settings.weeklyStartDay, 9) : [];
-  const [adv, skills, skillGrants, closedRows, weeklyRows] = await Promise.all([
+  const [adv, skills, skillGrants, closedRows, weeklyRows, advanceRows] = await Promise.all([
     loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo),
     access.entitled ? listStoreSkills(ctx.storeId) : Promise.resolve([]),
     asw.skillPay ? listEmployeeSkillGrants(ctx.storeId) : Promise.resolve(new Map()),
     asw.payCycle ? listPayrollPeriods(ctx.storeId) : Promise.resolve([]),
     weeks.length ? listWeeklyPayouts(ctx.storeId, weeks[weeks.length - 1].start) : Promise.resolve([]),
+    asw.salaryAdvance ? listSalaryAdvances(ctx.storeId, { limit: 60 }) : Promise.resolve([]),
   ]);
+  const nameOf = (userId: string) =>
+    profiles.find((p) => p.userId === userId)?.displayName || members.find((m) => m.userId === userId)?.email || "พนักงาน";
   const employeeSkillIds: Record<string, string[]> = {};
   for (const [userId, grants] of skillGrants) {
     employeeSkillIds[userId] = (grants as { skillId: string; revokedAt?: string | null }[])
@@ -129,6 +132,20 @@ export default async function StaffPage({
         periods: asw.payCycle ? recentPeriods(businessToday, access.settings.payCycleStartDay, access.settings.payDay, 12) : [],
         closedRows,
         businessToday,
+        advances: advanceRows.map((a) => ({
+          id: a.id,
+          userId: a.userId,
+          name: nameOf(a.userId),
+          status: a.status,
+          requestedAmount: a.requestedAmount,
+          approvedAmount: a.approvedAmount,
+          reason: a.reason,
+          decisionNote: a.decisionNote,
+          payMethod: a.payMethod,
+          paidDate: a.paidDate,
+          createdAt: a.createdAt,
+          deducted: a.deducted,
+        })),
         weekly: {
           weeks,
           // ส่งเฉพาะที่ต้องแสดง (ไม่มีข้อมูลบัญชีใน data อยู่แล้ว)

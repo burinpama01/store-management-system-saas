@@ -32,6 +32,7 @@ const FEATURE_HINT: Record<PayrollFeatureKey, string> = {
   myPayslip: "พนักงานเปิดดู/บันทึกสลิปของตัวเองได้ เฉพาะงวดที่ปิดแล้ว ตั้งแต่วันจ่าย",
   payrollNotifications: "แจ้งเตือนผ่านแอปมือถือ: สลิปออก, ปิดงวด, ใกล้วันจ่าย, ยอดถึงขั้น ฯลฯ",
   weeklyPay: "พนักงานที่ขอรับรายสัปดาห์ คิดเฉพาะวันที่มา (ขาด/วันหยุดไม่นับ) + OT + โบนัสรายวัน แจ้งยอดให้เจ้าของทุกสัปดาห์",
+  salaryAdvance: "พนักงานขอเบิกเงินในแอปได้ไม่เกินค่าแรงจากวันที่มาแล้ว เจ้าของ/ผู้จัดการอนุมัติ แล้วหักจากเงินเดือนอัตโนมัติ",
 };
 
 export function AdvancedPayrollPanel({
@@ -188,6 +189,32 @@ export function AdvancedPayrollPanel({
                 <li><b>จ่ายล่วงหน้า</b>: งวดรายเดือนคิดตามปกติ แล้วหักยอดที่จ่ายรายสัปดาห์ไปแล้ว (สัปดาห์ที่จบในงวด)</li>
                 <li>ระบบบันทึกเองตั้งแต่สัปดาห์ที่เปิดสวิตช์ · สัปดาห์ก่อนหน้านั้นกดบันทึกเองได้ที่แท็บเงินเดือน</li>
               </ul>
+            </div>
+          )}
+
+          {sw.salaryAdvance && (
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <h2 className="text-sm font-bold text-gray-900">เบิกเงินล่วงหน้า</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                เพดาน = ค่าแรงจากวันที่มาทำงานแล้วในรอบ (เต็มวัน 1 · ครึ่งวัน 0.5 · + OT) × % ด้านล่าง − ยอดที่เบิกค้างอยู่ · พนักงานเลือกยอดได้ถึงเพดาน
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <label className="text-xs font-medium text-gray-600">
+                  เบิกได้ (% ของค่าแรงที่ทำได้)
+                  <input name="advanceMaxPercent" type="number" min={1} max={100} step="1" defaultValue={settings.advanceMaxPercent} className={INPUT} style={{ fontSize: 16 }} />
+                </label>
+                <label className="text-xs font-medium text-gray-600">
+                  ยอดสูงสุดต่อรอบ (บาท)
+                  <input name="advanceMaxAmount" type="number" min={1} step="1" defaultValue={settings.advanceMaxAmount ?? ""} placeholder="ไม่จำกัด" className={INPUT} style={{ fontSize: 16 }} />
+                </label>
+                <label className="text-xs font-medium text-gray-600">
+                  จำนวนครั้งต่อรอบ
+                  <input name="advanceMaxRequests" type="number" min={1} max={31} step="1" defaultValue={settings.advanceMaxRequests ?? ""} placeholder="ไม่จำกัด" className={INPUT} style={{ fontSize: 16 }} />
+                </label>
+              </div>
+              <p className="mt-2 text-[11px] text-gray-400">
+                รอบ = งวดเงินเดือน (พนักงานรายสัปดาห์แบบแยกรอบ = สัปดาห์) · จ่ายเงินสดจะบันทึกเป็นรายจ่าย “เบิกเงินพนักงาน” และลดยอดลิ้นชัก · หักในงวด/สัปดาห์ที่จ่าย หักไม่หมดยกไปงวดถัดไป
+              </p>
             </div>
           )}
 

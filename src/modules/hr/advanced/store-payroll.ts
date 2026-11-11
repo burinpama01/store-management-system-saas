@@ -19,6 +19,7 @@ import {
   listPayRates,
   loadDailySales,
   loadMaxDailySalesBefore,
+  loadSalaryAdvanceDues,
   loadWeeklyAdvances,
 } from "./repository";
 
@@ -47,7 +48,7 @@ export async function loadAdvancedContext(
   periodEnd: string,
 ): Promise<AdvancedComputeContext> {
   const sw = settings.switches;
-  const [skills, rates, dailySales, maxBefore, weeklyAdvances] = await Promise.all([
+  const [skills, rates, dailySales, maxBefore, weeklyAdvances, salaryAdvances] = await Promise.all([
     sw.skillPay ? listEmployeeSkillGrants(storeId) : Promise.resolve(new Map()),
     listPayRates(storeId),
     sw.salesBonus || sw.monthlySalesBonus
@@ -58,12 +59,14 @@ export async function loadAdvancedContext(
       : Promise.resolve(0),
     // โหลดเสมอ: เงินที่จ่ายล่วงหน้าไปแล้วต้องถูกหัก แม้ปิดสวิตช์/หมดแพ็กภายหลัง
     loadWeeklyAdvances(storeId, periodStart, periodEnd),
+    // เบิกเงินที่จ่ายแล้ว: โหลดเสมอเช่นกัน (ไม่นับยอดที่หักในงวดนี้เอง → คิดซ้ำได้ผลเท่าเดิม)
+    loadSalaryAdvanceDues(storeId, "monthly", periodStart),
   ]);
   const userIds = new Set<string>([...skills.keys(), ...rates.keys()]);
   const employees = new Map(
     [...userIds].map((id) => [id, { skills: skills.get(id) ?? [], rates: rates.get(id) ?? [] }]),
   );
-  return { settings, employees, dailySales, maxSalesBeforePeriod: maxBefore, weeklyAdvances };
+  return { settings, employees, dailySales, maxSalesBeforePeriod: maxBefore, weeklyAdvances, salaryAdvances };
 }
 
 export interface StorePayrollResult {
