@@ -44,6 +44,8 @@ export interface EmployeeProfile {
   ssoEnabled?: boolean;
   /** อัตราภาษีหัก ณ ที่จ่าย % (โหมด % คงที่ต่อคน) */
   withholdingTaxRate?: number;
+  /** รอบจ่าย: รายเดือน (เดิม) / รายสัปดาห์แยกรอบ / รายสัปดาห์จ่ายล่วงหน้า — มีผลเมื่อร้านเปิดสวิตช์จ่ายรายสัปดาห์ */
+  payFrequency?: "monthly" | "weekly" | "weekly_advance";
   createdAt: string;
   updatedAt: string;
 }

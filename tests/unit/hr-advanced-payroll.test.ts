@@ -35,6 +35,16 @@ import {
 } from "@/modules/hr/advanced/income";
 import { computeAdvancedPayrollLines, type AdvancedComputeContext } from "@/modules/hr/advanced/compute";
 import { mapAdvancedSettings } from "@/modules/hr/advanced/repository";
+import {
+  computeWeeklyPayouts,
+  monthlyDailyRate,
+  parsePayFrequency,
+  isWeekAutoRecordable,
+  previousWeek,
+  recentWeeks,
+  weekContaining,
+  weeklyOwnerMessage,
+} from "@/modules/hr/advanced/weekly";
 import { computePayrollLines, type PayrollDay } from "@/modules/hr/payroll";
 import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type PayrollAdjustment, type StoreHrSettings } from "@/modules/hr/types";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
@@ -687,5 +697,174 @@ describe("ตั้งค่า + migration โบนัสหาร/ราย�
     for (const col of ["feat_monthly_sales_bonus", "sales_bonus_mode", "sales_bonus_user_ids", "monthly_bonus_tiers", "monthly_bonus_mode"]) {
       expect(repo).toContain(`${col}:`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// จ่ายรายสัปดาห์ (Plan/Weekly Pay Plan v1.html · W1–W9)
+// ---------------------------------------------------------------------------
+describe("จ่ายค่าแรงรายสัปดาห์", () => {
+  const WEEK = weekContaining("2026-11-11", 1); // จันทร์ 9 – อาทิตย์ 15 พ.ย.
+  const weekInput = (records: AttendanceRecord[], profiles: EmployeeProfile[], adjustments: PayrollAdjustment[] = []) => ({
+    summaries: [...new Set(profiles.map((p) => p.userId))].map((u) => summaryFor(records, u)),
+    records,
+    profiles,
+    adjustments,
+    settings: hr({ halfDayMaxHours: 4 }),
+    periodStart: WEEK.start,
+    periodEnd: WEEK.end,
+    today: "2026-11-20",
+    timezone: TZ,
+  });
+  const weeklyCtx = (over: Partial<AdvancedPayrollSettings> = {}): AdvancedComputeContext => ({
+    settings: { ...settingsWith({ weeklyPay: true }), ...over },
+    employees: new Map(),
+    dailySales: new Map(),
+    maxSalesBeforePeriod: 0,
+  });
+  const run = (input: ReturnType<typeof weekInput>, rateBasis: "profile" | "working_days" = "profile") =>
+    computeWeeklyPayouts({
+      week: WEEK,
+      lines: computeAdvancedPayrollLines(input, weeklyCtx()),
+      profiles: input.profiles,
+      hrSettings: input.settings,
+      rateBasis,
+      payCycleStartDay: 1,
+      payDay: 0,
+    });
+
+  it("สัปดาห์ตามวันเริ่มที่ร้านเลือก", () => {
+    expect(WEEK).toEqual({ start: "2026-11-09", end: "2026-11-15" });
+    expect(weekContaining("2026-11-11", 0)).toEqual({ start: "2026-11-08", end: "2026-11-14" });
+    expect(weekContaining("2026-11-08", 0).start).toBe("2026-11-08");
+    expect(weekContaining("2026-11-09", 1)).toEqual({ start: "2026-11-09", end: "2026-11-15" });
+    expect(previousWeek(WEEK)).toEqual({ start: "2026-11-02", end: "2026-11-08" });
+    expect(recentWeeks("2026-11-11", 1, 3).map((w) => w.start)).toEqual(["2026-11-09", "2026-11-02", "2026-10-26"]);
+  });
+
+  it("ค่าแรงต่อวันพนักงานเงินเดือน: ÷30 / เรทรายวันในโปรไฟล์ / ÷ วันทำงานในงวด", () => {
+    const base = { monthlySalary: 15000, dailyRate: 0, workingDays: [] as number[] };
+    const opts = { storeWorkingDays: [1, 2, 3, 4, 5, 6], payCycleStartDay: 1, payDay: 0 };
+    expect(monthlyDailyRate(base, "2026-11-10", { basis: "profile", ...opts })).toBe(500);
+    expect(monthlyDailyRate({ ...base, dailyRate: 450 }, "2026-11-10", { basis: "profile", ...opts })).toBe(450);
+    // พ.ย. 2026 มีวันอาทิตย์ 5 วัน → วันทำงาน 25 วัน
+    expect(monthlyDailyRate(base, "2026-11-10", { basis: "working_days", ...opts })).toBe(600);
+  });
+
+  it("แยกรอบ: นับเฉพาะวันที่มา (เต็ม 1 ครึ่ง 0.5) ขาด/วันหยุดไม่นับ ไม่หักค่าปรับ + รวมรายการมือ", () => {
+    const records = [rec("2026-11-09", 8), rec("2026-11-10", 4)];
+    const bonus = { id: "a1", userId: "u1", date: "2026-11-10", type: "bonus", amount: 100 } as PayrollAdjustment;
+    const [p] = run(weekInput(records, [prof({ payFrequency: "weekly", workingDays: [1, 2, 3, 4, 5, 6] })], [bonus]));
+    expect(p).toMatchObject({ mode: "weekly", fullDays: 1, halfDays: 1, workedDays: 1.5, basePay: 750, adjustmentsNet: 100, amount: 850 });
+    expect(p.days.find((d) => d.date === "2026-11-11")).toMatchObject({ status: "absent", units: 0, pay: 0 });
+  });
+
+  it("ล่วงหน้า: ไม่รวมรายการมือ (ไปอยู่ในงวดรายเดือน) · ฐาน ÷ วันทำงาน", () => {
+    const records = [rec("2026-11-09", 8)];
+    const bonus = { id: "a1", userId: "u1", date: "2026-11-10", type: "bonus", amount: 100 } as PayrollAdjustment;
+    const input = weekInput(records, [prof({ payFrequency: "weekly_advance", workingDays: [1, 2, 3, 4, 5, 6] })], [bonus]);
+    const [p] = run(input, "working_days");
+    expect(p).toMatchObject({ mode: "weekly_advance", workedDays: 1, basePay: 600, adjustmentsNet: 0, amount: 600 });
+  });
+
+  it("รายวัน: เรทรายวัน × วันที่มา + OT · คนรอบรายเดือนไม่อยู่ในผล", () => {
+    const records = [rec("2026-11-09", 10, "u1"), rec("2026-11-12", 8, "u1"), rec("2026-11-09", 8, "u2")];
+    const profiles = [
+      prof({ payType: "daily", dailyRate: 400, monthlySalary: 0, otEligible: true, payFrequency: "weekly" }),
+      prof({ id: "p2", userId: "u2" }),
+    ];
+    const out = run(weekInput(records, profiles));
+    expect(out.map((p) => p.userId)).toEqual(["u1"]);
+    // OT 2 ชม. × 1.5 × (400/8)
+    expect(out[0]).toMatchObject({ workedDays: 2, basePay: 800, otPay: 150, amount: 950 });
+  });
+
+  it("งวดรายเดือน: หักยอดจ่ายล่วงหน้า · แยกรอบติดป้าย (เฉพาะเมื่อเปิดสวิตช์)", () => {
+    const records = [rec("2026-11-01", 8, "u1"), rec("2026-11-01", 8, "u2")];
+    const profiles = [prof({ payFrequency: "weekly_advance" }), prof({ id: "p2", userId: "u2", payFrequency: "weekly" })];
+    const input = { summaries: [summaryFor(records, "u1"), summaryFor(records, "u2")], records, profiles, adjustments: [], settings: hr(), ...PERIOD };
+    const plain = computeAdvancedPayrollLines(input, { ...weeklyCtx(), weeklyAdvances: new Map() });
+    const lines = computeAdvancedPayrollLines(input, { ...weeklyCtx(), weeklyAdvances: new Map([["u1", 1234.5]]) });
+    const u1 = lines.find((l) => l.userId === "u1")!;
+    expect(u1.weeklyAdvance).toBe(1234.5);
+    expect(u1.netPay).toBe(Math.round((plain.find((l) => l.userId === "u1")!.netPay - 1234.5) * 100) / 100);
+    expect(lines.find((l) => l.userId === "u2")!.paidWeekly).toBe(true);
+    const off = computeAdvancedPayrollLines(input, { ...weeklyCtx(), settings: settingsWith({}) });
+    expect(off.some((l) => l.paidWeekly)).toBe(false);
+  });
+
+  it("ลาออกกลางสัปดาห์: นับเฉพาะวันถึงวันออก · ลาออกก่อนสัปดาห์ = ไม่มียอด", () => {
+    const records = [rec("2026-11-09", 8), rec("2026-11-10", 8), rec("2026-11-12", 8)];
+    const [p] = run(weekInput(records, [prof({ payFrequency: "weekly", employmentEndDate: "2026-11-10" })]));
+    expect(p).toMatchObject({ workedDays: 2, basePay: 1000 });
+    expect(run(weekInput(records, [prof({ payFrequency: "weekly", employmentEndDate: "2026-11-01" })]))).toEqual([]);
+  });
+
+  it("รายละเอียดรายวัน: รายชั่วโมง/รายวัน กระจายยอดรวมแล้วเท่ากับค่าแรงพื้นฐาน", () => {
+    const records = [rec("2026-11-09", 6), rec("2026-11-10", 3)];
+    const [h] = run(weekInput(records, [prof({ payType: "hourly", hourlyRate: 100, monthlySalary: 0, payFrequency: "weekly_advance" })]));
+    expect(h.basePay).toBe(900);
+    expect(h.days.filter((d) => d.units > 0).every((d) => d.pay > 0)).toBe(true);
+    expect(h.days.reduce((s, d) => s + d.pay, 0)).toBe(900);
+    expect(h.days.find((d) => d.date === "2026-11-09")!.pay).toBe(600);
+    // หารไม่ลงตัว: 3 วันเท่ากัน ยอด 1,000 → เศษไปวันสุดท้าย ผลรวมยังเท่าเดิม
+    const three = [rec("2026-11-09", 8), rec("2026-11-10", 8), rec("2026-11-11", 8)];
+    const [d] = run(weekInput(three, [prof({ payType: "hourly", hourlyRate: 1000 / 24, monthlySalary: 0, payFrequency: "weekly" })]));
+    expect(Math.round(d.days.reduce((s, x) => s + x.pay, 0) * 100) / 100).toBe(d.basePay);
+  });
+
+  it("ล่วงหน้า + OT: amount = ค่าแรงพื้นฐาน + OT (ไม่รวมรายการมือ)", () => {
+    const records = [rec("2026-11-09", 10)];
+    const bonus = { id: "a1", userId: "u1", date: "2026-11-09", type: "bonus", amount: 100 } as PayrollAdjustment;
+    const [p] = run(weekInput(records, [prof({ payType: "daily", dailyRate: 400, monthlySalary: 0, otEligible: true, payFrequency: "weekly_advance" })], [bonus]));
+    expect(p).toMatchObject({ basePay: 400, otPay: 150, adjustmentsNet: 0, amount: 550 });
+  });
+
+  it("cron บันทึกอัตโนมัติเฉพาะสัปดาห์ที่จบตั้งแต่วันเปิดสวิตช์", () => {
+    expect(isWeekAutoRecordable(WEEK, null)).toBe(true);
+    expect(isWeekAutoRecordable(WEEK, "2026-11-15")).toBe(true); // เปิดวันสุดท้ายของสัปดาห์ = บันทึก
+    expect(isWeekAutoRecordable(WEEK, "2026-11-16")).toBe(false);
+  });
+
+  it("ข้อความแจ้งเจ้าของ: จำนวนคน ยอดรวม และยอดต่อคน", () => {
+    const msg = weeklyOwnerMessage(
+      [
+        { employeeName: "สมชาย", amount: 1800, workedDays: 4.5 },
+        { employeeName: "มานี", amount: 1350, workedDays: 3 },
+      ],
+      (n) => `฿${n}`,
+    );
+    expect(msg).toBe("2 คน · รวม ฿3150 — สมชาย ฿1800 (4.5 วัน) · มานี ฿1350 (3 วัน)");
+  });
+
+  it("ตั้งค่า: อาทิตย์ (0) อ่านได้ถูก · ค่าเริ่มต้นจันทร์ + ตามโปรไฟล์ + สวิตช์ปิด", () => {
+    expect(mapAdvancedSettings({ weekly_start_day: 0 }).weeklyStartDay).toBe(0);
+    const d = mapAdvancedSettings({});
+    expect(d).toMatchObject({ weeklyStartDay: 1, weeklyRateBasis: "profile" });
+    expect(d.switches.weeklyPay).toBe(false);
+    expect(mapAdvancedSettings({ feat_weekly_pay: true, weekly_rate_basis: "working_days" })).toMatchObject({ weeklyRateBasis: "working_days" });
+    expect(parsePayFrequency("weekly_advance")).toBe("weekly_advance");
+    expect(parsePayFrequency("x")).toBe("monthly");
+  });
+
+  it("migration + เส้นทางระบบ: ค่าเริ่มต้นแบบเดิม, ปิดงวดข้ามคนแยกรอบ, cron บันทึกครั้งเดียวต่อสัปดาห์", () => {
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261111000000_payroll_weekly_pay.sql"), "utf8");
+    expect(sql).toContain("pay_frequency text not null default 'monthly'");
+    expect(sql).toContain("feat_weekly_pay boolean not null default false");
+    expect(sql).toContain("unique (store_id, user_id, week_start)");
+    expect(sql).toContain("payroll_weekly_payouts_store_org_fk");
+    const close = readFileSync(join(process.cwd(), "src/modules/hr/advanced/close-period.ts"), "utf8");
+    expect(close).toContain("!l.paidWeekly");
+    const cron = readFileSync(join(process.cwd(), "src/modules/hr/advanced/cron.ts"), "utf8");
+    expect(cron).toContain('hasPayrollNotification(c.storeId, "weekly_recorded", week.start)');
+    expect(cron).toContain("isWeekAutoRecordable(week, settings.weeklyPayEnabledAt)");
+    const repo = readFileSync(join(process.cwd(), "src/modules/hr/advanced/repository.ts"), "utf8");
+    // deploy ก่อน migration ต้องไม่ทำหน้าเงินเดือนล่ม
+    expect(repo).toContain('error.code === "42P01" || error.code === "PGRST205"');
+    const action = readFileSync(join(process.cwd(), "src/app/(dashboard)/staff/advanced-actions.ts"), "utf8");
+    expect(action).toContain("ปิดไปแล้ว — บันทึกสัปดาห์นี้ไม่ได้");
+    expect(action).toContain('.eq("pay_frequency", "weekly_advance")');
+    const store = readFileSync(join(process.cwd(), "src/modules/hr/advanced/store-payroll.ts"), "utf8");
+    expect(store).toContain("loadWeeklyAdvances(storeId, periodStart, periodEnd)");
   });
 });

@@ -13,7 +13,18 @@ import { closePayrollPeriodForStore } from "./close-period";
 import { fullMonthsBetween, salesBonusEligible, seniorityPayFor, tierAmountFor } from "./income";
 import { addDays, businessDate, isPeriodDue, periodContaining, previousPeriod, type PayPeriod } from "./pay-cycle";
 import { effectiveSwitches, type AdvancedPayrollSettings } from "./settings";
-import { getPayrollPeriod, listStoresWithPayrollAutomation, loadDailySales, loadMaxDailySalesBefore, mapAdvancedSettings } from "./repository";
+import {
+  claimPayrollNotification,
+  countWeeklyEmployees,
+  getPayrollPeriod,
+  hasPayrollNotification,
+  listStoresWithPayrollAutomation,
+  loadDailySales,
+  loadMaxDailySalesBefore,
+  mapAdvancedSettings,
+} from "./repository";
+import { isWeekAutoRecordable, previousWeek, weekContaining } from "./weekly";
+import { recordWeeklyPayoutsForStore } from "./weekly-close";
 import { formatBaht, listStoreManagerUserIds, listStoreMemberUserIds, pushPayrollNotification } from "./notify";
 import { mapProfile } from "../repository";
 import type { EmployeeProfile } from "../types";
@@ -70,6 +81,41 @@ export async function runPayrollCron(now: Date = new Date()): Promise<PayrollCro
       const today = businessDate(now, tz, closingTime);
       const sw = settings.switches;
       const notify = sw.payrollNotifications;
+
+      // ---- 0) จ่ายรายสัปดาห์ (W8): บันทึกสัปดาห์ที่เพิ่งจบ + แจ้งเจ้าของ ครั้งเดียวต่อสัปดาห์ ----
+      if (sw.weeklyPay) {
+        const week = previousWeek(weekContaining(today, settings.weeklyStartDay));
+        const fromEnable = isWeekAutoRecordable(week, settings.weeklyPayEnabledAt);
+        if (
+          fromEnable &&
+          !(await hasPayrollNotification(c.storeId, "weekly_recorded", week.start)) &&
+          (await countWeeklyEmployees(c.storeId)) > 0
+        ) {
+          const r = await recordWeeklyPayoutsForStore({
+            organizationId: c.organizationId,
+            storeId: c.storeId,
+            week,
+            today,
+            actorUserId: null,
+          });
+          if (r.ok) {
+            const marked = await claimPayrollNotification(c.storeId, "weekly_recorded", week.start);
+            if (!marked) {
+              await logSystemEvent({
+                level: "warn",
+                source: "hr.payroll-weekly",
+                action: "markRecorded",
+                message: `บันทึกเครื่องหมาย "สัปดาห์ ${week.start} ทำแล้ว" ไม่สำเร็จ — รอบหน้าจะลองใหม่ (ยอดไม่ซ้ำ)`,
+                organizationId: c.organizationId,
+                storeId: c.storeId,
+              });
+            }
+            result.notified += r.notified;
+          } else {
+            result.errors += 1;
+          }
+        }
+      }
 
       // ---- 1) รอบเงินเดือน: ปิดงวดที่เพิ่งจบ + แจ้งเตือนรอบงวด ----
       if (sw.payCycle) {

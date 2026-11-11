@@ -14,6 +14,7 @@ export const PAYROLL_FEATURE_KEYS = [
   "payCycle",
   "myPayslip",
   "payrollNotifications",
+  "weeklyPay",
 ] as const;
 
 export type PayrollFeatureKey = (typeof PAYROLL_FEATURE_KEYS)[number];
@@ -30,6 +31,7 @@ export const PAYROLL_FEATURE_LABEL: Record<PayrollFeatureKey, string> = {
   payCycle: "รอบเงินเดือน + ปิดงวดอัตโนมัติ",
   myPayslip: "สลิปของฉัน (พนักงานดูเอง)",
   payrollNotifications: "แจ้งเตือนเงินเดือน",
+  weeklyPay: "จ่ายค่าแรงรายสัปดาห์ (ตามวันที่มา)",
 };
 
 /** ตัวลูก → ตัวแม่ที่ต้องเปิดก่อน */
@@ -97,6 +99,12 @@ export interface AdvancedPayrollSettings {
   ssoWageFloor: number;
   ssoWageCeiling: number;
   whtMode: "manual" | "percent";
+  /** จ่ายรายสัปดาห์: วันเริ่มสัปดาห์ 0 = อาทิตย์ … 6 = เสาร์ */
+  weeklyStartDay: number;
+  /** จ่ายรายสัปดาห์ (พนักงานเงินเดือน): profile = เรทรายวัน/เงินเดือน÷30 · working_days = เงินเดือน÷วันทำงานในงวด */
+  weeklyRateBasis: "profile" | "working_days";
+  /** วันที่เปิดจ่ายรายสัปดาห์ — cron บันทึกเฉพาะสัปดาห์ที่จบตั้งแต่วันนี้ */
+  weeklyPayEnabledAt?: string | null;
   /** วันที่เปิดรอบเงินเดือน — ปิดอัตโนมัติเฉพาะงวดที่จบตั้งแต่วันนี้ */
   payCycleEnabledAt?: string | null;
 }
@@ -137,6 +145,8 @@ export const DEFAULT_ADVANCED_PAYROLL_SETTINGS: AdvancedPayrollSettings = {
   ssoWageFloor: 1650,
   ssoWageCeiling: 17500,
   whtMode: "manual",
+  weeklyStartDay: 1,
+  weeklyRateBasis: "profile",
 };
 
 function num(v: unknown): number | null {

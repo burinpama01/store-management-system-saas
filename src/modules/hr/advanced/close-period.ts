@@ -49,7 +49,8 @@ export async function closePayrollPeriodForStore(input: {
     today: input.today,
   });
   const profileByUser = new Map(result.profiles.map((p) => [p.userId, p]));
-  const lines = result.lines.filter((l) => l.hasProfile || l.netPay !== 0);
+  // จ่ายรายสัปดาห์แบบแยกรอบ = ไม่มีสลิปรายเดือน (W6)
+  const lines = result.lines.filter((l) => !l.paidWeekly && (l.hasProfile || l.netPay !== 0));
 
   const slips = lines.map((line) => {
     const p = profileByUser.get(line.userId);

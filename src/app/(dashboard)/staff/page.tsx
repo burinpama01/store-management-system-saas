@@ -10,7 +10,8 @@ import {
 // computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
 import { computeAdvancedPayrollLines } from "@/modules/hr/advanced/compute";
 import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
-import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills } from "@/modules/hr/advanced/repository";
+import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills, listWeeklyPayouts } from "@/modules/hr/advanced/repository";
+import { recentWeeks } from "@/modules/hr/advanced/weekly";
 import { businessDate, periodContaining, recentPeriods } from "@/modules/hr/advanced/pay-cycle";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
 import { listEmployeeSelfInfo, listPendingSelfInfoRequests } from "@/modules/hr/self-info-repository";
@@ -77,11 +78,13 @@ export default async function StaffPage({
   const selfInfo = Object.fromEntries(
     [...selfInfoMap].map(([userId, { bankAccountNo, ...rest }]) => [userId, { ...rest, bankAccountMasked: maskBankAccount(bankAccountNo) }]),
   );
-  const [adv, skills, skillGrants, closedRows] = await Promise.all([
+  const weeks = asw.weeklyPay ? recentWeeks(businessToday, access.settings.weeklyStartDay, 9) : [];
+  const [adv, skills, skillGrants, closedRows, weeklyRows] = await Promise.all([
     loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo),
     access.entitled ? listStoreSkills(ctx.storeId) : Promise.resolve([]),
     asw.skillPay ? listEmployeeSkillGrants(ctx.storeId) : Promise.resolve(new Map()),
     asw.payCycle ? listPayrollPeriods(ctx.storeId) : Promise.resolve([]),
+    weeks.length ? listWeeklyPayouts(ctx.storeId, weeks[weeks.length - 1].start) : Promise.resolve([]),
   ]);
   const employeeSkillIds: Record<string, string[]> = {};
   for (const [userId, grants] of skillGrants) {
@@ -125,6 +128,18 @@ export default async function StaffPage({
         periods: asw.payCycle ? recentPeriods(businessToday, access.settings.payCycleStartDay, access.settings.payDay, 12) : [],
         closedRows,
         businessToday,
+        weekly: {
+          weeks,
+          // ส่งเฉพาะที่ต้องแสดง (ไม่มีข้อมูลบัญชีใน data อยู่แล้ว)
+          rows: weeklyRows.map((r) => ({
+            userId: r.userId,
+            weekStart: r.weekStart,
+            mode: r.mode,
+            amount: r.amount,
+            workedDays: Number((r.data as { workedDays?: number }).workedDays ?? 0),
+            name: String((r.data as { employeeName?: string }).employeeName ?? ""),
+          })),
+        },
       }}
     />
   );

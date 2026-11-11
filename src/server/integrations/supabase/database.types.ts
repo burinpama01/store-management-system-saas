@@ -4342,6 +4342,7 @@ export interface Database {
           bank_account_name: string | null;
           sso_enabled: boolean;
           withholding_tax_rate: number;
+          pay_frequency: string;
           created_at: string;
           updated_at: string;
         };
@@ -4373,6 +4374,7 @@ export interface Database {
           bank_account_name?: string | null;
           sso_enabled?: boolean;
           withholding_tax_rate?: number;
+          pay_frequency?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -4400,6 +4402,7 @@ export interface Database {
           bank_account_name?: string | null;
           sso_enabled?: boolean;
           withholding_tax_rate?: number;
+          pay_frequency?: string;
           updated_at?: string;
         };
         Relationships: [];

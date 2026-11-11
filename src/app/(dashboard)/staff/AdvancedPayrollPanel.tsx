@@ -13,6 +13,7 @@ import {
   type AdvancedPayrollSettings,
   type PayrollFeatureKey,
 } from "@/modules/hr/advanced/settings";
+import { WEEKDAY_FULL_LABELS } from "@/modules/hr/advanced/weekly";
 import type { StoreSkill } from "@/modules/hr/advanced/repository";
 import { addStoreSkillAction, archiveStoreSkillAction, saveAdvancedPayrollSettingsAction } from "./advanced-actions";
 
@@ -30,6 +31,7 @@ const FEATURE_HINT: Record<PayrollFeatureKey, string> = {
   payCycle: "ตั้งรอบ/วันจ่าย ระบบปิดงวดให้เองหลังเวลาปิดร้านของวันสุดท้าย และเก็บสลิปถาวร",
   myPayslip: "พนักงานเปิดดู/บันทึกสลิปของตัวเองได้ เฉพาะงวดที่ปิดแล้ว ตั้งแต่วันจ่าย",
   payrollNotifications: "แจ้งเตือนผ่านแอปมือถือ: สลิปออก, ปิดงวด, ใกล้วันจ่าย, ยอดถึงขั้น ฯลฯ",
+  weeklyPay: "พนักงานที่ขอรับรายสัปดาห์ คิดเฉพาะวันที่มา (ขาด/วันหยุดไม่นับ) + OT + โบนัสรายวัน แจ้งยอดให้เจ้าของทุกสัปดาห์",
 };
 
 export function AdvancedPayrollPanel({
@@ -142,6 +144,52 @@ export function AdvancedPayrollPanel({
               </label>
             </div>
           </div>
+
+          {sw.weeklyPay && (
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <h2 className="text-sm font-bold text-gray-900">จ่ายค่าแรงรายสัปดาห์</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                เลือกพนักงานที่จ่ายรายสัปดาห์ได้ที่ข้อมูลพนักงานแต่ละคน (ช่อง &quot;รอบจ่าย&quot;) · หลังเวลาปิดร้านของวันสุดท้ายของสัปดาห์
+                ระบบบันทึกยอดแล้วแจ้งเจ้าของ/ผู้จัดการว่าต้องจ่ายใครเท่าไหร่
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-medium text-gray-600">
+                  สัปดาห์เริ่มวัน
+                  <select name="weeklyStartDay" defaultValue={settings.weeklyStartDay} className={INPUT} style={{ fontSize: 16 }}>
+                    {WEEKDAY_FULL_LABELS.map((label, i) => (
+                      <option key={label} value={i}>
+                        {label} – {WEEKDAY_FULL_LABELS[(i + 6) % 7]}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={HINT}>แจ้งยอดหลังเวลาปิดร้านของวัน{WEEKDAY_FULL_LABELS[(settings.weeklyStartDay + 6) % 7]}</span>
+                </label>
+                <fieldset className="text-xs font-medium text-gray-600">
+                  <legend>ค่าแรงต่อวัน (พนักงานเงินเดือน)</legend>
+                  <label className="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2">
+                    <input type="radio" name="weeklyRateBasis" value="profile" defaultChecked={settings.weeklyRateBasis !== "working_days"} className="mt-0.5 accent-orange-500" />
+                    <span>
+                      ตามโปรไฟล์
+                      <span className={HINT}>ใช้ค่าแรงรายวันที่ตั้งไว้ ถ้าไม่ตั้ง = เงินเดือน ÷ 30</span>
+                    </span>
+                  </label>
+                  <label className="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2">
+                    <input type="radio" name="weeklyRateBasis" value="working_days" defaultChecked={settings.weeklyRateBasis === "working_days"} className="mt-0.5 accent-orange-500" />
+                    <span>
+                      เงินเดือน ÷ วันทำงานในงวด
+                      <span className={HINT}>เช่น 15,000 งวดนี้มีวันทำงาน 26 วัน = วันละ 576.92 (เปลี่ยนตามงวด)</span>
+                    </span>
+                  </label>
+                </fieldset>
+              </div>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-[11px] text-gray-500">
+                <li>เต็มวัน = 1 วัน · ครึ่งวัน = 0.5 วัน · ขาด/ลา/วันหยุด = ไม่คิดเงินและไม่หักค่าปรับ · พนักงานรายวัน/รายชั่วโมงใช้เรทของตัวเอง</li>
+                <li><b>แยกรอบ</b>: ไม่อยู่ในงวด/สลิปรายเดือน · รายการบวก/หักที่บันทึกเองในสัปดาห์รวมในยอดสัปดาห์ · ไม่หักประกันสังคม/ภาษี</li>
+                <li><b>จ่ายล่วงหน้า</b>: งวดรายเดือนคิดตามปกติ แล้วหักยอดที่จ่ายรายสัปดาห์ไปแล้ว (สัปดาห์ที่จบในงวด)</li>
+                <li>ระบบบันทึกเองตั้งแต่สัปดาห์ที่เปิดสวิตช์ · สัปดาห์ก่อนหน้านั้นกดบันทึกเองได้ที่แท็บเงินเดือน</li>
+              </ul>
+            </div>
+          )}
 
           <div className="rounded-lg border border-gray-200 bg-white p-4">
             <h2 className="text-sm font-bold text-gray-900">ขั้นค่าทักษะ / ค่าอายุงาน</h2>
