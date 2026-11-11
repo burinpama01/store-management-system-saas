@@ -7,6 +7,8 @@ import type { Database, Json } from "@/server/integrations/supabase/database.typ
 import type { NotificationChannel, NotificationType } from "./types";
 import { isPushRecipientRole } from "./types";
 import type { Role } from "@/modules/tenants/types";
+import { listResignedUserIds } from "@/modules/hr/employment-status";
+import { logSystemEvent } from "@/modules/system/event-log";
 
 type NotificationSettingRow = Database["public"]["Tables"]["notification_settings"]["Row"];
 type NotificationTargetRow = Database["public"]["Tables"]["notification_targets"]["Row"];
@@ -253,10 +255,17 @@ export function filterPushEligibleUserIds(
   rows: readonly { user_id: string; store_id: string | null; role: Role }[],
   storeId: string,
   type: NotificationType,
+  /** คนที่ลาออกจากสาขานี้แล้ว (เลยวันออกงาน) — ไม่ได้รับแจ้งเตือนของร้านอีก (เจ้าของไม่ถูกตัด) */
+  resigned: ReadonlySet<string> = new Set(),
 ): Set<string> {
   return new Set(
     rows
-      .filter((m) => (m.store_id === null || m.store_id === storeId) && isPushRecipientRole(type, m.role))
+      .filter(
+        (m) =>
+          (m.store_id === null || m.store_id === storeId) &&
+          isPushRecipientRole(type, m.role) &&
+          (m.role === "owner" || !resigned.has(m.user_id)),
+      )
       .map((m) => m.user_id),
   );
 }
@@ -285,7 +294,19 @@ export async function listStorePushTokens(
   if (tokensRes.error) return { data: null, error: mapError(tokensRes.error) };
   if (memsRes.error) return { data: null, error: mapError(memsRes.error) };
 
-  const allowedUserIds = filterPushEligibleUserIds(memsRes.data ?? [], storeId, type);
+  // อ่านรายชื่อคนลาออกไม่ได้ = ส่งตามเดิม (ไม่ให้แจ้งเตือนออเดอร์หายทั้งร้าน)
+  const resigned = await listResignedUserIds(storeId).catch(async (e) => {
+    await logSystemEvent({
+      level: "warn",
+      source: "notifications.push",
+      action: "listResignedUserIds",
+      message: `อ่านรายชื่อพนักงานที่ลาออกไม่สำเร็จ — ส่งแจ้งเตือนโดยไม่ตัดใคร: ${e instanceof Error ? e.message : String(e)}`,
+      organizationId,
+      storeId,
+    }).catch(() => undefined);
+    return new Set<string>();
+  });
+  const allowedUserIds = filterPushEligibleUserIds(memsRes.data ?? [], storeId, type, resigned);
   return {
     data: (tokensRes.data ?? [])
       .filter((row) => allowedUserIds.has(row.user_id))

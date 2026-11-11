@@ -344,7 +344,9 @@ export function StaffManager({
                         <label className="text-xs font-medium text-gray-600">
                           วันออกงาน
                           <input name="employmentEndDate" type="date" defaultValue={profile?.employmentEndDate ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
-                          <span className="mt-1 block text-[11px] font-normal text-gray-400">ว่าง = ยังทำงานอยู่</span>
+                          <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                            ว่าง = ยังทำงานอยู่ · หลังวันนี้เข้าระบบของร้านและรับแจ้งเตือนไม่ได้ (เจ้าของกิจการไม่ถูกตัด)
+                          </span>
                         </label>
                         <p className="mt-2 text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">
                           บัญชีรับเงินเดือน
