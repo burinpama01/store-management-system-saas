@@ -12,7 +12,7 @@ import {
 } from "@/modules/attendance/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 // computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
-import { computeAdvancedPayrollLines, type AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
+import { computeAdvancedPayrollLines, joinedDatesFromMembers, type AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
 import { listCurrentPayslipsForPeriod, listPayrollPeriods } from "@/modules/hr/advanced/repository";
 import type { PayslipSnapshotData } from "@/modules/hr/advanced/close-period";
@@ -114,6 +114,7 @@ export default async function PayslipPage({
         periodEnd: dateTo,
         today,
         timezone: ctx.storeTimezone,
+        joinedDates: joinedDatesFromMembers(membersRes.data ?? [], ctx.storeTimezone),
       },
       adv,
     );
