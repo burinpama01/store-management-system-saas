@@ -13,6 +13,7 @@ import {
   productRows,
   stackedCategorySeries,
   type InsightsPreset,
+  type BreakEvenBasis,
   type InsightsRaw,
   type ProductRow,
   type Recommendation,
@@ -35,9 +36,10 @@ interface Props {
   today: string;
   data: InsightsRaw | null;
   error: string | null;
+  breakEven?: BreakEvenBasis | null;
 }
 
-export function InsightsView({ preset, from, to, today, data, error }: Props) {
+export function InsightsView({ preset, from, to, today, data, error, breakEven = null }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [customFrom, setCustomFrom] = useState(from);
@@ -94,18 +96,18 @@ export function InsightsView({ preset, from, to, today, data, error }: Props) {
       {error || !data ? (
         <div className="panel p-6 text-center text-sm text-[var(--color-danger)]">{error ?? "โหลดรายงานไม่สำเร็จ"}</div>
       ) : (
-        <InsightsBody data={data} pending={isPending} />
+        <InsightsBody data={data} pending={isPending} breakEven={breakEven} />
       )}
     </div>
   );
 }
 
-function InsightsBody({ data, pending }: { data: InsightsRaw; pending: boolean }) {
+function InsightsBody({ data, pending, breakEven }: { data: InsightsRaw; pending: boolean; breakEven: BreakEvenBasis | null }) {
   const categories = useMemo(() => categoryTotals(data.products), [data.products]);
   const stacked = useMemo(() => stackedCategorySeries(data, categories), [data, categories]);
   const rows = useMemo(() => productRows(data), [data]);
   const profit = useMemo(() => grossProfit(data.products), [data.products]);
-  const recommendations = useMemo(() => buildRecommendations(data), [data]);
+  const recommendations = useMemo(() => buildRecommendations(data, breakEven), [data, breakEven]);
   const colorByCategory = useMemo(() => new Map(stacked.series.map((s, i) => [s.key, seriesColor(s.key, i)])), [stacked.series]);
   const { summary, prevSummary } = data;
   const aov = summary.orders > 0 ? summary.revenue / summary.orders : 0;

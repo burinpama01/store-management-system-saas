@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   bangkokToday,
+  breakEvenRevenuePerDay,
   buildRecommendations,
   categoryTotals,
   grossProfit,
@@ -237,5 +238,40 @@ describe("migration + wiring", () => {
     expect(page).toContain('canUseFeature(billingState, "advancedReports")');
     expect(repo).toContain('source: "reports.insights"');
     expect(repo).not.toMatch(/context:[^}]*products:\s*parsed\.products[,\s}]/);
+  });
+});
+
+describe("คำแนะนำจุดคุ้มทุน (ฐานยอดเงิน)", () => {
+  const days = (n: number) => Array.from({ length: n }, (_, i) => ({ date: `2026-11-0${i + 1}`, orders: 2, revenue: 200 }));
+  const costed = base({
+    summary: { orders: 14, revenue: 1400, discount: 0, memberOrders: 7, items: 28 },
+    daily: days(7),
+    products: [product({ revenue: 1400, cost: 560, costedRevenue: 1400 })], // margin 60%
+  });
+
+  it("ต่ำกว่าจุดคุ้มทุน → warning พร้อมลิงก์", () => {
+    // ฐาน 31,200 ÷ (60% − 0%) ÷ 26 = 2,000/วัน · จริง 1,400 ÷ 7 วัน × 30 ÷ 26 = 230.77/วัน
+    const be = breakEvenRevenuePerDay(costed, { fixedMonthly: 31200, openDaysPerMonth: 26, otherVariablePct: 0 });
+    expect(be).toEqual({ breakEven: 2000, actual: 230.77 });
+    const rec = buildRecommendations(costed, { fixedMonthly: 31200, openDaysPerMonth: 26, otherVariablePct: 0 }).find((r) => r.id === "below-break-even");
+    expect(rec?.tone).toBe("warning");
+    expect(rec?.action?.href).toBe("/costing/break-even");
+  });
+
+  it("เกินจุดคุ้มทุน → positive", () => {
+    const ids = buildRecommendations(costed, { fixedMonthly: 1000, openDaysPerMonth: 26, otherVariablePct: 0 }).map((r) => r.id);
+    expect(ids).toContain("above-break-even");
+  });
+
+  it("ไม่มีฐาน / ต้นทุนครอบคลุมน้อย / วันน้อย → ไม่แสดง", () => {
+    expect(buildRecommendations(costed).map((r) => r.id)).not.toContain("below-break-even");
+    const lowCoverage = base({ ...costed, products: [product({ revenue: 1400, cost: 100, costedRevenue: 200 })] });
+    expect(breakEvenRevenuePerDay(lowCoverage, { fixedMonthly: 31200, openDaysPerMonth: 26, otherVariablePct: 0 })).toBeNull();
+    expect(breakEvenRevenuePerDay({ ...costed, daily: days(3) }, { fixedMonthly: 31200, openDaysPerMonth: 26, otherVariablePct: 0 })).toBeNull();
+    // ยอดกระจุกไม่กี่วันในช่วงยาว ไม่ทำให้ค่าเฉลี่ยพอง: 5 วันมียอดในช่วง 30 วัน
+    const sparse = base({ ...costed, range: { ...costed.range, days: 30 }, daily: days(5) });
+    expect(breakEvenRevenuePerDay(sparse, { fixedMonthly: 31200, openDaysPerMonth: 26, otherVariablePct: 0 })?.actual).toBe(53.85);
+    // ผันแปรอื่นกินกำไรหมด
+    expect(breakEvenRevenuePerDay(costed, { fixedMonthly: 31200, openDaysPerMonth: 26, otherVariablePct: 60 })).toBeNull();
   });
 });
