@@ -237,6 +237,11 @@ export interface PayrollComputeInput {
   /** Store-local "today"; absent days are only counted up to this date. */
   today: string;
   timezone: string;
+  /**
+   * วันที่พนักงานเข้าร่วมร้านในระบบ (YYYY-MM-DD เวลาสาขา) ต่อ userId — ใช้ร่วมกับ "วันเริ่มงาน"
+   * ตัดงวดของคนที่เริ่มงานกลางงวด (ใช้ใน computeAdvancedPayrollLines) · ไม่ส่ง = ใช้วันเริ่มงานอย่างเดียว
+   */
+  joinedDates?: Map<string, string>;
 }
 
 /**

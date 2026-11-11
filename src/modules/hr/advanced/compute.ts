@@ -147,6 +147,46 @@ function emptyExtras(line: PayrollLine): AdvancedPayrollLine {
   };
 }
 
+/**
+ * วันเข้าร่วมร้าน (เวลาสาขา) ต่อ userId จากสมาชิกภาพ — คนเดียวมีหลายแถวใช้แถวผูกสาขาก่อนระดับองค์กร
+ */
+export function joinedDatesFromMembers(
+  rows: { userId: string; joinedAt: string | null | undefined; storeId: string | null | undefined }[],
+  timezone: string,
+): Map<string, string> {
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" });
+  const picked = new Map<string, { date: string; storeLevel: boolean }>();
+  for (const r of rows) {
+    if (!r.joinedAt || !Number.isFinite(Date.parse(r.joinedAt))) continue;
+    const date = fmt.format(new Date(r.joinedAt));
+    const storeLevel = !!r.storeId;
+    const prev = picked.get(r.userId);
+    if (!prev || (!prev.storeLevel && storeLevel)) picked.set(r.userId, { date, storeLevel });
+  }
+  return new Map([...picked].map(([id, v]) => [id, v.date]));
+}
+
+/**
+ * ช่วงที่คิดเงินของพนักงานในงวด (เริ่มงาน/ลาออกกลางงวด)
+ *   เริ่ม = วันที่ช้ากว่าระหว่าง "วันเริ่มงาน" กับวันเข้าร่วมร้าน — แต่ถ้ามีลงเวลาก่อนหน้านั้น เริ่มที่วันลงเวลาแรก (ทำงานจริงต้องได้เงิน)
+ *   จบ = วันออกงาน
+ */
+export function payrollWindowFor(
+  profile: Pick<EmployeeProfile, "seniorityStartDate" | "employmentEndDate">,
+  joined: string | undefined,
+  firstRecordDate: string | undefined,
+  periodStart: string,
+  periodEnd: string,
+): { from: string; to: string } {
+  const s = profile.seniorityStartDate;
+  let start = s && joined ? (s > joined ? s : joined) : s ?? joined;
+  if (start && firstRecordDate && firstRecordDate < start) start = firstRecordDate;
+  const from = start && start > periodStart ? start : periodStart;
+  const end = profile.employmentEndDate;
+  const to = end && end < periodEnd ? end : periodEnd;
+  return { from, to };
+}
+
 export function computeAdvancedPayrollLines(
   input: PayrollComputeInput,
   adv?: AdvancedComputeContext | null,
@@ -154,12 +194,28 @@ export function computeAdvancedPayrollLines(
   const { periodStart, periodEnd, settings } = input;
   const periodDays = daysInclusive(periodStart, periodEnd);
 
+  // 0) ช่วงที่คิดเงินต่อคน — เริ่มงาน/ลาออกกลางงวด = ตัดงวดเฉพาะคนนั้น (ไม่นับขาดก่อนเริ่ม/หลังออก)
+  const firstRecord = new Map<string, string>();
+  for (const r of input.records) {
+    if (r.date < periodStart || r.date > periodEnd) continue;
+    const prev = firstRecord.get(r.userId);
+    if (!prev || r.date < prev) firstRecord.set(r.userId, r.date);
+  }
+  const windowByUser = new Map(
+    input.profiles.map((p) => [
+      p.userId,
+      payrollWindowFor(p, input.joinedDates?.get(p.userId), firstRecord.get(p.userId), periodStart, periodEnd),
+    ]),
+  );
+
   // 1) ประวัติเรท: เรทเดียวทั้งงวด → แทนค่าในโปรไฟล์แล้วใช้สูตรเดิม; หลายเรท → คิดแยกช่วงด้านล่าง
   const multiRate = new Map<string, ReturnType<typeof rateSegments>>();
   const profiles = input.profiles.map((p) => {
     const rates = adv?.employees.get(p.userId)?.rates ?? [];
     if (rates.length === 0) return p;
-    const segs = rateSegments(rates, periodStart, periodEnd, profileRate(p));
+    const w = windowByUser.get(p.userId);
+    // ช่วงเรทตามช่วงที่คิดเงินของคนนั้น (เริ่ม/ออกกลางงวด) — ไม่งั้นฐานเงินเดือนคิดเต็มงวด
+    const segs = rateSegments(rates, w && w.from <= w.to ? w.from : periodStart, w && w.from <= w.to ? w.to : periodEnd, profileRate(p));
     if (hasMultipleRates(segs)) {
       multiRate.set(p.userId, segs);
       const last = segs[segs.length - 1].rate;
@@ -171,13 +227,23 @@ export function computeAdvancedPayrollLines(
   const profileByUser = new Map(profiles.map((p) => [p.userId, p]));
 
   // R27 ลาออก: ออกก่อนงวดเริ่ม = ไม่มีบรรทัดในงวดนี้; ออกระหว่างงวด = คิดถึงวันออกงาน (ไม่นับขาดหลังวันออก)
+  // เริ่มงานกลางงวด = คิดตั้งแต่วันเริ่มงาน (ไม่นับขาดก่อนเริ่ม · เงินเดือนคิดตามสัดส่วนวัน) · เริ่มหลังงวดจบ = ไม่มีบรรทัด
   const endedBefore = new Set(
-    profiles.filter((p) => p.employmentEndDate && p.employmentEndDate < periodStart).map((p) => p.userId),
+    profiles
+      .filter((p) => {
+        if (p.employmentEndDate && p.employmentEndDate < periodStart) return true;
+        const w = windowByUser.get(p.userId);
+        return !!w && w.from > w.to;
+      })
+      .map((p) => p.userId),
   );
-  const endsInside = profiles.filter(
-    (p) => p.employmentEndDate && p.employmentEndDate >= periodStart && p.employmentEndDate < periodEnd,
-  );
-  const clipped = new Set(endsInside.map((p) => p.userId));
+  // partialPeriod = เริ่มงานกลางงวด หรือ ออกงานกลางงวด หรือทั้งคู่
+  const partialPeriod = profiles.filter((p) => {
+    if (endedBefore.has(p.userId)) return false;
+    const w = windowByUser.get(p.userId);
+    return !!w && (w.from > periodStart || w.to < periodEnd);
+  });
+  const clipped = new Set(partialPeriod.map((p) => p.userId));
   const keep = <T extends { userId: string }>(rows: T[], exclude: Set<string>) => rows.filter((r) => !exclude.has(r.userId));
   const excludeMain = new Set([...endedBefore, ...clipped]);
   const baseLines = computePayrollLines({
@@ -187,18 +253,21 @@ export function computeAdvancedPayrollLines(
     records: keep(input.records, excludeMain),
     adjustments: keep(input.adjustments, excludeMain),
   });
-  for (const p of endsInside) {
-    const end = p.employmentEndDate as string;
-    const only = <T extends { userId: string }>(rows: T[]) => rows.filter((r) => r.userId === p.userId && (!("date" in r) || String((r as { date?: string }).date) <= end));
+  for (const p of partialPeriod) {
+    const { from, to } = windowByUser.get(p.userId)!;
+    const inWindow = (date: string) => date >= from && date <= to;
+    const only = <T extends { userId: string }>(rows: T[]) =>
+      rows.filter((r) => r.userId === p.userId && (!("date" in r) || inWindow(String((r as { date?: string }).date))));
     baseLines.push(
       ...computePayrollLines({
         ...input,
         profiles: [p],
-        summaries: computePayrollSummariesFor(input.summaries, p.userId, input.records.filter((r) => r.userId === p.userId && r.date <= end)),
+        summaries: computePayrollSummariesFor(input.summaries, p.userId, input.records.filter((r) => r.userId === p.userId && inWindow(r.date))),
         records: only(input.records),
         adjustments: only(input.adjustments),
-        periodEnd: end,
-        today: input.today < end ? input.today : end,
+        periodStart: from,
+        periodEnd: to,
+        today: input.today < to ? input.today : to,
       }),
     );
   }
@@ -265,7 +334,10 @@ export function computeAdvancedPayrollLines(
       let otHours = 0;
       let regularHours = 0;
       if (profile.payType === "monthly") {
-        newBase = segs.reduce((sum, s) => sum + (s.rate.monthlySalary * s.days) / periodDays, 0);
+        // คิดเต็มงวด = สัดส่วนวันในงวด · ตัดงวด (เริ่ม/ออกกลางงวด) = ฐาน 30 วันแบบเดียวกับ monthlyBasePay
+        // (เดิมใช้จำนวนวันของงวด แม้ตัดงวด → เดือน 28/31 วันไม่ตรงกับแบบเรทเดียว)
+        const divisor = clipped.has(base.userId) ? 30 : periodDays;
+        newBase = segs.reduce((sum, s) => sum + (s.rate.monthlySalary * s.days) / divisor, 0);
       }
       for (const day of base.days) {
         if (!(day.hours > 0)) continue;

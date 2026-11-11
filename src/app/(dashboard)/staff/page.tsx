@@ -8,7 +8,7 @@ import {
   listStoreHolidays,
 } from "@/modules/attendance/repository";
 // computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
-import { computeAdvancedPayrollLines } from "@/modules/hr/advanced/compute";
+import { computeAdvancedPayrollLines, joinedDatesFromMembers } from "@/modules/hr/advanced/compute";
 import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
 import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills, listWeeklyPayouts } from "@/modules/hr/advanced/repository";
 import { recentWeeks } from "@/modules/hr/advanced/weekly";
@@ -103,6 +103,7 @@ export default async function StaffPage({
     periodEnd: dateTo,
     today,
     timezone: ctx.storeTimezone,
+    joinedDates: joinedDatesFromMembers(members.filter((m) => m.role !== "super_admin"), ctx.storeTimezone),
   }, adv);
 
   return (

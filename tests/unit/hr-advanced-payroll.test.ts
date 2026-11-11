@@ -33,7 +33,7 @@ import {
   computeMonthlySalesBonuses,
   salesBonusEligible,
 } from "@/modules/hr/advanced/income";
-import { computeAdvancedPayrollLines, type AdvancedComputeContext } from "@/modules/hr/advanced/compute";
+import { computeAdvancedPayrollLines, joinedDatesFromMembers, payrollWindowFor, type AdvancedComputeContext } from "@/modules/hr/advanced/compute";
 import { mapAdvancedSettings } from "@/modules/hr/advanced/repository";
 import {
   computeWeeklyPayouts,
@@ -866,5 +866,141 @@ describe("จ่ายค่าแรงรายสัปดาห์", () => {
     expect(action).toContain('.eq("pay_frequency", "weekly_advance")');
     const store = readFileSync(join(process.cwd(), "src/modules/hr/advanced/store-payroll.ts"), "utf8");
     expect(store).toContain("loadWeeklyAdvances(storeId, periodStart, periodEnd)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// เริ่มงานกลางงวด: ไม่นับขาดก่อนวันเริ่มงาน · เงินเดือนคิดตามสัดส่วนวัน
+// ---------------------------------------------------------------------------
+describe("เงินเดือน: เริ่มงานกลางงวด", () => {
+  const NOV = { periodStart: "2026-11-01", periodEnd: "2026-11-30", today: "2026-12-05", timezone: TZ };
+  const make = (profiles: EmployeeProfile[], records: AttendanceRecord[], joined?: Map<string, string>) => ({
+    summaries: [...new Set(profiles.map((p) => p.userId))].map((u) => summaryFor(records, u)),
+    records,
+    profiles,
+    adjustments: [],
+    settings: hr(),
+    ...NOV,
+    joinedDates: joined,
+  });
+
+  it("เงินเดือน: เริ่ม 16 พ.ย. = 15/30 ของเงินเดือน · ไม่มีขาดก่อนวันเริ่ม", () => {
+    const records = ["2026-11-16", "2026-11-17"].map((d) => rec(d, 8));
+    const [l] = computeAdvancedPayrollLines(make([prof({ seniorityStartDate: "2026-11-16", workingDays: [0, 1, 2, 3, 4, 5, 6] })], records), null);
+    expect(l.basePay).toBe(7500);
+    expect(l.days[0].date).toBe("2026-11-16");
+    expect(l.days.every((d) => d.date >= "2026-11-16")).toBe(true);
+    // ขาด 18–30 พ.ย. (13 วัน) × 7500/15
+    expect(l.absentDays).toBe(13);
+    expect(l.absentPenalty).toBe(6500);
+  });
+
+  it("รายวัน: วันก่อนเริ่มงานไม่ถูกนับเป็นขาด (ใช้วันเข้าร่วมร้านเมื่อวันเริ่มงานยังไม่ตั้ง)", () => {
+    const records = [rec("2026-11-20", 8)];
+    const p = prof({ payType: "daily", dailyRate: 400, monthlySalary: 0, seniorityStartDate: undefined, workingDays: [0, 1, 2, 3, 4, 5, 6] });
+    const [l] = computeAdvancedPayrollLines(make([p], records, new Map([["u1", "2026-11-20"]])), null);
+    expect(l.basePay).toBe(400);
+    expect(l.absentDays).toBe(10); // 21–30 พ.ย.
+  });
+
+  it("มีลงเวลาก่อนวันเริ่มงาน = เริ่มคิดตั้งแต่วันลงเวลาแรก (ทำงานจริงต้องได้เงิน)", () => {
+    const records = [rec("2026-11-10", 8), rec("2026-11-16", 8)];
+    const p = prof({ payType: "daily", dailyRate: 400, monthlySalary: 0, seniorityStartDate: "2026-11-16", workingDays: [] });
+    const [l] = computeAdvancedPayrollLines(make([p], records), null);
+    expect(l.basePay).toBe(800);
+    expect(l.days[0].date).toBe("2026-11-10");
+  });
+
+  it("เริ่มหลังงวดจบ = ไม่มีบรรทัด · เริ่มก่อนงวด = เหมือนเดิมทุกบาท", () => {
+    expect(computeAdvancedPayrollLines(make([prof({ seniorityStartDate: "2026-12-02" })], []), null)).toEqual([]);
+    const records = [rec("2026-11-02", 8)];
+    const before = make([prof({ seniorityStartDate: "2025-01-01" })], records);
+    const legacy = computePayrollLines(before);
+    expect(computeAdvancedPayrollLines(before, null).map((l) => l.netPay)).toEqual(legacy.map((l) => l.netPay));
+  });
+
+  it("เริ่มและออกในงวดเดียวกัน = คิดเฉพาะช่วงนั้น", () => {
+    const p = prof({ seniorityStartDate: "2026-11-11", employmentEndDate: "2026-11-20", workingDays: [] });
+    const [l] = computeAdvancedPayrollLines(make([p], [rec("2026-11-12", 8)]), null);
+    expect(l.basePay).toBe(5000); // 10/30 × 15,000
+    expect(l.days.map((d) => d.date)[0]).toBe("2026-11-11");
+    expect(l.days.at(-1)!.date).toBe("2026-11-20");
+  });
+
+  it("ขึ้นเงินเดือนกลางงวด + เริ่มงานกลางงวด: ฐาน 30 วันตามช่วงที่ทำงานจริง", () => {
+    const records = [rec("2026-11-16", 8)];
+    const input = make([prof({ seniorityStartDate: "2026-11-16", workingDays: [] })], records);
+    const ctx: AdvancedComputeContext = {
+      settings: settingsWith({}),
+      employees: new Map([["u1", { skills: [], rates: [
+        { payType: "monthly", monthlySalary: 15000, dailyRate: 0, hourlyRate: 0, effectiveFrom: "2026-01-01" },
+        { payType: "monthly", monthlySalary: 18000, dailyRate: 0, hourlyRate: 0, effectiveFrom: "2026-11-21" },
+      ] }]]),
+      dailySales: new Map(),
+      maxSalesBeforePeriod: 0,
+    };
+    const [l] = computeAdvancedPayrollLines(input, ctx);
+    // 16–20 พ.ย. 5 วัน × 15,000/30 + 21–30 พ.ย. 10 วัน × 18,000/30 = 2,500 + 6,000
+    expect(l.basePay).toBe(8500);
+  });
+
+  it("เริ่มงานกลางงวด + ยังไม่จบงวด: ขาดนับถึงวันนี้เท่านั้น", () => {
+    const input = { ...make([prof({ seniorityStartDate: "2026-11-16", workingDays: [0, 1, 2, 3, 4, 5, 6] })], [rec("2026-11-16", 8)]), today: "2026-11-22" };
+    const [l] = computeAdvancedPayrollLines(input, null);
+    expect(l.absentDays).toBe(6); // 17–22 พ.ย.
+  });
+
+  it("ออกงาน 15 พ.ย.: ไม่มีวันหลังวันออกงาน แม้วันนี้เลยงวดไปแล้ว", () => {
+    const [l] = computeAdvancedPayrollLines(make([prof({ employmentEndDate: "2026-11-15", workingDays: [0, 1, 2, 3, 4, 5, 6] })], []), null);
+    expect(l.days.length).toBe(15);
+    expect(l.days.every((d) => d.date <= "2026-11-15")).toBe(true);
+  });
+
+  it("หลายเรท + ตัดงวดในเดือน 28 วัน: ฐาน 30 วัน (ตรงกับแบบเรทเดียว)", () => {
+    const FEB = { periodStart: "2027-02-01", periodEnd: "2027-02-28", today: "2027-03-05", timezone: TZ };
+    const input = {
+      summaries: [summaryFor([rec("2027-02-16", 8)], "u1")],
+      records: [rec("2027-02-16", 8)],
+      profiles: [prof({ seniorityStartDate: "2027-02-15", workingDays: [] })],
+      adjustments: [],
+      settings: hr(),
+      ...FEB,
+    };
+    const ctx: AdvancedComputeContext = {
+      settings: settingsWith({}),
+      employees: new Map([["u1", { skills: [], rates: [
+        { payType: "monthly", monthlySalary: 15000, dailyRate: 0, hourlyRate: 0, effectiveFrom: "2026-01-01" },
+        { payType: "monthly", monthlySalary: 18000, dailyRate: 0, hourlyRate: 0, effectiveFrom: "2027-02-21" },
+      ] }]]),
+      dailySales: new Map(),
+      maxSalesBeforePeriod: 0,
+    };
+    const [l] = computeAdvancedPayrollLines(input, ctx);
+    // 15–20 ก.พ. 6 วัน × 500 + 21–28 ก.พ. 8 วัน × 600
+    expect(l.basePay).toBe(7800);
+    // เรทเดียวในช่วงเดียวกัน (14 วัน) = 14/30 × 15,000
+    expect(computeAdvancedPayrollLines(input, null)[0].basePay).toBe(7000);
+  });
+
+  it("ช่วงคิดเงิน + วันเข้าร่วมร้าน: ใช้วันที่ช้ากว่า · แถวผูกสาขาก่อนระดับองค์กร · เวลาสาขา", () => {
+    expect(payrollWindowFor({ seniorityStartDate: "2024-01-01" }, "2026-11-09", undefined, "2026-11-01", "2026-11-30")).toEqual({ from: "2026-11-09", to: "2026-11-30" });
+    expect(payrollWindowFor({ seniorityStartDate: "2026-11-12" }, "2026-11-09", undefined, "2026-11-01", "2026-11-30").from).toBe("2026-11-12");
+    expect(payrollWindowFor({}, undefined, undefined, "2026-11-01", "2026-11-30")).toEqual({ from: "2026-11-01", to: "2026-11-30" });
+    const m = joinedDatesFromMembers(
+      [
+        { userId: "u1", joinedAt: "2026-01-01T00:00:00Z", storeId: null },
+        { userId: "u1", joinedAt: "2026-11-08T18:30:00Z", storeId: "s1" },
+        { userId: "u2", joinedAt: null, storeId: "s1" },
+      ],
+      TZ,
+    );
+    expect(m.get("u1")).toBe("2026-11-09");
+    expect(m.has("u2")).toBe(false);
+  });
+
+  it("ทุกจุดที่คำนวณเงินเดือนส่งวันเข้าร่วมร้าน (หน้าพนักงาน, สลิป, ปิดงวด/cron/รายสัปดาห์)", () => {
+    for (const f of ["src/app/(dashboard)/staff/page.tsx", "src/app/payslip/page.tsx", "src/modules/hr/advanced/store-payroll.ts"]) {
+      expect(readFileSync(join(process.cwd(), f), "utf8")).toContain("joinedDates: joinedDatesFromMembers(");
+    }
   });
 });

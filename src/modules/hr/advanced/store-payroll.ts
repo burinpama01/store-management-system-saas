@@ -11,7 +11,7 @@ import { computePayrollSummaries, mapRecord } from "@/modules/attendance/reposit
 import { mapAdjustment, mapHrSettings, mapProfile } from "../repository";
 import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type StoreHrSettings } from "../types";
 import { resolvePayslipIssuer } from "../employee-identity";
-import { computeAdvancedPayrollLines, type AdvancedComputeContext, type AdvancedPayrollLine } from "./compute";
+import { computeAdvancedPayrollLines, joinedDatesFromMembers, type AdvancedComputeContext, type AdvancedPayrollLine } from "./compute";
 import { effectiveSwitches, type AdvancedPayrollSettings } from "./settings";
 import {
   getAdvancedPayrollSettings,
@@ -95,7 +95,7 @@ export async function computeStorePayroll(input: {
     db.from("stores").select("name, timezone, currency_code, closing_time").eq("id", input.storeId).maybeSingle(),
     db
       .from("memberships")
-      .select("user_id, role, store_id")
+      .select("user_id, role, store_id, joined_at")
       .eq("organization_id", input.organizationId)
       .or(`store_id.eq.${input.storeId},store_id.is.null`)
       .not("joined_at", "is", null),
@@ -178,6 +178,12 @@ export async function computeStorePayroll(input: {
       periodEnd: input.periodEnd,
       today: input.today,
       timezone,
+      joinedDates: joinedDatesFromMembers(
+        ((membersRes.data ?? []) as { user_id: string; role: string; store_id: string | null; joined_at: string | null }[])
+          .filter((m) => m.role !== "super_admin")
+          .map((m) => ({ userId: m.user_id, joinedAt: m.joined_at, storeId: m.store_id })),
+        timezone,
+      ),
     },
     adv,
   );
