@@ -8,7 +8,7 @@ import type { EmployeeProfile } from "../types";
 import type { AdvancedPayrollLine } from "./compute";
 import { fullMonthsBetween, seniorityPayFor } from "./income";
 import { addDays, type PayPeriod } from "./pay-cycle";
-import { savePeriodSnapshot } from "./repository";
+import { replaceSalaryAdvanceDeductions, savePeriodSnapshot } from "./repository";
 import { computeStorePayroll } from "./store-payroll";
 import { formatBaht, listStoreManagerUserIds, pushPayrollNotification } from "./notify";
 
@@ -102,6 +102,43 @@ export async function closePayrollPeriodForStore(input: {
     context: { periodStart: input.period.start, periodEnd: input.period.end, revision: saved.revision, count: slips.length },
   });
   if (saved.error) return { ok: false, error: saved.error, revision: saved.revision, total, count: slips.length };
+
+  // ยอดหักเบิกเงินของงวดนี้ (แทนที่ของเดิม — ปิดซ้ำหลังเปิดงวดแก้ได้) · ส่วนที่หักไม่หมดยกไปงวดถัดไปเอง
+  if (!saved.alreadyClosed) {
+    const write = () =>
+      replaceSalaryAdvanceDeductions({
+        storeId: input.storeId,
+        organizationId: input.organizationId,
+        kind: "monthly",
+        cycleStart: input.period.start,
+        userIds: lines.map((l) => l.userId),
+        items: lines.flatMap((l) => l.salaryAdvanceItems.map((i) => ({ advanceId: i.id, userId: l.userId, amount: i.amount }))),
+      });
+    let ded = await write();
+    if (ded.error) ded = await write(); // ลองซ้ำหนึ่งครั้ง (เครือข่ายสะดุด)
+    if (ded.error) {
+      const message = `ปิดงวดแล้ว แต่บันทึกยอดหักเบิกเงินไม่สำเร็จ — กด "เปิดงวดแก้ไข" แล้วปิดงวดใหม่ ไม่งั้นงวดหน้าจะหักเบิกซ้ำ (${ded.error})`;
+      await logSystemEvent({
+        level: "error",
+        source: "hr.salary-advance",
+        action: "recordDeductions",
+        message,
+        organizationId: input.organizationId,
+        storeId: input.storeId,
+        context: { periodStart: input.period.start },
+      });
+      await pushPayrollNotification({
+        organizationId: input.organizationId,
+        storeId: input.storeId,
+        userIds: await listStoreManagerUserIds(input.organizationId, input.storeId),
+        kind: "advance_deduction_failed",
+        dedupeKey: `${input.period.start}:r${saved.revision}`,
+        title: "บันทึกยอดหักเบิกเงินไม่สำเร็จ",
+        message: `งวด ${input.period.start} ถึง ${input.period.end} — เปิดงวดแก้ไขแล้วปิดใหม่ที่หน้าพนักงาน`,
+      }).catch(() => undefined);
+      return { ok: false, error: message, revision: saved.revision, total, count: slips.length };
+    }
+  }
   // อีกงานปิดไปก่อนแล้ว (cron กับคนกดพร้อมกัน) — ไม่แจ้งเตือนซ้ำ
   if (saved.alreadyClosed) return { ok: true, error: null, revision: saved.revision, total, count: slips.length };
 

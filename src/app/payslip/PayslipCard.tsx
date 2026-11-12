@@ -165,7 +165,10 @@ export function PayslipCard({
   const sso = line.socialSecurity ?? 0;
   const wht = line.withholdingTax ?? 0;
   const weeklyAdvance = (line as { weeklyAdvance?: number }).weeklyAdvance ?? 0;
-  const totalDeduction = line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal + sso + wht + weeklyAdvance;
+  const salaryAdvance = (line as { salaryAdvanceDeduction?: number }).salaryAdvanceDeduction ?? 0;
+  const salaryAdvanceItems = (line as { salaryAdvanceItems?: { id: string; paidDate: string; amount: number }[] }).salaryAdvanceItems ?? [];
+  const totalDeduction =
+    line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal + sso + wht + weeklyAdvance + salaryAdvance;
   // ใช้ยอดที่ระบบคำนวณ (ตรงกับ netPay) · บรรทัดแบบเดิมที่ไม่มี grossEarnings ค่อยรวมเอง
   const totalEarning =
     (line as { grossEarnings?: number }).grossEarnings ??
@@ -303,6 +306,12 @@ export function PayslipCard({
             )}
             {wht > 0 && <Row label="ภาษีหัก ณ ที่จ่าย" value={`−${money(wht, currency)}`} />}
             {weeklyAdvance > 0 && <Row label="หักจ่ายล่วงหน้ารายสัปดาห์" value={`−${money(weeklyAdvance, currency)}`} />}
+            {salaryAdvance > 0 && (
+              <Row
+                label={`หักเบิกล่วงหน้า (${salaryAdvanceItems.map((i) => `${i.paidDate} ${money(i.amount, currency)}`).join(", ")})`}
+                value={`−${money(salaryAdvance, currency)}`}
+              />
+            )}
             {line.latePenalty > 0 && <Row label={`หักมาสาย (${lateDays} วัน)`} value={`−${money(line.latePenalty, currency)}`} />}
             {line.absentPenalty > 0 && (
               <Row

@@ -106,6 +106,22 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
     if (switches.monthlySalesBonus && monthlyBonusTiers.length === 0) return { error: "ใส่ขั้นโบนัสรายเดือนอย่างน้อย 1 ขั้น เช่น 900000=1000" };
     const salesBonusMode = formData.get("salesBonusMode") === "split" ? "split" : "per_person";
     const monthlyBonusMode = formData.get("monthlyBonusMode") === "split" ? "split" : "per_person";
+    // เบิกเงิน: ฟิลด์ไม่ถูกส่ง (สวิตช์ปิด/ซ่อน) = คงค่าเดิม
+    let advanceMaxPercent = access.stored.advanceMaxPercent;
+    let advanceMaxAmount = access.stored.advanceMaxAmount;
+    let advanceMaxRequests = access.stored.advanceMaxRequests;
+    if (formData.has("advanceMaxPercent")) {
+      const pct = num(formData.get("advanceMaxPercent"), 1, 100);
+      if (pct === null) return { error: "% ที่เบิกได้ต้องอยู่ระหว่าง 1–100" };
+      advanceMaxPercent = pct;
+      const amountRaw = String(formData.get("advanceMaxAmount") ?? "").trim();
+      advanceMaxAmount = amountRaw === "" ? null : num(amountRaw, 1, 10_000_000);
+      if (amountRaw !== "" && advanceMaxAmount === null) return { error: "ยอดเบิกสูงสุดต่อรอบไม่ถูกต้อง (ว่าง = ไม่จำกัด)" };
+      const countRaw = String(formData.get("advanceMaxRequests") ?? "").trim();
+      const count = countRaw === "" ? null : num(countRaw, 1, 31);
+      if (countRaw !== "" && (count === null || !Number.isInteger(count))) return { error: "จำนวนครั้งต่อรอบต้องเป็น 1–31 (ว่าง = ไม่จำกัด)" };
+      advanceMaxRequests = count;
+    }
     const weeklyStartRaw = formData.get("weeklyStartDay");
     const weeklyStartDay = weeklyStartRaw === null ? access.stored.weeklyStartDay : num(weeklyStartRaw, 0, 6);
     if (weeklyStartDay === null || !Number.isInteger(weeklyStartDay)) return { error: "วันเริ่มสัปดาห์ไม่ถูกต้อง" };
@@ -152,6 +168,9 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
       whtMode: formData.get("whtMode") === "percent" ? "percent" : "manual",
       weeklyStartDay,
       weeklyRateBasis,
+      advanceMaxPercent,
+      advanceMaxAmount,
+      advanceMaxRequests,
       // เปิดจ่ายรายสัปดาห์ครั้งใหม่ = cron บันทึกตั้งแต่สัปดาห์ที่จบวันนี้เป็นต้นไป
       weeklyPayEnabledAt: switches.weeklyPay
         ? access.stored.switches.weeklyPay && access.stored.weeklyPayEnabledAt
@@ -188,6 +207,9 @@ export async function saveAdvancedPayrollSettingsAction(formData: FormData): Pro
         monthlyBonusMode,
         weeklyStartDay,
         weeklyRateBasis,
+        advanceMaxPercent,
+        advanceMaxAmount,
+        advanceMaxRequests,
         salesBonusSelectedCount: salesBonusUserIds?.length ?? null,
       },
     });

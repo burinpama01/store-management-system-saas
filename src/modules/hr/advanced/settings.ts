@@ -15,6 +15,7 @@ export const PAYROLL_FEATURE_KEYS = [
   "myPayslip",
   "payrollNotifications",
   "weeklyPay",
+  "salaryAdvance",
 ] as const;
 
 export type PayrollFeatureKey = (typeof PAYROLL_FEATURE_KEYS)[number];
@@ -32,6 +33,7 @@ export const PAYROLL_FEATURE_LABEL: Record<PayrollFeatureKey, string> = {
   myPayslip: "สลิปของฉัน (พนักงานดูเอง)",
   payrollNotifications: "แจ้งเตือนเงินเดือน",
   weeklyPay: "จ่ายค่าแรงรายสัปดาห์ (ตามวันที่มา)",
+  salaryAdvance: "พนักงานเบิกเงินล่วงหน้า",
 };
 
 /** ตัวลูก → ตัวแม่ที่ต้องเปิดก่อน */
@@ -103,6 +105,12 @@ export interface AdvancedPayrollSettings {
   weeklyStartDay: number;
   /** จ่ายรายสัปดาห์ (พนักงานเงินเดือน): profile = เรทรายวัน/เงินเดือน÷30 · working_days = เงินเดือน÷วันทำงานในงวด */
   weeklyRateBasis: "profile" | "working_days";
+  /** เบิกเงิน: % ของค่าแรงที่ทำได้แล้วที่เบิกได้ (1–100) */
+  advanceMaxPercent: number;
+  /** เบิกเงิน: ยอดสูงสุดต่อรอบ (null = ไม่จำกัด) */
+  advanceMaxAmount: number | null;
+  /** เบิกเงิน: จำนวนครั้งต่อรอบ (null = ไม่จำกัด) */
+  advanceMaxRequests: number | null;
   /** วันที่เปิดจ่ายรายสัปดาห์ — cron บันทึกเฉพาะสัปดาห์ที่จบตั้งแต่วันนี้ */
   weeklyPayEnabledAt?: string | null;
   /** วันที่เปิดรอบเงินเดือน — ปิดอัตโนมัติเฉพาะงวดที่จบตั้งแต่วันนี้ */
@@ -147,6 +155,9 @@ export const DEFAULT_ADVANCED_PAYROLL_SETTINGS: AdvancedPayrollSettings = {
   whtMode: "manual",
   weeklyStartDay: 1,
   weeklyRateBasis: "profile",
+  advanceMaxPercent: 100,
+  advanceMaxAmount: null,
+  advanceMaxRequests: null,
 };
 
 function num(v: unknown): number | null {

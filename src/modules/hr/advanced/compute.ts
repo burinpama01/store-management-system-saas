@@ -33,6 +33,7 @@ import {
   type SalesBonusDayShare,
 } from "./income";
 import { addDays, daysInclusive } from "./pay-cycle";
+import { allocateAdvanceDeduction, type AdvanceDue } from "./salary-advance";
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -53,6 +54,8 @@ export interface AdvancedComputeContext {
   maxSalesBeforePeriod: number;
   /** ยอดจ่ายล่วงหน้ารายสัปดาห์ที่บันทึกแล้ว (สัปดาห์ที่วันจบอยู่ในงวด) — หักในงวดนี้ แม้ปิดสวิตช์ไปแล้ว (เงินจ่ายไปแล้วจริง) */
   weeklyAdvances?: Map<string, number>;
+  /** เบิกเงินที่จ่ายแล้วแต่ยังหักไม่หมด (ไม่นับที่หักในงวดนี้เอง) — หักแม้ปิดสวิตช์ภายหลัง (เงินจ่ายไปแล้วจริง) */
+  salaryAdvances?: Map<string, AdvanceDue[]>;
 }
 
 export interface AdvancedPayrollLine extends PayrollLine {
@@ -82,6 +85,11 @@ export interface AdvancedPayrollLine extends PayrollLine {
   weeklyAdvance: number;
   /** จ่ายรายสัปดาห์แบบแยกรอบ — ไม่อยู่ในงวด/สลิปรายเดือน (ปิดงวดข้ามคนนี้) */
   paidWeekly: boolean;
+  /** หักเบิกล่วงหน้า (รวมใน totalDeductions แล้ว) */
+  salaryAdvanceDeduction: number;
+  salaryAdvanceItems: { id: string; paidDate: string; amount: number }[];
+  /** เบิกที่หักไม่หมดในงวดนี้ (ยอดสุทธิไม่พอ) — ยกไปงวดถัดไปเมื่อปิดงวด */
+  salaryAdvanceShortfall: number;
 }
 
 /** สรุปชั่วโมง/วันของคนที่ลาออกกลางงวด — นับเฉพาะ record ถึงวันออกงาน */
@@ -144,6 +152,9 @@ function emptyExtras(line: PayrollLine): AdvancedPayrollLine {
     permanentAtPeriodStart: false,
     weeklyAdvance: 0,
     paidWeekly: false,
+    salaryAdvanceDeduction: 0,
+    salaryAdvanceItems: [],
+    salaryAdvanceShortfall: 0,
   };
 }
 
@@ -435,6 +446,18 @@ export function computeAdvancedPayrollLines(
         line.weeklyAdvance,
     );
     line.netPay = round2(line.grossEarnings - line.totalDeductions);
+
+    // 6) หักเบิกล่วงหน้า — ไม่เกินยอดสุทธิ (เบิกเก่าก่อน) · แบบแยกรอบรายสัปดาห์หักในยอดสัปดาห์แทน
+    if (!line.paidWeekly) {
+      const alloc = allocateAdvanceDeduction(adv?.salaryAdvances?.get(base.userId) ?? [], periodEnd, line.netPay);
+      if (alloc.total > 0 || alloc.shortfall > 0) {
+        line.salaryAdvanceDeduction = alloc.total;
+        line.salaryAdvanceItems = alloc.items;
+        line.salaryAdvanceShortfall = alloc.shortfall;
+        line.totalDeductions = round2(line.totalDeductions + alloc.total);
+        line.netPay = round2(line.netPay - alloc.total);
+      }
+    }
     return line;
   });
 }

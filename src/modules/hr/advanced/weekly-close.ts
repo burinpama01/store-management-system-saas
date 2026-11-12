@@ -5,7 +5,7 @@
  * แจ้งเตือนส่งเมื่อเปิดสวิตช์จ่ายรายสัปดาห์ (ผู้ใช้สั่งให้แจ้งเจ้าของ ไม่ผูกกับสวิตช์แจ้งเตือนเงินเดือน)
  */
 import { logSystemEvent } from "@/modules/system/event-log";
-import { saveWeeklyPayouts } from "./repository";
+import { loadSalaryAdvanceDues, replaceSalaryAdvanceDeductions, saveWeeklyPayouts } from "./repository";
 import { computeStorePayroll } from "./store-payroll";
 import { formatBaht, listStoreManagerUserIds, pushPayrollNotification } from "./notify";
 import { computeWeeklyPayouts, weeklyOwnerMessage, type PayWeek, type WeeklyPayout } from "./weekly";
@@ -54,7 +54,14 @@ export async function recordWeeklyPayoutsForStore(input: {
   const settings = result.access.settings;
   if (!settings.switches.weeklyPay) return fail("ยังไม่ได้เปิดสวิตช์จ่ายค่าแรงรายสัปดาห์ (หรือแพ็กไม่มีสิทธิ์)");
 
+  let salaryAdvances: Awaited<ReturnType<typeof loadSalaryAdvanceDues>>;
+  try {
+    salaryAdvances = await loadSalaryAdvanceDues(storeId, "weekly", week.start);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : String(e));
+  }
   const payouts = computeWeeklyPayouts({
+    salaryAdvances,
     week,
     lines: result.lines,
     profiles: result.profiles,
@@ -79,6 +86,49 @@ export async function recordWeeklyPayoutsForStore(input: {
 
   const insertedIds = new Set(saved.inserted.map((r) => r.userId));
   const inserted = payouts.filter((p) => insertedIds.has(p.userId));
+  // หักเบิกเงินเฉพาะคนที่เพิ่งบันทึก (คนที่บันทึกไปแล้วยอดเดิมไม่เปลี่ยน)
+  if (inserted.some((p) => p.salaryAdvanceItems.length > 0)) {
+    const write = () =>
+      replaceSalaryAdvanceDeductions({
+        storeId,
+        organizationId,
+        kind: "weekly",
+        cycleStart: week.start,
+        userIds: inserted.map((p) => p.userId),
+        items: inserted.flatMap((p) => p.salaryAdvanceItems.map((i) => ({ advanceId: i.id, userId: p.userId, amount: i.amount }))),
+      });
+    let ded = await write();
+    if (ded.error) ded = await write();
+    if (ded.error) {
+      // ยอดหักต่อคนเก็บไว้ใน data ของยอดรายสัปดาห์แล้ว (salaryAdvanceItems) — ใช้ซ่อมได้
+      await logSystemEvent({
+        level: "error",
+        source: "hr.salary-advance",
+        action: "recordWeeklyDeductions",
+        message: `บันทึกยอดหักเบิกเงินรายสัปดาห์ไม่สำเร็จ (สัปดาห์หน้าอาจหักซ้ำ): ${ded.error}`,
+        organizationId,
+        storeId,
+        context: { weekStart: week.start, items: inserted.flatMap((p) => p.salaryAdvanceItems) },
+      });
+      await pushPayrollNotification({
+        organizationId,
+        storeId,
+        userIds: await listStoreManagerUserIds(organizationId, storeId),
+        kind: "advance_deduction_failed",
+        dedupeKey: `weekly:${week.start}`,
+        title: "บันทึกยอดหักเบิกเงินไม่สำเร็จ",
+        message: `สัปดาห์ ${week.start} ถึง ${week.end} — ตรวจยอดเบิกของพนักงานรายสัปดาห์ก่อนจ่ายสัปดาห์หน้า`,
+      }).catch(() => undefined);
+      return {
+        ok: false,
+        error: "บันทึกค่าแรงรายสัปดาห์แล้ว แต่บันทึกยอดหักเบิกเงินไม่สำเร็จ — ตรวจยอดเบิกของพนักงานรายสัปดาห์ก่อนจ่ายสัปดาห์หน้า",
+        inserted,
+        eligible: payouts.length,
+        total: Math.round(inserted.reduce((s, p) => s + p.amount, 0) * 100) / 100,
+        notified: 0,
+      };
+    }
+  }
   const total = Math.round(inserted.reduce((s, p) => s + p.amount, 0) * 100) / 100;
 
   await logSystemEvent({

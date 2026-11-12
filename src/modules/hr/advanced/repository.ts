@@ -50,6 +50,7 @@ export function mapAdvancedSettings(row: Record<string, unknown> | null | undefi
       myPayslip: row.feat_my_payslip === true,
       payrollNotifications: row.feat_payroll_notifications === true,
       weeklyPay: row.feat_weekly_pay === true,
+      salaryAdvance: row.feat_salary_advance === true,
     }),
     payCycleStartDay: n(row.pay_cycle_start_day, d.payCycleStartDay),
     payDay: row.pay_day === 0 ? 0 : n(row.pay_day, d.payDay),
@@ -83,6 +84,18 @@ export function mapAdvancedSettings(row: Record<string, unknown> | null | undefi
         : d.weeklyStartDay,
     weeklyRateBasis: row.weekly_rate_basis === "working_days" ? "working_days" : "profile",
     weeklyPayEnabledAt: (row.weekly_pay_enabled_at as string | null) ?? null,
+    advanceMaxPercent: (() => {
+      const v = Number(row.advance_max_percent);
+      return Number.isFinite(v) && v > 0 && v <= 100 ? v : d.advanceMaxPercent;
+    })(),
+    advanceMaxAmount:
+      row.advance_max_amount === null || row.advance_max_amount === undefined || !(Number(row.advance_max_amount) > 0)
+        ? null
+        : Number(row.advance_max_amount),
+    advanceMaxRequests:
+      row.advance_max_requests === null || row.advance_max_requests === undefined || !(Number(row.advance_max_requests) >= 1)
+        ? null
+        : Math.round(Number(row.advance_max_requests)),
     payCycleEnabledAt: (row.pay_cycle_enabled_at as string | null) ?? null,
   };
 }
@@ -118,6 +131,10 @@ export async function saveAdvancedPayrollSettings(
       weekly_start_day: s.weeklyStartDay,
       weekly_rate_basis: s.weeklyRateBasis,
       weekly_pay_enabled_at: sw.weeklyPay ? s.weeklyPayEnabledAt ?? null : null,
+      feat_salary_advance: sw.salaryAdvance,
+      advance_max_percent: s.advanceMaxPercent,
+      advance_max_amount: s.advanceMaxAmount,
+      advance_max_requests: s.advanceMaxRequests,
       pay_cycle_start_day: s.payCycleStartDay,
       pay_day: s.payDay,
       skill_tiers: s.skillTiers,
@@ -682,4 +699,262 @@ export async function listWeeklyPayouts(storeId: string, fromWeekStart: string):
     .limit(500);
   if (error) throw new Error(error.message);
   return ((data ?? []) as Record<string, unknown>[]).map(mapWeeklyPayout);
+}
+
+// ---------------------------------------------------------------------------
+// เบิกเงินล่วงหน้า (B1–B8) — เขียนผ่าน service client หลังตรวจสิทธิ์/เพดานใน server แล้วเท่านั้น
+// ---------------------------------------------------------------------------
+export interface SalaryAdvanceRow {
+  id: string;
+  userId: string;
+  status: "pending" | "paid" | "rejected" | "cancelled";
+  requestedAmount: number;
+  approvedAmount: number | null;
+  reason: string | null;
+  cycleStart: string;
+  requestedBy: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  payMethod: "cash" | "transfer" | null;
+  paidDate: string | null;
+  createdAt: string;
+  /** ยอดที่หักไปแล้วทุกงวด/สัปดาห์ */
+  deducted: number;
+}
+
+function isMissingTable(error: { code?: string } | null | undefined): boolean {
+  return error?.code === "42P01" || error?.code === "PGRST205";
+}
+
+function mapAdvance(r: Record<string, unknown>, deducted = 0): SalaryAdvanceRow {
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  return {
+    id: String(r.id),
+    userId: String(r.user_id),
+    status: r.status as SalaryAdvanceRow["status"],
+    requestedAmount: Number(r.requested_amount),
+    approvedAmount: num(r.approved_amount),
+    reason: (r.reason as string | null) ?? null,
+    cycleStart: String(r.cycle_start),
+    requestedBy: String(r.requested_by),
+    decidedBy: (r.decided_by as string | null) ?? null,
+    decidedAt: (r.decided_at as string | null) ?? null,
+    decisionNote: (r.decision_note as string | null) ?? null,
+    payMethod: (r.pay_method as SalaryAdvanceRow["payMethod"]) ?? null,
+    paidDate: (r.paid_date as string | null) ?? null,
+    createdAt: String(r.created_at ?? ""),
+    deducted,
+  };
+}
+
+/** รายการเบิกของสาขา (ล่าสุดก่อน) — userId = เฉพาะคนนั้น */
+export async function listSalaryAdvances(storeId: string, opts: { userId?: string; limit?: number } = {}): Promise<SalaryAdvanceRow[]> {
+  const db = await service();
+  let q = db.from("salary_advances").select("*").eq("store_id", storeId).order("created_at", { ascending: false }).limit(opts.limit ?? 200);
+  if (opts.userId) q = q.eq("user_id", opts.userId);
+  const { data, error } = await q;
+  if (error) {
+    if (isMissingTable(error)) return [];
+    throw new Error(error.message);
+  }
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const ids = rows.filter((r) => r.status === "paid").map((r) => String(r.id));
+  const deducted = new Map<string, number>();
+  if (ids.length) {
+    const { data: ded, error: dedErr } = await db.from("salary_advance_deductions").select("advance_id, amount").in("advance_id", ids);
+    if (dedErr) throw new Error(dedErr.message);
+    for (const d of (ded ?? []) as { advance_id: string; amount: number | string }[]) {
+      deducted.set(d.advance_id, Math.round(((deducted.get(d.advance_id) ?? 0) + Number(d.amount)) * 100) / 100);
+    }
+  }
+  return rows.map((r) => mapAdvance(r, deducted.get(String(r.id)) ?? 0));
+}
+
+export async function getSalaryAdvance(storeId: string, id: string): Promise<SalaryAdvanceRow | null> {
+  const db = await service();
+  const { data, error } = await db.from("salary_advances").select("*").eq("store_id", storeId).eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapAdvance(data as Record<string, unknown>) : null;
+}
+
+/**
+ * เบิกที่จ่ายแล้วแต่ยังหักไม่หมด ต่อ userId — ไม่นับยอดที่หักในรอบ (kind, cycleStart) นี้เอง
+ * (คิดงวดซ้ำ/เปิดงวดแก้ ต้องได้ผลเท่าเดิม) · ตารางยังไม่มี = ว่าง
+ */
+export async function loadSalaryAdvanceDues(
+  storeId: string,
+  kind: "monthly" | "weekly",
+  cycleStart: string,
+): Promise<Map<string, { id: string; paidDate: string; outstanding: number }[]>> {
+  const db = await service();
+  const { data, error } = await db
+    .from("salary_advances")
+    .select("id, user_id, approved_amount, paid_date")
+    .eq("store_id", storeId)
+    .eq("status", "paid");
+  if (error) {
+    if (isMissingTable(error)) return new Map();
+    throw new Error(`อ่านยอดเบิกเงินไม่สำเร็จ: ${error.message}`);
+  }
+  const rows = (data ?? []) as { id: string; user_id: string; approved_amount: number | string; paid_date: string }[];
+  if (rows.length === 0) return new Map();
+  const { data: ded, error: dedErr } = await db
+    .from("salary_advance_deductions")
+    .select("advance_id, cycle_kind, cycle_start, amount")
+    .in("advance_id", rows.map((r) => r.id));
+  if (dedErr) throw new Error(`อ่านยอดหักเบิกไม่สำเร็จ: ${dedErr.message}`);
+  const deducted = new Map<string, number>();
+  for (const d of (ded ?? []) as { advance_id: string; cycle_kind: string; cycle_start: string; amount: number | string }[]) {
+    if (d.cycle_kind === kind && d.cycle_start === cycleStart) continue;
+    deducted.set(d.advance_id, (deducted.get(d.advance_id) ?? 0) + Number(d.amount));
+  }
+  const out = new Map<string, { id: string; paidDate: string; outstanding: number }[]>();
+  for (const r of rows) {
+    const outstanding = Math.round((Number(r.approved_amount) - (deducted.get(r.id) ?? 0)) * 100) / 100;
+    if (outstanding <= 0) continue;
+    out.set(r.user_id, [...(out.get(r.user_id) ?? []), { id: r.id, paidDate: r.paid_date, outstanding }]);
+  }
+  return out;
+}
+
+/** บันทึกยอดหักของรอบนี้ (แทนที่ของเดิมในรอบเดียวกันของคนเหล่านั้น — ปิดงวดซ้ำได้) */
+export async function replaceSalaryAdvanceDeductions(input: {
+  storeId: string;
+  organizationId: string;
+  kind: "monthly" | "weekly";
+  cycleStart: string;
+  userIds: string[];
+  items: { advanceId: string; userId: string; amount: number }[];
+}): Promise<{ error: string | null }> {
+  if (input.userIds.length === 0) return { error: null };
+  const db = await service();
+  const del = await db
+    .from("salary_advance_deductions")
+    .delete()
+    .eq("store_id", input.storeId)
+    .eq("cycle_kind", input.kind)
+    .eq("cycle_start", input.cycleStart)
+    .in("user_id", input.userIds);
+  if (del.error) {
+    if (isMissingTable(del.error)) return { error: null };
+    return { error: del.error.message };
+  }
+  const rows = input.items
+    .filter((i) => i.amount > 0)
+    .map((i) => ({
+      advance_id: i.advanceId,
+      organization_id: input.organizationId,
+      store_id: input.storeId,
+      user_id: i.userId,
+      cycle_kind: input.kind,
+      cycle_start: input.cycleStart,
+      amount: i.amount,
+    }));
+  if (rows.length === 0) return { error: null };
+  const { error } = await db.from("salary_advance_deductions").insert(rows);
+  return { error: error?.message ?? null };
+}
+
+export async function insertSalaryAdvance(row: Record<string, unknown>): Promise<{ data: SalaryAdvanceRow | null; error: string | null }> {
+  const db = await service();
+  const { data, error } = await db.from("salary_advances").insert(row).select("*").single();
+  if (error) return { data: null, error: error.message };
+  return { data: mapAdvance(data as Record<string, unknown>), error: null };
+}
+
+/** เปลี่ยนสถานะแบบมีเงื่อนไข (กันกดซ้ำ/สองคนอนุมัติพร้อมกัน) — คืน null ถ้าสถานะไม่ใช่ fromStatus แล้ว */
+export async function updateSalaryAdvanceFrom(
+  storeId: string,
+  id: string,
+  fromStatus: SalaryAdvanceRow["status"],
+  patch: Record<string, unknown>,
+): Promise<{ data: SalaryAdvanceRow | null; error: string | null }> {
+  const db = await service();
+  const { data, error } = await db
+    .from("salary_advances")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("store_id", storeId)
+    .eq("id", id)
+    .eq("status", fromStatus)
+    .select("*")
+    .maybeSingle();
+  if (error) return { data: null, error: error.message };
+  return { data: data ? mapAdvance(data as Record<string, unknown>) : null, error: null };
+}
+
+/** หมวดรายจ่าย "เบิกเงินพนักงาน" ของสาขา (สร้างให้ถ้ายังไม่มี) */
+export async function ensureAdvanceExpenseCategory(storeId: string, organizationId: string): Promise<{ id: string; name: string } | null> {
+  const db = await service();
+  const name = "เบิกเงินพนักงาน";
+  const { data: found } = await db
+    .from("accounting_categories")
+    .select("id, name")
+    .eq("store_id", storeId)
+    .eq("type", "expense")
+    .eq("name", name)
+    .limit(1)
+    .maybeSingle();
+  if (found) return found as { id: string; name: string };
+  const { data, error } = await db
+    .from("accounting_categories")
+    .insert({ store_id: storeId, organization_id: organizationId, name, type: "expense", is_default: false, sort_order: 90 })
+    .select("id, name")
+    .single();
+  if (error || !data) return null;
+  return data as { id: string; name: string };
+}
+
+/** บันทึกรายจ่ายเบิกเงิน + (เงินสด) ลงบัญชีเงินสด ให้ลิ้นชักลดตาม */
+export async function recordAdvanceExpense(input: {
+  storeId: string;
+  organizationId: string;
+  amount: number;
+  payMethod: "cash" | "transfer";
+  date: string;
+  note: string;
+  actorUserId: string;
+}): Promise<{ transactionId: string | null; error: string | null }> {
+  const category = await ensureAdvanceExpenseCategory(input.storeId, input.organizationId);
+  if (!category) return { transactionId: null, error: "สร้างหมวดรายจ่ายเบิกเงินพนักงานไม่สำเร็จ" };
+  const db = await service();
+  const { data: tx, error } = await db
+    .from("transactions")
+    .insert({
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      type: "expense",
+      category_id: category.id,
+      category_name: category.name,
+      amount: input.amount,
+      payment_method: input.payMethod,
+      note: input.note.slice(0, 200),
+      date: input.date,
+      created_by_user_id: input.actorUserId,
+    })
+    .select("id")
+    .single();
+  if (error || !tx) return { transactionId: null, error: error?.message ?? "บันทึกรายจ่ายไม่สำเร็จ" };
+  if (input.payMethod === "cash") {
+    const { data: last } = await db
+      .from("cash_ledger_entries")
+      .select("balance_after")
+      .eq("store_id", input.storeId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const prev = Number(last?.balance_after ?? 0);
+    const { error: ledErr } = await db.from("cash_ledger_entries").insert({
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      type: "expense",
+      amount: input.amount,
+      balance_after: Math.round((prev - input.amount) * 100) / 100,
+      transaction_id: tx.id,
+      note: input.note.slice(0, 200),
+      created_by_user_id: input.actorUserId,
+    });
+    if (ledErr) return { transactionId: tx.id, error: `บันทึกรายจ่ายแล้ว แต่ลงบัญชีเงินสดไม่สำเร็จ: ${ledErr.message}` };
+  }
+  return { transactionId: tx.id, error: null };
 }
