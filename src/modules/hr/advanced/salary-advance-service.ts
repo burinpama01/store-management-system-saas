@@ -3,9 +3,10 @@
  * รอบ = งวดเงินเดือนปัจจุบัน · พนักงานรายสัปดาห์แบบแยกรอบ = สัปดาห์ปัจจุบัน
  */
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { logSystemEvent } from "@/modules/system/event-log";
 import { addDays, businessDate, periodContaining } from "./pay-cycle";
-import { listSalaryAdvances, listWeeklyPayouts, type SalaryAdvanceRow } from "./repository";
-import { computeAdvanceCap, type AdvanceCap } from "./salary-advance";
+import { getCashOnHand, listSalaryAdvances, listWeeklyPayouts, type SalaryAdvanceRow } from "./repository";
+import { cashAdvanceMax, computeAdvanceCap, type AdvanceCap } from "./salary-advance";
 import { computeStorePayroll, getAdvancedPayrollAccess } from "./store-payroll";
 import { weekContaining, workedDayPay } from "./weekly";
 
@@ -20,6 +21,12 @@ export interface AdvanceAvailability {
   earned: number;
   weeklyPaidInCycle: number;
   cap: AdvanceCap;
+  /** เงินสดในลิ้นชักตอนนี้ (ใช้ตรวจเบิกเงินสด — ไม่แสดงให้พนักงานเห็นยอดเต็ม) */
+  cashOnHand: number;
+  /** เบิกเงินสดได้สูงสุด = min(เพดาน, เงินสดในลิ้นชักปัดลงหลักร้อย) */
+  cashMax: number;
+  /** มีรอบเงินสดเปิดอยู่ (ไม่มี = ยอดเงินสดมาจากตอนปิดรอบล่าสุด อาจไม่เป็นปัจจุบัน) */
+  cashSessionOpen: boolean;
   advances: SalaryAdvanceRow[];
 }
 
@@ -87,7 +94,21 @@ export async function getAdvanceAvailability(input: {
     );
   }
 
-  const advances = await listSalaryAdvances(input.storeId, { userId: input.userId, limit: 100 });
+  const [advances, cash] = await Promise.all([
+    listSalaryAdvances(input.storeId, { userId: input.userId, limit: 100 }),
+    // อ่านยอดเงินสดไม่ได้ = ถือว่า 0 (เบิกเงินสดไม่ได้ แต่ยังเลือกโอนได้ — หน้าไม่ล่ม) + log
+    getCashOnHand(input.storeId).catch(async (e) => {
+      await logSystemEvent({
+        level: "warn",
+        source: "hr.salary-advance",
+        action: "getCashOnHand",
+        message: `อ่านยอดเงินสดในลิ้นชักไม่สำเร็จ — ปิดการเบิกเงินสดชั่วคราว: ${e instanceof Error ? e.message : String(e)}`,
+        organizationId: input.organizationId,
+        storeId: input.storeId,
+      }).catch(() => undefined);
+      return { amount: 0, sessionOpen: false };
+    }),
+  ]);
   const counted = advances.filter((a) => a.id !== input.excludeAdvanceId);
   const outstanding = round2(counted.reduce((s, a) => s + advanceOutstanding(a), 0));
   const inCycle = counted.filter((a) => a.cycleStart === cycle.start && (a.status === "pending" || a.status === "paid"));
@@ -114,6 +135,9 @@ export async function getAdvanceAvailability(input: {
     earned,
     weeklyPaidInCycle,
     cap,
+    cashOnHand: cash.amount,
+    cashMax: cashAdvanceMax(cap.available, cash.amount),
+    cashSessionOpen: cash.sessionOpen,
     advances,
   };
 }

@@ -29,7 +29,15 @@ const baht = (n: number) => `฿${n.toLocaleString("th-TH", { minimumFractionDig
 const INPUT = "mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3";
 
 /** คำขอเบิกเงิน (B3): อนุมัติ+จ่าย / ไม่อนุมัติ / บันทึกเบิกแทน / ประวัติล่าสุด */
-export function SalaryAdvancesPanel({ advances, employees }: { advances: AdvanceView[]; employees: { userId: string; name: string }[] }) {
+export function SalaryAdvancesPanel({
+  advances,
+  employees,
+  cashOnHand,
+}: {
+  advances: AdvanceView[];
+  employees: { userId: string; name: string }[];
+  cashOnHand: number | null;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +71,9 @@ export function SalaryAdvancesPanel({ advances, employees }: { advances: Advance
           {showRecord ? "ปิด" : "+ บันทึกเบิกแทนพนักงาน"}
         </button>
       </div>
+      {cashOnHand !== null && (
+        <p className="mt-1 text-xs text-gray-500">เงินสดในลิ้นชักตอนนี้ {baht(cashOnHand)} · จ่ายเงินสดได้ไม่เกินยอดนี้ (ปัดลงหลักร้อย)</p>
+      )}
       {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
       {notice && <p className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700" aria-live="polite">{notice}</p>}
 
@@ -111,6 +122,7 @@ export function SalaryAdvancesPanel({ advances, employees }: { advances: Advance
               </p>
               <p className="text-xs text-gray-500">
                 {a.createdAt.slice(0, 16).replace("T", " ")}
+                {a.payMethod ? ` · ขอรับเป็น${a.payMethod === "cash" ? "เงินสด" : "เงินโอน"}` : ""}
                 {a.reason ? ` · ${a.reason}` : ""}
               </p>
               <form
@@ -124,10 +136,11 @@ export function SalaryAdvancesPanel({ advances, employees }: { advances: Advance
                 </label>
                 <label className="text-xs font-medium text-gray-600">
                   จ่ายทาง
-                  <select name="payMethod" defaultValue="cash" className={INPUT} style={{ fontSize: 16 }}>
+                  <select name="payMethod" defaultValue={a.payMethod ?? "cash"} className={INPUT} style={{ fontSize: 16 }}>
                     <option value="cash">เงินสดจากลิ้นชัก</option>
                     <option value="transfer">โอน</option>
                   </select>
+                  <span className="mt-1 block text-[11px] font-normal text-gray-400">เงินสดอนุมัติได้ไม่เกินเงินสดในลิ้นชัก</span>
                 </label>
                 <label className="text-xs font-medium text-gray-600 sm:col-span-3">
                   หมายเหตุถึงพนักงาน (ไม่บังคับ · ใช้เป็นเหตุผลเมื่อไม่อนุมัติ)

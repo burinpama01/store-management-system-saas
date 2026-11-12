@@ -958,3 +958,41 @@ export async function recordAdvanceExpense(input: {
   }
   return { transactionId: tx.id, error: null };
 }
+
+/**
+ * เงินสดในลิ้นชักตอนนี้ — สูตรเดียวกับ getCurrentCashDrawer (หน้าบัญชี) แต่ใช้ service client
+ * เพราะพนักงานทั่วไปอาจอ่าน cash ledger ไม่ได้ (RLS)
+ *   มีรอบเปิด = เงินเปิดร้าน + ส่วนต่าง balance ใน ledger ตั้งแต่เปิดรอบ · ไม่มีรอบเปิด = ยอดนับจริงตอนปิดรอบล่าสุด
+ */
+export async function getCashOnHand(storeId: string): Promise<{ amount: number; sessionOpen: boolean }> {
+  const db = await service();
+  const balance = async (before: string | null) => {
+    let q = db.from("cash_ledger_entries").select("balance_after").eq("store_id", storeId).order("created_at", { ascending: false }).limit(1);
+    if (before) q = q.lt("created_at", before);
+    const { data, error } = await q.maybeSingle();
+    if (error) throw new Error(`อ่านยอดเงินสดไม่สำเร็จ: ${error.message}`);
+    return Number(data?.balance_after ?? 0);
+  };
+  const { data: open, error: openErr } = await db
+    .from("cash_sessions")
+    .select("opening_float, opened_at")
+    .eq("store_id", storeId)
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (openErr) throw new Error(`อ่านรอบเงินสดไม่สำเร็จ: ${openErr.message}`);
+  if (open) {
+    const [latest, atOpen] = await Promise.all([balance(null), balance(open.opened_at as string)]);
+    return { amount: Math.round((Number(open.opening_float) + latest - atOpen) * 100) / 100, sessionOpen: true };
+  }
+  const { data: closed } = await db
+    .from("cash_sessions")
+    .select("closing_count")
+    .eq("store_id", storeId)
+    .eq("status", "closed")
+    .order("closed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return { amount: Math.round(Number(closed?.closing_count ?? 0) * 100) / 100, sessionOpen: false };
+}

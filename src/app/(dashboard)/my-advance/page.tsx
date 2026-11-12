@@ -30,6 +30,8 @@ export default async function MyAdvancePage() {
       earned={av.earned}
       weeklyPaidInCycle={av.weeklyPaidInCycle}
       available={av.cap.available}
+      cashMax={av.cashMax}
+      cashSessionOpen={av.cashSessionOpen}
       blockedReason={av.cap.blockedReason}
       advances={av.advances.map((a) => ({
         id: a.id,

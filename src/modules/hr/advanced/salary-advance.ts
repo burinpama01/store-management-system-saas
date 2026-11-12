@@ -62,6 +62,32 @@ export function computeAdvanceCap(input: AdvanceCapInput): AdvanceCap {
   return { available, blockedReason, earnedCap, overLimit };
 }
 
+export type AdvancePayMethod = "cash" | "transfer";
+export const ADVANCE_PAY_METHOD_LABEL: Record<AdvancePayMethod, string> = { cash: "เงินสด", transfer: "โอน" };
+
+/**
+ * เบิกเงินสดได้สูงสุด = ไม่เกินเพดานเบิก และไม่เกินเงินสดในลิ้นชักตอนนี้
+ * เงินสดปัดลงหลักร้อย — พนักงานไม่เห็นยอดลิ้นชักแบบเป๊ะ และเหลือเงินทอนในลิ้นชัก
+ */
+export function cashAdvanceMax(available: number, cashOnHand: number): number {
+  const cash = Math.floor(Math.max(0, cashOnHand) / 100) * 100;
+  return round2(Math.max(0, Math.min(available, cash)));
+}
+
+/** ตรวจยอดตามวิธีรับเงิน — คืนข้อความผิดพลาด หรือ null ถ้าผ่าน */
+export function checkAdvanceAmount(amount: number, method: AdvancePayMethod, available: number, cashOnHand: number): string | null {
+  const fmt = (n: number) => `฿${n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (!(amount > 0)) return "ใส่จำนวนเงินที่ต้องการเบิก";
+  if (amount > available) return `เบิกได้ไม่เกิน ${fmt(available)} (ตามค่าแรงจากวันที่มาทำงานแล้ว)`;
+  if (method === "cash" && amount > cashAdvanceMax(available, cashOnHand)) {
+    const max = cashAdvanceMax(available, cashOnHand);
+    return max > 0
+      ? `เงินสดในร้านตอนนี้ไม่พอ — เบิกเงินสดได้สูงสุด ${fmt(max)} หรือเลือกรับเป็นเงินโอน`
+      : "ตอนนี้ไม่มีเงินสดในร้านพอให้เบิก — เลือกรับเป็นเงินโอนแทน";
+  }
+  return null;
+}
+
 export interface AdvanceDue {
   id: string;
   /** วันที่จ่าย (YYYY-MM-DD) */

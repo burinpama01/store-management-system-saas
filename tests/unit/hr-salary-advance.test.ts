@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { allocateAdvanceDeduction, computeAdvanceCap } from "@/modules/hr/advanced/salary-advance";
+import { allocateAdvanceDeduction, cashAdvanceMax, checkAdvanceAmount, computeAdvanceCap } from "@/modules/hr/advanced/salary-advance";
 import { advanceOutstanding } from "@/modules/hr/advanced/salary-advance-service";
 import { computeAdvancedPayrollLines, type AdvancedComputeContext } from "@/modules/hr/advanced/compute";
 import { computeWeeklyPayouts, weekContaining } from "@/modules/hr/advanced/weekly";
@@ -191,7 +191,7 @@ describe("ตั้งค่า + migration + เส้นทางระบบ"
 
   it("actions: ตรวจเพดานฝั่ง server · อนุมัติแบบมีเงื่อนไขสถานะ · เงินสดลงบัญชีเงินสด · ปิดงวดบันทึกยอดหัก", () => {
     const request = src("src/app/(dashboard)/my-advance/actions.ts");
-    expect(request).toContain("if (amount > av.cap.available)");
+    expect(request).toContain("checkAdvanceAmount(amount, payMethod, av.cap.available, av.cashOnHand)");
     const staff = src("src/app/(dashboard)/staff/advance-actions.ts");
     expect(staff).toContain('updateSalaryAdvanceFrom(ctx.storeId, id, "pending", {');
     expect(staff).toContain("excludeAdvanceId: id");
@@ -205,7 +205,7 @@ describe("ตั้งค่า + migration + เส้นทางระบบ"
     expect(request).toContain("after.cap.overLimit");
     expect(staff).toContain("after.cap.overLimit");
     // บันทึกรายจ่ายไม่สำเร็จ = ย้อนสถานะ (ไม่ใช่แค่เตือน)
-    expect(staff).toContain("await revert();");
+    expect(staff).toContain("await settleRollback(revert(),");
     // บันทึกเบิกให้ตัวเองไม่ได้
     expect(staff).toContain("if (userId === user.id)");
     // ปิดงวดแล้วบันทึกยอดหักไม่ได้ = ลองซ้ำ + แจ้งผู้จัดการ + คืน error
@@ -213,5 +213,43 @@ describe("ตั้งค่า + migration + เส้นทางระบบ"
     expect(close).toContain('kind: "advance_deduction_failed"');
     expect(close).toContain("return { ok: false, error: message");
     expect(src("src/modules/hr/advanced/weekly-close.ts")).toContain("แต่บันทึกยอดหักเบิกเงินไม่สำเร็จ");
+  });
+});
+
+describe("เบิกเงินสด/โอน: เงินสดไม่เกินเงินสดในลิ้นชัก", () => {
+  it("เงินสดเบิกได้สูงสุด = min(เพดาน, เงินสดในลิ้นชัก) · ลิ้นชักติดลบ = 0", () => {
+    expect(cashAdvanceMax(3000, 1200)).toBe(1200);
+    expect(cashAdvanceMax(800, 5000)).toBe(800);
+    expect(cashAdvanceMax(3000, -50)).toBe(0);
+    // ปัดลงหลักร้อย: ไม่เผยยอดลิ้นชักแบบเป๊ะ
+    expect(cashAdvanceMax(3000, 1280.5)).toBe(1200);
+    expect(cashAdvanceMax(3000, 99)).toBe(0);
+  });
+
+  it("ตรวจยอด: เงินสดเกินลิ้นชักไม่ได้ · โอนได้ถึงเพดาน · เกินเพดานไม่ได้ทั้งคู่", () => {
+    expect(checkAdvanceAmount(1000, "cash", 3000, 1200)).toBeNull();
+    expect(checkAdvanceAmount(1500, "cash", 3000, 1200)).toContain("เงินสดในร้านตอนนี้ไม่พอ");
+    expect(checkAdvanceAmount(1500, "cash", 3000, 1200)).toContain("฿1,200.00");
+    expect(checkAdvanceAmount(1500, "transfer", 3000, 1200)).toBeNull();
+    expect(checkAdvanceAmount(3500, "transfer", 3000, 1200)).toContain("เบิกได้ไม่เกิน");
+    expect(checkAdvanceAmount(100, "cash", 3000, 0)).toContain("เลือกรับเป็นเงินโอนแทน");
+    expect(checkAdvanceAmount(0, "transfer", 3000, 0)).toBe("ใส่จำนวนเงินที่ต้องการเบิก");
+    expect(checkAdvanceAmount(1200, "cash", 3000, 1280)).toBeNull();
+    expect(checkAdvanceAmount(1250, "cash", 3000, 1280)).toContain("฿1,200.00");
+  });
+
+  it("เส้นทางระบบ: พนักงานต้องเลือกวิธีรับเงิน · ตรวจเงินสดตอนขอ/อนุมัติ/บันทึกแทน · เงินสดอ่านด้วย service client", () => {
+    const request = src("src/app/(dashboard)/my-advance/actions.ts");
+    expect(request).toContain('if (methodRaw !== "cash" && methodRaw !== "transfer")');
+    expect(request).toContain("checkAdvanceAmount(amount, payMethod, av.cap.available, av.cashOnHand)");
+    expect(request).toContain("pay_method: payMethod");
+    const staff = src("src/app/(dashboard)/staff/advance-actions.ts");
+    expect(staff.match(/checkAdvanceAmount\(amount, payMethod, av\.cap\.available, av\.cashOnHand\)/g)?.length).toBe(2);
+    expect(staff).toContain('adv.payMethod ?? "cash"');
+    expect(src("src/modules/hr/advanced/repository.ts")).toContain("export async function getCashOnHand(storeId: string)");
+    // อนุมัติเงินสดพร้อมกันจนลิ้นชักติดลบ = ย้อน · ย้อนล้ม = log · ย้อนแล้วเก็บวิธีรับเงินเดิม
+    expect(staff).toContain("fresh.amount < -0.005");
+    expect(staff).toContain('action: "rollbackFailed"');
+    expect(staff).toContain("pay_method: adv.payMethod");
   });
 });
