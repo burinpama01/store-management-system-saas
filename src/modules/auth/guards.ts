@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { logSystemEvent } from "@/modules/system/event-log";
 import type { Role, PermissionKey, ResolvedPermissions } from "@/modules/tenants/types";
 import {
   getCurrentUser,
@@ -55,10 +56,28 @@ export const getOptionalResolvedCurrentPermissions = cache(async (): Promise<{
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const { organizations, stores, memberships } = await getUserStores();
+  const { organizations, stores, memberships, resignedMemberships } = await getUserStores();
   const ctx = await resolveCurrentStore(stores, organizations, memberships, user.id);
 
-  if (!ctx) throw new AuthorizationError("No store access");
+  if (!ctx) {
+    // ลาออกจากทุกร้านที่เคยอยู่แล้ว (ไม่มีร้านอื่นเหลือ) → หน้าแจ้งว่าไม่มีสิทธิ์ใช้งาน (API ได้ 403 ตามเดิม)
+    // x-pathname ตั้งโดย middleware ทุกคำขอ — ไม่มี (เช่นเรียกนอก request) จะถือเป็นหน้าเว็บและ redirect
+    if (stores.length === 0 && resignedMemberships.length > 0) {
+      const path = (await headers()).get("x-pathname") ?? "";
+      await logSystemEvent({
+        level: "info",
+        source: "auth.account-inactive",
+        action: "blockResigned",
+        message: "พนักงานที่เลยวันออกงานแล้วพยายามเข้าใช้งาน — ถูกพาไปหน้าไม่มีสิทธิ์",
+        organizationId: resignedMemberships[0].organization_id,
+        storeId: resignedMemberships[0].store_id,
+        actorUserId: user.id,
+        context: { path, resignedMemberships: resignedMemberships.length },
+      }).catch(() => undefined);
+      if (!path.startsWith("/api/")) redirect("/account-inactive");
+    }
+    throw new AuthorizationError("No store access");
+  }
 
   const membership = pickMembershipForStore(memberships, {
     userId: user.id,

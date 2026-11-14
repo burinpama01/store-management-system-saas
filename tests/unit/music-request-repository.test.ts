@@ -31,6 +31,7 @@ function row(overrides: Partial<MusicRequestRow> = {}): MusicRequestRow {
     donation_slip_url: null,
     donation_ref: null,
     donation_play_now: false,
+    bump_of_request_id: null,
     created_at: "2026-06-29T10:00:00Z",
     updated_at: "2026-06-29T10:00:00Z",
     ...overrides,
@@ -92,6 +93,7 @@ describe("toPublicMusicRequest — no internal leakage", () => {
       requesterLabel: "โต๊ะ 5",
       status: "pending",
       requestedAt: "2026-06-29T10:00:00Z",
+      canBump: false,
     });
     // Internal fields must never appear in the public view.
     expect(pub).not.toHaveProperty("note");

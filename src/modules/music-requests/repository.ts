@@ -57,7 +57,16 @@ export function toPublicMusicRequest(row: MusicRequestRow): PublicMusicRequest {
     requesterLabel: row.requester_label ?? undefined,
     status: row.status as PublicMusicRequestStatus,
     requestedAt: row.requested_at,
+    canBump:
+      (row.status === "pending" || row.status === "approved") &&
+      Boolean(row.youtube_video_id) &&
+      !(row.donation_status === "verified" && row.donation_play_now),
   };
+}
+
+/** คำขอ "ขอเล่นก่อน" ที่ยังไม่จ่าย — ไม่นับเป็นคิว (ไม่ให้เพลงซ้ำ / ไม่ให้เล่นฟรี) */
+export function isUnpaidBump(row: { bump_of_request_id?: string | null; donation_status: string }): boolean {
+  return Boolean(row.bump_of_request_id) && row.donation_status !== "verified";
 }
 
 export interface SubmitMusicRequestInput {
@@ -115,7 +124,7 @@ export async function submitMusicRequest(input: SubmitMusicRequestInput) {
  * with its YouTube track. Becomes 'verified' (and approved) once the slip checks.
  */
 export async function submitMusicDonationRequest(
-  input: SubmitMusicRequestInput & { donationAmount: number; playNow?: boolean },
+  input: SubmitMusicRequestInput & { donationAmount: number; playNow?: boolean; bumpOfRequestId?: string | null },
 ) {
   const supabase = await createSupabaseServiceClient();
   const { data, error } = await supabase.rpc("create_music_request", {
@@ -145,11 +154,20 @@ export async function submitMusicDonationRequest(
       donation_amount: input.donationAmount,
       donation_status: isFree ? "verified" : "pending",
       donation_play_now: Boolean(input.playNow),
+      bump_of_request_id: input.bumpOfRequestId ?? null,
       ...(isFree ? { status: "approved", decided_at: now } : {}),
       updated_at: now,
     })
     .eq("id", id);
-  if (upErr) return { data: null, error: mapError(upErr) };
+  if (upErr) {
+    // อัปเดตไม่ผ่าน (เช่น มีคนกำลังจ่ายดันเพลงนี้อยู่ — unique index) → ปิดคำขอที่เพิ่งสร้าง
+    // ไม่ให้ค้างเป็นคำขอธรรมดาที่เข้าคิวฟรี
+    await supabase
+      .from("music_requests")
+      .update({ status: "rejected", donation_status: "rejected", updated_at: new Date().toISOString() })
+      .eq("id", id);
+    return { data: null, error: mapError(upErr) };
+  }
   return { data: id, error: null };
 }
 
@@ -233,7 +251,7 @@ export async function listPublicMusicQueue(storeId: string, limit = 20) {
     .order("requested_at", { ascending: false })
     .limit(limit);
   if (error) return { data: [] as PublicMusicRequest[], error: mapError(error) };
-  return { data: (data ?? []).map(toPublicMusicRequest), error: null };
+  return { data: (data ?? []).filter((r) => !isUnpaidBump(r)).map(toPublicMusicRequest), error: null };
 }
 
 export interface PlayedTrack {
@@ -321,7 +339,8 @@ export async function listStoreMusicQueue(storeId: string, limit = 100) {
     .order("requested_at", { ascending: false })
     .limit(limit);
   if (error) return { data: [] as MusicRequest[], error: mapError(error) };
-  return { data: (data ?? []).map(mapMusicRequest), error: null };
+  // คำขอ "ขอเล่นก่อน" ที่ยังไม่จ่าย ไม่ต้องให้พนักงานเห็น/กดอนุมัติ (จะโผล่เมื่อจ่ายสำเร็จ)
+  return { data: (data ?? []).filter((r) => !isUnpaidBump(r)).map(mapMusicRequest), error: null };
 }
 
 /** Staff decision — RPC enforces cashier+ in the request's store and audits. */
@@ -350,6 +369,7 @@ export function mapMusicPlayerSettings(row: PlayerSettingsRow): MusicPlayerSetti
     minDonation: row.min_donation,
     playNowPrice: row.play_now_price ?? 100,
     interruptBaseOnRequest: row.interrupt_base_on_request ?? true,
+    customerScreenEnabled: row.customer_screen_enabled ?? false,
     maxDurationSeconds: row.max_duration_seconds,
     basePlaylist: Array.isArray(row.base_playlist)
       ? (row.base_playlist as unknown as PlaylistTrack[])
@@ -373,6 +393,7 @@ export function defaultMusicPlayerSettings(
     minDonation: 10,
     playNowPrice: 100,
     interruptBaseOnRequest: true,
+    customerScreenEnabled: false,
     maxDurationSeconds: 600,
     basePlaylist: [],
     licensingAcknowledgedAt: undefined,
@@ -401,6 +422,7 @@ export interface UpdateMusicPlayerSettingsInput {
   minDonation: number;
   playNowPrice: number;
   interruptBaseOnRequest: boolean;
+  customerScreenEnabled: boolean;
   maxDurationSeconds: number;
   basePlaylist: PlaylistTrack[];
   licensingAcknowledged: boolean;
@@ -432,6 +454,7 @@ export async function upsertMusicPlayerSettings(
       min_donation: input.minDonation,
       play_now_price: input.playNowPrice,
       interrupt_base_on_request: input.interruptBaseOnRequest,
+      customer_screen_enabled: input.customerScreenEnabled,
       max_duration_seconds: input.maxDurationSeconds,
       base_playlist: input.basePlaylist as unknown as Json,
       licensing_acknowledged_at: ackAt,
@@ -452,6 +475,9 @@ export function mapNowPlaying(row: NowPlayingRow): NowPlaying {
     title: row.title ?? undefined,
     durationSeconds: row.duration_seconds ?? undefined,
     startedAt: row.started_at,
+    playbackState: row.playback_state === "paused" ? "paused" : "playing",
+    positionSeconds: row.position_seconds ?? undefined,
+    positionAt: row.position_at ?? undefined,
   };
 }
 
@@ -466,6 +492,75 @@ export async function getNowPlaying(storeId: string) {
   return { data: data ? mapNowPlaying(data) : null, error: null };
 }
 
+/**
+ * เครื่องเล่นของร้านรายงานสถานะจริง (เล่น/หยุด + ตำแหน่ง) — ใช้ให้จอลูกค้าตามตอนกดหยุด/เลื่อนเพลง
+ * อัปเดตเฉพาะเมื่อยังเป็นเพลงเดียวกัน (กันรายงานค้างของเพลงก่อนหน้าทับเพลงใหม่)
+ * trigger ใน DB จะ broadcast ไปหัวข้อ music-playback:<store_id> ให้เอง
+ */
+export async function reportNowPlayingPlayback(
+  storeId: string,
+  input: { videoId: string; state: "playing" | "paused"; positionSeconds: number },
+) {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("store_now_playing")
+    .update({
+      playback_state: input.state,
+      position_seconds: Math.round(input.positionSeconds * 100) / 100,
+      position_at: new Date().toISOString(),
+    })
+    .eq("store_id", storeId)
+    .eq("youtube_video_id", input.videoId)
+    .select("store_id");
+  if (error) return { updated: false, error: mapError(error) };
+  return { updated: (data ?? []).length > 0, error: null };
+}
+
+/** เพลงในคิวที่ลูกค้าขอดันขึ้นก่อนได้ — ตรวจฝั่ง server (ไม่เชื่อ canBump จาก client) */
+export async function getBumpableRequest(storeId: string, requestId: string) {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("music_requests")
+    .select(
+      "id, status, youtube_video_id, youtube_title, song_title, artist_name, thumbnail_url, duration_seconds, donation_status, donation_play_now, bump_of_request_id",
+    )
+    .eq("id", requestId)
+    .eq("store_id", storeId)
+    .maybeSingle();
+  if (error) return { data: null, error: mapError(error), busy: false };
+  if (
+    !data ||
+    !(data.status === "pending" || data.status === "approved") ||
+    !data.youtube_video_id ||
+    isUnpaidBump(data) ||
+    (data.donation_status === "verified" && data.donation_play_now)
+  ) {
+    return { data: null, error: null, busy: false };
+  }
+  // รายการรอจ่ายที่ค้างเกิน 15 นาที = ลูกค้าทิ้งไปแล้ว → ปิด เพื่อให้คนอื่นดันเพลงนี้ได้
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  await supabase
+    .from("music_requests")
+    .update({ status: "expired", donation_status: "rejected", updated_at: new Date().toISOString() })
+    .eq("store_id", storeId)
+    .eq("bump_of_request_id", requestId)
+    .eq("donation_status", "pending")
+    .in("status", ["pending", "approved"])
+    .lt("created_at", since);
+  // มีคนกำลังจ่ายดันเพลงนี้อยู่ — กันจ่ายซ้อนแล้วเพลงเดียวกันเข้าคิวสองรอบ (unique index กันอีกชั้น)
+  const { data: pendingBumps } = await supabase
+    .from("music_requests")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("bump_of_request_id", requestId)
+    .eq("donation_status", "pending")
+    .in("status", ["pending", "approved"])
+    .gte("created_at", since)
+    .limit(1);
+  if ((pendingBumps ?? []).length > 0) return { data: null, error: null, busy: true };
+  return { data, error: null, busy: false };
+}
+
 /** Requests eligible to play: have a YouTube id and are queued (not yet played). */
 export async function listPlayableQueue(
   storeId: string,
@@ -478,14 +573,14 @@ export async function listPlayableQueue(
   const { data } = await supabase
     .from("music_requests")
     .select(
-      "id, youtube_video_id, youtube_title, song_title, duration_seconds, donation_status, donation_amount, donation_play_now, requested_at",
+      "id, youtube_video_id, youtube_title, song_title, duration_seconds, donation_status, donation_amount, donation_play_now, requested_at, bump_of_request_id",
     )
     .eq("store_id", storeId)
     .in("status", statuses)
     .not("youtube_video_id", "is", null)
     .order("requested_at", { ascending: true });
   return (data ?? [])
-    .filter((r) => r.youtube_video_id)
+    .filter((r) => r.youtube_video_id && !isUnpaidBump(r))
     .map((r) => ({
       id: r.id,
       youtubeVideoId: r.youtube_video_id as string,

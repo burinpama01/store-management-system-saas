@@ -18,7 +18,8 @@ import {
   CASHIER_ASSISTANT_PATH_PREFIX,
 } from "@/modules/ai-assistant/tools/back-office-access";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
-import { canUseFeature } from "@/modules/billing/types";
+import { canUseFeature, getPlanFeatures } from "@/modules/billing/types";
+import { getAdvancedPayrollSettings } from "@/modules/hr/advanced/repository";
 import {
   ANDROID_VERSION_NAME,
   isAndroidApp,
@@ -30,6 +31,7 @@ import { signOut } from "./actions";
 import { SubmitButton } from "@/shared/components/ui";
 import { CommandPalette } from "@/shared/components/CommandPalette";
 import type { CommandItem } from "@/modules/assistant/command-index";
+import { decideCostingAccess } from "@/modules/costing/access-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +82,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       : cashierAssistantAllowed && path.startsWith(CASHIER_ASSISTANT_PATH_PREFIX)
         ? ("accounting" as const)
         : null;
+  // สลิปของฉัน (R17, R32, R33): แสดงเมนูเฉพาะร้านที่มีแพ็ก "เงินเดือนขั้นสูง" และเปิดสวิตช์
+  const payrollSwitches =
+    can("attendance.clock") && !!assistantBilling && getPlanFeatures(assistantBilling).advancedPayroll
+      ? (await getAdvancedPayrollSettings(storeContext.storeId)).switches
+      : null;
+  const myPayslipVisible = !!payrollSwitches?.myPayslip;
+  // เบิกเงิน (B2): แพ็กเงินเดือนขั้นสูง + เปิดสวิตช์
+  const myAdvanceVisible = !!payrollSwitches?.salaryAdvance;
   // ค่าเริ่มต้นเสียงพูดของร้าน — แต่ละเครื่องปรับทับได้เองที่หน้าตั้งค่าแจ้งเตือน
   const notificationVoiceEnabled = Boolean(currentStoreRow?.notification_voice_enabled);
   // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
@@ -90,6 +100,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     canManageQr &&
     Boolean(currentStoreRow?.music_request_enabled) &&
     currentStoreRow?.music_license_status === "approved";
+  // ระบบต้นทุน: แพ็กเกจรายงานขั้นสูง + manager ขึ้นไป + ร้านอาหาร (หรือร้านเก่าที่ยังไม่มีโปรไฟล์)
+  const costingVisible = decideCostingAccess({
+    canViewReports: can("reports.view"),
+    canManageCatalog: can("catalog.manage"),
+    role: storeContext.role,
+    hasAdvancedReports: assistantBilling ? canUseFeature(assistantBilling, "advancedReports") : false,
+    businessMode: setupProfile?.businessMode ?? null,
+  }).allowed;
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
@@ -101,10 +119,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
+    ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     // งานหน้าร้าน (เช็กลิสต์) — เห็นเมื่อสาขาเปิดระบบแล้วเท่านั้น; เจ้าของตั้งค่าได้ที่ /ops/templates
     ...(currentStoreRow?.operations_enabled ? [{ href: "/ops", label: "งานหน้าร้าน" }] : []),
+    ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
+    ...(myAdvanceVisible ? [{ href: "/my-advance", label: "เบิกเงิน" }] : []),
+    ...(can("attendance.clock") ? [{ href: "/my-profile", label: "ข้อมูลของฉัน" }] : []),
     ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(
       storeContext && canManageQr && currentStoreRow?.buffet_enabled

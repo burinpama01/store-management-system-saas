@@ -296,7 +296,7 @@ describe("source wiring", () => {
   });
 
   it("migration: client เขียนตารางตรงไม่ได้, ประวัติ append-only, flag default false", () => {
-    const sql = read("supabase/migrations/20261015120000_ops_checklists.sql");
+    const sql = read("supabase/migrations/20261114120000_ops_checklists.sql");
     expect(sql).toContain("add column if not exists operations_enabled boolean not null default false");
     expect(sql).toMatch(/revoke all on table public\.ops_checklist_templates[\s\S]*from anon, authenticated;/);
     expect(sql).not.toMatch(/grant (insert|update|delete)[^;]*to authenticated/);

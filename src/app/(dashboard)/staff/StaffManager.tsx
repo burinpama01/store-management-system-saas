@@ -4,7 +4,19 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberWithEmail } from "@/modules/settings/repository";
 import type { EmployeeProfile, PayrollAdjustment, StoreHrSettings } from "@/modules/hr/types";
-import { PAY_TYPE_LABEL, ADJUSTMENT_LABEL, DEDUCTION_TYPES, WEEKDAY_LABELS } from "@/modules/hr/types";
+import {
+  PAY_TYPE_LABEL,
+  ADJUSTMENT_LABEL,
+  DEDUCTION_TYPES,
+  WEEKDAY_LABELS,
+  EMPLOYMENT_TYPES,
+  EMPLOYMENT_TYPE_LABEL,
+} from "@/modules/hr/types";
+import { defaultEmploymentType, seniorityLabel } from "@/modules/hr/employee-identity";
+import type { EmployeeSelfInfo } from "@/modules/hr/self-info";
+import type { SelfInfoRequestView } from "@/modules/hr/self-info-repository";
+import { SelfInfoSummary } from "./SelfInfoSummary";
+import { SelfInfoRequests } from "./SelfInfoRequests";
 import type { PayrollLine } from "@/modules/hr/payroll";
 import type { Role } from "@/modules/tenants/types";
 import {
@@ -13,12 +25,48 @@ import {
   addAdjustmentAction,
   deleteAdjustmentAction,
   saveHrSettingsAction,
+  savePayslipIdentityAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+import type { AdvancedPayrollSettings } from "@/modules/hr/advanced/settings";
+import type { PayrollPeriodRow, StoreSkill } from "@/modules/hr/advanced/repository";
+import type { PayPeriod } from "@/modules/hr/advanced/pay-cycle";
+import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
+import { AdvancedPayrollPanel } from "./AdvancedPayrollPanel";
+import { PAY_FREQUENCIES, PAY_FREQUENCY_LABEL, type PayWeek } from "@/modules/hr/advanced/weekly";
+import { WeeklyPayoutsPanel, type WeeklyPayoutView } from "./WeeklyPayoutsPanel";
+import { SalaryAdvancesPanel, type AdvanceView } from "./SalaryAdvancesPanel";
+import { PayrollPeriodsPanel } from "./PayrollPeriodsPanel";
+
+export interface StaffAdvancedProps {
+  entitled: boolean;
+  /** สวิตช์ที่มีผลจริง (แพ็กไม่มีสิทธิ์ = ปิดหมด) */
+  settings: AdvancedPayrollSettings;
+  /** ค่าที่ร้านตั้งไว้ (แสดงในฟอร์มตั้งค่า) */
+  stored: AdvancedPayrollSettings;
+  skills: StoreSkill[];
+  /** ทักษะที่พนักงานมีตอนนี้ (ยังไม่ถูกถอน) */
+  employeeSkillIds: Record<string, string[]>;
+  periods: PayPeriod[];
+  closedRows: PayrollPeriodRow[];
+  businessToday: string;
+  /** จ่ายรายสัปดาห์: สัปดาห์ล่าสุด (ใหม่ → เก่า รวมสัปดาห์ปัจจุบัน) + ยอดที่บันทึกแล้ว */
+  weekly: { weeks: PayWeek[]; rows: WeeklyPayoutView[] };
+  /** คำขอเบิกเงินล่าสุด (เปิดสวิตช์เบิกเงินเท่านั้น) */
+  advances: AdvanceView[];
+  /** เงินสดในลิ้นชักตอนนี้ (null = อ่านไม่ได้/ไม่ได้เปิดเบิกเงิน) */
+  cashOnHand: number | null;
+}
+
+export type StaffSelfInfo = Omit<EmployeeSelfInfo, "bankAccountNo"> & { bankAccountMasked: string };
 
 interface Props {
   members: MemberWithEmail[];
   profiles: EmployeeProfile[];
+  /** ข้อมูลที่พนักงานกรอกเองในหน้า "ข้อมูลของฉัน" (key = userId) */
+  selfInfo: Record<string, StaffSelfInfo>;
+  /** คำขอแก้ข้อมูลที่รออนุมัติ */
+  selfInfoRequests: SelfInfoRequestView[];
   payrollLines: PayrollLine[];
   adjustments: PayrollAdjustment[];
   hrSettings: StoreHrSettings;
@@ -27,6 +75,7 @@ interface Props {
   dateTo: string;
   today: string;
   canAddStaff: boolean;
+  advanced: StaffAdvancedProps;
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -45,6 +94,8 @@ function fmt(amount: number, currency: string): string {
 export function StaffManager({
   members,
   profiles,
+  selfInfo,
+  selfInfoRequests,
   payrollLines,
   adjustments,
   hrSettings,
@@ -53,18 +104,28 @@ export function StaffManager({
   dateTo,
   today,
   canAddStaff,
+  advanced,
 }: Props) {
+  const asw = advanced.settings.switches;
+  const advLines = payrollLines as AdvancedPayrollLine[];
   const router = useRouter();
-  const [tab, setTab] = useState<"employees" | "payroll" | "policy">("employees");
+  const [tab, setTab] = useState<"employees" | "payroll" | "policy" | "features">("employees");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [showAddStaff, setShowAddStaff] = useState(false);
+  const [showResigned, setShowResigned] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const profileByUser = new Map(profiles.map((p) => [p.userId, p]));
   // Members scoped to actual employees (exclude platform super_admin rows).
   const staff = members.filter((m) => m.role !== "super_admin");
+  // ลาออกแล้ว = วันออกงานผ่านไปแล้ว (วันสุดท้ายยังนับว่าทำงานอยู่) — ซ่อนไว้ก่อน กดดูได้
+  const isResigned = (userId: string) => {
+    const end = profileByUser.get(userId)?.employmentEndDate;
+    return !!end && end < today;
+  };
+  const resignedCount = staff.filter((m) => isResigned(m.userId)).length;
 
   function run(action: () => Promise<{ error: string | null }>, onOk?: () => void) {
     setError(null);
@@ -114,6 +175,12 @@ export function StaffManager({
         >
           นโยบาย HR
         </button>
+        <button
+          onClick={() => setTab("features")}
+          className={`min-h-11 rounded-lg px-4 text-sm font-semibold ${tab === "features" ? "bg-[var(--tenant-primary)] text-white" : "bg-[var(--surface-muted)] text-[var(--ink-2)]"}`}
+        >
+          ฟีเจอร์เงินเดือน{advanced.entitled ? "" : " 🔒"}
+        </button>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
@@ -121,6 +188,10 @@ export function StaffManager({
 
       {tab === "employees" ? (
         <section className="space-y-3">
+          <SelfInfoRequests
+            requests={selfInfoRequests}
+            nameOf={(userId) => profileByUser.get(userId)?.displayName || staff.find((m) => m.userId === userId)?.email || "พนักงาน"}
+          />
           {canAddStaff && (
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <button
@@ -165,12 +236,20 @@ export function StaffManager({
           )}
 
           <div className="space-y-2">
+            {resignedCount > 0 && (
+              <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={showResigned} onChange={(e) => setShowResigned(e.target.checked)} className="h-5 w-5 accent-orange-500" />
+                แสดงพนักงานที่ลาออกแล้ว ({resignedCount} คน)
+              </label>
+            )}
             {staff.length === 0 ? (
               <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
                 ยังไม่มีพนักงาน
               </p>
             ) : (
-              staff.map((m) => {
+              staff
+                .filter((m) => showResigned || !isResigned(m.userId))
+                .map((m) => {
                 const profile = profileByUser.get(m.userId);
                 const isEditing = editingUserId === m.userId;
                 return (
@@ -179,7 +258,25 @@ export function StaffManager({
                       <div className="min-w-0">
                         <p className="font-semibold text-gray-900 truncate">
                           {profile?.displayName || m.email}
+                          {isResigned(m.userId) && (
+                            <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">ลาออกแล้ว</span>
+                          )}
                         </p>
+                        {profile && (profile.employeeCode || profile.position || profile.seniorityStartDate) && (
+                          <p className="text-xs text-gray-500 truncate">
+                            {[
+                              profile.employeeCode,
+                              profile.position,
+                              EMPLOYMENT_TYPE_LABEL[profile.employmentType],
+                              seniorityLabel(profile.seniorityStartDate, today)
+                                ? `อายุงาน ${seniorityLabel(profile.seniorityStartDate, today)}`
+                                : "",
+                              profile.employmentEndDate ? `ออกงาน ${profile.employmentEndDate}` : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-400">
                           {ROLE_LABELS[m.role]} ·{" "}
                           {profile
@@ -198,7 +295,7 @@ export function StaffManager({
                         onClick={() => setEditingUserId(isEditing ? null : m.userId)}
                         className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
                       >
-                        {isEditing ? "ปิด" : "ตั้งค่าจ้าง"}
+                        {isEditing ? "ปิด" : profile ? "แก้ไขข้อมูล" : "ตั้งค่าจ้าง"}
                       </button>
                     </div>
 
@@ -208,6 +305,88 @@ export function StaffManager({
                         className="mt-4 grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-3"
                       >
                         <input type="hidden" name="userId" value={m.userId} />
+                        {selfInfo[m.userId] && <SelfInfoSummary info={selfInfo[m.userId]} owner={profile} />}
+                        <p className="text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">ข้อมูลพนักงาน (แสดงบนสลิป)</p>
+                        <label className="text-xs font-medium text-gray-600">
+                          รหัสพนักงาน
+                          <input name="employeeCode" maxLength={30} defaultValue={profile?.employeeCode ?? ""} placeholder="เช่น EMP-001" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          ชื่อ-สกุลจริง
+                          <input name="fullName" maxLength={150} defaultValue={profile?.fullName ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          ตำแหน่ง
+                          <input name="position" maxLength={80} defaultValue={profile?.position ?? ""} placeholder="เช่น พนักงานเสิร์ฟ" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          ประเภทการจ้าง
+                          <select
+                            name="employmentType"
+                            defaultValue={profile?.employmentType ?? defaultEmploymentType(profile?.payType ?? "monthly")}
+                            className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                          >
+                            {EMPLOYMENT_TYPES.map((t) => (
+                              <option key={t} value={t}>{EMPLOYMENT_TYPE_LABEL[t]}</option>
+                            ))}
+                          </select>
+                          <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                            ค่าทักษะ/ค่าอายุงาน/โบนัสยอดขาย ให้เฉพาะพนักงานประจำ (เริ่มงวดถัดไปหลังปรับ)
+                          </span>
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          เป็นพนักงานประจำตั้งแต่
+                          <input name="permanentSince" type="date" max={today} defaultValue={profile?.permanentSince ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                          <span className="mt-1 block text-[11px] font-normal text-gray-400">ว่าง + เลือกประจำ = วันนี้</span>
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          วันเริ่มงาน (นับอายุงาน)
+                          <input name="seniorityStartDate" type="date" max={today} defaultValue={profile?.seniorityStartDate ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                          <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                            ระบบตั้งให้จากวันแรกที่ลงเวลา · แก้ย้อนหลังได้สำหรับพนักงานเดิม
+                          </span>
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          วันออกงาน
+                          <input name="employmentEndDate" type="date" defaultValue={profile?.employmentEndDate ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                          <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                            ว่าง = ยังทำงานอยู่ · หลังวันนี้เข้าระบบของร้านและรับแจ้งเตือนไม่ได้ (เจ้าของกิจการไม่ถูกตัด)
+                          </span>
+                        </label>
+                        <p className="mt-2 text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">
+                          บัญชีรับเงินเดือน
+                          {profile?.bankAccountMasked ? (
+                            <span className="ml-2 font-normal text-gray-400">
+                              ปัจจุบัน {profile.bankName ?? ""} {profile.bankAccountMasked}
+                            </span>
+                          ) : null}
+                        </p>
+                        <label className="text-xs font-medium text-gray-600">
+                          ธนาคาร
+                          <input name="bankName" maxLength={80} defaultValue={profile?.bankName ?? ""} placeholder="เช่น กสิกรไทย" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          เลขบัญชี
+                          <input
+                            name="bankAccountNo"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            maxLength={24}
+                            placeholder={profile?.bankAccountMasked ? `${profile.bankAccountMasked} (เว้นว่าง = ไม่เปลี่ยน)` : ""}
+                            className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                          />
+                          {profile?.bankAccountMasked && (
+                            <span className="mt-1 flex items-center gap-1 text-[11px] font-normal text-gray-500">
+                              <input type="checkbox" name="clearBankAccount" className="accent-orange-500" />
+                              ลบเลขบัญชีนี้
+                            </span>
+                          )}
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          ชื่อบัญชี
+                          <input name="bankAccountName" maxLength={150} defaultValue={profile?.bankAccountName ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                        </label>
+                        <p className="mt-2 text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">ค่าจ้างและเวลาทำงาน</p>
                         <label className="text-xs font-medium text-gray-600">
                           ชื่อแสดง
                           <input name="displayName" defaultValue={profile?.displayName ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
@@ -272,9 +451,70 @@ export function StaffManager({
                           <input type="checkbox" name="otEligible" defaultChecked={profile?.otEligible ?? true} className="accent-orange-500" />
                           มีสิทธิ์ OT
                         </label>
+                        {advanced.entitled && (
+                          <label className="text-xs font-medium text-gray-600">
+                            ถ้าเปลี่ยนค่าจ้าง: มีผลตั้งแต่
+                            <input name="rateEffectiveFrom" type="date" defaultValue={today} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                            <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                              งวดก่อนวันนี้ใช้ค่าจ้างเดิม · กลางงวดคิดตามจำนวนวันจริง
+                            </span>
+                          </label>
+                        )}
+                        {asw.skillPay && (
+                          <div className="text-xs font-medium text-gray-600 sm:col-span-2 lg:col-span-3">
+                            <input type="hidden" name="skillsSubmitted" value="1" />
+                            ทักษะที่ทำได้
+                            <span className="ml-1 font-normal text-gray-400">(ได้/ถอนวันนี้ มีผลงวดถัดไป · ค่าทักษะเฉพาะพนักงานประจำ)</span>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {advanced.skills.length === 0 && (
+                                <span className="text-gray-400">ยังไม่มีรายการทักษะ — เพิ่มที่แท็บฟีเจอร์เงินเดือน</span>
+                              )}
+                              {advanced.skills.map((sk) => (
+                                <label key={sk.id} className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-gray-300 px-2 py-1.5">
+                                  <input
+                                    type="checkbox"
+                                    name="skillIds"
+                                    value={sk.id}
+                                    defaultChecked={(advanced.employeeSkillIds[m.userId] ?? []).includes(sk.id)}
+                                    className="accent-orange-500"
+                                  />
+                                  <span>{sk.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {asw.weeklyPay && (
+                          <label className="text-xs font-medium text-gray-600">
+                            รอบจ่าย
+                            <select
+                              name="payFrequency"
+                              defaultValue={profile?.payFrequency ?? "monthly"}
+                              className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3"
+                              style={{ fontSize: 16 }}
+                            >
+                              {PAY_FREQUENCIES.map((f) => (
+                                <option key={f} value={f}>{PAY_FREQUENCY_LABEL[f]}</option>
+                              ))}
+                            </select>
+                            <span className="mt-1 block text-[11px] font-normal text-gray-400">รายสัปดาห์ = คิดเฉพาะวันที่มา + OT + โบนัสรายวัน</span>
+                          </label>
+                        )}
+                        {asw.socialSecurity && (
+                          <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+                            <input type="checkbox" name="ssoEnabled" defaultChecked={profile?.ssoEnabled ?? true} className="accent-orange-500" />
+                            หักประกันสังคม
+                          </label>
+                        )}
+                        {asw.withholdingTax && advanced.settings.whtMode === "percent" && (
+                          <label className="text-xs font-medium text-gray-600">
+                            ภาษีหัก ณ ที่จ่าย (%)
+                            <input name="withholdingTaxRate" type="number" min={0} max={35} step="0.01" defaultValue={profile?.withholdingTaxRate ?? 0} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                          </label>
+                        )}
                         <div className="flex items-end lg:col-span-3">
                           <Button type="submit" variant="primary" loading={isPending} className="min-h-11 px-6 text-sm">
-                            บันทึกค่าจ้าง
+                            บันทึกข้อมูลพนักงาน
                           </Button>
                         </div>
                       </form>
@@ -287,6 +527,40 @@ export function StaffManager({
         </section>
       ) : tab === "payroll" ? (
         <section className="space-y-4">
+          {asw.payCycle && (
+            <PayrollPeriodsPanel
+              periods={advanced.periods}
+              closedRows={advanced.closedRows}
+              businessToday={advanced.businessToday}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              currency={currency}
+            />
+          )}
+          {asw.salaryAdvance && (
+            <SalaryAdvancesPanel
+              advances={advanced.advances}
+              cashOnHand={advanced.cashOnHand}
+              employees={staff
+                .filter((m) => !isResigned(m.userId))
+                .map((m) => ({ userId: m.userId, name: profileByUser.get(m.userId)?.displayName || m.email }))}
+            />
+          )}
+          {asw.weeklyPay && (
+            <WeeklyPayoutsPanel
+              weeks={advanced.weekly.weeks}
+              rows={advanced.weekly.rows}
+              businessToday={advanced.businessToday}
+              currency={currency}
+              weeklyStaffCount={
+                profiles.filter(
+                  (p) =>
+                    (p.payFrequency === "weekly" || p.payFrequency === "weekly_advance") &&
+                    (!p.employmentEndDate || p.employmentEndDate >= advanced.businessToday),
+                ).length
+              }
+            />
+          )}
           {/* Period picker */}
           <form
             onSubmit={(e) => {
@@ -341,11 +615,12 @@ export function StaffManager({
                     <td colSpan={13} className="px-3 py-8 text-center text-gray-400">ไม่มีข้อมูลในช่วงนี้</td>
                   </tr>
                 ) : (
-                  payrollLines.map((l) => (
+                  advLines.map((l) => (
                     <tr key={l.userId} className="border-b border-gray-50 last:border-0">
                       <td className="px-3 py-2 text-gray-800">
                         {l.employeeName}
                         {!l.hasProfile && <span className="ml-1 text-xs text-amber-500">(ยังไม่ตั้งค่าจ้าง)</span>}
+                        {l.paidWeekly && <span className="block text-[10px] text-sky-600">จ่ายรายสัปดาห์ (แยกรอบ) — ไม่อยู่ในงวด/สลิปนี้</span>}
                       </td>
                       <td className="px-3 py-2 text-gray-500">{PAY_TYPE_LABEL[l.payType]}</td>
                       <td className="px-3 py-2 text-right text-gray-700">
@@ -363,12 +638,43 @@ export function StaffManager({
                       <td className="px-3 py-2 text-right text-red-600">{l.latePenalty ? `−${fmt(l.latePenalty, currency)}` : "—"}</td>
                       <td className="px-3 py-2 text-right text-yellow-700">
                         {l.halfDayDeduction ? `−${fmt(l.halfDayDeduction, currency)}` : l.halfDays ? "จ่ายครึ่ง" : "—"}
-                        <span className="block text-[10px] text-gray-400">{l.halfDays ? `${l.halfDays} วัน` : ""}</span>
+                        <span className="block text-[10px] text-gray-400">{l.halfDayDeduction ? `${l.halfDayDeductionDays} วัน` : l.halfDays ? `${l.halfDays} วัน` : ""}</span>
                       </td>
                       <td className="px-3 py-2 text-right text-red-600">{l.absentPenalty ? `−${fmt(l.absentPenalty, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.absentDays ? `${l.absentDays} วัน` : ""}</span></td>
-                      <td className="px-3 py-2 text-right text-green-600">{l.bonusTotal ? `+${fmt(l.bonusTotal, currency)}` : "—"}</td>
-                      <td className="px-3 py-2 text-right text-red-600">{l.deductionTotal ? `−${fmt(l.deductionTotal, currency)}` : "—"}</td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(l.netPay, currency)}</td>
+                      <td className="px-3 py-2 text-right text-green-600">
+                        {(() => {
+                          const extra = l.bonusTotal + (l.skillPay ?? 0) + (l.seniorityPay ?? 0) + (l.salesBonus ?? 0) + (l.monthlySalesBonus ?? 0);
+                          return extra ? `+${fmt(extra, currency)}` : "—";
+                        })()}
+                        <span className="block text-[10px] text-gray-400">
+                          {[
+                            l.skillPay ? `ทักษะ ${l.skillPay}` : "",
+                            l.seniorityPay ? `อายุงาน ${l.seniorityPay}` : "",
+                            l.salesBonus ? `ยอดขาย ${l.salesBonus}` : "",
+                            l.monthlySalesBonus ? `ยอดรายเดือน ${l.monthlySalesBonus}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-red-600">
+                        {(() => {
+                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0) + (l.weeklyAdvance ?? 0) + (l.salaryAdvanceDeduction ?? 0);
+                          return ded ? `−${fmt(ded, currency)}` : "—";
+                        })()}
+                        <span className="block text-[10px] text-gray-400">
+                          {[
+                            l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "",
+                            l.withholdingTax ? `ภาษี ${l.withholdingTax}` : "",
+                            l.weeklyAdvance ? `จ่ายล่วงหน้ารายสัปดาห์ ${l.weeklyAdvance}` : "",
+                            l.salaryAdvanceDeduction ? `เบิกล่วงหน้า ${l.salaryAdvanceDeduction}` : "",
+                            l.salaryAdvanceShortfall ? `ค้างหักงวดหน้า ${l.salaryAdvanceShortfall}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${l.paidWeekly ? "text-gray-400 line-through" : "text-gray-900"}`}>{fmt(l.netPay, currency)}</td>
                       <td className="px-3 py-2 text-right">
                         <a
                           href={`/payslip?userId=${l.userId}&${payslipQuery}`}
@@ -406,7 +712,8 @@ export function StaffManager({
                   }}
                 >
                   <option value="">— เลือก —</option>
-                  {staff.map((m) => {
+                  {/* คนลาออกแล้วไม่ต้องให้เลือก (ยกเว้นติ๊กแสดงคนลาออก — เผื่อปรับงวดสุดท้าย) */}
+                  {staff.filter((m) => showResigned || !isResigned(m.userId)).map((m) => {
                     const name = profileByUser.get(m.userId)?.displayName || m.email;
                     return (
                       <option key={m.userId} value={m.userId} data-name={name}>
@@ -420,9 +727,11 @@ export function StaffManager({
               <label className="text-xs font-medium text-gray-600">
                 ประเภท
                 <select name="type" defaultValue="penalty" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm">
-                  {(Object.keys(ADJUSTMENT_LABEL) as Array<keyof typeof ADJUSTMENT_LABEL>).map((t) => (
-                    <option key={t} value={t}>{ADJUSTMENT_LABEL[t]}</option>
-                  ))}
+                  {(Object.keys(ADJUSTMENT_LABEL) as Array<keyof typeof ADJUSTMENT_LABEL>)
+                    .filter((t) => t !== "withholding_tax" || (asw.withholdingTax && advanced.settings.whtMode === "manual"))
+                    .map((t) => (
+                      <option key={t} value={t}>{ADJUSTMENT_LABEL[t]}</option>
+                    ))}
                 </select>
               </label>
               <label className="text-xs font-medium text-gray-600">
@@ -467,6 +776,16 @@ export function StaffManager({
             )}
           </div>
         </section>
+      ) : tab === "features" ? (
+        <AdvancedPayrollPanel
+          entitled={advanced.entitled}
+          settings={advanced.stored}
+          skills={advanced.skills}
+          employees={staff.map((m) => {
+            const p = profileByUser.get(m.userId);
+            return { userId: m.userId, name: p?.displayName || m.email, permanent: p?.employmentType === "permanent" };
+          })}
+        />
       ) : (
         <section className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -513,6 +832,30 @@ export function StaffManager({
               </label>
               <div className="flex items-end lg:col-span-3">
                 <Button type="submit" variant="primary" loading={isPending} loadingText="กำลังบันทึก..." className="min-h-11 px-6 text-sm">บันทึกนโยบาย</Button>
+              </div>
+            </form>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h2 className="text-sm font-bold text-gray-900">ข้อมูลบริษัท/ร้านบนสลิปเงินเดือน</h2>
+            <p className="text-xs text-gray-500">เว้นว่าง = ใช้ชื่อร้าน ที่อยู่ และเลขผู้เสียภาษีจากตั้งค่าใบเสร็จ</p>
+            <form
+              action={(fd) => run(() => savePayslipIdentityAction(fd), () => setNotice("บันทึกข้อมูลบนสลิปเรียบร้อยแล้ว"))}
+              className="mt-4 grid gap-3 sm:grid-cols-2"
+            >
+              <label className="text-xs font-medium text-gray-600">
+                ชื่อนิติบุคคล / ชื่อบนสลิป
+                <input name="payslipLegalName" maxLength={200} defaultValue={hrSettings.payslipLegalName ?? ""} placeholder="เช่น บริษัท ตัวอย่าง จำกัด" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              </label>
+              <label className="text-xs font-medium text-gray-600">
+                เลขประจำตัวผู้เสียภาษี (13 หลัก)
+                <input name="payslipTaxId" inputMode="numeric" maxLength={17} defaultValue={hrSettings.payslipTaxId ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              </label>
+              <label className="text-xs font-medium text-gray-600 sm:col-span-2">
+                ที่อยู่
+                <input name="payslipAddress" maxLength={400} defaultValue={hrSettings.payslipAddress ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              </label>
+              <div className="flex items-end sm:col-span-2">
+                <Button type="submit" variant="primary" loading={isPending} loadingText="กำลังบันทึก..." className="min-h-11 px-6 text-sm">บันทึกข้อมูลบนสลิป</Button>
               </div>
             </form>
           </div>

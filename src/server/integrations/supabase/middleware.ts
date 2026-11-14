@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "./database.types";
+import { RETURN_TO_PARAM, returnToForLoginRedirect } from "@/modules/auth/return-to";
 
 export async function updateSession(request: NextRequest) {
   // Expose the current path to Server Components (for subscription-expiry gating).
@@ -81,6 +82,8 @@ export async function updateSession(request: NextRequest) {
     // สรุปยอดจากเวลาปิดร้าน: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
     request.nextUrl.pathname === "/api/attendance/cron/closing-summary" ||
     request.nextUrl.pathname === "/api/operations/cron/checklist-due" ||
+    // เงินเดือนขั้นสูง: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
+    request.nextUrl.pathname === "/api/hr/cron/payroll" ||
     // Public REST API (Enterprise) — auth ด้วย API key ใน handler เอง ไม่ใช้ session
     request.nextUrl.pathname.startsWith("/api/v1/") ||
     // Same-origin proxy for receipt logo/footer images. Serves only public
@@ -91,6 +94,10 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    // จำหน้าที่ตั้งใจจะเปิด (เช่น /player/<slug> บนเครื่องใหม่) ให้ล็อกอินแล้วกลับมาที่เดิม
+    url.search = "";
+    const returnTo = returnToForLoginRedirect(request.nextUrl.pathname, request.nextUrl.search);
+    if (returnTo) url.searchParams.set(RETURN_TO_PARAM, returnTo);
     return NextResponse.redirect(url);
   }
 

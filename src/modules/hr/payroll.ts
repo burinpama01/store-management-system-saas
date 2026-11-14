@@ -30,6 +30,10 @@ export interface PayrollLine {
   payableDays: number;
   /** Monthly staff: the half of a day not worked, priced like an absent day. */
   halfDayDeduction: number;
+  /** ครึ่งวันที่ถูกหัก — เฉพาะวันทำงานตามตาราง (ไม่นับวันหยุดร้าน/วันหยุดประจำที่มาช่วย) */
+  halfDayDeductionDays: number;
+  /** ชั่วโมงที่จ่ายอัตราปกติ — รายชั่วโมง = ชั่วโมงรวม − ชั่วโมง OT; รายเดือน/รายวัน = ชั่วโมงรวม (ใช้แสดงผลเท่านั้น) */
+  regularHours: number;
   /** Days on a store holiday with an unclosed shift — not paid, not absence. */
   unpaidHolidayDays: number;
   /** ค่าแรงต่อวันที่ใช้คิดค่าปรับขาดงาน/ครึ่งวัน (แสดงบนสลิปให้ตรวจได้) */
@@ -96,6 +100,9 @@ export function effectiveHourlyRate(profile: EmployeeProfile, regularHoursPerDay
 
 /**
  * Base pay implied by the wage profile for a period's attendance totals.
+ * Hourly: returns rate × ALL hours including overtime — `computePayrollLines` subtracts the OT
+ * hours afterwards (OT is paid separately at the multiplier). Callers using this directly for
+ * hourly staff with OT must do the same, or they will pay OT hours twice (ISSUE-20261105-PAY-001).
  * `payableDays` counts a half-worked day as 0.5 so daily-rate staff are paid half —
  * omit it and the raw attendance day count is used (legacy behaviour).
  */
@@ -230,6 +237,11 @@ export interface PayrollComputeInput {
   /** Store-local "today"; absent days are only counted up to this date. */
   today: string;
   timezone: string;
+  /**
+   * วันที่พนักงานเข้าร่วมร้านในระบบ (YYYY-MM-DD เวลาสาขา) ต่อ userId — ใช้ร่วมกับ "วันเริ่มงาน"
+   * ตัดงวดของคนที่เริ่มงานกลางงวด (ใช้ใน computeAdvancedPayrollLines) · ไม่ส่ง = ใช้วันเริ่มงานอย่างเดียว
+   */
+  joinedDates?: Map<string, string>;
 }
 
 /**
@@ -316,11 +328,26 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     for (const date of hasOpenShiftByDay.keys()) {
       if (isNonWorkingDate(date) && !closedHoursByDay.has(date)) unpaidHolidayDays += 1;
     }
+    // ครึ่งวันที่ "ควรทำเต็มวัน" เท่านั้นที่หักเงินเดือนประจำได้ — มาช่วยครึ่งวันในวันหยุดร้าน
+    // หรือวันหยุดประจำของตัวเองเป็นงานเพิ่ม ไม่ใช่การขาดครึ่งวัน (ISSUE-20261105-PAY-002)
+    // วันที่ผู้จัดการบันทึก "ลา" ไว้แล้ว หักผ่านรายการลาอยู่แล้ว — ไม่หักครึ่งวันซ้ำ
+    const leaveDatesForHalfDay = new Set(userAdj.filter((a) => a.type === "leave").map((a) => a.date));
+    let halfDayDeductionDays = 0;
+    for (const [date, hours] of closedHoursByDay) {
+      if (
+        hours > 0 &&
+        isHalfDay(hours, halfDayMaxHours) &&
+        !isNonWorkingDate(date) &&
+        !leaveDatesForHalfDay.has(date)
+      ) {
+        halfDayDeductionDays += 1;
+      }
+    }
     const payableDays = round2(fullDays + 0.5 * halfDays);
 
     // ไม่มี record เลย (เช่นข้อมูลสรุปมาจากที่อื่น) ให้ใช้จำนวนวันดิบตามเดิม —
     // การหักครึ่งวัน/ตัดวันหยุดที่กะค้าง ทำได้ก็ต่อเมื่อมี record ให้ดูจริง
-    const basePay = summary
+    let basePay = summary
       ? computeBasePay(profile, summary, userRecords.length > 0 ? payableDays : undefined, { periodStart, periodEnd })
       : profile && profile.payType === "monthly"
         ? monthlyBasePay(profile.monthlySalary, periodStart, periodEnd)
@@ -362,6 +389,13 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     otHours = round2(otHours);
     const hourly = profile ? effectiveHourlyRate(profile, settings.regularHoursPerDay) : 0;
     const otPay = round2(otHours * settings.otMultiplier * hourly);
+    // รายชั่วโมง: basePay = เรท × ชั่วโมงทั้งหมด ซึ่งรวมชั่วโมง OT ไปแล้ว — ต้องตัดออก ไม่งั้นชั่วโมง OT
+    // ได้ทั้งค่าแรงปกติและ otPay เต็มอัตรา (= 2.5 เท่าแทน 1.5 เท่า, ISSUE-20261105-PAY-001)
+    let regularHours = round2(totalHours);
+    if (profile?.payType === "hourly" && summary && otHours > 0) {
+      regularHours = round2(Math.max(0, summary.totalHours - otHours));
+      basePay = round2(profile.hourlyRate * regularHours);
+    }
     latePenalty = round2(latePenalty);
 
     // --- Auto absent: scheduled working days (per profile) with no record, up to today ---
@@ -401,7 +435,7 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     // รายเดือน/รายวันที่มีค่าปรับต่อวัน: ครึ่งวันที่ไม่ได้ทำ ถูกหักครึ่งหนึ่งของค่าวันนั้น
     // (รายวันไม่ต้องหักซ้ำ เพราะ basePay คูณด้วย payableDays ที่ลดครึ่งไปแล้ว)
     const halfDayDeduction =
-      profile && profile.payType === "monthly" ? round2(0.5 * halfDays * perAbsentDay) : 0;
+      profile && profile.payType === "monthly" ? round2(0.5 * halfDayDeductionDays * perAbsentDay) : 0;
 
     // --- ตารางรายวัน: ที่มาของทุกตัวเลขบนสลิป (ใช้กติกาชุดเดียวกับที่คิดเงินด้านบน) ---
     const leaveDateSet = new Set(userAdj.filter((a) => a.type === "leave").map((a) => a.date));
@@ -440,6 +474,8 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
     let bonusTotal = 0;
     let deductionTotal = 0;
     for (const a of userAdj) {
+      // ภาษีกรอกเอง คิดแยกในเงินเดือนขั้นสูง (advanced/compute.ts) — ไม่ใช่โบนัส
+      if (a.type === "withholding_tax") continue;
       if (DEDUCTION_TYPES.includes(a.type)) deductionTotal += a.amount;
       else bonusTotal += a.amount;
     }
@@ -462,6 +498,8 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
       halfDays,
       payableDays,
       halfDayDeduction,
+      halfDayDeductionDays,
+      regularHours,
       unpaidHolidayDays,
       absentRatePerDay: round2(perAbsentDay),
       days,

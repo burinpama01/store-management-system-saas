@@ -3,6 +3,7 @@
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { logActionError } from "@/modules/system/event-log";
 import { landingPathForCurrentUser } from "@/modules/auth/guards";
+import { RETURN_TO_PARAM, sanitizeReturnTo } from "@/modules/auth/return-to";
 import { redirect } from "next/navigation";
 
 function logSignInError(error: { code?: string; message: string }) {
@@ -38,5 +39,10 @@ export async function signIn(
     };
   }
 
-  redirect(await landingPathForCurrentUser());
+  // กลับไปหน้าที่ตั้งใจจะเปิดก่อนถูกพามาล็อกอิน (ตรวจซ้ำฝั่ง server — ค่าในฟอร์มแก้ได้)
+  const returnTo = sanitizeReturnTo(formData.get(RETURN_TO_PARAM));
+  if (returnTo) redirect(returnTo);
+  const landing = await landingPathForCurrentUser();
+  // สิทธิ์ยังโหลดไม่ทันจะได้ /login กลับมา — กันวนกลับหน้าล็อกอินหลังล็อกอินสำเร็จ
+  redirect(landing === "/login" ? "/dashboard" : landing);
 }

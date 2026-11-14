@@ -3325,6 +3325,300 @@ export interface Database {
           },
         ];
       };
+      store_cost_settings: {
+        Row: {
+          store_id: string;
+          organization_id: string;
+          open_days_per_month: number;
+          target_profit_monthly: number;
+          target_food_cost_pct: number;
+          other_variable_pct: number;
+          price_rounding: "none" | "ceil_1" | "ceil_5" | "ceil_10";
+          cash_reserve: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          store_id: string;
+          organization_id: string;
+          open_days_per_month?: number;
+          target_profit_monthly?: number;
+          target_food_cost_pct?: number;
+          other_variable_pct?: number;
+          price_rounding?: "none" | "ceil_1" | "ceil_5" | "ceil_10";
+          cash_reserve?: number | null;
+          updated_at?: string;
+        };
+        Update: {
+          store_id?: string;
+          organization_id?: string;
+          open_days_per_month?: number;
+          target_profit_monthly?: number;
+          target_food_cost_pct?: number;
+          other_variable_pct?: number;
+          price_rounding?: "none" | "ceil_1" | "ceil_5" | "ceil_10";
+          cash_reserve?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_cost_budgets: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          kind: "monthly" | "startup";
+          cost_type: string;
+          name: string;
+          amount: number;
+          useful_life_months: number | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          kind?: "monthly" | "startup";
+          cost_type: string;
+          name: string;
+          amount: number;
+          useful_life_months?: number | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          kind?: "monthly" | "startup";
+          cost_type?: string;
+          name?: string;
+          amount?: number;
+          useful_life_months?: number | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      ingredients: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          purchase_unit: string;
+          usage_unit: string;
+          usage_per_purchase: number;
+          purchase_price: number;
+          yield_pct: number;
+          stock_pool_id: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          name: string;
+          purchase_unit: string;
+          usage_unit: string;
+          usage_per_purchase: number;
+          purchase_price: number;
+          yield_pct?: number;
+          stock_pool_id?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          name?: string;
+          purchase_unit?: string;
+          usage_unit?: string;
+          usage_per_purchase?: number;
+          purchase_price?: number;
+          yield_pct?: number;
+          stock_pool_id?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      ingredient_price_history: {
+        Row: {
+          id: string;
+          ingredient_id: string;
+          purchase_price: number;
+          recorded_by: string | null;
+          recorded_at: string;
+        };
+        Insert: {
+          id?: string;
+          ingredient_id: string;
+          purchase_price: number;
+          recorded_by?: string | null;
+          recorded_at?: string;
+        };
+        Update: {
+          id?: string;
+          ingredient_id?: string;
+          purchase_price?: number;
+          recorded_by?: string | null;
+          recorded_at?: string;
+        };
+        Relationships: [];
+      };
+      recipe_lines: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string;
+          variant_id: string | null;
+          ingredient_id: string;
+          quantity: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string;
+          variant_id?: string | null;
+          ingredient_id: string;
+          quantity: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string;
+          variant_id?: string | null;
+          ingredient_id?: string;
+          quantity?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      product_cost_settings: {
+        Row: {
+          product_id: string;
+          organization_id: string;
+          store_id: string;
+          packaging_cost: number;
+          target_food_cost_pct: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          product_id: string;
+          organization_id: string;
+          store_id: string;
+          packaging_cost?: number;
+          target_food_cost_pct?: number | null;
+          updated_at?: string;
+        };
+        Update: {
+          product_id?: string;
+          organization_id?: string;
+          store_id?: string;
+          packaging_cost?: number;
+          target_food_cost_pct?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      cost_allocation_templates: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string | null;
+          ingredient_pct: number;
+          packaging_pct: number;
+          labor_pct: number;
+          overhead_pct: number;
+          profit_pct: number;
+          effective_from: string;
+          created_by: string | null;
+          created_at: string;
+          use_store_default: boolean;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          product_id?: string | null;
+          ingredient_pct: number;
+          packaging_pct: number;
+          labor_pct: number;
+          overhead_pct: number;
+          profit_pct: number;
+          effective_from?: string;
+          created_by?: string | null;
+          created_at?: string;
+          use_store_default?: boolean;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string | null;
+          use_store_default?: boolean;
+          ingredient_pct?: number;
+          packaging_pct?: number;
+          labor_pct?: number;
+          overhead_pct?: number;
+          profit_pct?: number;
+          effective_from?: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      order_item_costs: {
+        Row: {
+          order_item_id: string;
+          order_id: string;
+          organization_id: string;
+          store_id: string;
+          product_id: string | null;
+          variant_id: string | null;
+          unit_cost: number | null;
+          packaging_cost: number | null;
+          snapshot_at: string;
+        };
+        Insert: {
+          order_item_id: string;
+          order_id: string;
+          organization_id: string;
+          store_id: string;
+          product_id?: string | null;
+          variant_id?: string | null;
+          unit_cost?: number | null;
+          packaging_cost?: number | null;
+          snapshot_at?: string;
+        };
+        Update: {
+          order_item_id?: string;
+          order_id?: string;
+          organization_id?: string;
+          store_id?: string;
+          product_id?: string | null;
+          variant_id?: string | null;
+          unit_cost?: number | null;
+          packaging_cost?: number | null;
+          snapshot_at?: string;
+        };
+        Relationships: [];
+      };
       order_items: {
         Row: {
           id: string;
@@ -3480,6 +3774,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           name: string;
+          cost_type: string | null;
           type: "income" | "expense" | "cash_adjustment";
           is_default: boolean;
           sort_order: number;
@@ -3491,6 +3786,7 @@ export interface Database {
           organization_id: string;
           store_id: string;
           name: string;
+          cost_type?: string | null;
           type: "income" | "expense" | "cash_adjustment";
           is_default?: boolean;
           sort_order?: number;
@@ -3502,6 +3798,7 @@ export interface Database {
           organization_id?: string;
           store_id?: string;
           name?: string;
+          cost_type?: string | null;
           type?: "income" | "expense" | "cash_adjustment";
           is_default?: boolean;
           sort_order?: number;
@@ -3709,6 +4006,7 @@ export interface Database {
           session_id: string | null;
           requester_label: string | null;
           song_title: string;
+          bump_of_request_id: string | null;
           artist_name: string | null;
           note: string | null;
           status: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
@@ -3737,6 +4035,7 @@ export interface Database {
           session_id?: string | null;
           requester_label?: string | null;
           song_title: string;
+          bump_of_request_id: string | null;
           artist_name?: string | null;
           note?: string | null;
           status?: "pending" | "approved" | "played" | "rejected" | "skipped" | "expired";
@@ -3770,6 +4069,7 @@ export interface Database {
           donation_slip_url?: string | null;
           donation_ref?: string | null;
           donation_play_now?: boolean;
+          bump_of_request_id?: string | null;
           updated_at?: string;
         };
         Relationships: [];
@@ -3810,6 +4110,7 @@ export interface Database {
           min_donation: number;
           play_now_price: number;
           interrupt_base_on_request: boolean;
+          customer_screen_enabled: boolean;
           max_duration_seconds: number;
           base_playlist: Json;
           licensing_acknowledged_at: string | null;
@@ -3824,6 +4125,7 @@ export interface Database {
           min_donation?: number;
           play_now_price?: number;
           interrupt_base_on_request?: boolean;
+          customer_screen_enabled?: boolean;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;
@@ -3836,6 +4138,7 @@ export interface Database {
           min_donation?: number;
           play_now_price?: number;
           interrupt_base_on_request?: boolean;
+          customer_screen_enabled?: boolean;
           max_duration_seconds?: number;
           base_playlist?: Json;
           licensing_acknowledged_at?: string | null;
@@ -3847,6 +4150,9 @@ export interface Database {
         Row: {
           store_id: string;
           music_request_id: string | null;
+          playback_state: string;
+          position_at: string | null;
+          position_seconds: number | null;
           source: "request" | "base";
           youtube_video_id: string | null;
           title: string | null;
@@ -3859,6 +4165,9 @@ export interface Database {
         Insert: {
           store_id: string;
           music_request_id?: string | null;
+          playback_state?: string;
+          position_at?: string | null;
+          position_seconds?: number | null;
           source?: "request" | "base";
           youtube_video_id?: string | null;
           title?: string | null;
@@ -3870,6 +4179,9 @@ export interface Database {
         };
         Update: {
           music_request_id?: string | null;
+          playback_state?: string;
+          position_at?: string | null;
+          position_seconds?: number | null;
           source?: "request" | "base";
           youtube_video_id?: string | null;
           title?: string | null;
@@ -3905,6 +4217,102 @@ export interface Database {
         };
         Relationships: [];
       };
+      employee_self_info_requests: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          changes: Json
+          status: string
+          review_note: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          changes: Json
+          status?: string
+          review_note?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          user_id?: string
+          changes?: Json
+          status?: string
+          review_note?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      employee_self_info: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          full_name: string | null
+          bank_name: string | null
+          bank_account_no: string | null
+          bank_account_name: string | null
+          nickname: string | null
+          phone: string | null
+          birth_date: string | null
+          address: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          full_name?: string | null
+          bank_name?: string | null
+          bank_account_no?: string | null
+          bank_account_name?: string | null
+          nickname?: string | null
+          phone?: string | null
+          birth_date?: string | null
+          address?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          user_id?: string
+          full_name?: string | null
+          bank_name?: string | null
+          bank_account_no?: string | null
+          bank_account_name?: string | null
+          nickname?: string | null
+          phone?: string | null
+          birth_date?: string | null
+          address?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employee_profiles: {
         Row: {
           id: string;
@@ -3922,6 +4330,19 @@ export interface Database {
           absent_penalty_amount: number;
           working_days: number[];
           ot_eligible: boolean;
+          employee_code: string | null;
+          full_name: string | null;
+          position: string | null;
+          employment_type: "permanent" | "daily" | "part_time" | "temporary";
+          permanent_since: string | null;
+          seniority_start_date: string | null;
+          employment_end_date: string | null;
+          bank_name: string | null;
+          bank_account_no: string | null;
+          bank_account_name: string | null;
+          sso_enabled: boolean;
+          withholding_tax_rate: number;
+          pay_frequency: string;
           created_at: string;
           updated_at: string;
         };
@@ -3941,6 +4362,19 @@ export interface Database {
           absent_penalty_amount?: number;
           working_days?: number[];
           ot_eligible?: boolean;
+          employee_code?: string | null;
+          full_name?: string | null;
+          position?: string | null;
+          employment_type?: "permanent" | "daily" | "part_time" | "temporary";
+          permanent_since?: string | null;
+          seniority_start_date?: string | null;
+          employment_end_date?: string | null;
+          bank_name?: string | null;
+          bank_account_no?: string | null;
+          bank_account_name?: string | null;
+          sso_enabled?: boolean;
+          withholding_tax_rate?: number;
+          pay_frequency?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -3956,6 +4390,19 @@ export interface Database {
           absent_penalty_amount?: number;
           working_days?: number[];
           ot_eligible?: boolean;
+          employee_code?: string | null;
+          full_name?: string | null;
+          position?: string | null;
+          employment_type?: "permanent" | "daily" | "part_time" | "temporary";
+          permanent_since?: string | null;
+          seniority_start_date?: string | null;
+          employment_end_date?: string | null;
+          bank_name?: string | null;
+          bank_account_no?: string | null;
+          bank_account_name?: string | null;
+          sso_enabled?: boolean;
+          withholding_tax_rate?: number;
+          pay_frequency?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -3972,6 +4419,32 @@ export interface Database {
           late_penalty_max_per_day: number;
           absent_penalty_per_day: number;
           backdated_rights_per_month: number;
+          payslip_legal_name: string | null;
+          payslip_address: string | null;
+          payslip_tax_id: string | null;
+          feat_sales_target_bar: boolean;
+          feat_sales_bonus: boolean;
+          feat_skill_pay: boolean;
+          feat_seniority_pay: boolean;
+          feat_social_security: boolean;
+          feat_withholding_tax: boolean;
+          feat_pay_cycle: boolean;
+          feat_my_payslip: boolean;
+          feat_payroll_notifications: boolean;
+          pay_cycle_start_day: number;
+          pay_day: number;
+          skill_tiers: Json;
+          seniority_tiers: Json;
+          sales_bonus_tiers: Json;
+          sales_bonus_channels: string[];
+          sales_bonus_late_max_minutes: number | null;
+          sales_record_bonus: number;
+          sales_record_mode: "replace" | "stack";
+          sales_record_baseline: number;
+          sso_rate: number;
+          sso_wage_floor: number;
+          sso_wage_ceiling: number;
+          wht_mode: "manual" | "percent";
           working_days: number[];
           created_at: string;
           updated_at: string;
@@ -3987,6 +4460,32 @@ export interface Database {
           late_penalty_max_per_day?: number;
           absent_penalty_per_day?: number;
           backdated_rights_per_month?: number;
+          payslip_legal_name?: string | null;
+          payslip_address?: string | null;
+          payslip_tax_id?: string | null;
+          feat_sales_target_bar?: boolean;
+          feat_sales_bonus?: boolean;
+          feat_skill_pay?: boolean;
+          feat_seniority_pay?: boolean;
+          feat_social_security?: boolean;
+          feat_withholding_tax?: boolean;
+          feat_pay_cycle?: boolean;
+          feat_my_payslip?: boolean;
+          feat_payroll_notifications?: boolean;
+          pay_cycle_start_day?: number;
+          pay_day?: number;
+          skill_tiers?: Json;
+          seniority_tiers?: Json;
+          sales_bonus_tiers?: Json;
+          sales_bonus_channels?: string[];
+          sales_bonus_late_max_minutes?: number | null;
+          sales_record_bonus?: number;
+          sales_record_mode?: "replace" | "stack";
+          sales_record_baseline?: number;
+          sso_rate?: number;
+          sso_wage_floor?: number;
+          sso_wage_ceiling?: number;
+          wht_mode?: "manual" | "percent";
           working_days?: number[];
           created_at?: string;
           updated_at?: string;
@@ -4000,6 +4499,32 @@ export interface Database {
           late_penalty_max_per_day?: number;
           absent_penalty_per_day?: number;
           backdated_rights_per_month?: number;
+          payslip_legal_name?: string | null;
+          payslip_address?: string | null;
+          payslip_tax_id?: string | null;
+          feat_sales_target_bar?: boolean;
+          feat_sales_bonus?: boolean;
+          feat_skill_pay?: boolean;
+          feat_seniority_pay?: boolean;
+          feat_social_security?: boolean;
+          feat_withholding_tax?: boolean;
+          feat_pay_cycle?: boolean;
+          feat_my_payslip?: boolean;
+          feat_payroll_notifications?: boolean;
+          pay_cycle_start_day?: number;
+          pay_day?: number;
+          skill_tiers?: Json;
+          seniority_tiers?: Json;
+          sales_bonus_tiers?: Json;
+          sales_bonus_channels?: string[];
+          sales_bonus_late_max_minutes?: number | null;
+          sales_record_bonus?: number;
+          sales_record_mode?: "replace" | "stack";
+          sales_record_baseline?: number;
+          sso_rate?: number;
+          sso_wage_floor?: number;
+          sso_wage_ceiling?: number;
+          wht_mode?: "manual" | "percent";
           working_days?: number[];
           updated_at?: string;
         };
@@ -4037,7 +4562,7 @@ export interface Database {
           user_id: string;
           employee_name: string;
           date: string;
-          type: "penalty" | "bonus" | "leave" | "absent" | "late";
+          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
           amount: number;
           note: string | null;
           created_by_user_id: string;
@@ -4050,7 +4575,7 @@ export interface Database {
           user_id: string;
           employee_name: string;
           date: string;
-          type: "penalty" | "bonus" | "leave" | "absent" | "late";
+          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
           amount: number;
           note?: string | null;
           created_by_user_id: string;
@@ -5158,6 +5683,27 @@ export interface Database {
         };
         Returns: string;
       };
+      submit_employee_self_info_request: {
+        Args: { p_store_id: string; p_changes: Json }
+        Returns: string
+      }
+      cancel_employee_self_info_request: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
+      review_employee_self_info_request: {
+        Args: { p_request_id: string; p_approve: boolean; p_note?: string | null }
+        Returns: undefined
+      }
+      costing_save_menu: {
+        Args: {
+          p_product_id: string;
+          p_lines: Json;
+          p_packaging_cost: number;
+          p_target_food_cost_pct: number | null;
+        };
+        Returns: undefined;
+      };
       redeem_loyalty_reward: {
         Args: {
           p_organization_id: string;
@@ -5354,6 +5900,14 @@ export interface Database {
           pos_revenue: number;
           delivery_revenue: number;
         }[];
+      };
+      get_sales_insights: {
+        Args: {
+          p_store_id: string;
+          p_date_from: string;
+          p_date_to: string;
+        };
+        Returns: Json;
       };
       get_report_daily_sales: {
         Args: {
