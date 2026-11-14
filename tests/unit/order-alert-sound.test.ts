@@ -103,8 +103,9 @@ describe("new_delivery_order notification type", () => {
     expect(sql.match(/^\s+'new_delivery_order',$/gm)).toHaveLength(2);
     expect(sql).toContain("notification_settings_notification_type_check");
     expect(sql).toContain("notification_templates_notification_type_check");
-    // ต้องไม่ทำชนิดเดิมหาย
-    for (const type of NOTIFICATION_TYPES) expect(sql).toContain(`'${type}'`);
+    // ต้องไม่ทำชนิดเดิมหาย (ชนิดที่เพิ่มหลัง migration นี้ตรวจใน migration ของตัวเอง)
+    const addedLater = new Set(["ops_checklist"]);
+    for (const type of NOTIFICATION_TYPES.filter((entry) => !addedLater.has(entry))) expect(sql).toContain(`'${type}'`);
   });
 
   it("delivery ingestion notifies once per new booking (after the duplicate check)", () => {

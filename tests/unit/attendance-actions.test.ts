@@ -91,6 +91,11 @@ vi.mock("@/modules/attendance/shift-status-repository", () => ({
   completeDailySummaryNotification: mocks.completeDailySummaryNotification,
 }));
 
+// เช็กลิสต์งานหน้าร้าน (ทดสอบแยกใน operations-checklist-rules) — ที่นี่ถือว่าไม่ติดเช็กลิสต์
+vi.mock("@/modules/operations/clock-out-gate", () => ({
+  checkClockOutChecklistGate: vi.fn(async () => null),
+}));
+
 vi.mock("@/modules/system/event-log", () => ({
   logSystemEvent: mocks.logSystemEvent,
   logActionError: mocks.logActionError,

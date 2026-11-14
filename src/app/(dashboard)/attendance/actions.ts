@@ -45,6 +45,7 @@ import { buildDailySummaryMessage } from "@/modules/reports/daily-summary";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
 import { getStore } from "@/modules/stores/repository";
+import { checkClockOutChecklistGate } from "@/modules/operations/clock-out-gate";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -330,6 +331,15 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
       if (openSession.error) return { error: openSession.error.userMessage };
       if (openSession.data) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
     }
+
+    // ผู้รับผิดชอบเช็กลิสต์ที่ตั้ง "ต้องเสร็จก่อนออกงาน" ต้องส่งก่อน (ทุก role — ตามที่เจ้าของมอบหมาย)
+    const checklistBlock = await checkClockOutChecklistGate({
+      organizationId: ctx.organizationId,
+      storeId: recordStoreId,
+      userId: user.id,
+      shiftDate: active.date,
+    });
+    if (checklistBlock) return { error: checklistBlock };
 
     const gpsPolicy = await getAttendanceGpsPolicy(recordStoreId, ctx.organizationId);
     const locationAllowed = gpsPolicy.gpsEnabled;

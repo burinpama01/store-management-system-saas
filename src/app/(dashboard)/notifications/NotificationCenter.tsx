@@ -33,6 +33,7 @@ const TYPE_META: Record<string, { label: string; emoji: string; tone: string }> 
   approval: { label: "คำขออนุมัติ", emoji: "✅", tone: "bg-violet-50 text-violet-700 border-violet-200" },
   service_request: { label: "เรียกพนักงาน", emoji: "🔔", tone: "bg-amber-50 text-amber-800 border-amber-200" },
   daily_summary: { label: "สรุปยอดประจำวัน", emoji: "📊", tone: "bg-teal-50 text-teal-700 border-teal-200" },
+  ops_checklist: { label: "เช็กลิสต์หน้าร้าน", emoji: "📋", tone: "bg-rose-50 text-rose-700 border-rose-200" },
   test: { label: "ทดสอบ", emoji: "🧪", tone: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
