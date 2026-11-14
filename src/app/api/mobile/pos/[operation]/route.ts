@@ -5,12 +5,15 @@ import type { Database } from '@/server/integrations/supabase/database.types';
 import { createSupabaseServiceClient } from '@/server/integrations/supabase/server';
 import { withNativeRequestContext } from '@/modules/native-pos/request-context';
 import { getUserStores } from '@/modules/auth/session';
-import { getResolvedCurrentPermissions } from '@/modules/auth/guards';
+import { getResolvedCurrentPermissions, requireFeature } from '@/modules/auth/guards';
+import { prepareNativeBeam, checkNativeBeam } from '@/modules/native-pos/beam';
+import { isBeamReadyForStore } from '@/modules/payments/beam-service';
 import { getOrganizationBillingState } from '@/modules/billing/billing-service';
 import { hasBillingAccess } from '@/modules/billing/pricing';
 import { listCategories, listProducts } from '@/modules/catalog/repository';
 import { authoritativeCart, nativeProduct, satang } from '@/modules/native-pos/catalog';
-import { checkoutAndPayAction, listTodayOrdersAction } from '@/app/pos/actions';
+import { checkoutAndPayAction, listTodayOrdersAction, searchPosCustomersAction } from '@/app/pos/actions';
+import { quoteNativeSale } from '@/modules/native-pos/sales';
 import { getConnectOrderById, getChannelLinkById, listChannelLinksByStore } from '@/modules/connect/repository';
 import { applyPosStatus } from '@/modules/connect/status-sync';
 import { POST as interpretVoice } from '@/app/api/ai/voice-intent/route';
@@ -18,12 +21,18 @@ import type { Order } from '@/modules/pos/types';
 import type { NativeOrder } from '@/modules/native-pos/contracts';
 import { findNativeOrderId, nativeOperationKey, cancelNativeOperation } from '@/modules/native-pos/operation';
 import { getOrder } from '@/modules/pos/order-repository';
+import { nativeWorkflow, workflowOperations } from '@/modules/native-pos/workflow';
 
 export const runtime = 'nodejs';
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
 // PostgreSQL UUID columns also contain legacy IDs without RFC version/variant bits.
 const databaseId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-const checkoutSchema = z.object({ operationId: z.string().uuid(), expectedTotalSatang: z.number().int().min(0).max(10000000000), method: z.enum(['cash', 'bank_transfer']), receivedSatang: z.number().int().min(0).max(10000000000), lines: z.array(z.object({ productId: databaseId, variantId: databaseId.nullable(), optionIds: z.array(databaseId).max(50), quantity: z.number().int().min(1).max(999), note: z.string().max(500) }).strict()).min(1).max(100) }).strict();
+const linesSchema = z.array(z.object({ productId: databaseId, variantId: databaseId.nullable(), optionIds: z.array(databaseId).max(50), quantity: z.number().int().min(1).max(999), note: z.string().max(500) }).strict()).min(1).max(100);
+const salesShape = { customerId: databaseId.nullable().optional(), couponCode: z.string().trim().max(80).nullable().optional(), manualDiscountSatang: z.number().int().min(0).max(10000000000).optional() };
+const quoteSchema = z.object({ lines: linesSchema, ...salesShape }).strict();
+const beamPrepareSchema = quoteSchema.extend({ operationId: z.string().uuid(), expectedTotalSatang: z.number().int().min(100).max(10000000000) }).strict();
+const beamStatusSchema = z.object({ operationId:z.string().uuid(),gatewayPaymentId:databaseId,expectedTotalSatang:z.number().int().min(100).max(10000000000) }).strict();
+const checkoutSchema = z.object({ operationId: z.string().uuid(), expectedTotalSatang: z.number().int().min(0).max(10000000000), method: z.enum(['cash', 'bank_transfer','beam']), gatewayPaymentId:databaseId.optional(), receivedSatang: z.number().int().min(0).max(10000000000), lines: linesSchema, ...salesShape }).strict().refine(v=>v.method==='beam'?!!v.gatewayPaymentId:!v.gatewayPaymentId);
 function orderDto(order: Order): NativeOrder {
   return { id: order.id, number: order.orderNumber, status: order.status, totalSatang: satang(order.total), createdAt: order.createdAt,
     lines: order.items.map(item => ({ key: item.id, productId: item.productId, name: item.productName, quantity: item.quantity, unitSatang: satang(item.unitPrice), variantId: item.variantId ?? null, optionIds: item.modifiers.map(m => m.option.id), note: item.note ?? '' })) };
@@ -52,6 +61,19 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
         const billing = await getOrganizationBillingState(ctx.organizationId);
         if (!billing || !hasBillingAccess(billing)) return json({ error: 'กรุณาตรวจสอบแพ็กเกจร้านก่อนใช้งาน' }, 403);
       }
+      if (workflowOperations.has(operation)) {
+        if (ctx.storeId !== storeId) return json({ error: 'บริบทร้านไม่ตรงกับร้านที่เลือก' }, 403);
+        if (!resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
+        let workflowBody: unknown;
+        if (request.method === 'POST') {
+          if (Number(request.headers.get('content-length') ?? 0) > 64000) return json({ error: 'ข้อมูลใหญ่เกินขอบเขต' }, 413);
+          const raw = await request.text();
+          if (raw.length > 64000) return json({ error: 'ข้อมูลใหญ่เกินขอบเขต' }, 413);
+          try { workflowBody = JSON.parse(raw); } catch { return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400); }
+        }
+        const result = await nativeWorkflow(operation, request.method, new URL(request.url), workflowBody, { storeId, organizationId: ctx.organizationId, storeTimezone: ctx.storeTimezone, userId: data.user.id, canRecord: resolved.can('cashflow.record') });
+        if (result) return json(result.body, result.status);
+      }
       if (operation === 'bootstrap' && request.method === 'GET') {
         if (!resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
         const [products, categories] = await Promise.all([listProducts(storeId), listCategories(storeId)]);
@@ -63,6 +85,19 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
         const result = await listTodayOrdersAction();
         if (result.error) return json({ error: result.error }, 502);
         return json({ orders: result.orders.map(orderDto) });
+      }
+      if(operation==='beam-config'&&request.method==='GET'){
+        if(ctx.storeId!==storeId||!resolved.can('pos.use'))return json({error:'ไม่มีสิทธิ์ใช้งาน POS ในร้านนี้'},403);
+        try {await requireFeature('byoPaymentGateway');}catch{return json({enabled:false});}
+        return json({enabled:await isBeamReadyForStore(storeId)});
+      }
+      if (operation === 'customers' && request.method === 'GET') {
+        if (ctx.storeId !== storeId || !resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS ในร้านนี้' }, 403);
+        const query = new URL(request.url).searchParams.get('q')?.trim() ?? '';
+        if (query.length < 2 || query.length > 80) return json({ error: 'ค้นหาลูกค้าอย่างน้อย 2 และไม่เกิน 80 ตัวอักษร' }, 400);
+        const result = await searchPosCustomersAction(query);
+        if (result.error) return json({ error: result.error }, 400);
+        return json({ customers: result.customers.slice(0,10).map(c => ({ id: c.id, name: c.name, phoneHint: c.phone ? `••••${c.phone.slice(-4)}` : '' })) });
       }
       if (operation === 'delivery' && request.method === 'GET') {
         if (!resolved.can('orders.manage_qr')) return json({ error: 'ไม่มีสิทธิ์จัดการเดลิเวอรี' }, 403);
@@ -92,6 +127,31 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
       if (raw.length > 64000) return json({ error: 'ข้อมูลใหญ่เกินขอบเขต' }, 413);
       let body: unknown;
       try { body = JSON.parse(raw); } catch { return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400); }
+      if(operation==='beam-status'){
+        if(ctx.storeId!==storeId||!resolved.can('pos.use'))return json({error:'ไม่มีสิทธิ์ใช้งาน POS ในร้านนี้'},403);
+        const parsed=beamStatusSchema.safeParse(body);if(!parsed.success)return json({error:'คำขอตรวจ Beam ไม่ถูกต้อง'},400);
+        try {await requireFeature('byoPaymentGateway');}catch{return json({error:'แพ็กเกจนี้ไม่รองรับ Beam'},403);}
+        try{return json({qr:await checkNativeBeam({storeId,organizationId:ctx.organizationId,userId:data.user.id},parsed.data.operationId,parsed.data.gatewayPaymentId,parsed.data.expectedTotalSatang)});}catch(error){return json({error:error instanceof Error?error.message:'ตรวจ Beam ไม่สำเร็จ'},409);}
+      }
+      if (operation === 'quote' || operation === 'beam-prepare') {
+        if (ctx.storeId !== storeId || !resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS ในร้านนี้' }, 403);
+        const parsed = operation==='beam-prepare'?beamPrepareSchema.safeParse(body):quoteSchema.safeParse(body);
+        if (!parsed.success) return json({ error: 'ข้อมูลตรวจยอดไม่ถูกต้อง' }, 400);
+        if(operation==='beam-prepare'){try{await requireFeature('byoPaymentGateway');}catch{return json({error:'แพ็กเกจนี้ไม่รองรับ Beam'},403);}}
+        const products = await listProducts(storeId, { productIds: [...new Set(parsed.data.lines.map(l => l.productId))] });
+        if (products.error) return json({ error: 'ตรวจราคาสินค้าไม่สำเร็จ' }, 502);
+        try {
+          const cart = authoritativeCart(storeId, { ...parsed.data, operationId: '', expectedTotalSatang: 0, method: 'cash', receivedSatang: 0 }, products.data ?? []);
+          const result = await quoteNativeSale(cart, parsed.data, resolved.can('pos.discount'));
+          if(operation==='beam-prepare'&&'operationId' in parsed.data&&'expectedTotalSatang' in parsed.data){
+            if(result.quote.totalSatang!==parsed.data.expectedTotalSatang)return json({error:'ยอดเปลี่ยน กรุณาตรวจรายการ Beam เดิมก่อนเริ่มใหม่'},409);
+            const operationId=parsed.data.operationId as string;
+            if(await findNativeOrderId(ctx.organizationId,storeId,data.user.id,operationId))return json({error:'มีบิลเดิมแล้ว กรุณาตรวจผลบิลเดิม'},409);
+            return json({qr:await prepareNativeBeam({storeId,organizationId:ctx.organizationId,userId:data.user.id},operationId,result.quote.totalSatang)});
+          }
+          return json({ quote: result.quote });
+        } catch (error) { return json({ error: error instanceof Error ? error.message : 'ตรวจยอดไม่สำเร็จ' }, 400); }
+      }
       if (operation === 'cancel-operation') {
         if (!resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
         const parsed = z.object({ operationId: z.string().uuid() }).strict().safeParse(body);
@@ -99,7 +159,7 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
         return json(await cancelNativeOperation(storeId, data.user.id, parsed.data.operationId));
       }
       if (operation === 'checkout') {
-        if (!resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
+        if (ctx.storeId !== storeId || !resolved.can('pos.use')) return json({ error: 'ไม่มีสิทธิ์ใช้งาน POS' }, 403);
         const parsed = checkoutSchema.safeParse(body);
         if (!parsed.success) return json({ error: 'ข้อมูลบิลไม่ถูกต้อง', notCreated: true }, 400);
         const existingId = await findNativeOrderId(ctx.organizationId, storeId, data.user.id, parsed.data.operationId);
@@ -115,10 +175,18 @@ async function handle(request: Request, context: { params: Promise<{ operation: 
         let cart: ReturnType<typeof authoritativeCart>;
         try { cart = authoritativeCart(storeId, parsed.data, products.data ?? []); }
         catch (error) { return json({ error: error instanceof Error ? error.message : 'รายการสินค้าไม่พร้อมขาย', notCreated: true }, 400); }
-        if (satang(cart.total) !== parsed.data.expectedTotalSatang) return json({ error: 'ราคาสินค้าเปลี่ยน กรุณาโหลดรายการใหม่และตรวจยอดก่อนรับเงิน', notCreated: true }, 409);
-        if (parsed.data.method === 'cash' && parsed.data.receivedSatang < satang(cart.total)) return json({ error: 'เงินรับน้อยกว่ายอดบิล', notCreated: true }, 400);
+        let sale: Awaited<ReturnType<typeof quoteNativeSale>>;
+        try { sale = await quoteNativeSale(cart, parsed.data, resolved.can('pos.discount')); }
+        catch (error) { return json({ error: error instanceof Error ? error.message : 'ตรวจยอดไม่สำเร็จ', notCreated: true }, 400); }
+        if (sale.quote.totalSatang !== parsed.data.expectedTotalSatang) return json({ error: 'ราคาหรือคูปองเปลี่ยน กรุณาตรวจยอดใหม่ก่อนรับเงิน', notCreated: true }, 409);
+        if (parsed.data.method === 'cash' && parsed.data.receivedSatang < sale.quote.totalSatang) return json({ error: 'เงินรับน้อยกว่ายอดบิล', notCreated: true }, 400);
+        if(parsed.data.method==='beam'){
+          try{await requireFeature('byoPaymentGateway');}catch{return json({error:'แพ็กเกจนี้ไม่รองรับ Beam'},403);}
+          try{const qr=await checkNativeBeam({storeId,organizationId:ctx.organizationId,userId:data.user.id},parsed.data.operationId,parsed.data.gatewayPaymentId!,sale.quote.totalSatang);if(qr.status!=='PAID')return json({error:'Beam ยังไม่ยืนยันรับเงิน กรุณาตรวจรายการเดิม'},409);}catch(error){return json({error:error instanceof Error?error.message:'ตรวจ Beam ไม่สำเร็จ'},409);}
+        }
         const operationKey = nativeOperationKey(data.user.id, storeId, parsed.data.operationId);
-        const result = await withNativeRequestContext({ client, user: data.user, storeId, expectedTotalSatang: parsed.data.expectedTotalSatang }, () => checkoutAndPayAction(cart, { method: parsed.data.method, amount: cart.total, receivedAmount: parsed.data.method === 'cash' ? parsed.data.receivedSatang / 100 : undefined, changeAmount: parsed.data.method === 'cash' ? (parsed.data.receivedSatang - satang(cart.total)) / 100 : undefined }, { idempotencyKey: operationKey, paymentIdempotencyKey: operationKey }));
+        const opts = { idempotencyKey: operationKey, paymentIdempotencyKey: operationKey, ...(parsed.data.method==='beam'?{beam:{gatewayPaymentId:parsed.data.gatewayPaymentId!}}:{}), ...(parsed.data.customerId ? { customerId: parsed.data.customerId } : {}), ...(sale.quote.couponCode ? { couponCode: sale.quote.couponCode, clientCouponDiscountAmount: sale.quote.couponDiscountSatang / 100 } : {}) };
+        const result = await withNativeRequestContext({ client, user: data.user, storeId, expectedTotalSatang: parsed.data.expectedTotalSatang }, () => checkoutAndPayAction(sale.cart, { method: parsed.data.method==='beam'?'other':parsed.data.method, amount: sale.quote.totalSatang / 100, receivedAmount: parsed.data.method === 'cash' ? parsed.data.receivedSatang / 100 : undefined, changeAmount: parsed.data.method === 'cash' ? (parsed.data.receivedSatang - sale.quote.totalSatang) / 100 : undefined }, opts));
         return json({ ...result, order: result.order ? orderDto(result.order) : null });
       }
       if (operation === 'delivery-status') {

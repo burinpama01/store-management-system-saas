@@ -7,7 +7,7 @@ import { mapError } from '@/shared/utils/error';
 export function nativeOperationKey(userId: string, storeId: string, operationId: string) {
   return `native:${storeId}:${userId}:${operationId}`;
 }
-export async function createNativeOrderIds(input: CreateOrderInput, operationKey: string) {
+export async function createNativeOrderIds(input: CreateOrderInput, operationKey: string, rewards?: { customerId: string | null; couponId: string | null; couponDiscountAmount: number }) {
   const scope = getNativeRequestContext();
   if (!scope || scope.user.id !== input.cashierId || scope.storeId !== input.storeId) throw new Error('ไม่พบคำขอ native ที่ตรวจสิทธิ์แล้ว');
   if (!Number.isSafeInteger(scope.expectedTotalSatang) || scope.expectedTotalSatang !== Math.round(input.cart.total * 100)) {
@@ -16,7 +16,10 @@ export async function createNativeOrderIds(input: CreateOrderInput, operationKey
   const client = await createSupabaseServiceClient() as unknown as SupabaseClient;
   const orderNumber = generateOrderNumber({ timeZone: input.storeTimezone });
   const items = input.cart.items.map(item => ({ product_id: item.productId, product_name: item.productName, variant_id: item.variant?.id ?? null, variant_name: item.variant?.name ?? null, modifiers: item.modifiers, quantity: item.quantity, unit_price: item.unitPrice, total_price: item.totalPrice, discount_amount: 0, note: item.note ?? null }));
-  const result = await client.rpc('create_native_pos_order', { p_store_id: input.storeId, p_key: operationKey, p_actor_id: scope.user.id, p_order_number: orderNumber, p_total: input.cart.total, p_items: items });
+  const base = { p_store_id: input.storeId, p_key: operationKey, p_actor_id: scope.user.id, p_order_number: orderNumber, p_total: input.cart.total, p_items: items };
+  const result = rewards || input.cart.discount > 0
+    ? await client.rpc('create_native_pos_rewards_order', { ...base, p_subtotal: input.cart.subtotal, p_discount: input.cart.discount, p_discount_note: input.cart.discountNote ?? null, p_customer_id: rewards?.customerId ?? null, p_coupon_id: rewards?.couponId ?? null, p_coupon_discount_amount: rewards?.couponDiscountAmount ?? 0 })
+    : await client.rpc('create_native_pos_order', base);
   if (result.error || !result.data) return { data: null, error: mapError(result.error ?? new Error('สร้างบิล native ไม่สำเร็จ')) };
   return { data: { id: result.data as string, orderNumber }, error: null };
 }

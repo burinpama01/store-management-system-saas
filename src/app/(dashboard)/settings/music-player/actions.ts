@@ -8,6 +8,7 @@ import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types"
 import { getStore } from "@/modules/stores/repository";
 import { upsertMusicPlayerSettings } from "@/modules/music-requests/repository";
 import { parseBasePlaylist } from "@/modules/music-requests/youtube";
+import { logSystemEvent } from "@/modules/system/event-log";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -45,6 +46,7 @@ export async function updateMusicPlayerSettingsAction(
     const autoApprove = formData.get("autoApprove") === "1";
     const donationEnabled = formData.get("donationEnabled") === "1";
     const interruptBaseOnRequest = formData.get("interruptBaseOnRequest") === "1";
+    const customerScreenEnabled = formData.get("customerScreenEnabled") === "1";
 
     const minRaw = parseFloat((formData.get("minDonation") as string | null) ?? "");
     const minDonation = Number.isFinite(minRaw) && minRaw >= 0 ? Math.round(minRaw * 100) / 100 : 10;
@@ -66,11 +68,22 @@ export async function updateMusicPlayerSettingsAction(
       minDonation,
       playNowPrice,
       interruptBaseOnRequest,
+      customerScreenEnabled,
       maxDurationSeconds,
       basePlaylist,
       licensingAcknowledged,
     });
     if (res.error) return { error: res.error.userMessage };
+
+    await logSystemEvent({
+      level: "info",
+      source: "music.player",
+      action: "saveSettings",
+      message: "บันทึกตั้งค่าเครื่องเล่นเพลง",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      context: { playerEnabled, autoApprove, donationEnabled, interruptBaseOnRequest, customerScreenEnabled },
+    });
 
     revalidatePath("/settings/music-player");
     return { error: null };

@@ -9,7 +9,7 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 type RecordRow = Database["public"]["Tables"]["attendance_records"]["Row"];
 type SettingsRow = Database["public"]["Tables"]["attendance_settings"]["Row"];
 
-function mapRecord(row: RecordRow): AttendanceRecord {
+export function mapRecord(row: RecordRow): AttendanceRecord {
   return {
     id: row.id,
     storeId: row.store_id,

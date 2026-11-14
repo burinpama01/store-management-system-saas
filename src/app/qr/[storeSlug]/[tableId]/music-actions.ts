@@ -20,6 +20,7 @@ import {
   hasRecentDuplicateRequest,
   isVideoQueued,
   getNowPlaying,
+  getBumpableRequest,
   type PlayedTrack,
 } from "@/modules/music-requests/repository";
 import { searchYouTube, type YouTubeSearchResult } from "@/modules/music-requests/youtube";
@@ -37,6 +38,8 @@ import {
   verifyMusicPaymentToken,
 } from "@/modules/music-requests/payment-token";
 import type { BeamQrForPos } from "@/modules/payments/types";
+import type { CustomerNowPlayingVideo } from "@/modules/music-requests/types";
+import { toCustomerNowPlayingVideo } from "@/modules/music-requests/customer-screen";
 
 export interface MusicTrackInput {
   videoId: string;
@@ -60,7 +63,10 @@ interface MusicContext {
   playNowPrice: number;
   /** แพ็กเกจมี Payment Gateway (BYO) — ร้านที่เปิด Beam ใช้ Beam แทนสลิป */
   beamAllowed: boolean;
+  /** ร้านเปิดให้ลูกค้าดูวิดีโอ/เนื้อร้องบนมือถือ */
+  customerScreenEnabled: boolean;
 }
+
 
 /** Re-resolves the music gate server-side; never trust client-provided flags. */
 async function resolveMusicContext(
@@ -88,7 +94,7 @@ async function resolveMusicContext(
 
   const { data: settings } = await supabase
     .from("store_music_player_settings")
-    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price")
+    .select("max_duration_seconds, donation_enabled, min_donation, play_now_price, customer_screen_enabled")
     .eq("store_id", storeId)
     .maybeSingle();
   const playerSettings = {
@@ -97,6 +103,7 @@ async function resolveMusicContext(
     donationEnabled: settings?.donation_enabled ?? false,
     minDonation: settings?.min_donation ?? 10,
     playNowPrice: settings?.play_now_price ?? 100,
+    customerScreenEnabled: settings?.customer_screen_enabled ?? false,
   };
 
   if (tableId === null) {
@@ -149,6 +156,11 @@ export async function listMusicQueueAction(
   queue: PublicMusicRequest[];
   expired: boolean;
   nowPlayingTitle?: string | null;
+  /** มีค่าเฉพาะร้านที่เปิดจอลูกค้า */
+  nowPlayingVideo?: CustomerNowPlayingVideo | null;
+  /** นาฬิกาฝั่ง server ตอนตอบ — มือถือใช้ชดเชยนาฬิกาเครื่องตอนได้ broadcast */
+  serverNowMs?: number;
+  customerScreenEnabled?: boolean;
   donationEnabled?: boolean;
   minDonation?: number;
   playNowPrice?: number;
@@ -160,12 +172,13 @@ export async function listMusicQueueAction(
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { queue: [], expired: false, error: resolved.reason };
 
-  const { eligibility, donationEnabled, minDonation, playNowPrice } = resolved.ctx;
+  const { eligibility, donationEnabled, minDonation, playNowPrice, customerScreenEnabled } = resolved.ctx;
   if (!eligibility.canViewQueue) {
     return { queue: [], expired: eligibility.expiredWholeQr, error: eligibility.reason };
   }
 
   const [res, np] = await Promise.all([listPublicMusicQueue(storeId), getNowPlaying(storeId)]);
+  const serverNow = nowMs();
   if (res.error) return { queue: [], expired: false, error: res.error.userMessage };
   // The now-playing track is shown in its own banner — don't duplicate it in the list.
   const nowId = np.data?.musicRequestId ?? null;
@@ -173,6 +186,24 @@ export async function listMusicQueueAction(
     queue: nowId ? res.data.filter((q) => q.id !== nowId) : res.data,
     expired: false,
     nowPlayingTitle: np.data?.title ?? null,
+    nowPlayingVideo: customerScreenEnabled
+      ? toCustomerNowPlayingVideo(
+          np.data
+            ? {
+                videoId: np.data.youtubeVideoId,
+                title: np.data.title,
+                durationSeconds: np.data.durationSeconds,
+                startedAt: np.data.startedAt,
+                state: np.data.playbackState,
+                positionSeconds: np.data.positionSeconds,
+                positionAt: np.data.positionAt,
+              }
+            : null,
+          serverNow,
+        )
+      : null,
+    serverNowMs: customerScreenEnabled ? serverNow : undefined,
+    customerScreenEnabled,
     donationEnabled,
     minDonation,
     playNowPrice,
@@ -337,6 +368,8 @@ export async function startMusicDonationAction(
   requesterLabel: string | undefined,
   amount: number,
   playNow = false,
+  /** "⏫ ขอเล่นก่อน": ดันเพลงที่อยู่ในคิวแล้ว — ใช้เพลงจากคำขอเดิม (ไม่เชื่อ track จาก client) */
+  bumpOfRequestId: string | null = null,
 ): Promise<{
   requestId: string | null;
   promptPayPayload: string | null;
@@ -351,7 +384,8 @@ export async function startMusicDonationAction(
 }> {
   const empty = { requestId: null, promptPayPayload: null, promptpayId: null, amount: null };
   if (!isValidTarget(storeId, tableId)) return { ...empty, error: "Invalid request" };
-  if (!track?.videoId) return { ...empty, error: "กรุณาเลือกเพลงก่อน" };
+  if (bumpOfRequestId !== null && !isUUID(bumpOfRequestId)) return { ...empty, error: "Invalid request" };
+  if (!bumpOfRequestId && !track?.videoId) return { ...empty, error: "กรุณาเลือกเพลงก่อน" };
 
   const resolved = await resolveMusicContext(storeId, tableId, querySessionId);
   if (!resolved.ok) return { ...empty, error: resolved.reason };
@@ -367,9 +401,32 @@ export async function startMusicDonationAction(
     return { ...empty, error: `เพลงต้องยาวไม่เกิน ${Math.floor(maxDurationSeconds / 60)} นาที` };
   }
 
-  // Don't let the same video sit in the queue twice.
-  const inQueue = await isVideoQueued(storeId, track.videoId);
-  if (inQueue.queued) return { ...empty, error: "มีเพลงนี้ในคิวแล้ว" };
+  if (bumpOfRequestId) {
+    // ดันเพลงเดิมขึ้นก่อน: ต้องยังรอคิวอยู่จริง — คำขอใหม่จะแทนที่คำขอเดิมเมื่อจ่ายสำเร็จ (trigger ใน DB)
+    const original = await getBumpableRequest(storeId, bumpOfRequestId);
+    if (original.error) return { ...empty, error: original.error.userMessage };
+    if (original.busy) return { ...empty, error: "มีคนกำลังจ่ายดันเพลงนี้อยู่ ลองเพลงอื่นหรือรอสักครู่" };
+    if (!original.data) return { ...empty, error: "เพลงนี้ไม่ได้รอคิวแล้ว — รีเฟรชแล้วลองใหม่" };
+    track = {
+      videoId: original.data.youtube_video_id as string,
+      title: original.data.youtube_title ?? original.data.song_title,
+      thumbnailUrl: original.data.thumbnail_url ?? undefined,
+      durationSeconds: original.data.duration_seconds ?? undefined,
+    };
+    await logSystemEvent({
+      level: "info",
+      source: "music.donation",
+      action: "queueBump",
+      message: playNow ? "ลูกค้าขอเปิดเพลงในคิวทันที" : "ลูกค้าขอดันเพลงในคิวขึ้นก่อน",
+      organizationId,
+      storeId,
+      context: { bumpOfRequestId, amount, playNow },
+    }).catch(() => undefined);
+  } else {
+    // Don't let the same video sit in the queue twice.
+    const inQueue = await isVideoQueued(storeId, track.videoId);
+    if (inQueue.queued) return { ...empty, error: "มีเพลงนี้ในคิวแล้ว" };
+  }
 
   // Store priced this tier at 0 → free path: no PromptPay needed at all.
   const isFree = amount <= 0;
@@ -404,8 +461,14 @@ export async function startMusicDonationAction(
     durationSeconds: track.durationSeconds,
     donationAmount: isFree ? 0 : amount,
     playNow,
+    bumpOfRequestId,
   });
-  if (res.error) return { ...empty, error: res.error.userMessage };
+  if (res.error) {
+    if (bumpOfRequestId && res.error.code === "23505") {
+      return { ...empty, error: "มีคนกำลังจ่ายดันเพลงนี้อยู่ ลองเพลงอื่นหรือรอสักครู่" };
+    }
+    return { ...empty, error: res.error.userMessage };
+  }
 
   if (isFree) {
     // Verified at creation (repository) — the song is already in the priority queue.

@@ -5,6 +5,7 @@ import {
   getPlanFeatures,
 } from "@/modules/billing/types";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { getUserStores } from "@/modules/auth/session";
 import {
   getActiveRecordToday,
   listAttendanceRecords,
@@ -13,10 +14,11 @@ import {
 } from "@/modules/attendance/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
-import { computeDayStatuses, type DayStatus } from "@/modules/attendance/calendar";
+import { computeDayStatuses, employmentWindow, resignedBefore, type DayStatus } from "@/modules/attendance/calendar";
 import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser, listPayrollAdjustments } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { listBranchStores } from "@/modules/stores/repository";
+import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
 import { AttendanceManager } from "./AttendanceManager";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
 import type { PayrollAdjustment } from "@/modules/hr/types";
@@ -62,17 +64,23 @@ export default async function AttendancePage({
   const monthEnd = `${currentMonth}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, "0")}`;
 
   // Per-day status for the viewer's personal calendar (holiday/leave/absent/late/in-no-out).
-  const [holidaysRes, profilesRes, myLeaveDates] = await Promise.all([
+  const [holidaysRes, profilesRes, myLeaveDates, userStores] = await Promise.all([
     listStoreHolidays(ctx.storeId, monthStart, monthEnd),
     listEmployeeProfiles(ctx.storeId),
     listLeaveDatesForUser(ctx.storeId, user.id, monthStart, monthEnd),
+    getUserStores(),
   ]);
+  // สมาชิกภาพของตัวเองที่ครอบสาขานี้ (ผูกสาขาก่อน ไม่มีค่อยใช้ระดับองค์กร) — ใช้หาวันเข้าร่วมร้าน
+  const myMemberships = userStores.memberships.filter((m) => m.organization_id === ctx.organizationId);
+  const myMembership =
+    myMemberships.find((m) => m.store_id === ctx.storeId) ?? myMemberships.find((m) => m.store_id === null) ?? null;
   const holidays = holidaysRes.data ?? [];
   const ownProfile = (profilesRes.data ?? []).find((p) => p.userId === user.id) ?? null;
   // Store-level open days are the calendar default; a per-employee schedule still overrides.
   const storeWorkingDays = hrSettings.workingDays?.length ? hrSettings.workingDays : [0, 1, 2, 3, 4, 5, 6];
   const effectiveWorkingDays =
     ownProfile?.workingDays?.length ? ownProfile.workingDays : storeWorkingDays;
+  const ownWindow = employmentWindow(ownProfile, myMembership?.joined_at ?? null, ctx.storeTimezone);
   const dayStatusMap = computeDayStatuses({
     month: currentMonth,
     today,
@@ -86,6 +94,9 @@ export default async function AttendancePage({
     holidays: new Set(holidays.map((h) => h.date)),
     leaveDates: new Set(myLeaveDates),
     halfDayMaxHours: hrSettings.halfDayMaxHours,
+    // ก่อนวันเริ่มงาน/หลังวันออกงาน ไม่ฟ้องขาด — คิดแบบเดียวกับปฏิทินทีม
+    employedFrom: ownWindow.from,
+    employedTo: ownWindow.to,
   });
   const dayStatus = Object.fromEntries(dayStatusMap);
   const holidayDates = holidays.map((h) => h.date);
@@ -144,8 +155,24 @@ export default async function AttendancePage({
       dateFrom,
       dateTo,
     );
-    members = (membersRes.data ?? [])
-      .filter((m) => m.role !== "super_admin")
+    const allProfiles = profilesRes.data ?? [];
+    // คนเดียวอาจมีทั้งสมาชิกภาพผูกสาขาและระดับองค์กร → เหลือแถวเดียว (ผูกสาขาก่อน) กันชื่อซ้ำ/วันเข้าร่วมผิด
+    const memberByUser = new Map<string, NonNullable<typeof membersRes.data>[number]>();
+    for (const m of (membersRes.data ?? []).filter((row) => row.role !== "super_admin")) {
+      const prev = memberByUser.get(m.userId);
+      if (!prev || (prev.storeId === null && m.storeId !== null)) memberByUser.set(m.userId, m);
+    }
+    const memberRows = [...memberByUser.values()];
+    const windowByUser = new Map(
+      memberRows.map((m) => [
+        m.userId,
+        employmentWindow(allProfiles.find((p) => p.userId === m.userId), m.joinedAt, ctx.storeTimezone),
+      ]),
+    );
+    // ลาออกก่อนช่วงที่ดู = ไม่แสดงในรายชื่อ/ปฏิทิน (ยังมีลงเวลาในช่วงนี้ = ยังแสดง เพื่อให้ตรวจย้อนหลังได้)
+    const hasRecordInRange = new Set((records ?? []).map((r) => r.userId));
+    members = memberRows
+      .filter((m) => !resignedBefore(windowByUser.get(m.userId)?.to, dateFrom) || hasRecordInRange.has(m.userId))
       .map((m) => ({ userId: m.userId, name: m.email }));
 
     // สถานะรายวันต่อคนสำหรับปฏิทินทีม — คิดเฉพาะเดือนที่ปฏิทินแสดง และเฉพาะช่วงวันที่
@@ -180,6 +207,8 @@ export default async function AttendancePage({
         halfDayMaxHours: hrSettings.halfDayMaxHours,
         scanFrom,
         scanTo,
+        employedFrom: windowByUser.get(member.userId)?.from ?? null,
+        employedTo: windowByUser.get(member.userId)?.to ?? null,
       });
       for (const [date, status] of memberStatuses) {
         if (status === "off") continue;
@@ -190,6 +219,8 @@ export default async function AttendancePage({
   }
 
   return (
+    <>
+    <SalesTargetBar className="mb-3 rounded-lg border" />
     <AttendanceManager
       todayRecord={todayRecord}
       canManage={canManage}
@@ -217,5 +248,6 @@ export default async function AttendancePage({
       branchStores={branchStores}
       branchFilter={branchFilter}
     />
+    </>
   );
 }

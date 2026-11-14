@@ -1,10 +1,14 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
+  CUSTOMER_DISPLAY_PAID_FLASH_MS,
+  resolveCustomerDisplayPaymentTransition,
   validateCustomerDisplayMessage,
+  type CustomerDisplayPaidFlash,
+  type CustomerDisplayPayment,
   type CustomerDisplaySnapshot,
 } from "@/modules/grocery-pos/customer-display";
 import {
@@ -101,6 +105,9 @@ function CustomerDisplayAdSlot({ slide, slotLabel }: { slide?: CustomerDisplayAd
 export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDisplaySettings | null }) {
   const [snapshot, setSnapshot] = useState<CustomerDisplaySnapshot | null>(null);
   const [slideIndexes, setSlideIndexes] = useState<Record<string, number>>({});
+  const [paidFlash, setPaidFlash] = useState<CustomerDisplayPaidFlash | null>(null);
+  const pendingPaymentRef = useRef<CustomerDisplayPayment | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<CustomerDisplayPayment | null>(null);
   const effectiveAdSettings = adSettings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
   const adSlots = useMemo(() => resolveAdSlots(effectiveAdSettings), [effectiveAdSettings]);
   const showAdPanel = adSlots.length > 0;
@@ -108,12 +115,28 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
   useEffect(() => {
     const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
     channel.onmessage = (event: MessageEvent<unknown>) => {
-      if (validateCustomerDisplayMessage(event.data)) {
-        setSnapshot(event.data);
+      if (!validateCustomerDisplayMessage(event.data)) return;
+      const next = event.data;
+      const transition = resolveCustomerDisplayPaymentTransition(pendingPaymentRef.current, next);
+      pendingPaymentRef.current = transition.pendingPayment;
+      setPendingPayment(transition.pendingPayment);
+      if (transition.paidFlash) {
+        setPaidFlash(transition.paidFlash);
+      } else if (next.status === "checkout" || next.status === "scanning") {
+        // ลูกค้าคนถัดไปเริ่มแล้ว — ปิดหน้าสำเร็จทันที
+        setPaidFlash(null);
       }
+      setSnapshot(next);
     };
     return () => channel.close();
   }, []);
+
+  // หน้า "ชำระเงินสำเร็จ" ปิดเองหลัง 5 วิ
+  useEffect(() => {
+    if (!paidFlash) return;
+    const timer = window.setTimeout(() => setPaidFlash(null), CUSTOMER_DISPLAY_PAID_FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [paidFlash]);
 
   useEffect(() => {
     if (adSlots.every((slot) => slot.slides.length <= 1)) return;
@@ -130,7 +153,8 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
   }, [adSlots, effectiveAdSettings.slideIntervalSeconds]);
 
   const items = snapshot?.items ?? [];
-  const payment = snapshot?.status === "checkout" ? snapshot.payment : undefined;
+  // QR ยังโชว์ต่อแม้ POS ส่ง checkout ซ้ำโดยไม่มี QR (ยอดเท่าเดิม)
+  const payment = snapshot?.status === "checkout" ? (snapshot.payment ?? pendingPayment ?? undefined) : undefined;
   const customer = snapshot?.customer ?? (snapshot?.customerName ? { name: snapshot.customerName } : undefined);
   const hasCustomerPoints = customer?.pointsEarned !== undefined || customer?.pointsBalance !== undefined;
   const statusText = useMemo(() => {
@@ -224,6 +248,31 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
             <div>
               {payment.method === "truemoney" ? null : <span>ยอดที่ต้องจ่าย</span>}
               <strong>{money(payment.amount)}</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {paidFlash && !payment ? (
+        <section className="customer-display-qr-layer" aria-label="ชำระเงินสำเร็จ" role="dialog" aria-live="assertive">
+          <div className="customer-display-qr-dialog customer-display-paid-dialog">
+            <div className="customer-display-paid-check" aria-hidden="true">
+              <svg viewBox="0 0 52 52" width="96" height="96">
+                <circle cx="26" cy="26" r="24" fill="none" strokeWidth="4" />
+                <path d="M15 27l7 7 15-16" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <p className="customer-display-paid-title">ชำระเงินสำเร็จ</p>
+            <div>
+              <span>ได้รับเงินแล้ว</span>
+              <strong>{money(paidFlash.amount)}</strong>
+            </div>
+            {paidFlash.pointsEarned !== undefined ? (
+              <p className="customer-display-paid-points">ได้รับแต้ม +{points(paidFlash.pointsEarned)}</p>
+            ) : null}
+            <p className="customer-display-paid-thanks">ขอบคุณที่ใช้บริการ</p>
+            <div className="customer-display-paid-timer" aria-hidden="true">
+              <i style={{ animationDuration: `${CUSTOMER_DISPLAY_PAID_FLASH_MS}ms` }} />
             </div>
           </div>
         </section>
@@ -490,6 +539,76 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           color: var(--color-text-primary);
           font-size: 48px;
           line-height: 1;
+        }
+        .customer-display-paid-dialog {
+          gap: 14px;
+          animation: customer-display-paid-pop 260ms ease-out;
+        }
+        .customer-display-paid-check svg {
+          display: block;
+          stroke: var(--color-success);
+        }
+        .customer-display-paid-check circle {
+          fill: color-mix(in srgb, var(--color-success) 12%, transparent);
+        }
+        .customer-display-paid-title {
+          margin: 0;
+          color: var(--color-success);
+          font-size: 30px;
+          font-weight: 800;
+        }
+        .customer-display-paid-points {
+          margin: 0;
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--color-success) 12%, transparent);
+          color: var(--color-success);
+          font-size: 18px;
+          font-weight: 700;
+          padding: 6px 14px;
+        }
+        .customer-display-paid-thanks {
+          margin: 0;
+          color: var(--color-text-secondary);
+          font-size: 18px;
+        }
+        .customer-display-paid-timer {
+          width: 100%;
+          height: 4px;
+          overflow: hidden;
+          border-radius: 999px;
+          background: var(--color-border);
+        }
+        .customer-display-paid-timer i {
+          display: block;
+          height: 100%;
+          background: var(--color-success);
+          transform-origin: left center;
+          animation-name: customer-display-paid-countdown;
+          animation-timing-function: linear;
+          animation-fill-mode: forwards;
+        }
+        /* ขยายอย่างเดียว ไม่ไล่ opacity — ถ้าเบราว์เซอร์จอลูกค้าหยุด animation กล่องยังมองเห็น */
+        @keyframes customer-display-paid-pop {
+          from {
+            transform: scale(0.94);
+          }
+          to {
+            transform: scale(1);
+          }
+        }
+        @keyframes customer-display-paid-countdown {
+          from {
+            transform: scaleX(1);
+          }
+          to {
+            transform: scaleX(0);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .customer-display-paid-dialog,
+          .customer-display-paid-timer i {
+            animation: none;
+          }
         }
         @media (max-width: 960px) {
           .customer-display-layout {

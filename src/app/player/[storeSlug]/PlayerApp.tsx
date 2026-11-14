@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { NowPlaying } from "@/modules/music-requests/types";
 import type { PlayHistoryItem } from "@/modules/music-requests/repository";
 import {
@@ -11,6 +11,7 @@ import {
   playBaseTrackAction,
   removeQueueItemAction,
   getPlayHistoryAction,
+  reportPlaybackAction,
   searchPlayerMusicAction,
   addStoreSongAction,
   removeStoreSongAction,
@@ -18,17 +19,19 @@ import {
   type PlayerBaseTrack,
   type PlayerSearchResult,
 } from "./actions";
+import { isWakeLockSupported, useWakeLock } from "@/shared/hooks/useWakeLock";
 
 interface YTPlayer {
   loadVideoById: (id: string) => void;
   playVideo: () => void;
   getDuration?: () => number;
   getCurrentTime?: () => number;
+  getVideoData?: () => { video_id?: string };
   destroy?: () => void;
 }
 interface YTNamespace {
   Player: new (el: string | HTMLElement, opts: unknown) => YTPlayer;
-  PlayerState: { ENDED: number };
+  PlayerState: { ENDED: number; PLAYING: number; PAUSED: number };
 }
 declare global {
   interface Window {
@@ -65,6 +68,9 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
   const advancingRef = useRef(false);
   const atEndPollsRef = useRef(0);
   const advanceRef = useRef<(opts?: { interrupted?: boolean }) => Promise<void>>(async () => {});
+  // จอลูกค้า: รายงานตอนกดหยุด/เล่นต่อ/เลื่อนเพลง (เฉพาะร้านที่เปิดจอลูกค้า)
+  const customerScreenRef = useRef(false);
+  const lastReportRef = useRef<{ videoId: string; state: "playing" | "paused"; pos: number; at: number } | null>(null);
 
   /**
    * `interrupted` = the current track is being cut off mid-play (a request jumping
@@ -141,6 +147,7 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     setUpcoming(res.upcoming);
     setBasePlaylist(res.basePlaylist);
     setInterruptBase(res.interruptBaseOnRequest);
+    customerScreenRef.current = res.customerScreenEnabled;
     // A "play now" donation — or the store's cut-in setting — interrupts at once.
     if (res.interrupt) void advanceRef.current({ interrupted: true });
     else if (!playingRef.current && res.upcoming.length > 0) void advanceRef.current();
@@ -284,6 +291,33 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     })();
   }
 
+  /**
+   * แจ้งเซิร์ฟเวอร์ตอนร้านกดหยุด/เล่นต่อ/เลื่อนเพลง (YouTube ส่ง PLAYING หลังเลื่อนเพลงเสมอ)
+   * ข้ามถ้าเป็นการเล่นต่อเนื่องตามปกติ (สถานะเดิมและตำแหน่งตรงกับที่คาดไว้) — ไม่ยิงเซิร์ฟเวอร์ถี่
+   */
+  function reportPlayback(state: "playing" | "paused") {
+    if (!customerScreenRef.current) return;
+    const p = playerRef.current;
+    const videoId = p?.getVideoData?.().video_id;
+    const pos = p?.getCurrentTime?.();
+    if (!videoId || !VIDEO_ID_RE.test(videoId) || typeof pos !== "number" || !Number.isFinite(pos)) return;
+    const at = performance.now();
+    const last = lastReportRef.current;
+    if (last && last.videoId === videoId && last.state === state) {
+      const expected = state === "playing" ? last.pos + (at - last.at) / 1000 : last.pos;
+      if (Math.abs(expected - pos) < 2) return;
+    }
+    // เพลงเพิ่งเริ่ม (ยังไม่เคยรายงาน) และเล่นจากต้นเพลง = ตรงกับที่เซิร์ฟเวอร์รู้อยู่แล้ว
+    if (!last || last.videoId !== videoId) {
+      if (state === "playing" && pos < 3) {
+        lastReportRef.current = { videoId, state, pos, at };
+        return;
+      }
+    }
+    lastReportRef.current = { videoId, state, pos, at };
+    void reportPlaybackAction({ videoId, state, positionSeconds: pos });
+  }
+
   // Create the YouTube player after the initial user gesture (autoplay policy).
   useEffect(() => {
     if (!started) return;
@@ -302,6 +336,9 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
           },
           onStateChange: (e: { data: number }) => {
             if (window.YT && e.data === window.YT.PlayerState.ENDED) void advanceRef.current();
+            if (window.YT && (e.data === window.YT.PlayerState.PLAYING || e.data === window.YT.PlayerState.PAUSED)) {
+              reportPlayback(e.data === window.YT.PlayerState.PLAYING ? "playing" : "paused");
+            }
           },
           // Skip videos YouTube refuses to play (bad id / embed disabled / removed).
           onError: () => {
@@ -342,15 +379,51 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     };
   }, [started, refreshState]);
 
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // กันจอ iPad/มือถือดับระหว่างเปิดเพลง (จอดับ = Safari หยุดเล่นเพลง)
+  useWakeLock(started);
+  const [noWakeLock, setNoWakeLock] = useState(false);
+
+  // กด "/" เพื่อไปช่องค้นหา (แบบ YouTube) — ไม่แย่งตอนกำลังพิมพ์ในช่องอื่น
+  useEffect(() => {
+    if (!started) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [started]);
+
+  function submitSearch() {
+    if (!searchQuery.trim()) return;
+    setPanel("search");
+    doSearch();
+  }
+
+  function openPanel(next: "queue" | "base" | "history") {
+    setPanel(next);
+    if (next === "base") void refreshState();
+    if (next === "history") void loadHistory();
+  }
+
   if (!started) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-black p-8 text-center text-white">
-        <p className="text-5xl">🎵</p>
-        <h1 className="mt-4 text-2xl font-bold">{storeName}</h1>
+      <main className="flex min-h-screen flex-col items-center justify-center bg-[#0f0f0f] p-8 text-center text-white">
+        <div className="flex h-16 w-24 items-center justify-center rounded-2xl bg-red-600 text-3xl shadow-lg shadow-red-900/40">
+          ▶
+        </div>
+        <h1 className="mt-6 text-2xl font-bold">{storeName}</h1>
         <p className="mt-2 text-sm text-white/60">เครื่องเล่นเพลงอัตโนมัติ</p>
         <button
-          onClick={() => setStarted(true)}
-          className="mt-8 rounded-full bg-violet-600 px-10 py-4 text-lg font-bold active:bg-violet-700"
+          onClick={() => {
+            setNoWakeLock(!isWakeLockSupported());
+            setStarted(true);
+          }}
+          className="mt-8 rounded-full bg-white px-10 py-3.5 text-lg font-bold text-black hover:bg-white/90 active:bg-white/80"
         >
           ▶ เริ่มเล่น
         </button>
@@ -361,234 +434,359 @@ export function PlayerApp({ storeName, initialNowPlaying }: Props) {
     );
   }
 
-  return (
-    <main className="flex min-h-screen flex-col bg-black text-white md:flex-row">
-      {/* Player column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center justify-between px-4 py-3">
-          <h1 className="truncate text-base font-bold">{storeName} · เครื่องเล่นเพลง</h1>
-          {error && <span className="shrink-0 text-xs text-red-400">{error}</span>}
-        </div>
-        <div className="relative mx-auto w-full max-w-3xl bg-black lg:max-w-4xl" style={{ aspectRatio: "16 / 9" }}>
-          <div id="yt-player" className="absolute inset-0 h-full w-full" />
-          {idle && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <p className="text-4xl">🎶</p>
-              <p className="mt-2 text-sm text-white/60">รอเพลงในคิว — เพิ่มเพลงร้านหรือให้ลูกค้าขอเพลง</p>
-            </div>
-          )}
-        </div>
-        <div className="mx-auto w-full max-w-3xl p-4 lg:max-w-4xl">
-          <p className="text-sm text-white/60">กำลังเล่น</p>
-          <p className="mt-1 truncate text-lg font-semibold">
-            {now?.title ?? "—"}
-            {now?.source === "base" && <span className="ml-2 text-xs text-white/40">(เพลงร้าน)</span>}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={playPrevious}
-              disabled={busy}
-              className="rounded-lg bg-white/10 px-3 py-2 text-sm disabled:opacity-40"
-            >
-              ⏮ เพลงก่อนหน้า
-            </button>
-            <button
-              onClick={skipCurrent}
-              disabled={busy}
-              className="rounded-lg bg-white/10 px-3 py-2 text-sm disabled:opacity-40"
-            >
-              ⏭ ข้ามเพลงนี้
-            </button>
-            <button
-              onClick={() => setPanel(panel === "search" ? "queue" : "search")}
-              className={`rounded-lg px-3 py-2 text-sm ${panel === "search" ? "bg-violet-600" : "bg-white/10"}`}
-            >
-              🔎 ค้นหาเพลง
-            </button>
-            <button
-              onClick={() => {
-                const next = panel === "base" ? "queue" : "base";
-                setPanel(next);
-                if (next === "base") void refreshState();
-              }}
-              className={`rounded-lg px-3 py-2 text-sm ${panel === "base" ? "bg-violet-600" : "bg-white/10"}`}
-            >
-              🎵 เพลงของร้าน
-            </button>
-            <button
-              onClick={() => {
-                const next = panel === "history" ? "queue" : "history";
-                setPanel(next);
-                if (next === "history") void loadHistory();
-              }}
-              className={`rounded-lg px-3 py-2 text-sm ${panel === "history" ? "bg-violet-600" : "bg-white/10"}`}
-            >
-              📜 ประวัติเพลง
-            </button>
-          </div>
-        </div>
-      </div>
+  const tabs: { key: "queue" | "base" | "history"; label: string }[] = [
+    { key: "queue", label: `ถัดไป${upcoming.length ? ` (${upcoming.length})` : ""}` },
+    { key: "base", label: `เพลงของร้าน${basePlaylist.length ? ` (${basePlaylist.length})` : ""}` },
+    { key: "history", label: "ประวัติ" },
+  ];
 
-      {/* Queue side panel */}
-      <aside className="w-full shrink-0 overflow-y-auto border-t border-white/10 p-4 md:max-h-screen md:w-80 md:border-l md:border-t-0 lg:w-96 xl:w-[26rem]">
-        {panel === "history" ? (
-          <>
-            <p className="text-sm font-semibold text-white/80">ประวัติเพลง ({history.length})</p>
-            <ul className="mt-3 space-y-2">
-              {history.map((h) => (
-                <li key={h.id} className="rounded-lg bg-white/5 px-3 py-2 text-sm">
-                  <p className="truncate">{h.title ?? h.youtubeVideoId}</p>
-                  <p className="text-xs text-white/40">
-                    {h.source === "base" ? "เพลงร้าน" : "คำขอ"} ·{" "}
-                    {new Date(h.playedAt).toLocaleTimeString("th-TH", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                </li>
-              ))}
-              {history.length === 0 && (
-                <li className="py-6 text-center text-sm text-white/30">ยังไม่มีประวัติ</li>
-              )}
-            </ul>
-          </>
-        ) : panel === "base" ? (
-          <>
-            <p className="text-sm font-semibold text-white/80">เพลงของร้าน ({basePlaylist.length})</p>
-            <p className="mt-1 text-xs text-white/40">เฉพาะพนักงาน — ลูกค้าไม่เห็น เลือกเพลงเพื่อเล่นทันที</p>
-            <ul className="mt-3 space-y-2">
-              {basePlaylist.map((t) => (
-                <li
-                  key={t.videoId}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm"
-                >
-                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                  <button
-                    onClick={() => playBase(t.videoId, t.title)}
-                    disabled={busy}
-                    title="เล่นเพลงนี้เลย"
-                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
-                  >
-                    ▶
-                  </button>
-                  <button
-                    onClick={() => removeStoreSong(t.videoId)}
-                    disabled={busy}
-                    title="ลบออกจากรายการ"
-                    className="shrink-0 px-1 text-white/40 hover:text-red-400 disabled:opacity-40"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-              {basePlaylist.length === 0 && (
-                <li className="py-6 text-center text-sm text-white/30">
-                  ยังไม่มีเพลงของร้าน — ไปที่ 🔎 ค้นหาเพลง เพื่อเพิ่ม
-                </li>
-              )}
-            </ul>
-          </>
-        ) : panel === "search" ? (
-          <>
-            <p className="text-sm font-semibold text-white/80">ค้นหาเพลง (YouTube)</p>
-            <p className="mt-1 text-xs text-white/40">พิมพ์ชื่อเพลง แล้วกดเล่นทันที หรือเพิ่มเข้ารายการเพลงร้าน</p>
-            <div className="mt-3 flex gap-2">
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }}
-                placeholder="ชื่อเพลง / ศิลปิน"
-                className="min-w-0 flex-1 rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none"
-              />
-              <button
-                onClick={doSearch}
-                disabled={searching || !searchQuery.trim()}
-                className="shrink-0 rounded-lg bg-violet-600 px-3 py-2 text-sm disabled:opacity-40"
+  return (
+    <main className="flex min-h-screen flex-col bg-[#0f0f0f] text-white">
+      {/* Top bar — โลโก้ร้าน / ช่องค้นหาตรงกลาง / ตั้งค่า (แบบ YouTube) */}
+      <header className="sticky top-0 z-20 flex items-center gap-3 bg-[#0f0f0f]/95 px-4 py-2.5 backdrop-blur">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <span className="flex h-6 w-8 items-center justify-center rounded-md bg-red-600 text-[11px]">▶</span>
+          <span className="hidden max-w-[12rem] truncate text-base font-bold sm:block">{storeName}</span>
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitSearch();
+          }}
+          className="mx-auto flex w-full max-w-xl min-w-0"
+        >
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setPanel("search")}
+            placeholder="ค้นหาเพลง / ศิลปิน"
+            aria-label="ค้นหาเพลง"
+            // globals.css มีกฎ input แบบ unlayered ที่ชนะ utility class — ใส่สีพื้น/ตัวอักษรแบบ inline
+            style={{ backgroundColor: "#121212", color: "#fff", borderColor: "rgba(255,255,255,0.15)" }}
+            className="min-w-0 flex-1 rounded-l-full border px-4 py-2 text-sm placeholder-white/40 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={searching || !searchQuery.trim()}
+            title="ค้นหา"
+            className="shrink-0 rounded-r-full border border-l-0 border-white/15 bg-white/10 px-5 text-sm hover:bg-white/15 disabled:opacity-40"
+          >
+            {searching ? "…" : "🔍"}
+          </button>
+        </form>
+        <a
+          href="/settings/music-player"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="ตั้งค่าเครื่องเล่นเพลง"
+          className="shrink-0 rounded-full px-2 py-1.5 text-lg text-white/70 hover:bg-white/10"
+        >
+          ⚙
+        </a>
+      </header>
+
+      {noWakeLock && (
+        <div className="mx-4 mb-2 rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-200">
+          เครื่องนี้กันจอดับเองไม่ได้ — ตั้งค่า iPad/มือถือ: จอภาพและความสว่าง → ล็อกอัตโนมัติ → ไม่ใช้
+          (จอดับแล้วเพลงจะหยุด)
+        </div>
+      )}
+      {error && (
+        <div className="mx-4 mb-2 rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-300" role="alert">
+          {error}
+        </div>
+      )}
+
+      <div className="flex flex-1 flex-col gap-6 px-4 pb-6 lg:flex-row">
+        {/* Player column */}
+        <section className="min-w-0 lg:flex-1">
+          <div className="relative w-full overflow-hidden rounded-xl bg-black" style={{ aspectRatio: "16 / 9" }}>
+            <div id="yt-player" className="absolute inset-0 h-full w-full" />
+            {idle && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black text-center">
+                <p className="text-4xl">🎶</p>
+                <p className="mt-2 text-sm text-white/60">รอเพลงในคิว — ค้นหาเพลงด้านบน หรือให้ลูกค้าสแกนขอเพลง</p>
+              </div>
+            )}
+          </div>
+
+          <h1 className="mt-3 line-clamp-2 text-lg font-bold leading-snug sm:text-xl">{now?.title ?? "ยังไม่มีเพลงที่กำลังเล่น"}</h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {now && (
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  now.source === "base" ? "bg-white/10 text-white/70" : "bg-red-600/20 text-red-300"
+                }`}
               >
-                {searching ? "…" : "ค้นหา"}
+                {now.source === "base" ? "เพลงของร้าน" : "ลูกค้าขอ"}
+              </span>
+            )}
+            <div className="ml-auto flex overflow-hidden rounded-full bg-white/10">
+              <button
+                onClick={playPrevious}
+                disabled={busy}
+                className="px-4 py-2 text-sm font-medium hover:bg-white/15 disabled:opacity-40"
+              >
+                ⏮ ก่อนหน้า
+              </button>
+              <span className="my-2 w-px bg-white/20" aria-hidden="true" />
+              <button
+                onClick={skipCurrent}
+                disabled={busy}
+                className="px-4 py-2 text-sm font-medium hover:bg-white/15 disabled:opacity-40"
+              >
+                ถัดไป ⏭
               </button>
             </div>
-            <ul className="mt-3 space-y-2">
-              {searchResults.map((r) => (
-                <li key={r.videoId} className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{r.title}</span>
-                  <button
-                    onClick={() => playBase(r.videoId, r.title)}
+          </div>
+          <p className="mt-3 rounded-xl bg-white/5 px-3 py-2 text-xs text-white/50">
+            {interruptBase
+              ? "เพลงที่ลูกค้าขอจะแทรกเพลงของร้านทันที แล้วกลับไปเล่นเพลงของร้านต่อเมื่อคิวหมด"
+              : "รอให้เพลงของร้านจบก่อนแล้วเล่นคิวถัดไป (ถ้าเป็นเพลง live ระบบจะแทรกให้เอง)"}
+            {" · กด / เพื่อค้นหาเพลง"}
+          </p>
+        </section>
+
+        {/* Side column — ถัดไป / เพลงร้าน / ประวัติ / ผลค้นหา */}
+        <aside className="w-full shrink-0 lg:w-[400px] xl:w-[420px]">
+          <div className="flex gap-2 overflow-x-auto pb-3">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => openPanel(t.key)}
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  panel === t.key ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/15"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+            {panel === "search" && (
+              <span className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-black">ผลการค้นหา</span>
+            )}
+          </div>
+
+          {panel === "search" ? (
+            <ul className="space-y-1">
+              {searching && <li className="py-6 text-center text-sm text-white/40">กำลังค้นหา…</li>}
+              {!searching &&
+                searchResults.map((r) => (
+                  <TrackRow
+                    key={r.videoId}
+                    videoId={r.videoId}
+                    thumbnailUrl={r.thumbnailUrl}
+                    title={r.title}
+                    durationSeconds={r.durationSeconds}
+                    meta="แตะเพื่อเล่นทันที"
+                    onPlay={() => playBase(r.videoId, r.title)}
                     disabled={busy}
-                    title="เล่นเพลงนี้เลย"
-                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
-                  >
-                    ▶
-                  </button>
-                  <button
-                    onClick={() => addStoreSong(r.videoId, r.title)}
-                    disabled={busy}
-                    title="เพิ่มเข้ารายการเพลงร้าน"
-                    className="shrink-0 px-1 text-white/60 hover:text-sky-400 disabled:opacity-40"
-                  >
-                    ＋
-                  </button>
-                </li>
-              ))}
-              {searchResults.length === 0 && !searching && (
-                <li className="py-6 text-center text-sm text-white/30">พิมพ์ชื่อเพลงแล้วกดค้นหา</li>
+                    actions={
+                      <RowAction title="เพิ่มเข้าเพลงของร้าน" onClick={() => addStoreSong(r.videoId, r.title)} disabled={busy}>
+                        ＋
+                      </RowAction>
+                    }
+                  />
+                ))}
+              {!searching && searchResults.length === 0 && (
+                <li className="py-6 text-center text-sm text-white/40">พิมพ์ชื่อเพลงในช่องด้านบนแล้วกด Enter</li>
               )}
             </ul>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-white/80">คิวเพลงที่ถูกขอ ({upcoming.length})</p>
-            <p className="mt-1 text-xs text-white/40">
-              {interruptBase
-                ? "เพลงที่ลูกค้าขอจะแทรกเพลงของร้านทันที แล้วกลับไปเล่นเพลงของร้านต่อเมื่อคิวหมด"
-                : "รอให้เพลงของร้านจบก่อนแล้วเล่นคิวถัดไป (ถ้าเป็นเพลง live ระบบจะแทรกให้เอง)"}
-              {" · "}
-              <a href="/settings/music-player" target="_blank" rel="noopener noreferrer" className="underline">
-                ตั้งค่า
-              </a>
-            </p>
-            <ul className="mt-3 space-y-2">
+          ) : panel === "base" ? (
+            <ul className="space-y-1">
+              <li className="px-1 pb-1 text-xs text-white/40">เฉพาะพนักงาน — ลูกค้าไม่เห็น แตะเพลงเพื่อเล่นทันที</li>
+              {basePlaylist.map((t) => (
+                <TrackRow
+                  key={t.videoId}
+                  videoId={t.videoId}
+                  title={t.title}
+                  meta="เพลงของร้าน"
+                  onPlay={() => playBase(t.videoId, t.title)}
+                  disabled={busy}
+                  active={now?.source === "base" && now.youtubeVideoId === t.videoId}
+                  actions={
+                    <RowAction title="ลบออกจากเพลงของร้าน" onClick={() => removeStoreSong(t.videoId)} disabled={busy} danger>
+                      ✕
+                    </RowAction>
+                  }
+                />
+              ))}
+              {basePlaylist.length === 0 && (
+                <li className="py-6 text-center text-sm text-white/40">ยังไม่มีเพลงของร้าน — ค้นหาด้านบนแล้วกด ＋ เพื่อเพิ่ม</li>
+              )}
+            </ul>
+          ) : panel === "history" ? (
+            <ul className="space-y-1">
+              {history.map((h) => (
+                <TrackRow
+                  key={h.id}
+                  videoId={h.youtubeVideoId}
+                  title={h.title ?? h.youtubeVideoId ?? "—"}
+                  meta={`${h.source === "base" ? "เพลงของร้าน" : "ลูกค้าขอ"} · ${new Date(h.playedAt).toLocaleTimeString("th-TH", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}`}
+                />
+              ))}
+              {history.length === 0 && <li className="py-6 text-center text-sm text-white/40">ยังไม่มีประวัติ</li>}
+            </ul>
+          ) : (
+            <ul className="space-y-1">
               {upcoming.map((q, i) => (
-                <li
+                <TrackRow
                   key={q.id}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm"
-                >
-                  <span className="w-5 shrink-0 text-white/40">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate">{q.title}</span>
-                  {q.playNow ? (
-                    <span className="shrink-0 rounded-full bg-rose-500/20 px-2 py-0.5 text-xs text-rose-300">
-                      ⚡ เปิดทันที
-                    </span>
-                  ) : q.isDonation ? (
-                    <span className="shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">
-                      💸 โดเนท
-                    </span>
-                  ) : null}
-                  <button
-                    onClick={() => playItem(q.id)}
-                    disabled={busy}
-                    title="เล่นเพลงนี้เลย"
-                    className="shrink-0 px-1 text-white/60 hover:text-emerald-400 disabled:opacity-40"
-                  >
-                    ▶
-                  </button>
-                  <button
-                    onClick={() => removeItem(q.id)}
-                    disabled={busy}
-                    title="ลบออกจากคิว"
-                    className="shrink-0 px-1 text-white/40 hover:text-red-400 disabled:opacity-40"
-                  >
-                    ✕
-                  </button>
-                </li>
+                  index={i + 1}
+                  videoId={q.videoId}
+                  title={q.title}
+                  durationSeconds={q.durationSeconds}
+                  meta="ลูกค้าขอ · แตะเพื่อเล่นเลย"
+                  badge={
+                    q.playNow ? (
+                      <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-[11px] text-rose-300">⚡ เปิดทันที</span>
+                    ) : q.isDonation ? (
+                      <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">💸 โดเนท</span>
+                    ) : null
+                  }
+                  onPlay={() => playItem(q.id)}
+                  disabled={busy}
+                  actions={
+                    <RowAction title="ลบออกจากคิว" onClick={() => removeItem(q.id)} disabled={busy} danger>
+                      ✕
+                    </RowAction>
+                  }
+                />
               ))}
               {upcoming.length === 0 && (
-                <li className="py-6 text-center text-sm text-white/30">ยังไม่มีเพลงในคิว</li>
+                <li className="py-6 text-center text-sm text-white/40">
+                  ยังไม่มีเพลงที่ลูกค้าขอ — ระหว่างนี้จะเล่นเพลงของร้าน
+                </li>
               )}
             </ul>
-          </>
-        )}
-      </aside>
+          )}
+        </aside>
+      </div>
     </main>
+  );
+}
+
+function formatDuration(seconds?: number): string | null {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
+function thumbnailFor(videoId?: string, thumbnailUrl?: string): string | null {
+  if (thumbnailUrl && /^https:\/\/i\.ytimg\.com\//.test(thumbnailUrl)) return thumbnailUrl;
+  if (videoId && VIDEO_ID_RE.test(videoId)) return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+  return null;
+}
+
+function RowAction({
+  title,
+  onClick,
+  disabled,
+  danger,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm text-white/60 hover:bg-white/15 disabled:opacity-40 ${
+        danger ? "hover:text-red-400" : "hover:text-sky-300"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TrackRow({
+  videoId,
+  thumbnailUrl,
+  title,
+  meta,
+  durationSeconds,
+  index,
+  badge,
+  active,
+  onPlay,
+  disabled,
+  actions,
+}: {
+  videoId?: string;
+  thumbnailUrl?: string;
+  title: string;
+  meta?: string;
+  durationSeconds?: number;
+  index?: number;
+  badge?: ReactNode;
+  active?: boolean;
+  onPlay?: () => void;
+  disabled?: boolean;
+  actions?: ReactNode;
+}) {
+  const thumb = thumbnailFor(videoId, thumbnailUrl);
+  const duration = formatDuration(durationSeconds);
+  const clickable = Boolean(onPlay) && !disabled;
+  const body = (
+    <>
+      {index !== undefined && <span className="w-5 shrink-0 text-center text-xs text-white/40">{index}</span>}
+      <div className="relative aspect-video w-36 shrink-0 overflow-hidden rounded-lg bg-white/10 sm:w-40">
+        {thumb ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumb} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xl text-white/30">🎵</div>
+        )}
+        {duration && (
+          <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1 text-[11px] font-medium">{duration}</span>
+        )}
+        {clickable && (
+          <span className="absolute inset-0 hidden items-center justify-center bg-black/40 text-2xl group-hover:flex">▶</span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 text-sm font-medium leading-snug">{title}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {badge}
+          {meta && <span className="text-xs text-white/50">{meta}</span>}
+        </div>
+      </div>
+    </>
+  );
+  // ปุ่มเล่น (รูปปก+ชื่อ) กับปุ่มจัดการ (＋/✕) เป็นปุ่มพี่น้องกัน ไม่ซ้อนกัน — ใช้คีย์บอร์ด/โปรแกรมอ่านจอได้ถูกต้อง
+  return (
+    <li className={`flex items-center gap-1 rounded-xl ${active ? "bg-white/10" : ""}`}>
+      {onPlay ? (
+        <button
+          type="button"
+          onClick={onPlay}
+          disabled={disabled}
+          aria-label={`เล่น ${title}`}
+          className="group flex min-w-0 flex-1 items-center gap-2 rounded-xl p-1.5 text-left hover:bg-white/10 disabled:cursor-default disabled:hover:bg-transparent"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-2 p-1.5">{body}</div>
+      )}
+      {actions}
+    </li>
   );
 }

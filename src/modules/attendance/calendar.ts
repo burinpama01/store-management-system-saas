@@ -34,6 +34,35 @@ export interface DayStatusInput {
    */
   scanFrom?: string;
   scanTo?: string;
+  /** ช่วงที่เป็นพนักงาน — ก่อนวันเริ่มงาน/หลังวันออกงาน = off (ไม่ฟ้องขาดงาน) · ว่าง = ไม่จำกัด */
+  employedFrom?: string | null;
+  employedTo?: string | null;
+}
+
+/**
+ * ช่วงที่เป็นพนักงานของสาขา
+ *   เริ่ม = วันที่ช้ากว่าระหว่าง "วันเริ่มงาน" ในโปรไฟล์ กับวันที่เข้าร่วมร้านในระบบ (ก่อนมีบัญชีไม่มีทางลงเวลา)
+ *   จบ = "วันออกงาน" ในโปรไฟล์
+ */
+export function employmentWindow(
+  profile: { seniorityStartDate?: string; employmentEndDate?: string } | null | undefined,
+  joinedAt: string | null | undefined,
+  timezone: string,
+): { from: string | null; to: string | null } {
+  let joined: string | null = null;
+  if (joinedAt && Number.isFinite(Date.parse(joinedAt))) {
+    joined = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+      new Date(joinedAt),
+    );
+  }
+  const start = profile?.seniorityStartDate ?? null;
+  const from = start && joined ? (start > joined ? start : joined) : start ?? joined;
+  return { from, to: profile?.employmentEndDate ?? null };
+}
+
+/** ลาออกก่อนวันที่ date แล้ว (ไม่ต้องแสดงในรายชื่อ/ปฏิทินช่วงที่เริ่มหลังวันนี้) */
+export function resignedBefore(employedTo: string | null | undefined, date: string): boolean {
+  return !!employedTo && employedTo < date;
 }
 
 function localMinutesOfDay(iso: string, timezone: string): number {
@@ -109,6 +138,11 @@ export function computeDayStatuses(input: DayStatusInput): Map<string, DayStatus
       continue;
     }
 
+    // ไม่มีการลงเวลา + อยู่นอกช่วงเป็นพนักงาน (ก่อนเริ่มงาน/หลังออกงาน) = ไม่มาร์กอะไร
+    if ((input.employedFrom && date < input.employedFrom) || (input.employedTo && date > input.employedTo)) {
+      out.set(date, "off");
+      continue;
+    }
     if (holidays.has(date)) {
       out.set(date, "holiday");
       continue;

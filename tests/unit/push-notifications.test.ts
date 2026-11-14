@@ -189,7 +189,9 @@ describe("push notification channel", () => {
     const repository = readFileSync(join(root, "src/modules/notifications/repository.ts"), "utf8").replace(/\r\n/g, "\n");
     const dispatcher = readFileSync(join(root, "src/modules/notifications/dispatcher.ts"), "utf8").replace(/\r\n/g, "\n");
 
-    expect(repository).toContain("filterPushEligibleUserIds(memsRes.data ?? [], storeId, type)");
+    expect(repository).toContain("filterPushEligibleUserIds(memsRes.data ?? [], storeId, type, resigned)");
+    // คนที่ลาออกแล้วไม่ได้รับแจ้งเตือนของร้าน
+    expect(repository).toContain("listResignedUserIds(storeId)");
     expect(dispatcher).toContain("listStorePushTokens(input.organizationId, input.storeId, input.type)");
   });
 
