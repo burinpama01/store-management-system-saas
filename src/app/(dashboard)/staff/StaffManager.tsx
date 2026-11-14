@@ -54,6 +54,8 @@ export interface StaffAdvancedProps {
   weekly: { weeks: PayWeek[]; rows: WeeklyPayoutView[] };
   /** คำขอเบิกเงินล่าสุด (เปิดสวิตช์เบิกเงินเท่านั้น) */
   advances: AdvanceView[];
+  /** เงินสดในลิ้นชักตอนนี้ (null = อ่านไม่ได้/ไม่ได้เปิดเบิกเงิน) */
+  cashOnHand: number | null;
 }
 
 export type StaffSelfInfo = Omit<EmployeeSelfInfo, "bankAccountNo"> & { bankAccountMasked: string };
@@ -538,6 +540,7 @@ export function StaffManager({
           {asw.salaryAdvance && (
             <SalaryAdvancesPanel
               advances={advanced.advances}
+              cashOnHand={advanced.cashOnHand}
               employees={staff
                 .filter((m) => !isResigned(m.userId))
                 .map((m) => ({ userId: m.userId, name: profileByUser.get(m.userId)?.displayName || m.email }))}

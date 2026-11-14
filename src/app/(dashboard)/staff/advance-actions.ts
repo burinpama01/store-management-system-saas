@@ -12,12 +12,14 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import { getAdvanceAvailability } from "@/modules/hr/advanced/salary-advance-service";
 import { getAdvancedPayrollAccess } from "@/modules/hr/advanced/store-payroll";
 import {
+  getCashOnHand,
   getSalaryAdvance,
   insertSalaryAdvance,
   recordAdvanceExpense,
   updateSalaryAdvanceFrom,
 } from "@/modules/hr/advanced/repository";
 import { formatBaht, pushPayrollNotification } from "@/modules/hr/advanced/notify";
+import { checkAdvanceAmount } from "@/modules/hr/advanced/salary-advance";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,6 +44,26 @@ function done() {
 
 function parseAmount(raw: FormDataEntryValue | null): number {
   return Math.round(parseFloat(String(raw ?? "").replace(/,/g, "")) * 100) / 100;
+}
+
+/** ย้อน/ยกเลิกคำขอ — ล้มเหลว = log ให้ตรวจเอง (สถานะอาจค้างเป็นจ่ายแล้วทั้งที่ยังไม่ได้จ่าย) */
+async function settleRollback(
+  result: Promise<{ data: unknown; error: string | null }>,
+  info: { organizationId: string; storeId: string; advanceId: string; actorUserId: string; step: string },
+): Promise<void> {
+  const r = await result;
+  if (r.error || !r.data) {
+    await logSystemEvent({
+      level: "error",
+      source: "hr.salary-advance",
+      action: "rollbackFailed",
+      message: `ย้อนสถานะคำขอเบิก (${info.step}) ไม่สำเร็จ — ตรวจคำขอ ${info.advanceId} ที่แท็บเงินเดือนด้วยตนเอง`,
+      organizationId: info.organizationId,
+      storeId: info.storeId,
+      actorUserId: info.actorUserId,
+      context: { advanceId: info.advanceId, error: r.error ?? "status changed" },
+    }).catch(() => undefined);
+  }
 }
 
 async function payAndRecord(input: {
@@ -95,6 +117,37 @@ async function payAndRecord(input: {
     });
     return `บันทึกรายจ่าย/เงินสดไม่สำเร็จ: ${expense.error}`;
   }
+  // เงินสด: ตรวจลิ้นชักซ้ำหลังบันทึก — อนุมัติเงินสดพร้อมกันหลายรายการจนลิ้นชักติดลบ = ย้อนรายการนี้
+  if (input.payMethod === "cash") {
+    const fresh = await getCashOnHand(input.ctx.storeId).catch(() => null);
+    if (fresh && fresh.amount < -0.005) {
+      const d1 = await db.from("cash_ledger_entries").delete().eq("transaction_id", expense.transactionId).eq("store_id", input.ctx.storeId);
+      const d2 = await db.from("transactions").delete().eq("id", expense.transactionId).eq("store_id", input.ctx.storeId);
+      if (d1.error || d2.error) {
+        await logSystemEvent({
+          level: "error",
+          source: "hr.salary-advance",
+          action: "payAndRecordCleanupFailed",
+          message: `ย้อนรายจ่ายเบิกเงินสด (ลิ้นชักติดลบ) ไม่สำเร็จ — ตรวจรายการ ${expense.transactionId} ที่หน้าบัญชี`,
+          organizationId: input.ctx.organizationId,
+          storeId: input.ctx.storeId,
+          actorUserId: input.actorUserId,
+          context: { transactionId: expense.transactionId, ledgerError: d1.error?.message ?? null, txError: d2.error?.message ?? null },
+        });
+      }
+      await logSystemEvent({
+        level: "warn",
+        source: "hr.salary-advance",
+        action: "cashOverdrawn",
+        message: "ยกเลิกการจ่ายเงินสดเบิก: ลิ้นชักติดลบหลังบันทึก (อนุมัติพร้อมกัน)",
+        organizationId: input.ctx.organizationId,
+        storeId: input.ctx.storeId,
+        actorUserId: input.actorUserId,
+        context: { advanceId: input.advanceId, amount: input.amount, cashAfter: fresh.amount },
+      });
+      return "เงินสดในลิ้นชักไม่พอ (มีการจ่ายเงินสดอื่นพร้อมกัน) — ลองใหม่หรือเลือกโอน";
+    }
+  }
   await db.from("salary_advances").update({ transaction_id: expense.transactionId }).eq("id", input.advanceId).eq("store_id", input.ctx.storeId);
   return null;
 }
@@ -104,9 +157,11 @@ export async function approveSalaryAdvanceAction(formData: FormData): Promise<{ 
     const { user, ctx } = await context();
     const id = String(formData.get("id") ?? "");
     if (!UUID_RE.test(id)) return { error: "คำขอไม่ถูกต้อง" };
-    const payMethod = formData.get("payMethod") === "transfer" ? "transfer" : "cash";
     const adv = await getSalaryAdvance(ctx.storeId, id);
     if (!adv || adv.status !== "pending") return { error: "คำขอนี้ถูกดำเนินการไปแล้ว" };
+    // ค่าเริ่มต้น = วิธีที่พนักงานเลือกตอนขอ · ผู้อนุมัติเปลี่ยนได้
+    const methodRaw = formData.get("payMethod");
+    const payMethod: "cash" | "transfer" = methodRaw === "transfer" || methodRaw === "cash" ? methodRaw : adv.payMethod ?? "cash";
     const amount = formData.has("amount") ? parseAmount(formData.get("amount")) : adv.requestedAmount;
     if (!(amount > 0) || amount > adv.requestedAmount) return { error: `ยอดอนุมัติต้องมากกว่า 0 และไม่เกินยอดที่ขอ (${formatBaht(adv.requestedAmount)})` };
 
@@ -114,6 +169,8 @@ export async function approveSalaryAdvanceAction(formData: FormData): Promise<{ 
     if (amount > av.cap.available) {
       return { error: `ตอนนี้เบิกได้สูงสุด ${formatBaht(av.cap.available)} ตามค่าแรงจากวันที่มาแล้ว — ปรับยอดลงก่อนอนุมัติ` };
     }
+    const cashInvalid = checkAdvanceAmount(amount, payMethod, av.cap.available, av.cashOnHand);
+    if (cashInvalid) return { error: cashInvalid };
     const claimed = await updateSalaryAdvanceFrom(ctx.storeId, id, "pending", {
       status: "paid",
       approved_amount: amount,
@@ -129,7 +186,8 @@ export async function approveSalaryAdvanceAction(formData: FormData): Promise<{ 
       updateSalaryAdvanceFrom(ctx.storeId, id, "paid", {
         status: "pending",
         approved_amount: null,
-        pay_method: null,
+        // กลับไปเป็นวิธีรับเงินที่พนักงานเลือกตอนขอ
+        pay_method: adv.payMethod,
         paid_date: null,
         decided_by: null,
         decided_at: null,
@@ -137,14 +195,15 @@ export async function approveSalaryAdvanceAction(formData: FormData): Promise<{ 
       });
     // ตรวจซ้ำหลังอนุมัติ: อนุมัติคำขออื่นของคนเดียวกันพร้อมกันจนเกินเพดาน = ย้อนกลับเป็นรออนุมัติ
     const after = await getAdvanceAvailability({ organizationId: ctx.organizationId, storeId: ctx.storeId, userId: adv.userId });
+    const rollbackInfo = { organizationId: ctx.organizationId, storeId: ctx.storeId, advanceId: id, actorUserId: user.id };
     if (after.cap.overLimit) {
-      await revert();
+      await settleRollback(revert(), { ...rollbackInfo, step: "เกินเพดาน" });
       return { error: "มีการอนุมัติ/เบิกอื่นพร้อมกันจนเกินเพดาน — ลองใหม่อีกครั้ง" };
     }
 
     const failed = await payAndRecord({ ctx, actorUserId: user.id, advanceId: id, userId: adv.userId, employeeName: av.employeeName, amount, payMethod, today: av.today });
     if (failed) {
-      await revert();
+      await settleRollback(revert(), { ...rollbackInfo, step: "บันทึกรายจ่าย" });
       return { error: `ยังไม่ได้อนุมัติ — ${failed}` };
     }
     await logSystemEvent({
@@ -233,7 +292,8 @@ export async function recordSalaryAdvanceForEmployeeAction(formData: FormData): 
     const av = await getAdvanceAvailability({ organizationId: ctx.organizationId, storeId: ctx.storeId, userId });
     if (!av.hasProfile) return { error: "พนักงานคนนี้ยังไม่ได้ตั้งค่าจ้าง" };
     if (av.cap.blockedReason) return { error: av.cap.blockedReason };
-    if (amount > av.cap.available) return { error: `เบิกได้ไม่เกิน ${formatBaht(av.cap.available)} ตามค่าแรงจากวันที่มาแล้ว` };
+    const invalid = checkAdvanceAmount(amount, payMethod, av.cap.available, av.cashOnHand);
+    if (invalid) return { error: invalid };
 
     const created = await insertSalaryAdvance({
       organization_id: ctx.organizationId,
@@ -253,13 +313,14 @@ export async function recordSalaryAdvanceForEmployeeAction(formData: FormData): 
     if (created.error || !created.data) return { error: "บันทึกไม่สำเร็จ" };
     const cancel = (note: string) => updateSalaryAdvanceFrom(ctx.storeId, created.data!.id, "paid", { status: "cancelled", decision_note: note });
     const after = await getAdvanceAvailability({ organizationId: ctx.organizationId, storeId: ctx.storeId, userId });
+    const rollbackInfo = { organizationId: ctx.organizationId, storeId: ctx.storeId, advanceId: created.data.id, actorUserId: user.id };
     if (after.cap.overLimit) {
-      await cancel("เกินเพดาน (บันทึกซ้อนกัน)");
+      await settleRollback(cancel("เกินเพดาน (บันทึกซ้อนกัน)"), { ...rollbackInfo, step: "เกินเพดาน" });
       return { error: "มีการเบิกอื่นพร้อมกันจนเกินเพดาน — ตรวจยอดแล้วลองใหม่" };
     }
     const failed = await payAndRecord({ ctx, actorUserId: user.id, advanceId: created.data.id, userId, employeeName: av.employeeName, amount, payMethod, today: av.today });
     if (failed) {
-      await cancel("บันทึกรายจ่ายไม่สำเร็จ");
+      await settleRollback(cancel("บันทึกรายจ่ายไม่สำเร็จ"), { ...rollbackInfo, step: "บันทึกรายจ่าย" });
       return { error: `ยังไม่ได้บันทึกการเบิก — ${failed}` };
     }
     await logSystemEvent({

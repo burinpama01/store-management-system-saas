@@ -36,6 +36,9 @@ export function MyAdvanceView(props: {
   earned: number;
   weeklyPaidInCycle: number;
   available: number;
+  /** เบิกเงินสดได้สูงสุด (ไม่เกินเงินสดในลิ้นชัก) */
+  cashMax: number;
+  cashSessionOpen: boolean;
   blockedReason: string | null;
   advances: MyAdvanceRow[];
 }) {
@@ -46,6 +49,9 @@ export function MyAdvanceView(props: {
   const [amount, setAmount] = useState("");
   const { confirm, confirmDialog } = useConfirm();
   const canRequest = props.hasProfile && !props.blockedReason && props.available > 0;
+  // ค่าเริ่มต้น: เงินสดถ้ามีเงินสดพอ ไม่งั้นโอน
+  const [payMethod, setPayMethod] = useState<"cash" | "transfer">(props.cashMax > 0 ? "cash" : "transfer");
+  const max = payMethod === "cash" ? props.cashMax : props.available;
 
   function run(action: () => Promise<{ error: string | null }>, ok: string) {
     setError(null);
@@ -99,13 +105,13 @@ export function MyAdvanceView(props: {
           className="space-y-3 rounded-lg border border-gray-200 bg-white p-4"
         >
           <label className="block text-xs font-medium text-gray-600">
-            จำนวนเงินที่ต้องการเบิก (สูงสุด {baht(props.available)})
+            จำนวนเงินที่ต้องการเบิก (สูงสุด {baht(max)})
             <input
               name="amount"
               type="number"
               inputMode="decimal"
               min={1}
-              max={props.available}
+              max={max}
               step="0.01"
               required
               value={amount}
@@ -116,20 +122,57 @@ export function MyAdvanceView(props: {
           </label>
           <div className="flex flex-wrap gap-2">
             {[0.25, 0.5, 1].map((f) => {
-              const v = Math.floor(props.available * f);
+              const v = Math.floor(max * f);
               if (v <= 0) return null;
               return (
                 <button
                   key={f}
                   type="button"
-                  onClick={() => setAmount(String(f === 1 ? props.available : v))}
+                  onClick={() => setAmount(String(f === 1 ? max : v))}
                   className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm text-gray-700"
                 >
-                  {f === 1 ? `เต็มเพดาน ${baht(props.available)}` : baht(v)}
+                  {f === 1 ? `เต็มเพดาน ${baht(max)}` : baht(v)}
                 </button>
               );
             })}
           </div>
+          <fieldset className="text-xs font-medium text-gray-600">
+            <legend>รับเงินเป็น</legend>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {(["cash", "transfer"] as const).map((m) => {
+                const disabled = m === "cash" && props.cashMax <= 0;
+                return (
+                  <label
+                    key={m}
+                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 ${payMethod === m ? "border-[var(--tenant-primary)] bg-orange-50/40" : "border-gray-300"} ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="payMethod"
+                      value={m}
+                      checked={payMethod === m}
+                      disabled={disabled}
+                      onChange={() => {
+                        setPayMethod(m);
+                        const nextMax = m === "cash" ? props.cashMax : props.available;
+                        if (amount && Number(amount) > nextMax) setAmount(String(nextMax));
+                      }}
+                      className="accent-orange-500"
+                    />
+                    <span className="text-sm text-gray-800">{m === "cash" ? "เงินสด" : "โอนเข้าบัญชี"}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <span className="mt-1 block text-[11px] font-normal text-gray-400">
+              {props.cashMax <= 0
+                ? "ตอนนี้เงินสดในร้านไม่พอให้เบิก — เลือกรับเป็นเงินโอน"
+                : props.cashMax < props.available
+                  ? `เงินสดเบิกได้สูงสุด ${baht(props.cashMax)} ตามเงินสดที่มีในร้านตอนนี้ · โอนเบิกได้ถึง ${baht(props.available)}`
+                  : "เงินสดไม่เกินเงินสดที่มีในร้านตอนอนุมัติ"}
+              {!props.cashSessionOpen && props.cashMax > 0 ? " · ร้านยังไม่เปิดรอบเงินสด ยอดเงินสดอาจไม่เป็นปัจจุบัน" : ""}
+            </span>
+          </fieldset>
           <label className="block text-xs font-medium text-gray-600">
             เหตุผล (ไม่บังคับ)
             <input name="reason" maxLength={200} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3" style={{ fontSize: 16 }} />

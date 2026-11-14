@@ -9,6 +9,7 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import { getAdvanceAvailability } from "@/modules/hr/advanced/salary-advance-service";
 import { getSalaryAdvance, insertSalaryAdvance, updateSalaryAdvanceFrom } from "@/modules/hr/advanced/repository";
 import { formatBaht, listStoreManagerUserIds, pushPayrollNotification } from "@/modules/hr/advanced/notify";
+import { ADVANCE_PAY_METHOD_LABEL, checkAdvanceAmount } from "@/modules/hr/advanced/salary-advance";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,13 +24,17 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
     if (!resolved.can("attendance.clock")) return { error: "ไม่มีสิทธิ์" };
     const amount = Math.round(parseFloat(String(formData.get("amount") ?? "").replace(/,/g, "")) * 100) / 100;
     const reason = String(formData.get("reason") ?? "").trim().slice(0, 200);
+    const methodRaw = formData.get("payMethod");
+    if (methodRaw !== "cash" && methodRaw !== "transfer") return { error: "เลือกรับเงินเป็นเงินสดหรือโอน" };
+    const payMethod = methodRaw;
     if (!(amount > 0)) return { error: "ใส่จำนวนเงินที่ต้องการเบิก" };
 
     const av = await getAdvanceAvailability({ organizationId: ctx.organizationId, storeId: ctx.storeId, userId: user.id });
     if (!av.enabled) return { error: "ร้านนี้ยังไม่เปิดให้เบิกเงิน" };
     if (!av.hasProfile) return { error: "ยังไม่ได้ตั้งค่าจ้างของคุณ — ติดต่อผู้จัดการ" };
     if (av.cap.blockedReason) return { error: av.cap.blockedReason };
-    if (amount > av.cap.available) return { error: `เบิกได้ไม่เกิน ${formatBaht(av.cap.available)} (ตามค่าแรงจากวันที่มาทำงานแล้ว)` };
+    const invalid = checkAdvanceAmount(amount, payMethod, av.cap.available, av.cashOnHand);
+    if (invalid) return { error: invalid };
 
     const created = await insertSalaryAdvance({
       organization_id: ctx.organizationId,
@@ -38,6 +43,8 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
       status: "pending",
       requested_amount: amount,
       reason: reason || null,
+      // วิธีรับเงินที่พนักงานเลือก (ผู้อนุมัติเปลี่ยนได้)
+      pay_method: payMethod,
       cycle_start: av.cycle.start,
       requested_by: user.id,
     });
@@ -53,11 +60,11 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
       level: "info",
       source: "hr.salary-advance",
       action: "requestSalaryAdvanceAction",
-      message: `ขอเบิกเงิน ${formatBaht(amount)} (เบิกได้ ${formatBaht(av.cap.available)})`,
+      message: `ขอเบิกเงิน ${formatBaht(amount)} รับเป็น${ADVANCE_PAY_METHOD_LABEL[payMethod]} (เบิกได้ ${formatBaht(av.cap.available)})`,
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       actorUserId: user.id,
-      context: { advanceId: created.data.id, amount, available: av.cap.available, earned: av.earned, cycleStart: av.cycle.start },
+      context: { advanceId: created.data.id, amount, payMethod, available: av.cap.available, cashMax: av.cashMax, earned: av.earned, cycleStart: av.cycle.start },
     });
     await pushPayrollNotification({
       organizationId: ctx.organizationId,
@@ -65,7 +72,7 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
       userIds: (await listStoreManagerUserIds(ctx.organizationId, ctx.storeId)).filter((id) => id !== user.id),
       kind: "advance_requested",
       dedupeKey: created.data.id,
-      title: `${av.employeeName} ขอเบิกเงิน ${formatBaht(amount)}`,
+      title: `${av.employeeName} ขอเบิกเงิน ${formatBaht(amount)} (${ADVANCE_PAY_METHOD_LABEL[payMethod]})`,
       message: `ค่าแรงจากวันที่มาแล้ว ${formatBaht(av.earned)} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน${reason ? ` · เหตุผล: ${reason}` : ""}`,
     }).catch(() => undefined);
     done();
