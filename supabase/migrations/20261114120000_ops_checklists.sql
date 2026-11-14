@@ -48,6 +48,7 @@ create table if not exists public.ops_checklist_templates (
 create index if not exists ops_checklist_templates_store_idx
   on public.ops_checklist_templates(store_id, is_active, sort_order);
 
+drop trigger if exists set_updated_at on public.ops_checklist_templates;
 create trigger set_updated_at before update on public.ops_checklist_templates
   for each row execute function set_updated_at();
 
@@ -152,6 +153,7 @@ begin
 end;
 $$;
 
+drop trigger if exists ops_checklist_events_append_only on public.ops_checklist_events;
 create trigger ops_checklist_events_append_only
 before update or delete on public.ops_checklist_events
 for each row execute function public.ops_checklist_events_block_mutation();
@@ -165,6 +167,12 @@ create table if not exists public.ops_notification_log (
 );
 
 -- 5) RLS — อ่านอย่างเดียวจาก client, เขียนผ่าน RPC เท่านั้น ------------------
+-- รูปหลักฐานเช็กลิสต์ (bucket staff-evidence, path <org>/<store>/ops/<run>/<item>-<uuid>.jpg)
+-- ตั้งใจไม่เพิ่ม storage policy ใหม่:
+--   * อัปโหลด + สร้าง signed URL ทำผ่าน service_role ใน server action เท่านั้น
+--   * อัปโหลดตรงจาก authenticated ถูก policy เดิมบล็อก (policy staff ต้องการ path 3 ระดับ)
+--   * manager+ อ่านตรงได้ผ่าน policy เดิม "staff-evidence: manager+ can read" (ตรวจแค่ folder[1] = org)
+--   ถ้าแก้ policy เดิมของ staff-evidence ต้องคงสิทธิ์ข้างบนไว้ ไม่งั้นหน้า /ops จะเปิดรูปไม่ได้
 alter table public.ops_checklist_templates enable row level security;
 alter table public.ops_checklist_template_items enable row level security;
 alter table public.ops_checklist_runs enable row level security;
@@ -186,23 +194,28 @@ grant all on table public.ops_checklist_templates, public.ops_checklist_template
   public.ops_notification_log
   to service_role;
 
+drop policy if exists "ops_checklist_templates: store member can read" on public.ops_checklist_templates;
 create policy "ops_checklist_templates: store member can read"
   on public.ops_checklist_templates for select
   using (auth_user_role_in_store(organization_id, store_id, 'staff'));
 
+drop policy if exists "ops_checklist_template_items: store member can read" on public.ops_checklist_template_items;
 create policy "ops_checklist_template_items: store member can read"
   on public.ops_checklist_template_items for select
   using (auth_user_role_in_store(organization_id, store_id, 'staff'));
 
+drop policy if exists "ops_checklist_runs: store member can read" on public.ops_checklist_runs;
 create policy "ops_checklist_runs: store member can read"
   on public.ops_checklist_runs for select
   using (auth_user_role_in_store(organization_id, store_id, 'staff'));
 
+drop policy if exists "ops_checklist_run_items: store member can read" on public.ops_checklist_run_items;
 create policy "ops_checklist_run_items: store member can read"
   on public.ops_checklist_run_items for select
   using (auth_user_role_in_store(organization_id, store_id, 'staff'));
 
 -- ประวัติละเอียดเห็นเฉพาะเจ้าของ/admin (ข้อ 6 ของผู้ใช้)
+drop policy if exists "ops_checklist_events: admin can read" on public.ops_checklist_events;
 create policy "ops_checklist_events: admin can read"
   on public.ops_checklist_events for select
   using (auth_user_role_in_store(organization_id, store_id, 'admin'));
