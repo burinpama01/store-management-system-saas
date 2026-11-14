@@ -174,6 +174,7 @@ describe("push notification channel", () => {
       "activation_nudge",
       "subscription_expiring",
       "daily_summary",
+      "ops_checklist",
     ]);
     for (const type of managementOnly) {
       expect(isPushRecipientRole(type, "cashier")).toBe(false);

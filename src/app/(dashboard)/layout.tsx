@@ -64,6 +64,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         music_license_status?: string;
         setup_profile?: unknown;
         notification_voice_enabled?: boolean;
+        operations_enabled?: boolean;
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
@@ -121,6 +122,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
+    // งานหน้าร้าน (เช็กลิสต์) — เห็นเมื่อสาขาเปิดระบบแล้วเท่านั้น; เจ้าของตั้งค่าได้ที่ /ops/templates
+    ...(currentStoreRow?.operations_enabled ? [{ href: "/ops", label: "งานหน้าร้าน" }] : []),
     ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
     ...(myAdvanceVisible ? [{ href: "/my-advance", label: "เบิกเงิน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/my-profile", label: "ข้อมูลของฉัน" }] : []),

@@ -81,6 +81,7 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/api/notifications/cron/") ||
     // สรุปยอดจากเวลาปิดร้าน: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
     request.nextUrl.pathname === "/api/attendance/cron/closing-summary" ||
+    request.nextUrl.pathname === "/api/operations/cron/checklist-due" ||
     // เงินเดือนขั้นสูง: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
     request.nextUrl.pathname === "/api/hr/cron/payroll" ||
     // Public REST API (Enterprise) — auth ด้วย API key ใน handler เอง ไม่ใช้ session

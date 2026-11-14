@@ -1,6 +1,7 @@
 import type { ResolvedPermissions } from "@/modules/tenants/types";
 import { DEFAULT_BILLING_STATE, canUseFeature, type BillingState } from "@/modules/billing/types";
 import type { SettingsTab } from "./SettingsNav";
+import { isOpsManagerRole } from "@/modules/operations/access";
 
 export function buildSettingsTabs(
   resolved: ResolvedPermissions,
@@ -26,6 +27,10 @@ export function buildSettingsTabs(
       { href: "/settings/integrations", label: "API", featureKey: "apiIntegration" },
       { href: "/settings/connect", label: "เดลิเวอรี (JDC)", featureKey: "apiIntegration" },
     );
+  }
+  // งานหน้าร้าน (เช็กลิสต์): เปิด/ปิดและตั้งค่าได้แม้ระบบยังปิดอยู่ — owner/admin เท่านั้น ตรงกับสิทธิ์ RPC
+  if (isOpsManagerRole(resolved.role)) {
+    tabs.push({ href: "/settings/operations", label: "งานหน้าร้าน" });
   }
   // เครื่องเล่นเพลง: คนที่จัดการคิวเพลงได้ (orders.manage_qr — รวมแคชเชียร์) เปิดหน้านี้ได้
   // แก้ค่าได้เฉพาะ settings.manage_store (หน้าเช็คเอง) ส่วนคนอื่นเห็นปุ่มเปิดเครื่องเล่นอย่างเดียว

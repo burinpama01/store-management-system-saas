@@ -215,3 +215,44 @@ VALUES
   ('55555555-0000-0000-0000-000000000011', '44444444-0000-0000-0000-000000000004', 'เพิ่มผักบุ้ง', 10, false, true, 2),
   ('55555555-0000-0000-0000-000000000012', '44444444-0000-0000-0000-000000000004', 'ข้าวเพิ่ม', 20, false, true, 3)
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- Staff test account for StoreOS Operations checklists (local only)
+-- Login: staff@demo.local / demo1234
+-- ============================================================
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  raw_app_meta_data, raw_user_meta_data,
+  phone, confirmation_token, recovery_token, email_change, email_change_token_new, phone_change, phone_change_token, reauthentication_token
+)
+VALUES (
+  '00000000-0000-0000-0000-000000000000',
+  '00000000-0000-0000-0000-000000000002',
+  'authenticated',
+  'authenticated',
+  'staff@demo.local',
+  extensions.crypt('demo1234', extensions.gen_salt('bf')),
+  NOW(), NOW(), NOW(),
+  '{"provider":"email","providers":["email"]}',
+  '{}',
+  NULL, '', '', '', '', '', '', ''
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.identities (id, user_id, provider, provider_id, identity_data, last_sign_in_at, created_at, updated_at)
+VALUES (
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000002',
+  'email',
+  'staff-demo',
+  jsonb_build_object('sub', '00000000-0000-0000-0000-000000000002', 'email', 'staff@demo.local'),
+  NOW(), NOW(), NOW()
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO memberships (organization_id, store_id, user_id, role, joined_at)
+SELECT 'aaaaaaaa-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'staff', NOW()
+WHERE NOT EXISTS (
+  SELECT 1 FROM memberships WHERE user_id = '00000000-0000-0000-0000-000000000002'
+);

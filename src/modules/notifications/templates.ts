@@ -43,6 +43,10 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
     title: "สรุปยอดประจำวัน",
     message: "ปิดร้านแล้ว — ยอดขายวันนี้ {revenue} จาก {orderCount} บิล ({trigger})",
   },
+  ops_checklist: {
+    title: "เช็กลิสต์หน้าร้าน",
+    message: "{templateName}: {itemLabel} (โดย {employeeName})",
+  },
   test: { title: "ข้อความทดสอบ", message: "[TEST] notification พร้อมใช้งาน" },
 };
 
@@ -68,6 +72,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   activation_nudge: ["store", "step"],
   subscription_expiring: ["store", "daysLeft", "plan"],
   daily_summary: ["store", "date", "orderCount", "revenue", "employeeName", "trigger"],
+  ops_checklist: ["store", "templateName", "itemLabel", "employeeName", "shiftDate"],
   test: ["store"],
 };
 
