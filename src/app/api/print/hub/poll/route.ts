@@ -18,7 +18,11 @@ import {
   touchHubHeartbeat,
   type HubUsbBinding,
 } from "@/modules/printing/print-hub-repository";
-import { resolveHubPollPacing, sanitizeHubIdleMs } from "@/modules/printing/hub-poll-pacing";
+import {
+  resolveHubLongPollWaitMs,
+  resolveHubPollPacing,
+  sanitizeHubIdleMs,
+} from "@/modules/printing/hub-poll-pacing";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 /** ความถี่ในการถามว่ามีงานเข้ามาหรือยัง ระหว่างที่คำขอ long-poll ค้างรอ */
@@ -32,8 +36,11 @@ const LONGPOLL_CHECK_INTERVAL_MS = 1_000;
  */
 const MAX_LONGPOLL_WAIT_MS = 25_000;
 
-/** ฟังก์ชันนี้ค้างรองานได้ จึงต้องขอเวลาทำงานมากกว่าค่าเริ่มต้นของเส้นทาง API ปกติ */
-export const maxDuration = 60;
+/**
+ * ฟังก์ชันนี้ค้างรองานได้สูงสุด MAX_LONGPOLL_WAIT_MS บวกงาน DB ก่อน/หลัง — 40 วินาทีพอ
+ * และเป็นเพดานกันคำขอที่ค้างผิดปกติไม่ให้กิน Provisioned Memory นานเกินจำเป็น
+ */
+export const maxDuration = 40;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
@@ -146,7 +153,8 @@ export async function POST(req: NextRequest) {
   //
   // ระหว่างรอใช้การถามแบบเบา (hasPendingPrintJobs) ไม่ใช่ claim เต็ม เพื่อไม่ให้
   // การรอกลายเป็นภาระของฐานข้อมูลแทน
-  const waitMs = sanitizeWaitMs(body.waitMs);
+  const idleMs = sanitizeHubIdleMs(body.idleMs);
+  const waitMs = resolveHubLongPollWaitMs({ requestedWaitMs: sanitizeWaitMs(body.waitMs), idleMs });
   if (!claimed.error && claimed.data?.length === 0 && waitMs > 0) {
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline) {
@@ -210,7 +218,7 @@ export async function POST(req: NextRequest) {
   // โปรเจคทะลุเพดานและโดนระงับบริการ — ดู hub-poll-pacing.ts)
   const pacing = resolveHubPollPacing({
     claimedJobs: jobs.length,
-    idleMs: sanitizeHubIdleMs(body.idleMs),
+    idleMs,
   });
 
   return NextResponse.json({
