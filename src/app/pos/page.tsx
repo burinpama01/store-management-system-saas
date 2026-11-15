@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import { canUseMemberPrivileges } from "@/modules/members/access";
+import { isMemberCodeEnabled } from "@/modules/members/repository";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
@@ -72,6 +74,9 @@ export default async function PosPage() {
   const couponEnabled = canUseFeature(resolvedBillingState, "couponManagement");
   const loyaltyEnabled = canUseFeature(resolvedBillingState, "loyaltyPoints");
   const customerDisplayEnabled = canUseFeature(resolvedBillingState, "customerDisplay");
+  // รหัสยืนยันสมาชิก 5 นาที: Enterprise + สวิตช์ของสาขา (ตั้งค่า › สิทธิ์สมาชิก)
+  const memberCodeEnabled =
+    loyaltyEnabled && canUseMemberPrivileges(resolvedBillingState) && (await isMemberCodeEnabled(ctx.storeId));
   const couponUnavailableMessage = couponEnabled
     ? null
     : explainFeatureLock(resolvedBillingState, "couponManagement") ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง";
@@ -139,6 +144,7 @@ export default async function PosPage() {
       couponUnavailableMessage={couponUnavailableMessage}
       loyaltyEnabled={loyaltyEnabled}
       loyaltyUnavailableMessage={loyaltyUnavailableMessage}
+      memberCodeEnabled={memberCodeEnabled}
       customerDisplayEnabled={customerDisplayEnabled}
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
       trueMoneyEnabled={trueMoneyEnabled}

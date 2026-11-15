@@ -12,6 +12,8 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
 import { escapeLikePattern } from "@/shared/utils/like-pattern";
 import { normalizeCustomerPhone } from "@/shared/utils/customer-phone";
+import { canUseMemberPrivileges } from "@/modules/members/access";
+import { isMemberCodeEnabled } from "@/modules/members/repository";
 
 type PortalLinkRow = Database["public"]["Tables"]["customer_member_portal_links"]["Row"];
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
@@ -66,6 +68,8 @@ export interface CustomerPortalData {
   customer: CustomerMemberProfile | null;
   rewards: LoyaltyReward[];
   redemptions: CustomerRewardRedemption[];
+  /** สาขานี้เปิดรหัสยืนยันสมาชิก 5 นาที (Enterprise + สวิตช์ member_code_enabled) */
+  memberCodeEnabled: boolean;
   error: string | null;
 }
 
@@ -141,12 +145,12 @@ function mapCustomer(customer: CustomerRow, account?: LoyaltyAccountRow | null):
 
 async function resolvePortalLink(storeSlug: string, portalCode: string) {
   const cleanCode = portalCode.trim();
-  if (!cleanCode) return { store: null, link: null, error: "ต้องเปิดจาก QR ของร้าน" };
+  if (!cleanCode) return { store: null, link: null, memberPrivileges: false, error: "ต้องเปิดจาก QR ของร้าน" };
 
   const supabase = await createSupabaseServiceClient();
   const storeRes = await getStoreForMemberPortal(supabase, storeSlug);
   if (storeRes.error || !storeRes.data || !storeRes.data.isActive) {
-    return { store: null, link: null, error: storeRes.error ?? "ไม่พบร้านนี้" };
+    return { store: null, link: null, memberPrivileges: false, error: storeRes.error ?? "ไม่พบร้านนี้" };
   }
 
   const billingState =
@@ -155,9 +159,11 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
     return {
       store: null,
       link: null,
+      memberPrivileges: false,
       error: ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE,
     };
   }
+  const memberPrivileges = canUseMemberPrivileges(billingState);
 
   const { data, error } = await supabase
     .from("customer_member_portal_links")
@@ -176,7 +182,7 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
       supabaseHost: safeSupabaseHost(),
       error: error.message,
     });
-    return { store: null, link: null, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
+    return { store: null, link: null, memberPrivileges: false, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
   }
   if (!data) {
     console.warn("[member-portal] portal link not found", {
@@ -186,9 +192,9 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
       codePrefix: cleanCode.slice(0, 6),
       supabaseHost: safeSupabaseHost(),
     });
-    return { store: null, link: null, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
+    return { store: null, link: null, memberPrivileges: false, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
   }
-  return { store: storeRes.data, link: data, error: null };
+  return { store: storeRes.data, link: data, memberPrivileges, error: null };
 }
 
 async function getStoreForMemberPortal(
@@ -333,13 +339,15 @@ export async function getCustomerPortalData(storeSlug: string, portalCode: strin
       customer: null,
       rewards: [],
       redemptions: [],
+      memberCodeEnabled: false,
       error: portal.error,
     };
   }
 
-  const [sessionRes, rewardsRes] = await Promise.all([
+  const [sessionRes, rewardsRes, memberCodeSwitch] = await Promise.all([
     getActiveSessionCustomer(portal.store),
     listActiveRewards(portal.store.id),
+    portal.memberPrivileges ? isMemberCodeEnabled(portal.store.id) : Promise.resolve(false),
   ]);
   const redemptionsRes = sessionRes.customer
     ? await listRewardRedemptions(portal.store.id, sessionRes.customer.id)
@@ -352,6 +360,7 @@ export async function getCustomerPortalData(storeSlug: string, portalCode: strin
     customer: sessionRes.customer,
     rewards: rewardsRes.data,
     redemptions: redemptionsRes.data,
+    memberCodeEnabled: portal.memberPrivileges && memberCodeSwitch,
     error: sessionRes.error ?? rewardsRes.error ?? redemptionsRes.error,
   };
 }

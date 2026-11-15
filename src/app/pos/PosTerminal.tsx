@@ -27,6 +27,8 @@ import {
   checkoutAndPayAction,
   collectPaymentAction,
   searchPosCustomersAction,
+  verifyPosMemberCodeAction,
+  type PosMemberVerification,
   evaluatePosCouponAction,
   listPosCustomerVouchersAction,
   registerPosCustomerAction,
@@ -181,6 +183,8 @@ interface Props {
   couponUnavailableMessage: string | null;
   loyaltyEnabled: boolean;
   loyaltyUnavailableMessage: string | null;
+  /** รหัสยืนยันสมาชิก 5 นาที (Enterprise + สวิตช์สาขา) */
+  memberCodeEnabled?: boolean;
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
   trueMoneyEnabled?: boolean;
@@ -1404,6 +1408,51 @@ function NumericKeypad({
   );
 }
 
+interface MemberCodeControl {
+  value: string;
+  verified: boolean;
+  onChange: (value: string) => void;
+  onVerify: () => void;
+}
+
+/**
+ * ยืนยันสมาชิกด้วยรหัส 6 หลักจากหน้าสมาชิกในมือถือลูกค้า (อายุ 5 นาที ใช้ครั้งเดียว)
+ * เครื่องสแกนแบบคีย์บอร์ดยิงตัวเลข + Enter ลงช่องนี้ได้เลย ไม่มีมือถือ = ใช้สิทธิ์ไม่ได้
+ */
+function MemberCodeVerifyBox({ control, isPending }: { control: MemberCodeControl; isPending: boolean }) {
+  const digits = control.value.replace(/[^0-9]/g, "");
+  const ready = digits.length === 6;
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+      <p className="text-sm font-semibold text-emerald-900">ยืนยันด้วยรหัสสมาชิก (ใช้สิทธิ์แพ็ก/ระดับ)</p>
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        <input
+          value={control.value}
+          onChange={(event) => control.onChange(event.target.value.replace(/[^0-9\s-]/g, "").slice(0, 9))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && ready && !isPending) control.onVerify();
+          }}
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="สแกน QR หรือพิมพ์รหัส 6 หลัก"
+          aria-label="รหัสสมาชิก 6 หลัก"
+          style={{ fontSize: 16 }}
+          className="min-h-12 rounded-xl border border-emerald-300 bg-white px-3 text-base tabular-nums tracking-widest text-slate-900 placeholder:tracking-normal placeholder:text-slate-400"
+        />
+        <button
+          type="button"
+          disabled={isPending || !ready}
+          onClick={control.onVerify}
+          className="min-h-12 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ยืนยัน
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-emerald-800">ลูกค้าไม่มีมือถือ: ค้นด้วยเบอร์ได้เพื่อสะสมแต้ม แต่ใช้สิทธิ์สมาชิกไม่ได้</p>
+    </div>
+  );
+}
+
 /**
  * สมาชิกสะสมแต้มในแผงเลื่อน (จอใหญ่/iPad) — ตัวอักษร ≥16px กัน Safari ซูม,
  * ปุ่มสูง ≥48px, แป้นเบอร์โทรบนจอ, ผลค้นหา/โค้ดแลกรางวัลเป็นการ์ดแตะง่าย
@@ -1423,6 +1472,7 @@ function MemberSheetSection({
   onRegisterNameChange,
   onRegister,
   onUseVoucher,
+  memberCode = null,
 }: {
   selectedCustomer: CustomerProfile | null;
   vouchers: PosRewardVoucher[];
@@ -1438,6 +1488,8 @@ function MemberSheetSection({
   onRegisterNameChange: (value: string) => void;
   onRegister: () => void;
   onUseVoucher: (voucher: PosRewardVoucher) => void;
+  /** null = สาขานี้ไม่ได้เปิดรหัสยืนยันสมาชิก */
+  memberCode?: MemberCodeControl | null;
 }) {
   if (selectedCustomer) {
     return (
@@ -1445,6 +1497,11 @@ function MemberSheetSection({
         <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
           <div className="min-w-0">
             <p className="truncate text-base font-semibold text-amber-900">⭐ {selectedCustomer.name}</p>
+            {memberCode && (
+              <p className={`text-xs font-semibold ${memberCode.verified ? "text-emerald-700" : "text-slate-500"}`}>
+                {memberCode.verified ? "✓ ยืนยันด้วยรหัสแล้ว — ใช้สิทธิ์สมาชิกได้" : "ยังไม่ยืนยันรหัส — ใช้สิทธิ์สมาชิกไม่ได้"}
+              </p>
+            )}
             <p className="text-sm text-amber-800">
               {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้มสะสม{" "}
               <span className="font-semibold tabular-nums">{formatPoints(selectedCustomer.pointsBalance ?? 0)}</span>
@@ -1495,6 +1552,7 @@ function MemberSheetSection({
   return (
     <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
       <div className="min-w-0 space-y-3">
+        {memberCode && <MemberCodeVerifyBox control={memberCode} isPending={isPending} />}
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <input
             data-autofocus="true"
@@ -3731,6 +3789,7 @@ export function PosTerminal({
   couponUnavailableMessage,
   loyaltyEnabled,
   loyaltyUnavailableMessage,
+  memberCodeEnabled = false,
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
   trueMoneyEnabled = false,
@@ -3819,6 +3878,11 @@ export function PosTerminal({
   const [customerSearchedQuery, setCustomerSearchedQuery] = useState<string | null>(null);
   const [registerName, setRegisterName] = useState("");
   const [customerVouchers, setCustomerVouchers] = useState<{ customerId: string; vouchers: PosRewardVoucher[] } | null>(null);
+  // ผลยืนยันรหัสสมาชิก 5 นาที — ผูกกับลูกค้าที่เลือกอยู่ เปลี่ยน/ล้างลูกค้าแล้วถือว่าหมดผล
+  const [memberVerification, setMemberVerification] = useState<
+    (PosMemberVerification & { customerId: string }) | null
+  >(null);
+  const [memberCodeInput, setMemberCodeInput] = useState("");
   // คูปองที่ใช้ไม่ได้แล้วหลังแก้ตะกร้า — โชว์เหนือปุ่มชำระเงินจนกว่าจะใส่คูปองใหม่/ล้างบิล
   const [couponNotice, setCouponNotice] = useState<string | null>(null);
   const [couponRecalcPending, setCouponRecalcPending] = useState(false);
@@ -4281,6 +4345,27 @@ export function PosTerminal({
     setRegisterName("");
     // คูปองที่ใช้อยู่ไม่ล้างทิ้ง — ตัวคำนวณใหม่จะตรวจกับลูกค้าคนนี้ให้เอง (L4)
     setCustomerCouponMessage(`ผูกสมาชิก ${customer.name} แล้ว`);
+  }
+
+  // ยืนยันแล้วแต่ลูกค้าในบิลเปลี่ยน (ล้างบิล/จ่ายเสร็จ/เลือกคนอื่น) → ผลยืนยันใช้ไม่ได้อีก
+  const activeMemberVerification =
+    memberVerification && selectedCustomer?.id === memberVerification.customerId ? memberVerification : null;
+
+  function handleVerifyMemberCode() {
+    const raw = memberCodeInput;
+    startTransition(async () => {
+      const result = await verifyPosMemberCodeAction(raw);
+      if (result.error || !result.customer || !result.verification) {
+        setCustomerCouponMessage(result.error ?? "ยืนยันรหัสสมาชิกไม่สำเร็จ");
+        return;
+      }
+      setMemberCodeInput("");
+      handleSelectCustomer(result.customer);
+      setMemberVerification({ ...result.verification, customerId: result.customer.id });
+      setCustomerCouponMessage(
+        `ยืนยันสมาชิก ${result.customer.name} แล้ว${result.verification.crossBranch ? " (สมาชิกจากสาขาอื่น)" : ""}`,
+      );
+    });
   }
 
   function handleClearCustomer() {
@@ -5302,6 +5387,16 @@ export function PosTerminal({
           onRegisterNameChange={setRegisterName}
           onRegister={handleRegisterCustomer}
           onUseVoucher={handleUseVoucher}
+          memberCode={
+            memberCodeEnabled
+              ? {
+                  value: memberCodeInput,
+                  verified: activeMemberVerification !== null,
+                  onChange: setMemberCodeInput,
+                  onVerify: handleVerifyMemberCode,
+                }
+              : null
+          }
         />
       }
       couponCode={couponCode}
