@@ -55,6 +55,9 @@ export default async function PrepaidPassesPage() {
         </p>
       )}
       {plansRes.error && <p className="alert-danger" role="alert">โหลดแพ็กไม่สำเร็จ: {plansRes.error}</p>}
+      <Link className="btn-secondary inline-block text-sm" href="/reports/prepaid-passes">
+        ดูรายงานแพ็ก (ขาย/ใช้/คงค้าง)
+      </Link>
       <p className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
         ⚖️ เงื่อนไข “ไม่คืนเงิน” อาจขัดกฎหมายคุ้มครองผู้บริโภคในบางกรณี (เช่น ร้านปิดกิจการ) แนะนำให้ปรึกษาที่ปรึกษากฎหมายก่อนขายจริง
       </p>
