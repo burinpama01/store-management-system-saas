@@ -10,7 +10,15 @@ import { getResolvedCurrentPermissions, requireFeature, requirePermission } from
 import { resolveUnknownPrintJob } from "@/modules/printing/print-hub-repository";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { listProducts } from "@/modules/catalog/repository";
-import { listCustomersForStore, saveCustomer, searchCustomersForStore } from "@/modules/customers/repository";
+import {
+  getCustomerProfileWithLoyalty,
+  listCustomersForStore,
+  saveCustomer,
+  searchCustomersForStore,
+} from "@/modules/customers/repository";
+import { canUseMemberPrivileges, MEMBER_PRIVILEGES_LOCK_MESSAGE } from "@/modules/members/access";
+import { normalizeMemberRedeemCodeInput } from "@/modules/members/redeem-code";
+import { verifyMemberRedeemCode } from "@/modules/members/repository";
 import { fallbackMemberName, isRegistrablePhone, type PosRewardVoucher } from "@/modules/pos/loyalty-coupon-ux";
 import { normalizeCustomerPhone } from "@/shared/utils/customer-phone";
 import type { CustomerProfile } from "@/modules/customers/types";
@@ -249,6 +257,104 @@ export async function searchPosCustomersAction(
     return { customers: result.data ?? [], error: null };
   } catch (e) {
     return { customers: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+export interface PosMemberVerification {
+  verificationId: string;
+  expiresAt: string;
+  /** ลูกค้าเปิดรหัสจากหน้าสมาชิกของอีกสาขา */
+  crossBranch: boolean;
+}
+
+/**
+ * ยืนยันสมาชิกด้วยรหัส 6 หลัก (อายุ 5 นาที) ที่ลูกค้าเปิดจากหน้าสมาชิก
+ * สำเร็จ = ผูกลูกค้าของสาขานี้กับบิล (สร้างให้ถ้าเคยซื้อแต่สาขาอื่น) + ได้ verification
+ * ที่ P1 (ตัดแพ็ก) / P2 (ส่วนลดระดับ) จะตรวจซ้ำตอนปิดบิล
+ */
+export async function verifyPosMemberCodeAction(rawCode: string): Promise<{
+  customer: CustomerProfile | null;
+  verification: PosMemberVerification | null;
+  error: string | null;
+}> {
+  let logBase: { organizationId?: string; storeId?: string; actorUserId?: string } = {};
+  try {
+    await requirePermission("pos.use");
+    const { ctx, user } = await getStoreContext();
+    logBase = { organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id };
+    const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    if (!canUseMemberPrivileges(billing)) {
+      return { customer: null, verification: null, error: MEMBER_PRIVILEGES_LOCK_MESSAGE };
+    }
+    const code = normalizeMemberRedeemCodeInput(rawCode);
+    if (!code) return { customer: null, verification: null, error: "รหัสสมาชิกต้องเป็นตัวเลข 6 หลัก" };
+
+    const verified = await verifyMemberRedeemCode({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      userId: user.id,
+      code,
+    });
+    if (verified.error || !verified.data) {
+      await logSystemEvent({
+        source: "pos.member-code",
+        action: "verifyPosMemberCode",
+        level: verified.status === "invalid" ? "info" : "warn",
+        message: `ยืนยันรหัสสมาชิกไม่ผ่าน: ${verified.status ?? "rpc_error"}`,
+        errorCode: verified.status ?? null,
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        actorUserId: user.id,
+      });
+      return { customer: null, verification: null, error: verified.error ?? "ยืนยันรหัสไม่สำเร็จ" };
+    }
+
+    const profile = await getCustomerProfileWithLoyalty(ctx.storeId, verified.data.customerId);
+    if (profile.error || !profile.data) {
+      await logSystemEvent({
+        level: "error",
+        source: "pos.member-code",
+        action: "verifyPosMemberCode",
+        message: "ยืนยันรหัสผ่านแต่โหลดข้อมูลลูกค้าไม่สำเร็จ",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        actorUserId: user.id,
+        context: { customerId: verified.data.customerId },
+      });
+      return { customer: null, verification: null, error: "ยืนยันแล้วแต่โหลดข้อมูลสมาชิกไม่สำเร็จ ลองค้นด้วยเบอร์" };
+    }
+
+    const crossBranch = verified.data.issuedStoreId !== ctx.storeId;
+    await logSystemEvent({
+      level: "info",
+      source: "pos.member-code",
+      action: "verifyPosMemberCode",
+      message: crossBranch ? "ยืนยันสมาชิกด้วยรหัส (ข้ามสาขา)" : "ยืนยันสมาชิกด้วยรหัส",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      context: { customerId: verified.data.customerId, verificationId: verified.data.verificationId, crossBranch },
+    });
+    return {
+      customer: profile.data,
+      verification: {
+        verificationId: verified.data.verificationId,
+        expiresAt: verified.data.expiresAt,
+        crossBranch,
+      },
+      error: null,
+    };
+  } catch (e) {
+    await logSystemEvent({
+      level: "error",
+      source: "pos.member-code",
+      action: "verifyPosMemberCode",
+      message: e instanceof Error ? e.message : "ยืนยันรหัสสมาชิกไม่สำเร็จ",
+      organizationId: logBase.organizationId ?? null,
+      storeId: logBase.storeId ?? null,
+      actorUserId: logBase.actorUserId ?? null,
+    });
+    return { customer: null, verification: null, error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
   }
 }
 

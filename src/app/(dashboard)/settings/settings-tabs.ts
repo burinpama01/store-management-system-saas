@@ -31,6 +31,10 @@ export function buildSettingsTabs(
   // งานหน้าร้าน (เช็กลิสต์): เปิด/ปิดและตั้งค่าได้แม้ระบบยังปิดอยู่ — owner/admin เท่านั้น ตรงกับสิทธิ์ RPC
   if (isOpsManagerRole(resolved.role)) {
     tabs.push({ href: "/settings/operations", label: "งานหน้าร้าน" });
+    // รหัสยืนยันสมาชิก (ฐานของแพ็กล่วงหน้า/ระดับสมาชิก) — Enterprise เท่านั้น; หน้าเช็ก plan เองอีกชั้น
+    if (billingState.plan === "enterprise") {
+      tabs.push({ href: "/settings/member-privileges", label: "สิทธิ์สมาชิก", featureKey: "loyaltyPoints" });
+    }
   }
   // เครื่องเล่นเพลง: คนที่จัดการคิวเพลงได้ (orders.manage_qr — รวมแคชเชียร์) เปิดหน้านี้ได้
   // แก้ค่าได้เฉพาะ settings.manage_store (หน้าเช็คเอง) ส่วนคนอื่นเห็นปุ่มเปิดเครื่องเล่นอย่างเดียว

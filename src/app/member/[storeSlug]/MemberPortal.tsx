@@ -12,6 +12,7 @@ import {
   verifyMemberOtpAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+import { MemberRedeemCodeCard } from "./MemberRedeemCodeCard";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -338,6 +339,8 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
                 {formatPoints(data.customer.pointsBalance)} แต้ม
               </p>
             </section>
+
+            {data.memberCodeEnabled && <MemberRedeemCodeCard storeSlug={storeSlug} portalCode={portalCode} />}
 
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-[var(--surface-muted)] p-1">
               <button

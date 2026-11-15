@@ -10,7 +10,8 @@ import {
 import { redeemRewardForCurrentCustomer } from "@/modules/loyalty/repository";
 import { deliverMemberOtp, verifyProviderOtp } from "@/modules/notifications/smskub";
 import { claimLoyaltyPointsWithCode } from "@/modules/loyalty/claim-repository";
-import { logActionError } from "@/modules/system/event-log";
+import { logActionError, logSystemEvent } from "@/modules/system/event-log";
+import { issueMemberRedeemCode } from "@/modules/members/repository";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -250,5 +251,58 @@ export async function claimReceiptPointsAction(formData: FormData): Promise<{
   } catch (e) {
     logPublicMemberActionError("claimReceiptPoints", e);
     return { error: "รับแต้มไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า", claimed: null };
+  }
+}
+
+/**
+ * ลูกค้าขอรหัสใช้สิทธิ์ 6 หลัก (อายุ 5 นาที ใช้ได้ครั้งเดียว) เพื่อให้แคชเชียร์สแกน/พิมพ์ที่ POS
+ * ต้องล็อกอินสมาชิกก่อน และสาขาต้องเปิดสวิตช์ + เป็น Enterprise
+ */
+export async function issueMemberRedeemCodeAction(formData: FormData): Promise<{
+  error: string | null;
+  code?: string;
+  expiresAt?: string;
+}> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนขอรหัสใช้สิทธิ์" };
+    if (!portalData.memberCodeEnabled) return { error: "สาขานี้ยังไม่เปิดใช้รหัสสมาชิก" };
+
+    const result = await issueMemberRedeemCode({
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      customerId: portalData.customer.id,
+    });
+    if (result.error || !result.data) {
+      void logSystemEvent({
+        level: result.status === "rate_limited" ? "warn" : "error",
+        source: "member.code",
+        action: "issueMemberRedeemCodeAction",
+        message: `ออกรหัสสมาชิกไม่สำเร็จ: ${result.status ?? "rpc_error"}`,
+        organizationId: portalData.store.organizationId,
+        storeId: portalData.store.id,
+        context: { status: result.status ?? null, customerId: portalData.customer.id },
+      });
+      return { error: result.error ?? "ขอรหัสไม่สำเร็จ กรุณาลองใหม่" };
+    }
+
+    void logSystemEvent({
+      level: "info",
+      source: "member.code",
+      action: "issueMemberRedeemCodeAction",
+      message: "ออกรหัสสมาชิก 5 นาที",
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { customerId: portalData.customer.id, expiresAt: result.data.expiresAt },
+    });
+    return { error: null, code: result.data.code, expiresAt: result.data.expiresAt };
+  } catch (e) {
+    logPublicMemberActionError("issueMemberRedeemCode", e);
+    return { error: "ขอรหัสไม่สำเร็จ กรุณาลองใหม่" };
   }
 }
