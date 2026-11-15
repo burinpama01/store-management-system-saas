@@ -4,7 +4,8 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { canUseMemberPrivileges } from "@/modules/members/access";
 import { isOpsManagerRole } from "@/modules/operations/access";
-import { getStoreWebsite, listWebsiteVersions, loadWebsiteRenderData } from "@/modules/store-website/repository";
+import { getStoreWebsite, listWebsiteVersions, loadVerifiedLunarDates, loadWebsiteRenderData } from "@/modules/store-website/repository";
+import { activeFestival, pendingLunarFestivals, toFestivalView, upcomingFestivals } from "@/modules/store-website/festivals";
 import { normalizeSlug } from "@/modules/store-website/schema";
 import { WEBSITE_TEMPLATES } from "@/modules/store-website/templates";
 import { WebsiteSetup } from "./WebsiteSetup";
@@ -42,8 +43,16 @@ async function WebsiteBody({ storeId }: { storeId: string }) {
   if (!website) {
     return <WebsiteSetup templates={WEBSITE_TEMPLATES} defaultSlug={normalizeSlug(renderData.store.slug).slice(0, 40)} siteBase={siteBase()} />;
   }
-  const versions = await listWebsiteVersions(storeId);
+  const [versions, lunar] = await Promise.all([listWebsiteVersions(storeId), loadVerifiedLunarDates()]);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const settings = website.festivalSettings;
+  const currentFestival = toFestivalView(activeFestival(today, settings, lunar), settings);
+  const upcoming = upcomingFestivals(today, settings, lunar).map((w) => ({
+    key: w.festival.key,
+    name: w.festival.name,
+    startsOn: w.startsOn,
+    endsOn: w.endsOn,
+  }));
   return (
     <WebsiteEditor
       key={website.updatedAt}
@@ -53,6 +62,9 @@ async function WebsiteBody({ storeId }: { storeId: string }) {
       versions={versions}
       siteBase={siteBase()}
       today={today}
+      currentFestival={currentFestival}
+      upcomingFestivals={upcoming}
+      pendingLunarKeys={pendingLunarFestivals(today, lunar)}
     />
   );
 }

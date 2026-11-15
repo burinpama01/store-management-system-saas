@@ -16,6 +16,7 @@ import {
 } from "@/modules/store-website/repository";
 import { normalizeSlug, parseWebsiteDocument, validateSlug, type WebsiteDocument } from "@/modules/store-website/schema";
 import { documentFromTemplate, findTemplate } from "@/modules/store-website/templates";
+import { FESTIVALS, festivalSettingsSchema, type FestivalSettings } from "@/modules/store-website/festivals";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 type ActionResult = { ok: boolean; error: string | null };
@@ -194,5 +195,33 @@ export async function restoreVersionAction(versionId: string): Promise<ActionRes
     return { ok: true, error: null, document };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "ย้อนฉบับไม่สำเร็จ" };
+  }
+}
+
+/** ตั้งค่าเทศกาล (S1) — เปลี่ยนชุดตกแต่งอัตโนมัติ / แสดงล่วงหน้า / ปิดบางเทศกาล */
+export async function saveFestivalSettingsAction(settings: FestivalSettings): Promise<ActionResult> {
+  try {
+    const g = await guard();
+    if (g.error !== null) return { ok: false, error: g.error };
+    const parsed = festivalSettingsSchema.safeParse(settings);
+    if (!parsed.success) return { ok: false, error: "ตั้งค่าเทศกาลไม่ถูกต้อง" };
+    const known = new Set(FESTIVALS.map((f) => f.key));
+    if (parsed.data.disabled.some((key) => !known.has(key))) return { ok: false, error: "มีเทศกาลที่ไม่รู้จัก" };
+    if (Object.keys(parsed.data.greetings ?? {}).some((key) => !known.has(key))) {
+      return { ok: false, error: "มีเทศกาลที่ไม่รู้จักในข้อความทักทาย" };
+    }
+    const current = await getStoreWebsite(g.ctx.storeId);
+    if (!current) return { ok: false, error: "ยังไม่ได้สร้างเว็บ" };
+    const result = await updateStoreWebsite(g.ctx.storeId, { festival_settings: parsed.data }, g.user.id);
+    log(result.error ? "error" : "info", "saveFestivalSettings", result.error ? `บันทึกเทศกาลไม่สำเร็จ: ${result.error}` : "บันทึกการตั้งค่าเทศกาล", g, {
+      auto: parsed.data.auto,
+      leadDays: parsed.data.leadDays,
+      disabled: parsed.data.disabled.length,
+    });
+    if (result.error !== null) return { ok: false, error: result.error };
+    revalidateSite(current.slug);
+    return { ok: true, error: null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
   }
 }

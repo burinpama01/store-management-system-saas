@@ -26,6 +26,8 @@ import {
   type WebsiteTemplate,
 } from "@/modules/store-website/templates";
 import { WebsiteRenderer } from "@/modules/store-website/WebsiteRenderer";
+import { festivalPreview, type FestivalView } from "@/modules/store-website/festivals";
+import { FestivalPanel, type UpcomingFestival } from "./FestivalPanel";
 import {
   applyTemplateThemeAction,
   publishWebsiteAction,
@@ -258,6 +260,9 @@ export function WebsiteEditor({
   versions,
   siteBase,
   today,
+  currentFestival,
+  upcomingFestivals,
+  pendingLunarKeys,
 }: {
   website: StoreWebsite;
   renderData: WebsiteRenderData;
@@ -265,6 +270,10 @@ export function WebsiteEditor({
   versions: WebsiteVersionSummary[];
   siteBase: string;
   today: string;
+  /** เทศกาลที่แสดงบนเว็บจริงตอนนี้ (null = ไม่มี) */
+  currentFestival: FestivalView | null;
+  upcomingFestivals: UpcomingFestival[];
+  pendingLunarKeys: string[];
 }) {
   const router = useRouter();
   const { confirm, confirmDialog } = useConfirm();
@@ -273,6 +282,8 @@ export function WebsiteEditor({
   const [openId, setOpenId] = useState<string | null>(null);
   const [slug, setSlug] = useState(website.slug);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [previewFestivalKey, setPreviewFestivalKey] = useState<string | null>(null);
+  const previewFestival = previewFestivalKey ? festivalPreview(previewFestivalKey, website.festivalSettings) : currentFestival;
   const [pending, startTransition] = useTransition();
   const publicUrl = `${siteBase}/s/${website.slug}`;
   const validation = useMemo(() => parseWebsiteDocument(doc), [doc]);
@@ -416,6 +427,14 @@ export function WebsiteEditor({
           )}
         </div>
 
+        <FestivalPanel
+          settings={website.festivalSettings}
+          upcoming={upcomingFestivals}
+          pendingLunarKeys={pendingLunarKeys}
+          previewKey={previewFestivalKey}
+          onPreview={setPreviewFestivalKey}
+        />
+
         {versions.length > 0 && (
           <details className="panel p-4 text-sm">
             <summary className="cursor-pointer font-semibold">ฉบับที่เคยเผยแพร่ ({versions.length})</summary>
@@ -458,10 +477,13 @@ export function WebsiteEditor({
         )}
         <div className="mx-auto w-full max-w-[380px] rounded-[32px] bg-[#121110] p-2.5 shadow-xl">
           <div className="h-[640px] overflow-y-auto rounded-[24px]" aria-label="พรีวิวเว็บไซต์ร้าน">
-            <WebsiteRenderer document={doc} data={renderData} today={today} />
+            <WebsiteRenderer document={doc} data={renderData} today={today} festival={previewFestival} />
           </div>
         </div>
-        <p className="text-center text-xs text-[var(--color-text-muted)]">พรีวิวฉบับร่าง — ลูกค้าเห็นเฉพาะฉบับที่กดเผยแพร่</p>
+        <p className="text-center text-xs text-[var(--color-text-muted)]">
+          พรีวิวฉบับร่าง — ลูกค้าเห็นเฉพาะฉบับที่กดเผยแพร่
+          {previewFestivalKey ? " · กำลังดูตัวอย่างเทศกาล" : currentFestival ? ` · ตอนนี้แสดงเทศกาล${currentFestival.name}` : ""}
+        </p>
       </div>
       {confirmDialog}
     </div>

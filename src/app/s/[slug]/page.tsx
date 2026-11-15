@@ -50,7 +50,7 @@ export default async function StoreWebsitePage({ params }: { params: Promise<{ s
   }
   return (
     <main style={{ minHeight: "100vh", background: site.document.theme.background }}>
-      <WebsiteRenderer document={site.document} data={site.data} today={bangkokToday()} />
+      <WebsiteRenderer document={site.document} data={site.data} today={bangkokToday()} festival={site.festival} />
     </main>
   );
 }
