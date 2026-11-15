@@ -87,9 +87,14 @@ export function ReportsManager({
           <h1 className="page-title">รายงาน</h1>
           <p className="page-kicker">เปรียบเทียบยอดขาย ช่องทางชำระเงิน และสินค้าหลักตามช่วงเวลา</p>
         </div>
-        <Link href="/reports/insights" className="btn-primary">
-          รายงานเชิงลึก + กราฟ
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/reports/prepaid-passes" className="btn-secondary">
+            แพ็กล่วงหน้า
+          </Link>
+          <Link href="/reports/insights" className="btn-primary">
+            รายงานเชิงลึก + กราฟ
+          </Link>
+        </div>
       </div>
 
       <div className="panel flex flex-wrap items-end gap-3 p-4">
