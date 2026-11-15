@@ -65,7 +65,7 @@ export function ConfirmDialog({
         <h2 id="confirm-title" className="text-sm font-semibold text-gray-900 mb-1">
           {title}
         </h2>
-        <p className="text-sm text-gray-600 mb-5">{message}</p>
+        <p className="mb-5 max-h-[50vh] overflow-y-auto whitespace-pre-line text-sm text-gray-600">{message}</p>
 
         <div className="flex justify-end gap-2">
           <button

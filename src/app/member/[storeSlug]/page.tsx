@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getCustomerPortalData } from "@/modules/customers/member-repository";
+import { getMemberPassesView } from "@/modules/prepaid-passes/member-portal";
 import { MemberPortal } from "./MemberPortal";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,15 @@ export default async function CustomerMemberPage({
   if (storeSlug.length > 100) notFound();
 
   const portalData = await getCustomerPortalData(storeSlug, portalCode);
+  // แพ็กของฉัน + ซื้อออนไลน์ (Enterprise) — โหลดเฉพาะคนที่ล็อกอินแล้ว
+  const passesView =
+    portalData.store && portalData.customer
+      ? await getMemberPassesView({
+          storeId: portalData.store.id,
+          customerId: portalData.customer.id,
+          canSell: portalData.memberPrivileges,
+        })
+      : null;
 
   return (
     <MemberPortal
@@ -25,6 +35,7 @@ export default async function CustomerMemberPage({
       portalCode={portalCode}
       claimCode={typeof claim === "string" ? claim.trim().toUpperCase() : null}
       data={portalData}
+      passesView={passesView}
     />
   );
 }

@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { canUseMemberPrivileges } from "@/modules/members/access";
+import { resolveMemberPassAccess } from "@/modules/prepaid-passes/grace";
 import { isMemberCodeEnabled } from "@/modules/members/repository";
+import { listPassSaleProducts } from "@/modules/prepaid-passes/repository";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
@@ -75,8 +77,16 @@ export default async function PosPage() {
   const loyaltyEnabled = canUseFeature(resolvedBillingState, "loyaltyPoints");
   const customerDisplayEnabled = canUseFeature(resolvedBillingState, "customerDisplay");
   // รหัสยืนยันสมาชิก 5 นาที: Enterprise + สวิตช์ของสาขา (ตั้งค่า › สิทธิ์สมาชิก)
-  const memberCodeEnabled =
-    loyaltyEnabled && canUseMemberPrivileges(resolvedBillingState) && (await isMemberCodeEnabled(ctx.storeId));
+  const memberCodeSwitch = await isMemberCodeEnabled(ctx.storeId);
+  // O1: หมด Enterprise แต่มีแพ็กค้าง → POS เปิดแผงสมาชิกแบบ "ยืนยันรหัส + ใช้แพ็ก" อย่างเดียว
+  const passAccess = memberCodeSwitch
+    ? await resolveMemberPassAccess(ctx.organizationId, resolvedBillingState)
+    : { privileges: false, grace: false };
+  const passGraceMode = passAccess.grace;
+  const memberCodeEnabled = memberCodeSwitch && ((loyaltyEnabled && passAccess.privileges) || passGraceMode);
+  // แพ็กล่วงหน้า (Enterprise): สินค้าขายแพ็กต้องผูกสมาชิก + แจ้งเงื่อนไขก่อนใส่ตะกร้า
+  const passSaleProducts =
+    loyaltyEnabled && canUseMemberPrivileges(resolvedBillingState) ? await listPassSaleProducts(ctx.storeId) : [];
   const couponUnavailableMessage = couponEnabled
     ? null
     : explainFeatureLock(resolvedBillingState, "couponManagement") ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง";
@@ -145,6 +155,8 @@ export default async function PosPage() {
       loyaltyEnabled={loyaltyEnabled}
       loyaltyUnavailableMessage={loyaltyUnavailableMessage}
       memberCodeEnabled={memberCodeEnabled}
+      passGraceMode={passGraceMode}
+      passSaleProducts={passSaleProducts}
       customerDisplayEnabled={customerDisplayEnabled}
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
       trueMoneyEnabled={trueMoneyEnabled}

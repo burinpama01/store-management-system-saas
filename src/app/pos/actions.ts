@@ -9,6 +9,17 @@ import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/au
 import { getResolvedCurrentPermissions, requireFeature, requirePermission } from "@/modules/auth/guards";
 import { resolveUnknownPrintJob } from "@/modules/printing/print-hub-repository";
 import { logSystemEvent } from "@/modules/system/event-log";
+import {
+  attachPassRedemptions,
+  closeOrderZeroTotal,
+  findOrderIdByIdempotencyKey,
+  listMemberPasses,
+  listPassSaleProducts,
+  releasePassRedemption,
+  reservePassRedemption,
+} from "@/modules/prepaid-passes/repository";
+import { cartHasPassItems, groupPassRedemptions, isPassCartItem } from "@/modules/prepaid-passes/rules";
+import type { MemberPass } from "@/modules/prepaid-passes/types";
 import { listProducts } from "@/modules/catalog/repository";
 import {
   getCustomerProfileWithLoyalty,
@@ -16,7 +27,8 @@ import {
   saveCustomer,
   searchCustomersForStore,
 } from "@/modules/customers/repository";
-import { canUseMemberPrivileges, MEMBER_PRIVILEGES_LOCK_MESSAGE } from "@/modules/members/access";
+import { MEMBER_PRIVILEGES_LOCK_MESSAGE } from "@/modules/members/access";
+import { canRedeemPasses, resolveMemberPassAccess } from "@/modules/prepaid-passes/grace";
 import { normalizeMemberRedeemCodeInput } from "@/modules/members/redeem-code";
 import { verifyMemberRedeemCode } from "@/modules/members/repository";
 import { fallbackMemberName, isRegistrablePhone, type PosRewardVoucher } from "@/modules/pos/loyalty-coupon-ux";
@@ -283,7 +295,9 @@ export async function verifyPosMemberCodeAction(rawCode: string): Promise<{
     const { ctx, user } = await getStoreContext();
     logBase = { organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id };
     const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
-    if (!canUseMemberPrivileges(billing)) {
+    // หมด Enterprise แต่ยังมีแพ็กค้าง (O1) → ยืนยันรหัสได้เพื่อใช้แพ็ก
+    const access = await resolveMemberPassAccess(ctx.organizationId, billing);
+    if (!canRedeemPasses(access)) {
       return { customer: null, verification: null, error: MEMBER_PRIVILEGES_LOCK_MESSAGE };
     }
     const code = normalizeMemberRedeemCodeInput(rawCode);
@@ -551,6 +565,10 @@ export async function submitOrderAction(
     if (!resolved.can("pos.use")) {
       return { orderId: null, orderNumber: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
     }
+    // ใช้แพ็กได้เฉพาะบิลจ่ายทันที — ผลยืนยันรหัสสมาชิกมีอายุสั้น ไม่เหมาะกับตั๋ว/โต๊ะที่พักไว้
+    if (cartHasPassItems(cart)) {
+      return { orderId: null, orderNumber: null, error: "ใช้แพ็กล่วงหน้าได้เฉพาะบิลที่จ่ายทันที — เอารายการใช้แพ็กออกก่อนพักบิล" };
+    }
     const canDiscount = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
     return await createPosOrderCore(user, ctx, canDiscount, cart, opts);
   } catch (e) {
@@ -577,20 +595,43 @@ async function createPosOrderCore(
     couponCode?: string | null;
     clientCouponDiscountAmount?: number;
     idempotencyKey?: string | null;
+    /** ผลยืนยันรหัสสมาชิก 5 นาที — ต้องมีเมื่อบิลมีบรรทัดใช้แพ็ก */
+    memberVerificationId?: string | null;
   },
 ): Promise<{ orderId: string | null; orderNumber: string | null; error: string | null }> {
   // Reserved voucher ids live outside the try so the catch can release them too —
   // a reserved-but-unreleased voucher is permanently lost to the customer.
   const reservedRedemptionIds: string[] = [];
+  // สิทธิ์แพ็กที่จองไว้ — คืนทุกครั้งที่สร้างออเดอร์ไม่สำเร็จ ไม่งั้นลูกค้าเสียสิทธิ์ฟรี
+  const reservedPassRedemptionIds: string[] = [];
   async function releaseReservedVouchers() {
     for (const redemptionId of reservedRedemptionIds) {
       await releaseProductRewardVoucher(ctx.storeId, redemptionId);
+    }
+    for (const redemptionId of reservedPassRedemptionIds.splice(0)) {
+      const releaseError = await releasePassRedemption(ctx.storeId, redemptionId);
+      if (releaseError) {
+        await logSystemEvent({
+          level: "error",
+          source: "pos.prepaid-pass",
+          action: "releasePassRedemption",
+          message: `คืนสิทธิ์แพ็กไม่สำเร็จ: ${releaseError}`,
+          organizationId: ctx.organizationId,
+          storeId: ctx.storeId,
+          actorUserId: user.id,
+          context: { redemptionId },
+        });
+      }
     }
   }
   try {
     if (cart.items.length === 0) return { orderId: null, orderNumber: null, error: "ไม่มีรายการในออร์เดอร์" };
     const rewardItems = cart.items.filter((item) => item.rewardVoucherCode);
-    const normalCart: Cart = { ...cart, items: cart.items.filter((item) => !item.rewardVoucherCode) };
+    const passItems = cart.items.filter((item) => !item.rewardVoucherCode && isPassCartItem(item));
+    const normalCart: Cart = {
+      ...cart,
+      items: cart.items.filter((item) => !item.rewardVoucherCode && !isPassCartItem(item)),
+    };
     // Re-pricing needs only the products present in the cart, not the whole catalog.
     const cartProductIds = Array.from(new Set(cart.items.map((item) => item.productId)));
     const productsRes = await listProducts(ctx.storeId, { includeInactive: false, productIds: cartProductIds });
@@ -641,8 +682,62 @@ async function createPosOrderCore(
         rewardRedemptionIds.push(voucherRes.data.redemptionId);
       }
     }
+    // แพ็กล่วงหน้า: ตรวจเมนูกับ catalog แล้วต่อท้ายเป็นบรรทัด ฿0 (สต็อกยังตัดตามปกติ)
+    // สิทธิ์จริงถูกจองด้านล่าง (ขั้นสุดท้ายก่อนสร้างออเดอร์) ใน RPC ที่ตรวจผลยืนยันรหัส/เจ้าของแพ็ก/เมนู/สาขา
+    const passGroups = groupPassRedemptions(passItems);
+    const passLines: Cart["items"] = [];
+    if (passGroups.length > 0) {
+      const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+      if (!canRedeemPasses(await resolveMemberPassAccess(ctx.organizationId, billing))) {
+        return { orderId: null, orderNumber: null, error: MEMBER_PRIVILEGES_LOCK_MESSAGE };
+      }
+      if (!opts?.memberVerificationId) {
+        return { orderId: null, orderNumber: null, error: "ต้องยืนยันรหัสสมาชิกก่อนใช้แพ็ก" };
+      }
+      if (!opts?.customerId?.trim()) {
+        return { orderId: null, orderNumber: null, error: "ต้องผูกสมาชิกที่ยืนยันรหัสแล้วกับบิล" };
+      }
+      if (!opts?.idempotencyKey?.trim()) {
+        return { orderId: null, orderNumber: null, error: "ต้องมี idempotency key สำหรับการใช้แพ็ก" };
+      }
+      // บิลที่ใช้แพ็กทั้งบิล (ยอด ฿0) ใช้คูปองร่วมไม่ได้ — ตัดก่อนสร้างออเดอร์ ไม่ให้ค้างแบบจ่ายไม่ได้
+      if (trustedCart.items.length === 0 && (opts?.couponCode?.trim() || (opts?.clientCouponDiscountAmount ?? 0) > 0)) {
+        return { orderId: null, orderNumber: null, error: "บิลที่ใช้แพ็กทั้งบิลใช้คูปองร่วมไม่ได้ — ล้างคูปองก่อน" };
+      }
+      for (const group of passGroups) {
+        const product = productsRes.data.find((candidate) => candidate.id === group.productId);
+        if (!product || !product.isActive || !product.availableForPos) {
+          return { orderId: null, orderNumber: null, error: "เมนูที่ใช้แพ็กไม่พร้อมขาย" };
+        }
+        passLines.push({
+          key: `pass:${group.passId}:${group.productId}`,
+          productId: product.id,
+          productName: product.name,
+          categoryId: product.categoryId,
+          variant: null,
+          modifiers: [],
+          quantity: group.quantity,
+          unitPrice: 0,
+          totalPrice: 0,
+          note: "🎟️ ใช้แพ็กล่วงหน้า",
+        });
+      }
+    }
+
+    // ขายแพ็ก: ต้องผูกสมาชิก (trigger ในฐานข้อมูลบังคับอีกชั้นตอนปิดบิล)
+    if (!opts?.customerId?.trim() && trustedCart.items.length > 0) {
+      const saleProducts = await listPassSaleProducts(ctx.storeId);
+      if (saleProducts.length > 0) {
+        const saleIds = new Set(saleProducts.map((sale) => sale.productId));
+        if (trustedCart.items.some((item) => saleIds.has(item.productId))) {
+          return { orderId: null, orderNumber: null, error: "ขายแพ็กล่วงหน้าต้องผูกสมาชิกที่มีเบอร์โทรในบิลก่อน" };
+        }
+      }
+    }
+
+    const extraLines = [...rewardLines, ...passLines];
     const finalCart: Cart =
-      rewardLines.length > 0 ? { ...trustedCart, items: [...trustedCart.items, ...rewardLines] } : trustedCart;
+      extraLines.length > 0 ? { ...trustedCart, items: [...trustedCart.items, ...extraLines] } : trustedCart;
 
     const tableRes = opts?.tableId ? await getTable(opts.tableId, ctx.storeId) : null;
     if (tableRes?.error) {
@@ -655,7 +750,8 @@ async function createPosOrderCore(
     const customerId = opts?.customerId?.trim() || null;
     const couponCode = opts?.couponCode?.trim() || null;
     const clientCouponDiscountAmount = opts?.clientCouponDiscountAmount ?? 0;
-    if (customerId) await requireFeature("loyaltyPoints");
+    // บิลที่ใช้แพ็กต้องผูกสมาชิกเสมอ — ผ่านการตรวจสิทธิ์แพ็กด้านบนแล้ว (รวมโหมดหมด Enterprise ที่ยังมีแพ็กค้าง)
+    if (customerId && passGroups.length === 0) await requireFeature("loyaltyPoints");
     if (couponCode || clientCouponDiscountAmount > 0) await requireFeature("couponManagement");
     if (clientCouponDiscountAmount > 0 && !couponCode) {
       return { orderId: null, orderNumber: null, error: "ต้องระบุรหัสคูปอง" };
@@ -674,6 +770,32 @@ async function createPosOrderCore(
         return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลถูกใช้ไปแล้ว" };
       }
       reservedRedemptionIds.push(redemptionId);
+    }
+
+    // จองสิทธิ์แพ็ก — ถ้าส่งบิลซ้ำด้วย idempotency key เดิมและออเดอร์ถูกสร้างไปแล้ว ไม่จองซ้ำ
+    if (passGroups.length > 0) {
+      const existingOrderId = opts?.idempotencyKey ? await findOrderIdByIdempotencyKey(ctx.storeId, opts.idempotencyKey) : null;
+      if (!existingOrderId) {
+        for (const group of passGroups) {
+          const reserved = await reservePassRedemption({
+            storeId: ctx.storeId,
+            verificationId: opts!.memberVerificationId!,
+            passId: group.passId,
+            productId: group.productId,
+            quantity: group.quantity,
+            checkoutKey: opts!.idempotencyKey!.trim(),
+          });
+          if (reserved.error || !reserved.data) {
+            await releaseReservedVouchers();
+            return { orderId: null, orderNumber: null, error: reserved.error ?? "จองสิทธิ์แพ็กไม่สำเร็จ" };
+          }
+          reservedPassRedemptionIds.push(reserved.data.redemptionId);
+          if (reserved.data.customerId !== opts?.customerId?.trim()) {
+            await releaseReservedVouchers();
+            return { orderId: null, orderNumber: null, error: "สมาชิกในบิลไม่ตรงกับคนที่ยืนยันรหัส" };
+          }
+        }
+      }
     }
 
     let orderCart = finalCart;
@@ -750,6 +872,37 @@ async function createPosOrderCore(
       result.data.id,
     );
 
+    // Order exists — แนบสิทธิ์แพ็กกับออเดอร์ (ส่งซ้ำ → RPC คืนสิทธิ์รอบใหม่ให้เอง)
+    if (reservedPassRedemptionIds.length > 0) {
+      const passIds = reservedPassRedemptionIds.splice(0);
+      const attachError = await attachPassRedemptions(ctx.storeId, result.data.id, passIds);
+      if (attachError) {
+        reservedPassRedemptionIds.push(...passIds);
+        await releaseReservedVouchers();
+        await logSystemEvent({
+          level: "error",
+          source: "pos.prepaid-pass",
+          action: "attachPassRedemptions",
+          message: `แนบสิทธิ์แพ็กไม่สำเร็จ ออเดอร์ค้างแบบยังไม่ชำระ: ${attachError}`,
+          organizationId: ctx.organizationId,
+          storeId: ctx.storeId,
+          actorUserId: user.id,
+          context: { orderId: result.data.id, orderNumber: result.data.orderNumber },
+        });
+        return { orderId: null, orderNumber: null, error: `ใช้แพ็กไม่สำเร็จ: ${attachError} — ยกเลิกบิล ${result.data.orderNumber} แล้วทำใหม่` };
+      }
+      void logSystemEvent({
+        level: "info",
+        source: "pos.prepaid-pass",
+        action: "redeemPrepaidPass",
+        message: "ใช้แพ็กล่วงหน้าในบิล",
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        actorUserId: user.id,
+        context: { orderId: result.data.id, groups: passGroups.length },
+      });
+    }
+
     // Order exists — link the reserved reward vouchers to it (best-effort; single-use already locked).
     for (const redemptionId of reservedRedemptionIds) {
       const attached = await attachRewardVoucherOrder(ctx.storeId, redemptionId, result.data.id);
@@ -817,6 +970,12 @@ export async function collectPaymentAction(
   try {
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
     if (!resolved.can("pos.use")) return { order: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
+
+    // ลองปิดบิล ฿0 (ใช้แพ็กทั้งบิล) ซ้ำ — RPC ตรวจเองว่ายอด 0 และมีการใช้แพ็กจริง
+    if (payment.amount === 0) {
+      const closed = await closeZeroTotalAndLoad(orderId, "", ctx, user.id);
+      return { order: closed.order, error: closed.error };
+    }
 
     if (payment.method === "cash") {
       const cashSession = await getOpenCashSession(ctx.storeId);
@@ -920,8 +1079,7 @@ export async function collectPaymentAction(
       if (!paidOrderRes.error) {
         paidOrder = paidOrderRes.data ?? null;
       }
-    } else if (orderRes.data?.customerId) {
-      await requireFeature("loyaltyPoints");
+    } else if (orderRes.data?.customerId && (await customerRewardsCloseAllowed(ctx.organizationId))) {
       const result = await closePosOrderPaymentWithRewards({
         orderId,
         storeId: ctx.storeId,
@@ -1014,6 +1172,72 @@ export async function collectPaymentAction(
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * บิลผูกลูกค้าปิดด้วยเส้นทางสะสมแต้มได้ไหม
+ * - มีสะสมแต้ม → ได้ (เหมือนเดิม)
+ * - ไม่มีสะสมแต้มแต่อยู่ในโหมดแพ็กค้าง (O1) → ไม่ได้: ปิดแบบธรรมดา (ไม่ให้แต้ม) แทนการโยน error ให้บิลค้าง
+ * - อย่างอื่น → โยน error ตามเดิม (requireFeature)
+ */
+async function customerRewardsCloseAllowed(organizationId: string): Promise<boolean> {
+  const billing = (await getOrganizationBillingState(organizationId)) ?? DEFAULT_BILLING_STATE;
+  if (canUseFeature(billing, "loyaltyPoints")) return true;
+  const access = await resolveMemberPassAccess(organizationId, billing);
+  if (access.grace) return false;
+  await requireFeature("loyaltyPoints");
+  return true;
+}
+
+/** ปิดบิล ฿0 (ใช้แพ็กทั้งบิล) แล้วโหลดออเดอร์ที่จ่ายแล้วกลับไปพิมพ์ใบเสร็จ */
+async function closeZeroTotalAndLoad(
+  orderId: string,
+  orderNumber: string,
+  ctx: { storeId: string; organizationId: string },
+  userId: string,
+): Promise<CheckoutAndPayResult> {
+  const closeError = await closeOrderZeroTotal(orderId, ctx.storeId, userId);
+  if (closeError) {
+    await logSystemEvent({
+      level: "error",
+      source: "pos.prepaid-pass",
+      action: "closeOrderZeroTotal",
+      message: `ปิดบิลใช้แพ็กไม่สำเร็จ: ${closeError}`,
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: userId,
+      context: { orderId, orderNumber },
+    });
+    return { orderId, orderNumber, order: null, failedStage: "payment", error: closeError };
+  }
+  void logSystemEvent({
+    level: "info",
+    source: "pos.prepaid-pass",
+    action: "closeOrderZeroTotal",
+    message: "ปิดบิลใช้แพ็กทั้งบิล (฿0)",
+    organizationId: ctx.organizationId,
+    storeId: ctx.storeId,
+    actorUserId: userId,
+    context: { orderId, orderNumber },
+  });
+  notifyLowStockAfterSaleSafely(ctx.organizationId, ctx.storeId, orderId);
+  const paid = await getOrder(orderId);
+  return { orderId, orderNumber, order: paid.data ?? null, failedStage: null, error: null };
+}
+
+/** แพ็กที่สมาชิก (ยืนยันรหัสแล้ว) ใช้ได้ที่สาขานี้ */
+export async function listPosMemberPassesAction(verificationId: string): Promise<{ passes: MemberPass[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    const { ctx } = await getStoreContext();
+    const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    if (!canRedeemPasses(await resolveMemberPassAccess(ctx.organizationId, billing))) return { passes: [], error: null };
+    const result = await listMemberPasses(ctx.storeId, verificationId);
+    if (result.error !== null) return { passes: [], error: result.error };
+    return { passes: result.data.filter((pass) => pass.usableHere && pass.productIds.length > 0), error: null };
+  } catch (e) {
+    return { passes: [], error: e instanceof Error ? e.message : "โหลดแพ็กไม่สำเร็จ" };
+  }
+}
+
 export interface CheckoutAndPayResult {
   orderId: string | null;
   orderNumber: string | null;
@@ -1042,6 +1266,7 @@ export async function checkoutAndPayAction(
     paymentIdempotencyKey?: string | null;
     trueMoney?: { confirmReason?: string | null } | null;
     beam?: { gatewayPaymentId: string } | null;
+    memberVerificationId?: string | null;
   },
 ): Promise<CheckoutAndPayResult> {
   let createdOrderId: string | null = null;
@@ -1052,6 +1277,19 @@ export async function checkoutAndPayAction(
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
     if (!resolved.can("pos.use")) {
       return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: "ไม่มีสิทธิ์ใช้งาน POS" };
+    }
+
+    // บิลยอด ฿0 ที่ใช้แพ็กทั้งบิล — ไม่มีการรับเงิน ปิดด้วย RPC เฉพาะ (ไม่มีแถว payments)
+    if (payment.amount === 0) {
+      if (!cartHasPassItems(cart)) {
+        return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: "ยอดชำระไม่ถูกต้อง" };
+      }
+      const canDiscountZero = !cartRequestsDiscount(cart) || resolved.can("pos.discount");
+      const createdZero = await createPosOrderCore(user, ctx, canDiscountZero, cart, opts);
+      if (createdZero.error || !createdZero.orderId || !createdZero.orderNumber) {
+        return { orderId: null, orderNumber: null, order: null, failedStage: "order", error: createdZero.error ?? "ไม่สามารถสร้างออร์เดอร์ได้" };
+      }
+      return await closeZeroTotalAndLoad(createdZero.orderId, createdZero.orderNumber, ctx, user.id);
     }
 
     if (payment.method === "cash") {
@@ -1186,7 +1424,7 @@ export async function checkoutAndPayAction(
     if (unifiedFlag.enabled && unifiedFlag.organizationId) {
       // U7: ขั้นชำระผ่าน governed RPC — ออเดอร์ถูกสร้างแล้ว (legacy create RPC) จึงชำระ
       // แบบ partial ให้ RPC ตรวจ revision/ยอดรวม server + rewards exactly-once เอง
-      if (customerId) {
+      if (customerId && !cartHasPassItems(cart)) {
         await requireFeature("loyaltyPoints");
       }
       const settled = await settleOrdersGoverned({
@@ -1216,7 +1454,7 @@ export async function checkoutAndPayAction(
           paidOrder = paidOrderRes.data ?? null;
         }
       }
-    } else if (customerId) {
+    } else if (customerId && (await customerRewardsCloseAllowed(ctx.organizationId))) {
       const result = await closePosOrderPaymentWithRewards({
         orderId: created.orderId,
         storeId: ctx.storeId,

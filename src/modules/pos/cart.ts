@@ -272,7 +272,7 @@ export function repriceCartForTier(cart: Cart, products: Product[], tier: PriceT
   let next = emptyCart(cart.storeId);
 
   for (const item of cart.items) {
-    if (item.rewardVoucherCode) {
+    if (item.rewardVoucherCode || item.prepaidPassId) {
       next = { ...next, items: [...next.items, { ...item }] };
       continue;
     }

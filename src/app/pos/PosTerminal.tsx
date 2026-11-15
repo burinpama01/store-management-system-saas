@@ -28,6 +28,7 @@ import {
   collectPaymentAction,
   searchPosCustomersAction,
   verifyPosMemberCodeAction,
+  listPosMemberPassesAction,
   type PosMemberVerification,
   evaluatePosCouponAction,
   listPosCustomerVouchersAction,
@@ -67,6 +68,8 @@ import {
 } from "@/modules/pos/loyalty-coupon-ux";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
+import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types";
+import { cartHasPassItems, formatPassExpiry, isPassCartItem } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
@@ -185,6 +188,10 @@ interface Props {
   loyaltyUnavailableMessage: string | null;
   /** รหัสยืนยันสมาชิก 5 นาที (Enterprise + สวิตช์สาขา) */
   memberCodeEnabled?: boolean;
+  /** สินค้าขายแพ็กล่วงหน้าของสาขา — ต้องผูกสมาชิกและแจ้งเงื่อนไขก่อนใส่ตะกร้า */
+  passSaleProducts?: PassSaleProduct[];
+  /** หมด Enterprise แต่ลูกค้ายังมีแพ็กค้าง: แผงสมาชิกเหลือแค่ยืนยันรหัส + ใช้แพ็ก */
+  passGraceMode?: boolean;
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
   trueMoneyEnabled?: boolean;
@@ -1408,6 +1415,57 @@ function NumericKeypad({
   );
 }
 
+interface MemberPassesControl {
+  passes: MemberPass[];
+  products: Product[];
+  creditsInCart: (passId: string) => number;
+  onUse: (pass: MemberPass, product: Product) => void;
+}
+
+/** แพ็กล่วงหน้าของสมาชิก — แตะเมนูเพื่อใส่บรรทัด ฿0 (ตัดสิทธิ์จริงตอนจ่าย) */
+function MemberPassList({ control, isPending }: { control: MemberPassesControl; isPending: boolean }) {
+  if (control.passes.length === 0) {
+    return <p className="text-sm text-slate-500">สมาชิกไม่มีแพ็กที่ใช้ได้ที่สาขานี้</p>;
+  }
+  const productsById = new Map(control.products.map((product) => [product.id, product]));
+  return (
+    <div className="space-y-2" aria-label="แพ็กล่วงหน้าของสมาชิก">
+      <p className="text-sm font-semibold text-slate-700">แพ็กล่วงหน้า — แตะเมนูเพื่อใช้สิทธิ์ในบิลนี้</p>
+      {control.passes.map((pass) => {
+        const left = pass.creditsRemaining - control.creditsInCart(pass.id);
+        const products = pass.productIds
+          .map((id) => productsById.get(id))
+          .filter((product): product is Product => !!product && product.isActive && product.availableForPos);
+        return (
+          <div key={pass.id} className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="truncate text-sm font-semibold text-violet-900">🎟️ {pass.planName}</p>
+              <p className="shrink-0 text-sm font-semibold tabular-nums text-violet-800">
+                เหลือ {left}/{pass.creditsTotal}
+              </p>
+            </div>
+            <p className="text-xs text-violet-700">{formatPassExpiry(pass.expiresAt)}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  disabled={isPending || left <= 0}
+                  onClick={() => control.onUse(pass, product)}
+                  className="min-h-12 rounded-lg border border-violet-300 bg-white px-3 text-sm font-semibold text-violet-900 hover:bg-violet-100 disabled:opacity-40"
+                >
+                  + {product.name}
+                </button>
+              ))}
+              {products.length === 0 && <p className="text-xs text-slate-500">เมนูของแพ็กนี้ไม่พร้อมขายที่สาขานี้</p>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 interface MemberCodeControl {
   value: string;
   verified: boolean;
@@ -1473,6 +1531,8 @@ function MemberSheetSection({
   onRegister,
   onUseVoucher,
   memberCode = null,
+  memberPasses = null,
+  codeOnly = false,
 }: {
   selectedCustomer: CustomerProfile | null;
   vouchers: PosRewardVoucher[];
@@ -1490,6 +1550,10 @@ function MemberSheetSection({
   onUseVoucher: (voucher: PosRewardVoucher) => void;
   /** null = สาขานี้ไม่ได้เปิดรหัสยืนยันสมาชิก */
   memberCode?: MemberCodeControl | null;
+  /** แพ็กของสมาชิกที่ยืนยันรหัสแล้ว — null = ยังไม่ยืนยัน */
+  memberPasses?: MemberPassesControl | null;
+  /** โหมดหมด Enterprise (มีแพ็กค้าง): ไม่มีค้น/สมัครสมาชิก/แต้ม เหลือยืนยันรหัสอย่างเดียว */
+  codeOnly?: boolean;
 }) {
   if (selectedCustomer) {
     return (
@@ -1515,6 +1579,7 @@ function MemberSheetSection({
             เปลี่ยนสมาชิก
           </button>
         </div>
+        {memberPasses && <MemberPassList control={memberPasses} isPending={isPending} />}
         {vouchers.length > 0 ? (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-slate-700">รางวัลที่แลกไว้ — แตะเพื่อใช้กับบิลนี้</p>
@@ -1543,6 +1608,15 @@ function MemberSheetSection({
         )}
       </div>
     );
+  }
+
+  if (codeOnly) {
+    return memberCode ? (
+      <div className="space-y-2">
+        <MemberCodeVerifyBox control={memberCode} isPending={isPending} />
+        <p className="text-xs text-slate-500">แพ็กเกจร้านไม่รองรับสะสมแต้มแล้ว — ลูกค้าที่มีแพ็กค้างยังใช้สิทธิ์ได้จนแพ็กหมดอายุ</p>
+      </div>
+    ) : null;
   }
 
   const trimmed = customerQuery.trim();
@@ -2997,6 +3071,7 @@ function PaymentPanel({
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
+  const zeroTotalPass = cart.total === 0 && cartHasPassItems(cart);
   const cashReady = method !== "cash" || (!cashSessionRequired && receivedNum >= cart.total);
   const qrReady =
     method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
@@ -3129,6 +3204,38 @@ function PaymentPanel({
     ...(trueMoneyEnabled ? (["truemoney"] as const) : []),
     ...(beamEnabled ? (["beam"] as const) : []),
   ];
+
+  // ใช้แพ็กทั้งบิล ยอด ฿0 — ไม่มีการรับเงิน server ปิดบิลด้วย RPC เฉพาะ (ไม่บันทึกยอดขาย/เงินสด)
+  if (zeroTotalPass) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+          <button
+            onClick={onBack}
+            disabled={hasPendingOrder}
+            className="min-h-12 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            ← กลับ
+          </button>
+          <h2 className="text-lg font-bold text-gray-900">ยืนยันใช้แพ็ก</h2>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="text-4xl" aria-hidden="true">🎟️</p>
+          <p className="text-lg font-semibold text-gray-900">ใช้แพ็กล่วงหน้าทั้งบิล — ไม่มียอดชำระ</p>
+          <p className="text-sm text-gray-600">กดยืนยันเพื่อตัดสิทธิ์จากแพ็กของลูกค้าและส่งออเดอร์</p>
+          {error && <p className="alert-danger w-full text-sm" role="alert">{error}</p>}
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => onConfirm("cash", 0)}
+            className="min-h-14 w-full max-w-sm rounded-xl bg-violet-600 text-base font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            {isPending ? "กำลังบันทึก…" : "ยืนยันใช้แพ็ก"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -3790,6 +3897,8 @@ export function PosTerminal({
   loyaltyEnabled,
   loyaltyUnavailableMessage,
   memberCodeEnabled = false,
+  passSaleProducts = [],
+  passGraceMode = false,
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
   trueMoneyEnabled = false,
@@ -3883,6 +3992,8 @@ export function PosTerminal({
     (PosMemberVerification & { customerId: string }) | null
   >(null);
   const [memberCodeInput, setMemberCodeInput] = useState("");
+  // แพ็กของสมาชิกที่ยืนยันรหัสแล้ว (โหลดหลังยืนยัน)
+  const [memberPasses, setMemberPasses] = useState<{ verificationId: string; passes: MemberPass[] } | null>(null);
   // คูปองที่ใช้ไม่ได้แล้วหลังแก้ตะกร้า — โชว์เหนือปุ่มชำระเงินจนกว่าจะใส่คูปองใหม่/ล้างบิล
   const [couponNotice, setCouponNotice] = useState<string | null>(null);
   const [couponRecalcPending, setCouponRecalcPending] = useState(false);
@@ -4151,9 +4262,31 @@ export function PosTerminal({
     });
   }
 
+  const passSaleByProductId = useMemo(
+    () => new Map(passSaleProducts.map((sale) => [sale.productId, sale])),
+    [passSaleProducts],
+  );
+
   const handleProductClick = useCallback((product: Product) => {
     if (cartLocked) return;
     if (!product.isActive || !product.availableForPos) return;
+    const passSale = passSaleByProductId.get(product.id);
+    if (passSale) {
+      // ขายแพ็ก: ต้องผูกสมาชิกที่มีเบอร์ + แคชเชียร์อ่านเงื่อนไข (ไม่คืนเงิน) ให้ลูกค้าก่อน
+      if (!selectedCustomer?.phone) {
+        setCustomerCouponMessage("ขายแพ็กล่วงหน้าต้องผูกสมาชิกที่มีเบอร์โทรก่อน");
+        setCustomerToolsOpen(true);
+        return;
+      }
+      void confirm({
+        title: `ขาย${passSale.planName} ให้ ${selectedCustomer.name}?`,
+        message: `แจ้งเงื่อนไขนี้ให้ลูกค้าก่อนรับเงิน\n\n${passSale.terms}`,
+        confirmLabel: "ลูกค้ารับทราบเงื่อนไข · ใส่ตะกร้า",
+      }).then((ok) => {
+        if (ok) commitCart(addToCart(cartRef.current, { product, variant: null, modifiers: [] }));
+      });
+      return;
+    }
     if (product.variants.length === 0 && product.modifierGroups.length === 0) {
       commitCart(addToCart(cartRef.current, { product, variant: null, modifiers: [] }));
       return;
@@ -4163,7 +4296,7 @@ export function PosTerminal({
       selectedVariant: null,
       selectedModifiers: buildDefaultModifierSelections(product.modifierGroups),
     });
-  }, [cartLocked, commitCart]);
+  }, [cartLocked, commitCart, passSaleByProductId, selectedCustomer, confirm]);
 
   const handleAddFromPicker = useCallback((input: AddToCartInput) => {
     commitCart(addToCart(cartRef.current, input));
@@ -4350,6 +4483,63 @@ export function PosTerminal({
   // ยืนยันแล้วแต่ลูกค้าในบิลเปลี่ยน (ล้างบิล/จ่ายเสร็จ/เลือกคนอื่น) → ผลยืนยันใช้ไม่ได้อีก
   const activeMemberVerification =
     memberVerification && selectedCustomer?.id === memberVerification.customerId ? memberVerification : null;
+
+  // โหลดแพ็กของสมาชิกหลังยืนยันรหัส
+  useEffect(() => {
+    const verificationId = activeMemberVerification?.verificationId;
+    if (!verificationId) return;
+    let cancelled = false;
+    void listPosMemberPassesAction(verificationId).then((result) => {
+      if (cancelled) return;
+      setMemberPasses({ verificationId, passes: result.passes });
+      if (result.error) setCustomerCouponMessage(result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMemberVerification?.verificationId]);
+
+  // ผลยืนยันหมด (เปลี่ยน/ล้างลูกค้า) → เอาบรรทัดใช้แพ็กออก ไม่งั้นจ่ายไม่ผ่าน
+  useEffect(() => {
+    if (activeMemberVerification) return;
+    if (!cartHasPassItems(cartRef.current)) return;
+    commitCart({ ...cartRef.current, items: cartRef.current.items.filter((item) => !isPassCartItem(item)) });
+    setCustomerCouponMessage("เอารายการใช้แพ็กออกแล้ว เพราะสมาชิกในบิลเปลี่ยน");
+  }, [activeMemberVerification, commitCart]);
+
+  const visibleMemberPasses =
+    activeMemberVerification && memberPasses?.verificationId === activeMemberVerification.verificationId
+      ? memberPasses.passes
+      : [];
+
+  function passCreditsInCart(passId: string) {
+    return cart.items
+      .filter((item) => item.prepaidPassId === passId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+  }
+
+  function handleUsePass(pass: MemberPass, product: Product) {
+    if (passCreditsInCart(pass.id) >= pass.creditsRemaining) {
+      setCustomerCouponMessage("สิทธิ์ในแพ็กนี้ใช้ครบในบิลนี้แล้ว");
+      return;
+    }
+    checkoutIdempotencyKeyRef.current = null;
+    const passLine: CartItem = {
+      key: `pass:${pass.id}:${product.id}:${Date.now()}`,
+      productId: product.id,
+      productName: product.name,
+      categoryId: product.categoryId,
+      variant: null,
+      modifiers: [],
+      quantity: 1,
+      unitPrice: 0,
+      totalPrice: 0,
+      prepaidPassId: pass.id,
+      note: `🎟️ ${pass.planName}`,
+    };
+    commitCart({ ...cartRef.current, items: [...cartRef.current.items, passLine] });
+    setCustomerCouponMessage(`ใช้${pass.planName}: ${product.name} (เหลือ ${pass.creditsRemaining - passCreditsInCart(pass.id) - 1} สิทธิ์หลังบิลนี้)`);
+  }
 
   function handleVerifyMemberCode() {
     const raw = memberCodeInput;
@@ -5017,6 +5207,7 @@ export function PosTerminal({
           paymentIdempotencyKey: createTicketId(),
           trueMoney: trueMoneyOpts,
           beam: beamOpts,
+          memberVerificationId: activeMemberVerification?.verificationId ?? null,
         });
         if (result.error) {
           // Order persisted but payment failed — remember it so retry only pays.
@@ -5365,7 +5556,8 @@ export function PosTerminal({
   const customerCouponTools = (
     <CustomerCouponPanel
       cart={cart}
-      loyaltyEnabled={loyaltyEnabled}
+      // โหมดหมด Enterprise ที่มีแพ็กค้าง: เปิดส่วนสมาชิก (แสดงเฉพาะช่องยืนยันรหัส + แพ็ก)
+      loyaltyEnabled={loyaltyEnabled || passGraceMode}
       loyaltyUnavailableMessage={loyaltyUnavailableMessage}
       couponEnabled={couponEnabled}
       couponUnavailableMessage={couponUnavailableMessage}
@@ -5394,6 +5586,17 @@ export function PosTerminal({
                   verified: activeMemberVerification !== null,
                   onChange: setMemberCodeInput,
                   onVerify: handleVerifyMemberCode,
+                }
+              : null
+          }
+          codeOnly={passGraceMode && !loyaltyEnabled}
+          memberPasses={
+            activeMemberVerification
+              ? {
+                  passes: visibleMemberPasses,
+                  products,
+                  creditsInCart: passCreditsInCart,
+                  onUse: handleUsePass,
                 }
               : null
           }

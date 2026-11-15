@@ -203,6 +203,8 @@ describe("computeStockAlerts", () => {
     // boundaries must recheck; the movement claim prevents duplicate delivery.
     expect(collectPayment).toContain("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, orderid");
     expect(checkoutAndPay).toContain("notifylowstockaftersalesafely( ctx.organizationid, ctx.storeid, created.orderid");
-    expect(pos.match(/notifylowstockaftersalesafely\(/g)).toHaveLength(3);
+    // บิล ฿0 ที่ใช้แพ็กทั้งบิล (close_pos_order_zero_total) ตัดสต็อกด้วย จึงต้องเช็กสต็อกต่ำด้วย
+    expect(pos).toContain("notifylowstockaftersalesafely(ctx.organizationid, ctx.storeid, orderid);");
+    expect(pos.match(/notifylowstockaftersalesafely\(/g)).toHaveLength(4);
   });
 });

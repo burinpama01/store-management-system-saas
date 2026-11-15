@@ -50,6 +50,8 @@ export interface CartItem {
   note?: string;
   /** Set when this line is a redeemed product reward (priced ฿0, validated server-side via the voucher). */
   rewardVoucherCode?: string;
+  /** บรรทัดใช้แพ็กซื้อล่วงหน้า (ราคา ฿0) — server จองสิทธิ์จากแพ็กนี้ตอนสร้างออเดอร์ */
+  prepaidPassId?: string;
 }
 
 export type DiscountType = "amount" | "percentage";

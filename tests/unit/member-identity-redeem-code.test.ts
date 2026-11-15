@@ -173,7 +173,8 @@ describe("ทางเข้าโค้ด", () => {
     const start = src.indexOf("export async function verifyPosMemberCodeAction");
     const body = src.slice(start, src.indexOf("export interface RewardProductLine"));
     expect(body).toContain('await requirePermission("pos.use")');
-    expect(body).toContain("canUseMemberPrivileges(billing)");
+    // O1: Enterprise หรือมีแพ็กค้าง (grace)
+    expect(body).toContain("canRedeemPasses(access)");
     expect(body).toContain("normalizeMemberRedeemCodeInput(rawCode)");
     expect(body).toContain('message: crossBranch ? "ยืนยันสมาชิกด้วยรหัส (ข้ามสาขา)" : "ยืนยันสมาชิกด้วยรหัส"');
     expect(body.match(/logSystemEvent\(/g)?.length).toBeGreaterThanOrEqual(3);
