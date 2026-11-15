@@ -15,6 +15,8 @@ import { Button } from "@/shared/components/ui";
 import { MemberRedeemCodeCard } from "./MemberRedeemCodeCard";
 import { MemberPassesCard } from "./MemberPassesCard";
 import type { MemberPassesView } from "@/modules/prepaid-passes/member-portal";
+import type { MemberTierCoupon, MemberTierView } from "@/modules/member-tiers/repository";
+import { MemberTierCard } from "./MemberTierCard";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -26,6 +28,10 @@ interface Props {
   data: CustomerPortalData;
   /** แพ็กของฉัน — null = ยังไม่ล็อกอิน */
   passesView?: MemberPassesView | null;
+  /** ระดับสมาชิก — null = ร้านไม่ได้เปิดใช้/ยังไม่ล็อกอิน */
+  tierView?: MemberTierView | null;
+  /** โค้ดพิเศษเดือนนี้ตามระดับ */
+  tierCoupons?: MemberTierCoupon[];
 }
 
 interface RedeemedVoucher {
@@ -85,7 +91,15 @@ function StatusMessage({ message }: { message: string | null }) {
   );
 }
 
-export function MemberPortal({ storeSlug, portalCode, claimCode, data, passesView = null }: Props) {
+export function MemberPortal({
+  storeSlug,
+  portalCode,
+  claimCode,
+  data,
+  passesView = null,
+  tierView = null,
+  tierCoupons = [],
+}: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"register" | "login">("register");
   const [otpId, setOtpId] = useState<string | null>(null);
@@ -344,6 +358,7 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data, passesVie
               </p>
             </section>
 
+            {tierView && <MemberTierCard view={tierView} coupons={tierCoupons} />}
             {data.passesOnly && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 ร้านปิดระบบสะสม/แลกแต้มแล้ว — แพ็กที่คุณซื้อไว้ยังใช้ได้ตามปกติจนหมดอายุ

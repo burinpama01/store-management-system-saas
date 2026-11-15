@@ -34,6 +34,7 @@ export function buildSettingsTabs(
     // รหัสยืนยันสมาชิก (ฐานของแพ็กล่วงหน้า/ระดับสมาชิก) — Enterprise เท่านั้น; หน้าเช็ก plan เองอีกชั้น
     if (billingState.plan === "enterprise") {
       tabs.push({ href: "/settings/member-privileges", label: "สิทธิ์สมาชิก", featureKey: "loyaltyPoints" });
+      tabs.push({ href: "/settings/member-tiers", label: "ระดับสมาชิก", featureKey: "loyaltyPoints" });
     }
   }
   // เครื่องเล่นเพลง: คนที่จัดการคิวเพลงได้ (orders.manage_qr — รวมแคชเชียร์) เปิดหน้านี้ได้

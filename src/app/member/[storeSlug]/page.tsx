@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getCustomerPortalData } from "@/modules/customers/member-repository";
 import { getMemberPassesView } from "@/modules/prepaid-passes/member-portal";
+import { getMemberTierForCustomer, listMemberTierCoupons } from "@/modules/member-tiers/repository";
 import { MemberPortal } from "./MemberPortal";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,15 @@ export default async function CustomerMemberPage({
           canSell: portalData.memberPrivileges,
         })
       : null;
+  // ระดับสมาชิก (Enterprise + ร้านเปิดใช้) — null = ไม่แสดง
+  const tierView =
+    portalData.store && portalData.customer && portalData.memberPrivileges
+      ? await getMemberTierForCustomer(portalData.store.id, portalData.customer.id)
+      : null;
+  const tierCoupons =
+    tierView && portalData.store && portalData.customer
+      ? await listMemberTierCoupons(portalData.store.id, portalData.customer.id, tierView.rank)
+      : [];
 
   return (
     <MemberPortal
@@ -36,6 +46,8 @@ export default async function CustomerMemberPage({
       claimCode={typeof claim === "string" ? claim.trim().toUpperCase() : null}
       data={portalData}
       passesView={passesView}
+      tierView={tierView}
+      tierCoupons={tierCoupons}
     />
   );
 }
