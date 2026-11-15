@@ -1,4 +1,6 @@
 import { Suspense, type CSSProperties, type ReactNode } from "react";
+import { canUseMemberPrivileges } from "@/modules/members/access";
+import { isOpsManagerRole } from "@/modules/operations/access";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -108,12 +110,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     hasAdvancedReports: assistantBilling ? canUseFeature(assistantBilling, "advancedReports") : false,
     businessMode: setupProfile?.businessMode ?? null,
   }).allowed;
+  const websiteVisible =
+    isOpsManagerRole(storeContext.role) && !!assistantBilling && canUseMemberPrivileges(assistantBilling);
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
     ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
     ...(can("catalog.manage") ? [{ href: "/customers", label: "ลูกค้า" }] : []),
+    // เว็บไซต์ร้าน — owner/admin ของร้าน Enterprise
+    ...(websiteVisible ? [{ href: "/website", label: "เว็บไซต์ร้าน" }] : []),
     ...(qrOrdersVisible ? [{ href: "/qr-orders", label: "QR Order" }] : []),
     ...(canManageQr ? [{ href: "/delivery", label: "เดลิเวอรี" }] : []),
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),

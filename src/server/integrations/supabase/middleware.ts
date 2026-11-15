@@ -47,6 +47,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/music/") ||
     request.nextUrl.pathname === "/member" ||
     request.nextUrl.pathname.startsWith("/member/") ||
+    // เว็บไซต์ของร้าน (สาธารณะ แคช ISR) — "/s/<slug>" เท่านั้น ไม่ชนกับเส้นทางอื่นที่ขึ้นต้นด้วย s
+    request.nextUrl.pathname.startsWith("/s/") ||
     request.nextUrl.pathname === "/pricing" ||
     request.nextUrl.pathname === "/register" ||
     request.nextUrl.pathname === "/privacy-policy" ||
