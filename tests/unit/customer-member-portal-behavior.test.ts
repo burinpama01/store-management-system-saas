@@ -271,6 +271,8 @@ describe("customer member portal behavior", () => {
       rewards: [],
       redemptions: [],
       memberCodeEnabled: false,
+      memberPrivileges: false,
+      passesOnly: false,
       error: null,
     });
     vi.spyOn(loyalty, "redeemRewardForCurrentCustomer").mockResolvedValue({

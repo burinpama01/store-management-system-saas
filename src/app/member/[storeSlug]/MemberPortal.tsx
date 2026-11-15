@@ -13,6 +13,8 @@ import {
 } from "./actions";
 import { Button } from "@/shared/components/ui";
 import { MemberRedeemCodeCard } from "./MemberRedeemCodeCard";
+import { MemberPassesCard } from "./MemberPassesCard";
+import type { MemberPassesView } from "@/modules/prepaid-passes/member-portal";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -22,6 +24,8 @@ interface Props {
   /** รหัสรับแต้มจาก QR ท้ายใบเสร็จ (?claim=) — null = เข้ามาปกติ */
   claimCode: string | null;
   data: CustomerPortalData;
+  /** แพ็กของฉัน — null = ยังไม่ล็อกอิน */
+  passesView?: MemberPassesView | null;
 }
 
 interface RedeemedVoucher {
@@ -81,7 +85,7 @@ function StatusMessage({ message }: { message: string | null }) {
   );
 }
 
-export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) {
+export function MemberPortal({ storeSlug, portalCode, claimCode, data, passesView = null }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"register" | "login">("register");
   const [otpId, setOtpId] = useState<string | null>(null);
@@ -340,7 +344,15 @@ export function MemberPortal({ storeSlug, portalCode, claimCode, data }: Props) 
               </p>
             </section>
 
+            {data.passesOnly && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                ร้านปิดระบบสะสม/แลกแต้มแล้ว — แพ็กที่คุณซื้อไว้ยังใช้ได้ตามปกติจนหมดอายุ
+              </p>
+            )}
             {data.memberCodeEnabled && <MemberRedeemCodeCard storeSlug={storeSlug} portalCode={portalCode} />}
+            {passesView && (passesView.passes.length > 0 || passesView.plans.length > 0) && (
+              <MemberPassesCard storeSlug={storeSlug} portalCode={portalCode} view={passesView} />
+            )}
 
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-[var(--surface-muted)] p-1">
               <button

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
@@ -33,6 +34,14 @@ export default async function MemberPrivilegesSettingsPage() {
       )}
 
       <MemberCodeToggle enabled={enabled} allowed={allowed} />
+
+      {allowed && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 text-sm">
+          <p className="font-semibold text-violet-900">แพ็กซื้อล่วงหน้า</p>
+          <p className="text-violet-800">สร้างแพ็ก เช่น อเมริกาโน่ 10 แก้ว ฿350 แล้วขายผ่าน POS ได้ทันที</p>
+          <Link className="btn-secondary mt-2 inline-block text-sm" href="/customers/passes">จัดการแพ็ก</Link>
+        </div>
+      )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
         <p className="font-semibold text-gray-900">วิธีใช้</p>

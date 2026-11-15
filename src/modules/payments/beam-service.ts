@@ -368,6 +368,8 @@ export async function createBeamQrPayment(input: {
   actorUserId: string | null;
   /** ผูกรายการชำระกับคำขอเพลง — PAID แล้ว trigger ยืนยันคำขอให้ */
   musicRequestId?: string | null;
+  /** ผูกรายการชำระกับคำสั่งซื้อแพ็กออนไลน์ — PAID แล้ว trigger ออกแพ็กให้ */
+  prepaidPassPurchaseId?: string | null;
   client?: BeamDb;
 }): Promise<{ ok: true; qr: BeamQrForPos } | { ok: false; error: string }> {
   const amount = roundMajorThb(input.amountMajor);
@@ -407,6 +409,7 @@ export async function createBeamQrPayment(input: {
         store_id: input.storeId,
         order_id: null,
         music_request_id: input.musicRequestId ?? null,
+        prepaid_pass_purchase_id: input.prepaidPassPurchaseId ?? null,
         provider_config_id: config.id,
         provider_key: "beam",
         mode: "open_api",
@@ -420,6 +423,7 @@ export async function createBeamQrPayment(input: {
           expiresAt,
           createdBy: input.actorUserId,
           ...(input.musicRequestId ? { purpose: "music_request" } : {}),
+          ...(input.prepaidPassPurchaseId ? { purpose: "prepaid_pass" } : {}),
         } as Json,
       })
       .select(GATEWAY_COLUMNS)
@@ -782,7 +786,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("gateway_payments")
-    .select("id, amount, status, order_id, pos_payment_id, music_request_id, failure_message, metadata, created_at, paid_at")
+    .select("id, amount, status, order_id, pos_payment_id, music_request_id, prepaid_pass_purchase_id, failure_message, metadata, created_at, paid_at")
     .eq("store_id", storeId)
     .eq("provider_key", "beam")
     .order("created_at", { ascending: false })
@@ -794,6 +798,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     order_id: string | null;
     pos_payment_id: string | null;
     music_request_id: string | null;
+    prepaid_pass_purchase_id?: string | null;
     failure_message: string | null;
     metadata: Record<string, unknown> | null;
     created_at: string;
@@ -803,7 +808,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     amount: typeof r.amount === "string" ? Number(r.amount) : r.amount,
     status: r.status as GatewayPaymentStatus,
     orderId: r.order_id,
-    attached: Boolean(r.pos_payment_id || r.music_request_id),
+    attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id),
     musicRequestId: r.music_request_id,
     environment: toEnvironment(typeof r.metadata?.environment === "string" ? r.metadata.environment : "live"),
     failureMessage: r.failure_message,
