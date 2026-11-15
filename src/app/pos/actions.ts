@@ -29,6 +29,7 @@ import {
 } from "@/modules/customers/repository";
 import { MEMBER_PRIVILEGES_LOCK_MESSAGE } from "@/modules/members/access";
 import { canRedeemPasses, resolveMemberPassAccess } from "@/modules/prepaid-passes/grace";
+import { getMemberTierForCustomer, listMemberTierCoupons, type MemberTierCoupon } from "@/modules/member-tiers/repository";
 import { normalizeMemberRedeemCodeInput } from "@/modules/members/redeem-code";
 import { verifyMemberRedeemCode } from "@/modules/members/repository";
 import { fallbackMemberName, isRegistrablePhone, type PosRewardVoucher } from "@/modules/pos/loyalty-coupon-ux";
@@ -277,6 +278,10 @@ export interface PosMemberVerification {
   expiresAt: string;
   /** ลูกค้าเปิดรหัสจากหน้าสมาชิกของอีกสาขา */
   crossBranch: boolean;
+  /** ระดับสมาชิก (ร้าน Enterprise ที่เปิดใช้ระดับ) — null = ไม่มี */
+  tier: { name: string; color: string; rank: number } | null;
+  /** โค้ดสิทธิ์ตามระดับของเดือนนี้ที่ใช้ได้ที่สาขานี้ */
+  tierCoupons: MemberTierCoupon[];
 }
 
 /**
@@ -339,6 +344,12 @@ export async function verifyPosMemberCodeAction(rawCode: string): Promise<{
     }
 
     const crossBranch = verified.data.issuedStoreId !== ctx.storeId;
+    const tierView = access.privileges
+      ? await getMemberTierForCustomer(ctx.storeId, verified.data.customerId).catch(() => null)
+      : null;
+    const tierCoupons = tierView
+      ? await listMemberTierCoupons(ctx.storeId, verified.data.customerId, tierView.rank).catch(() => [])
+      : [];
     await logSystemEvent({
       level: "info",
       source: "pos.member-code",
@@ -355,6 +366,8 @@ export async function verifyPosMemberCodeAction(rawCode: string): Promise<{
         verificationId: verified.data.verificationId,
         expiresAt: verified.data.expiresAt,
         crossBranch,
+        tier: tierView ? { name: tierView.tier.name, color: tierView.tier.color, rank: tierView.rank } : null,
+        tierCoupons,
       },
       error: null,
     };

@@ -83,6 +83,8 @@ export async function listCouponsForStore(storeId: string, options: { includeIna
     .from("coupons")
     .select("*")
     .eq("store_id", storeId)
+    // คูปองสิทธิ์ระดับสมาชิกสร้าง/ปิดอัตโนมัติจากหน้า ตั้งค่า › ระดับสมาชิก — ไม่ให้แก้จากหน้าคูปองปกติ
+    .is("member_tier_benefit_id" as never, null)
     .order("updated_at", { ascending: false });
 
   if (!options.includeInactive) query = query.eq("is_active", true);
@@ -143,6 +145,12 @@ export async function saveCoupon(input: CouponSaveInput) {
       .single();
     if (existingRes.error) return { data: null, error: mapError(existingRes.error) };
     existingCoupon = existingRes.data;
+    if ((existingCoupon as { member_tier_benefit_id?: string | null } | null)?.member_tier_benefit_id) {
+      return {
+        data: null,
+        error: mapError({ message: "คูปองสิทธิ์ระดับสมาชิกแก้ได้ที่ ตั้งค่า › ระดับสมาชิก เท่านั้น", code: "tier_coupon_locked" }),
+      };
+    }
   }
 
   const payload = {

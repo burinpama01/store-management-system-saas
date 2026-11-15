@@ -1469,6 +1469,11 @@ function MemberPassList({ control, isPending }: { control: MemberPassesControl; 
 interface MemberCodeControl {
   value: string;
   verified: boolean;
+  /** ระดับสมาชิกหลังยืนยันรหัส */
+  tier?: { name: string; color: string; rank: number } | null;
+  /** โค้ดสิทธิ์ตามระดับเดือนนี้ — แตะเพื่อใช้กับบิล (ฐานข้อมูลตรวจระดับ+ผลยืนยันซ้ำ) */
+  tierCoupons?: Array<{ benefitId: string; name: string; code: string; remaining: number; discountType: "amount" | "percentage"; discountValue: number; minSubtotal: number }>;
+  onUseTierCoupon?: (code: string) => void;
   onChange: (value: string) => void;
   onVerify: () => void;
 }
@@ -1565,6 +1570,33 @@ function MemberSheetSection({
               <p className={`text-xs font-semibold ${memberCode.verified ? "text-emerald-700" : "text-slate-500"}`}>
                 {memberCode.verified ? "✓ ยืนยันด้วยรหัสแล้ว — ใช้สิทธิ์สมาชิกได้" : "ยังไม่ยืนยันรหัส — ใช้สิทธิ์สมาชิกไม่ได้"}
               </p>
+            )}
+            {memberCode?.verified && memberCode.tier && (
+              <span
+                className="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-bold text-white"
+                style={{ background: memberCode.tier.color }}
+              >
+                {memberCode.tier.name}
+              </span>
+            )}
+            {memberCode?.verified && (memberCode.tierCoupons?.length ?? 0) > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2" aria-label="สิทธิ์ตามระดับ">
+                {memberCode.tierCoupons!.map((coupon) => (
+                  <button
+                    key={coupon.benefitId}
+                    type="button"
+                    disabled={isPending || coupon.remaining <= 0}
+                    onClick={() => memberCode.onUseTierCoupon?.(coupon.code)}
+                    className="min-h-11 rounded-lg border border-amber-300 bg-white px-3 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-40"
+                  >
+                    🏷️ {coupon.name}
+                    <span className="block font-normal text-amber-700">
+                      {coupon.discountType === "percentage" ? `ลด ${coupon.discountValue}%` : `ลด ฿${coupon.discountValue}`}
+                      {coupon.minSubtotal > 0 ? ` ขั้นต่ำ ฿${coupon.minSubtotal}` : ""} · เหลือ {coupon.remaining}
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
             <p className="text-sm text-amber-800">
               {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้มสะสม{" "}
@@ -5584,6 +5616,9 @@ export function PosTerminal({
               ? {
                   value: memberCodeInput,
                   verified: activeMemberVerification !== null,
+                  tier: activeMemberVerification?.tier ?? null,
+                  tierCoupons: activeMemberVerification?.tierCoupons ?? [],
+                  onUseTierCoupon: (code: string) => handleApplyCoupon(code),
                   onChange: setMemberCodeInput,
                   onVerify: handleVerifyMemberCode,
                 }
