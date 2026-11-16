@@ -34,7 +34,7 @@ import { SubmitButton } from "@/shared/components/ui";
 import { CommandPalette } from "@/shared/components/CommandPalette";
 import type { CommandItem } from "@/modules/assistant/command-index";
 import { decideCostingAccess } from "@/modules/costing/access-policy";
-import { getOnlineOrderSettings } from "@/modules/online-orders/repository";
+import { isOnlineOrderingEnabled } from "@/modules/online-orders/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -118,7 +118,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     canManageQr &&
     !!assistantBilling &&
     canUseMemberPrivileges(assistantBilling) &&
-    (await getOnlineOrderSettings(storeContext.storeId)).enabled;
+    (await isOnlineOrderingEnabled(storeContext.storeId));
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),

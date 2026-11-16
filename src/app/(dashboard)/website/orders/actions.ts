@@ -25,6 +25,7 @@ import {
 } from "@/modules/online-orders/core";
 import {
   expireStaleOnlineOrders,
+  getAttendanceOrigin,
   getOnlineOrderForStore,
   listOnlineOrdersForStore,
   saveOnlineOrderSettings,
@@ -73,7 +74,11 @@ export async function saveOnlineOrderSettingsAction(settings: OnlineOrderSetting
     if (!canUseMemberPrivileges(billing) || !getPlanFeatures(billing).byoPaymentGateway) {
       return { ok: false, error: "สั่งออนไลน์ใช้ได้เฉพาะแพ็กเกจ Enterprise" };
     }
-    const parsed = onlineOrderSettingsSchema.safeParse(settings);
+    // พิกัดร้าน = พิกัดลงเวลาเข้างาน (ถ้าตั้งไว้) — ค่าจากฟอร์มใช้เฉพาะร้านที่ยังไม่ตั้งจุดลงเวลา
+    const attendanceOrigin = await getAttendanceOrigin(ctx.storeId);
+    const parsed = onlineOrderSettingsSchema.safeParse(
+      attendanceOrigin ? { ...settings, originLat: attendanceOrigin.lat, originLng: attendanceOrigin.lng } : settings,
+    );
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ตั้งค่าไม่ถูกต้อง" };
     const site = await getStoreWebsite(ctx.storeId);
     if (parsed.data.enabled) {

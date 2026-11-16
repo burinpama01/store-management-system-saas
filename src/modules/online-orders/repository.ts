@@ -86,7 +86,49 @@ function toOrder(row: any): OnlineOrder {
 
 // ---------- ตั้งค่า ----------
 
+/** พิกัดร้านจากตั้งค่าลงเวลาเข้างาน (จุดศูนย์กลาง geofence) — ใช้เป็นพิกัดร้านของการส่งเสมอถ้ามี */
+export async function getAttendanceOrigin(storeId: string): Promise<{ lat: number; lng: number } | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db
+    .from("attendance_settings")
+    .select("geofence_center_lat, geofence_center_lng")
+    .eq("store_id", storeId)
+    .not("geofence_center_lat", "is", null)
+    .not("geofence_center_lng", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const lat = Number(data.geofence_center_lat);
+  const lng = Number(data.geofence_center_lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+/**
+ * ตั้งค่าสั่งออนไลน์ที่ใช้งานจริง — พิกัดร้าน = พิกัดลงเวลาเข้างาน (ถ้าตั้งไว้) แทนค่าที่บันทึกเอง
+ * ร้านย้าย/แก้จุดลงเวลา ค่าส่งก็คิดจากจุดใหม่ทันที ไม่ต้องตั้งสองที่
+ */
 export async function getOnlineOrderSettings(storeId: string): Promise<OnlineOrderSettings> {
+  return (await getOnlineOrderSettingsWithOrigin(storeId)).settings;
+}
+
+/** เหมือน getOnlineOrderSettings แต่บอกด้วยว่าพิกัดมาจากจุดลงเวลาเข้างานไหม (หน้าตั้งค่า) */
+export async function getOnlineOrderSettingsWithOrigin(
+  storeId: string,
+): Promise<{ settings: OnlineOrderSettings; originFromAttendance: boolean }> {
+  const [settings, origin] = await Promise.all([getStoredOnlineOrderSettings(storeId), getAttendanceOrigin(storeId)]);
+  return origin
+    ? { settings: { ...settings, originLat: origin.lat, originLng: origin.lng }, originFromAttendance: true }
+    : { settings, originFromAttendance: false };
+}
+
+/** เมนูหลังร้าน: อ่านแค่สวิตช์ (query เดียว) */
+export async function isOnlineOrderingEnabled(storeId: string): Promise<boolean> {
+  return (await getStoredOnlineOrderSettings(storeId)).enabled;
+}
+
+async function getStoredOnlineOrderSettings(storeId: string): Promise<OnlineOrderSettings> {
   const db: LooseClient = await createSupabaseServiceClient();
   const { data } = await db.from("store_online_order_settings").select("*").eq("store_id", storeId).maybeSingle();
   if (!data) return DEFAULT_ONLINE_ORDER_SETTINGS;
