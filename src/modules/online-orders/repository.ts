@@ -95,6 +95,7 @@ export async function getAttendanceOrigin(storeId: string): Promise<{ lat: numbe
     .eq("store_id", storeId)
     .not("geofence_center_lat", "is", null)
     .not("geofence_center_lng", "is", null)
+    .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (!data) return null;
@@ -109,8 +110,17 @@ export async function getAttendanceOrigin(storeId: string): Promise<{ lat: numbe
  * ร้านย้าย/แก้จุดลงเวลา ค่าส่งก็คิดจากจุดใหม่ทันที ไม่ต้องตั้งสองที่
  */
 export async function getOnlineOrderSettings(storeId: string): Promise<OnlineOrderSettings> {
+  return (await getOnlineOrderSettingsWithOrigin(storeId)).settings;
+}
+
+/** เหมือน getOnlineOrderSettings แต่บอกด้วยว่าพิกัดมาจากจุดลงเวลาเข้างานไหม (หน้าตั้งค่า) */
+export async function getOnlineOrderSettingsWithOrigin(
+  storeId: string,
+): Promise<{ settings: OnlineOrderSettings; originFromAttendance: boolean }> {
   const [settings, origin] = await Promise.all([getStoredOnlineOrderSettings(storeId), getAttendanceOrigin(storeId)]);
-  return origin ? { ...settings, originLat: origin.lat, originLng: origin.lng } : settings;
+  return origin
+    ? { settings: { ...settings, originLat: origin.lat, originLng: origin.lng }, originFromAttendance: true }
+    : { settings, originFromAttendance: false };
 }
 
 /** เมนูหลังร้าน: อ่านแค่สวิตช์ (query เดียว) */

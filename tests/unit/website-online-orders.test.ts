@@ -150,7 +150,8 @@ describe("พิกัดร้าน = จุดลงเวลาเข้า�
   it("ตั้งค่าที่ใช้งานจริงเอาพิกัด geofence ของการเข้างานมาทับ และบันทึกก็ใช้พิกัดเดียวกัน", () => {
     const repo = read("src/modules/online-orders/repository.ts");
     expect(repo).toContain('.from("attendance_settings")');
-    expect(repo).toContain("origin ? { ...settings, originLat: origin.lat, originLng: origin.lng } : settings");
+    expect(repo).toContain("settings: { ...settings, originLat: origin.lat, originLng: origin.lng }, originFromAttendance: true");
+    expect(repo).toContain('.order("updated_at", { ascending: false })');
     expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain("const attendanceOrigin = await getAttendanceOrigin(ctx.storeId);");
     expect(read("src/app/(dashboard)/layout.tsx")).toContain("isOnlineOrderingEnabled(storeContext.storeId)");
   });
