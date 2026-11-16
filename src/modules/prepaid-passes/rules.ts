@@ -24,6 +24,10 @@ export interface PassPlanInput {
   terms: string;
   productIds: string[];
   isActive: boolean;
+  /** ตัวเลือกเสริมที่รวมในแพ็ก (ลูกค้าไม่ต้องจ่ายเพิ่ม) เช่น "เย็น +5" */
+  modifierOptionIds?: string[];
+  /** ขนาดที่รวมในแพ็ก เช่น "แก้วใหญ่ +10" */
+  variantIds?: string[];
 }
 
 export function validatePassPlanInput(input: PassPlanInput): string | null {
@@ -42,6 +46,27 @@ export function validatePassPlanInput(input: PassPlanInput): string | null {
   if (terms.length > 5000) return "เงื่อนไขยาวเกินไป";
   if (input.productIds.length === 0) return "เลือกเมนูที่ใช้แพ็กได้อย่างน้อย 1 รายการ";
   return null;
+}
+
+/**
+ * ราคาที่ลูกค้าต้องจ่ายเพิ่มต่อแก้ว/ชิ้นเมื่อใช้แพ็ก = ส่วนต่างของตัวเลือก/ขนาดที่ "ไม่รวมในแพ็ก"
+ * ราคาเมนูพื้นฐานจ่ายด้วยแพ็กแล้วเสมอ · ใช้ทั้งฝั่ง POS (แสดงผล) และ server (ราคาจริง)
+ */
+export function passLineExtraPrice(input: {
+  variant: { id: string; priceAdjustment: number } | null;
+  modifierOptions: Array<{ id: string; priceAdjustment: number }>;
+  coveredVariantIds: ReadonlySet<string> | readonly string[];
+  coveredOptionIds: ReadonlySet<string> | readonly string[];
+}): number {
+  const coveredVariants = input.coveredVariantIds instanceof Set ? input.coveredVariantIds : new Set(input.coveredVariantIds);
+  const coveredOptions = input.coveredOptionIds instanceof Set ? input.coveredOptionIds : new Set(input.coveredOptionIds);
+  let extra = 0;
+  if (input.variant && !coveredVariants.has(input.variant.id)) extra += input.variant.priceAdjustment;
+  for (const option of input.modifierOptions) {
+    if (!coveredOptions.has(option.id)) extra += option.priceAdjustment;
+  }
+  // ตัวเลือกลดราคา (ติดลบ) ไม่ทำให้ร้านต้องจ่ายคืน — ต่ำสุด 0
+  return Math.max(0, Math.round(extra * 100) / 100);
 }
 
 /** มูลค่าต่อสิทธิ์ เช่น 350 / 10 = 35 — ใช้แสดงผลและรับรู้รายได้ */

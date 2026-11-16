@@ -12,6 +12,9 @@ export interface PassPlan {
   terms: string;
   isActive: boolean;
   productIds: string[];
+  /** ตัวเลือกเสริม/ขนาดที่รวมในแพ็ก */
+  modifierOptionIds: string[];
+  variantIds: string[];
   soldCount: number;
 }
 
@@ -25,6 +28,9 @@ export interface MemberPass {
   usableHere: boolean;
   /** เมนูของสาขานี้ที่ใช้แพ็กนี้ได้ */
   productIds: string[];
+  /** ตัวเลือกเสริม/ขนาดของเมนูสาขานี้ที่แพ็กครอบคลุม (ลูกค้าไม่จ่ายเพิ่ม) */
+  coveredOptionIds: string[];
+  coveredVariantIds: string[];
 }
 
 /** แพ็กที่ขายใน POS: สินค้าขายแพ็ก → เงื่อนไขที่ต้องแจ้งลูกค้าก่อนขาย */

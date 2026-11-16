@@ -6,10 +6,18 @@ import type { PassPlan } from "@/modules/prepaid-passes/types";
 import { passUnitValue, validatePassPlanInput, type PassPlanInput } from "@/modules/prepaid-passes/rules";
 import { savePassPlanAction } from "./actions";
 
+interface PriceChoice {
+  id: string;
+  name: string;
+  priceAdjustment: number;
+}
+
 interface MenuOption {
   id: string;
   name: string;
   price: number;
+  variants: PriceChoice[];
+  groups: Array<{ id: string; name: string; options: PriceChoice[] }>;
 }
 
 interface Draft {
@@ -22,6 +30,8 @@ interface Draft {
   redeemScope: "store" | "org";
   terms: string;
   productIds: string[];
+  modifierOptionIds: string[];
+  variantIds: string[];
   isActive: boolean;
 }
 
@@ -36,6 +46,8 @@ function emptyDraft(defaultTerms: string): Draft {
     redeemScope: "store",
     terms: defaultTerms,
     productIds: [],
+    modifierOptionIds: [],
+    variantIds: [],
     isActive: true,
   };
 }
@@ -51,6 +63,8 @@ function draftFromPlan(plan: PassPlan): Draft {
     redeemScope: plan.redeemScope,
     terms: plan.terms,
     productIds: plan.productIds,
+    modifierOptionIds: plan.modifierOptionIds,
+    variantIds: plan.variantIds,
     isActive: plan.isActive,
   };
 }
@@ -65,6 +79,8 @@ function toInput(draft: Draft): PassPlanInput {
     terms: draft.terms,
     productIds: draft.productIds,
     isActive: draft.isActive,
+    modifierOptionIds: draft.modifierOptionIds,
+    variantIds: draft.variantIds,
   };
 }
 
@@ -110,11 +126,31 @@ export function PassPlanManager({
 
   function toggleProduct(id: string) {
     if (!draft) return;
+    const removing = draft.productIds.includes(id);
+    const item = menuById.get(id);
+    // เอาเมนูออก → ตัดตัวเลือก/ขนาดของเมนูนั้นออกจากแพ็กด้วย
+    const optionIdsOfItem = new Set(item ? item.groups.flatMap((group) => group.options.map((option) => option.id)) : []);
+    const variantIdsOfItem = new Set(item ? item.variants.map((variant) => variant.id) : []);
     setDraft({
       ...draft,
-      productIds: draft.productIds.includes(id) ? draft.productIds.filter((x) => x !== id) : [...draft.productIds, id],
+      productIds: removing ? draft.productIds.filter((x) => x !== id) : [...draft.productIds, id],
+      modifierOptionIds: removing ? draft.modifierOptionIds.filter((x) => !optionIdsOfItem.has(x)) : draft.modifierOptionIds,
+      variantIds: removing ? draft.variantIds.filter((x) => !variantIdsOfItem.has(x)) : draft.variantIds,
     });
   }
+
+  function toggleCovered(kind: "modifierOptionIds" | "variantIds", id: string) {
+    if (!draft) return;
+    const list = draft[kind];
+    setDraft({ ...draft, [kind]: list.includes(id) ? list.filter((x) => x !== id) : [...list, id] });
+  }
+
+  const selectedWithChoices = draft
+    ? draft.productIds
+        .map((id) => menuById.get(id))
+        .filter((item): item is MenuOption => Boolean(item))
+        .filter((item) => item.variants.length > 0 || item.groups.some((group) => group.options.length > 0))
+    : [];
 
   const unit = draft ? passUnitValue(Number(draft.price) || 0, Number(draft.credits) || 0) : 0;
   const filteredMenu = menu.filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase()));
@@ -194,6 +230,59 @@ export function PassPlanManager({
               {filteredMenu.length === 0 && <p className="text-xs text-gray-500">ไม่พบเมนู</p>}
             </div>
           </div>
+
+          {selectedWithChoices.length > 0 && (
+            <div className="text-sm">
+              <span className="font-semibold text-gray-800">ตัวเลือกที่รวมในแพ็ก</span>
+              <p className="text-xs text-gray-500">
+                {draft.redeemScope === "org" && "ใช้ได้ทุกสาขา: สาขาอื่นเทียบตัวเลือกด้วยชื่อ (ชื่อกลุ่ม+ชื่อตัวเลือก) — ถ้าราคาตัวเลือกต่างกันระหว่างสาขา แพ็กจะครอบคลุมตามชื่อ · "}
+                ติ๊ก = ลูกค้าไม่ต้องจ่ายเพิ่ม (เช่น แพ็กอเมริกาโน่เย็น ให้ติ๊ก “เย็น +5”) · ไม่ติ๊ก = ลูกค้าจ่ายส่วนต่างตอนใช้แพ็ก
+              </p>
+              <div className="mt-2 space-y-2">
+                {selectedWithChoices.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-gray-200 p-2">
+                    <p className="font-medium text-gray-800">{item.name} <span className="text-xs text-gray-500">฿{money(item.price)}</span></p>
+                    {item.variants.length > 0 && (
+                      <div className="mt-1">
+                        <p className="text-xs text-gray-500">ขนาด</p>
+                        <div className="flex flex-wrap gap-2">
+                          {item.variants.map((variant) => (
+                            <label key={variant.id} className="flex items-center gap-1 rounded border border-gray-200 px-2 py-1">
+                              <input type="checkbox" checked={draft.variantIds.includes(variant.id)} onChange={() => toggleCovered("variantIds", variant.id)} />
+                              {variant.name}
+                              {variant.priceAdjustment !== 0 && <span className="text-xs text-gray-500">{variant.priceAdjustment > 0 ? "+" : ""}{money(variant.priceAdjustment)}</span>}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {item.groups
+                      .filter((group) => group.options.length > 0)
+                      .map((group) => (
+                        <div key={group.id} className="mt-1">
+                          <p className="text-xs text-gray-500">{group.name}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.options.map((option) => (
+                              <label key={option.id} className="flex items-center gap-1 rounded border border-gray-200 px-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={draft.modifierOptionIds.includes(option.id)}
+                                  onChange={() => toggleCovered("modifierOptionIds", option.id)}
+                                />
+                                {option.name}
+                                {option.priceAdjustment !== 0 && (
+                                  <span className="text-xs text-gray-500">{option.priceAdjustment > 0 ? "+" : ""}{money(option.priceAdjustment)}</span>
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <label className="block text-sm">
             <span className="font-semibold text-gray-800">เงื่อนไขแพ็ก (แสดงให้ลูกค้าก่อนซื้อ และเก็บสำเนาไว้กับแพ็กทุกใบ)</span>

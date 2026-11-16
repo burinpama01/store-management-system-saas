@@ -148,7 +148,7 @@ function sameItemDiscount(a: CartItem, b: CartItem): boolean {
   );
 }
 
-function resolveVariant(
+export function resolveVariant(
   product: Product,
   variantId: string | undefined,
 ): ProductVariant | null {
@@ -216,7 +216,7 @@ function addVariantStockDemand(
   }
 }
 
-function resolveModifiers(product: Product, optionIds: string[]): SelectedModifier[] {
+export function resolveModifiers(product: Product, optionIds: string[]): SelectedModifier[] {
   const uniqueIds = new Set(optionIds);
   if (uniqueIds.size !== optionIds.length) {
     throw new CartValidationError("ตัวเลือกซ้ำในรายการสินค้า");
