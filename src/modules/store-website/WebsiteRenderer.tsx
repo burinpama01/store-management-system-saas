@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- รูปจาก storage ของร้าน (ไม่ได้ตั้ง remotePatterns ให้ next/image) */
 import type { CSSProperties } from "react";
-import type { WebsiteBlock, WebsiteDocument, WebsiteTheme } from "./schema";
+import type { PosterElement, WebsiteBlock, WebsiteDocument, WebsiteTheme } from "./schema";
 import { isBannerActive } from "./schema";
 import { DELIVERY_APP_LABELS, SOCIAL_LABELS } from "./templates";
 import type { WebsiteRenderData } from "./repository";
@@ -261,8 +261,77 @@ function Block({ block, theme, data, today }: { block: WebsiteBlock; theme: Webs
           {block.title && <SectionTitle>{block.title}</SectionTitle>}
           {block.body && <p style={{ margin: 0, whiteSpace: "pre-line" }}>{block.body}</p>}
         </Card>
-      );
+      );    case "poster":
+      return <PosterView block={block} />;
   }
+}
+
+const ASPECT_RATIO: Record<string, string> = { "1:1": "1 / 1", "4:5": "4 / 5", "16:9": "16 / 9" };
+
+/** url(...) ใน CSS: encodeURI แล้วหนีวงเล็บ/เครื่องหมายคำพูดด้วย (ลิงก์ผ่าน safeUrl แล้ว) */
+export function cssUrl(url: string): string {
+  return `url("${encodeURI(url).replace(/[()'"]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}")`;
+}
+
+/** ชิ้นงานหนึ่งชิ้นบนโปสเตอร์ — ตำแหน่ง/ขนาดเป็น % จึงย่อขยายตามจอได้ (ใช้ร่วมกับตัวแก้ในหลังร้าน) */
+export function PosterElementView({ element }: { element: PosterElement }) {
+  const box: CSSProperties = {
+    position: "absolute",
+    left: `${element.x}%`,
+    top: `${element.y}%`,
+    width: `${element.w}%`,
+    transform: `translate(-50%, -50%) rotate(${element.rotate}deg)`,
+    pointerEvents: "none",
+  };
+  if (element.kind === "image") {
+    if (!element.imageUrl) return null;
+    return <img src={element.imageUrl} alt="" draggable={false} style={{ ...box, display: "block", height: "auto", borderRadius: 6 }} />;
+  }
+  if (element.kind === "sticker") {
+    // ขนาดสติกเกอร์ = ความกว้างชิ้นงาน (หน่วย cqw = % ของกว้างโปสเตอร์)
+    return <span style={{ ...box, fontSize: `${element.w * 0.8}cqw`, lineHeight: 1, textAlign: "center" }}>{element.sticker ?? "⭐"}</span>;
+  }
+  return (
+    <span
+      style={{
+        ...box,
+        fontSize: `${element.size ?? 6}cqw`,
+        color: element.color ?? "#1f2328",
+        fontWeight: element.bold ? 800 : 500,
+        textAlign: element.align ?? "center",
+        lineHeight: 1.2,
+        whiteSpace: "pre-line",
+        overflowWrap: "anywhere",
+      }}
+    >
+      {element.text ?? ""}
+    </span>
+  );
+}
+
+export function PosterView({ block }: { block: Extract<WebsiteBlock, { type: "poster" }> }) {
+  return (
+    <div
+      role="img"
+      aria-label={block.elements.filter((e) => e.kind === "text" && e.text).map((e) => e.text).join(" · ") || "โปสเตอร์ของร้าน"}
+      style={{
+        position: "relative",
+        width: "100%",
+        aspectRatio: ASPECT_RATIO[block.aspect] ?? "4 / 5",
+        containerType: "inline-size",
+        overflow: "hidden",
+        borderRadius: "var(--w-radius)",
+        backgroundColor: block.background,
+        backgroundImage: block.backgroundImageUrl ? cssUrl(block.backgroundImageUrl) : undefined,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      {block.elements.map((element) => (
+        <PosterElementView key={element.id} element={element} />
+      ))}
+    </div>
+  );
 }
 
 export function WebsiteRenderer({
@@ -270,10 +339,13 @@ export function WebsiteRenderer({
   data,
   today,
   festival = null,
+  editorMode = false,
 }: {
   document: WebsiteDocument;
   data: WebsiteRenderData;
   today: string;
+  /** พรีวิวในหลังร้าน: ใส่ data-block-id ให้แตะบล็อกเพื่อแก้ (หน้าสาธารณะไม่ใส่) */
+  editorMode?: boolean;
   /** ชั้นตกแต่งเทศกาล (S1) — null = ไม่มี */
   festival?: FestivalView | null;
 }) {
@@ -288,7 +360,7 @@ export function WebsiteRenderer({
       `}</style>
       <div style={{ maxWidth: 720, margin: "0 auto", paddingBottom: 32 }}>
         {visible.map((block, index) => (
-          <div key={block.id} style={block.type === "hero" && index === 0 ? undefined : { padding: "14px 16px 0" }}>
+          <div key={block.id} data-block-id={editorMode ? block.id : undefined} style={block.type === "hero" && index === 0 ? undefined : { padding: "14px 16px 0" }}>
             <Block block={block} theme={document.theme} data={data} today={today} />
           </div>
         ))}
