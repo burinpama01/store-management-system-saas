@@ -128,6 +128,45 @@ export const textBlockSchema = z.object({
   body: shortText(1500),
 });
 
+// ---------- S3: โปสเตอร์วางอิสระ ----------
+/** สติกเกอร์ให้เลือกจากชุดที่กำหนด (ไม่รับข้อความ/อีโมจิอิสระในช่องนี้) */
+export const POSTER_STICKERS = ["⭐", "🔥", "❤️", "🎉", "🏷️", "🆕", "☕", "🍰", "🍜", "🍹", "🎁", "💯", "✨", "🌸", "🏮", "🎃", "🎄", "👍"] as const;
+export const POSTER_ASPECTS = ["1:1", "4:5", "16:9"] as const;
+export const MAX_POSTER_ELEMENTS = 12;
+
+const pct = z.number().min(0).max(100);
+export const posterElementSchema = z.object({
+  id: blockId,
+  kind: z.enum(["text", "image", "sticker"]),
+  /** จุดกึ่งกลางชิ้นงาน เป็น % ของกว้าง/สูงโปสเตอร์ */
+  x: pct,
+  y: pct,
+  /** ความกว้างเป็น % ของโปสเตอร์ */
+  w: z.number().min(5).max(100),
+  rotate: z.number().min(-180).max(180),
+  text: shortText(120).optional(),
+  /** ขนาดตัวอักษร = % ของความกว้างโปสเตอร์ (ย่อ/ขยายตามจอ) */
+  size: z.number().min(2).max(30).optional(),
+  color: hex.optional(),
+  bold: z.boolean().optional(),
+  align: z.enum(["left", "center", "right"]).optional(),
+  imageUrl: optionalUrl,
+  sticker: z.enum(POSTER_STICKERS).optional(),
+});
+export type PosterElement = z.infer<typeof posterElementSchema>;
+
+export const posterBlockSchema = z.object({
+  ...base,
+  type: z.literal("poster"),
+  aspect: z.enum(POSTER_ASPECTS),
+  background: hex,
+  backgroundImageUrl: optionalUrl,
+  elements: z
+    .array(posterElementSchema)
+    .max(MAX_POSTER_ELEMENTS)
+    .refine((els) => new Set(els.map((e) => e.id)).size === els.length, "รหัสชิ้นงานในโปสเตอร์ซ้ำ"),
+});
+
 export const blockSchema = z.discriminatedUnion("type", [
   heroBlockSchema,
   bannerBlockSchema,
@@ -138,6 +177,7 @@ export const blockSchema = z.discriminatedUnion("type", [
   socialBlockSchema,
   deliveryAppsBlockSchema,
   textBlockSchema,
+  posterBlockSchema,
 ]);
 
 export const themeSchema = z.object({

@@ -76,6 +76,19 @@ export function emptyBlock(type: WebsiteBlock["type"], storeName = "ร้าน
       return { id, type, title: "สั่งผ่านแอปเดลิเวอรี", apps: [] };
     case "text":
       return { id, type, title: "เกี่ยวกับร้าน", body: "" };
+    case "poster":
+      return {
+        id,
+        type,
+        aspect: "4:5",
+        background: "#fff4e6",
+        backgroundImageUrl: "",
+        elements: [
+          { id: "t1", kind: "text", x: 50, y: 30, w: 80, rotate: 0, text: "โปรพิเศษ!", size: 12, color: "#c2410c", bold: true, align: "center" },
+          { id: "t2", kind: "text", x: 50, y: 52, w: 80, rotate: 0, text: "ซื้อ 2 แถม 1 ทุกเมนู", size: 6, color: "#1f2328", bold: false, align: "center" },
+          { id: "s1", kind: "sticker", x: 82, y: 14, w: 16, rotate: 12, sticker: "🔥" },
+        ],
+      };
   }
 }
 
@@ -106,6 +119,7 @@ export const BLOCK_LABELS: Record<WebsiteBlock["type"], string> = {
   social: "💬 โซเชียล",
   delivery_apps: "🛵 แอปเดลิเวอรี",
   text: "📝 ข้อความ",
+  poster: "🎨 โปสเตอร์ (วางอิสระ)",
 };
 
 export const DELIVERY_APP_LABELS: Record<string, { name: string; color: string }> = {

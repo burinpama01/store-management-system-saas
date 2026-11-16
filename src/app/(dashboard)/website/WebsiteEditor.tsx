@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- รูปจาก storage ของร้าน */
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type MouseEvent as ReactMouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { useConfirm } from "@/shared/components/ui/useConfirm";
@@ -28,6 +28,8 @@ import {
 import { WebsiteRenderer } from "@/modules/store-website/WebsiteRenderer";
 import { festivalPreview, type FestivalView } from "@/modules/store-website/festivals";
 import { FestivalPanel, type UpcomingFestival } from "./FestivalPanel";
+import { PosterEditor } from "./PosterEditor";
+import { nowMs } from "@/shared/utils/time";
 import {
   applyTemplateThemeAction,
   publishWebsiteAction,
@@ -242,7 +244,31 @@ function BlockForm({ block, onChange, renderData }: { block: WebsiteBlock; onCha
           <Text label="ข้อความ" value={block.body} max={1500} multiline onChange={(body) => onChange({ ...block, body })} />
         </div>
       );
+    case "poster":
+      return <PosterEditor block={block} onChange={onChange} ImageField={ImageField} />;
   }
+}
+
+/** ย่อจอกว้างด้วย transform (ใช้ได้ทุกเบราว์เซอร์) แล้วตั้งความสูงกล่องตามเนื้อหาจริง */
+function ScaledPreview({ width, scale, children }: { width: number; scale: number; children: React.ReactNode }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    const measure = () => setHeight(el.offsetHeight * scale);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scale]);
+  return (
+    <div style={{ height, overflow: "hidden" }}>
+      <div ref={innerRef} style={{ width, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 async function downloadQr(url: string, filename: string) {
@@ -298,9 +324,79 @@ export function WebsiteEditor({
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
+  // ประวัติการแก้ (เลิกทำ/ทำซ้ำ) — การแก้ต่อเนื่องภายใน 600ms (พิมพ์/ลาก) รวมเป็นขั้นเดียว
+  const history = useRef<{ past: WebsiteDocument[]; future: WebsiteDocument[]; lastAt: number }>({ past: [], future: [], lastAt: 0 });
+  const [historySize, setHistorySize] = useState({ past: 0, future: 0 });
+  const docRef = useRef(doc);
+  useEffect(() => {
+    docRef.current = doc;
+  }, [doc]);
+  const syncHistory = () => setHistorySize({ past: history.current.past.length, future: history.current.future.length });
   function update(next: WebsiteDocument) {
+    const h = history.current;
+    const now = nowMs();
+    if (now - h.lastAt > 600) h.past = [...h.past.slice(-49), docRef.current];
+    h.lastAt = now;
+    h.future = [];
+    docRef.current = next;
     setDoc(next);
     setDirty(true);
+    syncHistory();
+  }
+  const undo = useCallback(() => {
+    const h = history.current;
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future = [docRef.current, ...h.future].slice(0, 50);
+    h.lastAt = 0;
+    docRef.current = prev;
+    setDoc(prev);
+    setDirty(true);
+    setHistorySize({ past: h.past.length, future: h.future.length });
+  }, []);
+  const redo = useCallback(() => {
+    const h = history.current;
+    const [next, ...rest] = h.future;
+    if (!next) return;
+    h.future = rest;
+    h.past = [...h.past.slice(-49), docRef.current];
+    h.lastAt = 0;
+    docRef.current = next;
+    setDoc(next);
+    setDirty(true);
+    setHistorySize({ past: h.past.length, future: h.future.length });
+  }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      // ในช่องพิมพ์ปล่อยให้เบราว์เซอร์เลิกทำตัวอักษรเอง
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      const key = event.key.toLowerCase();
+      if (!(event.ctrlKey || event.metaKey) || (key !== "z" && key !== "y")) return;
+      event.preventDefault();
+      if (key === "y" || event.shiftKey) redo();
+      else undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+  const [device, setDevice] = useState<"mobile" | "desktop">("mobile");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  function moveTo(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || from >= doc.blocks.length || to >= doc.blocks.length) return;
+    const blocks = [...doc.blocks];
+    const [item] = blocks.splice(from, 1);
+    blocks.splice(to, 0, item);
+    update({ ...doc, blocks });
+  }
+  // แตะบล็อกในพรีวิว → เปิดฟอร์มบล็อกนั้น (ไม่ให้ลิงก์ในพรีวิวพาออกจากหน้า)
+  function selectFromPreview(event: ReactMouseEvent<HTMLDivElement>) {
+    const el = (event.target as HTMLElement).closest("[data-block-id]");
+    const id = el?.getAttribute("data-block-id");
+    if ((event.target as HTMLElement).closest("a")) event.preventDefault();
+    if (!id) return;
+    setOpenId(id);
+    window.requestAnimationFrame(() => document.getElementById(`block-row-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
   }
   function updateBlock(id: string, block: WebsiteBlock) {
     update({ ...doc, blocks: doc.blocks.map((b) => (b.id === id ? block : b)) });
@@ -398,8 +494,34 @@ export function WebsiteEditor({
         <div className="panel space-y-2 p-4">
           <p className="text-sm font-semibold">บล็อกบนหน้าเว็บ ({doc.blocks.length}/{MAX_BLOCKS})</p>
           {doc.blocks.map((block, index) => (
-            <div key={block.id} className="rounded-lg border border-[var(--color-border)]">
+            <div
+              key={block.id}
+              id={`block-row-${block.id}`}
+              className={`rounded-lg border ${openId === block.id ? "border-[var(--color-brand)]" : "border-[var(--color-border)]"} ${dragIndex === index ? "opacity-50" : ""}`}
+              onDragOver={(e) => {
+                if (dragIndex !== null) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIndex !== null) moveTo(dragIndex, index);
+                setDragIndex(null);
+              }}
+            >
               <div className="flex items-center gap-2 px-3 py-2">
+                <span
+                  draggable
+                  onDragStart={(e) => {
+                    setDragIndex(index);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", block.id);
+                  }}
+                  onDragEnd={() => setDragIndex(null)}
+                  className="cursor-grab select-none px-1 text-[var(--color-text-muted)]"
+                  title="ลากเพื่อจัดลำดับ (มือถือใช้ ↑ ↓)"
+                  aria-hidden="true"
+                >
+                  ⠿
+                </span>
                 <button type="button" className="min-w-0 flex-1 text-left text-sm font-semibold" onClick={() => setOpenId(openId === block.id ? null : block.id)}>
                   {BLOCK_LABELS[block.type]} {block.hidden && <span className="text-xs font-normal text-[var(--color-text-muted)]">(ซ่อน)</span>}
                 </button>
@@ -467,6 +589,8 @@ export function WebsiteEditor({
             onClick={() => run(() => publishWebsiteAction(doc), enabled ? "เผยแพร่แล้ว — ลูกค้าเห็นภายในไม่กี่วินาที" : "เผยแพร่แล้ว — กด “เปิดเว็บ” เพื่อให้ลูกค้าเห็น")}>
             {pending ? "กำลังบันทึก…" : "เผยแพร่"}
           </button>
+          <button type="button" className="btn-secondary" disabled={historySize.past === 0} onClick={undo} title="เลิกทำ (Ctrl+Z)" aria-label="เลิกทำ">↶</button>
+          <button type="button" className="btn-secondary" disabled={historySize.future === 0} onClick={redo} title="ทำซ้ำ (Ctrl+Shift+Z)" aria-label="ทำซ้ำ">↷</button>
           {dirty && <span className="self-center text-xs text-amber-700">มีการแก้ที่ยังไม่บันทึก</span>}
         </div>
         {validation.error !== null && <p className="alert-danger text-sm" role="alert">{validation.error}</p>}
@@ -475,13 +599,28 @@ export function WebsiteEditor({
             {message.text}
           </p>
         )}
-        <div className="mx-auto w-full max-w-[380px] rounded-[32px] bg-[#121110] p-2.5 shadow-xl">
-          <div className="h-[640px] overflow-y-auto rounded-[24px]" aria-label="พรีวิวเว็บไซต์ร้าน">
-            <WebsiteRenderer document={doc} data={renderData} today={today} festival={previewFestival} />
-          </div>
+        <div className="flex justify-center gap-1">
+          <button type="button" className={device === "mobile" ? "btn-primary text-xs" : "btn-secondary text-xs"} onClick={() => setDevice("mobile")}>📱 มือถือ</button>
+          <button type="button" className={device === "desktop" ? "btn-primary text-xs" : "btn-secondary text-xs"} onClick={() => setDevice("desktop")}>🖥️ คอมพิวเตอร์</button>
         </div>
+        {device === "mobile" ? (
+          <div className="mx-auto w-full max-w-[380px] rounded-[32px] bg-[#121110] p-2.5 shadow-xl">
+            <div className="h-[640px] cursor-pointer overflow-y-auto rounded-[24px]" aria-label="พรีวิวเว็บไซต์ร้าน — แตะบล็อกเพื่อแก้" onClickCapture={selectFromPreview}>
+              <WebsiteRenderer document={doc} data={renderData} today={today} festival={previewFestival} editorMode />
+            </div>
+          </div>
+        ) : (
+          <div className="mx-auto w-full max-w-[380px] overflow-hidden rounded-lg border-[6px] border-[#121110] bg-white shadow-xl">
+            {/* จำลองจอกว้าง 1024px แล้วย่อให้พอดีช่อง (368 / 1024) */}
+            <div className="h-[420px] cursor-pointer overflow-y-auto overflow-x-hidden" aria-label="พรีวิวจอคอมพิวเตอร์ — แตะบล็อกเพื่อแก้" onClickCapture={selectFromPreview}>
+              <ScaledPreview width={1024} scale={0.359}>
+                <WebsiteRenderer document={doc} data={renderData} today={today} festival={previewFestival} editorMode />
+              </ScaledPreview>
+            </div>
+          </div>
+        )}
         <p className="text-center text-xs text-[var(--color-text-muted)]">
-          พรีวิวฉบับร่าง — ลูกค้าเห็นเฉพาะฉบับที่กดเผยแพร่
+          พรีวิวฉบับร่าง (แตะบล็อกเพื่อแก้) — ลูกค้าเห็นเฉพาะฉบับที่กดเผยแพร่
           {previewFestivalKey ? " · กำลังดูตัวอย่างเทศกาล" : currentFestival ? ` · ตอนนี้แสดงเทศกาล${currentFestival.name}` : ""}
         </p>
       </div>
