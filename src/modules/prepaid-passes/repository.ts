@@ -23,7 +23,7 @@ export async function listPassPlans(storeId: string): Promise<Result<PassPlan[]>
   const client = await db();
   const { data, error } = await client
     .from("prepaid_pass_plans")
-    .select("*, prepaid_pass_plan_products(product_id)")
+    .select("*, prepaid_pass_plan_products(product_id), prepaid_pass_plan_modifier_options(modifier_option_id), prepaid_pass_plan_variants(variant_id)")
     .eq("store_id", storeId)
     .order("created_at", { ascending: false });
   if (error) return { data: null, error: error.message };
@@ -50,6 +50,8 @@ export async function listPassPlans(storeId: string): Promise<Result<PassPlan[]>
       terms: row.terms,
       isActive: Boolean(row.is_active),
       productIds: (row.prepaid_pass_plan_products ?? []).map((link: any) => link.product_id),
+      modifierOptionIds: (row.prepaid_pass_plan_modifier_options ?? []).map((link: any) => link.modifier_option_id),
+      variantIds: (row.prepaid_pass_plan_variants ?? []).map((link: any) => link.variant_id),
       soldCount: sold.get(row.id) ?? 0,
     })),
     error: null,
@@ -86,6 +88,8 @@ export async function savePassPlan(storeId: string, planId: string | null, input
     p_terms: input.terms.trim(),
     p_product_ids: input.productIds,
     p_is_active: input.isActive,
+    p_modifier_option_ids: input.modifierOptionIds ?? [],
+    p_variant_ids: input.variantIds ?? [],
   });
   if (error) return { data: null, error: rpcMessage(error, "บันทึกแพ็กไม่สำเร็จ") };
   return { data: String(data), error: null };
@@ -107,7 +111,31 @@ export async function listMemberPasses(storeId: string, verificationId: string):
       expiresAt: row.expires_at ?? null,
       usableHere: Boolean(row.usable_here),
       productIds: Array.isArray(row.product_ids) ? row.product_ids : [],
+      coveredOptionIds: Array.isArray(row.covered_option_ids) ? row.covered_option_ids : [],
+      coveredVariantIds: Array.isArray(row.covered_variant_ids) ? row.covered_variant_ids : [],
     })),
+    error: null,
+  };
+}
+
+/** ตัวเลือก/ขนาดของเมนูสาขานี้ที่แพ็กครอบคลุม — server ใช้คิดราคาบรรทัดใช้แพ็ก */
+export async function getPassCoveredOptions(
+  passId: string,
+  storeId: string,
+  productId: string,
+): Promise<Result<{ optionIds: string[]; variantIds: string[] }>> {
+  const client = await db();
+  const { data, error } = await client.rpc("prepaid_pass_covered_options", {
+    p_pass_id: passId,
+    p_store_id: storeId,
+    p_product_id: productId,
+  });
+  if (error) return { data: null, error: rpcMessage(error, "ตรวจตัวเลือกของแพ็กไม่สำเร็จ") };
+  return {
+    data: {
+      optionIds: Array.isArray(data?.modifier_option_ids) ? data.modifier_option_ids.map(String) : [],
+      variantIds: Array.isArray(data?.variant_ids) ? data.variant_ids.map(String) : [],
+    },
     error: null,
   };
 }

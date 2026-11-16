@@ -13,12 +13,13 @@ import {
   attachPassRedemptions,
   closeOrderZeroTotal,
   findOrderIdByIdempotencyKey,
+  getPassCoveredOptions,
   listMemberPasses,
   listPassSaleProducts,
   releasePassRedemption,
   reservePassRedemption,
 } from "@/modules/prepaid-passes/repository";
-import { cartHasPassItems, groupPassRedemptions, isPassCartItem } from "@/modules/prepaid-passes/rules";
+import { cartHasPassItems, groupPassRedemptions, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { MemberPass } from "@/modules/prepaid-passes/types";
 import { listProducts } from "@/modules/catalog/repository";
 import {
@@ -70,7 +71,7 @@ import {
 } from "@/modules/pos/saved-ticket-repository";
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
-import { buildTrustedCartFromCatalog } from "@/modules/pos/server-cart";
+import { buildTrustedCartFromCatalog, resolveModifiers, resolveVariant } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
 import { buildTableTicket, isEmptyTicket } from "@/modules/pos/table-ticket";
 import { describeTableUnpaid, findTableUnpaidContext } from "@/modules/pos/table-unpaid";
@@ -717,24 +718,58 @@ async function createPosOrderCore(
       if (trustedCart.items.length === 0 && (opts?.couponCode?.trim() || (opts?.clientCouponDiscountAmount ?? 0) > 0)) {
         return { orderId: null, orderNumber: null, error: "บิลที่ใช้แพ็กทั้งบิลใช้คูปองร่วมไม่ได้ — ล้างคูปองก่อน" };
       }
-      for (const group of passGroups) {
-        const product = productsRes.data.find((candidate) => candidate.id === group.productId);
+      // ราคาบรรทัดใช้แพ็ก = ส่วนต่างตัวเลือก/ขนาดที่ "ไม่รวมในแพ็ก" (คิดจาก catalog + ตัวเลือกที่แพ็กครอบคลุมในฐานข้อมูล)
+      const coveredByPassProduct = new Map<string, { optionIds: string[]; variantIds: string[] }>();
+      const passLineByKey = new Map<string, Cart["items"][number]>();
+      for (const item of passItems) {
+        const product = productsRes.data.find((candidate) => candidate.id === item.productId);
         if (!product || !product.isActive || !product.availableForPos) {
           return { orderId: null, orderNumber: null, error: "เมนูที่ใช้แพ็กไม่พร้อมขาย" };
         }
-        passLines.push({
-          key: `pass:${group.passId}:${group.productId}`,
+        let variant: ReturnType<typeof resolveVariant>;
+        let modifiers: ReturnType<typeof resolveModifiers>;
+        try {
+          variant = resolveVariant(product, item.variant?.id);
+          modifiers = resolveModifiers(product, item.modifiers.map((modifier) => modifier.option.id));
+        } catch (error) {
+          return { orderId: null, orderNumber: null, error: error instanceof Error ? error.message : "ตัวเลือกของเมนูที่ใช้แพ็กไม่ถูกต้อง" };
+        }
+        const coverKey = `${item.prepaidPassId}|${product.id}`;
+        let covered = coveredByPassProduct.get(coverKey);
+        if (!covered) {
+          const coveredRes = await getPassCoveredOptions(item.prepaidPassId!, ctx.storeId, product.id);
+          if (coveredRes.error !== null) return { orderId: null, orderNumber: null, error: coveredRes.error };
+          covered = coveredRes.data;
+          coveredByPassProduct.set(coverKey, covered);
+        }
+        const extra = passLineExtraPrice({
+          variant: variant ? { id: variant.id, priceAdjustment: variant.priceAdjustment } : null,
+          modifierOptions: modifiers.map((modifier) => ({ id: modifier.option.id, priceAdjustment: modifier.option.priceAdjustment })),
+          coveredVariantIds: covered.variantIds,
+          coveredOptionIds: covered.optionIds,
+        });
+        const quantity = Math.max(1, Math.min(50, Math.floor(item.quantity)));
+        const lineKey = `pass:${item.prepaidPassId}:${product.id}:${variant?.id ?? ""}:${modifiers.map((m) => m.option.id).sort().join(",")}`;
+        const existing = passLineByKey.get(lineKey);
+        if (existing) {
+          existing.quantity += quantity;
+          existing.totalPrice = Math.round(existing.unitPrice * existing.quantity * 100) / 100;
+          continue;
+        }
+        passLineByKey.set(lineKey, {
+          key: lineKey,
           productId: product.id,
           productName: product.name,
           categoryId: product.categoryId,
-          variant: null,
-          modifiers: [],
-          quantity: group.quantity,
-          unitPrice: 0,
-          totalPrice: 0,
-          note: "🎟️ ใช้แพ็กล่วงหน้า",
+          variant: variant ? { id: variant.id, name: variant.name, priceAdjustment: variant.priceAdjustment } : null,
+          modifiers,
+          quantity,
+          unitPrice: extra,
+          totalPrice: Math.round(extra * quantity * 100) / 100,
+          note: extra > 0 ? `🎟️ ใช้แพ็กล่วงหน้า (จ่ายเพิ่มตัวเลือก ฿${extra})` : "🎟️ ใช้แพ็กล่วงหน้า",
         });
       }
+      passLines.push(...passLineByKey.values());
     }
 
     // ขายแพ็ก: ต้องผูกสมาชิก (trigger ในฐานข้อมูลบังคับอีกชั้นตอนปิดบิล)

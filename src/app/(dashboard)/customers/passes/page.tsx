@@ -37,7 +37,21 @@ export default async function PrepaidPassesPage() {
   const saleIds = new Set(plans.map((plan) => plan.saleProductId));
   const menu = (productsRes.data ?? [])
     .filter((product) => !saleIds.has(product.id))
-    .map((product) => ({ id: product.id, name: product.name, price: product.basePrice }));
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: product.basePrice,
+      variants: product.variants
+        .filter((variant) => variant.isActive)
+        .map((variant) => ({ id: variant.id, name: variant.name, priceAdjustment: variant.priceAdjustment })),
+      groups: product.modifierGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        options: group.options
+          .filter((option) => option.isActive)
+          .map((option) => ({ id: option.id, name: option.name, priceAdjustment: option.priceAdjustment })),
+      })),
+    }));
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">

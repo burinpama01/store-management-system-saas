@@ -24,6 +24,9 @@ export async function savePassPlanAction(
     if (!canUseMemberPrivileges(billing)) return { ok: false, error: MEMBER_PRIVILEGES_LOCK_MESSAGE };
     if (planId !== null && !UUID_RE.test(planId)) return { ok: false, error: "ข้อมูลแพ็กไม่ถูกต้อง" };
     if (input.productIds.some((id) => !UUID_RE.test(id))) return { ok: false, error: "เมนูที่เลือกไม่ถูกต้อง" };
+    if ([...(input.modifierOptionIds ?? []), ...(input.variantIds ?? [])].some((id) => !UUID_RE.test(id))) {
+      return { ok: false, error: "ตัวเลือกที่เลือกไม่ถูกต้อง" };
+    }
     const invalid = validatePassPlanInput(input);
     if (invalid) return { ok: false, error: invalid };
 
@@ -43,6 +46,8 @@ export async function savePassPlanAction(
         validDays: input.validDays,
         redeemScope: input.redeemScope,
         products: input.productIds.length,
+        coveredOptions: input.modifierOptionIds?.length ?? 0,
+        coveredVariants: input.variantIds?.length ?? 0,
         isActive: input.isActive,
       },
     });

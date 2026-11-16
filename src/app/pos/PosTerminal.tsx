@@ -21,6 +21,7 @@ import {
   applyOrderDiscount,
   applyItemDiscount,
   removeItemDiscount,
+  replaceCartItems,
 } from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
 import {
@@ -69,7 +70,7 @@ import {
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
 import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types";
-import { cartHasPassItems, formatPassExpiry, isPassCartItem } from "@/modules/prepaid-passes/rules";
+import { cartHasPassItems, formatPassExpiry, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
@@ -163,6 +164,8 @@ interface PickerState {
   product: Product;
   selectedVariant: ProductVariant | null;
   selectedModifiers: Record<string, ModifierOption[]>;
+  /** ใช้แพ็ก: ราคา = เฉพาะตัวเลือก/ขนาดที่ไม่รวมในแพ็ก */
+  pass?: MemberPass;
 }
 
 interface Props {
@@ -636,10 +639,13 @@ function ModifierGroupPicker({
   group,
   selected,
   onToggle,
+  coveredOptionIds,
 }: {
   group: ModifierGroup;
   selected: ModifierOption[];
   onToggle: (opt: ModifierOption) => void;
+  /** ใช้แพ็ก: ตัวเลือกที่รวมในแพ็ก (แสดงป้าย "รวมในแพ็ก") */
+  coveredOptionIds?: ReadonlySet<string>;
 }) {
   const max = group.selectionType === "single" ? 1 : group.maxSelections;
   return (
@@ -655,7 +661,7 @@ function ModifierGroupPicker({
         {group.options.map((opt) => (
           <ModifierOptionButton
             key={opt.id}
-            option={opt}
+            option={coveredOptionIds?.has(opt.id) ? { ...opt, name: `${opt.name} 🎟️รวมในแพ็ก` } : opt}
             selected={selected.some((item) => item.id === opt.id)}
             disabled={
               group.selectionType === "multiple" &&
@@ -724,10 +730,18 @@ function ProductPickerModal({
   );
   const [note, setNote] = useState("");
 
-  const unitPrice =
-    product.basePrice +
-    (selectedVariant?.priceAdjustment ?? 0) +
-    Object.values(selectedModifiers).flat().reduce((s, o) => s + o.priceAdjustment, 0);
+  const coveredOptionIds = picker.pass ? new Set(picker.pass.coveredOptionIds) : undefined;
+  const coveredVariantIds = picker.pass ? new Set(picker.pass.coveredVariantIds) : undefined;
+  const unitPrice = picker.pass
+    ? passLineExtraPrice({
+        variant: selectedVariant,
+        modifierOptions: Object.values(selectedModifiers).flat(),
+        coveredVariantIds: coveredVariantIds!,
+        coveredOptionIds: coveredOptionIds!,
+      })
+    : product.basePrice +
+      (selectedVariant?.priceAdjustment ?? 0) +
+      Object.values(selectedModifiers).flat().reduce((s, o) => s + o.priceAdjustment, 0);
 
   const requiredGroupsMet = product.modifierGroups
     .filter((g) => g.isRequired)
@@ -769,8 +783,10 @@ function ProductPickerModal({
       <div className="bg-white rounded-t-2xl sm:rounded-xl w-full max-w-md max-h-[80vh] flex flex-col shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">{product.name}</h3>
-            <p className="text-xs text-gray-400">{priceStr(unitPrice)}</p>
+            <h3 className="text-sm font-semibold text-gray-900">{picker.pass ? `🎟️ ${product.name}` : product.name}</h3>
+            <p className="text-xs text-gray-400">
+              {picker.pass ? `ใช้${picker.pass.planName} · จ่ายเพิ่ม ${priceStr(unitPrice)}` : priceStr(unitPrice)}
+            </p>
           </div>
           <button onClick={onClose} className="min-w-11 min-h-11 text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
@@ -794,6 +810,7 @@ function ProductPickerModal({
                     }`}
                   >
                     {v.name}
+                    {coveredVariantIds?.has(v.id) && <span className="ml-1">🎟️</span>}
                     {v.priceAdjustment !== 0 && (
                       <span className="ml-1 opacity-70">
                         {v.priceAdjustment > 0 ? "+" : ""}
@@ -811,6 +828,7 @@ function ProductPickerModal({
               group={group}
               selected={selectedModifiers[group.id] ?? []}
               onToggle={(opt) => toggleModifier(group, opt)}
+              coveredOptionIds={coveredOptionIds}
             />
           ))}
           <label className="block space-y-1.5">
@@ -832,7 +850,7 @@ function ProductPickerModal({
             onClick={handleAdd}
             className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40"
           >
-            เพิ่มในออร์เดอร์ — {priceStr(unitPrice)}
+            {picker.pass ? `ใช้แพ็ก — จ่ายเพิ่ม ${priceStr(unitPrice)}` : `เพิ่มในออร์เดอร์ — ${priceStr(unitPrice)}`}
           </button>
         </div>
       </div>
@@ -4535,7 +4553,7 @@ export function PosTerminal({
   useEffect(() => {
     if (activeMemberVerification) return;
     if (!cartHasPassItems(cartRef.current)) return;
-    commitCart({ ...cartRef.current, items: cartRef.current.items.filter((item) => !isPassCartItem(item)) });
+    commitCart(replaceCartItems(cartRef.current, cartRef.current.items.filter((item) => !isPassCartItem(item))));
     setCustomerCouponMessage("เอารายการใช้แพ็กออกแล้ว เพราะสมาชิกในบิลเปลี่ยน");
   }, [activeMemberVerification, commitCart]);
 
@@ -4555,22 +4573,60 @@ export function PosTerminal({
       setCustomerCouponMessage("สิทธิ์ในแพ็กนี้ใช้ครบในบิลนี้แล้ว");
       return;
     }
+    // เมนูมีขนาด/ตัวเลือก → เปิดหน้าต่างเลือก (ตัวเลือกที่รวมในแพ็กไม่คิดเงิน ที่ไม่รวมจ่ายส่วนต่าง)
+    if (product.variants.length > 0 || product.modifierGroups.length > 0) {
+      setPicker({
+        product,
+        selectedVariant: null,
+        selectedModifiers: buildDefaultModifierSelections(product.modifierGroups),
+        pass,
+      });
+      return;
+    }
+    addPassLine(pass, product, null, [], undefined);
+  }
+
+  function addPassLine(
+    pass: MemberPass,
+    product: Product,
+    variant: CartItem["variant"],
+    modifiers: CartItem["modifiers"],
+    note: string | undefined,
+  ) {
     checkoutIdempotencyKeyRef.current = null;
+    const extra = passLineExtraPrice({
+      variant,
+      modifierOptions: modifiers.map((modifier) => modifier.option),
+      coveredVariantIds: pass.coveredVariantIds,
+      coveredOptionIds: pass.coveredOptionIds,
+    });
+    const lineKey = `pass:${pass.id}:${product.id}:${variant?.id ?? ""}:${modifiers
+      .map((modifier) => modifier.option.id)
+      .sort()
+      .join(",")}:${note ?? ""}`;
+    const same = cartRef.current.items.find((item) => item.key === lineKey);
+    if (same) {
+      commitCart(updateQuantity(cartRef.current, lineKey, same.quantity + 1));
+      setCustomerCouponMessage(`ใช้${pass.planName}: ${product.name} ×${same.quantity + 1}`);
+      return;
+    }
     const passLine: CartItem = {
-      key: `pass:${pass.id}:${product.id}:${Date.now()}`,
+      key: lineKey,
       productId: product.id,
       productName: product.name,
       categoryId: product.categoryId,
-      variant: null,
-      modifiers: [],
+      variant,
+      modifiers,
       quantity: 1,
-      unitPrice: 0,
-      totalPrice: 0,
+      unitPrice: extra,
+      totalPrice: extra,
       prepaidPassId: pass.id,
-      note: `🎟️ ${pass.planName}`,
+      note: [`🎟️ ${pass.planName}`, note].filter(Boolean).join(" · "),
     };
-    commitCart({ ...cartRef.current, items: [...cartRef.current.items, passLine] });
-    setCustomerCouponMessage(`ใช้${pass.planName}: ${product.name} (เหลือ ${pass.creditsRemaining - passCreditsInCart(pass.id) - 1} สิทธิ์หลังบิลนี้)`);
+    commitCart(replaceCartItems(cartRef.current, [...cartRef.current.items, passLine]));
+    setCustomerCouponMessage(
+      `ใช้${pass.planName}: ${product.name}${extra > 0 ? ` (จ่ายเพิ่มตัวเลือก ฿${extra})` : ""} · เหลือ ${pass.creditsRemaining - passCreditsInCart(pass.id) - 1} สิทธิ์หลังบิลนี้`,
+    );
   }
 
   function handleVerifyMemberCode() {
@@ -6159,7 +6215,25 @@ export function PosTerminal({
             .sort()
             .join(",")}`}
           picker={picker}
-          onAdd={handleAddFromPicker}
+          onAdd={(input) => {
+            const pass = picker.pass;
+            if (!pass) return handleAddFromPicker(input);
+            if (passCreditsInCart(pass.id) >= pass.creditsRemaining) {
+              setCustomerCouponMessage("สิทธิ์ในแพ็กนี้ใช้ครบในบิลนี้แล้ว");
+              return;
+            }
+            addPassLine(
+              pass,
+              input.product,
+              input.variant ? { id: input.variant.id, name: input.variant.name, priceAdjustment: input.variant.priceAdjustment } : null,
+              input.modifiers.map((modifier) => ({
+                modifierGroupId: modifier.groupId,
+                modifierGroupName: modifier.groupName,
+                option: { id: modifier.option.id, name: modifier.option.name, priceAdjustment: modifier.option.priceAdjustment },
+              })),
+              input.note,
+            );
+          }}
           onClose={() => setPicker(null)}
         />
       )}
