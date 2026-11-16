@@ -4,6 +4,8 @@ import type { WebsiteBlock, WebsiteDocument, WebsiteTheme } from "./schema";
 import { isBannerActive } from "./schema";
 import { DELIVERY_APP_LABELS, SOCIAL_LABELS } from "./templates";
 import type { WebsiteRenderData } from "./repository";
+import type { FestivalView } from "./festivals";
+import { FestivalOverlay } from "./FestivalOverlay";
 
 /**
  * ตัวเรนเดอร์เว็บไซต์ร้าน — คอมโพเนนต์แสดงผลล้วน (ไม่ดึงข้อมูลเอง)
@@ -258,10 +260,22 @@ function Block({ block, theme, data, today }: { block: WebsiteBlock; theme: Webs
   }
 }
 
-export function WebsiteRenderer({ document, data, today }: { document: WebsiteDocument; data: WebsiteRenderData; today: string }) {
+export function WebsiteRenderer({
+  document,
+  data,
+  today,
+  festival = null,
+}: {
+  document: WebsiteDocument;
+  data: WebsiteRenderData;
+  today: string;
+  /** ชั้นตกแต่งเทศกาล (S1) — null = ไม่มี */
+  festival?: FestivalView | null;
+}) {
   const visible = document.blocks.filter((block) => !block.hidden);
   return (
-    <div style={{ ...themeVars(document.theme), minHeight: "100%" }} data-website-style={document.theme.style}>
+    <div style={{ ...themeVars(document.theme), minHeight: "100%", position: "relative" }} data-website-style={document.theme.style} data-festival={festival?.key}>
+      {festival && <FestivalOverlay festival={festival} />}
       <style>{`
         .w-lux-hero::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,230,170,.22),transparent);animation:wshine 4s ease-in-out infinite}
         @keyframes wshine{to{left:130%}}

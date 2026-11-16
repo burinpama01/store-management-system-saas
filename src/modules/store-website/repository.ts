@@ -4,6 +4,14 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE } from "@/modules/billing/types";
 import { canUseMemberPrivileges } from "@/modules/members/access";
 import { parseWebsiteDocument, type WebsiteDocument } from "./schema";
+import {
+  activeFestival,
+  parseFestivalSettings,
+  toFestivalView,
+  type FestivalSettings,
+  type FestivalView,
+  type LunarFestivalDate,
+} from "./festivals";
 
 type Result<T> = { data: T; error: null } | { data: null; error: string };
 
@@ -53,6 +61,7 @@ export interface StoreWebsite {
   published: WebsiteDocument | null;
   publishedAt: string | null;
   updatedAt: string;
+  festivalSettings: FestivalSettings;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- แถวดิบจาก PostgREST */
@@ -69,7 +78,30 @@ function mapWebsite(row: any): StoreWebsite | null {
     published: published && published.error === null ? published.data : null,
     publishedAt: row.published_at ?? null,
     updatedAt: row.updated_at,
+    festivalSettings: parseFestivalSettings(row.festival_settings),
   };
+}
+
+function bangkokToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+/** วันที่เทศกาลจันทรคติที่ซูเปอร์แอดมินยืนยันแล้ว (ปีที่แล้ว–ปีหน้า) */
+export async function loadVerifiedLunarDates(): Promise<LunarFestivalDate[]> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const year = Number(bangkokToday().slice(0, 4));
+  const { data } = await db
+    .from("website_festival_dates")
+    .select("festival_key, year, starts_on, ends_on")
+    .eq("verified", true)
+    .gte("year", year - 1)
+    .lte("year", year + 1);
+  return (data ?? []).map((row: any) => ({
+    festivalKey: row.festival_key,
+    year: Number(row.year),
+    startsOn: row.starts_on,
+    endsOn: row.ends_on,
+  }));
 }
 
 /** โหลดข้อมูลร้านสำหรับเรนเดอร์ (service client — ใช้ทั้งหน้าเว็บสาธารณะและพรีวิวในหลังร้าน) */
@@ -140,7 +172,9 @@ export async function loadWebsiteRenderData(storeId: string): Promise<WebsiteRen
  * หน้าเว็บสาธารณะ: เฉพาะเว็บที่เปิดอยู่ + มีฉบับเผยแพร่ + องค์กรยังเป็น Enterprise
  * (หมด Enterprise = เว็บปิดเอง ข้อมูลยังอยู่ เปิดกลับได้เมื่อต่ออายุ)
  */
-export async function getPublishedWebsite(slug: string): Promise<{ document: WebsiteDocument; data: WebsiteRenderData } | null> {
+export async function getPublishedWebsite(
+  slug: string,
+): Promise<{ document: WebsiteDocument; data: WebsiteRenderData; festival: FestivalView | null } | null> {
   const db: LooseClient = await createSupabaseServiceClient();
   const { data: row } = await db
     .from("store_websites")
@@ -153,9 +187,14 @@ export async function getPublishedWebsite(slug: string): Promise<{ document: Web
   if (parsed.error !== null) return null;
   const billing = (await getOrganizationBillingState(row.organization_id)) ?? DEFAULT_BILLING_STATE;
   if (!canUseMemberPrivileges(billing)) return null;
-  const data = await loadWebsiteRenderData(row.store_id);
+  const settings = parseFestivalSettings(row.festival_settings);
+  const [data, lunar] = await Promise.all([
+    loadWebsiteRenderData(row.store_id),
+    settings.auto ? loadVerifiedLunarDates() : Promise.resolve([] as LunarFestivalDate[]),
+  ]);
   if (!data) return null;
-  return { document: parsed.data, data };
+  const festival = toFestivalView(activeFestival(bangkokToday(), settings, lunar), settings);
+  return { document: parsed.data, data, festival };
 }
 
 /** หลังร้าน (สิทธิ์ผู้ใช้) */
@@ -202,7 +241,13 @@ export async function createStoreWebsite(input: {
 
 export async function updateStoreWebsite(
   storeId: string,
-  patch: { draft_document?: WebsiteDocument; template_id?: string; slug?: string; is_enabled?: boolean },
+  patch: {
+    draft_document?: WebsiteDocument;
+    template_id?: string;
+    slug?: string;
+    is_enabled?: boolean;
+    festival_settings?: FestivalSettings;
+  },
   userId: string,
 ): Promise<Result<true>> {
   const db: LooseClient = await createSupabaseServerClient();
