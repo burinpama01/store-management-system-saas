@@ -10,12 +10,17 @@ import {
   createStoreWebsite,
   getStoreWebsite,
   getWebsiteVersion,
+  isDomainTaken,
   isSlugTaken,
   publishStoreWebsite,
   updateStoreWebsite,
+  updateWebsiteDomain,
 } from "@/modules/store-website/repository";
 import { normalizeSlug, parseWebsiteDocument, validateSlug, type WebsiteDocument } from "@/modules/store-website/schema";
-import { documentFromTemplate, findTemplate } from "@/modules/store-website/templates";
+import { documentFromTemplate } from "@/modules/store-website/templates";
+import { resolveTemplate } from "@/modules/store-website/template-library";
+import { normalizeDomain, validateDomain, type CustomDomainStatus } from "@/modules/store-website/domains";
+import { addProjectDomain, checkProjectDomain, removeProjectDomain } from "@/modules/store-website/vercel-domains";
 import { FESTIVALS, festivalSettingsSchema, type FestivalSettings } from "@/modules/store-website/festivals";
 import { logSystemEvent } from "@/modules/system/event-log";
 
@@ -63,7 +68,7 @@ export async function createWebsiteAction(rawSlug: string, templateId: string): 
     const slug = normalizeSlug(rawSlug);
     const invalid = validateSlug(slug);
     if (invalid) return { ok: false, error: invalid };
-    const template = findTemplate(templateId);
+    const template = await resolveTemplate(templateId);
     if (!template) return { ok: false, error: "เลือกเทมเพลต" };
     if (await isSlugTaken(slug, g.ctx.storeId)) return { ok: false, error: "ลิงก์นี้มีร้านอื่นใช้แล้ว" };
     const document = documentFromTemplate(template, g.ctx.storeName ?? "ร้านของเรา");
@@ -108,7 +113,7 @@ export async function applyTemplateThemeAction(templateId: string, document: Web
   try {
     const g = await guard();
     if (g.error !== null) return { ok: false, error: g.error };
-    const template = findTemplate(templateId);
+    const template = await resolveTemplate(templateId);
     if (!template) return { ok: false, error: "ไม่พบเทมเพลต" };
     const parsed = parseWebsiteDocument({ ...document, theme: template.theme });
     if (parsed.error !== null) return { ok: false, error: parsed.error };
@@ -223,5 +228,118 @@ export async function saveFestivalSettingsAction(settings: FestivalSettings): Pr
     return { ok: true, error: null };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
+}
+
+// ---------- S4: โดเมนของร้านเอง ----------
+const NO_VERCEL_NOTE = "รอผู้ดูแล StoreOS ต่อโดเมนเข้าระบบ (ภายใน 1 วันทำการ) — ระหว่างนี้ตั้งค่า DNS ตามคำแนะนำไว้ได้เลย";
+
+/** ตั้งโดเมนของร้าน → เพิ่มเข้าโปรเจค Vercel → สถานะรอ DNS */
+export async function setCustomDomainAction(rawDomain: string): Promise<ActionResult> {
+  try {
+    const g = await guard();
+    if (g.error !== null) return { ok: false, error: g.error };
+    const domain = normalizeDomain(rawDomain);
+    const invalid = validateDomain(domain);
+    if (invalid) return { ok: false, error: invalid };
+    const current = await getStoreWebsite(g.ctx.storeId);
+    if (!current) return { ok: false, error: "ยังไม่ได้สร้างเว็บ" };
+    if (current.customDomain === domain) return { ok: true, error: null };
+    if (await isDomainTaken(domain, g.ctx.storeId)) return { ok: false, error: "โดเมนนี้มีร้านอื่นใช้แล้ว" };
+
+    // เปลี่ยนโดเมน → ถอดโดเมนเก่าออกจากโปรเจคก่อน (ไม่ให้โดเมนเก่ายังชี้มาที่เว็บร้าน)
+    if (current.customDomain) {
+      const removed = await removeProjectDomain(current.customDomain);
+      if (removed.configured && removed.error) {
+        log("warn", "removeCustomDomain", `ถอดโดเมนเก่าออกจาก Vercel ไม่สำเร็จ: ${removed.error}`, g, { domain: current.customDomain });
+      }
+    }
+    const added = await addProjectDomain(domain);
+    let status: CustomDomainStatus = "pending";
+    let note: string | null = "ตั้งค่า DNS ตามคำแนะนำ แล้วกด “ตรวจสอบ” (DNS อาจใช้เวลา 5 นาที–24 ชม.)";
+    if (!added.configured) {
+      note = NO_VERCEL_NOTE;
+      log("warn", "setCustomDomain", "ไม่มี VERCEL_TOKEN/VERCEL_PROJECT_ID บนเซิร์ฟเวอร์ — โดเมนรอผู้ดูแลต่อเอง", g, { domain });
+    } else if (added.error) {
+      status = "error";
+      note = `ต่อโดเมนไม่สำเร็จ: ${added.error}`.slice(0, 300);
+    }
+    const result = await updateWebsiteDomain(g.ctx.storeId, { custom_domain: domain, custom_domain_status: status, custom_domain_note: note });
+    log(result.error || status === "error" ? "error" : "info", "setCustomDomain", result.error ? `บันทึกโดเมนไม่สำเร็จ: ${result.error}` : `ตั้งโดเมนของร้าน (${status})`, g, {
+      domain,
+      status,
+      vercel: added.configured,
+    });
+    if (result.error !== null) return { ok: false, error: result.error };
+    revalidatePath("/website");
+    revalidatePath("/system/website-templates");
+    return status === "error" ? { ok: false, error: note } : { ok: true, error: null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกโดเมนไม่สำเร็จ" };
+  }
+}
+
+/** ตรวจ DNS/การยืนยันโดเมน → ใช้งานได้เมื่อ Vercel ยืนยันแล้วและ DNS ชี้ถูก */
+export async function checkCustomDomainAction(): Promise<ActionResult & { status?: CustomDomainStatus }> {
+  try {
+    const g = await guard();
+    if (g.error !== null) return { ok: false, error: g.error };
+    const current = await getStoreWebsite(g.ctx.storeId);
+    if (!current?.customDomain) return { ok: false, error: "ยังไม่ได้ตั้งโดเมน" };
+    // กันกดรัว (เรียก API ภายนอก 3 ครั้งต่อการตรวจ)
+    if (current.customDomainCheckedAt && Date.parse(current.customDomainCheckedAt) > Date.now() - 15_000) {
+      return { ok: false, error: "เพิ่งตรวจไป รอสักครู่แล้วลองใหม่" };
+    }
+    const check = await checkProjectDomain(current.customDomain);
+    let status: CustomDomainStatus = current.customDomainStatus === "active" ? "active" : "pending";
+    let note: string | null;
+    if (!check.configured) {
+      note = NO_VERCEL_NOTE;
+      status = current.customDomainStatus === "active" ? "active" : "pending";
+    } else if (check.error !== null) {
+      // ยังไม่อยู่ในโปรเจค → ลองเพิ่มใหม่หนึ่งครั้ง
+      const added = await addProjectDomain(current.customDomain);
+      status = added.configured && !added.error ? "pending" : "error";
+      note = added.configured && added.error ? `ต่อโดเมนไม่สำเร็จ: ${added.error}`.slice(0, 300) : "เพิ่มโดเมนเข้าระบบใหม่แล้ว — กดตรวจสอบอีกครั้งหลังตั้ง DNS";
+    } else if (check.verified && !check.misconfigured) {
+      status = "active";
+      note = null;
+    } else {
+      status = "pending";
+      note = !check.verified && check.verification.length > 0
+        ? `ต้องเพิ่ม TXT ยืนยันเจ้าของโดเมน: ${check.verification.map((v) => `${v.domain} = ${v.value}`).join(" · ")}`.slice(0, 300)
+        : "DNS ยังไม่ชี้มาที่ StoreOS — ตรวจค่าตามคำแนะนำ (อาจต้องรอ DNS อัปเดตถึง 24 ชม.)";
+    }
+    const result = await updateWebsiteDomain(g.ctx.storeId, { custom_domain_status: status, custom_domain_note: note });
+    log(result.error ? "error" : "info", "checkCustomDomain", result.error ? `บันทึกผลตรวจโดเมนไม่สำเร็จ: ${result.error}` : `ตรวจโดเมน: ${status}`, g, {
+      domain: current.customDomain,
+      status,
+    });
+    if (result.error !== null) return { ok: false, error: result.error };
+    revalidatePath("/website");
+    return { ok: true, error: null, status };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "ตรวจโดเมนไม่สำเร็จ" };
+  }
+}
+
+export async function removeCustomDomainAction(): Promise<ActionResult> {
+  try {
+    const g = await guard();
+    if (g.error !== null) return { ok: false, error: g.error };
+    const current = await getStoreWebsite(g.ctx.storeId);
+    if (!current?.customDomain) return { ok: true, error: null };
+    const removed = await removeProjectDomain(current.customDomain);
+    if (removed.configured && removed.error) {
+      log("warn", "removeCustomDomain", `ถอดโดเมนออกจาก Vercel ไม่สำเร็จ: ${removed.error}`, g, { domain: current.customDomain });
+    }
+    const result = await updateWebsiteDomain(g.ctx.storeId, { custom_domain: null, custom_domain_status: "none", custom_domain_note: null });
+    log(result.error ? "error" : "info", "removeCustomDomain", result.error ? `ลบโดเมนไม่สำเร็จ: ${result.error}` : "ลบโดเมนของร้าน", g, { domain: current.customDomain });
+    if (result.error !== null) return { ok: false, error: result.error };
+    revalidatePath("/website");
+    revalidatePath("/system/website-templates");
+    return { ok: true, error: null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "ลบโดเมนไม่สำเร็จ" };
   }
 }

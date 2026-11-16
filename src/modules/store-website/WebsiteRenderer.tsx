@@ -97,23 +97,33 @@ function Block({ block, theme, data, today }: { block: WebsiteBlock; theme: Webs
     case "banner": {
       if (!isBannerActive(block, today)) return null;
       const href = linkHref(block.link, data.memberUrl);
+      // สัดส่วนคงที่ = รูปตามขนาดแนะนำโชว์ครบ · auto = สูงตามข้อความ (แบนเนอร์เก่าที่ยังไม่ตั้งค่า)
+      const aspect = block.aspect ?? "auto";
+      const hasText = Boolean(block.title || block.subtitle);
       const inner = (
         <div
           style={{
             borderRadius: "var(--w-radius)",
             overflow: "hidden",
             color: "#fff",
-            minHeight: 120,
-            padding: 16,
+            ...(aspect === "auto" ? { minHeight: 120 } : { aspectRatio: aspect.replace(":", " / ") }),
+            padding: hasText ? 16 : 0,
             display: "flex",
             flexDirection: "column",
             justifyContent: "flex-end",
-            background: block.imageUrl
-              ? `linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.55)), url("${encodeURI(block.imageUrl)}") center/cover`
+            backgroundColor: "var(--w-surface)",
+            backgroundImage: block.imageUrl
+              ? hasText
+                ? `linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,.55)), ${cssUrl(block.imageUrl)}`
+                : cssUrl(block.imageUrl)
               : "linear-gradient(180deg, rgba(0,0,0,0) 25%, rgba(0,0,0,.4)), linear-gradient(120deg, var(--w-accent), var(--w-primary))",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
           }}
+          role={block.imageUrl && !hasText ? "img" : undefined}
+          aria-label={block.imageUrl && !hasText ? "โปรโมชันของร้าน" : undefined}
         >
-          <p style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{block.title}</p>
+          {block.title && <p style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{block.title}</p>}
           {block.subtitle && <p style={{ margin: "2px 0 0", fontSize: 14, opacity: 0.92 }}>{block.subtitle}</p>}
         </div>
       );
@@ -261,9 +271,64 @@ function Block({ block, theme, data, today }: { block: WebsiteBlock; theme: Webs
           {block.title && <SectionTitle>{block.title}</SectionTitle>}
           {block.body && <p style={{ margin: 0, whiteSpace: "pre-line" }}>{block.body}</p>}
         </Card>
-      );    case "poster":
+      );
+    case "poster":
       return <PosterView block={block} />;
+    case "showcase3d":
+      return <Showcase3D block={block} data={data} />;
   }
+}
+
+const SHOWCASE_CARD_W = 120;
+
+/**
+ * โชว์เมนูแบบ 3D (S4) — วงล้อการ์ดหมุนด้วย CSS 3D ล้วน (ไม่โหลด WebGL/three.js)
+ * เบาบนมือถือสเปกต่ำ ไม่ต้องรัน JS · แตะ/ชี้ค้างเพื่อหยุดหมุน · ตั้งลดการเคลื่อนไหว = แสดงเป็นแถวปกติ
+ */
+function Showcase3D({ block, data }: { block: Extract<WebsiteBlock, { type: "showcase3d" }>; data: WebsiteRenderData }) {
+  const picked =
+    block.productIds.length > 0
+      ? block.productIds.map((id) => data.products.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => Boolean(p))
+      : data.products.filter((p) => p.imageUrl).slice(0, 8);
+  if (picked.length === 0) return null;
+  const n = picked.length;
+  // รัศมีวงล้อให้การ์ดเรียงชิดกันพอดี (+ช่องไฟ 14px)
+  const radius = n >= 3 ? Math.round(SHOWCASE_CARD_W / 2 / Math.tan(Math.PI / n) + 14) : 0;
+  const card = (p: (typeof picked)[number]) => (
+    <>
+      {p.imageUrl ? (
+        <img src={p.imageUrl} alt="" loading="lazy" draggable={false} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }} />
+      ) : (
+        <div style={{ aspectRatio: "1 / 1", background: "linear-gradient(135deg, var(--w-accent), var(--w-primary))" }} />
+      )}
+      <div style={{ padding: "6px 8px" }}>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</p>
+        {block.showPrices && <p style={{ margin: 0, fontSize: 13, color: "var(--w-primary)", fontWeight: 700 }}>฿{money(p.price)}</p>}
+      </div>
+    </>
+  );
+  const cardStyle: CSSProperties = { background: "var(--w-surface)", borderRadius: "var(--w-radius)", overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,.18)" };
+  return (
+    <section>
+      {block.title && <SectionTitle>{block.title}</SectionTitle>}
+      {n >= 3 && (
+        <div className="w3d-stage" role="img" aria-label={picked.map((p) => p.name).join(" · ")}>
+          <div className="w3d-ring" style={{ ["--w3d-r" as string]: `-${radius}px`, animationDuration: `${Math.max(14, n * 3)}s` }}>
+            {picked.map((p, i) => (
+              <div key={p.id} className="w3d-card" style={{ ...cardStyle, transform: `rotateY(${(360 / n) * i}deg) translateZ(${radius}px)` }}>
+                {card(p)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className={n >= 3 ? "w3d-flat" : undefined} style={{ display: n >= 3 ? undefined : "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${SHOWCASE_CARD_W}px, 1fr))`, gap: 10 }}>
+        {picked.map((p) => (
+          <div key={p.id} style={cardStyle}>{card(p)}</div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 const ASPECT_RATIO: Record<string, string> = { "1:1": "1 / 1", "4:5": "4 / 5", "16:9": "16 / 9" };
@@ -357,6 +422,13 @@ export function WebsiteRenderer({
         .w-lux-hero::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,230,170,.22),transparent);animation:wshine 4s ease-in-out infinite}
         @keyframes wshine{to{left:130%}}
         @media (prefers-reduced-motion: reduce){.w-lux-hero::after{animation:none;display:none}}
+        .w3d-stage{position:relative;height:250px;perspective:900px;overflow:hidden;touch-action:pan-y}
+        .w3d-ring{position:absolute;left:50%;top:24px;width:${SHOWCASE_CARD_W}px;margin-left:-${SHOWCASE_CARD_W / 2}px;transform-style:preserve-3d;transform:translateZ(var(--w3d-r)) rotateY(0deg);animation:w3dspin 24s linear infinite}
+        .w3d-card{position:absolute;inset:0 0 auto 0}
+        .w3d-stage:hover .w3d-ring,.w3d-stage:active .w3d-ring{animation-play-state:paused}
+        @keyframes w3dspin{to{transform:translateZ(var(--w3d-r)) rotateY(-360deg)}}
+        .w3d-flat{display:none}
+        @media (prefers-reduced-motion: reduce){.w3d-stage{display:none}.w3d-flat{display:grid}}
       `}</style>
       <div style={{ maxWidth: 720, margin: "0 auto", paddingBottom: 32 }}>
         {visible.map((block, index) => (

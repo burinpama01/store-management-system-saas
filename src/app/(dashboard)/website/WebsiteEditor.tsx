@@ -9,8 +9,11 @@ import { QrCode } from "@/shared/components/ui/QrCode";
 import { uploadStoreImageAction } from "@/modules/storage/image-actions";
 import type { StoreWebsite, WebsiteRenderData, WebsiteVersionSummary } from "@/modules/store-website/repository";
 import {
+  BANNER_ASPECTS,
+  BANNER_IMAGE_SIZES,
   DELIVERY_APPS,
   MAX_BLOCKS,
+  MAX_SHOWCASE_ITEMS,
   SOCIAL_PLATFORMS,
   isAllowedDeliveryUrl,
   parseWebsiteDocument,
@@ -23,12 +26,14 @@ import {
   SOCIAL_LABELS,
   STYLE_LABELS,
   emptyBlock,
+  isNewTemplate,
   type WebsiteTemplate,
 } from "@/modules/store-website/templates";
 import { WebsiteRenderer } from "@/modules/store-website/WebsiteRenderer";
 import { festivalPreview, type FestivalView } from "@/modules/store-website/festivals";
 import { FestivalPanel, type UpcomingFestival } from "./FestivalPanel";
 import { PosterEditor } from "./PosterEditor";
+import { DomainPanel } from "./DomainPanel";
 import { nowMs } from "@/shared/utils/time";
 import {
   applyTemplateThemeAction,
@@ -107,9 +112,25 @@ function BlockForm({ block, onChange, renderData }: { block: WebsiteBlock; onCha
           <Check label="แสดงเวลาปิดร้าน" checked={block.showOpenStatus} onChange={(showOpenStatus) => onChange({ ...block, showOpenStatus })} />
         </div>
       );
-    case "banner":
+    case "banner": {
+      const aspect = block.aspect ?? "auto";
       return (
         <div className="space-y-2">
+          <label className="block text-sm">
+            <span className="block text-xs text-[var(--color-text-muted)]">สัดส่วนแบนเนอร์</span>
+            <select className="input mt-1 w-full" style={INPUT} value={aspect} onChange={(e) => onChange({ ...block, aspect: e.target.value as (typeof BANNER_ASPECTS)[number] })}>
+              {BANNER_ASPECTS.map((value) => (
+                <option key={value} value={value}>
+                  {value === "auto" ? "อัตโนมัติ (สูงตามข้อความ — รูปอาจโดนตัดขอบ)" : `${value} · รูป ${BANNER_IMAGE_SIZES[value]} px`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {aspect === "auto"
+              ? "แนะนำเลือกสัดส่วนคงที่ถ้ารูปมีตัวหนังสือ — รูปจะโชว์ครบทั้งภาพ"
+              : `ส่งรูปขนาด ${BANNER_IMAGE_SIZES[aspect]} px (สัดส่วน ${aspect}) จะพอดีกรอบไม่โดนตัด · รูปมีตัวหนังสืออยู่แล้วให้ลบหัวข้อ/รายละเอียดด้านล่างออก`}
+          </p>
           <ImageField label="รูปโปรโมชัน / แพ็กเกจ" value={block.imageUrl ?? ""} onChange={(imageUrl) => onChange({ ...block, imageUrl })} />
           <Text label="หัวข้อ" value={block.title} max={80} onChange={(title) => onChange({ ...block, title })} />
           <Text label="รายละเอียด" value={block.subtitle} max={160} onChange={(subtitle) => onChange({ ...block, subtitle })} />
@@ -134,6 +155,35 @@ function BlockForm({ block, onChange, renderData }: { block: WebsiteBlock; onCha
           </div>
         </div>
       );
+    }
+    case "showcase3d": {
+      const selected = new Set(block.productIds);
+      return (
+        <div className="space-y-2">
+          <Text label="หัวข้อ" value={block.title} max={80} onChange={(title) => onChange({ ...block, title })} />
+          <Check label="แสดงราคา" checked={block.showPrices} onChange={(showPrices) => onChange({ ...block, showPrices })} />
+          <p className="text-xs text-[var(--color-text-muted)]">
+            การ์ดเมนูหมุนเป็นวงล้อ 3D (ตั้งแต่ 3 เมนูขึ้นไป) · เลือกได้สูงสุด {MAX_SHOWCASE_ITEMS} เมนู ไม่เลือก = 8 เมนูแรกที่มีรูป · รูปเมนูแนะนำสี่เหลี่ยมจัตุรัส 800×800
+          </p>
+          <div className="grid max-h-48 gap-1 overflow-y-auto rounded border border-[var(--color-border)] p-2 sm:grid-cols-2">
+            {renderData.products.map((p) => (
+              <label key={p.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selected.has(p.id)}
+                  disabled={!selected.has(p.id) && block.productIds.length >= MAX_SHOWCASE_ITEMS}
+                  onChange={(e) =>
+                    onChange({ ...block, productIds: e.target.checked ? [...block.productIds, p.id] : block.productIds.filter((id) => id !== p.id) })
+                  }
+                />
+                <span className="truncate">{p.name}</span>
+                {!p.imageUrl && <span className="text-xs text-[var(--color-text-muted)]">(ไม่มีรูป)</span>}
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    }
     case "passes":
       return (
         <div className="space-y-2">
@@ -311,6 +361,8 @@ export function WebsiteEditor({
   const [previewFestivalKey, setPreviewFestivalKey] = useState<string | null>(null);
   const previewFestival = previewFestivalKey ? festivalPreview(previewFestivalKey, website.festivalSettings) : currentFestival;
   const [pending, startTransition] = useTransition();
+  const [openedAt] = useState(() => nowMs());
+  const newTemplates = templates.filter((t) => isNewTemplate(t, openedAt));
   const publicUrl = `${siteBase}/s/${website.slug}`;
   const validation = useMemo(() => parseWebsiteDocument(doc), [doc]);
 
@@ -463,9 +515,14 @@ export function WebsiteEditor({
           )}
         </div>
 
+        <DomainPanel domain={website.customDomain} status={website.customDomainStatus} note={website.customDomainNote} />
+
         {/* เทมเพลต */}
         <div className="panel p-4">
           <p className="mb-2 text-sm font-semibold">เทมเพลต (เปลี่ยนสี/ฟอนต์/สไตล์ — เนื้อหาอยู่ครบ)</p>
+          {newTemplates.length > 0 && (
+            <p className="mb-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">✨ เทมเพลตใหม่ประจำเดือน {newTemplates.length} แบบ: {newTemplates.map((t) => t.name).join(", ")}</p>
+          )}
           <div className="flex flex-wrap gap-2">
             {templates.map((t) => (
               <button key={t.id} type="button" disabled={pending}
@@ -477,6 +534,7 @@ export function WebsiteEditor({
                 })}>
                 <span className="mr-1 inline-block h-3 w-3 rounded-full align-middle" style={{ background: t.theme.primary }} />
                 {t.name} <span className="opacity-60">· {STYLE_LABELS[t.style]}</span>
+                {isNewTemplate(t, openedAt) && <span className="ml-1 rounded bg-amber-400 px-1 text-[10px] font-bold text-white">ใหม่</span>}
               </button>
             ))}
           </div>
