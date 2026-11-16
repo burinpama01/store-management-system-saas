@@ -122,4 +122,25 @@ describe("โดเมนของร้านเอง", () => {
     expect(proxy).toContain('hostOf(request.headers.get("host"))');
     expect(proxy).not.toContain('get("x-forwarded-host")');
   });
+  it("หลังรีวิว: proxy ใช้คีย์ PUBLISHABLE · โดเมนในบัญชีอื่นไม่นับว่าสำเร็จ · กันเปลี่ยนโดเมนรัว · ตั้งโดเมนใหม่กดตรวจได้ทันที", () => {
+    const proxy = read("src/proxy.ts");
+    expect(proxy).toContain("process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+    expect(proxy).not.toContain("ANON_KEY");
+    const vercel = read("src/modules/store-website/vercel-domains.ts");
+    expect(vercel).toContain('if (res.ok || code === "domain_already_in_use_by_project") return');
+    const actions = read("src/app/(dashboard)/website/actions.ts");
+    expect(actions).toContain("current.domainChangedAt && Date.parse(current.domainChangedAt) > Date.now() - 30_000");
+    const repo = read("src/modules/store-website/repository.ts");
+    expect(repo).toContain("custom_domain_changed_at: new Date().toISOString(), custom_domain_checked_at: null");
+    expect(read("src/app/system/website-templates/actions.ts")).toContain("{ checked: true, requireDomain: true }");
+  });
+});
+
+describe("ปกร้านหนีอักขระใน url รูป", () => {
+  it("วงเล็บในลิงก์รูปปกถูก encode", () => {
+    const hero = emptyBlock("hero");
+    if (hero.type !== "hero") throw new Error("expected hero");
+    const out = html([{ ...hero, imageUrl: "https://img.example.com/a(1).jpg" }]);
+    expect(out).toContain("a%281%29.jpg");
+  });
 });

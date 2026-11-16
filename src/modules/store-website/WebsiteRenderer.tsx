@@ -75,7 +75,7 @@ function Block({ block, theme, data, today }: { block: WebsiteBlock; theme: Webs
             padding: "28px 20px",
             color: "#fff",
             background: block.imageUrl
-              ? `linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.6)), url("${encodeURI(block.imageUrl)}") center/cover`
+              ? `linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.6)), ${cssUrl(block.imageUrl)} center/cover`
               : `linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.45)), linear-gradient(135deg, var(--w-primary), var(--w-accent))`,
             display: "flex",
             flexDirection: "column",
@@ -422,9 +422,9 @@ export function WebsiteRenderer({
         .w-lux-hero::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,230,170,.22),transparent);animation:wshine 4s ease-in-out infinite}
         @keyframes wshine{to{left:130%}}
         @media (prefers-reduced-motion: reduce){.w-lux-hero::after{animation:none;display:none}}
-        .w3d-stage{position:relative;height:250px;perspective:900px;overflow:hidden;touch-action:pan-y}
+        .w3d-stage{position:relative;height:225px;perspective:900px;overflow:hidden;touch-action:pan-y}
         .w3d-ring{position:absolute;left:50%;top:24px;width:${SHOWCASE_CARD_W}px;margin-left:-${SHOWCASE_CARD_W / 2}px;transform-style:preserve-3d;transform:translateZ(var(--w3d-r)) rotateY(0deg);animation:w3dspin 24s linear infinite}
-        .w3d-card{position:absolute;inset:0 0 auto 0}
+        .w3d-card{position:absolute;inset:0 0 auto 0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
         .w3d-stage:hover .w3d-ring,.w3d-stage:active .w3d-ring{animation-play-state:paused}
         @keyframes w3dspin{to{transform:translateZ(var(--w3d-r)) rotateY(-360deg)}}
         .w3d-flat{display:none}

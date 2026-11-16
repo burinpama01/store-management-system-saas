@@ -64,7 +64,7 @@ export async function setDomainStatusAction(fd: FormData): Promise<void> {
   const status = String(fd.get("status") ?? "");
   if (!UUID_RE.test(storeId) || !["pending", "active", "error"].includes(status)) return;
   const note = String(fd.get("note") ?? "").trim().slice(0, 300) || null;
-  const result = await updateWebsiteDomain(storeId, { custom_domain_status: status as "pending" | "active" | "error", custom_domain_note: note });
+  const result = await updateWebsiteDomain(storeId, { custom_domain_status: status as "pending" | "active" | "error", custom_domain_note: note }, { checked: true, requireDomain: true });
   void logSystemEvent({
     level: result.error ? "error" : "info",
     source: "store-website.domains",

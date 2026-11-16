@@ -246,6 +246,10 @@ export async function setCustomDomainAction(rawDomain: string): Promise<ActionRe
     if (!current) return { ok: false, error: "ยังไม่ได้สร้างเว็บ" };
     if (current.customDomain === domain) return { ok: true, error: null };
     if (await isDomainTaken(domain, g.ctx.storeId)) return { ok: false, error: "โดเมนนี้มีร้านอื่นใช้แล้ว" };
+    // กันเปลี่ยนโดเมนรัว (เรียก Vercel API 2 ครั้งต่อการเปลี่ยน) — เว้นอย่างน้อย 30 วินาทีหลังตั้ง/ตรวจครั้งก่อน
+    if (current.domainChangedAt && Date.parse(current.domainChangedAt) > Date.now() - 30_000) {
+      return { ok: false, error: "เพิ่งเปลี่ยนโดเมนไป รอสักครู่แล้วลองใหม่" };
+    }
 
     // เปลี่ยนโดเมน → ถอดโดเมนเก่าออกจากโปรเจคก่อน (ไม่ให้โดเมนเก่ายังชี้มาที่เว็บร้าน)
     if (current.customDomain) {
@@ -310,7 +314,7 @@ export async function checkCustomDomainAction(): Promise<ActionResult & { status
         ? `ต้องเพิ่ม TXT ยืนยันเจ้าของโดเมน: ${check.verification.map((v) => `${v.domain} = ${v.value}`).join(" · ")}`.slice(0, 300)
         : "DNS ยังไม่ชี้มาที่ StoreOS — ตรวจค่าตามคำแนะนำ (อาจต้องรอ DNS อัปเดตถึง 24 ชม.)";
     }
-    const result = await updateWebsiteDomain(g.ctx.storeId, { custom_domain_status: status, custom_domain_note: note });
+    const result = await updateWebsiteDomain(g.ctx.storeId, { custom_domain_status: status, custom_domain_note: note }, { checked: true });
     log(result.error ? "error" : "info", "checkCustomDomain", result.error ? `บันทึกผลตรวจโดเมนไม่สำเร็จ: ${result.error}` : `ตรวจโดเมน: ${status}`, g, {
       domain: current.customDomain,
       status,

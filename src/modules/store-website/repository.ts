@@ -70,6 +70,8 @@ export interface StoreWebsite {
   customDomainStatus: CustomDomainStatus;
   customDomainNote: string | null;
   customDomainCheckedAt: string | null;
+  /** เวลาตั้ง/เปลี่ยนโดเมนล่าสุด (กันเปลี่ยนรัว) */
+  domainChangedAt: string | null;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- แถวดิบจาก PostgREST */
@@ -91,6 +93,7 @@ function mapWebsite(row: any): StoreWebsite | null {
     customDomainStatus: (["none", "pending", "active", "error"].includes(row.custom_domain_status) ? row.custom_domain_status : "none") as CustomDomainStatus,
     customDomainNote: row.custom_domain_note ?? null,
     customDomainCheckedAt: row.custom_domain_checked_at ?? null,
+    domainChangedAt: row.custom_domain_changed_at ?? null,
   };
 }
 
@@ -325,7 +328,7 @@ export async function listWebsiteVersions(storeId: string): Promise<WebsiteVersi
 /** โดเมนนี้มีร้านอื่นใช้แล้วไหม */
 export async function isDomainTaken(domain: string, exceptStoreId: string): Promise<boolean> {
   const db: LooseClient = await createSupabaseServiceClient();
-  const { data } = await db.from("store_websites").select("store_id").ilike("custom_domain", domain).limit(1);
+  const { data } = await db.from("store_websites").select("store_id").eq("custom_domain", domain.toLowerCase()).limit(1);
   return Boolean(data && data.length > 0 && data[0].store_id !== exceptStoreId);
 }
 
@@ -336,15 +339,22 @@ export async function isDomainTaken(domain: string, exceptStoreId: string): Prom
 export async function updateWebsiteDomain(
   storeId: string,
   patch: { custom_domain?: string | null; custom_domain_status: CustomDomainStatus; custom_domain_note: string | null },
+  options: { checked?: boolean; requireDomain?: boolean } = {},
 ): Promise<Result<true>> {
   const db: LooseClient = await createSupabaseServiceClient();
-  const { data, error } = await db
+  // checked_at = เวลาตรวจล่าสุด (กันกดตรวจรัว) · changed_at = เวลาตั้ง/ลบโดเมน (กันเปลี่ยนรัว) — ตั้งโดเมนใหม่ล้าง checked_at ให้กดตรวจได้ทันที
+  let query = db
     .from("store_websites")
-    .update({ ...patch, custom_domain_checked_at: new Date().toISOString() })
-    .eq("store_id", storeId)
-    .select("store_id");
+    .update({
+      ...patch,
+      ...(options.checked ? { custom_domain_checked_at: new Date().toISOString() } : {}),
+      ...(patch.custom_domain !== undefined ? { custom_domain_changed_at: new Date().toISOString(), custom_domain_checked_at: null } : {}),
+    })
+    .eq("store_id", storeId);
+  if (options.requireDomain) query = query.not("custom_domain", "is", null);
+  const { data, error } = await query.select("store_id");
   if (error) return { data: null, error: error.code === "23505" ? "โดเมนนี้มีร้านอื่นใช้แล้ว" : error.message };
-  if (rlsZero(data)) return { data: null, error: "ยังไม่ได้สร้างเว็บ" };
+  if (rlsZero(data)) return { data: null, error: options.requireDomain ? "ร้านนี้ยังไม่ได้ตั้งโดเมน" : "ยังไม่ได้สร้างเว็บ" };
   return { data: true, error: null };
 }
 

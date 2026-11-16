@@ -15,7 +15,7 @@ async function slugForDomain(host: string): Promise<string | null> {
   const cached = domainCache.get(host);
   if (cached && cached.expires > now) return cached.slug;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return null;
   let slug: string | null = null;
   try {
@@ -36,7 +36,11 @@ async function slugForDomain(host: string): Promise<string | null> {
   } catch {
     return null;
   }
-  if (domainCache.size > 500) domainCache.clear();
+  if (domainCache.size > 500) {
+    // ลบเฉพาะที่หมดอายุก่อน — ล้างทั้งหมดเฉพาะเมื่อยังเยอะเกิน (กันยิงฐานข้อมูลพร้อมกันทีเดียว)
+    for (const [k, v] of domainCache) if (v.expires <= now) domainCache.delete(k);
+    if (domainCache.size > 500) domainCache.clear();
+  }
   domainCache.set(host, { slug, expires: now + (slug ? HIT_TTL : MISS_TTL) });
   return slug;
 }

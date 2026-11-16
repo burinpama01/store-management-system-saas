@@ -39,7 +39,8 @@ alter table public.store_websites
   add column if not exists custom_domain_status text not null default 'none'
     check (custom_domain_status in ('none', 'pending', 'active', 'error')),
   add column if not exists custom_domain_note text check (custom_domain_note is null or char_length(custom_domain_note) <= 300),
-  add column if not exists custom_domain_checked_at timestamptz;
+  add column if not exists custom_domain_checked_at timestamptz,
+  add column if not exists custom_domain_changed_at timestamptz;
 
 create unique index if not exists store_websites_custom_domain_unique
   on public.store_websites (lower(custom_domain))
@@ -58,6 +59,7 @@ begin
     or new.custom_domain_status is distinct from old.custom_domain_status
     or new.custom_domain_note is distinct from old.custom_domain_note
     or new.custom_domain_checked_at is distinct from old.custom_domain_checked_at
+    or new.custom_domain_changed_at is distinct from old.custom_domain_changed_at
   ) then
     raise exception 'เปลี่ยนโดเมนได้ผ่านหน้าตั้งค่าเว็บไซต์เท่านั้น';
   end if;
@@ -85,6 +87,7 @@ begin
     new.custom_domain_status := 'none';
     new.custom_domain_note := null;
     new.custom_domain_checked_at := null;
+    new.custom_domain_changed_at := null;
   end if;
   return new;
 end;

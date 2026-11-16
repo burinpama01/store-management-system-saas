@@ -54,7 +54,8 @@ export async function addProjectDomain(domain: string): Promise<{ configured: fa
   if (!e) return { configured: false };
   const res = await call(e, "POST", `/v10/projects/${encodeURIComponent(e.projectId)}/domains`, { name: domain });
   const code = (res.json.error as { code?: string } | undefined)?.code;
-  if (res.ok || code === "domain_already_in_use_by_project" || code === "domain_already_exists") return { configured: true, error: null };
+  // อยู่ในโปรเจคนี้แล้ว = สำเร็จ · domain_already_exists (อยู่โปรเจค/บัญชีอื่น) = ผิดพลาด ต้องให้เจ้าของถอดจากที่เดิมก่อน
+  if (res.ok || code === "domain_already_in_use_by_project") return { configured: true, error: null };
   return { configured: true, error: errorMessage(res.json, `เพิ่มโดเมนไม่สำเร็จ (${res.status})`) };
 }
 
