@@ -50,6 +50,8 @@ export interface WebsiteRenderData {
   passPlans: WebsitePassPlan[];
   /** ลิงก์หน้าสมาชิกเดิม (มี token ของร้าน) — null = ร้านยังไม่สร้าง QR สมาชิก */
   memberUrl: string | null;
+  /** ลิงก์หน้าสั่งออนไลน์ (S2) — null = ร้านไม่เปิดสั่งออนไลน์ */
+  orderUrl?: string | null;
 }
 
 export interface StoreWebsite {
@@ -107,7 +109,7 @@ export async function loadVerifiedLunarDates(): Promise<LunarFestivalDate[]> {
 /** โหลดข้อมูลร้านสำหรับเรนเดอร์ (service client — ใช้ทั้งหน้าเว็บสาธารณะและพรีวิวในหลังร้าน) */
 export async function loadWebsiteRenderData(storeId: string): Promise<WebsiteRenderData | null> {
   const db: LooseClient = await createSupabaseServiceClient();
-  const [storeRes, productsRes, categoriesRes, plansRes, linkRes] = await Promise.all([
+  const [storeRes, productsRes, categoriesRes, plansRes, linkRes, orderingRes, siteRes] = await Promise.all([
     db.from("stores").select("id, name, slug, logo_url, address, phone, closing_time, is_active").eq("id", storeId).maybeSingle(),
     db
       .from("products")
@@ -132,6 +134,8 @@ export async function loadWebsiteRenderData(storeId: string): Promise<WebsiteRen
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    db.from("store_online_order_settings").select("enabled").eq("store_id", storeId).maybeSingle(),
+    db.from("store_websites").select("slug").eq("store_id", storeId).maybeSingle(),
   ]);
   const store = storeRes.data;
   if (!store || !store.is_active) return null;
@@ -165,6 +169,8 @@ export async function loadWebsiteRenderData(storeId: string): Promise<WebsiteRen
       validDays: p.valid_days ?? null,
     })),
     memberUrl: linkRes.data?.token ? `/member/${store.slug}?code=${encodeURIComponent(linkRes.data.token)}` : null,
+    // ลิงก์เว็บร้านใช้ slug ของเว็บ (store_websites.slug) ไม่ใช่ stores.slug
+    orderUrl: orderingRes.data?.enabled && siteRes.data?.slug ? `/s/${siteRes.data.slug}/order` : null,
   };
 }
 

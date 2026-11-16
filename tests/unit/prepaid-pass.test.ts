@@ -265,7 +265,7 @@ describe("P1b ซื้อแพ็กออนไลน์ผ่าน Beam + �
 
   it("ประวัติ Beam นับรายการซื้อแพ็กเป็น attached", () => {
     const beam = read("src/modules/payments/beam-service.ts");
-    expect(beam).toContain("attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id)");
+    expect(beam).toContain("attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id || r.online_order_id)");
   });
 });
 

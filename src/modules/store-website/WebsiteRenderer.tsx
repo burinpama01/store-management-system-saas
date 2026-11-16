@@ -178,6 +178,11 @@ function Block({ block, theme, data, today }: { block: WebsiteBlock; theme: Webs
               </Card>
             ))}
           </div>
+          {data.orderUrl && (
+            <a href={data.orderUrl} style={{ display: "block", marginTop: 12, textAlign: "center", padding: 12, borderRadius: "var(--w-radius)", background: "var(--w-primary)", color: "#fff", fontWeight: 700, textDecoration: "none" }}>
+              สั่งออนไลน์ · รับที่ร้าน / ส่งถึงบ้าน
+            </a>
+          )}
         </section>
       );
     }
