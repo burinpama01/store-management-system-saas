@@ -145,3 +145,13 @@ describe("migration + เส้นทางเงิน", () => {
     expect(read("src/modules/store-website/repository.ts")).toContain("`/s/${siteRes.data.slug}/order`");
   });
 });
+
+describe("พิกัดร้าน = จุดลงเวลาเข้างาน", () => {
+  it("ตั้งค่าที่ใช้งานจริงเอาพิกัด geofence ของการเข้างานมาทับ และบันทึกก็ใช้พิกัดเดียวกัน", () => {
+    const repo = read("src/modules/online-orders/repository.ts");
+    expect(repo).toContain('.from("attendance_settings")');
+    expect(repo).toContain("origin ? { ...settings, originLat: origin.lat, originLng: origin.lng } : settings");
+    expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain("const attendanceOrigin = await getAttendanceOrigin(ctx.storeId);");
+    expect(read("src/app/(dashboard)/layout.tsx")).toContain("isOnlineOrderingEnabled(storeContext.storeId)");
+  });
+});

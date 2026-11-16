@@ -6,7 +6,16 @@ import { saveOnlineOrderSettingsAction } from "./actions";
 
 const numberOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
 
-export function OnlineOrderSettingsForm({ initial, hasWebsite }: { initial: OnlineOrderSettings; hasWebsite: boolean }) {
+export function OnlineOrderSettingsForm({
+  initial,
+  hasWebsite,
+  originFromAttendance,
+}: {
+  initial: OnlineOrderSettings;
+  hasWebsite: boolean;
+  /** ร้านตั้งจุดลงเวลาเข้างานแล้ว → ใช้เป็นพิกัดร้าน (แก้ที่หน้าการเข้างาน) */
+  originFromAttendance: boolean;
+}) {
   const [s, setS] = useState(initial);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -63,17 +72,27 @@ export function OnlineOrderSettingsForm({ initial, hasWebsite }: { initial: Onli
             <input type="checkbox" checked={s.deliveryEnabled} onChange={(e) => set("deliveryEnabled", e.target.checked)} />
             เปิดส่งถึงบ้าน
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              ละติจูดร้าน
-              <input className={field} type="number" step="0.000001" value={s.originLat ?? ""} onChange={(e) => set("originLat", numberOrNull(e.target.value))} />
-            </label>
-            <label className="block">
-              ลองจิจูดร้าน
-              <input className={field} type="number" step="0.000001" value={s.originLng ?? ""} onChange={(e) => set("originLng", numberOrNull(e.target.value))} />
-            </label>
-          </div>
-          <button type="button" className="btn-secondary text-xs" onClick={useHere}>📍 ใช้ตำแหน่งที่ยืนอยู่ตอนนี้ (ยืนที่ร้าน)</button>
+          {originFromAttendance ? (
+            <p className="rounded bg-green-50 px-2 py-1 text-green-800">
+              📍 พิกัดร้าน = จุดลงเวลาเข้างาน ({s.originLat?.toFixed(5)}, {s.originLng?.toFixed(5)}) — แก้ได้ที่หน้า{" "}
+              <a href="/attendance" className="underline">การเข้างาน</a>
+            </p>
+          ) : (
+            <>
+              <p className="text-amber-700">ยังไม่ได้ตั้งจุดลงเวลาเข้างาน — ตั้งที่หน้าการเข้างาน (แนะนำ ใช้ร่วมกัน) หรือกรอกพิกัดร้านที่นี่</p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  ละติจูดร้าน
+                  <input className={field} type="number" step="0.000001" value={s.originLat ?? ""} onChange={(e) => set("originLat", numberOrNull(e.target.value))} />
+                </label>
+                <label className="block">
+                  ลองจิจูดร้าน
+                  <input className={field} type="number" step="0.000001" value={s.originLng ?? ""} onChange={(e) => set("originLng", numberOrNull(e.target.value))} />
+                </label>
+              </div>
+              <button type="button" className="btn-secondary text-xs" onClick={useHere}>📍 ใช้ตำแหน่งที่ยืนอยู่ตอนนี้ (ยืนที่ร้าน)</button>
+            </>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
               รัศมีส่ง (กม.)

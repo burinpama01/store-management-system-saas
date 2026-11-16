@@ -5,7 +5,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { canUseMemberPrivileges } from "@/modules/members/access";
 import { isOpsManagerRole } from "@/modules/operations/access";
-import { getOnlineOrderSettings } from "@/modules/online-orders/repository";
+import { getAttendanceOrigin, getOnlineOrderSettings } from "@/modules/online-orders/repository";
 import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { getReceiptSettings } from "@/modules/settings/repository";
 import { listPrinters } from "@/modules/stores/repository";
@@ -31,13 +31,14 @@ export default async function OnlineOrdersPage() {
     );
   }
 
-  const [settings, site, list, stations, receipt, printersRes] = await Promise.all([
+  const [settings, site, list, stations, receipt, printersRes, attendanceOrigin] = await Promise.all([
     getOnlineOrderSettings(ctx.storeId),
     getStoreWebsite(ctx.storeId),
     listOnlineOrdersAction(),
     listKitchenStations(ctx.storeId),
     getReceiptSettings(ctx.storeId, ctx.organizationId),
     listPrinters(ctx.storeId, ctx.organizationId),
+    getAttendanceOrigin(ctx.storeId),
   ]);
   const stationPrinters = (stations.data ?? [])
     .filter((s) => s.printerId)
@@ -70,7 +71,7 @@ export default async function OnlineOrdersPage() {
         printers={printersRes.data ?? []}
       />
       {canConfigure ? (
-        <OnlineOrderSettingsForm initial={settings} hasWebsite={Boolean(site)} />
+        <OnlineOrderSettingsForm initial={settings} hasWebsite={Boolean(site)} originFromAttendance={Boolean(attendanceOrigin)} />
       ) : (
         <p className="text-xs text-[var(--muted)]">ตั้งค่าสั่งออนไลน์ได้เฉพาะเจ้าของหรือแอดมิน</p>
       )}
