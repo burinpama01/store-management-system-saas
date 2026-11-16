@@ -34,6 +34,7 @@ import { SubmitButton } from "@/shared/components/ui";
 import { CommandPalette } from "@/shared/components/CommandPalette";
 import type { CommandItem } from "@/modules/assistant/command-index";
 import { decideCostingAccess } from "@/modules/costing/access-policy";
+import { getOnlineOrderSettings } from "@/modules/online-orders/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }).allowed;
   const websiteVisible =
     isOpsManagerRole(storeContext.role) && !!assistantBilling && canUseMemberPrivileges(assistantBilling);
+  // สั่งออนไลน์ (เว็บร้าน S2) — แสดงในเมนูเมื่อร้าน Enterprise เปิดสวิตช์แล้ว (เจ้าของเข้าตั้งค่าได้จากหน้าเว็บไซต์ร้าน)
+  const onlineOrdersVisible =
+    canManageQr &&
+    !!assistantBilling &&
+    canUseMemberPrivileges(assistantBilling) &&
+    (await getOnlineOrderSettings(storeContext.storeId)).enabled;
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
@@ -122,6 +129,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(websiteVisible ? [{ href: "/website", label: "เว็บไซต์ร้าน" }] : []),
     ...(qrOrdersVisible ? [{ href: "/qr-orders", label: "QR Order" }] : []),
     ...(canManageQr ? [{ href: "/delivery", label: "เดลิเวอรี" }] : []),
+    ...(onlineOrdersVisible ? [{ href: "/website/orders", label: "สั่งออนไลน์" }] : []),
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),

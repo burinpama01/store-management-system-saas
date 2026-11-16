@@ -91,6 +91,6 @@ describe("music request donation via Beam wiring", () => {
     const service = read("src/modules/payments/beam-service.ts");
     expect(service).toContain('if (row.status === "PAID") return { ok: true, qr: toPosView(row, null) };');
     expect(service).toContain("input.minLookupIntervalMs");
-    expect(service).toContain("attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id)");
+    expect(service).toContain("attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id || r.online_order_id)");
   });
 });

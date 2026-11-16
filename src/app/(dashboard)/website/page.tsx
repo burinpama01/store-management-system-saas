@@ -54,6 +54,15 @@ async function WebsiteBody({ storeId }: { storeId: string }) {
     endsOn: w.endsOn,
   }));
   return (
+    <>
+    <div className="page-shell pb-0">
+      <a href="/website/orders" className="panel flex items-center justify-between p-3 text-sm hover:bg-[var(--surface-muted,#f5f5f4)]">
+        <span>
+          <b>สั่งออนไลน์</b> — รับที่ร้าน / ร้านส่งเอง จ่ายด้วย Beam (ตั้งค่าและดูคิวออเดอร์)
+        </span>
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
     <WebsiteEditor
       key={website.updatedAt}
       website={website}
@@ -66,5 +75,6 @@ async function WebsiteBody({ storeId }: { storeId: string }) {
       upcomingFestivals={upcoming}
       pendingLunarKeys={pendingLunarFestivals(today, lunar)}
     />
+    </>
   );
 }
