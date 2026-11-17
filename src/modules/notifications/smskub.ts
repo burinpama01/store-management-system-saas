@@ -21,10 +21,14 @@ async function readProviderMessage(response: Response) {
 }
 
 export async function sendSmskubOtp(phone: string, code: string) {
+  return sendSmskubMessage(phone, buildOtpMessage(code), "StoreOS OTP");
+}
+
+/** ส่ง SMS ข้อความทั่วไปผ่าน SMS แคมเปญ (v1) — ใช้ร่วมกับ OTP และ SMS ภารกิจสะสม */
+export async function sendSmskubMessage(phone: string, message: string, campaignName: string) {
   const apiKey = requireEnv("SMSKUB_API_KEY");
   const senderName = process.env.SMSKUB_SENDER_NAME?.trim() || undefined;
   const apiUrl = process.env.SMSKUB_API_URL?.trim() || DEFAULT_SMSKUB_API_URL;
-  const message = buildOtpMessage(code);
 
   const response = await fetch(apiUrl, {
     method: "POST",
@@ -34,7 +38,7 @@ export async function sendSmskubOtp(phone: string, code: string) {
       key: apiKey,
     },
     body: JSON.stringify({
-      name: "StoreOS OTP",
+      name: campaignName,
       message,
       to: [phone],
       from: senderName,

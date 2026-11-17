@@ -11,7 +11,7 @@ import { onPosCommand } from "@/modules/pos/section-bus";
 // ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
 import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
-import type { Cart, CartItem, DiscountType, Order, PaymentMethod, SavedOrderTicket } from "@/modules/pos/types";
+import type { Cart, CartItem, DiscountType, Order, PaymentMethod, ReceiptMissionProgress, SavedOrderTicket } from "@/modules/pos/types";
 import {
   emptyCart,
   addToCart,
@@ -33,6 +33,7 @@ import {
   type PosMemberVerification,
   evaluatePosCouponAction,
   listPosCustomerVouchersAction,
+  listPosMissionProgressAction,
   registerPosCustomerAction,
   listSavedTicketsAction,
   saveSavedTicketAction,
@@ -92,6 +93,8 @@ import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPane
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
 import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
+import { countOrderTowardMission } from "@/modules/missions/rules";
+import type { PosMissionProgress } from "@/modules/missions/repository";
 import { useRegisterVoiceCart, type VoiceCartApi } from "./unified/voice-cart-bridge";
 import {
   publishCustomerDisplaySnapshot,
@@ -142,6 +145,8 @@ type ReceiptOrder = {
   changeAmount?: number;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** ภารกิจสะสมที่บิลนี้ถูกนับ — พิมพ์ท้ายใบเสร็จ */
+  missionProgress?: ReceiptMissionProgress[];
   /** QR รับแต้มท้ายใบเสร็จ (เฉพาะบิลที่ยังไม่ผูกลูกค้า) — ดึงหลังจ่ายเงินสำเร็จ */
   loyaltyClaim?: { url: string; code: string; points: number; expiresAt: string };
   /** true = กำลังรอ QR รับแต้มจาก server อยู่ (พิมพ์อัตโนมัติต้องรอก่อน ไม่งั้นได้ใบที่ไม่มี QR) */
@@ -1534,6 +1539,14 @@ function MemberCodeVerifyBox({ control, isPending }: { control: MemberCodeContro
   );
 }
 
+interface PosMissionLine {
+  enrollmentId: string;
+  name: string;
+  progress: number;
+  targetCount: number;
+  thisBill: number;
+}
+
 /**
  * สมาชิกสะสมแต้มในแผงเลื่อน (จอใหญ่/iPad) — ตัวอักษร ≥16px กัน Safari ซูม,
  * ปุ่มสูง ≥48px, แป้นเบอร์โทรบนจอ, ผลค้นหา/โค้ดแลกรางวัลเป็นการ์ดแตะง่าย
@@ -1556,9 +1569,12 @@ function MemberSheetSection({
   memberCode = null,
   memberPasses = null,
   codeOnly = false,
+  missions = [],
 }: {
   selectedCustomer: CustomerProfile | null;
   vouchers: PosRewardVoucher[];
+  /** ภารกิจสะสมที่ลูกค้ากำลังทำ */
+  missions?: PosMissionLine[];
   customerQuery: string;
   customerResults: CustomerProfile[];
   searchedQuery: string | null;
@@ -1629,6 +1645,27 @@ function MemberSheetSection({
             เปลี่ยนสมาชิก
           </button>
         </div>
+        {missions.length > 0 && (
+          <div className="space-y-1.5 rounded-xl border border-slate-200 bg-white p-3" aria-label="ภารกิจสะสมของลูกค้า">
+            {missions.map((mission) => {
+              const after = Math.min(mission.progress + mission.thisBill, mission.targetCount);
+              return (
+                <div key={mission.enrollmentId} className="text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-semibold text-slate-800">🎯 {mission.name}</span>
+                    <span className="shrink-0 tabular-nums text-slate-700">
+                      {mission.progress}/{mission.targetCount}
+                      {mission.thisBill > 0 && <span className="ml-1 font-semibold text-emerald-700">บิลนี้ +{mission.thisBill}</span>}
+                    </span>
+                  </div>
+                  {after >= mission.targetCount && mission.thisBill > 0 && (
+                    <p className="text-xs font-semibold text-emerald-700">จ่ายบิลนี้แล้วครบภารกิจ — ลูกค้าได้คูปองรางวัลทันที</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {memberPasses && <MemberPassList control={memberPasses} isPending={isPending} />}
         {vouchers.length > 0 ? (
           <div className="space-y-2">
@@ -3700,6 +3737,7 @@ function ReceiptPanel({
         paymentStatus: "paid" as const,
         loyaltyPointsEarned: order.loyaltyPointsEarned,
         loyaltyPointsBalance: order.loyaltyPointsBalance,
+        missionProgress: order.missionProgress,
         // QR รับแต้ม — มีเฉพาะบิลที่ยังไม่ผูกลูกค้า
         loyaltyClaim: order.loyaltyClaim,
         vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
@@ -3743,6 +3781,7 @@ function ReceiptPanel({
           payments: receiptData.payments,
           loyaltyPointsEarned: receiptData.loyaltyPointsEarned,
           loyaltyPointsBalance: receiptData.loyaltyPointsBalance,
+          missionProgress: receiptData.missionProgress,
           footerText: receiptData.footerText,
           paperWidth: receiptData.paperWidth,
           printedAt: receiptData.printedAt,
@@ -4037,6 +4076,7 @@ export function PosTerminal({
   const [customerSearchedQuery, setCustomerSearchedQuery] = useState<string | null>(null);
   const [registerName, setRegisterName] = useState("");
   const [customerVouchers, setCustomerVouchers] = useState<{ customerId: string; vouchers: PosRewardVoucher[] } | null>(null);
+  const [customerMissions, setCustomerMissions] = useState<{ customerId: string; missions: PosMissionProgress[] } | null>(null);
   // ผลยืนยันรหัสสมาชิก 5 นาที — ผูกกับลูกค้าที่เลือกอยู่ เปลี่ยน/ล้างลูกค้าแล้วถือว่าหมดผล
   const [memberVerification, setMemberVerification] = useState<
     (PosMemberVerification & { customerId: string }) | null
@@ -4651,6 +4691,7 @@ export function PosTerminal({
     setSelectedCustomer(null);
     setCustomerResults([]);
     setCustomerVouchers(null);
+    setCustomerMissions(null);
     setCustomerCouponMessage("ล้างลูกค้าแล้ว");
   }
 
@@ -4683,6 +4724,11 @@ export function PosTerminal({
     void listPosCustomerVouchersAction(customerId).then((result) => {
       if (cancelled) return;
       setCustomerVouchers({ customerId, vouchers: result.error ? [] : result.vouchers });
+    });
+    // ภารกิจสะสมที่กำลังทำ — โหลดคู่กับคูปอง (ร้านปิดภารกิจ = รายการว่าง)
+    void listPosMissionProgressAction(customerId).then((result) => {
+      if (cancelled) return;
+      setCustomerMissions({ customerId, missions: result.error ? [] : result.missions });
     });
     return () => {
       cancelled = true;
@@ -5362,6 +5408,7 @@ export function PosTerminal({
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned,
         loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance,
+        missionProgress: paidOrder?.missionProgress,
         // บิลที่ยังไม่ผูกลูกค้าจะมี QR รับแต้มตามมาทีหลัง — บอกใบเสร็จให้รอก่อนพิมพ์อัตโนมัติ
         loyaltyClaimPending: !selectedCustomer && Boolean(order.orderId),
       });
@@ -5528,6 +5575,7 @@ export function PosTerminal({
       paymentStatus: "paid" as const,
       loyaltyPointsEarned: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsEarned : undefined,
       loyaltyPointsBalance: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsBalance : undefined,
+      missionProgress: order.missionProgress,
       loyaltyClaim: claimResult?.claim ?? undefined,
       vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
       footerText: settings.footerText,
@@ -5619,6 +5667,27 @@ export function PosTerminal({
       ? usableVouchers(customerVouchers.vouchers, cart, appliedCoupon?.code)
       : [];
 
+  // ความคืบหน้าภารกิจ + บิลนี้จะนับได้กี่ชิ้น (กติกาเดียวกับ trigger: ไม่นับบรรทัด ฿0, เพดานต่อบิล)
+  const visibleMissions: PosMissionLine[] =
+    selectedCustomer && customerMissions?.customerId === selectedCustomer.id
+      ? customerMissions.missions.map((mission) => ({
+          enrollmentId: mission.enrollmentId,
+          name: mission.name,
+          progress: mission.progress,
+          targetCount: mission.targetCount,
+          thisBill: countOrderTowardMission(
+            cart.items.map((item) => ({
+              productId: item.productId,
+              categoryId: item.categoryId || null,
+              quantity: item.quantity,
+              totalPrice: item.totalPrice,
+            })),
+            mission,
+            mission.targetCount - mission.progress,
+          ),
+        }))
+      : [];
+
   function renderMemberQuickBar(compact: boolean) {
     return (
       <MemberQuickBar
@@ -5655,6 +5724,7 @@ export function PosTerminal({
         <MemberSheetSection
           selectedCustomer={selectedCustomer}
           vouchers={visibleVouchers}
+          missions={visibleMissions}
           customerQuery={customerQuery}
           customerResults={customerResults}
           searchedQuery={customerSearchedQuery}

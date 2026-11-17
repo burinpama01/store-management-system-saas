@@ -1,3 +1,6 @@
+import { missionReceiptRows } from "./mission-lines";
+import type { ReceiptMissionProgress } from "@/modules/pos/types";
+
 // ESC/POS command builder for 58mm/80mm thermal receipt printers
 
 // Control bytes
@@ -139,6 +142,8 @@ export interface EscPosReceiptInput {
   }[];
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** ภารกิจสะสมที่บิลนี้ถูกนับ */
+  missionProgress?: ReceiptMissionProgress[];
   footerText?: string;
   paperWidth: "58mm" | "80mm";
   printedAt: string;
@@ -243,6 +248,20 @@ export function buildEscPosReceipt(receipt: EscPosReceiptInput): Uint8Array {
     }
     if (hasBalancePoints) {
       push(summaryLine("แต้มคงเหลือ", pointsStr(balancePoints), paperWidth));
+    }
+  }
+
+  const missionRows = missionReceiptRows(receipt.missionProgress);
+  if (missionRows.length > 0) {
+    push(divider(paperWidth));
+    push(CMD.ALIGN_CENTER, CMD.BOLD_ON);
+    push(encodeText("ภารกิจสะสม\n"));
+    push(CMD.BOLD_OFF, CMD.ALIGN_LEFT);
+    for (const row of missionRows) {
+      push(summaryLine(row.name.slice(0, 24), row.progress, paperWidth));
+      push(CMD.ALIGN_CENTER, CMD.BOLD_ON);
+      push(encodeText(row.note + "\n"));
+      push(CMD.BOLD_OFF, CMD.ALIGN_LEFT);
     }
   }
 

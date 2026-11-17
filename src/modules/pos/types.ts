@@ -56,6 +56,13 @@ export interface CartItem {
 
 export type DiscountType = "amount" | "percentage";
 
+export interface ReceiptMissionProgress {
+  name: string;
+  progress: number;
+  targetCount: number;
+  completed: boolean;
+}
+
 export interface Cart {
   storeId: string;
   items: CartItem[];
@@ -101,6 +108,8 @@ export interface Order {
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
   loyaltyPointsBalance?: number;
+  /** ภารกิจสะสมที่บิลนี้ถูกนับ (โหลดหลังจ่าย) — ใบเสร็จพิมพ์ “อีก X ชิ้นได้รางวัล” */
+  missionProgress?: ReceiptMissionProgress[];
   items: OrderItem[];
   subtotal: number;
   discount: number;
