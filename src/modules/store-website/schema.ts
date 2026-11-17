@@ -66,12 +66,25 @@ export const heroBlockSchema = z.object({
   showOpenStatus: z.boolean(),
 });
 
+/** สัดส่วนแบนเนอร์ — auto = สูงตามข้อความ (เดิม) · ค่าอื่น = กรอบคงที่ รูปที่ส่งตามขนาดแนะนำจะโชว์ครบไม่โดนครอป */
+export const BANNER_ASPECTS = ["auto", "16:9", "2:1", "3:1", "1:1", "4:5"] as const;
+export type BannerAspect = (typeof BANNER_ASPECTS)[number];
+/** ขนาดรูปที่แนะนำต่อสัดส่วน (กว้าง×สูง พิกเซล) */
+export const BANNER_IMAGE_SIZES: Record<Exclude<BannerAspect, "auto">, string> = {
+  "16:9": "1600×900",
+  "2:1": "1600×800",
+  "3:1": "1500×500",
+  "1:1": "1080×1080",
+  "4:5": "1080×1350",
+};
+
 export const bannerBlockSchema = z.object({
   ...base,
   type: z.literal("banner"),
   title: shortText(80),
   subtitle: shortText(160),
   imageUrl: optionalUrl,
+  aspect: z.enum(BANNER_ASPECTS).optional(),
   link: linkTargetSchema,
   /** YYYY-MM-DD ตามเวลาไทย — ว่าง = แสดงตลอด */
   startsOn: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),
@@ -167,6 +180,17 @@ export const posterBlockSchema = z.object({
     .refine((els) => new Set(els.map((e) => e.id)).size === els.length, "รหัสชิ้นงานในโปสเตอร์ซ้ำ"),
 });
 
+// ---------- S4: โชว์เมนูแบบ 3D ----------
+export const MAX_SHOWCASE_ITEMS = 10;
+export const showcase3dBlockSchema = z.object({
+  ...base,
+  type: z.literal("showcase3d"),
+  title: shortText(80),
+  /** ว่าง = เมนูที่มีรูป 8 รายการแรก */
+  productIds: z.array(z.string().uuid()).max(MAX_SHOWCASE_ITEMS),
+  showPrices: z.boolean(),
+});
+
 export const blockSchema = z.discriminatedUnion("type", [
   heroBlockSchema,
   bannerBlockSchema,
@@ -178,6 +202,7 @@ export const blockSchema = z.discriminatedUnion("type", [
   deliveryAppsBlockSchema,
   textBlockSchema,
   posterBlockSchema,
+  showcase3dBlockSchema,
 ]);
 
 export const themeSchema = z.object({

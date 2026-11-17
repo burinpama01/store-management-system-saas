@@ -10,7 +10,21 @@ export interface WebsiteTemplate {
   style: TemplateStyle;
   description: string;
   theme: WebsiteTheme;
+  /** S4: เทมเพลตจากคลังรายเดือน (ฐานข้อมูล) */
+  library?: boolean;
+  /** วันที่เผยแพร่ในคลัง (ISO) — ใช้แสดงป้าย “ใหม่” */
+  publishedAt?: string | null;
 }
+
+/** เทมเพลตจากคลังที่เผยแพร่ไม่เกิน 30 วัน = ใหม่ */
+export const NEW_TEMPLATE_DAYS = 30;
+export function isNewTemplate(template: Pick<WebsiteTemplate, "publishedAt">, nowMs: number): boolean {
+  if (!template.publishedAt) return false;
+  const at = Date.parse(template.publishedAt);
+  return Number.isFinite(at) && nowMs - at <= NEW_TEMPLATE_DAYS * 86_400_000 && at <= nowMs + 60_000;
+}
+
+export const TEMPLATE_ID_RE = /^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/;
 
 export const BUSINESS_LABELS: Record<TemplateBusiness, string> = {
   cafe: "คาเฟ่",
@@ -44,6 +58,7 @@ export const WEBSITE_TEMPLATES: WebsiteTemplate[] = [
   { id: "grocery-cute", name: "ร้านของชำน่ารัก", business: "grocery", style: "cute", description: "สีสดใส ใกล้บ้าน", theme: theme("cute", "#2f9e44", "#fd7e14") },
 ];
 
+/** เทมเพลตในโค้ดเท่านั้น — ฝั่ง server ใช้ resolveTemplate() ใน template-library.ts (รวมคลังรายเดือน) */
 export function findTemplate(id: string): WebsiteTemplate | null {
   return WEBSITE_TEMPLATES.find((template) => template.id === id) ?? null;
 }
@@ -61,7 +76,7 @@ export function emptyBlock(type: WebsiteBlock["type"], storeName = "ร้าน
     case "hero":
       return { id, type, title: storeName, subtitle: "", imageUrl: "", showOpenStatus: true };
     case "banner":
-      return { id, type, title: "โปรโมชันเดือนนี้", subtitle: "", imageUrl: "", link: { kind: "none", url: "" }, startsOn: "", endsOn: "" };
+      return { id, type, title: "โปรโมชันเดือนนี้", subtitle: "", imageUrl: "", aspect: "16:9", link: { kind: "none", url: "" }, startsOn: "", endsOn: "" };
     case "passes":
       return { id, type, title: "แพ็กสุดคุ้ม ซื้อล่วงหน้า" };
     case "menu":
@@ -76,6 +91,8 @@ export function emptyBlock(type: WebsiteBlock["type"], storeName = "ร้าน
       return { id, type, title: "สั่งผ่านแอปเดลิเวอรี", apps: [] };
     case "text":
       return { id, type, title: "เกี่ยวกับร้าน", body: "" };
+    case "showcase3d":
+      return { id, type, title: "เมนูเด่น หมุนดูรอบ", productIds: [], showPrices: true };
     case "poster":
       return {
         id,
@@ -118,6 +135,7 @@ export const BLOCK_LABELS: Record<WebsiteBlock["type"], string> = {
   info: "📍 ที่อยู่ เวลาเปิด",
   social: "💬 โซเชียล",
   delivery_apps: "🛵 แอปเดลิเวอรี",
+  showcase3d: "🧊 โชว์เมนู 3D",
   text: "📝 ข้อความ",
   poster: "🎨 โปสเตอร์ (วางอิสระ)",
 };

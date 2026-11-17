@@ -7,7 +7,7 @@ import { isOpsManagerRole } from "@/modules/operations/access";
 import { getStoreWebsite, listWebsiteVersions, loadVerifiedLunarDates, loadWebsiteRenderData } from "@/modules/store-website/repository";
 import { activeFestival, pendingLunarFestivals, toFestivalView, upcomingFestivals } from "@/modules/store-website/festivals";
 import { normalizeSlug } from "@/modules/store-website/schema";
-import { WEBSITE_TEMPLATES } from "@/modules/store-website/templates";
+import { listAvailableTemplates } from "@/modules/store-website/template-library";
 import { WebsiteSetup } from "./WebsiteSetup";
 import { WebsiteEditor } from "./WebsiteEditor";
 
@@ -38,10 +38,10 @@ export default async function WebsitePage() {
 }
 
 async function WebsiteBody({ storeId }: { storeId: string }) {
-  const [website, renderData] = await Promise.all([getStoreWebsite(storeId), loadWebsiteRenderData(storeId)]);
+  const [website, renderData, templates] = await Promise.all([getStoreWebsite(storeId), loadWebsiteRenderData(storeId), listAvailableTemplates()]);
   if (!renderData) return <p className="alert-danger">โหลดข้อมูลร้านไม่สำเร็จ</p>;
   if (!website) {
-    return <WebsiteSetup templates={WEBSITE_TEMPLATES} defaultSlug={normalizeSlug(renderData.store.slug).slice(0, 40)} siteBase={siteBase()} />;
+    return <WebsiteSetup templates={templates} defaultSlug={normalizeSlug(renderData.store.slug).slice(0, 40)} siteBase={siteBase()} />;
   }
   const [versions, lunar] = await Promise.all([listWebsiteVersions(storeId), loadVerifiedLunarDates()]);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -67,7 +67,7 @@ async function WebsiteBody({ storeId }: { storeId: string }) {
       key={website.updatedAt}
       website={website}
       renderData={renderData}
-      templates={WEBSITE_TEMPLATES}
+      templates={templates}
       versions={versions}
       siteBase={siteBase()}
       today={today}
