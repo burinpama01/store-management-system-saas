@@ -258,6 +258,12 @@ export async function transitionOnlineOrder(input: {
   return Boolean(data);
 }
 
+export async function getOnlineOrderById(id: string): Promise<OnlineOrder | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db.from("online_orders").select("*").eq("id", id).maybeSingle();
+  return data ? toOrder(data) : null;
+}
+
 /** ตั้ง notified_at ครั้งเดียว — คืน true เฉพาะผู้ที่ตั้งได้ (ส่งแจ้งเตือนครั้งเดียว) */
 export async function claimOnlineOrderNotification(id: string): Promise<boolean> {
   const db: LooseClient = await createSupabaseServiceClient();

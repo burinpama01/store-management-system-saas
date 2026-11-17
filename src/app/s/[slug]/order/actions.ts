@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { cancelBeamQrPayment, createBeamQrPayment, refreshBeamPayment } from "@/modules/payments/beam-service";
 import type { BeamQrForPos } from "@/modules/payments/types";
-import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
+import { notifyOnlineOrderPaidOnce } from "@/modules/online-orders/notify";
 import { logSystemEvent } from "@/modules/system/event-log";
 import {
   QR_LIFETIME_MS,
@@ -21,7 +21,6 @@ import {
 import { priceCart } from "@/modules/online-orders/menu";
 import { resolveOrderingStore } from "@/modules/online-orders/public";
 import {
-  claimOnlineOrderNotification,
   countPendingOnlineOrders,
   expireStaleOnlineOrders,
   findOnlineOrderByRequest,
@@ -279,25 +278,8 @@ export async function getTrackingAction(token: string, withQr: boolean): Promise
     }
   }
 
-  if (order.status === "paid" && !order.notifiedAt && (await claimOnlineOrderNotification(order.id))) {
-    notifyOwnerSafely({
-      type: "new_delivery_order",
-      organizationId: order.organizationId,
-      storeId: order.storeId,
-      title: "มีออเดอร์ออนไลน์ใหม่ (จ่ายแล้ว)",
-      message: `${order.fulfillment === "pickup" ? "รับที่ร้าน" : "ส่งถึงบ้าน"} ${order.orderCode} ยอด ${order.total.toFixed(2)}`,
-      metadata: { onlineOrderId: order.id, orderNumber: order.orderCode, total: order.total, source: "online" },
-    });
-    void logSystemEvent({
-      level: "info",
-      source: "online-orders",
-      action: "onlineOrderPaid",
-      message: `คำสั่งซื้อออนไลน์ ${order.orderCode} จ่ายแล้ว`,
-      organizationId: order.organizationId,
-      storeId: order.storeId,
-      context: { onlineOrderId: order.id, total: order.total },
-    });
-  }
+  // ทางสำรอง — ปกติ webhook Beam แจ้งไปแล้ว (claim notified_at กันซ้ำ)
+  if (order.status === "paid" && !order.notifiedAt) await notifyOnlineOrderPaidOnce(order);
   return { view: toView(order, qr, notice), error: null };
 }
 

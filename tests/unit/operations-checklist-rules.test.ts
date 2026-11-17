@@ -304,7 +304,8 @@ describe("source wiring", () => {
     expect(sql).toContain("on public.ops_checklist_events for select\n  using (auth_user_role_in_store(organization_id, store_id, 'admin'))");
     expect(sql).toContain("where exists (select 1 from public.ops_checklist_due_alerts())");
     // constraint ชนิดแจ้งเตือนต้องมีชนิดเดิมครบ ไม่ทำของเดิมหาย
-    for (const type of NOTIFICATION_TYPES) expect(sql).toContain(`'${type}'`);
+    const addedLater = new Set(["new_online_order", "salary_advance_request", "pass_purchase"]);
+    for (const type of NOTIFICATION_TYPES.filter((t) => !addedLater.has(t))) expect(sql).toContain(`'${type}'`);
     // เปิดรอบใหม่ต้องล้าง dedupe ข้อสำคัญ ให้แจ้งเจ้าของได้อีกครั้ง
     expect(sql).toMatch(/delete from public\.ops_notification_log[\s\S]*run_id = p_run_id/);
   });

@@ -47,6 +47,18 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
     title: "เช็กลิสต์หน้าร้าน",
     message: "{templateName}: {itemLabel} (โดย {employeeName})",
   },
+  new_online_order: {
+    title: "มีออเดอร์ออนไลน์ใหม่ (จ่ายแล้ว)",
+    message: "{fulfillment} {orderNumber} ยอด {total}",
+  },
+  salary_advance_request: {
+    title: "{employeeName} ขอเบิกเงิน {amount}",
+    message: "รับเป็น{payMethod} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน",
+  },
+  pass_purchase: {
+    title: "ลูกค้าซื้อแพ็กล่วงหน้า",
+    message: "{planName} ยอด {amount} (จ่ายออนไลน์แล้ว)",
+  },
   test: { title: "ข้อความทดสอบ", message: "[TEST] notification พร้อมใช้งาน" },
 };
 
@@ -73,6 +85,9 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   subscription_expiring: ["store", "daysLeft", "plan"],
   daily_summary: ["store", "date", "orderCount", "revenue", "employeeName", "trigger"],
   ops_checklist: ["store", "templateName", "itemLabel", "employeeName", "shiftDate"],
+  new_online_order: ["store", "fulfillment", "orderNumber", "total"],
+  salary_advance_request: ["store", "employeeName", "amount", "payMethod", "reason"],
+  pass_purchase: ["store", "planName", "amount", "credits"],
   test: ["store"],
 };
 

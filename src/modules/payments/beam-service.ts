@@ -1,4 +1,5 @@
 import type { Json } from "@/server/integrations/supabase/database.types";
+import { runGatewayPaidEffects } from "./paid-effects";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { createBeamQrCharge, getBeamCharge, pingBeamCredentials } from "./beam-client";
@@ -600,6 +601,7 @@ export async function refreshBeamPayment(input: {
       },
     });
     const resolved = (moved as { status?: string } | null)?.status as GatewayPaymentStatus | undefined;
+    if (resolved === "PAID") await runGatewayPaidEffects(row.id);
     return { ok: true, status: resolved ?? next, amount };
   }
 
