@@ -34,6 +34,9 @@ const TYPE_META: Record<string, { label: string; emoji: string; tone: string }> 
   service_request: { label: "เรียกพนักงาน", emoji: "🔔", tone: "bg-amber-50 text-amber-800 border-amber-200" },
   daily_summary: { label: "สรุปยอดประจำวัน", emoji: "📊", tone: "bg-teal-50 text-teal-700 border-teal-200" },
   ops_checklist: { label: "เช็กลิสต์หน้าร้าน", emoji: "📋", tone: "bg-rose-50 text-rose-700 border-rose-200" },
+  new_online_order: { label: "ออร์เดอร์ออนไลน์", emoji: "🌐", tone: "bg-orange-50 text-orange-700 border-orange-200" },
+  salary_advance_request: { label: "ขอเบิกเงิน", emoji: "💸", tone: "bg-violet-50 text-violet-700 border-violet-200" },
+  pass_purchase: { label: "ซื้อแพ็กล่วงหน้า", emoji: "🎟️", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   test: { label: "ทดสอบ", emoji: "🧪", tone: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 

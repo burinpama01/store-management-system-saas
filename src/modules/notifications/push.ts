@@ -119,6 +119,7 @@ const ORDER_PUSH_TYPES: ReadonlySet<NotificationPayload["type"]> = new Set([
   "new_qr_order",
   "new_buffet_order",
   "new_delivery_order",
+  "new_online_order",
 ]);
 
 /**

@@ -1,4 +1,5 @@
 import type { Json } from "@/server/integrations/supabase/database.types";
+import { runGatewayPaidEffects } from "./paid-effects";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { parseBeamCharge } from "./beam-client";
@@ -227,6 +228,8 @@ export async function processBeamWebhook(input: {
       .eq("status", row.status);
   }
   await finish("processed", row.id, null);
+  // แจ้งร้าน (ออเดอร์ออนไลน์/ซื้อแพ็ก) — trigger อาจเปลี่ยน LATE_PAID → PAID ให้แพ็ก จึงอ่านสถานะจริงใน helper
+  if (nextStatus === "PAID" || nextStatus === "LATE_PAID") await runGatewayPaidEffects(row.id);
   await logSystemEvent({
     level: nextStatus === "PAID" || nextStatus === row.status ? "info" : "warn",
     source: "payments.webhook",

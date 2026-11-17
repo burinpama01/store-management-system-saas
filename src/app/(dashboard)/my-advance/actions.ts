@@ -9,6 +9,9 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import { getAdvanceAvailability } from "@/modules/hr/advanced/salary-advance-service";
 import { getSalaryAdvance, insertSalaryAdvance, updateSalaryAdvanceFrom } from "@/modules/hr/advanced/repository";
 import { formatBaht, listStoreManagerUserIds, pushPayrollNotification } from "@/modules/hr/advanced/notify";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
+import { notifyOwnerSafely } from "@/modules/notifications/dispatcher";
 import { ADVANCE_PAY_METHOD_LABEL, checkAdvanceAmount } from "@/modules/hr/advanced/salary-advance";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,15 +69,38 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
       actorUserId: user.id,
       context: { advanceId: created.data.id, amount, payMethod, available: av.cap.available, cashMax: av.cashMax, earned: av.earned, cycleStart: av.cycle.start },
     });
-    await pushPayrollNotification({
+    const title = `${av.employeeName} ขอเบิกเงิน ${formatBaht(amount)} (${ADVANCE_PAY_METHOD_LABEL[payMethod]})`;
+    const message = `ค่าแรงจากวันที่มาแล้ว ${formatBaht(av.earned)} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน${reason ? ` · เหตุผล: ${reason}` : ""}`;
+    const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+    if (!getPlanFeatures(billing).lineNotify) {
+      // แพ็กที่ไม่มีระบบแจ้งเตือน (เช่น business เลือกเงินเดือนขั้นสูงแต่ไม่เลือกแจ้งเตือน) — push ตรงถึงผู้จัดการแบบเดิม ไม่ให้คำขอเงียบ
+      await pushPayrollNotification({
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        userIds: (await listStoreManagerUserIds(ctx.organizationId, ctx.storeId)).filter((id) => id !== user.id),
+        kind: "advance_requested",
+        dedupeKey: created.data.id,
+        title,
+        message,
+      }).catch(() => undefined);
+      done();
+      return { error: null };
+    }
+    // ตามหน้าตั้งค่าแจ้งเตือน (LINE/Telegram/Push) หัวข้อ "พนักงานขอเบิกเงิน" — push ถึงเฉพาะเจ้าของ/ผู้จัดการ
+    notifyOwnerSafely({
+      type: "salary_advance_request",
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
-      userIds: (await listStoreManagerUserIds(ctx.organizationId, ctx.storeId)).filter((id) => id !== user.id),
-      kind: "advance_requested",
-      dedupeKey: created.data.id,
-      title: `${av.employeeName} ขอเบิกเงิน ${formatBaht(amount)} (${ADVANCE_PAY_METHOD_LABEL[payMethod]})`,
-      message: `ค่าแรงจากวันที่มาแล้ว ${formatBaht(av.earned)} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน${reason ? ` · เหตุผล: ${reason}` : ""}`,
-    }).catch(() => undefined);
+      title,
+      message,
+      metadata: {
+        advanceId: created.data.id,
+        employeeName: av.employeeName,
+        amount: formatBaht(amount),
+        payMethod: ADVANCE_PAY_METHOD_LABEL[payMethod],
+        reason: reason || null,
+      },
+    });
     done();
     return { error: null };
   } catch (e) {
