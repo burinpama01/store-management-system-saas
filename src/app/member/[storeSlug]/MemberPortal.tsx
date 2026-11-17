@@ -17,6 +17,8 @@ import { MemberPassesCard } from "./MemberPassesCard";
 import type { MemberPassesView } from "@/modules/prepaid-passes/member-portal";
 import type { MemberTierCoupon, MemberTierView } from "@/modules/member-tiers/repository";
 import { MemberTierCard } from "./MemberTierCard";
+import { MemberMissionsCard } from "./MemberMissionsCard";
+import type { MemberMissionsView } from "@/modules/missions/repository";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -32,6 +34,8 @@ interface Props {
   tierView?: MemberTierView | null;
   /** โค้ดพิเศษเดือนนี้ตามระดับ */
   tierCoupons?: MemberTierCoupon[];
+  /** ภารกิจสะสม — null = ร้านไม่ได้เปิด/ยังไม่ล็อกอิน */
+  missionsView?: MemberMissionsView | null;
 }
 
 interface RedeemedVoucher {
@@ -99,6 +103,7 @@ export function MemberPortal({
   passesView = null,
   tierView = null,
   tierCoupons = [],
+  missionsView = null,
 }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"register" | "login">("register");
@@ -358,6 +363,7 @@ export function MemberPortal({
               </p>
             </section>
 
+            {missionsView && <MemberMissionsCard storeSlug={storeSlug} portalCode={portalCode} view={missionsView} />}
             {tierView && <MemberTierCard view={tierView} coupons={tierCoupons} />}
             {data.passesOnly && (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -464,7 +470,9 @@ export function MemberPortal({
                             <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}>
                               {badge.label}
                             </span>
-                            <p className="mt-1 text-xs text-[var(--muted)]">-{formatPoints(redemption.pointsSpent)} แต้ม</p>
+                            <p className="mt-1 text-xs text-[var(--muted)]">
+                              {redemption.pointsSpent > 0 ? `-${formatPoints(redemption.pointsSpent)} แต้ม` : "รางวัลภารกิจ"}
+                            </p>
                           </div>
                         </button>
                       );
@@ -536,7 +544,9 @@ export function MemberPortal({
                   : "ของรางวัล"}
               </dd>
               <dt className="text-[var(--muted)]">แต้มที่ใช้</dt>
-              <dd className="text-right font-semibold text-[var(--foreground)]">{formatPoints(detail.pointsSpent)} แต้ม</dd>
+              <dd className="text-right font-semibold text-[var(--foreground)]">
+                {detail.pointsSpent > 0 ? `${formatPoints(detail.pointsSpent)} แต้ม` : "รางวัลภารกิจ (ไม่ใช้แต้ม)"}
+              </dd>
               <dt className="text-[var(--muted)]">วันที่แลก</dt>
               <dd className="text-right font-semibold text-[var(--foreground)]">{formatDate(detail.createdAt)}</dd>
               <dt className="text-[var(--muted)]">หมดอายุ</dt>

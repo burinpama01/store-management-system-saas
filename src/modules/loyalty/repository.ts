@@ -194,7 +194,9 @@ export async function listLoyaltyRewardsForStore(storeId: string, options: { inc
 
   const { data, error } = await query;
   if (error) return { data: null, error: mapError(error) };
-  return { data: (data ?? []).map(mapLoyaltyReward), error: null };
+  // ของรางวัลซ่อนของภารกิจสะสม (mission_only) ไม่ใช่ของแลกแต้ม — ไม่แสดงในหน้าจัดการของรางวัล
+  const rows = (data ?? []).filter((row) => (row as { mission_only?: boolean }).mission_only !== true);
+  return { data: rows.map(mapLoyaltyReward), error: null };
 }
 
 export async function saveLoyaltyReward(input: LoyaltyRewardSaveInput) {

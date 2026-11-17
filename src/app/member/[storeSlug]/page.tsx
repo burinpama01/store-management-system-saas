@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getCustomerPortalData } from "@/modules/customers/member-repository";
 import { getMemberPassesView } from "@/modules/prepaid-passes/member-portal";
 import { getMemberTierForCustomer, listMemberTierCoupons } from "@/modules/member-tiers/repository";
+import { getMemberMissionsView } from "@/modules/missions/repository";
 import { MemberPortal } from "./MemberPortal";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,12 @@ export default async function CustomerMemberPage({
       ? await listMemberTierCoupons(portalData.store.id, portalData.customer.id, tierView.rank)
       : [];
 
+  // ภารกิจสะสม (Enterprise + ร้านเปิดภารกิจ) — โหลดเฉพาะคนที่ล็อกอินแล้ว
+  const missionsView =
+    portalData.store && portalData.customer && portalData.memberPrivileges
+      ? await getMemberMissionsView(portalData.store.id, portalData.customer.id)
+      : null;
+
   return (
     <MemberPortal
       storeSlug={storeSlug}
@@ -48,6 +55,7 @@ export default async function CustomerMemberPage({
       passesView={passesView}
       tierView={tierView}
       tierCoupons={tierCoupons}
+      missionsView={missionsView}
     />
   );
 }

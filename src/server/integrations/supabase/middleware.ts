@@ -47,6 +47,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/music/") ||
     request.nextUrl.pathname === "/member" ||
     request.nextUrl.pathname.startsWith("/member/") ||
+    // ลิงก์สั้นใน SMS ภารกิจ (/m/<slug> → หน้าสมาชิกของร้าน)
+    request.nextUrl.pathname.startsWith("/m/") ||
     // เว็บไซต์ของร้าน (สาธารณะ แคช ISR) — "/s/<slug>" เท่านั้น ไม่ชนกับเส้นทางอื่นที่ขึ้นต้นด้วย s
     request.nextUrl.pathname.startsWith("/s/") ||
     request.nextUrl.pathname === "/pricing" ||
@@ -86,6 +88,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/api/operations/cron/checklist-due" ||
     // เงินเดือนขั้นสูง: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
     request.nextUrl.pathname === "/api/hr/cron/payroll" ||
+    // SMS ภารกิจสะสม: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
+    request.nextUrl.pathname === "/api/missions/cron/sms" ||
     // Public REST API (Enterprise) — auth ด้วย API key ใน handler เอง ไม่ใช้ session
     request.nextUrl.pathname.startsWith("/api/v1/") ||
     // Same-origin proxy for receipt logo/footer images. Serves only public

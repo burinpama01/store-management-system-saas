@@ -13,6 +13,7 @@ import { claimLoyaltyPointsWithCode } from "@/modules/loyalty/claim-repository";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 import { issueMemberRedeemCode } from "@/modules/members/repository";
 import { cancelPassPurchase, checkPassPurchase, startPassPurchase } from "@/modules/prepaid-passes/member-portal";
+import { joinStoreMission, setMissionSmsOptOut } from "@/modules/missions/repository";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -418,5 +419,74 @@ export async function cancelPassPurchaseAction(formData: FormData): Promise<{ er
   } catch (e) {
     logPublicMemberActionError("cancelPassPurchase", e);
     return { error: "ยกเลิกไม่สำเร็จ" };
+  }
+}
+
+/** ลูกค้ากดรับภารกิจ (Enterprise + ร้านเปิดภารกิจ) — นับเฉพาะบิลที่จ่ายหลังจากนี้ */
+export async function joinMissionAction(formData: FormData): Promise<{ error: string | null; already?: boolean }> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const missionId = text(formData, "missionId");
+    if (!UUID_RE.test(missionId)) return { error: "ข้อมูลภารกิจไม่ถูกต้อง" };
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนรับภารกิจ" };
+    if (!portalData.memberPrivileges) return { error: "ภารกิจสะสมใช้ได้เฉพาะร้านแพ็กเกจ Enterprise" };
+
+    const smsOptIn = text(formData, "smsOptIn") !== "0";
+    const result = await joinStoreMission(portalData.customer.id, missionId, smsOptIn);
+    void logSystemEvent({
+      level: result.error ? "warn" : "info",
+      source: "missions.member",
+      action: "joinMissionAction",
+      message:
+        result.error !== null
+          ? `รับภารกิจไม่สำเร็จ: ${result.error}`
+          : result.data.already
+            ? "กดรับภารกิจที่กำลังทำอยู่แล้ว"
+            : `รับภารกิจ (รอบที่ ${result.data.round})`,
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { missionId, customerId: portalData.customer.id, enrollmentId: result.data?.enrollmentId ?? null, smsOptIn },
+    });
+    if (result.error !== null) return { error: result.error };
+    revalidatePath(`/member/${storeSlug}`);
+    return { error: null, already: result.data.already };
+  } catch (e) {
+    logPublicMemberActionError("joinMission", e);
+    return { error: "รับภารกิจไม่สำเร็จ กรุณาลองใหม่" };
+  }
+}
+
+/** ลูกค้าเปิด/ปิดรับ SMS ภารกิจของสาขานี้ (PDPA: ยกเลิกได้ทุกเมื่อ) */
+export async function setMissionSmsOptOutAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const optOut = text(formData, "optOut") === "1";
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อน" };
+    const result = await setMissionSmsOptOut(portalData.store.id, portalData.customer.id, optOut);
+    void logSystemEvent({
+      level: result.error ? "error" : "info",
+      source: "missions.member",
+      action: "setMissionSmsOptOutAction",
+      message: result.error ? `เปลี่ยนการรับ SMS ภารกิจไม่สำเร็จ: ${result.error}` : optOut ? "ลูกค้ายกเลิกรับ SMS ภารกิจ" : "ลูกค้าเปิดรับ SMS ภารกิจ",
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { customerId: portalData.customer.id, optOut },
+    });
+    if (result.error !== null) return { error: "บันทึกไม่สำเร็จ กรุณาลองใหม่" };
+    revalidatePath(`/member/${storeSlug}`);
+    return { error: null };
+  } catch (e) {
+    logPublicMemberActionError("setMissionSmsOptOut", e);
+    return { error: "บันทึกไม่สำเร็จ กรุณาลองใหม่" };
   }
 }

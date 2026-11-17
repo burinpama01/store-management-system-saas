@@ -47,7 +47,7 @@ async function slugForDomain(host: string): Promise<string | null> {
 
 /** path ที่ยอมให้ผ่านบนโดเมนร้าน (หน้าสมาชิก/ API ที่หน้าสั่งออนไลน์และสมาชิกเรียก) */
 function isAllowedOnStoreDomain(pathname: string): boolean {
-  return pathname.startsWith("/api/") || pathname.startsWith("/member/") || pathname.startsWith("/s/");
+  return pathname.startsWith("/api/") || pathname.startsWith("/member/") || pathname.startsWith("/m/") || pathname.startsWith("/s/");
 }
 
 export async function proxy(request: NextRequest) {

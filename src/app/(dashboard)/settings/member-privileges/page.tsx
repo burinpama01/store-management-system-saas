@@ -43,6 +43,14 @@ export default async function MemberPrivilegesSettingsPage() {
         </div>
       )}
 
+      {allowed && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm">
+          <p className="font-semibold text-orange-900">ภารกิจสะสม</p>
+          <p className="text-orange-800">ให้ลูกค้ากดรับภารกิจ เช่น ซื้อครบ 6 แก้วรับฟรี 1 แก้ว ไม่ต้องจ่ายล่วงหน้า ระบบนับให้ตอนจ่ายบิล</p>
+          <Link className="btn-secondary mt-2 inline-block text-sm" href="/customers/missions">จัดการภารกิจ</Link>
+        </div>
+      )}
+
       <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
         <p className="font-semibold text-gray-900">วิธีใช้</p>
         <ol className="mt-2 list-decimal space-y-1 pl-5">

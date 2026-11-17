@@ -33,6 +33,7 @@ import { canRedeemPasses, resolveMemberPassAccess } from "@/modules/prepaid-pass
 import { getMemberTierForCustomer, listMemberTierCoupons, type MemberTierCoupon } from "@/modules/member-tiers/repository";
 import { normalizeMemberRedeemCodeInput } from "@/modules/members/redeem-code";
 import { verifyMemberRedeemCode } from "@/modules/members/repository";
+import { listPosMissionProgress, type PosMissionProgress } from "@/modules/missions/repository";
 import { fallbackMemberName, isRegistrablePhone, type PosRewardVoucher } from "@/modules/pos/loyalty-coupon-ux";
 import { normalizeCustomerPhone } from "@/shared/utils/customer-phone";
 import type { CustomerProfile } from "@/modules/customers/types";
@@ -499,6 +500,22 @@ export async function evaluatePosCouponAction(
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** ภารกิจที่ลูกค้าในบิลกำลังทำ (ร้านเปิดภารกิจ) — POS แสดงความคืบหน้า + “บิลนี้ +N” */
+export async function listPosMissionProgressAction(
+  customerId: string,
+): Promise<{ missions: PosMissionProgress[]; error: string | null }> {
+  try {
+    await requirePermission("pos.use");
+    if (!UUID_PATTERN.test(customerId)) return { missions: [], error: "ข้อมูลลูกค้าไม่ถูกต้อง" };
+    const { ctx } = await getStoreContext();
+    const result = await listPosMissionProgress(ctx.storeId, customerId);
+    if (result.error !== null) return { missions: [], error: result.error };
+    return { missions: result.data, error: null };
+  } catch (e) {
+    return { missions: [], error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
 /** โค้ดแลกรางวัลที่ลูกค้าที่ผูกบิลอยู่ยังไม่ได้ใช้ — POS แสดงให้แตะใช้ */
 export async function listPosCustomerVouchersAction(
   customerId: string,
@@ -813,7 +830,17 @@ async function createPosOrderCore(
     // checkout can never strand a customer's voucher in the used state.
     for (const redemptionId of rewardRedemptionIds) {
       const reserved = await reserveProductRewardVoucher(ctx.storeId, redemptionId);
-      if (reserved.error || !reserved.reserved) {
+      if (reserved.error) {
+        await releaseReservedVouchers();
+        // คูปองรางวัลภารกิจต้องยืนยันรหัสสมาชิกก่อน (trigger ใน DB) — บอกแคชเชียร์ตรง ๆ ไม่ใช่ “ถูกใช้ไปแล้ว”
+        const needsCode = /ยืนยันรหัสสมาชิก/.test(reserved.error.message ?? "") || /ยืนยันรหัสสมาชิก/.test(reserved.error.userMessage ?? "");
+        return {
+          orderId: null,
+          orderNumber: null,
+          error: needsCode ? "ต้องยืนยันรหัสสมาชิกก่อนใช้คูปองรางวัลภารกิจ" : "ใช้โค้ดของรางวัลไม่สำเร็จ กรุณาลองใหม่",
+        };
+      }
+      if (!reserved.reserved) {
         await releaseReservedVouchers();
         return { orderId: null, orderNumber: null, error: "โค้ดของรางวัลถูกใช้ไปแล้ว" };
       }

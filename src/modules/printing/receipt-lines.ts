@@ -1,3 +1,4 @@
+import { missionReceiptRows } from "./mission-lines";
 import type { ReceiptData } from "./types";
 import { buildReceiptPromptPayQr } from "./receipt-qr";
 import { formatPoints } from "@/shared/utils/points";
@@ -316,6 +317,16 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     }
     if (hasBalancePoints) {
       lines.push({ text: padLine("แต้มคงเหลือ", pointsStr(balancePoints), cols) });
+    }
+  }
+
+  const missionRows = missionReceiptRows(data.missionProgress);
+  if (missionRows.length > 0) {
+    lines.push({ text: div });
+    lines.push({ text: "ภารกิจสะสม", align: "center", bold: true });
+    for (const row of missionRows) {
+      lines.push({ text: padLine(row.name.slice(0, Math.max(cols - row.progress.length - 1, 8)), row.progress, cols) });
+      lines.push({ text: row.note, align: "center", bold: true });
     }
   }
 
