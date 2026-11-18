@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   EMPTY_MISSION_INPUT,
   MISSION_TEMPLATES,
+  missionProgressText,
   rewardLabel,
   validateMissionInput,
   type Mission,
@@ -33,6 +34,8 @@ interface Draft {
   input: MissionInput;
   targetCount: string;
   maxPerOrder: string;
+  minOrderTotal: string;
+  rewardPoints: string;
   durationDays: string;
   joinEndsAt: string;
   maxParticipants: string;
@@ -49,6 +52,8 @@ function toDraft(id: string | null, input: MissionInput): Draft {
     input,
     targetCount: String(input.targetCount),
     maxPerOrder: input.maxPerOrder === null ? "" : String(input.maxPerOrder),
+    minOrderTotal: String(input.minOrderTotal ?? 0),
+    rewardPoints: input.rewardPoints === null || input.rewardPoints === undefined ? "" : String(input.rewardPoints),
     durationDays: input.durationDays === null ? "" : String(input.durationDays),
     joinEndsAt: input.joinEndsAt ? input.joinEndsAt.slice(0, 10) : "",
     maxParticipants: input.maxParticipants === null ? "" : String(input.maxParticipants),
@@ -70,7 +75,9 @@ function fromDraft(draft: Draft): MissionInput {
   return {
     ...draft.input,
     targetCount: Number(draft.targetCount),
-    maxPerOrder: intOrNull(draft.maxPerOrder),
+    maxPerOrder: draft.input.countMode === "items" ? intOrNull(draft.maxPerOrder) : null,
+    minOrderTotal: draft.input.countMode === "orders" && draft.minOrderTotal.trim() !== "" ? Number(draft.minOrderTotal) : 0,
+    rewardPoints: draft.input.rewardType === "points" ? intOrNull(draft.rewardPoints) : null,
     durationDays: intOrNull(draft.durationDays),
     joinEndsAt: endOfThaiDay(draft.joinEndsAt),
     maxParticipants: intOrNull(draft.maxParticipants),
@@ -222,15 +229,43 @@ export function MissionManager({ enabled, missions, products, categories }: Prop
             )}
           </div>
 
+          <div className="text-sm">
+            <span className="field-label">นับแบบไหน</span>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {([["items", "จำนวนชิ้น"], ["spend", "ยอดซื้อสะสม (บาท)"], ["orders", "จำนวนบิล"]] as const).map(([value, label]) => (
+                <button key={value} type="button" className={draft.input.countMode === value ? "btn-primary text-sm" : "btn-secondary text-sm"} onClick={() => patch({ countMode: value })}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              {draft.input.countMode === "spend"
+                ? "รวมยอดสินค้าในขอบเขตที่ลูกค้าจ่ายจริงทุกบิล เช่น สะสมครบ ฿1,000"
+                : draft.input.countMode === "orders"
+                  ? "นับ 1 ครั้งต่อบิลที่ยอดสินค้าในขอบเขตถึงขั้นต่ำ เช่น ซื้อ ฿120/บิล · ตั้งเป้า 1 ครั้ง + ขั้นต่ำ 0 = ภารกิจซื้อครั้งแรก"
+                  : "นับจำนวนชิ้นในขอบเขต เช่น ดื่มครบ 6 แก้ว"}
+            </p>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block text-sm">
-              <span className="field-label">เป้าหมาย (ชิ้น)</span>
+              <span className="field-label">
+                เป้าหมาย ({draft.input.countMode === "spend" ? "บาท" : draft.input.countMode === "orders" ? "ครั้ง" : "ชิ้น"})
+              </span>
               <input className="input mt-1 w-full" style={inputStyle} inputMode="numeric" value={draft.targetCount} onChange={(e) => patchField("targetCount", e.target.value)} />
             </label>
-            <label className="block text-sm">
-              <span className="field-label">นับได้สูงสุดต่อบิล (ว่าง = ไม่จำกัด)</span>
-              <input className="input mt-1 w-full" style={inputStyle} inputMode="numeric" value={draft.maxPerOrder} onChange={(e) => patchField("maxPerOrder", e.target.value)} />
-            </label>
+            {draft.input.countMode === "items" && (
+              <label className="block text-sm">
+                <span className="field-label">นับได้สูงสุดต่อบิล (ว่าง = ไม่จำกัด)</span>
+                <input className="input mt-1 w-full" style={inputStyle} inputMode="numeric" value={draft.maxPerOrder} onChange={(e) => patchField("maxPerOrder", e.target.value)} />
+              </label>
+            )}
+            {draft.input.countMode === "orders" && (
+              <label className="block text-sm">
+                <span className="field-label">ยอดขั้นต่ำต่อบิล (บาท, 0 = ไม่มีขั้นต่ำ)</span>
+                <input className="input mt-1 w-full" style={inputStyle} inputMode="decimal" value={draft.minOrderTotal} onChange={(e) => patchField("minOrderTotal", e.target.value)} />
+              </label>
+            )}
             <label className="block text-sm">
               <span className="field-label">ทำให้ครบภายใน (วันหลังกดรับ)</span>
               <input className="input mt-1 w-full" style={inputStyle} inputMode="numeric" placeholder="เช่น 30" value={draft.durationDays} onChange={(e) => patchField("durationDays", e.target.value)} />
@@ -254,8 +289,15 @@ export function MissionManager({ enabled, missions, products, categories }: Prop
             <div className="flex flex-wrap gap-2">
               <button type="button" className={draft.input.rewardType === "product" ? "btn-primary text-sm" : "btn-secondary text-sm"} onClick={() => patch({ rewardType: "product" })}>เมนูฟรี 1 ชิ้น</button>
               <button type="button" className={draft.input.rewardType === "discount" ? "btn-primary text-sm" : "btn-secondary text-sm"} onClick={() => patch({ rewardType: "discount", rewardDiscountKind: draft.input.rewardDiscountKind ?? "amount" })}>คูปองส่วนลด</button>
+              <button type="button" className={draft.input.rewardType === "points" ? "btn-primary text-sm" : "btn-secondary text-sm"} onClick={() => patch({ rewardType: "points" })}>แต้มโบนัส</button>
             </div>
-            {draft.input.rewardType === "product" ? (
+            {draft.input.rewardType === "points" ? (
+              <label className="block w-48">
+                <span className="text-xs text-gray-600">แต้มที่ได้เมื่อทำครบ</span>
+                <input className="input mt-1 w-full" style={inputStyle} inputMode="decimal" value={draft.rewardPoints} onChange={(e) => patchField("rewardPoints", e.target.value)} />
+                <span className="text-xs text-gray-500">บวกเข้าบัญชีแต้มทันทีที่บิลจ่ายสำเร็จ · ยกเลิกบิล = หักคืน</span>
+              </label>
+            ) : draft.input.rewardType === "product" ? (
               <label className="block">
                 <span className="text-xs text-gray-600">เมนูที่ได้ฟรี</span>
                 <select className="input mt-1 w-full" style={inputStyle} value={draft.input.rewardProductId ?? ""} onChange={(e) => patch({ rewardProductId: e.target.value || null })}>
@@ -283,10 +325,12 @@ export function MissionManager({ enabled, missions, products, categories }: Prop
                 </label>
               </div>
             )}
-            <label className="block w-48">
-              <span className="text-xs text-gray-600">คูปองใช้ได้ (วัน)</span>
-              <input className="input mt-1 w-full" style={inputStyle} inputMode="numeric" value={draft.rewardValidDays} onChange={(e) => patchField("rewardValidDays", e.target.value)} />
-            </label>
+            {draft.input.rewardType !== "points" && (
+              <label className="block w-48">
+                <span className="text-xs text-gray-600">คูปองใช้ได้ (วัน)</span>
+                <input className="input mt-1 w-full" style={inputStyle} inputMode="numeric" value={draft.rewardValidDays} onChange={(e) => patchField("rewardValidDays", e.target.value)} />
+              </label>
+            )}
           </div>
 
           {draft.id && (
@@ -317,8 +361,9 @@ export function MissionManager({ enabled, missions, products, categories }: Prop
                   </span>
                 </p>
                 <p className="text-xs text-gray-600">
-                  {mission.targetCount} ชิ้น
-                  {mission.maxPerOrder ? ` · สูงสุด ${mission.maxPerOrder}/บิล` : ""}
+                  {missionProgressText(mission.countMode, 0, mission.targetCount).replace(/^฿?0\//, "")}
+                  {mission.countMode === "orders" && mission.minOrderTotal > 0 ? ` (ขั้นต่ำ ฿${mission.minOrderTotal}/บิล)` : ""}
+                  {mission.countMode === "items" && mission.maxPerOrder ? ` · สูงสุด ${mission.maxPerOrder}/บิล` : ""}
                   {mission.durationDays ? ` · ภายใน ${mission.durationDays} วัน` : ""}
                   {" · ปิด "}{formatDate(mission.joinEndsAt)}
                   {mission.repeatable ? " · ทำซ้ำได้" : ""}

@@ -61,6 +61,10 @@ export interface ReceiptMissionProgress {
   progress: number;
   targetCount: number;
   completed: boolean;
+  /** วิธีนับ — ใบเสร็จแสดงหน่วย (ชิ้น/บาท/ครั้ง) ไม่มี = ชิ้น */
+  countMode?: "items" | "spend" | "orders";
+  /** รางวัลเป็นแต้ม (ครบแล้วแต้มเข้าบัญชีเลย ไม่ใช่คูปอง) */
+  pointsReward?: boolean;
 }
 
 export interface Cart {

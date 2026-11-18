@@ -93,7 +93,7 @@ import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPane
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
 import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
-import { countOrderTowardMission } from "@/modules/missions/rules";
+import { countOrderTowardMission, missionProgressText } from "@/modules/missions/rules";
 import type { PosMissionProgress } from "@/modules/missions/repository";
 import { useRegisterVoiceCart, type VoiceCartApi } from "./unified/voice-cart-bridge";
 import {
@@ -1545,6 +1545,7 @@ interface PosMissionLine {
   progress: number;
   targetCount: number;
   thisBill: number;
+  countMode: "items" | "spend" | "orders";
 }
 
 /**
@@ -1654,8 +1655,12 @@ function MemberSheetSection({
                   <div className="flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate font-semibold text-slate-800">🎯 {mission.name}</span>
                     <span className="shrink-0 tabular-nums text-slate-700">
-                      {mission.progress}/{mission.targetCount}
-                      {mission.thisBill > 0 && <span className="ml-1 font-semibold text-emerald-700">บิลนี้ +{mission.thisBill}</span>}
+                      {missionProgressText(mission.countMode, mission.progress, mission.targetCount)}
+                      {mission.thisBill > 0 && (
+                        <span className="ml-1 font-semibold text-emerald-700">
+                          บิลนี้ +{mission.countMode === "spend" ? `฿${mission.thisBill.toLocaleString("th-TH")}` : mission.thisBill}
+                        </span>
+                      )}
                     </span>
                   </div>
                   {after >= mission.targetCount && mission.thisBill > 0 && (
@@ -5675,6 +5680,7 @@ export function PosTerminal({
           name: mission.name,
           progress: mission.progress,
           targetCount: mission.targetCount,
+          countMode: mission.countMode,
           thisBill: countOrderTowardMission(
             cart.items.map((item) => ({
               productId: item.productId,

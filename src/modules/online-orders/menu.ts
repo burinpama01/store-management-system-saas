@@ -3,7 +3,7 @@ import type { CartLine, PricedLine } from "./core";
 
 /**
  * เมนูสำหรับสั่งออนไลน์ + คิดราคาฝั่ง server (service client — ผู้เรียกตรวจว่าร้านเปิดสั่งออนไลน์แล้ว)
- * กติกาเมนู: สินค้าเปิดขาย, ไม่หมด, ไม่ใช่สินค้าขายแพ็ก (แพ็กขายที่ร้าน)
+ * กติกาเมนู: สินค้าเปิดขาย, ไม่หมด, เปิด "ขายออนไลน์" (products.online_enabled), ไม่ใช่สินค้าขายแพ็ก (แพ็กขายที่ร้าน)
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ตารางใหม่/คอลัมน์ใหม่ยังไม่อยู่ใน database.types
@@ -76,7 +76,9 @@ async function loadCatalog(db: LooseClient, storeId: string, productIds: string[
     .select("id, store_id, name, description, base_price, image_url, category_id, kitchen_station_id, is_active, out_of_stock")
     .eq("store_id", storeId)
     .eq("is_active", true)
-    .eq("out_of_stock", false);
+    .eq("out_of_stock", false)
+    // ปิดขายออนไลน์ = ไม่ขึ้นเมนู และสั่ง/คิดราคาไม่ได้ (คิดราคาฝั่ง server ใช้ query เดียวกัน)
+    .eq("online_enabled", true);
   productQuery = productIds ? productQuery.in("id", productIds) : productQuery.order("sort_order").order("name").limit(300);
   const [productsRes, passRes] = await Promise.all([
     productQuery,

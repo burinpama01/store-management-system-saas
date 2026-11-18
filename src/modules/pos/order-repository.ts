@@ -386,7 +386,7 @@ async function loadOrderMissionProgress(orderId: string): Promise<ReceiptMission
     if (error || !events || events.length === 0) return undefined;
     const { data: rows, error: rowsErr } = await db
       .from("store_mission_enrollments")
-      .select("progress, target_count, status, store_missions(name)")
+      .select("progress, target_count, status, count_mode, reward_points_awarded, store_missions(name, reward_type)")
       .in("id", events.map((event: { enrollment_id: string }) => event.enrollment_id));
     if (rowsErr || !rows) return undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- แถวดิบจาก PostgREST
@@ -395,6 +395,8 @@ async function loadOrderMissionProgress(orderId: string): Promise<ReceiptMission
       progress: Number(row.progress),
       targetCount: Number(row.target_count),
       completed: row.status === "completed",
+      countMode: row.count_mode ?? "items",
+      pointsReward: row.store_missions?.reward_type === "points",
     }));
   } catch {
     return undefined;
