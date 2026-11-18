@@ -141,7 +141,10 @@ describe("ต่อสายในแอป", () => {
     expect(actions).toContain('"ต้องยืนยันรหัสสมาชิกก่อนใช้คูปองรางวัลภารกิจ"');
   });
   it("หน้าสมาชิกไม่แสดง “-0 แต้ม” สำหรับรางวัลภารกิจ", () => {
-    expect(read("src/app/member/[storeSlug]/MemberPortal.tsx")).toContain('"รางวัลภารกิจ"');
+    const portal = read("src/app/member/[storeSlug]/MemberPortal.tsx");
+    // คูปองทรงตั๋วบอกที่มา "จากภารกิจ" แทนจำนวนแต้ม · รายละเอียดบอกว่าไม่ใช้แต้ม
+    expect(portal).toContain('redemption.pointsSpent > 0 ? `แลกแต้ม · ${formatPoints(redemption.pointsSpent)} แต้ม` : "จากภารกิจ"');
+    expect(portal).toContain("รางวัลภารกิจ (ไม่ใช้แต้ม)");
   });
 });
 
