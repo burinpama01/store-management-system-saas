@@ -608,6 +608,15 @@ function ProductForm({
           </label>
         )}
       </div>
+      <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+        <input
+          type="checkbox"
+          name="availableOnline"
+          defaultChecked={product?.availableOnline ?? true}
+          className="rounded border-gray-300"
+        />
+        ขายในหน้าสั่งออนไลน์ (เว็บร้าน) — ไม่ติ๊ก = ขายหน้าร้าน/QR ได้ แต่ไม่ขึ้นหน้าสั่งออนไลน์
+      </label>
       <div className="rounded border border-gray-200 bg-gray-50 p-2.5 space-y-2">
         <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
           <input
@@ -2022,6 +2031,11 @@ export function CatalogManager({
                         {p.outOfStock && (
                           <span className="rounded-md bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700">
                             ของหมด
+                          </span>
+                        )}
+                        {p.availableOnline === false && (
+                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+                            ไม่ขายออนไลน์
                           </span>
                         )}
                       </div>

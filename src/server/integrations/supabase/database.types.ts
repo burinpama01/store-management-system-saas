@@ -1871,6 +1871,7 @@ export interface Database {
           delivery_price: number | null;
           delivery_out_of_stock: boolean;
           out_of_stock: boolean;
+          online_enabled: boolean;
           unit_label: string | null;
           price_wholesale: number | null;
           price_agent: number | null;
@@ -1898,6 +1899,7 @@ export interface Database {
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
           out_of_stock?: boolean;
+          online_enabled?: boolean;
           unit_label?: string | null;
           price_wholesale?: number | null;
           price_agent?: number | null;
@@ -1925,6 +1927,7 @@ export interface Database {
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
           out_of_stock?: boolean;
+          online_enabled?: boolean;
           unit_label?: string | null;
           price_wholesale?: number | null;
           price_agent?: number | null;

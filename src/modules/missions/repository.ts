@@ -20,6 +20,8 @@ function mapMission(row: any): Mission {
     name: row.name,
     description: row.description ?? "",
     scope: row.scope,
+    countMode: row.count_mode ?? "items",
+    minOrderTotal: Number(row.min_order_total ?? 0),
     categoryIds: row.category_ids ?? [],
     productIds: row.product_ids ?? [],
     targetCount: Number(row.target_count),
@@ -34,6 +36,7 @@ function mapMission(row: any): Mission {
     rewardDiscountKind: row.reward_discount_kind,
     rewardDiscountValue: row.reward_discount_value === null ? null : Number(row.reward_discount_value),
     rewardMinSubtotal: Number(row.reward_min_subtotal ?? 0),
+    rewardPoints: row.reward_points === null || row.reward_points === undefined ? null : Number(row.reward_points),
     rewardValidDays: Number(row.reward_valid_days),
     status: row.status,
     createdAt: row.created_at,
@@ -76,7 +79,7 @@ export async function listStoreMissions(storeId: string): Promise<Result<{ missi
 
   const { data: enrollments, error: enrollErr } = await db
     .from("store_mission_enrollments")
-    .select("id, mission_id, member_identity_id, status")
+    .select("id, mission_id, member_identity_id, status, reward_points_awarded")
     .eq("store_id", storeId)
     .in("mission_id", rows.map((row) => row.id))
     .limit(20000);
@@ -102,6 +105,8 @@ export async function listStoreMissions(storeId: string): Promise<Result<{ missi
     s.members.add(e.member_identity_id);
     if (e.status === "active") s.active += 1;
     if (e.status === "completed") s.completed += 1;
+    // รางวัลแต้มไม่มีคูปอง — นับว่า "ใช้รางวัลแล้ว" เมื่อแต้มเข้าบัญชี
+    if (Number(e.reward_points_awarded ?? 0) > 0) s.rewardsUsed += 1;
   }
   for (const r of (used ?? []) as any[]) {
     const missionId = missionOfEnrollment.get(r.mission_enrollment_id);
@@ -134,6 +139,8 @@ export interface MemberMissionCard {
   description: string;
   targetCount: number;
   maxPerOrder: number | null;
+  countMode: "items" | "spend" | "orders";
+  minOrderTotal: number;
   rewardText: string;
   repeatable: boolean;
   joinEndsAt: string | null;
@@ -175,6 +182,7 @@ function scopeText(row: any, categoryNames: Map<string, string>, productNames: M
 
 function rewardTextFromRow(row: any, productNames: Map<string, string>): string {
   if (row.reward_type === "product") return `${productNames.get(row.reward_product_id) ?? "เมนู"} ฟรี 1 ชิ้น`;
+  if (row.reward_type === "points") return `โบนัส ${Number(row.reward_points ?? 0).toLocaleString("th-TH")} แต้ม`;
   const value = Number(row.reward_discount_value ?? 0);
   const base = row.reward_discount_kind === "percentage" ? `ลด ${value}%` : `ลด ฿${value.toLocaleString("th-TH")}`;
   const min = Number(row.reward_min_subtotal ?? 0);
@@ -241,6 +249,8 @@ export async function getMemberMissionsView(storeId: string, customerId: string)
       description: row.description ?? "",
       targetCount: Number(row.target_count),
       maxPerOrder: row.max_per_order === null ? null : Number(row.max_per_order),
+      countMode: mine?.count_mode ?? row.count_mode ?? "items",
+      minOrderTotal: Number(mine?.min_order_total ?? row.min_order_total ?? 0),
       rewardText: rewardTextFromRow(row, productNames),
       repeatable: row.repeatable === true,
       joinEndsAt: row.join_ends_at,
@@ -306,6 +316,8 @@ export interface PosMissionProgress {
   categoryIds: string[];
   productIds: string[];
   maxPerOrder: number | null;
+  countMode: "items" | "spend" | "orders";
+  minOrderTotal: number;
   expiresAt: string | null;
 }
 
@@ -323,7 +335,7 @@ export async function listPosMissionProgress(storeId: string, customerId: string
   const nowIso = new Date().toISOString();
   const { data, error } = await db
     .from("store_mission_enrollments")
-    .select("id, progress, target_count, max_per_order, expires_at, store_missions!inner(name, scope, category_ids, product_ids, status)")
+    .select("id, progress, target_count, max_per_order, count_mode, min_order_total, expires_at, store_missions!inner(name, scope, category_ids, product_ids, status)")
     .eq("store_id", storeId)
     .eq("member_identity_id", customer.member_identity_id)
     .eq("status", "active")
@@ -341,6 +353,8 @@ export async function listPosMissionProgress(storeId: string, customerId: string
       categoryIds: row.store_missions.category_ids ?? [],
       productIds: row.store_missions.product_ids ?? [],
       maxPerOrder: row.max_per_order === null ? null : Number(row.max_per_order),
+      countMode: row.count_mode ?? "items",
+      minOrderTotal: Number(row.min_order_total ?? 0),
       expiresAt: row.expires_at,
     })),
     error: null,

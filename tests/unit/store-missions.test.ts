@@ -198,7 +198,7 @@ describe("M2 SMS ภารกิจ", () => {
       expect(msg).toContain("store-os.online/m/eachother");
       expect(smsCredits(msg)).toBeLessThanOrEqual(2);
     }
-    expect(buildMissionSms({ kind: "near", storeName: "each other II", storeSlug: "eachother", missionName: "ดื่มครบ 6 แก้ว", voucherExpiresAt: null })).toContain("each other II: อีก 1 ชิ้น");
+    expect(buildMissionSms({ kind: "near", storeName: "each other II", storeSlug: "eachother", missionName: "ดื่มครบ 6 แก้ว", voucherExpiresAt: null })).toContain("each other II: อีกครั้งเดียวครบภารกิจ");
   });
   it("ยินยอม/ยกเลิก + เพดานร้าน/ลูกค้า + เวลาส่ง ตรวจที่ claim ที่เดียว", () => {
     expect(sql).toContain("add column if not exists sms_opt_in boolean not null default true");

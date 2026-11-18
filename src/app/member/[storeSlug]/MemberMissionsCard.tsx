@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberMissionCard, MemberMissionsView } from "@/modules/missions/repository";
 import { joinMissionAction, setMissionSmsOptOutAction } from "./actions";
+import { missionProgressText, missionRemainingText, missionUnit } from "@/modules/missions/rules";
 
 interface Props {
   storeSlug: string;
@@ -140,7 +141,7 @@ export function MemberMissionsCard({ storeSlug, portalCode, view, mode = "full",
                   <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-[var(--foreground)]">{m.name}</p>
                   <ProgressBar progress={e.progress} target={e.targetCount} />
                   <div className="mt-1 flex justify-between text-[11px] text-[var(--muted)]">
-                    <span>{e.progress}/{e.targetCount}</span>
+                    <span>{missionProgressText(m.countMode, e.progress, e.targetCount)}</span>
                     <span>{left ? `เหลือ ${left} วัน` : e.expiresAt ? formatShortDate(e.expiresAt) : ""}</span>
                   </div>
                 </button>
@@ -197,7 +198,7 @@ export function MemberMissionsCard({ storeSlug, portalCode, view, mode = "full",
                 <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-[var(--foreground)]">{m.name}</p>
                 <ProgressBar progress={e.progress} target={e.targetCount} />
                 <div className="mt-1 flex justify-between text-[11px] text-[var(--muted)]">
-                  <span>{e.progress}/{e.targetCount}</span>
+                  <span>{missionProgressText(m.countMode, e.progress, e.targetCount)}</span>
                   <span>{left ? `เหลือ ${left} วัน` : e.expiresAt ? formatShortDate(e.expiresAt) : ""}</span>
                 </div>
               </button>
@@ -210,21 +211,32 @@ export function MemberMissionsCard({ storeSlug, portalCode, view, mode = "full",
         <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
           <p className="font-semibold text-[var(--foreground)]">{opened.name}</p>
           <p className="text-xs text-[var(--muted)]">รางวัล: {opened.rewardText}</p>
-          <Stamps progress={opened.enrollment.progress} target={opened.enrollment.targetCount} />
-          {opened.enrollment.targetCount > 12 && <ProgressBar progress={opened.enrollment.progress} target={opened.enrollment.targetCount} />}
+          {opened.countMode !== "spend" && <Stamps progress={opened.enrollment.progress} target={opened.enrollment.targetCount} />}
+          {(opened.countMode === "spend" || opened.enrollment.targetCount > 12) && (
+            <>
+              <ProgressBar progress={opened.enrollment.progress} target={opened.enrollment.targetCount} />
+              <p className="mt-1 text-xs text-[var(--muted)]">{missionProgressText(opened.countMode, opened.enrollment.progress, opened.enrollment.targetCount)}</p>
+            </>
+          )}
           {opened.enrollment.status === "active" && (
             <p className="mt-2 text-sm font-bold text-[var(--color-brand-hover)]">
-              อีก {Math.max(opened.enrollment.targetCount - opened.enrollment.progress, 0)} ชิ้น ได้รางวัล!
+              {missionRemainingText(opened.countMode, Math.max(opened.enrollment.targetCount - opened.enrollment.progress, 0))} ได้รางวัล!
             </p>
           )}
           {opened.enrollment.status === "completed" && (
-            <p className="mt-2 text-sm font-bold text-emerald-700">ทำครบแล้ว — คูปองรางวัลอยู่ในแท็บ “คูปอง” ด้านล่าง</p>
+            <p className="mt-2 text-sm font-bold text-emerald-700">
+              {opened.rewardText.startsWith("โบนัส") ? "ทำครบแล้ว — แต้มโบนัสเข้าบัญชีแล้ว" : "ทำครบแล้ว — คูปองรางวัลอยู่ในแท็บ “คูปอง” ด้านล่าง"}
+            </p>
           )}
           <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-[var(--ink-2)]">
-            <li>นับ: {opened.scopeText}{opened.maxPerOrder ? ` · สูงสุด ${opened.maxPerOrder} ชิ้นต่อบิล` : ""}</li>
+            <li>
+              นับ{opened.countMode === "spend" ? "ยอดซื้อ" : opened.countMode === "orders" ? "จำนวนบิล" : ""}: {opened.scopeText}
+              {opened.countMode === "items" && opened.maxPerOrder ? ` · สูงสุด ${opened.maxPerOrder} ชิ้นต่อบิล` : ""}
+              {opened.countMode === "orders" && opened.minOrderTotal > 0 ? ` · ยอดต่อบิล ฿${opened.minOrderTotal} ขึ้นไป` : ""}
+            </li>
             <li>นับเฉพาะบิลที่จ่ายหลังกดรับ และต้องบอกเบอร์หรือแสดงรหัสสมาชิกตอนจ่าย</li>
             {opened.enrollment.expiresAt && <li>หมดเขตรอบนี้ {formatShortDate(opened.enrollment.expiresAt)}</li>}
-            <li>ใช้คูปองรางวัลต้องแสดงรหัสสมาชิก 5 นาทีที่ร้าน</li>
+            {!opened.rewardText.startsWith("โบนัส") && <li>ใช้คูปองรางวัลต้องแสดงรหัสสมาชิก 5 นาทีที่ร้าน</li>}
           </ul>
         </div>
       )}
@@ -240,7 +252,8 @@ export function MemberMissionsCard({ storeSlug, portalCode, view, mode = "full",
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-[var(--foreground)]">{m.name}</p>
                   <p className="text-xs text-[var(--muted)]">
-                    {m.targetCount} ชิ้น · {m.rewardText}
+                    {m.countMode === "spend" ? `ยอดซื้อ ฿${m.targetCount.toLocaleString("th-TH")}` : `${m.targetCount} ${missionUnit(m.countMode)}`}
+                    {m.countMode === "orders" && m.minOrderTotal > 0 ? ` (฿${m.minOrderTotal}+/บิล)` : ""} · {m.rewardText}
                     {m.durationDays ? ` · ภายใน ${m.durationDays} วัน` : ""}
                     {ended ? ` · รับได้ถึง ${ended}` : ""}
                   </p>

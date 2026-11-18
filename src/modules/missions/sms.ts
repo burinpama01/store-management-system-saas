@@ -19,6 +19,8 @@ export interface MissionSmsRow {
   missionName: string | null;
   rewardName: string | null;
   voucherExpiresAt: string | null;
+  /** รางวัลแต้ม (ไม่มีคูปอง) */
+  rewardPoints?: number | null;
 }
 
 export const SMS_MAX_CHARS = 134;
@@ -45,12 +47,16 @@ function thaiShortDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" }).replace(/\s+/g, "");
 }
 
-export function buildMissionSms(row: Pick<MissionSmsRow, "kind" | "storeName" | "storeSlug" | "missionName" | "voucherExpiresAt">): string {
+export function buildMissionSms(
+  row: Pick<MissionSmsRow, "kind" | "storeName" | "storeSlug" | "missionName" | "voucherExpiresAt"> & { rewardPoints?: number | null },
+): string {
   const link = `${SHORT_LINK_BASE}${row.storeSlug}`;
   const body =
     row.kind === "near"
-      ? `อีก 1 ชิ้นครบภารกิจ ${clip(row.missionName ?? "", 24)} รับรางวัลเลย`
-      : row.kind === "reward"
+      ? `อีกครั้งเดียวครบภารกิจ ${clip(row.missionName ?? "", 24)} รับรางวัลเลย`
+      : row.kind === "reward" && row.rewardPoints
+        ? `ยินดีด้วย! ทำภารกิจครบ ได้โบนัส ${row.rewardPoints.toLocaleString("th-TH")} แต้มแล้ว`
+        : row.kind === "reward"
         ? `ยินดีด้วย! ทำภารกิจครบ ได้คูปองรางวัลแล้ว ใช้ได้ถึง${thaiShortDate(row.voucherExpiresAt)}`
         : `คูปองรางวัลภารกิจจะหมดอายุ${thaiShortDate(row.voucherExpiresAt)} แวะมาใช้นะ`;
   const tail = ` ${link}`;
@@ -77,6 +83,7 @@ export async function runMissionSms(limit = 50): Promise<{ claimed: number; sent
     missionName: r.mission_name,
     rewardName: r.reward_name,
     voucherExpiresAt: r.voucher_expires_at,
+    rewardPoints: r.reward_points === null || r.reward_points === undefined ? null : Number(r.reward_points),
   }));
 
   let sent = 0;
