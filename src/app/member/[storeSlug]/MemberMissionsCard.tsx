@@ -9,6 +9,9 @@ interface Props {
   storeSlug: string;
   portalCode: string;
   view: MemberMissionsView;
+  /** "home" = หน้าแรก: แถบภารกิจที่กำลังทำ + ปุ่มดูทั้งหมด (ไม่มีรายการรับ/ตั้งค่า SMS) */
+  mode?: "home" | "full";
+  onSeeAll?: () => void;
 }
 
 function formatShortDate(iso: string | null) {
@@ -58,7 +61,7 @@ function ProgressBar({ progress, target }: { progress: number; target: number })
   );
 }
 
-export function MemberMissionsCard({ storeSlug, portalCode, view }: Props) {
+export function MemberMissionsCard({ storeSlug, portalCode, view, mode = "full", onSeeAll }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -109,6 +112,61 @@ export function MemberMissionsCard({ storeSlug, portalCode, view }: Props) {
 
   const hasJoinable = view.missions.some((m) => m.canJoin);
 
+  // หน้าแรก: แถบภารกิจที่กำลังทำ (แตะ = ไปแท็บภารกิจ) หรือชวนรับภารกิจ
+  if (mode === "home") {
+    const joinable = view.missions.filter((m) => m.canJoin).length;
+    return (
+      <section aria-label="ภารกิจที่กำลังทำ">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-base font-bold text-[var(--foreground)]">
+            {active.length > 0 ? `ภารกิจที่กำลังทำ (${active.length})` : "ภารกิจ"}
+          </h2>
+          <button type="button" onClick={onSeeAll} className="text-xs font-semibold text-[var(--tenant-primary)]">
+            ดูทั้งหมด ›
+          </button>
+        </div>
+        {active.length > 0 ? (
+          <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {active.map((m) => {
+              const e = m.enrollment!;
+              const left = daysLeft(e.expiresAt);
+              return (
+                <button
+                  key={m.missionId}
+                  type="button"
+                  onClick={onSeeAll}
+                  className="w-40 shrink-0 snap-start rounded-xl border border-[var(--border)] bg-white p-3 text-left"
+                >
+                  <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-[var(--foreground)]">{m.name}</p>
+                  <ProgressBar progress={e.progress} target={e.targetCount} />
+                  <div className="mt-1 flex justify-between text-[11px] text-[var(--muted)]">
+                    <span>{e.progress}/{e.targetCount}</span>
+                    <span>{left ? `เหลือ ${left} วัน` : e.expiresAt ? formatShortDate(e.expiresAt) : ""}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onSeeAll}
+            className="flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-3 text-left"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--tenant-primary-soft)] text-xl">🎯</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-[var(--foreground)]">
+                {joinable > 0 ? `มีภารกิจให้รับ ${joinable} รายการ` : "ดูภารกิจของร้าน"}
+              </span>
+              <span className="block text-xs text-[var(--muted)]">ซื้อครบตามภารกิจ รับคูปองรางวัล ไม่ต้องจ่ายล่วงหน้า</span>
+            </span>
+            <span className="text-sm font-semibold text-[var(--tenant-primary)]">›</span>
+          </button>
+        )}
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-lg border border-[var(--border)] bg-white p-5 shadow-sm">
       <div className="flex items-baseline justify-between">
@@ -123,7 +181,7 @@ export function MemberMissionsCard({ storeSlug, portalCode, view }: Props) {
       )}
 
       {active.length > 0 && (
-        <div className="-mx-5 mt-3 flex snap-x gap-3 overflow-x-auto px-5 pb-1">
+        <div className="-mx-5 mt-3 flex snap-x gap-3 overflow-x-auto px-5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {active.map((m) => {
             const e = m.enrollment!;
             const left = daysLeft(e.expiresAt);
@@ -160,7 +218,7 @@ export function MemberMissionsCard({ storeSlug, portalCode, view }: Props) {
             </p>
           )}
           {opened.enrollment.status === "completed" && (
-            <p className="mt-2 text-sm font-bold text-emerald-700">ทำครบแล้ว — คูปองรางวัลอยู่ใน “รายการแลกของรางวัล” ด้านล่าง</p>
+            <p className="mt-2 text-sm font-bold text-emerald-700">ทำครบแล้ว — คูปองรางวัลอยู่ในแท็บ “คูปอง” ด้านล่าง</p>
           )}
           <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-[var(--ink-2)]">
             <li>นับ: {opened.scopeText}{opened.maxPerOrder ? ` · สูงสุด ${opened.maxPerOrder} ชิ้นต่อบิล` : ""}</li>

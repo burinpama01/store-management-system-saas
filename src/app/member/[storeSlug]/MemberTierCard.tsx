@@ -16,12 +16,12 @@ function Progress({ line }: { line: TierProgressLine }) {
   return (
     <div>
       <p className="text-xs text-[var(--muted)]">{line.label}</p>
-      <p className="text-base font-bold tabular-nums text-red-700">
+      <p className="text-base font-bold tabular-nums text-[var(--foreground)]">
         {fmt(line.current)}
         <span className="text-xs font-normal text-[var(--muted)]">/{fmt(line.target)}</span>
       </p>
-      <div className="mt-1 h-1.5 overflow-hidden rounded bg-gray-200">
-        <div className="h-full bg-red-600" style={{ width: `${pct}%` }} />
+      <div className="mt-1 h-1.5 overflow-hidden rounded bg-[var(--canvas-2)]">
+        <div className="h-full bg-[var(--tenant-primary)]" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -54,7 +54,7 @@ export function MemberTierCard({ view, coupons = [] }: { view: MemberTierView; c
       <div className="space-y-3 p-4">
         {progress.keep.length > 0 && (
           <div>
-            <p className="text-sm font-semibold text-red-700">
+            <p className="text-sm font-semibold text-[var(--tenant-primary-strong)]">
               เพื่อรักษาระดับในรอบนี้{program.metricMode === "either" ? " (ถึงอย่างใดอย่างหนึ่งก็พอ)" : ""}
             </p>
             <div className="mt-1 grid grid-cols-2 gap-3">
