@@ -145,6 +145,7 @@ create policy "tax_parties_cashier_update" on public.tax_parties for update
 -- งวดตามเวลาไทย (Asia/Bangkok) · row lock ทำให้ออกพร้อมกันหลายเครื่องไม่ชน/ไม่ข้าม
 -- ไม่ grant ให้ authenticated: ถ้าเรียกตรงได้ เลขจะถูกจองโดยไม่มีเอกสาร = เลขขาดช่วง
 -- RPC ออกเอกสาร (security definer, เฟส B1) เรียกฟังก์ชันนี้ในธุรกรรมเดียวกับการ insert เอกสาร
+-- ฟังก์ชันนี้ไม่ตรวจ auth.uid() เอง: ผู้เรียก (RPC ออกเอกสาร) ต้องตรวจสิทธิ์และสาขาก่อนเรียกทุกครั้ง
 -- ------------------------------------------------------------
 create or replace function public.document_default_prefix(p_doc_type text)
 returns text
