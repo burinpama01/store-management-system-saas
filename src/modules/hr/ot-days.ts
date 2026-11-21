@@ -114,3 +114,34 @@ export function findPaidLock(
   }
   return null;
 }
+
+/** ป้ายวันให้ OT บนปฏิทินลงเวลา (ส่งให้ client เฉพาะข้อมูลที่ต้องแสดง) */
+export interface CalendarOtDay {
+  date: string;
+  capHours: number;
+  multiplier: number | null;
+  /** พนักงานที่ได้ OT วันนั้น — ปฏิทินส่วนตัวส่งมาแค่ตัวเอง */
+  userIds: string[];
+  note: string | null;
+}
+
+/**
+ * แปลงวันให้ OT เป็นข้อมูลปฏิทิน
+ *   - viewerUserId = ปฏิทินส่วนตัว: เหลือเฉพาะวันที่คนนี้อยู่ในรายชื่อ และไม่ส่งรายชื่อคนอื่นออกไป
+ *   - ไม่ส่ง = ปฏิทินทีม (ผู้จัดการ): ส่งครบทุกวันพร้อมรายชื่อ
+ */
+export function toCalendarOtDays(
+  days: { date: string; capHours: number; multiplier: number | null; userIds: string[]; note?: string | null }[],
+  viewerUserId?: string,
+): CalendarOtDay[] {
+  return days
+    .filter((d) => !viewerUserId || d.userIds.includes(viewerUserId))
+    .map((d) => ({
+      date: d.date,
+      capHours: d.capHours,
+      multiplier: d.multiplier,
+      userIds: viewerUserId ? [viewerUserId] : [...d.userIds],
+      note: d.note ?? null,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}

@@ -15,7 +15,15 @@ import {
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
 import { computeDayStatuses, employmentWindow, resignedBefore, type DayStatus } from "@/modules/attendance/calendar";
-import { getStoreHrSettings, listEmployeeProfiles, listLeaveDatesForUser, listPayrollAdjustments } from "@/modules/hr/repository";
+import {
+  getStoreHrSettings,
+  listEmployeeProfiles,
+  listLeaveDatesForUser,
+  listPayrollAdjustments,
+  listStoreOtDays,
+} from "@/modules/hr/repository";
+import { toCalendarOtDays, type CalendarOtDay } from "@/modules/hr/ot-days";
+import { logSystemEvent } from "@/modules/system/event-log";
 import { listStoreMemberships } from "@/modules/settings/repository";
 import { listBranchStores } from "@/modules/stores/repository";
 import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
@@ -64,12 +72,34 @@ export default async function AttendancePage({
   const monthEnd = `${currentMonth}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, "0")}`;
 
   // Per-day status for the viewer's personal calendar (holiday/leave/absent/late/in-no-out).
-  const [holidaysRes, profilesRes, myLeaveDates, userStores] = await Promise.all([
+  // วันให้ OT แสดงบนปฏิทินเฉพาะร้านที่ใช้โหมด "เฉพาะวันที่กำหนด" (โหมดทุกวันไม่มีวันพิเศษให้บอก)
+  const otScheduled = hrSettings.otMode === "scheduled";
+  // ป้ายบนปฏิทินเป็นแค่การแสดงผล — DB error ห้ามทำหน้าลงเวลาพังทั้งหน้า (log แล้วไม่แสดงป้าย)
+  const loadCalendarOtDays = (from: string, to: string) =>
+    otScheduled
+      ? listStoreOtDays(ctx.storeId, from, to).catch(async (e: unknown) => {
+          await logSystemEvent({
+            level: "error",
+            source: "hr.ot-days",
+            action: "loadCalendarOtDays",
+            message: `โหลดวันให้ OT บนปฏิทินลงเวลาไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`,
+            organizationId: ctx.organizationId,
+            storeId: ctx.storeId,
+            actorUserId: user.id,
+            context: { from, to },
+          });
+          return [];
+        })
+      : Promise.resolve([]);
+  const [holidaysRes, profilesRes, myLeaveDates, userStores, myOtDayRows] = await Promise.all([
     listStoreHolidays(ctx.storeId, monthStart, monthEnd),
     listEmployeeProfiles(ctx.storeId),
     listLeaveDatesForUser(ctx.storeId, user.id, monthStart, monthEnd),
     getUserStores(),
+    loadCalendarOtDays(monthStart, monthEnd),
   ]);
+  // ปฏิทินส่วนตัว: เฉพาะวันที่ตัวเองได้ OT (ไม่ส่งรายชื่อคนอื่นไปหน้าเว็บ)
+  const myOtDays = toCalendarOtDays(myOtDayRows, user.id);
   // สมาชิกภาพของตัวเองที่ครอบสาขานี้ (ผูกสาขาก่อน ไม่มีค่อยใช้ระดับองค์กร) — ใช้หาวันเข้าร่วมร้าน
   const myMemberships = userStores.memberships.filter((m) => m.organization_id === ctx.organizationId);
   const myMembership =
@@ -114,6 +144,7 @@ export default async function AttendancePage({
   let branchFilter = ctx.storeId;
   // ปฏิทินทีม: สถานะรายวันของพนักงานแต่ละคน (ครบ/สาย/ครึ่งวัน/ขาด/ลา/วันหยุด)
   let teamDayStatus: Record<string, Record<string, DayStatus>> = {};
+  let teamOtDays: CalendarOtDay[] = [];
 
   if (canManage) {
     const params = await searchParams;
@@ -181,7 +212,11 @@ export default async function AttendancePage({
     const [cy, cm] = calendarMonth.split("-").map(Number);
     const calMonthStart = `${calendarMonth}-01`;
     const calMonthEnd = `${calendarMonth}-${String(new Date(Date.UTC(cy, cm, 0)).getUTCDate()).padStart(2, "0")}`;
-    const calHolidaysRes = await listStoreHolidays(ctx.storeId, calMonthStart, calMonthEnd);
+    const [calHolidaysRes, calOtDayRows] = await Promise.all([
+      listStoreHolidays(ctx.storeId, calMonthStart, calMonthEnd),
+      loadCalendarOtDays(calMonthStart, calMonthEnd),
+    ]);
+    teamOtDays = toCalendarOtDays(calOtDayRows);
     const calHolidays = new Set((calHolidaysRes.data ?? []).map((h) => h.date));
     const profiles = profilesRes.data ?? [];
     const scanFrom = dateFrom > calMonthStart ? dateFrom : calMonthStart;
@@ -247,6 +282,8 @@ export default async function AttendancePage({
       teamDayStatus={teamDayStatus}
       branchStores={branchStores}
       branchFilter={branchFilter}
+      myOtDays={myOtDays}
+      teamOtDays={teamOtDays}
     />
     </>
   );

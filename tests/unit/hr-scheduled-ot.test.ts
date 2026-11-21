@@ -6,7 +6,7 @@ import { computeAdvancedPayrollLines, type AdvancedComputeContext } from "@/modu
 import { DEFAULT_ADVANCED_PAYROLL_SETTINGS } from "@/modules/hr/advanced/settings";
 import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type StoreHrSettings } from "@/modules/hr/types";
 import type { AttendanceRecord, PayrollSummary } from "@/modules/attendance/types";
-import { earliestOtDayDate, findPaidLock, validateOtDayInput } from "@/modules/hr/ot-days";
+import { earliestOtDayDate, findPaidLock, toCalendarOtDays, validateOtDayInput } from "@/modules/hr/ot-days";
 
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -372,5 +372,42 @@ describe("ต่อสายครบทุกเส้นทาง (source)", (
     expect(src.match(/findPaidLock\(/g)?.length).toBe(2);
     expect(src).toContain('"otDayBackdated"');
     expect(src).toContain('"otDayDeleted"');
+  });
+});
+
+describe("จุดบอกวันให้ OT บนปฏิทินลงเวลา", () => {
+  const rows = [
+    { date: "2026-11-21", capHours: 4, multiplier: 2, userIds: ["u1", "u2"], note: "เทศกาล" },
+    { date: "2026-11-20", capHours: 2.5, multiplier: null, userIds: ["u2"] },
+  ];
+
+  it("ปฏิทินส่วนตัว: เหลือเฉพาะวันที่ตัวเองได้ และไม่ส่งรายชื่อคนอื่น", () => {
+    const mine = toCalendarOtDays(rows, "u1");
+    expect(mine).toEqual([{ date: "2026-11-21", capHours: 4, multiplier: 2, userIds: ["u1"], note: "เทศกาล" }]);
+    expect(toCalendarOtDays(rows, "u3")).toEqual([]);
+  });
+
+  it("ปฏิทินทีม: ครบทุกวัน เรียงวันที่ พร้อมรายชื่อ", () => {
+    const team = toCalendarOtDays(rows);
+    expect(team.map((d) => d.date)).toEqual(["2026-11-20", "2026-11-21"]);
+    expect(team[1].userIds).toEqual(["u1", "u2"]);
+    expect(team[0].note).toBeNull();
+  });
+
+  it("หน้าลงเวลาโหลดวัน OT เฉพาะโหมด scheduled และส่งเข้าปฏิทินทั้งสองแบบ", () => {
+    const page = read("src/app/(dashboard)/attendance/page.tsx");
+    expect(page).toContain('hrSettings.otMode === "scheduled"');
+    expect(page.match(/loadCalendarOtDays\(/g)?.length).toBe(2);
+    // DB error = log + ไม่แสดงป้าย ห้ามทำหน้าลงเวลาพัง
+    expect(page).toContain('action: "loadCalendarOtDays"');
+    expect(page).toMatch(/listStoreOtDays\(ctx\.storeId, from, to\)\.catch\(/);
+    expect(page).toContain("toCalendarOtDays(myOtDayRows, user.id)");
+    const manager = read("src/app/(dashboard)/attendance/AttendanceManager.tsx");
+    expect(manager).toContain("otDays={myOtDays}");
+    expect(manager).toContain("otDays={teamOtDays}");
+    const calendar = read("src/app/(dashboard)/attendance/AttendanceCalendar.tsx");
+    expect(calendar).toContain("data-ot-day");
+    expect(calendar).toContain("ot.userIds.filter((id) => id === filterUser)");
+    expect(calendar).toContain("วันให้ OT");
   });
 });
