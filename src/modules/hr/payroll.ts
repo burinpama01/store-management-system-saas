@@ -4,6 +4,7 @@ import {
   type EmployeeProfile,
   type PayrollAdjustment,
   type StoreHrSettings,
+  type StoreOtDay,
 } from "./types";
 
 export interface PayrollLine {
@@ -17,6 +18,10 @@ export interface PayrollLine {
   /** Auto overtime pay (hours over the daily threshold × multiplier × hourly rate). */
   otHours: number;
   otPay: number;
+  /** ตัวคูณ OT ที่ใช้ (ทุกวันใช้ค่าเดียวกัน) · null = หลายวันใช้ตัวคูณต่างกัน (โหมด OT เฉพาะวัน) */
+  otMultiplierUsed: number | null;
+  /** รายชั่วโมง + ร้านตั้ง "ชั่วโมงที่เกินไม่จ่าย": ชั่วโมงที่ทำเกินแต่ไม่ได้เป็น OT จึงไม่ได้เงิน */
+  unpaidOverflowHours: number;
   /** Auto late penalty (minutes late × per-minute rate, capped per day). */
   latePenalty: number;
   /** Auto absent penalty (scheduled working days with no record × per-day rate). */
@@ -96,6 +101,60 @@ export function effectiveHourlyRate(profile: EmployeeProfile, regularHoursPerDay
     return profile.monthlySalary / (30 * regularHoursPerDay);
   }
   return 0;
+}
+
+/** กฎ OT ของวันหนึ่ง (โหมด scheduled) */
+export interface OtDayRule {
+  capHours: number;
+  multiplier: number | null;
+  userIds: Set<string>;
+}
+
+export function buildOtDayRules(otDays: Iterable<Pick<StoreOtDay, "date" | "capHours" | "multiplier" | "userIds">> | undefined): Map<string, OtDayRule> {
+  const out = new Map<string, OtDayRule>();
+  for (const d of otDays ?? []) out.set(d.date, { capHours: d.capHours, multiplier: d.multiplier, userIds: new Set(d.userIds) });
+  return out;
+}
+
+export interface DayOtResult {
+  /** ชั่วโมง OT ของวันนั้น (ไม่เกินเพดาน) */
+  otHours: number;
+  /** ตัวคูณที่ใช้กับวันนั้น */
+  multiplier: number;
+  /** ชั่วโมงที่เกินชั่วโมงปกติแต่ไม่ได้เป็น OT และร้านตั้งว่าไม่จ่าย (มีผลกับรายชั่วโมงเท่านั้น) */
+  unpaidHours: number;
+}
+
+/**
+ * กติกา OT ของวันเดียว — จุดเดียวที่ทุกเส้นทางคิดเงิน (งวดปกติ / หลายเรทกลางงวด / รายสัปดาห์) ใช้ร่วมกัน
+ *   daily (แบบเดิม): มีสิทธิ์ OT + เพดานร้าน > 0 → OT = min(เกิน, เพดานร้าน) × ตัวคูณร้าน
+ *   scheduled: เฉพาะวันที่อยู่ในรายการ และพนักงานอยู่ในรายชื่อของวันนั้น → OT = min(เกิน, เพดานวันนั้น) × (ตัวคูณวันนั้น ?? ร้าน)
+ * ส่วนที่เกินแต่ไม่ได้เป็น OT: regular = จ่ายเรทปกติ (เดิม) · none = ไม่จ่าย
+ */
+export function otForDay(input: {
+  settings: Pick<StoreHrSettings, "regularHoursPerDay" | "otMultiplier" | "otDailyCapHours" | "otMode" | "otOverflowPay">;
+  rules: Map<string, OtDayRule>;
+  profile: Pick<EmployeeProfile, "otEligible">;
+  userId: string;
+  date: string;
+  dayHours: number;
+}): DayOtResult {
+  const { settings, rules, profile, userId, date, dayHours } = input;
+  const over = Math.max(0, dayHours - settings.regularHoursPerDay);
+  let cap = 0;
+  let multiplier = settings.otMultiplier;
+  if (settings.otMode === "scheduled") {
+    const rule = rules.get(date);
+    if (rule && rule.userIds.has(userId)) {
+      cap = rule.capHours;
+      if (rule.multiplier != null && rule.multiplier > 0) multiplier = rule.multiplier;
+    }
+  } else if (profile.otEligible) {
+    cap = settings.otDailyCapHours;
+  }
+  const otHours = cap > 0 ? Math.min(over, cap) : 0;
+  const unpaidHours = settings.otOverflowPay === "none" ? over - otHours : 0;
+  return { otHours, multiplier, unpaidHours };
 }
 
 /**
@@ -237,6 +296,8 @@ export interface PayrollComputeInput {
   /** Store-local "today"; absent days are only counted up to this date. */
   today: string;
   timezone: string;
+  /** วันที่ร้านให้ OT (ใช้เมื่อ settings.otMode = "scheduled") — ควรครอบคลุมช่วงงวด */
+  otDays?: Pick<StoreOtDay, "date" | "capHours" | "multiplier" | "userIds">[];
   /**
    * วันที่พนักงานเข้าร่วมร้านในระบบ (YYYY-MM-DD เวลาสาขา) ต่อ userId — ใช้ร่วมกับ "วันเริ่มงาน"
    * ตัดงวดของคนที่เริ่มงานกลางงวด (ใช้ใน computeAdvancedPayrollLines) · ไม่ส่ง = ใช้วันเริ่มงานอย่างเดียว
@@ -254,6 +315,7 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
   const profileByUser = new Map(profiles.map((p) => [p.userId, p]));
   const summaryByUser = new Map(summaries.map((s) => [s.userId, s]));
   const holidayDateSet = new Set(holidayDates);
+  const otRules = buildOtDayRules(input.otDays);
 
   const recordsByUser = new Map<string, AttendanceRecord[]>();
   for (const r of records) {
@@ -355,7 +417,11 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
 
     // --- Auto OT + late from records (grouped by store-local day) ---
     let otHours = 0;
+    let otPayRaw = 0;
+    let unpaidOverflowHours = 0;
+    const otMultipliers = new Set<number>();
     let latePenalty = 0;
+    const hourly = profile ? effectiveHourlyRate(profile, settings.regularHoursPerDay) : 0;
     if (profile) {
       const hoursByDay = new Map<string, number>();
       const firstClockInByDay = new Map<string, string>();
@@ -379,21 +445,27 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
           if (lateBy > 0) latePenalty += latePenaltyForMinutes(profile, settings, lateBy);
         }
       }
-      if (profile.otEligible && settings.otDailyCapHours > 0) {
-        for (const dayHours of hoursByDay.values()) {
-          const over = Math.max(0, dayHours - settings.regularHoursPerDay);
-          otHours += Math.min(over, settings.otDailyCapHours);
+      for (const [date, dayHours] of hoursByDay) {
+        const day = otForDay({ settings, rules: otRules, profile, userId, date, dayHours });
+        unpaidOverflowHours += day.unpaidHours;
+        if (day.otHours > 0) {
+          otHours += day.otHours;
+          otPayRaw += day.otHours * day.multiplier * hourly;
+          otMultipliers.add(day.multiplier);
         }
       }
     }
     otHours = round2(otHours);
-    const hourly = profile ? effectiveHourlyRate(profile, settings.regularHoursPerDay) : 0;
-    const otPay = round2(otHours * settings.otMultiplier * hourly);
+    unpaidOverflowHours = round2(unpaidOverflowHours);
+    // ตัวคูณเดียวทั้งงวด = สูตรเดิม (ปัดชั่วโมงก่อนคูณ ให้ยอดเท่าเดิมทุกสตางค์) · หลายตัวคูณ = รวมรายวัน
+    const otMultiplierUsed = otMultipliers.size > 1 ? null : otMultipliers.size === 1 ? [...otMultipliers][0] : settings.otMultiplier;
+    const otPay = otMultiplierUsed === null ? round2(otPayRaw) : round2(otHours * otMultiplierUsed * hourly);
     // รายชั่วโมง: basePay = เรท × ชั่วโมงทั้งหมด ซึ่งรวมชั่วโมง OT ไปแล้ว — ต้องตัดออก ไม่งั้นชั่วโมง OT
     // ได้ทั้งค่าแรงปกติและ otPay เต็มอัตรา (= 2.5 เท่าแทน 1.5 เท่า, ISSUE-20261105-PAY-001)
     let regularHours = round2(totalHours);
-    if (profile?.payType === "hourly" && summary && otHours > 0) {
-      regularHours = round2(Math.max(0, summary.totalHours - otHours));
+    // ร้านตั้ง "ชั่วโมงที่เกินไม่จ่าย" → ตัดชั่วโมงที่เกินแต่ไม่ได้เป็น OT ออกจากค่าแรงปกติด้วย
+    if (profile?.payType === "hourly" && summary && (otHours > 0 || unpaidOverflowHours > 0)) {
+      regularHours = round2(Math.max(0, summary.totalHours - otHours - unpaidOverflowHours));
       basePay = round2(profile.hourlyRate * regularHours);
     }
     latePenalty = round2(latePenalty);
@@ -491,6 +563,8 @@ export function computePayrollLines(input: PayrollComputeInput): PayrollLine[] {
       basePay,
       otHours,
       otPay,
+      otMultiplierUsed,
+      unpaidOverflowHours: profile?.payType === "hourly" ? unpaidOverflowHours : 0,
       latePenalty,
       absentDays,
       absentPenalty,

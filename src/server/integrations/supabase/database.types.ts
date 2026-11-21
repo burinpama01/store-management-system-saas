@@ -4455,6 +4455,8 @@ export interface Database {
           sso_wage_ceiling: number;
           wht_mode: "manual" | "percent";
           working_days: number[];
+          ot_mode: "daily" | "scheduled";
+          ot_overflow_pay: "regular" | "none";
           created_at: string;
           updated_at: string;
         };
@@ -4496,6 +4498,8 @@ export interface Database {
           sso_wage_ceiling?: number;
           wht_mode?: "manual" | "percent";
           working_days?: number[];
+          ot_mode?: "daily" | "scheduled";
+          ot_overflow_pay?: "regular" | "none";
           created_at?: string;
           updated_at?: string;
         };
@@ -4535,6 +4539,45 @@ export interface Database {
           sso_wage_ceiling?: number;
           wht_mode?: "manual" | "percent";
           working_days?: number[];
+          ot_mode?: "daily" | "scheduled";
+          ot_overflow_pay?: "regular" | "none";
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_ot_days: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          date: string;
+          cap_hours: number;
+          multiplier: number | null;
+          user_ids: string[];
+          note: string | null;
+          updated_by_user_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          date: string;
+          cap_hours: number;
+          multiplier?: number | null;
+          user_ids: string[];
+          note?: string | null;
+          updated_by_user_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          cap_hours?: number;
+          multiplier?: number | null;
+          user_ids?: string[];
+          note?: string | null;
+          updated_by_user_id?: string;
           updated_at?: string;
         };
         Relationships: [];

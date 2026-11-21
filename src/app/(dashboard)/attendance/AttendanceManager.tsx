@@ -24,6 +24,7 @@ import { AttendanceCalendar } from "./AttendanceCalendar";
 import type { DayStatus } from "@/modules/attendance/calendar";
 import type { StoreHoliday } from "@/modules/attendance/repository";
 import type { PayrollAdjustment } from "@/modules/hr/types";
+import type { CalendarOtDay } from "@/modules/hr/ot-days";
 import { getNativePosition, isNativeApp } from "@/shared/native/geolocation";
 
 interface Props {
@@ -58,6 +59,9 @@ interface Props {
   branchStores: { id: string; name: string }[];
   /** "all" = ทุกสาขา หรือ store id ที่เลือกกรอง */
   branchFilter: string;
+  /** วันให้ OT (โหมดเฉพาะวัน) — ปฏิทินส่วนตัว: เฉพาะวันที่ตัวเองได้ · ปฏิทินทีม: ทุกวันพร้อมรายชื่อ */
+  myOtDays?: CalendarOtDay[];
+  teamOtDays?: CalendarOtDay[];
 }
 
 function fmtDuration(inIso: string, outIso: string | null): string {
@@ -178,6 +182,8 @@ export function AttendanceManager({
   teamDayStatus,
   branchStores,
   branchFilter,
+  myOtDays,
+  teamOtDays,
 }: Props) {
   const router = useRouter();
   /** Clock timestamps are UTC; render them as "HH:MM" in the store's timezone. */
@@ -400,6 +406,7 @@ export function AttendanceManager({
           employees={[]}
           title="ปฏิทินการเข้า-ออกงานของฉัน"
           dayStatus={dayStatus}
+          otDays={myOtDays}
           timeZone={storeTimezone}
         />
       )}
@@ -719,6 +726,7 @@ export function AttendanceManager({
             holidayDates={holidayDates}
             employeeLeaveDates={leaveAdjustments}
             teamDayStatus={teamDayStatus}
+            otDays={teamOtDays}
             timeZone={storeTimezone}
           />
 

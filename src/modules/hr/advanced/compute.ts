@@ -5,6 +5,8 @@
 import {
   computePayrollLines,
   effectiveHourlyRate,
+  buildOtDayRules,
+  otForDay,
   isHalfDay,
   type PayrollComputeInput,
   type PayrollLine,
@@ -327,6 +329,7 @@ export function computeAdvancedPayrollLines(
         })
       : null;
 
+  const otRules = buildOtDayRules(input.otDays);
   return baseLines.map((base) => {
     const line = emptyExtras(base);
     const profile = profileByUser.get(base.userId);
@@ -337,13 +340,14 @@ export function computeAdvancedPayrollLines(
     if (segs) {
       line.rateSegments = segs.map((s) => ({ from: s.from, to: s.to, days: s.days, label: rateLabel(s.rate) }));
       const reg = settings.regularHoursPerDay;
-      const otOn = profile.otEligible && settings.otDailyCapHours > 0;
       const rates = adv?.employees.get(base.userId)?.rates ?? [];
       const at = (date: string) => rateOn(rates, date) ?? profileRate(input.profiles.find((p) => p.userId === base.userId) ?? profile);
       let newBase = 0;
       let otPay = 0;
       let otHours = 0;
       let regularHours = 0;
+      let unpaidOverflow = 0;
+      const multipliers = new Set<number>();
       if (profile.payType === "monthly") {
         // คิดเต็มงวด = สัดส่วนวันในงวด · ตัดงวด (เริ่ม/ออกกลางงวด) = ฐาน 30 วันแบบเดียวกับ monthlyBasePay
         // (เดิมใช้จำนวนวันของงวด แม้ตัดงวด → เดือน 28/31 วันไม่ตรงกับแบบเรทเดียว)
@@ -353,22 +357,30 @@ export function computeAdvancedPayrollLines(
       for (const day of base.days) {
         if (!(day.hours > 0)) continue;
         const r = at(day.date);
-        const otD = otOn ? Math.min(Math.max(0, day.hours - reg), settings.otDailyCapHours) : 0;
+        // กติกา OT รายวันชุดเดียวกับ computePayrollLines (แบบเดิม / เฉพาะวันที่กำหนด)
+        const ot = otForDay({ settings, rules: otRules, profile, userId: base.userId, date: day.date, dayHours: day.hours });
+        const otD = ot.otHours;
         const hourly = effectiveHourlyRate({ ...profile, ...r }, reg);
         otHours += otD;
-        otPay += otD * settings.otMultiplier * hourly;
+        otPay += otD * ot.multiplier * hourly;
+        unpaidOverflow += ot.unpaidHours;
+        if (otD > 0) multipliers.add(ot.multiplier);
         if (profile.payType === "daily") {
           newBase += (isHalfDay(day.hours, settings.halfDayMaxHours ?? 0) ? 0.5 : 1) * r.dailyRate;
         } else if (profile.payType === "hourly") {
-          newBase += (day.hours - otD) * r.hourlyRate;
-          regularHours += day.hours - otD;
+          newBase += (day.hours - otD - ot.unpaidHours) * r.hourlyRate;
+          regularHours += day.hours - otD - ot.unpaidHours;
         }
       }
       const oldBase = line.basePay;
       line.basePay = round2(newBase);
       line.otPay = round2(otPay);
       line.otHours = round2(otHours);
-      if (profile.payType === "hourly") line.regularHours = round2(regularHours);
+      line.otMultiplierUsed = multipliers.size > 1 ? null : multipliers.size === 1 ? [...multipliers][0] : settings.otMultiplier;
+      if (profile.payType === "hourly") {
+        line.regularHours = round2(regularHours);
+        line.unpaidOverflowHours = round2(unpaidOverflow);
+      }
       // ค่าหักขาด/ครึ่งวันของรายเดือนคิดจากฐานเงินเดือน → ปรับตามฐานใหม่
       if (profile.payType === "monthly" && !(profile.absentPenaltyAmount > 0) && oldBase > 0) {
         const perDay = (line.absentRatePerDay * line.basePay) / oldBase;
