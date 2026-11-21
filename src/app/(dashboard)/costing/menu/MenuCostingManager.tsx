@@ -373,6 +373,11 @@ export function MenuCostingManager({
   );
 }
 
+/** ป้ายตัวเลือก — บอกหน่วยในสูตร และเตือนถ้ายังไม่ใส่ราคา (ต้นทุนจะเป็น 0) */
+function ingredientOptionLabel(i: Ingredient) {
+  return `${i.name} (${i.usageUnit})${i.purchasePrice === 0 ? " · ยังไม่ใส่ราคา" : ""}`;
+}
+
 interface DraftLine {
   key: string;
   variantId: string | null;
@@ -413,14 +418,36 @@ function MenuEditor({
   const [useOverride, setUseOverride] = useState(Boolean(override));
   const [overrideDraft, setOverrideDraft] = useState(() => toStrings(override ?? storeAllocation));
 
-  const activeIngredients = ingredients.filter((i) => i.isActive);
+  const [ingredientQuery, setIngredientQuery] = useState("");
+  const activeIngredients = useMemo(() => ingredients.filter((i) => i.isActive), [ingredients]);
+  /** ตัวเลือกวัตถุดิบจัดกลุ่มตามหมวด ("ไม่ระบุหมวด" ไว้ท้าย) — ร้านที่มีวัตถุดิบเป็นร้อยหาง่ายขึ้น */
+  const ingredientGroups = useMemo(() => {
+    const q = ingredientQuery.trim().toLowerCase();
+    const map = new Map<string, Ingredient[]>();
+    for (const i of activeIngredients) {
+      if (q && !i.name.toLowerCase().includes(q) && !(i.category ?? "").toLowerCase().includes(q)) continue;
+      const key = i.category ?? "";
+      const list = map.get(key);
+      if (list) list.push(i);
+      else map.set(key, [i]);
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "th")))
+      .map(([key, items]) => ({ label: key || "ไม่ระบุหมวด", items: items.sort((a, b) => a.name.localeCompare(b.name, "th")) }));
+  }, [activeIngredients, ingredientQuery]);
+  const hasCategories = useMemo(() => activeIngredients.some((i) => i.category), [activeIngredients]);
+  const matchCount = ingredientGroups.reduce((sum, g) => sum + g.items.length, 0);
   const previewLines: RecipeLine[] = draftLines
     .filter((l) => l.ingredientId && Number(l.quantity) > 0)
     .map((l) => ({ id: l.key, productId: product.id, variantId: l.variantId, ingredientId: l.ingredientId, quantity: Number(l.quantity) }));
   const variantRows = [{ id: null as string | null, name: "ปกติ", price: product.basePrice }, ...product.variants.map((v) => ({ id: v.id as string | null, name: v.name, price: product.basePrice + v.priceAdjustment }))];
 
   function addLine() {
-    setDraftLines((current) => [...current, { key: `new-${Date.now()}-${current.length}`, variantId: null, ingredientId: activeIngredients[0]?.id ?? "", quantity: "" }]);
+    // ค้นหาแล้วเหลือรายการเดียว → เลือกให้เลย; ไม่งั้นให้ผู้ใช้เลือกเอง (เดิมเติมตัวแรกของรายการ ทำให้ผูกผิดได้ง่าย)
+    const only = matchCount === 1 ? ingredientGroups[0].items[0].id : "";
+    setDraftLines((current) => [...current, { key: `new-${Date.now()}-${current.length}`, variantId: null, ingredientId: only, quantity: "" }]);
+    // เลือกให้แล้ว → ล้างคำค้นเพื่อให้บรรทัดถัดไปเห็นรายการครบ
+    if (only) setIngredientQuery("");
   }
 
   function saveRecipe() {
@@ -441,9 +468,29 @@ function MenuEditor({
     <div className="mt-3 space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
       <section className="space-y-2">
         <h4 className="text-sm font-semibold text-[var(--ink)]">สูตร (ต่อ 1 ที่)</h4>
+        {activeIngredients.length > 15 && (
+          <label className="block">
+            <span className="sr-only">ค้นหาวัตถุดิบในรายการเลือก</span>
+            <input
+              type="search"
+              className={inputClass}
+              style={{ fontSize: 16 }}
+              value={ingredientQuery}
+              onChange={(e) => setIngredientQuery(e.target.value)}
+              placeholder={hasCategories ? "ค้นหาวัตถุดิบหรือหมวด เพื่อย่อรายการให้เลือก" : "ค้นหาวัตถุดิบ เพื่อย่อรายการให้เลือก"}
+            />
+            {ingredientQuery.trim() !== "" && (
+              <span className="mt-1 block text-xs text-[var(--muted)]" aria-live="polite">
+                พบ {matchCount} รายการ{matchCount === 0 ? " — ลองคำอื่น" : ""}
+              </span>
+            )}
+          </label>
+        )}
         {draftLines.length === 0 && <p className="text-sm text-[var(--muted)]">ยังไม่มีวัตถุดิบในสูตร</p>}
         {draftLines.map((line, index) => {
           const ingredient = ingredientsById.get(line.ingredientId);
+          // บรรทัดที่เลือกไว้แล้วต้องยังแสดงชื่อเดิมแม้ถูกกรองออกจากผลค้นหา
+          const selectedHidden = ingredient && !ingredientGroups.some((g) => g.items.some((i) => i.id === ingredient.id));
           return (
             <div key={line.key} className="grid grid-cols-[minmax(0,1fr)_88px_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_88px_auto]">
               <select
@@ -453,11 +500,22 @@ function MenuEditor({
                 onChange={(e) => setDraftLines((c) => c.map((l, i) => (i === index ? { ...l, ingredientId: e.target.value } : l)))}
               >
                 <option value="">เลือกวัตถุดิบ</option>
-                {activeIngredients.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.usageUnit})
-                  </option>
-                ))}
+                {selectedHidden && <option value={ingredient.id}>{ingredientOptionLabel(ingredient)}</option>}
+                {hasCategories
+                  ? ingredientGroups.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.items.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {ingredientOptionLabel(i)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))
+                  : ingredientGroups.flatMap((group) => group.items).map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {ingredientOptionLabel(i)}
+                      </option>
+                    ))}
               </select>
               <select
                 aria-label="ใช้กับตัวเลือก"
