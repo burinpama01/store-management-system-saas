@@ -31,6 +31,8 @@ export function buildSettingsTabs(
   // งานหน้าร้าน (เช็กลิสต์): เปิด/ปิดและตั้งค่าได้แม้ระบบยังปิดอยู่ — owner/admin เท่านั้น ตรงกับสิทธิ์ RPC
   if (isOpsManagerRole(resolved.role)) {
     tabs.push({ href: "/settings/operations", label: "งานหน้าร้าน" });
+    // ข้อมูลภาษี (ตัวตนผู้ขายตามกฎหมาย) — owner/admin ตรงกับ RLS store_tax_profiles
+    tabs.push({ href: "/settings/tax", label: "ข้อมูลภาษี" });
     // รหัสยืนยันสมาชิก (ฐานของแพ็กล่วงหน้า/ระดับสมาชิก) — Enterprise เท่านั้น; หน้าเช็ก plan เองอีกชั้น
     if (billingState.plan === "enterprise") {
       tabs.push({ href: "/settings/member-privileges", label: "สิทธิ์สมาชิก", featureKey: "loyaltyPoints" });
