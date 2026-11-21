@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listStoreMemberships } from "@/modules/settings/repository";
-import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
+import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings, listStoreOtDays } from "@/modules/hr/repository";
+import { addDaysIso, OT_DAY_MAX_AHEAD_DAYS } from "@/modules/hr/ot-days";
 import {
   listAttendanceRecords,
   computePayrollSummaries,
@@ -48,7 +49,10 @@ export default async function StaffPage({
   let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : currentPeriod?.end ?? today;
   if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
 
-  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, selfInfoMap, selfInfoRequests] = await Promise.all([
+  // วันให้ OT: ช่วงงวดที่ดู + 31 วันย้อนหลังถึง 1 ปีข้างหน้า (รายการในหน้าตั้งค่า) — โหลดครั้งเดียว
+  const otFrom = [dateFrom, addDaysIso(today, -31)].sort()[0];
+  const otTo = [dateTo, addDaysIso(today, OT_DAY_MAX_AHEAD_DAYS)].sort()[1];
+  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, selfInfoMap, selfInfoRequests, otDays] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
     // Attendance is read org-wide (null) and then narrowed to this store's roster below: a shift
@@ -61,6 +65,7 @@ export default async function StaffPage({
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
     listEmployeeSelfInfo(ctx.storeId),
     listPendingSelfInfoRequests(ctx.storeId),
+    listStoreOtDays(ctx.storeId, otFrom, otTo),
   ]);
 
   const members = membersRes.data ?? [];
@@ -103,6 +108,7 @@ export default async function StaffPage({
     adjustments,
     settings: hrSettings,
     holidayDates: (holidaysRes.data ?? []).map((h) => h.date),
+    otDays,
     periodStart: dateFrom,
     periodEnd: dateTo,
     today,
@@ -119,6 +125,7 @@ export default async function StaffPage({
       payrollLines={payrollLines}
       adjustments={adjustments}
       hrSettings={hrSettings}
+      otDays={otDays}
       currency={storeRes.data?.currencyCode ?? "THB"}
       dateFrom={dateFrom}
       dateTo={dateTo}

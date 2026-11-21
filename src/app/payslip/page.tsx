@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
-import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
+import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings, listStoreOtDays } from "@/modules/hr/repository";
 import { listEmployeeSelfInfo } from "@/modules/hr/self-info-repository";
 import { applySelfInfo } from "@/modules/hr/self-info";
 import { getReceiptSettings } from "@/modules/settings/repository";
@@ -97,6 +97,7 @@ export default async function PayslipPage({
       getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId),
       listEmployeeSelfInfo(ctx.storeId),
     ]);
+    const otDays = hrSettings.otMode === "scheduled" ? await listStoreOtDays(ctx.storeId, dateFrom, dateTo) : [];
 
     const roster = new Set((membersRes.data ?? []).filter((m) => m.role !== "super_admin").map((m) => m.userId));
     const records = (recordsRes.data ?? []).filter((r) => roster.has(r.userId));
@@ -110,6 +111,7 @@ export default async function PayslipPage({
         adjustments: adjustmentsRes.data ?? [],
         settings: hrSettings,
         holidayDates: (holidaysRes.data ?? []).map((h) => h.date),
+        otDays,
         periodStart: dateFrom,
         periodEnd: dateTo,
         today,

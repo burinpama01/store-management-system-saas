@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberWithEmail } from "@/modules/settings/repository";
-import type { EmployeeProfile, PayrollAdjustment, StoreHrSettings } from "@/modules/hr/types";
+import type { EmployeeProfile, PayrollAdjustment, StoreHrSettings, StoreOtDay } from "@/modules/hr/types";
 import {
   PAY_TYPE_LABEL,
   ADJUSTMENT_LABEL,
@@ -37,6 +37,7 @@ import { PAY_FREQUENCIES, PAY_FREQUENCY_LABEL, type PayWeek } from "@/modules/hr
 import { WeeklyPayoutsPanel, type WeeklyPayoutView } from "./WeeklyPayoutsPanel";
 import { SalaryAdvancesPanel, type AdvanceView } from "./SalaryAdvancesPanel";
 import { PayrollPeriodsPanel } from "./PayrollPeriodsPanel";
+import { OtDaysPanel } from "./OtDaysPanel";
 
 export interface StaffAdvancedProps {
   entitled: boolean;
@@ -70,6 +71,8 @@ interface Props {
   payrollLines: PayrollLine[];
   adjustments: PayrollAdjustment[];
   hrSettings: StoreHrSettings;
+  /** วันให้ OT (โหมดเฉพาะวัน) ตั้งแต่ 31 วันก่อนถึง 1 ปีข้างหน้า */
+  otDays: StoreOtDay[];
   currency: string;
   dateFrom: string;
   dateTo: string;
@@ -99,6 +102,7 @@ export function StaffManager({
   payrollLines,
   adjustments,
   hrSettings,
+  otDays,
   currency,
   dateFrom,
   dateTo,
@@ -800,11 +804,31 @@ export function StaffManager({
                 <input name="regularHoursPerDay" type="number" min={1} max={24} step="0.5" defaultValue={hrSettings.regularHoursPerDay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
+                การคิด OT
+                <select name="otMode" defaultValue={hrSettings.otMode} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-base sm:text-sm">
+                  <option value="daily">ทุกวันที่ทำเกินชั่วโมงปกติ (แบบเดิม)</option>
+                  <option value="scheduled">เฉพาะวันที่กำหนด</option>
+                </select>
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  เฉพาะวันที่กำหนด = คิด OT เฉพาะวันในรายการ “วันให้ OT” ด้านล่าง · เปลี่ยนกลางงวด ระบบคิดใหม่ทั้งงวดที่ยังไม่ปิด
+                </span>
+              </label>
+              <label className="text-xs font-medium text-gray-600">
+                ชั่วโมงที่ทำเกินแต่ไม่ได้ OT (พนักงานรายชั่วโมง)
+                <select name="otOverflowPay" defaultValue={hrSettings.otOverflowPay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-base sm:text-sm">
+                  <option value="regular">จ่ายเรทปกติตามชั่วโมงจริง</option>
+                  <option value="none">ไม่จ่าย (นับแค่ชั่วโมงปกติ + OT)</option>
+                </select>
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  เช่น วันไม่มี OT หรือทำเกินเพดาน OT · พนักงานรายวัน/รายเดือนไม่ได้รับผล
+                </span>
+              </label>
+              <label className="text-xs font-medium text-gray-600">
                 ตัวคูณ OT (เช่น 1.5)
                 <input name="otMultiplier" type="number" min={1} max={5} step="0.1" defaultValue={hrSettings.otMultiplier} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
-                OT สูงสุด/วัน (ชม.)
+                OT สูงสุด/วัน (ชม.) — โหมดทุกวัน
                 <input name="otDailyCapHours" type="number" min={0} max={12} step="0.5" defaultValue={hrSettings.otDailyCapHours} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
@@ -835,6 +859,21 @@ export function StaffManager({
               </div>
             </form>
           </div>
+          <OtDaysPanel
+            otDays={otDays}
+            employees={staff
+              .filter((m) => !isResigned(m.userId))
+              .map((m) => {
+                const p = profileByUser.get(m.userId);
+                return { userId: m.userId, name: p?.displayName || m.email, otEligible: p?.otEligible ?? true };
+              })}
+            today={today}
+            otMode={hrSettings.otMode}
+            storeMultiplier={hrSettings.otMultiplier}
+            isPending={isPending}
+            run={run}
+            onNotice={setNotice}
+          />
           <div className="rounded-lg border border-gray-200 bg-white p-4">
             <h2 className="text-sm font-bold text-gray-900">ข้อมูลบริษัท/ร้านบนสลิปเงินเดือน</h2>
             <p className="text-xs text-gray-500">เว้นว่าง = ใช้ชื่อร้าน ที่อยู่ และเลขผู้เสียภาษีจากตั้งค่าใบเสร็จ</p>

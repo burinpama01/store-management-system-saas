@@ -59,12 +59,39 @@ export const EMPLOYMENT_TYPE_LABEL: Record<EmploymentType, string> = {
   temporary: "ชั่วคราว",
 };
 
+export type OtMode = "daily" | "scheduled";
+export type OtOverflowPay = "regular" | "none";
+
+/** วันที่ร้านให้ OT (โหมด scheduled) — เพดาน/ตัวคูณ/รายชื่อ ใช้เฉพาะวันนั้น */
+export interface StoreOtDay {
+  id: string;
+  storeId: string;
+  organizationId: string;
+  date: string;
+  capHours: number;
+  /** null = ใช้ตัวคูณของร้าน */
+  multiplier: number | null;
+  userIds: string[];
+  note?: string;
+  /** ผู้บันทึกล่าสุด */
+  updatedByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** จำนวนวันที่ให้ OT ย้อนหลังได้ (นับจากวันนี้ตามเวลาร้าน) */
+export const OT_DAY_BACKDATE_LIMIT_DAYS = 7;
+
 export interface StoreHrSettings {
   storeId: string;
   organizationId: string;
   regularHoursPerDay: number;
   otMultiplier: number;
   otDailyCapHours: number;
+  /** daily = คิด OT ทุกวันที่ทำเกิน (แบบเดิม) · scheduled = คิดเฉพาะวันที่ร้านกำหนดใน store_ot_days */
+  otMode: OtMode;
+  /** ชั่วโมงที่เกินชั่วโมงปกติแต่ไม่ได้เป็น OT ของพนักงานรายชั่วโมง: regular = จ่ายเรทปกติ · none = ไม่จ่าย */
+  otOverflowPay: OtOverflowPay;
   latePenaltyPerMinute: number;
   latePenaltyMaxPerDay: number;
   absentPenaltyPerDay: number;
@@ -85,6 +112,8 @@ export const DEFAULT_HR_SETTINGS: Omit<StoreHrSettings, "storeId" | "organizatio
   regularHoursPerDay: 8,
   otMultiplier: 1.5,
   otDailyCapHours: 2,
+  otMode: "daily",
+  otOverflowPay: "regular",
   latePenaltyPerMinute: 0,
   latePenaltyMaxPerDay: 0,
   absentPenaltyPerDay: 0,

@@ -224,6 +224,9 @@ export function PayslipCard({
         )}
         <Row label="ชั่วโมงทำงานรวม" value={hoursLabel(line.totalHours)} />
         {line.otHours > 0 && <Row label="ชั่วโมง OT" value={hoursLabel(line.otHours)} muted />}
+        {(line.unpaidOverflowHours ?? 0) > 0 && (
+          <Row label="ชั่วโมงที่เกินแต่ไม่ได้เป็น OT (ไม่จ่าย)" value={hoursLabel(line.unpaidOverflowHours)} muted />
+        )}
         {lateDays > 0 && <Row label="วันที่มาสาย" value={`${lateDays} วัน`} muted />}
         {trueAbsentDays > 0 && <Row label="วันขาดงาน (ไม่มีบันทึก)" value={`${trueAbsentDays} วัน`} muted />}
         {inNoOutDays > 0 && <Row label="วันที่เข้างานแต่ไม่ลงออก (นับเป็นขาด)" value={`${inNoOutDays} วัน`} muted />}
@@ -292,7 +295,17 @@ export function PayslipCard({
             value={`+${money(monthlyBonus, currency)}`}
           />
         )}
-        {line.otPay > 0 && <Row label={`ค่าล่วงเวลา (${line.otHours} ชม. × ${otMultiplier})`} value={`+${money(line.otPay, currency)}`} />}
+        {line.otPay > 0 && (
+          <Row
+            // สลิปเก่า (snapshot ก่อนมี otMultiplierUsed) = ใช้ตัวคูณร้าน · null = หลายวันใช้ตัวคูณต่างกัน
+            label={
+              line.otMultiplierUsed === null
+                ? `ค่าล่วงเวลา (${line.otHours} ชม. หลายอัตรา)`
+                : `ค่าล่วงเวลา (${line.otHours} ชม. × ${line.otMultiplierUsed ?? otMultiplier})`
+            }
+            value={`+${money(line.otPay, currency)}`}
+          />
+        )}
         {line.bonusTotal > 0 && <Row label="โบนัส/เพิ่มเติม" value={`+${money(line.bonusTotal, currency)}`} />}
         <Row label="รวมรายรับ" value={money(totalEarning, currency)} />
 

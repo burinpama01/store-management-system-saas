@@ -8,7 +8,7 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { computePayrollSummaries, mapRecord } from "@/modules/attendance/repository";
-import { mapAdjustment, mapHrSettings, mapProfile } from "../repository";
+import { listStoreOtDays, mapAdjustment, mapHrSettings, mapProfile } from "../repository";
 import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type StoreHrSettings } from "../types";
 import { resolvePayslipIssuer } from "../employee-identity";
 import { computeAdvancedPayrollLines, joinedDatesFromMembers, type AdvancedComputeContext, type AdvancedPayrollLine } from "./compute";
@@ -133,6 +133,9 @@ export async function computeStorePayroll(input: {
   const hrSettings: StoreHrSettings = hrRes.data
     ? mapHrSettings(hrRes.data)
     : { storeId: input.storeId, organizationId: input.organizationId, ...DEFAULT_HR_SETTINGS, createdAt: "", updatedAt: "" };
+  // วันให้ OT ใช้เฉพาะโหมดเฉพาะวัน (โหมดเดิมไม่ต้องอ่าน — DB สะดุดไม่ทำให้ปิดงวดล้ม)
+  // อ่านไม่ได้ = โยน error (ห้ามปิดงวดโดยไม่มี OT ที่ร้านตั้งไว้)
+  const otDays = hrSettings.otMode === "scheduled" ? await listStoreOtDays(input.storeId, input.periodStart, input.periodEnd) : [];
   const roster = new Set<string>(
     ((membersRes.data ?? []) as { user_id: string; role: string }[]).filter((m) => m.role !== "super_admin").map((m) => m.user_id),
   );
@@ -177,6 +180,7 @@ export async function computeStorePayroll(input: {
       adjustments,
       settings: hrSettings,
       holidayDates: ((holidaysRes.data ?? []) as { date: string }[]).map((h) => h.date),
+      otDays,
       periodStart: input.periodStart,
       periodEnd: input.periodEnd,
       today: input.today,
