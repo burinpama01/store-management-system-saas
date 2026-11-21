@@ -296,6 +296,48 @@ describe("otForDay / buildOtDayRules", () => {
     });
     expect(r).toEqual({ otHours: 0, multiplier: 1.5, unpaidHours: 0 });
   });
+
+  const run = (dayHours: number, extra: Parameters<typeof hr>[0] = {}, capHours = 4) =>
+    otForDay({
+      settings: hr(extra),
+      rules: buildOtDayRules([{ date: "2026-11-21", capHours, multiplier: null, userIds: ["u1"] }]),
+      profile: { otEligible: true },
+      userId: "u1",
+      date: "2026-11-21",
+      dayHours,
+    });
+
+  it("OT นับเฉพาะชั่วโมงเต็ม — เศษนาทีทิ้ง ทั้งโหมดเฉพาะวัน", () => {
+    // ชั่วโมงปกติ 8 → ทำ 9 ชม. 40 นาที = เกิน 1:40 → OT 1 ชม.
+    expect(run(8 + 1 + 40 / 60, { otMode: "scheduled" }).otHours).toBe(1);
+    // เกิน 50 นาที ไม่ถึง 1 ชม. → ไม่ได้ OT
+    expect(run(8 + 50 / 60, { otMode: "scheduled" }).otHours).toBe(0);
+    // เพดานวันนั้น 2.5 ชม. ทำเกิน 3 ชม. → 2
+    expect(run(11, { otMode: "scheduled" }, 2.5).otHours).toBe(2);
+  });
+
+  it("OT นับเฉพาะชั่วโมงเต็ม — โหมดทุกวันด้วย", () => {
+    expect(run(8 + 1 + 59 / 60, { otMode: "daily", otDailyCapHours: 4 }).otHours).toBe(1);
+    expect(run(8 + 30 / 60, { otMode: "daily", otDailyCapHours: 4 }).otHours).toBe(0);
+  });
+
+  it("ชั่วโมงจากการหารนาทีคลาดทศนิยมเล็กน้อยยังนับครบ", () => {
+    // 120 นาที / 60 อาจได้ 1.9999999 ในบางเส้นทาง
+    expect(run(8 + 1.9999999999, { otMode: "scheduled" }).otHours).toBe(2);
+  });
+
+  it("เศษนาทีที่ไม่ได้เป็น OT: ร้านตั้งไม่จ่าย → นับเป็นชั่วโมงไม่จ่าย", () => {
+    const r = run(9.5, { otMode: "scheduled", otOverflowPay: "none" });
+    expect(r.otHours).toBe(1);
+    expect(r.unpaidHours).toBeCloseTo(0.5, 6);
+    expect(run(9.5, { otMode: "scheduled", otOverflowPay: "regular" }).unpaidHours).toBe(0);
+  });
+
+  it("เพดานทศนิยม + ไม่จ่ายส่วนเกิน: เศษเพดานไปอยู่ชั่วโมงไม่จ่าย", () => {
+    const r = run(13, { otMode: "scheduled", otOverflowPay: "none" }, 2.5);
+    expect(r.otHours).toBe(2);
+    expect(r.unpaidHours).toBe(3);
+  });
 });
 
 describe("กฎให้ OT ย้อนหลัง 7 วัน + งวดที่จ่ายแล้ว", () => {

@@ -99,7 +99,7 @@ export function OtDaysPanel({ otDays, employees, today, otMode, storeMultiplier,
         <div>
           <h2 className="text-sm font-bold text-gray-900">วันให้ OT</h2>
           <p className="text-xs text-gray-500">
-            กำหนดวันที่ให้ OT พร้อมเพดานชั่วโมงของแต่ละวัน · วันที่ไม่อยู่ในรายการจะไม่คิด OT · ให้ย้อนหลังได้ไม่เกิน{" "}
+            กำหนดวันที่ให้ OT พร้อมเพดานชั่วโมงของแต่ละวัน · วันที่ไม่อยู่ในรายการจะไม่คิด OT · OT นับเฉพาะชั่วโมงเต็ม (ไม่ถึง 1 ชม. ไม่ได้) · ให้ย้อนหลังได้ไม่เกิน{" "}
             {OT_DAY_BACKDATE_LIMIT_DAYS} วัน และงวดที่จ่ายเงินแล้วแก้ไม่ได้
           </p>
         </div>
@@ -171,6 +171,7 @@ export function OtDaysPanel({ otDays, employees, today, otMode, storeMultiplier,
               defaultValue={editing?.capHours ?? 4}
               className={inputCls}
             />
+            <span className="mt-1 block text-[11px] font-normal text-gray-400">นับเฉพาะชั่วโมงเต็ม · ตั้ง 2.5 ได้ OT สูงสุด 2 ชม.</span>
           </label>
           <label className="text-xs font-medium text-gray-600">
             ตัวคูณ (เว้นว่าง = ใช้ของร้าน ×{storeMultiplier})

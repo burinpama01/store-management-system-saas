@@ -129,7 +129,8 @@ export interface DayOtResult {
  * กติกา OT ของวันเดียว — จุดเดียวที่ทุกเส้นทางคิดเงิน (งวดปกติ / หลายเรทกลางงวด / รายสัปดาห์) ใช้ร่วมกัน
  *   daily (แบบเดิม): มีสิทธิ์ OT + เพดานร้าน > 0 → OT = min(เกิน, เพดานร้าน) × ตัวคูณร้าน
  *   scheduled: เฉพาะวันที่อยู่ในรายการ และพนักงานอยู่ในรายชื่อของวันนั้น → OT = min(เกิน, เพดานวันนั้น) × (ตัวคูณวันนั้น ?? ร้าน)
- * ส่วนที่เกินแต่ไม่ได้เป็น OT: regular = จ่ายเรทปกติ (เดิม) · none = ไม่จ่าย
+ * OT นับเฉพาะชั่วโมงเต็ม (ปัดเศษนาทีทิ้ง) — ทำ 1 ชม. 40 นาที = OT 1 ชม. · ไม่ถึง 1 ชม. = 0 (ทั้งสองโหมด)
+ * ส่วนที่เกินแต่ไม่ได้เป็น OT (รวมเศษนาที): regular = จ่ายเรทปกติ (เดิม) · none = ไม่จ่าย
  */
 export function otForDay(input: {
   settings: Pick<StoreHrSettings, "regularHoursPerDay" | "otMultiplier" | "otDailyCapHours" | "otMode" | "otOverflowPay">;
@@ -152,7 +153,8 @@ export function otForDay(input: {
   } else if (profile.otEligible) {
     cap = settings.otDailyCapHours;
   }
-  const otHours = cap > 0 ? Math.min(over, cap) : 0;
+  // เพดานทศนิยม (เช่น 2.5) ก็ได้แค่ชั่วโมงเต็ม (2) · +1e-9 กันชั่วโมงจากการหารนาทีคลาดทศนิยม (เช่น 1.9999999 ต้องเป็น 2)
+  const otHours = cap > 0 ? Math.floor(Math.min(over, cap) + 1e-9) : 0;
   const unpaidHours = settings.otOverflowPay === "none" ? over - otHours : 0;
   return { otHours, multiplier, unpaidHours };
 }
