@@ -168,6 +168,13 @@ export async function listRecentMovements(storeId: string, ingredientId: string 
   };
 }
 
+/** วัตถุดิบต้องอยู่ในสาขาที่ผู้ใช้เลือกอยู่ — RPC ตรวจสิทธิ์จากสาขาของวัตถุดิบเอง จึงต้องผูกกับสาขาปัจจุบันที่ชั้น action */
+export async function ingredientBelongsToStore(storeId: string, ingredientId: string): Promise<boolean> {
+  const db: LooseClient = await createSupabaseServerClient();
+  const { data, error } = await db.from("ingredients").select("id").eq("id", ingredientId).eq("store_id", storeId).maybeSingle();
+  return !error && Boolean(data);
+}
+
 export async function setIngredientBalance(input: {
   ingredientId: string;
   kind: "opening" | "manual_adjust";
