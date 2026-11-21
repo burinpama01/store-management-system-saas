@@ -4,6 +4,8 @@ const TABS = [
   { href: "/costing", label: "ภาพรวม" },
   { href: "/costing/menu", label: "ต้นทุนเมนู" },
   { href: "/costing/ingredients", label: "วัตถุดิบ" },
+  { href: "/costing/inventory", label: "คลังวัตถุดิบ" },
+  { href: "/costing/suppliers", label: "ผู้ขาย" },
   { href: "/costing/break-even", label: "จุดคุ้มทุน" },
 ] as const;
 
