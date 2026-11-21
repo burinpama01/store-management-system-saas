@@ -3423,6 +3423,7 @@ export interface Database {
           usage_per_purchase: number;
           purchase_price: number;
           yield_pct: number;
+          category: string | null;
           stock_pool_id: string | null;
           is_active: boolean;
           created_at: string;
@@ -3438,6 +3439,7 @@ export interface Database {
           usage_per_purchase: number;
           purchase_price: number;
           yield_pct?: number;
+          category?: string | null;
           stock_pool_id?: string | null;
           is_active?: boolean;
           created_at?: string;
@@ -3453,6 +3455,7 @@ export interface Database {
           usage_per_purchase?: number;
           purchase_price?: number;
           yield_pct?: number;
+          category?: string | null;
           stock_pool_id?: string | null;
           is_active?: boolean;
           created_at?: string;
