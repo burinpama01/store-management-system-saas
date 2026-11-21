@@ -115,7 +115,8 @@ export async function listDocumentSequences(storeId: string): Promise<Result<Doc
 export async function searchTaxParties(storeId: string, query: string, limit = 20): Promise<Result<TaxParty[]>> {
   const db: LooseClient = await createSupabaseServerClient();
   let request = db.from("tax_parties").select("*").eq("store_id", storeId).eq("is_active", true).order("name").limit(Math.min(Math.max(limit, 1), 50));
-  const q = query.trim().replace(/[%,()]/g, "");
+  // ตัด wildcard ของ LIKE (% _) และอักขระที่ PostgREST ใช้แยกเงื่อนไข
+  const q = query.trim().replace(/[%_,()\\]/g, "");
   if (q) request = /^\d+$/.test(q) ? request.like("tax_id", `${q}%`) : request.ilike("name", `%${q}%`);
   const { data, error } = await request;
   if (error) return { data: null, error: taxErrorMessage(error.message) };
