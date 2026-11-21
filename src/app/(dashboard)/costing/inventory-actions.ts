@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getInventoryAccess } from "@/modules/inventory/access";
 import {
+  ingredientBelongsToStore,
   saveIngredientInventorySettings,
   saveSupplier,
   setIngredientBalance,
@@ -89,6 +90,8 @@ export async function setIngredientBalanceAction(input: {
   }
   const reason = cleanText(input.reason, 300);
   if (input.kind === "manual_adjust" && !reason) return { error: "กรุณาระบุเหตุผลที่ปรับยอด" };
+  // กันปรับยอดวัตถุดิบของสาขาอื่น (ผู้จัดการหลายสาขา) — สวิตช์/ log ใช้สาขาปัจจุบัน ต้องตรงกับวัตถุดิบ
+  if (!(await ingredientBelongsToStore(ctx.storeId, input.ingredientId))) return { error: "ไม่พบวัตถุดิบนี้ในสาขา" };
 
   const result = await setIngredientBalance({ ...input, reason });
   await logInventory({
