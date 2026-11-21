@@ -23,11 +23,14 @@ export interface Ingredient {
   purchasePrice: number;
   yieldPct: number;
   isActive: boolean;
+  /** หมวดสำหรับจัดกลุ่ม/กรอง (null = ยังไม่ระบุ) */
+  category: string | null;
 }
 
 export interface IngredientInput {
   id?: string | null;
   name: string;
+  category?: string | null;
   purchaseUnit: string;
   usageUnit: string;
   usagePerPurchase: number;

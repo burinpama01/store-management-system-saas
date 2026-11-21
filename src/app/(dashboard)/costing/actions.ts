@@ -62,6 +62,8 @@ export async function saveIngredientAction(input: IngredientInput): Promise<Acti
   if (!access) return { error };
   const name = input.name?.trim() ?? "";
   if (!name || name.length > 80) return { error: "ชื่อวัตถุดิบต้องมี 1–80 ตัวอักษร" };
+  const category = typeof input.category === "string" ? input.category.trim() : "";
+  if (category.length > 40) return { error: "ชื่อหมวดต้องไม่เกิน 40 ตัวอักษร" };
   if (!input.purchaseUnit?.trim() || !input.usageUnit?.trim()) return { error: "กรุณาระบุหน่วยซื้อและหน่วยที่ใช้" };
   if (!finite(input.usagePerPurchase) || input.usagePerPurchase <= 0) return { error: "ปริมาณที่ใช้ได้ต่อการซื้อต้องมากกว่า 0" };
   if (!finite(input.purchasePrice) || input.purchasePrice < 0 || input.purchasePrice > 10_000_000) return { error: "ราคาซื้อไม่ถูกต้อง" };
@@ -69,7 +71,7 @@ export async function saveIngredientAction(input: IngredientInput): Promise<Acti
   if (input.id && !UUID_RE.test(input.id)) return { error: "ข้อมูลวัตถุดิบไม่ถูกต้อง" };
 
   const scope = { organizationId: access.ctx.organizationId, storeId: access.ctx.storeId };
-  const result = await saveIngredient(scope, { ...input, name }, access.user.id);
+  const result = await saveIngredient(scope, { ...input, name, category: category || null }, access.user.id);
   await logCosting({
     action: "saveIngredient",
     ok: !result.error,
