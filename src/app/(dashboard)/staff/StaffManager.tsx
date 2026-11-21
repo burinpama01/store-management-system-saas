@@ -830,6 +830,9 @@ export function StaffManager({
               <label className="text-xs font-medium text-gray-600">
                 OT สูงสุด/วัน (ชม.) — โหมดทุกวัน
                 <input name="otDailyCapHours" type="number" min={0} max={12} step="0.5" defaultValue={hrSettings.otDailyCapHours} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  OT นับเฉพาะชั่วโมงเต็ม · ทำ 1 ชม. 40 นาที ได้ 1 ชม. · ไม่ถึง 1 ชม. ไม่ได้ OT
+                </span>
               </label>
               <label className="text-xs font-medium text-gray-600">
                 ค่าปรับมาสาย/นาที
