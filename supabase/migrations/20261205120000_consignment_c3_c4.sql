@@ -224,7 +224,9 @@ begin
   for v_m in
     select m.id, m.settled_amount from public.resale_movements m
      where m.supplier_id = p_supplier_id and m.settlement_id is not null and m.settlement_id <> v_id
-       and m.movement_type = 'sale'
+       and m.movement_type = 'sale' and m.settled_amount > 0
+       -- ล็อกเฉพาะแถวที่มีการคืนของอ้างถึง (มีโอกาส clawback) ไม่ล็อกประวัติทั้งหมด
+       and exists (select 1 from public.resale_movements r where r.reverses_id = m.id)
      for update
   loop
     v_net := public.resale_net_owner(v_m.id);
