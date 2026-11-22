@@ -18,7 +18,8 @@ type ActionResult = { error: string | null };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ROUNDING: readonly PriceRounding[] = ["none", "ceil_1", "ceil_5", "ceil_10"];
-const MAX_RECIPE_LINES = 60;
+// สูตรหลัก + บรรทัดของตัวเลือกเสริม (ต้องตรงกับเพดานใน costing_save_menu)
+const MAX_RECIPE_LINES = 120;
 
 /** ทุกการแก้ต้นทุนต้องทิ้ง log ทั้งสำเร็จและล้มเหลว (กฎโปรเจกต์: ห้ามสำเร็จแบบเงียบ) */
 async function logCosting(input: {
@@ -106,7 +107,7 @@ export async function deleteIngredientAction(ingredientId: string): Promise<Acti
 
 export async function saveMenuCostingAction(input: {
   productId: string;
-  lines: Array<{ variantId: string | null; ingredientId: string; quantity: number }>;
+  lines: Array<{ variantId: string | null; modifierOptionId: string | null; ingredientId: string; quantity: number }>;
   packagingCost: number;
   targetFoodCostPct: number | null;
 }): Promise<ActionResult> {
@@ -115,11 +116,19 @@ export async function saveMenuCostingAction(input: {
   if (!UUID_RE.test(input.productId)) return { error: "ข้อมูลเมนูไม่ถูกต้อง" };
   if (!Array.isArray(input.lines) || input.lines.length > MAX_RECIPE_LINES) return { error: `สูตรมีได้ไม่เกิน ${MAX_RECIPE_LINES} บรรทัด` };
   for (const line of input.lines) {
-    if (!UUID_RE.test(line.ingredientId) || (line.variantId !== null && !UUID_RE.test(line.variantId))) return { error: "ข้อมูลสูตรไม่ถูกต้อง" };
+    const modifierOptionId = line.modifierOptionId ?? null;
+    if (
+      !UUID_RE.test(line.ingredientId) ||
+      (line.variantId !== null && !UUID_RE.test(line.variantId)) ||
+      (modifierOptionId !== null && !UUID_RE.test(modifierOptionId))
+    ) {
+      return { error: "ข้อมูลสูตรไม่ถูกต้อง" };
+    }
+    if (line.variantId !== null && modifierOptionId !== null) return { error: "บรรทัดสูตรผูกได้ทั้ง ตัวเลือกสินค้า หรือ ตัวเลือกเสริม อย่างใดอย่างหนึ่ง" };
     if (!finite(line.quantity) || line.quantity <= 0 || line.quantity > 1_000_000) return { error: "ปริมาณในสูตรต้องมากกว่า 0" };
   }
   // วัตถุดิบเดียวกันในตัวเลือกเดียวกันห้ามซ้ำ (ต้นทุนจะนับสองเท่า) — DB มี unique index กันซ้ำอีกชั้น
-  const lineKeys = input.lines.map((line) => `${line.ingredientId}:${line.variantId ?? "all"}`);
+  const lineKeys = input.lines.map((line) => `${line.ingredientId}:${line.variantId ?? "all"}:${line.modifierOptionId ?? "base"}`);
   if (new Set(lineKeys).size !== lineKeys.length) return { error: "วัตถุดิบในสูตรซ้ำกัน — รวมเป็นบรรทัดเดียว" };
   if (!finite(input.packagingCost) || input.packagingCost < 0 || input.packagingCost > 100_000) return { error: "ค่าบรรจุภัณฑ์ไม่ถูกต้อง" };
   if (input.targetFoodCostPct !== null && (!finite(input.targetFoodCostPct) || input.targetFoodCostPct <= 0 || input.targetFoodCostPct >= 100)) {
@@ -128,7 +137,10 @@ export async function saveMenuCostingAction(input: {
 
   const scope = { organizationId: access.ctx.organizationId, storeId: access.ctx.storeId };
   // ธุรกรรมเดียว + RLS ตรวจซ้ำว่าเมนู/วัตถุดิบ/ตัวเลือกเป็นของร้านนี้ (with check ใน migration)
-  const saved = await saveMenuCosting(input);
+  const saved = await saveMenuCosting({
+    ...input,
+    lines: input.lines.map((line) => ({ ...line, modifierOptionId: line.modifierOptionId ?? null })),
+  });
   const failure = saved.error;
   await logCosting({
     action: "saveMenuCosting",
@@ -136,7 +148,11 @@ export async function saveMenuCostingAction(input: {
     message: failure ? `บันทึกสูตรเมนูไม่สำเร็จ: ${failure}` : "บันทึกสูตรและต้นทุนเมนู",
     ...scope,
     actorUserId: access.user.id,
-    context: { productId: input.productId, lineCount: input.lines.length },
+    context: {
+      productId: input.productId,
+      lineCount: input.lines.length,
+      optionLineCount: input.lines.filter((line) => line.modifierOptionId).length,
+    },
   });
   if (failure) return { error: failure };
   revalidateCosting();

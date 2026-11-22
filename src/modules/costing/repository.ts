@@ -38,7 +38,7 @@ export async function loadCostingWorkspace(storeId: string): Promise<{ data: Cos
   const [ingredientsRes, linesRes, productRes, templatesRes, settingsRes, channelRes] = await Promise.all([
     // เพดานกันข้อมูลโตไม่จำกัด (ร้านทั่วไปไม่ถึง) — C2 ทำหน้าแบ่งหน้าเมื่อจำเป็น
     supabase.from("ingredients").select("*").eq("store_id", storeId).order("name").limit(1000),
-    supabase.from("recipe_lines").select("id, product_id, variant_id, ingredient_id, quantity").eq("store_id", storeId).limit(5000),
+    supabase.from("recipe_lines").select("id, product_id, variant_id, modifier_option_id, ingredient_id, quantity").eq("store_id", storeId).limit(5000),
     supabase.from("product_cost_settings").select("product_id, packaging_cost, target_food_cost_pct").eq("store_id", storeId).limit(2000),
     supabase.from("cost_allocation_templates").select("*").eq("store_id", storeId).order("effective_from", { ascending: false }).limit(2000),
     supabase.from("store_cost_settings").select("*").eq("store_id", storeId).maybeSingle(),
@@ -68,6 +68,7 @@ export async function loadCostingWorkspace(storeId: string): Promise<{ data: Cos
         id: row.id,
         productId: row.product_id,
         variantId: row.variant_id,
+        modifierOptionId: row.modifier_option_id ?? null,
         ingredientId: row.ingredient_id,
         quantity: num(row.quantity),
       })),
@@ -165,7 +166,7 @@ export async function deleteIngredient(storeId: string, ingredientId: string) {
  */
 export async function saveMenuCosting(input: {
   productId: string;
-  lines: Array<{ variantId: string | null; ingredientId: string; quantity: number }>;
+  lines: Array<{ variantId: string | null; modifierOptionId: string | null; ingredientId: string; quantity: number }>;
   packagingCost: number;
   targetFoodCostPct: number | null;
 }) {
@@ -173,7 +174,13 @@ export async function saveMenuCosting(input: {
   const { error } = await supabase.rpc("costing_save_menu", {
     p_product_id: input.productId,
     // variantId "" = ทุกตัวเลือก (SQL ใช้ nullif(el->>'variantId', '')::uuid)
-    p_lines: input.lines.map((line) => ({ variantId: line.variantId ?? "", ingredientId: line.ingredientId, quantity: line.quantity })),
+    // modifierOptionId "" = สูตรหลัก (ไม่ผูกตัวเลือกเสริม)
+    p_lines: input.lines.map((line) => ({
+      variantId: line.variantId ?? "",
+      modifierOptionId: line.modifierOptionId ?? "",
+      ingredientId: line.ingredientId,
+      quantity: line.quantity,
+    })),
     p_packaging_cost: input.packagingCost,
     p_target_food_cost_pct: input.targetFoodCostPct,
   });

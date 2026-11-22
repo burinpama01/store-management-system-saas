@@ -3494,6 +3494,7 @@ export interface Database {
           store_id: string;
           product_id: string;
           variant_id: string | null;
+          modifier_option_id: string | null;
           ingredient_id: string;
           quantity: number;
           created_at: string;
@@ -3504,6 +3505,7 @@ export interface Database {
           store_id: string;
           product_id: string;
           variant_id?: string | null;
+          modifier_option_id?: string | null;
           ingredient_id: string;
           quantity: number;
           created_at?: string;
@@ -3514,6 +3516,7 @@ export interface Database {
           store_id?: string;
           product_id?: string;
           variant_id?: string | null;
+          modifier_option_id?: string | null;
           ingredient_id?: string;
           quantity?: number;
           created_at?: string;
