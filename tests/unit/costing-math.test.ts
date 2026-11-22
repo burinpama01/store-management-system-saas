@@ -214,6 +214,23 @@ describe("SQL ↔ TS parity และความปลอดภัยของ 
     expect(readFileSync("src/app/(dashboard)/costing/actions.ts", "utf8")).toContain("const MAX_RECIPE_LINES = 120;");
   });
 
+  it("ผูกวัตถุดิบตรงตัวเลือกในหน้าแก้เมนู: RPC invoker + manager + ใช้กับเมนูชื่อเดียวกันเฉพาะสาขานี้", () => {
+    const sql = readFileSync("supabase/migrations/20261201120000_costing_save_option_lines.sql", "utf8");
+    expect(sql).toContain("security invoker");
+    expect(sql).not.toContain("security definer");
+    expect(sql).toContain("auth_user_role_in_store(v_org, v_store, 'manager')");
+    expect(sql).toContain("if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) > 30 then");
+    expect(sql).toContain("where p2.store_id = v_store");
+    expect(sql).toMatch(/coalesce\(p_apply_same_name, false\)\s+and p2\.is_active\s+and o2\.is_active/);
+    expect(sql).toContain("delete from recipe_lines where store_id = v_store and modifier_option_id = v_target.option_id;");
+    expect(sql).toContain("revoke all on function public.costing_save_option_lines(uuid, jsonb, boolean) from public, anon;");
+    const actions = readFileSync("src/app/(dashboard)/costing/actions.ts", "utf8");
+    expect(actions).toContain("const MAX_OPTION_LINES = 30;");
+    // หน้าแก้เมนูส่งข้อมูลสูตรให้เฉพาะคนที่แก้ระบบต้นทุนได้
+    const page = readFileSync("src/app/(dashboard)/catalog/page.tsx", "utf8");
+    expect(page).toContain("costing.decision.allowed && costing.decision.canEdit");
+  });
+
   it("ตารางต้นทุนทุกตารางเปิด RLS ระดับ manager และไม่แก้ products/order_items", () => {
     for (const table of ["store_cost_settings", "store_cost_budgets", "ingredients", "ingredient_price_history", "recipe_lines", "product_cost_settings", "cost_allocation_templates"]) {
       expect(foundation).toContain(`alter table public.${table} enable row level security;`);
