@@ -49,7 +49,9 @@ export function ConsignmentToggle({ enabled, canToggle }: { enabled: boolean; ca
           </button>
         )}
       </div>
-      <p className="text-sm text-[var(--muted)]">ตอนนี้เตรียมรายชื่อเจ้าของสินค้าได้ก่อน · ตั้งเมนู รับของ และเคลียร์เงินจะตามมาในรุ่นถัดไป</p>
+      <p className="text-sm text-[var(--muted)]">
+        ขั้นตอน: เพิ่มเจ้าของสินค้า → ตั้งเมนู (ซื้อมาขาย/รับฝากขาย) → รับของ → ขายที่ POS ตัดสต็อกเอง → เคลียร์เงินเจ้าของ
+      </p>
       {message && (
         <p role="status" className={`rounded-lg px-3 py-2 text-sm ${message.tone === "ok" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>
           {message.text}

@@ -35,6 +35,13 @@ export function decideConsignmentAccess(input: {
   };
 }
 
+/** ปิดรอบเงินสด: แคชเชียร์ขึ้นไปแยกเงินสดให้เจ้าของรอบรายวันได้ (เปิดสวิตช์แล้วเท่านั้น) */
+export const CONSIGNMENT_DAILY_CLOSE_ROLES = [...CONSIGNMENT_MANAGER_ROLES, "cashier"] as const;
+
+export function canSettleAtDailyClose(input: { hasConsignment: boolean; role: string; enabled: boolean }): boolean {
+  return input.hasConsignment && input.enabled && (CONSIGNMENT_DAILY_CLOSE_ROLES as readonly string[]).includes(input.role);
+}
+
 /** เมนูนำทาง: แสดงเมื่อมีสิทธิ์ (แม้ยังไม่เปิด เพื่อให้เจ้าของเข้าไปเปิดได้) */
 export function isConsignmentNavVisible(input: { hasConsignment: boolean; role: string }): boolean {
   return decideConsignmentAccess({ ...input, enabled: false }).allowed;
