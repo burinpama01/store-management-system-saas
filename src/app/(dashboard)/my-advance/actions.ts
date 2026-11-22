@@ -59,18 +59,23 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
       return { error: "มีคำขออื่นส่งพร้อมกันจนเกินเพดาน — ตรวจยอดเบิกได้แล้วลองใหม่" };
     }
 
+    // ยอดคงเหลือหลังคำขอนี้ (after นับคำขอนี้เป็น "รออนุมัติ" แล้ว) — ผู้อนุมัติเห็นว่าเบิกไปเท่าไรแล้ว
+    const remaining = after.cap.available;
+    // เหลือ 0 เพราะครบจำนวนครั้ง ≠ เบิกครบค่าแรง — บอกเหตุผลให้ผู้อนุมัติเห็น
+    const remainingText = `${formatBaht(remaining)}${after.cap.blockedReason ? ` (${after.cap.blockedReason})` : ""}`;
+
     await logSystemEvent({
       level: "info",
       source: "hr.salary-advance",
       action: "requestSalaryAdvanceAction",
-      message: `ขอเบิกเงิน ${formatBaht(amount)} รับเป็น${ADVANCE_PAY_METHOD_LABEL[payMethod]} (เบิกได้ ${formatBaht(av.cap.available)})`,
+      message: `ขอเบิกเงิน ${formatBaht(amount)} รับเป็น${ADVANCE_PAY_METHOD_LABEL[payMethod]} (เบิกได้ก่อนคำขอนี้ ${formatBaht(av.cap.available)} · คงเหลือหลังคำขอ ${remainingText})`,
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       actorUserId: user.id,
-      context: { advanceId: created.data.id, amount, payMethod, available: av.cap.available, cashMax: av.cashMax, earned: av.earned, cycleStart: av.cycle.start },
+      context: { advanceId: created.data.id, amount, payMethod, available: av.cap.available, remaining, cashMax: av.cashMax, earned: av.earned, cycleStart: av.cycle.start },
     });
     const title = `${av.employeeName} ขอเบิกเงิน ${formatBaht(amount)} (${ADVANCE_PAY_METHOD_LABEL[payMethod]})`;
-    const message = `ค่าแรงจากวันที่มาแล้ว ${formatBaht(av.earned)} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน${reason ? ` · เหตุผล: ${reason}` : ""}`;
+    const message = `ค่าแรงจากวันที่มาแล้ว ${formatBaht(av.earned)} · เบิกได้อีก ${remainingText} (หลังคำขอนี้) · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน${reason ? ` · เหตุผล: ${reason}` : ""}`;
     const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
     if (!getPlanFeatures(billing).lineNotify) {
       // แพ็กที่ไม่มีระบบแจ้งเตือน (เช่น business เลือกเงินเดือนขั้นสูงแต่ไม่เลือกแจ้งเตือน) — push ตรงถึงผู้จัดการแบบเดิม ไม่ให้คำขอเงียบ
@@ -99,6 +104,8 @@ export async function requestSalaryAdvanceAction(formData: FormData): Promise<{ 
         amount: formatBaht(amount),
         payMethod: ADVANCE_PAY_METHOD_LABEL[payMethod],
         reason: reason || null,
+        earned: formatBaht(av.earned),
+        remaining: remainingText,
       },
     });
     done();

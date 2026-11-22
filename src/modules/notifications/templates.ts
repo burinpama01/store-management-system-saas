@@ -53,7 +53,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
   },
   salary_advance_request: {
     title: "{employeeName} ขอเบิกเงิน {amount}",
-    message: "รับเป็น{payMethod} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน",
+    message: "รับเป็น{payMethod} · ค่าแรงที่มาแล้ว {earned} · เบิกได้อีก {remaining} · อนุมัติได้ที่หน้าพนักงาน แท็บเงินเดือน",
   },
   pass_purchase: {
     title: "ลูกค้าซื้อแพ็กล่วงหน้า",
@@ -86,7 +86,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   daily_summary: ["store", "date", "orderCount", "revenue", "employeeName", "trigger"],
   ops_checklist: ["store", "templateName", "itemLabel", "employeeName", "shiftDate"],
   new_online_order: ["store", "fulfillment", "orderNumber", "total"],
-  salary_advance_request: ["store", "employeeName", "amount", "payMethod", "reason"],
+  salary_advance_request: ["store", "employeeName", "amount", "payMethod", "reason", "earned", "remaining"],
   pass_purchase: ["store", "planName", "amount", "credits"],
   test: ["store"],
 };
