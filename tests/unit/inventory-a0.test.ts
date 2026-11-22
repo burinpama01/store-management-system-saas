@@ -15,7 +15,7 @@ import { inventoryErrorMessage } from "@/modules/inventory/repository";
 import { validateSupplier } from "@/modules/inventory/validate";
 import { branchLabel, isValidBranchCode, isValidThaiTaxId } from "@/shared/utils/thai-tax-id";
 
-const migration = readFileSync(join(process.cwd(), "supabase/migrations/20261127120000_ingredient_inventory_a0.sql"), "utf8")
+const migration = readFileSync(join(process.cwd(), "supabase/migrations/20261202120000_ingredient_inventory_a0.sql"), "utf8")
   .toLowerCase()
   .replace(/\s+/g, " ");
 
