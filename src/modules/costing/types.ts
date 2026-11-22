@@ -43,6 +43,8 @@ export interface RecipeLine {
   productId: string;
   /** null = ใช้กับทุกตัวเลือกของเมนู */
   variantId: string | null;
+  /** null = สูตรหลัก · มีค่า = บวกเพิ่มเฉพาะเมื่อลูกค้าเลือกตัวเลือกเสริมนี้ (เช่น เย็น/ปั่น/วิปครีม) */
+  modifierOptionId: string | null;
   ingredientId: string;
   quantity: number;
 }
