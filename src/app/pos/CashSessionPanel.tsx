@@ -7,6 +7,7 @@ import type { CashSession } from "@/modules/cashflow/types";
 import { openCashSessionAction, closeCashSessionAction } from "./cash-actions";
 import { Button } from "@/shared/components/ui";
 import { signOut } from "../(dashboard)/actions";
+import { ConsignmentCloseStep } from "./ConsignmentCloseStep";
 
 interface Props {
   session: CashSession | null;
@@ -224,6 +225,7 @@ export function CashSessionPanel({ session, cashSalesPreview, cashMovementPrevie
                   )}
                   <Row label="เงินที่ควรมี" value={formatMoney(expectedCash, currency)} />
                 </dl>
+                <ConsignmentCloseStep onSettled={() => router.refresh()} />
                 <label className="mt-4 block text-sm font-medium text-gray-700">
                   เงินที่นับได้จริง
                   <input

@@ -39,6 +39,7 @@ import {
 import type { Store } from "@/modules/stores/types";
 import type { OptionRecipeData } from "@/modules/costing/repository";
 import { OptionRecipeButton, OptionRecipeProvider } from "./OptionRecipeEditor";
+import { ConsignmentLinkProvider, ConsignmentSourcingLink } from "./ConsignmentSourcingLink";
 
 type PanelMode =
   | "closed"
@@ -71,6 +72,8 @@ interface Props {
   kitchenStations: { id: string; name: string }[];
   /** null = ไม่แสดงปุ่มผูกวัตถุดิบ (ไม่ใช่ผู้จัดการ/แพ็กไม่มีระบบต้นทุน) */
   optionRecipe: OptionRecipeData | null;
+  /** ร้าน Enterprise ที่เปิดซื้อขาด/ฝากขาย + ผู้จัดการ → แสดงลิงก์ตั้งค่าในหน้าแก้เมนู */
+  consignmentEnabled?: boolean;
 }
 
 function priceStr(n: number) {
@@ -1494,6 +1497,7 @@ function CatalogDialog({
             product={selectedProduct}
             modifierGroupTemplates={modifierGroupTemplates}
           />
+          <ConsignmentSourcingLink productId={selectedProduct.id} />
         </>
       )}
     </ModalDialog>
@@ -1782,6 +1786,7 @@ export function CatalogManager({
   canUseStock,
   kitchenStations,
   optionRecipe,
+  consignmentEnabled = false,
 }: Props) {
   const [panelMode, setPanelMode] = useState<PanelMode>("closed");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
@@ -1883,6 +1888,7 @@ export function CatalogManager({
   }
 
   return (
+    <ConsignmentLinkProvider enabled={consignmentEnabled}>
     <OptionRecipeProvider data={optionRecipe} products={products}>
     <div className="flex min-h-full flex-col">
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
@@ -2160,5 +2166,6 @@ export function CatalogManager({
       {confirmDialog}
     </div>
     </OptionRecipeProvider>
+    </ConsignmentLinkProvider>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "@/modules/catalog/repository";
 import { listBranchStores } from "@/modules/stores/repository";
 import { getCostingAccess } from "@/modules/costing/access";
+import { getConsignmentAccess } from "@/modules/consignment/access";
 import { loadOptionRecipeData } from "@/modules/costing/repository";
 import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { CatalogManager } from "./CatalogManager";
@@ -30,6 +31,7 @@ export default async function CatalogPage() {
     kitchenStationsResult,
     billingState,
     optionRecipe,
+    consignmentEnabled,
   ] = await Promise.all([
     listCategories(ctx.storeId),
     listProducts(ctx.storeId, { includeInactive: true }),
@@ -45,6 +47,10 @@ export default async function CatalogPage() {
         costing.decision.allowed && costing.decision.canEdit ? ((await loadOptionRecipeData(ctx.storeId)).data ?? null) : null,
       )
       .catch(() => null),
+    // ลิงก์ "ซื้อมาขาย/ฝากขาย" ในหน้าแก้เมนู — Enterprise + ผู้จัดการ + เปิดสวิตช์สาขา
+    getConsignmentAccess()
+      .then((c) => c.decision.allowed && c.decision.canOperate)
+      .catch(() => false),
   ]);
 
   const categories = categoriesResult.data ?? [];
@@ -76,6 +82,7 @@ export default async function CatalogPage() {
         canUseStock={features.stockManagement}
         kitchenStations={kitchenStations}
         optionRecipe={optionRecipe}
+        consignmentEnabled={consignmentEnabled}
       />
     </div>
   );
