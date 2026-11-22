@@ -47,7 +47,7 @@ describe("costing wiring", () => {
 
   it("ทุกแอ็กชันผ่านด่าน editor และทิ้ง log", () => {
     const exported = actions.match(/export async function \w+/g) ?? [];
-    expect(exported.length).toBe(6);
+    expect(exported.length).toBe(7);
     expect((actions.match(/await requireEditor\(\)/g) ?? []).length).toBe(exported.length);
     expect((actions.match(/await logCosting\(/g) ?? []).length).toBe(exported.length);
     expect(actions).toContain('source: "costing"');

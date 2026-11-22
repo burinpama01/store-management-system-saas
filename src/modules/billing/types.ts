@@ -66,6 +66,8 @@ export interface PlanFeatures {
   aiForecast: boolean;
   /** เงินเดือนขั้นสูง: ค่าทักษะ/อายุงาน/โบนัสยอดขาย/รอบ+ปิดงวด/สลิปของฉัน/ประกันสังคม-ภาษี */
   advancedPayroll: boolean;
+  /** สินค้าซื้อขาด/รับฝากขาย: ล็อต ต้นทุนรายรส เคลียร์เงินเจ้าของ (Enterprise เท่านั้น) */
+  consignment: boolean;
 }
 
 export type FeatureKey = keyof PlanFeatures;
@@ -102,6 +104,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   aiVision: "AI อ่านภาพ",
   aiForecast: "AI พยากรณ์",
   advancedPayroll: "เงินเดือนขั้นสูง",
+  consignment: "สินค้าซื้อขาด/ฝากขาย",
 };
 
 export const PLAN_LABELS: Record<BillingPlan, string> = {
@@ -216,6 +219,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiVision: false,
     aiForecast: false,
     advancedPayroll: false,
+    consignment: false,
   },
   starter: {
     maxStores: 1,
@@ -241,6 +245,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiVision: false,
     aiForecast: false,
     advancedPayroll: false,
+    consignment: false,
   },
   standard: {
     maxStores: 3,
@@ -266,6 +271,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiVision: false,
     aiForecast: false,
     advancedPayroll: false,
+    consignment: false,
   },
   premium: {
     maxStores: 5,
@@ -291,6 +297,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiVision: false,
     aiForecast: false,
     advancedPayroll: false,
+    consignment: false,
   },
   enterprise: {
     maxStores: Infinity,
@@ -316,6 +323,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiVision: true,
     aiForecast: true,
     advancedPayroll: true,
+    consignment: true,
   },
 };
 

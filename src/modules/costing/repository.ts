@@ -153,8 +153,12 @@ export async function deleteIngredient(storeId: string, ingredientId: string) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("ingredients").delete().eq("id", ingredientId).eq("store_id", storeId);
   if (error) {
-    // FK restrict จาก recipe_lines
-    if (error.code === "23503") return { error: "วัตถุดิบนี้ยังอยู่ในสูตรเมนู — เอาออกจากสูตรก่อน" };
+    // FK restrict จาก recipe_lines หรือสมุดคลัง ingredient_movements (ประวัติคลังต้องอยู่ครบ)
+    if (error.code === "23503") {
+      return String(error.message ?? "").includes("ingredient_movements")
+        ? { error: "วัตถุดิบนี้มีประวัติในคลังแล้ว จึงลบไม่ได้ (ต้องเก็บประวัติไว้ตรวจย้อนหลัง)" }
+        : { error: "วัตถุดิบนี้ยังอยู่ในสูตรเมนู — เอาออกจากสูตรก่อน" };
+    }
     return { error: mapError(error).userMessage };
   }
   return { error: null };
