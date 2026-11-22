@@ -1,14 +1,32 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toPurchaseUnits } from "@/modules/inventory/math";
 import type { InventoryItem, Supplier } from "@/modules/inventory/types";
-import type { ExpenseCategory, PayMethod, PurchaseBill } from "@/modules/purchasing/types";
+import { canApproveBill, needsApproval } from "@/modules/purchasing/access-policy";
+import {
+  BILL_STATUS_LABELS,
+  EVIDENCE_KINDS,
+  EVIDENCE_LABELS,
+  type EvidenceKind,
+  type ExpenseCategory,
+  type PayMethod,
+  type PurchaseBill,
+} from "@/modules/purchasing/types";
 import { billTotals, onHandAfterReceive } from "@/modules/purchasing/validate";
 import { useConfirm } from "@/shared/components/ui/useConfirm";
 import { money } from "../CostingChrome";
-import { payPurchaseBillAction, postPurchaseBillAction, voidPurchaseBillAction } from "../purchase-actions";
+import {
+  approvePurchaseBillAction,
+  payPurchaseBillAction,
+  postPurchaseBillAction,
+  recoverPurchaseBillAction,
+  rejectPurchaseBillAction,
+  voidPurchaseBillAction,
+} from "../purchase-actions";
+import { BillPhotoPicker, type PickedPhoto } from "./BillPhotoPicker";
 
 const inputClass = "min-h-11 w-full rounded-lg border border-[var(--border)] bg-white px-3 text-[16px] text-[var(--ink)]";
 
@@ -35,6 +53,8 @@ export function PurchaseBillsManager({
   categories,
   enabled,
   canEdit,
+  role,
+  userId,
 }: {
   bills: PurchaseBill[];
   items: InventoryItem[];
@@ -42,16 +62,19 @@ export function PurchaseBillsManager({
   categories: ExpenseCategory[];
   enabled: boolean;
   canEdit: boolean;
+  role: string;
+  userId: string;
 }) {
   const router = useRouter();
   const { confirm, confirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<"all" | "unpaid">("all");
+  const [filter, setFilter] = useState<"all" | "pending" | "unpaid" | "recover">("all");
   const [supplierId, setSupplierId] = useState("");
   const [supplierName, setSupplierName] = useState("");
   const [billNo, setBillNo] = useState("");
   const [billDate, setBillDate] = useState(bangkokToday());
-  const [isTax, setIsTax] = useState(false);
+  const [kind, setKind] = useState<EvidenceKind>("receipt");
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
   const [discount, setDiscount] = useState("0");
   const [vat, setVat] = useState("0");
   const [payStatus, setPayStatus] = useState<"paid" | "unpaid">("paid");
@@ -60,6 +83,7 @@ export function PurchaseBillsManager({
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
   const [voiding, setVoiding] = useState<{ bill: PurchaseBill; reason: string } | null>(null);
+  const [rejecting, setRejecting] = useState<{ bill: PurchaseBill; reason: string } | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -67,8 +91,21 @@ export function PurchaseBillsManager({
   const supplierById = useMemo(() => new Map(suppliers.map((s) => [s.id, s.name])), [suppliers]);
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
   const totals = billTotals(lines.map((l) => ({ lineTotal: Number(l.lineTotal) || 0 })), Number(discount) || 0, Number(vat) || 0);
-  const shown = bills.filter((b) => (filter === "unpaid" ? b.status === "posted" && b.paymentStatus === "unpaid" : true));
+  const outstanding = (b: PurchaseBill) => Math.max(0, Math.round((b.paidAmount - b.recoveredAmount) * 100) / 100);
+  const pendingBills = bills.filter((b) => b.status === "pending");
+  const recoverBills = bills.filter((b) => b.status === "rejected" && outstanding(b) > 0);
+  const shown = bills.filter((b) =>
+    filter === "unpaid"
+      ? b.status === "posted" && b.paymentStatus === "unpaid"
+      : filter === "pending"
+        ? b.status === "pending"
+        : filter === "recover"
+          ? b.status === "rejected" && outstanding(b) > 0
+          : true,
+  );
   const unpaidTotal = bills.filter((b) => b.status === "posted" && b.paymentStatus === "unpaid").reduce((s, b) => s + b.total, 0);
+  const recoverTotal = recoverBills.reduce((s, b) => s + outstanding(b), 0);
+  const willNeedApproval = needsApproval(role, kind);
 
   function setLine(i: number, patch: Partial<LineDraft>) {
     setLines((ls) =>
@@ -92,7 +129,8 @@ export function PurchaseBillsManager({
     setSupplierName("");
     setBillNo("");
     setBillDate(bangkokToday());
-    setIsTax(false);
+    setKind("receipt");
+    setPhotos([]);
     setDiscount("0");
     setVat("0");
     setPayStatus("paid");
@@ -103,6 +141,9 @@ export function PurchaseBillsManager({
   }
 
   function save() {
+    if (kind === "handwritten" && photos.length === 0) {
+      return setMessage({ tone: "error", text: "บิลเขียนมือต้องแนบรูปบิลอย่างน้อย 1 รูป" });
+    }
     const filled = lines.filter((l) => l.target || l.rawName.trim() || l.lineTotal.trim());
     for (const [i, l] of filled.entries()) {
       if (!l.target) return setMessage({ tone: "error", text: `บรรทัด ${i + 1}: เลือกวัตถุดิบ หรือหมวดค่าใช้จ่าย` });
@@ -116,7 +157,8 @@ export function PurchaseBillsManager({
         supplierName: supplierId ? null : supplierName || null,
         billNo: billNo || null,
         billDate,
-        isTaxInvoice: isTax,
+        evidenceKind: kind,
+        imageIds: photos.map((p) => p.id),
         discount: Number(discount) || 0,
         vatAmount: Number(vat) || 0,
         total: totals.total,
@@ -141,7 +183,10 @@ export function PurchaseBillsManager({
       }
       setMessage({
         tone: "ok",
-        text: `บันทึกบิลซื้อ ${money(totals.total)} บาทแล้ว${(result.negativeResets ?? 0) > 0 ? ` · ล้างยอดติดลบ ${result.negativeResets} วัตถุดิบ (บันทึกเป็นใช้เกินก่อนรับของ)` : ""}`,
+        text:
+          result.status === "pending"
+            ? `ส่งบิล ${money(totals.total)} บาท รออนุมัติแล้ว — สต็อกจะเข้าเมื่อผู้จัดการคนอื่นหรือเจ้าของอนุมัติ`
+            : `บันทึกบิลซื้อ ${money(totals.total)} บาทแล้ว${(result.negativeResets ?? 0) > 0 ? ` · ล้างยอดติดลบ ${result.negativeResets} วัตถุดิบ (บันทึกเป็นใช้เกินก่อนรับของ)` : ""}`,
       });
       reset();
       setOpen(false);
@@ -159,6 +204,55 @@ export function PurchaseBillsManager({
     startTransition(async () => {
       const result = await payPurchaseBillAction(bill.id, method, bill.total);
       setMessage(result.error ? { tone: "error", text: result.error } : { tone: "ok", text: "บันทึกการจ่ายแล้ว" });
+      router.refresh();
+    });
+  }
+
+  async function approve(bill: PurchaseBill) {
+    const ok = await confirm({
+      title: "อนุมัติบิลซื้อ?",
+      message: `${bill.supplierName ?? supplierById.get(bill.supplierId ?? "") ?? "ไม่ระบุผู้ขาย"} ${money(bill.total)} บาท — รับเข้าคลังและอัปเดตราคาซื้อ`,
+      confirmLabel: "อนุมัติ",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await approvePurchaseBillAction(bill.id);
+      setMessage(
+        result.error
+          ? { tone: "error", text: result.error }
+          : { tone: "ok", text: `อนุมัติแล้ว — รับเข้าคลัง${(result.negativeResets ?? 0) > 0 ? ` · ล้างยอดติดลบ ${result.negativeResets} วัตถุดิบ` : ""}` },
+      );
+      router.refresh();
+    });
+  }
+
+  function doReject() {
+    if (!rejecting) return;
+    startTransition(async () => {
+      const result = await rejectPurchaseBillAction(rejecting.bill.id, rejecting.reason);
+      if (result.error) {
+        setMessage({ tone: "error", text: result.error });
+        return;
+      }
+      setMessage({
+        tone: "ok",
+        text: (result.outstanding ?? 0) > 0 ? `ไม่อนุมัติแล้ว — ต้องตามเงินคืน ${money(result.outstanding ?? 0)} บาท (ดูแท็บ ต้องตามเงินคืน)` : "ไม่อนุมัติแล้ว",
+      });
+      setRejecting(null);
+      router.refresh();
+    });
+  }
+
+  async function recover(bill: PurchaseBill, method: PayMethod) {
+    const ok = await confirm({
+      title: "รับเงินคืนแล้ว?",
+      message: `${money(outstanding(bill))} บาท ด้วย${method === "cash" ? "เงินสด (เข้าลิ้นชัก)" : "การโอน"}`,
+      confirmLabel: "รับคืนแล้ว",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await recoverPurchaseBillAction(bill.id, method);
+      setMessage(result.error ? { tone: "error", text: result.error } : { tone: "ok", text: "บันทึกรับเงินคืนแล้ว" });
       router.refresh();
     });
   }
@@ -194,13 +288,20 @@ export function PurchaseBillsManager({
             + บันทึกบิลซื้อ
           </button>
         )}
-        <div className="flex gap-1">
-          {(["all", "unpaid"] as const).map((f) => (
+        <div className="flex flex-wrap gap-1">
+          {(["all", "pending", "unpaid", "recover"] as const).map((f) => (
             <button key={f} type="button" onClick={() => setFilter(f)} className={`min-h-10 rounded-full border px-3 text-sm ${filter === f ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white" : "border-[var(--border)]"}`}>
-              {f === "all" ? "ทั้งหมด" : `ค้างจ่าย (${money(unpaidTotal)})`}
+              {f === "all"
+                ? "ทั้งหมด"
+                : f === "pending"
+                  ? `รออนุมัติ (${pendingBills.length})`
+                  : f === "unpaid"
+                    ? `ค้างจ่าย (${money(unpaidTotal)})`
+                    : `ต้องตามเงินคืน (${money(recoverTotal)})`}
             </button>
           ))}
         </div>
+        <Link href="/costing/purchases/evidence" className="btn-secondary min-h-10 text-sm">ส่งออกหลักฐาน</Link>
       </div>
 
       {open && (
@@ -284,9 +385,13 @@ export function PurchaseBillsManager({
               <span className="text-[var(--muted)]">VAT</span>
               <input className={inputClass} inputMode="decimal" value={vat} onChange={(e) => setVat(e.target.value)} />
             </label>
-            <label className="flex min-h-11 items-end gap-2 pb-2 text-sm">
-              <input type="checkbox" checked={isTax} onChange={(e) => setIsTax(e.target.checked)} />
-              ใบกำกับภาษี
+            <label className="block text-sm">
+              <span className="text-[var(--muted)]">ชนิดหลักฐาน</span>
+              <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as EvidenceKind)}>
+                {EVIDENCE_KINDS.map((k) => (
+                  <option key={k} value={k}>{EVIDENCE_LABELS[k]}</option>
+                ))}
+              </select>
             </label>
             <div className="rounded-lg bg-[var(--surface-muted)] p-2 text-right text-sm">
               <p className="text-[var(--muted)]">รวม {money(totals.subtotal)}</p>
@@ -326,8 +431,14 @@ export function PurchaseBillsManager({
             <span className="text-[var(--muted)]">หมายเหตุ</span>
             <input className={inputClass} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
+          <BillPhotoPicker photos={photos} onChange={setPhotos} required={kind === "handwritten"} />
+          {willNeedApproval && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              บิลนี้ต้องรออนุมัติจากผู้จัดการคนอื่นหรือเจ้าของ — สต็อก/ราคาซื้อจะเข้าเมื่ออนุมัติ · ถ้าจ่ายเงินสด ตัดลิ้นชักทันที
+            </p>
+          )}
           <div className="flex gap-2">
-            <button type="button" className="btn-primary min-h-11" disabled={isPending} onClick={save}>บันทึกและรับเข้าคลัง</button>
+            <button type="button" className="btn-primary min-h-11" disabled={isPending} onClick={save}>{willNeedApproval ? "ส่งให้อนุมัติ" : "บันทึกและรับเข้าคลัง"}</button>
             <button type="button" className="btn-secondary min-h-11" disabled={isPending} onClick={() => setOpen(false)}>ยกเลิก</button>
           </div>
         </div>
@@ -345,23 +456,41 @@ export function PurchaseBillsManager({
         </div>
       )}
 
+      {rejecting && (
+        <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="font-semibold text-red-900">ไม่อนุมัติบิล {money(rejecting.bill.total)} บาท</p>
+          <p className="text-sm text-red-800">สต็อกไม่เปลี่ยน · ถ้าจ่ายไปแล้ว รายจ่ายย้ายไปหมวด &quot;รายจ่ายไม่อนุมัติ&quot; และขึ้นยอดต้องตามเงินคืน</p>
+          <input className={inputClass} placeholder="เหตุผล *" maxLength={300} value={rejecting.reason} onChange={(e) => setRejecting({ ...rejecting, reason: e.target.value })} />
+          <div className="flex gap-2">
+            <button type="button" className="btn-primary min-h-11" disabled={isPending || !rejecting.reason.trim()} onClick={doReject}>ยืนยันไม่อนุมัติ</button>
+            <button type="button" className="btn-secondary min-h-11" disabled={isPending} onClick={() => setRejecting(null)}>กลับ</button>
+          </div>
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--muted)]">ยังไม่มีบิลซื้อ</p>
       ) : (
         <ul className="divide-y divide-[var(--border)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
           {shown.map((b) => (
-            <li key={b.id} className={`space-y-1 p-3 ${b.status === "voided" ? "opacity-60" : ""}`}>
+            <li key={b.id} className={`space-y-1 p-3 ${b.status === "voided" || b.status === "rejected" ? "opacity-70" : ""} ${b.status === "pending" ? "bg-amber-50" : ""}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-semibold text-[var(--ink)]">
                     {b.supplierName ?? supplierById.get(b.supplierId ?? "") ?? "ไม่ระบุผู้ขาย"}
                     {b.billNo ? ` · #${b.billNo}` : ""}
-                    {b.status === "voided" && " (ยกเลิก)"}
+                    {b.status !== "posted" && (
+                      <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${b.status === "pending" ? "bg-amber-200 text-amber-900" : "bg-[var(--surface-muted)] text-[var(--muted)]"}`}>
+                        {BILL_STATUS_LABELS[b.status]}
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-[var(--muted)]">
-                    {b.billDate} · {b.lines.length} บรรทัด
-                    {b.isTaxInvoice ? " · ใบกำกับภาษี" : ""}
-                    {b.status === "posted" && (b.paymentStatus === "paid" ? ` · จ่ายแล้ว (${b.paymentMethod === "cash" ? "เงินสด" : "โอน"})` : ` · ค้างจ่าย${b.dueDate ? ` ครบ ${b.dueDate}` : ""}`)}
+                    {b.billDate} · {b.lines.length} บรรทัด · {EVIDENCE_LABELS[b.evidenceKind]}
+                    {b.postedByName && b.status !== "posted" ? ` · ส่งโดย ${b.postedByName}` : ""}
+                    {b.paymentStatus === "paid" ? ` · จ่ายแล้ว (${b.paymentMethod === "cash" ? "เงินสด" : "โอน"})` : b.status === "posted" || b.status === "pending" ? ` · ค้างจ่าย${b.dueDate ? ` ครบ ${b.dueDate}` : ""}` : ""}
+                    {b.status === "rejected" && outstanding(b) > 0 ? ` · ต้องตามเงินคืน ${money(outstanding(b))}` : ""}
+                    {b.rejectReason ? ` · ${b.rejectReason}` : ""}
                     {b.voidReason ? ` · ${b.voidReason}` : ""}
                   </p>
                 </div>
@@ -376,6 +505,22 @@ export function PurchaseBillsManager({
                   {canEdit && b.status === "posted" && (
                     <button type="button" className="btn-secondary min-h-9 text-xs" disabled={isPending} onClick={() => setVoiding({ bill: b, reason: "" })}>ยกเลิก</button>
                   )}
+                  {canEdit && b.status === "pending" && (
+                    <>
+                      {canApproveBill({ role, userId, postedBy: b.postedBy }) ? (
+                        <button type="button" className="btn-primary min-h-9 text-xs" disabled={isPending} onClick={() => approve(b)}>อนุมัติ</button>
+                      ) : (
+                        <span className="text-xs text-[var(--muted)]">บิลของคุณ — ให้คนอื่นอนุมัติ</span>
+                      )}
+                      <button type="button" className="btn-secondary min-h-9 text-xs" disabled={isPending} onClick={() => setRejecting({ bill: b, reason: "" })}>ไม่อนุมัติ</button>
+                    </>
+                  )}
+                  {canEdit && b.status === "rejected" && outstanding(b) > 0 && (
+                    <>
+                      <button type="button" className="btn-primary min-h-9 text-xs" disabled={isPending} onClick={() => recover(b, "cash")}>รับคืนเงินสด</button>
+                      <button type="button" className="btn-secondary min-h-9 text-xs" disabled={isPending} onClick={() => recover(b, "transfer")}>รับคืนโอน</button>
+                    </>
+                  )}
                 </div>
               </div>
               <p className="text-xs text-[var(--muted)]">
@@ -385,6 +530,18 @@ export function PurchaseBillsManager({
                   .join(" · ")}
                 {b.lines.length > 5 ? ` · และอีก ${b.lines.length - 5} บรรทัด` : ""}
               </p>
+              {b.images.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {b.images.map((img, k) =>
+                    img.url ? (
+                      <a key={img.id} href={img.url} target="_blank" rel="noreferrer" aria-label={`รูปบิล ${k + 1}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- signed URL ชั่วคราว */}
+                        <img src={img.url} alt={`รูปบิล ${k + 1}`} className="h-16 w-16 rounded-md border border-[var(--border)] object-cover" loading="lazy" />
+                      </a>
+                    ) : null,
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>

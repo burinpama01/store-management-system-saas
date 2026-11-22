@@ -1,5 +1,5 @@
 /** ตรวจ/คำนวณบิลซื้อฝั่งแอป (pure — เทสต์ได้) · RPC ตรวจซ้ำทุกข้อ */
-import type { PurchaseBillInput } from "./types";
+import { EVIDENCE_KINDS, MAX_BILL_IMAGES, type PurchaseBillInput } from "./types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (v: unknown): v is string => typeof v === "string" && UUID_RE.test(v);
@@ -28,6 +28,11 @@ export function onHandAfterReceive(onHand: number | null, usageQtyIn: number): {
 export function validateBill(input: PurchaseBillInput): { value: PurchaseBillInput } | { error: string } {
   if (input.supplierId !== null && !isUuid(input.supplierId)) return { error: "ข้อมูลผู้ขายไม่ถูกต้อง" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.billDate ?? "")) return { error: "ใส่วันที่ในบิล" };
+  if (!EVIDENCE_KINDS.includes(input.evidenceKind)) return { error: "เลือกชนิดหลักฐาน (ใบกำกับภาษี / ใบเสร็จ / บิลเขียนมือ)" };
+  const imageIds = Array.isArray(input.imageIds) ? [...new Set(input.imageIds)] : [];
+  if (imageIds.length > MAX_BILL_IMAGES) return { error: `แนบรูปได้ไม่เกิน ${MAX_BILL_IMAGES} รูป` };
+  if (imageIds.some((id) => !isUuid(id))) return { error: "ข้อมูลรูปไม่ถูกต้อง" };
+  if (input.evidenceKind === "handwritten" && imageIds.length === 0) return { error: "บิลเขียนมือต้องแนบรูปบิลอย่างน้อย 1 รูป" };
   if (!finite(input.discount) || input.discount < 0) return { error: "ส่วนลดไม่ถูกต้อง" };
   if (!finite(input.vatAmount) || input.vatAmount < 0) return { error: "VAT ไม่ถูกต้อง" };
   if (input.paymentStatus !== "paid" && input.paymentStatus !== "unpaid") return { error: "เลือกจ่ายแล้วหรือค้างจ่าย" };
@@ -56,13 +61,14 @@ export function validateBill(input: PurchaseBillInput): { value: PurchaseBillInp
       billNo: clean(input.billNo, 60),
       note: clean(input.note, 300),
       paymentMethod: input.paymentStatus === "paid" ? input.paymentMethod : null,
+      imageIds,
       dueDate: input.paymentStatus === "unpaid" ? input.dueDate : null,
       total,
       discount: round2(input.discount),
       vatAmount: round2(input.vatAmount),
       lines: lines.map((l) => ({
         ingredientId: isUuid(l.ingredientId) ? l.ingredientId : null,
-        expenseCategoryId: isUuid(l.ingredientId) ? null : l.expenseCategoryId,
+        expenseCategoryId: isUuid(l.ingredientId) ? null : isUuid(l.expenseCategoryId) ? l.expenseCategoryId : null,
         rawName: (l.rawName ?? "").trim().slice(0, 200) || "-",
         qty: l.qty,
         unitLabel: clean(l.unitLabel, 30),

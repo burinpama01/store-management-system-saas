@@ -7,7 +7,7 @@ import { PurchaseBillsManager } from "./PurchaseBillsManager";
 export const dynamic = "force-dynamic";
 
 export default async function CostingPurchasesPage() {
-  const { ctx, decision } = await getInventoryAccess();
+  const { user, ctx, decision } = await getInventoryAccess();
   if (!decision.allowed) return <CostingLocked message={decision.message} />;
 
   const [billsRes, itemsRes, suppliersRes, categoriesRes] = await Promise.all([
@@ -24,7 +24,7 @@ export default async function CostingPurchasesPage() {
       <CostingHeader
         active="/costing/purchases"
         title="บิลซื้อ"
-        description="บันทึกบิลซื้อ → รับเข้าคลัง + อัปเดตราคาซื้อ/ต้นทุนเฉลี่ย + ลงรายจ่าย · สต็อกติดลบ: ซื้อเข้าแล้วนับใหม่ตามที่ซื้อ"
+        description="บันทึกบิลซื้อ → รับเข้าคลัง + อัปเดตราคาซื้อ/ต้นทุนเฉลี่ย + ลงรายจ่าย · บิลเขียนมือ/บิลจากพนักงานต้องอนุมัติ · รูปบิลเก็บเป็นหลักฐานยื่นภาษี"
       />
       <PurchaseBillsManager
         bills={billsRes.data ?? []}
@@ -33,6 +33,8 @@ export default async function CostingPurchasesPage() {
         categories={categoriesRes.data ?? []}
         enabled={decision.enabled}
         canEdit={decision.canEdit}
+        role={ctx.role}
+        userId={user.id}
       />
     </section>
   );

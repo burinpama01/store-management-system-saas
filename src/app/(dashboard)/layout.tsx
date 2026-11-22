@@ -69,6 +69,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         setup_profile?: unknown;
         notification_voice_enabled?: boolean;
         operations_enabled?: boolean;
+        inventory_enabled?: boolean;
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
@@ -141,6 +142,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
     ...(consignmentVisible ? [{ href: "/consignment", label: "ฝากขาย" }] : []),
+    // ส่งบิลซื้อ (บิลตลาด/เขียนมือ รออนุมัติ) — พนักงานที่ไม่เห็นเมนูต้นทุน เมื่อสาขาเปิดคลังวัตถุดิบ (Plan v5)
+    ...(!costingVisible && currentStoreRow?.inventory_enabled ? [{ href: "/purchase-bills", label: "ส่งบิลซื้อ" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     // งานหน้าร้าน (เช็กลิสต์) — เห็นเมื่อสาขาเปิดระบบแล้วเท่านั้น; เจ้าของตั้งค่าได้ที่ /ops/templates

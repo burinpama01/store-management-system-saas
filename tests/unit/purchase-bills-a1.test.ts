@@ -15,7 +15,8 @@ const base = {
   supplierName: " ศุภชัยบรรจุภัณฑ์ ",
   billNo: " N6911-01829 ",
   billDate: "2026-11-22",
-  isTaxInvoice: false,
+  evidenceKind: "receipt" as const,
+  imageIds: [] as string[],
   discount: 0,
   vatAmount: 0,
   total: 248,
@@ -115,11 +116,11 @@ describe("A1 migration contracts", () => {
 });
 
 describe("wiring", () => {
-  it("every action passes the inventory gate and logs", () => {
+  it("every action passes a gate and logs (submit/upload = staff gate, others = inventory gate)", () => {
     const src = read("src/app/(dashboard)/costing/purchase-actions.ts");
     const exported = src.match(/export async function \w+/g) ?? [];
-    expect(exported.length).toBe(3);
-    expect((src.match(/await editor\(\)/g) ?? []).length).toBe(3);
+    expect(exported.length).toBe(7);
+    expect((src.match(/await editor\(\)/g) ?? []).length).toBe(5);
     expect(src).toContain('source: "purchasing"');
   });
 });
