@@ -63,4 +63,19 @@ describe("หัวข้อแจ้งเตือนของฟีเจอ�
     expect(src).toContain("if (!getPlanFeatures(billing).lineNotify) {");
     expect(src.indexOf("await pushPayrollNotification(")).toBeLessThan(src.indexOf('type: "salary_advance_request"'));
   });
+
+  it("แจ้งเตือนขอเบิกเงินบอกยอดคงเหลือหลังคำขอนี้ (ทั้งข้อความเดิมและตัวแปร template)", () => {
+    const src = read("src/app/(dashboard)/my-advance/actions.ts");
+    // ยอดคงเหลือมาจากการตรวจซ้ำหลังบันทึก (นับคำขอนี้แล้ว) และประกาศก่อนใช้
+    expect(src).toContain("const remaining = after.cap.available;");
+    expect(src.indexOf("const remaining = after.cap.available;")).toBeLessThan(src.indexOf("await logSystemEvent({"));
+    expect(src).toContain("เบิกได้อีก ${remainingText}");
+    expect(src).toContain("remaining: remainingText,");
+    // ครบจำนวนครั้ง → บอกเหตุผล ไม่ใช่แค่ ฿0
+    expect(src).toContain("after.cap.blockedReason ? ` (${after.cap.blockedReason})` : \"\"");
+    expect(src).toContain("earned: formatBaht(av.earned),");
+    const tpl = read("src/modules/notifications/templates.ts");
+    expect(tpl).toContain('"reason", "earned", "remaining"');
+    expect(tpl).toContain("เบิกได้อีก {remaining}");
+  });
 });
