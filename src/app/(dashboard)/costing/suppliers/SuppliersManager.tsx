@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { Supplier } from "@/modules/inventory/types";
+import type { PayoutMethod, SettleCycle, Supplier, SupplierInput } from "@/modules/inventory/types";
 import { branchLabel } from "@/shared/utils/thai-tax-id";
 import { saveSupplierAction } from "../inventory-actions";
 
@@ -20,6 +20,9 @@ interface Draft {
   leadDays: string;
   paymentTermsDays: string;
   isActive: boolean;
+  payoutMethod: PayoutMethod;
+  payoutAccount: string;
+  settleCycle: SettleCycle;
 }
 
 const EMPTY: Draft = {
@@ -35,7 +38,15 @@ const EMPTY: Draft = {
   leadDays: "1",
   paymentTermsDays: "0",
   isActive: true,
+  payoutMethod: "cash",
+  payoutAccount: "",
+  settleCycle: "restock",
 };
+
+const PAYOUT_LABEL: Record<PayoutMethod, string> = { cash: "รับเงินสด", transfer: "รับโอน" };
+const CYCLE_LABEL: Record<SettleCycle, string> = { daily: "เคลียร์ทุกวันตอนปิดรอบ", restock: "เคลียร์ตอนเติมของ" };
+
+type SaveSupplier = (input: SupplierInput) => Promise<{ error: string | null }>;
 
 function toDraft(s: Supplier): Draft {
   return {
@@ -51,10 +62,25 @@ function toDraft(s: Supplier): Draft {
     leadDays: String(s.leadDays),
     paymentTermsDays: String(s.paymentTermsDays),
     isActive: s.isActive,
+    payoutMethod: s.payoutMethod,
+    payoutAccount: s.payoutAccount ?? "",
+    settleCycle: s.settleCycle,
   };
 }
 
-export function SuppliersManager({ suppliers, canEdit }: { suppliers: Supplier[]; canEdit: boolean }) {
+export function SuppliersManager({
+  suppliers,
+  canEdit,
+  saveAction = saveSupplierAction,
+  showConsignment = false,
+}: {
+  suppliers: Supplier[];
+  canEdit: boolean;
+  /** หน้าฝากขายส่งแอ็กชันของตัวเอง (ด่านสิทธิ์ Enterprise) */
+  saveAction?: SaveSupplier;
+  /** แสดง/ส่งช่องฝากขาย (วิธีรับเงิน + รอบเคลียร์) */
+  showConsignment?: boolean;
+}) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -66,7 +92,7 @@ export function SuppliersManager({ suppliers, canEdit }: { suppliers: Supplier[]
   function save() {
     if (!draft) return;
     startTransition(async () => {
-      const result = await saveSupplierAction({
+      const result = await saveAction({
         id: draft.id,
         name: draft.name,
         taxId: draft.taxId || null,
@@ -79,6 +105,9 @@ export function SuppliersManager({ suppliers, canEdit }: { suppliers: Supplier[]
         leadDays: Number(draft.leadDays),
         paymentTermsDays: Number(draft.paymentTermsDays),
         isActive: draft.isActive,
+        consignment: showConsignment
+          ? { payoutMethod: draft.payoutMethod, payoutAccount: draft.payoutAccount || null, settleCycle: draft.settleCycle }
+          : null,
       });
       if (result.error) {
         setMessage({ tone: "error", text: result.error });
@@ -149,6 +178,31 @@ export function SuppliersManager({ suppliers, canEdit }: { suppliers: Supplier[]
               <span className="text-[var(--muted)]">หมายเหตุ</span>
               <input className={inputClass} maxLength={500} value={draft.note} onChange={(e) => field("note", e.target.value)} />
             </label>
+            {showConsignment && (
+              <fieldset className="space-y-3 rounded-lg border border-[var(--border)] p-3 sm:col-span-2">
+                <legend className="px-1 text-sm font-semibold text-[var(--ink)]">ฝากขาย: การจ่ายเงินเจ้าของ</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-sm">
+                    <span className="text-[var(--muted)]">วิธีรับเงิน</span>
+                    <select className={inputClass} value={draft.payoutMethod} onChange={(e) => field("payoutMethod", e.target.value as PayoutMethod)}>
+                      <option value="cash">เงินสด (ตัดจากลิ้นชัก)</option>
+                      <option value="transfer">โอน</option>
+                    </select>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-[var(--muted)]">รอบเคลียร์เงิน</span>
+                    <select className={inputClass} value={draft.settleCycle} onChange={(e) => field("settleCycle", e.target.value as SettleCycle)}>
+                      <option value="restock">ตอนเจ้าของมาเติมของ</option>
+                      <option value="daily">ทุกวันตอนปิดรอบเงินสด</option>
+                    </select>
+                  </label>
+                  <label className="block text-sm sm:col-span-2">
+                    <span className="text-[var(--muted)]">พร้อมเพย์ / เลขบัญชี (ไว้ดูตอนโอน)</span>
+                    <input className={inputClass} maxLength={120} value={draft.payoutAccount} onChange={(e) => field("payoutAccount", e.target.value)} />
+                  </label>
+                </div>
+              </fieldset>
+            )}
             <label className="flex min-h-11 items-center gap-2 text-sm">
               <input type="checkbox" checked={draft.isActive} onChange={(e) => field("isActive", e.target.checked)} />
               ใช้งานอยู่
@@ -170,7 +224,9 @@ export function SuppliersManager({ suppliers, canEdit }: { suppliers: Supplier[]
               <div className="min-w-0">
                 <p className="font-semibold text-[var(--ink)]">{s.name}{!s.isActive && " (ปิดใช้งาน)"}</p>
                 <p className="mt-0.5 text-xs text-[var(--muted)]">
-                  {[s.taxId ? `เลขผู้เสียภาษี ${s.taxId} ${branchLabel(s.branchCode)}` : "ไม่มีเลขผู้เสียภาษี", s.phone, `รอของ ${s.leadDays} วัน`, s.paymentTermsDays > 0 ? `เครดิต ${s.paymentTermsDays} วัน` : "จ่ายสด"]
+                  {(showConsignment
+                    ? [PAYOUT_LABEL[s.payoutMethod], CYCLE_LABEL[s.settleCycle], s.phone, s.lineId ? `LINE ${s.lineId}` : null]
+                    : [s.taxId ? `เลขผู้เสียภาษี ${s.taxId} ${branchLabel(s.branchCode)}` : "ไม่มีเลขผู้เสียภาษี", s.phone, `รอของ ${s.leadDays} วัน`, s.paymentTermsDays > 0 ? `เครดิต ${s.paymentTermsDays} วัน` : "จ่ายสด"])
                     .filter(Boolean)
                     .join(" · ")}
                 </p>

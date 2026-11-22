@@ -36,6 +36,22 @@ export interface Supplier {
   leadDays: number;
   paymentTermsDays: number;
   isActive: boolean;
+  /** ฝากขาย (เฟส C0): เจ้าของรับเงินสดหรือโอน */
+  payoutMethod: PayoutMethod;
+  /** ฝากขาย: พร้อมเพย์/เลขบัญชี (ข้อความแสดงผล) */
+  payoutAccount: string | null;
+  /** ฝากขาย: เคลียร์เงินทุกวันตอนปิดรอบ หรือตอนเติมของ */
+  settleCycle: SettleCycle;
+}
+
+export type PayoutMethod = "cash" | "transfer";
+export type SettleCycle = "daily" | "restock";
+
+/** ช่องฝากขายของผู้ขาย — ส่งมาเฉพาะจากหน้าที่มีสิทธิ์ฝากขาย ไม่งั้นค่าเดิมใน DB ไม่ถูกแตะ */
+export interface SupplierConsignmentInput {
+  payoutMethod: PayoutMethod;
+  payoutAccount: string | null;
+  settleCycle: SettleCycle;
 }
 
 export interface SupplierInput {
@@ -51,6 +67,7 @@ export interface SupplierInput {
   leadDays: number;
   paymentTermsDays: number;
   isActive: boolean;
+  consignment?: SupplierConsignmentInput | null;
 }
 
 /** แถวที่หน้าคลังแสดง: วัตถุดิบ + ยอดคงเหลือ (ถ้ายังไม่ตั้งยอดยกมา stock = null) */

@@ -34,6 +34,7 @@ import { SubmitButton } from "@/shared/components/ui";
 import { CommandPalette } from "@/shared/components/CommandPalette";
 import type { CommandItem } from "@/modules/assistant/command-index";
 import { decideCostingAccess } from "@/modules/costing/access-policy";
+import { isConsignmentNavVisible } from "@/modules/consignment/access-policy";
 import { isOnlineOrderingEnabled } from "@/modules/online-orders/repository";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +112,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     hasAdvancedReports: assistantBilling ? canUseFeature(assistantBilling, "advancedReports") : false,
     businessMode: setupProfile?.businessMode ?? null,
   }).allowed;
+  // สินค้าซื้อขาด/ฝากขาย (C0): Enterprise + manager ขึ้นไป — เห็นแม้ยังไม่เปิดสวิตช์ เพื่อเข้าไปเปิด
+  const consignmentVisible = isConsignmentNavVisible({
+    hasConsignment: assistantBilling ? canUseFeature(assistantBilling, "consignment") : false,
+    role: storeContext.role,
+  });
   const websiteVisible =
     isOpsManagerRole(storeContext.role) && !!assistantBilling && canUseMemberPrivileges(assistantBilling);
   // สั่งออนไลน์ (เว็บร้าน S2) — แสดงในเมนูเมื่อร้าน Enterprise เปิดสวิตช์แล้ว (เจ้าของเข้าตั้งค่าได้จากหน้าเว็บไซต์ร้าน)
@@ -134,6 +140,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
+    ...(consignmentVisible ? [{ href: "/consignment", label: "ฝากขาย" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
     // งานหน้าร้าน (เช็กลิสต์) — เห็นเมื่อสาขาเปิดระบบแล้วเท่านั้น; เจ้าของตั้งค่าได้ที่ /ops/templates

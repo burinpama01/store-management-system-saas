@@ -8,6 +8,7 @@
 import { createContext, useContext, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { OptionRecipeData } from "@/modules/costing/repository";
+import { useConfirm } from "@/shared/components/ui/useConfirm";
 import { saveOptionRecipeAction } from "../costing/actions";
 
 type Ingredient = OptionRecipeData["ingredients"][number];
@@ -116,6 +117,7 @@ function OptionRecipeForm({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
   const [isPending, startTransition] = useTransition();
   const [lines, setLines] = useState<DraftLine[]>(() =>
     (ctx.linesByOption.get(optionId) ?? []).map((l, i) => ({ key: `l-${i}`, ingredientId: l.ingredientId, quantity: String(l.quantity) })),
@@ -137,7 +139,7 @@ function OptionRecipeForm({
       .map(([key, items]) => ({ label: key || "ไม่ระบุหมวด", items }));
   }, [ctx.ingredients]);
 
-  function save() {
+  async function save() {
     const cleaned = lines.filter((l) => l.ingredientId && l.quantity.trim() !== "");
     const payload = cleaned.map((l) => ({ ingredientId: l.ingredientId, quantity: Number(l.quantity) }));
     if (payload.some((l) => !(l.quantity > 0))) {
@@ -145,7 +147,16 @@ function OptionRecipeForm({
       return;
     }
     const applyAll = applySameName && sameCount > 1;
-    if (applyAll && payload.length === 0 && !window.confirm(`ลบวัตถุดิบของ "${groupName}: ${optionName}" ออกจากทั้ง ${sameCount} เมนู?`)) return;
+    // ห้ามใช้กล่องยืนยันของเบราว์เซอร์ — WebView แอปมือถือ/iframe บล็อก ใช้ dialog ในแอปแทน
+    if (applyAll && payload.length === 0) {
+      const ok = await confirm({
+        title: "ลบวัตถุดิบทุกเมนู?",
+        message: `ลบวัตถุดิบของ "${groupName}: ${optionName}" ออกจากทั้ง ${sameCount} เมนู`,
+        confirmLabel: "ลบทั้งหมด",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setMessage(null);
     startTransition(async () => {
       const result = await saveOptionRecipeAction({ optionId, lines: payload, applySameName: applyAll });
@@ -242,6 +253,7 @@ function OptionRecipeForm({
           {message.text}
         </p>
       )}
+      {confirmDialog}
     </div>
   );
 }

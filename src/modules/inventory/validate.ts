@@ -22,6 +22,13 @@ export function validateSupplier(input: SupplierInput): { value: SupplierInput }
   if (!Number.isInteger(input.paymentTermsDays) || input.paymentTermsDays < 0 || input.paymentTermsDays > 180) {
     return { error: "เครดิตเทอมต้องเป็น 0–180 วัน" };
   }
+  let consignment: SupplierInput["consignment"] = null;
+  if (input.consignment) {
+    const { payoutMethod, settleCycle } = input.consignment;
+    if (payoutMethod !== "cash" && payoutMethod !== "transfer") return { error: "วิธีรับเงินไม่ถูกต้อง" };
+    if (settleCycle !== "daily" && settleCycle !== "restock") return { error: "รอบเคลียร์เงินไม่ถูกต้อง" };
+    consignment = { payoutMethod, settleCycle, payoutAccount: cleanText(input.consignment.payoutAccount, 120) };
+  }
   return {
     value: {
       id: input.id ?? null,
@@ -36,6 +43,7 @@ export function validateSupplier(input: SupplierInput): { value: SupplierInput }
       leadDays: input.leadDays,
       paymentTermsDays: input.paymentTermsDays,
       isActive: input.isActive !== false,
+      consignment,
     },
   };
 }

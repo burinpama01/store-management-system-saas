@@ -150,7 +150,11 @@ export async function saveSupplierAction(input: SupplierInput): Promise<ActionRe
   const validated = validateSupplier(input);
   if ("error" in validated) return { error: validated.error };
 
-  const result = await saveSupplier({ organizationId: ctx.organizationId, storeId: ctx.storeId }, validated.value);
+  // หน้าคลังไม่มีสิทธิ์ตั้งช่องฝากขาย (Enterprise) — ตัดทิ้งเสมอ ค่าเดิมใน DB ไม่ถูกแตะ
+  const result = await saveSupplier(
+    { organizationId: ctx.organizationId, storeId: ctx.storeId },
+    { ...validated.value, consignment: null },
+  );
   await logInventory({
     action: "saveSupplier",
     ok: !result.error,

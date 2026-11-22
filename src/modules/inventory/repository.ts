@@ -48,6 +48,9 @@ function mapSupplier(row: any): Supplier {
     leadDays: num(row.lead_days),
     paymentTermsDays: num(row.payment_terms_days),
     isActive: row.is_active === true,
+    payoutMethod: row.payout_method === "transfer" ? "transfer" : "cash",
+    payoutAccount: row.payout_account ?? null,
+    settleCycle: row.settle_cycle === "daily" ? "daily" : "restock",
   };
 }
 
@@ -95,9 +98,24 @@ export async function saveSupplier(scope: StoreScope, input: SupplierInput): Pro
     payment_terms_days: input.paymentTermsDays,
     is_active: input.isActive,
     updated_at: new Date().toISOString(),
+    // ช่องฝากขายเขียนเฉพาะเมื่อส่งมา — หน้าผู้ขายของคลังไม่แตะค่าที่หน้าฝากขายตั้งไว้
+    ...(input.consignment
+      ? {
+          payout_method: input.consignment.payoutMethod,
+          payout_account: input.consignment.payoutAccount,
+          settle_cycle: input.consignment.settleCycle,
+        }
+      : {}),
   };
   const result = input.id
-    ? await db.from("suppliers").update(payload).eq("id", input.id).eq("store_id", scope.storeId).select("id").maybeSingle()
+    ? await db
+        .from("suppliers")
+        .update(payload)
+        .eq("id", input.id)
+        .eq("store_id", scope.storeId)
+        .eq("organization_id", scope.organizationId)
+        .select("id")
+        .maybeSingle()
     : await db.from("suppliers").insert(payload).select("id").single();
   if (result.error) return { data: null, error: inventoryErrorMessage(result.error.message) };
   if (!result.data) return { data: null, error: "ไม่พบผู้ขายนี้" };
