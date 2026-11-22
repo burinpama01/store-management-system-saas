@@ -5762,6 +5762,14 @@ export interface Database {
         };
         Returns: undefined;
       };
+      costing_save_option_lines: {
+        Args: {
+          p_option_id: string;
+          p_lines: Json;
+          p_apply_same_name: boolean;
+        };
+        Returns: number;
+      };
       redeem_loyalty_reward: {
         Args: {
           p_organization_id: string;

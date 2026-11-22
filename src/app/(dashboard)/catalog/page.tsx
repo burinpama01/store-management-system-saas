@@ -9,6 +9,8 @@ import {
   listVariantTemplates,
 } from "@/modules/catalog/repository";
 import { listBranchStores } from "@/modules/stores/repository";
+import { getCostingAccess } from "@/modules/costing/access";
+import { loadOptionRecipeData } from "@/modules/costing/repository";
 import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { CatalogManager } from "./CatalogManager";
 import { MenuScanWizard } from "./MenuScanWizard";
@@ -27,6 +29,7 @@ export default async function CatalogPage() {
     branchStoresResult,
     kitchenStationsResult,
     billingState,
+    optionRecipe,
   ] = await Promise.all([
     listCategories(ctx.storeId),
     listProducts(ctx.storeId, { includeInactive: true }),
@@ -35,6 +38,13 @@ export default async function CatalogPage() {
     listBranchStores(ctx.organizationId),
     listKitchenStations(ctx.storeId),
     getOrganizationBillingState(ctx.organizationId),
+    // ปุ่ม "วัตถุดิบ" ข้างตัวเลือกเสริม — เฉพาะคนที่แก้ระบบต้นทุนได้ (ผู้จัดการ + แพ็กที่มีรายงานขั้นสูง)
+    // โหลดไม่สำเร็จ = ซ่อนปุ่ม ไม่ทำให้หน้าเมนูล้ม
+    getCostingAccess()
+      .then(async (costing) =>
+        costing.decision.allowed && costing.decision.canEdit ? ((await loadOptionRecipeData(ctx.storeId)).data ?? null) : null,
+      )
+      .catch(() => null),
   ]);
 
   const categories = categoriesResult.data ?? [];
@@ -65,6 +75,7 @@ export default async function CatalogPage() {
         canUseQrOrdering={features.qrOrdering}
         canUseStock={features.stockManagement}
         kitchenStations={kitchenStations}
+        optionRecipe={optionRecipe}
       />
     </div>
   );

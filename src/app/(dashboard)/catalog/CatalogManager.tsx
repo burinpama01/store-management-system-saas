@@ -37,6 +37,8 @@ import {
   toggleProductAvailabilityAction,
 } from "./actions";
 import type { Store } from "@/modules/stores/types";
+import type { OptionRecipeData } from "@/modules/costing/repository";
+import { OptionRecipeButton, OptionRecipeProvider } from "./OptionRecipeEditor";
 
 type PanelMode =
   | "closed"
@@ -67,6 +69,8 @@ interface Props {
   canUseQrOrdering: boolean;
   canUseStock: boolean;
   kitchenStations: { id: string; name: string }[];
+  /** null = ไม่แสดงปุ่มผูกวัตถุดิบ (ไม่ใช่ผู้จัดการ/แพ็กไม่มีระบบต้นทุน) */
+  optionRecipe: OptionRecipeData | null;
 }
 
 function priceStr(n: number) {
@@ -1179,9 +1183,10 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
         </button>
       </div>
       {group.options.map((opt) => (
-        <div key={opt.id} className="flex items-center justify-between pl-2">
+        <div key={opt.id} className="flex flex-wrap items-center justify-between gap-y-1 pl-2">
           <span className="text-xs text-gray-700">{opt.name}</span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <OptionRecipeButton optionId={opt.id} optionName={opt.name} groupName={group.name} />
             <span className="text-xs text-gray-500">{priceDeltaStr(opt.priceAdjustment)}</span>
             <label className="inline-flex min-h-7 items-center gap-1 rounded-full bg-gray-50 px-2 text-[11px] font-medium text-gray-600">
               <input
@@ -1776,6 +1781,7 @@ export function CatalogManager({
   canUseQrOrdering,
   canUseStock,
   kitchenStations,
+  optionRecipe,
 }: Props) {
   const [panelMode, setPanelMode] = useState<PanelMode>("closed");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
@@ -1877,6 +1883,7 @@ export function CatalogManager({
   }
 
   return (
+    <OptionRecipeProvider data={optionRecipe} products={products}>
     <div className="flex min-h-full flex-col">
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2152,5 +2159,6 @@ export function CatalogManager({
 
       {confirmDialog}
     </div>
+    </OptionRecipeProvider>
   );
 }

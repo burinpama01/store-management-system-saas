@@ -9,6 +9,7 @@ import {
   insertAllocationTemplate,
   saveIngredient,
   saveMenuCosting,
+  saveOptionRecipe,
   saveStoreCostSettings,
 } from "@/modules/costing/repository";
 import type { AllocationPcts, IngredientInput, PriceRounding } from "@/modules/costing/types";
@@ -157,6 +158,41 @@ export async function saveMenuCostingAction(input: {
   if (failure) return { error: failure };
   revalidateCosting();
   return { error: null };
+}
+
+const MAX_OPTION_LINES = 30;
+
+/** วัตถุดิบที่บวกเพิ่มเมื่อเลือกตัวเลือกเสริม — เรียกจากหน้าแก้เมนู (/catalog) */
+export async function saveOptionRecipeAction(input: {
+  optionId: string;
+  lines: Array<{ ingredientId: string; quantity: number }>;
+  applySameName: boolean;
+}): Promise<ActionResult & { optionCount?: number }> {
+  const { access, error } = await requireEditor();
+  if (!access) return { error };
+  if (!UUID_RE.test(input.optionId)) return { error: "ข้อมูลตัวเลือกไม่ถูกต้อง" };
+  if (!Array.isArray(input.lines) || input.lines.length > MAX_OPTION_LINES) return { error: `ตัวเลือกหนึ่งมีวัตถุดิบได้ไม่เกิน ${MAX_OPTION_LINES} บรรทัด` };
+  for (const line of input.lines) {
+    if (!UUID_RE.test(line.ingredientId)) return { error: "ข้อมูลสูตรไม่ถูกต้อง" };
+    if (!finite(line.quantity) || line.quantity <= 0 || line.quantity > 1_000_000) return { error: "ปริมาณต้องมากกว่า 0" };
+  }
+  if (new Set(input.lines.map((line) => line.ingredientId)).size !== input.lines.length) return { error: "วัตถุดิบซ้ำกัน — รวมเป็นบรรทัดเดียว" };
+
+  const scope = { organizationId: access.ctx.organizationId, storeId: access.ctx.storeId };
+  const applySameName = input.applySameName === true;
+  const result = await saveOptionRecipe({ optionId: input.optionId, lines: input.lines, applySameName });
+  await logCosting({
+    action: "saveOptionRecipe",
+    ok: !result.error,
+    message: result.error ? `บันทึกวัตถุดิบของตัวเลือกไม่สำเร็จ: ${result.error}` : "บันทึกวัตถุดิบของตัวเลือกเสริม",
+    ...scope,
+    actorUserId: access.user.id,
+    context: { optionId: input.optionId, lineCount: input.lines.length, applySameName, optionCount: result.data },
+  });
+  if (result.error) return { error: result.error };
+  revalidateCosting();
+  revalidatePath("/catalog");
+  return { error: null, optionCount: result.data ?? 0 };
 }
 
 export async function saveAllocationAction(input: { productId: string | null; pcts: AllocationPcts }): Promise<ActionResult> {
