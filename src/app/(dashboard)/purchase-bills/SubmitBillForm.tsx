@@ -15,6 +15,8 @@ import {
 import { billTotals } from "@/modules/purchasing/validate";
 import { postPurchaseBillAction } from "../costing/purchase-actions";
 import { BillPhotoPicker, type PickedPhoto } from "../costing/purchases/BillPhotoPicker";
+import { ScanBillButton, scanSummary } from "../costing/purchases/ScanBillButton";
+import type { ScannedBillDraft } from "@/modules/purchasing/bill-scan";
 
 const inputClass = "min-h-11 w-full rounded-lg border border-[var(--border)] bg-white px-3 text-[16px] text-[var(--ink)]";
 const money = (v: number) => v.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,6 +28,7 @@ interface LineDraft {
   rawName: string;
   qty: string;
   lineTotal: string;
+  issue?: boolean;
 }
 const emptyLine = (): LineDraft => ({ key: `l-${Math.random().toString(36).slice(2)}`, target: "", rawName: "", qty: "1", lineTotal: "" });
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
@@ -55,9 +58,13 @@ export function SubmitBillForm({
   const [pay, setPay] = useState<"cash" | "transfer" | "unpaid">("cash");
   const [note, setNote] = useState("");
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [discount, setDiscount] = useState("0");
+  const [vat, setVat] = useState("0");
+  const [source, setSource] = useState<"manual" | "ai">("manual");
+  const [scanNote, setScanNote] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
-  const totals = billTotals(lines.map((l) => ({ lineTotal: Number(l.lineTotal) || 0 })), 0, 0);
+  const totals = billTotals(lines.map((l) => ({ lineTotal: Number(l.lineTotal) || 0 })), Number(discount) || 0, Number(vat) || 0);
   const ingById = new Map(ingredients.map((i) => [i.id, i]));
   const pendingApproval = needsApproval(role, kind);
 
@@ -65,11 +72,42 @@ export function SubmitBillForm({
     setLines((ls) =>
       ls.map((l, j) => {
         if (j !== i) return l;
-        const next = { ...l, ...patch };
+        const next = { ...l, ...patch, issue: false };
         if ("target" in patch && next.target.startsWith("i:") && !next.rawName) next.rawName = ingById.get(next.target.slice(2))?.name ?? "";
         return next;
       }),
     );
+  }
+
+  function applyScan({ photo, draft, error }: { photo: PickedPhoto; draft: ScannedBillDraft | null; error: string | null }) {
+    if (photo.id) setPhotos((ps) => (ps.some((p) => p.id === photo.id) ? ps : [...ps, photo]));
+    if (error || !draft) {
+      setScanNote({ tone: "error", text: `${error ?? "AI อ่านบิลไม่สำเร็จ"}${photo.id ? " · รูปแนบไว้แล้ว กรอกรายการเองต่อได้" : ""}` });
+      return;
+    }
+    if (!draft.isBill) {
+      setScanNote({ tone: "error", text: `AI: รูปนี้ไม่ใช่บิลซื้อ (${draft.notBillReason ?? "ไม่พบยอดเงิน"}) — รูปแนบไว้แล้ว กรอกเองได้` });
+      return;
+    }
+    setSource("ai");
+    setKind(draft.evidenceKind);
+    setSupplierName(draft.supplierLabel ?? "");
+    setBillNo(draft.billNo ?? "");
+    if (draft.billDate) setBillDate(draft.billDate);
+    setDiscount(String(draft.discount));
+    setVat(String(draft.vatAmount));
+    if (draft.paymentHint === "credit") setPay("unpaid");
+    setLines(
+      draft.lines.map((l) => ({
+        ...emptyLine(),
+        target: l.match.kind === "ingredient" ? `i:${l.match.id}` : l.match.kind === "category" ? `c:${l.match.id}` : "",
+        rawName: l.rawName,
+        qty: l.qty === null ? "" : String(l.qty),
+        lineTotal: l.lineTotal === null ? "" : String(l.lineTotal),
+        issue: l.issue,
+      })),
+    );
+    setScanNote(scanSummary(draft));
   }
 
   function submit() {
@@ -88,14 +126,14 @@ export function SubmitBillForm({
         billNo: billNo || null,
         billDate,
         evidenceKind: kind,
-        discount: 0,
-        vatAmount: 0,
+        discount: Number(discount) || 0,
+        vatAmount: Number(vat) || 0,
         total: totals.total,
         paymentStatus: pay === "unpaid" ? "unpaid" : "paid",
         paymentMethod: pay === "unpaid" ? null : (pay as PayMethod),
         dueDate: null,
         note: note || null,
-        source: "manual",
+        source,
         imageIds: photos.map((p) => p.id),
         lines: filled.map((l) => {
           const ingId = l.target.startsWith("i:") ? l.target.slice(2) : null;
@@ -120,6 +158,10 @@ export function SubmitBillForm({
       setLines([emptyLine()]);
       setNote("");
       setPhotos([]);
+      setDiscount("0");
+      setVat("0");
+      setSource("manual");
+      setScanNote(null);
       router.refresh();
     });
   }
@@ -132,6 +174,12 @@ export function SubmitBillForm({
         </p>
       )}
       <div className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <ScanBillButton onScanned={applyScan} />
+        {scanNote && (
+          <p className={`rounded-lg px-3 py-2 text-sm ${scanNote.tone === "ok" ? "bg-green-50 text-green-800" : scanNote.tone === "warn" ? "border border-amber-200 bg-amber-50 text-amber-900" : "bg-red-50 text-red-700"}`}>
+            {scanNote.text}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           {EVIDENCE_KINDS.map((k) => (
             <button
@@ -162,7 +210,10 @@ export function SubmitBillForm({
           {lines.map((l, i) => {
             const ing = l.target.startsWith("i:") ? ingById.get(l.target.slice(2)) : undefined;
             return (
-              <div key={l.key} className="grid gap-2 rounded-lg border border-[var(--border)] p-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_80px_110px_auto]">
+              <div
+                key={l.key}
+                className={`grid gap-2 rounded-lg border p-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_80px_110px_auto] ${l.issue ? "border-amber-400 bg-amber-50" : !l.target && source === "ai" ? "border-red-300" : "border-[var(--border)]"}`}
+              >
                 <select aria-label="วัตถุดิบหรือหมวด" className={inputClass} value={l.target} onChange={(e) => setLine(i, { target: e.target.value })}>
                   <option value="">เลือกวัตถุดิบ / หมวดค่าใช้จ่าย</option>
                   <optgroup label="วัตถุดิบ (เข้าคลังเมื่ออนุมัติ)">
@@ -205,7 +256,17 @@ export function SubmitBillForm({
               </button>
             ))}
           </div>
-          <p className="text-lg font-bold text-[var(--ink)]">รวม {money(totals.total)} บาท</p>
+          <div className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-1">
+              ส่วนลด
+              <input aria-label="ส่วนลด" className={`${inputClass} w-24`} inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+            </label>
+            <label className="flex items-center gap-1">
+              VAT
+              <input aria-label="VAT" className={`${inputClass} w-24`} inputMode="decimal" value={vat} onChange={(e) => setVat(e.target.value)} />
+            </label>
+            <p className="text-lg font-bold text-[var(--ink)]">รวม {money(totals.total)} บาท</p>
+          </div>
         </div>
         <label className="block text-sm">
           <span className="text-[var(--muted)]">หมายเหตุ</span>

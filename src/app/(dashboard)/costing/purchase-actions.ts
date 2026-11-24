@@ -5,14 +5,24 @@
  * - ส่งบิล/อัปโหลดรูป: พนักงานทุกระดับ (getPurchaseSubmitAccess) · บิลเขียนมือ/ของพนักงาน = รออนุมัติ
  * - อนุมัติ/ไม่อนุมัติ/รับเงินคืน/จ่าย/ยกเลิก: ผู้จัดการขึ้นไป (getInventoryAccess)
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import sharp from "sharp";
+import { AI_DEFAULT_MODEL, isAiEnabled } from "@/modules/ai/gateway";
+import { MAX_IMAGE_BYTES, MIN_IMAGE_BYTES, sniffImageMime } from "@/modules/ai/menu-scan";
+import { reserveQuota, settleUsage } from "@/modules/ai/quota";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { canUseFeature } from "@/modules/billing/types";
 import { getCashOnHand } from "@/modules/hr/advanced/repository";
+import { BILL_SCAN_MAX_OUTPUT_TOKENS, buildScannedDraft, normalizeItemName, type ScannedBillDraft } from "@/modules/purchasing/bill-scan";
+import { extractBillFromImage } from "@/modules/purchasing/bill-scan-ai";
 import { getInventoryAccess } from "@/modules/inventory/access";
 import { getPurchaseSubmitAccess } from "@/modules/purchasing/access";
 import {
   approvePurchaseBill,
+  downloadEvidenceImage,
+  getVisibleEvidenceImage,
+  loadScanContext,
   payPurchaseBill,
   postPurchaseBill,
   PURCHASE_EVIDENCE_BUCKET,
@@ -283,4 +293,93 @@ export async function voidPurchaseBillAction(billId: string, reason: string): Pr
   if (result.error) return { error: result.error };
   revalidateAll();
   return { error: null };
+}
+
+/**
+ * A2: ให้ AI อ่านรูปบิลที่อัปโหลดแล้ว (รูปอยู่ในคลังหลักฐาน) → ร่างบิลให้คนตรวจก่อนบันทึก
+ * ด่าน: ส่งบิลได้ + แพ็กเกจมี aiVision + AI เปิดอยู่ + จองโควตาก่อนเรียก (แบบ AI สแกนเมนู)
+ * ล้ม/โควตาหมด/ไม่ใช่บิล → แจ้งตรง ๆ ให้กรอกเองต่อได้ (ห้ามสลับเครื่องมือเงียบ ๆ)
+ */
+export async function scanPurchaseBillAction(
+  imageId: string,
+): Promise<{ error: string | null; draft?: ScannedBillDraft }> {
+  const access = await getPurchaseSubmitAccess();
+  if (!access.decision.allowed) return { error: access.decision.message };
+  const { user, ctx } = access;
+  if (!UUID_RE.test(imageId)) return { error: "ข้อมูลรูปไม่ถูกต้อง" };
+  const scanLog = (ok: boolean, message: string, context?: Record<string, unknown>) =>
+    log({ action: "scanPurchaseBill", ok, message, organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id, context: { imageId, ...context } });
+
+  const billing = await getOrganizationBillingState(ctx.organizationId);
+  if (billing && !canUseFeature(billing, "aiVision")) {
+    await scanLog(false, "อ่านบิลด้วย AI ไม่ได้: แพ็กเกจไม่มี aiVision");
+    return { error: "แพ็กเกจปัจจุบันยังไม่รวม AI อ่านรูป — กรอกบิลเองได้ตามปกติ" };
+  }
+  if (!isAiEnabled()) {
+    await scanLog(false, "อ่านบิลด้วย AI ไม่ได้: ระบบ AI ปิดอยู่");
+    return { error: "ระบบ AI ยังไม่เปิดใช้ — กรอกบิลเองได้ตามปกติ" };
+  }
+  const image = await getVisibleEvidenceImage(ctx.storeId, imageId);
+  if (!image) return { error: "ไม่พบรูปนี้ (หรือไม่ใช่รูปของคุณ) — อัปโหลดใหม่" };
+  const bytes = await downloadEvidenceImage(image.storagePath);
+  if (!bytes) {
+    await scanLog(false, "อ่านบิลด้วย AI ไม่ได้: โหลดรูปจากคลังไม่สำเร็จ");
+    return { error: "โหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง" };
+  }
+  const mime = sniffImageMime(bytes);
+  if (!mime || bytes.byteLength > MAX_IMAGE_BYTES) return { error: "รูปนี้ให้ AI อ่านไม่ได้ — กรอกบิลเอง" };
+  // รูปเสีย/เล็กผิดปกติ: ไม่เผาโควตา
+  if (bytes.byteLength < MIN_IMAGE_BYTES) return { error: "รูปเล็กหรือไม่ชัดเกินไป — ถ่ายบิลให้เต็มกรอบแล้วลองใหม่" };
+
+  const requestId = randomUUID();
+  const requestHash = createHash("sha256").update(requestId).digest("hex").slice(0, 16);
+  const reserve = await reserveQuota({ organizationId: ctx.organizationId, requestId, feature: "aiVision", maxTokens: BILL_SCAN_MAX_OUTPUT_TOKENS });
+  if (!reserve.granted) {
+    await scanLog(false, "อ่านบิลด้วย AI ไม่ได้: โควตา AI หมด", { reason: reserve.reason ?? null });
+    return { error: "โควตา AI หมด — เติมเงินที่ ตั้งค่า → เรียกเก็บเงิน หรือกรอกบิลเองได้ตามปกติ" };
+  }
+  const settle = (tokens: number, status: "ok" | "error" | "denied") =>
+    settleUsage({ organizationId: ctx.organizationId, requestId, feature: "aiVision", model: AI_DEFAULT_MODEL, storeId: ctx.storeId, userId: user.id, tokens, status, requestHash });
+
+  let scan;
+  try {
+    scan = await extractBillFromImage(Buffer.from(bytes).toString("base64"), mime, AI_DEFAULT_MODEL);
+    await settle(BILL_SCAN_MAX_OUTPUT_TOKENS, "ok");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "error";
+    // หมดเวลา: ปล่อยให้การจองหมดอายุเอง (แบบสแกนเมนู) · อื่น ๆ คืนโควตา
+    if (message !== "ai_timeout") await settle(0, message === "ai_disabled" ? "denied" : "error");
+    await scanLog(false, `อ่านบิลด้วย AI ล้มเหลว: ${message}`);
+    return { error: message === "ai_timeout" ? "AI ใช้เวลานานเกินไป — ลองใหม่ หรือกรอกบิลเอง" : "AI อ่านบิลไม่สำเร็จ — กรอกบิลเองได้ตามปกติ" };
+  }
+
+  const context = await loadScanContext(ctx.storeId);
+  if (context.error) {
+    await scanLog(false, `อ่านบิลแล้วแต่โหลดข้อมูลจับคู่ไม่สำเร็จ: ${context.error}`);
+    return { error: "โหลดข้อมูลวัตถุดิบไม่สำเร็จ ลองใหม่อีกครั้ง" };
+  }
+  const history = new Map<string, { ingredientId: string | null; categoryId: string | null }>();
+  for (const l of context.lines) {
+    const key = normalizeItemName(l.rawName);
+    if (key && !history.has(key)) history.set(key, { ingredientId: l.ingredientId, categoryId: l.categoryId });
+  }
+  const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
+  const draft = buildScannedDraft({
+    imageId,
+    scan,
+    todayIso,
+    history,
+    ingredients: context.ingredients,
+    categoryIds: context.categoryIds,
+    suppliers: context.suppliers,
+  });
+  const matched = draft.lines.filter((l) => l.match.kind !== "none").length;
+  await scanLog(true, draft.isBill ? `AI อ่านบิล ${draft.lines.length} บรรทัด (จับคู่ได้ ${matched})` : `AI อ่านแล้วไม่ใช่บิล: ${draft.notBillReason}`, {
+    isBill: draft.isBill,
+    lines: draft.lines.length,
+    matched,
+    totalMatches: draft.check.totalMatches,
+    paymentHint: draft.paymentHint,
+  });
+  return { error: null, draft };
 }

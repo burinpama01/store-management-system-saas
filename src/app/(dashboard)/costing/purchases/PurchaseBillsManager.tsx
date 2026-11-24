@@ -27,6 +27,8 @@ import {
   voidPurchaseBillAction,
 } from "../purchase-actions";
 import { BillPhotoPicker, type PickedPhoto } from "./BillPhotoPicker";
+import { ScanBillButton, scanSummary } from "./ScanBillButton";
+import type { ScannedBillDraft } from "@/modules/purchasing/bill-scan";
 
 const inputClass = "min-h-11 w-full rounded-lg border border-[var(--border)] bg-white px-3 text-[16px] text-[var(--ink)]";
 
@@ -37,6 +39,7 @@ interface LineDraft {
   qty: string;
   unitPrice: string;
   lineTotal: string;
+  issue?: boolean; // AI อ่านแล้วตัวเลขไม่ตรง/ไม่ครบ
 }
 
 function bangkokToday() {
@@ -75,6 +78,8 @@ export function PurchaseBillsManager({
   const [billDate, setBillDate] = useState(bangkokToday());
   const [kind, setKind] = useState<EvidenceKind>("receipt");
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [source, setSource] = useState<"manual" | "ai">("manual");
+  const [scanNote, setScanNote] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
   const [discount, setDiscount] = useState("0");
   const [vat, setVat] = useState("0");
   const [payStatus, setPayStatus] = useState<"paid" | "unpaid">("paid");
@@ -111,7 +116,7 @@ export function PurchaseBillsManager({
     setLines((ls) =>
       ls.map((l, j) => {
         if (j !== i) return l;
-        const next = { ...l, ...patch };
+        const next = { ...l, ...patch, issue: false };
         // จำนวน × ราคา → ยอดบรรทัด (แก้ยอดเองได้ เช่นบิลที่มีแค่ยอดรวม)
         if (("qty" in patch || "unitPrice" in patch) && Number.isFinite(n(next.qty)) && Number.isFinite(n(next.unitPrice))) {
           next.lineTotal = String(Math.round(n(next.qty) * n(next.unitPrice) * 100) / 100);
@@ -131,6 +136,8 @@ export function PurchaseBillsManager({
     setBillDate(bangkokToday());
     setKind("receipt");
     setPhotos([]);
+    setSource("manual");
+    setScanNote(null);
     setDiscount("0");
     setVat("0");
     setPayStatus("paid");
@@ -166,7 +173,7 @@ export function PurchaseBillsManager({
         paymentMethod: payStatus === "paid" ? payMethod : null,
         dueDate: payStatus === "unpaid" ? dueDate || null : null,
         note: note || null,
-        source: "manual",
+        source,
         lines: filled.map((l) => ({
           ingredientId: l.target.startsWith("i:") ? l.target.slice(2) : null,
           expenseCategoryId: l.target.startsWith("c:") ? l.target.slice(2) : null,
@@ -192,6 +199,42 @@ export function PurchaseBillsManager({
       setOpen(false);
       router.refresh();
     });
+  }
+
+  function applyScan({ photo, draft, error }: { photo: PickedPhoto; draft: ScannedBillDraft | null; error: string | null }) {
+    if (photo.id) setPhotos((ps) => (ps.some((p) => p.id === photo.id) ? ps : [...ps, photo]));
+    if (error || !draft) {
+      setScanNote({ tone: "error", text: `${error ?? "AI อ่านบิลไม่สำเร็จ"}${photo.id ? " · รูปแนบไว้แล้ว กรอกรายการเองต่อได้" : ""}` });
+      return;
+    }
+    if (!draft.isBill) {
+      setScanNote({ tone: "error", text: `AI: รูปนี้ไม่ใช่บิลซื้อ (${draft.notBillReason ?? "ไม่พบยอดเงิน"}) — รูปแนบไว้แล้ว กรอกเองได้` });
+      return;
+    }
+    setSource("ai");
+    setSupplierId(draft.supplierId ?? "");
+    setSupplierName(draft.supplierId ? "" : (draft.supplierName ?? ""));
+    setBillNo(draft.billNo ?? "");
+    if (draft.billDate) setBillDate(draft.billDate);
+    setKind(draft.evidenceKind);
+    setDiscount(String(draft.discount));
+    setVat(String(draft.vatAmount));
+    if (draft.paymentHint === "credit") {
+      setPayStatus("unpaid");
+      setDueDate(draft.dueDate ?? "");
+    }
+    setLines(
+      draft.lines.map((l) => ({
+        ...emptyLine(),
+        target: l.match.kind === "ingredient" ? `i:${l.match.id}` : l.match.kind === "category" ? `c:${l.match.id}` : "",
+        rawName: l.rawName,
+        qty: l.qty === null ? "" : String(l.qty),
+        unitPrice: l.unitPrice === null ? "" : String(l.unitPrice),
+        lineTotal: l.lineTotal === null ? "" : String(l.lineTotal),
+        issue: l.issue,
+      })),
+    );
+    setScanNote(scanSummary(draft));
   }
 
   async function pay(bill: PurchaseBill, method: PayMethod) {
@@ -306,7 +349,15 @@ export function PurchaseBillsManager({
 
       {open && (
         <div className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-          <h2 className="text-base font-semibold text-[var(--ink)]">บิลซื้อใหม่</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-[var(--ink)]">บิลซื้อใหม่</h2>
+            <ScanBillButton onScanned={applyScan} />
+          </div>
+          {scanNote && (
+            <p className={`rounded-lg px-3 py-2 text-sm ${scanNote.tone === "ok" ? "bg-green-50 text-green-800" : scanNote.tone === "warn" ? "border border-amber-200 bg-amber-50 text-amber-900" : "bg-red-50 text-red-700"}`}>
+              {scanNote.text}
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block text-sm">
               <span className="text-[var(--muted)]">ผู้ขาย</span>
@@ -340,7 +391,7 @@ export function PurchaseBillsManager({
               const usageIn = item && n(l.qty) > 0 ? n(l.qty) * item.usagePerPurchase : 0;
               const preview = item ? onHandAfterReceive(item.onHand, usageIn) : null;
               return (
-                <div key={l.key} className="space-y-1 rounded-lg border border-[var(--border)] p-2">
+                <div key={l.key} className={`space-y-1 rounded-lg border p-2 ${l.issue ? "border-amber-400 bg-amber-50" : !l.target && source === "ai" ? "border-red-300" : "border-[var(--border)]"}`}>
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_80px_100px_110px_auto]">
                     <select aria-label="วัตถุดิบหรือหมวด" className={inputClass} value={l.target} onChange={(e) => setLine(i, { target: e.target.value })}>
                       <option value="">เลือกวัตถุดิบ / หมวดค่าใช้จ่าย</option>
