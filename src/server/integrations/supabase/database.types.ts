@@ -5532,6 +5532,18 @@ export interface Database {
         };
         Returns: Database["public"]["Tables"]["variant_stock_links"]["Row"];
       };
+      link_variant_to_source_variant: {
+        Args: {
+          p_target_variant_id: string;
+          p_source_variant_id: string;
+          p_consumption_quantity: number;
+        };
+        Returns: string;
+      };
+      remove_variant_from_stock: {
+        Args: { p_variant_id: string };
+        Returns: undefined;
+      };
       adjust_customer_loyalty_points: {
         Args: {
           p_organization_id: string;

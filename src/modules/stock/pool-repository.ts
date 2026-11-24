@@ -15,6 +15,8 @@ export interface StockPoolView {
   quantity: number;
   lowStockThreshold: number;
   isActive: boolean;
+  /** ยอดที่ลูกค้าสั่ง QR จองไว้ (ยังไม่ตัดจาก quantity) */
+  reservedUnits: number;
 }
 
 export interface StockPoolLink {
@@ -53,6 +55,7 @@ function mapPool(row: StockPoolRow): StockPoolView {
     quantity: row.quantity,
     lowStockThreshold: row.low_stock_threshold,
     isActive: row.is_active,
+    reservedUnits: (row as { reserved_units?: number | null }).reserved_units ?? 0,
   };
 }
 
@@ -187,10 +190,78 @@ export async function adjustStockPool(input: StockPoolAdjustmentInput): Promise<
       error: {
         code: "stock_adjustment_failed",
         message: error?.message ?? "stock pool adjustment returned no data",
-        userMessage: "ไม่สามารถปรับสต็อกได้",
+        userMessage: thaiRpcMessage(error?.message, "ไม่สามารถปรับสต็อกได้"),
       },
     };
   }
 
   return { ok: true, data, error: null };
+}
+
+/** ข้อความ exception ภาษาไทยที่ RPC ตั้งใจให้ร้านเห็น — ข้อความอังกฤษ/ภายในใช้ fallback */
+export function thaiRpcMessage(message: string | null | undefined, fallback: string): string {
+  return message && /^[฀-๿]/.test(message) ? message : fallback;
+}
+
+/** ตรวจว่า variant ทุกตัวอยู่ในร้านที่กำลังทำงาน ก่อนเรียก RPC (RPC ตรวจสิทธิ์ซ้ำอีกชั้น) */
+async function variantsBelongToStore(variantIds: readonly string[], storeId: string): Promise<boolean> {
+  const supabase = await createSupabaseServerClient();
+  const ids = [...new Set(variantIds)];
+  const { data: variants, error } = await supabase.from("product_variants").select("id, product_id").in("id", ids);
+  if (error || !variants || variants.length !== ids.length) return false;
+  const productIds = [...new Set(variants.map((row) => row.product_id))];
+  const { data: products, error: productError } = await supabase.from("products").select("id, store_id").in("id", productIds);
+  if (productError || !products || products.length !== productIds.length) return false;
+  return products.every((row) => row.store_id === storeId);
+}
+
+/**
+ * แบบง่าย: ให้ target ตัดสต็อกจาก source ครั้งละ consumptionQuantity — RPC สร้าง Pool ให้เอง
+ * (ยอดเริ่มต้น = ยอดเดิมของ source) หรือใช้ Pool ที่ source ผูกอยู่แล้ว
+ */
+export async function linkVariantToSourceVariant(input: {
+  targetVariantId: string;
+  sourceVariantId: string;
+  storeId: string;
+  consumptionQuantity: number;
+}): Promise<{ ok: true; poolId: string; error: null } | { ok: false; error: AppError }> {
+  if (!(await variantsBelongToStore([input.targetVariantId, input.sourceVariantId], input.storeId))) {
+    return { ok: false, error: mapError(new Error("ไม่พบสินค้าในร้านนี้")) };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("link_variant_to_source_variant", {
+    p_target_variant_id: input.targetVariantId,
+    p_source_variant_id: input.sourceVariantId,
+    p_consumption_quantity: input.consumptionQuantity,
+  });
+  if (error || typeof data !== "string") {
+    return {
+      ok: false,
+      error: {
+        code: "stock_share_failed",
+        message: error?.message ?? "link_variant_to_source_variant returned no data",
+        userMessage: thaiRpcMessage(error?.message, "ตั้งค่าตัดสต็อกไม่สำเร็จ"),
+      },
+    };
+  }
+  return { ok: true, poolId: data, error: null };
+}
+
+/** ลบออกจากรายการสต็อก: ถอดจาก Pool + เลิกนับสต็อก (เมนูยังขายได้ ไม่จำกัดจำนวน) */
+export async function removeVariantFromStock(input: {
+  variantId: string;
+  storeId: string;
+}): Promise<{ ok: true; error: null } | { ok: false; error: AppError }> {
+  if (!(await variantsBelongToStore([input.variantId], input.storeId))) {
+    return { ok: false, error: mapError(new Error("ไม่พบสินค้าในร้านนี้")) };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("remove_variant_from_stock", { p_variant_id: input.variantId });
+  if (error) {
+    return {
+      ok: false,
+      error: { code: "stock_remove_failed", message: error.message, userMessage: thaiRpcMessage(error.message, "ลบออกจากรายการสต็อกไม่สำเร็จ") },
+    };
+  }
+  return { ok: true, error: null };
 }
