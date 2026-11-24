@@ -48,7 +48,6 @@ export interface StockState {
 
 const INTEGER_QUANTITY_ERROR = "กรุณากรอกจำนวนเต็มตั้งแต่ 0 ขึ้นไป";
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
-const MONEY_LIMIT = 9_999_999.99;
 
 type StockActionResult = { ok: true; error: null } | { ok: false; error: string };
 type PoolActionResult = { ok: true; pool: StockPoolView; error: null } | { ok: false; error: string };
@@ -88,9 +87,10 @@ export async function createVariantFromStockAction(fd: FormData): Promise<{ ok: 
     if (!resolved.can("stock.manage") || !resolved.can("catalog.manage")) return { ok: false, error: "ต้องมีสิทธิ์จัดการเมนูสินค้าและสต๊อก" };
     const productId = readTrimmed(fd, "productId");
     const name = readTrimmed(fd, "variantName");
-    const rawPriceAdjustment = readTrimmed(fd, "priceAdjustment");
-    const priceAdjustment = Number(rawPriceAdjustment);
-    if (!productId || !name || !rawPriceAdjustment || !Number.isFinite(priceAdjustment) || Math.abs(priceAdjustment) > MONEY_LIMIT) {
+    // ตัวเลือกที่สร้างจากหน้าสต็อกต้องไม่เปลี่ยนราคาขาย — ไม่รับค่าราคาจาก client
+    // (เคยมีช่องปรับราคา ร้านใส่ราคาโปรซ้ำจนลูกค้าถูกคิดเงิน 2 เท่า)
+    const priceAdjustment = 0;
+    if (!productId || !name) {
       return { ok: false, error: "ข้อมูล Variant ไม่ถูกต้อง" };
     }
     const product = await getProduct(productId);
@@ -392,4 +392,84 @@ async function countActiveSiblingVariants(variantId: string, storeId: string): P
     .eq("product_id", variant.product_id)
     .eq("is_active", true);
   return { activeVariantCount: count ?? 0 };
+}
+
+/**
+ * เพิ่มสินค้าที่ "ไม่มีตัวเลือก" เข้ารายการนับสต็อกได้ทันที — สร้างตัวเลือก "ปกติ" ราคาเพิ่ม 0
+ * ให้เองเบื้องหลัง (ระบบนับสต็อกที่ระดับตัวเลือก) ร้านไม่ต้องเข้าไดอาล็อกขั้นสูงหรือกรอกราคา
+ */
+export async function startTrackingProductAction(_prev: StockState, fd: FormData): Promise<StockState> {
+  try {
+    await requirePermission("stock.manage");
+    await requireFeature("stockManagement");
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("stock.manage")) return { ok: false, error: "ไม่มีสิทธิ์จัดการสต็อก" };
+    if (!resolved.can("catalog.manage")) return { ok: false, error: "ต้องมีสิทธิ์จัดการเมนูสินค้าและสต๊อก" };
+    const productId = readTrimmed(fd, "productId");
+    const quantity = parseRawQuantity(fd.get("quantity"));
+    if (!productId) return { ok: false, error: "เลือกสินค้า" };
+    if (quantity === null) return { ok: false, error: INTEGER_QUANTITY_ERROR };
+    const product = await getProduct(productId);
+    if (!product.data || product.data.storeId !== ctx.storeId) return { ok: false, error: "ไม่มีสิทธิ์" };
+    if (product.data.variants.length > 0) {
+      return { ok: false, error: "สินค้านี้มีตัวเลือกแล้ว — เลือกตัวเลือกจากรายการแทน" };
+    }
+    // ตั๋ว/บิลค้างที่มีสินค้านี้แบบ "ไม่มีตัวเลือก" จะชำระไม่ได้หลังสร้างตัวเลือก — ให้ปิดก่อน
+    const pending = await countPendingUsesOfProduct(ctx.storeId, productId);
+    if (pending > 0) {
+      return { ok: false, error: `มีตั๋วหรือบิลที่ยังไม่ชำระ ${pending} รายการที่มี “${product.data.name}” — ชำระหรือลบก่อน แล้วค่อยเริ่มนับสต็อก` };
+    }
+    const created = await createVariant({ productId, name: "ปกติ", priceAdjustment: 0, trackStock: true, stockQuantity: quantity });
+    if (created.error || !created.data) {
+      await logStockPoolEvent({
+        action: "startTrackingProduct", ok: false, message: "เพิ่มสินค้าเข้ารายการนับสต็อกไม่สำเร็จ",
+        organizationId: ctx.organizationId, storeId: ctx.storeId,
+        context: { productId, quantity, error: created.error?.message ?? null },
+      });
+      return { ok: false, error: "เพิ่มสินค้าไม่สำเร็จ" };
+    }
+    await logStockPoolEvent({
+      action: "startTrackingProduct", ok: true, message: `เริ่มนับสต็อก "${product.data.name}" ยอด ${quantity}`,
+      organizationId: ctx.organizationId, storeId: ctx.storeId,
+      context: { productId, variantId: created.data.id, quantity, note: "สร้างตัวเลือก ปกติ ให้สินค้าที่ไม่มีตัวเลือก — ตั๋วในเครื่องที่บันทึกก่อนหน้าต้องเพิ่มสินค้านี้ใหม่" },
+    });
+    revalidatePath("/stock");
+    return { ok: true, error: null };
+  } catch (error) { return { ok: false, error: safeError(error, "เพิ่มสินค้าไม่สำเร็จ") }; }
+}
+
+/** ฟอร์ม "เพิ่มสินค้าที่ต้องนับสต็อก": target = "v:<variantId>" (มีตัวเลือก) หรือ "p:<productId>" (ไม่มีตัวเลือก) */
+export async function addToStockAction(prev: StockState, fd: FormData): Promise<StockState> {
+  const target = readTrimmed(fd, "target");
+  const next = new FormData();
+  next.set("quantity", String(fd.get("quantity") ?? ""));
+  if (target.startsWith("p:")) {
+    next.set("productId", target.slice(2));
+    return startTrackingProductAction(prev, next);
+  }
+  if (target.startsWith("v:")) {
+    next.set("variantId", target.slice(2));
+    return setStockAction(prev, next);
+  }
+  return { ok: false, error: "เลือกสินค้า" };
+}
+
+/** นับตั๋วที่บันทึกบน server + บิลที่ยังไม่ชำระ ที่มีสินค้านี้อยู่ */
+async function countPendingUsesOfProduct(storeId: string, productId: string): Promise<number> {
+  const supabase = await createSupabaseServerClient();
+  const [tickets, openItems] = await Promise.all([
+    supabase.from("pos_saved_tickets").select("cart_snapshot").eq("store_id", storeId),
+    supabase
+      .from("order_items")
+      .select("id, orders!inner(store_id, status)")
+      .eq("product_id", productId)
+      .eq("orders.store_id", storeId)
+      .in("orders.status", ["draft", "open", "pending_payment"])
+      .limit(50),
+  ]);
+  const ticketCount = (tickets.data ?? []).filter((row) => {
+    const items = (row as { cart_snapshot?: { items?: Array<{ productId?: string }> } | null }).cart_snapshot?.items ?? [];
+    return items.some((item) => item.productId === productId);
+  }).length;
+  return ticketCount + (openItems.data?.length ?? 0);
 }

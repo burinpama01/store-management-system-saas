@@ -72,7 +72,7 @@ import {
 } from "@/modules/pos/saved-ticket-repository";
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
-import { buildTrustedCartFromCatalog, resolveModifiers, resolveVariant } from "@/modules/pos/server-cart";
+import { buildTrustedCartFromCatalog, CartValidationError, resolveModifiers, resolveVariant } from "@/modules/pos/server-cart";
 import { cartRequestsDiscount } from "@/modules/pos/discount-policy";
 import { buildTableTicket, isEmptyTicket } from "@/modules/pos/table-ticket";
 import { describeTableUnpaid, findTableUnpaidContext } from "@/modules/pos/table-unpaid";
@@ -2716,12 +2716,27 @@ export async function getBeamPosStatusAction(): Promise<{ enabled: boolean }> {
 export async function prepareBeamQrAction(
   amount: number,
   clientRequestId: string,
+  cart?: Cart | null,
 ): Promise<{ qr: BeamQrForPos | null; error: string | null }> {
   try {
     const { user, ctx, resolved } = await getResolvedCurrentPermissions();
     if (!resolved.can("pos.use")) return { qr: null, error: "ไม่มีสิทธิ์ใช้งาน POS" };
     if (!UUID_RE.test(clientRequestId)) return { qr: null, error: "คำขอไม่ถูกต้อง" };
     await requireFeature("byoPaymentGateway");
+    // ตรวจตะกร้ากับเมนูปัจจุบันก่อนออก QR — ถ้าลูกค้าจ่ายแล้วค่อยพบว่าตะกร้าใช้ไม่ได้
+    // เงินจะเข้าแต่ปิดบิลไม่ได้ (เคยเกิดจริง: ตัวเลือกถูกลบระหว่างที่ตะกร้าค้างอยู่)
+    if (cart && cart.items.length > 0) {
+      const cartError = await validateCartForPayment(cart, ctx.storeId, resolved.can("pos.discount"));
+      if (cartError) {
+        await logSystemEvent({
+          level: "warn", source: "pos.beam", action: "prepareBeamQr.cartInvalid",
+          message: "ไม่ออก QR Beam เพราะตะกร้าไม่ตรงกับเมนูปัจจุบัน",
+          organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id,
+          context: { amount, error: cartError },
+        });
+        return { qr: null, error: cartError };
+      }
+    }
     const res = await createBeamQrPayment({
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
@@ -2759,5 +2774,26 @@ export async function cancelBeamQrAction(gatewayPaymentId: string): Promise<{ er
     return await cancelBeamQrPayment({ storeId: ctx.storeId, gatewayPaymentId, actorUserId: user.id });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "ยกเลิก QR ไม่สำเร็จ" };
+  }
+}
+
+/** คืนข้อความ error ถ้าตะกร้าใช้ไม่ได้กับเมนูปัจจุบัน (สินค้า/ตัวเลือก/สต็อก) — null = ผ่าน */
+async function validateCartForPayment(cart: Cart, storeId: string, canDiscount: boolean): Promise<string | null> {
+  if (cart.storeId !== storeId) return "ร้านค้าในตะกร้าไม่ถูกต้อง";
+  // ตรวจเฉพาะรายการขายปกติ เหมือนตอน checkout — รายการแลกรางวัล/ใช้แพ็กมีเส้นทางตรวจของตัวเอง
+  const normalItems = cart.items.filter((item) => !item.rewardVoucherCode && !isPassCartItem(item));
+  if (normalItems.length === 0) return null;
+  const normalCart: Cart = { ...cart, items: normalItems };
+  const productsRes = await listProducts(storeId, {
+    includeInactive: false,
+    productIds: Array.from(new Set(normalItems.map((item) => item.productId))),
+  });
+  if (productsRes.error || !productsRes.data) return productsRes.error?.userMessage ?? "ไม่พบข้อมูลสินค้า";
+  try {
+    buildTrustedCartFromCatalog(normalCart, productsRes.data, { storeId, canDiscount });
+    return null;
+  } catch (error) {
+    if (error instanceof CartValidationError) return error.message;
+    throw error;
   }
 }

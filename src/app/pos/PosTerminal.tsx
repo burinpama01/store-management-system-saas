@@ -3217,6 +3217,12 @@ function PaymentPanel({
     setCustomerDisplayNotice("ส่ง QR ไปจอลูกค้าแล้ว");
   }, [method, trueMoneyPayload, customerDisplayEnabled, cart.total, onShowPromptPayOnCustomerDisplay]);
 
+  // ตะกร้าล่าสุดสำหรับตรวจกับเมนูฝั่ง server ก่อนออก QR Beam (ไม่ใส่ใน deps — QR ผูกกับยอด/ครั้งที่ลอง)
+  const beamCartRef = useRef(cart);
+  useEffect(() => {
+    beamCartRef.current = cart;
+  }, [cart]);
+
   // Beam: one QR (charge) per method/amount/attempt; abandoning it cancels the charge row
   // so a payment that still lands shows up as LATE_PAID instead of silently closing a bill.
   useEffect(() => {
@@ -3224,7 +3230,7 @@ function PaymentPanel({
     const amount = Number(beamKey.split("|")[0]);
     let cancelled = false;
     let createdId: string | null = null;
-    void prepareBeamQrAction(amount, createTicketId()).then((res) => {
+    void prepareBeamQrAction(amount, createTicketId(), beamCartRef.current).then((res) => {
       if (cancelled) {
         if (res.qr) void cancelBeamQrAction(res.qr.gatewayPaymentId);
         return;
