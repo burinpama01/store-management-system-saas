@@ -144,8 +144,8 @@ export function AddStockDialog({
     if (!product) return;
     const form = new FormData();
     const name = (document.getElementById("stock-variant-name") as HTMLInputElement | null)?.value ?? "";
-    const price = (document.getElementById("stock-variant-price") as HTMLInputElement | null)?.value ?? "0";
-    form.set("productId", product.id); form.set("variantName", name); form.set("priceAdjustment", price);
+    // ตัวเลือกที่สร้างจากหน้าสต็อกไม่เปลี่ยนราคาขาย (เคยมีช่องปรับราคา ร้านใส่ราคาโปรซ้ำจนราคาเป็น 2 เท่า)
+    form.set("productId", product.id); form.set("variantName", name); form.set("priceAdjustment", "0");
     startTransition(async () => {
       setError(null);
       const result = await createVariantFromStockAction(form);
@@ -211,7 +211,7 @@ export function AddStockDialog({
         <p className="rounded-md bg-teal-50 p-3 text-sm text-teal-950">Variant = รูปแบบย่อย/หน่วยขายของสินค้า เช่น <strong>1 ขวด</strong> และ <strong>3 ขวด</strong>; แต่ละ Variant มีราคา/หน่วยขายของตัวเอง.</p>
         {activeVariants(product).length > 0 && <div className="space-y-2"><p className="text-sm font-medium">เลือก Variant ที่จะตั้งสต๊อก</p>{activeVariants(product).map((item) => <button key={item.id} type="button" onClick={() => selectVariant(item)} className="min-h-11 w-full rounded-md border border-[var(--border)] p-3 text-left hover:border-teal-700">{item.name} <span className="text-xs text-[var(--muted)]">ราคาเพิ่ม {item.priceAdjustment}</span></button>)}</div>}
         {activeVariants(product).length === 0 && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">สินค้านี้ยังไม่มี Variant จึงต้องสร้างก่อนจึงจะตั้งสต๊อกได้</div>}
-        {!canManageCatalog ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">ต้องมีสิทธิ์จัดการเมนูสินค้าและสต๊อก</p> : <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-sm font-medium">ชื่อ Variant<input id="stock-variant-name" className="form-input mt-1 min-h-11 w-full" placeholder="เช่น 1 ขวด" /></label><label className="text-sm font-medium">ปรับราคา<input id="stock-variant-price" className="form-input mt-1 min-h-11 w-full" type="number" defaultValue="0" step="0.01" /></label><div className="sm:col-span-2"><Button variant="secondary" onClick={createVariant} loading={pending} loadingText="กำลังสร้าง Variant..." className="min-h-11">สร้าง Variant แล้วไปต่อ</Button></div></div>}
+        {!canManageCatalog ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">ต้องมีสิทธิ์จัดการเมนูสินค้าและสต๊อก</p> : <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-sm font-medium">ชื่อ Variant<input id="stock-variant-name" className="form-input mt-1 min-h-11 w-full" placeholder="เช่น 1 ขวด" /></label><p className="self-end text-xs text-[var(--muted)]">ราคาขายใช้ราคาเดิมของสินค้า</p><div className="sm:col-span-2"><Button variant="secondary" onClick={createVariant} loading={pending} loadingText="กำลังสร้าง Variant..." className="min-h-11">สร้าง Variant แล้วไปต่อ</Button></div></div>}
       </section>}
 
       {step === "choose_pool" && variant && <section className="space-y-4">
