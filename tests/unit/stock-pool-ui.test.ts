@@ -214,10 +214,40 @@ describe("stock pool inline workflow", () => {
 
     // variant ที่ผูก Pool แล้วต้องแก้ยอดผ่าน Pool เท่านั้น — แต่ variant ที่ยังไม่ผูก
     // ต้องมีที่ให้แก้สต๊อกเดิม ไม่งั้นข้อมูลเก่าที่ track_stock อยู่จะปรับไม่ได้เลย
-    expect(manager).toContain("linkedVariantIds");
-    expect(manager).toContain("!linkedVariantIds.has(variant.id)");
     expect(manager).toContain("setStockAction");
     expect(card).toContain("pool.quantity");
+  });
+
+  it("builds simple stock rows: own stock, main shared row edits the pool, shared row shows sets", async () => {
+    const { buildStockRows } = await import("@/app/(dashboard)/stock/StockManager");
+    const variant = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+      id, name, isActive: true, trackStock: true, stockQuantity: 0, ...extra,
+    });
+    const products = [
+      { id: "p1", name: "เบียร์สิงห์", variants: [variant("v1", "1 ขวด", { stockQuantity: 99 })] },
+      { id: "p2", name: "โปร เบียร์สิงห์ 3 ขวด", variants: [variant("v2", "3 ขวด")] },
+      { id: "p3", name: "เบียร์ช้าง", variants: [variant("v3", "1 ขวด", { stockQuantity: 12 }), variant("v4", "ไม่นับ", { trackStock: false })] },
+    ];
+    const pools = [{ id: "pool", organizationId: "o", storeId: "s", name: "เบียร์สิงห์ 1 ขวด", unitLabel: "หน่วย", quantity: 24, lowStockThreshold: 0, isActive: true, reservedUnits: 0 }];
+    const links = [
+      { variantId: "v1", stockPoolId: "pool", consumptionQuantity: 1 },
+      { variantId: "v2", stockPoolId: "pool", consumptionQuantity: 3 },
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = buildStockRows(products as any, pools, links);
+    const byId = Object.fromEntries(rows.map((row) => [row.variant.id, row]));
+    expect(Object.keys(byId).sort()).toEqual(["v1", "v2", "v3"]);
+    expect(byId.v1).toMatchObject({ kind: "main", quantity: 24 });
+    expect(byId.v2).toMatchObject({ kind: "shared", quantity: 8, consumption: 3, sourceLabels: ["เบียร์สิงห์ 1 ขวด"] });
+    expect(byId.v3).toMatchObject({ kind: "own", quantity: 12, siblingCount: 2 });
+  });
+
+  it("rejects editing a shared row directly and routes the main row to the pool balance", async () => {
+    const source = readFileSync(join(root, "src/app/(dashboard)/stock/actions.ts"), "utf8");
+    expect(source).toContain("แก้ยอดที่สินค้าหลัก");
+    expect(source).toContain('mode: "set_balance"');
+    expect(source).toContain("shareStockAction");
+    expect(source).toContain("removeFromStockAction");
   });
 
   it("maps unknown repository errors to stable Thai action messages", async () => {
