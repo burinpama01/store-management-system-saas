@@ -119,7 +119,7 @@ describe("wiring", () => {
   it("every action passes a gate and logs (submit/upload = staff gate, others = inventory gate)", () => {
     const src = read("src/app/(dashboard)/costing/purchase-actions.ts");
     const exported = src.match(/export async function \w+/g) ?? [];
-    expect(exported.length).toBe(7);
+    expect(exported.length).toBe(8);
     expect((src.match(/await editor\(\)/g) ?? []).length).toBe(5);
     expect(src).toContain('source: "purchasing"');
   });

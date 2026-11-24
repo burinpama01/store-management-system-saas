@@ -319,3 +319,55 @@ export async function voidPurchaseBill(billId: string, reason: string): Promise<
   if (error) return { data: null, error: purchaseErrorMessage(error.message) };
   return { data: num(data?.refunded), error: null };
 }
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- แถวดิบจาก PostgREST */
+/** รูปหลักฐานที่ผู้ใช้คนนี้มีสิทธิ์เห็น (RLS: เจ้าของรูปหรือผู้จัดการ) ของสาขานี้ */
+export async function getVisibleEvidenceImage(storeId: string, imageId: string): Promise<{ storagePath: string } | null> {
+  const db: LooseClient = await createSupabaseServerClient();
+  const { data } = await db.from("purchase_bill_images").select("storage_path, store_id").eq("id", imageId).maybeSingle();
+  if (!data || data.store_id !== storeId) return null;
+  return { storagePath: data.storage_path };
+}
+
+export async function downloadEvidenceImage(storagePath: string): Promise<Uint8Array | null> {
+  const service = await createSupabaseServiceClient();
+  const { data, error } = await service.storage.from(PURCHASE_EVIDENCE_BUCKET).download(storagePath);
+  if (error || !data) return null;
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+/**
+ * ข้อมูลประกอบการจับคู่ผล AI (service client หลังผ่านด่านแล้ว · เฉพาะสาขานี้):
+ * ชื่อบนบิลที่เคยยืนยัน → วัตถุดิบ/หมวด ล่าสุด, รายชื่อวัตถุดิบ/หมวด/ผู้ขายที่ใช้งาน
+ */
+export async function loadScanContext(storeId: string) {
+  const service: LooseClient = await createSupabaseServiceClient();
+  const [lines, ing, cat, sup] = await Promise.all([
+    service
+      .from("purchase_bill_lines")
+      .select("raw_name, ingredient_id, expense_category_id, purchase_bills!inner(store_id, status, posted_at)")
+      .eq("purchase_bills.store_id", storeId)
+      .in("purchase_bills.status", ["pending", "posted"])
+      .order("posted_at", { referencedTable: "purchase_bills", ascending: false })
+      .limit(1000),
+    service.from("ingredients").select("id, name").eq("store_id", storeId).eq("is_active", true).limit(1000),
+    service.from("accounting_categories").select("id").eq("store_id", storeId).eq("type", "expense").limit(300),
+    service.from("suppliers").select("id, name, tax_id, payment_terms_days").eq("store_id", storeId).eq("is_active", true).limit(500),
+  ]);
+  const rows = [...(lines.data ?? [])].sort((a: any, b: any) =>
+    String(b.purchase_bills?.posted_at ?? "").localeCompare(String(a.purchase_bills?.posted_at ?? "")),
+  );
+  return {
+    error: lines.error?.message ?? ing.error?.message ?? cat.error?.message ?? sup.error?.message ?? null,
+    lines: rows.map((r: any) => ({ rawName: r.raw_name as string, ingredientId: r.ingredient_id ?? null, categoryId: r.expense_category_id ?? null })),
+    ingredients: (ing.data ?? []).map((r: any) => ({ id: r.id as string, name: r.name as string })),
+    categoryIds: new Set<string>((cat.data ?? []).map((r: any) => r.id as string)),
+    suppliers: (sup.data ?? []).map((r: any) => ({
+      id: r.id as string,
+      name: r.name as string,
+      taxId: (r.tax_id as string | null) ?? null,
+      paymentTermsDays: num(r.payment_terms_days),
+    })),
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
