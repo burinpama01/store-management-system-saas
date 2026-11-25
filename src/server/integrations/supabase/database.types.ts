@@ -4642,6 +4642,63 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      attendance_backdate_requests: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          employee_name: string;
+          attendance_record_id: string | null;
+          date: string;
+          clock_in_at: string;
+          clock_out_at: string;
+          note: string | null;
+          status: "pending" | "approved" | "rejected" | "cancelled";
+          decided_by_user_id: string | null;
+          decided_at: string | null;
+          decision_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          user_id?: string;
+          employee_name?: string;
+          attendance_record_id?: string | null;
+          date?: string;
+          clock_in_at?: string;
+          clock_out_at?: string;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected" | "cancelled";
+          decided_by_user_id?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          user_id?: string;
+          employee_name?: string;
+          attendance_record_id?: string | null;
+          date?: string;
+          clock_in_at?: string;
+          clock_out_at?: string;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected" | "cancelled";
+          decided_by_user_id?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       attendance_records: {
         Row: {
           id: string;
@@ -5405,6 +5462,21 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      request_attendance_backdate: {
+        Args: {
+          p_store_id: string;
+          p_record_id: string | null;
+          p_date: string | null;
+          p_clock_in_at: string | null;
+          p_clock_out_at: string;
+          p_note: string | null;
+        };
+        Returns: string;
+      };
+      decide_attendance_backdate: {
+        Args: { p_request_id: string; p_action: string; p_note: string | null };
+        Returns: Database["public"]["Tables"]["attendance_backdate_requests"]["Row"];
+      };
       settle_platform_billing_order: {
         Args: { p_order_id: string; p_method: string; p_ref: string; p_amount: number };
         Returns: Json;

@@ -13,7 +13,8 @@ import {
   getAttendanceSettings,
 } from "@/modules/attendance/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
-import { countSelfBackdated, nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
+import { nextMonthStart, listStoreHolidays } from "@/modules/attendance/repository";
+import { countBackdateRequestsInMonth, listBackdateRequests, type BackdateRequest } from "@/modules/attendance/backdate-requests";
 import { computeDayStatuses, employmentWindow, resignedBefore, type DayStatus } from "@/modules/attendance/calendar";
 import {
   getStoreHrSettings,
@@ -54,15 +55,27 @@ export default async function AttendancePage({
 
   const today = getStoreLocalDate(ctx.storeTimezone);
   const monthStart = today.slice(0, 7) + "-01";
-  const [todayRecord, attendanceSettingsResult, hrSettings, backdatedUsed, myRecRes] = await Promise.all([
+  // ย้อนหลังได้ไม่เกิน 35 วัน — ครอบคลุมเดือนก่อนหน้าช่วงต้นเดือน
+  const lookbackFrom = new Date(Date.parse(today) - 35 * 86_400_000).toISOString().slice(0, 10);
+  const [todayRecord, attendanceSettingsResult, hrSettings, backdatedUsed, myRecRes, myRecentRes, myRequestsRes] = await Promise.all([
     // Org-wide active record: show the clock-out button wherever the shift was opened.
     getActiveRecordToday(user.id, ctx.organizationId, today),
     getAttendanceSettings(ctx.storeId, ctx.organizationId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
-    countSelfBackdated(user.id, ctx.storeId, monthStart, nextMonthStart(today)),
+    countBackdateRequestsInMonth(user.id, ctx.storeId, monthStart, nextMonthStart(today)),
     // The viewer's own clock-in/out for this month — powers the personal calendar shown to everyone.
     listAttendanceRecords(ctx.organizationId, ctx.storeId, monthStart, today, user.id),
+    listAttendanceRecords(ctx.organizationId, ctx.storeId, lookbackFrom, today, user.id),
+    listBackdateRequests({ storeIds: [ctx.storeId], userId: user.id, sinceDate: lookbackFrom, limit: 10 }),
   ]);
+  const myRequests = myRequestsRes.data;
+  const pendingRecordIds = new Set(
+    myRequests.filter((r) => r.status === "pending" && r.attendanceRecordId).map((r) => r.attendanceRecordId as string),
+  );
+  // แถวที่ลืมกดออกงาน (วันที่ผ่านมาแล้ว ยังไม่มีเวลาออก ยังไม่มีคำขอค้าง) → ขอได้แค่เวลาออก
+  const myOpenRecords = (myRecentRes.data ?? [])
+    .filter((r) => !r.clockOutAt && r.date < today && !pendingRecordIds.has(r.id))
+    .map((r) => ({ id: r.id, date: r.date, clockInAt: r.clockInAt }));
   const attendanceSettings = attendanceSettingsResult.data;
   const myMonthRecords = myRecRes.data ?? [];
   const currentMonth = today.slice(0, 7);
@@ -145,6 +158,7 @@ export default async function AttendancePage({
   // ปฏิทินทีม: สถานะรายวันของพนักงานแต่ละคน (ครบ/สาย/ครึ่งวัน/ขาด/ลา/วันหยุด)
   let teamDayStatus: Record<string, Record<string, DayStatus>> = {};
   let teamOtDays: CalendarOtDay[] = [];
+  let pendingBackdateRequests: BackdateRequest[] = [];
 
   if (canManage) {
     const params = await searchParams;
@@ -171,6 +185,12 @@ export default async function AttendancePage({
           ? "all"
           : ctx.storeId;
     const recordStoreId = branchFilter === "all" ? null : branchFilter;
+    const pendingRes = await listBackdateRequests({
+      storeIds: recordStoreId ? [recordStoreId] : branchStores.length > 0 ? branchStores.map((b) => b.id) : [ctx.storeId],
+      status: "pending",
+      limit: 50,
+    });
+    pendingBackdateRequests = pendingRes.data;
 
     const [recRes, membersRes, adjustmentsRes] = await Promise.all([
       listAttendanceRecords(ctx.organizationId, recordStoreId, dateFrom, dateTo),
@@ -271,6 +291,9 @@ export default async function AttendancePage({
       today={today}
       backdatedRights={hrSettings.backdatedRightsPerMonth}
       backdatedUsed={backdatedUsed}
+      myOpenRecords={myOpenRecords}
+      myBackdateRequests={myRequests}
+      pendingBackdateRequests={pendingBackdateRequests}
       storeWorkingDays={storeWorkingDays}
       myMonthRecords={myMonthRecords}
       currentMonth={currentMonth}
