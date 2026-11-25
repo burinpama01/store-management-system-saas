@@ -7,7 +7,7 @@ import type { StockPoolLink, StockPoolView } from "@/modules/stock/pool-reposito
 import { Button } from "@/shared/components/ui";
 import { AddStockDialog } from "./AddStockDialog";
 import { StockPoolCard } from "./StockPoolCard";
-import { removeFromStockAction, setStockAction, shareStockAction, type StockState } from "./actions";
+import { addToStockAction, removeFromStockAction, setStockAction, shareStockAction, type StockState } from "./actions";
 
 const INITIAL: StockState = { error: null, ok: false };
 const LOW = 5;
@@ -99,11 +99,14 @@ export function StockManager({
   // ตัวเลือกต้นทางของ "ตัดสต็อกจาก": แถวที่ขายทีละ 1 (นับเองหรือเป็นตัวหลักของสต็อกร่วม)
   const sourceOptions = rows.filter((row) => row.kind !== "shared");
   const trackedIds = new Set(rows.map((row) => row.variant.id));
-  const untracked = products.flatMap((product) =>
-    product.variants
-      .filter((variant) => variant.isActive && !trackedIds.has(variant.id))
-      .map((variant) => ({ id: variant.id, label: `${product.name} ${variant.name}`.trim() })),
-  );
+  // สินค้าที่ยังไม่นับสต็อก: ตัวเลือกที่ยังไม่นับ + สินค้าที่ไม่มีตัวเลือกเลย (ระบบสร้างตัวเลือก "ปกติ" ให้เอง)
+  const untracked = products.flatMap((product) => {
+    const active = product.variants.filter((variant) => variant.isActive);
+    if (product.variants.length === 0) return [{ id: `p:${product.id}`, label: product.name }];
+    return active
+      .filter((variant) => !trackedIds.has(variant.id))
+      .map((variant) => ({ id: `v:${variant.id}`, label: `${product.name} ${variant.name}`.trim() }));
+  });
 
   const linkedNames = (poolId: string) => links.filter((link) => link.stockPoolId === poolId).flatMap((link) => {
     for (const product of products) {
@@ -294,12 +297,12 @@ function RemoveForm({ row, canManageCatalog, onCancel }: { row: StockRowView; ca
 }
 
 function StartTrackingForm({ options, disabled }: { options: Array<{ id: string; label: string }>; disabled: boolean }) {
-  const [state, action, pending] = useActionState(setStockAction, INITIAL);
+  const [state, action, pending] = useActionState(addToStockAction, INITIAL);
   return (
     <form action={action} className="panel flex flex-col gap-2 p-3 sm:flex-row sm:items-end">
       <label className="flex flex-1 flex-col gap-1 text-xs text-[var(--muted)]">
         เพิ่มสินค้าที่ต้องนับสต็อก
-        <select name="variantId" required className="form-input min-h-11" style={{ fontSize: 16 }} defaultValue="">
+        <select name="target" required className="form-input min-h-11" style={{ fontSize: 16 }} defaultValue="">
           <option value="" disabled>เลือกสินค้า</option>
           {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>

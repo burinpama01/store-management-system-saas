@@ -137,7 +137,7 @@ describe("v5 migration contracts", () => {
 describe("v5 wiring", () => {
   const actions = read("src/app/(dashboard)/costing/purchase-actions.ts");
   it("submit + upload use the staff gate; manager actions use the inventory gate", () => {
-    expect((actions.match(/await getPurchaseSubmitAccess\(\)/g) ?? []).length).toBe(2);
+    expect((actions.match(/await getPurchaseSubmitAccess\(\)/g) ?? []).length).toBe(3);
     expect((actions.match(/await editor\(\)/g) ?? []).length).toBe(5);
     expect(actions).toContain('source: "purchasing"');
   });

@@ -41,7 +41,7 @@ export function BillPhotoPicker({
         }
         let blob: Blob;
         try {
-          blob = await compressImage(file, { maxDim: 2000, quality: 0.82 });
+          blob = await compressImage(file, { maxDim: 2000, quality: 0.9 });
         } catch (e) {
           setError(e instanceof Error ? e.message : "อ่านไฟล์รูปไม่ได้");
           continue;
