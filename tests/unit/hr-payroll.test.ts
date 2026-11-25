@@ -479,16 +479,20 @@ describe("HR payroll migration + repository wiring", () => {
     expect(attActions).toContain("deleteAttendanceAction");
   });
 
-  it("self backdated clock enforces monthly rights + past-date only", () => {
+  it("self backdated clock = คำขอรออนุมัติ (สิทธิต่อเดือน + วันที่ผ่านมา + ไม่ซ้อนแถวลืมกดออก)", () => {
     const att = read("src/app/(dashboard)/attendance/actions.ts");
     expect(att).toContain("selfBackdatedClockAction");
-    expect(att).toContain("countSelfBackdated");
-    expect(att).toContain("backdatedRightsPerMonth");
-    expect(att).toContain("date >= today"); // past-date guard
-    const repo = read("src/modules/attendance/repository.ts");
-    expect(repo).toContain("countSelfBackdated");
-    expect(repo).toContain('.eq("adjusted_by_user_id", userId)');
-    expect(repo).toContain('.eq("status", "backdated")');
+    expect(att).toContain("submitBackdateRequest");
+    expect(att).toContain("decideBackdateRequestAction");
+    expect(att).toContain("date >= getStoreLocalDate"); // past-date guard
+    expect(att).not.toContain("countSelfBackdated");
+    const migration = read("supabase/migrations/20261209120000_attendance_backdate_requests.sql");
+    expect(migration).toContain("backdated_rights_per_month");
+    expect(migration).toContain("status in ('pending', 'approved')");
+    expect(migration).toContain("ขอเวลาออกย้อนหลังได้เฉพาะวันที่ผ่านมาแล้วที่ลืมกดออกงาน");
+    expect(migration).toContain("attendance.manage");
+    const repo = read("src/modules/attendance/backdate-requests.ts");
+    expect(repo).toContain('.in("status", ["pending", "approved"])');
   });
 
   it("payslip route + PDF export links exist", () => {
