@@ -6020,33 +6020,33 @@ export function PosTerminal({
 
         {/* Category tabs + ปุ่มขนาดการ์ด (อยู่นอกส่วนเลื่อน เห็นเสมอ) */}
         <div className="shrink-0 flex items-center border-b border-[var(--border)] bg-[var(--surface)]">
-        <div className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button
-            type="button"
-            onClick={() => setSelectedCategoryId(null)}
-            className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
-              selectedCategoryId === null
-                ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
-                : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
-            }`}
-          >
-            ทั้งหมด
-          </button>
-          {categories.map((cat) => (
+          <div className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
-              key={cat.id}
               type="button"
-              onClick={() => setSelectedCategoryId(cat.id)}
+              onClick={() => setSelectedCategoryId(null)}
               className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
-                selectedCategoryId === cat.id
+                selectedCategoryId === null
                   ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
                   : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
               }`}
             >
-              {cat.name}
+              ทั้งหมด
             </button>
-          ))}
-        </div>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategoryId(cat.id)}
+                className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
+                  selectedCategoryId === cat.id
+                    ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
+                    : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => writeTileSize(nextTileSize(tileSize))}

@@ -33,6 +33,14 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
   it("รายการเมนูเป็นกล่องที่เลื่อนได้ ส่วนหมวดหมู่/หัวข้ออยู่กับที่", () => {
     expect(terminal).toContain('{/* Product grid */}\n        <div className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">');
     expect(terminal).toContain('className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2');
+    // ปุ่มขนาดการ์ดต้องอยู่นอกส่วนเลื่อนของหมวด (เห็นเสมอ ไม่หายตอนเลื่อน)
+    const scrollStart = terminal.indexOf('className="min-w-0 flex-1 flex gap-2 overflow-x-auto');
+    const scrollClose = terminal.indexOf("
+          </div>
+", scrollStart);
+    const tileButton = terminal.indexOf("writeTileSize(nextTileSize(tileSize))");
+    expect(scrollClose).toBeGreaterThan(scrollStart);
+    expect(tileButton).toBeGreaterThan(scrollClose);
   });
 
   it("shell เป็นคอลัมน์เต็มความสูง แถบหัวแถวเดียวคงที่", () => {
