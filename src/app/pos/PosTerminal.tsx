@@ -270,13 +270,16 @@ function productInitials(name: string) {
 }
 
 function PosProductImage({ product }: { product: Product }) {
-  if (product.imageUrl) {
+  // รูปลิงก์เสีย → โชว์ตัวอักษรย่อแทนข้อความ alt ที่ล้นการ์ด
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (product.imageUrl && failedUrl !== product.imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={product.imageUrl}
         alt={`รูปเมนู ${product.name}`}
         loading="lazy"
+        onError={() => setFailedUrl(product.imageUrl ?? null)}
         className="h-full w-full object-cover"
       />
     );
@@ -292,10 +295,13 @@ function PosProductImage({ product }: { product: Product }) {
 const PosProductTile = memo(function PosProductTile({
   product,
   disabled,
+  cartQty,
   onSelect,
 }: {
   product: Product;
   disabled: boolean;
+  /** จำนวนเมนูนี้ในตะกร้า (รวมทุกตัวเลือก) — กดแล้วเห็นทันทีว่าเข้าตะกร้า */
+  cartQty: number;
   onSelect: (product: Product) => void;
 }) {
   const handleSelect = useCallback(() => onSelect(product), [onSelect, product]);
@@ -305,16 +311,23 @@ const PosProductTile = memo(function PosProductTile({
       type="button"
       disabled={disabled}
       onClick={handleSelect}
-      className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+      className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
     >
-      <div className="aspect-[4/3] border-b border-gray-100">
+      {/* มือถือ 3 คอลัมน์: รูปจัตุรัสให้รูปไม่เตี้ยเกิน / จอใหญ่กลับเป็น 4:3 ให้เห็นเมนูต่อจอมากขึ้น */}
+      <div className="aspect-square border-b border-gray-100 sm:aspect-[4/3]">
         <PosProductImage product={product} />
       </div>
-      <div className="p-3">
-        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
+      {cartQty > 0 && (
+        <span className="absolute right-1.5 top-1.5 min-w-7 rounded-full bg-[var(--tenant-primary)] px-1.5 py-0.5 text-center text-xs font-bold leading-5 text-white shadow-sm tabular-nums">
+          {cartQty > 99 ? "99+" : cartQty}
+          <span className="sr-only"> ในตะกร้า</span>
+        </span>
+      )}
+      <div className="px-2 py-1.5 sm:p-2.5">
+        <p className="text-xs font-medium leading-snug text-gray-900 line-clamp-2 sm:text-sm">
           {product.name}
         </p>
-        <p className="mt-1.5 text-sm font-semibold text-gray-700 tabular-nums">
+        <p className="mt-1 text-sm font-semibold text-gray-700 tabular-nums">
           {priceStr(product.basePrice)}
         </p>
         {product.variants.length > 0 && (
@@ -4132,6 +4145,14 @@ export function PosTerminal({
     return selectedCategoryId ? base.filter((p) => p.categoryId === selectedCategoryId) : base;
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
+  const cartQtyByProduct = useMemo(() => {
+    const qty = new Map<string, number>();
+    for (const item of cart.items) {
+      if (item.rewardVoucherCode) continue; // ของรางวัล ฿0 ไม่นับเป็นการกดเมนู
+      qty.set(item.productId, (qty.get(item.productId) ?? 0) + item.quantity);
+    }
+    return qty;
+  }, [cart.items]);
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
 
   // ตั๋วครัวจาก POS: สถานีของแต่ละรายการมาจากสินค้า (order_items ได้ค่าเดียวกันจาก trigger)
@@ -5978,7 +5999,7 @@ export function PosTerminal({
         )}
 
         {/* Category tabs */}
-        <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+        <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => setSelectedCategoryId(null)}
@@ -6007,17 +6028,19 @@ export function PosTerminal({
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
           {filteredProducts.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
               ไม่มีสินค้าในหมวดนี้
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(96px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(120px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))] 2xl:grid-cols-[repeat(auto-fill,minmax(170px,1fr))]">
+              {/* md+ มีแผงออร์เดอร์ 320px กินที่ → การ์ดขั้นต่ำเล็กลงให้ iPad ยังได้ 4–5 คอลัมน์ */}
               {filteredProducts.map((product) => (
                 <PosProductTile
                   key={product.id}
                   disabled={cartLocked}
+                  cartQty={cartQtyByProduct.get(product.id) ?? 0}
                   onSelect={handleProductClick}
                   product={product}
                 />
