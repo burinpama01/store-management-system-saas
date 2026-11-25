@@ -5928,8 +5928,9 @@ export function PosTerminal({
   // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
   const posActionButtons = (
     <>
-      {/* โชว์ทุกขนาดจอ — สถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
-      <ConnectionBadge />
+      {/* มือถือ: ซ่อนป้าย "เชื่อมต่อปกติ" ให้หัวจอเหลือแถวเดียว — ตอนออฟไลน์ ConnectionBadge
+          ไม่ใช้ className นี้ จึงโชว์ "ออฟไลน์ — บันทึกไม่ได้" เสมอทุกขนาดจอ */}
+      <ConnectionBadge className="hidden sm:inline-flex" />
       {/* ใน POS รวม ปุ่มโต๊ะอยู่บนแถบหัวของ shell แล้ว (คุมทั้งผังโต๊ะ/ครัว/บิล)
           ที่นี่จึงแสดงเฉพาะตอนเปิด POS เดี่ยวที่ไม่มี shell */}
       {topbarHost ? null : (
@@ -5957,8 +5958,10 @@ export function PosTerminal({
         className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
         aria-expanded={printerConnectionOpen}
         aria-controls="pos-printer-connection"
+        aria-label="เชื่อมต่อเครื่องพิมพ์"
+        title="เชื่อมต่อเครื่องพิมพ์"
       >
-        <span className="sm:hidden">ปริ้น</span>
+        <span className="sm:hidden" aria-hidden="true">🖨️</span>
         <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
       </button>
       {exitHref ? (
@@ -5986,7 +5989,7 @@ export function PosTerminal({
     );
 
   return (
-    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
+    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] lg:flex-row">
       {/* งานพิมพ์ที่ไม่ทราบผลต้องเห็นตรงจุดที่คนยืนอยู่หน้าเครื่องพิมพ์ (การ์ดลอย ไม่กินความสูง) */}
       <PrintQueueAlert />
 
@@ -6060,7 +6063,7 @@ export function PosTerminal({
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
+        <div className="flex-1 overflow-y-auto p-3 pb-24 lg:pb-3">
           {filteredProducts.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
               ไม่มีสินค้าในหมวดนี้
@@ -6085,7 +6088,7 @@ export function PosTerminal({
       <button
         type="button"
         onClick={() => setOrderPanelOpen(true)}
-        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg md:hidden ${
+        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
           orderPanelOpen ? "hidden" : "flex"
         }`}
       >
@@ -6105,7 +6108,7 @@ export function PosTerminal({
         onKeyDown={(event) => {
           if (event.key === "Escape") setOrderPanelOpen(false);
         }}
-        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 md:hidden ${
+        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 lg:hidden ${
           orderPanelOpen ? "translate-y-0" : "pointer-events-none translate-y-full"
         }`}
       >
@@ -6195,7 +6198,7 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
+      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white lg:flex lg:w-80 lg:shrink-0 lg:flex-col">
         {renderOrderPanelContent()}
       </aside>
 

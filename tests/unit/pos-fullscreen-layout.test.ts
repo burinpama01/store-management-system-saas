@@ -31,7 +31,7 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
   });
 
   it("รายการเมนูเป็นกล่องที่เลื่อนได้ ส่วนหมวดหมู่/หัวข้ออยู่กับที่", () => {
-    expect(terminal).toContain('{/* Product grid */}\n        <div className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">');
+    expect(terminal).toContain('{/* Product grid */}\n        <div className="flex-1 overflow-y-auto p-3 pb-24 lg:pb-3">');
     expect(terminal).toContain('className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2');
     // ปุ่มขนาดการ์ดต้องอยู่นอกส่วนเลื่อนของหมวด (เห็นเสมอ ไม่หายตอนเลื่อน)
     const scrollStart = terminal.indexOf('className="min-w-0 flex-1 flex gap-2 overflow-x-auto');
@@ -132,7 +132,7 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(voice).toContain("sm:min-h-11 sm:min-w-11");
     // justify-end + overflow-x-auto ดันส่วนที่ล้นไปทางซ้ายซึ่งเลื่อนไปหาไม่ได้
     expect(workspace).toContain(
-      'className="flex w-full min-w-0 items-center gap-2 overflow-x-auto sm:ml-auto sm:w-auto sm:flex-1 sm:basis-0 sm:justify-end"',
+      'className="flex min-w-0 flex-1 basis-[200px] items-center gap-2 overflow-x-auto sm:ml-auto sm:basis-0 sm:justify-end"',
     );
   });
 
