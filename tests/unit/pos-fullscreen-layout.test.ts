@@ -35,9 +35,7 @@ describe("POS เต็มจอ — ไม่มีการเลื่อน�
     expect(terminal).toContain('className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2');
     // ปุ่มขนาดการ์ดต้องอยู่นอกส่วนเลื่อนของหมวด (เห็นเสมอ ไม่หายตอนเลื่อน)
     const scrollStart = terminal.indexOf('className="min-w-0 flex-1 flex gap-2 overflow-x-auto');
-    const scrollClose = terminal.indexOf("
-          </div>
-", scrollStart);
+    const scrollClose = terminal.indexOf("\n          </div>\n", scrollStart);
     const tileButton = terminal.indexOf("writeTileSize(nextTileSize(tileSize))");
     expect(scrollClose).toBeGreaterThan(scrollStart);
     expect(tileButton).toBeGreaterThan(scrollClose);
