@@ -588,10 +588,12 @@ describe("UX/UI regression guards", () => {
   it("POS grid fills by tile width (3 cols on phones) and tiles show cart quantity", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
-    expect(source).toContain("grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]");
+    const tileSize = read("src/modules/pos/tile-size.ts");
+    expect(tileSize).toContain("grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]");
+    expect(tileSize).toContain("md:grid-cols-[repeat(auto-fill,minmax(96px,1fr))]");
+    expect(tileSize).toContain("xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))]");
     expect(source).not.toContain("lg:grid-cols-5 gap-2");
-    expect(source).toContain("md:grid-cols-[repeat(auto-fill,minmax(96px,1fr))]");
-    expect(source).toContain("xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))]");
+    expect(source).toContain("className={POS_TILE_GRID_CLASS[tileSize]}");
     expect(source).toContain("sm:aspect-[4/3]");
     expect(source).toContain('cartQty > 99 ? "99+" : cartQty');
     expect(source).toContain("cartQty={cartQtyByProduct.get(product.id) ?? 0}");
@@ -600,6 +602,18 @@ describe("UX/UI regression guards", () => {
     // ปุ่มลอยเปิดออร์เดอร์ยังอยู่ (ผู้ใช้ให้คงไว้)
     expect(source).toContain("เปิดออร์เดอร์");
     expect(source).toContain("pb-24 md:pb-3");
+  });
+
+  it("POS tile size toggle (เล็ก/กลาง/ใหญ่) is per-device and hydration-safe", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const tileSize = read("src/modules/pos/tile-size.ts");
+
+    expect(source).toContain("useSyncExternalStore(subscribeTileSize, getTileSnapshot, serverTileSize)");
+    expect(source).toContain("writeTileSize(nextTileSize(tileSize))");
+    expect(source).toContain("size={tileSize}");
+    expect(tileSize).toContain('"storeos.pos.tileSize"');
+    expect(tileSize).toContain("grid grid-cols-4 gap-1.5");
+    expect(tileSize).toContain("grid grid-cols-2 gap-2");
   });
 
   it("POS memoizes product category filtering for fast cashier taps", () => {

@@ -7,6 +7,16 @@ import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import { onPosCommand } from "@/modules/pos/section-bus";
+import {
+  POS_TILE_GRID_CLASS,
+  POS_TILE_SIZE_LABEL,
+  getTileSnapshot,
+  nextTileSize,
+  serverTileSize,
+  subscribeTileSize,
+  writeTileSize,
+  type PosTileSize,
+} from "@/modules/pos/tile-size";
 // การจับคู่คำพูดกับชื่อตัวเลือกอยู่ในโมดูล voice-pos (ทดสอบแยกได้ และ normalize
 // ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
 import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
@@ -292,19 +302,28 @@ function PosProductImage({ product }: { product: Product }) {
   );
 }
 
+const POS_TILE_TEXT_CLASS: Record<PosTileSize, { box: string; name: string; price: string }> = {
+  sm: { box: "px-1.5 py-1 sm:p-2", name: "text-[11px] sm:text-xs", price: "mt-0.5 text-xs" },
+  md: { box: "px-2 py-1.5 sm:p-2.5", name: "text-xs sm:text-sm", price: "mt-1 text-sm" },
+  lg: { box: "p-2.5 sm:p-3", name: "text-sm", price: "mt-1.5 text-sm" },
+};
+
 const PosProductTile = memo(function PosProductTile({
   product,
   disabled,
   cartQty,
+  size,
   onSelect,
 }: {
   product: Product;
   disabled: boolean;
+  size: PosTileSize;
   /** จำนวนเมนูนี้ในตะกร้า (รวมทุกตัวเลือก) — กดแล้วเห็นทันทีว่าเข้าตะกร้า */
   cartQty: number;
   onSelect: (product: Product) => void;
 }) {
   const handleSelect = useCallback(() => onSelect(product), [onSelect, product]);
+  const text = POS_TILE_TEXT_CLASS[size];
 
   return (
     <button
@@ -323,11 +342,11 @@ const PosProductTile = memo(function PosProductTile({
           <span className="sr-only"> ในตะกร้า</span>
         </span>
       )}
-      <div className="px-2 py-1.5 sm:p-2.5">
-        <p className="text-xs font-medium leading-snug text-gray-900 line-clamp-2 sm:text-sm">
+      <div className={text.box}>
+        <p className={`${text.name} font-medium leading-snug text-gray-900 line-clamp-2`}>
           {product.name}
         </p>
-        <p className="mt-1 text-sm font-semibold text-gray-700 tabular-nums">
+        <p className={`${text.price} font-semibold text-gray-700 tabular-nums`}>
           {priceStr(product.basePrice)}
         </p>
         {product.variants.length > 0 && (
@@ -4145,6 +4164,7 @@ export function PosTerminal({
     return selectedCategoryId ? base.filter((p) => p.categoryId === selectedCategoryId) : base;
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
+  const tileSize = useSyncExternalStore(subscribeTileSize, getTileSnapshot, serverTileSize);
   const cartQtyByProduct = useMemo(() => {
     const qty = new Map<string, number>();
     for (const item of cart.items) {
@@ -5998,8 +6018,9 @@ export function PosTerminal({
           </div>
         )}
 
-        {/* Category tabs */}
-        <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Category tabs + ปุ่มขนาดการ์ด (อยู่นอกส่วนเลื่อน เห็นเสมอ) */}
+        <div className="shrink-0 flex items-center border-b border-[var(--border)] bg-[var(--surface)]">
+        <div className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => setSelectedCategoryId(null)}
@@ -6026,6 +6047,17 @@ export function PosTerminal({
             </button>
           ))}
         </div>
+          <button
+            type="button"
+            onClick={() => writeTileSize(nextTileSize(tileSize))}
+            className="mr-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full border border-[var(--border)] px-2.5 text-xs font-bold text-[var(--ink-2)] hover:bg-[var(--surface-muted)]"
+            aria-label={`ขนาดการ์ดเมนู: ${POS_TILE_SIZE_LABEL[tileSize]} (แตะเพื่อเปลี่ยน)`}
+            title="ขนาดการ์ดเมนู"
+          >
+            <span aria-hidden="true">▦</span>
+            <span>{POS_TILE_SIZE_LABEL[tileSize]}</span>
+          </button>
+        </div>
 
         {/* Product grid */}
         <div className="flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
@@ -6034,13 +6066,13 @@ export function PosTerminal({
               ไม่มีสินค้าในหมวดนี้
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(96px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(120px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))] 2xl:grid-cols-[repeat(auto-fill,minmax(170px,1fr))]">
-              {/* md+ มีแผงออร์เดอร์ 320px กินที่ → การ์ดขั้นต่ำเล็กลงให้ iPad ยังได้ 4–5 คอลัมน์ */}
+            <div className={POS_TILE_GRID_CLASS[tileSize]}>
               {filteredProducts.map((product) => (
                 <PosProductTile
                   key={product.id}
                   disabled={cartLocked}
                   cartQty={cartQtyByProduct.get(product.id) ?? 0}
+                  size={tileSize}
                   onSelect={handleProductClick}
                   product={product}
                 />
