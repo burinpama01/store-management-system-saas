@@ -15,8 +15,8 @@ export const POS_TILE_SIZE_LABEL: Record<PosTileSize, string> = {
 };
 
 // class ต้องเป็น string ตายตัวในไฟล์ (Tailwind สแกนจากซอร์ส ห้ามต่อ string)
-// lg+ มีแผงออร์เดอร์ 320px กินที่ → ค่าการ์ดขั้นต่ำช่วง lg คิดจากพื้นที่ที่เหลือ
-// ต่ำกว่า lg (มือถือ/iPad แนวตั้ง) ไม่มีแผงข้าง ออร์เดอร์อยู่ในลิ้นชัก
+// lg+ (≥1024px) มีแผงออร์เดอร์ 320px กินที่ → ค่าการ์ดขั้นต่ำช่วง lg คิดจากพื้นที่ที่เหลือ
+// ต่ำกว่า lg = <1024px (มือถือ/iPad แนวตั้ง) ไม่มีแผงข้าง ออร์เดอร์อยู่ในลิ้นชัก
 export const POS_TILE_GRID_CLASS: Record<PosTileSize, string> = {
   sm: "grid grid-cols-4 gap-1.5 sm:grid-cols-[repeat(auto-fill,minmax(96px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(100px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(110px,1fr))] 2xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))]",
   md: "grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(120px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))] 2xl:grid-cols-[repeat(auto-fill,minmax(170px,1fr))]",

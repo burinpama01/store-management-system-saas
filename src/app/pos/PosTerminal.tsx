@@ -4086,6 +4086,16 @@ export function PosTerminal({
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  // จอกว้างถึง 1024 (เช่น หมุน iPad เป็นแนวนอน) = ออร์เดอร์ย้ายไปแผงขวา → ปิดลิ้นชัก
+  // ไม่งั้นหมุนกลับแนวตั้งแล้วลิ้นชักเด้งขึ้นมาเองทั้งที่ไม่ได้กด
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setOrderPanelOpen(false);
+    };
+    query.addEventListener("change", handleChange);
+    return () => query.removeEventListener("change", handleChange);
+  }, []);
   // ผู้ช่วย AI "กดปุ่มคิดเงิน" แทนพนักงาน — เส้นทางเดียวกับปุ่ม onCheckout เป๊ะ ๆ
   // (เปิดแผงรับชำระตัวเดิมเท่านั้น: เตรียม QR / จอลูกค้า / การยืนยัน ยังเป็นโค้ดเดิมและเป็นหน้าที่ของคน)
   useEffect(() => onPosCommand((command) => {
@@ -6088,7 +6098,7 @@ export function PosTerminal({
       <button
         type="button"
         onClick={() => setOrderPanelOpen(true)}
-        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
+        className={`fixed bottom-4 right-4 z-40 min-h-11 min-w-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
           orderPanelOpen ? "hidden" : "flex"
         }`}
       >

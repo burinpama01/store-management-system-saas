@@ -61,6 +61,9 @@ describe("POS ticket UX guards", () => {
     expect(source).toContain("border-l border-gray-200 bg-white lg:flex");
     expect(source).toMatch(/<aside className="hidden [^"]*min-h-0 overflow-hidden/);
     expect(source).toContain("lg:w-80");
+    // หมุนจอข้าม 1024 → ปิดลิ้นชัก (ออร์เดอร์อยู่แผงขวาแล้ว)
+    expect(source).toContain('window.matchMedia("(min-width: 1024px)")');
+    expect(source).toContain("if (event.matches) setOrderPanelOpen(false);");
   });
 
   it("keeps ticket tools and bill history behind dedicated pop-up sheets", () => {
@@ -431,6 +434,8 @@ describe("POS ticket UX guards", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
     const mobileDrawerStart = source.indexOf("{/* Mobile / tablet order drawer */}");
     const mobileDrawerEnd = source.indexOf("<aside className");
+    expect(mobileDrawerStart).toBeGreaterThan(-1);
+    expect(mobileDrawerEnd).toBeGreaterThan(mobileDrawerStart);
     const mobileDrawerSource = source.slice(mobileDrawerStart, mobileDrawerEnd);
 
     // sheet ทุกตัวต้องนับรวม ไม่งั้น drawer ออร์เดอร์บนมือถือกินโฟกัสทับ
