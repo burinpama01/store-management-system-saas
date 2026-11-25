@@ -85,7 +85,8 @@ export default async function StaffPage({
   );
   const weeks = asw.weeklyPay ? recentWeeks(businessToday, access.settings.weeklyStartDay, 9) : [];
   const [adv, skills, skillGrants, closedRows, weeklyRows, advanceRows, cashNow] = await Promise.all([
-    loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo),
+    // otDays ช่วงกว้างกว่างวด (ใช้กับ UI) — ไม่กระทบโบนัส เพราะจุดตัดดูเฉพาะวัน OT ที่มี records ในงวด
+    loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo, { otDays, records }),
     access.entitled ? listStoreSkills(ctx.storeId) : Promise.resolve([]),
     asw.skillPay ? listEmployeeSkillGrants(ctx.storeId) : Promise.resolve(new Map()),
     asw.payCycle ? listPayrollPeriods(ctx.storeId) : Promise.resolve([]),

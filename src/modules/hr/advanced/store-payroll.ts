@@ -9,7 +9,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { computePayrollSummaries, mapRecord } from "@/modules/attendance/repository";
 import { listStoreOtDays, mapAdjustment, mapHrSettings, mapProfile } from "../repository";
-import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type StoreHrSettings } from "../types";
+import { DEFAULT_HR_SETTINGS, type EmployeeProfile, type StoreHrSettings, type StoreOtDay } from "../types";
 import { resolvePayslipIssuer } from "../employee-identity";
 import { computeAdvancedPayrollLines, joinedDatesFromMembers, type AdvancedComputeContext, type AdvancedPayrollLine } from "./compute";
 import { effectiveSwitches, type AdvancedPayrollSettings } from "./settings";
@@ -20,6 +20,7 @@ import {
   loadDailySales,
   loadMaxDailySalesBefore,
   loadSalaryAdvanceDues,
+  loadSalesUntil,
   loadWeeklyAdvances,
 } from "./repository";
 
@@ -46,6 +47,8 @@ export async function loadAdvancedContext(
   settings: AdvancedPayrollSettings,
   periodStart: string,
   periodEnd: string,
+  /** วันให้ OT + เวลาเข้าออกงาน — ใช้คิดโบนัสยอดขายของคนที่ออกก่อนจบช่วง OT (ไม่ส่ง = แบบเดิม) */
+  ot?: { otDays: Pick<StoreOtDay, "date">[]; records: OtCutoffRecord[] },
 ): Promise<AdvancedComputeContext> {
   const sw = settings.switches;
   const [skills, rates, dailySales, maxBefore, weeklyAdvances, salaryAdvances] = await Promise.all([
@@ -66,7 +69,65 @@ export async function loadAdvancedContext(
   const employees = new Map(
     [...userIds].map((id) => [id, { skills: skills.get(id) ?? [], rates: rates.get(id) ?? [] }]),
   );
-  return { settings, employees, dailySales, maxSalesBeforePeriod: maxBefore, weeklyAdvances, salaryAdvances };
+  const salesAtClockOut =
+    sw.salesBonus && ot && ot.otDays.length > 0
+      ? await loadOtDaySalesAtClockOut(storeId, settings, ot.otDays, ot.records)
+      : undefined;
+  return { settings, employees, dailySales, maxSalesBeforePeriod: maxBefore, weeklyAdvances, salaryAdvances, salesAtClockOut };
+}
+
+export type OtCutoffRecord = { userId: string; date: string; clockOutAt: string | null };
+
+/** จุดตัดยอดของแต่ละคนในวันให้ OT = เวลาออกงานล่าสุดของวันนั้น · ยังมีกะค้าง (ไม่ได้กดออก) = ไม่ตัด */
+export function otDayClockOutCutoffs(
+  otDates: readonly string[],
+  records: readonly OtCutoffRecord[],
+): { key: string; date: string; until: string }[] {
+  const dates = new Set(otDates);
+  const latest = new Map<string, { date: string; until: string | null }>();
+  for (const r of records) {
+    if (!dates.has(r.date)) continue;
+    const key = `${r.date}|${r.userId}`;
+    const cur = latest.get(key);
+    // กะค้าง (until = null) = ยังอยู่ในร้าน — ล็อกไว้ ไม่ตัดยอดคนนี้ แม้มีกะอื่นที่ออกแล้ว (ตั้งใจ ไม่ขึ้นกับลำดับ)
+    if (cur && cur.until === null) continue;
+    if (!r.clockOutAt) {
+      latest.set(key, { date: r.date, until: null });
+      continue;
+    }
+    if (!cur || (cur.until !== null && r.clockOutAt > cur.until)) latest.set(key, { date: r.date, until: r.clockOutAt });
+  }
+  return [...latest.entries()]
+    .filter(([, v]) => v.until !== null)
+    .map(([key, v]) => ({ key, date: v.date, until: v.until as string }));
+}
+
+/** อ่านไม่ได้ = ไม่ตัด (โบนัสตามยอดทั้งวันแบบเดิม) + log — หน้าเงินเดือนต้องไม่ล้มเพราะส่วนนี้ */
+async function loadOtDaySalesAtClockOut(
+  storeId: string,
+  settings: AdvancedPayrollSettings,
+  otDays: Pick<StoreOtDay, "date">[],
+  records: OtCutoffRecord[],
+): Promise<Map<string, number> | undefined> {
+  const cutoffs = otDayClockOutCutoffs(
+    otDays.map((d) => d.date),
+    records,
+  );
+  if (cutoffs.length === 0) return new Map();
+  try {
+    const totals = await loadSalesUntil(storeId, cutoffs, settings.salesBonusChannels);
+    return new Map(cutoffs.map((c, i) => [c.key, totals[i] ?? 0]));
+  } catch (error) {
+    await logSystemEvent({
+      level: "error",
+      source: "hr.sales-bonus",
+      action: "loadOtDaySalesAtClockOut",
+      message: `อ่านยอดขายตอนออกงานในวันให้ OT ไม่สำเร็จ — โบนัสคิดตามยอดทั้งวัน: ${error instanceof Error ? error.message : String(error)}`,
+      storeId,
+      context: { cutoffs: cutoffs.length },
+    }).catch(() => undefined);
+    return undefined;
+  }
 }
 
 export interface StorePayrollResult {
@@ -170,7 +231,7 @@ export async function computeStorePayroll(input: {
     .map((p: EmployeeProfile) => applySelfInfo(p, selfByUser.get(p.userId)));
   const adjustments = (adjRes.data ?? []).map(mapAdjustment).filter((a: { userId: string }) => roster.has(a.userId));
   const summaries = computePayrollSummaries(records, null, input.organizationId, input.periodStart, input.periodEnd);
-  const adv = await loadAdvancedContext(input.storeId, access.settings, input.periodStart, input.periodEnd);
+  const adv = await loadAdvancedContext(input.storeId, access.settings, input.periodStart, input.periodEnd, { otDays, records });
 
   const lines = computeAdvancedPayrollLines(
     {
