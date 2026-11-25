@@ -102,7 +102,7 @@ export default async function PayslipPage({
     const roster = new Set((membersRes.data ?? []).filter((m) => m.role !== "super_admin").map((m) => m.userId));
     const records = (recordsRes.data ?? []).filter((r) => roster.has(r.userId));
     const summaries = computePayrollSummaries(records, null, ctx.organizationId, dateFrom, dateTo);
-    const adv = await loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo);
+    const adv = await loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo, { otDays, records });
     const lines = computeAdvancedPayrollLines(
       {
         summaries,

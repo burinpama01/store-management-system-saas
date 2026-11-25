@@ -74,6 +74,20 @@ export interface SalesDay {
   isRecord: boolean;
   /** โบนัสต่อคนที่ใช้จริงของวันนั้น */
   bonusPerPerson: number;
+  /** ยอดสถิติก่อนวันนี้ (ใช้คิดโบนัสจากยอดที่ตัดตามเวลาออกงานในวันให้ OT) */
+  recordBefore?: number;
+}
+
+/** โบนัสต่อคนจากยอดหนึ่ง ๆ — สูตรเดียวกับระดับสาขา (ขั้น + สถิติ แบบแทน/ซ้อน) */
+export function salesDayBonusFor(
+  sales: number,
+  recordBefore: number,
+  cfg: { tiers: SalesBonusTier[]; recordBonus: number; recordMode: "replace" | "stack" },
+): { tierAmount: number; isRecord: boolean; bonusPerPerson: number } {
+  const tierAmount = tierAmountFor(sales, cfg.tiers);
+  const isRecord = sales > 0 && sales > recordBefore && cfg.recordBonus > 0;
+  const bonusPerPerson = isRecord ? (cfg.recordMode === "stack" ? tierAmount + cfg.recordBonus : cfg.recordBonus) : tierAmount;
+  return { tierAmount, isRecord, bonusPerPerson: round2(bonusPerPerson) };
 }
 
 export function tierAmountFor(sales: number, tiers: SalesBonusTier[]): number {
@@ -99,14 +113,8 @@ export function computeStoreSalesDays(input: {
   let record = Math.max(input.recordBaseline, input.maxBeforePeriod);
   for (const date of [...input.dates].sort()) {
     const sales = round2(input.dailySales.get(date) ?? 0);
-    const tierAmount = tierAmountFor(sales, input.tiers);
-    const isRecord = sales > 0 && sales > record && input.recordBonus > 0;
-    const bonusPerPerson = isRecord
-      ? input.recordMode === "stack"
-        ? tierAmount + input.recordBonus
-        : input.recordBonus
-      : tierAmount;
-    out.set(date, { date, sales, tierAmount, isRecord, bonusPerPerson: round2(bonusPerPerson) });
+    const b = salesDayBonusFor(sales, record, input);
+    out.set(date, { date, sales, tierAmount: b.tierAmount, isRecord: b.isRecord, bonusPerPerson: b.bonusPerPerson, recordBefore: record });
     if (sales > record) record = sales;
   }
   return out;
@@ -119,6 +127,10 @@ export interface SalesBonusDayShare {
   /** โหมดหาร: ก้อนรวมของวัน และจำนวนคนที่หาร */
   pool?: number;
   people?: number;
+  /** วันให้ OT ที่ออกงานก่อนจบช่วง OT: ยอดขายตอนออกงาน (โบนัสคิดจากยอดนี้) */
+  cutoffSales?: number;
+  /** โหมดหารแบบเป็นชั้น (วันให้ OT ที่แต่ละคนได้ขั้นต่างกัน) — amount ≠ pool ÷ people */
+  layered?: true;
 }
 
 export interface EmployeeSalesBonus {
@@ -173,16 +185,37 @@ export function computeDailySalesBonuses(input: {
   isEligibleOn: (userId: string, date: string) => boolean;
   lateMaxMinutes: number | null;
   mode: BonusSplitMode;
+  /**
+   * วันให้ OT: ยอดขายตอนที่คนนี้ออกงาน (ออกก่อนจบช่วง OT) — null = ได้ตามยอดทั้งวัน (อยู่จนจบ OT / ไม่ใช่วัน OT)
+   * มีผลเมื่อส่ง personalBonusFor มาด้วย
+   */
+  cutoffSalesFor?: (userId: string, day: PayrollDay) => number | null;
+  /** โบนัสต่อคนจากยอดที่ตัด (สูตรเดียวกับระดับสาขา) */
+  personalBonusFor?: (sales: number, store: SalesDay) => { bonusPerPerson: number; isRecord: boolean };
 }): Map<string, EmployeeSalesBonus> {
+  // ระดับโบนัสของคนหนึ่งในวันนั้น: ปกติ = ของทั้งวัน · ออกก่อนจบ OT = จากยอดตอนออกงาน (ไม่เกินของทั้งวัน)
+  const levelOf = (userId: string, day: PayrollDay, store: SalesDay): { level: number; record: boolean; cut?: number } => {
+    const cut = input.cutoffSalesFor && input.personalBonusFor ? input.cutoffSalesFor(userId, day) : null;
+    if (cut === null || cut === undefined || !(cut < store.sales)) return { level: store.bonusPerPerson, record: store.isRecord };
+    const sales = round2(Math.max(0, cut));
+    const b = input.personalBonusFor!(sales, store);
+    return { level: Math.min(b.bonusPerPerson, store.bonusPerPerson), record: b.isRecord, cut: sales };
+  };
   const qualifies = (userId: string, day: PayrollDay) =>
     day.status === "full" &&
     (input.storeDays.get(day.date)?.bonusPerPerson ?? 0) > 0 &&
     input.isEligibleOn(userId, day.date) &&
     !(input.lateMaxMinutes !== null && day.lateMinutes > input.lateMaxMinutes);
 
-  const peopleByDate = new Map<string, number>();
+  // ระดับของทุกคนที่ผ่านเกณฑ์ ต่อวัน (โหมดหารต้องรู้ทั้งร้าน)
+  const levelsByDate = new Map<string, number[]>();
   for (const emp of input.employees) {
-    for (const day of emp.days) if (qualifies(emp.userId, day)) peopleByDate.set(day.date, (peopleByDate.get(day.date) ?? 0) + 1);
+    for (const day of emp.days) {
+      if (!qualifies(emp.userId, day)) continue;
+      const arr = levelsByDate.get(day.date) ?? [];
+      arr.push(levelOf(emp.userId, day, input.storeDays.get(day.date) as SalesDay).level);
+      levelsByDate.set(day.date, arr);
+    }
   }
 
   const out = new Map<string, EmployeeSalesBonus>();
@@ -191,19 +224,41 @@ export function computeDailySalesBonuses(input: {
     for (const day of emp.days) {
       if (!qualifies(emp.userId, day)) continue;
       const store = input.storeDays.get(day.date) as SalesDay;
+      const { level, record, cut } = levelOf(emp.userId, day, store);
+      const extra = cut !== undefined ? { cutoffSales: cut } : {};
       if (input.mode === "split") {
-        const people = peopleByDate.get(day.date) ?? 1;
-        const amount = round2(store.bonusPerPerson / people);
-        result.days.push({ date: day.date, amount, record: store.isRecord, pool: store.bonusPerPerson, people });
+        const levels = levelsByDate.get(day.date) ?? [level];
+        const amount = round2(layeredShare(level, levels));
+        if (amount <= 0 && cut !== undefined) continue;
+        const layered = levels.some((l) => l !== levels[0]) ? { layered: true as const } : {};
+        result.days.push({ date: day.date, amount, record, pool: store.bonusPerPerson, people: levels.length, ...extra, ...layered });
         result.total = round2(result.total + amount);
       } else {
-        result.days.push({ date: day.date, amount: store.bonusPerPerson, record: store.isRecord });
-        result.total = round2(result.total + store.bonusPerPerson);
+        if (level <= 0) continue;
+        result.days.push({ date: day.date, amount: level, record, ...extra });
+        result.total = round2(result.total + level);
       }
     }
     out.set(emp.userId, result);
   }
   return out;
+}
+
+/**
+ * โหมดหารแบบเป็นชั้น (วันให้ OT): โบนัสแต่ละขั้นที่เพิ่มขึ้น หารเฉพาะคนที่ยังอยู่ตอนยอดถึงขั้นนั้น
+ * ทุกคนระดับเท่ากัน (วันปกติ) = ก้อนรวม ÷ จำนวนคน เหมือนเดิม
+ */
+export function layeredShare(level: number, levels: readonly number[]): number {
+  const steps = [...new Set(levels.filter((l) => l > 0))].sort((a, b) => a - b);
+  let prev = 0;
+  let share = 0;
+  for (const step of steps) {
+    if (step > level) break;
+    const holders = levels.filter((l) => l >= step).length;
+    if (holders > 0) share += (step - prev) / holders;
+    prev = step;
+  }
+  return share;
 }
 
 export interface MonthlySalesBonus {

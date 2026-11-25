@@ -25,6 +25,7 @@ import {
   rateOn,
   rateSegments,
   salesBonusEligible,
+  salesDayBonusFor,
   seniorityPayFor,
   skillPayFor,
   socialSecurityFor,
@@ -58,6 +59,11 @@ export interface AdvancedComputeContext {
   weeklyAdvances?: Map<string, number>;
   /** เบิกเงินที่จ่ายแล้วแต่ยังหักไม่หมด (ไม่นับที่หักในงวดนี้เอง) — หักแม้ปิดสวิตช์ภายหลัง (เงินจ่ายไปแล้วจริง) */
   salaryAdvances?: Map<string, AdvanceDue[]>;
+  /**
+   * วันให้ OT: ยอดขายของวันนั้นตอนที่แต่ละคนออกงาน (key = `${date}|${userId}`)
+   * คนที่ออกก่อนจบช่วง OT ได้โบนัสยอดขายรายวันตามยอดนี้ · ไม่มี key = ได้ตามยอดทั้งวัน
+   */
+  salesAtClockOut?: Map<string, number>;
 }
 
 export interface AdvancedPayrollLine extends PayrollLine {
@@ -305,6 +311,26 @@ export function computeAdvancedPayrollLines(
   const selected = adv?.settings.salesBonusUserIds ?? null;
   const eligible = (userId: string, date: string) => salesBonusEligible(selected, userId, profileByUser.get(userId), date);
   const bonusEmployees = baseLines.map((l) => ({ userId: l.userId, days: l.days }));
+  const otRules = buildOtDayRules(input.otDays);
+  // วันให้ OT: อยู่จนจบ OT = อยู่ในรายชื่อวันนั้น + ได้ OT จริง (≥ 1 ชม.เต็ม) → โบนัสตามยอดทั้งวัน
+  // คนอื่นที่ทำเต็มวัน (ออกก่อนจบช่วง OT) → โบนัสตามยอดตอนที่ตัวเองออกงาน
+  const cutoffSalesFor = (userId: string, day: (typeof bonusEmployees)[number]["days"][number]): number | null => {
+    if (input.settings.otMode !== "scheduled" || !adv?.salesAtClockOut) return null;
+    const rule = otRules.get(day.date);
+    if (!rule) return null;
+    if (rule.userIds.has(userId)) {
+      const ot = otForDay({
+        settings: input.settings,
+        rules: otRules,
+        profile: profileByUser.get(userId) ?? { otEligible: false },
+        userId,
+        date: day.date,
+        dayHours: day.hours,
+      });
+      if (ot.otHours >= 1) return null;
+    }
+    return adv.salesAtClockOut.get(`${day.date}|${userId}`) ?? null;
+  };
   const dailyBonuses =
     adv && sw?.salesBonus && storeDays
       ? computeDailySalesBonuses({
@@ -313,6 +339,14 @@ export function computeAdvancedPayrollLines(
           isEligibleOn: eligible,
           lateMaxMinutes: adv.settings.salesBonusLateMaxMinutes,
           mode: adv.settings.salesBonusMode,
+          cutoffSalesFor,
+          personalBonusFor: (sales, store) =>
+            // ไม่รู้สถิติก่อนวันนั้น = ไม่ให้สถิติ (กันจ่ายเกิน) — computeStoreSalesDays ตั้ง recordBefore ให้เสมอ
+            salesDayBonusFor(sales, store.recordBefore ?? Number.POSITIVE_INFINITY, {
+              tiers: adv.settings.salesBonusTiers,
+              recordBonus: adv.settings.salesRecordBonus,
+              recordMode: adv.settings.salesRecordMode,
+            }),
         })
       : null;
   const monthlyBonuses =
@@ -329,7 +363,6 @@ export function computeAdvancedPayrollLines(
         })
       : null;
 
-  const otRules = buildOtDayRules(input.otDays);
   return baseLines.map((base) => {
     const line = emptyExtras(base);
     const profile = profileByUser.get(base.userId);

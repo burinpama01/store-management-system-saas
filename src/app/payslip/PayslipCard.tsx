@@ -67,7 +67,7 @@ export function hoursLabel(hours: number): string {
 }
 
 /** ตารางรายวัน — ที่มาของทุกยอดบนสลิป เจ้าของและพนักงานตรวจย้อนได้ทีละวัน */
-function DailyTable({ days, timeZone, bonusByDate }: { days: PayrollDay[]; timeZone: string; bonusByDate: Map<string, { amount: number; record: boolean }> }) {
+function DailyTable({ days, timeZone, bonusByDate }: { days: PayrollDay[]; timeZone: string; bonusByDate: Map<string, { amount: number; record: boolean; cutoffSales?: number }> }) {
   const shown = days.filter((d) => d.status !== "off" || d.hours > 0);
   if (shown.length === 0) return null;
   return (
@@ -98,6 +98,7 @@ function DailyTable({ days, timeZone, bonusByDate }: { days: PayrollDay[]; timeZ
                   {DAY_STATUS_LABEL[d.status]}
                   {d.late && d.hours > 0 ? ` · สาย ${d.lateMinutes} น.` : ""}
                   {bonus ? ` · โบนัสยอดขาย +${bonus.amount}${bonus.record ? " 👑" : ""}` : ""}
+                  {bonus?.cutoffSales !== undefined ? ` (ออกก่อนจบ OT · ยอดตอนออก ${bonus.cutoffSales.toLocaleString("th-TH")})` : ""}
                 </td>
               </tr>
             );

@@ -388,6 +388,32 @@ export async function loadDailySales(
   return new Map(((data ?? []) as { business_date: string; total: number }[]).map((r) => [r.business_date, Number(r.total)]));
 }
 
+/**
+ * ยอดขายของวันทำการนับถึงเวลาที่กำหนด (หลายจุดพร้อมกัน) — ใช้คิดโบนัสคนที่ออกก่อนจบช่วง OT
+ * คืนผลตามลำดับ cutoffs (ยอดสะสมของวันนั้นถึงเวลานั้น)
+ */
+export async function loadSalesUntil(
+  storeId: string,
+  cutoffs: { date: string; until: string }[],
+  channels: SalesChannel[],
+): Promise<number[]> {
+  if (cutoffs.length === 0) return [];
+  const db = await service();
+  const { data, error } = await db.rpc("payroll_store_sales_until", {
+    p_store_id: storeId,
+    p_dates: cutoffs.map((c) => c.date),
+    p_untils: cutoffs.map((c) => c.until),
+    p_channels: channels,
+  });
+  if (error) throw new Error(`payroll_store_sales_until: ${error.message}`);
+  // ต้องได้ 1 แถวต่อจุดตัด — ไม่ครบ (เช่นไม่พบสาขา) = โยน error ให้ผู้เรียก fail-open (ไม่ตัดยอด) แทนการได้ 0 เงียบ ๆ
+  if (!Array.isArray(data) || data.length !== cutoffs.length) {
+    throw new Error(`payroll_store_sales_until: ได้ ${Array.isArray(data) ? data.length : 0} แถว จาก ${cutoffs.length} จุดตัด`);
+  }
+  const byIdx = new Map(((data ?? []) as { idx: number; total: number }[]).map((r) => [Number(r.idx), Number(r.total)]));
+  return cutoffs.map((_, i) => byIdx.get(i + 1) ?? 0);
+}
+
 export async function loadMaxDailySalesBefore(storeId: string, before: string, channels: SalesChannel[]): Promise<number> {
   const db = await service();
   const { data, error } = await db.rpc("payroll_store_max_daily_sales_before", {
