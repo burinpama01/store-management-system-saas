@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
+import { getStorePrintMode } from "@/modules/printing/direct-print-repository";
 import {
   MAX_HUB_DEVICE_ID_LENGTH,
   provisionHubDeviceToken,
@@ -52,6 +53,22 @@ export async function POST(request: Request) {
   }
   const parsed = RequestSchema.safeParse(body);
   if (!parsed.success) return fail("invalid_body", 400);
+
+  // D4: ร้านปิด Print Hub แล้ว (ใช้พิมพ์ตรงจากโปรแกรม StoreOS POS) — ไม่ออก token ให้ Hub อีก
+  // Launcher เก่าได้ 409 → จบที่ "http_409" ตามเพดาน 12 ครั้งต่อการเปิด ไม่วนไม่จบ
+  if ((await getStorePrintMode(ctx.storeId)) === "direct") {
+    await logSystemEvent({
+      level: "info",
+      source: "printing.hub",
+      action: "provisionRefusedDirectMode",
+      message: "ไม่ออก Print Hub token — ร้านใช้พิมพ์ตรงจากโปรแกรม StoreOS POS แล้ว",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: user.id,
+      context: { deviceLabel: parsed.data.deviceLabel ?? null },
+    });
+    return fail("hub_disabled_direct_mode", 409);
+  }
 
   const result = await provisionHubDeviceToken({
     organizationId: ctx.organizationId,

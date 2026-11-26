@@ -40,6 +40,15 @@ export const HUB_POLL_CLOSED_MS = 15_000;
  */
 export const HUB_QUIET_UNTIL_CLOSED_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * ร้านเปลี่ยนเป็น "พิมพ์ตรงจากโปรแกรม StoreOS POS" แล้ว (D4 ปิด Print Hub)
+ *
+ * Hub ที่ยังติดตั้งค้างบนเครื่องร้านจะถูกตอบว่างทันทีพร้อมจังหวะนี้ — 60 วินาที = เพดานที่
+ * agent ยอมยืด (MAX_SERVER_POLL_INTERVAL_MS ใน scripts/print-hub.mjs)
+ * ห้ามใช้วิธี revoke token แทน: agent เจอ 401 จะถอยแค่ 8 วินาที (~10,800 ครั้ง/วัน)
+ */
+export const HUB_POLL_DISABLED_MS = 60_000;
+
 export type HubActivityReason = "jobs" | "recent" | "quiet";
 
 export interface HubPacingInput {
