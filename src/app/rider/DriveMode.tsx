@@ -331,6 +331,14 @@ export function DriveMode({
         </div>
       </div>
 
+      {!route && routeError && (
+        <div className="z-10 flex items-center justify-between gap-2 bg-amber-500 px-4 py-2 text-sm text-black">
+          <span>ยังไม่มีเส้นทาง</span>
+          <button type="button" onClick={() => void requestRoute(fix ? { lat: fix.lat, lng: fix.lng } : null)} className="min-h-11 rounded-lg bg-black/80 px-3 text-white">
+            ลองใหม่
+          </button>
+        </div>
+      )}
       {offRoute && (
         <div className="z-10 flex items-center justify-between gap-2 bg-amber-500 px-4 py-2 text-sm text-black">
           <span>หลุดเส้นทาง</span>

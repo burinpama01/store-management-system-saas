@@ -73,7 +73,9 @@ export async function computeDeliveryRoute(origin: LatLng, destination: LatLng):
       error: null,
     };
   } catch (e) {
-    return { route: null, error: e instanceof Error ? e.message : "เรียก Google Routes ไม่สำเร็จ" };
+    // หมดเวลา/เน็ตหลุด — ข้อความไทยให้คนส่ง (ผู้เรียก log ข้อความนี้ไว้)
+    const timeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    return { route: null, error: timeout ? "Google Maps ตอบช้า/เน็ตไม่เสถียร — กดคำนวณใหม่ หรือใช้แอป Google Maps" : "ขอเส้นทางไม่สำเร็จ — ใช้แอป Google Maps" };
   }
 }
 
