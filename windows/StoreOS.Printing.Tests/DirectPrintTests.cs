@@ -22,6 +22,15 @@ public class PrinterHostPolicyTests
     [InlineData("", false)]
     [InlineData(null, false)]
     public void OnlyPrivateLanIpv4(string? host, bool allowed) => Assert.Equal(allowed, PrinterHostPolicy.IsAllowedHost(host));
+
+    [Theory]
+    [InlineData(9100, true)]
+    [InlineData(9109, true)]
+    [InlineData(445, false)]
+    [InlineData(3389, false)]
+    [InlineData(22, false)]
+    [InlineData(80, false)]
+    public void OnlyRawPrintingPorts(int port, bool allowed) => Assert.Equal(allowed, PrinterHostPolicy.IsAllowedPort(port));
 }
 
 public class PosBridgeProtocolTests
@@ -45,6 +54,7 @@ public class PosBridgeProtocolTests
     {
         Assert.Null(PosBridgeProtocol.Parse("""{"channel":"storeos.device","type":"print.job"}"""));
         Assert.Null(PosBridgeProtocol.Parse(Job(jobId: "bad id with spaces")));
+        Assert.Null(PosBridgeProtocol.Parse(Job(jobId: "job:with:colon")));
         Assert.Null(PosBridgeProtocol.Parse(Job(base64: "!!!not-base64")));
         Assert.Null(PosBridgeProtocol.Parse("not json"));
         Assert.Null(PosBridgeProtocol.Parse(new string('x', 500_000)));

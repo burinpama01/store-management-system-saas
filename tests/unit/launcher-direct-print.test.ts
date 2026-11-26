@@ -93,6 +93,23 @@ describe("launcher direct print (storeos.pos)", () => {
     expect(fetcher).toHaveBeenCalledWith("/api/print/enqueue", expect.anything());
   });
 
+  it("เรียกพร้อมกันหลายจุด = ส่ง hello ครั้งเดียว", async () => {
+    const posted = installFakeLauncher();
+    const both = await Promise.all([isDirectPrintAvailable(), isDirectPrintAvailable()]);
+    expect(both).toEqual([true, true]);
+    expect(posted.filter((m) => m.type === "hello.request")).toHaveLength(1);
+  });
+
+  it("hello หมดเวลา (โปรแกรมยังไม่พร้อม) → ถามใหม่ได้หลัง 10 วิ ไม่ค้าง false ทั้งหน้า", async () => {
+    const posted = installFakeLauncher({ hello: false });
+    expect(await isDirectPrintAvailable()).toBe(false);
+    const now = Date.now();
+    const spy = vi.spyOn(Date, "now").mockReturnValue(now + 11_000);
+    await isDirectPrintAvailable();
+    expect(posted.filter((m) => m.type === "hello.request")).toHaveLength(2);
+    spy.mockRestore();
+  });
+
   it("เครื่องพิมพ์ที่พิมพ์ตรงได้ = IP/escpos ที่มี IP เท่านั้น", () => {
     expect(isDirectPrintablePrinter({ type: "ip", ipAddress: "192.168.1.20" } as never)).toBe(true);
     expect(isDirectPrintablePrinter({ type: "usb", ipAddress: null } as never)).toBe(false);

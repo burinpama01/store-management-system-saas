@@ -154,7 +154,7 @@ public static class PosBridgeProtocol
         if (string.IsNullOrEmpty(value) || value.Length > 64) return null;
         foreach (var c in value)
         {
-            if (!(char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or ':')) return null;
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '-' or '_')) return null;
         }
         return value;
     }

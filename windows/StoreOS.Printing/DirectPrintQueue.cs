@@ -99,10 +99,10 @@ public sealed class DirectPrintQueue(IPrintTransport transport, DirectPrintQueue
 
     private string? Validate(DirectPrintJob job)
     {
-        var hostOk = PrinterHostPolicy.IsAllowedHost(job.Host)
-            || (_options.AllowLoopbackForTests && PrinterHostPolicy.IsLoopback(job.Host));
-        if (!hostOk) return "IP เครื่องพิมพ์ต้องเป็นวง LAN ในร้าน (เช่น 192.168.x.x)";
-        if (!PrinterHostPolicy.IsAllowedPort(job.Port)) return "พอร์ตเครื่องพิมพ์ไม่ถูกต้อง";
+        // เทสต์ใช้เซิร์ฟเวอร์ปลอมบน loopback พอร์ตสุ่ม — โปรแกรมจริงไม่เปิดทางนี้
+        var testLoopback = _options.AllowLoopbackForTests && PrinterHostPolicy.IsLoopback(job.Host);
+        if (!testLoopback && !PrinterHostPolicy.IsAllowedHost(job.Host)) return "IP เครื่องพิมพ์ต้องเป็นวง LAN ในร้าน (เช่น 192.168.x.x)";
+        if (!testLoopback && !PrinterHostPolicy.IsAllowedPort(job.Port)) return "พอร์ตเครื่องพิมพ์ต้องอยู่ระหว่าง 9100–9109";
         if (job.Bytes.Length == 0) return "งานพิมพ์ว่าง";
         if (job.Bytes.Length > PrinterHostPolicy.MaxJobBytes) return "งานพิมพ์ใหญ่เกิน 256KB";
         return null;

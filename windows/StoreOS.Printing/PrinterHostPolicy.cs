@@ -32,7 +32,11 @@ public static partial class PrinterHostPolicy
             || (bytes[0] == 192 && bytes[1] == 168);
     }
 
-    public static bool IsAllowedPort(int port) => port is >= 1 and <= 65535;
+    /// <summary>
+    /// พอร์ต raw printing เท่านั้น (9100–9109) — กันหน้าเว็บใช้ปุ่มตรวจ/พิมพ์เป็นเครื่องมือสแกนบริการอื่น
+    /// ในวงร้าน (SMB 445, RDP 3389, SSH 22 …) แม้ IP จะอยู่ในวง LAN ก็ตาม
+    /// </summary>
+    public static bool IsAllowedPort(int port) => port is >= 9100 and <= 9109;
 
     /// <summary>ใช้เฉพาะเทสต์ (เซิร์ฟเวอร์ปลอมบน 127.0.0.1) — โปรแกรมจริงไม่เปิดทางนี้</summary>
     internal static bool IsLoopback(string? host) =>

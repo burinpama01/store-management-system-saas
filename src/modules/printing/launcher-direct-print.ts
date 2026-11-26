@@ -42,6 +42,9 @@ type Pending = (message: Record<string, unknown>) => void;
 
 let webview: WebViewLike | null | undefined;
 let helloPromise: Promise<readonly string[] | null> | null = null;
+/** hello ไม่มีคำตอบ (เช่นโปรแกรมยังโหลดไม่เสร็จตอนเปิดเครื่อง) — ถามใหม่ได้หลังเวลานี้ ไม่ต้องรีเฟรชหน้า */
+let helloFailedAt = 0;
+export const POS_HELLO_RETRY_MS = 10_000;
 const pending = new Map<string, Pending>();
 let listening = false;
 
@@ -104,7 +107,8 @@ function waitFor(key: string, timeoutMs: number): Promise<Record<string, unknown
 
 /** capability ของ POS Launcher (null = ไม่ได้เปิดใน POS Launcher) — ถามครั้งเดียวต่อหน้า */
 export function getPosLauncherCapabilities(): Promise<readonly string[] | null> {
-  if (helloPromise) return helloPromise;
+  if (helloPromise && !(helloFailedAt && Date.now() - helloFailedAt >= POS_HELLO_RETRY_MS)) return helloPromise;
+  helloFailedAt = 0;
   const view = getWebView();
   if (!view) {
     helloPromise = Promise.resolve(null);
@@ -118,7 +122,10 @@ export function getPosLauncherCapabilities(): Promise<readonly string[] | null> 
       return null;
     }
     const message = await reply;
-    if (!message) return null;
+    if (!message) {
+      helloFailedAt = Date.now();
+      return null;
+    }
     return Array.isArray(message.capabilities)
       ? message.capabilities.filter((c): c is string => typeof c === "string").slice(0, 20)
       : [];
@@ -139,7 +146,14 @@ export function isDirectPrintablePrinter(printer: Pick<Printer, "type" | "ipAddr
 /** อ่านผลจากโปรแกรม — ข้อมูลเท่านั้น รูปทรงผิด = ไม่แน่ใจ */
 export function parseDirectPrintResult(message: Record<string, unknown> | null): DirectPrintOutcome {
   if (!message) {
-    return { outcome: "unknown", error: "POS Launcher ไม่ตอบผลการพิมพ์ — ตรวจที่เครื่องพิมพ์ก่อนพิมพ์ซ้ำ", attempts: 0, elapsedMs: 0 };
+    // ไม่รู้ว่าโปรแกรมส่งไปถึงไหนแล้ว (อาจปิด/รีสตาร์ตกลางทาง) — คงเป็น unknown กันใบซ้ำ
+    // แต่บอกวิธีเช็กให้ชัด: ดูกระดาษ หรือแท็บเครื่องพิมพ์ในโปรแกรมที่มีประวัติทุกงาน
+    return {
+      outcome: "unknown",
+      error: "ไม่ได้รับผลจาก POS Launcher — ดูกระดาษหรือประวัติในแท็บเครื่องพิมพ์ก่อนกดพิมพ์ซ้ำ",
+      attempts: 0,
+      elapsedMs: 0,
+    };
   }
   const outcome = message.outcome === "printed" || message.outcome === "failed" ? message.outcome : "unknown";
   return {
@@ -178,7 +192,12 @@ export async function printDirect(request: DirectPrintRequest): Promise<DirectPr
 export function assertDirectPrinted(result: DirectPrintOutcome): void {
   if (result.outcome === "printed") return;
   if (result.outcome === "unknown") {
-    throw new Error(`${result.error ?? "ส่งไม่ครบ"} — อาจพิมพ์ออกไปแล้วบางส่วน ตรวจกระดาษก่อนกดพิมพ์ซ้ำ`);
+    // attempts 0 = ไม่ได้ผลกลับเลย ข้อความอธิบายในตัวแล้ว / >0 = ส่งไปบางส่วนแล้วหลุด
+    throw new Error(
+      result.attempts === 0
+        ? (result.error ?? "ไม่ได้รับผลการพิมพ์")
+        : `${result.error ?? "ส่งไม่ครบ"} — อาจพิมพ์ออกไปแล้วบางส่วน ตรวจกระดาษก่อนกดพิมพ์ซ้ำ`,
+    );
   }
   throw new Error(result.error ?? "พิมพ์ไม่สำเร็จ");
 }
@@ -187,6 +206,7 @@ export function assertDirectPrinted(result: DirectPrintOutcome): void {
 export function __resetPosLauncherForTests(): void {
   webview = undefined;
   helloPromise = null;
+  helloFailedAt = 0;
   pending.clear();
   listening = false;
 }
