@@ -50,6 +50,26 @@ describe("attendance UX + RBAC visibility batch", () => {
     expect(actions).toContain("กรุณาปิดรอบเงินสดก่อนออกงาน");
   });
 
+  it("6b) รอบเงินสดเปิดอยู่: ยังมีคนอื่นลงเวลาอยู่ในสาขา = ออกได้ · คนสุดท้าย/นับไม่ได้ = บล็อก", () => {
+    const actions = read("src/app/(dashboard)/attendance/actions.ts");
+    const start = actions.indexOf("const openSession = await getOpenCashSession(recordStoreId);");
+    const block = actions.slice(start, start + 1600);
+    expect(block).toContain("countOpenShiftsInStore({");
+    expect(block).toContain("storeId: recordStoreId");
+    expect(block).toContain("date: active.date");
+    expect(block).toContain("excludeRecordId: active.id");
+    // null (นับไม่ได้) หรือ 0 = บล็อก (fail closed)
+    expect(block).toContain('if (!othersOnShift) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };');
+    expect(block).toContain('action: "clockOutWithOpenCashSession"');
+    // กะค้างวันเดียวกันที่ลืมกดออก (เข้างานเกิน 16 ชม.) ไม่นับเป็นคนอยู่ต่อ
+    expect(block).toContain("clockedInSince: recentShiftSince");
+    expect(actions).toContain("const CLOCK_OUT_RECENT_SHIFT_HOURS = 16;");
+    expect(read("src/modules/attendance/shift-status-repository.ts")).toContain('query.gte("clock_in_at", input.clockedInSince)');
+    // ตรวจซ้ำหลังออก (กันสองคนกดออกพร้อมกัน) → log เตือน
+    expect(actions).toContain('action: "cashSessionLeftOpen"');
+    expect(actions.indexOf('action: "cashSessionLeftOpen"')).toBeGreaterThan(actions.indexOf("const result = await clockOut(active.id"));
+  });
+
   it("7) hides profit/loss totals from below-manager on the accounting page", () => {
     const page = read("src/app/(dashboard)/accounting/page.tsx");
     expect(page).toContain('canViewTotals={resolved.can("reports.view")}');

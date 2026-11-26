@@ -14,6 +14,8 @@ export interface CountOpenShiftsInput {
   readonly date: string;
   /** แถวของคนที่เพิ่งกดออกไป กันกรณีสถานะยังไม่ทันอัปเดต */
   readonly excludeRecordId?: string;
+  /** นับเฉพาะกะที่เข้างานตั้งแต่เวลานี้ (ISO) — กันกะค้างของวันเดียวกันที่ลืมกดออกไปนานแล้ว */
+  readonly clockedInSince?: string;
 }
 
 export interface DailySummaryNotificationClaimInput {
@@ -50,6 +52,7 @@ export async function countOpenShiftsInStore(input: CountOpenShiftsInput): Promi
     .eq("date", input.date)
     .eq("status", "active");
   if (input.excludeRecordId) query = query.neq("id", input.excludeRecordId);
+  if (input.clockedInSince) query = query.gte("clock_in_at", input.clockedInSince);
 
   const { count, error } = await query;
   return toSafeExactCount(count, error);
