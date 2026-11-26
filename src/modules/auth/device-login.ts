@@ -68,7 +68,8 @@ export function generateShortCode(random: (size: number) => Buffer = randomBytes
 
 /** IP จาก header ของ Vercel (x-forwarded-for ตัวแรก) → sha256 — ไม่เก็บ/ไม่ส่ง IP ดิบ */
 export function hashClientIp(forwardedFor: string | null | undefined, realIp?: string | null): string | null {
-  const ip = (forwardedFor?.split(",")[0] ?? realIp ?? "").trim();
+  // x-real-ip ก่อน: Vercel ตั้งให้เองจากการเชื่อมต่อจริง — x-forwarded-for อาจมีค่าที่ client แทรกมาข้างหน้า
+  const ip = (realIp?.trim() || forwardedFor?.split(",").pop() || "").trim();
   return ip ? sha256Hex(`device-login:${ip}`) : null;
 }
 

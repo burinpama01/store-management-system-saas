@@ -75,6 +75,7 @@ import {
   approveDeviceLoginRequest,
   createDeviceLoginRequest,
   generateShortCode,
+  hashClientIp,
   getDeviceLoginRequest,
   maskEmail,
   normalizeEmployeeCode,
@@ -188,6 +189,12 @@ describe("device login (QR + รหัสพนักงาน)", () => {
     await expect(createDeviceLoginRequest({ ipHash: ip })).rejects.toBeInstanceOf(DeviceLoginRateLimitError);
     expect((await getDeviceLoginRequest(created.requestId, ip))?.sameNetwork).toBe(true);
     expect((await getDeviceLoginRequest(created.requestId, "c".repeat(64)))?.sameNetwork).toBe(false);
+  });
+
+  it("IP: เชื่อ x-real-ip ก่อน (client แทรก x-forwarded-for ปลอมไม่ได้ผล)", () => {
+    expect(hashClientIp("1.1.1.1, 203.0.113.9", "203.0.113.9")).toBe(hashClientIp(null, "203.0.113.9"));
+    expect(hashClientIp("1.1.1.1, 203.0.113.9", null)).toBe(hashClientIp(null, "203.0.113.9"));
+    expect(hashClientIp(null, null)).toBeNull();
   });
 
   it("middleware: หน้า QR + start/poll/complete public แต่หน้าอนุมัติบนมือถือต้องล็อกอิน", () => {
