@@ -42,7 +42,7 @@ describe("R2 รายได้คนส่ง — เงินเดือน",
 });
 
 describe("R2 รายได้คนส่ง — action", () => {
-  const actions = read("src/app/(dashboard)/website/orders/actions.ts");
+  const actions = read("src/app/(dashboard)/website/orders/actions.ts") + " " + read("src/modules/online-orders/transition-service.ts");
   const repo = read("src/modules/online-orders/repository.ts");
 
   it("ออกไปส่ง (ส่งถึงบ้าน) ต้องเลือกคนส่งที่เป็นพนักงานสาขานี้ + ล็อกอัตรา/ยอด", () => {
@@ -78,7 +78,7 @@ describe("R2 แก้ตามรีวิว", () => {
     expect(staff).not.toContain("window.confirm(");
   });
   it("บันทึกรายได้ล้ม → บอกให้เพิ่มเป็นโบนัสพร้อมรหัสออเดอร์ (ฟอร์มมือไม่มีชนิด delivery_pay)", () => {
-    expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain('เป็น "โบนัส/เพิ่ม" ฿${order.riderPayAmount}');
+    expect(read("src/modules/online-orders/transition-service.ts")).toContain('เป็น "โบนัส/เพิ่ม" ฿${order.riderPayAmount}');
   });
   it("online_order_id อ้างถึง online_orders (on delete set null) + type มี onlineOrderId", () => {
     expect(read("supabase/migrations/20261213120000_online_rider_pay.sql")).toContain("references public.online_orders(id) on delete set null");
