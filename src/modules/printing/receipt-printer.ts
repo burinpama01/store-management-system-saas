@@ -105,7 +105,11 @@ export async function autoPrintReceipt({
   }
   const hubPrinter = selectHubReceiptPrinter(printers, preferredPrinterId);
   if (hubPrinter) {
-    const { hubOnline } = await enqueueReceiptPrintJob(hubPrinter.id, { ...browser, paperWidth: hubPrinter.paperWidth });
+    const { hubOnline } = await enqueueReceiptPrintJob(
+      hubPrinter.id,
+      { ...browser, paperWidth: hubPrinter.paperWidth },
+      { printer: hubPrinter },
+    );
     return { channel: "configured", printer: hubPrinter, hubOnline };
   }
   const channel = await printReceiptAuto(escpos, browser);

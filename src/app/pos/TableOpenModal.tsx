@@ -73,9 +73,14 @@ export function TableOpenModal({ onClose, onSelectTable, onOpenBill, onAddItems,
         if (hubPrinter && slipRes.slip) {
           // Print the table QR on the thermal printer via the Print Hub (iPad-safe).
           const receipt = buildTableQrReceiptData({ ...slipRes.slip, paperWidth: hubPrinter.paperWidth });
-          const { hubOnline } = await enqueueReceiptPrintJob(hubPrinter.id, receipt);
+          const { hubOnline, direct } = await enqueueReceiptPrintJob(hubPrinter.id, receipt, {
+            printer: hubPrinter,
+            kind: "table",
+          });
           setNotice(
-            hubOnline === false
+            direct
+              ? `เปิดโต๊ะ ${label} + พิมพ์ QR แล้ว${ticketNote}`
+              : hubOnline === false
               ? `เปิดโต๊ะ ${label} แล้ว${ticketNote} · ส่ง QR เข้าคิว แต่ Hub ออฟไลน์ จะพิมพ์เมื่อเปิดเครื่องแคชเชียร์`
               : `เปิดโต๊ะ ${label} + พิมพ์ QR ผ่าน Hub แล้ว${ticketNote}`,
           );
