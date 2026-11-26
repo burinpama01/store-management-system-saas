@@ -73,6 +73,12 @@ describe("R4 หน้าคนส่ง — สิทธิ์และเง�
     expect(actions).not.toMatch(/addPaymentAndClose|voidOrder|recordRiderPayAdjustment/);
   });
 
+  it("รับงานใหม่ไม่ได้เมื่อร้านปิดสั่งออนไลน์ · ส่งไม่สำเร็จได้เฉพาะงานที่กำลังไปส่ง", () => {
+    expect(actions).toContain("if (!(await isOnlineOrderingEnabled(g.ctx.storeId)))");
+    const fail = actions.slice(actions.indexOf("export async function failRiderJobAction"));
+    expect(fail).toContain('if (order.status !== "out_for_delivery")');
+  });
+
   it("ส่งไม่สำเร็จจากหน้าคนส่งได้เฉพาะเก็บปลายทาง", () => {
     expect(actions).toContain('if (order.paymentMethod !== "cod") return { ok: false, error: "ออเดอร์จ่ายแล้ว — แจ้งร้านให้จัดการ" };');
   });
@@ -83,6 +89,10 @@ describe("R4 หน้าคนส่ง — สิทธิ์และเง�
     expect(route).toContain('languageCode: "th"');
     expect(route).toContain("process.env.GOOGLE_MAPS_API_KEY");
     expect(actions).toContain("ROUTE_LIMIT_PER_HOUR = 20");
+    // นับข้าม instance จาก log ในฐานข้อมูล (ไม่ใช่ Map ในหน่วยความจำ) และเขียน log เสร็จก่อนตอบ
+    expect(actions).toContain('.contains("context", { onlineOrderId })');
+    expect(actions).not.toContain("new Map<string, number[]>()");
+    expect(actions).toContain("await logSystemEvent({");
     expect(actions).toContain('action: "riderRoute"');
     // หน้าเว็บใช้ key เบราว์เซอร์แยก (NEXT_PUBLIC_*) ไม่ใช่ key server
     expect(read("src/app/rider/page.tsx")).toContain("NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY");

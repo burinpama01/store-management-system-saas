@@ -221,7 +221,7 @@ export function DriveMode({
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       void request();
-      // กลับจากแอปอื่น: ขอตำแหน่งใหม่ทันที (ไม่เด้ง "ถึงแล้ว" ย้อนหลัง)
+      // กลับจากแอปอื่น: นับ "ถึงแล้ว" ใหม่ (ไม่เด้งย้อนหลัง) + ปลุก GPS ให้ watchPosition ส่งตำแหน่งสดทันที (iOS พักไว้ตอนอยู่เบื้องหลัง)
       nearSinceRef.current = null;
       navigator.geolocation?.getCurrentPosition(() => undefined, () => undefined, { enableHighAccuracy: true, maximumAge: 0 });
     };

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { performOnlineOrderTransition } from "@/modules/online-orders/transition-service";
+import { performOnlineOrderTransition, type TransitionActor } from "@/modules/online-orders/transition-service";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
@@ -382,7 +382,8 @@ export async function updateOnlineOrderStatusAction(
     const g = await queueGuard();
     if (g.error !== null) return { ok: false, error: g.error };
     if (to === "accepted") return { ok: false, error: "ใช้ปุ่มรับออเดอร์" };
-    const res = await performOnlineOrderTransition(g as never, id, to, { reason, riderUserId, codMethod, via: "queue" });
+    // g จาก getResolvedCurrentPermissions มีรูปตรง TransitionActor
+    const res = await performOnlineOrderTransition(g as unknown as TransitionActor, id, to, { reason, riderUserId, codMethod, via: "queue" });
     if (res.ok) revalidatePath("/website/orders");
     return res;
   } catch (e) {

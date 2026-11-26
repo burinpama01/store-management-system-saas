@@ -141,8 +141,13 @@ export function RiderApp({ storeName, browserMapsKey, mapId }: { storeName: stri
               )}
               {job.mine && job.status === "out_for_delivery" && (
                 <>
-                  <button type="button" onClick={() => setDriving(job)} className="min-h-11 flex-1 rounded-lg bg-orange-600 px-4 font-semibold text-white">
-                    🧭 นำทาง
+                  <button
+                    type="button"
+                    disabled={!job.dest}
+                    onClick={() => setDriving(job)}
+                    className="min-h-11 flex-1 rounded-lg bg-orange-600 px-4 font-semibold text-white disabled:opacity-50"
+                  >
+                    🧭 นำทาง{job.dest ? "" : " (ลูกค้าไม่ได้ปักหมุด)"}
                   </button>
                   <button type="button" disabled={busyId === job.id} onClick={() => complete(job)} className="min-h-11 rounded-lg border px-4">
                     ส่งสำเร็จ

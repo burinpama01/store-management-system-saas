@@ -11,15 +11,22 @@ import { STATUS_LABEL, type CodCollectMethod, type OnlineOrderStatus } from "@/m
 import {
   getOnlineOrderForStore,
   getOnlineOrderSettingsWithOrigin,
+  isOnlineOrderingEnabled,
   listOnlineOrdersForStore,
   type OnlineOrder,
 } from "@/modules/online-orders/repository";
+import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { computeDeliveryRoute, googleMapsNavUrl, type DeliveryRoute } from "@/modules/online-orders/route-google";
-import { performOnlineOrderTransition } from "@/modules/online-orders/transition-service";
+import { performOnlineOrderTransition, type TransitionActor } from "@/modules/online-orders/transition-service";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type ActionResult = { ok: boolean; error: string | null };
+
+/** g จาก getResolvedCurrentPermissions มีรูปตรง TransitionActor (resolved.can รับ PermissionKey) */
+function actor(g: { user: { id: string }; ctx: { organizationId: string; storeId: string }; resolved: unknown }): TransitionActor {
+  return g as unknown as TransitionActor;
+}
 
 async function riderGuard() {
   const { user, ctx, resolved } = await getResolvedCurrentPermissions();
@@ -112,7 +119,9 @@ export async function claimRiderJobAction(id: string): Promise<ActionResult> {
     if (!order) return { ok: false, error };
     if (order.riderUserId && order.riderUserId !== g.user.id) return { ok: false, error: "มีคนรับงานนี้ไปแล้ว" };
     if (order.status !== "accepted" && order.status !== "preparing") return { ok: false, error: `งานอยู่ในสถานะ "${STATUS_LABEL[order.status]}" แล้ว` };
-    return await performOnlineOrderTransition(g as never, id, "out_for_delivery", { riderUserId: g.user.id, via: "rider" });
+    // ร้านปิดสั่งออนไลน์แล้ว = ไม่รับงานใหม่ (งานที่กำลังส่งยังส่งสำเร็จ/ไม่สำเร็จได้)
+    if (!(await isOnlineOrderingEnabled(g.ctx.storeId))) return { ok: false, error: "ร้านปิดสั่งออนไลน์อยู่ — รับงานใหม่ไม่ได้" };
+    return await performOnlineOrderTransition(actor(g), id, "out_for_delivery", { riderUserId: g.user.id, via: "rider" });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "รับงานไม่สำเร็จ" };
   }
@@ -127,7 +136,7 @@ export async function completeRiderJobAction(id: string, codMethod?: CodCollectM
     if (!order) return { ok: false, error };
     if (order.riderUserId !== g.user.id) return { ok: false, error: "งานนี้ไม่ใช่ของคุณ" };
     if (order.status !== "out_for_delivery") return { ok: false, error: `งานอยู่ในสถานะ "${STATUS_LABEL[order.status]}" แล้ว` };
-    return await performOnlineOrderTransition(g as never, id, "completed", { codMethod, via: "rider" });
+    return await performOnlineOrderTransition(actor(g), id, "completed", { codMethod, via: "rider" });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
   }
@@ -141,16 +150,33 @@ export async function failRiderJobAction(id: string, reason: string): Promise<Ac
     const { order, error } = await loadMine(g, id);
     if (!order) return { ok: false, error };
     if (order.riderUserId !== g.user.id) return { ok: false, error: "งานนี้ไม่ใช่ของคุณ" };
+    if (order.status !== "out_for_delivery") return { ok: false, error: `งานอยู่ในสถานะ "${STATUS_LABEL[order.status]}" แล้ว` };
     if (order.paymentMethod !== "cod") return { ok: false, error: "ออเดอร์จ่ายแล้ว — แจ้งร้านให้จัดการ" };
-    return await performOnlineOrderTransition(g as never, id, "delivery_failed", { reason, via: "rider" });
+    return await performOnlineOrderTransition(actor(g), id, "delivery_failed", { reason, via: "rider" });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
   }
 }
 
-/** จำกัดการขอเส้นทางต่อออเดอร์ (คุมค่า Google) — นับต่อ instance พอ เพราะเส้นทางขอแค่ตอนเริ่ม/กดคำนวณใหม่ */
+/**
+ * จำกัดการขอเส้นทางต่อออเดอร์ (คุมค่า Google): นับจาก log riderRoute ในฐานข้อมูล (ข้าม serverless instance)
+ * ไม่ใช่ Map ในหน่วยความจำ — ทุก cold start จะได้โควตาใหม่
+ */
 const ROUTE_LIMIT_PER_HOUR = 20;
-const routeCalls = new Map<string, number[]>();
+
+async function countRecentRouteCalls(storeId: string, onlineOrderId: string): Promise<number> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- system_event_logs อ่านด้วย service client
+  const db: any = await createSupabaseServiceClient();
+  const since = new Date(Date.now() - 3_600_000).toISOString();
+  const { count } = await db
+    .from("system_event_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .eq("action", "riderRoute")
+    .gte("occurred_at", since)
+    .contains("context", { onlineOrderId });
+  return count ?? 0;
+}
 
 export async function getRiderRouteAction(
   id: string,
@@ -162,10 +188,9 @@ export async function getRiderRouteAction(
   if (!order) return { route: null, error };
   if (order.riderUserId !== g.user.id) return { route: null, error: "งานนี้ไม่ใช่ของคุณ" };
   if (order.lat === null || order.lng === null) return { route: null, error: "ออเดอร์นี้ไม่มีหมุดจุดส่ง — ใช้ที่อยู่/โทรหาลูกค้า" };
-  const now = Date.now();
-  const recent = (routeCalls.get(id) ?? []).filter((t) => now - t < 3_600_000);
-  if (recent.length >= ROUTE_LIMIT_PER_HOUR) return { route: null, error: "ขอเส้นทางบ่อยเกินไป — ใช้ปุ่มเปิด Google Maps" };
-  routeCalls.set(id, [...recent, now]);
+  if ((await countRecentRouteCalls(g.ctx.storeId, id)) >= ROUTE_LIMIT_PER_HOUR) {
+    return { route: null, error: "ขอเส้นทางบ่อยเกินไป — ใช้ปุ่มเปิด Google Maps" };
+  }
   const validOrigin =
     origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng) && Math.abs(origin.lat) <= 90 && Math.abs(origin.lng) <= 180 ? origin : null;
   let from = validOrigin;
@@ -175,7 +200,7 @@ export async function getRiderRouteAction(
   }
   if (!from) return { route: null, error: "ไม่รู้ตำแหน่งเริ่มต้น — เปิด GPS" };
   const result = await computeDeliveryRoute(from, { lat: order.lat, lng: order.lng });
-  void logSystemEvent({
+  await logSystemEvent({
     level: result.route ? "info" : "warn",
     source: "online-orders",
     action: "riderRoute",
