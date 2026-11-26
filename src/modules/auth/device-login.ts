@@ -4,7 +4,9 @@
 //   * QR มีแค่ id คำขอ (uuid) + รหัสสั้น — ไม่มีอะไรที่ใช้เข้าระบบได้
 //   * รหัสลับของเครื่อง (32 ไบต์) อยู่ในหน้าเว็บบนเครื่องร้านเท่านั้น เก็บใน DB เป็น sha256
 //   * คนอนุมัติต้องล็อกอินอยู่แล้วบนมือถือ + กรอกรหัสพนักงานของตัวเองให้ตรง (ยืนยันซ้ำ ไม่ใช่ความลับ)
+//   * หน้าอนุมัติบอกว่ามือถือกับเครื่องที่ขออยู่เครือข่ายเดียวกันไหม (กันส่ง QR หลอกทาง LINE)
 //   * ผิด 5 ครั้ง = ยกเลิกคำขอ / หมดอายุ 5 นาที / ตั๋วแลก session ใช้ได้ครั้งเดียวภายใน 2 นาที
+//   * จำกัดคำขอใหม่ต่อ IP (endpoint ขอ QR เป็น public)
 //   * session ที่ได้ = ของพนักงานคนนั้น สิทธิ์เท่าบัญชีเขาเท่านั้น
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -13,6 +15,9 @@ import { createSupabaseServiceClient } from "@/server/integrations/supabase/serv
 export const DEVICE_LOGIN_TTL_MS = 5 * 60_000;
 export const DEVICE_LOGIN_TICKET_TTL_MS = 2 * 60_000;
 export const DEVICE_LOGIN_MAX_ATTEMPTS = 5;
+/** คำขอใหม่ต่อ IP ใน 10 นาที — ร้านจริงสร้างไม่กี่ครั้ง (หมดอายุ 5 นาทีสร้างใหม่ ≈ 2 ครั้ง/10 นาที/เครื่อง) */
+export const DEVICE_LOGIN_MAX_PER_IP = 20;
+const RATE_WINDOW_MS = 10 * 60_000;
 /** ไม่มีตัวที่สับสนกัน (0/O, 1/I/L) — พนักงานพิมพ์ตามจอได้ */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -32,6 +37,7 @@ interface Row {
   short_code: string;
   device_secret_hash: string;
   device_label: string | null;
+  requester_ip_hash: string | null;
   status: DeviceLoginStatus;
   failed_attempts: number;
   approved_by: string | null;
@@ -41,6 +47,8 @@ interface Row {
   expires_at: string;
   created_at: string;
 }
+
+export class DeviceLoginRateLimitError extends Error {}
 
 export function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -56,6 +64,19 @@ export function generateShortCode(random: (size: number) => Buffer = randomBytes
   const bytes = random(6);
   const chars = Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]);
   return `${chars.slice(0, 3).join("")}-${chars.slice(3).join("")}`;
+}
+
+/** IP จาก header ของ Vercel (x-forwarded-for ตัวแรก) → sha256 — ไม่เก็บ/ไม่ส่ง IP ดิบ */
+export function hashClientIp(forwardedFor: string | null | undefined, realIp?: string | null): string | null {
+  const ip = (forwardedFor?.split(",")[0] ?? realIp ?? "").trim();
+  return ip ? sha256Hex(`device-login:${ip}`) : null;
+}
+
+/** "somchai@gmail.com" → "so*****@gmail.com" */
+export function maskEmail(email: string | null | undefined): string {
+  if (!email || !email.includes("@")) return "บัญชีนี้";
+  const [name, domain] = email.split("@");
+  return `${name.slice(0, 2)}${"*".repeat(Math.max(2, name.length - 2))}@${domain}`;
 }
 
 export function normalizeEmployeeCode(value: string): string {
@@ -90,10 +111,20 @@ function toPublic(row: Row): DeviceLoginPublicView {
   };
 }
 
-export async function createDeviceLoginRequest(input: { deviceLabel?: unknown; userAgent?: unknown }) {
+export async function createDeviceLoginRequest(input: { deviceLabel?: unknown; userAgent?: unknown; ipHash?: string | null }) {
   const client = await db();
-  // เก็บกวาดคำขอเก่า (เกิน 1 วัน) — ไม่มี cron ว่าง ทำตอนมีคนขอใหม่แทน
-  await client.from("device_login_requests").delete().lt("expires_at", new Date(Date.now() - 86_400_000).toISOString());
+  // เก็บกวาดคำขอที่หมดอายุเกิน 1 ชม. (เก็บไว้สั้น ๆ ให้หน้าอนุมัติบอกได้ว่า "หมดอายุ") — ไม่มี cron ว่าง
+  await client.from("device_login_requests").delete().lt("expires_at", new Date(Date.now() - 3_600_000).toISOString());
+
+  // จำกัดจำนวนคำขอต่อ IP (endpoint นี้ public) — กันสร้างแถวไม่จำกัด
+  if (input.ipHash) {
+    const { count } = await client
+      .from("device_login_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("requester_ip_hash", input.ipHash)
+      .gt("created_at", new Date(Date.now() - RATE_WINDOW_MS).toISOString());
+    if ((count ?? 0) >= DEVICE_LOGIN_MAX_PER_IP) throw new DeviceLoginRateLimitError("ขอ QR บ่อยเกินไป รอสักครู่แล้วลองใหม่");
+  }
 
   const secret = randomBytes(32).toString("base64url");
   const row = {
@@ -101,6 +132,7 @@ export async function createDeviceLoginRequest(input: { deviceLabel?: unknown; u
     device_secret_hash: sha256Hex(secret),
     device_label: cleanLabel(input.deviceLabel, 80),
     user_agent: cleanLabel(input.userAgent, 300),
+    requester_ip_hash: input.ipHash ?? null,
     expires_at: new Date(Date.now() + DEVICE_LOGIN_TTL_MS).toISOString(),
   };
   const { data, error } = await client.from("device_login_requests").insert(row).select("id, short_code, expires_at").single();
@@ -108,15 +140,22 @@ export async function createDeviceLoginRequest(input: { deviceLabel?: unknown; u
   return { requestId: data.id as string, code: data.short_code as string, secret, expiresAt: data.expires_at as string };
 }
 
-export async function getDeviceLoginRequest(id: string): Promise<DeviceLoginPublicView | null> {
+export async function getDeviceLoginRequest(
+  id: string,
+  viewerIpHash?: string | null,
+): Promise<(DeviceLoginPublicView & { sameNetwork: boolean | null }) | null> {
   if (!isUuid(id)) return null;
   const client = await db();
   const { data } = await client
     .from("device_login_requests")
-    .select("id, short_code, device_label, status, expires_at, created_at")
+    .select("id, short_code, device_label, status, expires_at, created_at, requester_ip_hash")
     .eq("id", id)
     .maybeSingle();
-  return data ? toPublic(data as Row) : null;
+  if (!data) return null;
+  const row = data as Row;
+  // มือถือใช้ WiFi ร้าน = IP สาธารณะเดียวกับเครื่องร้าน; ใช้เน็ตมือถือจะต่างกัน (ไม่ใช่หลักฐานว่าโดนหลอก แต่ต้องเตือน)
+  const sameNetwork = row.requester_ip_hash && viewerIpHash ? row.requester_ip_hash === viewerIpHash : null;
+  return { ...toPublic(row), sameNetwork };
 }
 
 export type ApproveResult =
@@ -202,35 +241,56 @@ export async function pollDeviceLoginRequest(requestId: string, secret: string):
   const view = toPublic(row as Row);
   if (view.status !== "approved") return { status: view.status };
 
+  // ออกตั๋วครั้งเดียว — ถ้าออกไปแล้วและยังไม่หมดอายุ (poll สองรอบซ้อนกัน) ไม่ออกใหม่ทับ
+  // รอบที่สองตอบ pending แทน ตั๋วใบแรกยังใช้ได้; ตั๋วหมดอายุแล้วค่อยออกใบใหม่
+  const now = new Date().toISOString();
   const ticket = randomBytes(32).toString("base64url");
   const { data: updated } = await client
     .from("device_login_requests")
     .update({ ticket_hash: sha256Hex(ticket), ticket_expires_at: new Date(Date.now() + DEVICE_LOGIN_TICKET_TTL_MS).toISOString() })
     .eq("id", requestId)
     .eq("status", "approved")
+    .or(`ticket_hash.is.null,ticket_expires_at.lt.${now}`)
     .select("id");
-  if (!updated || updated.length === 0) return { status: "invalid" };
+  if (!updated || updated.length === 0) return { status: "pending" };
   return { status: "approved", ticket };
 }
 
+export interface VerifiedTicket {
+  readonly userId: string;
+  readonly storeId: string | null;
+  readonly deviceLabel: string | null;
+  readonly ticketHash: string;
+}
+
 /**
- * แลกตั๋วเป็นผู้ใช้ที่อนุมัติ — mark completed แบบมีเงื่อนไข (ใช้ได้ครั้งเดียวจริง แม้ยิงพร้อมกัน)
- * คืน userId + storeId ให้ route ไปสร้าง session
+ * ขั้น 1: ตรวจตั๋ว (ยังไม่ใช้) — route สร้าง session ก่อน แล้วค่อย mark completed
+ * ถ้าสร้าง session ล้ม (auth สะดุด) ตั๋วยังใช้ได้จนหมดอายุ เครื่องลองใหม่ได้ไม่ต้องให้พนักงานอนุมัติซ้ำ
  */
-export async function consumeDeviceLoginTicket(requestId: string, ticket: string): Promise<{ userId: string; storeId: string | null; deviceLabel: string | null } | null> {
+export async function verifyDeviceLoginTicket(requestId: string, ticket: string): Promise<VerifiedTicket | null> {
   if (!isUuid(requestId) || typeof ticket !== "string" || ticket.length < 20 || ticket.length > 100) return null;
   const client = await db();
   const { data: row } = await client.from("device_login_requests").select("*").eq("id", requestId).maybeSingle();
   if (!row || row.status !== "approved" || !row.ticket_hash || !row.approved_by) return null;
   if (!sameHash(row.ticket_hash, sha256Hex(ticket))) return null;
   if (!row.ticket_expires_at || Date.parse(row.ticket_expires_at) <= Date.now()) return null;
+  return {
+    userId: row.approved_by as string,
+    storeId: (row.approved_store_id as string | null) ?? null,
+    deviceLabel: row.device_label as string | null,
+    ticketHash: row.ticket_hash as string,
+  };
+}
+
+/** ขั้น 2: mark completed แบบมีเงื่อนไข (ตั๋วใบนี้ใช้ได้ครั้งเดียวจริง แม้ยิงพร้อมกัน) — false = ถูกใช้ไปแล้ว */
+export async function markDeviceLoginCompleted(requestId: string, ticketHash: string): Promise<boolean> {
+  const client = await db();
   const { data: updated } = await client
     .from("device_login_requests")
     .update({ status: "completed", completed_at: new Date().toISOString(), ticket_hash: null })
     .eq("id", requestId)
     .eq("status", "approved")
-    .eq("ticket_hash", row.ticket_hash)
+    .eq("ticket_hash", ticketHash)
     .select("id");
-  if (!updated || updated.length === 0) return null;
-  return { userId: row.approved_by as string, storeId: (row.approved_store_id as string | null) ?? null, deviceLabel: row.device_label as string | null };
+  return Boolean(updated && updated.length > 0);
 }

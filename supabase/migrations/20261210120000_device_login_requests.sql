@@ -12,6 +12,8 @@ create table if not exists public.device_login_requests (
   device_secret_hash text not null check (length(device_secret_hash) = 64),
   device_label       text check (device_label is null or length(device_label) <= 80),
   user_agent         text check (user_agent is null or length(user_agent) <= 300),
+  -- sha256 ของ IP ผู้ขอ (ไม่เก็บ IP ดิบ) — จำกัดจำนวนคำขอต่อ IP และบอกผู้อนุมัติว่าอยู่เครือข่ายเดียวกันไหม
+  requester_ip_hash  text check (requester_ip_hash is null or length(requester_ip_hash) = 64),
   status             text not null default 'pending'
                        check (status in ('pending', 'approved', 'completed', 'cancelled', 'expired')),
   failed_attempts    int not null default 0 check (failed_attempts >= 0),
@@ -30,6 +32,8 @@ comment on table public.device_login_requests is
   'คำขอเข้าใช้เครื่องร้านด้วย QR (StoreOS POS) — service role เท่านั้น; QR มีแค่ id + รหัสสั้น รหัสลับเครื่องเก็บเป็น sha256';
 
 create index if not exists device_login_requests_expires_idx on public.device_login_requests (expires_at);
+create index if not exists device_login_requests_ip_idx on public.device_login_requests (requester_ip_hash, created_at desc)
+  where requester_ip_hash is not null;
 create index if not exists device_login_requests_approver_idx on public.device_login_requests (approved_by, approved_at desc)
   where approved_by is not null;
 
