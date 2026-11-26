@@ -250,7 +250,7 @@ export async function pollDeviceLoginRequest(requestId: string, secret: string):
     .update({ ticket_hash: sha256Hex(ticket), ticket_expires_at: new Date(Date.now() + DEVICE_LOGIN_TICKET_TTL_MS).toISOString() })
     .eq("id", requestId)
     .eq("status", "approved")
-    .or(`ticket_hash.is.null,ticket_expires_at.lt.${now}`)
+    .or(`ticket_hash.is.null,ticket_expires_at.lt."${now}"`)
     .select("id");
   if (!updated || updated.length === 0) return { status: "pending" };
   return { status: "approved", ticket };

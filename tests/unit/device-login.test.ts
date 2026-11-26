@@ -37,7 +37,7 @@ function builder(table: string) {
       const [a, b] = expr.split(",");
       const isNullKey = a.split(".")[0];
       const [ltKey, , ...rest] = b.split(".");
-      const ltValue = rest.join(".");
+      const ltValue = rest.join(".").replace(/^"|"$/g, "");
       filters.push((r) => r[isNullKey] == null || String(r[ltKey]) < ltValue);
       return api;
     },
