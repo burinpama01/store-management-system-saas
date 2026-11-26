@@ -39,8 +39,7 @@
             <DockPanel LastChildFill="False">
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
                     <Button x:Name="TabPos" Style="{StaticResource TabButton}" Content="🧾  ขาย (POS)" Click="OnTabPos" />
-                    <Button x:Name="TabCatalog" Style="{StaticResource TabButton}" Content="🍽  เมนูสินค้า" Click="OnTabCatalog" />
-                    <Button x:Name="TabPrinters" Style="{StaticResource TabButton}" Content="🖨  เครื่องพิมพ์" Click="OnTabPrinters" />
+                    <Button x:Name="TabSettings" Style="{StaticResource TabButton}" Content="⚙  การตั้งค่าอื่นๆ" Click="OnTabSettings" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border x:Name="StatusPill" CornerRadius="999" Padding="12,5" Background="#EFE9E3" Margin="0,0,8,0">

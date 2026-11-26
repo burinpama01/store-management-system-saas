@@ -187,5 +187,11 @@ describe("D3 วิธีพิมพ์ระดับร้าน + จอง�
     expect(login).toContain('router.replace("/device-login")');
     expect(login).toContain('params.get("method") === "password"');
     expect(readFileSync("src/app/device-login/DeviceLoginQr.tsx", "utf8")).toContain('href="/login?method=password"');
+    // โปรแกรม StoreOS POS ไม่ใช่ Launcher รุ่นเก่า — ห้ามขึ้นแถบ "รุ่นนี้อัปเดตตัวเองไม่ได้"
+    expect(readFileSync("src/modules/launcher/device-host.ts", "utf8")).toMatch(/StoreOSPos.*navigator.userAgent/);
+    // ราคาบนใบเสร็จวาดใหญ่เท่าชื่อเมนู + ยอดสุทธิเป็นบรรทัดใหญ่
+    const lines = readFileSync("src/modules/printing/receipt-lines.ts", "utf8");
+    expect(lines).toContain('lines.push({ text: "** รวมสุทธิ **", right: priceStr(data.total), bold: true, emphasis: "item" });');
+    expect(readFileSync("src/modules/printing/receipt-raster-client.ts", "utf8")).toContain("ctx.font = emphasised ? `700 ${itemFontPx}px");
   });
 });

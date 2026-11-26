@@ -97,8 +97,7 @@ public partial class MainWindow : Window
     // ───────────── แท็บ ─────────────
 
     private void OnTabPos(object sender, RoutedEventArgs e) => Navigate(PosTab.Pos);
-    private void OnTabCatalog(object sender, RoutedEventArgs e) => Navigate(PosTab.Catalog);
-    private void OnTabPrinters(object sender, RoutedEventArgs e) => Navigate(PosTab.Printers);
+    private void OnTabSettings(object sender, RoutedEventArgs e) => Navigate(PosTab.Settings);
 
     private void Navigate(PosTab tab)
     {
@@ -109,7 +108,7 @@ public partial class MainWindow : Window
 
     private void HighlightTab(PosTab tab)
     {
-        foreach (var (button, t) in new[] { (TabPos, PosTab.Pos), (TabCatalog, PosTab.Catalog), (TabPrinters, PosTab.Printers) })
+        foreach (var (button, t) in new[] { (TabPos, PosTab.Pos), (TabSettings, PosTab.Settings) })
         {
             var on = t == tab;
             button.Background = on ? ActiveBg : Brushes.Transparent;
@@ -138,6 +137,13 @@ public partial class MainWindow : Window
         if (decision == NavigationDecision.Allow)
         {
             var tab = PosNavigationPolicy.TabFor(url);
+            // ล็อกอินด้วยรหัสผ่านแล้วเว็บพาไปหน้าแดชบอร์ด — ในโปรแกรมนี้ให้เริ่มที่หน้าขายเสมอ
+            if (_lastWasAuthPage && tab == PosTab.Settings)
+            {
+                _lastWasAuthPage = false;
+                Navigate(PosTab.Pos);
+                return;
+            }
             _lastWasAuthPage = tab == PosTab.None;
             if (tab != PosTab.None)
             {
