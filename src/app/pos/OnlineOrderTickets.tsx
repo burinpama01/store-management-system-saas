@@ -5,12 +5,14 @@
 // ไม่มีปุ่มเก็บเงินที่นี่ (กันเก็บเงินซ้ำ) · ยกเลิก/คืนเงินทำที่หน้า สั่งออนไลน์ เท่านั้น
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { nextStatuses, type OnlineOrderStatus } from "@/modules/online-orders/core";
+import { nextStatuses, type CodCollectMethod, type OnlineOrderStatus } from "@/modules/online-orders/core";
 import type { Printer } from "@/modules/stores/types";
 import { printKitchenForOrder, type StationPrinter } from "../(dashboard)/delivery/print-kitchen";
 import { RiderPicker } from "../(dashboard)/website/orders/RiderPicker";
+import { CodCollectPicker, CodFailButton } from "../(dashboard)/website/orders/CodControls";
 import {
   acceptOnlineOrderAction,
+  settleCodCashAction,
   listOnlineOrdersAction,
   updateOnlineOrderStatusAction,
   type OnlineOrderVM,
@@ -19,7 +21,7 @@ import {
 import { ONLINE_ORDER_REFRESH_EVENT } from "./online-order-events";
 
 /** สถานะที่ยังต้องอยู่ในแถบตั๋ว (รอรับ → ก่อนสำเร็จ) */
-export const POS_ONLINE_STATUSES: readonly OnlineOrderStatus[] = ["paid", "accepted", "preparing", "ready", "out_for_delivery"];
+export const POS_ONLINE_STATUSES: readonly OnlineOrderStatus[] = ["paid", "cod_pending", "accepted", "preparing", "ready", "out_for_delivery"];
 
 /** มีตั๋วค้าง = ถามทุก 30 วิ · ไม่มี = 2 นาที (เผื่อไม่มีสิทธิ์เห็นแจ้งเตือน) · แท็บซ่อนอยู่ไม่ถาม */
 const POLL_ACTIVE_MS = 30_000;
@@ -44,6 +46,13 @@ const BUTTON_LABEL: Partial<Record<OnlineOrderStatus, string>> = {
   completed: "สำเร็จ",
 };
 
+/** ป้ายการเงินของตั๋ว: จ่าย Beam แล้ว / เก็บปลายทาง / เงินค้างที่คนส่ง */
+function moneyLabel(o: OnlineOrderVM): string {
+  if (o.paymentMethod !== "cod") return `จ่ายแล้ว ${baht(o.total)}`;
+  if (o.codCashPending) return `💵 เงินค้างที่คนส่ง ${baht(o.codCashPending)}`;
+  return `เก็บปลายทาง ${baht(o.total)}`;
+}
+
 export function useOnlineOrderTickets(enabled: boolean) {
   const [orders, setOrders] = useState<OnlineOrderVM[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +66,8 @@ export function useOnlineOrderTickets(enabled: boolean) {
       return;
     }
     setError(null);
-    const active = res.orders.filter((o) => POS_ONLINE_STATUSES.includes(o.status));
+    // + ส่งสำเร็จแล้วแต่เงินสดเก็บปลายทางยังไม่คืนร้าน (ต้องกด "รับเงินคืน")
+    const active = res.orders.filter((o) => POS_ONLINE_STATUSES.includes(o.status) || o.codCashPending);
     activeRef.current = active.length;
     setOrders(active);
   }, [enabled]);
@@ -119,7 +129,7 @@ export function OnlineOrderTicketList({ orders, onOpen }: { orders: OnlineOrderV
                 <span className="shrink-0 text-[10px] font-medium">{o.statusLabel}</span>
               </span>
               <span className="mt-1 block text-[11px] text-gray-500">
-                {o.fulfillment === "pickup" ? "รับที่ร้าน" : "ส่งถึงบ้าน"} · จ่ายแล้ว {baht(o.total)} · {o.items.length} รายการ
+                {o.fulfillment === "pickup" ? "รับที่ร้าน" : "ส่งถึงบ้าน"} · {moneyLabel(o)} · {o.items.length} รายการ
               </span>
               <span className="mt-0.5 block truncate text-[11px] text-gray-500">
                 {o.customerName} · สั่ง {time(o.createdAt)}
@@ -154,6 +164,8 @@ export function OnlineOrderTicketDialog({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pickingRider, setPickingRider] = useState(false);
+  const [pickingCod, setPickingCod] = useState(false);
+  const isCod = order.paymentMethod === "cod";
 
   const printKitchen = async (orderId: string, billNumber: string) =>
     printKitchenForOrder(orderId, { ...print, billNumber, fulfillment: order.fulfillment }).catch(() => "พิมพ์ตั๋วครัวไม่สำเร็จ");
@@ -177,19 +189,31 @@ export function OnlineOrderTicketDialog({
       return `รับออเดอร์ ${order.orderCode} แล้ว · ${printed}`;
     });
 
-  const move = (to: OnlineOrderStatus, riderUserId?: string) => {
+  const move = (to: OnlineOrderStatus, riderUserId?: string, codMethod?: CodCollectMethod, reason?: string) => {
     // R2: ส่งถึงบ้าน → เลือกคนส่งก่อนออกไปส่ง
     if (to === "out_for_delivery" && order.fulfillment === "delivery" && !riderUserId) {
       setPickingRider(true);
       return;
     }
+    // R3: เก็บปลายทาง → เลือกวิธีรับเงินก่อนสำเร็จ
+    if (to === "completed" && isCod && !codMethod) {
+      setPickingCod(true);
+      return;
+    }
     setPickingRider(false);
+    setPickingCod(false);
     return run(async () => {
-      const res = await updateOnlineOrderStatusAction(order.id, to, undefined, riderUserId);
+      const res = await updateOnlineOrderStatusAction(order.id, to, reason, riderUserId, codMethod);
       if (!res.ok) return res.error;
-      return res.error ?? `เปลี่ยนเป็น "${BUTTON_LABEL[to] ?? to}" แล้ว`;
+      return res.error ?? `เปลี่ยนเป็น "${to === "delivery_failed" ? "ส่งไม่สำเร็จ" : (BUTTON_LABEL[to] ?? to)}" แล้ว`;
     });
   };
+
+  const settleCash = () =>
+    run(async () => {
+      const res = await settleCodCashAction(order.id);
+      return res.ok ? `รับเงินสด ${baht(order.codCashPending ?? order.total)} คืนจากคนส่งแล้ว — ปิดบิลเข้าลิ้นชัก` : res.error;
+    });
 
   const reprint = () =>
     run(async () => (order.orderId ? printKitchen(order.orderId, order.orderCode) : "ยังไม่มีบิล — กดรับออเดอร์ก่อน"));
@@ -197,10 +221,13 @@ export function OnlineOrderTicketDialog({
   // POS ไม่ยกเลิก/คืนเงิน — ทำที่หน้า สั่งออนไลน์ (ต้องยืนยันโอนคืน)
   // บิล POS ยังไม่ปิด (ขั้นปิดบิลล้มตอนรับ) = ห้ามเลื่อนสถานะ — ไม่งั้นกด "สำเร็จ" แล้วยอดขายไม่เข้า POS
   // ปิดบิลซ้ำได้เฉพาะสถานะ "รับแล้ว" (acceptOnlineOrderAction รับแค่ paid/accepted)
-  const billPending = order.status !== "paid" && !order.billClosed;
+  // เก็บปลายทาง: บิลเปิดค้างจนรับเงินเป็นเรื่องปกติ — ใช้กติกานี้กับออเดอร์จ่าย Beam เท่านั้น
+  const awaitingAccept = order.status === "paid" || order.status === "cod_pending";
+  const billPending = !isCod && order.status !== "paid" && !order.billClosed;
   const needsBillRetry = billPending && order.status === "accepted";
   const statusButtons =
-    order.status === "paid" || billPending ? [] : nextStatuses(order.status, order.fulfillment).filter((to) => BUTTON_LABEL[to]);
+    awaitingAccept || billPending ? [] : nextStatuses(order.status, order.fulfillment, order.paymentMethod).filter((to) => BUTTON_LABEL[to]);
+  const canFail = isCod && nextStatuses(order.status, order.fulfillment, order.paymentMethod).includes("delivery_failed");
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={`ออเดอร์ออนไลน์ ${order.orderCode}`}>
@@ -218,7 +245,13 @@ export function OnlineOrderTicketDialog({
         </div>
 
         <p className="mt-2 inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-          จ่ายแล้ว (Beam) {baht(order.total)} — ไม่ต้องเก็บเงิน
+          {isCod
+            ? order.codCashPending
+              ? `💵 เงินสดค้างที่คนส่ง ${baht(order.codCashPending)} — กด “รับเงินคืน” เมื่อได้เงิน`
+              : order.status === "completed"
+                ? `เก็บเงินปลายทางแล้ว (${order.codCollectedMethod === "bank_transfer" ? "โอน" : "เงินสด"})`
+                : `เก็บเงินปลายทาง ${baht(order.total)} — รับเงินตอนส่งของ`
+            : `จ่ายแล้ว (Beam) ${baht(order.total)} — ไม่ต้องเก็บเงิน`}
         </p>
 
         <ul className="mt-3 divide-y divide-gray-100 text-sm">
@@ -275,7 +308,12 @@ export function OnlineOrderTicketDialog({
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {order.status === "paid" && (
+          {order.codCashPending ? (
+            <button type="button" disabled={busy} onClick={settleCash} className="btn-primary min-h-11 flex-1 px-4 text-sm">
+              รับเงินคืน {baht(order.codCashPending)}
+            </button>
+          ) : null}
+          {awaitingAccept && (
             <button type="button" disabled={busy} onClick={accept} className="btn-primary min-h-11 flex-1 px-4 text-sm">
               {busy ? "กำลังรับ…" : "รับออเดอร์ + พิมพ์ตั๋วครัว"}
             </button>
@@ -290,13 +328,29 @@ export function OnlineOrderTicketDialog({
               {BUTTON_LABEL[to]}
             </button>
           ))}
-          {order.orderId && (
+          {order.orderId && order.status !== "completed" && (
             <button type="button" disabled={busy} onClick={reprint} className="btn-secondary min-h-11 px-4 text-sm">
               พิมพ์ตั๋วครัวซ้ำ
             </button>
           )}
+          {canFail && (
+            <CodFailButton
+              busy={busy}
+              label={order.status === "cod_pending" ? "ปฏิเสธออเดอร์" : "ส่งไม่สำเร็จ"}
+              onConfirm={(reason) => void move("delivery_failed", undefined, undefined, reason)}
+            />
+          )}
         </div>
         <p className="mt-3 text-[11px] text-gray-400">ยกเลิก/คืนเงิน ทำที่หน้า สั่งออนไลน์ (ต้องยืนยันการโอนคืน)</p>
+        {pickingCod && (
+          <CodCollectPicker
+            orderCode={order.orderCode}
+            total={order.total}
+            busy={busy}
+            onPick={(method) => void move("completed", undefined, method)}
+            onClose={() => setPickingCod(false)}
+          />
+        )}
         {pickingRider && (
           <RiderPicker
             orderCode={order.orderCode}

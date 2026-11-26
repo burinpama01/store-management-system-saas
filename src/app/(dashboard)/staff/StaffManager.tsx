@@ -28,6 +28,7 @@ import {
   savePayslipIdentityAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+import { useConfirm } from "@/shared/components/ui/useConfirm";
 import type { AdvancedPayrollSettings } from "@/modules/hr/advanced/settings";
 import type { PayrollPeriodRow, StoreSkill } from "@/modules/hr/advanced/repository";
 import type { PayPeriod } from "@/modules/hr/advanced/pay-cycle";
@@ -114,6 +115,7 @@ export function StaffManager({
   const advLines = payrollLines as AdvancedPayrollLine[];
   const router = useRouter();
   const [tab, setTab] = useState<"employees" | "payroll" | "policy" | "features">("employees");
+  const { confirm, confirmDialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -153,6 +155,7 @@ export function StaffManager({
 
   return (
     <div className="page-shell">
+      {confirmDialog}
       <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-[var(--ink)]">พนักงาน &amp; เงินเดือน</h1>
@@ -768,11 +771,17 @@ export function StaffManager({
                       {a.note ? ` · ${a.note}` : ""}
                     </span>
                     <Button
-                      onClick={() => {
+                      onClick={async () => {
                         // ค่าส่งเดลิเวอรี่ระบบสร้างจากออเดอร์ออนไลน์ — ลบแล้วคนส่งเสียรายได้ ต้องยืนยันก่อน
                         if (
                           a.type === "delivery_pay" &&
-                          !window.confirm(`ลบค่าส่งเดลิเวอรี่ของ ${a.employeeName} (${a.note ?? ""}) ใช่ไหม? ระบบจะไม่สร้างให้ใหม่อัตโนมัติ`)
+                          !(await confirm({
+                            title: "ลบค่าส่งเดลิเวอรี่?",
+                            message: `ลบค่าส่งของ ${a.employeeName} (${a.note ?? ""}) — ระบบจะไม่สร้างให้ใหม่อัตโนมัติ`,
+                            confirmLabel: "ลบ",
+                            cancelLabel: "ไม่ลบ",
+                            danger: true,
+                          }))
                         ) {
                           return;
                         }

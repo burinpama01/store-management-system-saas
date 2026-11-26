@@ -10,15 +10,17 @@ const baht = (n: number) => `฿${n.toLocaleString("th-TH", { maximumFractionDig
 
 const STEPS_PICKUP = ["paid", "accepted", "preparing", "ready", "completed"] as const;
 const STEPS_DELIVERY = ["paid", "accepted", "preparing", "out_for_delivery", "completed"] as const;
+const STEPS_COD = ["cod_pending", "accepted", "preparing", "out_for_delivery", "completed"] as const;
 const STEP_LABEL: Record<string, string> = {
   paid: "จ่ายแล้ว",
+  cod_pending: "สั่งแล้ว (เก็บเงินปลายทาง)",
   accepted: "ร้านรับออเดอร์",
   preparing: "กำลังทำ",
   ready: "พร้อมรับที่ร้าน",
   out_for_delivery: "กำลังไปส่ง",
   completed: "สำเร็จ",
 };
-const DONE = new Set(["completed", "expired", "refund_pending", "refunded"]);
+const DONE = new Set(["completed", "expired", "refund_pending", "refunded", "delivery_failed"]);
 
 export function TrackingClient({ slug, token }: { slug: string; token: string }) {
   const [view, setView] = useState<TrackingView | null>(null);
@@ -73,7 +75,8 @@ export function TrackingClient({ slug, token }: { slug: string; token: string })
   }
   if (!view) return <main className="mx-auto max-w-md p-6 text-center text-stone-500">กำลังโหลด...</main>;
 
-  const steps: readonly string[] = view.fulfillment === "pickup" ? STEPS_PICKUP : STEPS_DELIVERY;
+  const steps: readonly string[] =
+    view.fulfillment === "pickup" ? STEPS_PICKUP : view.paymentMethod === "cod" ? STEPS_COD : STEPS_DELIVERY;
   const reached = steps.indexOf(view.status);
   const secondsLeft = Math.max(0, Math.floor((Date.parse(view.expiresAt) - now) / 1000));
 
@@ -136,6 +139,14 @@ export function TrackingClient({ slug, token }: { slug: string; token: string })
         </section>
       )}
 
+      {view.paymentMethod === "cod" && !DONE.has(view.status) && (
+        <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+          💵 เก็บเงินปลายทาง {baht(view.total)} — จ่ายกับพนักงานตอนรับของ (เงินสด/โอน)
+        </p>
+      )}
+      {view.status === "delivery_failed" && (
+        <p className="rounded-xl bg-stone-100 p-3 text-sm">ร้านยกเลิกหรือส่งไม่สำเร็จ — ติดต่อร้านหากมีคำถาม</p>
+      )}
       {(view.status === "refund_pending" || view.status === "refunded" || view.status === "expired") && (
         <p className="rounded-xl bg-stone-100 p-3 text-sm">
           {view.status === "expired" ? "คำสั่งซื้อนี้หมดเวลาชำระหรือถูกยกเลิกแล้ว" : view.status === "refund_pending" ? "ร้านยกเลิกคำสั่งซื้อ และจะคืนเงินให้ — ติดต่อร้านหากมีคำถาม" : "ร้านคืนเงินแล้ว"}

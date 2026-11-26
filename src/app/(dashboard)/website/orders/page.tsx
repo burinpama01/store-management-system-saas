@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getTierProgram } from "@/modules/member-tiers/repository";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
@@ -31,14 +32,17 @@ export default async function OnlineOrdersPage() {
     );
   }
 
-  const [{ settings, originFromAttendance }, site, list, stations, receipt, printersRes] = await Promise.all([
+  const [{ settings, originFromAttendance }, site, list, stations, receipt, printersRes, tierProgram] = await Promise.all([
     getOnlineOrderSettingsWithOrigin(ctx.storeId),
     getStoreWebsite(ctx.storeId),
     listOnlineOrdersAction(),
     listKitchenStations(ctx.storeId),
     getReceiptSettings(ctx.storeId, ctx.organizationId),
     listPrinters(ctx.storeId, ctx.organizationId),
+    // R3: ระดับสมาชิก (ตั้งเพดานเก็บเงินปลายทางรายระดับ) — ไม่มีโปรแกรมระดับ = ไม่มีรายการ
+    getTierProgram(ctx.organizationId).catch(() => null),
   ]);
+  const memberTiers = (tierProgram?.tiers ?? []).map((t) => ({ rank: t.rank, name: t.name }));
   const stationPrinters = (stations.data ?? [])
     .filter((s) => s.printerId)
     .map((s) => ({ id: s.id, name: s.name, printerId: s.printerId as string }));
@@ -70,7 +74,7 @@ export default async function OnlineOrdersPage() {
         printers={printersRes.data ?? []}
       />
       {canConfigure ? (
-        <OnlineOrderSettingsForm initial={settings} hasWebsite={Boolean(site)} originFromAttendance={originFromAttendance} />
+        <OnlineOrderSettingsForm initial={settings} hasWebsite={Boolean(site)} originFromAttendance={originFromAttendance} memberTiers={memberTiers} />
       ) : (
         <p className="text-xs text-[var(--muted)]">ตั้งค่าสั่งออนไลน์ได้เฉพาะเจ้าของหรือแอดมิน</p>
       )}

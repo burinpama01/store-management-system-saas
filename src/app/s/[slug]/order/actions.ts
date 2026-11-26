@@ -1,14 +1,26 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { headers } from "next/headers";
+import { hashClientIp } from "@/modules/auth/device-login";
+import { deliverMemberOtp, verifyProviderOtp } from "@/modules/notifications/smskub";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { cancelBeamQrPayment, createBeamQrPayment, refreshBeamPayment } from "@/modules/payments/beam-service";
 import type { BeamQrForPos } from "@/modules/payments/types";
 import { notifyOnlineOrderPaidOnce } from "@/modules/online-orders/notify";
 import { logSystemEvent } from "@/modules/system/event-log";
 import {
+  COD_FAILED_BLOCK_COUNT,
+  COD_FAILED_LOOKBACK_DAYS,
+  COD_MAX_ACTIVE_PER_PHONE,
+  COD_OTP_COOLDOWN_MS,
+  COD_OTP_MAX_ATTEMPTS,
+  COD_OTP_MAX_PER_IP_10MIN,
+  COD_OTP_MAX_PER_PHONE_DAY,
+  COD_OTP_TTL_MS,
   QR_LIFETIME_MS,
   STATUS_LABEL,
+  codCapFor,
   checkoutSchema,
   isPaymentWindowOver,
   maskPhone,
@@ -21,6 +33,14 @@ import {
 import { priceCart } from "@/modules/online-orders/menu";
 import { resolveOrderingStore } from "@/modules/online-orders/public";
 import {
+  bumpCodOtpAttempts,
+  consumeCodOtp,
+  countCodOtpRequests,
+  countActiveCodOrders,
+  countFailedCodOrders,
+  findMemberTierRankByPhone,
+  getLatestCodOtp,
+  insertCodOtp,
   countPendingOnlineOrders,
   expireStaleOnlineOrders,
   findOnlineOrderByRequest,
@@ -85,6 +105,103 @@ export interface StartResult {
   token: string | null;
 }
 
+// ---------- เก็บเงินปลายทาง (R3): OTP ยืนยันเบอร์ ----------
+
+function otpHash(storeId: string, phone: string, code: string): string {
+  return createHash("sha256").update(`online-cod:${storeId}:${phone}:${code}`).digest("hex");
+}
+
+async function clientIpHash(): Promise<string | null> {
+  const h = await headers();
+  return hashClientIp(h.get("x-forwarded-for"), h.get("x-real-ip"));
+}
+
+/** ขอ OTP ก่อนสั่งเก็บเงินปลายทาง — จำกัดความถี่ต่อเบอร์/ต่อ IP (กันค่า SMS โดนยิง) */
+export async function requestCodOtpAction(slug: string, rawPhone: string): Promise<{ ok: boolean; error: string | null; cooldownSec: number }> {
+  const fail = (error: string, cooldownSec = 0) => ({ ok: false, error, cooldownSec });
+  const phone = normalizeThaiPhone(String(rawPhone ?? ""));
+  if (!/^0[0-9]{8,9}$/.test(phone)) return fail("กรอกเบอร์โทรให้ถูกต้อง");
+  const resolved = await resolveOrderingStore(slug);
+  if (!resolved.ok) return fail(resolved.reason);
+  const store = resolved.store;
+  if (!store.settings.codEnabled || !store.settings.deliveryEnabled) return fail("ร้านยังไม่เปิดเก็บเงินปลายทาง");
+  if (!store.settings.codRequireOtp) return { ok: true, error: null, cooldownSec: 0 };
+  if ((await countFailedCodOrders(store.storeId, phone, COD_FAILED_LOOKBACK_DAYS)) >= COD_FAILED_BLOCK_COUNT) {
+    return fail("เบอร์นี้ใช้เก็บเงินปลายทางไม่ได้ — กรุณาจ่ายด้วย QR");
+  }
+  const ipHash = await clientIpHash();
+  const recent = await countCodOtpRequests({ storeId: store.storeId, phone, ipHash });
+  if (recent.lastAt) {
+    const wait = COD_OTP_COOLDOWN_MS - (Date.now() - new Date(recent.lastAt).getTime());
+    if (wait > 0) return fail("ส่งรหัสไปแล้ว รอสักครู่ก่อนขอใหม่", Math.ceil(wait / 1000));
+  }
+  if (recent.phoneToday >= COD_OTP_MAX_PER_PHONE_DAY) return fail("ขอรหัสครบจำนวนต่อวันแล้ว — กรุณาจ่ายด้วย QR");
+  if (recent.ip10min >= COD_OTP_MAX_PER_IP_10MIN) return fail("ขอรหัสถี่เกินไป ลองใหม่อีกสักครู่");
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  let channel: "campaigns" | "otp_v2";
+  try {
+    channel = (await deliverMemberOtp(phone, code)).channel;
+  } catch (e) {
+    void logSystemEvent({
+      level: "error",
+      source: "online-orders",
+      action: "requestCodOtp",
+      message: `ส่ง OTP เก็บเงินปลายทางไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`,
+      organizationId: store.organizationId,
+      storeId: store.storeId,
+    });
+    return fail("ส่งรหัสไม่สำเร็จ — กรุณาจ่ายด้วย QR หรือลองใหม่ภายหลัง");
+  }
+  const saved = await insertCodOtp({
+    storeId: store.storeId,
+    phone,
+    // otp_v2 = ผู้ให้บริการสร้างรหัสเอง เราไม่มีรหัส → ตรวจกับผู้ให้บริการตอนยืนยัน
+    codeHash: channel === "campaigns" ? otpHash(store.storeId, phone, code) : null,
+    channel,
+    ipHash,
+    expiresAt: new Date(Date.now() + COD_OTP_TTL_MS).toISOString(),
+  });
+  void logSystemEvent({
+    level: saved ? "info" : "error",
+    source: "online-orders",
+    action: "requestCodOtp",
+    message: saved ? `ส่ง OTP เก็บเงินปลายทาง (${channel})` : "บันทึก OTP เก็บเงินปลายทางไม่สำเร็จ",
+    organizationId: store.organizationId,
+    storeId: store.storeId,
+    context: { channel },
+  });
+  if (!saved) return fail("ส่งรหัสไม่สำเร็จ ลองใหม่อีกครั้ง");
+  return { ok: true, error: null, cooldownSec: Math.ceil(COD_OTP_COOLDOWN_MS / 1000) };
+}
+
+/** ตรวจ OTP + ใช้ครั้งเดียว — คืน null = ผ่าน, ข้อความ = ไม่ผ่าน */
+async function verifyCodOtp(storeId: string, phone: string, code: string | undefined): Promise<string | null> {
+  if (!code) return "กรอกรหัส OTP ที่ได้รับทาง SMS";
+  const otp = await getLatestCodOtp(storeId, phone);
+  if (!otp) return "ขอรหัส OTP ก่อน";
+  if (new Date(otp.expiresAt).getTime() < Date.now()) return "รหัสหมดอายุ — ขอรหัสใหม่";
+  if (otp.attempts >= COD_OTP_MAX_ATTEMPTS) return "ใส่รหัสผิดหลายครั้ง — ขอรหัสใหม่";
+  let valid = false;
+  if (otp.channel === "campaigns") {
+    const expected = Buffer.from(otp.codeHash ?? "", "hex");
+    const actual = Buffer.from(otpHash(storeId, phone, code), "hex");
+    valid = expected.length === actual.length && expected.length > 0 && timingSafeEqual(expected, actual);
+  } else {
+    try {
+      valid = await verifyProviderOtp(phone, code);
+    } catch {
+      return "ตรวจรหัสไม่สำเร็จชั่วคราว ลองใหม่อีกครั้ง";
+    }
+  }
+  if (!valid) {
+    await bumpCodOtpAttempts(otp.id, otp.attempts + 1);
+    return "รหัส OTP ไม่ถูกต้อง";
+  }
+  if (!(await consumeCodOtp(otp.id))) return "รหัสนี้ถูกใช้แล้ว — ขอรหัสใหม่";
+  return null;
+}
+
 export async function startOnlineOrderAction(slug: string, raw: unknown): Promise<StartResult> {
   const fail = (error: string): StartResult => ({ ok: false, error, token: null });
   const prepared = typeof raw === "object" && raw !== null && "customerPhone" in raw
@@ -116,6 +233,26 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
   const total = Math.round((priced.subtotal + fee.fee) * 100) / 100;
   if (total < 1) return fail("ยอดชำระต้องอย่างน้อย 1 บาท");
 
+  // R3: เก็บเงินปลายทาง — ส่งถึงบ้านเท่านั้น + เพดาน (ระดับสมาชิก/ต่อบิล) + ประวัติไม่รับของ + OTP
+  const isCod = input.paymentMethod === "cod";
+  if (isCod) {
+    if (!store.settings.codEnabled) return fail("ร้านยังไม่เปิดเก็บเงินปลายทาง");
+    if (input.fulfillment !== "delivery") return fail("เก็บเงินปลายทางใช้ได้กับส่งถึงบ้านเท่านั้น");
+    if ((await countFailedCodOrders(store.storeId, input.customerPhone, COD_FAILED_LOOKBACK_DAYS)) >= COD_FAILED_BLOCK_COUNT) {
+      return fail("เบอร์นี้ใช้เก็บเงินปลายทางไม่ได้ — กรุณาจ่ายด้วย QR");
+    }
+    if ((await countActiveCodOrders(store.storeId, input.customerPhone)) >= COD_MAX_ACTIVE_PER_PHONE) {
+      return fail("มีออเดอร์เก็บเงินปลายทางที่ยังไม่ส่งอยู่แล้ว — รอรับของก่อน หรือจ่ายด้วย QR");
+    }
+    const tierRank = await findMemberTierRankByPhone(store.storeId, input.customerPhone);
+    const cap = codCapFor(store.settings, tierRank);
+    if (total > cap) return fail(`เก็บเงินปลายทางได้ไม่เกิน ฿${cap.toLocaleString("th-TH")} — กรุณาจ่ายด้วย QR`);
+    if (store.settings.codRequireOtp) {
+      const otpError = await verifyCodOtp(store.storeId, input.customerPhone, input.otpCode);
+      if (otpError) return fail(otpError);
+    }
+  }
+
   const now = Date.now();
   const minPickup = store.settings.prepMinutes;
   const pickupAt =
@@ -132,7 +269,8 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
     client_request_id: input.clientRequestId,
     order_code: onlineOrderCode(id),
     fulfillment: input.fulfillment,
-    status: "awaiting_payment",
+    status: isCod ? "cod_pending" : "awaiting_payment",
+    payment_method: isCod ? "cod" : "beam",
     customer_name: input.customerName,
     customer_phone: input.customerPhone,
     address: input.fulfillment === "delivery" ? input.address : null,
@@ -160,7 +298,22 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
       organizationId: store.organizationId,
       storeId: store.storeId,
     });
-    return fail("สร้างคำสั่งซื้อไม่สำเร็จ ลองใหม่อีกครั้ง");
+    return fail(isCod ? "สร้างคำสั่งซื้อไม่สำเร็จ — ขอรหัส OTP ใหม่แล้วลองอีกครั้ง" : "สร้างคำสั่งซื้อไม่สำเร็จ ลองใหม่อีกครั้ง");
+  }
+
+  if (isCod) {
+    void logSystemEvent({
+      level: "info",
+      source: "online-orders",
+      action: "createOnlineOrder",
+      message: `คำสั่งซื้อออนไลน์ ${inserted.order.orderCode} เก็บเงินปลายทาง ${total.toFixed(2)}`,
+      organizationId: store.organizationId,
+      storeId: store.storeId,
+      context: { onlineOrderId: id, fulfillment: input.fulfillment, total, lines: priced.lines.length, paymentMethod: "cod" },
+    });
+    // ไม่มีขั้นจ่าย — แจ้งร้านทันที (เหมือนออเดอร์ที่จ่าย Beam แล้ว)
+    await notifyOnlineOrderPaidOnce(inserted.order);
+    return { ok: true, error: null, token };
   }
 
   const qr = await ensureQr(inserted.order);
@@ -213,6 +366,8 @@ export interface TrackingView {
   createdAt: string;
   qr: { payload: string | null; image: string | null } | null;
   notice: string | null;
+  /** R3: cod = จ่ายเงินปลายทาง */
+  paymentMethod: "beam" | "cod";
 }
 
 function toView(order: OnlineOrder, qr: BeamQrForPos | null, notice: string | null): TrackingView {
@@ -238,6 +393,7 @@ function toView(order: OnlineOrder, qr: BeamQrForPos | null, notice: string | nu
     createdAt: order.createdAt,
     qr: qr ? { payload: qr.qrPayload, image: qr.qrImageBase64 } : null,
     notice,
+    paymentMethod: order.paymentMethod,
   };
 }
 

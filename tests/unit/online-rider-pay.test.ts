@@ -72,7 +72,10 @@ describe("R2 รายได้คนส่ง — action", () => {
 
 describe("R2 แก้ตามรีวิว", () => {
   it("ลบค่าส่งเดลิเวอรี่ที่หน้าพนักงานต้องยืนยัน", () => {
-    expect(read("src/app/(dashboard)/staff/StaffManager.tsx")).toContain('a.type === "delivery_pay" &&\n                          !window.confirm(');
+    const staff = read("src/app/(dashboard)/staff/StaffManager.tsx");
+    expect(staff).toContain('a.type === "delivery_pay" &&');
+    expect(staff).toContain('title: "ลบค่าส่งเดลิเวอรี่?"');
+    expect(staff).not.toContain("window.confirm(");
   });
   it("บันทึกรายได้ล้ม → บอกให้เพิ่มเป็นโบนัสพร้อมรหัสออเดอร์ (ฟอร์มมือไม่มีชนิด delivery_pay)", () => {
     expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain('เป็น "โบนัส/เพิ่ม" ฿${order.riderPayAmount}');

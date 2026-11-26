@@ -8,14 +8,14 @@ import { claimOnlineOrderNotification, getOnlineOrderById, type OnlineOrder } fr
  */
 export async function notifyOnlineOrderPaidOnce(orderOrId: OnlineOrder | string): Promise<boolean> {
   const order = typeof orderOrId === "string" ? await getOnlineOrderById(orderOrId) : orderOrId;
-  if (!order || order.notifiedAt || order.status !== "paid") return false;
+  if (!order || order.notifiedAt || (order.status !== "paid" && order.status !== "cod_pending")) return false;
   if (!(await claimOnlineOrderNotification(order.id))) return false;
-  const fulfillment = order.fulfillment === "pickup" ? "รับที่ร้าน" : "ส่งถึงบ้าน";
+  const fulfillment = order.fulfillment === "pickup" ? "รับที่ร้าน" : order.paymentMethod === "cod" ? "ส่งถึงบ้าน · เก็บเงินปลายทาง" : "ส่งถึงบ้าน";
   notifyOwnerSafely({
     type: "new_online_order",
     organizationId: order.organizationId,
     storeId: order.storeId,
-    title: "มีออเดอร์ออนไลน์ใหม่ (จ่ายแล้ว)",
+    title: order.paymentMethod === "cod" ? "มีออเดอร์ออนไลน์ใหม่ (เก็บเงินปลายทาง)" : "มีออเดอร์ออนไลน์ใหม่ (จ่ายแล้ว)",
     message: `${fulfillment} ${order.orderCode} ยอด ${order.total.toFixed(2)}`,
     metadata: { onlineOrderId: order.id, orderNumber: order.orderCode, total: order.total, fulfillment, source: "online" },
   });

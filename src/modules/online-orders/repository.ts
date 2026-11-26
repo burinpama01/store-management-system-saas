@@ -48,6 +48,12 @@ export interface OnlineOrder {
   riderUserId: string | null;
   riderName: string | null;
   riderPayAmount: number | null;
+  /** R3 */
+  paymentMethod: "beam" | "cod";
+  codCollectedMethod: "cash" | "bank_transfer" | "beam" | null;
+  codCashHeld: number | null;
+  codSettledAt: string | null;
+  failureReason: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- แถวดิบจาก service client
@@ -87,7 +93,23 @@ function toOrder(row: any): OnlineOrder {
     riderUserId: row.rider_user_id ?? null,
     riderName: row.rider_name ?? null,
     riderPayAmount: num(row.rider_pay_amount),
+    paymentMethod: row.payment_method === "cod" ? "cod" : "beam",
+    codCollectedMethod: row.cod_collected_method ?? null,
+    codCashHeld: num(row.cod_cash_held),
+    codSettledAt: row.cod_settled_at ?? null,
+    failureReason: row.failure_reason ?? null,
   };
+}
+
+/** cod_tier_caps (jsonb) → { "<rank>": ยอด } — ค่าที่อ่านไม่ออกตัดทิ้ง */
+function parseTierCaps(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [rank, cap] of Object.entries(value as Record<string, unknown>)) {
+    const n = Number(cap);
+    if (/^[0-9]{1,2}$/.test(rank) && Number.isFinite(n) && n >= 0 && n <= 100000) out[rank] = n;
+  }
+  return out;
 }
 
 // ---------- ตั้งค่า ----------
@@ -155,6 +177,11 @@ async function getStoredOnlineOrderSettings(storeId: string): Promise<OnlineOrde
     riderPayEnabled: Boolean(data.rider_pay_enabled ?? false),
     riderPayRate: data.rider_pay_rate === undefined || data.rider_pay_rate === null ? 10 : Number(data.rider_pay_rate),
     riderPayIncludeFee: data.rider_pay_include_fee === undefined || data.rider_pay_include_fee === null ? true : Boolean(data.rider_pay_include_fee),
+    // คอลัมน์ R3 (20261214120000) — ยังไม่มี = ปิด COD (ห้ามทำให้ทั้งแถวเสีย ไม่งั้นร้านปิดสั่งออนไลน์ทั้งหมด)
+    codEnabled: Boolean(data.cod_enabled ?? false),
+    codMaxPerBill: data.cod_max_per_bill === undefined || data.cod_max_per_bill === null ? 500 : Number(data.cod_max_per_bill),
+    codTierCaps: parseTierCaps(data.cod_tier_caps),
+    codRequireOtp: data.cod_require_otp === undefined || data.cod_require_otp === null ? true : Boolean(data.cod_require_otp),
     minOrder: Number(data.min_order),
     prepMinutes: Number(data.prep_minutes),
   });
@@ -187,6 +214,10 @@ export async function saveOnlineOrderSettings(input: {
       rider_pay_enabled: s.riderPayEnabled,
       rider_pay_rate: s.riderPayRate,
       rider_pay_include_fee: s.riderPayIncludeFee,
+      cod_enabled: s.codEnabled,
+      cod_max_per_bill: s.codMaxPerBill,
+      cod_tier_caps: s.codTierCaps,
+      cod_require_otp: s.codRequireOtp,
       min_order: s.minOrder,
       prep_minutes: s.prepMinutes,
       updated_by: input.userId,
@@ -407,4 +438,145 @@ export async function recordRiderPayAdjustment(input: {
   if (!error) return "created";
   if (error.code === "23505") return "exists";
   return error.message ?? "บันทึกรายได้คนส่งไม่สำเร็จ";
+}
+
+// ---------- เก็บเงินปลายทาง (R3) ----------
+
+/** ระดับสมาชิกของเบอร์นี้ในร้าน (null = ไม่ใช่สมาชิก/ร้านไม่ได้เปิดระดับ) */
+export async function findMemberTierRankByPhone(storeId: string, phone: string): Promise<number | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db
+    .from("customers")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("phone", phone)
+    .not("member_identity_id", "is", null)
+    .limit(1);
+  const customerId = (data as { id: string }[] | null)?.[0]?.id;
+  if (!customerId) return null;
+  const { getMemberTierForCustomer } = await import("@/modules/member-tiers/repository");
+  const tier = await getMemberTierForCustomer(storeId, customerId).catch(() => null);
+  return tier ? tier.rank : null;
+}
+
+/** เก็บปลายทางแล้วส่งไม่สำเร็จกี่ครั้งในช่วงหลัง (ใช้ปิด COD ของเบอร์ที่ไม่รับของ) */
+export async function countFailedCodOrders(storeId: string, phone: string, days: number): Promise<number> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { count } = await db
+    .from("online_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .eq("customer_phone", phone)
+    .eq("payment_method", "cod")
+    .eq("status", "delivery_failed")
+    // failed_at = เวลาที่ส่งไม่สำเร็จจริง (updated_at เปลี่ยนได้จากเหตุอื่น ทำให้หน้าต่าง 90 วันเลื่อน)
+    .gte("failed_at", since);
+  return count ?? 0;
+}
+
+export interface CodOtpRow {
+  id: string;
+  codeHash: string | null;
+  channel: "campaigns" | "otp_v2";
+  attempts: number;
+  expiresAt: string;
+  verifiedAt: string | null;
+  consumedAt: string | null;
+  createdAt: string;
+}
+
+export async function countCodOtpRequests(input: { storeId: string; phone: string; ipHash: string | null }): Promise<{
+  lastAt: string | null;
+  phoneToday: number;
+  ip10min: number;
+}> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+  const tenMin = new Date(Date.now() - 10 * 60_000).toISOString();
+  const [phoneRes, ipRes] = await Promise.all([
+    db.from("online_order_otps").select("created_at").eq("store_id", input.storeId).eq("phone", input.phone).gte("created_at", dayAgo).order("created_at", { ascending: false }),
+    input.ipHash
+      ? db.from("online_order_otps").select("id", { count: "exact", head: true }).eq("ip_hash", input.ipHash).gte("created_at", tenMin)
+      : Promise.resolve({ count: 0 }),
+  ]);
+  const rows = (phoneRes.data ?? []) as { created_at: string }[];
+  return { lastAt: rows[0]?.created_at ?? null, phoneToday: rows.length, ip10min: (ipRes as { count: number | null }).count ?? 0 };
+}
+
+export async function insertCodOtp(row: {
+  storeId: string;
+  phone: string;
+  codeHash: string | null;
+  channel: "campaigns" | "otp_v2";
+  ipHash: string | null;
+  expiresAt: string;
+}): Promise<boolean> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { error } = await db.from("online_order_otps").insert({
+    store_id: row.storeId,
+    phone: row.phone,
+    code_hash: row.codeHash,
+    channel: row.channel,
+    ip_hash: row.ipHash,
+    expires_at: row.expiresAt,
+  });
+  return !error;
+}
+
+/** OTP ล่าสุดที่ยังไม่ใช้ของเบอร์นี้ */
+export async function getLatestCodOtp(storeId: string, phone: string): Promise<CodOtpRow | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db
+    .from("online_order_otps")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("phone", phone)
+    .is("consumed_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id,
+    codeHash: data.code_hash ?? null,
+    channel: data.channel,
+    attempts: Number(data.attempts ?? 0),
+    expiresAt: data.expires_at,
+    verifiedAt: data.verified_at ?? null,
+    consumedAt: data.consumed_at ?? null,
+    createdAt: data.created_at,
+  };
+}
+
+export async function bumpCodOtpAttempts(id: string, attempts: number): Promise<void> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  await db.from("online_order_otps").update({ attempts }).eq("id", id);
+}
+
+/** ใช้ OTP ครั้งเดียว — คืน true เฉพาะผู้ที่จองได้ (กันใช้ซ้ำจากสองแท็บ) */
+export async function consumeCodOtp(id: string): Promise<boolean> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+  const { data } = await db
+    .from("online_order_otps")
+    .update({ verified_at: now, consumed_at: now })
+    .eq("id", id)
+    .is("consumed_at", null)
+    .select("id")
+    .maybeSingle();
+  return Boolean(data);
+}
+
+/** ออเดอร์เก็บปลายทางที่ยังไม่จบของเบอร์นี้ (กันสั่งรัวโดยไม่ต้องจ่าย) */
+export async function countActiveCodOrders(storeId: string, phone: string): Promise<number> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { count } = await db
+    .from("online_orders")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .eq("customer_phone", phone)
+    .eq("payment_method", "cod")
+    .in("status", ["cod_pending", "accepted", "preparing", "out_for_delivery"]);
+  return count ?? 0;
 }

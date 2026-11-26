@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { OnlineMenuProduct } from "@/modules/online-orders/menu";
-import { quoteOnlineOrderAction, startOnlineOrderAction, type QuoteResult } from "./actions";
+import { quoteOnlineOrderAction, startOnlineOrderAction, type QuoteResult, requestCodOtpAction } from "./actions";
 
 interface CartItem {
   key: string;
@@ -40,6 +40,8 @@ export function OrderApp(props: {
   deliveryRadiusKm: number;
   deliveryFreeKm?: number;
   storeOrigin?: { lat: number; lng: number } | null;
+  /** R3: ร้านเปิดเก็บเงินปลายทาง (ส่งถึงบ้าน) */
+  cod?: { maxPerBill: number; requireOtp: boolean } | null;
 }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -55,6 +57,11 @@ export function OrderApp(props: {
   const [point, setPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [quote, setQuote] = useState<QuoteResult | null>(null);
+  const [payMethod, setPayMethod] = useState<"beam" | "cod">("beam");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSentFor, setOtpSentFor] = useState<string | null>(null);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpBusy, setOtpBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requestId] = useState(newRequestId);
   const [pending, startTransition] = useTransition();
@@ -86,7 +93,32 @@ export function OrderApp(props: {
     ...(fulfillment === "delivery" ? { address: address.trim() || "-", addressNote: addressNote.trim(), lat: point?.lat ?? null, lng: point?.lng ?? null } : {}),
     pickupInMinutes: fulfillment === "pickup" ? pickupIn : null,
     note: note.trim(),
+    ...(fulfillment === "delivery" && payMethod === "cod" ? { paymentMethod: "cod" as const, ...(otpCode ? { otpCode } : {}) } : {}),
   });
+
+  const codAllowed = Boolean(props.cod) && fulfillment === "delivery";
+  const useCod = codAllowed && payMethod === "cod";
+
+  const sendOtp = async () => {
+    setError(null);
+    if (!/^0[0-9]{8,9}$/.test(phone.replace(/[\s-]/g, ""))) return setError("กรอกเบอร์โทรก่อนขอรหัส");
+    setOtpBusy(true);
+    const res = await requestCodOtpAction(props.slug, phone).catch(() => ({ ok: false, error: "ขอรหัสไม่สำเร็จ", cooldownSec: 0 }));
+    setOtpBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      if (res.cooldownSec) setOtpCooldown(res.cooldownSec);
+      return;
+    }
+    setOtpSentFor(phone.replace(/[\s-]/g, ""));
+    setOtpCooldown(res.cooldownSec);
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      const left = res.cooldownSec - Math.floor((Date.now() - started) / 1000);
+      setOtpCooldown(Math.max(0, left));
+      if (left <= 0) window.clearInterval(timer);
+    }, 1000);
+  };
 
   const refreshQuote = (nextFulfillment = fulfillment, nextPoint = point) => {
     if (cart.length === 0) return;
@@ -127,6 +159,7 @@ export function OrderApp(props: {
     if (!/^0[0-9]{8,9}$/.test(phone.replace(/[\s-]/g, ""))) return setError("กรอกเบอร์โทรให้ถูกต้อง");
     if (fulfillment === "delivery" && !address.trim()) return setError("กรอกที่อยู่จัดส่ง");
     if (fulfillment === "delivery" && !point) return setError("ปักหมุดจุดส่งบนแผนที่ (หรือกดใช้ตำแหน่งปัจจุบัน)");
+    if (useCod && props.cod?.requireOtp && !/^[0-9]{4,8}$/.test(otpCode)) return setError("กดขอรหัส OTP แล้วกรอกรหัสที่ได้รับทาง SMS");
     startTransition(async () => {
       const res = await startOnlineOrderAction(props.slug, { ...payload(), customerName: name.trim(), customerPhone: phone.trim() });
       if (!res.ok || !res.token) {
@@ -255,6 +288,45 @@ export function OrderApp(props: {
             <textarea className={inputCls} style={inputStyle} rows={2} maxLength={300} placeholder="หมายเหตุถึงร้าน" value={note} onChange={(e) => setNote(e.target.value)} />
           </section>
 
+          {codAllowed && props.cod && (
+            <section className="space-y-2 rounded-xl border bg-white p-3 text-sm">
+              <h2 className="font-semibold">วิธีจ่าย</h2>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setPayMethod("beam")} className={`rounded-lg border px-3 py-2 ${payMethod === "beam" ? "border-orange-600 bg-orange-50 font-semibold" : ""}`}>
+                  QR พร้อมเพย์
+                </button>
+                <button type="button" onClick={() => setPayMethod("cod")} className={`rounded-lg border px-3 py-2 ${payMethod === "cod" ? "border-orange-600 bg-orange-50 font-semibold" : ""}`}>
+                  เก็บเงินปลายทาง
+                </button>
+              </div>
+              {useCod && (
+                <>
+                  <p className="text-xs text-stone-500">
+                    จ่ายเงินสด/โอนกับพนักงานตอนรับของ · ยอดไม่เกิน {baht(props.cod.maxPerBill)} (สมาชิกบางระดับได้มากกว่า)
+                  </p>
+                  {props.cod.requireOtp && (
+                    <div className="flex gap-2">
+                      <input
+                        className={inputCls}
+                        style={inputStyle}
+                        inputMode="numeric"
+                        maxLength={8}
+                        placeholder="รหัส OTP จาก SMS"
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ""))}
+                        autoComplete="one-time-code"
+                      />
+                      <button type="button" onClick={sendOtp} disabled={otpBusy || otpCooldown > 0} className="shrink-0 rounded-lg border border-orange-600 px-3 text-orange-700 disabled:opacity-50">
+                        {otpBusy ? "กำลังส่ง..." : otpCooldown > 0 ? `ส่งใหม่ ${otpCooldown}s` : otpSentFor ? "ส่งรหัสใหม่" : "ขอรหัส"}
+                      </button>
+                    </div>
+                  )}
+                  {otpSentFor && <p className="text-xs text-emerald-700">ส่งรหัสไปที่ {otpSentFor} แล้ว</p>}
+                </>
+              )}
+            </section>
+          )}
+
           <section className="rounded-xl border bg-white p-3 text-sm">
             <div className="flex justify-between"><span>ค่าอาหาร</span><span>{baht(quote?.subtotal || itemsTotal)}</span></div>
             {fulfillment === "delivery" && (
@@ -269,7 +341,10 @@ export function OrderApp(props: {
             </div>
             {quote && !quote.ok && quote.error && <p className="mt-1 text-xs text-red-600">{quote.error}</p>}
             {props.minOrder > 0 && itemsTotal < props.minOrder && <p className="mt-1 text-xs text-red-600">ยอดขั้นต่ำ {baht(props.minOrder)}</p>}
-            <p className="mt-2 text-xs text-stone-500">จ่ายด้วย QR พร้อมเพย์ — ร้านเริ่มทำหลังได้รับเงิน{props.storePhone ? ` · ติดต่อร้าน ${props.storePhone}` : ""}</p>
+            <p className="mt-2 text-xs text-stone-500">
+              {useCod ? "เก็บเงินปลายทาง — ร้านเริ่มทำหลังกดรับออเดอร์" : "จ่ายด้วย QR พร้อมเพย์ — ร้านเริ่มทำหลังได้รับเงิน"}
+              {props.storePhone ? ` · ติดต่อร้าน ${props.storePhone}` : ""}
+            </p>
           </section>
           {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
         </div>
@@ -285,7 +360,7 @@ export function OrderApp(props: {
             <div className="flex gap-2">
               <button type="button" onClick={() => setStep("menu")} className="rounded-xl border px-4">เพิ่มเมนู</button>
               <button type="button" onClick={submit} disabled={pending} className="flex-1 rounded-xl bg-orange-600 py-3 font-semibold text-white disabled:opacity-60">
-                {pending ? "กำลังดำเนินการ..." : "ไปชำระเงิน"}
+                {pending ? "กำลังดำเนินการ..." : useCod ? "ยืนยันสั่ง (เก็บเงินปลายทาง)" : "ไปชำระเงิน"}
               </button>
             </div>
           )}

@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Printer } from "@/modules/stores/types";
 import { useConfirm } from "@/shared/components/ui/useConfirm";
-import { STATUS_LABEL, nextStatuses, type OnlineOrderStatus } from "@/modules/online-orders/core";
+import { STATUS_LABEL, nextStatuses, type CodCollectMethod, type OnlineOrderStatus } from "@/modules/online-orders/core";
 import { printKitchenForOrder, type StationPrinter } from "../../delivery/print-kitchen";
 import { RiderPicker } from "./RiderPicker";
-import { acceptOnlineOrderAction, listOnlineOrdersAction, updateOnlineOrderStatusAction, type OnlineOrderVM } from "./actions";
+import { CodCollectPicker, CodFailButton } from "./CodControls";
+import { acceptOnlineOrderAction, listOnlineOrdersAction, settleCodCashAction, updateOnlineOrderStatusAction, type OnlineOrderVM } from "./actions";
 
 const baht = (n: number) => `฿${n.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
 const time = (iso: string | null) =>
@@ -51,6 +52,8 @@ export function OnlineOrdersBoard(props: {
   const [cancelling, setCancelling] = useState<{ id: string; reason: string } | null>(null);
   /** R2: ออเดอร์ที่กำลังเลือกคนส่ง */
   const [ridingFor, setRidingFor] = useState<OnlineOrderVM | null>(null);
+  /** R3: ออเดอร์เก็บปลายทางที่กำลังเลือกวิธีรับเงิน */
+  const [collectingFor, setCollectingFor] = useState<OnlineOrderVM | null>(null);
 
   const reload = useCallback(async () => {
     const res = await listOnlineOrdersAction();
@@ -64,9 +67,11 @@ export function OnlineOrdersBoard(props: {
     return () => window.clearInterval(id);
   }, [reload]);
 
-  const active = orders.filter((o) => !["completed", "refunded"].includes(o.status));
-  const shown = filter === "active" ? active : orders.filter((o) => ["completed", "refunded"].includes(o.status));
-  const waiting = orders.filter((o) => o.status === "paid").length;
+  // เงินสดเก็บปลายทางที่ยังไม่คืนร้าน = ยังต้องจัดการ (อยู่ในแท็บกำลังดำเนินการ)
+  const isDone = (o: OnlineOrderVM) => ["completed", "refunded", "delivery_failed"].includes(o.status) && !o.codCashPending;
+  const active = orders.filter((o) => !isDone(o));
+  const shown = filter === "active" ? active : orders.filter(isDone);
+  const waiting = orders.filter((o) => o.status === "paid" || o.status === "cod_pending").length;
 
   const accept = (o: OnlineOrderVM) => {
     setBusyId(o.id);
@@ -95,12 +100,17 @@ export function OnlineOrdersBoard(props: {
     });
   };
 
-  const move = async (o: OnlineOrderVM, to: OnlineOrderStatus, reason?: string, riderUserId?: string) => {
+  const move = async (o: OnlineOrderVM, to: OnlineOrderStatus, reason?: string, riderUserId?: string, codMethod?: CodCollectMethod) => {
     if (to === "out_for_delivery" && o.fulfillment === "delivery" && !riderUserId) {
       setRidingFor(o);
       return;
     }
+    if (to === "completed" && o.paymentMethod === "cod" && !codMethod) {
+      setCollectingFor(o);
+      return;
+    }
     setRidingFor(null);
+    setCollectingFor(null);
     if (to === "refund_pending" && reason === undefined) {
       setCancelling({ id: o.id, reason: "ของหมด" });
       return;
@@ -115,7 +125,7 @@ export function OnlineOrdersBoard(props: {
     setMessage(null);
     setCancelling(null);
     startTransition(async () => {
-      const res = await updateOnlineOrderStatusAction(o.id, to, reason, riderUserId);
+      const res = await updateOnlineOrderStatusAction(o.id, to, reason, riderUserId, codMethod);
       if (!res.ok || res.error) setMessage(res.error);
       setBusyId(null);
       await reload();
@@ -179,14 +189,43 @@ export function OnlineOrdersBoard(props: {
               <span>รวม{o.deliveryFee > 0 ? ` (ค่าส่ง ${baht(o.deliveryFee)})` : ""}</span>
               <span>{baht(o.total)}</span>
             </p>
+            {o.paymentMethod === "cod" && (
+              <p className="rounded bg-amber-50 px-2 py-1 text-amber-900">
+                {o.codCashPending
+                  ? `💵 เงินสดค้างที่คนส่ง ${baht(o.codCashPending)} — ยังไม่เข้าลิ้นชัก`
+                  : o.status === "completed"
+                    ? `เก็บเงินปลายทางแล้ว (${o.codCollectedMethod === "bank_transfer" ? "โอน" : "เงินสด"})`
+                    : o.status === "delivery_failed"
+                      ? `ส่งไม่สำเร็จ: ${o.failureReason ?? "-"}`
+                      : `💵 เก็บเงินปลายทาง ${baht(o.total)}`}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
-              {o.status === "paid" || (o.status === "accepted" && !o.billClosed) ? (
+              {o.status === "paid" || o.status === "cod_pending" || (o.status === "accepted" && !o.billClosed && o.paymentMethod !== "cod") ? (
                 <button type="button" disabled={busyId === o.id} onClick={() => accept(o)} className="btn-primary">
-                  {busyId === o.id ? "กำลังรับ..." : o.status === "paid" ? "รับออเดอร์" : "ปิดบิลอีกครั้ง"}
+                  {busyId === o.id ? "กำลังรับ..." : o.status === "accepted" ? "ปิดบิลอีกครั้ง" : "รับออเดอร์"}
                 </button>
               ) : null}
-              {nextStatuses(o.status, o.fulfillment)
-                .filter((to) => to !== "accepted")
+              {o.codCashPending ? (
+                <button
+                  type="button"
+                  disabled={busyId === o.id}
+                  className="btn-primary"
+                  onClick={() => {
+                    setBusyId(o.id);
+                    startTransition(async () => {
+                      const res = await settleCodCashAction(o.id);
+                      setMessage(res.ok ? `รับเงินสด ${o.orderCode} คืนแล้ว — ปิดบิลเข้าลิ้นชัก` : res.error);
+                      setBusyId(null);
+                      await reload();
+                    });
+                  }}
+                >
+                  รับเงินคืน {baht(o.codCashPending)}
+                </button>
+              ) : null}
+              {nextStatuses(o.status, o.fulfillment, o.paymentMethod)
+                .filter((to) => to !== "accepted" && to !== "delivery_failed")
                 .filter((to) => props.canCancel || to !== "refund_pending")
                 .map((to) => (
                   <button
@@ -199,6 +238,13 @@ export function OnlineOrdersBoard(props: {
                     {BUTTON_LABEL[to] ?? STATUS_LABEL[to]}
                   </button>
                 ))}
+              {nextStatuses(o.status, o.fulfillment, o.paymentMethod).includes("delivery_failed") && (
+                <CodFailButton
+                  busy={busyId === o.id}
+                  label={o.status === "cod_pending" ? "ปฏิเสธออเดอร์" : "ส่งไม่สำเร็จ"}
+                  onConfirm={(reason) => void move(o, "delivery_failed", reason)}
+                />
+              )}
             </div>
             {cancelling?.id === o.id && (
               <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-2">
@@ -225,6 +271,15 @@ export function OnlineOrdersBoard(props: {
         ))}
       </div>
       {confirmDialog}
+      {collectingFor && (
+        <CodCollectPicker
+          orderCode={collectingFor.orderCode}
+          total={collectingFor.total}
+          busy={busyId === collectingFor.id}
+          onPick={(method) => void move(collectingFor, "completed", undefined, undefined, method)}
+          onClose={() => setCollectingFor(null)}
+        />
+      )}
       {ridingFor && (
         <RiderPicker
           orderCode={ridingFor.orderCode}
