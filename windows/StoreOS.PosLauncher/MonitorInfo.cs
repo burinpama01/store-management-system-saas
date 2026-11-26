@@ -38,6 +38,8 @@ public static class MonitorInfo
     private const uint MonitorInfoPrimary = 1;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpShowWindow = 0x0040;
+    /// <summary>ไม่แย่งโฟกัส — เสียบ/ถอดจอระหว่างขาย แคชเชียร์ต้องพิมพ์/สแกนต่อที่หน้าขายได้</summary>
+    private const uint SwpNoActivate = 0x0010;
 
     public static IReadOnlyList<MonitorRect> All()
     {
@@ -60,5 +62,5 @@ public static class MonitorInfo
 
     /// <summary>วางหน้าต่างให้เต็มจอนั้นพอดี (พิกเซลจริง ไม่ต้องแปลง DPI เอง)</summary>
     public static void Cover(IntPtr hwnd, MonitorRect monitor) =>
-        SetWindowPos(hwnd, IntPtr.Zero, monitor.Left, monitor.Top, monitor.Width, monitor.Height, SwpNoZOrder | SwpShowWindow);
+        SetWindowPos(hwnd, IntPtr.Zero, monitor.Left, monitor.Top, monitor.Width, monitor.Height, SwpNoZOrder | SwpShowWindow | SwpNoActivate);
 }

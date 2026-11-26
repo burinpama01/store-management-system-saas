@@ -23,6 +23,8 @@ public class PosNavigationPolicyTests
     [InlineData("https://www.store-os.online/device-login", NavigationDecision.Allow)]
     [InlineData("https://www.store-os.online/api/device-login/complete", NavigationDecision.Allow)]
     [InlineData("https://www.store-os.online/dashboard", NavigationDecision.Allow)]
+    [InlineData("https://www.store-os.online/pos/display", NavigationDecision.Allow)]
+    [InlineData("https://www.store-os.online/player/_", NavigationDecision.Allow)]
     public void ProdNavigation(string url, NavigationDecision expected) => Assert.Equal(expected, PosNavigationPolicy.Decide(url, "prod"));
 
     [Fact]
@@ -62,6 +64,8 @@ public class PosNavigationPolicyTests
         Assert.Equal(PosTab.None, PosNavigationPolicy.TabFor("https://www.store-os.online/login"));
         Assert.Equal(PosTab.Settings, PosNavigationPolicy.TabFor("https://www.store-os.online/dashboard"));
         Assert.Equal(PosTab.Settings, PosNavigationPolicy.TabFor("https://www.store-os.online/attendance"));
+        Assert.Equal(PosTab.Settings, PosNavigationPolicy.TabFor("https://www.store-os.online/player/_"));
+        Assert.True(PosNavigationPolicy.IsTrustedMessageSource("https://www.store-os.online/pos/display", "prod"));
         Assert.Equal("https://www.store-os.online/settings", PosNavigationPolicy.UrlFor(PosTab.Settings, "https://www.store-os.online/"));
     }
 }

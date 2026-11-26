@@ -72,6 +72,7 @@ public partial class MainWindow : Window
             var userData = Path.Combine(PosLauncherSettings.DataRoot, "webview2", _settings.SafeChannel);
             Directory.CreateDirectory(userData);
             // เพลงในร้านต้องเล่นเองได้โดยไม่ต้องมีคนกด (เปิดเครื่องตอนเช้าแล้วเพลงขึ้นเลย)
+            // flag มีผลทุกหน้าต่างใน environment นี้ (หน้าหลัก/จอลูกค้า/เพลง) — รับได้เพราะเปิดได้เฉพาะโดเมน StoreOS
             var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
             _environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData, options: options);
             await Web.EnsureCoreWebView2Async(_environment);
@@ -100,6 +101,7 @@ public partial class MainWindow : Window
 
         Navigate(PosTab.Pos);
         _probeTimer.Start();
+        // ยิงจาก thread ของระบบ ไม่ใช่ UI thread — handler ใช้ Dispatcher.InvokeAsync; ถอดตอนปิดหน้าต่างกัน leak
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         Closed += (_, _) => Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
     }
@@ -155,6 +157,8 @@ public partial class MainWindow : Window
                 return;
             }
             _lastWasAuthPage = tab == PosTab.None;
+            // กลับหน้าเข้าระบบ (ออกจากระบบ/เปลี่ยนกะ) — คนถัดไปล็อกอินแล้วจอลูกค้าต้องเปิดเองอีกครั้ง
+            if (tab == PosTab.None) _loggedIn = false;
             if (tab != PosTab.None)
             {
                 _lastAllowedUrl = url;

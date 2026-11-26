@@ -79,6 +79,7 @@ public partial class CustomerDisplayWindow : Window
     private void GuardDisplayPath(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
+        // ตรวจตรงตัว — ถ้าเว็บเพิ่ม sub-path ใต้ /pos/display ต้องแก้ที่นี่ด้วย
         if (uri.AbsolutePath.Equals("/pos/display", StringComparison.OrdinalIgnoreCase)) return;
         var reason = uri.AbsolutePath.StartsWith("/login", StringComparison.OrdinalIgnoreCase)
             || uri.AbsolutePath.StartsWith("/device-login", StringComparison.OrdinalIgnoreCase)

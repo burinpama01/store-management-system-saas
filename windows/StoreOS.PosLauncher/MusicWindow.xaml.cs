@@ -60,10 +60,18 @@ public partial class MusicWindow : Window
             // ร้านยังไม่เปิดเครื่องเล่นเพลง/ไม่มีสิทธิ์ → เว็บพาไปแดชบอร์ด: ปิดหน้าต่างแล้วบอกเหตุผลแทน
             core.SourceChanged += (_, _) =>
             {
-                if (Uri.TryCreate(core.Source, UriKind.Absolute, out var uri) && uri.AbsolutePath.StartsWith("/dashboard", StringComparison.OrdinalIgnoreCase))
+                if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)) return;
+                if (uri.AbsolutePath.StartsWith("/dashboard", StringComparison.OrdinalIgnoreCase))
                 {
                     LocalLog.Write("info", "music_unavailable", uri.AbsolutePath);
                     Unavailable?.Invoke();
+                    Stop();
+                }
+                else if (uri.AbsolutePath.StartsWith("/login", StringComparison.OrdinalIgnoreCase)
+                    || uri.AbsolutePath.StartsWith("/device-login", StringComparison.OrdinalIgnoreCase))
+                {
+                    // หลุดล็อกอิน — ปิดหน้าต่างเพลง ไม่ค้างหน้าเข้าระบบไว้ (ล็อกอินใหม่ที่หน้าหลักแล้วกดเพลงอีกครั้ง)
+                    LocalLog.Write("info", "music_logged_out", uri.AbsolutePath);
                     Stop();
                 }
             };
