@@ -407,6 +407,15 @@ describe("UX/UI regression guards", () => {
     expect(source).toContain("โหมดอ่านอย่างเดียวสำหรับ role นี้");
   });
 
+  it("catalog product grid fills by card width (2 cols on phones) like POS", () => {
+    const source = read("src/app/(dashboard)/catalog/CatalogManager.tsx");
+
+    expect(source).toContain("grid grid-cols-2 gap-2 @lg:grid-cols-[repeat(auto-fill,minmax(180px,1fr))]");
+    expect(source).not.toContain("grid-cols-1 gap-3 @md:grid-cols-2 @2xl:grid-cols-3");
+    expect(source).toContain("onError={() => setFailedUrl(product.imageUrl ?? null)}");
+    expect(source).toContain("p-4 pb-24 md:pb-4");
+  });
+
   it("catalog add and edit flows open in a dialog instead of a side panel", () => {
     const source = read("src/app/(dashboard)/catalog/CatalogManager.tsx");
     const dialog = read("src/shared/components/ui/ModalDialog.tsx");
