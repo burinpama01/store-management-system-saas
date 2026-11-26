@@ -84,6 +84,8 @@ import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types
 import { cartHasPassItems, formatPassExpiry, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
+import type { OnlineOrderVM } from "../(dashboard)/website/orders/actions";
+import { OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import {
@@ -218,6 +220,8 @@ interface Props {
   hidePromptPayQr?: boolean;
   /** สถานีครัว/บาร์ที่ผูกเครื่องพิมพ์ — ใช้ออกตั๋วครัวตอนจ่ายทันที/ส่งเข้าครัว */
   stationPrinters?: StationRoutingStation[];
+  /** ร้านเปิดสั่งออนไลน์ + ผู้ใช้จัดการออเดอร์ออนไลน์ได้ → แถบตั๋วมีหมวด "ออนไลน์" (R1) */
+  onlineOrdersEnabled?: boolean;
 }
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
@@ -2235,7 +2239,12 @@ function TicketPanel({
   onDeleteTicket,
   onTicketDraftChange,
   qrByTable,
+  onlineOrders = [],
+  onOpenOnlineOrder,
 }: {
+  /** ตั๋วออนไลน์ (จ่ายแล้ว) — แสดงก่อนตั๋วที่บันทึก */
+  onlineOrders?: OnlineOrderVM[];
+  onOpenOnlineOrder?: (id: string) => void;
   cart: Cart;
   savedTickets: SavedOrderTicket[];
   activeTicketId: string | null;
@@ -2361,6 +2370,7 @@ function TicketPanel({
           </div>
         )}
       </div>
+      {onOpenOnlineOrder && <OnlineOrderTicketList orders={onlineOrders} onOpen={onOpenOnlineOrder} />}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
@@ -4037,6 +4047,7 @@ export function PosTerminal({
   beamEnabled = false,
   hidePromptPayQr = false,
   stationPrinters = [],
+  onlineOrdersEnabled = false,
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -4056,6 +4067,17 @@ export function PosTerminal({
   /** เลขโต๊ะของ billTableId (รู้เมื่อมาจากหน้าเปิดโต๊ะ — deep link ไม่รู้) */
   const [billTableNumber, setBillTableNumber] = useState<string | null>(null);
   const [showTableOpen, setShowTableOpen] = useState(false);
+  // ตั๋วออนไลน์ (R1): deep link /pos?online=<id> = เปิดตั๋วนั้นทันที (มาจากกดรับ/กดแจ้งเตือน)
+  const onlineParam = searchParams.get("online");
+  const [onlineFocusId, setOnlineFocusId] = useState<string | null>(() => (onlineOrdersEnabled ? onlineParam : null));
+  const [lastOnlineParam, setLastOnlineParam] = useState(onlineParam);
+  if (onlineParam !== lastOnlineParam) {
+    // ค่าใน URL เปลี่ยนระหว่างอยู่หน้า POS (กดแจ้งเตือนซ้ำ) — ปรับ state ระหว่าง render ตามแบบที่ React แนะนำ
+    setLastOnlineParam(onlineParam);
+    if (onlineOrdersEnabled && onlineParam) setOnlineFocusId(onlineParam);
+  }
+  const { orders: onlineOrders, refresh: refreshOnlineOrders } = useOnlineOrderTickets(onlineOrdersEnabled);
+  const focusedOnlineOrder = onlineFocusId ? (onlineOrders.find((o) => o.id === onlineFocusId) ?? null) : null;
   /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   // ช่องแถบหัวของ shell รวม (อ่านจาก DOM) — null = เปิด POS เดี่ยว ต้องวาดแถบเอง
@@ -5879,7 +5901,7 @@ export function PosTerminal({
             onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
-            savedTicketCount={savedTickets.length}
+            savedTicketCount={savedTickets.length + onlineOrders.length}
             billHistoryCount={billHistory.length}
             ticketMessage={ticketMessage}
             printStatusMessage={printStatusMessage}
@@ -6157,7 +6179,7 @@ export function PosTerminal({
             onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
-            savedTicketCount={savedTickets.length}
+            savedTicketCount={savedTickets.length + onlineOrders.length}
             billHistoryCount={billHistory.length}
             ticketMessage={ticketMessage}
             printStatusMessage={printStatusMessage}
@@ -6306,8 +6328,28 @@ export function PosTerminal({
           onDeleteTicket={handleDeleteTicket}
           onTicketDraftChange={handleTicketDraftChange}
           qrByTable={qrByTable}
+          onlineOrders={onlineOrders}
+          onOpenOnlineOrder={onlineOrdersEnabled ? (id) => setOnlineFocusId(id) : undefined}
         />
       </PosUtilitySheet>
+
+      {focusedOnlineOrder && (
+        <OnlineOrderTicketDialog
+          order={focusedOnlineOrder}
+          print={{
+            storeName,
+            stationPrinters: stationPrinters.filter((s): s is StationRoutingStation & { printerId: string } => Boolean(s.printerId)),
+            paperWidth: receiptSettings?.paperWidth === "58mm" ? "58mm" : "80mm",
+            printers,
+          }}
+          onClose={() => {
+            setOnlineFocusId(null);
+            // ล้าง ?online= ออกจาก URL — รีเฟรชหน้าแล้วไม่เด้งตั๋วเดิมซ้ำ
+            if (searchParams.get("online")) window.history.replaceState(null, "", window.location.pathname);
+          }}
+          onChanged={refreshOnlineOrders}
+        />
+      )}
 
       <PosUtilitySheet
         open={billHistoryPanelOpen && changePaymentOrder === null}

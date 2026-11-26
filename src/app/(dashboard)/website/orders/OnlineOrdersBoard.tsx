@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { Printer } from "@/modules/stores/types";
 import { useConfirm } from "@/shared/components/ui/useConfirm";
 import { STATUS_LABEL, nextStatuses, type OnlineOrderStatus } from "@/modules/online-orders/core";
@@ -45,6 +46,7 @@ export function OnlineOrdersBoard(props: {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const { confirm, confirmDialog } = useConfirm();
+  const router = useRouter();
   const [cancelling, setCancelling] = useState<{ id: string; reason: string } | null>(null);
 
   const reload = useCallback(async () => {
@@ -79,6 +81,10 @@ export function OnlineOrdersBoard(props: {
           printers: props.printers,
         }).catch(() => "พิมพ์ตั๋วครัวไม่สำเร็จ");
         setMessage(`รับออเดอร์ ${o.orderCode} แล้ว · ${printed}`);
+        // R1: รับแล้วเด้งเข้าตั๋วออนไลน์ในหน้าขาย (ค้างจนส่งเสร็จ)
+        setBusyId(null);
+        router.push(`/pos?online=${o.id}`);
+        return;
       }
       setBusyId(null);
       await reload();

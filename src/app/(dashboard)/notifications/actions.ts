@@ -1,5 +1,6 @@
 "use server";
 
+import { onlineOrderIdFromMetadata } from "@/modules/notifications/online-order-link";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/modules/auth/guards";
 import { getCurrentUser, getUserStores, resolveCurrentStore } from "@/modules/auth/session";
@@ -39,6 +40,8 @@ export interface NewNotificationItem {
   title: string | null;
   message: string;
   createdAt: string;
+  /** ออเดอร์ออนไลน์ (new_online_order) — กดแจ้งเตือนแล้วเปิดตั๋วนั้นใน POS */
+  onlineOrderId?: string | null;
 }
 
 /**
@@ -61,6 +64,7 @@ export async function listNewNotificationsAction(): Promise<{
         title: n.title,
         message: n.message,
         createdAt: n.createdAt,
+        onlineOrderId: onlineOrderIdFromMetadata(n.metadata),
       })),
       error: null,
     };
