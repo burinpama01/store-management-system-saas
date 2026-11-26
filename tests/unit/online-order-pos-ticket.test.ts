@@ -53,7 +53,7 @@ describe("R1 ตั๋วออนไลน์ใน POS — หน้า POS", 
   it("รีวิว: dialog remount ต่อออเดอร์ + บิลยังไม่ปิดห้ามเลื่อนสถานะ + ปิดบิลซ้ำเฉพาะ accepted", () => {
     expect(terminal).toContain("key={focusedOnlineOrder.id}");
     expect(tickets).toContain('const needsBillRetry = billPending && order.status === "accepted"');
-    expect(tickets).toContain('order.status === "paid" || billPending ? []');
+    expect(tickets).toContain("awaitingAccept || billPending ? []");
   });
 
   it("ตั๋วครัวรับที่ร้านเขียน 'รับที่ร้าน'", () => {

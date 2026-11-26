@@ -122,7 +122,7 @@ describe("migration + เส้นทางเงิน", () => {
   });
 
   it("รับออเดอร์: จองสถานะก่อน แล้วปิดบิลด้วยเงิน Beam ผ่านเส้นทาง POS เดิม", () => {
-    expect(backActions).toContain('from: "paid",\n        to: "accepted"');
+    expect(backActions).toContain('from: order.status,\n        to: "accepted"');
     expect(backActions).toContain("claimBeamPaymentForOrder");
     expect(backActions).toContain("addPaymentAndClose(");
     expect(backActions).toContain("releaseBeamPaymentClaim");

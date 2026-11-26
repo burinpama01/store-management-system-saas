@@ -10,11 +10,14 @@ export function OnlineOrderSettingsForm({
   initial,
   hasWebsite,
   originFromAttendance,
+  memberTiers = [],
 }: {
   initial: OnlineOrderSettings;
   hasWebsite: boolean;
   /** ร้านตั้งจุดลงเวลาเข้างานแล้ว → ใช้เป็นพิกัดร้าน (แก้ที่หน้าการเข้างาน) */
   originFromAttendance: boolean;
+  /** R3: ระดับสมาชิกของร้าน (ตั้งเพดานเก็บเงินปลายทางรายระดับ) */
+  memberTiers?: { rank: number; name: string }[];
 }) {
   const [s, setS] = useState(initial);
   const [message, setMessage] = useState<string | null>(null);
@@ -134,6 +137,51 @@ export function OnlineOrderSettingsForm({
             ) : (
               <>ค่าส่ง = ค่าเริ่มต้น + ค่าต่อ กม. × ระยะเส้นตรง (ปัดขึ้นทีละ 0.5 กม.) — ตัวอย่าง 2.3 กม. = {(s.deliveryBaseFee + s.deliveryFeePerKm * 2.5).toLocaleString("th-TH")} บาท</>
             )}
+          </p>
+        </fieldset>
+        <fieldset className="space-y-2 rounded-lg border border-[var(--border)] p-3" disabled={!s.deliveryEnabled}>
+          <legend className="px-1 font-semibold">เก็บเงินปลายทาง</legend>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={s.codEnabled} onChange={(e) => set("codEnabled", e.target.checked)} />
+            ให้ลูกค้าเลือกเก็บเงินปลายทาง (ส่งถึงบ้านเท่านั้น — จ่ายเงินสด/โอนกับคนส่ง)
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              เพดานยอดต่อบิล (บาท)
+              <input className={field} type="number" min={0} step={50} value={s.codMaxPerBill} onChange={(e) => set("codMaxPerBill", Number(e.target.value) || 0)} />
+            </label>
+            <label className="flex items-end gap-2 pb-2">
+              <input type="checkbox" checked={s.codRequireOtp} onChange={(e) => set("codRequireOtp", e.target.checked)} />
+              ยืนยันเบอร์ด้วย OTP (SMS)
+            </label>
+          </div>
+          {memberTiers.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-[var(--muted)]">เพดานตามระดับสมาชิก (เว้นว่าง = ใช้เพดานต่อบิล)</p>
+              <div className="grid grid-cols-2 gap-2">
+                {memberTiers.map((t) => (
+                  <label key={t.rank} className="block text-sm">
+                    {t.name}
+                    <input
+                      className={field}
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={s.codTierCaps[String(t.rank)] ?? ""}
+                      onChange={(e) => {
+                        const next = { ...s.codTierCaps };
+                        if (e.target.value.trim() === "") delete next[String(t.rank)];
+                        else next[String(t.rank)] = Number(e.target.value) || 0;
+                        set("codTierCaps", next);
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-[var(--muted)]">
+            ร้านกดรับก่อนจึงเริ่มทำ · ส่งสำเร็จเลือกเงินสด/โอน (เงินสดปิดบิลเข้าลิ้นชักตอนคนส่งคืนเงิน) · ส่งไม่สำเร็จ 2 ครั้งใน 90 วัน เบอร์นั้นใช้เก็บปลายทางไม่ได้
           </p>
         </fieldset>
         <fieldset className="space-y-2 rounded-lg border border-[var(--border)] p-3" disabled={!s.deliveryEnabled}>

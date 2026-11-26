@@ -6,7 +6,7 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { canUseMemberPrivileges } from "@/modules/members/access";
 import { isOpsManagerRole } from "@/modules/operations/access";
-import { addPaymentAndClose } from "@/modules/pos/order-repository";
+import { addPaymentAndClose, voidOrder } from "@/modules/pos/order-repository";
 import {
   claimBeamPaymentForOrder,
   finalizeBeamPaymentForOrder,
@@ -21,6 +21,7 @@ import {
   canTransition,
   computeRiderPay,
   onlineOrderSettingsSchema,
+  type CodCollectMethod,
   type OnlineOrderSettings,
   type OnlineOrderStatus,
 } from "@/modules/online-orders/core";
@@ -135,6 +136,12 @@ export interface OnlineOrderVM {
   /** R2: คนส่ง (ออนไลน์ส่งถึงบ้าน) */
   riderName: string | null;
   riderPayAmount: number | null;
+  /** R3: เก็บเงินปลายทาง */
+  paymentMethod: "beam" | "cod";
+  codCollectedMethod: "cash" | "bank_transfer" | "beam" | null;
+  /** เงินสดที่คนส่งเก็บมาแล้วยังไม่คืนร้าน (บิลยังไม่ปิด) */
+  codCashPending: number | null;
+  failureReason: string | null;
 }
 
 function toVM(o: OnlineOrder, closedBills: Set<string>): OnlineOrderVM {
@@ -167,6 +174,10 @@ function toVM(o: OnlineOrder, closedBills: Set<string>): OnlineOrderVM {
     createdAt: o.createdAt,
     riderName: o.riderName,
     riderPayAmount: o.riderPayAmount,
+    paymentMethod: o.paymentMethod,
+    codCollectedMethod: o.codCollectedMethod,
+    codCashPending: o.paymentMethod === "cod" && o.codCollectedMethod === "cash" && !o.codSettledAt ? (o.codCashHeld ?? o.total) : null,
+    failureReason: o.failureReason,
   };
 }
 
@@ -213,11 +224,12 @@ export async function acceptOnlineOrderAction(id: string): Promise<{ ok: boolean
     if (!g.resolved.can("pos.use")) return fail("ต้องมีสิทธิ์ใช้ POS เพื่อปิดบิล");
     let order = await getOnlineOrderForStore(g.ctx.storeId, id);
     if (!order) return fail("ไม่พบออเดอร์");
-    if (order.status === "paid") {
+    const isCod = order.paymentMethod === "cod";
+    if (order.status === "paid" || order.status === "cod_pending") {
       const moved = await transitionOnlineOrder({
         storeId: g.ctx.storeId,
         id,
-        from: "paid",
+        from: order.status,
         to: "accepted",
         userId: g.user.id,
         patch: { accepted_at: new Date().toISOString() },
@@ -227,8 +239,8 @@ export async function acceptOnlineOrderAction(id: string): Promise<{ ok: boolean
     } else if (order.status !== "accepted") {
       return fail(`ออเดอร์อยู่ในสถานะ "${STATUS_LABEL[order.status]}" แล้ว`);
     }
-    if (!order.gatewayPaymentId) return fail("ไม่พบรายการชำระ Beam ของออเดอร์นี้");
-    const gatewayPaymentId = order.gatewayPaymentId;
+    if (!isCod && !order.gatewayPaymentId) return fail("ไม่พบรายการชำระ Beam ของออเดอร์นี้");
+    const gatewayPaymentId = order.gatewayPaymentId ?? "";
 
     const service = await createSupabaseServiceClient();
     let orderId = order.orderId;
@@ -316,9 +328,9 @@ export async function acceptOnlineOrderAction(id: string): Promise<{ ok: boolean
       }
     }
 
-    // ปิดบิลด้วยเงิน Beam (ข้ามถ้าปิดไปแล้ว)
+    // ปิดบิลด้วยเงิน Beam (ข้ามถ้าปิดไปแล้ว) · เก็บปลายทาง = บิลเปิดค้างจนรับเงิน (ส่งสำเร็จ/คืนเงินสด)
     const { data: billRow } = await service.from("orders").select("status, order_number").eq("id", orderId as string).maybeSingle();
-    if (billRow && billRow.status !== "paid") {
+    if (billRow && billRow.status !== "paid" && !isCod) {
       const claimed = await claimBeamPaymentForOrder({
         storeId: g.ctx.storeId,
         gatewayPaymentId: gatewayPaymentId,
@@ -364,6 +376,8 @@ export async function updateOnlineOrderStatusAction(
   reason?: string,
   /** R2: ออกไปส่ง (ส่งถึงบ้าน) ต้องระบุคนส่ง */
   riderUserId?: string,
+  /** R3: ส่งสำเร็จแบบเก็บปลายทาง ต้องระบุวิธีรับเงิน */
+  codMethod?: CodCollectMethod,
 ): Promise<ActionResult> {
   try {
     if (!UUID_RE.test(id)) return { ok: false, error: "ไม่พบออเดอร์" };
@@ -372,7 +386,7 @@ export async function updateOnlineOrderStatusAction(
     if (to === "accepted") return { ok: false, error: "ใช้ปุ่มรับออเดอร์" };
     const order = await getOnlineOrderForStore(g.ctx.storeId, id);
     if (!order) return { ok: false, error: "ไม่พบออเดอร์" };
-    if (!canTransition(order.status, to, order.fulfillment)) return { ok: false, error: "เปลี่ยนเป็นสถานะนี้ไม่ได้" };
+    if (!canTransition(order.status, to, order.fulfillment, order.paymentMethod)) return { ok: false, error: "เปลี่ยนเป็นสถานะนี้ไม่ได้" };
     if (to === "refund_pending" && !isOpsManagerRole(g.resolved.role)) {
       return { ok: false, error: "ยกเลิกออเดอร์ที่จ่ายแล้วได้เฉพาะเจ้าของหรือแอดมิน" };
     }
@@ -395,8 +409,49 @@ export async function updateOnlineOrderStatusAction(
         ? computeRiderPay({ subtotal: order.subtotal, deliveryFee: order.deliveryFee, rate: settings.riderPayRate, includeFee: settings.riderPayIncludeFee })
         : null;
     }
+    // R3: ส่งสำเร็จแบบเก็บปลายทาง — โอน = ปิดบิลทันที · เงินสด = ค้างที่คนส่งจนคืนร้าน (ปิดบิลตอนนั้น)
+    const isCod = order.paymentMethod === "cod";
+    if (isCod && to === "completed") {
+      if (codMethod !== "cash" && codMethod !== "bank_transfer") return { ok: false, error: "เลือกวิธีรับเงิน (เงินสด/โอน)" };
+      if (!g.resolved.can("pos.use")) return { ok: false, error: "ต้องมีสิทธิ์ใช้ POS เพื่อรับเงิน" };
+      if (!order.orderId) return { ok: false, error: "ยังไม่มีบิลของออเดอร์นี้ — กดรับออเดอร์ก่อน" };
+      patch.cod_collected_method = codMethod;
+      if (codMethod === "bank_transfer") {
+        const closed = await addPaymentAndClose(order.orderId, g.ctx.storeId, g.user.id, {
+          method: "bank_transfer",
+          amount: order.total,
+          reference: `COD:${order.orderCode}`,
+        });
+        if (closed.error) {
+          log("error", "codCollect", `ปิดบิลเก็บปลายทาง (โอน) ไม่สำเร็จ ${order.orderCode}: ${closed.error.userMessage}`, g, { onlineOrderId: id });
+          return { ok: false, error: `ปิดบิลไม่สำเร็จ: ${closed.error.userMessage}` };
+        }
+        patch.cod_settled_at = now;
+        patch.cod_settled_by = g.user.id;
+      } else {
+        patch.cod_cash_held = order.total;
+      }
+    }
+    // R3: ส่งไม่สำเร็จ/ร้านปฏิเสธ COD — ยกเลิกบิลที่เปิดค้าง (ไม่มีเงินเข้า)
+    if (to === "delivery_failed") {
+      patch.failure_reason = (reason ?? "").trim().slice(0, 200) || "ส่งไม่สำเร็จ";
+      if (order.orderId) {
+        const voided = await voidOrder(order.orderId, g.ctx.storeId, g.user.id, `ออนไลน์ ${order.orderCode}: ${String(patch.failure_reason)}`);
+        if (!voided.ok) {
+          log("error", "codDeliveryFailed", `ยกเลิกบิลเก็บปลายทางไม่สำเร็จ ${order.orderCode}`, g, { onlineOrderId: id });
+          return { ok: false, error: "ยกเลิกบิลไม่สำเร็จ ลองอีกครั้ง" };
+        }
+      }
+    }
     const moved = await transitionOnlineOrder({ storeId: g.ctx.storeId, id, from: order.status, to, userId: g.user.id, patch });
     if (!moved) return { ok: false, error: "สถานะเปลี่ยนไปแล้ว — โหลดใหม่" };
+    if (isCod && (to === "completed" || to === "delivery_failed")) {
+      log(to === "delivery_failed" ? "warn" : "info", to === "completed" ? "codCollect" : "codDeliveryFailed",
+        to === "completed"
+          ? `เก็บปลายทาง ${order.orderCode} ฿${order.total} (${codMethod === "cash" ? "เงินสดค้างที่คนส่ง" : "โอน ปิดบิลแล้ว"})`
+          : `เก็บปลายทาง ${order.orderCode} ส่งไม่สำเร็จ: ${String(patch.failure_reason)}`,
+        g, { onlineOrderId: id, codMethod: codMethod ?? null, riderUserId: order.riderUserId });
+    }
     if (to === "out_for_delivery" && patch.rider_user_id) {
       log("info", "assignOnlineOrderRider", `ออเดอร์ออนไลน์ ${order.orderCode}: คนส่ง ${String(patch.rider_name)}`, g, {
         onlineOrderId: id,
@@ -445,5 +500,53 @@ export async function updateOnlineOrderStatusAction(
     return { ok: true, error: null };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "เปลี่ยนสถานะไม่สำเร็จ" };
+  }
+}
+
+/**
+ * R3: คนส่งกลับร้านพร้อมเงินสดเก็บปลายทาง → ปิดบิลเงินสดเข้ารอบเงินสดที่เปิดอยู่
+ * กันกดซ้ำ: ปิดบิลก่อน (RPC ปิดซ้ำไม่ได้) แล้วจอง cod_settled_at แบบมีเงื่อนไข
+ */
+export async function settleCodCashAction(id: string): Promise<ActionResult> {
+  try {
+    if (!UUID_RE.test(id)) return { ok: false, error: "ไม่พบออเดอร์" };
+    const g = await queueGuard();
+    if (g.error !== null) return { ok: false, error: g.error };
+    if (!g.resolved.can("pos.use")) return { ok: false, error: "ต้องมีสิทธิ์ใช้ POS เพื่อรับเงิน" };
+    const order = await getOnlineOrderForStore(g.ctx.storeId, id);
+    if (!order || order.paymentMethod !== "cod" || order.codCollectedMethod !== "cash") return { ok: false, error: "ไม่พบเงินค้างของออเดอร์นี้" };
+    if (order.codSettledAt) return { ok: true, error: null };
+    if (!order.orderId) return { ok: false, error: "ไม่พบบิลของออเดอร์นี้" };
+    const service = await createSupabaseServiceClient();
+    const { data: bill } = await service.from("orders").select("status").eq("id", order.orderId).maybeSingle();
+    if (bill?.status !== "paid") {
+      const closed = await addPaymentAndClose(order.orderId, g.ctx.storeId, g.user.id, {
+        method: "cash",
+        amount: order.codCashHeld ?? order.total,
+        receivedAmount: order.codCashHeld ?? order.total,
+        changeAmount: 0,
+        reference: `COD:${order.orderCode}`,
+      });
+      if (closed.error) {
+        log("error", "settleCodCash", `ปิดบิลเงินสดเก็บปลายทางไม่สำเร็จ ${order.orderCode}: ${closed.error.userMessage}`, g, { onlineOrderId: id });
+        return { ok: false, error: `ปิดบิลไม่สำเร็จ: ${closed.error.userMessage}` };
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- คอลัมน์ใหม่
+    await (service as never as { from: (t: string) => any })
+      .from("online_orders")
+      .update({ cod_settled_at: new Date().toISOString(), cod_settled_by: g.user.id, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("store_id", g.ctx.storeId)
+      .is("cod_settled_at", null);
+    log("info", "settleCodCash", `รับเงินสดเก็บปลายทางคืน ${order.orderCode} ฿${order.codCashHeld ?? order.total} จาก ${order.riderName ?? "คนส่ง"}`, g, {
+      onlineOrderId: id,
+      riderUserId: order.riderUserId,
+      amount: order.codCashHeld ?? order.total,
+    });
+    revalidatePath("/website/orders");
+    return { ok: true, error: null };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "รับเงินไม่สำเร็จ" };
   }
 }

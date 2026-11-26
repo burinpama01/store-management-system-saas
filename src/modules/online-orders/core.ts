@@ -16,6 +16,8 @@ export const ONLINE_ORDER_STATUSES = [
   "expired",
   "refund_pending",
   "refunded",
+  "cod_pending",
+  "delivery_failed",
 ] as const;
 export type OnlineOrderStatus = (typeof ONLINE_ORDER_STATUSES)[number];
 export type Fulfillment = "pickup" | "delivery";
@@ -31,13 +33,26 @@ export const STATUS_LABEL: Record<OnlineOrderStatus, string> = {
   expired: "หมดเวลาชำระ",
   refund_pending: "ยกเลิก รอร้านคืนเงิน",
   refunded: "ยกเลิก คืนเงินแล้ว",
+  cod_pending: "เก็บเงินปลายทาง รอร้านรับ",
+  delivery_failed: "ส่งไม่สำเร็จ/ยกเลิก",
 };
 
+export type OnlinePaymentMethod = "beam" | "cod";
+/** วิธีรับเงินปลายทางตอนส่งสำเร็จ (R3a: เงินสด/โอน · Beam QR = R3b) */
+export type CodCollectMethod = "cash" | "bank_transfer";
+
 /** สถานะถัดไปที่ร้านกดได้ (รับออเดอร์ = accept ทำในเส้นทางพิเศษเพราะต้องสร้างบิล) */
-export function nextStatuses(status: OnlineOrderStatus, fulfillment: Fulfillment): OnlineOrderStatus[] {
+export function nextStatuses(
+  status: OnlineOrderStatus,
+  fulfillment: Fulfillment,
+  paymentMethod: OnlinePaymentMethod = "beam",
+): OnlineOrderStatus[] {
   switch (status) {
     case "paid":
       return ["accepted", "refund_pending"];
+    // เก็บปลายทาง: ยังไม่มีเงิน — ปฏิเสธได้เลยไม่ต้องคืนเงิน
+    case "cod_pending":
+      return ["accepted", "delivery_failed"];
     // รับแล้ว = บิล POS ปิดด้วยเงิน Beam แล้ว — ยกเลิก/คืนเงินหลังจากนี้ใช้ขั้นตอนบิลที่จ่ายแล้วของร้าน
     // (ยกเลิกในหน้านี้ได้เฉพาะก่อนรับ เพื่อไม่ให้ยอดขายกับเงินที่คืนไม่ตรงกัน)
     case "accepted":
@@ -45,8 +60,10 @@ export function nextStatuses(status: OnlineOrderStatus, fulfillment: Fulfillment
     case "preparing":
       return [fulfillment === "pickup" ? "ready" : "out_for_delivery"];
     case "ready":
-    case "out_for_delivery":
       return ["completed"];
+    // เก็บปลายทาง: ลูกค้าไม่รับ/ติดต่อไม่ได้ = ส่งไม่สำเร็จ (ยกเลิกบิลที่เปิดค้าง ไม่มีเงินเข้า)
+    case "out_for_delivery":
+      return paymentMethod === "cod" ? ["completed", "delivery_failed"] : ["completed"];
     case "refund_pending":
       return ["refunded"];
     default:
@@ -54,12 +71,17 @@ export function nextStatuses(status: OnlineOrderStatus, fulfillment: Fulfillment
   }
 }
 
-export function canTransition(from: OnlineOrderStatus, to: OnlineOrderStatus, fulfillment: Fulfillment): boolean {
-  return nextStatuses(from, fulfillment).includes(to);
+export function canTransition(
+  from: OnlineOrderStatus,
+  to: OnlineOrderStatus,
+  fulfillment: Fulfillment,
+  paymentMethod: OnlinePaymentMethod = "beam",
+): boolean {
+  return nextStatuses(from, fulfillment, paymentMethod).includes(to);
 }
 
 /** สถานะที่ร้านยังต้องจัดการ (แสดงในคิว + นับแจ้งเตือน) */
-export const ACTIVE_STATUSES: OnlineOrderStatus[] = ["paid", "accepted", "preparing", "ready", "out_for_delivery", "refund_pending"];
+export const ACTIVE_STATUSES: OnlineOrderStatus[] = ["paid", "cod_pending", "accepted", "preparing", "ready", "out_for_delivery", "refund_pending"];
 
 // ---------- ตั้งค่า ----------
 
@@ -82,6 +104,14 @@ export const onlineOrderSettingsSchema = z
     riderPayRate: z.number().min(0).max(100),
     /** บวกค่าส่งที่ลูกค้าจ่ายให้คนส่งเต็มจำนวน */
     riderPayIncludeFee: z.boolean(),
+    /** R3: เก็บเงินปลายทาง (ส่งถึงบ้านเท่านั้น) */
+    codEnabled: z.boolean(),
+    /** เพดานยอดต่อบิล (ลูกค้าทั่วไป/ระดับที่ไม่ได้ตั้ง) */
+    codMaxPerBill: z.number().min(0).max(100000),
+    /** เพดานตามระดับสมาชิก { "<rank>": ยอด } */
+    codTierCaps: z.record(z.string().regex(/^[0-9]{1,2}$/), z.number().min(0).max(100000)),
+    /** ยืนยันเบอร์ด้วย OTP ก่อนสั่ง */
+    codRequireOtp: z.boolean(),
     minOrder: z.number().min(0).max(1000000),
     prepMinutes: z.number().int().min(0).max(240),
   })
@@ -106,6 +136,10 @@ export const DEFAULT_ONLINE_ORDER_SETTINGS: OnlineOrderSettings = {
   riderPayEnabled: false,
   riderPayRate: 10,
   riderPayIncludeFee: true,
+  codEnabled: false,
+  codMaxPerBill: 500,
+  codTierCaps: {},
+  codRequireOtp: true,
   minOrder: 0,
   prepMinutes: 20,
 };
@@ -141,6 +175,10 @@ export const checkoutSchema = z
     /** นาทีจากตอนนี้ (รับที่ร้าน) — null = เร็วที่สุด */
     pickupInMinutes: z.number().int().min(0).max(24 * 60).nullable().optional(),
     note: z.string().trim().max(300).optional(),
+    /** R3: beam = จ่าย QR ก่อน (เดิม) · cod = เก็บเงินปลายทาง */
+    paymentMethod: z.enum(["beam", "cod"]).optional(),
+    /** OTP ยืนยันเบอร์ (cod) */
+    otpCode: z.string().regex(/^[0-9]{4,8}$/).optional(),
   })
   .strict();
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -194,6 +232,29 @@ export function quoteDelivery(
   const billedKm = Math.ceil(Math.max(0, distanceKm - freeKm) * 2) / 2;
   return { ok: true, distanceKm, fee: round2(settings.deliveryBaseFee + settings.deliveryFeePerKm * billedKm) };
 }
+
+// ---------- เก็บเงินปลายทาง (R3) ----------
+
+/** เพดาน COD ของลูกค้า: ระดับสมาชิกที่ตั้งเพดานไว้ใช้ของระดับนั้น · นอกนั้นใช้เพดานต่อบิล */
+export function codCapFor(settings: Pick<OnlineOrderSettings, "codMaxPerBill" | "codTierCaps">, tierRank: number | null): number {
+  if (tierRank !== null) {
+    const tierCap = settings.codTierCaps[String(tierRank)];
+    if (typeof tierCap === "number" && Number.isFinite(tierCap)) return tierCap;
+  }
+  return settings.codMaxPerBill;
+}
+
+/** ส่งไม่สำเร็จแบบเก็บปลายทางกี่ครั้ง (90 วัน) จึงปิด COD ของเบอร์นั้น */
+export const COD_FAILED_BLOCK_COUNT = 2;
+export const COD_FAILED_LOOKBACK_DAYS = 90;
+/** ออเดอร์เก็บปลายทางที่ยังไม่จบได้พร้อมกันต่อเบอร์ */
+export const COD_MAX_ACTIVE_PER_PHONE = 2;
+/** OTP: อายุ 5 นาที · ส่งซ้ำได้ทุก 60 วิ · ≤5 ครั้ง/เบอร์/วัน · ≤20 ครั้ง/IP/10 นาที · ใส่ผิดได้ 5 ครั้ง */
+export const COD_OTP_TTL_MS = 5 * 60_000;
+export const COD_OTP_COOLDOWN_MS = 60_000;
+export const COD_OTP_MAX_PER_PHONE_DAY = 5;
+export const COD_OTP_MAX_PER_IP_10MIN = 20;
+export const COD_OTP_MAX_ATTEMPTS = 5;
 
 // ---------- คนส่ง (R2) ----------
 
