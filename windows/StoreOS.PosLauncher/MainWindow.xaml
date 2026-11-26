@@ -45,6 +45,11 @@
                     <Border x:Name="StatusPill" CornerRadius="999" Padding="12,5" Background="#EFE9E3" Margin="0,0,8,0">
                         <TextBlock x:Name="StatusText" FontSize="13" FontWeight="SemiBold" Foreground="#6A615A" Text="● พิมพ์ตรง: รอพิมพ์ใบแรก" />
                     </Border>
+                    <Button x:Name="DisplayButton" Style="{StaticResource TabButton}" Content="🖥  จอลูกค้า" FontSize="13" Click="OnToggleCustomerDisplay"
+                            ToolTip="เปิด/ปิดจอลูกค้า (มีจอที่สอง = เต็มจอนั้น)" />
+                    <Button x:Name="MusicButton" Style="{StaticResource TabButton}" Content="🎵  เพลง" FontSize="13" Click="OnOpenMusic"
+                            ToolTip="เครื่องเล่นเพลง + คิวขอเพลงของร้าน" />
+                    <Button x:Name="MusicStopButton" Style="{StaticResource TabButton}" Content="■ หยุดเพลง" FontSize="13" Click="OnStopMusic" Visibility="Collapsed" />
                     <Button Style="{StaticResource TabButton}" Content="ประวัติการพิมพ์ / ค้นหาเครื่องพิมพ์" FontSize="13" Click="OnOpenPrinterTools" />
                 </StackPanel>
             </DockPanel>

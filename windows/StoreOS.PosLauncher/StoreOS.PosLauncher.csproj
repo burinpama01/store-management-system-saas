@@ -17,7 +17,7 @@
     <AssemblyName>StoreOS.PosLauncher</AssemblyName>
     <RootNamespace>StoreOS.PosLauncher</RootNamespace>
     <Product>StoreOS POS</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <ApplicationIcon>Assets\storeos.ico</ApplicationIcon>
   </PropertyGroup>
 

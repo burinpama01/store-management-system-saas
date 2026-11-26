@@ -43,6 +43,12 @@ public partial class MainWindow : Window
     private string? _lastAllowedUrl;
     private bool _lastWasAuthPage = true;
     private PrinterToolsWindow? _tools;
+    private CoreWebView2Environment? _environment;
+    private CustomerDisplayWindow? _display;
+    private MusicWindow? _music;
+    /// <summary>ร้านยังไม่เปิดฟีเจอร์จอลูกค้า — ไม่เปิดเองซ้ำทุกครั้งที่เข้าหน้าขาย (กดปุ่มเองได้)</summary>
+    private bool _displayFeatureOff;
+    private bool _loggedIn;
 
     public MainWindow(PosLauncherSettings settings)
     {
@@ -65,8 +71,10 @@ public partial class MainWindow : Window
         {
             var userData = Path.Combine(PosLauncherSettings.DataRoot, "webview2", _settings.SafeChannel);
             Directory.CreateDirectory(userData);
-            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
-            await Web.EnsureCoreWebView2Async(environment);
+            // เพลงในร้านต้องเล่นเองได้โดยไม่ต้องมีคนกด (เปิดเครื่องตอนเช้าแล้วเพลงขึ้นเลย)
+            var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
+            _environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userData, options: options);
+            await Web.EnsureCoreWebView2Async(_environment);
         }
         catch (Exception ex)
         {
@@ -92,6 +100,8 @@ public partial class MainWindow : Window
 
         Navigate(PosTab.Pos);
         _probeTimer.Start();
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        Closed += (_, _) => Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
     }
 
     // ───────────── แท็บ ─────────────
@@ -149,6 +159,11 @@ public partial class MainWindow : Window
             {
                 _lastAllowedUrl = url;
                 HighlightTab(tab);
+                if (!_loggedIn)
+                {
+                    _loggedIn = true;
+                    AutoOpenCustomerDisplay();
+                }
             }
             return;
         }
@@ -187,7 +202,21 @@ public partial class MainWindow : Window
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         // หน้าต่างใหม่ (เช่น ใบเสร็จ PDF, ลิงก์ target=_blank) ไม่เปิดในโปรแกรม — StoreOS ไปเบราว์เซอร์, เว็บอื่นบล็อก
+        // ยกเว้นจอลูกค้า (/pos/display) และเครื่องเล่นเพลง (/player/...) ที่โปรแกรมเปิดเป็นหน้าต่างของตัวเอง
         e.Handled = true;
+        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var target) && PosNavigationPolicy.IsAllowedHost(target, _settings.Channel))
+        {
+            if (target.AbsolutePath.Equals("/pos/display", StringComparison.OrdinalIgnoreCase))
+            {
+                OpenCustomerDisplay(userRequested: true);
+                return;
+            }
+            if (target.AbsolutePath.StartsWith("/player/", StringComparison.OrdinalIgnoreCase))
+            {
+                OpenMusic(target.AbsoluteUri);
+                return;
+            }
+        }
         var decision = PosNavigationPolicy.Decide(e.Uri, _settings.Channel);
         if (decision != NavigationDecision.Block)
         {
@@ -340,6 +369,100 @@ public partial class MainWindow : Window
         StatusPill.Background = bg;
         StatusText.Foreground = fg;
     }
+
+    // ───────────── จอลูกค้า ─────────────
+
+    private void AutoOpenCustomerDisplay()
+    {
+        if (!_settings.CustomerDisplayAuto || _displayFeatureOff || _display is not null) return;
+        if (MonitorInfo.Secondary() is null) return;
+        OpenCustomerDisplay(userRequested: false);
+    }
+
+    private void OpenCustomerDisplay(bool userRequested)
+    {
+        if (_environment is null) return;
+        if (_display is not null)
+        {
+            _display.Activate();
+            return;
+        }
+        var monitor = MonitorInfo.Secondary();
+        if (userRequested) _displayFeatureOff = false;
+        var window = new CustomerDisplayWindow(_environment, _baseUrl + "/pos/display", _settings.Channel, monitor) { Owner = this };
+        window.ClosedBecause += reason =>
+        {
+            if (reason == "feature_off")
+            {
+                _displayFeatureOff = true;
+                if (userRequested) ShowNotice("ร้านนี้ยังไม่เปิดจอลูกค้า — เปิดได้ที่ การตั้งค่าอื่นๆ › ตั้งค่า › จอลูกค้า");
+            }
+        };
+        window.Closed += (_, _) =>
+        {
+            _display = null;
+            DisplayButton.Content = "🖥  จอลูกค้า";
+        };
+        _display = window;
+        DisplayButton.Content = "🖥  ปิดจอลูกค้า";
+        window.Show();
+        // จอที่สองเต็มจอแล้ว — ดึงโฟกัสกลับมาที่หน้าขาย (แคชเชียร์พิมพ์/สแกนต่อได้ทันที)
+        Activate();
+        LocalLog.Write("info", "customer_display_opened", monitor is null ? "window (single screen)" : $"fullscreen {monitor.Width}x{monitor.Height} @ {monitor.Left},{monitor.Top}");
+    }
+
+    private void OnToggleCustomerDisplay(object sender, RoutedEventArgs e)
+    {
+        if (_display is not null)
+        {
+            _display.Close();
+            return;
+        }
+        OpenCustomerDisplay(userRequested: true);
+    }
+
+    /// <summary>เสียบ/ถอดจอ หรือเปลี่ยนความละเอียด — ย้าย/เปิด/ปิดจอลูกค้าตาม</summary>
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            var secondary = MonitorInfo.Secondary();
+            if (secondary is not null)
+            {
+                if (_display is not null) _display.MoveTo(secondary);
+                else if (_loggedIn) AutoOpenCustomerDisplay();
+            }
+            else if (_display is not null && _display.WindowStyle == WindowStyle.None)
+            {
+                _display.Close(); // จอที่สองถูกถอด — ไม่ปล่อยหน้าต่างไร้กรอบทับหน้าขาย
+            }
+        });
+    }
+
+    // ───────────── เพลง ─────────────
+
+    private void OpenMusic(string? url = null)
+    {
+        if (_environment is null) return;
+        if (_music is null)
+        {
+            _music = new MusicWindow(_environment, url ?? _baseUrl + "/player/_", _settings.Channel) { Owner = this };
+            _music.Unavailable += () => ShowNotice("ร้านนี้ยังไม่เปิดเครื่องเล่นเพลง/ขอเพลง — ตั้งค่าได้ที่ การตั้งค่าอื่นๆ › ตั้งค่า › เครื่องเล่นเพลง");
+            _music.Closed += (_, _) =>
+            {
+                _music = null;
+                MusicStopButton.Visibility = Visibility.Collapsed;
+            };
+            MusicStopButton.Visibility = Visibility.Visible;
+        }
+        _music.Show();
+        if (_music.WindowState == WindowState.Minimized) _music.WindowState = WindowState.Normal;
+        _music.Activate();
+    }
+
+    private void OnOpenMusic(object sender, RoutedEventArgs e) => OpenMusic();
+
+    private void OnStopMusic(object sender, RoutedEventArgs e) => _music?.Stop();
 
     private void OnOpenPrinterTools(object sender, RoutedEventArgs e)
     {
