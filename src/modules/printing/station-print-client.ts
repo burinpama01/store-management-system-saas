@@ -13,6 +13,8 @@ import {
 export interface StationPrintResult {
   /** ส่งเข้าคิวใหม่ (รวมงานเดิมที่ failed แล้วถูกส่งกลับเข้าคิว) — ยังไม่ใช่ "พิมพ์ออกแล้ว" */
   queued: number;
+  /** พิมพ์ตรงจากโปรแกรม StoreOS POS สำเร็จแล้ว (ร้านโหมดพิมพ์ตรง) */
+  printedDirect?: number;
   /** จอ/ช่องทางอื่นส่งไปแล้ว และงานนั้นรอพิมพ์/กำลังพิมพ์/พิมพ์แล้ว */
   alreadyQueued: number;
   /** งานเดิมสถานะ unknown — ไม่รู้ว่าออกไหม ไม่ส่งซ้ำให้อัตโนมัติ ต้องตรวจที่เครื่อง */
@@ -84,12 +86,18 @@ async function printStationTicketDirect(
     label: `${job.stationName} ${job.receipt.orderNumber ?? ""}`.trim(),
   });
   // รายงานผลให้ server — failed = ปล่อยการจองให้ลองใหม่ได้ / printed, unknown = กันพิมพ์ซ้ำ
-  await fetch("/api/print/direct-result", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sourceKey: job.sourceKey, outcome: printed.outcome, error: printed.error }),
-  }).catch(() => undefined);
-  if (printed.outcome === "printed") result.queued += 1;
+  // ลองซ้ำ 3 ครั้ง: ถ้าไม่ถึงเลย การจองค้าง "claimed" แล้วอีก 2 นาทีจออื่นจองต่อได้ = เสี่ยงตั๋วซ้ำ
+  let reported = false;
+  for (let attempt = 0; attempt < 3 && !reported; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+    reported = await fetch("/api/print/direct-result", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceKey: job.sourceKey, outcome: printed.outcome, error: printed.error }),
+    }).then((res) => res.ok, () => false);
+  }
+  if (!reported) console.warn("[direct-print] รายงานผลตั๋วครัวไม่ถึง server", job.sourceKey, printed.outcome);
+  if (printed.outcome === "printed") result.printedDirect = (result.printedDirect ?? 0) + 1;
   else if (printed.outcome === "unknown") result.uncertain.push({ stationName: job.stationName });
   else result.failed.push({ stationName: job.stationName, error: printed.error ?? "พิมพ์ไม่สำเร็จ" });
   return "done";
@@ -161,6 +169,7 @@ export async function dispatchOrderStationTickets(
 /** ข้อความสั้นสำหรับแถบสถานะ — บอกตามจริง: ส่งเข้าคิว ≠ พิมพ์ออก, unknown/ล้มเหลว ต้องแจ้ง */
 export function describeStationPrintResult(res: StationPrintResult): string {
   const parts: string[] = [];
+  if ((res.printedDirect ?? 0) > 0) parts.push(`พิมพ์ตั๋วครัวแล้ว ${res.printedDirect} สถานี`);
   if (res.queued > 0) parts.push(`ส่งตั๋วครัวเข้าคิว ${res.queued} สถานี`);
   if (res.alreadyQueued > 0) {
     parts.push(res.queued > 0 ? `อีก ${res.alreadyQueued} สถานีจออื่นส่งแล้ว` : "ตั๋วครัวถูกส่งจากอีกจอแล้ว");

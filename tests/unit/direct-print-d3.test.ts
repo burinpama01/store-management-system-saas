@@ -30,6 +30,7 @@ function builder(table: string) {
     update: (p: Row) => ((op = "update"), (patch = p), api),
     delete: () => ((op = "delete"), api),
     eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), api),
+    lt: (k: string, v: string) => (filters.push((r) => String(r[k]) < v), api),
     maybeSingle: async () => ({ data: run()[0] ?? null, error: null }),
     then: (resolve: (v: { data: Row[]; error: null }) => unknown) => resolve({ data: run(), error: null }),
   };
@@ -56,12 +57,13 @@ vi.mock("@/modules/printing/launcher-direct-print", () => ({
 
 import {
   DIRECT_CLAIM_STALE_MS,
+  __clearPrintModeCache,
   claimDirectStationTicket,
   finishDirectStationTicket,
   getStorePrintMode,
   parsePrintMode,
 } from "@/modules/printing/direct-print-repository";
-import { enqueueStationTickets } from "@/modules/printing/station-print-client";
+import { describeStationPrintResult, enqueueStationTickets } from "@/modules/printing/station-print-client";
 
 const STORE = "22222222-2222-4222-8222-222222222222";
 const ORG = "33333333-3333-4333-8333-333333333333";
@@ -71,6 +73,7 @@ const claimInput = (userId: string) => ({ organizationId: ORG, storeId: STORE, s
 describe("D3 วิธีพิมพ์ระดับร้าน + จองตั๋วครัว", () => {
   beforeEach(() => {
     for (const k of Object.keys(tables)) delete tables[k];
+    __clearPrintModeCache();
     launcher.available = true;
     launcher.outcome = "printed";
     launcher.printed = [];
@@ -118,10 +121,38 @@ describe("D3 วิธีพิมพ์ระดับร้าน + จอง�
   it("โปรแกรม POS + ร้านโหมดพิมพ์ตรง: จอง → พิมพ์ตรงเข้าเครื่องของสถานี → รายงานผล (ไม่เข้าคิว)", async () => {
     const calls = stubFetch({ mode: "direct", claim: "mine", printer: { id: "p1", host: "192.168.1.21", port: 9100 } });
     const result = await enqueueStationTickets([job]);
-    expect(result.queued).toBe(1);
+    expect(result.printedDirect).toBe(1);
+    expect(result.queued).toBe(0);
+    expect(describeStationPrintResult(result)).toBe("พิมพ์ตั๋วครัวแล้ว 1 สถานี");
     expect(launcher.printed[0]).toMatchObject({ host: "192.168.1.21", kind: "kitchen" });
     expect(calls.map((c) => c.url)).toEqual(["/api/print/direct-claim", "/api/print/direct-result"]);
     expect(calls[1].body).toMatchObject({ sourceKey: KEY, outcome: "printed" });
+  });
+
+  it("วิธีพิมพ์ถูกแคช (ไม่ query ทุกงานพิมพ์)", async () => {
+    tables.stores = [{ id: STORE, print_mode: "direct" }];
+    expect(await getStorePrintMode(STORE)).toBe("direct");
+    tables.stores[0].print_mode = "hub";
+    expect(await getStorePrintMode(STORE)).toBe("direct");
+  });
+
+  it("รายงานผลไม่ถึงครั้งแรก = ลองซ้ำจนถึง", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resultCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/print/direct-claim") {
+        return new Response(JSON.stringify({ mode: "direct", claim: "mine", printer: { id: "p1", host: "192.168.1.21", port: 9100 } }), { status: 200 });
+      }
+      resultCalls += 1;
+      if (resultCalls === 1) throw new TypeError("network down");
+      return new Response("{}", { status: 200 });
+    }));
+    const pending = enqueueStationTickets([job]);
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await pending;
+    vi.useRealTimers();
+    expect(resultCalls).toBe(2);
+    expect(result.printedDirect).toBe(1);
   });
 
   it("จออื่นจองไปแล้ว = ไม่พิมพ์ซ้ำ", async () => {

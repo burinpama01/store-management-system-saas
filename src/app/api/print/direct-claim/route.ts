@@ -55,13 +55,28 @@ export async function POST(req: NextRequest) {
   }
 
   const sourceKey = `station_ticket:${parsed.orderId}:${parsed.stationId}`;
-  const claim = await claimDirectStationTicket({
-    organizationId: ctx.organizationId,
-    storeId: ctx.storeId,
-    sourceKey,
-    printerId: printer.id,
-    userId: ctx.userId,
-  });
+  let claim: Awaited<ReturnType<typeof claimDirectStationTicket>>;
+  try {
+    claim = await claimDirectStationTicket({
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      sourceKey,
+      printerId: printer.id,
+      userId: ctx.userId,
+    });
+  } catch (error) {
+    void logSystemEvent({
+      level: "error",
+      source: "printing.direct",
+      action: "station_claim_failed",
+      message: error instanceof Error ? error.message : "claim failed",
+      organizationId: ctx.organizationId,
+      storeId: ctx.storeId,
+      actorUserId: ctx.userId,
+      context: { sourceKey },
+    });
+    return NextResponse.json({ error: "จองตั๋วครัวไม่สำเร็จ ลองใหม่อีกครั้ง" }, { status: 503 });
+  }
   void logSystemEvent({
     level: "info",
     source: "printing.direct",

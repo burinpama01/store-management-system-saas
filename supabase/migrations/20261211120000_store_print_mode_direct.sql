@@ -33,6 +33,8 @@ comment on table public.print_direct_claims is
   'ตั๋วครัวที่ถูกจองพิมพ์ตรงจากโปรแกรม StoreOS POS (กันซ้ำข้ามจอ) — service role เท่านั้น';
 
 create index if not exists print_direct_claims_store_time_idx on public.print_direct_claims (store_id, claimed_at desc);
+create index if not exists print_direct_claims_open_idx on public.print_direct_claims (store_id, claimed_at)
+  where status = 'claimed';
 
 alter table public.print_direct_claims enable row level security;
 revoke all on public.print_direct_claims from anon, authenticated;
