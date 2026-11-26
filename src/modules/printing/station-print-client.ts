@@ -2,6 +2,7 @@
 
 import { bytesToBase64 } from "./print-job-base64";
 import { buildReceiptPrinterBytes } from "./receipt-printer-bytes";
+import { isDirectPrintAvailable, printDirect } from "./launcher-direct-print";
 import {
   buildStationTicketJobs,
   type StationRoutingItem,
@@ -36,11 +37,71 @@ interface EnqueueResponseBody {
  * ตั๋วที่มี sourceKey (ออเดอร์+สถานี) ถูก dedupe ฝั่ง server — เปิดกี่จอก็ออกใบเดียว
  * และ server เลือกเครื่องพิมพ์ของสถานีเอง (printerId ที่ส่งไปเป็นแค่ค่าอ้างอิง)
  */
+interface DirectClaimBody {
+  mode?: "hub" | "direct";
+  claim?: "mine" | "taken" | "skip";
+  status?: string;
+  printer?: { id: string; host: string; port: number };
+  error?: string;
+}
+
+/**
+ * เฟส D3 — ร้านโหมดพิมพ์ตรง + เปิดในโปรแกรม StoreOS POS: จองตั๋วที่ server (กันซ้ำข้ามจอ) แล้วยิงตรงเข้า
+ * เครื่องพิมพ์ของสถานี คืน null = ร้านยังโหมด hub (ให้ไปทางคิวเดิม)
+ */
+async function printStationTicketDirect(
+  job: StationTicketJob,
+  printJobBase64: string,
+  result: StationPrintResult,
+): Promise<"done" | "hub"> {
+  const claimRes = await fetch("/api/print/direct-claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourceKey: job.sourceKey }),
+  });
+  const claim = (await claimRes.json().catch(() => ({}))) as DirectClaimBody;
+  if (claimRes.ok && claim.mode === "hub") return "hub";
+  if (!claimRes.ok) {
+    result.failed.push({ stationName: job.stationName, error: claim.error ?? `HTTP ${claimRes.status}` });
+    return "done";
+  }
+  if (claim.claim === "skip") return "done";
+  if (claim.claim === "taken") {
+    if (claim.status === "unknown") result.uncertain.push({ stationName: job.stationName });
+    else result.alreadyQueued += 1;
+    return "done";
+  }
+  if (claim.claim !== "mine" || !claim.printer) {
+    result.failed.push({ stationName: job.stationName, error: "จองตั๋วครัวไม่สำเร็จ" });
+    return "done";
+  }
+  const printed = await printDirect({
+    printerId: claim.printer.id,
+    host: claim.printer.host,
+    port: claim.printer.port,
+    bytesBase64: printJobBase64,
+    kind: "kitchen",
+    label: `${job.stationName} ${job.receipt.orderNumber ?? ""}`.trim(),
+  });
+  // รายงานผลให้ server — failed = ปล่อยการจองให้ลองใหม่ได้ / printed, unknown = กันพิมพ์ซ้ำ
+  await fetch("/api/print/direct-result", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourceKey: job.sourceKey, outcome: printed.outcome, error: printed.error }),
+  }).catch(() => undefined);
+  if (printed.outcome === "printed") result.queued += 1;
+  else if (printed.outcome === "unknown") result.uncertain.push({ stationName: job.stationName });
+  else result.failed.push({ stationName: job.stationName, error: printed.error ?? "พิมพ์ไม่สำเร็จ" });
+  return "done";
+}
+
 export async function enqueueStationTickets(jobs: StationTicketJob[]): Promise<StationPrintResult> {
   const result: StationPrintResult = { queued: 0, alreadyQueued: 0, uncertain: [], failed: [] };
+  const direct = await isDirectPrintAvailable();
   for (const job of jobs) {
     try {
       const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(job.receipt, job.receipt));
+      if (direct && job.sourceKey && (await printStationTicketDirect(job, printJobBase64, result)) === "done") continue;
       const res = await fetch("/api/print/enqueue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

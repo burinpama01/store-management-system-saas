@@ -143,7 +143,7 @@ export function DeviceLoginQr({ initialError }: { initialError: string | null })
         <button type="button" onClick={() => { setError(null); void start(); }} className="min-h-11 rounded-lg border border-gray-300 px-4 font-semibold text-gray-700 hover:bg-gray-50">
           สร้าง QR ใหม่
         </button>
-        <Link href="/login" className="flex min-h-11 items-center rounded-lg px-4 font-semibold text-gray-600 hover:text-gray-900">
+        <Link href="/login?method=password" className="flex min-h-11 items-center rounded-lg px-4 font-semibold text-gray-600 hover:text-gray-900">
           ใช้อีเมล/รหัสผ่านแทน
         </Link>
       </div>
