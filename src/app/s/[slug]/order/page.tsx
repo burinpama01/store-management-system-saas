@@ -42,10 +42,10 @@ export default async function OnlineOrderPage({ params }: { params: Promise<{ sl
       prepMinutes={store.settings.prepMinutes}
       deliveryRadiusKm={store.settings.deliveryRadiusKm}
       deliveryFreeKm={store.settings.deliveryFreeKm}
-      // จุดเริ่มแผนที่ปักหมุด = ที่ตั้งร้าน (ร้านเปิดเผยอยู่แล้วสำหรับรับที่ร้าน)
+      // จุดเริ่มแผนที่ปักหมุด = ย่านร้าน — ปัด 3 ตำแหน่ง (~100 ม.) พิกัดร้านมาจากจุดลงเวลา ไม่เปิดเผยละเอียดบนหน้าสาธารณะ
       storeOrigin={
         store.settings.originLat !== null && store.settings.originLng !== null
-          ? { lat: store.settings.originLat, lng: store.settings.originLng }
+          ? { lat: Math.round(store.settings.originLat * 1000) / 1000, lng: Math.round(store.settings.originLng * 1000) / 1000 }
           : null
       }
     />

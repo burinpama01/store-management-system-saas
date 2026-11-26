@@ -39,6 +39,9 @@ export function OnlineOrderSettingsForm({
   };
 
   const field = "input w-full";
+  // ตัวอย่างค่าส่งต้องอยู่ในรัศมีส่งจริง (ไม่โชว์ราคาของระยะที่ส่งไม่ได้)
+  const exampleKm = Math.round(Math.min(s.deliveryFreeKm + 2.3, s.deliveryRadiusKm) * 10) / 10;
+
   return (
     <section className="panel space-y-4 p-4 text-sm">
       <div>
@@ -109,6 +112,7 @@ export function OnlineOrderSettingsForm({
             <label className="block">
               ส่งฟรีในระยะ (กม. แรก, 0 = ไม่มี)
               <input className={field} type="number" min={0} max={50} step={0.5} value={s.deliveryFreeKm} onChange={(e) => set("deliveryFreeKm", Number(e.target.value) || 0)} />
+              {s.deliveryFreeKm > s.deliveryRadiusKm && <span className="mt-1 block text-xs text-red-600">ระยะส่งฟรีต้องไม่เกินรัศมีส่ง</span>}
             </label>
             <label className="block">
               ส่งฟรีเมื่อยอดถึง (เว้นว่าง = ไม่มี)
@@ -119,8 +123,13 @@ export function OnlineOrderSettingsForm({
             {s.deliveryFreeKm > 0 ? (
               <>
                 ส่งฟรีในระยะ {s.deliveryFreeKm} กม. แรก · เกินคิด ค่าเริ่มต้น + ค่าต่อ กม. × ส่วนที่เกิน (ปัดขึ้นทีละ 0.5 กม.) — ตัวอย่าง{" "}
-                {s.deliveryFreeKm} กม. = ฟรี · {(s.deliveryFreeKm + 2.3).toLocaleString("th-TH")} กม. ={" "}
-                {(s.deliveryBaseFee + s.deliveryFeePerKm * 2.5).toLocaleString("th-TH")} บาท
+                {s.deliveryFreeKm} กม. = ฟรี
+                {exampleKm > s.deliveryFreeKm && (
+                  <>
+                    {" "}· {exampleKm.toLocaleString("th-TH")} กม. ={" "}
+                    {(s.deliveryBaseFee + s.deliveryFeePerKm * (Math.ceil((exampleKm - s.deliveryFreeKm) * 2) / 2)).toLocaleString("th-TH")} บาท
+                  </>
+                )}
               </>
             ) : (
               <>ค่าส่ง = ค่าเริ่มต้น + ค่าต่อ กม. × ระยะเส้นตรง (ปัดขึ้นทีละ 0.5 กม.) — ตัวอย่าง 2.3 กม. = {(s.deliveryBaseFee + s.deliveryFeePerKm * 2.5).toLocaleString("th-TH")} บาท</>

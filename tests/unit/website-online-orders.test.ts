@@ -186,6 +186,8 @@ describe("ส่งฟรีในระยะ X กม. แรก + ปัก�
     expect(app).toContain("<MapPicker");
     expect(app).toContain("center={props.storeOrigin ?? null}");
     expect(app).toContain("showRadius={false}");
-    expect(readFileSync("src/shared/components/ui/MapPicker.tsx", "utf8")).toContain("if (lastPickRef.current === `${lat},${lng}`) return;");
+    // พิกัดร้านบนหน้าสาธารณะปัด 3 ตำแหน่ง
+    expect(readFileSync("src/app/s/[slug]/order/page.tsx", "utf8")).toContain("Math.round(store.settings.originLat * 1000) / 1000");
+    expect(readFileSync("src/shared/components/ui/MapPicker.tsx", "utf8")).toContain("if (lastPickRef.current === pickKey(lat, lng)) return;");
   });
 });

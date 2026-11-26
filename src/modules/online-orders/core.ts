@@ -180,7 +180,7 @@ export function quoteDelivery(
     return { ok: false, error: `อยู่นอกพื้นที่ส่ง (ห่าง ${distanceKm.toFixed(1)} กม. ร้านส่งไม่เกิน ${settings.deliveryRadiusKm} กม.)` };
   }
   if (settings.deliveryFreeOver !== null && subtotal >= settings.deliveryFreeOver) return { ok: true, distanceKm, fee: 0 };
-  const freeKm = settings.deliveryFreeKm ?? 0;
+  const freeKm = settings.deliveryFreeKm;
   if (freeKm > 0 && distanceKm <= freeKm) return { ok: true, distanceKm, fee: 0 };
   const billedKm = Math.ceil(Math.max(0, distanceKm - freeKm) * 2) / 2;
   return { ok: true, distanceKm, fee: round2(settings.deliveryBaseFee + settings.deliveryFeePerKm * billedKm) };

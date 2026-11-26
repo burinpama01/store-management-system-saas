@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import type * as LeafletNS from "leaflet";
 
 const BANGKOK: [number, number] = [13.7563, 100.5018];
+/** เทียบพิกัดที่ 6 ตำแหน่ง — หน้าลงเวลาเก็บเป็นข้อความ toFixed(6) แล้วแปลงกลับ ค่าไม่ตรงทุกบิต */
+const pickKey = (lat: number, lng: number) => `${lat.toFixed(6)},${lng.toFixed(6)}`;
 
 /**
  * Click-to-pick location map (Leaflet + OpenStreetMap, no API key).
@@ -78,7 +80,7 @@ export function MapPicker({
       if (lat != null && lng != null) place(lat, lng);
       map.on("click", (e: LeafletNS.LeafletMouseEvent) => {
         place(e.latlng.lat, e.latlng.lng);
-        lastPickRef.current = `${e.latlng.lat},${e.latlng.lng}`;
+        lastPickRef.current = pickKey(e.latlng.lat, e.latlng.lng);
         onPickRef.current(e.latlng.lat, e.latlng.lng);
       });
       setTimeout(() => map.invalidateSize(), 120);
@@ -105,7 +107,7 @@ export function MapPicker({
   // ค่าพิกัดเปลี่ยนจากภายนอก (เช่น กด "ใช้ตำแหน่งปัจจุบัน") → ย้ายหมุด + เลื่อนกล้องไปหา
   useEffect(() => {
     if (lat == null || lng == null || !placeRef.current || !mapRef.current) return;
-    if (lastPickRef.current === `${lat},${lng}`) return;
+    if (lastPickRef.current === pickKey(lat, lng)) return;
     placeRef.current(lat, lng);
     mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 16));
   }, [lat, lng]);
