@@ -2,7 +2,7 @@ export type PayType = "monthly" | "daily" | "hourly";
 /** ประเภทการจ้าง — แยกจากวิธีคิดเงิน (payType): ค่าทักษะ/อายุงาน/โบนัสยอดขาย ให้เฉพาะ permanent */
 export type EmploymentType = "permanent" | "daily" | "part_time" | "temporary";
 /** withholding_tax = ภาษีหัก ณ ที่จ่ายโหมดกรอกเอง (คิดแยกในเงินเดือนขั้นสูง ไม่นับเป็นโบนัส/รายการหัก) */
-export type AdjustmentType = "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
+export type AdjustmentType = "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax" | "delivery_pay";
 
 export interface EmployeeProfile {
   id: string;
@@ -151,7 +151,11 @@ export const ADJUSTMENT_LABEL: Record<AdjustmentType, string> = {
   absent: "หักขาดงาน",
   late: "หักมาสาย",
   withholding_tax: "ภาษีหัก ณ ที่จ่าย",
+  delivery_pay: "ค่าส่งเดลิเวอรี่",
 };
+
+/** รายการเพิ่มที่แสดงในสลิป (บวกเงินเดือน) — delivery_pay มาจากออเดอร์ออนไลน์อัตโนมัติ */
+export const ADDITION_TYPES: AdjustmentType[] = ["bonus", "delivery_pay"];
 
 /** Adjustment types that reduce pay (bonus increases). */
 export const DEDUCTION_TYPES: AdjustmentType[] = ["penalty", "leave", "absent", "late"];

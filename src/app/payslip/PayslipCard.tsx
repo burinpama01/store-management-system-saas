@@ -8,6 +8,7 @@ import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { formatStoreTime } from "@/modules/attendance/date";
 import {
   ADJUSTMENT_LABEL,
+  ADDITION_TYPES,
   DEDUCTION_TYPES,
   EMPLOYMENT_TYPE_LABEL,
   PAY_TYPE_LABEL,
@@ -350,11 +351,11 @@ export function PayslipCard({
         <Row label="เงินสุทธิ" value={money(line.netPay, currency)} strong />
       </div>
 
-      {line.adjustments.filter((a) => a.type === "bonus").length > 0 && (
+      {line.adjustments.filter((a) => ADDITION_TYPES.includes(a.type)).length > 0 && (
         <div className="mt-3 text-xs text-gray-500">
           <p className="font-semibold">รายการเพิ่ม:</p>
           {line.adjustments
-            .filter((a) => a.type === "bonus")
+            .filter((a) => ADDITION_TYPES.includes(a.type))
             .map((a) => (
               <p key={a.id}>
                 · {a.date} {ADJUSTMENT_LABEL[a.type]} {money(a.amount, currency)}

@@ -6,6 +6,7 @@ import type { Printer } from "@/modules/stores/types";
 import { useConfirm } from "@/shared/components/ui/useConfirm";
 import { STATUS_LABEL, nextStatuses, type OnlineOrderStatus } from "@/modules/online-orders/core";
 import { printKitchenForOrder, type StationPrinter } from "../../delivery/print-kitchen";
+import { RiderPicker } from "./RiderPicker";
 import { acceptOnlineOrderAction, listOnlineOrdersAction, updateOnlineOrderStatusAction, type OnlineOrderVM } from "./actions";
 
 const baht = (n: number) => `฿${n.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
@@ -48,6 +49,8 @@ export function OnlineOrdersBoard(props: {
   const { confirm, confirmDialog } = useConfirm();
   const router = useRouter();
   const [cancelling, setCancelling] = useState<{ id: string; reason: string } | null>(null);
+  /** R2: ออเดอร์ที่กำลังเลือกคนส่ง */
+  const [ridingFor, setRidingFor] = useState<OnlineOrderVM | null>(null);
 
   const reload = useCallback(async () => {
     const res = await listOnlineOrdersAction();
@@ -92,7 +95,12 @@ export function OnlineOrdersBoard(props: {
     });
   };
 
-  const move = async (o: OnlineOrderVM, to: OnlineOrderStatus, reason?: string) => {
+  const move = async (o: OnlineOrderVM, to: OnlineOrderStatus, reason?: string, riderUserId?: string) => {
+    if (to === "out_for_delivery" && o.fulfillment === "delivery" && !riderUserId) {
+      setRidingFor(o);
+      return;
+    }
+    setRidingFor(null);
     if (to === "refund_pending" && reason === undefined) {
       setCancelling({ id: o.id, reason: "ของหมด" });
       return;
@@ -107,8 +115,8 @@ export function OnlineOrdersBoard(props: {
     setMessage(null);
     setCancelling(null);
     startTransition(async () => {
-      const res = await updateOnlineOrderStatusAction(o.id, to, reason);
-      if (!res.ok) setMessage(res.error);
+      const res = await updateOnlineOrderStatusAction(o.id, to, reason, riderUserId);
+      if (!res.ok || res.error) setMessage(res.error);
       setBusyId(null);
       await reload();
     });
@@ -147,6 +155,12 @@ export function OnlineOrdersBoard(props: {
               {o.address && <p className="text-[var(--muted)]">{o.address}{o.addressNote ? ` (${o.addressNote})` : ""}</p>}
               {o.mapUrl && (
                 <a href={o.mapUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">นำทาง (Google Maps)</a>
+              )}
+              {o.riderName && (
+                <p className="text-sky-800">
+                  🛵 คนส่ง: {o.riderName}
+                  {o.riderPayAmount ? ` · รายได้พิเศษ ${baht(o.riderPayAmount)}` : ""}
+                </p>
               )}
             </div>
             <ul className="divide-y rounded-lg border">
@@ -211,6 +225,16 @@ export function OnlineOrdersBoard(props: {
         ))}
       </div>
       {confirmDialog}
+      {ridingFor && (
+        <RiderPicker
+          orderCode={ridingFor.orderCode}
+          subtotal={ridingFor.subtotal}
+          deliveryFee={ridingFor.deliveryFee}
+          busy={busyId === ridingFor.id}
+          onPick={(riderUserId) => void move(ridingFor, "out_for_delivery", undefined, riderUserId)}
+          onClose={() => setRidingFor(null)}
+        />
+      )}
     </div>
   );
 }

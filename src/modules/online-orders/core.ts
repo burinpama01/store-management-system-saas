@@ -76,6 +76,12 @@ export const onlineOrderSettingsSchema = z
     deliveryFreeOver: z.number().min(0).max(1000000).nullable(),
     /** ส่งฟรีในระยะกี่ กม. แรก (0 = ไม่มี) — เกินระยะนี้คิดเฉพาะส่วนที่เกิน */
     deliveryFreeKm: z.number().min(0).max(50),
+    /** R2: รายได้พิเศษคนส่ง (ออนไลน์ส่งถึงบ้าน) — เข้าเงินเดือนอัตโนมัติเมื่อส่งสำเร็จ */
+    riderPayEnabled: z.boolean(),
+    /** % ของยอดอาหาร */
+    riderPayRate: z.number().min(0).max(100),
+    /** บวกค่าส่งที่ลูกค้าจ่ายให้คนส่งเต็มจำนวน */
+    riderPayIncludeFee: z.boolean(),
     minOrder: z.number().min(0).max(1000000),
     prepMinutes: z.number().int().min(0).max(240),
   })
@@ -97,6 +103,9 @@ export const DEFAULT_ONLINE_ORDER_SETTINGS: OnlineOrderSettings = {
   deliveryFeePerKm: 10,
   deliveryFreeOver: null,
   deliveryFreeKm: 0,
+  riderPayEnabled: false,
+  riderPayRate: 10,
+  riderPayIncludeFee: true,
   minOrder: 0,
   prepMinutes: 20,
 };
@@ -184,6 +193,16 @@ export function quoteDelivery(
   if (freeKm > 0 && distanceKm <= freeKm) return { ok: true, distanceKm, fee: 0 };
   const billedKm = Math.ceil(Math.max(0, distanceKm - freeKm) * 2) / 2;
   return { ok: true, distanceKm, fee: round2(settings.deliveryBaseFee + settings.deliveryFeePerKm * billedKm) };
+}
+
+// ---------- คนส่ง (R2) ----------
+
+/** รายได้พิเศษคนส่ง = rate% × ยอดอาหาร (+ ค่าส่งทั้งหมดถ้าเปิด) — ยอดอาหาร = subtotal (ไม่รวมค่าส่ง) */
+export function computeRiderPay(input: { subtotal: number; deliveryFee: number; rate: number; includeFee: boolean }): number {
+  const food = Math.max(0, input.subtotal);
+  const rate = Math.min(100, Math.max(0, input.rate));
+  const fee = input.includeFee ? Math.max(0, input.deliveryFee) : 0;
+  return round2(round2((food * rate) / 100) + fee);
 }
 
 // ---------- อื่น ๆ ----------

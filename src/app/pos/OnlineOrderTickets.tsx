@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { nextStatuses, type OnlineOrderStatus } from "@/modules/online-orders/core";
 import type { Printer } from "@/modules/stores/types";
 import { printKitchenForOrder, type StationPrinter } from "../(dashboard)/delivery/print-kitchen";
+import { RiderPicker } from "../(dashboard)/website/orders/RiderPicker";
 import {
   acceptOnlineOrderAction,
   listOnlineOrdersAction,
@@ -152,6 +153,7 @@ export function OnlineOrderTicketDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pickingRider, setPickingRider] = useState(false);
 
   const printKitchen = async (orderId: string, billNumber: string) =>
     printKitchenForOrder(orderId, { ...print, billNumber, fulfillment: order.fulfillment }).catch(() => "พิมพ์ตั๋วครัวไม่สำเร็จ");
@@ -175,11 +177,19 @@ export function OnlineOrderTicketDialog({
       return `รับออเดอร์ ${order.orderCode} แล้ว · ${printed}`;
     });
 
-  const move = (to: OnlineOrderStatus) =>
-    run(async () => {
-      const res = await updateOnlineOrderStatusAction(order.id, to);
-      return res.ok ? `เปลี่ยนเป็น "${BUTTON_LABEL[to] ?? to}" แล้ว` : res.error;
+  const move = (to: OnlineOrderStatus, riderUserId?: string) => {
+    // R2: ส่งถึงบ้าน → เลือกคนส่งก่อนออกไปส่ง
+    if (to === "out_for_delivery" && order.fulfillment === "delivery" && !riderUserId) {
+      setPickingRider(true);
+      return;
+    }
+    setPickingRider(false);
+    return run(async () => {
+      const res = await updateOnlineOrderStatusAction(order.id, to, undefined, riderUserId);
+      if (!res.ok) return res.error;
+      return res.error ?? `เปลี่ยนเป็น "${BUTTON_LABEL[to] ?? to}" แล้ว`;
     });
+  };
 
   const reprint = () =>
     run(async () => (order.orderId ? printKitchen(order.orderId, order.orderCode) : "ยังไม่มีบิล — กดรับออเดอร์ก่อน"));
@@ -252,6 +262,12 @@ export function OnlineOrderTicketDialog({
             บิลของออเดอร์นี้ยังไม่ปิด (ยอดยังไม่เข้า POS) — แจ้งผู้ดูแลตรวจที่หน้า สั่งออนไลน์ ก่อนเลื่อนสถานะ
           </p>
         )}
+        {order.riderName && (
+          <p className="mt-3 rounded-lg bg-sky-50 p-2 text-sm text-sky-900">
+            🛵 คนส่ง: <b>{order.riderName}</b>
+            {order.riderPayAmount ? ` · รายได้พิเศษ ${baht(order.riderPayAmount)} (เข้าเงินเดือนเมื่อสำเร็จ)` : ""}
+          </p>
+        )}
         {message && (
           <p role="status" className="mt-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-900">
             {message}
@@ -281,6 +297,16 @@ export function OnlineOrderTicketDialog({
           )}
         </div>
         <p className="mt-3 text-[11px] text-gray-400">ยกเลิก/คืนเงิน ทำที่หน้า สั่งออนไลน์ (ต้องยืนยันการโอนคืน)</p>
+        {pickingRider && (
+          <RiderPicker
+            orderCode={order.orderCode}
+            subtotal={order.subtotal}
+            deliveryFee={order.deliveryFee}
+            busy={busy}
+            onPick={(riderUserId) => void move("out_for_delivery", riderUserId)}
+            onClose={() => setPickingRider(false)}
+          />
+        )}
       </div>
     </div>
   );

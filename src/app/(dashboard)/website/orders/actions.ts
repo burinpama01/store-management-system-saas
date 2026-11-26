@@ -19,6 +19,7 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import {
   STATUS_LABEL,
   canTransition,
+  computeRiderPay,
   onlineOrderSettingsSchema,
   type OnlineOrderSettings,
   type OnlineOrderStatus,
@@ -26,6 +27,10 @@ import {
 import {
   expireStaleOnlineOrders,
   getAttendanceOrigin,
+  getOnlineOrderSettings,
+  listRiderCandidates,
+  recordRiderPayAdjustment,
+  type RiderCandidate,
   getOnlineOrderForStore,
   listOnlineOrdersForStore,
   saveOnlineOrderSettings,
@@ -127,6 +132,9 @@ export interface OnlineOrderVM {
   billClosed: boolean;
   paidAt: string | null;
   createdAt: string;
+  /** R2: คนส่ง (ออนไลน์ส่งถึงบ้าน) */
+  riderName: string | null;
+  riderPayAmount: number | null;
 }
 
 function toVM(o: OnlineOrder, closedBills: Set<string>): OnlineOrderVM {
@@ -157,7 +165,23 @@ function toVM(o: OnlineOrder, closedBills: Set<string>): OnlineOrderVM {
     billClosed: o.orderId !== null && closedBills.has(o.orderId),
     paidAt: o.paidAt,
     createdAt: o.createdAt,
+    riderName: o.riderName,
+    riderPayAmount: o.riderPayAmount,
   };
+}
+
+/** R2: รายชื่อคนส่งที่เลือกได้ (คนลงเวลาอยู่ขึ้นก่อน) + ร้านเปิดรายได้คนส่งไหม */
+export async function listRiderCandidatesAction(): Promise<{
+  riders: RiderCandidate[];
+  payEnabled: boolean;
+  payRate: number;
+  payIncludeFee: boolean;
+  error: string | null;
+}> {
+  const g = await queueGuard();
+  if (g.error !== null) return { riders: [], payEnabled: false, payRate: 0, payIncludeFee: false, error: g.error };
+  const [riders, settings] = await Promise.all([listRiderCandidates(g.ctx.storeId), getOnlineOrderSettings(g.ctx.storeId)]);
+  return { riders, payEnabled: settings.riderPayEnabled, payRate: settings.riderPayRate, payIncludeFee: settings.riderPayIncludeFee, error: null };
 }
 
 export async function listOnlineOrdersAction(): Promise<{ orders: OnlineOrderVM[]; error: string | null }> {
@@ -334,7 +358,13 @@ export async function acceptOnlineOrderAction(id: string): Promise<{ ok: boolean
 }
 
 /** เปลี่ยนสถานะอื่น ๆ (กำลังทำ/พร้อมรับ/กำลังส่ง/สำเร็จ/ยกเลิกรอคืนเงิน/คืนเงินแล้ว) */
-export async function updateOnlineOrderStatusAction(id: string, to: OnlineOrderStatus, reason?: string): Promise<ActionResult> {
+export async function updateOnlineOrderStatusAction(
+  id: string,
+  to: OnlineOrderStatus,
+  reason?: string,
+  /** R2: ออกไปส่ง (ส่งถึงบ้าน) ต้องระบุคนส่ง */
+  riderUserId?: string,
+): Promise<ActionResult> {
   try {
     if (!UUID_RE.test(id)) return { ok: false, error: "ไม่พบออเดอร์" };
     const g = await queueGuard();
@@ -351,8 +381,54 @@ export async function updateOnlineOrderStatusAction(id: string, to: OnlineOrderS
     if (to === "completed") patch.completed_at = now;
     if (to === "refunded") patch.refunded_at = now;
     if (to === "refund_pending") patch.cancel_reason = (reason ?? "").trim().slice(0, 200) || "ร้านยกเลิก";
+    // R2: ออกไปส่ง = เลือกคนส่ง + ล็อกอัตรา/ยอดรายได้คนส่ง ณ ตอนนี้ (ร้านเปลี่ยนตั้งค่าทีหลังไม่ย้อน)
+    if (to === "out_for_delivery" && order.fulfillment === "delivery") {
+      if (!riderUserId || !UUID_RE.test(riderUserId)) return { ok: false, error: "เลือกคนส่งก่อน" };
+      const [riders, settings] = await Promise.all([listRiderCandidates(g.ctx.storeId), getOnlineOrderSettings(g.ctx.storeId)]);
+      const rider = riders.find((r) => r.userId === riderUserId);
+      if (!rider) return { ok: false, error: "คนส่งต้องเป็นพนักงานของสาขานี้ที่ยังไม่ลาออก" };
+      patch.rider_user_id = rider.userId;
+      patch.rider_name = rider.name.slice(0, 120);
+      patch.rider_assigned_at = now;
+      patch.rider_pay_rate = settings.riderPayEnabled ? settings.riderPayRate : null;
+      patch.rider_pay_amount = settings.riderPayEnabled
+        ? computeRiderPay({ subtotal: order.subtotal, deliveryFee: order.deliveryFee, rate: settings.riderPayRate, includeFee: settings.riderPayIncludeFee })
+        : null;
+    }
     const moved = await transitionOnlineOrder({ storeId: g.ctx.storeId, id, from: order.status, to, userId: g.user.id, patch });
     if (!moved) return { ok: false, error: "สถานะเปลี่ยนไปแล้ว — โหลดใหม่" };
+    if (to === "out_for_delivery" && patch.rider_user_id) {
+      log("info", "assignOnlineOrderRider", `ออเดอร์ออนไลน์ ${order.orderCode}: คนส่ง ${String(patch.rider_name)}`, g, {
+        onlineOrderId: id,
+        riderUserId: patch.rider_user_id,
+        riderPayAmount: patch.rider_pay_amount,
+      });
+    }
+    // R2: ส่งสำเร็จ → รายได้คนส่งเข้าเงินเดือน (1 ออเดอร์ 1 แถว — unique online_order_id)
+    let riderPayError: string | null = null;
+    if (to === "completed" && order.fulfillment === "delivery" && order.riderUserId && (order.riderPayAmount ?? 0) > 0) {
+      const result = await recordRiderPayAdjustment({
+        organizationId: g.ctx.organizationId,
+        storeId: g.ctx.storeId,
+        onlineOrderId: id,
+        orderCode: order.orderCode,
+        riderUserId: order.riderUserId,
+        riderName: order.riderName ?? "พนักงาน",
+        amount: order.riderPayAmount as number,
+        createdByUserId: g.user.id,
+      });
+      if (result === "created" || result === "exists") {
+        log("info", "recordRiderPay", `รายได้คนส่ง ${order.riderName ?? ""} ฿${order.riderPayAmount} (${order.orderCode}) ${result === "exists" ? "มีอยู่แล้ว" : "เข้าเงินเดือนแล้ว"}`, g, {
+          onlineOrderId: id,
+          riderUserId: order.riderUserId,
+          amount: order.riderPayAmount,
+          result,
+        });
+      } else {
+        riderPayError = result;
+        log("error", "recordRiderPay", `บันทึกรายได้คนส่งไม่สำเร็จ (${order.orderCode}): ${result}`, g, { onlineOrderId: id, riderUserId: order.riderUserId });
+      }
+    }
     log(to === "refund_pending" ? "warn" : "info", "updateOnlineOrderStatus", `ออเดอร์ออนไลน์ ${order.orderCode}: ${STATUS_LABEL[order.status]} → ${STATUS_LABEL[to]}`, g, {
       onlineOrderId: id,
       from: order.status,
@@ -360,6 +436,7 @@ export async function updateOnlineOrderStatusAction(id: string, to: OnlineOrderS
       billOrderId: order.orderId,
     });
     revalidatePath("/website/orders");
+    if (riderPayError) return { ok: true, error: "ส่งสำเร็จแล้ว แต่บันทึกค่าส่งของคนส่งไม่สำเร็จ — เพิ่มเองที่หน้าพนักงาน" };
     return { ok: true, error: null };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "เปลี่ยนสถานะไม่สำเร็จ" };
