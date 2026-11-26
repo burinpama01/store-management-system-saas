@@ -136,6 +136,8 @@ export interface PayrollAdjustment {
   note?: string;
   createdByUserId: string;
   createdAt: string;
+  /** delivery_pay ที่ระบบสร้างจากออเดอร์ออนไลน์ (R2) */
+  onlineOrderId?: string | null;
 }
 
 export const PAY_TYPE_LABEL: Record<PayType, string> = {

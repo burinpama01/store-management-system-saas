@@ -23,6 +23,7 @@ alter table public.payroll_adjustments add constraint payroll_adjustments_type_c
   check (type in ('penalty','bonus','leave','absent','late','withholding_tax','delivery_pay'));
 
 -- 1 ออเดอร์ = รายได้คนส่ง 1 แถวเท่านั้น (กดสำเร็จซ้ำ/สองเครื่องพร้อมกันไม่จ่ายซ้ำ)
-alter table public.payroll_adjustments add column if not exists online_order_id uuid;
+alter table public.payroll_adjustments add column if not exists online_order_id uuid
+  references public.online_orders(id) on delete set null;
 create unique index if not exists payroll_adjustments_online_order_uidx
   on public.payroll_adjustments (online_order_id) where online_order_id is not null;

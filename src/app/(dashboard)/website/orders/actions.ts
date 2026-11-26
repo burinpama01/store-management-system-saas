@@ -436,7 +436,12 @@ export async function updateOnlineOrderStatusAction(
       billOrderId: order.orderId,
     });
     revalidatePath("/website/orders");
-    if (riderPayError) return { ok: true, error: "ส่งสำเร็จแล้ว แต่บันทึกค่าส่งของคนส่งไม่สำเร็จ — เพิ่มเองที่หน้าพนักงาน" };
+    if (riderPayError) {
+      return {
+        ok: true,
+        error: `ส่งสำเร็จแล้ว แต่บันทึกค่าส่งของคนส่งไม่สำเร็จ — เพิ่มเองที่หน้าพนักงาน เป็น "โบนัส/เพิ่ม" ฿${order.riderPayAmount} หมายเหตุ "ส่งออนไลน์ ${order.orderCode}"`,
+      };
+    }
     return { ok: true, error: null };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "เปลี่ยนสถานะไม่สำเร็จ" };

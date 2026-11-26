@@ -69,3 +69,19 @@ describe("R2 รายได้คนส่ง — action", () => {
     expect(read("src/app/(dashboard)/website/orders/OnlineOrdersBoard.tsx")).toContain("<RiderPicker");
   });
 });
+
+describe("R2 แก้ตามรีวิว", () => {
+  it("ลบค่าส่งเดลิเวอรี่ที่หน้าพนักงานต้องยืนยัน", () => {
+    expect(read("src/app/(dashboard)/staff/StaffManager.tsx")).toContain('a.type === "delivery_pay" &&\n                          !window.confirm(');
+  });
+  it("บันทึกรายได้ล้ม → บอกให้เพิ่มเป็นโบนัสพร้อมรหัสออเดอร์ (ฟอร์มมือไม่มีชนิด delivery_pay)", () => {
+    expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain('เป็น "โบนัส/เพิ่ม" ฿${order.riderPayAmount}');
+  });
+  it("online_order_id อ้างถึง online_orders (on delete set null) + type มี onlineOrderId", () => {
+    expect(read("supabase/migrations/20261213120000_online_rider_pay.sql")).toContain("references public.online_orders(id) on delete set null");
+    expect(read("src/modules/hr/types.ts")).toContain("onlineOrderId?: string | null;");
+  });
+  it("รายชื่อคนส่ง: โปรไฟล์ไม่มีชื่อใช้ชื่อบัญชี/อีเมล", () => {
+    expect(read("src/modules/online-orders/repository.ts")).toContain("db.auth.admin.getUserById(userId)");
+  });
+});

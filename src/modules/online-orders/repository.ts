@@ -351,14 +351,32 @@ export async function listRiderCandidates(storeId: string): Promise<RiderCandida
     listResignedUserIds(storeId).catch(() => new Set<string>()),
   ]);
   const onShift = new Set(((activeRes.data ?? []) as { user_id: string }[]).map((r) => r.user_id));
-  return ((profRes.data ?? []) as { user_id: string; display_name: string | null }[])
-    .filter((p) => !resigned.has(p.user_id))
-    .map((p) => ({ userId: p.user_id, name: (p.display_name ?? "").trim() || "พนักงาน", onShift: onShift.has(p.user_id) }))
+  const profiles = ((profRes.data ?? []) as { user_id: string; display_name: string | null }[]).filter((p) => !resigned.has(p.user_id));
+  // โปรไฟล์ไม่ได้ตั้งชื่อ → ใช้ชื่อบัญชี/อีเมล (ไม่งั้นแคชเชียร์เห็นแค่ "พนักงาน" แยกไม่ออกว่าใคร)
+  const missing = profiles.filter((p) => !(p.display_name ?? "").trim()).map((p) => p.user_id);
+  const accountName = new Map<string, string>();
+  await Promise.all(
+    missing.map(async (userId) => {
+      const { data } = await db.auth.admin.getUserById(userId).catch(() => ({ data: null }));
+      const user = data?.user;
+      const meta = (user?.user_metadata ?? {}) as Record<string, unknown>;
+      const name = [meta.full_name, meta.name, meta.display_name].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+      const fromEmail = typeof user?.email === "string" ? user.email.split("@")[0] : "";
+      if (name || fromEmail) accountName.set(userId, (name ?? fromEmail).trim());
+    }),
+  );
+  return profiles
+    .map((p) => ({
+      userId: p.user_id,
+      name: (p.display_name ?? "").trim() || accountName.get(p.user_id) || "พนักงาน",
+      onShift: onShift.has(p.user_id),
+    }))
     .sort((a, b) => Number(b.onShift) - Number(a.onShift) || a.name.localeCompare(b.name, "th"));
 }
 
 /**
  * บันทึกรายได้คนส่งเข้าเงินเดือน (payroll_adjustments ชนิด delivery_pay) — 1 ออเดอร์ 1 แถว (unique online_order_id)
+ * วันที่ = วันที่กด "สำเร็จ" ตามเวลาร้าน (ตกงวดของวันนั้น)
  * คืน "created" | "exists" | ข้อความ error
  */
 export async function recordRiderPayAdjustment(input: {

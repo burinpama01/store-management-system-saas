@@ -768,7 +768,16 @@ export function StaffManager({
                       {a.note ? ` · ${a.note}` : ""}
                     </span>
                     <Button
-                      onClick={() => run(() => deleteAdjustmentAction(a.id))}
+                      onClick={() => {
+                        // ค่าส่งเดลิเวอรี่ระบบสร้างจากออเดอร์ออนไลน์ — ลบแล้วคนส่งเสียรายได้ ต้องยืนยันก่อน
+                        if (
+                          a.type === "delivery_pay" &&
+                          !window.confirm(`ลบค่าส่งเดลิเวอรี่ของ ${a.employeeName} (${a.note ?? ""}) ใช่ไหม? ระบบจะไม่สร้างให้ใหม่อัตโนมัติ`)
+                        ) {
+                          return;
+                        }
+                        run(() => deleteAdjustmentAction(a.id));
+                      }}
                       loading={isPending}
                       className="shrink-0 text-xs text-red-500 hover:underline"
                     >

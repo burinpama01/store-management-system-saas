@@ -49,7 +49,7 @@ export function RiderPicker({
             <p className="text-base font-bold text-gray-900">ใครไปส่ง {orderCode}?</p>
             {pay !== null && (
               <p className="text-xs text-emerald-700">
-                คนส่งได้รายได้พิเศษ {baht(pay)} ({state?.payRate}% ของอาหาร{state?.payIncludeFee ? " + ค่าส่ง" : ""}) เข้าเงินเดือนเมื่อกดสำเร็จ
+                คนส่งได้รายได้พิเศษประมาณ {baht(pay)} ({state?.payRate}% ของอาหาร{state?.payIncludeFee ? " + ค่าส่ง" : ""}) เข้าเงินเดือนเมื่อกดสำเร็จ
               </p>
             )}
           </div>
