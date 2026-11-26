@@ -26,7 +26,7 @@ if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
   -o (Join-Path $Stage "app")
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish ล้ม (exit $LASTEXITCODE)" }
 
-foreach ($f in @("install.cmd", "install-pos-launcher.ps1", "uninstall-pos-launcher.ps1", "README-TH.txt")) {
+foreach ($f in @("install.cmd", "install-pos-launcher.ps1", "uninstall-pos-launcher.ps1", "uninstall.cmd", "README-TH.txt")) {
   Copy-Item (Join-Path $PSScriptRoot $f) $Stage
 }
 if (Test-Path $Zip) { Remove-Item $Zip -Force }

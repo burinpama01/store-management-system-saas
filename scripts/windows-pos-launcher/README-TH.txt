@@ -14,4 +14,4 @@ StoreOS POS - โปรแกรมขายหน้าร้านสำหร
   - ต้องเปิดโปรแกรมไว้ตลอดเวลาร้านเปิด (ออร์เดอร์ QR พิมพ์อัตโนมัติเมื่อโปรแกรมเปิดอยู่)
 
 log ของโปรแกรม: %LOCALAPPDATA%\StoreOS\PosLauncher\logs
-ถอนการติดตั้ง: คลิกขวา uninstall-pos-launcher.ps1 -> Run with PowerShell
+ถอนการติดตั้ง: ดับเบิลคลิก uninstall.cmd

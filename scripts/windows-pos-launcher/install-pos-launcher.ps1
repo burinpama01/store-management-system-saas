@@ -49,8 +49,14 @@ if ($wv) {
 }
 
 Write-Step "คัดลอกโปรแกรม"
-Get-Process -Name "StoreOS.PosLauncher" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
+# ปิดตัวเดิมแบบสุภาพก่อน (ให้งานพิมพ์ที่ค้างส่งจบ) แล้วค่อยบังคับปิดถ้าไม่ปิดใน 5 วิ
+$running = Get-Process -Name "StoreOS.PosLauncher" -ErrorAction SilentlyContinue
+if ($running) {
+  $running | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+  $running | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
+  Get-Process -Name "StoreOS.PosLauncher" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 500
+}
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item (Join-Path $Root "app\*") $InstallDir -Recurse -Force
 $exe = Join-Path $InstallDir $ExeName

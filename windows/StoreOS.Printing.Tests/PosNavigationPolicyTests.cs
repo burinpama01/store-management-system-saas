@@ -30,6 +30,7 @@ public class PosNavigationPolicyTests
     [Theory]
     [InlineData("https://www.store-os.online/pos", true)]
     [InlineData("https://www.store-os.online/settings/receipt", true)]
+    [InlineData("https://www.store-os.online/catalog", true)]
     [InlineData("https://www.store-os.online/login", false)]   // หน้าเข้าระบบสั่งพิมพ์ไม่ได้
     [InlineData("https://www.store-os.online/attendance", false)]
     [InlineData("https://evil.example.com/pos", false)]
@@ -37,6 +38,13 @@ public class PosNavigationPolicyTests
     [InlineData(null, false)]
     public void TrustedMessageSource(string? source, bool trusted) =>
         Assert.Equal(trusted, PosNavigationPolicy.IsTrustedMessageSource(source, "prod"));
+
+    [Fact]
+    public void LocalhostMessagesOnlyOnDevChannel()
+    {
+        Assert.True(PosNavigationPolicy.IsTrustedMessageSource("http://localhost:3000/pos", "dev"));
+        Assert.False(PosNavigationPolicy.IsTrustedMessageSource("http://localhost:3000/pos", "prod"));
+    }
 
     [Fact]
     public void TabsMapToPaths()

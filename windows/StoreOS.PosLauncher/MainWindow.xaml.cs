@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, (string Host, int Port)> _knownPrinters = new(StringComparer.Ordinal);
     private DateTime _lastJobAt = DateTime.MinValue;
     private int _activeJobs;
+    private bool _probeRunning;
     private string? _lastAllowedUrl;
     private bool _lastWasAuthPage = true;
     private PrinterToolsWindow? _tools;
@@ -80,6 +81,7 @@ public partial class MainWindow : Window
         core.Settings.AreDevToolsEnabled = _settings.AllowDevTools;
         core.Settings.AreDefaultContextMenusEnabled = _settings.AllowDevTools;
         core.Settings.IsStatusBarEnabled = false;
+        if (_settings.AllowDevTools) LocalLog.Write("warn", "devtools_enabled", $"channel={_settings.SafeChannel}");
         core.NavigationStarting += OnNavigationStarting;
         core.SourceChanged += OnSourceChanged;
         core.NewWindowRequested += OnNewWindowRequested;
@@ -255,6 +257,7 @@ public partial class MainWindow : Window
     {
         _activeJobs++;
         _lastJobAt = DateTime.UtcNow;
+        SetStatus($"● กำลังส่งงานพิมพ์ · {job.Host}:{job.Port}", WarnBg, WarnFg);
         try
         {
             var result = await _queue.PrintAsync(job);
@@ -277,7 +280,8 @@ public partial class MainWindow : Window
     {
         LocalLog.Write(entry.Outcome == "printed" ? "info" : "warn", "print",
             $"{entry.Kind} {entry.Label} → {entry.Target} {entry.Outcome} {entry.ElapsedMs}ms attempts={entry.Attempts} bytes={entry.Bytes} {entry.Error}");
-        Dispatcher.Invoke(() =>
+        // InvokeAsync ไม่ใช่ Invoke: Completed อาจถูกยกจาก UI thread เอง (เช่นงานที่ถูกปฏิเสธทันที) — Invoke จะค้าง
+        Dispatcher.InvokeAsync(() =>
         {
             var parts = entry.Target.Split(':');
             if (parts.Length == 2 && int.TryParse(parts[1], out var port)) _knownPrinters[entry.Target] = (parts[0], port);
@@ -296,13 +300,22 @@ public partial class MainWindow : Window
     /// <summary>ตรวจเครื่องพิมพ์ที่เคยใช้ทุก 30 วิ — ข้ามถ้ากำลังพิมพ์/เพิ่งพิมพ์ (กันชนกับงานจริง)</summary>
     private async Task ProbeKnownPrintersAsync()
     {
-        if (_knownPrinters.Count == 0 || _activeJobs > 0 || DateTime.UtcNow - _lastJobAt < TimeSpan.FromSeconds(20)) return;
+        if (_probeRunning || _knownPrinters.Count == 0 || _activeJobs > 0 || DateTime.UtcNow - _lastJobAt < TimeSpan.FromSeconds(20)) return;
+        _probeRunning = true;
         var down = new List<string>();
-        foreach (var (key, target) in _knownPrinters.ToList())
+        try
         {
-            var probe = await PrinterDiscovery.ProbeAsync(target.Host, target.Port, TimeSpan.FromSeconds(2));
-            if (!probe.Reachable) down.Add(key);
+            foreach (var (key, target) in _knownPrinters.ToList())
+            {
+                var probe = await PrinterDiscovery.ProbeAsync(target.Host, target.Port, TimeSpan.FromSeconds(2));
+                if (!probe.Reachable) down.Add(key);
+            }
         }
+        finally
+        {
+            _probeRunning = false;
+        }
+        if (_activeJobs > 0) return; // มีงานพิมพ์เข้ามาระหว่างตรวจ — สถานะจริงมาจากงานนั้น
         if (down.Count > 0)
         {
             SetStatus($"● เครื่องพิมพ์ไม่ตอบ · {string.Join(", ", down)}", BadBg, BadFg);
