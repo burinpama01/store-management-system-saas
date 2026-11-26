@@ -351,9 +351,30 @@ describe("buildReceiptLines", () => {
 
     const itemLine = lines.find((line) => line.emphasis === "item");
     const priceWidth = "x1 45.00".length;
-    const maxNameWidth = Math.floor((RECEIPT_COLS["80mm"] - priceWidth - 1) / ITEM_NAME_SCALE);
+    // ราคาวาดใหญ่เท่าชื่อ → ที่ของราคาคิด × ITEM_NAME_SCALE ด้วย (ตรงกับ receipt-lines.ts)
+    const maxNameWidth = Math.floor((RECEIPT_COLS["80mm"] - priceWidth * ITEM_NAME_SCALE - 1) / ITEM_NAME_SCALE);
     expect(itemLine?.text.length).toBeLessThanOrEqual(maxNameWidth);
     expect(itemLine?.text.endsWith("…")).toBe(true);
+  });
+
+  it("ราคายาวมากบน 58mm ชื่อเมนูยังเหลือ (ไม่หายทั้งบรรทัด) + ยอดสุทธิเป็นบรรทัดใหญ่", () => {
+    const { lines } = buildReceiptLines({
+      storeName: "ร้านทดสอบ",
+      orderNumber: "X-1",
+      items: [{ name: "ชาเขียวมัทฉะลาเต้พิเศษ", quantity: 999, unitPrice: 999.99, totalPrice: 998990.01, modifierNames: [] }],
+      subtotal: 998990.01,
+      discount: 0,
+      total: 998990.01,
+      payments: [{ method: "cash", amount: 998990.01 }],
+      showQrPayment: false,
+      paperWidth: "58mm",
+      printedAt: "2026-06-20T16:24:00.000Z",
+    } as never);
+    const itemLine = lines.find((line) => line.emphasis === "item" && line.text !== "** รวมสุทธิ **");
+    expect(itemLine?.text.length).toBeGreaterThanOrEqual(3);
+    const total = lines.find((line) => line.text === "** รวมสุทธิ **");
+    expect(total).toMatchObject({ emphasis: "item", bold: true });
+    expect(total?.right).toContain("998");
   });
 
   it("places the store logo at the top and the footer image at the very bottom", () => {

@@ -14,6 +14,8 @@ public sealed class PosLauncherSettings
     public string BaseUrl { get; init; } = PosNavigationPolicy.DefaultBaseUrl;
     public string Channel { get; init; } = "prod";
     public bool AllowDevTools { get; init; }
+    /// <summary>มีจอที่สองแล้วเปิดจอลูกค้าเต็มจอนั้นเองตอนเข้าหน้าขาย (ค่าเริ่มต้น: เปิด)</summary>
+    public bool CustomerDisplayAuto { get; init; } = true;
 
     public static string DataRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StoreOS", "PosLauncher");

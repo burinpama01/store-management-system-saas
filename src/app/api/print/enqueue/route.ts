@@ -16,6 +16,7 @@ import {
 import { parseStationTicketSourceKey } from "@/modules/printing/station-routing";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { getPrinter } from "@/modules/stores/repository";
+import { getStorePrintMode } from "@/modules/printing/direct-print-repository";
 
 /** True when the store's Print Hub has polled recently (else jobs wait in queue). */
 async function isHubOnline(storeId: string): Promise<boolean> {
@@ -103,6 +104,14 @@ export async function POST(req: NextRequest) {
   const { ctx, resolved } = authz;
   if (!resolved.can("pos.use") && !resolved.can("settings.manage_printer")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // ร้านโหมดพิมพ์ตรง (D3): ไม่รับงานเข้าคิวคลาวด์เลย — Print Hub ปิดแล้ว งานที่เข้าคิวจะค้างไม่มีใครพิมพ์
+  if ((await getStorePrintMode(ctx.storeId)) === "direct") {
+    return NextResponse.json(
+      { error: "ร้านนี้ตั้งให้พิมพ์จากโปรแกรม StoreOS POS บนเครื่องแคชเชียร์เท่านั้น — สั่งพิมพ์จากเครื่องนั้น", printMode: "direct" },
+      { status: 409 },
+    );
   }
 
   let body: { printerId?: string; printJobBase64?: string; sourceKey?: unknown };

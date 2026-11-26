@@ -263,14 +263,15 @@ export async function renderReceiptRaster(data: ReceiptData): Promise<Uint8Array
       // เพราะสองฝั่งอาจใช้ฟอนต์คนละขนาดกัน
       ctx.textAlign = "right";
       const prevFont = ctx.font;
-      ctx.font = `600 ${baseFont}`;
+      // บรรทัดชื่อเมนู/ยอดสุทธิ: ราคาใหญ่และหนาเท่าชื่อ (อ่านง่ายขึ้นตามที่ร้านขอ) / บรรทัดอื่นขนาดปกติ
+      ctx.font = emphasised ? `700 ${itemFontPx}px "Courier New", "Sarabun", monospace` : `600 ${baseFont}`;
       // Courier กว้างราว 0.6 เท่าของขนาดฟอนต์ — ใช้เป็นค่าประมาณเมื่อ canvas
       // ตัวที่รันอยู่ไม่มี measureText (เช่น canvas จำลองในเทส)
       const rightWidth =
         typeof ctx.measureText === "function"
           ? ctx.measureText(line.right).width
-          : line.right.length * fontPx * 0.6;
-      drawText(line.right, width - padX, y + (emphasised ? itemFontPx - fontPx : 0), width - padX * 2);
+          : line.right.length * (emphasised ? itemFontPx : fontPx) * 0.6;
+      drawText(line.right, width - padX, y, width - padX * 2);
       ctx.font = prevFont;
       ctx.textAlign = "left";
       drawText(text, padX, y, width - padX * 2 - rightWidth - padX);

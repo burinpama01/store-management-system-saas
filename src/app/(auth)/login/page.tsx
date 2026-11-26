@@ -23,6 +23,15 @@ export default function LoginPage() {
     formAction(formData);
   };
 
+  // เฉพาะโปรแกรม StoreOS POS (UA มี StoreOSPos/): เปิดหน้า QR ก่อน ไม่ต้องพิมพ์รหัสผ่านบนเครื่องร้าน
+  // ?method=password = ผู้ใช้กด "ใช้อีเมล/รหัสผ่านแทน" จากหน้า QR เอง → แสดงฟอร์มนี้ตามปกติ
+  useEffect(() => {
+    if (!/StoreOSPos\//.test(navigator.userAgent)) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("method") === "password" || window.location.hash.includes("access_token")) return;
+    router.replace("/device-login");
+  }, [router]);
+
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const accessToken = hash.get("access_token");
