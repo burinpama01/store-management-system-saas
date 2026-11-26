@@ -91,7 +91,7 @@ export async function saveOnlineOrderSettingsAction(settings: OnlineOrderSetting
       if (!site) return { ok: false, error: "สร้างเว็บไซต์ร้านก่อนเปิดสั่งออนไลน์" };
       const service = await createSupabaseServiceClient();
       if (!(await isBeamReadyForStore(ctx.storeId, service))) {
-        return { ok: false, error: "เปิด Beam ก่อน (ตั้งค่า → การชำระเงิน) — สั่งออนไลน์รับเงินผ่าน Beam เท่านั้น" };
+        return { ok: false, error: "เปิด Beam ก่อน (ตั้งค่า → การชำระเงิน) — ระบบสั่งออนไลน์ต้องเปิด Beam (QR พร้อมเพย์) แม้จะเปิดเก็บเงินปลายทางด้วย" };
       }
     }
     const error = await saveOnlineOrderSettings({ storeId: ctx.storeId, organizationId: ctx.organizationId, settings: parsed.data, userId: user.id });
@@ -435,11 +435,17 @@ export async function updateOnlineOrderStatusAction(
     // R3: ส่งไม่สำเร็จ/ร้านปฏิเสธ COD — ยกเลิกบิลที่เปิดค้าง (ไม่มีเงินเข้า)
     if (to === "delivery_failed") {
       patch.failure_reason = (reason ?? "").trim().slice(0, 200) || "ส่งไม่สำเร็จ";
+      patch.failed_at = now;
       if (order.orderId) {
         const voided = await voidOrder(order.orderId, g.ctx.storeId, g.user.id, `ออนไลน์ ${order.orderCode}: ${String(patch.failure_reason)}`);
         if (!voided.ok) {
-          log("error", "codDeliveryFailed", `ยกเลิกบิลเก็บปลายทางไม่สำเร็จ ${order.orderCode}`, g, { onlineOrderId: id });
-          return { ok: false, error: "ยกเลิกบิลไม่สำเร็จ ลองอีกครั้ง" };
+          // กดซ้ำหลังรอบก่อน void สำเร็จแต่เปลี่ยนสถานะไม่ทัน → บิล voided แล้ว ถือว่าผ่าน (ไม่งั้นค้างตลอด)
+          const service = await createSupabaseServiceClient();
+          const { data: bill } = await service.from("orders").select("status").eq("id", order.orderId).maybeSingle();
+          if (bill?.status !== "voided") {
+            log("error", "codDeliveryFailed", `ยกเลิกบิลเก็บปลายทางไม่สำเร็จ ${order.orderCode}`, g, { onlineOrderId: id });
+            return { ok: false, error: "ยกเลิกบิลไม่สำเร็จ ลองอีกครั้ง" };
+          }
         }
       }
     }

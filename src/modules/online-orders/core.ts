@@ -249,8 +249,12 @@ export const COD_FAILED_BLOCK_COUNT = 2;
 export const COD_FAILED_LOOKBACK_DAYS = 90;
 /** ออเดอร์เก็บปลายทางที่ยังไม่จบได้พร้อมกันต่อเบอร์ */
 export const COD_MAX_ACTIVE_PER_PHONE = 2;
-/** OTP: อายุ 5 นาที · ส่งซ้ำได้ทุก 60 วิ · ≤5 ครั้ง/เบอร์/วัน · ≤20 ครั้ง/IP/10 นาที · ใส่ผิดได้ 5 ครั้ง */
-export const COD_OTP_TTL_MS = 5 * 60_000;
+/**
+ * OTP: อายุ 10 นาที (ต้องตรงข้อความ SMS กลาง "หมดอายุใน 10 นาที" ใน smskub.buildOtpMessage)
+ * · ส่งซ้ำได้ทุก 60 วิ · ≤5 ครั้ง/เบอร์/วัน · ≤20 ครั้ง/IP/10 นาที · ใส่ผิดได้ 5 ครั้ง
+ */
+export const COD_OTP_TTL_MIN = 10;
+export const COD_OTP_TTL_MS = COD_OTP_TTL_MIN * 60_000;
 export const COD_OTP_COOLDOWN_MS = 60_000;
 export const COD_OTP_MAX_PER_PHONE_DAY = 5;
 export const COD_OTP_MAX_PER_IP_10MIN = 20;

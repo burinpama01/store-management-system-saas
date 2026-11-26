@@ -133,3 +133,18 @@ describe("R3 เก็บเงินปลายทาง — ฝั่งร�
     expect(read("src/app/pos/OnlineOrderTickets.tsx")).toContain('const billPending = !isCod && order.status !== "paid" && !order.billClosed;');
   });
 });
+
+describe("R3a แก้ตามรีวิว", () => {
+  it("อายุ OTP ตรงข้อความ SMS (10 นาที)", async () => {
+    const { COD_OTP_TTL_MIN, COD_OTP_TTL_MS } = await import("@/modules/online-orders/core");
+    expect(COD_OTP_TTL_MS).toBe(COD_OTP_TTL_MIN * 60_000);
+    expect(read("src/modules/notifications/smskub.ts")).toContain(`หมดอายุใน ${COD_OTP_TTL_MIN} นาที`);
+  });
+  it("ส่งไม่สำเร็จกดซ้ำได้: void ล้มแต่บิล voided แล้ว = ผ่าน", () => {
+    expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain('if (bill?.status !== "voided") {');
+  });
+  it("ประวัติไม่รับของนับจาก failed_at", () => {
+    expect(read("src/modules/online-orders/repository.ts")).toContain('.gte("failed_at", since)');
+    expect(read("supabase/migrations/20261214120000_online_cod.sql")).toContain("add column if not exists failed_at timestamptz");
+  });
+});

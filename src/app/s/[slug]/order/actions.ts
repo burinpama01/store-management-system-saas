@@ -298,7 +298,7 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
       organizationId: store.organizationId,
       storeId: store.storeId,
     });
-    return fail("สร้างคำสั่งซื้อไม่สำเร็จ ลองใหม่อีกครั้ง");
+    return fail(isCod ? "สร้างคำสั่งซื้อไม่สำเร็จ — ขอรหัส OTP ใหม่แล้วลองอีกครั้ง" : "สร้างคำสั่งซื้อไม่สำเร็จ ลองใหม่อีกครั้ง");
   }
 
   if (isCod) {

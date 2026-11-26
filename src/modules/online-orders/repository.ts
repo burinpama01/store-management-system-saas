@@ -470,7 +470,8 @@ export async function countFailedCodOrders(storeId: string, phone: string, days:
     .eq("customer_phone", phone)
     .eq("payment_method", "cod")
     .eq("status", "delivery_failed")
-    .gte("updated_at", since);
+    // failed_at = เวลาที่ส่งไม่สำเร็จจริง (updated_at เปลี่ยนได้จากเหตุอื่น ทำให้หน้าต่าง 90 วันเลื่อน)
+    .gte("failed_at", since);
   return count ?? 0;
 }
 

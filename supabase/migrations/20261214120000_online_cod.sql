@@ -15,8 +15,10 @@ alter table public.online_orders
     check (cod_collected_method is null or cod_collected_method in ('cash', 'bank_transfer', 'beam')),
   add column if not exists cod_cash_held numeric(12,2) check (cod_cash_held is null or cod_cash_held >= 0),
   add column if not exists cod_settled_at timestamptz,
-  add column if not exists cod_settled_by uuid,
-  add column if not exists failure_reason text check (failure_reason is null or char_length(failure_reason) <= 200);
+  add column if not exists cod_settled_by uuid references auth.users(id) on delete set null,
+  add column if not exists failure_reason text check (failure_reason is null or char_length(failure_reason) <= 200),
+  -- เวลาที่ส่งไม่สำเร็จจริง (นับประวัติไม่รับของ 90 วัน)
+  add column if not exists failed_at timestamptz;
 
 -- สถานะใหม่: cod_pending (เก็บปลายทาง รอร้านรับ) · delivery_failed (ส่งไม่สำเร็จ/ร้านปฏิเสธ COD)
 alter table public.online_orders drop constraint if exists online_orders_status_check;
