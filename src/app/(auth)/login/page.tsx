@@ -162,6 +162,14 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          {/* เครื่องร้าน (StoreOS POS / คอมใช้ร่วมกัน): ไม่ต้องพิมพ์รหัสผ่านบนเครื่องนี้ */}
+          <Link
+            href="/device-login"
+            className="mt-3 flex min-h-11 items-center justify-center rounded-lg border border-[var(--border)] px-4 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--surface-muted)]"
+          >
+            📱 เข้าใช้ด้วย QR จากมือถือ (ยืนยันด้วยรหัสพนักงาน)
+          </Link>
+
           <p className="reference-auth-register">
             ยังไม่มีบัญชี? <Link href="/register">สมัครใช้งานฟรี 30 วัน</Link>
           </p>

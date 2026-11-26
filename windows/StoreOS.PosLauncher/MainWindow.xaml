@@ -1,0 +1,61 @@
+<Window x:Class="StoreOS.PosLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="StoreOS POS"
+        Icon="Assets/storeos.ico"
+        Width="1366" Height="800" MinWidth="900" MinHeight="600"
+        WindowState="Maximized"
+        Background="#F6F4F1">
+    <Window.Resources>
+        <Style x:Key="TabButton" TargetType="Button">
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#6A615A" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#EFE9E3" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="#FAF8F6" BorderBrush="#E6DFD8" BorderThickness="0,0,0,1" Padding="10,6">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <Button x:Name="TabPos" Style="{StaticResource TabButton}" Content="🧾  ขาย (POS)" Click="OnTabPos" />
+                    <Button x:Name="TabCatalog" Style="{StaticResource TabButton}" Content="🍽  เมนูสินค้า" Click="OnTabCatalog" />
+                    <Button x:Name="TabPrinters" Style="{StaticResource TabButton}" Content="🖨  เครื่องพิมพ์" Click="OnTabPrinters" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="StatusPill" CornerRadius="999" Padding="12,5" Background="#EFE9E3" Margin="0,0,8,0">
+                        <TextBlock x:Name="StatusText" FontSize="13" FontWeight="SemiBold" Foreground="#6A615A" Text="● พิมพ์ตรง: รอพิมพ์ใบแรก" />
+                    </Border>
+                    <Button Style="{StaticResource TabButton}" Content="ประวัติการพิมพ์ / ค้นหาเครื่องพิมพ์" FontSize="13" Click="OnOpenPrinterTools" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Grid>
+            <wv2:WebView2 x:Name="Web" />
+            <Border x:Name="ExternalNotice" Visibility="Collapsed" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,12,0,0"
+                    Background="#1D1916" CornerRadius="10" Padding="14,8">
+                <TextBlock x:Name="ExternalNoticeText" Foreground="White" FontSize="13" />
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

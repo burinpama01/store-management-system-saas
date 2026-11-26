@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    StoreOS POS — โปรแกรม Windows สำหรับเครื่องขาย (แผน POS Launcher Direct IP Printing v2 — เฟส D2)
+    เน้น 3 อย่าง: หน้าขาย POS / จัดการเมนูสินค้า / ตั้งค่าเครื่องพิมพ์
+    พิมพ์ตรงเข้าเครื่องพิมพ์ IP:9100 ผ่าน StoreOS.Printing ไม่ผ่าน Print Hub / คิวบนคลาวด์
+    แยกจาก StoreOS.Launcher เดิม (ติดตั้งคนละโฟลเดอร์ ชื่อ process ต่างกัน เปิดคู่กันได้)
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <Platforms>x64</Platforms>
+    <AssemblyName>StoreOS.PosLauncher</AssemblyName>
+    <RootNamespace>StoreOS.PosLauncher</RootNamespace>
+    <Product>StoreOS POS</Product>
+    <Version>1.0.0</Version>
+    <ApplicationIcon>Assets\storeos.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StoreOS.Printing\StoreOS.Printing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\storeos.ico" />
+  </ItemGroup>
+
+</Project>
