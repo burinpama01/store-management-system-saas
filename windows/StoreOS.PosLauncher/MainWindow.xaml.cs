@@ -10,7 +10,7 @@ using StoreOS.Printing;
 namespace StoreOS.PosLauncher;
 
 /// <summary>
-/// หน้าต่างหลัก: 3 แท็บ (POS / เมนูสินค้า / เครื่องพิมพ์) + ช่อง storeos.pos สำหรับพิมพ์ตรง
+/// หน้าต่างหลัก: แท็บ ขาย (POS) / การตั้งค่าอื่นๆ (หน้าเว็บหลังร้านเต็ม) + จอลูกค้า + เพลง + ช่อง storeos.pos สำหรับพิมพ์ตรง
 ///
 /// ด่านความปลอดภัย 2 ชั้น (ทั้งคู่ต้องผ่าน):
 ///   1. หน้าที่เปิดในโปรแกรมได้ = โดเมน StoreOS + เฉพาะหน้างาน POS (PosNavigationPolicy.Decide)
@@ -172,13 +172,6 @@ public partial class MainWindow : Window
 
     private void HandleDisallowed(string url, NavigationDecision decision)
     {
-        // หลังล็อกอินเว็บพาไปหน้าแดชบอร์ด — ในโปรแกรมนี้ให้ไปหน้าขายแทน ไม่ต้องเด้งเบราว์เซอร์
-        if (decision == NavigationDecision.OpenExternal && _lastWasAuthPage)
-        {
-            _lastWasAuthPage = false;
-            Navigate(PosTab.Pos);
-            return;
-        }
         if (decision == NavigationDecision.OpenExternal)
         {
             OpenInBrowser(url);

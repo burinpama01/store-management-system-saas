@@ -254,7 +254,8 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     // ชื่อเมนูวาดด้วยฟอนต์ใหญ่กว่าบรรทัดอื่น จึงตัดความยาวตามสัดส่วนคอลัมน์ที่เหลือ
     // หลังหักที่ของราคา แล้วให้ผู้วาดจัดราคาชิดขวาเอง (ดู `right` ใน ReceiptLine)
     // ราคาวาดใหญ่เท่าชื่อเมนูด้วย (ผู้ใช้ขอให้ราคาอ่านง่ายขึ้น) จึงหักที่ราคาตามสัดส่วนฟอนต์ใหญ่
-    const nameWidth = Math.floor((cols - priceField.length * ITEM_NAME_SCALE - 1) / ITEM_NAME_SCALE);
+    // อย่างน้อย 4 ตัว: ราคายาวมาก (ขายส่ง) บนกระดาษ 58mm ต้องไม่ทำให้ชื่อเมนูหายทั้งบรรทัด
+    const nameWidth = Math.max(4, Math.floor((cols - priceField.length * ITEM_NAME_SCALE - 1) / ITEM_NAME_SCALE));
     const name = displayName.length > nameWidth ? displayName.slice(0, nameWidth - 1) + "…" : displayName;
     lines.push({ text: name, right: priceField, emphasis: "item" });
     // Department-store style: show the multiplication when the line is more than 1 unit.

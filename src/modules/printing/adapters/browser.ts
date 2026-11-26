@@ -112,6 +112,8 @@ function buildReceiptHtml(data: ReceiptData): string {
   .receipt-line.is-split { display: flex; align-items: baseline; gap: 0.5em; }
   .receipt-line.is-split > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; }
   .receipt-right { flex: 0 0 auto; font-size: 0.77em; font-weight: 600; white-space: pre; }
+  /* บรรทัดชื่อเมนู/ยอดสุทธิ: ราคาใหญ่เท่าชื่อ (ตรงกับใบเสร็จ raster) */
+  .receipt-line.is-item .receipt-right { font-size: 1em; font-weight: 700; }
   .promptpay-qr { display: flex; justify-content: center; padding: 2mm 0 1mm; }
   .promptpay-qr-image { display: block; background: #fff; image-rendering: pixelated; }
   .receipt-image { display: flex; justify-content: center; }
