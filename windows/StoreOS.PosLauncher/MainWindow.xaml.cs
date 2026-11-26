@@ -81,6 +81,8 @@ public partial class MainWindow : Window
         core.Settings.AreDevToolsEnabled = _settings.AllowDevTools;
         core.Settings.AreDefaultContextMenusEnabled = _settings.AllowDevTools;
         core.Settings.IsStatusBarEnabled = false;
+        // ให้หน้าเว็บรู้ว่าเปิดในโปรแกรม StoreOS POS (หน้า QR ใช้ตั้งชื่ออุปกรณ์)
+        core.Settings.UserAgent = $"{core.Settings.UserAgent} StoreOSPos/{AppVersion}";
         if (_settings.AllowDevTools) LocalLog.Write("warn", "devtools_enabled", $"channel={_settings.SafeChannel}");
         core.NavigationStarting += OnNavigationStarting;
         core.SourceChanged += OnSourceChanged;

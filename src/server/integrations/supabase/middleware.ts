@@ -59,6 +59,12 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/download/") ||
     request.nextUrl.pathname.startsWith("/api/mobile/pos/") || // Handler verifies Bearer independently.
     request.nextUrl.pathname === "/api/line/webhook" ||
+    // ล็อกอินเครื่องร้านด้วย QR (D2b): หน้าแสดง QR + start/poll/complete ยังไม่มี session
+    // (auth ด้วยรหัสลับเครื่อง/ตั๋วครั้งเดียวใน handler) — หน้า /device-login/approve บนมือถือ "ไม่" public
+    request.nextUrl.pathname === "/device-login" ||
+    request.nextUrl.pathname === "/api/device-login/start" ||
+    request.nextUrl.pathname === "/api/device-login/poll" ||
+    request.nextUrl.pathname === "/api/device-login/complete" ||
     request.nextUrl.pathname === "/api/print/hub/poll" ||
     request.nextUrl.pathname === "/api/print/hub/ack" ||
     // StoreOS Launcher บนเครื่องแคชเชียร์ส่ง log กลับมา (auth ด้วย Hub token ใน handler

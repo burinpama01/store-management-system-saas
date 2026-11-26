@@ -21,6 +21,9 @@ public class PosNavigationPolicyTests
     [InlineData("http://localhost:3000/pos", NavigationDecision.Block)]
     [InlineData("javascript:alert(1)", NavigationDecision.Block)]
     [InlineData("about:blank", NavigationDecision.Allow)]
+    [InlineData("https://www.store-os.online/device-login", NavigationDecision.Allow)]
+    [InlineData("https://www.store-os.online/api/device-login/complete", NavigationDecision.Allow)]
+    [InlineData("https://www.store-os.online/api/print/enqueue", NavigationDecision.OpenExternal)]
     public void ProdNavigation(string url, NavigationDecision expected) => Assert.Equal(expected, PosNavigationPolicy.Decide(url, "prod"));
 
     [Fact]

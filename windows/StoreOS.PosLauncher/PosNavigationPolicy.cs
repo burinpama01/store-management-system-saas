@@ -37,6 +37,7 @@ public static class PosNavigationPolicy
     private static readonly string[] AuthPaths =
     [
         "/login", "/register", "/reset-password", "/update-password", "/auth", "/device-login",
+        "/api/device-login", // ส่งฟอร์มแลกตั๋ว (POST) เป็นการนำทางระดับหน้า
         "/account-inactive", "/suspended", "/onboarding", "/app-entry",
     ];
 
