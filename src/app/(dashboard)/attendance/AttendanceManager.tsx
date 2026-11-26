@@ -14,6 +14,7 @@ import {
   adjustAttendanceAction,
   deleteAttendanceAction,
   selfBackdatedClockAction,
+  decideBackdateRequestAction,
   addHolidayAction,
   deleteHolidayAction,
   addEmployeeLeaveAction,
@@ -23,6 +24,7 @@ import { WEEKDAY_LABELS } from "@/modules/hr/types";
 import { AttendanceCalendar } from "./AttendanceCalendar";
 import type { DayStatus } from "@/modules/attendance/calendar";
 import type { StoreHoliday } from "@/modules/attendance/repository";
+import type { BackdateRequest } from "@/modules/attendance/backdate-requests";
 import type { PayrollAdjustment } from "@/modules/hr/types";
 import type { CalendarOtDay } from "@/modules/hr/ot-days";
 import { getNativePosition, isNativeApp } from "@/shared/native/geolocation";
@@ -43,6 +45,12 @@ interface Props {
   today: string;
   backdatedRights: number;
   backdatedUsed: number;
+  /** แถวของตัวเองที่ลืมกดออกงาน (วันที่ผ่านมา) — ขอได้แค่เวลาออก */
+  myOpenRecords?: { id: string; date: string; clockInAt: string }[];
+  /** คำขอลงเวลาย้อนหลังของตัวเอง (ล่าสุด) */
+  myBackdateRequests?: BackdateRequest[];
+  /** คำขอที่รออนุมัติ (จอผู้จัดการ) */
+  pendingBackdateRequests?: BackdateRequest[];
   /** Store-level open weekdays (0=Sun .. 6=Sat). */
   storeWorkingDays: number[];
   /** The viewer's own clock-in/out records for the current month (personal calendar). */
@@ -171,6 +179,9 @@ export function AttendanceManager({
   today,
   backdatedRights,
   backdatedUsed,
+  myOpenRecords = [],
+  myBackdateRequests = [],
+  pendingBackdateRequests = [],
   storeWorkingDays,
   myMonthRecords,
   currentMonth,
@@ -189,6 +200,10 @@ export function AttendanceManager({
   /** Clock timestamps are UTC; render them as "HH:MM" in the store's timezone. */
   const fmtTime = (iso: string) => formatStoreTime(iso, storeTimezone);
   const [selfBackdateOpen, setSelfBackdateOpen] = useState(false);
+  /** "" = วันที่ไม่ได้ลงเวลาเลย, อื่น ๆ = id แถวที่ลืมกดออกงาน */
+  const [backdateRecordId, setBackdateRecordId] = useState("");
+  const selectedOpenRecord = myOpenRecords.find((r) => r.id === backdateRecordId) ?? null;
+  const fmtDateTh = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
   const [clocking, setClocking] = useState(false);
   const [clockError, setClockError] = useState<string | null>(null);
   const [attendanceSettingsDialogOpen, setAttendanceSettingsDialogOpen] = useState(false);
@@ -386,14 +401,44 @@ export function AttendanceManager({
             onClick={() => {
               setClockError(null);
               setEditError(null);
-              setActionNotice("เปิดฟอร์มลงเวลาย้อนหลังแล้ว");
+              setActionNotice("เปิดฟอร์มขอลงเวลาย้อนหลังแล้ว");
+              setBackdateRecordId(myOpenRecords[0]?.id ?? "");
               setSelfBackdateOpen(true);
             }}
             disabled={backdatedUsed >= backdatedRights}
             className="btn-secondary w-full text-sm disabled:opacity-40"
           >
-            ลงเวลาย้อนหลัง (เหลือ {Math.max(0, backdatedRights - backdatedUsed)}/{backdatedRights} ครั้งเดือนนี้)
+            ขอลงเวลาย้อนหลัง (เหลือ {Math.max(0, backdatedRights - backdatedUsed)}/{backdatedRights} ครั้งเดือนนี้)
           </button>
+          {myOpenRecords.length > 0 && (
+            <p className="mt-2 text-xs text-red-600">มี {myOpenRecords.length} วันที่ลืมกดออกงาน (นับขาด) — กดขอลงเวลาออกย้อนหลังเพื่อให้ผู้จัดการอนุมัติ</p>
+          )}
+          {myBackdateRequests.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {myBackdateRequests.slice(0, 5).map((req) => (
+                <li key={req.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-xs">
+                  <span>
+                    {fmtDateTh(req.date)} · {fmtTime(req.clockInAt)}–{fmtTime(req.clockOutAt)}
+                    {req.attendanceRecordId ? " (ขอเวลาออก)" : ""}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <BackdateStatusBadge status={req.status} />
+                    {req.status === "pending" && (
+                      <button
+                        type="button"
+                        className="text-red-600 underline disabled:opacity-40"
+                        disabled={isEditing}
+                        onClick={() => runEdit(() => decideBackdateRequestAction(req.id, "cancel"), () => {}, "ยกเลิกคำขอแล้ว")}
+                      >
+                        ยกเลิก
+                      </button>
+                    )}
+                  </span>
+                  {req.status === "rejected" && req.decisionNote && <span className="basis-full text-red-600">เหตุผล: {req.decisionNote}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
@@ -456,6 +501,20 @@ export function AttendanceManager({
       {/* Manage sections — visible to attendance.manage only */}
       {canManage && (
         <>
+          <BackdateApprovals
+            requests={pendingBackdateRequests}
+            fmtTime={fmtTime}
+            fmtDateTh={fmtDateTh}
+            branchNameById={multiBranch ? branchNameById : null}
+            busy={isEditing}
+            onDecide={(id, action, note) =>
+              runEdit(
+                () => decideBackdateRequestAction(id, action, note),
+                () => {},
+                action === "approve" ? "อนุมัติแล้ว — บันทึกเวลาอัปเดตแล้ว" : "ปฏิเสธคำขอแล้ว",
+              )
+            }
+          />
           <Collapsible
             title="วันลาพนักงาน (รายบุคคล)"
             desc="ลาเฉพาะพนักงานคนนั้น (ลาพักร้อน/ลากิจ/ลาป่วย) — คนละอย่างกับ 'วันหยุดร้าน' ที่ปิดทั้งร้าน; แสดงบนปฏิทินและไม่นับเป็นขาดงาน"
@@ -925,37 +984,75 @@ export function AttendanceManager({
         </>
       )}
 
-      {/* Self-service backdated clock (all employees, limited per month) */}
+      {/* คำขอลงเวลาย้อนหลัง — มีผลเมื่อผู้จัดการอนุมัติ; วันที่ลืมกดออก ขอได้แค่เวลาออก */}
       {selfBackdateOpen && (
-        <ModalDialog open title="ลงเวลาย้อนหลัง" onClose={() => setSelfBackdateOpen(false)} size="md">
+        <ModalDialog open title="ขอลงเวลาย้อนหลัง" onClose={() => setSelfBackdateOpen(false)} size="md">
           <form
-            action={(fd) => runEdit(() => selfBackdatedClockAction(fd), () => setSelfBackdateOpen(false), "ลงเวลาย้อนหลังแล้ว")}
+            action={(fd) => runEdit(() => selfBackdatedClockAction(fd), () => setSelfBackdateOpen(false), "ส่งคำขอแล้ว — รอผู้จัดการอนุมัติ")}
             className="space-y-3"
           >
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              ใช้สำหรับวันที่ลืมลงเวลา · เหลือสิทธิ {Math.max(0, backdatedRights - backdatedUsed)}/{backdatedRights} ครั้งในเดือนนี้
+              คำขอจะมีผลเมื่อผู้จัดการอนุมัติ · เหลือสิทธิ {Math.max(0, backdatedRights - backdatedUsed)}/{backdatedRights} ครั้งในเดือนนี้
             </p>
             <label className="block text-xs font-medium text-gray-600">
-              วันที่ (ย้อนหลัง)
-              <input name="date" type="date" max={today} required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              วันที่ต้องการแก้
+              <select
+                name="recordId"
+                value={backdateRecordId}
+                onChange={(e) => setBackdateRecordId(e.target.value)}
+                className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3"
+                style={{ fontSize: 16 }}
+              >
+                {myOpenRecords.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {fmtDateTh(r.date)} — เข้า {fmtTime(r.clockInAt)} (ลืมกดออกงาน)
+                  </option>
+                ))}
+                <option value="">วันที่ไม่ได้ลงเวลาเลย</option>
+              </select>
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-xs font-medium text-gray-600">
-                เวลาเข้า
-                <input name="clockInAt" type="datetime-local" required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
-              </label>
-              <label className="block text-xs font-medium text-gray-600">
-                เวลาออก (ไม่บังคับ)
-                <input name="clockOutAt" type="datetime-local" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
-              </label>
-            </div>
+            {selectedOpenRecord ? (
+              <>
+                <p className="text-xs text-gray-500">เวลาเข้า {fmtTime(selectedOpenRecord.clockInAt)} (ใช้ตามที่ลงไว้) — ระบุเฉพาะเวลาออก</p>
+                <label className="block text-xs font-medium text-gray-600">
+                  เวลาออก
+                  <input
+                    key={selectedOpenRecord.id}
+                    name="clockOutAt"
+                    type="datetime-local"
+                    required
+                    min={toStoreDateTimeLocal(selectedOpenRecord.clockInAt, storeTimezone)}
+                    defaultValue={toStoreDateTimeLocal(new Date(Date.parse(selectedOpenRecord.clockInAt) + 8 * 3_600_000).toISOString(), storeTimezone)}
+                    className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3"
+                    style={{ fontSize: 16 }}
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="block text-xs font-medium text-gray-600">
+                  วันที่ (ย้อนหลัง)
+                  <input name="date" type="date" max={today} required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3" style={{ fontSize: 16 }} />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs font-medium text-gray-600">
+                    เวลาเข้า
+                    <input name="clockInAt" type="datetime-local" required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3" style={{ fontSize: 16 }} />
+                  </label>
+                  <label className="block text-xs font-medium text-gray-600">
+                    เวลาออก
+                    <input name="clockOutAt" type="datetime-local" required className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3" style={{ fontSize: 16 }} />
+                  </label>
+                </div>
+              </>
+            )}
             <label className="block text-xs font-medium text-gray-600">
               เหตุผล
-              <input name="note" maxLength={200} placeholder="เช่น ลืมลงเวลา" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+              <input name="note" maxLength={200} placeholder="เช่น ลืมกดออกงาน" className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3" style={{ fontSize: 16 }} />
             </label>
             {editError && <p className="text-xs text-red-600">{editError}</p>}
-            <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังบันทึก..." className="min-h-11 w-full text-sm">
-              ลงเวลาย้อนหลัง
+            <Button type="submit" variant="primary" loading={isEditing} loadingText="กำลังส่ง..." className="min-h-11 w-full text-sm">
+              ส่งคำขอ
             </Button>
           </form>
         </ModalDialog>
@@ -1120,5 +1217,84 @@ function AttendanceSettingsDialog({
         </Button>
       </form>
     </ModalDialog>
+  );
+}
+
+function BackdateStatusBadge({ status }: { status: BackdateRequest["status"] }) {
+  const map: Record<BackdateRequest["status"], [string, string]> = {
+    pending: ["รออนุมัติ", "bg-amber-100 text-amber-800"],
+    approved: ["อนุมัติแล้ว", "bg-emerald-100 text-emerald-800"],
+    rejected: ["ไม่อนุมัติ", "bg-red-100 text-red-700"],
+    cancelled: ["ยกเลิกแล้ว", "bg-gray-100 text-gray-600"],
+  };
+  const [label, cls] = map[status];
+  return <span className={`rounded px-2 py-0.5 font-semibold ${cls}`}>{label}</span>;
+}
+
+/** ผู้จัดการ: คำขอลงเวลาย้อนหลังที่รออนุมัติ (ยังไม่มีผลกับบันทึกเวลา/เงินเดือน) */
+function BackdateApprovals({
+  requests,
+  fmtTime,
+  fmtDateTh,
+  branchNameById,
+  busy,
+  onDecide,
+}: {
+  requests: BackdateRequest[];
+  fmtTime: (iso: string) => string;
+  fmtDateTh: (d: string) => string;
+  branchNameById: Map<string, string> | null;
+  busy: boolean;
+  onDecide: (id: string, action: "approve" | "reject", note?: string) => void;
+}) {
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  if (requests.length === 0) return null;
+  const hours = (a: string, b: string) => Math.round(((Date.parse(b) - Date.parse(a)) / 3_600_000) * 100) / 100;
+  return (
+    <section className="max-w-3xl rounded-lg border border-amber-300 bg-amber-50 p-4">
+      <h2 className="text-sm font-semibold text-amber-900">คำขอลงเวลาย้อนหลังรออนุมัติ ({requests.length})</h2>
+      <p className="text-xs text-amber-800">ยังไม่มีผลกับบันทึกเวลาและเงินเดือนจนกว่าจะอนุมัติ — ตรวจวันที่และชั่วโมงก่อนกด</p>
+      <ul className="mt-3 space-y-2">
+        {requests.map((req) => {
+          const h = hours(req.clockInAt, req.clockOutAt);
+          return (
+            <li key={req.id} className="rounded-md border border-amber-200 bg-white p-3 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    {req.employeeName}
+                    {branchNameById && <span className="ml-1 text-xs font-normal text-gray-500">· {branchNameById.get(req.storeId) ?? ""}</span>}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {fmtDateTh(req.date)} · เข้า {fmtTime(req.clockInAt)} – ออก {fmtTime(req.clockOutAt)}
+                    {" "}({h} ชม.){req.attendanceRecordId ? " · ลืมกดออกงาน ขอเวลาออก" : " · ไม่ได้ลงเวลาทั้งวัน"}
+                  </p>
+                  {h > 12 && <p className="text-xs font-semibold text-red-600">⚠️ เกิน 12 ชั่วโมง — ตรวจว่าเลือกวันออกถูกไหม</p>}
+                  {req.note && <p className="text-xs text-gray-500">เหตุผล: {req.note}</p>}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="primary" className="min-h-11 text-xs" disabled={busy} onClick={() => onDecide(req.id, "approve")}>อนุมัติ</Button>
+                  <Button variant="secondary" className="min-h-11 text-xs text-red-700" disabled={busy} onClick={() => { setRejectingId(req.id); setRejectNote(""); }}>ไม่อนุมัติ</Button>
+                </div>
+              </div>
+              {rejectingId === req.id && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <input
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    maxLength={200}
+                    placeholder="เหตุผล (แจ้งพนักงาน)"
+                    className="min-h-11 flex-1 rounded-lg border border-gray-300 px-3"
+                    style={{ fontSize: 16 }}
+                  />
+                  <Button variant="secondary" className="min-h-11 text-xs text-red-700" disabled={busy} onClick={() => { onDecide(req.id, "reject", rejectNote); setRejectingId(null); }}>ยืนยันไม่อนุมัติ</Button>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

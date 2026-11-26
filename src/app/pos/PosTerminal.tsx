@@ -7,6 +7,16 @@ import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import { onPosCommand } from "@/modules/pos/section-bus";
+import {
+  POS_TILE_GRID_CLASS,
+  POS_TILE_SIZE_LABEL,
+  getTileSnapshot,
+  nextTileSize,
+  serverTileSize,
+  subscribeTileSize,
+  writeTileSize,
+  type PosTileSize,
+} from "@/modules/pos/tile-size";
 // การจับคู่คำพูดกับชื่อตัวเลือกอยู่ในโมดูล voice-pos (ทดสอบแยกได้ และ normalize
 // ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
 import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
@@ -270,13 +280,16 @@ function productInitials(name: string) {
 }
 
 function PosProductImage({ product }: { product: Product }) {
-  if (product.imageUrl) {
+  // รูปลิงก์เสีย → โชว์ตัวอักษรย่อแทนข้อความ alt ที่ล้นการ์ด
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (product.imageUrl && failedUrl !== product.imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={product.imageUrl}
         alt={`รูปเมนู ${product.name}`}
         loading="lazy"
+        onError={() => setFailedUrl(product.imageUrl ?? null)}
         className="h-full w-full object-cover"
       />
     );
@@ -289,32 +302,51 @@ function PosProductImage({ product }: { product: Product }) {
   );
 }
 
+const POS_TILE_TEXT_CLASS: Record<PosTileSize, { box: string; name: string; price: string }> = {
+  sm: { box: "px-1.5 py-1 sm:p-2", name: "text-[11px] sm:text-xs", price: "mt-0.5 text-xs" },
+  md: { box: "px-2 py-1.5 sm:p-2.5", name: "text-xs sm:text-sm", price: "mt-1 text-sm" },
+  lg: { box: "p-2.5 sm:p-3", name: "text-sm", price: "mt-1.5 text-sm" },
+};
+
 const PosProductTile = memo(function PosProductTile({
   product,
   disabled,
+  cartQty,
+  size,
   onSelect,
 }: {
   product: Product;
   disabled: boolean;
+  size: PosTileSize;
+  /** จำนวนเมนูนี้ในตะกร้า (รวมทุกตัวเลือก) — กดแล้วเห็นทันทีว่าเข้าตะกร้า */
+  cartQty: number;
   onSelect: (product: Product) => void;
 }) {
   const handleSelect = useCallback(() => onSelect(product), [onSelect, product]);
+  const text = POS_TILE_TEXT_CLASS[size];
 
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={handleSelect}
-      className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+      className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
     >
-      <div className="aspect-[4/3] border-b border-gray-100">
+      {/* มือถือ 3 คอลัมน์: รูปจัตุรัสให้รูปไม่เตี้ยเกิน / จอใหญ่กลับเป็น 4:3 ให้เห็นเมนูต่อจอมากขึ้น */}
+      <div className="aspect-square border-b border-gray-100 sm:aspect-[4/3]">
         <PosProductImage product={product} />
       </div>
-      <div className="p-3">
-        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
+      {cartQty > 0 && (
+        <span className="absolute right-1.5 top-1.5 min-w-7 rounded-full bg-[var(--tenant-primary)] px-1.5 py-0.5 text-center text-xs font-bold leading-5 text-white shadow-sm tabular-nums">
+          {cartQty > 99 ? "99+" : cartQty}
+          <span className="sr-only"> ในตะกร้า</span>
+        </span>
+      )}
+      <div className={text.box}>
+        <p className={`${text.name} font-medium leading-snug text-gray-900 line-clamp-2`}>
           {product.name}
         </p>
-        <p className="mt-1.5 text-sm font-semibold text-gray-700 tabular-nums">
+        <p className={`${text.price} font-semibold text-gray-700 tabular-nums`}>
           {priceStr(product.basePrice)}
         </p>
         {product.variants.length > 0 && (
@@ -4054,6 +4086,16 @@ export function PosTerminal({
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  // จอกว้างถึง 1024 (เช่น หมุน iPad เป็นแนวนอน) = ออร์เดอร์ย้ายไปแผงขวา → ปิดลิ้นชัก
+  // ไม่งั้นหมุนกลับแนวตั้งแล้วลิ้นชักเด้งขึ้นมาเองทั้งที่ไม่ได้กด
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setOrderPanelOpen(false);
+    };
+    query.addEventListener("change", handleChange);
+    return () => query.removeEventListener("change", handleChange);
+  }, []);
   // ผู้ช่วย AI "กดปุ่มคิดเงิน" แทนพนักงาน — เส้นทางเดียวกับปุ่ม onCheckout เป๊ะ ๆ
   // (เปิดแผงรับชำระตัวเดิมเท่านั้น: เตรียม QR / จอลูกค้า / การยืนยัน ยังเป็นโค้ดเดิมและเป็นหน้าที่ของคน)
   useEffect(() => onPosCommand((command) => {
@@ -4132,6 +4174,15 @@ export function PosTerminal({
     return selectedCategoryId ? base.filter((p) => p.categoryId === selectedCategoryId) : base;
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
+  const tileSize = useSyncExternalStore(subscribeTileSize, getTileSnapshot, serverTileSize);
+  const cartQtyByProduct = useMemo(() => {
+    const qty = new Map<string, number>();
+    for (const item of cart.items) {
+      if (item.rewardVoucherCode) continue; // ของรางวัล ฿0 ไม่นับเป็นการกดเมนู
+      qty.set(item.productId, (qty.get(item.productId) ?? 0) + item.quantity);
+    }
+    return qty;
+  }, [cart.items]);
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
 
   // ตั๋วครัวจาก POS: สถานีของแต่ละรายการมาจากสินค้า (order_items ได้ค่าเดียวกันจาก trigger)
@@ -5887,8 +5938,9 @@ export function PosTerminal({
   // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
   const posActionButtons = (
     <>
-      {/* โชว์ทุกขนาดจอ — สถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
-      <ConnectionBadge />
+      {/* มือถือ: ซ่อนป้าย "เชื่อมต่อปกติ" ให้หัวจอเหลือแถวเดียว — ตอนออฟไลน์ ConnectionBadge
+          ไม่ใช้ className นี้ จึงโชว์ "ออฟไลน์ — บันทึกไม่ได้" เสมอทุกขนาดจอ */}
+      <ConnectionBadge className="hidden sm:inline-flex" />
       {/* ใน POS รวม ปุ่มโต๊ะอยู่บนแถบหัวของ shell แล้ว (คุมทั้งผังโต๊ะ/ครัว/บิล)
           ที่นี่จึงแสดงเฉพาะตอนเปิด POS เดี่ยวที่ไม่มี shell */}
       {topbarHost ? null : (
@@ -5916,8 +5968,10 @@ export function PosTerminal({
         className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
         aria-expanded={printerConnectionOpen}
         aria-controls="pos-printer-connection"
+        aria-label="เชื่อมต่อเครื่องพิมพ์"
+        title="เชื่อมต่อเครื่องพิมพ์"
       >
-        <span className="sm:hidden">ปริ้น</span>
+        <span className="sm:hidden" aria-hidden="true">🖨️</span>
         <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
       </button>
       {exitHref ? (
@@ -5945,7 +5999,7 @@ export function PosTerminal({
     );
 
   return (
-    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
+    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] lg:flex-row">
       {/* งานพิมพ์ที่ไม่ทราบผลต้องเห็นตรงจุดที่คนยืนอยู่หน้าเครื่องพิมพ์ (การ์ดลอย ไม่กินความสูง) */}
       <PrintQueueAlert />
 
@@ -5977,47 +6031,61 @@ export function PosTerminal({
           </div>
         )}
 
-        {/* Category tabs */}
-        <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-          <button
-            type="button"
-            onClick={() => setSelectedCategoryId(null)}
-            className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
-              selectedCategoryId === null
-                ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
-                : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
-            }`}
-          >
-            ทั้งหมด
-          </button>
-          {categories.map((cat) => (
+        {/* Category tabs + ปุ่มขนาดการ์ด (อยู่นอกส่วนเลื่อน เห็นเสมอ) */}
+        <div className="shrink-0 flex items-center border-b border-[var(--border)] bg-[var(--surface)]">
+          <div className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
-              key={cat.id}
               type="button"
-              onClick={() => setSelectedCategoryId(cat.id)}
+              onClick={() => setSelectedCategoryId(null)}
               className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
-                selectedCategoryId === cat.id
+                selectedCategoryId === null
                   ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
                   : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
               }`}
             >
-              {cat.name}
+              ทั้งหมด
             </button>
-          ))}
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategoryId(cat.id)}
+                className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
+                  selectedCategoryId === cat.id
+                    ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
+                    : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => writeTileSize(nextTileSize(tileSize))}
+            className="mr-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full border border-[var(--border)] px-2.5 text-xs font-bold text-[var(--ink-2)] hover:bg-[var(--surface-muted)]"
+            aria-label={`ขนาดการ์ดเมนู: ${POS_TILE_SIZE_LABEL[tileSize]} (แตะเพื่อเปลี่ยน)`}
+            title="ขนาดการ์ดเมนู"
+          >
+            <span aria-hidden="true">▦</span>
+            <span>{POS_TILE_SIZE_LABEL[tileSize]}</span>
+          </button>
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto p-3 pb-24 lg:pb-3">
           {filteredProducts.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
               ไม่มีสินค้าในหมวดนี้
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            <div className={POS_TILE_GRID_CLASS[tileSize]}>
               {filteredProducts.map((product) => (
                 <PosProductTile
                   key={product.id}
                   disabled={cartLocked}
+                  cartQty={cartQtyByProduct.get(product.id) ?? 0}
+                  size={tileSize}
                   onSelect={handleProductClick}
                   product={product}
                 />
@@ -6030,7 +6098,7 @@ export function PosTerminal({
       <button
         type="button"
         onClick={() => setOrderPanelOpen(true)}
-        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg md:hidden ${
+        className={`fixed bottom-4 right-4 z-40 min-h-11 min-w-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
           orderPanelOpen ? "hidden" : "flex"
         }`}
       >
@@ -6050,7 +6118,7 @@ export function PosTerminal({
         onKeyDown={(event) => {
           if (event.key === "Escape") setOrderPanelOpen(false);
         }}
-        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 md:hidden ${
+        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 lg:hidden ${
           orderPanelOpen ? "translate-y-0" : "pointer-events-none translate-y-full"
         }`}
       >
@@ -6140,7 +6208,7 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
+      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white lg:flex lg:w-80 lg:shrink-0 lg:flex-col">
         {renderOrderPanelContent()}
       </aside>
 
