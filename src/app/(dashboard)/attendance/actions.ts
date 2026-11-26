@@ -311,6 +311,9 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
   }
 }
 
+/** กะที่เข้างานภายในกี่ชั่วโมงถึงนับว่า "ยังอยู่ในร้าน" ตอนตัดสินว่าต้องปิดรอบเงินสดก่อนออกไหม */
+const CLOCK_OUT_RECENT_SHIFT_HOURS = 16;
+
 export async function clockOutAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.clock");
@@ -325,11 +328,36 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     // Operate on the branch the shift belongs to (not the currently-resolved store).
     const recordStoreId = active.storeId;
 
-    // Cashier/staff must close that branch's open cash session before clocking out.
+    // Cashier/staff must close that branch's open cash session before clocking out —
+    // เฉพาะคนสุดท้ายที่ยังอยู่ในสาขา: ยังมีคนอื่นลงเวลาอยู่ (เช่นคนทำ OT) = ออกได้ คนที่อยู่ต่อเป็นคนปิดรอบ
+    // นับเฉพาะกะที่เข้างานภายใน 16 ชม. — กะค้างวันเดียวกันที่ลืมกดออกต้องไม่ทำให้คนสุดท้ายจริงหลุดการปิดรอบ
+    const recentShiftSince = new Date(now.getTime() - CLOCK_OUT_RECENT_SHIFT_HOURS * 60 * 60 * 1000).toISOString();
+    let leftWithOpenCashSessionId: string | null = null;
     if (ctx.role === "cashier" || ctx.role === "staff") {
       const openSession = await getOpenCashSession(recordStoreId);
       if (openSession.error) return { error: openSession.error.userMessage };
-      if (openSession.data) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
+      if (openSession.data) {
+        const othersOnShift = await countOpenShiftsInStore({
+          storeId: recordStoreId,
+          organizationId: ctx.organizationId,
+          date: active.date,
+          excludeRecordId: active.id,
+          clockedInSince: recentShiftSince,
+        });
+        // นับไม่ได้ (null) = ยืนยันไม่ได้ว่ามีคนอยู่ต่อ → บล็อกแบบเดิม (fail closed)
+        if (!othersOnShift) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
+        leftWithOpenCashSessionId = openSession.data.id;
+        await logSystemEvent({
+          level: "info",
+          source: "attendance.clock-out",
+          action: "clockOutWithOpenCashSession",
+          message: `ออกงานขณะรอบเงินสดยังเปิด — ยังมีคนลงเวลาอยู่ ${othersOnShift} คน (คนสุดท้ายต้องปิดรอบ)`,
+          organizationId: ctx.organizationId,
+          storeId: recordStoreId,
+          actorUserId: user.id,
+          context: { attendanceRecordId: active.id, cashSessionId: openSession.data.id, othersOnShift, shiftDate: active.date },
+        }).catch(() => undefined);
+      }
     }
 
     // ผู้รับผิดชอบเช็กลิสต์ที่ตั้ง "ต้องเสร็จก่อนออกงาน" ต้องส่งก่อน (ทุก role — ตามที่เจ้าของมอบหมาย)
@@ -367,6 +395,28 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     });
 
     if (result.error) return { error: result.error.userMessage };
+    if (leftWithOpenCashSessionId) {
+      // ตรวจซ้ำหลังออก: สองคนกดออกพร้อมกันอาจเห็นกันและกันจนไม่มีใครปิดรอบ — บันทึกเตือนให้ตามปิด
+      const remaining = await countOpenShiftsInStore({
+        storeId: recordStoreId,
+        organizationId: ctx.organizationId,
+        date: active.date,
+        excludeRecordId: active.id,
+        clockedInSince: recentShiftSince,
+      });
+      if (remaining === 0) {
+        await logSystemEvent({
+          level: "warn",
+          source: "attendance.clock-out",
+          action: "cashSessionLeftOpen",
+          message: "ทุกคนออกงานแล้วแต่รอบเงินสดยังเปิดค้าง (ออกพร้อมกัน) — ต้องมีคนเปิด POS ปิดรอบ",
+          organizationId: ctx.organizationId,
+          storeId: recordStoreId,
+          actorUserId: user.id,
+          context: { attendanceRecordId: active.id, cashSessionId: leftWithOpenCashSessionId, shiftDate: active.date },
+        }).catch(() => undefined);
+      }
+    }
     if (result.data) {
       notifyOwnerSafely({
         type: "attendance_clock_out",
