@@ -1,4 +1,5 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { parsePrintMode, type StorePrintMode } from "./direct-print-repository";
 import type { Json } from "@/server/integrations/supabase/database.types";
 import { mapError, type AppError } from "@/shared/utils/error";
 import { shouldRetargetToUsb } from "@/modules/printing/usb-fallback";
@@ -842,20 +843,26 @@ export interface HubProvisionResult {
 export async function authenticateHubRequest(
   storeId: string,
   token: string,
-): Promise<{ ok: boolean; organizationId: string | null }> {
-  if (!storeId || !token) return { ok: false, organizationId: null };
+): Promise<{ ok: boolean; organizationId: string | null; printMode: StorePrintMode }> {
+  if (!storeId || !token) return { ok: false, organizationId: null, printMode: "hub" };
 
   const supabase = await createSupabaseServiceClient();
-  const store = await supabase
+  // print_mode มากับ query เดิม — poll ทุกรอบต้องรู้ว่าร้านปิด Print Hub แล้วหรือยัง (D4) โดยไม่เพิ่มรอบ DB
+  // print_mode ยังไม่อยู่ใน database.types (เพิ่มใน D3) — บอกรูปแถวเอง
+  const store = (await supabase
     .from("stores")
-    .select("organization_id, print_hub_token_hash")
+    .select("organization_id, print_hub_token_hash, print_mode" as "organization_id, print_hub_token_hash")
     .eq("id", storeId)
-    .single();
-  if (store.error || !store.data) return { ok: false, organizationId: null };
+    .single()) as unknown as {
+    data: { organization_id: string; print_hub_token_hash: string | null; print_mode?: unknown } | null;
+    error: unknown;
+  };
+  if (store.error || !store.data) return { ok: false, organizationId: null, printMode: "hub" };
+  const printMode = parsePrintMode(store.data.print_mode);
 
   // token รายร้านแบบเดิม — เครื่องที่ยังไม่ provision ใหม่ต้องใช้ได้ต่อ
   if (verifyHubToken(token, store.data.print_hub_token_hash)) {
-    return { ok: true, organizationId: store.data.organization_id };
+    return { ok: true, organizationId: store.data.organization_id, printMode };
   }
 
   // token รายเครื่อง: เทียบทีละใบที่ยังไม่ถูกยกเลิก (ร้านหนึ่งมีไม่กี่เครื่อง)
@@ -864,10 +871,10 @@ export async function authenticateHubRequest(
     .select("id, token_hash")
     .eq("store_id", storeId)
     .is("revoked_at", null);
-  if (devices.error || !devices.data) return { ok: false, organizationId: null };
+  if (devices.error || !devices.data) return { ok: false, organizationId: null, printMode };
 
   const matched = devices.data.find((row) => verifyHubToken(token, row.token_hash));
-  if (!matched) return { ok: false, organizationId: null };
+  if (!matched) return { ok: false, organizationId: null, printMode };
 
   // best-effort — ล้มเหลวไม่ควรทำให้ Hub ที่ยืนยันตัวได้แล้วถูกปฏิเสธ
   await supabase
@@ -875,7 +882,7 @@ export async function authenticateHubRequest(
     .update({ last_seen_at: new Date().toISOString() })
     .eq("id", matched.id);
 
-  return { ok: true, organizationId: store.data.organization_id };
+  return { ok: true, organizationId: store.data.organization_id, printMode };
 }
 
 /**
