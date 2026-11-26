@@ -18,6 +18,8 @@ export interface KitchenPrintOptions {
   paperWidth: "58mm" | "80mm";
   billNumber: string;
   printers: Printer[];
+  /** ออเดอร์ออนไลน์รับที่ร้าน → ตั๋วครัวเขียน "รับที่ร้าน" แทน "เดลิเวอรี" */
+  fulfillment?: "pickup" | "delivery";
 }
 
 function extractModifierNames(value: Json): string[] {
@@ -64,7 +66,7 @@ export async function printKitchenForOrder(
     const res = await dispatchOrderStationTickets({
       orderId: internalOrderId,
       orderNumber: opts.billNumber,
-      tableNumber: "เดลิเวอรี",
+      tableNumber: opts.fulfillment === "pickup" ? "รับที่ร้าน" : "เดลิเวอรี",
       paperWidth: opts.paperWidth,
       items: items.map((i) => ({
         name: i.name,
@@ -83,7 +85,7 @@ export async function printKitchenForOrder(
   const receipt: ReceiptData & EscPosReceiptInput = {
     storeName: opts.storeName,
     orderNumber: opts.billNumber,
-    tableNumber: "เดลิเวอรี",
+    tableNumber: opts.fulfillment === "pickup" ? "รับที่ร้าน" : "เดลิเวอรี",
     items: items.map((i) => ({
       name: i.name,
       variantName: i.variantName,

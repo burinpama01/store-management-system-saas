@@ -79,6 +79,7 @@ export function OnlineOrdersBoard(props: {
           paperWidth: props.paperWidth,
           billNumber: res.orderNumber ?? o.orderCode,
           printers: props.printers,
+          fulfillment: o.fulfillment,
         }).catch(() => "พิมพ์ตั๋วครัวไม่สำเร็จ");
         setMessage(`รับออเดอร์ ${o.orderCode} แล้ว · ${printed}`);
         // R1: รับแล้วเด้งเข้าตั๋วออนไลน์ในหน้าขาย (ค้างจนส่งเสร็จ)

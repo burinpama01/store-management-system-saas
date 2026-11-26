@@ -48,6 +48,17 @@ describe("R1 ตั๋วออนไลน์ใน POS — หน้า POS", 
     expect(tickets).toContain("ไม่ต้องเก็บเงิน");
   });
 
+  it("รีวิว: dialog remount ต่อออเดอร์ + บิลยังไม่ปิดห้ามเลื่อนสถานะ + ปิดบิลซ้ำเฉพาะ accepted", () => {
+    expect(terminal).toContain("key={focusedOnlineOrder.id}");
+    expect(tickets).toContain('const needsBillRetry = billPending && order.status === "accepted"');
+    expect(tickets).toContain('order.status === "paid" || billPending ? []');
+  });
+
+  it("ตั๋วครัวรับที่ร้านเขียน 'รับที่ร้าน'", () => {
+    const kitchen = read("src/app/(dashboard)/delivery/print-kitchen.ts");
+    expect(kitchen.match(/opts\.fulfillment === "pickup" \? "รับที่ร้าน" : "เดลิเวอรี"/g)?.length).toBe(2);
+  });
+
   it("polling: มีตั๋วค้าง 30 วิ / ไม่มี 2 นาที / แท็บซ่อนไม่ถาม", () => {
     expect(tickets).toContain("POLL_ACTIVE_MS = 30_000");
     expect(tickets).toContain("POLL_IDLE_MS = 120_000");

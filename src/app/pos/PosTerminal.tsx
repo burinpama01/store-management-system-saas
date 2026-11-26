@@ -6335,6 +6335,7 @@ export function PosTerminal({
 
       {focusedOnlineOrder && (
         <OnlineOrderTicketDialog
+          key={focusedOnlineOrder.id}
           order={focusedOnlineOrder}
           print={{
             storeName,

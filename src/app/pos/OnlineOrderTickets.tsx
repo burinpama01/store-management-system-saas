@@ -145,7 +145,7 @@ export function OnlineOrderTicketDialog({
   const [message, setMessage] = useState<string | null>(null);
 
   const printKitchen = async (orderId: string, billNumber: string) =>
-    printKitchenForOrder(orderId, { ...print, billNumber }).catch(() => "พิมพ์ตั๋วครัวไม่สำเร็จ");
+    printKitchenForOrder(orderId, { ...print, billNumber, fulfillment: order.fulfillment }).catch(() => "พิมพ์ตั๋วครัวไม่สำเร็จ");
 
   const run = async (task: () => Promise<string | null>) => {
     setBusy(true);
@@ -176,8 +176,12 @@ export function OnlineOrderTicketDialog({
     run(async () => (order.orderId ? printKitchen(order.orderId, order.orderCode) : "ยังไม่มีบิล — กดรับออเดอร์ก่อน"));
 
   // POS ไม่ยกเลิก/คืนเงิน — ทำที่หน้า สั่งออนไลน์ (ต้องยืนยันโอนคืน)
-  const statusButtons = order.status === "paid" ? [] : nextStatuses(order.status, order.fulfillment).filter((to) => BUTTON_LABEL[to]);
-  const needsBillRetry = order.status !== "paid" && !order.billClosed;
+  // บิล POS ยังไม่ปิด (ขั้นปิดบิลล้มตอนรับ) = ห้ามเลื่อนสถานะ — ไม่งั้นกด "สำเร็จ" แล้วยอดขายไม่เข้า POS
+  // ปิดบิลซ้ำได้เฉพาะสถานะ "รับแล้ว" (acceptOnlineOrderAction รับแค่ paid/accepted)
+  const billPending = order.status !== "paid" && !order.billClosed;
+  const needsBillRetry = billPending && order.status === "accepted";
+  const statusButtons =
+    order.status === "paid" || billPending ? [] : nextStatuses(order.status, order.fulfillment).filter((to) => BUTTON_LABEL[to]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={`ออเดอร์ออนไลน์ ${order.orderCode}`}>
@@ -200,7 +204,7 @@ export function OnlineOrderTicketDialog({
 
         <ul className="mt-3 divide-y divide-gray-100 text-sm">
           {order.items.map((line, index) => (
-            <li key={index} className="flex justify-between gap-3 py-1.5">
+            <li key={`${index}-${line.name}`} className="flex justify-between gap-3 py-1.5">
               <span>
                 {line.name} ×{line.quantity}
                 {line.detail && <span className="block text-xs text-gray-500">{line.detail}</span>}
@@ -234,6 +238,11 @@ export function OnlineOrderTicketDialog({
           )}
         </div>
 
+        {billPending && !needsBillRetry && (
+          <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2 text-sm text-red-800">
+            บิลของออเดอร์นี้ยังไม่ปิด (ยอดยังไม่เข้า POS) — แจ้งผู้ดูแลตรวจที่หน้า สั่งออนไลน์ ก่อนเลื่อนสถานะ
+          </p>
+        )}
         {message && (
           <p role="status" className="mt-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-900">
             {message}
