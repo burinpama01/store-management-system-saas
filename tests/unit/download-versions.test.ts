@@ -119,3 +119,16 @@ describe("อ่านรุ่นแอปจาก User-Agent", () => {
     expect(isAndroidApp(iosUa)).toBe(false);
   });
 });
+
+describe("StoreOS POS (พิมพ์ตรง) download", () => {
+  it("เวอร์ชันบนเว็บตรงกับ csproj ของโปรแกรม + ลิงก์ชี้ release pos-launcher-v<เวอร์ชัน>", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { POS_LAUNCHER_VERSION, POS_LAUNCHER_SHA256, posLauncherDownloadUrl } = await import("@/modules/launcher/pos-launcher-version");
+    const csproj = readFileSync("windows/StoreOS.PosLauncher/StoreOS.PosLauncher.csproj", "utf8");
+    expect(csproj).toContain(`<Version>${POS_LAUNCHER_VERSION}</Version>`);
+    expect(POS_LAUNCHER_SHA256).toMatch(/^[0-9a-f]{64}$/);
+    expect(posLauncherDownloadUrl()).toBe(
+      `https://github.com/burinpama01/store-management-system-saas/releases/download/pos-launcher-v${POS_LAUNCHER_VERSION}/storeos-pos-launcher-${POS_LAUNCHER_VERSION}.zip`,
+    );
+  });
+});

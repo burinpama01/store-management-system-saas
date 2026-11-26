@@ -33,6 +33,10 @@ export function PrintModeCard({ mode, canEdit }: { mode: StorePrintMode; canEdit
             <span className="text-amber-700">
               ต้องเปิดโปรแกรม StoreOS POS ไว้ตลอดเวลาร้านเปิด · iPad/มือถือ/จออื่นจะสั่งพิมพ์ไม่ได้ · ใช้ได้เฉพาะเครื่องพิมพ์ IP/WiFi
             </span>
+            <br />
+            <a href="/download/pos-launcher" className="font-semibold text-[var(--tenant-primary)] underline" rel="nofollow">
+              ดาวน์โหลดโปรแกรม StoreOS POS สำหรับ Windows
+            </a>
           </span>
         </label>
         {canEdit ? (
