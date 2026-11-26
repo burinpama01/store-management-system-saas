@@ -4620,11 +4620,12 @@ export interface Database {
           user_id: string;
           employee_name: string;
           date: string;
-          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
+          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax" | "delivery_pay";
           amount: number;
           note: string | null;
           created_by_user_id: string;
           created_at: string;
+          online_order_id: string | null;
         };
         Insert: {
           id?: string;
@@ -4633,11 +4634,12 @@ export interface Database {
           user_id: string;
           employee_name: string;
           date: string;
-          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
+          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax" | "delivery_pay";
           amount: number;
           note?: string | null;
           created_by_user_id: string;
           created_at?: string;
+          online_order_id?: string | null;
         };
         Update: never;
         Relationships: [];

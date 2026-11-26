@@ -45,6 +45,9 @@ export interface OnlineOrder {
   completedAt: string | null;
   notifiedAt: string | null;
   createdAt: string;
+  riderUserId: string | null;
+  riderName: string | null;
+  riderPayAmount: number | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- แถวดิบจาก service client
@@ -81,6 +84,9 @@ function toOrder(row: any): OnlineOrder {
     completedAt: row.completed_at ?? null,
     notifiedAt: row.notified_at ?? null,
     createdAt: row.created_at,
+    riderUserId: row.rider_user_id ?? null,
+    riderName: row.rider_name ?? null,
+    riderPayAmount: num(row.rider_pay_amount),
   };
 }
 
@@ -145,6 +151,10 @@ async function getStoredOnlineOrderSettings(storeId: string): Promise<OnlineOrde
     deliveryFreeOver: num(data.delivery_free_over),
     // คอลัมน์ใหม่ (20261212120000) — ยังไม่มี = 0 ไม่ทำให้ตั้งค่าทั้งแถวเสีย
     deliveryFreeKm: Number(data.delivery_free_km ?? 0) || 0,
+    // คอลัมน์ R2 (20261213120000) — ยังไม่มี = ปิด
+    riderPayEnabled: Boolean(data.rider_pay_enabled ?? false),
+    riderPayRate: data.rider_pay_rate === undefined || data.rider_pay_rate === null ? 10 : Number(data.rider_pay_rate),
+    riderPayIncludeFee: data.rider_pay_include_fee === undefined || data.rider_pay_include_fee === null ? true : Boolean(data.rider_pay_include_fee),
     minOrder: Number(data.min_order),
     prepMinutes: Number(data.prep_minutes),
   });
@@ -174,6 +184,9 @@ export async function saveOnlineOrderSettings(input: {
       delivery_fee_per_km: s.deliveryFeePerKm,
       delivery_free_over: s.deliveryFreeOver,
       delivery_free_km: s.deliveryFreeKm,
+      rider_pay_enabled: s.riderPayEnabled,
+      rider_pay_rate: s.riderPayRate,
+      rider_pay_include_fee: s.riderPayIncludeFee,
       min_order: s.minOrder,
       prep_minutes: s.prepMinutes,
       updated_by: input.userId,
@@ -314,4 +327,84 @@ export async function countPendingOnlineOrders(storeId: string, phone: string): 
       .gte("created_at", since),
   ]);
   return { byPhone: phoneRes.count ?? 0, byStore: storeRes.count ?? 0 };
+}
+
+// ---------- คนส่ง + รายได้คนส่ง (R2) ----------
+
+export interface RiderCandidate {
+  userId: string;
+  name: string;
+  /** ลงเวลาเข้างานอยู่ตอนนี้ */
+  onShift: boolean;
+}
+
+/**
+ * คนที่เลือกเป็นคนส่งได้: มีโปรไฟล์พนักงานในสาขานี้ + ยังไม่ลาออก · คนที่ลงเวลาอยู่ขึ้นก่อน
+ * (ต้องมีโปรไฟล์พนักงาน เพราะรายได้คนส่งเข้าเงินเดือนผ่านโปรไฟล์นี้)
+ */
+export async function listRiderCandidates(storeId: string): Promise<RiderCandidate[]> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { listResignedUserIds } = await import("@/modules/hr/employment-status");
+  const [profRes, activeRes, resigned] = await Promise.all([
+    db.from("employee_profiles").select("user_id, display_name").eq("store_id", storeId),
+    db.from("attendance_records").select("user_id").eq("store_id", storeId).eq("status", "active"),
+    listResignedUserIds(storeId).catch(() => new Set<string>()),
+  ]);
+  const onShift = new Set(((activeRes.data ?? []) as { user_id: string }[]).map((r) => r.user_id));
+  const profiles = ((profRes.data ?? []) as { user_id: string; display_name: string | null }[]).filter((p) => !resigned.has(p.user_id));
+  // โปรไฟล์ไม่ได้ตั้งชื่อ → ใช้ชื่อบัญชี/อีเมล (ไม่งั้นแคชเชียร์เห็นแค่ "พนักงาน" แยกไม่ออกว่าใคร)
+  const missing = profiles.filter((p) => !(p.display_name ?? "").trim()).map((p) => p.user_id);
+  const accountName = new Map<string, string>();
+  await Promise.all(
+    missing.map(async (userId) => {
+      const { data } = await db.auth.admin.getUserById(userId).catch(() => ({ data: null }));
+      const user = data?.user;
+      const meta = (user?.user_metadata ?? {}) as Record<string, unknown>;
+      const name = [meta.full_name, meta.name, meta.display_name].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+      const fromEmail = typeof user?.email === "string" ? user.email.split("@")[0] : "";
+      if (name || fromEmail) accountName.set(userId, (name ?? fromEmail).trim());
+    }),
+  );
+  return profiles
+    .map((p) => ({
+      userId: p.user_id,
+      name: (p.display_name ?? "").trim() || accountName.get(p.user_id) || "พนักงาน",
+      onShift: onShift.has(p.user_id),
+    }))
+    .sort((a, b) => Number(b.onShift) - Number(a.onShift) || a.name.localeCompare(b.name, "th"));
+}
+
+/**
+ * บันทึกรายได้คนส่งเข้าเงินเดือน (payroll_adjustments ชนิด delivery_pay) — 1 ออเดอร์ 1 แถว (unique online_order_id)
+ * วันที่ = วันที่กด "สำเร็จ" ตามเวลาร้าน (ตกงวดของวันนั้น)
+ * คืน "created" | "exists" | ข้อความ error
+ */
+export async function recordRiderPayAdjustment(input: {
+  organizationId: string;
+  storeId: string;
+  onlineOrderId: string;
+  orderCode: string;
+  riderUserId: string;
+  riderName: string;
+  amount: number;
+  createdByUserId: string;
+}): Promise<"created" | "exists" | string> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data: store } = await db.from("stores").select("timezone").eq("id", input.storeId).maybeSingle();
+  const { storeLocalDate } = await import("@/modules/hr/employment-status");
+  const { error } = await db.from("payroll_adjustments").insert({
+    organization_id: input.organizationId,
+    store_id: input.storeId,
+    user_id: input.riderUserId,
+    employee_name: input.riderName.slice(0, 120),
+    date: storeLocalDate(new Date(), store?.timezone ?? null),
+    type: "delivery_pay",
+    amount: input.amount,
+    note: `ส่งออนไลน์ ${input.orderCode}`.slice(0, 200),
+    created_by_user_id: input.createdByUserId,
+    online_order_id: input.onlineOrderId,
+  });
+  if (!error) return "created";
+  if (error.code === "23505") return "exists";
+  return error.message ?? "บันทึกรายได้คนส่งไม่สำเร็จ";
 }

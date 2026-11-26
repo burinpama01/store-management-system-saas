@@ -136,6 +136,28 @@ export function OnlineOrderSettingsForm({
             )}
           </p>
         </fieldset>
+        <fieldset className="space-y-2 rounded-lg border border-[var(--border)] p-3" disabled={!s.deliveryEnabled}>
+          <legend className="px-1 font-semibold">รายได้พิเศษคนส่ง</legend>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={s.riderPayEnabled} onChange={(e) => set("riderPayEnabled", e.target.checked)} />
+            ให้รายได้พิเศษพนักงานที่ออกไปส่ง (เข้าเงินเดือนอัตโนมัติเมื่อกด “สำเร็จ”)
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              % ของยอดอาหาร
+              <input className={field} type="number" min={0} max={100} step={0.5} value={s.riderPayRate} onChange={(e) => set("riderPayRate", Number(e.target.value) || 0)} />
+            </label>
+            <label className="flex items-end gap-2 pb-2">
+              <input type="checkbox" checked={s.riderPayIncludeFee} onChange={(e) => set("riderPayIncludeFee", e.target.checked)} />
+              บวกค่าส่งที่ลูกค้าจ่ายให้คนส่งทั้งหมด
+            </label>
+          </div>
+          <p className="text-xs text-[var(--muted)]">
+            ตัวอย่าง: อาหาร 300 + ค่าส่ง 30 → คนส่งได้ ฿
+            {(Math.round(((300 * s.riderPayRate) / 100) * 100) / 100 + (s.riderPayIncludeFee ? 30 : 0)).toLocaleString("th-TH")} ·
+            เลือกคนส่งตอนกด “ออกไปส่ง” · อัตราล็อก ณ ตอนออกไปส่ง
+          </p>
+        </fieldset>
       </div>
       <div className="flex items-center gap-3">
         <button type="button" onClick={save} disabled={pending} className="btn-primary">{pending ? "กำลังบันทึก..." : "บันทึก"}</button>

@@ -94,6 +94,7 @@ export function mapAdjustment(row: AdjustmentRow): PayrollAdjustment {
     note: row.note ?? undefined,
     createdByUserId: row.created_by_user_id,
     createdAt: row.created_at,
+    onlineOrderId: (row as { online_order_id?: string | null }).online_order_id ?? null,
   };
 }
 
