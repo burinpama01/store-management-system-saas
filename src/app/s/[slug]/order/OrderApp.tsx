@@ -1,5 +1,6 @@
 "use client";
 
+import { MapPicker } from "@/shared/components/ui/MapPicker";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -37,6 +38,8 @@ export function OrderApp(props: {
   minOrder: number;
   prepMinutes: number;
   deliveryRadiusKm: number;
+  deliveryFreeKm?: number;
+  storeOrigin?: { lat: number; lng: number } | null;
 }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -123,7 +126,7 @@ export function OrderApp(props: {
     if (!name.trim()) return setError("กรอกชื่อผู้รับ");
     if (!/^0[0-9]{8,9}$/.test(phone.replace(/[\s-]/g, ""))) return setError("กรอกเบอร์โทรให้ถูกต้อง");
     if (fulfillment === "delivery" && !address.trim()) return setError("กรอกที่อยู่จัดส่ง");
-    if (fulfillment === "delivery" && !point) return setError("กดใช้ตำแหน่งปัจจุบันเพื่อคำนวณค่าส่ง");
+    if (fulfillment === "delivery" && !point) return setError("ปักหมุดจุดส่งบนแผนที่ (หรือกดใช้ตำแหน่งปัจจุบัน)");
     startTransition(async () => {
       const res = await startOnlineOrderAction(props.slug, { ...payload(), customerName: name.trim(), customerPhone: phone.trim() });
       if (!res.ok || !res.token) {
@@ -221,7 +224,24 @@ export function OrderApp(props: {
                 <button type="button" onClick={locate} disabled={locating} className="w-full rounded-lg border border-orange-600 px-3 py-2 text-orange-700">
                   {locating ? "กำลังหาตำแหน่ง..." : point ? "📍 อัปเดตตำแหน่งปัจจุบัน" : "📍 ใช้ตำแหน่งปัจจุบัน"}
                 </button>
-                <p className="text-xs text-stone-500">ร้านส่งในระยะ {props.deliveryRadiusKm} กม. — ใช้ตำแหน่งนี้คำนวณค่าส่งและให้ร้านนำทาง</p>
+                <p className="text-xs text-stone-500">
+                  แตะแผนที่เพื่อปักหมุดจุดส่ง (เลื่อนหมุดได้) · ร้านส่งในระยะ {props.deliveryRadiusKm} กม.
+                  {props.deliveryFreeKm ? ` · ส่งฟรี ${props.deliveryFreeKm} กม. แรก` : ""} — ใช้หมุดนี้คำนวณค่าส่งและให้ร้านนำทาง
+                </p>
+                <MapPicker
+                  lat={point?.lat ?? null}
+                  lng={point?.lng ?? null}
+                  center={props.storeOrigin ?? null}
+                  radius={null}
+                  showRadius={false}
+                  onPick={(lat, lng) => {
+                    const next = { lat, lng };
+                    setPoint(next);
+                    setError(null);
+                    refreshQuote("delivery", next);
+                  }}
+                />
+                {point && <p className="text-xs text-emerald-700">📍 ปักหมุดแล้ว — แตะจุดอื่นบนแผนที่เพื่อย้าย</p>}
                 <textarea className={inputCls} style={inputStyle} rows={2} maxLength={300} placeholder="ที่อยู่ (บ้านเลขที่ ซอย อาคาร)" value={address} onChange={(e) => setAddress(e.target.value)} />
                 <input className={inputCls} style={inputStyle} maxLength={200} placeholder="จุดสังเกต (ถ้ามี)" value={addressNote} onChange={(e) => setAddressNote(e.target.value)} />
               </div>

@@ -156,3 +156,36 @@ describe("พิกัดร้าน = จุดลงเวลาเข้า�
     expect(read("src/app/(dashboard)/layout.tsx")).toContain("isOnlineOrderingEnabled(storeContext.storeId)");
   });
 });
+
+describe("ส่งฟรีในระยะ X กม. แรก + ปักหมุดจุดส่ง", () => {
+  // SHOP + 0.01 ลองจิจูด ≈ 1.1 กม.; + 0.03 ≈ 3.3 กม.
+  it("ไม่เกินระยะส่งฟรี = 0 บาท", () => {
+    expect(quoteDelivery({ ...DELIVERY, deliveryFreeKm: 2 }, 100, { lat: SHOP.lat, lng: SHOP.lng + 0.01 })).toMatchObject({ ok: true, fee: 0 });
+  });
+
+  it("เกินระยะส่งฟรี = คิดเฉพาะส่วนที่เกิน (ปัดขึ้นทีละ 0.5 กม.)", () => {
+    const q = quoteDelivery({ ...DELIVERY, deliveryFreeKm: 2 }, 100, { lat: SHOP.lat, lng: SHOP.lng + 0.03 });
+    expect(q.ok).toBe(true);
+    if (!q.ok) return;
+    const billed = Math.ceil((q.distanceKm - 2) * 2) / 2;
+    expect(q.fee).toBe(DELIVERY.deliveryBaseFee + DELIVERY.deliveryFeePerKm * billed);
+  });
+
+  it("0 = พฤติกรรมเดิม (คิดเต็มระยะ)", () => {
+    const q = quoteDelivery({ ...DELIVERY, deliveryFreeKm: 0 }, 100, { lat: SHOP.lat, lng: SHOP.lng + 0.01 });
+    expect(q.ok && q.fee).toBe(DELIVERY.deliveryBaseFee + DELIVERY.deliveryFeePerKm * Math.ceil((q.ok ? q.distanceKm : 0) * 2) / 2);
+  });
+
+  it("ระยะส่งฟรีเกินรัศมีส่ง = บันทึกไม่ได้", () => {
+    expect(onlineOrderSettingsSchema.safeParse({ ...DELIVERY, deliveryFreeKm: DELIVERY.deliveryRadiusKm + 1 }).success).toBe(false);
+  });
+
+  it("หน้าสั่งของลูกค้ามีแผนที่ปักหมุด เริ่มที่ร้าน ไม่มีวงรัศมี", async () => {
+    const { readFileSync } = await import("node:fs");
+    const app = readFileSync("src/app/s/[slug]/order/OrderApp.tsx", "utf8");
+    expect(app).toContain("<MapPicker");
+    expect(app).toContain("center={props.storeOrigin ?? null}");
+    expect(app).toContain("showRadius={false}");
+    expect(readFileSync("src/shared/components/ui/MapPicker.tsx", "utf8")).toContain("if (lastPickRef.current === `${lat},${lng}`) return;");
+  });
+});

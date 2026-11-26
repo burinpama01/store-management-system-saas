@@ -41,6 +41,13 @@ export default async function OnlineOrderPage({ params }: { params: Promise<{ sl
       minOrder={store.settings.minOrder}
       prepMinutes={store.settings.prepMinutes}
       deliveryRadiusKm={store.settings.deliveryRadiusKm}
+      deliveryFreeKm={store.settings.deliveryFreeKm}
+      // จุดเริ่มแผนที่ปักหมุด = ที่ตั้งร้าน (ร้านเปิดเผยอยู่แล้วสำหรับรับที่ร้าน)
+      storeOrigin={
+        store.settings.originLat !== null && store.settings.originLng !== null
+          ? { lat: store.settings.originLat, lng: store.settings.originLng }
+          : null
+      }
     />
   );
 }

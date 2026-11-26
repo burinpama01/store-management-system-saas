@@ -107,12 +107,24 @@ export function OnlineOrderSettingsForm({
               <input className={field} type="number" min={0} value={s.deliveryFeePerKm} onChange={(e) => set("deliveryFeePerKm", Number(e.target.value))} />
             </label>
             <label className="block">
+              ส่งฟรีในระยะ (กม. แรก, 0 = ไม่มี)
+              <input className={field} type="number" min={0} max={50} step={0.5} value={s.deliveryFreeKm} onChange={(e) => set("deliveryFreeKm", Number(e.target.value) || 0)} />
+            </label>
+            <label className="block">
               ส่งฟรีเมื่อยอดถึง (เว้นว่าง = ไม่มี)
               <input className={field} type="number" min={0} value={s.deliveryFreeOver ?? ""} onChange={(e) => set("deliveryFreeOver", numberOrNull(e.target.value))} />
             </label>
           </div>
           <p className="text-xs text-[var(--muted)]">
-            ค่าส่ง = ค่าเริ่มต้น + ค่าต่อ กม. × ระยะเส้นตรง (ปัดขึ้นทีละ 0.5 กม.) — ตัวอย่าง 2.3 กม. = {(s.deliveryBaseFee + s.deliveryFeePerKm * 2.5).toLocaleString("th-TH")} บาท
+            {s.deliveryFreeKm > 0 ? (
+              <>
+                ส่งฟรีในระยะ {s.deliveryFreeKm} กม. แรก · เกินคิด ค่าเริ่มต้น + ค่าต่อ กม. × ส่วนที่เกิน (ปัดขึ้นทีละ 0.5 กม.) — ตัวอย่าง{" "}
+                {s.deliveryFreeKm} กม. = ฟรี · {(s.deliveryFreeKm + 2.3).toLocaleString("th-TH")} กม. ={" "}
+                {(s.deliveryBaseFee + s.deliveryFeePerKm * 2.5).toLocaleString("th-TH")} บาท
+              </>
+            ) : (
+              <>ค่าส่ง = ค่าเริ่มต้น + ค่าต่อ กม. × ระยะเส้นตรง (ปัดขึ้นทีละ 0.5 กม.) — ตัวอย่าง 2.3 กม. = {(s.deliveryBaseFee + s.deliveryFeePerKm * 2.5).toLocaleString("th-TH")} บาท</>
+            )}
           </p>
         </fieldset>
       </div>
