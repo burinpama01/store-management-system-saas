@@ -74,12 +74,15 @@ export const onlineOrderSettingsSchema = z
     deliveryBaseFee: z.number().min(0).max(10000),
     deliveryFeePerKm: z.number().min(0).max(1000),
     deliveryFreeOver: z.number().min(0).max(1000000).nullable(),
+    /** ส่งฟรีในระยะกี่ กม. แรก (0 = ไม่มี) — เกินระยะนี้คิดเฉพาะส่วนที่เกิน */
+    deliveryFreeKm: z.number().min(0).max(50),
     minOrder: z.number().min(0).max(1000000),
     prepMinutes: z.number().int().min(0).max(240),
   })
   .strict()
   .refine((s) => (s.originLat === null) === (s.originLng === null), "พิกัดร้านต้องมีทั้งละติจูดและลองจิจูด")
   .refine((s) => !s.deliveryEnabled || s.originLat !== null, "เปิดส่งถึงบ้านต้องตั้งพิกัดร้านก่อน")
+  .refine((s) => s.deliveryFreeKm <= s.deliveryRadiusKm, "ระยะส่งฟรีต้องไม่เกินรัศมีส่ง")
   .refine((s) => !s.enabled || s.pickupEnabled || s.deliveryEnabled, "เลือกอย่างน้อย 1 ช่องทาง (รับที่ร้าน/ส่งถึงบ้าน)");
 export type OnlineOrderSettings = z.infer<typeof onlineOrderSettingsSchema>;
 
@@ -93,6 +96,7 @@ export const DEFAULT_ONLINE_ORDER_SETTINGS: OnlineOrderSettings = {
   deliveryBaseFee: 20,
   deliveryFeePerKm: 10,
   deliveryFreeOver: null,
+  deliveryFreeKm: 0,
   minOrder: 0,
   prepMinutes: 20,
 };
@@ -158,7 +162,11 @@ export type DeliveryQuote =
   | { ok: true; distanceKm: number; fee: number }
   | { ok: false; error: string };
 
-/** ค่าส่ง = ค่าเริ่มต้น + ค่าต่อ กม. × ระยะ (ปัดขึ้นทีละ 0.5 กม.) · ส่งฟรีเมื่อยอดถึง · เกินรัศมี = ส่งไม่ได้ */
+/**
+ * ค่าส่ง = ค่าเริ่มต้น + ค่าต่อ กม. × ระยะที่คิดเงิน (ปัดขึ้นทีละ 0.5 กม.)
+ * · ส่งฟรีในระยะ X กม. แรก: ไม่เกิน X = ฟรี · เกิน X = คิดเฉพาะส่วนที่เกิน (ระยะที่คิดเงิน = ระยะ − X)
+ * · ส่งฟรีเมื่อยอดถึง · เกินรัศมี = ส่งไม่ได้
+ */
 export function quoteDelivery(
   settings: OnlineOrderSettings,
   subtotal: number,
@@ -166,13 +174,15 @@ export function quoteDelivery(
 ): DeliveryQuote {
   if (!settings.deliveryEnabled) return { ok: false, error: "ร้านยังไม่เปิดส่งถึงบ้าน" };
   if (settings.originLat === null || settings.originLng === null) return { ok: false, error: "ร้านยังไม่ได้ตั้งพิกัดร้าน" };
-  if (!point) return { ok: false, error: "กดใช้ตำแหน่งปัจจุบันเพื่อคำนวณค่าส่ง" };
+  if (!point) return { ok: false, error: "ปักหมุดจุดส่งบนแผนที่ (หรือกดใช้ตำแหน่งปัจจุบัน) เพื่อคำนวณค่าส่ง" };
   const distanceKm = round2(haversineKm({ lat: settings.originLat, lng: settings.originLng }, point));
   if (distanceKm > settings.deliveryRadiusKm) {
     return { ok: false, error: `อยู่นอกพื้นที่ส่ง (ห่าง ${distanceKm.toFixed(1)} กม. ร้านส่งไม่เกิน ${settings.deliveryRadiusKm} กม.)` };
   }
   if (settings.deliveryFreeOver !== null && subtotal >= settings.deliveryFreeOver) return { ok: true, distanceKm, fee: 0 };
-  const billedKm = Math.ceil(distanceKm * 2) / 2;
+  const freeKm = settings.deliveryFreeKm;
+  if (freeKm > 0 && distanceKm <= freeKm) return { ok: true, distanceKm, fee: 0 };
+  const billedKm = Math.ceil(Math.max(0, distanceKm - freeKm) * 2) / 2;
   return { ok: true, distanceKm, fee: round2(settings.deliveryBaseFee + settings.deliveryFeePerKm * billedKm) };
 }
 

@@ -143,6 +143,8 @@ async function getStoredOnlineOrderSettings(storeId: string): Promise<OnlineOrde
     deliveryBaseFee: Number(data.delivery_base_fee),
     deliveryFeePerKm: Number(data.delivery_fee_per_km),
     deliveryFreeOver: num(data.delivery_free_over),
+    // คอลัมน์ใหม่ (20261212120000) — ยังไม่มี = 0 ไม่ทำให้ตั้งค่าทั้งแถวเสีย
+    deliveryFreeKm: Number(data.delivery_free_km ?? 0) || 0,
     minOrder: Number(data.min_order),
     prepMinutes: Number(data.prep_minutes),
   });
@@ -171,6 +173,7 @@ export async function saveOnlineOrderSettings(input: {
       delivery_base_fee: s.deliveryBaseFee,
       delivery_fee_per_km: s.deliveryFeePerKm,
       delivery_free_over: s.deliveryFreeOver,
+      delivery_free_km: s.deliveryFreeKm,
       min_order: s.minOrder,
       prep_minutes: s.prepMinutes,
       updated_by: input.userId,
