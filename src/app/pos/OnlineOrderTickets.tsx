@@ -65,19 +65,28 @@ export function useOnlineOrderTickets(enabled: boolean) {
     if (!enabled) return;
     let timer: number | undefined;
     let cancelled = false;
+    let first = true;
     const loop = async () => {
-      if (document.visibilityState === "visible") await refresh();
+      // รอบแรกโหลดเสมอ (หน้าเปิดจากลิงก์ขณะหน้าต่างอยู่เบื้องหลังต้องมีข้อมูลทันที) · รอบถัดไปเฉพาะตอนเห็นหน้า
+      if (first || document.visibilityState === "visible") await refresh();
+      first = false;
       if (cancelled) return;
       timer = window.setTimeout(loop, activeRef.current > 0 ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     };
     // setTimeout(0): setState เกิดหลัง effect จบ (กติกา react-hooks/set-state-in-effect)
     timer = window.setTimeout(loop, 0);
     const onEvent = () => void refresh();
+    // กลับมาที่หน้าขาย (เปิดหน้าต่างโปรแกรมขึ้นมา) → โหลดทันที ไม่ต้องรอรอบ 2 นาที
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
     window.addEventListener(ONLINE_ORDER_REFRESH_EVENT, onEvent);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
       window.removeEventListener(ONLINE_ORDER_REFRESH_EVENT, onEvent);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [enabled, refresh]);
 

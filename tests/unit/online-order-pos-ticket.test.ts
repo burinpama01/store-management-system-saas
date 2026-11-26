@@ -38,7 +38,9 @@ describe("R1 ตั๋วออนไลน์ใน POS — หน้า POS", 
   });
 
   it("แถบตั๋วมีหมวดออนไลน์ และนับรวมในป้ายจำนวนตั๋ว", () => {
-    expect(terminal).toContain("<OnlineOrderTicketList orders={onlineOrders}");
+    expect(terminal).toContain("<OnlineOrderTicketList orders={onlineOrders} onOpen={(id) => setOnlineFocusId(id)} />");
+    // อยู่นอก TicketPanel (fieldset ล็อกตอนซิงค์ตั๋วที่บันทึก)
+    expect(terminal.indexOf("<OnlineOrderTicketList")).toBeLessThan(terminal.search(/<TicketPanel\s/));
     expect(terminal.match(/savedTicketCount=\{savedTickets\.length \+ onlineOrders\.length\}/g)?.length).toBe(2);
   });
 
@@ -57,6 +59,11 @@ describe("R1 ตั๋วออนไลน์ใน POS — หน้า POS", 
   it("ตั๋วครัวรับที่ร้านเขียน 'รับที่ร้าน'", () => {
     const kitchen = read("src/app/(dashboard)/delivery/print-kitchen.ts");
     expect(kitchen.match(/opts\.fulfillment === "pickup" \? "รับที่ร้าน" : "เดลิเวอรี"/g)?.length).toBe(2);
+  });
+
+  it("polling: รอบแรกโหลดเสมอ + กลับมาเห็นหน้าโหลดทันที", () => {
+    expect(tickets).toContain('if (first || document.visibilityState === "visible") await refresh();');
+    expect(tickets).toContain('document.addEventListener("visibilitychange", onVisible)');
   });
 
   it("polling: มีตั๋วค้าง 30 วิ / ไม่มี 2 นาที / แท็บซ่อนไม่ถาม", () => {

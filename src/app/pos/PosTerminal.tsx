@@ -84,7 +84,6 @@ import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types
 import { cartHasPassItems, formatPassExpiry, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
-import type { OnlineOrderVM } from "../(dashboard)/website/orders/actions";
 import { OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
@@ -2239,12 +2238,7 @@ function TicketPanel({
   onDeleteTicket,
   onTicketDraftChange,
   qrByTable,
-  onlineOrders = [],
-  onOpenOnlineOrder,
 }: {
-  /** ตั๋วออนไลน์ (จ่ายแล้ว) — แสดงก่อนตั๋วที่บันทึก */
-  onlineOrders?: OnlineOrderVM[];
-  onOpenOnlineOrder?: (id: string) => void;
   cart: Cart;
   savedTickets: SavedOrderTicket[];
   activeTicketId: string | null;
@@ -2370,7 +2364,6 @@ function TicketPanel({
           </div>
         )}
       </div>
-      {onOpenOnlineOrder && <OnlineOrderTicketList orders={onlineOrders} onOpen={onOpenOnlineOrder} />}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-semibold text-gray-500">ตั๋วที่บันทึก</p>
@@ -6306,6 +6299,12 @@ export function PosTerminal({
         title="ระบบตั๋ว"
         onClose={() => setTicketPanelOpen(false)}
       >
+        {/* อยู่นอก TicketPanel: ตั๋วที่บันทึกล็อกทั้งแผง ~2 วิ ตอนซิงค์ — ตั๋วออนไลน์ไม่เกี่ยว ต้องกดได้ทันที */}
+        {onlineOrdersEnabled && onlineOrders.length > 0 && (
+          <div className="mb-4">
+            <OnlineOrderTicketList orders={onlineOrders} onOpen={(id) => setOnlineFocusId(id)} />
+          </div>
+        )}
         <TicketPanel
           cart={cart}
           savedTickets={savedTickets}
@@ -6328,8 +6327,6 @@ export function PosTerminal({
           onDeleteTicket={handleDeleteTicket}
           onTicketDraftChange={handleTicketDraftChange}
           qrByTable={qrByTable}
-          onlineOrders={onlineOrders}
-          onOpenOnlineOrder={onlineOrdersEnabled ? (id) => setOnlineFocusId(id) : undefined}
         />
       </PosUtilitySheet>
 
