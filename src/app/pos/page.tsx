@@ -23,6 +23,7 @@ import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
 import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
 import { readAssistantConfig } from "@/modules/ai-assistant/config";
 import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
+import { isOnlineOrderingEnabled } from "@/modules/online-orders/repository";
 import { PushTokenRegistrar } from "@/app/(dashboard)/PushTokenRegistrar";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +98,12 @@ export default async function PosPage() {
     ? null
     : explainFeatureLock(resolvedBillingState, "customerDisplay") ?? "แพ็กเกจนี้ยังไม่รองรับจอลูกค้า";
   const byoPaymentGatewayEnabled = canUseFeature(resolvedBillingState, "byoPaymentGateway");
+  // ตั๋วออนไลน์ใน POS: เงื่อนไขเดียวกับเมนู "สั่งออนไลน์" (จัดการออเดอร์ได้ + Enterprise + ร้านเปิดสั่งออนไลน์)
+  const onlineOrdersEnabled =
+    resolved.can("orders.manage_qr") &&
+    canUseMemberPrivileges(resolvedBillingState) &&
+    byoPaymentGatewayEnabled &&
+    (await isOnlineOrderingEnabled(ctx.storeId));
   const trueMoneyConfig = byoPaymentGatewayEnabled
     ? await getEnabledTrueMoneyManualConfig(ctx.storeId)
     : { data: null };
@@ -162,6 +169,7 @@ export default async function PosPage() {
       trueMoneyEnabled={trueMoneyEnabled}
       beamEnabled={beamEnabled}
       hidePromptPayQr={hidePromptPayQr}
+      onlineOrdersEnabled={onlineOrdersEnabled}
     />
   );
 
