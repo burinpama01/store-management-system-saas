@@ -20,7 +20,11 @@ import { logSystemEvent } from "@/modules/system/event-log";
 import type { OnlineOrder } from "./repository";
 import { performOnlineOrderTransition, type TransitionActor } from "./transition-service";
 
-const OPEN = ["PENDING", "REQUIRES_ACTION", "PROCESSING"];
+// ตรงกับ OPEN_STATUSES ใน beam-service (รายการที่ยังรอลูกค้าจ่าย)
+const OPEN = ["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING"];
+/** เงินเข้าแล้วแต่ต้องให้ร้านตรวจ (ยอดไม่ตรง/จ่ายหลังยกเลิก) — ห้ามสร้าง QR ใหม่ให้ลูกค้าจ่ายซ้ำ */
+const NEEDS_REVIEW = ["REVIEW_REQUIRED", "LATE_PAID"];
+export const COD_BEAM_REVIEW_ERROR = "ลูกค้าจ่ายแล้วแต่ยอด/สถานะต้องตรวจ — แจ้งร้านตรวจที่ ตั้งค่า → การชำระเงิน ห้ามสร้าง QR ใหม่";
 
 export function codBeamReferencePrefix(onlineOrderId: string): string {
   return `beam:cod-${onlineOrderId}-`;
@@ -57,6 +61,7 @@ export async function startCodBeamQr(g: TransitionActor, order: OnlineOrder): Pr
   if (bad) return { qr: null, error: bad };
   const service = await createSupabaseServiceClient();
   const last = await latestAttempt(g.ctx.storeId, order.id);
+  if (last && NEEDS_REVIEW.includes(last.status)) return { qr: null, error: COD_BEAM_REVIEW_ERROR };
   const round = !last ? 1 : OPEN.includes(last.status) || last.status === "PAID" ? last.round : last.round + 1;
   const created = await createBeamQrPayment({
     organizationId: g.ctx.organizationId,
@@ -89,7 +94,11 @@ export async function settleCodBeamIfPaid(
   order: OnlineOrder,
   gatewayPaymentId: string,
 ): Promise<{ status: string; done: boolean; error: string | null }> {
-  if (order.status === "completed" && order.codCollectedMethod === "beam") return { status: "PAID", done: true, error: null };
+  if (order.status === "completed" && order.codCollectedMethod === "beam") {
+    // รอบก่อนอาจค้างก่อนผูก pos_payment_id — ผูกให้ครบ (ประวัติ Beam ไม่ขึ้น "ยังไม่ผูก")
+    if (order.orderId) await ensureFinalized(g, order.orderId, gatewayPaymentId);
+    return { status: "PAID", done: true, error: null };
+  }
   const bad = check(order);
   if (bad) return { status: "UNKNOWN", done: false, error: bad };
   const service = await createSupabaseServiceClient();
@@ -106,6 +115,9 @@ export async function settleCodBeamIfPaid(
   }
   const refreshed = await refreshBeamPayment({ storeId: g.ctx.storeId, gatewayPaymentId, client: service, minLookupIntervalMs: 5_000 });
   if (!refreshed.ok) return { status: "UNKNOWN", done: false, error: refreshed.error };
+  if (NEEDS_REVIEW.includes(refreshed.status)) {
+    return { status: refreshed.status, done: false, error: COD_BEAM_REVIEW_ERROR };
+  }
   if (refreshed.status !== "PAID") {
     return { status: refreshed.status, done: false, error: OPEN.includes(refreshed.status) ? null : "QR หมดอายุ/ยกเลิก — สร้าง QR ใหม่" };
   }
@@ -138,8 +150,47 @@ export async function settleCodBeamIfPaid(
       actorUserId: g.user.id,
       client: service,
     });
+  } else {
+    // บิลปิดแล้ว (รอบก่อนค้างกลางทาง) — ต้องปิดด้วยรายการนี้จริง ไม่งั้นเงินก้อนนี้เป็นเงินเกิน
+    const ok = await ensureFinalized(g, billId, gatewayPaymentId);
+    if (!ok) return { status: "PAID", done: false, error: "บิลนี้ปิดด้วยรายการอื่นแล้ว — แจ้งร้านตรวจเงิน Beam ก้อนนี้ (อาจต้องคืนเงิน)" };
   }
   const moved = await performOnlineOrderTransition(g, order.id, "completed", { codMethod: "beam", via: "rider" });
   if (!moved.ok) return { status: "PAID", done: false, error: moved.error };
   return { status: "PAID", done: true, error: moved.error };
+}
+
+/**
+ * บิลปิดด้วยเงิน Beam รายการนี้แล้วหรือยัง + ผูก pos_payment_id ถ้ายังค้าง (กดตรวจซ้ำหลังรอบก่อนล้มกลางทาง)
+ * คืน false = บิลไม่ได้ปิดด้วยรายการนี้
+ */
+async function ensureFinalized(g: TransitionActor, billId: string, gatewayPaymentId: string): Promise<boolean> {
+  const service = await createSupabaseServiceClient();
+  const { data: pay } = await service
+    .from("payments")
+    .select("id")
+    .eq("order_id", billId)
+    .eq("reference", `BEAM:${gatewayPaymentId}`)
+    .limit(1)
+    .maybeSingle();
+  if (!pay) return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- อ่าน gateway_payments ด้วย service client
+  const { data: gw } = await (service as any)
+    .from("gateway_payments")
+    .select("pos_payment_id")
+    .eq("id", gatewayPaymentId)
+    .eq("store_id", g.ctx.storeId)
+    .maybeSingle();
+  if (gw && !gw.pos_payment_id) {
+    await finalizeBeamPaymentForOrder({
+      organizationId: g.ctx.organizationId,
+      storeId: g.ctx.storeId,
+      gatewayPaymentId,
+      orderId: billId,
+      posPaymentId: pay.id,
+      actorUserId: g.user.id,
+      client: service,
+    });
+  }
+  return true;
 }

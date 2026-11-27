@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 // หน้าคนส่ง (R4) — พนักงาน (pos.use) รับงาน/ส่งงานออนไลน์ส่งถึงบ้านของตัวเอง
 // กติกาเงินทั้งหมดอยู่ใน transition-service (เดียวกับหน้า สั่งออนไลน์/POS) — ที่นี่แค่จำกัดว่าทำได้เฉพาะงานของตัวเอง
 
@@ -235,5 +236,7 @@ export async function checkRiderCodQrAction(id: string, gatewayPaymentId: string
   const { order, error } = await loadMine(g, id);
   if (!order) return { status: "UNKNOWN", done: false, error };
   if (order.riderUserId !== g.user.id) return { status: "UNKNOWN", done: false, error: "งานนี้ไม่ใช่ของคุณ" };
-  return settleCodBeamIfPaid(actor(g), order, gatewayPaymentId);
+  const res = await settleCodBeamIfPaid(actor(g), order, gatewayPaymentId);
+  if (res.done) revalidatePath("/rider");
+  return res;
 }

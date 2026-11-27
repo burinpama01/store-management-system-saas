@@ -131,7 +131,12 @@ export function CodBeamQrPanel({
         return;
       }
       if (res.error) setError(res.error);
-      if (res.status === "PAID" || ["PENDING", "REQUIRES_ACTION", "PROCESSING", "UNKNOWN"].includes(res.status)) {
+      if (res.status === "REVIEW_REQUIRED" || res.status === "LATE_PAID") {
+        // ลูกค้าจ่ายแล้ว — ห้ามให้สร้าง QR ใหม่ (กันจ่ายซ้ำ)
+        setStatus("ลูกค้าจ่ายแล้ว รอร้านตรวจ");
+        return;
+      }
+      if (res.status === "PAID" || ["CREATED", "PENDING", "REQUIRES_ACTION", "PROCESSING", "UNKNOWN"].includes(res.status)) {
         setStatus(res.status === "PAID" ? "ได้รับเงินแล้ว กำลังปิดบิล…" : "รอลูกค้าสแกนจ่าย…");
         timer = window.setTimeout(() => void poll(gw), 4_000);
       } else {

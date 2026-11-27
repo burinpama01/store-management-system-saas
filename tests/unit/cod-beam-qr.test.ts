@@ -54,3 +54,18 @@ describe("R3b เก็บปลายทางด้วย Beam QR", () => {
     }
   });
 });
+
+describe("R3b แก้ตามรีวิว", () => {
+  const mod = read("src/modules/online-orders/cod-beam.ts");
+  it("ยอดไม่ตรง/จ่ายหลังยกเลิก: ไม่บอกว่าหมดอายุ + ห้ามสร้าง QR ใหม่ (กันลูกค้าจ่ายซ้ำ)", () => {
+    expect(mod).toContain('const NEEDS_REVIEW = ["REVIEW_REQUIRED", "LATE_PAID"];');
+    expect(mod).toContain("if (last && NEEDS_REVIEW.includes(last.status)) return { qr: null, error: COD_BEAM_REVIEW_ERROR };");
+    expect(mod).toContain("if (NEEDS_REVIEW.includes(refreshed.status)) {");
+    expect(read("src/app/(dashboard)/website/orders/CodControls.tsx")).toContain('setStatus("ลูกค้าจ่ายแล้ว รอร้านตรวจ");');
+  });
+  it("กดตรวจซ้ำหลังค้างกลางทาง: บิลต้องปิดด้วยรายการนี้ + ผูก pos_payment_id ที่ยังค้าง", () => {
+    expect(mod).toContain('.eq("reference", `BEAM:${gatewayPaymentId}`)');
+    expect(mod).toContain("if (gw && !gw.pos_payment_id) {");
+    expect(mod).toContain("บิลนี้ปิดด้วยรายการอื่นแล้ว");
+  });
+});
