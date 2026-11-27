@@ -7,8 +7,16 @@ import { useConfirm } from "@/shared/components/ui/useConfirm";
 import { STATUS_LABEL, nextStatuses, type CodCollectMethod, type OnlineOrderStatus } from "@/modules/online-orders/core";
 import { printKitchenForOrder, type StationPrinter } from "../../delivery/print-kitchen";
 import { RiderPicker } from "./RiderPicker";
-import { CodCollectPicker, CodFailButton } from "./CodControls";
-import { acceptOnlineOrderAction, listOnlineOrdersAction, settleCodCashAction, updateOnlineOrderStatusAction, type OnlineOrderVM } from "./actions";
+import { CodBeamQrPanel, CodCollectPicker, CodFailButton } from "./CodControls";
+import {
+  acceptOnlineOrderAction,
+  checkCodQrAction,
+  listOnlineOrdersAction,
+  settleCodCashAction,
+  startCodQrAction,
+  updateOnlineOrderStatusAction,
+  type OnlineOrderVM,
+} from "./actions";
 
 const baht = (n: number) => `฿${n.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
 const time = (iso: string | null) =>
@@ -54,6 +62,8 @@ export function OnlineOrdersBoard(props: {
   const [ridingFor, setRidingFor] = useState<OnlineOrderVM | null>(null);
   /** R3: ออเดอร์เก็บปลายทางที่กำลังเลือกวิธีรับเงิน */
   const [collectingFor, setCollectingFor] = useState<OnlineOrderVM | null>(null);
+  /** R3b: QR Beam เก็บปลายทาง */
+  const [beamFor, setBeamFor] = useState<OnlineOrderVM | null>(null);
 
   const reload = useCallback(async () => {
     const res = await listOnlineOrdersAction();
@@ -111,6 +121,10 @@ export function OnlineOrdersBoard(props: {
     }
     setRidingFor(null);
     setCollectingFor(null);
+    if (to === "completed" && codMethod === "beam") {
+      setBeamFor(o);
+      return;
+    }
     if (to === "refund_pending" && reason === undefined) {
       setCancelling({ id: o.id, reason: "ของหมด" });
       return;
@@ -271,6 +285,20 @@ export function OnlineOrdersBoard(props: {
         ))}
       </div>
       {confirmDialog}
+      {beamFor && (
+        <CodBeamQrPanel
+          orderCode={beamFor.orderCode}
+          total={beamFor.total}
+          start={() => startCodQrAction(beamFor.id)}
+          check={(gw) => checkCodQrAction(beamFor.id, gw)}
+          onDone={() => {
+            setMessage(`ได้รับเงิน Beam ${beamFor.orderCode} แล้ว — ปิดบิลและส่งสำเร็จ`);
+            setBeamFor(null);
+            void reload();
+          }}
+          onClose={() => setBeamFor(null)}
+        />
+      )}
       {collectingFor && (
         <CodCollectPicker
           orderCode={collectingFor.orderCode}

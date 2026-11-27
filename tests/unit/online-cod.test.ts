@@ -103,7 +103,7 @@ describe("R3 เก็บเงินปลายทาง — ฝั่งร�
   it("สำเร็จ: โอน = ปิดบิลทันที · เงินสด = ค้างที่คนส่ง", () => {
     expect(actions).toContain('method: "bank_transfer",');
     expect(actions).toContain("patch.cod_cash_held = order.total;");
-    expect(actions).toContain('if (codMethod !== "cash" && codMethod !== "bank_transfer") return { ok: false, error: "เลือกวิธีรับเงิน (เงินสด/โอน)" };');
+    expect(actions).toContain('if (codMethod !== "cash" && codMethod !== "bank_transfer" && codMethod !== "beam") {');
   });
 
   it("ส่งไม่สำเร็จ: ยกเลิกบิลเปิดค้างก่อนเปลี่ยนสถานะ", () => {

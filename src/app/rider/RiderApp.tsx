@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { CodCollectMethod } from "@/modules/online-orders/core";
-import { CodCollectPicker, CodFailButton } from "../(dashboard)/website/orders/CodControls";
+import { CodBeamQrPanel, CodCollectPicker, CodFailButton } from "../(dashboard)/website/orders/CodControls";
 import {
+  checkRiderCodQrAction,
   claimRiderJobAction,
   completeRiderJobAction,
+  startRiderCodQrAction,
   failRiderJobAction,
   listRiderJobsAction,
   type RiderJobVM,
@@ -22,6 +24,8 @@ export function RiderApp({ storeName, browserMapsKey, mapId }: { storeName: stri
   const [message, setMessage] = useState<string | null>(null);
   const [driving, setDriving] = useState<RiderJobVM | null>(null);
   const [collecting, setCollecting] = useState<RiderJobVM | null>(null);
+  /** R3b: QR Beam ที่กำลังให้ลูกค้าสแกน */
+  const [beamFor, setBeamFor] = useState<RiderJobVM | null>(null);
 
   const load = useCallback(async () => {
     const res = await listRiderJobsAction().catch(() => null);
@@ -64,6 +68,10 @@ export function RiderApp({ storeName, browserMapsKey, mapId }: { storeName: stri
     }
     setCollecting(null);
     setDriving(null);
+    if (method === "beam") {
+      setBeamFor(job);
+      return;
+    }
     void run(job.id, () => completeRiderJobAction(job.id, method), `ส่ง ${job.orderCode} สำเร็จ${method === "cash" ? " — เงินสดคืนร้านด้วย" : ""}`);
   };
 
@@ -167,6 +175,23 @@ export function RiderApp({ storeName, browserMapsKey, mapId }: { storeName: stri
         ))}
       </div>
 
+      {beamFor && (
+        <CodBeamQrPanel
+          orderCode={beamFor.orderCode}
+          total={beamFor.total}
+          start={() => startRiderCodQrAction(beamFor.id)}
+          check={(gw) => checkRiderCodQrAction(beamFor.id, gw)}
+          onDone={() => {
+            setMessage(`ได้รับเงิน Beam ${beamFor.orderCode} แล้ว — ส่งสำเร็จ`);
+            setBeamFor(null);
+            void load();
+          }}
+          onClose={() => {
+            setBeamFor(null);
+            void load();
+          }}
+        />
+      )}
       {collecting && (
         <CodCollectPicker
           orderCode={collecting.orderCode}
