@@ -1,9 +1,13 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { isOpsManagerRole } from "@/modules/operations/access";
+import { getOrganizationBillingState } from "@/modules/billing/billing-service";
+import { canUseFeature, DEFAULT_BILLING_STATE } from "@/modules/billing/types";
+import { isTaxDocumentsEnabled } from "@/modules/tax/documents-repository";
 import { getStoreTaxProfile, listDocumentSequences } from "@/modules/tax/repository";
 import { canIssueAbbreviatedTaxInvoice, canIssueFullTaxInvoice } from "@/modules/tax/rules";
 import { DOCUMENT_LABELS } from "@/modules/tax/types";
+import { TaxDocumentsToggle } from "./TaxDocumentsToggle";
 import { TaxProfileForm } from "./TaxProfileForm";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +17,13 @@ export default async function TaxSettingsPage() {
   if (!resolved.can("settings.view")) redirect("/dashboard");
   if (!isOpsManagerRole(ctx.role)) redirect("/settings/store");
 
-  const [profileRes, sequencesRes] = await Promise.all([getStoreTaxProfile(ctx.storeId), listDocumentSequences(ctx.storeId)]);
+  const billing = (await getOrganizationBillingState(ctx.organizationId)) ?? DEFAULT_BILLING_STATE;
+  const hasTaxDocuments = canUseFeature(billing, "taxDocuments");
+  const [profileRes, sequencesRes, docsEnabled] = await Promise.all([
+    getStoreTaxProfile(ctx.storeId),
+    listDocumentSequences(ctx.storeId),
+    hasTaxDocuments ? isTaxDocumentsEnabled(ctx.storeId) : Promise.resolve(false),
+  ]);
   const profile = profileRes.data ?? null;
 
   return (
@@ -32,8 +42,17 @@ export default async function TaxSettingsPage() {
         <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
           <p className="font-semibold text-gray-900">ใบกำกับภาษีเต็มรูป</p>
           <p className={canIssueFullTaxInvoice(profile) ? "text-green-700" : "text-gray-600"}>
-            {canIssueFullTaxInvoice(profile) ? "พร้อม (จด VAT แล้ว) — ปุ่มออกเอกสารจะมาในรอบถัดไป" : "ยังไม่พร้อม — ต้องตั้งค่าว่าจด VAT แล้ว"}
+            {!hasTaxDocuments
+              ? "มีในแพ็กเกจ Enterprise"
+              : canIssueFullTaxInvoice(profile)
+                ? docsEnabled
+                  ? "เปิดใช้แล้ว — ออกได้ที่เมนู ใบกำกับภาษี"
+                  : "พร้อมเปิด (จด VAT แล้ว)"
+                : "ยังไม่พร้อม — ต้องตั้งค่าว่าจด VAT แล้ว"}
           </p>
+          {hasTaxDocuments && (
+            <TaxDocumentsToggle enabled={docsEnabled} ready={canIssueFullTaxInvoice(profile)} />
+          )}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
           <p className="font-semibold text-gray-900">ใบกำกับภาษีอย่างย่อจาก POS</p>

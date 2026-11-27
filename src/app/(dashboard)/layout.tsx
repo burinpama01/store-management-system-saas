@@ -1,6 +1,7 @@
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { canUseMemberPrivileges } from "@/modules/members/access";
 import { isOpsManagerRole } from "@/modules/operations/access";
+import { TAX_DOC_VIEW_ROLES } from "@/modules/tax/access-policy";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -70,6 +71,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         notification_voice_enabled?: boolean;
         operations_enabled?: boolean;
         inventory_enabled?: boolean;
+        tax_documents_enabled?: boolean;
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
@@ -118,6 +120,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     hasConsignment: assistantBilling ? canUseFeature(assistantBilling, "consignment") : false,
     role: storeContext.role,
   });
+  const taxDocumentsVisible =
+    Boolean(currentStoreRow?.tax_documents_enabled) &&
+    !!assistantBilling &&
+    canUseFeature(assistantBilling, "taxDocuments") &&
+    (TAX_DOC_VIEW_ROLES as readonly string[]).includes(storeContext.role);
   const websiteVisible =
     isOpsManagerRole(storeContext.role) && !!assistantBilling && canUseMemberPrivileges(assistantBilling);
   // สั่งออนไลน์ (เว็บร้าน S2) — แสดงในเมนูเมื่อร้าน Enterprise เปิดสวิตช์แล้ว (เจ้าของเข้าตั้งค่าได้จากหน้าเว็บไซต์ร้าน)
@@ -139,6 +146,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     ...(onlineOrdersVisible ? [{ href: "/website/orders", label: "สั่งออนไลน์" }] : []),
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
+    // ใบกำกับภาษีเต็มรูป (B1): Enterprise + แคชเชียร์ขึ้นไป + สาขาเปิดสวิตช์แล้ว (เจ้าของเปิดที่ ตั้งค่า › ข้อมูลภาษี)
+    ...(taxDocumentsVisible ? [{ href: "/tax-documents", label: "ใบกำกับภาษี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
     ...(consignmentVisible ? [{ href: "/consignment", label: "ฝากขาย" }] : []),
