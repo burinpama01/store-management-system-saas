@@ -42,14 +42,16 @@ export function OrderApp(props: {
   storeOrigin?: { lat: number; lng: number } | null;
   /** R3: ร้านเปิดเก็บเงินปลายทาง (ส่งถึงบ้าน) */
   cod?: { maxPerBill: number; requireOtp: boolean } | null;
+  /** สั่งจากหน้าสมาชิก: กรอกชื่อ/เบอร์ให้ · ใช้เบอร์นี้ไม่ต้องขอ OTP (server ตรวจซ้ำ) */
+  member?: { name: string; phone: string; backHref: string } | null;
 }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [picking, setPicking] = useState<OnlineMenuProduct | null>(null);
   const [step, setStep] = useState<"menu" | "checkout">("menu");
   const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">(props.pickupEnabled ? "pickup" : "delivery");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(props.member?.name ?? "");
+  const [phone, setPhone] = useState(props.member?.phone ?? "");
   const [address, setAddress] = useState("");
   const [addressNote, setAddressNote] = useState("");
   const [note, setNote] = useState("");
@@ -98,6 +100,9 @@ export function OrderApp(props: {
 
   const codAllowed = Boolean(props.cod) && fulfillment === "delivery";
   const useCod = codAllowed && payMethod === "cod";
+  // ใช้เบอร์สมาชิกที่ยืนยันแล้ว → ไม่ต้องขอ OTP
+  const memberPhoneVerified = Boolean(props.member?.phone) && phone.replace(/[\s-]/g, "") === (props.member?.phone ?? "").replace(/[\s-]/g, "");
+  const needOtp = useCod && Boolean(props.cod?.requireOtp) && !memberPhoneVerified;
 
   const sendOtp = async () => {
     setError(null);
@@ -159,7 +164,7 @@ export function OrderApp(props: {
     if (!/^0[0-9]{8,9}$/.test(phone.replace(/[\s-]/g, ""))) return setError("กรอกเบอร์โทรให้ถูกต้อง");
     if (fulfillment === "delivery" && !address.trim()) return setError("กรอกที่อยู่จัดส่ง");
     if (fulfillment === "delivery" && !point) return setError("ปักหมุดจุดส่งบนแผนที่ (หรือกดใช้ตำแหน่งปัจจุบัน)");
-    if (useCod && props.cod?.requireOtp && !/^[0-9]{4,8}$/.test(otpCode)) return setError("กดขอรหัส OTP แล้วกรอกรหัสที่ได้รับทาง SMS");
+    if (needOtp && !/^[0-9]{4,8}$/.test(otpCode)) return setError("กดขอรหัส OTP แล้วกรอกรหัสที่ได้รับทาง SMS");
     startTransition(async () => {
       const res = await startOnlineOrderAction(props.slug, { ...payload(), customerName: name.trim(), customerPhone: phone.trim() });
       if (!res.ok || !res.token) {
@@ -177,7 +182,7 @@ export function OrderApp(props: {
           <p className="text-xs text-stone-500">สั่งออนไลน์</p>
           <h1 className="text-lg font-bold">{props.storeName}</h1>
         </div>
-        <Link href={`/s/${props.slug}`} className="text-sm text-orange-700">หน้าร้าน</Link>
+        <Link href={props.member?.backHref ?? `/s/${props.slug}`} className="text-sm text-orange-700">{props.member ? "หน้าสมาชิก" : "หน้าร้าน"}</Link>
       </header>
 
       {step === "menu" ? (
@@ -304,7 +309,10 @@ export function OrderApp(props: {
                   <p className="text-xs text-stone-500">
                     จ่ายเงินสด/โอนกับพนักงานตอนรับของ · ยอดไม่เกิน {baht(props.cod.maxPerBill)} (สมาชิกบางระดับได้มากกว่า)
                   </p>
-                  {props.cod.requireOtp && (
+                  {memberPhoneVerified && props.cod.requireOtp && (
+                    <p className="text-xs text-emerald-700">✓ เบอร์สมาชิกยืนยันแล้ว — ไม่ต้องขอรหัส OTP</p>
+                  )}
+                  {needOtp && (
                     <div className="flex gap-2">
                       <input
                         className={inputCls}

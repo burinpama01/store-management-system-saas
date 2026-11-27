@@ -3,6 +3,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
 import { hashClientIp } from "@/modules/auth/device-login";
+import { getMemberSessionByStoreId } from "@/modules/customers/member-repository";
 import { deliverMemberOtp, verifyProviderOtp } from "@/modules/notifications/smskub";
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { cancelBeamQrPayment, createBeamQrPayment, refreshBeamPayment } from "@/modules/payments/beam-service";
@@ -248,8 +249,14 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
     const cap = codCapFor(store.settings, tierRank);
     if (total > cap) return fail(`เก็บเงินปลายทางได้ไม่เกิน ฿${cap.toLocaleString("th-TH")} — กรุณาจ่ายด้วย QR`);
     if (store.settings.codRequireOtp) {
-      const otpError = await verifyCodOtp(store.storeId, input.customerPhone, input.otpCode);
-      if (otpError) return fail(otpError);
+      // สมาชิกที่ล็อกอินอยู่ (ยืนยัน OTP ตอนเข้าสมาชิกแล้ว) + ใช้เบอร์สมาชิก → ไม่ต้องขอ OTP ซ้ำ
+      // ตรวจจาก cookie สมาชิกฝั่ง server เท่านั้น (ส่งมาเฉพาะคำขอจากหน้า /member/<slug>/order)
+      const member = await getMemberSessionByStoreId(store.storeId).catch(() => null);
+      const memberVerified = Boolean(member?.phone && normalizeThaiPhone(member.phone) === input.customerPhone);
+      if (!memberVerified) {
+        const otpError = await verifyCodOtp(store.storeId, input.customerPhone, input.otpCode);
+        if (otpError) return fail(otpError);
+      }
     }
   }
 

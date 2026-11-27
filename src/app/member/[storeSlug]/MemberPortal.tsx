@@ -36,6 +36,8 @@ interface Props {
   tierCoupons?: MemberTierCoupon[];
   /** ภารกิจสะสม — null = ร้านไม่ได้เปิด/ยังไม่ล็อกอิน */
   missionsView?: MemberMissionsView | null;
+  /** สั่งออนไลน์จากหน้าสมาชิก — null = ร้านไม่ได้เปิด/ยังไม่ล็อกอิน */
+  onlineOrderHref?: string | null;
 }
 
 interface RedeemedVoucher {
@@ -178,6 +180,7 @@ export function MemberPortal({
   tierView = null,
   tierCoupons = [],
   missionsView = null,
+  onlineOrderHref = null,
 }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"register" | "login">("register");
@@ -315,6 +318,7 @@ export function MemberPortal({
 
   const quickActions = (
     [
+      { key: "order", icon: "🛵", label: "สั่งออนไลน์", badge: 0, show: Boolean(onlineOrderHref), anchor: null },
       { key: "missions", icon: "🎯", label: "ภารกิจ", badge: activeMissionCount, show: Boolean(missionsView?.enabled), anchor: null },
       { key: "coupons", icon: "🎟️", label: "คูปอง", badge: readyCouponCount, show: true, anchor: null },
       { key: "member", icon: "☕", label: "แพ็ก", badge: 0, show: hasPasses, anchor: "member-passes" },
@@ -552,7 +556,14 @@ export function MemberPortal({
                       <button
                         key={item.label}
                         type="button"
-                        onClick={() => go(item.key, item.anchor)}
+                        onClick={() => {
+                          // สั่งออนไลน์ = ไปหน้าสั่งของสมาชิก (ไม่ใช่แท็บในหน้านี้)
+                          if (item.key === "order") {
+                            if (onlineOrderHref) router.push(onlineOrderHref);
+                            return;
+                          }
+                          go(item.key, item.anchor);
+                        }}
                         className="relative rounded-xl border border-[var(--border)] bg-white px-1 py-2.5 text-center text-xs font-semibold text-[var(--ink-2)] shadow-sm"
                       >
                         <span aria-hidden="true" className="mx-auto mb-1 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--tenant-primary-soft)] text-lg">

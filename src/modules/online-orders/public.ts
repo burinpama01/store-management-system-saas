@@ -65,3 +65,15 @@ async function resolveOrderingStoreUncached(slug: string): Promise<OrderingStore
 
 /** dedupe ภายใน request เดียว (generateMetadata + หน้า) */
 export const resolveOrderingStore = cache(resolveOrderingStoreUncached);
+
+/** stores.slug (หน้าสมาชิก) → slug เว็บร้าน (store_websites.slug ที่หน้าสั่งออนไลน์ใช้) */
+export async function websiteSlugForStoreSlug(storeSlug: string): Promise<{ storeId: string; websiteSlug: string } | null> {
+  const clean = storeSlug.toLowerCase();
+  if (!/^[a-z0-9-]{1,100}$/.test(clean)) return null;
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data: store } = await db.from("stores").select("id").eq("slug", clean).maybeSingle();
+  if (!store) return null;
+  const { data: site } = await db.from("store_websites").select("slug").eq("store_id", store.id).maybeSingle();
+  if (!site?.slug) return null;
+  return { storeId: store.id, websiteSlug: site.slug };
+}
