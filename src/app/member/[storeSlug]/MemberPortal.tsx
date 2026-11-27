@@ -38,6 +38,8 @@ interface Props {
   missionsView?: MemberMissionsView | null;
   /** สั่งออนไลน์จากหน้าสมาชิก — null = ร้านไม่ได้เปิด/ยังไม่ล็อกอิน */
   onlineOrderHref?: string | null;
+  /** ประวัติสั่งออนไลน์ — /member/<slug>/orders */
+  orderHistoryHref?: string | null;
 }
 
 interface RedeemedVoucher {
@@ -181,6 +183,7 @@ export function MemberPortal({
   tierCoupons = [],
   missionsView = null,
   onlineOrderHref = null,
+  orderHistoryHref = null,
 }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"register" | "login">("register");
@@ -319,6 +322,7 @@ export function MemberPortal({
   const quickActions = (
     [
       { key: "order", icon: "🛵", label: "สั่งออนไลน์", badge: 0, show: Boolean(onlineOrderHref), anchor: null },
+      { key: "history", icon: "🧾", label: "ประวัติสั่ง", badge: 0, show: Boolean(orderHistoryHref), anchor: null },
       { key: "missions", icon: "🎯", label: "ภารกิจ", badge: activeMissionCount, show: Boolean(missionsView?.enabled), anchor: null },
       { key: "coupons", icon: "🎟️", label: "คูปอง", badge: readyCouponCount, show: true, anchor: null },
       { key: "member", icon: "☕", label: "แพ็ก", badge: 0, show: hasPasses, anchor: "member-passes" },
@@ -560,6 +564,10 @@ export function MemberPortal({
                           // สั่งออนไลน์ = ไปหน้าสั่งของสมาชิก (ไม่ใช่แท็บในหน้านี้)
                           if (item.key === "order") {
                             if (onlineOrderHref) router.push(onlineOrderHref);
+                            return;
+                          }
+                          if (item.key === "history") {
+                            if (orderHistoryHref) router.push(orderHistoryHref);
                             return;
                           }
                           go(item.key, item.anchor);

@@ -6,19 +6,10 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { OnlineMenuProduct } from "@/modules/online-orders/menu";
 import { normalizeThaiPhone } from "@/modules/online-orders/core";
+import type { ReorderCartItem } from "@/modules/online-orders/reorder";
 import { quoteOnlineOrderAction, startOnlineOrderAction, type QuoteResult, requestCodOtpAction } from "./actions";
 
-interface CartItem {
-  key: string;
-  productId: string;
-  name: string;
-  detail: string;
-  unitPrice: number;
-  variantId: string | null;
-  modifierOptionIds: string[];
-  quantity: number;
-  note: string;
-}
+type CartItem = ReorderCartItem;
 
 const baht = (n: number) => `฿${n.toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
 const inputCls = "w-full rounded-lg border border-stone-300 px-3 py-2";
@@ -45,9 +36,12 @@ export function OrderApp(props: {
   cod?: { maxPerBill: number; requireOtp: boolean } | null;
   /** สั่งจากหน้าสมาชิก: กรอกชื่อ/เบอร์ให้ · ใช้เบอร์นี้ไม่ต้องขอ OTP (server ตรวจซ้ำ) */
   member?: { name: string; phone: string; backHref: string } | null;
+  /** สั่งอีกครั้งจากออเดอร์เดิม (หน้าสมาชิก) — ตะกร้าเริ่มต้น + ข้อความแจ้ง */
+  initialCart?: CartItem[];
+  reorderNotice?: string | null;
 }) {
   const router = useRouter();
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => props.initialCart ?? []);
   const [picking, setPicking] = useState<OnlineMenuProduct | null>(null);
   const [step, setStep] = useState<"menu" | "checkout">("menu");
   const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">(props.pickupEnabled ? "pickup" : "delivery");
@@ -188,6 +182,7 @@ export function OrderApp(props: {
 
       {step === "menu" ? (
         <div className="space-y-6 p-4">
+          {props.reorderNotice && <p className="rounded-lg bg-orange-50 p-3 text-sm text-orange-800">{props.reorderNotice}</p>}
           {props.menu.length === 0 && <p className="text-center text-stone-500">ยังไม่มีเมนูให้สั่ง</p>}
           {categories.map(([category, products]) => (
             <section key={category}>

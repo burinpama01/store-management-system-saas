@@ -58,6 +58,7 @@ export default async function CustomerMemberPage({
   return (
     <MemberPortal
       onlineOrderHref={onlineOrderHref}
+      orderHistoryHref={onlineOrderHref ? `/member/${encodeURIComponent(storeSlug)}/orders` : null}
       storeSlug={storeSlug}
       portalCode={portalCode}
       claimCode={typeof claim === "string" ? claim.trim().toUpperCase() : null}
