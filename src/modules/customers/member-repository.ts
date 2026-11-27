@@ -854,3 +854,31 @@ export async function generateMemberPortalLink(input: {
   if (error) return { data: null, error: mapError(error) };
   return { data: data as PortalLinkRow, error: null };
 }
+
+/**
+ * สมาชิกที่ล็อกอินหน้าสมาชิกของร้านนี้อยู่ (cookie ตามร้าน · path /member/<slug>)
+ * ใช้กับหน้าสั่งออนไลน์ใต้ /member/<slug>/order — เบอร์นี้ยืนยัน OTP ตอนเข้าสมาชิกแล้ว
+ */
+export async function getMemberSessionByStoreId(storeId: string): Promise<{ customerId: string; name: string; phone: string | null } | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(getMemberSessionCookieName(storeId))?.value;
+  if (!token) return null;
+  const supabase = await createSupabaseServiceClient();
+  const { data: session } = await supabase
+    .from("customer_member_sessions")
+    .select("customer_id")
+    .eq("store_id", storeId)
+    .eq("session_token_hash", hashValue(token))
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (!session) return null;
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("id, name, phone")
+    .eq("store_id", storeId)
+    .eq("id", session.customer_id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!customer) return null;
+  return { customerId: customer.id, name: customer.name, phone: customer.phone ?? null };
+}

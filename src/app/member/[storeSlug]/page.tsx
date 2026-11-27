@@ -4,6 +4,7 @@ import { getMemberPassesView } from "@/modules/prepaid-passes/member-portal";
 import { getMemberTierForCustomer, listMemberTierCoupons } from "@/modules/member-tiers/repository";
 import { getMemberMissionsView } from "@/modules/missions/repository";
 import { MemberPortal } from "./MemberPortal";
+import { resolveOrderingStore, websiteSlugForStoreSlug } from "@/modules/online-orders/public";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +47,17 @@ export default async function CustomerMemberPage({
       ? await getMemberMissionsView(portalData.store.id, portalData.customer.id)
       : null;
 
+  // สั่งออนไลน์จากหน้าสมาชิก (ร้านเปิดสั่งออนไลน์ + ล็อกอินแล้ว) — ชื่อ/เบอร์กรอกให้ เก็บปลายทางไม่ต้อง OTP ซ้ำ
+  let onlineOrderHref: string | null = null;
+  if (portalData.store && portalData.customer) {
+    const site = await websiteSlugForStoreSlug(storeSlug).catch(() => null);
+    const ordering = site ? await resolveOrderingStore(site.websiteSlug).catch(() => null) : null;
+    if (ordering?.ok) onlineOrderHref = `/member/${encodeURIComponent(storeSlug)}/order`;
+  }
+
   return (
     <MemberPortal
+      onlineOrderHref={onlineOrderHref}
       storeSlug={storeSlug}
       portalCode={portalCode}
       claimCode={typeof claim === "string" ? claim.trim().toUpperCase() : null}
