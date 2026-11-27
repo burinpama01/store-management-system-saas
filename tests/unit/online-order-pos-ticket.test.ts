@@ -94,6 +94,13 @@ describe("แคชเชียร์ต้องรู้ว่ามีออ�
     expect(fn).toContain('resolved.can("orders.manage_qr")');
     expect(fn).not.toContain("reports.view");
   });
+  it("แตะดูแล้วไม่รับ → เตือนใหม่หลัง 60 วิ · ป้ายรอรับนับเก็บปลายทางด้วย", () => {
+    const p = read("src/app/pos/PosTerminal.tsx");
+    expect(p).toContain("ONLINE_ACK_SNOOZE_MS = 60_000");
+    expect(p).toContain("onlineAwaitingAt - at > ONLINE_ACK_SNOOZE_MS");
+    expect(read("src/app/pos/OnlineOrderTickets.tsx")).toContain('o.status === "paid" || o.status === "cod_pending"');
+  });
+
   it("แถบเตือน + เสียงซ้ำจนกว่าจะแตะเปิด", () => {
     const p = read("src/app/pos/PosTerminal.tsx");
     expect(p).toContain('useRepeatingAlert(onlineOrdersEnabled && unackOnline.length > 0, "order"');

@@ -63,6 +63,8 @@ export function useOnlineOrderTickets(enabled: boolean) {
   const [error, setError] = useState<string | null>(null);
   /** ออเดอร์ที่รอร้านกดรับ (จากการถามทุก 15 วิ) — ใช้เตือนเสียง/แถบบนหน้าขาย */
   const [awaiting, setAwaiting] = useState<{ id: string; orderCode: string }[]>([]);
+  /** เวลาที่ถามล่าสุด — ใช้คิดว่า "แตะดูแล้ว" หมดอายุหรือยัง (ไม่เรียก Date.now ระหว่าง render) */
+  const [awaitingAt, setAwaitingAt] = useState(0);
   const activeRef = useRef(0);
   const knownAwaitingRef = useRef<string>("");
 
@@ -104,6 +106,7 @@ export function useOnlineOrderTickets(enabled: boolean) {
       const res = await pendingOnlineOrdersAction().catch(() => null);
       if (cancelled || !res || res.error) return;
       setAwaiting(res.orders);
+      setAwaitingAt(Date.now());
       const key = res.orders.map((o) => o.id).join(",");
       if (key !== knownAwaitingRef.current) {
         knownAwaitingRef.current = key;
@@ -124,13 +127,13 @@ export function useOnlineOrderTickets(enabled: boolean) {
     };
   }, [enabled, refresh]);
 
-  return { orders, error, refresh, awaiting };
+  return { orders, error, refresh, awaiting, awaitingAt };
 }
 
 /** หมวด "ออนไลน์" ในแถบตั๋ว */
 export function OnlineOrderTicketList({ orders, onOpen }: { orders: OnlineOrderVM[]; onOpen: (id: string) => void }) {
   if (orders.length === 0) return null;
-  const waiting = orders.filter((o) => o.status === "paid").length;
+  const waiting = orders.filter((o) => o.status === "paid" || o.status === "cod_pending").length;
   return (
     <div className="space-y-2" data-testid="online-order-tickets">
       <div className="flex items-center justify-between gap-2">

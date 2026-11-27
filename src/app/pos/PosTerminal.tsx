@@ -224,6 +224,9 @@ interface Props {
   onlineOrdersEnabled?: boolean;
 }
 
+/** แตะดูออเดอร์ออนไลน์แล้วไม่กดรับ — เตือนใหม่หลังจากนี้ */
+const ONLINE_ACK_SNOOZE_MS = 60_000;
+
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -4070,13 +4073,28 @@ export function PosTerminal({
     setLastOnlineParam(onlineParam);
     if (onlineOrdersEnabled && onlineParam) setOnlineFocusId(onlineParam);
   }
-  const { orders: onlineOrders, refresh: refreshOnlineOrders, awaiting: onlineAwaiting } = useOnlineOrderTickets(onlineOrdersEnabled);
+  const {
+    orders: onlineOrders,
+    refresh: refreshOnlineOrders,
+    awaiting: onlineAwaiting,
+    awaitingAt: onlineAwaitingAt,
+  } = useOnlineOrderTickets(onlineOrdersEnabled);
   // ออเดอร์ออนไลน์รอรับที่ยังไม่มีใครแตะดู → แถบเตือน + เสียงซ้ำ (แคชเชียร์ไม่มีสิทธิ์เห็นแจ้งเตือนกลาง)
-  const [ackOnlineIds, setAckOnlineIds] = useState<string[]>([]);
-  const unackOnline = onlineAwaiting.filter((o) => !ackOnlineIds.includes(o.id));
+  // แตะดูแล้วปิดโดยไม่กดรับ → เงียบ 60 วิ แล้วเตือนใหม่ (กันร้านเงียบเพราะแค่เปิดดู)
+  const [ackOnlineAt, setAckOnlineAt] = useState<Record<string, number>>({});
+  const unackOnline = onlineAwaiting.filter((o) => {
+    const at = ackOnlineAt[o.id];
+    return at === undefined || onlineAwaitingAt - at > ONLINE_ACK_SNOOZE_MS;
+  });
   useRepeatingAlert(onlineOrdersEnabled && unackOnline.length > 0, "order", { announcement: "มีออเดอร์ออนไลน์ใหม่" });
   const openOnlineOrder = (id: string) => {
-    setAckOnlineIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    // เก็บเฉพาะใบที่ยังรอรับ (ใบที่รับไปแล้วตัดทิ้ง ไม่สะสมทั้งวัน)
+    setAckOnlineAt((prev) => {
+      const next: Record<string, number> = {};
+      for (const o of onlineAwaiting) if (prev[o.id] !== undefined) next[o.id] = prev[o.id];
+      next[id] = Date.now();
+      return next;
+    });
     setOnlineFocusId(id);
   };
   const focusedOnlineOrder = onlineFocusId ? (onlineOrders.find((o) => o.id === onlineFocusId) ?? null) : null;
