@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { CUSTOMER_DISPLAY_IMAGE_MAX_BYTES, CUSTOMER_DISPLAY_VIDEO_MAX_BYTES } from "@/modules/settings/customer-display";
 import {
   STORE_AD_PACKAGE_LIMIT,
   STORE_AD_TERMS_MAX,
@@ -11,6 +12,9 @@ import {
 import { saveStoreAdOfferAction } from "./actions";
 
 const field = "form-input";
+// ใช้ลิมิตเดียวกับการอัปโหลดสื่อจอลูกค้า (แหล่งความจริงเดียว)
+const videoMaxMb = Math.round(CUSTOMER_DISPLAY_VIDEO_MAX_BYTES / (1024 * 1024));
+const imageMaxMb = Math.round(CUSTOMER_DISPLAY_IMAGE_MAX_BYTES / (1024 * 1024));
 // iOS ซูมเมื่อ input เล็กกว่า 16px (ดูบันทึก POS แผง iPad) — บังคับ 16px
 const inputStyle = { fontSize: 16 } as const;
 
@@ -141,10 +145,10 @@ export function StoreAdOfferForm({ offer }: { offer: StoreAdOffer }) {
         <div className="space-y-2 text-sm font-semibold text-[var(--text)]">
           รับสื่อแบบ
           <label className="flex items-center gap-2 font-normal">
-            <input type="checkbox" checked={allowVideo} onChange={(e) => setAllowVideo(e.target.checked)} /> วิดีโอ (ไม่เกิน 50 MB)
+            <input type="checkbox" checked={allowVideo} onChange={(e) => setAllowVideo(e.target.checked)} /> วิดีโอ (ไม่เกิน {videoMaxMb} MB)
           </label>
           <label className="flex items-center gap-2 font-normal">
-            <input type="checkbox" checked={allowImage} onChange={(e) => setAllowImage(e.target.checked)} /> รูปภาพ (ไม่เกิน 10 MB)
+            <input type="checkbox" checked={allowImage} onChange={(e) => setAllowImage(e.target.checked)} /> รูปภาพ (ไม่เกิน {imageMaxMb} MB)
           </label>
         </div>
         <label className="text-sm font-semibold text-[var(--text)] sm:col-span-2">

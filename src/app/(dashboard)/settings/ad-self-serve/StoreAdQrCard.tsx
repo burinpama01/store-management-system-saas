@@ -99,7 +99,7 @@ export function StoreAdQrCard({
             {copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
           </button>
           {src ? (
-            <a href={src} download={`qr-ads-${storeName}.png`} className="btn-secondary min-h-9 text-sm">
+            <a href={src} download={`qr-ads-${storeName.replace(/[/\\:*?"<>|]/g, "_")}.png`} className="btn-secondary min-h-9 text-sm">
               ดาวน์โหลด QR
             </a>
           ) : null}

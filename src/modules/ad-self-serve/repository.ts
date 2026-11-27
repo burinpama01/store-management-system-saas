@@ -16,10 +16,10 @@ export function storeAdErrorMessage(raw: string | undefined | null): string {
   if (message.includes("row-level security") || message.includes("permission denied")) {
     return "ไม่มีสิทธิ์แก้การตั้งค่ารับลงโฆษณา";
   }
-  if (message.includes("check constraint")) return "ข้อมูลไม่ถูกต้องตามเงื่อนไข";
   if (message.includes("store_ad_offers") && message.includes("does not exist")) {
     return "ระบบรับลงโฆษณายังไม่พร้อม (ยังไม่ได้อัปเดตฐานข้อมูล)";
   }
+  if (message.includes("check constraint")) return "ข้อมูลไม่ถูกต้องตามเงื่อนไข";
   return "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง";
 }
 

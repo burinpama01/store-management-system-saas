@@ -11,6 +11,7 @@ import {
   mapStoreAdOfferRow,
   normalizeStoreAdOfferInput,
 } from "@/modules/ad-self-serve/rules";
+import { storeAdErrorMessage } from "@/modules/ad-self-serve/repository";
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
 
@@ -114,6 +115,17 @@ describe("A1 wiring", () => {
     expect(migration).toContain("enabled boolean not null default false");
     expect(migration).not.toMatch(/on public\.store_ad_orders for insert/);
     expect(migration).toContain('"price":59');
+    // ไม่ใช้ for all บน offers (ลบแถวทิ้งไม่ได้) และสถานะจ่ายแล้วต้องมี paid_at
+    expect(migration).not.toMatch(/on public\.store_ad_offers for all/);
+    expect(migration).toContain("check (status in ('pending_payment', 'cancelled') or paid_at is not null)");
+    expect(migration).toContain("payment_ref text");
+    expect(migration).toContain("status_reason text");
+  });
+
+  it("maps DB errors to Thai messages", () => {
+    expect(storeAdErrorMessage("new row violates row-level security policy")).toContain("ไม่มีสิทธิ์");
+    expect(storeAdErrorMessage('violates check constraint "x"')).toBe("ข้อมูลไม่ถูกต้องตามเงื่อนไข");
+    expect(storeAdErrorMessage('relation "public.store_ad_offers" does not exist')).toContain("ยังไม่พร้อม");
   });
 
   it("guards the save action and logs it", () => {

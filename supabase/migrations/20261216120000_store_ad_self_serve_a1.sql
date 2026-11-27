@@ -49,9 +49,23 @@ create policy "store_ad_offers: store member can read"
     )
   );
 
+-- แยก insert/update (ไม่ใช้ for all) — ร้านปิดด้วย enabled=false ไม่ลบแถวทิ้ง
 drop policy if exists "store_ad_offers: settings managers can write" on public.store_ad_offers;
-create policy "store_ad_offers: settings managers can write"
-  on public.store_ad_offers for all
+drop policy if exists "store_ad_offers: settings managers can insert" on public.store_ad_offers;
+create policy "store_ad_offers: settings managers can insert"
+  on public.store_ad_offers for insert
+  with check (
+    exists (
+      select 1 from public.stores
+      where stores.id = store_ad_offers.store_id
+        and stores.organization_id = store_ad_offers.organization_id
+    )
+    and auth_user_has_permission(organization_id, store_id, 'settings.manage_store')
+  );
+
+drop policy if exists "store_ad_offers: settings managers can update" on public.store_ad_offers;
+create policy "store_ad_offers: settings managers can update"
+  on public.store_ad_offers for update
   using (
     exists (
       select 1 from public.stores
@@ -100,17 +114,26 @@ create table if not exists public.store_ad_orders (
     'cancelled'        -- ไม่จ่าย/ยกเลิก
   )),
   payment_method text check (payment_method in ('beam', 'slip')),
+  -- หลักฐานการจ่าย: beam = gateway_payments.id · slip = รหัสอ้างอิงจากตัวตรวจสลิป
+  -- (A2 จะเพิ่ม gateway_payments.ad_order_id + trigger แบบเดียวกับขอเพลง)
+  payment_ref text,
+  slip_path text,
   paid_at timestamptz,
   starts_at timestamptz,
   ends_at timestamptz,
   reviewed_at timestamptz,
   reviewed_by uuid references auth.users(id) on delete set null,
-  removed_reason text,
+  -- เหตุผลที่ร้านไม่อนุมัติ (rejected) หรือถอด (removed)
+  status_reason text check (status_reason is null or char_length(status_reason) <= 300),
   -- hash ของ IP ผู้ลง (จำกัดจำนวนคำสั่ง/กันสแปม) — ไม่เก็บ IP ดิบ
   client_ip_hash text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (ends_at is null or starts_at is null or ends_at > starts_at)
+  check (ends_at is null or starts_at is null or ends_at > starts_at),
+  -- สถานะที่แปลว่า "จ่ายแล้ว" ต้องมีเวลาจ่ายเสมอ — กันบั๊กที่ทำให้โฆษณาขึ้นจอโดยไม่ได้จ่าย
+  check (status in ('pending_payment', 'cancelled') or paid_at is not null),
+  -- ขึ้นจอได้ต้องมีสื่อและช่วงเวลา
+  check (status <> 'active' or (media_url is not null and starts_at is not null and ends_at is not null))
 );
 
 create index if not exists store_ad_orders_store_status_idx

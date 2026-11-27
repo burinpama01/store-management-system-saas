@@ -60,6 +60,11 @@ export default async function AdSelfServeSettingsPage() {
       {offerRes.error ? <p className="alert-danger text-sm">{offerRes.error}</p> : null}
       {offer.enabled && slug ? (
         <StoreAdQrCard url={buildStoreAdUrl(origin, slug)} storeName={ctx.storeName} packages={offer.packages} />
+      ) : offer.enabled ? (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          ร้านยังไม่มีลิงก์สาธารณะ จึงสร้าง QR ไม่ได้ —{" "}
+          <Link href="/settings/store" className="underline">ตั้งค่าร้าน</Link>
+        </p>
       ) : (
         <p className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm text-[var(--muted)]">
           เปิดสวิตช์ &quot;รับลงโฆษณา&quot; แล้วบันทึก จึงจะแสดง QR สำหรับพิมพ์ติดร้าน
