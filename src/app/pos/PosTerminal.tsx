@@ -84,7 +84,8 @@ import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types
 import { cartHasPassItems, formatPassExpiry, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
-import { OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
+import { OnlineOrderAlertBanner, OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
+import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import {
@@ -4069,7 +4070,15 @@ export function PosTerminal({
     setLastOnlineParam(onlineParam);
     if (onlineOrdersEnabled && onlineParam) setOnlineFocusId(onlineParam);
   }
-  const { orders: onlineOrders, refresh: refreshOnlineOrders } = useOnlineOrderTickets(onlineOrdersEnabled);
+  const { orders: onlineOrders, refresh: refreshOnlineOrders, awaiting: onlineAwaiting } = useOnlineOrderTickets(onlineOrdersEnabled);
+  // ออเดอร์ออนไลน์รอรับที่ยังไม่มีใครแตะดู → แถบเตือน + เสียงซ้ำ (แคชเชียร์ไม่มีสิทธิ์เห็นแจ้งเตือนกลาง)
+  const [ackOnlineIds, setAckOnlineIds] = useState<string[]>([]);
+  const unackOnline = onlineAwaiting.filter((o) => !ackOnlineIds.includes(o.id));
+  useRepeatingAlert(onlineOrdersEnabled && unackOnline.length > 0, "order", { announcement: "มีออเดอร์ออนไลน์ใหม่" });
+  const openOnlineOrder = (id: string) => {
+    setAckOnlineIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setOnlineFocusId(id);
+  };
   const focusedOnlineOrder = onlineFocusId ? (onlineOrders.find((o) => o.id === onlineFocusId) ?? null) : null;
   /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
@@ -6302,7 +6311,7 @@ export function PosTerminal({
         {/* อยู่นอก TicketPanel: ตั๋วที่บันทึกล็อกทั้งแผง ~2 วิ ตอนซิงค์ — ตั๋วออนไลน์ไม่เกี่ยว ต้องกดได้ทันที */}
         {onlineOrdersEnabled && onlineOrders.length > 0 && (
           <div className="mb-4">
-            <OnlineOrderTicketList orders={onlineOrders} onOpen={(id) => setOnlineFocusId(id)} />
+            <OnlineOrderTicketList orders={onlineOrders} onOpen={openOnlineOrder} />
           </div>
         )}
         <TicketPanel
@@ -6330,6 +6339,7 @@ export function PosTerminal({
         />
       </PosUtilitySheet>
 
+      {onlineOrdersEnabled && <OnlineOrderAlertBanner orders={unackOnline} onOpen={openOnlineOrder} />}
       {focusedOnlineOrder && (
         <OnlineOrderTicketDialog
           key={focusedOnlineOrder.id}

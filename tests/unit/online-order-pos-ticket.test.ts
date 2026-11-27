@@ -38,7 +38,7 @@ describe("R1 ตั๋วออนไลน์ใน POS — หน้า POS", 
   });
 
   it("แถบตั๋วมีหมวดออนไลน์ และนับรวมในป้ายจำนวนตั๋ว", () => {
-    expect(terminal).toContain("<OnlineOrderTicketList orders={onlineOrders} onOpen={(id) => setOnlineFocusId(id)} />");
+    expect(terminal).toContain("<OnlineOrderTicketList orders={onlineOrders} onOpen={openOnlineOrder} />");
     // อยู่นอก TicketPanel (fieldset ล็อกตอนซิงค์ตั๋วที่บันทึก)
     expect(terminal.indexOf("<OnlineOrderTicketList")).toBeLessThan(terminal.search(/<TicketPanel\s/));
     expect(terminal.match(/savedTicketCount=\{savedTickets\.length \+ onlineOrders\.length\}/g)?.length).toBe(2);
@@ -81,5 +81,22 @@ describe("R1 ตั๋วออนไลน์ใน POS — หน้า POS", 
 
   it("หน้า สั่งออนไลน์: รับแล้วพาไปตั๋วใน POS", () => {
     expect(read("src/app/(dashboard)/website/orders/OnlineOrdersBoard.tsx")).toContain("router.push(`/pos?online=${o.id}`)");
+  });
+});
+
+describe("แคชเชียร์ต้องรู้ว่ามีออเดอร์ออนไลน์ (พบจากทดสอบจริง 2026-11-27)", () => {
+  it("POS ถามออเดอร์รอรับทุก 15 วิ ผ่าน action ที่แคชเชียร์ใช้ได้ (ไม่ต้อง reports.view)", () => {
+    const t = read("src/app/pos/OnlineOrderTickets.tsx");
+    expect(t).toContain("PENDING_POLL_MS = 15_000");
+    expect(t).toContain("pendingOnlineOrdersAction()");
+    const a = read("src/app/(dashboard)/website/orders/actions.ts");
+    const fn = a.slice(a.indexOf("export async function pendingOnlineOrdersAction"));
+    expect(fn).toContain('resolved.can("orders.manage_qr")');
+    expect(fn).not.toContain("reports.view");
+  });
+  it("แถบเตือน + เสียงซ้ำจนกว่าจะแตะเปิด", () => {
+    const p = read("src/app/pos/PosTerminal.tsx");
+    expect(p).toContain('useRepeatingAlert(onlineOrdersEnabled && unackOnline.length > 0, "order"');
+    expect(p).toContain("<OnlineOrderAlertBanner orders={unackOnline} onOpen={openOnlineOrder} />");
   });
 });
