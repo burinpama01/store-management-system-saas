@@ -88,13 +88,29 @@ describe("ประวัติสั่งซื้อสมาชิก", () =
     expect(page).toContain("getMemberOrderLines(site.storeId, member.phone, reorderId)");
   });
 
-  it("หน้าประวัติอยู่ใต้ /member/<slug>/orders ต้องล็อกอินสมาชิก + มีปุ่มสั่งอีกครั้ง", () => {
-    const page = read("src/app/member/[storeSlug]/orders/page.tsx");
-    expect(page).toContain("const member = await getMemberSessionByStoreId(site.storeId);");
+  it("ประวัติการสั่งเป็นแท็บในหน้าสั่งออนไลน์ (ไม่มีปุ่มแยกในหน้าสมาชิก) + ลิงก์เดิม /orders พาไปแท็บประวัติ", () => {
+    const app = read("src/app/s/[slug]/order/OrderApp.tsx");
+    expect(app).toContain('{v === "order" ? "สั่งอาหาร" : "ประวัติการสั่ง"}');
+    expect(app).toContain("<MemberHistoryList history={props.memberHistory}");
+    expect(app).toContain("{count > 0 && view === \"order\" && (");
+    const page = read("src/app/member/[storeSlug]/order/page.tsx");
+    expect(page).toContain("history = await listMemberOnlineOrders(site.storeId, member.phone)");
+    expect(page).toContain("reorderBaseHref: `${orderBase}reorder=`");
+    expect(read("src/app/member/[storeSlug]/MemberPortal.tsx")).not.toContain('key: "history"');
+    expect(read("src/app/member/[storeSlug]/orders/page.tsx")).toContain("view=history");
+  });
+
+  it("กลับหน้าสมาชิกต้องพก ?code= (QR ของร้าน) — ไม่งั้นขึ้น ต้องเปิดจาก QR ของร้าน", () => {
+    const page = read("src/app/member/[storeSlug]/order/page.tsx");
+    expect(page).toContain('const memberHref = `/member/${slugPart}${codeQs ? `?${codeQs}` : ""}`;');
+    expect(page).toContain("backHref: memberHref");
     expect(page).toContain("if (!member) redirect(memberHref);");
-    expect(page).toContain("/order?reorder=");
-    expect(read("src/app/member/[storeSlug]/MemberPortal.tsx")).toContain('{ key: "history", icon: "🧾", label: "ประวัติสั่ง"');
-    expect(read("src/app/member/[storeSlug]/page.tsx")).toContain("orderHistoryHref={onlineOrderHref ? `/member/${encodeURIComponent(storeSlug)}/orders` : null}");
+  });
+
+  it("หน้าติดตาม: ปุ่มกลับไปประวัติรับเฉพาะลิงก์ /member/<slug>/order?... (กัน open redirect)", () => {
+    const page = read("src/app/s/[slug]/order/t/[token]/page.tsx");
+    expect(page).toContain("/^\\/member\\/[A-Za-z0-9%_-]+\\/order\\?[A-Za-z0-9%_=&-]*$/.test(back)");
+    expect(read("src/app/s/[slug]/order/t/[token]/TrackingClient.tsx")).toContain('{backHref ? "กลับไปประวัติการสั่ง" : "กลับหน้าร้าน"}');
   });
 
   it("หน้าติดตาม: คำขอค้าง (iOS ล็อกจอ) ไม่ล็อกการรีเฟรชถาวร + กลับมาที่หน้าแล้วถามสถานะทันที", () => {

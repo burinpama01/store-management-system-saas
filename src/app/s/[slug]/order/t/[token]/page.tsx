@@ -9,7 +9,16 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
-export default async function OnlineOrderTrackingPage({ params }: { params: Promise<{ slug: string; token: string }> }) {
+export default async function OnlineOrderTrackingPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string; token: string }>;
+  searchParams: Promise<{ back?: string | string[] }>;
+}) {
   const { slug, token } = await params;
-  return <TrackingClient slug={slug} token={token} />;
+  const { back } = await searchParams;
+  // รับเฉพาะลิงก์ภายในหน้าสมาชิก กัน open redirect
+  const backHref = typeof back === "string" && /^\/member\/[A-Za-z0-9%_-]+\/order\?[A-Za-z0-9%_=&-]*$/.test(back) && back.length <= 300 ? back : null;
+  return <TrackingClient slug={slug} token={token} backHref={backHref} />;
 }

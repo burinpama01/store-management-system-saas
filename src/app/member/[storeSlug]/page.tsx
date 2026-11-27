@@ -52,13 +52,13 @@ export default async function CustomerMemberPage({
   if (portalData.store && portalData.customer) {
     const site = await websiteSlugForStoreSlug(storeSlug).catch(() => null);
     const ordering = site ? await resolveOrderingStore(site.websiteSlug).catch(() => null) : null;
-    if (ordering?.ok) onlineOrderHref = `/member/${encodeURIComponent(storeSlug)}/order`;
+    // พก ?code= (QR ของร้าน) ไปด้วย — หน้าสมาชิกต้องมี code ไม่งั้นขึ้น "ต้องเปิดจาก QR ของร้าน" ตอนกดกลับ
+    if (ordering?.ok) onlineOrderHref = `/member/${encodeURIComponent(storeSlug)}/order${portalCode ? `?code=${encodeURIComponent(portalCode)}` : ""}`;
   }
 
   return (
     <MemberPortal
       onlineOrderHref={onlineOrderHref}
-      orderHistoryHref={onlineOrderHref ? `/member/${encodeURIComponent(storeSlug)}/orders` : null}
       storeSlug={storeSlug}
       portalCode={portalCode}
       claimCode={typeof claim === "string" ? claim.trim().toUpperCase() : null}

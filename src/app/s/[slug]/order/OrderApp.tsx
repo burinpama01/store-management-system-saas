@@ -7,6 +7,10 @@ import { useMemo, useState, useTransition } from "react";
 import type { OnlineMenuProduct } from "@/modules/online-orders/menu";
 import { normalizeThaiPhone } from "@/modules/online-orders/core";
 import type { ReorderCartItem } from "@/modules/online-orders/reorder";
+import type { MemberOrderSummary } from "@/modules/online-orders/member-history";
+
+/** ประวัติการสั่งของสมาชิก (แท็บในหน้าสั่ง) — orders null = โหลดไม่สำเร็จ */
+type MemberHistoryProp = { orders: MemberOrderSummary[] | null; trackingBaseHref: string; reorderBaseHref: string };
 import { quoteOnlineOrderAction, startOnlineOrderAction, type QuoteResult, requestCodOtpAction } from "./actions";
 
 type CartItem = ReorderCartItem;
@@ -35,7 +39,9 @@ export function OrderApp(props: {
   /** R3: ร้านเปิดเก็บเงินปลายทาง (ส่งถึงบ้าน) */
   cod?: { maxPerBill: number; requireOtp: boolean } | null;
   /** สั่งจากหน้าสมาชิก: กรอกชื่อ/เบอร์ให้ · ใช้เบอร์นี้ไม่ต้องขอ OTP (server ตรวจซ้ำ) */
-  member?: { name: string; phone: string; backHref: string } | null;
+  member?: { name: string; phone: string; backHref: string; historyHref: string } | null;
+  memberHistory?: MemberHistoryProp | null;
+  initialView?: "order" | "history";
   /** สั่งอีกครั้งจากออเดอร์เดิม (หน้าสมาชิก) — ตะกร้าเริ่มต้น + ข้อความแจ้ง */
   initialCart?: CartItem[];
   reorderNotice?: string | null;
@@ -44,6 +50,7 @@ export function OrderApp(props: {
   const [cart, setCart] = useState<CartItem[]>(() => props.initialCart ?? []);
   const [picking, setPicking] = useState<OnlineMenuProduct | null>(null);
   const [step, setStep] = useState<"menu" | "checkout">("menu");
+  const [view, setView] = useState<"order" | "history">(props.initialView ?? "order");
   const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">(props.pickupEnabled ? "pickup" : "delivery");
   const [name, setName] = useState(props.member?.name ?? "");
   const [phone, setPhone] = useState(props.member?.phone ?? "");
@@ -166,7 +173,8 @@ export function OrderApp(props: {
         setError(res.error ?? "สั่งไม่สำเร็จ");
         return;
       }
-      router.push(`/s/${props.slug}/order/t/${res.token}`);
+      // สมาชิก: หน้าติดตามมีปุ่มกลับไปประวัติการสั่ง
+      router.push(`/s/${props.slug}/order/t/${res.token}${props.member ? `?back=${encodeURIComponent(props.member.historyHref)}` : ""}`);
     });
   };
 
@@ -179,8 +187,26 @@ export function OrderApp(props: {
         </div>
         <Link href={props.member?.backHref ?? `/s/${props.slug}`} className="text-sm text-orange-700">{props.member ? "หน้าสมาชิก" : "หน้าร้าน"}</Link>
       </header>
+      {props.memberHistory && (
+        <div className="grid grid-cols-2 border-b bg-white text-sm" role="tablist">
+          {(["order", "history"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={view === v}
+              onClick={() => setView(v)}
+              className={`py-2.5 font-semibold ${view === v ? "border-b-2 border-orange-600 text-orange-700" : "text-stone-500"}`}
+            >
+              {v === "order" ? "สั่งอาหาร" : "ประวัติการสั่ง"}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {step === "menu" ? (
+      {view === "history" && props.memberHistory ? (
+        <MemberHistoryList history={props.memberHistory} backHref={props.member?.historyHref ?? null} />
+      ) : step === "menu" ? (
         <div className="space-y-6 p-4">
           {props.reorderNotice && <p className="rounded-lg bg-orange-50 p-3 text-sm text-orange-800">{props.reorderNotice}</p>}
           {props.menu.length === 0 && <p className="text-center text-stone-500">ยังไม่มีเมนูให้สั่ง</p>}
@@ -355,7 +381,7 @@ export function OrderApp(props: {
         </div>
       )}
 
-      {count > 0 && (
+      {count > 0 && view === "order" && (
         <div className="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-md border-t bg-white p-3">
           {step === "menu" ? (
             <button type="button" onClick={() => { setStep("checkout"); refreshQuote(); }} className="w-full rounded-xl bg-orange-600 py-3 font-semibold text-white">
@@ -387,6 +413,53 @@ export function OrderApp(props: {
         />
       )}
     </main>
+  );
+}
+
+const ACTIVE_STATUSES = new Set(["awaiting_payment", "paid", "cod_pending", "accepted", "preparing", "ready", "out_for_delivery"]);
+
+function MemberHistoryList({ history, backHref }: { history: MemberHistoryProp; backHref: string | null }) {
+  if (history.orders === null) {
+    return <p className="m-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">โหลดประวัติไม่สำเร็จ ลองใหม่อีกครั้ง</p>;
+  }
+  if (history.orders.length === 0) {
+    return <p className="m-4 rounded-xl border bg-white p-6 text-center text-sm text-stone-600">ยังไม่มีประวัติสั่งออนไลน์</p>;
+  }
+  const backQs = backHref ? `?back=${encodeURIComponent(backHref)}` : "";
+  return (
+    <ul className="space-y-3 p-4">
+      {history.orders.map((o) => (
+        <li key={o.id} className="rounded-xl border bg-white p-3 text-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="font-semibold">{o.orderCode}</p>
+              <p className="text-xs text-stone-500">
+                {new Date(o.createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" })}
+                {" · "}
+                {o.fulfillment === "delivery" ? "ส่งถึงบ้าน" : "รับที่ร้าน"}
+                {o.paymentMethod === "cod" ? " · เก็บปลายทาง" : ""}
+              </p>
+            </div>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${ACTIVE_STATUSES.has(o.status) ? "bg-orange-100 text-orange-800" : o.status === "completed" ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600"}`}>
+              {o.statusLabel}
+            </span>
+          </div>
+          <p className="mt-2 line-clamp-2 text-stone-700">{o.itemsText}</p>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="font-bold">{baht(o.total)}</span>
+            <div className="flex gap-2">
+              <Link href={`${history.trackingBaseHref}${encodeURIComponent(o.publicToken)}${backQs}`} className="rounded-lg border px-3 py-1.5">
+                รายละเอียด
+              </Link>
+              {/* โหลดหน้าใหม่ (server ตรวจเจ้าของออเดอร์ + ใส่ตะกร้าตามเมนูปัจจุบัน) */}
+              <a href={`${history.reorderBaseHref}${encodeURIComponent(o.id)}`} className="rounded-lg bg-orange-600 px-3 py-1.5 font-semibold text-white">
+                สั่งอีกครั้ง
+              </a>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
