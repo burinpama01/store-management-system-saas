@@ -200,3 +200,51 @@ export function resolveCustomerDisplayAdSlots(
   const slides = [...top, ...bottom];
   return slides.length > 0 ? [{ key: "single", label: "โปรโมชัน", slides }] : [];
 }
+
+// ── จอลูกค้าว่าง → โฆษณาเต็มจอ ─────────────────────────────────────────────
+
+/** ไม่มีการทำรายการนานเท่านี้ จอลูกค้าสลับเป็นโฆษณาเต็มจอ (600 วินาที = 10 นาที) */
+export const CUSTOMER_DISPLAY_IDLE_AD_MS = 600 * 1000;
+
+/** ข้อมูลจาก POS ที่จอใช้ตัดสินว่ามีการทำรายการหรือไม่ (ส่วนหนึ่งของ CustomerDisplaySnapshot) */
+export interface CustomerDisplayActivitySource {
+  status: "idle" | "scanning" | "checkout" | "paid";
+  items: ReadonlyArray<{ name: string; quantity: number; totalPrice: number }>;
+  total: number;
+  payment?: { amount: number } | null;
+  customer?: { name?: string } | null;
+  customerName?: string;
+}
+
+/**
+ * ลายเซ็นของ "การทำรายการ" — เปลี่ยนเมื่อสถานะ/ตะกร้า/ยอด/QR/ลูกค้าเปลี่ยนเท่านั้น
+ * POS อาจส่งสถานะเดิมซ้ำ (re-render) — ข้อความซ้ำที่เนื้อหาเท่าเดิมไม่นับเป็นการทำรายการ
+ */
+export function customerDisplayActivityKey(snapshot: CustomerDisplayActivitySource | null | undefined): string {
+  if (!snapshot) return "none";
+  return JSON.stringify([
+    snapshot.status,
+    snapshot.total,
+    snapshot.items.map((item) => [item.name, item.quantity, item.totalPrice]),
+    snapshot.payment?.amount ?? null,
+    snapshot.customer?.name ?? snapshot.customerName ?? null,
+  ]);
+}
+
+/**
+ * เข้าโหมดโฆษณาเต็มจอได้เฉพาะตอนไม่มีลูกค้ากำลังทำรายการ
+ * (ว่าง / จ่ายเสร็จแล้ว / ยังไม่เคยได้ข้อมูลจาก POS) — ตะกร้าค้างหรือรอจ่าย QR ห้ามบังรายการ
+ */
+export function canEnterCustomerDisplayIdleAd(snapshot: CustomerDisplayActivitySource | null | undefined): boolean {
+  if (!snapshot) return true;
+  return snapshot.status === "idle" || snapshot.status === "paid";
+}
+
+/** โหมดเต็มจอรวมสไลด์ทุกช่องที่เปิดไว้เป็นชุดเดียว */
+export function resolveCustomerDisplayFullscreenSlides(
+  settings: CustomerDisplaySettings,
+  failedUrls: ReadonlySet<string> = new Set(),
+): CustomerDisplayAdSlotView | null {
+  const [slot] = resolveCustomerDisplayAdSlots({ ...settings, adLayout: "single" }, failedUrls);
+  return slot ? { ...slot, label: "โฆษณาเต็มจอ" } : null;
+}

@@ -5,11 +5,15 @@ import {
   CUSTOMER_DISPLAY_IMAGE_MAX_BYTES,
   CUSTOMER_DISPLAY_VIDEO_MAX_BYTES,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
+  CUSTOMER_DISPLAY_IDLE_AD_MS,
   CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS,
+  canEnterCustomerDisplayIdleAd,
+  customerDisplayActivityKey,
   customerDisplaySettingsSignature,
   customerDisplaySlideDwellMs,
   customerDisplayUploadSizeError,
   resolveCustomerDisplayAdSlots,
+  resolveCustomerDisplayFullscreenSlides,
   type CustomerDisplayAdSlide,
   type CustomerDisplaySettings,
 } from "@/modules/settings/customer-display";
@@ -110,6 +114,42 @@ describe("customerDisplaySlideDwellMs", () => {
   });
 });
 
+describe("idle fullscreen ad mode", () => {
+  const idle = { status: "idle" as const, items: [], total: 0 };
+  const scanning = {
+    status: "scanning" as const,
+    items: [{ name: "ลาเต้", quantity: 1, totalPrice: 60 }],
+    total: 60,
+  };
+
+  it("switches after 600 seconds", () => {
+    expect(CUSTOMER_DISPLAY_IDLE_AD_MS).toBe(600_000);
+  });
+
+  it("only enters when no customer is mid-transaction", () => {
+    expect(canEnterCustomerDisplayIdleAd(null)).toBe(true);
+    expect(canEnterCustomerDisplayIdleAd(idle)).toBe(true);
+    expect(canEnterCustomerDisplayIdleAd({ ...scanning, status: "paid" })).toBe(true);
+    expect(canEnterCustomerDisplayIdleAd(scanning)).toBe(false);
+    expect(canEnterCustomerDisplayIdleAd({ ...scanning, status: "checkout" })).toBe(false);
+  });
+
+  it("treats repeated identical POS messages as no activity", () => {
+    expect(customerDisplayActivityKey({ ...idle })).toBe(customerDisplayActivityKey({ ...idle }));
+    expect(customerDisplayActivityKey(scanning)).not.toBe(customerDisplayActivityKey(idle));
+    expect(
+      customerDisplayActivityKey({ ...scanning, items: [{ name: "ลาเต้", quantity: 2, totalPrice: 120 }], total: 120 }),
+    ).not.toBe(customerDisplayActivityKey(scanning));
+  });
+
+  it("merges every enabled slot into one fullscreen rotation", () => {
+    const slot = resolveCustomerDisplayFullscreenSlides(settings({ adLayout: "split" }));
+    expect(slot?.slides).toHaveLength(3);
+    expect(resolveCustomerDisplayFullscreenSlides(settings({ adEnabled: false }))).toBeNull();
+    expect(resolveCustomerDisplayFullscreenSlides(settings({ topSlides: [], bottomSlides: [] }))).toBeNull();
+  });
+});
+
 describe("customer display screen wiring", () => {
   const screen = read("src/app/pos/grocery/display/CustomerDisplayScreen.tsx");
   const route = read("src/app/api/pos/customer-display/settings/route.ts");
@@ -127,6 +167,14 @@ describe("customer display screen wiring", () => {
     expect(screen).toContain("loop={!rotates}");
     expect(screen).toContain("onLoadedMetadata");
     expect(screen).toContain("customerDisplaySlideDwellMs(slide, intervalSeconds, videoDurationMs)");
+  });
+
+  it("shows fullscreen ads after idle and returns on POS activity or touch", () => {
+    expect(screen).toContain("idleAdMs = CUSTOMER_DISPLAY_IDLE_AD_MS");
+    expect(screen).toContain("canEnterCustomerDisplayIdleAd(snapshot)");
+    expect(screen).toContain("activityKey !== activityKeyRef.current");
+    expect(screen).toContain('window.addEventListener("pointerdown", onPointer)');
+    expect(screen).toContain("customer-display-idle-ad");
   });
 
   it("skips and reports broken media", () => {

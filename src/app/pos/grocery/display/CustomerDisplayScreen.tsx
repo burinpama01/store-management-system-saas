@@ -12,11 +12,15 @@ import {
   type CustomerDisplaySnapshot,
 } from "@/modules/grocery-pos/customer-display";
 import {
+  CUSTOMER_DISPLAY_IDLE_AD_MS,
   CUSTOMER_DISPLAY_REFRESH_MS,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
+  canEnterCustomerDisplayIdleAd,
+  customerDisplayActivityKey,
   customerDisplaySettingsSignature,
   customerDisplaySlideDwellMs,
   resolveCustomerDisplayAdSlots,
+  resolveCustomerDisplayFullscreenSlides,
   type CustomerDisplayAdSlide,
   type CustomerDisplayAdSlotView,
   type CustomerDisplaySettings,
@@ -125,7 +129,14 @@ function CustomerDisplayAdRotator({
   );
 }
 
-export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDisplaySettings | null }) {
+export function CustomerDisplayScreen({
+  adSettings,
+  idleAdMs = CUSTOMER_DISPLAY_IDLE_AD_MS,
+}: {
+  adSettings?: CustomerDisplaySettings | null;
+  /** เวลาว่างก่อนสลับเป็นโฆษณาเต็มจอ (ค่าเริ่มต้น 600 วิ) */
+  idleAdMs?: number;
+}) {
   const [snapshot, setSnapshot] = useState<CustomerDisplaySnapshot | null>(null);
   const [paidFlash, setPaidFlash] = useState<CustomerDisplayPaidFlash | null>(null);
   const pendingPaymentRef = useRef<CustomerDisplayPayment | null>(null);
@@ -143,6 +154,18 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
     [effectiveAdSettings, failedMediaUrls],
   );
   const showAdPanel = adSlots.length > 0;
+  const fullscreenSlot = useMemo(
+    () => resolveCustomerDisplayFullscreenSlides(effectiveAdSettings, failedMediaUrls),
+    [effectiveAdSettings, failedMediaUrls],
+  );
+  // ไม่มีการทำรายการ 600 วิ → โฆษณาเต็มจอ; POS ขยับ/แตะจอ → กลับหน้ารายการทันที
+  const [idleAdActive, setIdleAdActive] = useState(false);
+  const [activityTick, setActivityTick] = useState(0);
+  const activityKeyRef = useRef(customerDisplayActivityKey(null));
+  const markActivity = useCallback(() => {
+    setIdleAdActive(false);
+    setActivityTick((tick) => tick + 1);
+  }, []);
   // จอลูกค้าเปิดค้างทั้งวัน — กันเครื่องพักจอ (เครื่องที่ไม่รองรับจะข้ามเอง)
   useWakeLock(true);
 
@@ -222,9 +245,14 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
         setPaidFlash(null);
       }
       setSnapshot(next);
+      const activityKey = customerDisplayActivityKey(next);
+      if (activityKey !== activityKeyRef.current) {
+        activityKeyRef.current = activityKey;
+        markActivity();
+      }
     };
     return () => channel.close();
-  }, []);
+  }, [markActivity]);
 
   // หน้า "ชำระเงินสำเร็จ" ปิดเองหลัง 5 วิ
   useEffect(() => {
@@ -237,6 +265,22 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
   const items = snapshot?.items ?? [];
   // QR ยังโชว์ต่อแม้ POS ส่ง checkout ซ้ำโดยไม่มี QR (ยอดเท่าเดิม)
   const payment = snapshot?.status === "checkout" ? (snapshot.payment ?? pendingPayment ?? undefined) : undefined;
+  const idleAdEligible = Boolean(fullscreenSlot) && !payment && !paidFlash && canEnterCustomerDisplayIdleAd(snapshot);
+  const showIdleAd = idleAdActive && idleAdEligible;
+
+  useEffect(() => {
+    if (!idleAdEligible) return;
+    const timer = window.setTimeout(() => setIdleAdActive(true), idleAdMs);
+    return () => window.clearTimeout(timer);
+  }, [idleAdEligible, activityTick, idleAdMs]);
+
+  // ลูกค้า/พนักงานแตะจอระหว่างโฆษณาเต็มจอ = กลับหน้ารายการและเริ่มนับใหม่
+  useEffect(() => {
+    if (!showIdleAd) return;
+    const onPointer = () => markActivity();
+    window.addEventListener("pointerdown", onPointer);
+    return () => window.removeEventListener("pointerdown", onPointer);
+  }, [showIdleAd, markActivity]);
   const customer = snapshot?.customer ?? (snapshot?.customerName ? { name: snapshot.customerName } : undefined);
   const hasCustomerPoints = customer?.pointsEarned !== undefined || customer?.pointsBalance !== undefined;
   const statusText = useMemo(() => {
@@ -321,6 +365,17 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           </aside>
         ) : null}
       </section>
+
+      {showIdleAd && fullscreenSlot ? (
+        <section className="customer-display-idle-ad" aria-label="โฆษณาเต็มจอ">
+          <CustomerDisplayAdRotator
+            key={`idle:${adSignature}`}
+            slot={fullscreenSlot}
+            intervalSeconds={effectiveAdSettings.slideIntervalSeconds}
+            onMediaError={handleMediaError}
+          />
+        </section>
+      ) : null}
 
       {payment ? (
         <section
@@ -528,7 +583,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
         .customer-display-ad-split {
           grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
         }
-        .customer-display-ad-slot {
+        .customer-display :global(.customer-display-ad-slot) {
           position: relative;
           display: grid;
           align-content: end;
@@ -539,7 +594,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
             linear-gradient(155deg, color-mix(in srgb, var(--color-brand) 72%, #0f172a) 0%, #1f2937 58%, #111827 100%);
           padding: 24px;
         }
-        .customer-display-ad-slot::before {
+        .customer-display :global(.customer-display-ad-slot::before) {
           content: "";
           position: absolute;
           inset: 18px 18px auto auto;
@@ -548,46 +603,66 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
           border-radius: 50%;
         }
-        .customer-display-ad-media {
+        .customer-display :global(.customer-display-ad-media) {
           position: absolute;
           inset: 0;
           width: 100%;
           height: 100%;
           background: #111827;
         }
-        .customer-display-ad-media--cover {
+        .customer-display :global(.customer-display-ad-media--cover) {
           object-fit: cover;
         }
-        .customer-display-ad-media--contain {
+        .customer-display :global(.customer-display-ad-media--contain) {
           object-fit: contain;
         }
-        .customer-display-ad-content {
+        .customer-display :global(.customer-display-ad-content) {
           position: relative;
           z-index: 1;
           display: grid;
           gap: 12px;
         }
-        .customer-display-ad-content--overlay {
+        .customer-display :global(.customer-display-ad-content--overlay) {
           border-radius: var(--radius-md);
           background: color-mix(in srgb, #000000 42%, transparent);
           padding: 14px;
           backdrop-filter: blur(4px);
         }
-        .customer-display-ad-content span {
+        .customer-display :global(.customer-display-ad-content span) {
           color: color-mix(in srgb, #ffffff 78%, var(--color-brand));
           font-size: 18px;
           font-weight: 800;
         }
-        .customer-display-ad-content strong {
+        .customer-display :global(.customer-display-ad-content strong) {
           max-width: 12ch;
           font-size: 44px;
           line-height: 1.05;
         }
-        .customer-display-ad-content p {
+        .customer-display :global(.customer-display-ad-content p) {
           max-width: 28ch;
           margin: 0;
           color: color-mix(in srgb, #ffffff 82%, var(--color-brand));
           font-size: 20px;
+        }
+        .customer-display-idle-ad {
+          position: fixed;
+          inset: 0;
+          z-index: 15;
+          display: grid;
+          background: #000000;
+          animation: customer-display-idle-in 400ms ease-out;
+        }
+        .customer-display-idle-ad :global(.customer-display-ad-slot) {
+          border-radius: 0;
+          padding: 40px;
+        }
+        @keyframes customer-display-idle-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
         }
         .customer-display-qr-layer {
           position: fixed;
@@ -705,7 +780,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           .customer-display-ad-panel {
             min-height: 260px;
           }
-          .customer-display-ad-content strong {
+          .customer-display :global(.customer-display-ad-content strong) {
             max-width: 18ch;
             font-size: 36px;
           }
@@ -741,7 +816,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           .customer-display-ad-panel {
             padding: 10px;
           }
-          .customer-display-ad-slot {
+          .customer-display :global(.customer-display-ad-slot) {
             padding: 18px;
           }
           .customer-display-qr-dialog {
