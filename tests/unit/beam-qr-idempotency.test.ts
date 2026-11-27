@@ -8,7 +8,7 @@ const create = src.slice(src.indexOf("export async function createBeamQrPayment"
 
 describe("createBeamQrPayment — กดซ้ำ/เรียกพร้อมกันไม่ทำให้ QR ที่ใช้ได้กลายเป็น FAILED", () => {
   it("มี charge + payload แล้ว → คืน QR เดิม ไม่ยิง Beam ซ้ำ", () => {
-    const reuse = create.indexOf("if (row.provider_payment_id && row.injected_emv_payload) {");
+    const reuse = create.indexOf("if (row.provider_payment_id && row.injected_emv_payload && notExpired) {");
     expect(reuse).toBeGreaterThan(0);
     expect(reuse).toBeLessThan(create.indexOf("const charge = await createBeamQrCharge({"));
   });

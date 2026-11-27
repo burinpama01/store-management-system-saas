@@ -405,7 +405,11 @@ export async function createBeamQrPayment(input: {
     }
     // สร้าง QR กับ Beam สำเร็จไปแล้ว (มี charge + payload) → ใช้ของเดิม ไม่ยิง Beam ซ้ำ
     // (หน้าสั่ง + หน้าติดตามเรียกพร้อมกันได้ — เดิมรอบที่สองโดน 412 แล้วรายการถูกตั้ง FAILED ทั้งที่ QR ใช้ได้)
-    if (row.provider_payment_id && row.injected_emv_payload) {
+    // QR แบบภาพ (ไม่มี EMV) ไม่ได้เก็บรูปไว้ → ยิง Beam ซ้ำด้วย payload เดิม (requestedExpiresAt) ได้ charge เดิมพร้อมรูป
+    // QR หมดอายุแล้ว (แต่สถานะยังไม่อัปเดต) → ไม่คืนของเดิม ให้ไปทางปกติ
+    const reuseExpiry = typeof row.metadata?.expiresAt === "string" ? Date.parse(row.metadata.expiresAt) : NaN;
+    const notExpired = !Number.isFinite(reuseExpiry) || reuseExpiry > Date.now();
+    if (row.provider_payment_id && row.injected_emv_payload && notExpired) {
       return { ok: true, qr: toPosView(row, null) };
     }
   } else {
