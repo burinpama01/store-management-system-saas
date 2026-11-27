@@ -403,6 +403,15 @@ export async function createBeamQrPayment(input: {
       if (row.status === "PAID") return { ok: true, qr: toPosView(row, null) };
       return { ok: false, error: "QR นี้หมดอายุหรือถูกยกเลิกแล้ว — กรุณาสร้างรายการใหม่" };
     }
+    // สร้าง QR กับ Beam สำเร็จไปแล้ว (มี charge + payload) → ใช้ของเดิม ไม่ยิง Beam ซ้ำ
+    // (หน้าสั่ง + หน้าติดตามเรียกพร้อมกันได้ — เดิมรอบที่สองโดน 412 แล้วรายการถูกตั้ง FAILED ทั้งที่ QR ใช้ได้)
+    // QR แบบภาพ (ไม่มี EMV) ไม่ได้เก็บรูปไว้ → ยิง Beam ซ้ำด้วย payload เดิม (requestedExpiresAt) ได้ charge เดิมพร้อมรูป
+    // QR หมดอายุแล้ว (แต่สถานะยังไม่อัปเดต) → ไม่คืนของเดิม ให้ไปทางปกติ
+    const reuseExpiry = typeof row.metadata?.expiresAt === "string" ? Date.parse(row.metadata.expiresAt) : NaN;
+    const notExpired = !Number.isFinite(reuseExpiry) || reuseExpiry > Date.now();
+    if (row.provider_payment_id && row.injected_emv_payload && notExpired) {
+      return { ok: true, qr: toPosView(row, null) };
+    }
   } else {
     const expiresAt = new Date(Date.now() + QR_TTL_MS).toISOString();
     const { data: inserted, error } = await supabase
@@ -425,6 +434,9 @@ export async function createBeamQrPayment(input: {
           channel: "qr_promptpay",
           environment: config.environment,
           expiresAt,
+          // ค่าที่ส่งให้ Beam จริง — metadata.expiresAt ถูกทับด้วยค่าที่ Beam ตอบ (คนละรูปแบบ)
+          // retry ต้องส่ง payload เดิมเป๊ะ ไม่งั้น Beam ตอบ 412 (idempotency key ซ้ำแต่ payload ต่าง)
+          requestedExpiresAt: expiresAt,
           createdBy: input.actorUserId,
           ...(input.musicRequestId ? { purpose: "music_request" } : {}),
           ...(input.prepaidPassPurchaseId ? { purpose: "prepaid_pass" } : {}),
@@ -440,9 +452,11 @@ export async function createBeamQrPayment(input: {
   }
 
   const expiresAt =
-    typeof row.metadata?.expiresAt === "string"
-      ? row.metadata.expiresAt
-      : new Date(Date.now() + QR_TTL_MS).toISOString();
+    typeof row.metadata?.requestedExpiresAt === "string"
+      ? row.metadata.requestedExpiresAt
+      : typeof row.metadata?.expiresAt === "string"
+        ? row.metadata.expiresAt
+        : new Date(Date.now() + QR_TTL_MS).toISOString();
   // Same idempotency key on a retry → Beam returns the same charge (12 h window).
   const charge = await createBeamQrCharge({
     environment: config.environment,
@@ -454,6 +468,16 @@ export async function createBeamQrPayment(input: {
   });
 
   if (!charge.ok) {
+    // อีกคำขอสร้าง QR สำเร็จไปพร้อมกัน (Beam ตอบ 412 idempotency) → ใช้ QR นั้น ห้ามตั้ง FAILED
+    const { data: latest } = await supabase
+      .from("gateway_payments")
+      .select(GATEWAY_COLUMNS)
+      .eq("id", row.id)
+      .maybeSingle();
+    const winner = latest as BeamGatewayRow | null;
+    if (winner?.provider_payment_id && winner.injected_emv_payload && OPEN_STATUSES.includes(winner.status as GatewayPaymentStatus)) {
+      return { ok: true, qr: toPosView(winner, null) };
+    }
     await supabase
       .from("gateway_payments")
       .update({ status: "FAILED", failure_message: charge.error, updated_at: new Date().toISOString() })
