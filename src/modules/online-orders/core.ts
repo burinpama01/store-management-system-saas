@@ -38,8 +38,8 @@ export const STATUS_LABEL: Record<OnlineOrderStatus, string> = {
 };
 
 export type OnlinePaymentMethod = "beam" | "cod";
-/** วิธีรับเงินปลายทางตอนส่งสำเร็จ (R3a: เงินสด/โอน · Beam QR = R3b) */
-export type CodCollectMethod = "cash" | "bank_transfer";
+/** วิธีรับเงินปลายทางตอนส่งสำเร็จ — เงินสด/โอน (R3a) · Beam QR บนมือถือคนส่ง (R3b) */
+export type CodCollectMethod = "cash" | "bank_transfer" | "beam";
 
 /** สถานะถัดไปที่ร้านกดได้ (รับออเดอร์ = accept ทำในเส้นทางพิเศษเพราะต้องสร้างบิล) */
 export function nextStatuses(

@@ -9,10 +9,12 @@ import { nextStatuses, type CodCollectMethod, type OnlineOrderStatus } from "@/m
 import type { Printer } from "@/modules/stores/types";
 import { printKitchenForOrder, type StationPrinter } from "../(dashboard)/delivery/print-kitchen";
 import { RiderPicker } from "../(dashboard)/website/orders/RiderPicker";
-import { CodCollectPicker, CodFailButton } from "../(dashboard)/website/orders/CodControls";
+import { CodBeamQrPanel, CodCollectPicker, CodFailButton } from "../(dashboard)/website/orders/CodControls";
 import {
   acceptOnlineOrderAction,
+  checkCodQrAction,
   settleCodCashAction,
+  startCodQrAction,
   listOnlineOrdersAction,
   updateOnlineOrderStatusAction,
   type OnlineOrderVM,
@@ -165,6 +167,7 @@ export function OnlineOrderTicketDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [pickingRider, setPickingRider] = useState(false);
   const [pickingCod, setPickingCod] = useState(false);
+  const [beamOpen, setBeamOpen] = useState(false);
   const isCod = order.paymentMethod === "cod";
 
   const printKitchen = async (orderId: string, billNumber: string) =>
@@ -202,6 +205,10 @@ export function OnlineOrderTicketDialog({
     }
     setPickingRider(false);
     setPickingCod(false);
+    if (to === "completed" && codMethod === "beam") {
+      setBeamOpen(true);
+      return;
+    }
     return run(async () => {
       const res = await updateOnlineOrderStatusAction(order.id, to, reason, riderUserId, codMethod);
       if (!res.ok) return res.error;
@@ -342,6 +349,20 @@ export function OnlineOrderTicketDialog({
           )}
         </div>
         <p className="mt-3 text-[11px] text-gray-400">ยกเลิก/คืนเงิน ทำที่หน้า สั่งออนไลน์ (ต้องยืนยันการโอนคืน)</p>
+        {beamOpen && (
+          <CodBeamQrPanel
+            orderCode={order.orderCode}
+            total={order.total}
+            start={() => startCodQrAction(order.id)}
+            check={(gw) => checkCodQrAction(order.id, gw)}
+            onDone={() => {
+              setBeamOpen(false);
+              setMessage(`ได้รับเงิน Beam ${order.orderCode} แล้ว — ปิดบิลและส่งสำเร็จ`);
+              void onChanged();
+            }}
+            onClose={() => setBeamOpen(false)}
+          />
+        )}
         {pickingCod && (
           <CodCollectPicker
             orderCode={order.orderCode}

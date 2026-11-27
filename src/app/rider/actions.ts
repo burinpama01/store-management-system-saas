@@ -18,6 +18,8 @@ import {
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { computeDeliveryRoute, googleMapsNavUrl, type DeliveryRoute } from "@/modules/online-orders/route-google";
 import { performOnlineOrderTransition, type TransitionActor } from "@/modules/online-orders/transition-service";
+import { settleCodBeamIfPaid, startCodBeamQr } from "@/modules/online-orders/cod-beam";
+import type { BeamQrForPos } from "@/modules/payments/types";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -213,4 +215,25 @@ export async function getRiderRouteAction(
     context: { onlineOrderId: id, fromGps: Boolean(validOrigin) },
   });
   return result;
+}
+
+/** R3b: QR Beam เก็บปลายทางบนมือถือคนส่ง — เฉพาะงานของฉันที่กำลังไปส่ง */
+export async function startRiderCodQrAction(id: string): Promise<{ qr: BeamQrForPos | null; error: string | null }> {
+  const g = await riderGuard();
+  if (g.error !== null) return { qr: null, error: g.error };
+  const { order, error } = await loadMine(g, id);
+  if (!order) return { qr: null, error };
+  if (order.riderUserId !== g.user.id) return { qr: null, error: "งานนี้ไม่ใช่ของคุณ" };
+  return startCodBeamQr(actor(g), order);
+}
+
+/** R3b: ลูกค้าจ่ายแล้วหรือยัง — จ่ายแล้วปิดบิล + ส่งสำเร็จให้เลย */
+export async function checkRiderCodQrAction(id: string, gatewayPaymentId: string): Promise<{ status: string; done: boolean; error: string | null }> {
+  const g = await riderGuard();
+  if (g.error !== null) return { status: "UNKNOWN", done: false, error: g.error };
+  if (!UUID_RE.test(gatewayPaymentId)) return { status: "UNKNOWN", done: false, error: "ไม่พบรายการชำระ" };
+  const { order, error } = await loadMine(g, id);
+  if (!order) return { status: "UNKNOWN", done: false, error };
+  if (order.riderUserId !== g.user.id) return { status: "UNKNOWN", done: false, error: "งานนี้ไม่ใช่ของคุณ" };
+  return settleCodBeamIfPaid(actor(g), order, gatewayPaymentId);
 }

@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { performOnlineOrderTransition, type TransitionActor } from "@/modules/online-orders/transition-service";
+import { settleCodBeamIfPaid, startCodBeamQr } from "@/modules/online-orders/cod-beam";
+import type { BeamQrForPos } from "@/modules/payments/types";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
@@ -437,4 +439,27 @@ export async function settleCodCashAction(id: string): Promise<ActionResult> {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "รับเงินไม่สำเร็จ" };
   }
+}
+
+/** R3b: QR Beam เก็บปลายทาง (หน้าร้าน/POS) */
+export async function startCodQrAction(id: string): Promise<{ qr: BeamQrForPos | null; error: string | null }> {
+  if (!UUID_RE.test(id)) return { qr: null, error: "ไม่พบออเดอร์" };
+  const g = await queueGuard();
+  if (g.error !== null) return { qr: null, error: g.error };
+  if (!g.resolved.can("pos.use")) return { qr: null, error: "ต้องมีสิทธิ์ใช้ POS เพื่อรับเงิน" };
+  const order = await getOnlineOrderForStore(g.ctx.storeId, id);
+  if (!order) return { qr: null, error: "ไม่พบออเดอร์" };
+  return startCodBeamQr(g as unknown as TransitionActor, order);
+}
+
+export async function checkCodQrAction(id: string, gatewayPaymentId: string): Promise<{ status: string; done: boolean; error: string | null }> {
+  if (!UUID_RE.test(id) || !UUID_RE.test(gatewayPaymentId)) return { status: "UNKNOWN", done: false, error: "ไม่พบรายการ" };
+  const g = await queueGuard();
+  if (g.error !== null) return { status: "UNKNOWN", done: false, error: g.error };
+  if (!g.resolved.can("pos.use")) return { status: "UNKNOWN", done: false, error: "ต้องมีสิทธิ์ใช้ POS เพื่อรับเงิน" };
+  const order = await getOnlineOrderForStore(g.ctx.storeId, id);
+  if (!order) return { status: "UNKNOWN", done: false, error: "ไม่พบออเดอร์" };
+  const res = await settleCodBeamIfPaid(g as unknown as TransitionActor, order, gatewayPaymentId);
+  if (res.done) revalidatePath("/website/orders");
+  return res;
 }

@@ -88,11 +88,20 @@ export async function performOnlineOrderTransition(
   // R3: ส่งสำเร็จแบบเก็บปลายทาง — โอน = ปิดบิลทันที · เงินสด = ค้างที่คนส่งจนคืนร้าน (ปิดบิลตอนนั้น)
   const isCod = order.paymentMethod === "cod";
   if (isCod && to === "completed") {
-    if (codMethod !== "cash" && codMethod !== "bank_transfer") return { ok: false, error: "เลือกวิธีรับเงิน (เงินสด/โอน)" };
+    if (codMethod !== "cash" && codMethod !== "bank_transfer" && codMethod !== "beam") {
+      return { ok: false, error: "เลือกวิธีรับเงิน (เงินสด/โอน/Beam)" };
+    }
     if (!can("pos.use")) return { ok: false, error: "ต้องมีสิทธิ์ใช้ POS เพื่อรับเงิน" };
     if (!order.orderId) return { ok: false, error: "ยังไม่มีบิลของออเดอร์นี้ — กดรับออเดอร์ก่อน" };
     patch.cod_collected_method = codMethod;
-    if (codMethod === "bank_transfer") {
+    if (codMethod === "beam") {
+      // ปิดบิลด้วยเงิน Beam มาแล้วในทาง cod-beam (QR บนมือถือคนส่ง) — ที่นี่แค่ยืนยันว่าบิลปิดจริง
+      const service = await createSupabaseServiceClient();
+      const { data: bill } = await service.from("orders").select("status").eq("id", order.orderId).maybeSingle();
+      if (bill?.status !== "paid") return { ok: false, error: "ยังไม่ได้รับเงินผ่าน Beam — ให้ลูกค้าสแกน QR ก่อน" };
+      patch.cod_settled_at = now;
+      patch.cod_settled_by = g.user.id;
+    } else if (codMethod === "bank_transfer") {
       const closed = await addPaymentAndClose(order.orderId, g.ctx.storeId, g.user.id, {
         method: "bank_transfer",
         amount: order.total,
@@ -130,7 +139,7 @@ export async function performOnlineOrderTransition(
   if (isCod && (to === "completed" || to === "delivery_failed")) {
     log(to === "delivery_failed" ? "warn" : "info", to === "completed" ? "codCollect" : "codDeliveryFailed",
       to === "completed"
-        ? `เก็บปลายทาง ${order.orderCode} ฿${order.total} (${codMethod === "cash" ? "เงินสดค้างที่คนส่ง" : "โอน ปิดบิลแล้ว"})`
+        ? `เก็บปลายทาง ${order.orderCode} ฿${order.total} (${codMethod === "cash" ? "เงินสดค้างที่คนส่ง" : codMethod === "beam" ? "Beam QR ปิดบิลแล้ว" : "โอน ปิดบิลแล้ว"})`
         : `เก็บปลายทาง ${order.orderCode} ส่งไม่สำเร็จ: ${String(patch.failure_reason)}`,
       g, { onlineOrderId: id, codMethod: codMethod ?? null, riderUserId: order.riderUserId });
   }

@@ -692,8 +692,10 @@ export async function claimBeamPaymentForOrder(input: {
   gatewayPaymentId: string;
   orderId: string;
   expectedAmount: number;
+  /** service client เมื่อผู้เรียกตรวจสิทธิ์เองแล้ว (เช่น คนส่งตำแหน่ง staff — RLS ให้ update เฉพาะ cashier+) */
+  client?: BeamDb;
 }): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   const { data } = await supabase
     .from("gateway_payments")
     .select(GATEWAY_COLUMNS)
@@ -730,8 +732,9 @@ export async function releaseBeamPaymentClaim(input: {
   storeId: string;
   gatewayPaymentId: string;
   orderId: string;
+  client?: BeamDb;
 }): Promise<void> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   await supabase
     .from("gateway_payments")
     .update({ order_id: null, updated_at: new Date().toISOString() })
@@ -748,8 +751,9 @@ export async function finalizeBeamPaymentForOrder(input: {
   orderId: string;
   posPaymentId: string | null;
   actorUserId: string;
+  client?: BeamDb;
 }): Promise<void> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   await supabase
     .from("gateway_payments")
     .update({ pos_payment_id: input.posPaymentId, updated_at: new Date().toISOString() })

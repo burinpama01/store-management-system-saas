@@ -65,7 +65,8 @@ describe("R4 หน้าคนส่ง — สิทธิ์และเง�
 
   it("ทำได้เฉพาะงานของตัวเอง: รับงานที่ยังไม่มีคนส่ง / ส่งสำเร็จ-ส่งไม่สำเร็จ-ขอเส้นทาง เฉพาะของฉัน", () => {
     expect(actions).toContain('if (order.riderUserId && order.riderUserId !== g.user.id) return { ok: false, error: "มีคนรับงานนี้ไปแล้ว" };');
-    expect(actions.match(/if \(order\.riderUserId !== g\.user\.id\)/g)?.length).toBe(3);
+    // ส่งสำเร็จ / ส่งไม่สำเร็จ / ขอเส้นทาง / QR Beam (สร้าง+ตรวจ)
+    expect(actions.match(/if \(order\.riderUserId !== g\.user\.id\)/g)?.length).toBe(5);
   });
 
   it("กติกาเงินใช้ transition-service เดียวกับหน้าร้าน (ไม่เขียนซ้ำ)", () => {
