@@ -17,7 +17,8 @@ export default async function CustomerMemberPage({
 }) {
   const { storeSlug } = await params;
   const { code, claim } = await searchParams;
-  const portalCode = String(code ?? "");
+  // ?code=A&code=B → string[] — ไม่ใช่ code ที่ถูกต้อง
+  const portalCode = typeof code === "string" ? code.slice(0, 120) : "";
 
   if (storeSlug.length > 100) notFound();
 

@@ -419,6 +419,8 @@ export function OrderApp(props: {
 const ACTIVE_STATUSES = new Set(["awaiting_payment", "paid", "cod_pending", "accepted", "preparing", "ready", "out_for_delivery"]);
 
 function MemberHistoryList({ history, backHref }: { history: MemberHistoryProp; backHref: string | null }) {
+  // สั่งอีกครั้ง = โหลดหน้าใหม่ — กันกดซ้ำ + บอกว่ากำลังเปิด
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   if (history.orders === null) {
     return <p className="m-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">โหลดประวัติไม่สำเร็จ ลองใหม่อีกครั้ง</p>;
   }
@@ -452,8 +454,16 @@ function MemberHistoryList({ history, backHref }: { history: MemberHistoryProp; 
                 รายละเอียด
               </Link>
               {/* โหลดหน้าใหม่ (server ตรวจเจ้าของออเดอร์ + ใส่ตะกร้าตามเมนูปัจจุบัน) */}
-              <a href={`${history.reorderBaseHref}${encodeURIComponent(o.id)}`} className="rounded-lg bg-orange-600 px-3 py-1.5 font-semibold text-white">
-                สั่งอีกครั้ง
+              <a
+                href={`${history.reorderBaseHref}${encodeURIComponent(o.id)}`}
+                onClick={(e) => {
+                  if (loadingId) e.preventDefault();
+                  else setLoadingId(o.id);
+                }}
+                aria-busy={loadingId === o.id}
+                className={`rounded-lg bg-orange-600 px-3 py-1.5 font-semibold text-white ${loadingId ? "opacity-60" : ""}`}
+              >
+                {loadingId === o.id ? "กำลังเปิด…" : "สั่งอีกครั้ง"}
               </a>
             </div>
           </div>
