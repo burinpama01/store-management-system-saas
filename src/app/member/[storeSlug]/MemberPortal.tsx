@@ -319,6 +319,7 @@ export function MemberPortal({
   const quickActions = (
     [
       { key: "order", icon: "🛵", label: "สั่งออนไลน์", badge: 0, show: Boolean(onlineOrderHref), anchor: null },
+      { key: "history", icon: "🧾", label: "ประวัติสั่ง", badge: 0, show: Boolean(onlineOrderHref), anchor: null },
       { key: "missions", icon: "🎯", label: "ภารกิจ", badge: activeMissionCount, show: Boolean(missionsView?.enabled), anchor: null },
       { key: "coupons", icon: "🎟️", label: "คูปอง", badge: readyCouponCount, show: true, anchor: null },
       { key: "member", icon: "☕", label: "แพ็ก", badge: 0, show: hasPasses, anchor: "member-passes" },
@@ -560,6 +561,11 @@ export function MemberPortal({
                           // สั่งออนไลน์ = ไปหน้าสั่งของสมาชิก (ไม่ใช่แท็บในหน้านี้)
                           if (item.key === "order") {
                             if (onlineOrderHref) router.push(onlineOrderHref);
+                            return;
+                          }
+                          if (item.key === "history") {
+                            // /member/<slug>/order → /member/<slug>/orders (cookie สมาชิก path เดียวกัน)
+                            if (onlineOrderHref) router.push(`${onlineOrderHref}s`);
                             return;
                           }
                           go(item.key, item.anchor);

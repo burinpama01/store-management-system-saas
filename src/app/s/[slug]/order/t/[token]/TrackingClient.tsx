@@ -27,13 +27,15 @@ export function TrackingClient({ slug, token }: { slug: string; token: string })
   const [qr, setQr] = useState<{ payload: string | null; image: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const busy = useRef(false);
+  // เวลาที่เริ่มคำขอค้างอยู่ (0 = ว่าง) — iOS ล็อกจอระหว่างรอ คำขออาจค้างตลอด ห้ามให้ล็อกการรีเฟรชถาวร
+  const busySince = useRef(0);
   const { confirm, confirmDialog } = useConfirm();
   const hasQr = useRef(false);
 
   const load = useCallback(async () => {
-    if (busy.current) return;
-    busy.current = true;
+    if (busySince.current && Date.now() - busySince.current < 20_000) return;
+    const startedAt = Date.now();
+    busySince.current = startedAt;
     try {
       // ขอ QR ครั้งเดียวต่อการเปิดหน้า (สร้าง QR = เรียก Beam) — รอบต่อไปถามแค่สถานะ
       const res = await getTrackingAction(token, !hasQr.current);
@@ -47,8 +49,10 @@ export function TrackingClient({ slug, token }: { slug: string; token: string })
         hasQr.current = true;
         setQr(res.view.qr);
       }
+    } catch {
+      // เน็ตหลุด — รอบถัดไปลองใหม่
     } finally {
-      busy.current = false;
+      if (busySince.current === startedAt) busySince.current = 0;
     }
   }, [token]);
 
@@ -64,9 +68,19 @@ export function TrackingClient({ slug, token }: { slug: string; token: string })
       if (document.visibilityState === "visible") void load();
     }, ms);
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    // กลับมาที่หน้า (ปลดล็อกจอ/สลับแอป/ย้อนกลับ) → ถามสถานะทันที ไม่ต้องรอรอบถัดไป
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       window.clearInterval(id);
       window.clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [status, load]);
 
