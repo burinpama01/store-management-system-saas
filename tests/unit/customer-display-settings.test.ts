@@ -124,8 +124,11 @@ describe("customer display ad settings", () => {
     expect(screen).toContain("<img");
     expect(screen).toContain("setInterval");
     expect(screen).toContain("slideIntervalSeconds");
-    expect(screen).toContain("if (slides.length === 0) return [];");
-    expect(screen).toContain("slot.slides.length > 0");
+    // ตรรกะเลือกช่องโฆษณาย้ายไป module (ทดสอบพฤติกรรมจริงใน customer-display-ads-reliability.test.ts)
+    const settingsModule = read("src/modules/settings/customer-display.ts");
+    expect(screen).toContain("resolveCustomerDisplayAdSlots");
+    expect(settingsModule).toContain("slides.length > 0 ? [{ key: \"single\"");
+    expect(settingsModule).toContain("slot.slides.length > 0");
     expect(actions).toContain("topSlides.length > CUSTOMER_DISPLAY_SLIDE_LIMIT");
     expect(actions).toContain("bottomSlides.length > CUSTOMER_DISPLAY_SLIDE_LIMIT");
   });

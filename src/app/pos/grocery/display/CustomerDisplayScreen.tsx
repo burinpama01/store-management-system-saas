@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
   CUSTOMER_DISPLAY_PAID_FLASH_MS,
@@ -12,11 +12,18 @@ import {
   type CustomerDisplaySnapshot,
 } from "@/modules/grocery-pos/customer-display";
 import {
+  CUSTOMER_DISPLAY_REFRESH_MS,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
+  customerDisplaySettingsSignature,
+  resolveCustomerDisplayAdSlots,
   type CustomerDisplayAdSlide,
+  type CustomerDisplayAdSlotView,
   type CustomerDisplaySettings,
 } from "@/modules/settings/customer-display";
 import { QrCode } from "@/shared/components/ui/QrCode";
+import { useWakeLock } from "@/shared/hooks/useWakeLock";
+
+const CUSTOMER_DISPLAY_SETTINGS_ENDPOINT = "/api/pos/customer-display/settings";
 
 function money(value: number) {
   return new Intl.NumberFormat("th-TH", {
@@ -33,35 +40,20 @@ function points(value: number) {
   }).format(value);
 }
 
-interface AdSlotView {
-  key: string;
-  label: string;
-  slides: CustomerDisplayAdSlide[];
-}
-
-function resolveAdSlots(settings: CustomerDisplaySettings): AdSlotView[] {
-  if (!settings.adEnabled) return [];
-  const slides = [
-    ...(settings.topSlotEnabled ? settings.topSlides : []),
-    ...(settings.bottomSlotEnabled ? settings.bottomSlides : []),
-  ];
-  if (!settings.topSlotEnabled && !settings.bottomSlotEnabled) return [];
-  if (slides.length === 0) return [];
-  if (settings.adLayout === "split") {
-    return [
-      settings.topSlotEnabled ? { key: "top", label: "ช่องบน", slides: settings.topSlides } : null,
-      settings.bottomSlotEnabled ? { key: "bottom", label: "ช่องล่าง", slides: settings.bottomSlides } : null,
-    ].filter((slot): slot is AdSlotView => slot !== null && slot.slides.length > 0);
-  }
-  return [{ key: "single", label: "โปรโมชัน", slides }];
-}
-
-function currentSlide(slot: AdSlotView, indexes: Record<string, number>) {
+function currentSlide(slot: CustomerDisplayAdSlotView, indexes: Record<string, number>) {
   if (slot.slides.length === 0) return undefined;
-  return slot.slides[indexes[slot.key] % slot.slides.length] ?? slot.slides[0];
+  return slot.slides[(indexes[slot.key] ?? 0) % slot.slides.length] ?? slot.slides[0];
 }
 
-function CustomerDisplayAdSlot({ slide, slotLabel }: { slide?: CustomerDisplayAdSlide; slotLabel: string }) {
+function CustomerDisplayAdSlot({
+  slide,
+  slotLabel,
+  onMediaError,
+}: {
+  slide?: CustomerDisplayAdSlide;
+  slotLabel: string;
+  onMediaError: (slide: CustomerDisplayAdSlide) => void;
+}) {
   if (!slide) {
     return (
       <div className="customer-display-ad-slot">
@@ -78,18 +70,23 @@ function CustomerDisplayAdSlot({ slide, slotLabel }: { slide?: CustomerDisplayAd
     <div className="customer-display-ad-slot">
       {slide.mediaType === "video" ? (
         <video
+          key={slide.url}
           className={`customer-display-ad-media customer-display-ad-media--${slide.fit}`}
           src={slide.url}
           autoPlay
           muted
           loop
           playsInline
+          preload="auto"
+          onError={() => onMediaError(slide)}
         />
       ) : (
         <img
+          key={slide.url}
           className={`customer-display-ad-media customer-display-ad-media--${slide.fit}`}
           src={slide.url}
           alt={slide.title || slotLabel}
+          onError={() => onMediaError(slide)}
         />
       )}
       {(slide.title || slide.description) ? (
@@ -108,9 +105,82 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
   const [paidFlash, setPaidFlash] = useState<CustomerDisplayPaidFlash | null>(null);
   const pendingPaymentRef = useRef<CustomerDisplayPayment | null>(null);
   const [pendingPayment, setPendingPayment] = useState<CustomerDisplayPayment | null>(null);
-  const effectiveAdSettings = adSettings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
-  const adSlots = useMemo(() => resolveAdSlots(effectiveAdSettings), [effectiveAdSettings]);
+  // ค่าโฆษณาเริ่มจาก server แล้วดึงใหม่เป็นระยะ — ร้านแก้โฆษณาแล้วจอเปลี่ยนเอง
+  const [liveAdSettings, setLiveAdSettings] = useState<CustomerDisplaySettings | null>(adSettings ?? null);
+  const adSignatureRef = useRef(customerDisplaySettingsSignature(adSettings));
+  // สื่อที่โหลดไม่ขึ้น — ซ่อนสไลด์นั้นแทนการโชว์ภาพแตก แล้วลองใหม่ตอนดึงค่ารอบถัดไป
+  const [failedMediaUrls, setFailedMediaUrls] = useState<ReadonlySet<string>>(() => new Set());
+  const reportedMediaUrlsRef = useRef<Set<string>>(new Set());
+  const effectiveAdSettings = liveAdSettings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
+  const adSlots = useMemo(
+    () => resolveCustomerDisplayAdSlots(effectiveAdSettings, failedMediaUrls),
+    [effectiveAdSettings, failedMediaUrls],
+  );
   const showAdPanel = adSlots.length > 0;
+  // จอลูกค้าเปิดค้างทั้งวัน — กันเครื่องพักจอ (เครื่องที่ไม่รองรับจะข้ามเอง)
+  useWakeLock(true);
+
+  const handleMediaError = useCallback((slide: CustomerDisplayAdSlide) => {
+    setFailedMediaUrls((current) => {
+      if (current.has(slide.url)) return current;
+      const next = new Set(current);
+      next.add(slide.url);
+      return next;
+    });
+    // แจ้งผู้ดูแลครั้งเดียวต่อไฟล์ต่อการเปิดจอ
+    if (reportedMediaUrlsRef.current.has(slide.url)) return;
+    reportedMediaUrlsRef.current.add(slide.url);
+    void fetch(CUSTOMER_DISPLAY_SETTINGS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: slide.url, mediaType: slide.mediaType, slot: slide.slot }),
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let inFlight = false;
+    const refresh = async (retryFailedMedia: boolean) => {
+      if (disposed || inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const res = await fetch(CUSTOMER_DISPLAY_SETTINGS_ENDPOINT, { cache: "no-store" });
+        // 401/403/500 หรือ session หมด (middleware redirect ไป /login) = เก็บโฆษณาเดิมไว้ ไม่ทำให้จอว่าง
+        if (!res.ok || res.redirected || disposed) return;
+        const body = (await res.json()) as { settings?: CustomerDisplaySettings | null };
+        if (disposed || body.settings === undefined) return;
+        const signature = customerDisplaySettingsSignature(body.settings);
+        const changed = signature !== adSignatureRef.current;
+        // ลองโหลดสื่อที่เคยเสียอีกครั้งเมื่อร้านแก้โฆษณา หรือเน็ตเพิ่งกลับมา
+        // (ไม่ล้างทุกรอบ — ไม่งั้นไฟล์ที่เสียถาวรจะโผล่ภาพแตกทุก 5 นาที)
+        if (changed || retryFailedMedia) setFailedMediaUrls((current) => (current.size === 0 ? current : new Set()));
+        // โฆษณาชุดใหม่ = แจ้งไฟล์เสียได้อีกครั้ง (ถ้ายังเสียอยู่ ผู้ดูแลต้องเห็น)
+        if (changed) reportedMediaUrlsRef.current = new Set();
+        if (!changed) return;
+        adSignatureRef.current = signature;
+        setLiveAdSettings(body.settings);
+        setSlideIndexes({});
+      } catch {
+        // ออฟไลน์ — แสดงโฆษณาเดิมต่อ
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(false), CUSTOMER_DISPLAY_REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh(false);
+    };
+    const onOnline = () => void refresh(true);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
 
   useEffect(() => {
     const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
@@ -228,7 +298,12 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
             aria-label="โฆษณา"
           >
             {adSlots.map((slot) => (
-              <CustomerDisplayAdSlot key={slot.key} slide={currentSlide(slot, slideIndexes)} slotLabel={slot.label} />
+              <CustomerDisplayAdSlot
+                key={slot.key}
+                slide={currentSlide(slot, slideIndexes)}
+                slotLabel={slot.label}
+                onMediaError={handleMediaError}
+              />
             ))}
           </aside>
         ) : null}

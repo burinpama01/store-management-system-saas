@@ -113,3 +113,69 @@ function normalizeMediaUrl(value: unknown) {
     return "";
   }
 }
+
+// ── จอลูกค้า: ดึงโฆษณาใหม่ / ข้ามสื่อเสีย / จำกัดขนาดไฟล์ ─────────────────────
+
+/** จอลูกค้าถามโฆษณาล่าสุดทุก 5 นาที (และทุกครั้งที่กลับมาเห็นหน้า) — ร้านแก้โฆษณาแล้วไม่ต้องรีเฟรชจอเอง */
+export const CUSTOMER_DISPLAY_REFRESH_MS = 5 * 60 * 1000;
+
+/** จำกัดขนาดไฟล์ก่อนอัปโหลด — วิดีโอเล่นวนตลอดวัน ไฟล์ใหญ่ = กินโควตา egress */
+export const CUSTOMER_DISPLAY_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
+export const CUSTOMER_DISPLAY_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+/** ชื่อไฟล์เป็น UUID ไม่ถูกเขียนทับ → ให้เบราว์เซอร์แคชได้ 1 ปี ไม่ต้องโหลดใหม่ทุกรอบสไลด์ */
+export const CUSTOMER_DISPLAY_MEDIA_CACHE_SECONDS = 31_536_000;
+
+export function customerDisplayUploadSizeError(mediaType: CustomerDisplayMediaType, sizeBytes: number): string | null {
+  const limit = mediaType === "video" ? CUSTOMER_DISPLAY_VIDEO_MAX_BYTES : CUSTOMER_DISPLAY_IMAGE_MAX_BYTES;
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= limit) return null;
+  const limitMb = Math.round(limit / (1024 * 1024));
+  const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+  return mediaType === "video"
+    ? `วิดีโอใหญ่เกินไป (${sizeMb} MB) — จำกัด ${limitMb} MB ลองตัดให้สั้นลงหรือลดความละเอียดเป็น 720p`
+    : `รูปใหญ่เกินไป (${sizeMb} MB) — จำกัด ${limitMb} MB`;
+}
+
+/** ลายเซ็นของเนื้อหาโฆษณา — ใช้เช็กว่าค่าที่ดึงมาใหม่ต่างจากที่จอแสดงอยู่หรือไม่ */
+export function customerDisplaySettingsSignature(settings: CustomerDisplaySettings | null | undefined): string {
+  const s = settings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
+  return JSON.stringify([
+    s.adEnabled,
+    s.adLayout,
+    s.topSlotEnabled,
+    s.bottomSlotEnabled,
+    s.slideIntervalSeconds,
+    s.topSlides,
+    s.bottomSlides,
+  ]);
+}
+
+export interface CustomerDisplayAdSlotView {
+  key: "single" | "top" | "bottom";
+  label: string;
+  slides: CustomerDisplayAdSlide[];
+}
+
+/**
+ * แปลงค่าตั้งค่าเป็นช่องโฆษณาที่จะแสดง โดยตัดสไลด์ที่สื่อโหลดไม่ขึ้น (failedUrls) ออก
+ * ช่องที่ไม่เหลือสไลด์จะไม่แสดง — ไม่ให้ลูกค้าเห็นภาพแตก
+ */
+export function resolveCustomerDisplayAdSlots(
+  settings: CustomerDisplaySettings,
+  failedUrls: ReadonlySet<string> = new Set(),
+): CustomerDisplayAdSlotView[] {
+  if (!settings.adEnabled) return [];
+  if (!settings.topSlotEnabled && !settings.bottomSlotEnabled) return [];
+  const playable = (slides: CustomerDisplayAdSlide[]) => slides.filter((slide) => !failedUrls.has(slide.url));
+  const top = settings.topSlotEnabled ? playable(settings.topSlides) : [];
+  const bottom = settings.bottomSlotEnabled ? playable(settings.bottomSlides) : [];
+  if (settings.adLayout === "split") {
+    const slots: CustomerDisplayAdSlotView[] = [
+      { key: "top", label: "ช่องบน", slides: top },
+      { key: "bottom", label: "ช่องล่าง", slides: bottom },
+    ];
+    return slots.filter((slot) => slot.slides.length > 0);
+  }
+  const slides = [...top, ...bottom];
+  return slides.length > 0 ? [{ key: "single", label: "โปรโมชัน", slides }] : [];
+}
