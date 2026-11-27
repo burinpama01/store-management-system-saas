@@ -10,10 +10,21 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
 import { closePayrollPeriodForStore } from "./close-period";
-import { fullMonthsBetween, isPermanentOn, seniorityPayFor, tierAmountFor } from "./income";
+import { fullMonthsBetween, salesBonusEligible, seniorityPayFor, tierAmountFor } from "./income";
 import { addDays, businessDate, isPeriodDue, periodContaining, previousPeriod, type PayPeriod } from "./pay-cycle";
 import { effectiveSwitches, type AdvancedPayrollSettings } from "./settings";
-import { getPayrollPeriod, listStoresWithPayrollAutomation, loadDailySales, loadMaxDailySalesBefore, mapAdvancedSettings } from "./repository";
+import {
+  claimPayrollNotification,
+  countWeeklyEmployees,
+  getPayrollPeriod,
+  hasPayrollNotification,
+  listStoresWithPayrollAutomation,
+  loadDailySales,
+  loadMaxDailySalesBefore,
+  mapAdvancedSettings,
+} from "./repository";
+import { isWeekAutoRecordable, previousWeek, weekContaining } from "./weekly";
+import { recordWeeklyPayoutsForStore } from "./weekly-close";
 import { formatBaht, listStoreManagerUserIds, listStoreMemberUserIds, pushPayrollNotification } from "./notify";
 import { mapProfile } from "../repository";
 import type { EmployeeProfile } from "../types";
@@ -70,6 +81,41 @@ export async function runPayrollCron(now: Date = new Date()): Promise<PayrollCro
       const today = businessDate(now, tz, closingTime);
       const sw = settings.switches;
       const notify = sw.payrollNotifications;
+
+      // ---- 0) จ่ายรายสัปดาห์ (W8): บันทึกสัปดาห์ที่เพิ่งจบ + แจ้งเจ้าของ ครั้งเดียวต่อสัปดาห์ ----
+      if (sw.weeklyPay) {
+        const week = previousWeek(weekContaining(today, settings.weeklyStartDay));
+        const fromEnable = isWeekAutoRecordable(week, settings.weeklyPayEnabledAt);
+        if (
+          fromEnable &&
+          !(await hasPayrollNotification(c.storeId, "weekly_recorded", week.start)) &&
+          (await countWeeklyEmployees(c.storeId)) > 0
+        ) {
+          const r = await recordWeeklyPayoutsForStore({
+            organizationId: c.organizationId,
+            storeId: c.storeId,
+            week,
+            today,
+            actorUserId: null,
+          });
+          if (r.ok) {
+            const marked = await claimPayrollNotification(c.storeId, "weekly_recorded", week.start);
+            if (!marked) {
+              await logSystemEvent({
+                level: "warn",
+                source: "hr.payroll-weekly",
+                action: "markRecorded",
+                message: `บันทึกเครื่องหมาย "สัปดาห์ ${week.start} ทำแล้ว" ไม่สำเร็จ — รอบหน้าจะลองใหม่ (ยอดไม่ซ้ำ)`,
+                organizationId: c.organizationId,
+                storeId: c.storeId,
+              });
+            }
+            result.notified += r.notified;
+          } else {
+            result.errors += 1;
+          }
+        }
+      }
 
       // ---- 1) รอบเงินเดือน: ปิดงวดที่เพิ่งจบ + แจ้งเตือนรอบงวด ----
       if (sw.payCycle) {
@@ -171,7 +217,10 @@ export async function runPayrollCron(now: Date = new Date()): Promise<PayrollCro
         const sales = (await loadDailySales(c.storeId, today, today, settings.salesBonusChannels)).get(today) ?? 0;
         const tier = [...settings.salesBonusTiers].reverse().find((t) => sales >= t.minSales);
         const onShift = await openShiftUserIds(db, c.storeId, today);
-        const eligibleOnShift = onShift.filter((id) => isPermanentOn(profiles.find((p) => p.userId === id), today));
+        const eligibleOnShift = onShift.filter((id) =>
+          salesBonusEligible(settings.salesBonusUserIds, id, profiles.find((p) => p.userId === id), today),
+        );
+        const split = settings.salesBonusMode === "split";
         if (tier && eligibleOnShift.length) {
           const r = await pushPayrollNotification({
             organizationId: c.organizationId,
@@ -180,7 +229,9 @@ export async function runPayrollCron(now: Date = new Date()): Promise<PayrollCro
             kind: "sales_tier_reached",
             dedupeKey: `${today}:${tier.minSales}`,
             title: "ยอดขายถึงขั้นโบนัสแล้ว 🎉",
-            message: `ยอดวันนี้ทะลุ ${tier.minSales.toLocaleString("th-TH")} · โบนัส +${tierAmountFor(sales, settings.salesBonusTiers)}/คน (ต้องทำเต็มวัน)`,
+            message: split
+              ? `ยอดวันนี้ทะลุ ${tier.minSales.toLocaleString("th-TH")} · โบนัสรวม ${tierAmountFor(sales, settings.salesBonusTiers)} หารตามคนที่ทำเต็มวัน`
+              : `ยอดวันนี้ทะลุ ${tier.minSales.toLocaleString("th-TH")} · โบนัส +${tierAmountFor(sales, settings.salesBonusTiers)}/คน (ต้องทำเต็มวัน)`,
           });
           result.notified += r.sent;
         }
@@ -193,7 +244,9 @@ export async function runPayrollCron(now: Date = new Date()): Promise<PayrollCro
             kind: "sales_record",
             dedupeKey: today,
             title: "ทำสถิติยอดขายสูงสุดของร้าน! 👑",
-            message: `ยอดวันนี้ ${formatBaht(sales)} · โบนัสสถิติ +${settings.salesRecordBonus}/คน`,
+            message: split
+              ? `ยอดวันนี้ ${formatBaht(sales)} · โบนัสสถิติรวม ${settings.salesRecordBonus} หารตามคนที่ทำเต็มวัน`
+              : `ยอดวันนี้ ${formatBaht(sales)} · โบนัสสถิติ +${settings.salesRecordBonus}/คน`,
           });
           result.notified += r.sent;
         }
@@ -282,7 +335,7 @@ async function incompleteDataWarnings(
   periodStart: string,
   today: string,
 ): Promise<string[]> {
-  const [members, profiles, openShifts] = await Promise.all([
+  const [members, profiles, openShifts, selfBanks] = await Promise.all([
     listStoreMemberUserIds(organizationId, storeId),
     db.from("employee_profiles").select("user_id, bank_account_no, employment_end_date").eq("store_id", storeId),
     db
@@ -292,12 +345,25 @@ async function incompleteDataWarnings(
       .gte("date", periodStart)
       .lt("date", today)
       .is("clock_out_at", null),
+    db.from("employee_self_info").select("user_id").eq("store_id", storeId).not("bank_account_no", "is", null),
   ]);
+  // พนักงานกรอกเลขบัญชีเองแล้วก็นับว่ามี (อ่านไม่ได้ = นับเกินแบบปลอดภัย + log)
+  if (selfBanks?.error) {
+    await logSystemEvent({
+      level: "warn",
+      source: "hr.self-info",
+      action: "incompleteDataWarnings.selfInfo",
+      message: `อ่านเลขบัญชีที่พนักงานกรอกเองไม่สำเร็จ: ${selfBanks.error.message}`,
+      organizationId,
+      storeId,
+    }).catch(() => undefined);
+  }
+  const selfBankUsers = new Set(((selfBanks?.data ?? []) as { user_id: string }[]).map((r) => r.user_id));
   const rows = (profiles.data ?? []) as { user_id: string; bank_account_no: string | null; employment_end_date: string | null }[];
   const active = rows.filter((p) => !p.employment_end_date || p.employment_end_date >= periodStart);
   const withProfile = new Set(rows.map((p) => p.user_id));
   const out: string[] = [];
-  const noBank = active.filter((p) => !p.bank_account_no).length;
+  const noBank = active.filter((p) => !p.bank_account_no && !selfBankUsers.has(p.user_id)).length;
   if (noBank) out.push(`${noBank} คนยังไม่มีเลขบัญชี`);
   const noProfile = members.filter((id) => !withProfile.has(id)).length;
   if (noProfile) out.push(`${noProfile} คนยังไม่ตั้งค่าจ้าง`);

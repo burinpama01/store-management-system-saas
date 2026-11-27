@@ -12,6 +12,9 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 import { mapError } from "@/shared/utils/error";
 import { escapeLikePattern } from "@/shared/utils/like-pattern";
 import { normalizeCustomerPhone } from "@/shared/utils/customer-phone";
+import { canUseMemberPrivileges } from "@/modules/members/access";
+import { orgHasActivePasses } from "@/modules/prepaid-passes/grace";
+import { isMemberCodeEnabled } from "@/modules/members/repository";
 
 type PortalLinkRow = Database["public"]["Tables"]["customer_member_portal_links"]["Row"];
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
@@ -66,6 +69,15 @@ export interface CustomerPortalData {
   customer: CustomerMemberProfile | null;
   rewards: LoyaltyReward[];
   redemptions: CustomerRewardRedemption[];
+  /** สาขานี้เปิดรหัสยืนยันสมาชิก 5 นาที (Enterprise + สวิตช์ member_code_enabled) */
+  memberCodeEnabled: boolean;
+  /** องค์กรเป็น Enterprise ที่ใช้งานอยู่ — ขายแพ็กออนไลน์ได้ */
+  memberPrivileges: boolean;
+  /**
+   * หมด Enterprise/สะสมแต้ม แต่ยังมีแพ็กค้าง (O1): เปิดหน้าสมาชิกเพื่อดูแพ็ก + ขอรหัสใช้สิทธิ์เท่านั้น
+   * ไม่มีของรางวัล/แลกแต้ม/รับแต้มจากใบเสร็จ
+   */
+  passesOnly: boolean;
   error: string | null;
 }
 
@@ -141,20 +153,27 @@ function mapCustomer(customer: CustomerRow, account?: LoyaltyAccountRow | null):
 
 async function resolvePortalLink(storeSlug: string, portalCode: string) {
   const cleanCode = portalCode.trim();
-  if (!cleanCode) return { store: null, link: null, error: "ต้องเปิดจาก QR ของร้าน" };
+  if (!cleanCode) return { store: null, link: null, memberPrivileges: false, passGrace: false, passesOnly: false, error: "ต้องเปิดจาก QR ของร้าน" };
 
   const supabase = await createSupabaseServiceClient();
   const storeRes = await getStoreForMemberPortal(supabase, storeSlug);
   if (storeRes.error || !storeRes.data || !storeRes.data.isActive) {
-    return { store: null, link: null, error: storeRes.error ?? "ไม่พบร้านนี้" };
+    return { store: null, link: null, memberPrivileges: false, passGrace: false, passesOnly: false, error: storeRes.error ?? "ไม่พบร้านนี้" };
   }
 
   const billingState =
     (await getOrganizationBillingState(storeRes.data.organizationId)) ?? DEFAULT_BILLING_STATE;
-  if (!canUseFeature(billingState, "loyaltyPoints")) {
+  const memberPrivileges = canUseMemberPrivileges(billingState);
+  // O1: หมด Enterprise → ลูกค้าที่มีแพ็กค้างยังต้องเปิดหน้าสมาชิกเพื่อขอรหัสใช้แพ็กได้
+  const passGrace = memberPrivileges ? false : await orgHasActivePasses(storeRes.data.organizationId);
+  const passesOnly = !canUseFeature(billingState, "loyaltyPoints");
+  if (passesOnly && !passGrace) {
     return {
       store: null,
       link: null,
+      memberPrivileges: false,
+      passGrace: false,
+      passesOnly: false,
       error: ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE,
     };
   }
@@ -176,7 +195,7 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
       supabaseHost: safeSupabaseHost(),
       error: error.message,
     });
-    return { store: null, link: null, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
+    return { store: null, link: null, memberPrivileges: false, passGrace: false, passesOnly: false, error: MEMBER_PORTAL_LOOKUP_ERROR_MESSAGE };
   }
   if (!data) {
     console.warn("[member-portal] portal link not found", {
@@ -186,9 +205,9 @@ async function resolvePortalLink(storeSlug: string, portalCode: string) {
       codePrefix: cleanCode.slice(0, 6),
       supabaseHost: safeSupabaseHost(),
     });
-    return { store: null, link: null, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
+    return { store: null, link: null, memberPrivileges: false, passGrace: false, passesOnly: false, error: "ไม่พบ QR สมัครสมาชิกนี้ กรุณาสแกน QR ล่าสุดจากร้าน" };
   }
-  return { store: storeRes.data, link: data, error: null };
+  return { store: storeRes.data, link: data, memberPrivileges, passGrace, passesOnly, error: null };
 }
 
 async function getStoreForMemberPortal(
@@ -333,13 +352,17 @@ export async function getCustomerPortalData(storeSlug: string, portalCode: strin
       customer: null,
       rewards: [],
       redemptions: [],
+      memberCodeEnabled: false,
+      memberPrivileges: false,
+      passesOnly: false,
       error: portal.error,
     };
   }
 
-  const [sessionRes, rewardsRes] = await Promise.all([
+  const [sessionRes, rewardsRes, memberCodeSwitch] = await Promise.all([
     getActiveSessionCustomer(portal.store),
-    listActiveRewards(portal.store.id),
+    portal.passesOnly ? Promise.resolve({ data: [] as LoyaltyReward[], error: null }) : listActiveRewards(portal.store.id),
+    portal.memberPrivileges || portal.passGrace ? isMemberCodeEnabled(portal.store.id) : Promise.resolve(false),
   ]);
   const redemptionsRes = sessionRes.customer
     ? await listRewardRedemptions(portal.store.id, sessionRes.customer.id)
@@ -352,6 +375,9 @@ export async function getCustomerPortalData(storeSlug: string, portalCode: strin
     customer: sessionRes.customer,
     rewards: rewardsRes.data,
     redemptions: redemptionsRes.data,
+    memberCodeEnabled: (portal.memberPrivileges || portal.passGrace) && memberCodeSwitch,
+    memberPrivileges: portal.memberPrivileges,
+    passesOnly: portal.passesOnly,
     error: sessionRes.error ?? rewardsRes.error ?? redemptionsRes.error,
   };
 }
@@ -495,6 +521,10 @@ export async function requestMemberOtp(
 ) {
   const portal = await resolvePortalLink(input.storeSlug, input.portalCode);
   if (!portal.store || !portal.link) return { data: null, error: portal.error ?? "ต้องเปิดจาก QR ของร้าน" };
+  // โหมดแพ็กค้าง (O1): ให้เฉพาะสมาชิกเดิมเข้าดู/ใช้แพ็ก — ไม่รับสมัครใหม่ (ไม่เสียค่า SMS เปล่า)
+  if (portal.passesOnly && input.mode === "register") {
+    return { data: null, error: ENTERPRISE_MEMBER_PORTAL_LOCK_MESSAGE };
+  }
 
   let customerId: string | null = null;
   let name = input.name?.trim() ?? "";
@@ -823,4 +853,32 @@ export async function generateMemberPortalLink(input: {
 
   if (error) return { data: null, error: mapError(error) };
   return { data: data as PortalLinkRow, error: null };
+}
+
+/**
+ * สมาชิกที่ล็อกอินหน้าสมาชิกของร้านนี้อยู่ (cookie ตามร้าน · path /member/<slug>)
+ * ใช้กับหน้าสั่งออนไลน์ใต้ /member/<slug>/order — เบอร์นี้ยืนยัน OTP ตอนเข้าสมาชิกแล้ว
+ */
+export async function getMemberSessionByStoreId(storeId: string): Promise<{ customerId: string; name: string; phone: string | null } | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(getMemberSessionCookieName(storeId))?.value;
+  if (!token) return null;
+  const supabase = await createSupabaseServiceClient();
+  const { data: session } = await supabase
+    .from("customer_member_sessions")
+    .select("customer_id")
+    .eq("store_id", storeId)
+    .eq("session_token_hash", hashValue(token))
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (!session) return null;
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("id, name, phone")
+    .eq("store_id", storeId)
+    .eq("id", session.customer_id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!customer) return null;
+  return { customerId: customer.id, name: customer.name, phone: customer.phone ?? null };
 }

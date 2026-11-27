@@ -117,6 +117,7 @@ export const ORDER_ALERT_TYPES: ReadonlySet<string> = new Set([
   "new_qr_order",
   "new_buffet_order",
   "new_delivery_order",
+  "new_online_order",
 ]);
 
 export function alertPatternForTypes(types: readonly string[]): AlertPattern {

@@ -1,18 +1,21 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { listStoreMemberships } from "@/modules/settings/repository";
-import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
+import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings, listStoreOtDays } from "@/modules/hr/repository";
+import { addDaysIso, OT_DAY_MAX_AHEAD_DAYS } from "@/modules/hr/ot-days";
 import {
   listAttendanceRecords,
   computePayrollSummaries,
   listStoreHolidays,
 } from "@/modules/attendance/repository";
 // computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
-import { computeAdvancedPayrollLines } from "@/modules/hr/advanced/compute";
+import { computeAdvancedPayrollLines, joinedDatesFromMembers } from "@/modules/hr/advanced/compute";
 import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
-import { listEmployeeSkillGrants, listPayrollPeriods, listStoreSkills } from "@/modules/hr/advanced/repository";
+import { getCashOnHand, listEmployeeSkillGrants, listPayrollPeriods, listSalaryAdvances, listStoreSkills, listWeeklyPayouts } from "@/modules/hr/advanced/repository";
+import { recentWeeks } from "@/modules/hr/advanced/weekly";
 import { businessDate, periodContaining, recentPeriods } from "@/modules/hr/advanced/pay-cycle";
 import { maskBankAccount } from "@/modules/hr/employee-identity";
+import { listEmployeeSelfInfo, listPendingSelfInfoRequests } from "@/modules/hr/self-info-repository";
 import { getStore } from "@/modules/stores/repository";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import { StaffManager } from "./StaffManager";
@@ -46,7 +49,10 @@ export default async function StaffPage({
   let dateTo = isValidDate(params.dateTo ?? "") ? params.dateTo! : currentPeriod?.end ?? today;
   if (dateFrom > dateTo) [dateFrom, dateTo] = [dateTo, dateFrom];
 
-  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings] = await Promise.all([
+  // วันให้ OT: ช่วงงวดที่ดู + 31 วันย้อนหลังถึง 1 ปีข้างหน้า (รายการในหน้าตั้งค่า) — โหลดครั้งเดียว
+  const otFrom = [dateFrom, addDaysIso(today, -31)].sort()[0];
+  const otTo = [dateTo, addDaysIso(today, OT_DAY_MAX_AHEAD_DAYS)].sort()[1];
+  const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, storeRes, hrSettings, selfInfoMap, selfInfoRequests, otDays] = await Promise.all([
     listStoreMemberships(ctx.organizationId, ctx.storeId),
     listEmployeeProfiles(ctx.storeId),
     // Attendance is read org-wide (null) and then narrowed to this store's roster below: a shift
@@ -57,6 +63,9 @@ export default async function StaffPage({
     listStoreHolidays(ctx.storeId, dateFrom, dateTo),
     getStore(ctx.storeId),
     getStoreHrSettings(ctx.storeId, ctx.organizationId),
+    listEmployeeSelfInfo(ctx.storeId),
+    listPendingSelfInfoRequests(ctx.storeId),
+    listStoreOtDays(ctx.storeId, otFrom, otTo),
   ]);
 
   const members = membersRes.data ?? [];
@@ -70,12 +79,23 @@ export default async function StaffPage({
     bankAccountMasked: maskBankAccount(bankAccountNo),
   }));
   const adjustments = adjustmentsRes.data ?? [];
-  const [adv, skills, skillGrants, closedRows] = await Promise.all([
-    loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo),
+  // ข้อมูลที่พนักงานกรอกเอง — เลขบัญชีเต็มไม่ส่งไป browser เช่นกัน
+  const selfInfo = Object.fromEntries(
+    [...selfInfoMap].map(([userId, { bankAccountNo, ...rest }]) => [userId, { ...rest, bankAccountMasked: maskBankAccount(bankAccountNo) }]),
+  );
+  const weeks = asw.weeklyPay ? recentWeeks(businessToday, access.settings.weeklyStartDay, 9) : [];
+  const [adv, skills, skillGrants, closedRows, weeklyRows, advanceRows, cashNow] = await Promise.all([
+    // otDays ช่วงกว้างกว่างวด (ใช้กับ UI) — ไม่กระทบโบนัส เพราะจุดตัดดูเฉพาะวัน OT ที่มี records ในงวด
+    loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo, { otDays, records }),
     access.entitled ? listStoreSkills(ctx.storeId) : Promise.resolve([]),
     asw.skillPay ? listEmployeeSkillGrants(ctx.storeId) : Promise.resolve(new Map()),
     asw.payCycle ? listPayrollPeriods(ctx.storeId) : Promise.resolve([]),
+    weeks.length ? listWeeklyPayouts(ctx.storeId, weeks[weeks.length - 1].start) : Promise.resolve([]),
+    asw.salaryAdvance ? listSalaryAdvances(ctx.storeId, { limit: 60 }) : Promise.resolve([]),
+    asw.salaryAdvance ? getCashOnHand(ctx.storeId).catch(() => null) : Promise.resolve(null),
   ]);
+  const nameOf = (userId: string) =>
+    profiles.find((p) => p.userId === userId)?.displayName || members.find((m) => m.userId === userId)?.email || "พนักงาน";
   const employeeSkillIds: Record<string, string[]> = {};
   for (const [userId, grants] of skillGrants) {
     employeeSkillIds[userId] = (grants as { skillId: string; revokedAt?: string | null }[])
@@ -89,19 +109,24 @@ export default async function StaffPage({
     adjustments,
     settings: hrSettings,
     holidayDates: (holidaysRes.data ?? []).map((h) => h.date),
+    otDays,
     periodStart: dateFrom,
     periodEnd: dateTo,
     today,
     timezone: ctx.storeTimezone,
+    joinedDates: joinedDatesFromMembers(members.filter((m) => m.role !== "super_admin"), ctx.storeTimezone),
   }, adv);
 
   return (
     <StaffManager
       members={members}
       profiles={clientProfiles}
+      selfInfo={selfInfo}
+      selfInfoRequests={selfInfoRequests}
       payrollLines={payrollLines}
       adjustments={adjustments}
       hrSettings={hrSettings}
+      otDays={otDays}
       currency={storeRes.data?.currencyCode ?? "THB"}
       dateFrom={dateFrom}
       dateTo={dateTo}
@@ -116,6 +141,33 @@ export default async function StaffPage({
         periods: asw.payCycle ? recentPeriods(businessToday, access.settings.payCycleStartDay, access.settings.payDay, 12) : [],
         closedRows,
         businessToday,
+        cashOnHand: cashNow?.amount ?? null,
+        advances: advanceRows.map((a) => ({
+          id: a.id,
+          userId: a.userId,
+          name: nameOf(a.userId),
+          status: a.status,
+          requestedAmount: a.requestedAmount,
+          approvedAmount: a.approvedAmount,
+          reason: a.reason,
+          decisionNote: a.decisionNote,
+          payMethod: a.payMethod,
+          paidDate: a.paidDate,
+          createdAt: a.createdAt,
+          deducted: a.deducted,
+        })),
+        weekly: {
+          weeks,
+          // ส่งเฉพาะที่ต้องแสดง (ไม่มีข้อมูลบัญชีใน data อยู่แล้ว)
+          rows: weeklyRows.map((r) => ({
+            userId: r.userId,
+            weekStart: r.weekStart,
+            mode: r.mode,
+            amount: r.amount,
+            workedDays: Number((r.data as { workedDays?: number }).workedDays ?? 0),
+            name: String((r.data as { employeeName?: string }).employeeName ?? ""),
+          })),
+        },
       }}
     />
   );

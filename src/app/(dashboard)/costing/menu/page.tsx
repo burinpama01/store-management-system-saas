@@ -24,6 +24,14 @@ export default async function CostingMenuPage() {
     basePrice: product.basePrice,
     deliveryPrice: product.deliveryPrice ?? null,
     variants: product.variants.filter((v) => v.isActive).map((v) => ({ id: v.id, name: v.name, priceAdjustment: v.priceAdjustment })),
+    // ตัวเลือกเสริม (ร้อน/เย็น/ปั่น, ท็อปปิ้ง ฯลฯ) — listProducts คืนเฉพาะตัวเลือกที่เปิดอยู่
+    modifierGroups: product.modifierGroups
+      .filter((g) => g.options.length > 0)
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        options: g.options.map((o) => ({ id: o.id, name: o.name, priceAdjustment: o.priceAdjustment })),
+      })),
   }));
   const storeTemplate = effectiveAllocation(data.templates, null);
   const productOverrides = Object.fromEntries(

@@ -5,6 +5,7 @@ import { allocationSum, menuAllocationCard, validateAllocation } from "@/modules
 import {
   deliveryPriceForCommission,
   foodCostPct,
+  ingredientUnitCost,
   plateIngredientCost,
   suggestedPriceForFoodCost,
 } from "@/modules/costing/math";
@@ -32,6 +33,7 @@ export interface MenuProduct {
   basePrice: number;
   deliveryPrice: number | null;
   variants: Array<{ id: string; name: string; priceAdjustment: number }>;
+  modifierGroups: Array<{ id: string; name: string; options: Array<{ id: string; name: string; priceAdjustment: number }> }>;
 }
 
 const BAR_COLORS: Record<CostBucket, string> = {
@@ -135,8 +137,11 @@ export function MenuCostingManager({
         const card = menuAllocationCard({ price: product.basePrice, ingredientCost, packagingCost, pcts, rounding: settings.priceRounding });
         const plate = (ingredientCost ?? 0) + packagingCost;
         const targetFood = setting?.targetFoodCostPct ?? settings.targetFoodCostPct;
+        // บรรทัดที่บวกเพิ่มตามตัวเลือกเสริม — ภาพรวมแสดงต้นทุนสูตรหลักเท่านั้น จึงต้องบอกผู้ใช้
+        const optionLineCount = recipeLines.filter((l) => l.productId === product.id && l.modifierOptionId !== null).length;
         return {
           product,
+          optionLineCount,
           setting,
           ingredientCost,
           packagingCost,
@@ -283,7 +288,11 @@ export function MenuCostingManager({
             </header>
 
             {row.ingredientCost === null ? (
-              <p className="my-3 rounded-lg bg-[var(--surface-muted)] px-3 py-3 text-sm text-[var(--muted)]">ยังไม่มีสูตร — ยังคำนวณต้นทุนไม่ได้</p>
+              <p className="my-3 rounded-lg bg-[var(--surface-muted)] px-3 py-3 text-sm text-[var(--muted)]">
+                {row.optionLineCount > 0
+                  ? `ยังไม่มีสูตรหลัก — มีวัตถุดิบตามตัวเลือกเสริม ${row.optionLineCount} บรรทัด (เพิ่มสูตรหลักเพื่อคำนวณต้นทุน)`
+                  : "ยังไม่มีสูตร — ยังคำนวณต้นทุนไม่ได้"}
+              </p>
             ) : (
               <ul className="my-2 space-y-2" aria-label={`สัดส่วนต้นทุน ${row.product.name}`}>
                 {row.card.lines.map((line) => (
@@ -319,9 +328,12 @@ export function MenuCostingManager({
               {row.ingredientCost !== null && (
                 <>
                   <p>
-                    ต้นทุนต่อจาน <strong className="tabular-nums">{baht(row.ingredientCost + row.packagingCost)}</strong> · food cost{" "}
+                    ต้นทุนต่อจาน{row.optionLineCount > 0 ? " (สูตรหลัก)" : ""} <strong className="tabular-nums">{baht(row.ingredientCost + row.packagingCost)}</strong> · food cost{" "}
                     <strong className="tabular-nums">{row.foodPct === null ? "—" : `${row.foodPct.toFixed(1)}%`}</strong>
                   </p>
+                  {row.optionLineCount > 0 && (
+                    <p className="text-xs text-[var(--muted)]">ตัวเลือกเสริม (เช่น เย็น/ปั่น) บวกต้นทุนเพิ่ม — ดูในแก้สูตร</p>
+                  )}
                   {row.card.priceForTarget !== null && (
                     <p>
                       ราคาที่กำไรตามเป้า <strong className="tabular-nums">{row.card.priceForTarget} ฿</strong>
@@ -373,11 +385,30 @@ export function MenuCostingManager({
   );
 }
 
+/** ป้ายตัวเลือก — บอกหน่วยในสูตร และเตือนถ้ายังไม่ใส่ราคา (ต้นทุนจะเป็น 0) */
+function ingredientOptionLabel(i: Ingredient) {
+  return `${i.name} (${i.usageUnit})${i.purchasePrice === 0 ? " · ยังไม่ใส่ราคา" : ""}`;
+}
+
 interface DraftLine {
   key: string;
   variantId: string | null;
+  modifierOptionId: string | null;
   ingredientId: string;
   quantity: string;
+}
+
+/** ค่าในช่อง "ใช้กับ": "" = สูตรหลัก · v:<id> = เฉพาะตัวเลือกสินค้า · m:<id> = บวกเพิ่มเมื่อเลือกตัวเลือกเสริม */
+function scopeValue(line: Pick<DraftLine, "variantId" | "modifierOptionId">) {
+  if (line.modifierOptionId) return `m:${line.modifierOptionId}`;
+  if (line.variantId) return `v:${line.variantId}`;
+  return "";
+}
+
+function parseScope(value: string): Pick<DraftLine, "variantId" | "modifierOptionId"> {
+  if (value.startsWith("m:")) return { variantId: null, modifierOptionId: value.slice(2) };
+  if (value.startsWith("v:")) return { variantId: value.slice(2), modifierOptionId: null };
+  return { variantId: null, modifierOptionId: null };
 }
 
 function MenuEditor({
@@ -406,21 +437,78 @@ function MenuEditor({
   onDone: () => void;
 }) {
   const [draftLines, setDraftLines] = useState<DraftLine[]>(() =>
-    lines.map((l) => ({ key: l.id, variantId: l.variantId, ingredientId: l.ingredientId, quantity: String(l.quantity) })),
+    lines.map((l) => ({
+      key: l.id,
+      variantId: l.variantId,
+      modifierOptionId: l.modifierOptionId,
+      ingredientId: l.ingredientId,
+      quantity: String(l.quantity),
+    })),
   );
   const [packaging, setPackaging] = useState(String(packagingCost));
   const [targetFood, setTargetFood] = useState(targetFoodCostPct === null ? "" : String(targetFoodCostPct));
   const [useOverride, setUseOverride] = useState(Boolean(override));
   const [overrideDraft, setOverrideDraft] = useState(() => toStrings(override ?? storeAllocation));
 
-  const activeIngredients = ingredients.filter((i) => i.isActive);
+  const [ingredientQuery, setIngredientQuery] = useState("");
+  const activeIngredients = useMemo(() => ingredients.filter((i) => i.isActive), [ingredients]);
+  /** ตัวเลือกวัตถุดิบจัดกลุ่มตามหมวด ("ไม่ระบุหมวด" ไว้ท้าย) — ร้านที่มีวัตถุดิบเป็นร้อยหาง่ายขึ้น */
+  const ingredientGroups = useMemo(() => {
+    const q = ingredientQuery.trim().toLowerCase();
+    const map = new Map<string, Ingredient[]>();
+    for (const i of activeIngredients) {
+      if (q && !i.name.toLowerCase().includes(q) && !(i.category ?? "").toLowerCase().includes(q)) continue;
+      const key = i.category ?? "";
+      const list = map.get(key);
+      if (list) list.push(i);
+      else map.set(key, [i]);
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "th")))
+      .map(([key, items]) => ({ label: key || "ไม่ระบุหมวด", items: items.sort((a, b) => a.name.localeCompare(b.name, "th")) }));
+  }, [activeIngredients, ingredientQuery]);
+  const hasCategories = useMemo(() => activeIngredients.some((i) => i.category), [activeIngredients]);
+  const matchCount = ingredientGroups.reduce((sum, g) => sum + g.items.length, 0);
   const previewLines: RecipeLine[] = draftLines
     .filter((l) => l.ingredientId && Number(l.quantity) > 0)
-    .map((l) => ({ id: l.key, productId: product.id, variantId: l.variantId, ingredientId: l.ingredientId, quantity: Number(l.quantity) }));
+    .map((l) => ({
+      id: l.key,
+      productId: product.id,
+      variantId: l.variantId,
+      modifierOptionId: l.modifierOptionId,
+      ingredientId: l.ingredientId,
+      quantity: Number(l.quantity),
+    }));
+  const optionInfo = useMemo(() => {
+    const map = new Map<string, { groupName: string; name: string; priceAdjustment: number }>();
+    for (const group of product.modifierGroups) {
+      for (const option of group.options) map.set(option.id, { groupName: group.name, name: option.name, priceAdjustment: option.priceAdjustment });
+    }
+    return map;
+  }, [product.modifierGroups]);
+  /** ตัวเลือกเสริมที่มีวัตถุดิบเพิ่ม — แสดงต้นทุนที่บวกขึ้นในกล่องสรุป */
+  const optionPreview = [...new Set(previewLines.flatMap((l) => (l.modifierOptionId ? [l.modifierOptionId] : [])))].map((optionId) => {
+    let extra = 0;
+    for (const line of previewLines) {
+      if (line.modifierOptionId !== optionId) continue;
+      const ingredient = ingredientsById.get(line.ingredientId);
+      if (ingredient) extra += line.quantity * ingredientUnitCost(ingredient);
+    }
+    const info = optionInfo.get(optionId);
+    return { optionId, label: info ? `${info.groupName}: ${info.name}` : "ตัวเลือกที่ปิด/ลบแล้ว", priceAdjustment: info?.priceAdjustment ?? 0, extra };
+  });
+  const hasChoices = product.variants.length > 0 || product.modifierGroups.length > 0;
   const variantRows = [{ id: null as string | null, name: "ปกติ", price: product.basePrice }, ...product.variants.map((v) => ({ id: v.id as string | null, name: v.name, price: product.basePrice + v.priceAdjustment }))];
 
   function addLine() {
-    setDraftLines((current) => [...current, { key: `new-${Date.now()}-${current.length}`, variantId: null, ingredientId: activeIngredients[0]?.id ?? "", quantity: "" }]);
+    // ค้นหาแล้วเหลือรายการเดียว → เลือกให้เลย; ไม่งั้นให้ผู้ใช้เลือกเอง (เดิมเติมตัวแรกของรายการ ทำให้ผูกผิดได้ง่าย)
+    const only = matchCount === 1 ? ingredientGroups[0].items[0].id : "";
+    setDraftLines((current) => [
+      ...current,
+      { key: `new-${Date.now()}-${current.length}`, variantId: null, modifierOptionId: null, ingredientId: only, quantity: "" },
+    ]);
+    // เลือกให้แล้ว → ล้างคำค้นเพื่อให้บรรทัดถัดไปเห็นรายการครบ
+    if (only) setIngredientQuery("");
   }
 
   function saveRecipe() {
@@ -429,7 +517,12 @@ function MenuEditor({
       () =>
         saveMenuCostingAction({
           productId: product.id,
-          lines: cleaned.map((l) => ({ variantId: l.variantId, ingredientId: l.ingredientId, quantity: Number(l.quantity) })),
+          lines: cleaned.map((l) => ({
+            variantId: l.variantId,
+            modifierOptionId: l.modifierOptionId,
+            ingredientId: l.ingredientId,
+            quantity: Number(l.quantity),
+          })),
           packagingCost: Number(packaging) || 0,
           targetFoodCostPct: targetFood.trim() === "" ? null : Number(targetFood),
         }),
@@ -441,9 +534,35 @@ function MenuEditor({
     <div className="mt-3 space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
       <section className="space-y-2">
         <h4 className="text-sm font-semibold text-[var(--ink)]">สูตร (ต่อ 1 ที่)</h4>
+        {product.modifierGroups.length > 0 && (
+          <p className="text-xs text-[var(--muted)]">
+            เลือก &quot;เพิ่มเมื่อเลือก …&quot; ในช่องใช้กับ เพื่อบวกวัตถุดิบเฉพาะตอนลูกค้าเลือกตัวเลือกนั้น เช่น เย็น = น้ำแข็ง, ปั่น = น้ำแข็ง + ผงปั่น
+            (สูตรหลักควรเป็นแก้วร้อน/จานพื้นฐาน)
+          </p>
+        )}
+        {activeIngredients.length > 15 && (
+          <label className="block">
+            <span className="sr-only">ค้นหาวัตถุดิบในรายการเลือก</span>
+            <input
+              type="search"
+              className={inputClass}
+              style={{ fontSize: 16 }}
+              value={ingredientQuery}
+              onChange={(e) => setIngredientQuery(e.target.value)}
+              placeholder={hasCategories ? "ค้นหาวัตถุดิบหรือหมวด เพื่อย่อรายการให้เลือก" : "ค้นหาวัตถุดิบ เพื่อย่อรายการให้เลือก"}
+            />
+            {ingredientQuery.trim() !== "" && (
+              <span className="mt-1 block text-xs text-[var(--muted)]" aria-live="polite">
+                พบ {matchCount} รายการ{matchCount === 0 ? " — ลองคำอื่น" : ""}
+              </span>
+            )}
+          </label>
+        )}
         {draftLines.length === 0 && <p className="text-sm text-[var(--muted)]">ยังไม่มีวัตถุดิบในสูตร</p>}
         {draftLines.map((line, index) => {
           const ingredient = ingredientsById.get(line.ingredientId);
+          // บรรทัดที่เลือกไว้แล้วต้องยังแสดงชื่อเดิมแม้ถูกกรองออกจากผลค้นหา
+          const selectedHidden = ingredient && !ingredientGroups.some((g) => g.items.some((i) => i.id === ingredient.id));
           return (
             <div key={line.key} className="grid grid-cols-[minmax(0,1fr)_88px_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_88px_auto]">
               <select
@@ -453,24 +572,55 @@ function MenuEditor({
                 onChange={(e) => setDraftLines((c) => c.map((l, i) => (i === index ? { ...l, ingredientId: e.target.value } : l)))}
               >
                 <option value="">เลือกวัตถุดิบ</option>
-                {activeIngredients.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.usageUnit})
-                  </option>
-                ))}
+                {selectedHidden && <option value={ingredient.id}>{ingredientOptionLabel(ingredient)}</option>}
+                {hasCategories
+                  ? ingredientGroups.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.items.map((i) => (
+                          <option key={i.id} value={i.id}>
+                            {ingredientOptionLabel(i)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))
+                  : ingredientGroups.flatMap((group) => group.items).map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {ingredientOptionLabel(i)}
+                      </option>
+                    ))}
               </select>
               <select
                 aria-label="ใช้กับตัวเลือก"
                 className={`${inputClass} col-span-3 sm:col-span-1`}
-                value={line.variantId ?? ""}
-                onChange={(e) => setDraftLines((c) => c.map((l, i) => (i === index ? { ...l, variantId: e.target.value || null } : l)))}
+                value={scopeValue(line)}
+                onChange={(e) => setDraftLines((c) => c.map((l, i) => (i === index ? { ...l, ...parseScope(e.target.value) } : l)))}
               >
-                <option value="">ทุกตัวเลือก</option>
-                {product.variants.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    เฉพาะ {v.name}
-                  </option>
+                <option value="">{hasChoices ? "สูตรหลัก (ทุกแก้ว/ทุกจาน)" : "ทุกตัวเลือก"}</option>
+                {product.variants.length > 0 && (
+                  <optgroup label="ตัวเลือกสินค้า">
+                    {product.variants.map((v) => (
+                      <option key={v.id} value={`v:${v.id}`}>
+                        เฉพาะ {v.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {product.modifierGroups.map((group) => (
+                  <optgroup key={group.id} label={`เพิ่มเมื่อเลือก · ${group.name}`}>
+                    {group.options.map((o) => (
+                      <option key={o.id} value={`m:${o.id}`}>
+                        + {o.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
+                {/* บรรทัดของตัวเลือกที่ถูกปิดไปแล้ว — คงไว้ไม่ให้หายตอนบันทึก */}
+                {line.modifierOptionId && !optionInfo.has(line.modifierOptionId) && (
+                  <option value={`m:${line.modifierOptionId}`}>+ ตัวเลือกที่ปิดอยู่</option>
+                )}
+                {line.variantId && !product.variants.some((v) => v.id === line.variantId) && (
+                  <option value={`v:${line.variantId}`}>เฉพาะตัวเลือกที่ปิดอยู่</option>
+                )}
               </select>
               <input
                 aria-label={`ปริมาณ (${ingredient?.usageUnit ?? "หน่วย"})`}
@@ -518,6 +668,20 @@ function MenuEditor({
               </p>
             );
           })}
+          {optionPreview.length > 0 && (
+            <div className="mt-2 border-t border-[var(--border)] pt-2">
+              <p className="text-xs font-semibold text-[var(--muted)]">บวกเพิ่มเมื่อลูกค้าเลือก</p>
+              {optionPreview.map((o) => (
+                <p key={o.optionId} className="flex justify-between gap-2 tabular-nums">
+                  <span>
+                    {o.label}
+                    {o.priceAdjustment ? ` (+${baht(o.priceAdjustment)} ฿)` : ""}
+                  </span>
+                  <span>+ ต้นทุน {baht(o.extra)}</span>
+                </p>
+              ))}
+            </div>
+          )}
         </div>
         <button type="button" className="btn-primary min-h-11" disabled={isPending} onClick={saveRecipe}>
           บันทึกสูตร

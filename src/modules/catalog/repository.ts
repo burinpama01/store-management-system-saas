@@ -247,6 +247,7 @@ function mapProduct(
     deliveryPrice: row.delivery_price,
     deliveryOutOfStock: row.delivery_out_of_stock,
     outOfStock: row.out_of_stock,
+    availableOnline: row.online_enabled ?? true,
     sortOrder: row.sort_order,
     variants: variants
       .filter((v) => v.product_id === row.id)
@@ -500,6 +501,7 @@ export interface CreateProductInput {
   availableForDelivery?: boolean;
   deliveryPrice?: number | null;
   deliveryOutOfStock?: boolean;
+  availableOnline?: boolean;
   kitchenStationId?: string | null;
   sortOrder?: number;
 }
@@ -529,6 +531,7 @@ export async function createProduct(input: CreateProductInput) {
       available_for_delivery: input.availableForDelivery ?? false,
       delivery_price: input.deliveryPrice ?? null,
       delivery_out_of_stock: input.deliveryOutOfStock ?? false,
+      online_enabled: input.availableOnline ?? true,
       kitchen_station_id: input.kitchenStationId ?? null,
       sort_order: input.sortOrder ?? 0,
     })
@@ -561,6 +564,7 @@ export async function updateProduct(
       | "deliveryPrice"
       | "deliveryOutOfStock"
       | "outOfStock"
+      | "availableOnline"
       | "sortOrder"
       | "categoryId"
     >
@@ -591,6 +595,7 @@ export async function updateProduct(
       delivery_price: input.deliveryPrice,
       delivery_out_of_stock: input.deliveryOutOfStock,
       out_of_stock: input.outOfStock,
+      online_enabled: input.availableOnline,
       kitchen_station_id: input.kitchenStationId,
       sort_order: input.sortOrder,
       category_id: input.categoryId,
@@ -1274,6 +1279,7 @@ async function restoreExistingProductSnapshot(
       is_active: product.isActive,
       available_for_pos: product.availableForPos,
       available_for_qr: product.availableForQr,
+      online_enabled: product.availableOnline ?? true,
       sort_order: product.sortOrder,
       updated_at: product.updatedAt,
     })
@@ -1734,6 +1740,7 @@ export async function copyProductsAcrossBranches(input: CopyProductsAcrossBranch
         is_active: sourceProduct.isActive,
         available_for_pos: sourceProduct.availableForPos,
         available_for_qr: sourceProduct.availableForQr,
+        online_enabled: sourceProduct.availableOnline ?? true,
         sort_order: sourceProduct.sortOrder,
       };
 

@@ -227,7 +227,7 @@ describe("autoPrintReceipt", () => {
     const btHub = btHubPrinter("bt-hub", true);
     const result = await autoPrintReceipt({ printers: [btHub], escpos, browser: receipt });
     expect(result.printer).toBe(btHub);
-    expect(enqueueReceiptPrintJob).toHaveBeenCalledWith(btHub.id, { ...receipt, paperWidth: "80mm" });
+    expect(enqueueReceiptPrintJob).toHaveBeenCalledWith(btHub.id, { ...receipt, paperWidth: "80mm" }, { printer: btHub });
     expect(printReceiptAuto).not.toHaveBeenCalled();
   });
 

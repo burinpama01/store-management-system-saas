@@ -10,7 +10,10 @@ import {
 import { redeemRewardForCurrentCustomer } from "@/modules/loyalty/repository";
 import { deliverMemberOtp, verifyProviderOtp } from "@/modules/notifications/smskub";
 import { claimLoyaltyPointsWithCode } from "@/modules/loyalty/claim-repository";
-import { logActionError } from "@/modules/system/event-log";
+import { logActionError, logSystemEvent } from "@/modules/system/event-log";
+import { issueMemberRedeemCode } from "@/modules/members/repository";
+import { cancelPassPurchase, checkPassPurchase, startPassPurchase } from "@/modules/prepaid-passes/member-portal";
+import { joinStoreMission, setMissionSmsOptOut } from "@/modules/missions/repository";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -176,6 +179,7 @@ export async function redeemMemberRewardAction(formData: FormData): Promise<Rede
       return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
     }
     if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนแลกของรางวัล" };
+    if (portalData.passesOnly) return { error: "ร้านปิดระบบแลกของรางวัลแล้ว" };
 
     const result = await redeemRewardForCurrentCustomer({
       organizationId: portalData.store.organizationId,
@@ -226,6 +230,7 @@ export async function claimReceiptPointsAction(formData: FormData): Promise<{
       return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน"), claimed: null };
     }
     if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนรับแต้ม", claimed: null };
+    if (portalData.passesOnly) return { error: "ร้านปิดระบบสะสมแต้มแล้ว", claimed: null };
 
     const result = await claimLoyaltyPointsWithCode({
       storeId: portalData.store.id,
@@ -250,5 +255,238 @@ export async function claimReceiptPointsAction(formData: FormData): Promise<{
   } catch (e) {
     logPublicMemberActionError("claimReceiptPoints", e);
     return { error: "รับแต้มไม่สำเร็จ กรุณาลองใหม่หรือแจ้งร้านค้า", claimed: null };
+  }
+}
+
+/**
+ * ลูกค้าขอรหัสใช้สิทธิ์ 6 หลัก (อายุ 5 นาที ใช้ได้ครั้งเดียว) เพื่อให้แคชเชียร์สแกน/พิมพ์ที่ POS
+ * ต้องล็อกอินสมาชิกก่อน และสาขาต้องเปิดสวิตช์ + เป็น Enterprise
+ */
+export async function issueMemberRedeemCodeAction(formData: FormData): Promise<{
+  error: string | null;
+  code?: string;
+  expiresAt?: string;
+}> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนขอรหัสใช้สิทธิ์" };
+    if (!portalData.memberCodeEnabled) return { error: "สาขานี้ยังไม่เปิดใช้รหัสสมาชิก" };
+
+    const result = await issueMemberRedeemCode({
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      customerId: portalData.customer.id,
+    });
+    if (result.error || !result.data) {
+      void logSystemEvent({
+        level: result.status === "rate_limited" ? "warn" : "error",
+        source: "member.code",
+        action: "issueMemberRedeemCodeAction",
+        message: `ออกรหัสสมาชิกไม่สำเร็จ: ${result.status ?? "rpc_error"}`,
+        organizationId: portalData.store.organizationId,
+        storeId: portalData.store.id,
+        context: { status: result.status ?? null, customerId: portalData.customer.id },
+      });
+      return { error: result.error ?? "ขอรหัสไม่สำเร็จ กรุณาลองใหม่" };
+    }
+
+    void logSystemEvent({
+      level: "info",
+      source: "member.code",
+      action: "issueMemberRedeemCodeAction",
+      message: "ออกรหัสสมาชิก 5 นาที",
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { customerId: portalData.customer.id, expiresAt: result.data.expiresAt },
+    });
+    return { error: null, code: result.data.code, expiresAt: result.data.expiresAt };
+  } catch (e) {
+    logPublicMemberActionError("issueMemberRedeemCode", e);
+    return { error: "ขอรหัสไม่สำเร็จ กรุณาลองใหม่" };
+  }
+}
+
+const PASS_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** ลูกค้าซื้อแพ็กเองผ่าน Beam — ต้องล็อกอินและติ๊กยอมรับเงื่อนไข (ไม่คืนเงิน) */
+export async function startPassPurchaseAction(formData: FormData): Promise<{
+  error: string | null;
+  purchaseId?: string;
+  planName?: string;
+  qr?: { qrPayload: string | null; qrImageBase64: string | null; amount: number; expiresAt: string | null };
+}> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const planId = text(formData, "planId");
+    if (!PASS_ID_RE.test(planId)) return { error: "ข้อมูลแพ็กไม่ถูกต้อง" };
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนซื้อแพ็ก" };
+    if (!portalData.memberPrivileges) return { error: "ร้านนี้ยังไม่เปิดขายแพ็กออนไลน์" };
+
+    const result = await startPassPurchase({
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      customerId: portalData.customer.id,
+      planId,
+      termsAccepted: text(formData, "termsAccepted") === "yes",
+    });
+    void logSystemEvent({
+      level: result.error ? "warn" : "info",
+      source: "prepaid-pass.online",
+      action: "startPassPurchase",
+      message: result.error ? `เริ่มซื้อแพ็กออนไลน์ไม่สำเร็จ: ${result.error}` : "ลูกค้าเริ่มซื้อแพ็กออนไลน์ (ยอมรับเงื่อนไขแล้ว)",
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { planId, customerId: portalData.customer.id, purchaseId: result.data?.purchaseId ?? null },
+    });
+    if (result.error !== null) return { error: result.error };
+    return {
+      error: null,
+      purchaseId: result.data.purchaseId,
+      planName: result.data.planName,
+      qr: {
+        qrPayload: result.data.qr.qrPayload,
+        qrImageBase64: result.data.qr.qrImageBase64,
+        amount: result.data.qr.amount,
+        expiresAt: result.data.qr.expiresAt,
+      },
+    };
+  } catch (e) {
+    logPublicMemberActionError("startPassPurchase", e);
+    return { error: "เริ่มซื้อแพ็กไม่สำเร็จ กรุณาลองใหม่" };
+  }
+}
+
+export async function checkPassPurchaseAction(formData: FormData): Promise<{
+  status: "pending" | "paid" | "failed" | "review";
+  error: string | null;
+}> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const purchaseId = text(formData, "purchaseId");
+    if (!PASS_ID_RE.test(purchaseId)) return { status: "failed", error: "ข้อมูลไม่ถูกต้อง" };
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.store || !portalData.customer) return { status: "failed", error: "กรุณาเข้าสู่ระบบอีกครั้ง" };
+    const result = await checkPassPurchase({ storeId: portalData.store.id, customerId: portalData.customer.id, purchaseId });
+    if (result.status === "paid") {
+      void logSystemEvent({
+        level: "info",
+        source: "prepaid-pass.online",
+        action: "checkPassPurchase",
+        message: "ลูกค้าเห็นแพ็กเข้าบัญชีแล้ว (จ่าย Beam สำเร็จ)",
+        organizationId: portalData.store.organizationId,
+        storeId: portalData.store.id,
+        context: { purchaseId },
+      });
+      revalidateMemberPortal(storeSlug);
+    }
+    return result;
+  } catch (e) {
+    logPublicMemberActionError("checkPassPurchase", e);
+    return { status: "pending", error: null };
+  }
+}
+
+export async function cancelPassPurchaseAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const purchaseId = text(formData, "purchaseId");
+    if (!PASS_ID_RE.test(purchaseId)) return { error: "ข้อมูลไม่ถูกต้อง" };
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.store || !portalData.customer) return { error: "กรุณาเข้าสู่ระบบอีกครั้ง" };
+    const result = await cancelPassPurchase({ storeId: portalData.store.id, customerId: portalData.customer.id, purchaseId });
+    void logSystemEvent({
+      level: result.error ? "warn" : "info",
+      source: "prepaid-pass.online",
+      action: "cancelPassPurchase",
+      message: result.error ? `ยกเลิกซื้อแพ็กออนไลน์ไม่สำเร็จ: ${result.error}` : "ลูกค้ายกเลิกซื้อแพ็กออนไลน์",
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { purchaseId, customerId: portalData.customer.id },
+    });
+    return result;
+  } catch (e) {
+    logPublicMemberActionError("cancelPassPurchase", e);
+    return { error: "ยกเลิกไม่สำเร็จ" };
+  }
+}
+
+/** ลูกค้ากดรับภารกิจ (Enterprise + ร้านเปิดภารกิจ) — นับเฉพาะบิลที่จ่ายหลังจากนี้ */
+export async function joinMissionAction(formData: FormData): Promise<{ error: string | null; already?: boolean }> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const missionId = text(formData, "missionId");
+    if (!UUID_RE.test(missionId)) return { error: "ข้อมูลภารกิจไม่ถูกต้อง" };
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อนรับภารกิจ" };
+    if (!portalData.memberPrivileges) return { error: "ภารกิจสะสมใช้ได้เฉพาะร้านแพ็กเกจ Enterprise" };
+
+    const smsOptIn = text(formData, "smsOptIn") !== "0";
+    const result = await joinStoreMission(portalData.customer.id, missionId, smsOptIn);
+    void logSystemEvent({
+      level: result.error ? "warn" : "info",
+      source: "missions.member",
+      action: "joinMissionAction",
+      message:
+        result.error !== null
+          ? `รับภารกิจไม่สำเร็จ: ${result.error}`
+          : result.data.already
+            ? "กดรับภารกิจที่กำลังทำอยู่แล้ว"
+            : `รับภารกิจ (รอบที่ ${result.data.round})`,
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { missionId, customerId: portalData.customer.id, enrollmentId: result.data?.enrollmentId ?? null, smsOptIn },
+    });
+    if (result.error !== null) return { error: result.error };
+    revalidatePath(`/member/${storeSlug}`);
+    return { error: null, already: result.data.already };
+  } catch (e) {
+    logPublicMemberActionError("joinMission", e);
+    return { error: "รับภารกิจไม่สำเร็จ กรุณาลองใหม่" };
+  }
+}
+
+/** ลูกค้าเปิด/ปิดรับ SMS ภารกิจของสาขานี้ (PDPA: ยกเลิกได้ทุกเมื่อ) */
+export async function setMissionSmsOptOutAction(formData: FormData): Promise<{ error: string | null }> {
+  try {
+    const storeSlug = text(formData, "storeSlug");
+    const portalCode = text(formData, "portalCode");
+    const optOut = text(formData, "optOut") === "1";
+    const portalData = await getCustomerPortalData(storeSlug, portalCode);
+    if (!portalData.portalValid || !portalData.store) {
+      return { error: publicMemberError(portalData.error, "ต้องเปิดจาก QR ของร้าน") };
+    }
+    if (!portalData.customer) return { error: "กรุณาเข้าสู่ระบบก่อน" };
+    const result = await setMissionSmsOptOut(portalData.store.id, portalData.customer.id, optOut);
+    void logSystemEvent({
+      level: result.error ? "error" : "info",
+      source: "missions.member",
+      action: "setMissionSmsOptOutAction",
+      message: result.error ? `เปลี่ยนการรับ SMS ภารกิจไม่สำเร็จ: ${result.error}` : optOut ? "ลูกค้ายกเลิกรับ SMS ภารกิจ" : "ลูกค้าเปิดรับ SMS ภารกิจ",
+      organizationId: portalData.store.organizationId,
+      storeId: portalData.store.id,
+      context: { customerId: portalData.customer.id, optOut },
+    });
+    if (result.error !== null) return { error: "บันทึกไม่สำเร็จ กรุณาลองใหม่" };
+    revalidatePath(`/member/${storeSlug}`);
+    return { error: null };
+  } catch (e) {
+    logPublicMemberActionError("setMissionSmsOptOut", e);
+    return { error: "บันทึกไม่สำเร็จ กรุณาลองใหม่" };
   }
 }

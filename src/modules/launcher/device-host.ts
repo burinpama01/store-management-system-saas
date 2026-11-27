@@ -147,6 +147,12 @@ export function initLauncherDevice(): void {
   initialized = true;
   webview = detectWebView();
   if (!webview) return;
+  // โปรแกรม StoreOS POS (ตัวใหม่ พิมพ์ตรง) ไม่ใช่ StoreOS Launcher — ไม่มีช่อง storeos.device
+  // ถ้าไม่ข้าม จะถูกนับเป็น "Launcher รุ่นเก่า" แล้วขึ้นแถบชวนดาวน์โหลดผิดโปรแกรม
+  if (/StoreOSPos\//.test(navigator.userAgent)) {
+    webview = null;
+    return;
+  }
 
   setSnapshot({ inLauncher: true });
   webview.addEventListener("message", (event) => {

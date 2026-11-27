@@ -6,6 +6,8 @@ import { ReceiptSettingsForm } from "./ReceiptSettingsForm";
 import { ReceiptTests } from "./ReceiptTests";
 import { PrinterConnect } from "./PrinterConnect";
 import { saveHubBluetoothPrinterAction, saveNetworkPrinterAction } from "./actions";
+import { PrintModeCard } from "./PrintModeCard";
+import { getStorePrintMode } from "@/modules/printing/direct-print-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,7 @@ export default async function ReceiptSettingsPage() {
 
   const settingsRes = await getReceiptSettings(ctx.storeId, ctx.organizationId);
   const printersRes = await listPrinters(ctx.storeId, ctx.organizationId);
+  const printMode = await getStorePrintMode(ctx.storeId);
   const canEdit = resolved.can("settings.manage_store");
 
   return (
@@ -29,6 +32,7 @@ export default async function ReceiptSettingsPage() {
           storeId={ctx.storeId}
         />
       )}
+      <PrintModeCard mode={printMode} canEdit={resolved.can("settings.manage_printer")} />
       <PrinterConnect
         printers={printersRes.data}
         printerLoadError={printersRes.error?.userMessage ?? null}

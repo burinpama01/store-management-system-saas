@@ -8,6 +8,7 @@ import { parseServiceAccount, sendFcmToDevice } from "@/modules/notifications/pu
 import { deleteDevicePushTokens } from "@/modules/notifications/repository";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { claimPayrollNotification } from "./repository";
+import { listResignedUserIds } from "../employment-status";
 
 export interface PayrollPushInput {
   organizationId: string;
@@ -22,7 +23,19 @@ export interface PayrollPushInput {
 }
 
 export async function pushPayrollNotification(input: PayrollPushInput): Promise<{ sent: number; devices: number; skipped?: string }> {
-  const userIds = [...new Set(input.userIds)].filter(Boolean);
+  // คนที่ลาออกจากสาขานี้แล้ว (เลยวันออกงาน) ไม่ได้รับแจ้งเตือนเงินเดือน/ร้านอีก
+  const resigned = await listResignedUserIds(input.storeId).catch(async (e) => {
+    await logSystemEvent({
+      level: "warn",
+      source: "hr.payroll-notify",
+      action: "listResignedUserIds",
+      message: `อ่านรายชื่อพนักงานที่ลาออกไม่สำเร็จ — ส่งแจ้งเตือนโดยไม่ตัดใคร: ${e instanceof Error ? e.message : String(e)}`,
+      organizationId: input.organizationId,
+      storeId: input.storeId,
+    }).catch(() => undefined);
+    return new Set<string>();
+  });
+  const userIds = [...new Set(input.userIds)].filter((id) => !!id && !resigned.has(id));
   if (userIds.length === 0) return { sent: 0, devices: 0, skipped: "no_recipients" };
   if (input.dedupeKey && !(await claimPayrollNotification(input.storeId, input.kind, input.dedupeKey))) {
     return { sent: 0, devices: 0, skipped: "duplicate" };

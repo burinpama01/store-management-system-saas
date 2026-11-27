@@ -10,6 +10,7 @@ import {
   createStaffMember,
   upsertStoreHrSettings,
   updateStorePayslipIdentity,
+  getStoreHrSettings,
 } from "@/modules/hr/repository";
 import { parseEmployeeIdentity } from "@/modules/hr/employee-identity";
 import { getStoreLocalDate } from "@/modules/attendance/date";
@@ -90,8 +91,13 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
     const access = await getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId);
     const sw = access.settings.switches;
     const before = (await listEmployeeProfiles(ctx.storeId)).data?.find((p) => p.userId === userId);
-    const advanced: { ssoEnabled?: boolean; withholdingTaxRate?: number } = {};
+    const advanced: { ssoEnabled?: boolean; withholdingTaxRate?: number; payFrequency?: "monthly" | "weekly" | "weekly_advance" } = {};
     if (sw.socialSecurity) advanced.ssoEnabled = formData.get("ssoEnabled") === "on";
+    // รอบจ่ายรายสัปดาห์ — ตั้งได้เฉพาะเมื่อร้านเปิดสวิตช์ (ปิดสวิตช์ = คงค่าเดิม แต่ไม่มีผล)
+    if (sw.weeklyPay && formData.has("payFrequency")) {
+      const f = formData.get("payFrequency");
+      advanced.payFrequency = f === "weekly" || f === "weekly_advance" ? f : "monthly";
+    }
     if (sw.withholdingTax && access.settings.whtMode === "percent") {
       const rate = Math.round(parseFloat(String(formData.get("withholdingTaxRate") ?? "0")) * 100) / 100;
       if (!(rate >= 0 && rate <= 35)) return { error: "อัตราภาษีต้องอยู่ระหว่าง 0–35%" };
@@ -229,6 +235,8 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
         rateEffectiveFrom: rateChanged ? rateEffectiveRaw || today : null,
         skillsGranted: skillChanges.granted.length,
         skillsRevoked: skillChanges.revoked.length,
+        payFrequency: advanced.payFrequency ?? null,
+        payFrequencyChanged: advanced.payFrequency !== undefined && (before?.payFrequency ?? "monthly") !== advanced.payFrequency,
       },
     });
 
@@ -243,7 +251,7 @@ export async function saveEmployeeProfileAction(formData: FormData): Promise<{ e
 export async function saveHrSettingsAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.manage");
-    const { ctx } = await getStoreContext();
+    const { user, ctx } = await getStoreContext();
 
     const num = (key: string, min: number, max: number): number | null => {
       const n = Math.round(parseFloat(String(formData.get(key) ?? "")) * 100) / 100;
@@ -258,23 +266,30 @@ export async function saveHrSettingsAction(formData: FormData): Promise<{ error:
     const latePenaltyMaxPerDay = num("latePenaltyMaxPerDay", 0, 100_000);
     const absentPenaltyPerDay = num("absentPenaltyPerDay", 0, 100_000);
     const halfDayMaxHours = num("halfDayMaxHours", 0, 24);
+    const otModeRaw = String(formData.get("otMode") ?? "daily");
+    const otOverflowRaw = String(formData.get("otOverflowPay") ?? "regular");
+    const otMode = otModeRaw === "scheduled" ? "scheduled" : otModeRaw === "daily" ? "daily" : null;
+    const otOverflowPay = otOverflowRaw === "none" ? "none" : otOverflowRaw === "regular" ? "regular" : null;
     const backdatedRaw = parseInt(String(formData.get("backdatedRightsPerMonth") ?? ""), 10);
     const backdatedRightsPerMonth = Number.isInteger(backdatedRaw) && backdatedRaw >= 0 && backdatedRaw <= 31 ? backdatedRaw : null;
 
     if (
       regularHoursPerDay === null || otMultiplier === null || otDailyCapHours === null ||
       latePenaltyPerMinute === null || latePenaltyMaxPerDay === null || absentPenaltyPerDay === null ||
-      halfDayMaxHours === null || backdatedRightsPerMonth === null
+      halfDayMaxHours === null || backdatedRightsPerMonth === null || otMode === null || otOverflowPay === null
     ) {
       return { error: "ค่าตั้งค่าไม่ถูกต้อง" };
     }
 
+    const before = await getStoreHrSettings(ctx.storeId, ctx.organizationId);
     const result = await upsertStoreHrSettings({
       storeId: ctx.storeId,
       organizationId: ctx.organizationId,
       regularHoursPerDay,
       otMultiplier,
       otDailyCapHours,
+      otMode,
+      otOverflowPay,
       latePenaltyPerMinute,
       latePenaltyMaxPerDay,
       absentPenaltyPerDay,
@@ -283,7 +298,21 @@ export async function saveHrSettingsAction(formData: FormData): Promise<{ error:
     });
     if (result.error) return { error: result.error.userMessage };
 
+    if (before.otMode !== otMode || before.otOverflowPay !== otOverflowPay) {
+      await logSystemEvent({
+        level: "info",
+        source: "hr.ot-days",
+        action: "otModeChanged",
+        message: `เปลี่ยนการคิด OT: ${otMode === "scheduled" ? "เฉพาะวันที่กำหนด" : "ทุกวัน (แบบเดิม)"} · ชั่วโมงที่เกิน${otOverflowPay === "none" ? "ไม่จ่าย" : "จ่ายเรทปกติ"}`,
+        organizationId: ctx.organizationId,
+        storeId: ctx.storeId,
+        actorUserId: user.id,
+        context: { from: { otMode: before.otMode, otOverflowPay: before.otOverflowPay }, to: { otMode, otOverflowPay } },
+      });
+    }
+
     revalidatePath("/staff", "page");
+    revalidatePath("/payslip", "page");
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

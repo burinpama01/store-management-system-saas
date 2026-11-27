@@ -17,16 +17,14 @@ import {
   upsertAttendanceSettings,
   addManualAttendance,
   adjustAttendanceRecord,
+  findOpenRecordForDay,
   deleteAttendanceRecord,
-  countSelfBackdated,
-  nextMonthStart,
   addStoreHoliday,
   deleteStoreHoliday,
 } from "@/modules/attendance/repository";
 import {
   addPayrollAdjustment,
   deletePayrollAdjustment,
-  getStoreHrSettings,
   updateStoreWorkingDays,
 } from "@/modules/hr/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
@@ -43,8 +41,10 @@ import {
 } from "@/modules/attendance/shift-status-repository";
 import { buildDailySummaryMessage } from "@/modules/reports/daily-summary";
 import { logActionError, logSystemEvent } from "@/modules/system/event-log";
+import { decideBackdateRequest, submitBackdateRequest } from "@/modules/attendance/backdate-requests";
 import type { AttendanceGpsPolicy } from "@/modules/attendance/policy";
 import { getStore } from "@/modules/stores/repository";
+import { checkClockOutChecklistGate } from "@/modules/operations/clock-out-gate";
 
 async function getStoreContext() {
   const user = await getCurrentUser();
@@ -310,6 +310,9 @@ export async function clockInAction(formData: FormData): Promise<{ error: string
   }
 }
 
+/** กะที่เข้างานภายในกี่ชั่วโมงถึงนับว่า "ยังอยู่ในร้าน" ตอนตัดสินว่าต้องปิดรอบเงินสดก่อนออกไหม */
+const CLOCK_OUT_RECENT_SHIFT_HOURS = 16;
+
 export async function clockOutAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.clock");
@@ -324,12 +327,46 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     // Operate on the branch the shift belongs to (not the currently-resolved store).
     const recordStoreId = active.storeId;
 
-    // Cashier/staff must close that branch's open cash session before clocking out.
+    // Cashier/staff must close that branch's open cash session before clocking out —
+    // เฉพาะคนสุดท้ายที่ยังอยู่ในสาขา: ยังมีคนอื่นลงเวลาอยู่ (เช่นคนทำ OT) = ออกได้ คนที่อยู่ต่อเป็นคนปิดรอบ
+    // นับเฉพาะกะที่เข้างานภายใน 16 ชม. — กะค้างวันเดียวกันที่ลืมกดออกต้องไม่ทำให้คนสุดท้ายจริงหลุดการปิดรอบ
+    const recentShiftSince = new Date(now.getTime() - CLOCK_OUT_RECENT_SHIFT_HOURS * 60 * 60 * 1000).toISOString();
+    let leftWithOpenCashSessionId: string | null = null;
     if (ctx.role === "cashier" || ctx.role === "staff") {
       const openSession = await getOpenCashSession(recordStoreId);
       if (openSession.error) return { error: openSession.error.userMessage };
-      if (openSession.data) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
+      if (openSession.data) {
+        const othersOnShift = await countOpenShiftsInStore({
+          storeId: recordStoreId,
+          organizationId: ctx.organizationId,
+          date: active.date,
+          excludeRecordId: active.id,
+          clockedInSince: recentShiftSince,
+        });
+        // นับไม่ได้ (null) = ยืนยันไม่ได้ว่ามีคนอยู่ต่อ → บล็อกแบบเดิม (fail closed)
+        if (!othersOnShift) return { error: "กรุณาปิดรอบเงินสดก่อนออกงาน" };
+        leftWithOpenCashSessionId = openSession.data.id;
+        await logSystemEvent({
+          level: "info",
+          source: "attendance.clock-out",
+          action: "clockOutWithOpenCashSession",
+          message: `ออกงานขณะรอบเงินสดยังเปิด — ยังมีคนลงเวลาอยู่ ${othersOnShift} คน (คนสุดท้ายต้องปิดรอบ)`,
+          organizationId: ctx.organizationId,
+          storeId: recordStoreId,
+          actorUserId: user.id,
+          context: { attendanceRecordId: active.id, cashSessionId: openSession.data.id, othersOnShift, shiftDate: active.date },
+        }).catch(() => undefined);
+      }
     }
+
+    // ผู้รับผิดชอบเช็กลิสต์ที่ตั้ง "ต้องเสร็จก่อนออกงาน" ต้องส่งก่อน (ทุก role — ตามที่เจ้าของมอบหมาย)
+    const checklistBlock = await checkClockOutChecklistGate({
+      organizationId: ctx.organizationId,
+      storeId: recordStoreId,
+      userId: user.id,
+      shiftDate: active.date,
+    });
+    if (checklistBlock) return { error: checklistBlock };
 
     const gpsPolicy = await getAttendanceGpsPolicy(recordStoreId, ctx.organizationId);
     const locationAllowed = gpsPolicy.gpsEnabled;
@@ -357,6 +394,28 @@ export async function clockOutAction(formData: FormData): Promise<{ error: strin
     });
 
     if (result.error) return { error: result.error.userMessage };
+    if (leftWithOpenCashSessionId) {
+      // ตรวจซ้ำหลังออก: สองคนกดออกพร้อมกันอาจเห็นกันและกันจนไม่มีใครปิดรอบ — บันทึกเตือนให้ตามปิด
+      const remaining = await countOpenShiftsInStore({
+        storeId: recordStoreId,
+        organizationId: ctx.organizationId,
+        date: active.date,
+        excludeRecordId: active.id,
+        clockedInSince: recentShiftSince,
+      });
+      if (remaining === 0) {
+        await logSystemEvent({
+          level: "warn",
+          source: "attendance.clock-out",
+          action: "cashSessionLeftOpen",
+          message: "ทุกคนออกงานแล้วแต่รอบเงินสดยังเปิดค้าง (ออกพร้อมกัน) — ต้องมีคนเปิด POS ปิดรอบ",
+          organizationId: ctx.organizationId,
+          storeId: recordStoreId,
+          actorUserId: user.id,
+          context: { attendanceRecordId: active.id, cashSessionId: leftWithOpenCashSessionId, shiftDate: active.date },
+        }).catch(() => undefined);
+      }
+    }
     if (result.data) {
       notifyOwnerSafely({
         type: "attendance_clock_out",
@@ -545,6 +604,20 @@ export async function addManualAttendanceAction(formData: FormData): Promise<{ e
     }
     const note = (String(formData.get("note") ?? "")).trim().slice(0, 200) || undefined;
 
+    // วันนั้นมีแถว "ลืมกดออกงาน" อยู่แล้ว → แก้แถวเดิมแทนการเพิ่มแถวซ้อน
+    const openRow = await findOpenRecordForDay(ctx.organizationId, userId, date);
+    if (openRow) {
+      const adjusted = await adjustAttendanceRecord(openRow.id, openRow.storeId, {
+        clockInAt,
+        clockOutAt,
+        note: note ?? openRow.note ?? undefined,
+        adjustedByUserId: user.id,
+      });
+      if (adjusted.error) return { error: adjusted.error.userMessage };
+      revalidatePath("/attendance", "page");
+      return { error: null };
+    }
+
     const result = await addManualAttendance({
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
@@ -595,46 +668,56 @@ export async function adjustAttendanceAction(formData: FormData): Promise<{ erro
   }
 }
 
-/** Employee self-service backdated clock for a missed day, limited to N/month. */
+/**
+ * พนักงานยื่นคำขอลงเวลาย้อนหลัง (ยังไม่มีผลจนกว่าผู้จัดการอนุมัติ)
+ * - recordId = แถวที่ลืมกดออกงาน → ขอแค่เวลาออก (เวลาเข้าใช้ของเดิม ไม่สร้างแถวซ้อน)
+ * - ไม่มี recordId = วันที่ไม่ได้ลงเวลาเลย → ขอทั้งเวลาเข้า-ออก
+ * สิทธิต่อเดือน/กันทับซ้อน/ตรวจเวลา ทำใน RPC request_attendance_backdate
+ */
 export async function selfBackdatedClockAction(formData: FormData): Promise<{ error: string | null }> {
   try {
     await requirePermission("attendance.clock");
     const { user, ctx } = await getStoreContext();
 
-    const date = String(formData.get("date") ?? "").trim();
-    if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
+    const recordId = String(formData.get("recordId") ?? "").trim();
+    if (recordId && !UUID_RE.test(recordId)) return { error: "รายการไม่ถูกต้อง" };
+    const clockOutAt = parseLocalDateTime(formData.get("clockOutAt"), ctx.storeTimezone);
+    if (!clockOutAt) return { error: "กรุณาระบุเวลาออก" };
 
-    const today = getStoreLocalDate(ctx.storeTimezone);
-    if (date >= today) return { error: "ลงย้อนหลังได้เฉพาะวันที่ผ่านมาแล้ว" };
-
-    const clockInAt = parseLocalDateTime(formData.get("clockInAt"), ctx.storeTimezone);
-    if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
-    const clockOutRaw = String(formData.get("clockOutAt") ?? "").trim();
-    const clockOutAt = clockOutRaw ? parseLocalDateTime(clockOutRaw, ctx.storeTimezone) : null;
-    if (clockOutRaw && !clockOutAt) return { error: "เวลาออกไม่ถูกต้อง" };
-    if (clockOutAt && Date.parse(clockOutAt) <= Date.parse(clockInAt)) {
-      return { error: "เวลาออกต้องหลังเวลาเข้า" };
+    let date: string | null = null;
+    let clockInAt: string | null = null;
+    if (!recordId) {
+      date = String(formData.get("date") ?? "").trim();
+      if (!DATE_RE.test(date) || isNaN(Date.parse(date))) return { error: "วันที่ไม่ถูกต้อง" };
+      if (date >= getStoreLocalDate(ctx.storeTimezone)) return { error: "ลงย้อนหลังได้เฉพาะวันที่ผ่านมาแล้ว" };
+      clockInAt = parseLocalDateTime(formData.get("clockInAt"), ctx.storeTimezone);
+      if (!clockInAt) return { error: "เวลาเข้าไม่ถูกต้อง" };
     }
+    const note = (String(formData.get("note") ?? "")).trim().slice(0, 200) || null;
 
-    const settings = await getStoreHrSettings(ctx.storeId, ctx.organizationId);
-    const monthStart = date.slice(0, 7) + "-01";
-    const used = await countSelfBackdated(user.id, ctx.storeId, monthStart, nextMonthStart(date));
-    if (used >= settings.backdatedRightsPerMonth) {
-      return { error: `ใช้สิทธิลงเวลาย้อนหลังครบ ${settings.backdatedRightsPerMonth} ครั้งในเดือนนี้แล้ว` };
-    }
-
-    const result = await addManualAttendance({
-      organizationId: ctx.organizationId,
+    const result = await submitBackdateRequest({
       storeId: ctx.storeId,
-      userId: user.id,
-      employeeName: (user.email ?? user.id).slice(0, 100),
+      recordId: recordId || null,
       date,
       clockInAt,
       clockOutAt,
-      note: (String(formData.get("note") ?? "")).trim().slice(0, 200) || undefined,
-      adjustedByUserId: user.id,
+      note,
     });
-    if (result.error) return { error: result.error.userMessage };
+    if (result.error || !result.id) {
+      await logSystemEvent({
+        level: "warn", source: "attendance.backdate", action: "requestBackdate",
+        message: "ยื่นคำขอลงเวลาย้อนหลังไม่สำเร็จ",
+        organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id,
+        context: { recordId: recordId || null, date, clockOutAt, error: result.rawError ?? result.error },
+      });
+      return { error: result.error ?? "ส่งคำขอไม่สำเร็จ" };
+    }
+    await logSystemEvent({
+      level: "info", source: "attendance.backdate", action: "requestBackdate",
+      message: recordId ? "ยื่นคำขอเวลาออกย้อนหลัง (ลืมกดออกงาน)" : "ยื่นคำขอลงเวลาย้อนหลังทั้งวัน",
+      organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id,
+      context: { requestId: result.id, recordId: recordId || null, date, clockOutAt },
+    });
 
     const requesterName = (user.email ?? user.id).slice(0, 100);
     notifyOwnerSafely({
@@ -642,11 +725,46 @@ export async function selfBackdatedClockAction(formData: FormData): Promise<{ er
       organizationId: ctx.organizationId,
       storeId: ctx.storeId,
       title: "คำขออนุมัติใหม่",
-      message: `${requesterName} ขอลงเวลาย้อนหลังวันที่ ${date}`,
-      metadata: { employeeName: requesterName, date, kind: "backdated_clock" },
+      message: recordId
+        ? `${requesterName} ขอลงเวลาออกย้อนหลัง (ลืมกดออกงาน) — รออนุมัติในหน้าลงเวลา`
+        : `${requesterName} ขอลงเวลาย้อนหลังวันที่ ${date} — รออนุมัติในหน้าลงเวลา`,
+      metadata: { employeeName: requesterName, date, kind: "backdated_clock", requestId: result.id },
     });
 
     revalidatePath("/attendance", "page");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };
+  }
+}
+
+/** ผู้จัดการอนุมัติ/ปฏิเสธ หรือพนักงานยกเลิกคำขอของตัวเอง (สิทธิ์ตรวจซ้ำใน RPC) */
+export async function decideBackdateRequestAction(
+  requestId: string,
+  action: "approve" | "reject" | "cancel",
+  note?: string,
+): Promise<{ error: string | null }> {
+  try {
+    if (action === "cancel") await requirePermission("attendance.clock");
+    else await requirePermission("attendance.manage");
+    const { user, ctx } = await getStoreContext();
+    if (!UUID_RE.test(requestId)) return { error: "รายการไม่ถูกต้อง" };
+    if (!["approve", "reject", "cancel"].includes(action)) return { error: "คำสั่งไม่ถูกต้อง" };
+
+    const result = await decideBackdateRequest({ requestId, action, note: note?.trim().slice(0, 200) || null });
+    await logSystemEvent({
+      level: result.error ? "warn" : "info",
+      source: "attendance.backdate",
+      action: `decideBackdate.${action}`,
+      message: result.error
+        ? "ดำเนินการคำขอลงเวลาย้อนหลังไม่สำเร็จ"
+        : action === "approve" ? "อนุมัติคำขอลงเวลาย้อนหลัง" : action === "reject" ? "ปฏิเสธคำขอลงเวลาย้อนหลัง" : "ยกเลิกคำขอลงเวลาย้อนหลัง",
+      organizationId: ctx.organizationId, storeId: ctx.storeId, actorUserId: user.id,
+      context: { requestId, employee: result.data?.employeeName ?? null, date: result.data?.date ?? null, error: result.rawError ?? result.error },
+    });
+    if (result.error) return { error: result.error };
+    if (action === "approve") revalidateAttendancePayrollPaths();
+    else revalidatePath("/attendance", "page");
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "เกิดข้อผิดพลาด" };

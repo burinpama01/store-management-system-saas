@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
-import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings } from "@/modules/hr/repository";
+import { listEmployeeProfiles, listPayrollAdjustments, getStoreHrSettings, listStoreOtDays } from "@/modules/hr/repository";
+import { listEmployeeSelfInfo } from "@/modules/hr/self-info-repository";
+import { applySelfInfo } from "@/modules/hr/self-info";
 import { getReceiptSettings } from "@/modules/settings/repository";
 import { maskBankAccount, resolvePayslipIssuer } from "@/modules/hr/employee-identity";
 import {
@@ -10,7 +12,7 @@ import {
 } from "@/modules/attendance/repository";
 import { listStoreMemberships } from "@/modules/settings/repository";
 // computePayrollLines เดิมถูกห่อด้วย computeAdvancedPayrollLines (ไม่มีสิทธิ์/ปิดสวิตช์ = ผลเท่าเดิม)
-import { computeAdvancedPayrollLines, type AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
+import { computeAdvancedPayrollLines, joinedDatesFromMembers, type AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { getAdvancedPayrollAccess, loadAdvancedContext } from "@/modules/hr/advanced/store-payroll";
 import { listCurrentPayslipsForPeriod, listPayrollPeriods } from "@/modules/hr/advanced/repository";
 import type { PayslipSnapshotData } from "@/modules/hr/advanced/close-period";
@@ -82,7 +84,7 @@ export default async function PayslipPage({
     });
     views.sort((a, b) => a.line.employeeName.localeCompare(b.line.employeeName));
   } else {
-    const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, hrSettings, receiptRes, access] = await Promise.all([
+    const [membersRes, profilesRes, recordsRes, adjustmentsRes, holidaysRes, hrSettings, receiptRes, access, selfInfo] = await Promise.all([
       listStoreMemberships(ctx.organizationId, ctx.storeId),
       listEmployeeProfiles(ctx.storeId),
       // Org-wide, then narrowed to this store's roster — same scope as /staff so the slip always
@@ -93,12 +95,14 @@ export default async function PayslipPage({
       getStoreHrSettings(ctx.storeId, ctx.organizationId),
       getReceiptSettings(ctx.storeId, ctx.organizationId),
       getAdvancedPayrollAccess(ctx.organizationId, ctx.storeId),
+      listEmployeeSelfInfo(ctx.storeId),
     ]);
+    const otDays = hrSettings.otMode === "scheduled" ? await listStoreOtDays(ctx.storeId, dateFrom, dateTo) : [];
 
     const roster = new Set((membersRes.data ?? []).filter((m) => m.role !== "super_admin").map((m) => m.userId));
     const records = (recordsRes.data ?? []).filter((r) => roster.has(r.userId));
     const summaries = computePayrollSummaries(records, null, ctx.organizationId, dateFrom, dateTo);
-    const adv = await loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo);
+    const adv = await loadAdvancedContext(ctx.storeId, access.settings, dateFrom, dateTo, { otDays, records });
     const lines = computeAdvancedPayrollLines(
       {
         summaries,
@@ -107,16 +111,19 @@ export default async function PayslipPage({
         adjustments: adjustmentsRes.data ?? [],
         settings: hrSettings,
         holidayDates: (holidaysRes.data ?? []).map((h) => h.date),
+        otDays,
         periodStart: dateFrom,
         periodEnd: dateTo,
         today,
         timezone: ctx.storeTimezone,
+        joinedDates: joinedDatesFromMembers(membersRes.data ?? [], ctx.storeTimezone),
       },
       adv,
     );
     issuer = resolvePayslipIssuer(hrSettings, receiptRes.data, storeName);
     otMultiplier = hrSettings.otMultiplier;
-    const profileByUser = new Map((profilesRes.data ?? []).map((p) => [p.userId, p]));
+    // ชื่อจริง/บัญชี: ค่าที่เจ้าของตั้งก่อน ไม่มีจึงใช้ที่พนักงานกรอกเอง
+    const profileByUser = new Map((profilesRes.data ?? []).map((p) => [p.userId, applySelfInfo(p, selfInfo.get(p.userId))]));
     views = lines.map((line) => {
       const p = profileByUser.get(line.userId);
       return {

@@ -1,3 +1,4 @@
+import { missionReceiptRows } from "./mission-lines";
 import type { ReceiptData } from "./types";
 import { buildReceiptPromptPayQr } from "./receipt-qr";
 import { formatPoints } from "@/shared/utils/points";
@@ -252,7 +253,9 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     const priceField = `x${item.quantity} ${priceStr(item.totalPrice)}`;
     // ชื่อเมนูวาดด้วยฟอนต์ใหญ่กว่าบรรทัดอื่น จึงตัดความยาวตามสัดส่วนคอลัมน์ที่เหลือ
     // หลังหักที่ของราคา แล้วให้ผู้วาดจัดราคาชิดขวาเอง (ดู `right` ใน ReceiptLine)
-    const nameWidth = Math.floor((cols - priceField.length - 1) / ITEM_NAME_SCALE);
+    // ราคาวาดใหญ่เท่าชื่อเมนูด้วย (ผู้ใช้ขอให้ราคาอ่านง่ายขึ้น) จึงหักที่ราคาตามสัดส่วนฟอนต์ใหญ่
+    // อย่างน้อย 4 ตัว: ราคายาวมาก (ขายส่ง) บนกระดาษ 58mm ต้องไม่ทำให้ชื่อเมนูหายทั้งบรรทัด
+    const nameWidth = Math.max(4, Math.floor((cols - priceField.length * ITEM_NAME_SCALE - 1) / ITEM_NAME_SCALE));
     const name = displayName.length > nameWidth ? displayName.slice(0, nameWidth - 1) + "…" : displayName;
     lines.push({ text: name, right: priceField, emphasis: "item" });
     // Department-store style: show the multiplication when the line is more than 1 unit.
@@ -275,7 +278,8 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     const label = data.discountNote ? `ส่วนลด (${data.discountNote})` : "ส่วนลด";
     lines.push({ text: padLine(label, `-${priceStr(data.discount)}`, cols) });
   }
-  lines.push({ text: padLine("** รวมสุทธิ **", priceStr(data.total), cols), bold: true });
+  // ยอดสุทธิวาดใหญ่ (ขนาดเดียวกับชื่อเมนู) — ลูกค้า/แคชเชียร์มองหาบรรทัดนี้ก่อนเสมอ
+  lines.push({ text: "** รวมสุทธิ **", right: priceStr(data.total), bold: true, emphasis: "item" });
 
   if (isFiniteNumber(data.vatRate) && data.vatRate > 0) {
     // VAT is included in the prices: back out the pre-VAT value for display only.
@@ -316,6 +320,16 @@ export function buildReceiptLines(data: ReceiptData): { lines: ReceiptLine[]; co
     }
     if (hasBalancePoints) {
       lines.push({ text: padLine("แต้มคงเหลือ", pointsStr(balancePoints), cols) });
+    }
+  }
+
+  const missionRows = missionReceiptRows(data.missionProgress);
+  if (missionRows.length > 0) {
+    lines.push({ text: div });
+    lines.push({ text: "ภารกิจสะสม", align: "center", bold: true });
+    for (const row of missionRows) {
+      lines.push({ text: padLine(row.name.slice(0, Math.max(cols - row.progress.length - 1, 8)), row.progress, cols) });
+      lines.push({ text: row.note, align: "center", bold: true });
     }
   }
 

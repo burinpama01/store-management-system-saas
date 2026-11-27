@@ -17,6 +17,8 @@ interface SalesTargetData {
   topTier?: { minSales: number; amount: number } | null;
   isRecord?: boolean;
   recordBonus?: number;
+  /** split = ตัวเลขเป็นก้อนรวม หารตามคนที่ทำเต็มวัน */
+  bonusMode?: "per_person" | "split";
 }
 
 const REFRESH_MS = 5 * 60_000;
@@ -27,6 +29,7 @@ function baht(n: number): string {
 
 export function SalesTargetBar({ className = "" }: { className?: string }) {
   const [data, setData] = useState<SalesTargetData | null>(null);
+  const unit = data?.bonusMode === "split" ? " (รวม หารตามคนเข้างาน)" : "/คน";
 
   useEffect(() => {
     let stopped = false;
@@ -74,14 +77,14 @@ export function SalesTargetBar({ className = "" }: { className?: string }) {
         <span className="font-semibold">ยอดขายวันนี้ ฿{baht(sales)}</span>
         <span>
           {data.isRecord ? (
-            <b>👑 ทำสถิติสูงสุดของร้าน! โบนัสสถิติ +{data.recordBonus}/คน</b>
+            <b>👑 ทำสถิติสูงสุดของร้าน! โบนัสสถิติ +{data.recordBonus}{unit}</b>
           ) : next ? (
             <>
-              อีก <b>฿{baht(data.remaining ?? 0)}</b> ถึงโบนัส <b>+{next.amount}/คน</b>
-              {data.currentBonus ? ` · ตอนนี้ได้ +${data.currentBonus}/คน` : ""}
+              อีก <b>฿{baht(data.remaining ?? 0)}</b> ถึงโบนัส <b>+{next.amount}{unit}</b>
+              {data.currentBonus ? ` · ตอนนี้ได้ +${data.currentBonus}${unit}` : ""}
             </>
           ) : (
-            <b>ถึงขั้นสูงสุดแล้ว 🎉 โบนัส +{data.currentBonus}/คน</b>
+            <b>ถึงขั้นสูงสุดแล้ว 🎉 โบนัส +{data.currentBonus}{unit}</b>
           )}
         </span>
       </div>

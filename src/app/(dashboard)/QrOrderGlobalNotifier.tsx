@@ -314,7 +314,9 @@ export function QrOrderGlobalNotifier({
       setPrintStatus("กำลังสั่งพิมพ์ออร์เดอร์ QR");
       const printResult = await printQrKitchenOrder(storeName, visibleOrder, receiptPrinters);
       setPrintStatus(
-        printResult.hubOnline === false
+        printResult.direct
+          ? "พิมพ์ออร์เดอร์ QR แล้ว (พิมพ์ตรงจาก POS Launcher)"
+          : printResult.hubOnline === false
           ? "ส่งเข้าคิวแล้ว แต่ Hub (เครื่องแคชเชียร์) ออฟไลน์ — จะพิมพ์เมื่อเปิดเครื่อง"
           : hubPrinter
             ? "ส่งออร์เดอร์ QR เข้าคิว Hub แล้ว"

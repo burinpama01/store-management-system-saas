@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MemberWithEmail } from "@/modules/settings/repository";
-import type { EmployeeProfile, PayrollAdjustment, StoreHrSettings } from "@/modules/hr/types";
+import type { EmployeeProfile, PayrollAdjustment, StoreHrSettings, StoreOtDay } from "@/modules/hr/types";
 import {
   PAY_TYPE_LABEL,
   ADJUSTMENT_LABEL,
@@ -13,6 +13,10 @@ import {
   EMPLOYMENT_TYPE_LABEL,
 } from "@/modules/hr/types";
 import { defaultEmploymentType, seniorityLabel } from "@/modules/hr/employee-identity";
+import type { EmployeeSelfInfo } from "@/modules/hr/self-info";
+import type { SelfInfoRequestView } from "@/modules/hr/self-info-repository";
+import { SelfInfoSummary } from "./SelfInfoSummary";
+import { SelfInfoRequests } from "./SelfInfoRequests";
 import type { PayrollLine } from "@/modules/hr/payroll";
 import type { Role } from "@/modules/tenants/types";
 import {
@@ -24,12 +28,17 @@ import {
   savePayslipIdentityAction,
 } from "./actions";
 import { Button } from "@/shared/components/ui";
+import { useConfirm } from "@/shared/components/ui/useConfirm";
 import type { AdvancedPayrollSettings } from "@/modules/hr/advanced/settings";
 import type { PayrollPeriodRow, StoreSkill } from "@/modules/hr/advanced/repository";
 import type { PayPeriod } from "@/modules/hr/advanced/pay-cycle";
 import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { AdvancedPayrollPanel } from "./AdvancedPayrollPanel";
+import { PAY_FREQUENCIES, PAY_FREQUENCY_LABEL, type PayWeek } from "@/modules/hr/advanced/weekly";
+import { WeeklyPayoutsPanel, type WeeklyPayoutView } from "./WeeklyPayoutsPanel";
+import { SalaryAdvancesPanel, type AdvanceView } from "./SalaryAdvancesPanel";
 import { PayrollPeriodsPanel } from "./PayrollPeriodsPanel";
+import { OtDaysPanel } from "./OtDaysPanel";
 
 export interface StaffAdvancedProps {
   entitled: boolean;
@@ -43,14 +52,28 @@ export interface StaffAdvancedProps {
   periods: PayPeriod[];
   closedRows: PayrollPeriodRow[];
   businessToday: string;
+  /** จ่ายรายสัปดาห์: สัปดาห์ล่าสุด (ใหม่ → เก่า รวมสัปดาห์ปัจจุบัน) + ยอดที่บันทึกแล้ว */
+  weekly: { weeks: PayWeek[]; rows: WeeklyPayoutView[] };
+  /** คำขอเบิกเงินล่าสุด (เปิดสวิตช์เบิกเงินเท่านั้น) */
+  advances: AdvanceView[];
+  /** เงินสดในลิ้นชักตอนนี้ (null = อ่านไม่ได้/ไม่ได้เปิดเบิกเงิน) */
+  cashOnHand: number | null;
 }
+
+export type StaffSelfInfo = Omit<EmployeeSelfInfo, "bankAccountNo"> & { bankAccountMasked: string };
 
 interface Props {
   members: MemberWithEmail[];
   profiles: EmployeeProfile[];
+  /** ข้อมูลที่พนักงานกรอกเองในหน้า "ข้อมูลของฉัน" (key = userId) */
+  selfInfo: Record<string, StaffSelfInfo>;
+  /** คำขอแก้ข้อมูลที่รออนุมัติ */
+  selfInfoRequests: SelfInfoRequestView[];
   payrollLines: PayrollLine[];
   adjustments: PayrollAdjustment[];
   hrSettings: StoreHrSettings;
+  /** วันให้ OT (โหมดเฉพาะวัน) ตั้งแต่ 31 วันก่อนถึง 1 ปีข้างหน้า */
+  otDays: StoreOtDay[];
   currency: string;
   dateFrom: string;
   dateTo: string;
@@ -75,9 +98,12 @@ function fmt(amount: number, currency: string): string {
 export function StaffManager({
   members,
   profiles,
+  selfInfo,
+  selfInfoRequests,
   payrollLines,
   adjustments,
   hrSettings,
+  otDays,
   currency,
   dateFrom,
   dateTo,
@@ -89,15 +115,23 @@ export function StaffManager({
   const advLines = payrollLines as AdvancedPayrollLine[];
   const router = useRouter();
   const [tab, setTab] = useState<"employees" | "payroll" | "policy" | "features">("employees");
+  const { confirm, confirmDialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [showAddStaff, setShowAddStaff] = useState(false);
+  const [showResigned, setShowResigned] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const profileByUser = new Map(profiles.map((p) => [p.userId, p]));
   // Members scoped to actual employees (exclude platform super_admin rows).
   const staff = members.filter((m) => m.role !== "super_admin");
+  // ลาออกแล้ว = วันออกงานผ่านไปแล้ว (วันสุดท้ายยังนับว่าทำงานอยู่) — ซ่อนไว้ก่อน กดดูได้
+  const isResigned = (userId: string) => {
+    const end = profileByUser.get(userId)?.employmentEndDate;
+    return !!end && end < today;
+  };
+  const resignedCount = staff.filter((m) => isResigned(m.userId)).length;
 
   function run(action: () => Promise<{ error: string | null }>, onOk?: () => void) {
     setError(null);
@@ -121,6 +155,7 @@ export function StaffManager({
 
   return (
     <div className="page-shell">
+      {confirmDialog}
       <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-[var(--ink)]">พนักงาน &amp; เงินเดือน</h1>
@@ -160,6 +195,10 @@ export function StaffManager({
 
       {tab === "employees" ? (
         <section className="space-y-3">
+          <SelfInfoRequests
+            requests={selfInfoRequests}
+            nameOf={(userId) => profileByUser.get(userId)?.displayName || staff.find((m) => m.userId === userId)?.email || "พนักงาน"}
+          />
           {canAddStaff && (
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <button
@@ -204,12 +243,20 @@ export function StaffManager({
           )}
 
           <div className="space-y-2">
+            {resignedCount > 0 && (
+              <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={showResigned} onChange={(e) => setShowResigned(e.target.checked)} className="h-5 w-5 accent-orange-500" />
+                แสดงพนักงานที่ลาออกแล้ว ({resignedCount} คน)
+              </label>
+            )}
             {staff.length === 0 ? (
               <p className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-400">
                 ยังไม่มีพนักงาน
               </p>
             ) : (
-              staff.map((m) => {
+              staff
+                .filter((m) => showResigned || !isResigned(m.userId))
+                .map((m) => {
                 const profile = profileByUser.get(m.userId);
                 const isEditing = editingUserId === m.userId;
                 return (
@@ -218,6 +265,9 @@ export function StaffManager({
                       <div className="min-w-0">
                         <p className="font-semibold text-gray-900 truncate">
                           {profile?.displayName || m.email}
+                          {isResigned(m.userId) && (
+                            <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">ลาออกแล้ว</span>
+                          )}
                         </p>
                         {profile && (profile.employeeCode || profile.position || profile.seniorityStartDate) && (
                           <p className="text-xs text-gray-500 truncate">
@@ -262,6 +312,7 @@ export function StaffManager({
                         className="mt-4 grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-3"
                       >
                         <input type="hidden" name="userId" value={m.userId} />
+                        {selfInfo[m.userId] && <SelfInfoSummary info={selfInfo[m.userId]} owner={profile} />}
                         <p className="text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">ข้อมูลพนักงาน (แสดงบนสลิป)</p>
                         <label className="text-xs font-medium text-gray-600">
                           รหัสพนักงาน
@@ -305,7 +356,9 @@ export function StaffManager({
                         <label className="text-xs font-medium text-gray-600">
                           วันออกงาน
                           <input name="employmentEndDate" type="date" defaultValue={profile?.employmentEndDate ?? ""} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
-                          <span className="mt-1 block text-[11px] font-normal text-gray-400">ว่าง = ยังทำงานอยู่</span>
+                          <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                            ว่าง = ยังทำงานอยู่ · หลังวันนี้เข้าระบบของร้านและรับแจ้งเตือนไม่ได้ (เจ้าของกิจการไม่ถูกตัด)
+                          </span>
                         </label>
                         <p className="mt-2 text-xs font-bold text-gray-800 sm:col-span-2 lg:col-span-3">
                           บัญชีรับเงินเดือน
@@ -438,6 +491,22 @@ export function StaffManager({
                             </div>
                           </div>
                         )}
+                        {asw.weeklyPay && (
+                          <label className="text-xs font-medium text-gray-600">
+                            รอบจ่าย
+                            <select
+                              name="payFrequency"
+                              defaultValue={profile?.payFrequency ?? "monthly"}
+                              className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3"
+                              style={{ fontSize: 16 }}
+                            >
+                              {PAY_FREQUENCIES.map((f) => (
+                                <option key={f} value={f}>{PAY_FREQUENCY_LABEL[f]}</option>
+                              ))}
+                            </select>
+                            <span className="mt-1 block text-[11px] font-normal text-gray-400">รายสัปดาห์ = คิดเฉพาะวันที่มา + OT + โบนัสรายวัน</span>
+                          </label>
+                        )}
                         {asw.socialSecurity && (
                           <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
                             <input type="checkbox" name="ssoEnabled" defaultChecked={profile?.ssoEnabled ?? true} className="accent-orange-500" />
@@ -473,6 +542,30 @@ export function StaffManager({
               dateFrom={dateFrom}
               dateTo={dateTo}
               currency={currency}
+            />
+          )}
+          {asw.salaryAdvance && (
+            <SalaryAdvancesPanel
+              advances={advanced.advances}
+              cashOnHand={advanced.cashOnHand}
+              employees={staff
+                .filter((m) => !isResigned(m.userId))
+                .map((m) => ({ userId: m.userId, name: profileByUser.get(m.userId)?.displayName || m.email }))}
+            />
+          )}
+          {asw.weeklyPay && (
+            <WeeklyPayoutsPanel
+              weeks={advanced.weekly.weeks}
+              rows={advanced.weekly.rows}
+              businessToday={advanced.businessToday}
+              currency={currency}
+              weeklyStaffCount={
+                profiles.filter(
+                  (p) =>
+                    (p.payFrequency === "weekly" || p.payFrequency === "weekly_advance") &&
+                    (!p.employmentEndDate || p.employmentEndDate >= advanced.businessToday),
+                ).length
+              }
             />
           )}
           {/* Period picker */}
@@ -534,6 +627,7 @@ export function StaffManager({
                       <td className="px-3 py-2 text-gray-800">
                         {l.employeeName}
                         {!l.hasProfile && <span className="ml-1 text-xs text-amber-500">(ยังไม่ตั้งค่าจ้าง)</span>}
+                        {l.paidWeekly && <span className="block text-[10px] text-sky-600">จ่ายรายสัปดาห์ (แยกรอบ) — ไม่อยู่ในงวด/สลิปนี้</span>}
                       </td>
                       <td className="px-3 py-2 text-gray-500">{PAY_TYPE_LABEL[l.payType]}</td>
                       <td className="px-3 py-2 text-right text-gray-700">
@@ -556,7 +650,7 @@ export function StaffManager({
                       <td className="px-3 py-2 text-right text-red-600">{l.absentPenalty ? `−${fmt(l.absentPenalty, currency)}` : "—"}<span className="block text-[10px] text-gray-400">{l.absentDays ? `${l.absentDays} วัน` : ""}</span></td>
                       <td className="px-3 py-2 text-right text-green-600">
                         {(() => {
-                          const extra = l.bonusTotal + (l.skillPay ?? 0) + (l.seniorityPay ?? 0) + (l.salesBonus ?? 0);
+                          const extra = l.bonusTotal + (l.skillPay ?? 0) + (l.seniorityPay ?? 0) + (l.salesBonus ?? 0) + (l.monthlySalesBonus ?? 0);
                           return extra ? `+${fmt(extra, currency)}` : "—";
                         })()}
                         <span className="block text-[10px] text-gray-400">
@@ -564,6 +658,7 @@ export function StaffManager({
                             l.skillPay ? `ทักษะ ${l.skillPay}` : "",
                             l.seniorityPay ? `อายุงาน ${l.seniorityPay}` : "",
                             l.salesBonus ? `ยอดขาย ${l.salesBonus}` : "",
+                            l.monthlySalesBonus ? `ยอดรายเดือน ${l.monthlySalesBonus}` : "",
                           ]
                             .filter(Boolean)
                             .join(" · ")}
@@ -571,14 +666,22 @@ export function StaffManager({
                       </td>
                       <td className="px-3 py-2 text-right text-red-600">
                         {(() => {
-                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0);
+                          const ded = l.deductionTotal + (l.socialSecurity ?? 0) + (l.withholdingTax ?? 0) + (l.weeklyAdvance ?? 0) + (l.salaryAdvanceDeduction ?? 0);
                           return ded ? `−${fmt(ded, currency)}` : "—";
                         })()}
                         <span className="block text-[10px] text-gray-400">
-                          {[l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "", l.withholdingTax ? `ภาษี ${l.withholdingTax}` : ""].filter(Boolean).join(" · ")}
+                          {[
+                            l.socialSecurity ? `ปกส. ${l.socialSecurity}` : "",
+                            l.withholdingTax ? `ภาษี ${l.withholdingTax}` : "",
+                            l.weeklyAdvance ? `จ่ายล่วงหน้ารายสัปดาห์ ${l.weeklyAdvance}` : "",
+                            l.salaryAdvanceDeduction ? `เบิกล่วงหน้า ${l.salaryAdvanceDeduction}` : "",
+                            l.salaryAdvanceShortfall ? `ค้างหักงวดหน้า ${l.salaryAdvanceShortfall}` : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(l.netPay, currency)}</td>
+                      <td className={`px-3 py-2 text-right font-bold ${l.paidWeekly ? "text-gray-400 line-through" : "text-gray-900"}`}>{fmt(l.netPay, currency)}</td>
                       <td className="px-3 py-2 text-right">
                         <a
                           href={`/payslip?userId=${l.userId}&${payslipQuery}`}
@@ -616,7 +719,8 @@ export function StaffManager({
                   }}
                 >
                   <option value="">— เลือก —</option>
-                  {staff.map((m) => {
+                  {/* คนลาออกแล้วไม่ต้องให้เลือก (ยกเว้นติ๊กแสดงคนลาออก — เผื่อปรับงวดสุดท้าย) */}
+                  {staff.filter((m) => showResigned || !isResigned(m.userId)).map((m) => {
                     const name = profileByUser.get(m.userId)?.displayName || m.email;
                     return (
                       <option key={m.userId} value={m.userId} data-name={name}>
@@ -667,7 +771,22 @@ export function StaffManager({
                       {a.note ? ` · ${a.note}` : ""}
                     </span>
                     <Button
-                      onClick={() => run(() => deleteAdjustmentAction(a.id))}
+                      onClick={async () => {
+                        // ค่าส่งเดลิเวอรี่ระบบสร้างจากออเดอร์ออนไลน์ — ลบแล้วคนส่งเสียรายได้ ต้องยืนยันก่อน
+                        if (
+                          a.type === "delivery_pay" &&
+                          !(await confirm({
+                            title: "ลบค่าส่งเดลิเวอรี่?",
+                            message: `ลบค่าส่งของ ${a.employeeName} (${a.note ?? ""}) — ระบบจะไม่สร้างให้ใหม่อัตโนมัติ`,
+                            confirmLabel: "ลบ",
+                            cancelLabel: "ไม่ลบ",
+                            danger: true,
+                          }))
+                        ) {
+                          return;
+                        }
+                        run(() => deleteAdjustmentAction(a.id));
+                      }}
                       loading={isPending}
                       className="shrink-0 text-xs text-red-500 hover:underline"
                     >
@@ -680,7 +799,15 @@ export function StaffManager({
           </div>
         </section>
       ) : tab === "features" ? (
-        <AdvancedPayrollPanel entitled={advanced.entitled} settings={advanced.stored} skills={advanced.skills} />
+        <AdvancedPayrollPanel
+          entitled={advanced.entitled}
+          settings={advanced.stored}
+          skills={advanced.skills}
+          employees={staff.map((m) => {
+            const p = profileByUser.get(m.userId);
+            return { userId: m.userId, name: p?.displayName || m.email, permanent: p?.employmentType === "permanent" };
+          })}
+        />
       ) : (
         <section className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -695,12 +822,35 @@ export function StaffManager({
                 <input name="regularHoursPerDay" type="number" min={1} max={24} step="0.5" defaultValue={hrSettings.regularHoursPerDay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
+                การคิด OT
+                <select name="otMode" defaultValue={hrSettings.otMode} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-base sm:text-sm">
+                  <option value="daily">ทุกวันที่ทำเกินชั่วโมงปกติ (แบบเดิม)</option>
+                  <option value="scheduled">เฉพาะวันที่กำหนด</option>
+                </select>
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  เฉพาะวันที่กำหนด = คิด OT เฉพาะวันในรายการ “วันให้ OT” ด้านล่าง · เปลี่ยนกลางงวด ระบบคิดใหม่ทั้งงวดที่ยังไม่ปิด
+                </span>
+              </label>
+              <label className="text-xs font-medium text-gray-600">
+                ชั่วโมงที่ทำเกินแต่ไม่ได้ OT (พนักงานรายชั่วโมง)
+                <select name="otOverflowPay" defaultValue={hrSettings.otOverflowPay} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-base sm:text-sm">
+                  <option value="regular">จ่ายเรทปกติตามชั่วโมงจริง</option>
+                  <option value="none">ไม่จ่าย (นับแค่ชั่วโมงปกติ + OT)</option>
+                </select>
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  เช่น วันไม่มี OT หรือทำเกินเพดาน OT · พนักงานรายวัน/รายเดือนไม่ได้รับผล
+                </span>
+              </label>
+              <label className="text-xs font-medium text-gray-600">
                 ตัวคูณ OT (เช่น 1.5)
                 <input name="otMultiplier" type="number" min={1} max={5} step="0.1" defaultValue={hrSettings.otMultiplier} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
               </label>
               <label className="text-xs font-medium text-gray-600">
-                OT สูงสุด/วัน (ชม.)
+                OT สูงสุด/วัน (ชม.) — โหมดทุกวัน
                 <input name="otDailyCapHours" type="number" min={0} max={12} step="0.5" defaultValue={hrSettings.otDailyCapHours} className="mt-1 w-full min-h-11 rounded-lg border border-gray-300 px-3 text-sm" />
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  OT นับเฉพาะชั่วโมงเต็ม · ทำ 1 ชม. 40 นาที ได้ 1 ชม. · ไม่ถึง 1 ชม. ไม่ได้ OT
+                </span>
               </label>
               <label className="text-xs font-medium text-gray-600">
                 ค่าปรับมาสาย/นาที
@@ -730,6 +880,21 @@ export function StaffManager({
               </div>
             </form>
           </div>
+          <OtDaysPanel
+            otDays={otDays}
+            employees={staff
+              .filter((m) => !isResigned(m.userId))
+              .map((m) => {
+                const p = profileByUser.get(m.userId);
+                return { userId: m.userId, name: p?.displayName || m.email, otEligible: p?.otEligible ?? true };
+              })}
+            today={today}
+            otMode={hrSettings.otMode}
+            storeMultiplier={hrSettings.otMultiplier}
+            isPending={isPending}
+            run={run}
+            onNotice={setNotice}
+          />
           <div className="rounded-lg border border-gray-200 bg-white p-4">
             <h2 className="text-sm font-bold text-gray-900">ข้อมูลบริษัท/ร้านบนสลิปเงินเดือน</h2>
             <p className="text-xs text-gray-500">เว้นว่าง = ใช้ชื่อร้าน ที่อยู่ และเลขผู้เสียภาษีจากตั้งค่าใบเสร็จ</p>

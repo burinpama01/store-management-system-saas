@@ -120,6 +120,23 @@ export async function getCustomerById(storeId: string, customerId: string) {
   return { data: data ? mapCustomer(data) : null, error: null };
 }
 
+/** ลูกค้า 1 คนพร้อมแต้มสะสม — ใช้หลังยืนยันรหัสสมาชิกที่ POS */
+export async function getCustomerProfileWithLoyalty(storeId: string, customerId: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("id", customerId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (error) return { data: null, error: mapError(error) };
+  if (!data) return { data: null, error: null };
+  const mapped = await mapCustomersWithLoyaltyAccounts(storeId, [data]);
+  if (mapped.error) return { data: null, error: mapped.error };
+  return { data: mapped.data?.[0] ?? null, error: null };
+}
+
 export async function saveCustomer(input: CustomerSaveInput) {
   const supabase = await createSupabaseServerClient();
   const payload = {

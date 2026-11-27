@@ -10,6 +10,9 @@ import type {
   PayType,
   AdjustmentType,
   StoreHrSettings,
+  StoreOtDay,
+  OtMode,
+  OtOverflowPay,
 } from "./types";
 import { DEFAULT_HR_SETTINGS } from "./types";
 import type { Database } from "@/server/integrations/supabase/database.types";
@@ -17,6 +20,7 @@ import type { Database } from "@/server/integrations/supabase/database.types";
 type ProfileRow = Database["public"]["Tables"]["employee_profiles"]["Row"];
 type AdjustmentRow = Database["public"]["Tables"]["payroll_adjustments"]["Row"];
 type HrSettingsRow = Database["public"]["Tables"]["store_hr_settings"]["Row"];
+type OtDayRow = Database["public"]["Tables"]["store_ot_days"]["Row"];
 
 export function mapProfile(row: ProfileRow): EmployeeProfile {
   return {
@@ -47,6 +51,8 @@ export function mapProfile(row: ProfileRow): EmployeeProfile {
     bankAccountName: row.bank_account_name ?? undefined,
     ssoEnabled: row.sso_enabled ?? true,
     withholdingTaxRate: row.withholding_tax_rate ?? 0,
+    payFrequency:
+      row.pay_frequency === "weekly" || row.pay_frequency === "weekly_advance" ? row.pay_frequency : "monthly",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -59,6 +65,8 @@ export function mapHrSettings(row: HrSettingsRow): StoreHrSettings {
     regularHoursPerDay: row.regular_hours_per_day,
     otMultiplier: row.ot_multiplier,
     otDailyCapHours: row.ot_daily_cap_hours,
+    otMode: row.ot_mode === "scheduled" ? "scheduled" : "daily",
+    otOverflowPay: row.ot_overflow_pay === "none" ? "none" : "regular",
     latePenaltyPerMinute: row.late_penalty_per_minute,
     latePenaltyMaxPerDay: row.late_penalty_max_per_day,
     absentPenaltyPerDay: row.absent_penalty_per_day,
@@ -86,6 +94,7 @@ export function mapAdjustment(row: AdjustmentRow): PayrollAdjustment {
     note: row.note ?? undefined,
     createdByUserId: row.created_by_user_id,
     createdAt: row.created_at,
+    onlineOrderId: (row as { online_order_id?: string | null }).online_order_id ?? null,
   };
 }
 
@@ -117,7 +126,7 @@ export interface UpsertProfileInput {
   /** ข้อมูลสำหรับสลิป — ไม่ส่ง = ไม่แตะคอลัมน์เหล่านี้ */
   identity?: EmployeeIdentityInput;
   /** เงินเดือนขั้นสูง: ประกันสังคม/ภาษีรายคน — ไม่ส่ง = ไม่แตะ */
-  advanced?: { ssoEnabled?: boolean; withholdingTaxRate?: number };
+  advanced?: { ssoEnabled?: boolean; withholdingTaxRate?: number; payFrequency?: "monthly" | "weekly" | "weekly_advance" };
 }
 
 export async function upsertEmployeeProfile(input: UpsertProfileInput) {
@@ -164,6 +173,7 @@ export async function upsertEmployeeProfile(input: UpsertProfileInput) {
       ...(input.advanced?.withholdingTaxRate !== undefined
         ? { withholding_tax_rate: input.advanced.withholdingTaxRate }
         : {}),
+      ...(input.advanced?.payFrequency !== undefined ? { pay_frequency: input.advanced.payFrequency } : {}),
       updated_at: new Date().toISOString(),
     },
     { onConflict: "store_id,user_id" },
@@ -199,6 +209,8 @@ export interface UpsertHrSettingsInput {
   regularHoursPerDay: number;
   otMultiplier: number;
   otDailyCapHours: number;
+  otMode: OtMode;
+  otOverflowPay: OtOverflowPay;
   latePenaltyPerMinute: number;
   latePenaltyMaxPerDay: number;
   absentPenaltyPerDay: number;
@@ -215,6 +227,8 @@ export async function upsertStoreHrSettings(input: UpsertHrSettingsInput) {
       regular_hours_per_day: input.regularHoursPerDay,
       ot_multiplier: input.otMultiplier,
       ot_daily_cap_hours: input.otDailyCapHours,
+      ot_mode: input.otMode,
+      ot_overflow_pay: input.otOverflowPay,
       late_penalty_per_minute: input.latePenaltyPerMinute,
       late_penalty_max_per_day: input.latePenaltyMaxPerDay,
       absent_penalty_per_day: input.absentPenaltyPerDay,
@@ -387,4 +401,126 @@ export async function createStaffMember(input: CreateStaffInput) {
   }
 
   return { ok: true, error: null, userId: created.user.id };
+}
+
+// ---------------------------------------------------------------------------
+// วันที่ให้ OT (โหมด "เฉพาะวันที่กำหนด")
+// ---------------------------------------------------------------------------
+export function mapOtDay(row: OtDayRow): StoreOtDay {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    organizationId: row.organization_id,
+    date: row.date,
+    capHours: Number(row.cap_hours),
+    multiplier: row.multiplier == null ? null : Number(row.multiplier),
+    userIds: row.user_ids ?? [],
+    note: row.note ?? undefined,
+    updatedByUserId: row.updated_by_user_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function isMissingTable(error: { code?: string } | null): boolean {
+  return !!error && (error.code === "42P01" || error.code === "PGRST205");
+}
+
+/**
+ * วันให้ OT ในช่วง from–to · ตารางยังไม่ถูกสร้าง (โค้ดขึ้นก่อน migration) = ไม่มีวันให้ OT
+ * error อื่นต้องไม่เงียบ — ไม่งั้นงวดที่ตั้ง OT ไว้จะคิดเงินขาด
+ */
+export async function listStoreOtDays(storeId: string, from: string, to: string): Promise<StoreOtDay[]> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("store_ot_days")
+    .select("*")
+    .eq("store_id", storeId)
+    .gte("date", from)
+    .lte("date", to)
+    .order("date", { ascending: true });
+  if (error) {
+    if (isMissingTable(error)) return [];
+    throw new Error(`อ่านวันให้ OT ไม่สำเร็จ: ${error.message}`);
+  }
+  return (data ?? []).map(mapOtDay);
+}
+
+export async function getStoreOtDay(storeId: string, id: string): Promise<StoreOtDay | null> {
+  const supabase = await createSupabaseServiceClient();
+  const { data, error } = await supabase.from("store_ot_days").select("*").eq("store_id", storeId).eq("id", id).maybeSingle();
+  if (error) throw new Error(`อ่านวันให้ OT ไม่สำเร็จ: ${error.message}`);
+  return data ? mapOtDay(data) : null;
+}
+
+/** บันทึกวันให้ OT (หลายวันพร้อมกัน) — วันเดิมถูกแทนที่ · เรียกหลัง server action ตรวจสิทธิ์/กฎย้อนหลังแล้วเท่านั้น */
+export async function upsertStoreOtDays(rows: {
+  storeId: string;
+  organizationId: string;
+  date: string;
+  capHours: number;
+  multiplier: number | null;
+  userIds: string[];
+  note?: string;
+  updatedByUserId: string;
+}[]): Promise<{ error: string | null }> {
+  if (rows.length === 0) return { error: null };
+  const supabase = await createSupabaseServiceClient();
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("store_ot_days").upsert(
+    rows.map((r) => ({
+      store_id: r.storeId,
+      organization_id: r.organizationId,
+      date: r.date,
+      cap_hours: r.capHours,
+      multiplier: r.multiplier,
+      user_ids: r.userIds,
+      note: r.note ?? null,
+      updated_by_user_id: r.updatedByUserId,
+      updated_at: now,
+    })),
+    { onConflict: "store_id,date" },
+  );
+  if (error) return { error: isMissingTable(error) ? "ยังไม่ได้เปิดใช้ตารางวันให้ OT (รอ migration)" : error.message };
+  return { error: null };
+}
+
+export async function deleteStoreOtDay(storeId: string, id: string): Promise<{ error: string | null }> {
+  const supabase = await createSupabaseServiceClient();
+  const { error, count } = await supabase.from("store_ot_days").delete({ count: "exact" }).eq("store_id", storeId).eq("id", id);
+  if (error) return { error: error.message };
+  if (count === 0) return { error: "ไม่พบวันให้ OT ที่ต้องลบ (อาจถูกลบไปแล้ว)" };
+  return { error: null };
+}
+
+/**
+ * งวด/สัปดาห์ที่จ่ายเงินแล้วซึ่งทับช่วง from–to — ใช้ล็อกการเพิ่ม/แก้/ลบวันให้ OT
+ * อ่านไม่ได้ (error อื่นที่ไม่ใช่ตารางยังไม่มี) = โยน error ให้ action ปฏิเสธ ไม่ปล่อยผ่านเงียบ ๆ
+ */
+export async function loadPaidLocks(
+  storeId: string,
+  from: string,
+  to: string,
+): Promise<{ periods: { periodStart: string; periodEnd: string; status: "closed" | "reopened" }[]; weeks: { userId: string; weekStart: string; weekEnd: string }[] }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ตารางเงินเดือนขั้นสูงยังไม่อยู่ใน database.types
+  const db: any = await createSupabaseServiceClient();
+  const [periodsRes, weeksRes] = await Promise.all([
+    db.from("payroll_periods").select("period_start, period_end, status").eq("store_id", storeId).lte("period_start", to).gte("period_end", from),
+    db.from("payroll_weekly_payouts").select("user_id, week_start, week_end").eq("store_id", storeId).lte("week_start", to).gte("week_end", from),
+  ]);
+  for (const r of [periodsRes, weeksRes]) {
+    if (r.error && !isMissingTable(r.error)) throw new Error(`ตรวจงวดที่จ่ายแล้วไม่สำเร็จ: ${r.error.message}`);
+  }
+  return {
+    periods: ((periodsRes.error ? [] : periodsRes.data ?? []) as { period_start: string; period_end: string; status: string }[]).map((p) => ({
+      periodStart: p.period_start,
+      periodEnd: p.period_end,
+      status: p.status === "reopened" ? "reopened" : "closed",
+    })),
+    weeks: ((weeksRes.error ? [] : weeksRes.data ?? []) as { user_id: string; week_start: string; week_end: string }[]).map((w) => ({
+      userId: w.user_id,
+      weekStart: w.week_start,
+      weekEnd: w.week_end,
+    })),
+  };
 }

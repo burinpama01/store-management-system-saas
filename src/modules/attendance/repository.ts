@@ -268,6 +268,28 @@ export interface ManualAttendanceInput {
   adjustedByUserId: string;
 }
 
+/** แถวที่ยังไม่มีเวลาออก (ลืมกดออกงาน) ของพนักงานในวันนั้น — ใช้เติมแทนการเพิ่มแถวซ้อน */
+export async function findOpenRecordForDay(
+  organizationId: string,
+  userId: string,
+  date: string,
+): Promise<{ id: string; storeId: string; note: string | null } | null> {
+  // ค้นทั้งองค์กร — พนักงานอาจลงเวลาไว้ที่สาขาอื่นจากที่ผู้จัดการเปิดอยู่
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("attendance_records")
+    .select("id, store_id, note")
+    .eq("organization_id", organizationId)
+    .eq("user_id", userId)
+    .eq("date", date)
+    .is("clock_out_at", null)
+    .in("status", ["abandoned", "active"])
+    .order("clock_in_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data ? { id: data.id, storeId: data.store_id, note: data.note } : null;
+}
+
 /** Manager adds a backdated attendance record. */
 export async function addManualAttendance(input: ManualAttendanceInput) {
   const supabase = await createSupabaseServerClient();
@@ -332,6 +354,7 @@ export function nextMonthStart(date: string): string {
 }
 
 /** Count self-service backdated records the user created within a month (rights usage). */
+/** @deprecated ใช้ countBackdateRequestsInMonth (modules/attendance/backdate-requests) — นับจากคำขอ ไม่ใช่แถวบันทึกเวลา */
 export async function countSelfBackdated(
   userId: string,
   storeId: string,

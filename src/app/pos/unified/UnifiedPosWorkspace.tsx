@@ -195,8 +195,10 @@ export function UnifiedPosWorkspace({
           <div
             id={POS_TOPBAR_ACTIONS_ID}
             /* justify-end + overflow-x-auto จะดันส่วนที่ล้นไปทางซ้ายซึ่งเลื่อนไปหาไม่ได้
-               จึงชิดขวาเฉพาะจอที่กว้างพอ (ไม่ล้น) ส่วนจอเล็กเรียงจากซ้ายแล้วเลื่อนได้ */
-            className="flex w-full min-w-0 items-center gap-2 overflow-x-auto sm:ml-auto sm:w-auto sm:flex-1 sm:basis-0 sm:justify-end"
+               จึงชิดขวาเฉพาะจอที่กว้างพอ (ไม่ล้น) ส่วนจอเล็กเรียงจากซ้ายแล้วเลื่อนได้
+               มือถือ: basis 200px = ขึ้นแถวเดียวกับปุ่มโต๊ะ (ไม่บังคับเต็มแถวเหมือนเดิม)
+               แต่ไม่ไปเบียดท้ายแถวปุ่มเสียงจนเหลือช่องแคบกดไม่ได้ */
+            className="flex min-w-0 flex-1 basis-[200px] items-center gap-2 overflow-x-auto sm:ml-auto sm:basis-0 sm:justify-end"
           />
         </div>
 

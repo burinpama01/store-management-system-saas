@@ -18,7 +18,12 @@ import {
   touchHubHeartbeat,
   type HubUsbBinding,
 } from "@/modules/printing/print-hub-repository";
-import { resolveHubPollPacing, sanitizeHubIdleMs } from "@/modules/printing/hub-poll-pacing";
+import {
+  HUB_POLL_DISABLED_MS,
+  resolveHubLongPollWaitMs,
+  resolveHubPollPacing,
+  sanitizeHubIdleMs,
+} from "@/modules/printing/hub-poll-pacing";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 /** ความถี่ในการถามว่ามีงานเข้ามาหรือยัง ระหว่างที่คำขอ long-poll ค้างรอ */
@@ -32,8 +37,15 @@ const LONGPOLL_CHECK_INTERVAL_MS = 1_000;
  */
 const MAX_LONGPOLL_WAIT_MS = 25_000;
 
-/** ฟังก์ชันนี้ค้างรองานได้ จึงต้องขอเวลาทำงานมากกว่าค่าเริ่มต้นของเส้นทาง API ปกติ */
-export const maxDuration = 60;
+/**
+ * ฟังก์ชันนี้ค้างรองานได้สูงสุด MAX_LONGPOLL_WAIT_MS บวกงาน DB ก่อน/หลัง — 40 วินาทีพอ
+ * และเป็นเพดานกันคำขอที่ค้างผิดปกติไม่ให้กิน Provisioned Memory นานเกินจำเป็น
+ */
+export const maxDuration = 40;
+
+/** log "Hub ยังถามอยู่ทั้งที่ร้านปิดแล้ว" ไม่เกินชั่วโมงละครั้งต่อร้านต่อ instance — รู้ว่าที่ร้านยังไม่ถอนการติดตั้ง แต่ไม่ท่วม log */
+const DISABLED_LOG_INTERVAL_MS = 60 * 60_000;
+const disabledLoggedAt = new Map<string, number>();
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
@@ -96,6 +108,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: protocol.message, minProtocolVersion: PRINT_HUB_MIN_PROTOCOL_VERSION }, { status: 426 });
   }
 
+  // D4: ร้านใช้พิมพ์ตรงจากโปรแกรม StoreOS POS แล้ว — Print Hub ไม่มีหน้าที่อีก
+  // ตอบว่างทันที (ไม่เคลม/ไม่ long-poll/ไม่บันทึก heartbeat) และสั่งให้พักนานสุดที่ agent ยอม
+  // งานใหม่เข้าคิวไม่ได้อยู่แล้ว (enqueue ตอบ 409 ในโหมดพิมพ์ตรง)
+  if (auth.printMode === "direct") {
+    const last = disabledLoggedAt.get(storeId) ?? 0;
+    if (Date.now() - last >= DISABLED_LOG_INTERVAL_MS) {
+      disabledLoggedAt.set(storeId, Date.now());
+      await logSystemEvent({
+        level: "info",
+        source: "printing.hub",
+        action: "hubPolledWhileDirect",
+        message: "Print Hub ยังทำงานอยู่ที่เครื่องร้าน ทั้งที่ร้านใช้พิมพ์ตรงแล้ว — ให้พัก 60 วินาที (ควรถอนการติดตั้ง)",
+        organizationId: auth.organizationId,
+        storeId,
+        context: { agentVersion: sanitizeAgentVersion(body.agentVersion) },
+      });
+    }
+    return NextResponse.json({
+      ok: true,
+      jobs: [],
+      protocolVersion: PRINT_HUB_PROTOCOL_VERSION,
+      minProtocolVersion: PRINT_HUB_MIN_PROTOCOL_VERSION,
+      leaseSeconds: PRINT_JOB_LEASE_SECONDS,
+      nextPollMs: HUB_POLL_DISABLED_MS,
+      pollReason: "direct_mode",
+      hubDisabled: true,
+    });
+  }
+
   await touchHubHeartbeat(storeId);
 
   // Device inventory is independent of claim — run it alongside reconcile/expire so
@@ -146,7 +187,8 @@ export async function POST(req: NextRequest) {
   //
   // ระหว่างรอใช้การถามแบบเบา (hasPendingPrintJobs) ไม่ใช่ claim เต็ม เพื่อไม่ให้
   // การรอกลายเป็นภาระของฐานข้อมูลแทน
-  const waitMs = sanitizeWaitMs(body.waitMs);
+  const idleMs = sanitizeHubIdleMs(body.idleMs);
+  const waitMs = resolveHubLongPollWaitMs({ requestedWaitMs: sanitizeWaitMs(body.waitMs), idleMs });
   if (!claimed.error && claimed.data?.length === 0 && waitMs > 0) {
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline) {
@@ -210,7 +252,7 @@ export async function POST(req: NextRequest) {
   // โปรเจคทะลุเพดานและโดนระงับบริการ — ดู hub-poll-pacing.ts)
   const pacing = resolveHubPollPacing({
     claimedJobs: jobs.length,
-    idleMs: sanitizeHubIdleMs(body.idleMs),
+    idleMs,
   });
 
   return NextResponse.json({

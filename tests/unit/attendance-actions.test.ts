@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   listStoreMemberships: vi.fn(),
   addPayrollAdjustment: vi.fn(),
   addManualAttendance: vi.fn(),
+  findOpenRecordForDay: vi.fn(),
+  adjustAttendanceRecord: vi.fn(),
   abandonStaleActiveRecords: vi.fn(),
   getActiveRecordToday: vi.fn(),
   clockIn: vi.fn(),
@@ -64,7 +66,8 @@ vi.mock("@/modules/attendance/repository", () => ({
   getAttendanceSettings: vi.fn(async () => ({ data: null, error: null })),
   upsertAttendanceSettings: vi.fn(),
   addManualAttendance: mocks.addManualAttendance,
-  adjustAttendanceRecord: vi.fn(),
+  findOpenRecordForDay: mocks.findOpenRecordForDay,
+  adjustAttendanceRecord: mocks.adjustAttendanceRecord,
   deleteAttendanceRecord: vi.fn(),
   countSelfBackdated: vi.fn(async () => 0),
   nextMonthStart: vi.fn((date: string) => `${date.slice(0, 7)}-32`),
@@ -89,6 +92,11 @@ vi.mock("@/modules/attendance/shift-status-repository", () => ({
   countOpenShiftsInStore: mocks.countOpenShiftsInStore,
   claimDailySummaryNotification: mocks.claimDailySummaryNotification,
   completeDailySummaryNotification: mocks.completeDailySummaryNotification,
+}));
+
+// เช็กลิสต์งานหน้าร้าน (ทดสอบแยกใน operations-checklist-rules) — ที่นี่ถือว่าไม่ติดเช็กลิสต์
+vi.mock("@/modules/operations/clock-out-gate", () => ({
+  checkClockOutChecklistGate: vi.fn(async () => null),
 }));
 
 vi.mock("@/modules/system/event-log", () => ({
@@ -126,6 +134,7 @@ describe("attendance manager actions", () => {
     });
     mocks.addPayrollAdjustment.mockResolvedValue({ ok: true, error: null });
     mocks.addManualAttendance.mockResolvedValue({ ok: true, error: null });
+    mocks.findOpenRecordForDay.mockResolvedValue(null);
     mocks.getActiveRecordToday.mockResolvedValue(null);
     mocks.abandonStaleActiveRecords.mockResolvedValue({ count: 0, error: null });
     mocks.clockIn.mockResolvedValue({ data: null, error: null });
@@ -547,6 +556,22 @@ describe("attendance manager actions", () => {
         amount: 0,
       }),
     );
+  });
+
+  it("เพิ่มย้อนหลังวันที่มีแถวลืมกดออกงาน → แก้แถวเดิม ไม่สร้างแถวซ้อน", async () => {
+    mocks.findOpenRecordForDay.mockResolvedValue({ id: "att-open", storeId: "store-2", note: null });
+    mocks.adjustAttendanceRecord.mockResolvedValue({ data: {}, error: null });
+    const { addManualAttendanceAction } = await import("@/app/(dashboard)/attendance/actions");
+    const result = await addManualAttendanceAction(fd({
+      userId: USER_ID,
+      date: "2026-06-17",
+      clockInAt: "2026-06-17T09:00",
+      clockOutAt: "2026-06-17T18:00",
+    }));
+    expect(result.error).toBeNull();
+    // แถวอยู่สาขาอื่น → แก้ที่สาขาของแถวนั้น
+    expect(mocks.adjustAttendanceRecord).toHaveBeenCalledWith("att-open", "store-2", expect.objectContaining({ clockOutAt: expect.any(String) }));
+    expect(mocks.addManualAttendance).not.toHaveBeenCalled();
   });
 
   it("uses the server-side member email for manual attendance instead of hidden employeeName", async () => {

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { listProducts } from "@/modules/catalog/repository";
 import { effectiveAllocation, menuAllocationCard } from "@/modules/costing/allocation";
 import { getCostingAccess } from "@/modules/costing/access";
+import { summarizeFixedCosts } from "@/modules/costing/break-even";
+import { listCostBudgets } from "@/modules/costing/break-even-repository";
 import { foodCostPct, plateIngredientCost } from "@/modules/costing/math";
 import { loadCostingWorkspace } from "@/modules/costing/repository";
 import { DEFAULT_ALLOCATION } from "@/modules/costing/types";
@@ -12,9 +14,10 @@ export const dynamic = "force-dynamic";
 export default async function CostingOverviewPage() {
   const { ctx, decision } = await getCostingAccess();
   if (!decision.allowed) return <CostingLocked message={decision.message} />;
-  const [workspace, productsRes] = await Promise.all([
+  const [workspace, productsRes, budgetsRes] = await Promise.all([
     loadCostingWorkspace(ctx.storeId),
     listProducts(ctx.storeId, { includeInactive: false }),
+    listCostBudgets(ctx.storeId),
   ]);
   if (!workspace.data) return <CostingLocked message={workspace.error ?? "โหลดข้อมูลต้นทุนไม่สำเร็จ"} />;
   const data = workspace.data;
@@ -33,6 +36,8 @@ export default async function CostingOverviewPage() {
   });
   const offTarget = costed.filter((c) => c.profitOff).sort((a, b) => a.profitPct - b.profitPct);
   const avgFood = costed.length > 0 ? costed.reduce((sum, c) => sum + (c.food ?? 0), 0) / costed.length : null;
+
+  const fixed = summarizeFixedCosts(budgetsRes.data);
 
   const stats = [
     { label: "เมนูที่มีสูตรแล้ว", value: `${costed.length}/${products.length}` },
@@ -53,6 +58,21 @@ export default async function CostingOverviewPage() {
           </div>
         ))}
       </div>
+
+      <Link
+        href="/costing/break-even"
+        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 hover:bg-[var(--surface-muted)]"
+      >
+        <span>
+          <span className="block text-base font-semibold text-[var(--ink)]">จุดคุ้มทุน</span>
+          <span className="block text-sm text-[var(--muted)]">
+            {fixed.total > 0
+              ? `ต้นทุนคงที่ ${money(fixed.total)} ฿/เดือน — ดูว่าต้องขายวันละกี่ชิ้นถึงคุ้มทุน`
+              : "ใส่ค่าเช่า น้ำไฟ ค่าแรง แล้วดูว่าต้องขายวันละกี่ชิ้นถึงคุ้มทุน"}
+          </span>
+        </span>
+        <span className="text-sm font-semibold text-[var(--tenant-primary)]">เปิด →</span>
+      </Link>
 
       {costed.length === 0 ? (
         <div className="space-y-2 rounded-xl border border-dashed border-[var(--border)] p-6 text-sm text-[var(--ink)]">

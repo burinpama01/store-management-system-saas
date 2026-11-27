@@ -1,6 +1,6 @@
 /**
  * Store Cost Engine — สูตรคำนวณ (pure, ไม่มี I/O)
- * สูตรต้นทุนต่อจานต้องตรงกับ SQL costing_plate_cost() ใน migration 20261109000002 (parity test)
+ * สูตรต้นทุนต่อจานต้องตรงกับ SQL costing_plate_cost() ใน migration 20261130120000 (parity test)
  */
 import type { Ingredient, PriceRounding, RecipeLine } from "./types";
 
@@ -16,9 +16,22 @@ export function ingredientUnitCost(ingredient: Pick<Ingredient, "purchasePrice" 
   return ingredient.purchasePrice / ingredient.usagePerPurchase / (ingredient.yieldPct / 100);
 }
 
-/** บรรทัดสูตรที่ใช้กับตัวเลือกนี้: บรรทัดที่ไม่ระบุตัวเลือก + บรรทัดของตัวเลือกนั้น */
-export function recipeLinesFor(lines: RecipeLine[], productId: string, variantId: string | null): RecipeLine[] {
-  return lines.filter((line) => line.productId === productId && (line.variantId === null || line.variantId === variantId));
+/**
+ * บรรทัดสูตรที่ใช้ตอนขาย: สูตรหลัก + บรรทัดของ variant ที่ขาย + บรรทัดของตัวเลือกเสริมที่ลูกค้าเลือก
+ * (ตรงกับ SQL costing_plate_cost ใน migration 20261130120000)
+ */
+export function recipeLinesFor(
+  lines: RecipeLine[],
+  productId: string,
+  variantId: string | null,
+  optionIds: readonly string[] = [],
+): RecipeLine[] {
+  return lines.filter(
+    (line) =>
+      line.productId === productId &&
+      (line.variantId === null || line.variantId === variantId) &&
+      (line.modifierOptionId === null || optionIds.includes(line.modifierOptionId)),
+  );
 }
 
 /**
@@ -30,8 +43,9 @@ export function plateIngredientCost(
   ingredientsById: Map<string, Pick<Ingredient, "purchasePrice" | "usagePerPurchase" | "yieldPct">>,
   productId: string,
   variantId: string | null,
+  optionIds: readonly string[] = [],
 ): number | null {
-  const used = recipeLinesFor(lines, productId, variantId);
+  const used = recipeLinesFor(lines, productId, variantId, optionIds);
   if (used.length === 0) return null;
   let total = 0;
   for (const line of used) {

@@ -165,6 +165,8 @@ describe("enterprise branch reports", () => {
     expect(orderQueries).toHaveLength(3);
     expect(orderQueries[0].in).toHaveBeenCalledWith("store_id", stores.slice(0, 200).map((store) => store.id));
     expect(orderQueries[1].range).toHaveBeenCalledWith(1000, 1999);
+    // แบ่งหน้าต้องเรียงด้วยคีย์ไม่ซ้ำ ไม่งั้นแถวข้าม/ซ้ำระหว่างหน้า
+    expect(orderQueries[0].order).toHaveBeenCalledWith("id");
     expect(orderQueries[2].in).toHaveBeenCalledWith("store_id", ["store-201"]);
   });
 
@@ -207,6 +209,7 @@ describe("enterprise branch reports", () => {
     expect(storeQueries).toHaveLength(2);
     expect(storeQueries[0].range).toHaveBeenCalledWith(0, 999);
     expect(storeQueries[1].range).toHaveBeenCalledWith(1000, 1999);
+    expect(storeQueries[0].order).toHaveBeenCalledWith("id");
     expect(result).toHaveLength(1001);
     expect(result.find((item) => item.storeId === "store-1001")).toMatchObject({
       revenue: 75,

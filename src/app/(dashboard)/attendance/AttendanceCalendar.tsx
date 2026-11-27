@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { AttendanceRecord } from "@/modules/attendance/types";
 import type { DayStatus } from "@/modules/attendance/calendar";
 import { formatStoreTime } from "@/modules/attendance/date";
+import type { CalendarOtDay } from "@/modules/hr/ot-days";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
@@ -62,12 +63,18 @@ interface Props {
   holidayDates?: string[];
   /** Team mode: per-employee leave/holiday dates from payroll adjustments. */
   employeeLeaveDates?: { date: string; userId: string; employeeName: string; note?: string }[];
+  /** วันให้ OT (โหมด OT เฉพาะวัน) — โชว์ป้าย "OT" บนช่องวัน */
+  otDays?: CalendarOtDay[];
   /** IANA timezone of the store — clock times are stored UTC and rendered in this zone. */
   timeZone: string;
 }
 
 function shortName(name: string): string {
   return name.split("@")[0].slice(0, 10);
+}
+
+function fmtHours(h: number): string {
+  return Number.isInteger(h) ? String(h) : h.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export function AttendanceCalendar({
@@ -79,6 +86,7 @@ export function AttendanceCalendar({
   teamDayStatus,
   holidayDates,
   employeeLeaveDates,
+  otDays,
   timeZone,
 }: Props) {
   const [filterUser, setFilterUser] = useState<string>("");
@@ -113,6 +121,19 @@ export function AttendanceCalendar({
     }
     return map;
   }, [employeeLeaveDates, month, filterUser]);
+
+  // วันให้ OT ต่อวันที่ — โหมดทีมที่กรองพนักงาน: โชว์เฉพาะวันที่คนนั้นอยู่ในรายชื่อ
+  const otByDate = useMemo(() => {
+    const map = new Map<string, CalendarOtDay>();
+    for (const d of otDays ?? []) {
+      if (!d.date.startsWith(month)) continue;
+      if (filterUser && !d.userIds.includes(filterUser)) continue;
+      map.set(d.date, d);
+    }
+    return map;
+  }, [otDays, month, filterUser]);
+  const nameByUser = useMemo(() => new Map(employees.map((e) => [e.userId, e.name])), [employees]);
+  const hasOtDays = useMemo(() => (otDays ?? []).some((d) => d.date.startsWith(month)), [otDays, month]);
 
   const visibleEmployees = useMemo(
     () => (filterUser ? employees.filter((e) => e.userId === filterUser) : employees),
@@ -173,6 +194,21 @@ export function AttendanceCalendar({
             const teamMeta = worst ? STATUS_META[worst] : null;
             const absentCount = entries.filter((e) => e.status === "absent").length;
             const recordByUser = new Map(recs.map((r) => [r.userId, r]));
+            const ot = otByDate.get(date) ?? null;
+            // กรองดูคนเดียว = นับ/แสดงเฉพาะคนนั้น
+            const otUserIds = ot ? (filterUser ? ot.userIds.filter((id) => id === filterUser) : ot.userIds) : [];
+            const otTitle = ot
+              ? [
+                  `วันให้ OT · สูงสุด ${fmtHours(ot.capHours)} ชม.`,
+                  ot.multiplier ? `ตัวคูณ ×${ot.multiplier}` : "ตัวคูณตามร้าน",
+                  !personal
+                    ? `${otUserIds.length} คน: ${otUserIds.map((id) => shortName(nameByUser.get(id) ?? id.slice(0, 8))).join(", ")}`
+                    : null,
+                  ot.note || null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "";
 
             const cellClass = meta
               ? meta.cell
@@ -207,6 +243,16 @@ export function AttendanceCalendar({
                     <span className="text-[10px] text-blue-600">ลา</span>
                   )}
                 </div>
+                {ot && (
+                  <p
+                    className="mb-0.5 inline-flex max-w-full items-center gap-1 truncate rounded bg-violet-100 px-1 text-[10px] font-semibold leading-tight text-violet-700"
+                    title={otTitle}
+                    data-ot-day={date}
+                  >
+                    OT ≤{fmtHours(ot.capHours)}ชม.{ot.multiplier ? ` ×${ot.multiplier}` : ""}
+                    {!personal ? ` · ${otUserIds.length} คน` : ""}
+                  </p>
+                )}
                 <div className="space-y-0.5">
                   {personal &&
                     recs.slice(0, 1).map((r) => (
@@ -286,6 +332,11 @@ export function AttendanceCalendar({
               {STATUS_META[k].label}
             </span>
           ))}
+          {hasOtDays && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+              <span className="inline-block h-2 w-2 rounded-sm bg-violet-400" /> วันให้ OT
+            </span>
+          )}
         </div>
       ) : (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
@@ -298,6 +349,11 @@ export function AttendanceCalendar({
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block h-2 w-2 rounded-sm bg-blue-300" /> วันลาพนักงาน
           </span>
+          {hasOtDays && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-sm bg-violet-400" /> วันให้ OT
+            </span>
+          )}
         </div>
       )}
     </div>

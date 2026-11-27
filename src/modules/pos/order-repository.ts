@@ -1,9 +1,9 @@
-import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { mapError } from "@/shared/utils/error";
 import { generateOrderNumber } from "@/modules/pos/order-number";
 import { getStoreLocalDate } from "@/modules/attendance/date";
 import type { Cart } from "./types";
-import type { Order, OrderItem, Payment } from "./types";
+import type { Order, OrderItem, Payment, ReceiptMissionProgress } from "./types";
 import type { Database, Json } from "@/server/integrations/supabase/database.types";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
@@ -362,7 +362,45 @@ export async function getOrder(orderId: string) {
       loyaltyPointsBalance = accountRes.data?.points_balance;
     }
   }
-  return { data: mapOrder(orderRes.data, items, payments, loyaltyPointsBalance), error: null };
+  const order = mapOrder(orderRes.data, items, payments, loyaltyPointsBalance);
+  if (customerId && orderRes.data.status === "paid") {
+    order.missionProgress = await loadOrderMissionProgress(orderId);
+  }
+  return { data: order, error: null };
+}
+
+/**
+ * ภารกิจที่บิลนี้ถูกนับ (store_mission_progress ไม่ grant ให้ authenticated → service client;
+ * ผู้เรียกโหลดออเดอร์ผ่าน RLS มาแล้ว) — ล้มเหลว = ไม่พิมพ์ส่วนภารกิจ ไม่ทำให้ใบเสร็จพัง
+ */
+async function loadOrderMissionProgress(orderId: string): Promise<ReceiptMissionProgress[] | undefined> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ตารางใหม่ยังไม่อยู่ใน database.types
+    const db: any = await createSupabaseServiceClient();
+    const { data: events, error } = await db
+      .from("store_mission_progress")
+      .select("enrollment_id")
+      .eq("order_id", orderId)
+      .eq("kind", "earn")
+      .limit(10);
+    if (error || !events || events.length === 0) return undefined;
+    const { data: rows, error: rowsErr } = await db
+      .from("store_mission_enrollments")
+      .select("progress, target_count, status, count_mode, reward_points_awarded, store_missions(name, reward_type)")
+      .in("id", events.map((event: { enrollment_id: string }) => event.enrollment_id));
+    if (rowsErr || !rows) return undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- แถวดิบจาก PostgREST
+    return rows.map((row: any) => ({
+      name: String(row.store_missions?.name ?? "ภารกิจ"),
+      progress: Number(row.progress),
+      targetCount: Number(row.target_count),
+      completed: row.status === "completed",
+      countMode: row.count_mode ?? "items",
+      pointsReward: row.store_missions?.reward_type === "points",
+    }));
+  } catch {
+    return undefined;
+  }
 }
 
 /**

@@ -2,7 +2,7 @@ export type PayType = "monthly" | "daily" | "hourly";
 /** ประเภทการจ้าง — แยกจากวิธีคิดเงิน (payType): ค่าทักษะ/อายุงาน/โบนัสยอดขาย ให้เฉพาะ permanent */
 export type EmploymentType = "permanent" | "daily" | "part_time" | "temporary";
 /** withholding_tax = ภาษีหัก ณ ที่จ่ายโหมดกรอกเอง (คิดแยกในเงินเดือนขั้นสูง ไม่นับเป็นโบนัส/รายการหัก) */
-export type AdjustmentType = "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
+export type AdjustmentType = "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax" | "delivery_pay";
 
 export interface EmployeeProfile {
   id: string;
@@ -44,6 +44,8 @@ export interface EmployeeProfile {
   ssoEnabled?: boolean;
   /** อัตราภาษีหัก ณ ที่จ่าย % (โหมด % คงที่ต่อคน) */
   withholdingTaxRate?: number;
+  /** รอบจ่าย: รายเดือน (เดิม) / รายสัปดาห์แยกรอบ / รายสัปดาห์จ่ายล่วงหน้า — มีผลเมื่อร้านเปิดสวิตช์จ่ายรายสัปดาห์ */
+  payFrequency?: "monthly" | "weekly" | "weekly_advance";
   createdAt: string;
   updatedAt: string;
 }
@@ -57,12 +59,39 @@ export const EMPLOYMENT_TYPE_LABEL: Record<EmploymentType, string> = {
   temporary: "ชั่วคราว",
 };
 
+export type OtMode = "daily" | "scheduled";
+export type OtOverflowPay = "regular" | "none";
+
+/** วันที่ร้านให้ OT (โหมด scheduled) — เพดาน/ตัวคูณ/รายชื่อ ใช้เฉพาะวันนั้น */
+export interface StoreOtDay {
+  id: string;
+  storeId: string;
+  organizationId: string;
+  date: string;
+  capHours: number;
+  /** null = ใช้ตัวคูณของร้าน */
+  multiplier: number | null;
+  userIds: string[];
+  note?: string;
+  /** ผู้บันทึกล่าสุด */
+  updatedByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** จำนวนวันที่ให้ OT ย้อนหลังได้ (นับจากวันนี้ตามเวลาร้าน) */
+export const OT_DAY_BACKDATE_LIMIT_DAYS = 7;
+
 export interface StoreHrSettings {
   storeId: string;
   organizationId: string;
   regularHoursPerDay: number;
   otMultiplier: number;
   otDailyCapHours: number;
+  /** daily = คิด OT ทุกวันที่ทำเกิน (แบบเดิม) · scheduled = คิดเฉพาะวันที่ร้านกำหนดใน store_ot_days */
+  otMode: OtMode;
+  /** ชั่วโมงที่เกินชั่วโมงปกติแต่ไม่ได้เป็น OT ของพนักงานรายชั่วโมง: regular = จ่ายเรทปกติ · none = ไม่จ่าย */
+  otOverflowPay: OtOverflowPay;
   latePenaltyPerMinute: number;
   latePenaltyMaxPerDay: number;
   absentPenaltyPerDay: number;
@@ -83,6 +112,8 @@ export const DEFAULT_HR_SETTINGS: Omit<StoreHrSettings, "storeId" | "organizatio
   regularHoursPerDay: 8,
   otMultiplier: 1.5,
   otDailyCapHours: 2,
+  otMode: "daily",
+  otOverflowPay: "regular",
   latePenaltyPerMinute: 0,
   latePenaltyMaxPerDay: 0,
   absentPenaltyPerDay: 0,
@@ -105,6 +136,8 @@ export interface PayrollAdjustment {
   note?: string;
   createdByUserId: string;
   createdAt: string;
+  /** delivery_pay ที่ระบบสร้างจากออเดอร์ออนไลน์ (R2) */
+  onlineOrderId?: string | null;
 }
 
 export const PAY_TYPE_LABEL: Record<PayType, string> = {
@@ -120,7 +153,11 @@ export const ADJUSTMENT_LABEL: Record<AdjustmentType, string> = {
   absent: "หักขาดงาน",
   late: "หักมาสาย",
   withholding_tax: "ภาษีหัก ณ ที่จ่าย",
+  delivery_pay: "ค่าส่งเดลิเวอรี่",
 };
+
+/** รายการเพิ่มที่แสดงในสลิป (บวกเงินเดือน) — delivery_pay มาจากออเดอร์ออนไลน์อัตโนมัติ */
+export const ADDITION_TYPES: AdjustmentType[] = ["bonus", "delivery_pay"];
 
 /** Adjustment types that reduce pay (bonus increases). */
 export const DEDUCTION_TYPES: AdjustmentType[] = ["penalty", "leave", "absent", "late"];

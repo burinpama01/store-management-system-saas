@@ -198,6 +198,11 @@ export function addToCart(cart: Cart, input: AddToCartInput): Cart {
   return recalcTotals({ ...cart, items });
 }
 
+/** แทนรายการทั้งหมดแล้วคำนวณยอดใหม่ (ใช้กับบรรทัดพิเศษ เช่น ใช้แพ็กที่มีส่วนต่างตัวเลือก) */
+export function replaceCartItems(cart: Cart, items: CartItem[]): Cart {
+  return recalcTotals({ ...cart, items });
+}
+
 export function updateQuantity(cart: Cart, key: string, quantity: number): Cart {
   if (quantity <= 0) return removeFromCart(cart, key);
   const items = cart.items.map((i) => (i.key === key ? { ...i, quantity } : i));
@@ -272,7 +277,7 @@ export function repriceCartForTier(cart: Cart, products: Product[], tier: PriceT
   let next = emptyCart(cart.storeId);
 
   for (const item of cart.items) {
-    if (item.rewardVoucherCode) {
+    if (item.rewardVoucherCode || item.prepaidPassId) {
       next = { ...next, items: [...next.items, { ...item }] };
       continue;
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { computeDayStatuses, type DayStatus } from "@/modules/attendance/calendar";
+import { computeDayStatuses, employmentWindow, resignedBefore, type DayStatus } from "@/modules/attendance/calendar";
 import type { AttendanceRecord } from "@/modules/attendance/types";
 
 const TZ = "Asia/Bangkok"; // UTC+7
@@ -126,5 +126,64 @@ describe("attendance manager employee leave and feedback UX", () => {
 
     expect(calendar).toContain("employeeLeaveDates");
     expect(calendar).toContain("วันลาพนักงาน");
+  });
+});
+
+describe("ช่วงที่เป็นพนักงาน (เริ่มงาน/ลาออก)", () => {
+  it("ก่อนวันเริ่มงานไม่ฟ้องขาด · หลังวันเริ่มงานยังฟ้องตามปกติ", () => {
+    const s = run({ employedFrom: "2026-06-10" });
+    expect(s.get("2026-06-01")).toBe("off"); // จันทร์ก่อนเริ่มงาน
+    expect(s.get("2026-06-09")).toBe("off");
+    expect(s.get("2026-06-10")).toBe("absent"); // พุธ วันเริ่มงานแต่ไม่มา
+  });
+
+  it("หลังวันออกงานไม่ฟ้องขาด · วันออกงานยังนับ", () => {
+    const s = run({ employedTo: "2026-06-10" });
+    expect(s.get("2026-06-10")).toBe("absent");
+    expect(s.get("2026-06-11")).toBe("off");
+    expect(s.get("2026-06-29")).toBe("off");
+  });
+
+  it("มีลงเวลานอกช่วง (มาก่อนวันเริ่มงาน) ยังแสดงตามจริง", () => {
+    const s = run({ employedFrom: "2026-06-10", records: [rec("2026-06-08", "2026-06-08T02:00:00Z", "2026-06-08T10:00:00Z")] });
+    expect(s.get("2026-06-08")).toBe("completed");
+  });
+
+  it("วันหยุด/ลาก่อนวันเริ่มงานก็ไม่มาร์ก", () => {
+    const s = run({ employedFrom: "2026-06-10", holidays: new Set(["2026-06-03"]), leaveDates: new Set(["2026-06-04"]) });
+    expect(s.get("2026-06-03")).toBe("off");
+    expect(s.get("2026-06-04")).toBe("off");
+  });
+
+  it("employmentWindow: เริ่ม = วันที่ช้ากว่าระหว่างวันเริ่มงานกับวันเข้าร่วมร้าน (เวลาไทย) · จบ = วันออกงาน", () => {
+    // เข้าร่วม 2026-11-08 18:30 UTC = 9 พ.ย. เวลาไทย
+    expect(employmentWindow(null, "2026-11-08T18:30:00Z", TZ)).toEqual({ from: "2026-11-09", to: null });
+    expect(employmentWindow({ seniorityStartDate: "2026-11-11" }, "2026-11-08T18:30:00Z", TZ).from).toBe("2026-11-11");
+    // พนักงานเดิมที่ตั้งวันเริ่มงานย้อนหลัง แต่เพิ่งมีบัญชี → ก่อนมีบัญชีไม่ฟ้องขาด
+    expect(employmentWindow({ seniorityStartDate: "2024-01-01" }, "2026-11-08T18:30:00Z", TZ).from).toBe("2026-11-09");
+    expect(employmentWindow({ seniorityStartDate: "2024-01-01", employmentEndDate: "2026-11-05" }, null, TZ)).toEqual({ from: "2024-01-01", to: "2026-11-05" });
+  });
+
+  it("employmentWindow: ไม่มีข้อมูล/วันเข้าร่วมผิดรูปแบบ = ไม่จำกัด", () => {
+    expect(employmentWindow(null, null, TZ)).toEqual({ from: null, to: null });
+    expect(employmentWindow(null, "not-a-date", TZ)).toEqual({ from: null, to: null });
+  });
+
+  it("resignedBefore: ลาออกก่อนวันที่ดู = ซ่อน", () => {
+    expect(resignedBefore("2026-10-31", "2026-11-01")).toBe(true);
+    expect(resignedBefore("2026-11-01", "2026-11-01")).toBe(false);
+    expect(resignedBefore(null, "2026-11-01")).toBe(false);
+  });
+
+  it("หน้าลงเวลา: ส่งช่วงเป็นพนักงานเข้าปฏิทินทีม และซ่อนคนลาออกก่อนช่วงที่ดู", () => {
+    const src = readFileSync(join(process.cwd(), "src/app/(dashboard)/attendance/page.tsx"), "utf8");
+    expect(src).toContain("employmentWindow(allProfiles.find((p) => p.userId === m.userId), m.joinedAt, ctx.storeTimezone)");
+    expect(src).toContain("!resignedBefore(windowByUser.get(m.userId)?.to, dateFrom) || hasRecordInRange.has(m.userId)");
+    expect(src).toContain("employedFrom: windowByUser.get(member.userId)?.from ?? null");
+    // ปฏิทินของตัวเองใช้สูตรเดียวกับปฏิทินทีม
+    expect(src).toContain("employmentWindow(ownProfile, myMembership?.joined_at ?? null, ctx.storeTimezone)");
+    expect(src).toContain("prev.storeId === null && m.storeId !== null");
+    const staff = readFileSync(join(process.cwd(), "src/app/(dashboard)/staff/StaffManager.tsx"), "utf8");
+    expect(staff).toContain("showResigned || !isResigned(m.userId)");
   });
 });

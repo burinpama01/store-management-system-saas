@@ -4,6 +4,10 @@ const TABS = [
   { href: "/costing", label: "ภาพรวม" },
   { href: "/costing/menu", label: "ต้นทุนเมนู" },
   { href: "/costing/ingredients", label: "วัตถุดิบ" },
+  { href: "/costing/inventory", label: "คลังวัตถุดิบ" },
+  { href: "/costing/purchases", label: "บิลซื้อ" },
+  { href: "/costing/suppliers", label: "ผู้ขาย" },
+  { href: "/costing/break-even", label: "จุดคุ้มทุน" },
 ] as const;
 
 export function CostingHeader({ active, title, description }: { active: (typeof TABS)[number]["href"]; title: string; description: string }) {

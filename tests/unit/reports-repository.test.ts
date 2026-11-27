@@ -55,7 +55,7 @@ function chainResult(
 ) {
   const final = new Set(finalMethods);
   const builder: Record<string, ReturnType<typeof vi.fn>> = {};
-  for (const method of ["select", "eq", "gte", "lt", "in"]) {
+  for (const method of ["select", "eq", "gte", "lt", "in", "order", "range"]) {
     builder[method] = vi.fn(() => (final.has(method) ? Promise.resolve(result) : builder));
   }
   return builder;
@@ -80,7 +80,7 @@ function mockDashboardClient({
   paymentsResult?: { data?: unknown; error?: unknown };
   orderItemsResult?: { data?: unknown; error?: unknown };
 }) {
-  const paidOrdersQuery = chainResult(paidOrdersResult, ["lt"]);
+  const paidOrdersQuery = chainResult(paidOrdersResult, ["range"]);
   const pendingCountQuery = chainResult(pendingCountResult, ["in"]);
   const paymentsQuery: Record<string, ReturnType<typeof vi.fn>> = {};
   paymentsQuery.select = vi.fn(() => paymentsQuery);
@@ -88,7 +88,7 @@ function mockDashboardClient({
   paymentsQuery.eq = vi.fn(() =>
     paymentsQuery.eq.mock.calls.length >= 2 ? Promise.resolve(paymentsResult) : paymentsQuery,
   );
-  const orderItemsQuery = chainResult(orderItemsResult, ["eq"]);
+  const orderItemsQuery = chainResult(orderItemsResult, ["range"]);
   let ordersQueryCount = 0;
   const client = {
     rpc: vi.fn(async () => summaryResult),
@@ -203,7 +203,7 @@ describe("reports repository dashboard behavior", () => {
         { id: "order-2", total: 79.5, qr_order_source: false, order_number: "POS-0001", paid_at: "2026-06-05T04:00:00.000Z" },
       ],
       error: null,
-    }, ["lt"]);
+    }, ["range"]);
     const paymentsResult = { data: [], error: null };
     const paymentsQuery: Record<string, ReturnType<typeof vi.fn>> = {};
     paymentsQuery.select = vi.fn(() => paymentsQuery);
@@ -211,7 +211,7 @@ describe("reports repository dashboard behavior", () => {
     paymentsQuery.eq = vi.fn(() =>
       paymentsQuery.eq.mock.calls.length >= 2 ? Promise.resolve(paymentsResult) : paymentsQuery,
     );
-    const itemsQuery = chainResult({ data: [], error: null }, ["eq"]);
+    const itemsQuery = chainResult({ data: [], error: null }, ["range"]);
     const client = {
       rpc: vi
         .fn()
@@ -240,5 +240,46 @@ describe("reports repository dashboard behavior", () => {
       deliveryOrderCount: 0,
     });
     expect(report.dailySales).toEqual([{ date: "2026-06-05", orderCount: 2, revenue: 200 }]);
+  });
+
+  it("ดึงออเดอร์ครบทุกหน้า (เกิน 1,000 บิล) และไม่นับรายการที่ยกเลิกเป็นสินค้าขายดี", async () => {
+    vi.resetModules();
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({
+      id: `o-${i}`, total: 1, qr_order_source: false, order_number: `POS-${i}`, paid_at: "2026-06-05T03:00:00.000Z",
+    }));
+    const page2 = [{ id: "o-1000", total: 5, qr_order_source: false, order_number: "POS-1000", paid_at: "2026-06-05T03:00:00.000Z" }];
+    const ordersQuery: Record<string, ReturnType<typeof vi.fn>> = {};
+    for (const m of ["select", "eq", "gte", "lt", "order"]) ordersQuery[m] = vi.fn(() => ordersQuery);
+    ordersQuery.range = vi.fn(async (from: number) => ({ data: from === 0 ? page1 : page2, error: null }));
+    const paymentsQuery: Record<string, ReturnType<typeof vi.fn>> = {};
+    paymentsQuery.select = vi.fn(() => paymentsQuery);
+    paymentsQuery.in = vi.fn(() => paymentsQuery);
+    paymentsQuery.eq = vi.fn(() => (paymentsQuery.eq.mock.calls.length % 2 === 0 ? Promise.resolve({ data: [], error: null }) : paymentsQuery));
+    const itemsQuery = chainResult({ data: [], error: null }, ["range"]);
+    const client = {
+      rpc: vi
+        .fn()
+        .mockResolvedValueOnce({ data: null, error: { message: "missing summary function" } })
+        .mockResolvedValueOnce({ data: null, error: { message: "missing daily function" } }),
+      from: vi.fn((table: string) => {
+        if (table === "orders") return ordersQuery;
+        if (table === "payments") return paymentsQuery;
+        if (table === "order_items") return itemsQuery;
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+    mockSupabaseClient(client);
+
+    const { getReportData } = await import("@/modules/reports/repository");
+    const report = await getReportData("store-1", "2026-06-05", "2026-06-05");
+
+    expect(ordersQuery.range).toHaveBeenNthCalledWith(1, 0, 999);
+    expect(ordersQuery.range).toHaveBeenNthCalledWith(2, 1000, 1999);
+    expect(ordersQuery.order).toHaveBeenCalledWith("id");
+    expect(report.salesSummary.orderCount).toBe(1001);
+    expect(report.salesSummary.revenue).toBe(1005);
+    // 1,001 ออเดอร์ = 6 ชุด ชุดละ ≤200
+    expect(itemsQuery.in).toHaveBeenCalledTimes(6);
+    expect(itemsQuery.eq).toHaveBeenCalledWith("voided", false);
   });
 });

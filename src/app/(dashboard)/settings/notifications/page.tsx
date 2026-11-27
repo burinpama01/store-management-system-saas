@@ -55,6 +55,10 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   activation_nudge: "ตั้งค่าร้าน (nudge)",
   subscription_expiring: "แพ็กเกจใกล้หมดอายุ/หมดอายุ",
   daily_summary: "สรุปยอดประจำวัน (ตอนคนสุดท้ายออกงาน)",
+  ops_checklist: "เช็กลิสต์หน้าร้าน (ข้อสำคัญไม่ผ่าน / เลยกำหนด)",
+  new_online_order: "ออร์เดอร์ออนไลน์จากเว็บร้าน (จ่ายแล้ว)",
+  salary_advance_request: "พนักงานขอเบิกเงิน",
+  pass_purchase: "ลูกค้าซื้อแพ็กล่วงหน้าออนไลน์",
   test: "ข้อความทดสอบ",
 };
 

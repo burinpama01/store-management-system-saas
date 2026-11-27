@@ -1,4 +1,5 @@
 import type { Json } from "@/server/integrations/supabase/database.types";
+import { runGatewayPaidEffects } from "./paid-effects";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { logSystemEvent } from "@/modules/system/event-log";
 import { createBeamQrCharge, getBeamCharge, pingBeamCredentials } from "./beam-client";
@@ -368,6 +369,10 @@ export async function createBeamQrPayment(input: {
   actorUserId: string | null;
   /** ผูกรายการชำระกับคำขอเพลง — PAID แล้ว trigger ยืนยันคำขอให้ */
   musicRequestId?: string | null;
+  /** ผูกรายการชำระกับคำสั่งซื้อแพ็กออนไลน์ — PAID แล้ว trigger ออกแพ็กให้ */
+  prepaidPassPurchaseId?: string | null;
+  /** ผูกกับคำสั่งซื้อออนไลน์จากเว็บร้าน — PAID แล้ว trigger เปลี่ยนเป็นจ่ายแล้ว */
+  onlineOrderId?: string | null;
   client?: BeamDb;
 }): Promise<{ ok: true; qr: BeamQrForPos } | { ok: false; error: string }> {
   const amount = roundMajorThb(input.amountMajor);
@@ -398,6 +403,15 @@ export async function createBeamQrPayment(input: {
       if (row.status === "PAID") return { ok: true, qr: toPosView(row, null) };
       return { ok: false, error: "QR นี้หมดอายุหรือถูกยกเลิกแล้ว — กรุณาสร้างรายการใหม่" };
     }
+    // สร้าง QR กับ Beam สำเร็จไปแล้ว (มี charge + payload) → ใช้ของเดิม ไม่ยิง Beam ซ้ำ
+    // (หน้าสั่ง + หน้าติดตามเรียกพร้อมกันได้ — เดิมรอบที่สองโดน 412 แล้วรายการถูกตั้ง FAILED ทั้งที่ QR ใช้ได้)
+    // QR แบบภาพ (ไม่มี EMV) ไม่ได้เก็บรูปไว้ → ยิง Beam ซ้ำด้วย payload เดิม (requestedExpiresAt) ได้ charge เดิมพร้อมรูป
+    // QR หมดอายุแล้ว (แต่สถานะยังไม่อัปเดต) → ไม่คืนของเดิม ให้ไปทางปกติ
+    const reuseExpiry = typeof row.metadata?.expiresAt === "string" ? Date.parse(row.metadata.expiresAt) : NaN;
+    const notExpired = !Number.isFinite(reuseExpiry) || reuseExpiry > Date.now();
+    if (row.provider_payment_id && row.injected_emv_payload && notExpired) {
+      return { ok: true, qr: toPosView(row, null) };
+    }
   } else {
     const expiresAt = new Date(Date.now() + QR_TTL_MS).toISOString();
     const { data: inserted, error } = await supabase
@@ -407,6 +421,8 @@ export async function createBeamQrPayment(input: {
         store_id: input.storeId,
         order_id: null,
         music_request_id: input.musicRequestId ?? null,
+        prepaid_pass_purchase_id: input.prepaidPassPurchaseId ?? null,
+        online_order_id: input.onlineOrderId ?? null,
         provider_config_id: config.id,
         provider_key: "beam",
         mode: "open_api",
@@ -418,8 +434,13 @@ export async function createBeamQrPayment(input: {
           channel: "qr_promptpay",
           environment: config.environment,
           expiresAt,
+          // ค่าที่ส่งให้ Beam จริง — metadata.expiresAt ถูกทับด้วยค่าที่ Beam ตอบ (คนละรูปแบบ)
+          // retry ต้องส่ง payload เดิมเป๊ะ ไม่งั้น Beam ตอบ 412 (idempotency key ซ้ำแต่ payload ต่าง)
+          requestedExpiresAt: expiresAt,
           createdBy: input.actorUserId,
           ...(input.musicRequestId ? { purpose: "music_request" } : {}),
+          ...(input.prepaidPassPurchaseId ? { purpose: "prepaid_pass" } : {}),
+          ...(input.onlineOrderId ? { purpose: "online_order" } : {}),
         } as Json,
       })
       .select(GATEWAY_COLUMNS)
@@ -431,9 +452,11 @@ export async function createBeamQrPayment(input: {
   }
 
   const expiresAt =
-    typeof row.metadata?.expiresAt === "string"
-      ? row.metadata.expiresAt
-      : new Date(Date.now() + QR_TTL_MS).toISOString();
+    typeof row.metadata?.requestedExpiresAt === "string"
+      ? row.metadata.requestedExpiresAt
+      : typeof row.metadata?.expiresAt === "string"
+        ? row.metadata.expiresAt
+        : new Date(Date.now() + QR_TTL_MS).toISOString();
   // Same idempotency key on a retry → Beam returns the same charge (12 h window).
   const charge = await createBeamQrCharge({
     environment: config.environment,
@@ -445,6 +468,16 @@ export async function createBeamQrPayment(input: {
   });
 
   if (!charge.ok) {
+    // อีกคำขอสร้าง QR สำเร็จไปพร้อมกัน (Beam ตอบ 412 idempotency) → ใช้ QR นั้น ห้ามตั้ง FAILED
+    const { data: latest } = await supabase
+      .from("gateway_payments")
+      .select(GATEWAY_COLUMNS)
+      .eq("id", row.id)
+      .maybeSingle();
+    const winner = latest as BeamGatewayRow | null;
+    if (winner?.provider_payment_id && winner.injected_emv_payload && OPEN_STATUSES.includes(winner.status as GatewayPaymentStatus)) {
+      return { ok: true, qr: toPosView(winner, null) };
+    }
     await supabase
       .from("gateway_payments")
       .update({ status: "FAILED", failure_message: charge.error, updated_at: new Date().toISOString() })
@@ -592,6 +625,7 @@ export async function refreshBeamPayment(input: {
       },
     });
     const resolved = (moved as { status?: string } | null)?.status as GatewayPaymentStatus | undefined;
+    if (resolved === "PAID") await runGatewayPaidEffects(row.id);
     return { ok: true, status: resolved ?? next, amount };
   }
 
@@ -682,8 +716,10 @@ export async function claimBeamPaymentForOrder(input: {
   gatewayPaymentId: string;
   orderId: string;
   expectedAmount: number;
+  /** service client เมื่อผู้เรียกตรวจสิทธิ์เองแล้ว (เช่น คนส่งตำแหน่ง staff — RLS ให้ update เฉพาะ cashier+) */
+  client?: BeamDb;
 }): Promise<{ ok: true; amount: number } | { ok: false; error: string }> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   const { data } = await supabase
     .from("gateway_payments")
     .select(GATEWAY_COLUMNS)
@@ -720,8 +756,9 @@ export async function releaseBeamPaymentClaim(input: {
   storeId: string;
   gatewayPaymentId: string;
   orderId: string;
+  client?: BeamDb;
 }): Promise<void> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   await supabase
     .from("gateway_payments")
     .update({ order_id: null, updated_at: new Date().toISOString() })
@@ -738,8 +775,9 @@ export async function finalizeBeamPaymentForOrder(input: {
   orderId: string;
   posPaymentId: string | null;
   actorUserId: string;
+  client?: BeamDb;
 }): Promise<void> {
-  const supabase = await createSupabaseServerClient();
+  const supabase = input.client ?? (await createSupabaseServerClient());
   await supabase
     .from("gateway_payments")
     .update({ pos_payment_id: input.posPaymentId, updated_at: new Date().toISOString() })
@@ -782,7 +820,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("gateway_payments")
-    .select("id, amount, status, order_id, pos_payment_id, music_request_id, failure_message, metadata, created_at, paid_at")
+    .select("id, amount, status, order_id, pos_payment_id, music_request_id, prepaid_pass_purchase_id, online_order_id, failure_message, metadata, created_at, paid_at")
     .eq("store_id", storeId)
     .eq("provider_key", "beam")
     .order("created_at", { ascending: false })
@@ -794,6 +832,8 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     order_id: string | null;
     pos_payment_id: string | null;
     music_request_id: string | null;
+    prepaid_pass_purchase_id?: string | null;
+    online_order_id?: string | null;
     failure_message: string | null;
     metadata: Record<string, unknown> | null;
     created_at: string;
@@ -803,7 +843,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     amount: typeof r.amount === "string" ? Number(r.amount) : r.amount,
     status: r.status as GatewayPaymentStatus,
     orderId: r.order_id,
-    attached: Boolean(r.pos_payment_id || r.music_request_id),
+    attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id || r.online_order_id),
     musicRequestId: r.music_request_id,
     environment: toEnvironment(typeof r.metadata?.environment === "string" ? r.metadata.environment : "live"),
     failureMessage: r.failure_message,

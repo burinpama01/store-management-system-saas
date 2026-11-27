@@ -38,7 +38,7 @@ export async function loadCostingWorkspace(storeId: string): Promise<{ data: Cos
   const [ingredientsRes, linesRes, productRes, templatesRes, settingsRes, channelRes] = await Promise.all([
     // เพดานกันข้อมูลโตไม่จำกัด (ร้านทั่วไปไม่ถึง) — C2 ทำหน้าแบ่งหน้าเมื่อจำเป็น
     supabase.from("ingredients").select("*").eq("store_id", storeId).order("name").limit(1000),
-    supabase.from("recipe_lines").select("id, product_id, variant_id, ingredient_id, quantity").eq("store_id", storeId).limit(5000),
+    supabase.from("recipe_lines").select("id, product_id, variant_id, modifier_option_id, ingredient_id, quantity").eq("store_id", storeId).limit(5000),
     supabase.from("product_cost_settings").select("product_id, packaging_cost, target_food_cost_pct").eq("store_id", storeId).limit(2000),
     supabase.from("cost_allocation_templates").select("*").eq("store_id", storeId).order("effective_from", { ascending: false }).limit(2000),
     supabase.from("store_cost_settings").select("*").eq("store_id", storeId).maybeSingle(),
@@ -62,11 +62,13 @@ export async function loadCostingWorkspace(storeId: string): Promise<{ data: Cos
         purchasePrice: num(row.purchase_price),
         yieldPct: num(row.yield_pct),
         isActive: row.is_active,
+        category: row.category ?? null,
       })),
       recipeLines: (linesRes.data ?? []).map((row) => ({
         id: row.id,
         productId: row.product_id,
         variantId: row.variant_id,
+        modifierOptionId: row.modifier_option_id ?? null,
         ingredientId: row.ingredient_id,
         quantity: num(row.quantity),
       })),
@@ -111,6 +113,7 @@ export async function saveIngredient(scope: StoreScope, input: IngredientInput, 
     organization_id: scope.organizationId,
     store_id: scope.storeId,
     name: input.name.trim(),
+    category: input.category?.trim() || null,
     purchase_unit: input.purchaseUnit.trim(),
     usage_unit: input.usageUnit.trim(),
     usage_per_purchase: input.usagePerPurchase,
@@ -150,8 +153,12 @@ export async function deleteIngredient(storeId: string, ingredientId: string) {
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("ingredients").delete().eq("id", ingredientId).eq("store_id", storeId);
   if (error) {
-    // FK restrict จาก recipe_lines
-    if (error.code === "23503") return { error: "วัตถุดิบนี้ยังอยู่ในสูตรเมนู — เอาออกจากสูตรก่อน" };
+    // FK restrict จาก recipe_lines หรือสมุดคลัง ingredient_movements (ประวัติคลังต้องอยู่ครบ)
+    if (error.code === "23503") {
+      return String(error.message ?? "").includes("ingredient_movements")
+        ? { error: "วัตถุดิบนี้มีประวัติในคลังแล้ว จึงลบไม่ได้ (ต้องเก็บประวัติไว้ตรวจย้อนหลัง)" }
+        : { error: "วัตถุดิบนี้ยังอยู่ในสูตรเมนู — เอาออกจากสูตรก่อน" };
+    }
     return { error: mapError(error).userMessage };
   }
   return { error: null };
@@ -163,7 +170,7 @@ export async function deleteIngredient(storeId: string, ingredientId: string) {
  */
 export async function saveMenuCosting(input: {
   productId: string;
-  lines: Array<{ variantId: string | null; ingredientId: string; quantity: number }>;
+  lines: Array<{ variantId: string | null; modifierOptionId: string | null; ingredientId: string; quantity: number }>;
   packagingCost: number;
   targetFoodCostPct: number | null;
 }) {
@@ -171,7 +178,13 @@ export async function saveMenuCosting(input: {
   const { error } = await supabase.rpc("costing_save_menu", {
     p_product_id: input.productId,
     // variantId "" = ทุกตัวเลือก (SQL ใช้ nullif(el->>'variantId', '')::uuid)
-    p_lines: input.lines.map((line) => ({ variantId: line.variantId ?? "", ingredientId: line.ingredientId, quantity: line.quantity })),
+    // modifierOptionId "" = สูตรหลัก (ไม่ผูกตัวเลือกเสริม)
+    p_lines: input.lines.map((line) => ({
+      variantId: line.variantId ?? "",
+      modifierOptionId: line.modifierOptionId ?? "",
+      ingredientId: line.ingredientId,
+      quantity: line.quantity,
+    })),
     p_packaging_cost: input.packagingCost,
     p_target_food_cost_pct: input.targetFoodCostPct,
   });
@@ -180,6 +193,68 @@ export async function saveMenuCosting(input: {
   if (error.code === "42501") return { error: "ต้องเป็นผู้จัดการขึ้นไปจึงจะแก้สูตรได้" };
   if (error.code === "P0002") return { error: "ไม่พบเมนูนี้" };
   return { error: mapError(error).userMessage };
+}
+
+/** ข้อมูลสำหรับปุ่ม "วัตถุดิบ" ข้างตัวเลือกเสริมในหน้าแก้เมนู (/catalog) */
+export interface OptionRecipeData {
+  /** ไม่ส่งราคาซื้อจริงถึงเบราว์เซอร์ — ส่งแค่ว่าใส่ราคาแล้วหรือยัง */
+  ingredients: Array<Pick<Ingredient, "id" | "name" | "usageUnit" | "category"> & { hasPrice: boolean }>;
+  lines: Array<{ optionId: string; ingredientId: string; quantity: number }>;
+}
+
+export async function loadOptionRecipeData(storeId: string): Promise<{ data: OptionRecipeData | null; error: string | null }> {
+  const supabase = await createSupabaseServerClient();
+  const [ingredientsRes, linesRes] = await Promise.all([
+    supabase
+      .from("ingredients")
+      .select("id, name, usage_unit, category, purchase_price")
+      .eq("store_id", storeId)
+      .eq("is_active", true)
+      .order("name")
+      .limit(1000),
+    supabase
+      .from("recipe_lines")
+      .select("modifier_option_id, ingredient_id, quantity")
+      .eq("store_id", storeId)
+      .not("modifier_option_id", "is", null)
+      .limit(5000),
+  ]);
+  const firstError = ingredientsRes.error ?? linesRes.error;
+  if (firstError) return { data: null, error: mapError(firstError).userMessage };
+  return {
+    data: {
+      ingredients: (ingredientsRes.data ?? []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        usageUnit: row.usage_unit,
+        category: row.category ?? null,
+        hasPrice: num(row.purchase_price) > 0,
+      })),
+      lines: (linesRes.data ?? []).flatMap((row) =>
+        row.modifier_option_id ? [{ optionId: row.modifier_option_id, ingredientId: row.ingredient_id, quantity: num(row.quantity) }] : [],
+      ),
+    },
+    error: null,
+  };
+}
+
+/** แทนที่วัตถุดิบของตัวเลือกเสริม (ธุรกรรมเดียว) · คืนจำนวนตัวเลือกที่ถูกตั้ง */
+export async function saveOptionRecipe(input: {
+  optionId: string;
+  lines: Array<{ ingredientId: string; quantity: number }>;
+  applySameName: boolean;
+}): Promise<{ data: number | null; error: string | null }> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("costing_save_option_lines", {
+    p_option_id: input.optionId,
+    p_lines: input.lines.map((line) => ({ ingredientId: line.ingredientId, quantity: line.quantity })),
+    p_apply_same_name: input.applySameName,
+  });
+  if (!error) return { data: typeof data === "number" ? data : Number(data ?? 0), error: null };
+  if (error.code === "23505") return { data: null, error: "วัตถุดิบซ้ำกัน — รวมเป็นบรรทัดเดียว" };
+  if (error.code === "42501") return { data: null, error: "ต้องเป็นผู้จัดการขึ้นไปจึงจะแก้สูตรได้" };
+  if (error.code === "P0002") return { data: null, error: "ไม่พบตัวเลือกนี้ — รีเฟรชหน้าแล้วลองใหม่" };
+  return { data: null, error: mapError(error).userMessage };
 }
 
 /** สัดส่วนใหม่ = แถวใหม่ (ประวัติเดิมไม่เปลี่ยน รายงานย้อนหลังใช้ค่าที่มีผล ณ วันขาย) */

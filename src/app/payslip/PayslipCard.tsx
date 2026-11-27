@@ -8,6 +8,7 @@ import type { AdvancedPayrollLine } from "@/modules/hr/advanced/compute";
 import { formatStoreTime } from "@/modules/attendance/date";
 import {
   ADJUSTMENT_LABEL,
+  ADDITION_TYPES,
   DEDUCTION_TYPES,
   EMPLOYMENT_TYPE_LABEL,
   PAY_TYPE_LABEL,
@@ -67,7 +68,7 @@ export function hoursLabel(hours: number): string {
 }
 
 /** ตารางรายวัน — ที่มาของทุกยอดบนสลิป เจ้าของและพนักงานตรวจย้อนได้ทีละวัน */
-function DailyTable({ days, timeZone, bonusByDate }: { days: PayrollDay[]; timeZone: string; bonusByDate: Map<string, { amount: number; record: boolean }> }) {
+function DailyTable({ days, timeZone, bonusByDate }: { days: PayrollDay[]; timeZone: string; bonusByDate: Map<string, { amount: number; record: boolean; cutoffSales?: number }> }) {
   const shown = days.filter((d) => d.status !== "off" || d.hours > 0);
   if (shown.length === 0) return null;
   return (
@@ -98,6 +99,7 @@ function DailyTable({ days, timeZone, bonusByDate }: { days: PayrollDay[]; timeZ
                   {DAY_STATUS_LABEL[d.status]}
                   {d.late && d.hours > 0 ? ` · สาย ${d.lateMinutes} น.` : ""}
                   {bonus ? ` · โบนัสยอดขาย +${bonus.amount}${bonus.record ? " 👑" : ""}` : ""}
+                  {bonus?.cutoffSales !== undefined ? ` (ออกก่อนจบ OT · ยอดตอนออก ${bonus.cutoffSales.toLocaleString("th-TH")})` : ""}
                 </td>
               </tr>
             );
@@ -160,15 +162,25 @@ export function PayslipCard({
   const skillPay = line.skillPay ?? 0;
   const seniorityPay = line.seniorityPay ?? 0;
   const salesBonus = line.salesBonus ?? 0;
+  const monthlyBonus = line.monthlySalesBonus ?? 0;
+  const monthlyDetail = line.monthlySalesBonusDetail ?? null;
   const sso = line.socialSecurity ?? 0;
   const wht = line.withholdingTax ?? 0;
-  const totalDeduction = line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal + sso + wht;
-  const totalEarning = line.basePay + line.otPay + line.bonusTotal + skillPay + seniorityPay + salesBonus;
+  const weeklyAdvance = (line as { weeklyAdvance?: number }).weeklyAdvance ?? 0;
+  const salaryAdvance = (line as { salaryAdvanceDeduction?: number }).salaryAdvanceDeduction ?? 0;
+  const salaryAdvanceItems = (line as { salaryAdvanceItems?: { id: string; paidDate: string; amount: number }[] }).salaryAdvanceItems ?? [];
+  const totalDeduction =
+    line.latePenalty + line.absentPenalty + line.halfDayDeduction + line.deductionTotal + sso + wht + weeklyAdvance + salaryAdvance;
+  // ใช้ยอดที่ระบบคำนวณ (ตรงกับ netPay) · บรรทัดแบบเดิมที่ไม่มี grossEarnings ค่อยรวมเอง
+  const totalEarning =
+    (line as { grossEarnings?: number }).grossEarnings ??
+    line.basePay + line.otPay + line.bonusTotal + skillPay + seniorityPay + salesBonus + monthlyBonus;
   const bonusByDate = new Map((line.salesBonusDays ?? []).map((d) => [d.date, d]));
   const salesDays = line.salesBonusDays ?? [];
   const recordDays = salesDays.filter((d) => d.record).length;
   const normalByAmount = new Map<number, number>();
   for (const d of salesDays) if (!d.record) normalByAmount.set(d.amount, (normalByAmount.get(d.amount) ?? 0) + 1);
+  const splitDays = salesDays.filter((d) => d.people !== undefined).length;
 
   return (
     <section className="mb-8 break-inside-avoid rounded-lg border border-gray-300 p-6">
@@ -214,6 +226,9 @@ export function PayslipCard({
         )}
         <Row label="ชั่วโมงทำงานรวม" value={hoursLabel(line.totalHours)} />
         {line.otHours > 0 && <Row label="ชั่วโมง OT" value={hoursLabel(line.otHours)} muted />}
+        {(line.unpaidOverflowHours ?? 0) > 0 && (
+          <Row label="ชั่วโมงที่เกินแต่ไม่ได้เป็น OT (ไม่จ่าย)" value={hoursLabel(line.unpaidOverflowHours)} muted />
+        )}
         {lateDays > 0 && <Row label="วันที่มาสาย" value={`${lateDays} วัน`} muted />}
         {trueAbsentDays > 0 && <Row label="วันขาดงาน (ไม่มีบันทึก)" value={`${trueAbsentDays} วัน`} muted />}
         {inNoOutDays > 0 && <Row label="วันที่เข้างานแต่ไม่ลงออก (นับเป็นขาด)" value={`${inNoOutDays} วัน`} muted />}
@@ -259,16 +274,40 @@ export function PayslipCard({
         )}
         {salesBonus > 0 && (
           <Row
-            label={`โบนัสยอดขายรายวัน (${[
-              ...[...normalByAmount.entries()].map(([amount, days]) => `${days} วัน×${amount}`),
-              recordDays ? `สถิติ ${recordDays} วัน` : "",
-            ]
-              .filter(Boolean)
-              .join(" · ")})`}
+            label={`โบนัสยอดขายรายวัน (${
+              splitDays > 0
+                ? `หารตามคนเข้างาน ${splitDays} วัน${recordDays ? ` · สถิติ ${recordDays} วัน` : ""}`
+                : [
+                    ...[...normalByAmount.entries()].map(([amount, days]) => `${days} วัน×${amount}`),
+                    recordDays ? `สถิติ ${recordDays} วัน` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+            })`}
             value={`+${money(salesBonus, currency)}`}
           />
         )}
-        {line.otPay > 0 && <Row label={`ค่าล่วงเวลา (${line.otHours} ชม. × ${otMultiplier})`} value={`+${money(line.otPay, currency)}`} />}
+        {monthlyBonus > 0 && monthlyDetail && (
+          <Row
+            label={`โบนัสยอดขายรายเดือน (ยอดรอบ ${money(monthlyDetail.periodSales, currency)}${
+              monthlyDetail.totalFullDays
+                ? ` · ก้อนรวม ${money(monthlyDetail.tierAmount, currency)} หารตามวันทำงาน ${monthlyDetail.fullDays}/${monthlyDetail.totalFullDays} วัน`
+                : ""
+            })`}
+            value={`+${money(monthlyBonus, currency)}`}
+          />
+        )}
+        {line.otPay > 0 && (
+          <Row
+            // สลิปเก่า (snapshot ก่อนมี otMultiplierUsed) = ใช้ตัวคูณร้าน · null = หลายวันใช้ตัวคูณต่างกัน
+            label={
+              line.otMultiplierUsed === null
+                ? `ค่าล่วงเวลา (${line.otHours} ชม. หลายอัตรา)`
+                : `ค่าล่วงเวลา (${line.otHours} ชม. × ${line.otMultiplierUsed ?? otMultiplier})`
+            }
+            value={`+${money(line.otPay, currency)}`}
+          />
+        )}
         {line.bonusTotal > 0 && <Row label="โบนัส/เพิ่มเติม" value={`+${money(line.bonusTotal, currency)}`} />}
         <Row label="รวมรายรับ" value={money(totalEarning, currency)} />
 
@@ -281,6 +320,13 @@ export function PayslipCard({
               <Row label={`ประกันสังคม${line.socialSecurityBase ? ` (ฐาน ${money(line.socialSecurityBase, currency)})` : ""}`} value={`−${money(sso, currency)}`} />
             )}
             {wht > 0 && <Row label="ภาษีหัก ณ ที่จ่าย" value={`−${money(wht, currency)}`} />}
+            {weeklyAdvance > 0 && <Row label="หักจ่ายล่วงหน้ารายสัปดาห์" value={`−${money(weeklyAdvance, currency)}`} />}
+            {salaryAdvance > 0 && (
+              <Row
+                label={`หักเบิกล่วงหน้า (${salaryAdvanceItems.map((i) => `${i.paidDate} ${money(i.amount, currency)}`).join(", ")})`}
+                value={`−${money(salaryAdvance, currency)}`}
+              />
+            )}
             {line.latePenalty > 0 && <Row label={`หักมาสาย (${lateDays} วัน)`} value={`−${money(line.latePenalty, currency)}`} />}
             {line.absentPenalty > 0 && (
               <Row
@@ -305,11 +351,11 @@ export function PayslipCard({
         <Row label="เงินสุทธิ" value={money(line.netPay, currency)} strong />
       </div>
 
-      {line.adjustments.filter((a) => a.type === "bonus").length > 0 && (
+      {line.adjustments.filter((a) => ADDITION_TYPES.includes(a.type)).length > 0 && (
         <div className="mt-3 text-xs text-gray-500">
           <p className="font-semibold">รายการเพิ่ม:</p>
           {line.adjustments
-            .filter((a) => a.type === "bonus")
+            .filter((a) => ADDITION_TYPES.includes(a.type))
             .map((a) => (
               <p key={a.id}>
                 · {a.date} {ADJUSTMENT_LABEL[a.type]} {money(a.amount, currency)}

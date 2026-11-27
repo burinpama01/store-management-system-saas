@@ -2,6 +2,7 @@ import type { Printer } from "@/modules/stores/types";
 import type { ReceiptData } from "./types";
 import { bytesToBase64 } from "./print-job-base64";
 import { buildReceiptPrinterBytes } from "./receipt-printer-bytes";
+import { assertDirectPrinted, isDirectPrintAvailable, isDirectPrintablePrinter, printDirect } from "./launcher-direct-print";
 
 export const DEFAULT_LOCAL_PRINT_BRIDGE_URL = "http://127.0.0.1:17878";
 
@@ -78,10 +79,24 @@ async function postJson(fetcher: Fetcher, url: string, body: unknown) {
 export async function enqueueReceiptPrintJob(
   printerId: string,
   receiptData: ReceiptData,
-  options: { fetcher?: Fetcher } = {},
-): Promise<{ hubOnline: boolean | null }> {
+  options: { fetcher?: Fetcher; printer?: Printer | null; kind?: "receipt" | "table" } = {},
+): Promise<{ hubOnline: boolean | null; direct?: boolean }> {
   const fetcher = options.fetcher ?? fetch;
   const printJobBase64 = bytesToBase64(await buildReceiptPrinterBytes(receiptData, receiptData));
+  // เปิดใน StoreOS POS Launcher + เครื่องพิมพ์ IP → ยิงตรงเข้าเครื่องพิมพ์ ไม่ผ่านคิวคลาวด์
+  if (isDirectPrintablePrinter(options.printer) && (await isDirectPrintAvailable())) {
+    assertDirectPrinted(
+      await printDirect({
+        printerId,
+        host: options.printer!.ipAddress!,
+        port: options.printer!.port ?? 9100,
+        bytesBase64: printJobBase64,
+        kind: options.kind ?? "receipt",
+        label: receiptData.orderNumber,
+      }),
+    );
+    return { hubOnline: true, direct: true };
+  }
   const res = await fetcher("/api/print/enqueue", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -102,6 +117,22 @@ export async function sendNetworkPrintJob(
 ) {
   const fetcher = options.fetcher ?? fetch;
   const hostname = options.hostname ?? getBrowserHostname();
+
+  // StoreOS POS Launcher: พิมพ์ตรงจากเครื่องนี้ (เร็วสุด ไม่ออกอินเทอร์เน็ต) — ล้มแล้วไม่ส่งต่อเข้า Hub
+  // เพราะผล "unknown" อาจออกกระดาษไปแล้ว ส่งซ้ำทางอื่นจะได้ใบซ้ำ
+  if (isDirectPrintablePrinter(printer) && (await isDirectPrintAvailable())) {
+    assertDirectPrinted(
+      await printDirect({
+        printerId: payload.printerId,
+        host: printer.ipAddress!,
+        port: printer.port ?? 9100,
+        bytesBase64: payload.printJobBase64,
+        kind: payload.receiptData.orderNumber ? "receipt" : "test",
+        label: payload.receiptData.orderNumber || null,
+      }),
+    );
+    return;
+  }
 
   if (shouldUseLocalPrintBridge(hostname)) {
     if (!printer.ipAddress) throw new Error("ยังไม่ได้ตั้งค่า IP เครื่องพิมพ์");

@@ -1,4 +1,6 @@
 import { Suspense, type CSSProperties, type ReactNode } from "react";
+import { canUseMemberPrivileges } from "@/modules/members/access";
+import { isOpsManagerRole } from "@/modules/operations/access";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -32,6 +34,8 @@ import { SubmitButton } from "@/shared/components/ui";
 import { CommandPalette } from "@/shared/components/CommandPalette";
 import type { CommandItem } from "@/modules/assistant/command-index";
 import { decideCostingAccess } from "@/modules/costing/access-policy";
+import { isConsignmentNavVisible } from "@/modules/consignment/access-policy";
+import { isOnlineOrderingEnabled } from "@/modules/online-orders/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +68,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         music_license_status?: string;
         setup_profile?: unknown;
         notification_voice_enabled?: boolean;
+        operations_enabled?: boolean;
+        inventory_enabled?: boolean;
       }
     | undefined;
   const qrOrderingEnabled = Boolean(currentStoreRow?.qr_ordering_enabled);
@@ -82,11 +88,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         ? ("accounting" as const)
         : null;
   // สลิปของฉัน (R17, R32, R33): แสดงเมนูเฉพาะร้านที่มีแพ็ก "เงินเดือนขั้นสูง" และเปิดสวิตช์
-  const myPayslipVisible =
-    can("attendance.clock") &&
-    !!assistantBilling &&
-    getPlanFeatures(assistantBilling).advancedPayroll &&
-    (await getAdvancedPayrollSettings(storeContext.storeId)).switches.myPayslip;
+  const payrollSwitches =
+    can("attendance.clock") && !!assistantBilling && getPlanFeatures(assistantBilling).advancedPayroll
+      ? (await getAdvancedPayrollSettings(storeContext.storeId)).switches
+      : null;
+  const myPayslipVisible = !!payrollSwitches?.myPayslip;
+  // เบิกเงิน (B2): แพ็กเงินเดือนขั้นสูง + เปิดสวิตช์
+  const myAdvanceVisible = !!payrollSwitches?.salaryAdvance;
   // ค่าเริ่มต้นเสียงพูดของร้าน — แต่ละเครื่องปรับทับได้เองที่หน้าตั้งค่าแจ้งเตือน
   const notificationVoiceEnabled = Boolean(currentStoreRow?.notification_voice_enabled);
   // F1: profile-driven nav hiding — legacy stores (no profile) keep the legacy nav;
@@ -105,21 +113,44 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     hasAdvancedReports: assistantBilling ? canUseFeature(assistantBilling, "advancedReports") : false,
     businessMode: setupProfile?.businessMode ?? null,
   }).allowed;
+  // สินค้าซื้อขาด/ฝากขาย (C0): Enterprise + manager ขึ้นไป — เห็นแม้ยังไม่เปิดสวิตช์ เพื่อเข้าไปเปิด
+  const consignmentVisible = isConsignmentNavVisible({
+    hasConsignment: assistantBilling ? canUseFeature(assistantBilling, "consignment") : false,
+    role: storeContext.role,
+  });
+  const websiteVisible =
+    isOpsManagerRole(storeContext.role) && !!assistantBilling && canUseMemberPrivileges(assistantBilling);
+  // สั่งออนไลน์ (เว็บร้าน S2) — แสดงในเมนูเมื่อร้าน Enterprise เปิดสวิตช์แล้ว (เจ้าของเข้าตั้งค่าได้จากหน้าเว็บไซต์ร้าน)
+  const onlineOrdersVisible =
+    canManageQr &&
+    !!assistantBilling &&
+    canUseMemberPrivileges(assistantBilling) &&
+    (await isOnlineOrderingEnabled(storeContext.storeId));
   const navItems = [
     ...(can("dashboard.view") ? [{ href: "/dashboard", label: "ภาพรวม" }] : []),
     ...(can("catalog.manage") ? [{ href: "/catalog", label: "เมนูสินค้า" }] : []),
     ...(can("stock.manage") ? [{ href: "/stock", label: "สต็อก" }] : []),
     ...(can("pos.use") ? [{ href: "/pos", label: "POS" }] : []),
     ...(can("catalog.manage") ? [{ href: "/customers", label: "ลูกค้า" }] : []),
+    // เว็บไซต์ร้าน — owner/admin ของร้าน Enterprise
+    ...(websiteVisible ? [{ href: "/website", label: "เว็บไซต์ร้าน" }] : []),
     ...(qrOrdersVisible ? [{ href: "/qr-orders", label: "QR Order" }] : []),
     ...(canManageQr ? [{ href: "/delivery", label: "เดลิเวอรี" }] : []),
+    ...(onlineOrdersVisible ? [{ href: "/website/orders", label: "สั่งออนไลน์" }] : []),
     ...(musicRequestsVisible ? [{ href: "/music-requests", label: "ขอเพลง" }] : []),
     ...(can("cashflow.view") ? [{ href: "/accounting", label: "บัญชี" }] : []),
     ...(can("reports.view") ? [{ href: "/reports", label: "รายงาน" }] : []),
     ...(costingVisible ? [{ href: "/costing", label: "ต้นทุน" }] : []),
+    ...(consignmentVisible ? [{ href: "/consignment", label: "ฝากขาย" }] : []),
+    // ส่งบิลซื้อ (บิลตลาด/เขียนมือ รออนุมัติ) — พนักงานที่ไม่เห็นเมนูต้นทุน เมื่อสาขาเปิดคลังวัตถุดิบ (Plan v5)
+    ...(!costingVisible && currentStoreRow?.inventory_enabled ? [{ href: "/purchase-bills", label: "ส่งบิลซื้อ" }] : []),
     ...(can("reports.view") ? [{ href: "/notifications", label: "แจ้งเตือน" }] : []),
     ...(can("attendance.clock") ? [{ href: "/attendance", label: "การเข้างาน" }] : []),
+    // งานหน้าร้าน (เช็กลิสต์) — เห็นเมื่อสาขาเปิดระบบแล้วเท่านั้น; เจ้าของตั้งค่าได้ที่ /ops/templates
+    ...(currentStoreRow?.operations_enabled ? [{ href: "/ops", label: "งานหน้าร้าน" }] : []),
     ...(myPayslipVisible ? [{ href: "/my-payslips", label: "สลิปของฉัน" }] : []),
+    ...(myAdvanceVisible ? [{ href: "/my-advance", label: "เบิกเงิน" }] : []),
+    ...(can("attendance.clock") ? [{ href: "/my-profile", label: "ข้อมูลของฉัน" }] : []),
     ...(can("attendance.manage") ? [{ href: "/staff", label: "พนักงาน" }] : []),
     ...(
       storeContext && canManageQr && currentStoreRow?.buffet_enabled

@@ -1,4 +1,8 @@
 import { Suspense } from "react";
+import { canUseMemberPrivileges } from "@/modules/members/access";
+import { resolveMemberPassAccess } from "@/modules/prepaid-passes/grace";
+import { isMemberCodeEnabled } from "@/modules/members/repository";
+import { listPassSaleProducts } from "@/modules/prepaid-passes/repository";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import type { PermissionKey } from "@/modules/tenants/types";
@@ -19,6 +23,7 @@ import { DASHBOARD_COMMANDS } from "@/modules/assistant/command-index";
 import { listVoiceAliases } from "@/modules/voice-pos/alias-repository";
 import { readAssistantConfig } from "@/modules/ai-assistant/config";
 import { StoreAlertNotifiers } from "@/shared/notifications/StoreAlertNotifiers";
+import { isOnlineOrderingEnabled } from "@/modules/online-orders/repository";
 import { PushTokenRegistrar } from "@/app/(dashboard)/PushTokenRegistrar";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +77,17 @@ export default async function PosPage() {
   const couponEnabled = canUseFeature(resolvedBillingState, "couponManagement");
   const loyaltyEnabled = canUseFeature(resolvedBillingState, "loyaltyPoints");
   const customerDisplayEnabled = canUseFeature(resolvedBillingState, "customerDisplay");
+  // รหัสยืนยันสมาชิก 5 นาที: Enterprise + สวิตช์ของสาขา (ตั้งค่า › สิทธิ์สมาชิก)
+  const memberCodeSwitch = await isMemberCodeEnabled(ctx.storeId);
+  // O1: หมด Enterprise แต่มีแพ็กค้าง → POS เปิดแผงสมาชิกแบบ "ยืนยันรหัส + ใช้แพ็ก" อย่างเดียว
+  const passAccess = memberCodeSwitch
+    ? await resolveMemberPassAccess(ctx.organizationId, resolvedBillingState)
+    : { privileges: false, grace: false };
+  const passGraceMode = passAccess.grace;
+  const memberCodeEnabled = memberCodeSwitch && ((loyaltyEnabled && passAccess.privileges) || passGraceMode);
+  // แพ็กล่วงหน้า (Enterprise): สินค้าขายแพ็กต้องผูกสมาชิก + แจ้งเงื่อนไขก่อนใส่ตะกร้า
+  const passSaleProducts =
+    loyaltyEnabled && canUseMemberPrivileges(resolvedBillingState) ? await listPassSaleProducts(ctx.storeId) : [];
   const couponUnavailableMessage = couponEnabled
     ? null
     : explainFeatureLock(resolvedBillingState, "couponManagement") ?? "แพ็กเกจนี้ยังไม่รองรับคูปอง";
@@ -82,6 +98,12 @@ export default async function PosPage() {
     ? null
     : explainFeatureLock(resolvedBillingState, "customerDisplay") ?? "แพ็กเกจนี้ยังไม่รองรับจอลูกค้า";
   const byoPaymentGatewayEnabled = canUseFeature(resolvedBillingState, "byoPaymentGateway");
+  // ตั๋วออนไลน์ใน POS: เงื่อนไขเดียวกับเมนู "สั่งออนไลน์" (จัดการออเดอร์ได้ + Enterprise + ร้านเปิดสั่งออนไลน์)
+  const onlineOrdersEnabled =
+    resolved.can("orders.manage_qr") &&
+    canUseMemberPrivileges(resolvedBillingState) &&
+    byoPaymentGatewayEnabled &&
+    (await isOnlineOrderingEnabled(ctx.storeId));
   const trueMoneyConfig = byoPaymentGatewayEnabled
     ? await getEnabledTrueMoneyManualConfig(ctx.storeId)
     : { data: null };
@@ -139,11 +161,15 @@ export default async function PosPage() {
       couponUnavailableMessage={couponUnavailableMessage}
       loyaltyEnabled={loyaltyEnabled}
       loyaltyUnavailableMessage={loyaltyUnavailableMessage}
+      memberCodeEnabled={memberCodeEnabled}
+      passGraceMode={passGraceMode}
+      passSaleProducts={passSaleProducts}
       customerDisplayEnabled={customerDisplayEnabled}
       customerDisplayUnavailableMessage={customerDisplayUnavailableMessage}
       trueMoneyEnabled={trueMoneyEnabled}
       beamEnabled={beamEnabled}
       hidePromptPayQr={hidePromptPayQr}
+      onlineOrdersEnabled={onlineOrdersEnabled}
     />
   );
 

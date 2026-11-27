@@ -23,11 +23,14 @@ export interface Ingredient {
   purchasePrice: number;
   yieldPct: number;
   isActive: boolean;
+  /** หมวดสำหรับจัดกลุ่ม/กรอง (null = ยังไม่ระบุ) */
+  category: string | null;
 }
 
 export interface IngredientInput {
   id?: string | null;
   name: string;
+  category?: string | null;
   purchaseUnit: string;
   usageUnit: string;
   usagePerPurchase: number;
@@ -40,6 +43,8 @@ export interface RecipeLine {
   productId: string;
   /** null = ใช้กับทุกตัวเลือกของเมนู */
   variantId: string | null;
+  /** null = สูตรหลัก · มีค่า = บวกเพิ่มเฉพาะเมื่อลูกค้าเลือกตัวเลือกเสริมนี้ (เช่น เย็น/ปั่น/วิปครีม) */
+  modifierOptionId: string | null;
   ingredientId: string;
   quantity: number;
 }

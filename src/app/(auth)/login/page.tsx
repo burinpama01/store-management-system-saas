@@ -23,6 +23,15 @@ export default function LoginPage() {
     formAction(formData);
   };
 
+  // เฉพาะโปรแกรม StoreOS POS (UA มี StoreOSPos/): เปิดหน้า QR ก่อน ไม่ต้องพิมพ์รหัสผ่านบนเครื่องร้าน
+  // ?method=password = ผู้ใช้กด "ใช้อีเมล/รหัสผ่านแทน" จากหน้า QR เอง → แสดงฟอร์มนี้ตามปกติ
+  useEffect(() => {
+    if (!/StoreOSPos\//.test(navigator.userAgent)) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("method") === "password" || window.location.hash.includes("access_token")) return;
+    router.replace("/device-login");
+  }, [router]);
+
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const accessToken = hash.get("access_token");
@@ -161,6 +170,14 @@ export default function LoginPage() {
               เข้าสู่ระบบ
             </Button>
           </form>
+
+          {/* เครื่องร้าน (StoreOS POS / คอมใช้ร่วมกัน): ไม่ต้องพิมพ์รหัสผ่านบนเครื่องนี้ */}
+          <Link
+            href="/device-login"
+            className="mt-3 flex min-h-11 items-center justify-center rounded-lg border border-[var(--border)] px-4 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--surface-muted)]"
+          >
+            📱 เข้าใช้ด้วย QR จากมือถือ (ยืนยันด้วยรหัสพนักงาน)
+          </Link>
 
           <p className="reference-auth-register">
             ยังไม่มีบัญชี? <Link href="/register">สมัครใช้งานฟรี 30 วัน</Link>

@@ -470,6 +470,8 @@ export interface Database {
           store_id: string
           order_id: string | null
           music_request_id: string | null
+          prepaid_pass_purchase_id: string | null
+          online_order_id: string | null
           provider_config_id: string
           provider_key: string
           mode: string
@@ -497,6 +499,8 @@ export interface Database {
           store_id: string
           order_id?: string | null
           music_request_id?: string | null
+          prepaid_pass_purchase_id?: string | null
+          online_order_id?: string | null
           provider_config_id: string
           provider_key: string
           mode: string
@@ -524,6 +528,8 @@ export interface Database {
           store_id?: string
           order_id?: string | null
           music_request_id?: string | null
+          prepaid_pass_purchase_id?: string | null
+          online_order_id?: string | null
           provider_config_id?: string
           provider_key?: string
           mode?: string
@@ -1865,6 +1871,7 @@ export interface Database {
           delivery_price: number | null;
           delivery_out_of_stock: boolean;
           out_of_stock: boolean;
+          online_enabled: boolean;
           unit_label: string | null;
           price_wholesale: number | null;
           price_agent: number | null;
@@ -1892,6 +1899,7 @@ export interface Database {
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
           out_of_stock?: boolean;
+          online_enabled?: boolean;
           unit_label?: string | null;
           price_wholesale?: number | null;
           price_agent?: number | null;
@@ -1919,6 +1927,7 @@ export interface Database {
           delivery_price?: number | null;
           delivery_out_of_stock?: boolean;
           out_of_stock?: boolean;
+          online_enabled?: boolean;
           unit_label?: string | null;
           price_wholesale?: number | null;
           price_agent?: number | null;
@@ -3414,6 +3423,7 @@ export interface Database {
           usage_per_purchase: number;
           purchase_price: number;
           yield_pct: number;
+          category: string | null;
           stock_pool_id: string | null;
           is_active: boolean;
           created_at: string;
@@ -3429,6 +3439,7 @@ export interface Database {
           usage_per_purchase: number;
           purchase_price: number;
           yield_pct?: number;
+          category?: string | null;
           stock_pool_id?: string | null;
           is_active?: boolean;
           created_at?: string;
@@ -3444,6 +3455,7 @@ export interface Database {
           usage_per_purchase?: number;
           purchase_price?: number;
           yield_pct?: number;
+          category?: string | null;
           stock_pool_id?: string | null;
           is_active?: boolean;
           created_at?: string;
@@ -3482,6 +3494,7 @@ export interface Database {
           store_id: string;
           product_id: string;
           variant_id: string | null;
+          modifier_option_id: string | null;
           ingredient_id: string;
           quantity: number;
           created_at: string;
@@ -3492,6 +3505,7 @@ export interface Database {
           store_id: string;
           product_id: string;
           variant_id?: string | null;
+          modifier_option_id?: string | null;
           ingredient_id: string;
           quantity: number;
           created_at?: string;
@@ -3502,6 +3516,7 @@ export interface Database {
           store_id?: string;
           product_id?: string;
           variant_id?: string | null;
+          modifier_option_id?: string | null;
           ingredient_id?: string;
           quantity?: number;
           created_at?: string;
@@ -4217,6 +4232,102 @@ export interface Database {
         };
         Relationships: [];
       };
+      employee_self_info_requests: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          changes: Json
+          status: string
+          review_note: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          changes: Json
+          status?: string
+          review_note?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          user_id?: string
+          changes?: Json
+          status?: string
+          review_note?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      employee_self_info: {
+        Row: {
+          id: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          full_name: string | null
+          bank_name: string | null
+          bank_account_no: string | null
+          bank_account_name: string | null
+          nickname: string | null
+          phone: string | null
+          birth_date: string | null
+          address: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          store_id: string
+          user_id: string
+          full_name?: string | null
+          bank_name?: string | null
+          bank_account_no?: string | null
+          bank_account_name?: string | null
+          nickname?: string | null
+          phone?: string | null
+          birth_date?: string | null
+          address?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          store_id?: string
+          user_id?: string
+          full_name?: string | null
+          bank_name?: string | null
+          bank_account_no?: string | null
+          bank_account_name?: string | null
+          nickname?: string | null
+          phone?: string | null
+          birth_date?: string | null
+          address?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       employee_profiles: {
         Row: {
           id: string;
@@ -4246,6 +4357,7 @@ export interface Database {
           bank_account_name: string | null;
           sso_enabled: boolean;
           withholding_tax_rate: number;
+          pay_frequency: string;
           created_at: string;
           updated_at: string;
         };
@@ -4277,6 +4389,7 @@ export interface Database {
           bank_account_name?: string | null;
           sso_enabled?: boolean;
           withholding_tax_rate?: number;
+          pay_frequency?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -4304,6 +4417,7 @@ export interface Database {
           bank_account_name?: string | null;
           sso_enabled?: boolean;
           withholding_tax_rate?: number;
+          pay_frequency?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -4347,6 +4461,8 @@ export interface Database {
           sso_wage_ceiling: number;
           wht_mode: "manual" | "percent";
           working_days: number[];
+          ot_mode: "daily" | "scheduled";
+          ot_overflow_pay: "regular" | "none";
           created_at: string;
           updated_at: string;
         };
@@ -4388,6 +4504,8 @@ export interface Database {
           sso_wage_ceiling?: number;
           wht_mode?: "manual" | "percent";
           working_days?: number[];
+          ot_mode?: "daily" | "scheduled";
+          ot_overflow_pay?: "regular" | "none";
           created_at?: string;
           updated_at?: string;
         };
@@ -4427,6 +4545,45 @@ export interface Database {
           sso_wage_ceiling?: number;
           wht_mode?: "manual" | "percent";
           working_days?: number[];
+          ot_mode?: "daily" | "scheduled";
+          ot_overflow_pay?: "regular" | "none";
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      store_ot_days: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          date: string;
+          cap_hours: number;
+          multiplier: number | null;
+          user_ids: string[];
+          note: string | null;
+          updated_by_user_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id: string;
+          store_id: string;
+          date: string;
+          cap_hours: number;
+          multiplier?: number | null;
+          user_ids: string[];
+          note?: string | null;
+          updated_by_user_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          cap_hours?: number;
+          multiplier?: number | null;
+          user_ids?: string[];
+          note?: string | null;
+          updated_by_user_id?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -4463,11 +4620,12 @@ export interface Database {
           user_id: string;
           employee_name: string;
           date: string;
-          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
+          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax" | "delivery_pay";
           amount: number;
           note: string | null;
           created_by_user_id: string;
           created_at: string;
+          online_order_id: string | null;
         };
         Insert: {
           id?: string;
@@ -4476,13 +4634,71 @@ export interface Database {
           user_id: string;
           employee_name: string;
           date: string;
-          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax";
+          type: "penalty" | "bonus" | "leave" | "absent" | "late" | "withholding_tax" | "delivery_pay";
           amount: number;
           note?: string | null;
           created_by_user_id: string;
           created_at?: string;
+          online_order_id?: string | null;
         };
         Update: never;
+        Relationships: [];
+      };
+      attendance_backdate_requests: {
+        Row: {
+          id: string;
+          organization_id: string;
+          store_id: string;
+          user_id: string;
+          employee_name: string;
+          attendance_record_id: string | null;
+          date: string;
+          clock_in_at: string;
+          clock_out_at: string;
+          note: string | null;
+          status: "pending" | "approved" | "rejected" | "cancelled";
+          decided_by_user_id: string | null;
+          decided_at: string | null;
+          decision_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          user_id?: string;
+          employee_name?: string;
+          attendance_record_id?: string | null;
+          date?: string;
+          clock_in_at?: string;
+          clock_out_at?: string;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected" | "cancelled";
+          decided_by_user_id?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          store_id?: string;
+          user_id?: string;
+          employee_name?: string;
+          attendance_record_id?: string | null;
+          date?: string;
+          clock_in_at?: string;
+          clock_out_at?: string;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected" | "cancelled";
+          decided_by_user_id?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
         Relationships: [];
       };
       attendance_records: {
@@ -5248,6 +5464,21 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      request_attendance_backdate: {
+        Args: {
+          p_store_id: string;
+          p_record_id: string | null;
+          p_date: string | null;
+          p_clock_in_at: string | null;
+          p_clock_out_at: string;
+          p_note: string | null;
+        };
+        Returns: string;
+      };
+      decide_attendance_backdate: {
+        Args: { p_request_id: string; p_action: string; p_note: string | null };
+        Returns: Database["public"]["Tables"]["attendance_backdate_requests"]["Row"];
+      };
       settle_platform_billing_order: {
         Args: { p_order_id: string; p_method: string; p_ref: string; p_amount: number };
         Returns: Json;
@@ -5374,6 +5605,18 @@ export interface Database {
           p_consumption_quantity: number;
         };
         Returns: Database["public"]["Tables"]["variant_stock_links"]["Row"];
+      };
+      link_variant_to_source_variant: {
+        Args: {
+          p_target_variant_id: string;
+          p_source_variant_id: string;
+          p_consumption_quantity: number;
+        };
+        Returns: string;
+      };
+      remove_variant_from_stock: {
+        Args: { p_variant_id: string };
+        Returns: undefined;
       };
       adjust_customer_loyalty_points: {
         Args: {
@@ -5584,6 +5827,18 @@ export interface Database {
         };
         Returns: string;
       };
+      submit_employee_self_info_request: {
+        Args: { p_store_id: string; p_changes: Json }
+        Returns: string
+      }
+      cancel_employee_self_info_request: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
+      review_employee_self_info_request: {
+        Args: { p_request_id: string; p_approve: boolean; p_note?: string | null }
+        Returns: undefined
+      }
       costing_save_menu: {
         Args: {
           p_product_id: string;
@@ -5592,6 +5847,14 @@ export interface Database {
           p_target_food_cost_pct: number | null;
         };
         Returns: undefined;
+      };
+      costing_save_option_lines: {
+        Args: {
+          p_option_id: string;
+          p_lines: Json;
+          p_apply_same_name: boolean;
+        };
+        Returns: number;
       };
       redeem_loyalty_reward: {
         Args: {
@@ -5789,6 +6052,14 @@ export interface Database {
           pos_revenue: number;
           delivery_revenue: number;
         }[];
+      };
+      get_sales_insights: {
+        Args: {
+          p_store_id: string;
+          p_date_from: string;
+          p_date_to: string;
+        };
+        Returns: Json;
       };
       get_report_daily_sales: {
         Args: {

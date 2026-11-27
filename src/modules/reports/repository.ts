@@ -71,6 +71,24 @@ type BranchOrderRow = {
 const BATCH_SIZE = 200;
 const QUERY_PAGE_SIZE = 1000;
 
+type PageResult<T> = { data: T[] | null; error: unknown };
+
+/**
+ * ดึงให้ครบทุกหน้า — PostgREST ตัดที่ 1,000 แถวต่อคำขอแบบเงียบ ๆ
+ * (ร้านที่มีบิลเกิน 1,000 ในช่วงรายงานเคยได้ยอดชำระ/สินค้าขายดีไม่ครบ)
+ * query ต้อง order ด้วยคีย์ที่ไม่ซ้ำ เพื่อไม่ให้แถวข้าม/ซ้ำระหว่างหน้า
+ */
+async function fetchAllPages<T>(page: (from: number, to: number) => PromiseLike<PageResult<T>>): Promise<{ data: T[]; error: unknown }> {
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += QUERY_PAGE_SIZE) {
+    const { data, error } = await page(offset, offset + QUERY_PAGE_SIZE - 1);
+    if (error) return { data: rows, error };
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < QUERY_PAGE_SIZE) return { data: rows, error: null };
+  }
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -256,11 +274,17 @@ async function fetchOrderItemsInBatches(
   }
   const batches = await Promise.all(
     chunks.map((chunk) =>
-      supabase
-        .from("order_items")
-        .select("product_id, product_name, quantity, total_price, orders!inner(store_id)")
-        .in("order_id", chunk)
-        .eq("orders.store_id", storeId),
+      fetchAllPages((from, to) =>
+        supabase
+          .from("order_items")
+          .select("product_id, product_name, quantity, total_price, orders!inner(store_id)")
+          .in("order_id", chunk)
+          .eq("orders.store_id", storeId)
+          // รายการที่ยกเลิก (void) ไม่ใช่ยอดขาย — ห้ามนับเป็นสินค้าขายดี
+          .eq("voided", false)
+          .order("id")
+          .range(from, to),
+      ),
     ),
   );
   if (batches.some((r) => r.error)) {
@@ -279,6 +303,8 @@ async function fetchBranchStoresInPages(organizationId: string): Promise<BranchS
       .eq("organization_id", organizationId)
       .eq("is_active", true)
       .order("name")
+      // คีย์ไม่ซ้ำต่อท้าย — ชื่อสาขาซ้ำกันได้ ทำให้แบ่งหน้าแล้วแถวข้าม/ซ้ำ
+      .order("id")
       .range(offset, offset + QUERY_PAGE_SIZE - 1);
     if (result.error) {
       throw new Error("Unable to load branch stores");
@@ -309,6 +335,7 @@ async function fetchBranchOrdersInBatches(
         .eq("status", "paid")
         .gte("paid_at", dateFrom)
         .lt("paid_at", nextDayExclusive)
+        .order("id")
         .range(offset, offset + QUERY_PAGE_SIZE - 1);
       if (result.error) {
         throw new Error("Unable to load branch sales summary");
@@ -340,21 +367,25 @@ export async function getReportData(
       p_date_from: dateFrom,
       p_date_to: dateTo,
     }),
-    supabase
-      .from("orders")
-      .select("id, total, qr_order_source, order_number, paid_at, table_bill_key")
-      .eq("store_id", storeId)
-      .eq("status", "paid")
-      .gte("paid_at", dateFrom)
-      .lt("paid_at", nextDayExclusive),
+    fetchAllPages((from, to) =>
+      supabase
+        .from("orders")
+        .select("id, total, qr_order_source, order_number, paid_at, table_bill_key")
+        .eq("store_id", storeId)
+        .eq("status", "paid")
+        .gte("paid_at", dateFrom)
+        .lt("paid_at", nextDayExclusive)
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
-  const reportOrders = (orderIdsResult.data ?? []) as ReportOrderRow[];
-  const orderIds = reportOrders.map((o) => o.id);
-
+  // ตรวจ error ก่อนใช้ข้อมูล — หน้ากลางพังแล้ว data จะมีแค่บางส่วน
   if (orderIdsResult.error) {
     throw new Error("Unable to load report order ids");
   }
+  const reportOrders = (orderIdsResult.data ?? []) as ReportOrderRow[];
+  const orderIds = reportOrders.map((o) => o.id);
 
   const salesSummary = withTableBills(
     summaryResult.error
@@ -452,13 +483,17 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
       p_date_from: today,
       p_date_to: today,
     }),
-    supabase
-      .from("orders")
-      .select("id, total, qr_order_source, order_number, table_bill_key")
-      .eq("store_id", storeId)
-      .eq("status", "paid")
-      .gte("paid_at", today)
-      .lt("paid_at", tomorrowExclusive),
+    fetchAllPages((from, to) =>
+      supabase
+        .from("orders")
+        .select("id, total, qr_order_source, order_number, table_bill_key")
+        .eq("store_id", storeId)
+        .eq("status", "paid")
+        .gte("paid_at", today)
+        .lt("paid_at", tomorrowExclusive)
+        .order("id")
+        .range(from, to),
+    ),
     supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
@@ -466,11 +501,11 @@ export async function getDashboardData(storeId: string): Promise<DashboardData> 
       .in("status", ["open", "pending_payment"]),
   ]);
 
-  const dashboardOrders = (orderIdsResult.data ?? []) as DashboardOrderRow[];
-  const orderIds = dashboardOrders.map((o) => o.id);
   if (orderIdsResult.error) {
     throw new Error("Unable to load dashboard order ids");
   }
+  const dashboardOrders = (orderIdsResult.data ?? []) as DashboardOrderRow[];
+  const orderIds = dashboardOrders.map((o) => o.id);
   if (countResult.error) {
     throw new Error("Unable to load dashboard pending orders");
   }

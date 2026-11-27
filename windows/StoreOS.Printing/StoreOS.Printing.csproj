@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    พิมพ์ตรงจากเครื่อง POS เข้าเครื่องพิมพ์ IP:9100 (แผน POS Launcher Direct IP Printing v2 — เฟส D1)
+    แยกเป็น library ไม่ผูก WPF/WebView2 เพื่อให้ทดสอบด้วยเซิร์ฟเวอร์ TCP ปลอมได้ และให้โปรแกรม
+    StoreOS POS Launcher (D2) อ้างอิงไปใช้
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>StoreOS.Printing</RootNamespace>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="StoreOS.Printing.Tests" />
+  </ItemGroup>
+
+</Project>

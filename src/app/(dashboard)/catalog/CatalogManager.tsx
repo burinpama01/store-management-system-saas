@@ -37,6 +37,9 @@ import {
   toggleProductAvailabilityAction,
 } from "./actions";
 import type { Store } from "@/modules/stores/types";
+import type { OptionRecipeData } from "@/modules/costing/repository";
+import { OptionRecipeButton, OptionRecipeProvider } from "./OptionRecipeEditor";
+import { ConsignmentLinkProvider, ConsignmentSourcingLink } from "./ConsignmentSourcingLink";
 
 type PanelMode =
   | "closed"
@@ -67,6 +70,10 @@ interface Props {
   canUseQrOrdering: boolean;
   canUseStock: boolean;
   kitchenStations: { id: string; name: string }[];
+  /** null = ไม่แสดงปุ่มผูกวัตถุดิบ (ไม่ใช่ผู้จัดการ/แพ็กไม่มีระบบต้นทุน) */
+  optionRecipe: OptionRecipeData | null;
+  /** ร้าน Enterprise ที่เปิดซื้อขาด/ฝากขาย + ผู้จัดการ → แสดงลิงก์ตั้งค่าในหน้าแก้เมนู */
+  consignmentEnabled?: boolean;
 }
 
 function priceStr(n: number) {
@@ -149,13 +156,16 @@ function RoleCapabilityBar({
 }
 
 function ProductImage({ product }: { product: Product }) {
-  if (product.imageUrl) {
+  // รูปลิงก์เสีย/ถูกบล็อกข้ามโดเมน → โชว์ตัวย่อแทนข้อความ alt ที่ล้นการ์ด (แบบเดียวกับ POS)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (product.imageUrl && failedUrl !== product.imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={product.imageUrl}
         alt={productImageAlt(product)}
         loading="lazy"
+        onError={() => setFailedUrl(product.imageUrl ?? null)}
         className="h-full w-full object-cover"
       />
     );
@@ -608,6 +618,15 @@ function ProductForm({
           </label>
         )}
       </div>
+      <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+        <input
+          type="checkbox"
+          name="availableOnline"
+          defaultChecked={product?.availableOnline ?? true}
+          className="rounded border-gray-300"
+        />
+        ขายในหน้าสั่งออนไลน์ (เว็บร้าน) — ไม่ติ๊ก = ขายหน้าร้าน/QR ได้ แต่ไม่ขึ้นหน้าสั่งออนไลน์
+      </label>
       <div className="rounded border border-gray-200 bg-gray-50 p-2.5 space-y-2">
         <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
           <input
@@ -1170,9 +1189,10 @@ function ModifierGroupSection({ group }: { group: ModifierGroup }) {
         </button>
       </div>
       {group.options.map((opt) => (
-        <div key={opt.id} className="flex items-center justify-between pl-2">
+        <div key={opt.id} className="flex flex-wrap items-center justify-between gap-y-1 pl-2">
           <span className="text-xs text-gray-700">{opt.name}</span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <OptionRecipeButton optionId={opt.id} optionName={opt.name} groupName={group.name} />
             <span className="text-xs text-gray-500">{priceDeltaStr(opt.priceAdjustment)}</span>
             <label className="inline-flex min-h-7 items-center gap-1 rounded-full bg-gray-50 px-2 text-[11px] font-medium text-gray-600">
               <input
@@ -1480,6 +1500,7 @@ function CatalogDialog({
             product={selectedProduct}
             modifierGroupTemplates={modifierGroupTemplates}
           />
+          <ConsignmentSourcingLink productId={selectedProduct.id} />
         </>
       )}
     </ModalDialog>
@@ -1767,6 +1788,8 @@ export function CatalogManager({
   canUseQrOrdering,
   canUseStock,
   kitchenStations,
+  optionRecipe,
+  consignmentEnabled = false,
 }: Props) {
   const [panelMode, setPanelMode] = useState<PanelMode>("closed");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
@@ -1868,6 +1891,8 @@ export function CatalogManager({
   }
 
   return (
+    <ConsignmentLinkProvider enabled={consignmentEnabled}>
+    <OptionRecipeProvider data={optionRecipe} products={products}>
     <div className="flex min-h-full flex-col">
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1965,7 +1990,8 @@ export function CatalogManager({
           </div>
         </aside>
 
-        <section className="@container min-w-0 bg-slate-50 p-4">
+        {/* pb-24 บนมือถือ: ปุ่มลอยผู้ช่วยมุมขวาล่างไม่บังการ์ดแถวสุดท้าย */}
+        <section className="@container min-w-0 bg-slate-50 p-4 pb-24 md:pb-4">
           <CatalogToolsDialogs
             products={products}
             branchStores={branchStores}
@@ -1999,15 +2025,17 @@ export function CatalogManager({
               ยังไม่มีสินค้าในหมวดนี้
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-4 @7xl:grid-cols-5">
+            /* แบบเดียวกับหน้า POS: มือถือ/พื้นที่แคบ 2 คอลัมน์ (เดิม 1 = เห็นทีละชิ้น)
+               กว้าง ≥ 512px เติมคอลัมน์ตามความกว้างการ์ดขั้นต่ำ 180px (ปุ่ม 4 ปุ่มยังไม่เบียด) */
+            <div className="grid grid-cols-2 gap-2 @lg:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] @lg:gap-3">
               {filteredProducts.map((p) => (
-                <article key={p.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <article key={p.id} className="@container/card min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
                   <div className="aspect-[4/3] overflow-hidden border-b border-slate-100">
                     <ProductImage product={p} />
                   </div>
-                  <div className="space-y-3 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                  <div className="space-y-2.5 p-2 @lg:space-y-3 @lg:p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
                         <h3 className="line-clamp-2 text-sm font-bold text-slate-950">{p.name}</h3>
                         <p className="mt-1 text-sm font-bold tabular-nums text-slate-800">
                           {priceStr(p.basePrice)}
@@ -2027,6 +2055,12 @@ export function CatalogManager({
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5 text-xs">
+                      {/* อยู่แถวป้ายที่ขึ้นบรรทัดใหม่ได้ — เดิมอยู่คอลัมน์ขวาที่ไม่ยุบ ดันชื่อสินค้าจนหายบนการ์ดแคบ */}
+                      {p.availableOnline === false && (
+                        <span className="rounded border border-slate-200 bg-slate-100 px-2 py-1 font-bold text-slate-600">
+                          ไม่ขายออนไลน์
+                        </span>
+                      )}
                       <span className={`rounded border px-2 py-1 ${
                         p.availableForPos ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-400"
                       }`}>
@@ -2051,11 +2085,12 @@ export function CatalogManager({
                     </div>
                     {canManageCatalog ? (
                       <div className="space-y-2">
-                        <div className="flex gap-2">
+                        {/* การ์ดแคบกว่า 160px (จอ 320) ปุ่มเรียงลง ไม่ให้ "ปิดใช้งาน" หักสองบรรทัด */}
+                        <div className="flex flex-col gap-1.5 @min-[160px]/card:flex-row @min-[160px]/card:gap-2">
                           <button
                             type="button"
                             onClick={() => handleToggleActive(p)}
-                            className={`min-h-9 flex-1 rounded-md border px-2 text-xs font-bold ${
+                            className={`min-h-10 flex-1 whitespace-nowrap rounded-md border px-2 text-xs font-bold ${
                               p.isActive
                                 ? "border-slate-200 text-slate-600 hover:bg-slate-50"
                                 : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -2066,7 +2101,7 @@ export function CatalogManager({
                           <button
                             type="button"
                             onClick={() => handleToggleStock(p)}
-                            className={`min-h-9 flex-1 rounded-md border px-2 text-xs font-bold ${
+                            className={`min-h-10 flex-1 whitespace-nowrap rounded-md border px-2 text-xs font-bold ${
                               p.outOfStock
                                 ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                 : "border-rose-200 text-rose-600 hover:bg-rose-50"
@@ -2138,5 +2173,7 @@ export function CatalogManager({
 
       {confirmDialog}
     </div>
+    </OptionRecipeProvider>
+    </ConsignmentLinkProvider>
   );
 }

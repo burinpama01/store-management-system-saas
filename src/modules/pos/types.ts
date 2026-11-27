@@ -50,9 +50,22 @@ export interface CartItem {
   note?: string;
   /** Set when this line is a redeemed product reward (priced ฿0, validated server-side via the voucher). */
   rewardVoucherCode?: string;
+  /** บรรทัดใช้แพ็กซื้อล่วงหน้า (ราคา ฿0) — server จองสิทธิ์จากแพ็กนี้ตอนสร้างออเดอร์ */
+  prepaidPassId?: string;
 }
 
 export type DiscountType = "amount" | "percentage";
+
+export interface ReceiptMissionProgress {
+  name: string;
+  progress: number;
+  targetCount: number;
+  completed: boolean;
+  /** วิธีนับ — ใบเสร็จแสดงหน่วย (ชิ้น/บาท/ครั้ง) ไม่มี = ชิ้น */
+  countMode?: "items" | "spend" | "orders";
+  /** รางวัลเป็นแต้ม (ครบแล้วแต้มเข้าบัญชีเลย ไม่ใช่คูปอง) */
+  pointsReward?: boolean;
+}
 
 export interface Cart {
   storeId: string;
@@ -99,6 +112,8 @@ export interface Order {
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
   loyaltyPointsBalance?: number;
+  /** ภารกิจสะสมที่บิลนี้ถูกนับ (โหลดหลังจ่าย) — ใบเสร็จพิมพ์ “อีก X ชิ้นได้รางวัล” */
+  missionProgress?: ReceiptMissionProgress[];
   items: OrderItem[];
   subtotal: number;
   discount: number;

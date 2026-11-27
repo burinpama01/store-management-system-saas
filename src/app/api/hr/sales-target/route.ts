@@ -54,6 +54,8 @@ export async function GET(): Promise<Response> {
         topTier: tiers[tiers.length - 1] ?? null,
         isRecord: sales > 0 && sales > record && access.settings.salesRecordBonus > 0,
         recordBonus: access.settings.salesRecordBonus,
+        // split = ตัวเลขโบนัสเป็นก้อนรวม หารตามคนที่ทำเต็มวัน
+        bonusMode: access.settings.salesBonusMode,
       },
       { headers: { "cache-control": "no-store" } },
     );

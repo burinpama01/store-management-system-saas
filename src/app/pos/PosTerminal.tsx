@@ -7,11 +7,21 @@ import { createPortal } from "react-dom";
 import { ConnectionBadge } from "@/shared/components/ConnectionBadge";
 import { POS_TOPBAR_ACTIONS_ID } from "@/modules/pos/topbar-slot";
 import { onPosCommand } from "@/modules/pos/section-bus";
+import {
+  POS_TILE_GRID_CLASS,
+  POS_TILE_SIZE_LABEL,
+  getTileSnapshot,
+  nextTileSize,
+  serverTileSize,
+  subscribeTileSize,
+  writeTileSize,
+  type PosTileSize,
+} from "@/modules/pos/tile-size";
 // การจับคู่คำพูดกับชื่อตัวเลือกอยู่ในโมดูล voice-pos (ทดสอบแยกได้ และ normalize
 // ภาษาไทย/เปอร์เซ็นต์อยู่ที่เดียวกับตัวแปลงตัวเลขของ parser)
 import { matchesVoiceChoicePhrase, normalizeVoiceChoicePhrase } from "@/modules/voice-pos/parser";
 import type { Category, Product, ProductVariant, ModifierOption, ModifierGroup } from "@/modules/catalog/types";
-import type { Cart, CartItem, DiscountType, Order, PaymentMethod, SavedOrderTicket } from "@/modules/pos/types";
+import type { Cart, CartItem, DiscountType, Order, PaymentMethod, ReceiptMissionProgress, SavedOrderTicket } from "@/modules/pos/types";
 import {
   emptyCart,
   addToCart,
@@ -21,14 +31,19 @@ import {
   applyOrderDiscount,
   applyItemDiscount,
   removeItemDiscount,
+  replaceCartItems,
 } from "@/modules/pos/cart";
 import type { AddToCartInput } from "@/modules/pos/cart";
 import {
   checkoutAndPayAction,
   collectPaymentAction,
   searchPosCustomersAction,
+  verifyPosMemberCodeAction,
+  listPosMemberPassesAction,
+  type PosMemberVerification,
   evaluatePosCouponAction,
   listPosCustomerVouchersAction,
+  listPosMissionProgressAction,
   registerPosCustomerAction,
   listSavedTicketsAction,
   saveSavedTicketAction,
@@ -65,8 +80,12 @@ import {
 } from "@/modules/pos/loyalty-coupon-ux";
 import { signOut } from "../(dashboard)/actions";
 import type { CustomerProfile } from "@/modules/customers/types";
+import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types";
+import { cartHasPassItems, formatPassExpiry, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
+import { OnlineOrderAlertBanner, OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
+import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import {
@@ -86,6 +105,8 @@ import { PrinterConnectionPanel } from "@/modules/printing/PrinterConnectionPane
 import { TableBillModal } from "./TableBillModal";
 import { TableOpenModal } from "./TableOpenModal";
 import { SalesTargetBar } from "@/shared/components/SalesTargetBar";
+import { countOrderTowardMission, missionProgressText } from "@/modules/missions/rules";
+import type { PosMissionProgress } from "@/modules/missions/repository";
 import { useRegisterVoiceCart, type VoiceCartApi } from "./unified/voice-cart-bridge";
 import {
   publishCustomerDisplaySnapshot,
@@ -136,6 +157,8 @@ type ReceiptOrder = {
   changeAmount?: number;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** ภารกิจสะสมที่บิลนี้ถูกนับ — พิมพ์ท้ายใบเสร็จ */
+  missionProgress?: ReceiptMissionProgress[];
   /** QR รับแต้มท้ายใบเสร็จ (เฉพาะบิลที่ยังไม่ผูกลูกค้า) — ดึงหลังจ่ายเงินสำเร็จ */
   loyaltyClaim?: { url: string; code: string; points: number; expiresAt: string };
   /** true = กำลังรอ QR รับแต้มจาก server อยู่ (พิมพ์อัตโนมัติต้องรอก่อน ไม่งั้นได้ใบที่ไม่มี QR) */
@@ -158,6 +181,8 @@ interface PickerState {
   product: Product;
   selectedVariant: ProductVariant | null;
   selectedModifiers: Record<string, ModifierOption[]>;
+  /** ใช้แพ็ก: ราคา = เฉพาะตัวเลือก/ขนาดที่ไม่รวมในแพ็ก */
+  pass?: MemberPass;
 }
 
 interface Props {
@@ -181,6 +206,12 @@ interface Props {
   couponUnavailableMessage: string | null;
   loyaltyEnabled: boolean;
   loyaltyUnavailableMessage: string | null;
+  /** รหัสยืนยันสมาชิก 5 นาที (Enterprise + สวิตช์สาขา) */
+  memberCodeEnabled?: boolean;
+  /** สินค้าขายแพ็กล่วงหน้าของสาขา — ต้องผูกสมาชิกและแจ้งเงื่อนไขก่อนใส่ตะกร้า */
+  passSaleProducts?: PassSaleProduct[];
+  /** หมด Enterprise แต่ลูกค้ายังมีแพ็กค้าง: แผงสมาชิกเหลือแค่ยืนยันรหัส + ใช้แพ็ก */
+  passGraceMode?: boolean;
   customerDisplayEnabled: boolean;
   customerDisplayUnavailableMessage: string | null;
   trueMoneyEnabled?: boolean;
@@ -189,7 +220,12 @@ interface Props {
   hidePromptPayQr?: boolean;
   /** สถานีครัว/บาร์ที่ผูกเครื่องพิมพ์ — ใช้ออกตั๋วครัวตอนจ่ายทันที/ส่งเข้าครัว */
   stationPrinters?: StationRoutingStation[];
+  /** ร้านเปิดสั่งออนไลน์ + ผู้ใช้จัดการออเดอร์ออนไลน์ได้ → แถบตั๋วมีหมวด "ออนไลน์" (R1) */
+  onlineOrdersEnabled?: boolean;
 }
+
+/** แตะดูออเดอร์ออนไลน์แล้วไม่กดรับ — เตือนใหม่หลังจากนี้ */
+const ONLINE_ACK_SNOOZE_MS = 60_000;
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
 
@@ -251,13 +287,16 @@ function productInitials(name: string) {
 }
 
 function PosProductImage({ product }: { product: Product }) {
-  if (product.imageUrl) {
+  // รูปลิงก์เสีย → โชว์ตัวอักษรย่อแทนข้อความ alt ที่ล้นการ์ด
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (product.imageUrl && failedUrl !== product.imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={product.imageUrl}
         alt={`รูปเมนู ${product.name}`}
         loading="lazy"
+        onError={() => setFailedUrl(product.imageUrl ?? null)}
         className="h-full w-full object-cover"
       />
     );
@@ -270,32 +309,51 @@ function PosProductImage({ product }: { product: Product }) {
   );
 }
 
+const POS_TILE_TEXT_CLASS: Record<PosTileSize, { box: string; name: string; price: string }> = {
+  sm: { box: "px-1.5 py-1 sm:p-2", name: "text-[11px] sm:text-xs", price: "mt-0.5 text-xs" },
+  md: { box: "px-2 py-1.5 sm:p-2.5", name: "text-xs sm:text-sm", price: "mt-1 text-sm" },
+  lg: { box: "p-2.5 sm:p-3", name: "text-sm", price: "mt-1.5 text-sm" },
+};
+
 const PosProductTile = memo(function PosProductTile({
   product,
   disabled,
+  cartQty,
+  size,
   onSelect,
 }: {
   product: Product;
   disabled: boolean;
+  size: PosTileSize;
+  /** จำนวนเมนูนี้ในตะกร้า (รวมทุกตัวเลือก) — กดแล้วเห็นทันทีว่าเข้าตะกร้า */
+  cartQty: number;
   onSelect: (product: Product) => void;
 }) {
   const handleSelect = useCallback(() => onSelect(product), [onSelect, product]);
+  const text = POS_TILE_TEXT_CLASS[size];
 
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={handleSelect}
-      className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+      className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] text-left shadow-[var(--shadow-xs)] transition-all hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-sm)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
     >
-      <div className="aspect-[4/3] border-b border-gray-100">
+      {/* มือถือ 3 คอลัมน์: รูปจัตุรัสให้รูปไม่เตี้ยเกิน / จอใหญ่กลับเป็น 4:3 ให้เห็นเมนูต่อจอมากขึ้น */}
+      <div className="aspect-square border-b border-gray-100 sm:aspect-[4/3]">
         <PosProductImage product={product} />
       </div>
-      <div className="p-3">
-        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">
+      {cartQty > 0 && (
+        <span className="absolute right-1.5 top-1.5 min-w-7 rounded-full bg-[var(--tenant-primary)] px-1.5 py-0.5 text-center text-xs font-bold leading-5 text-white shadow-sm tabular-nums">
+          {cartQty > 99 ? "99+" : cartQty}
+          <span className="sr-only"> ในตะกร้า</span>
+        </span>
+      )}
+      <div className={text.box}>
+        <p className={`${text.name} font-medium leading-snug text-gray-900 line-clamp-2`}>
           {product.name}
         </p>
-        <p className="mt-1.5 text-sm font-semibold text-gray-700 tabular-nums">
+        <p className={`${text.price} font-semibold text-gray-700 tabular-nums`}>
           {priceStr(product.basePrice)}
         </p>
         {product.variants.length > 0 && (
@@ -625,10 +683,13 @@ function ModifierGroupPicker({
   group,
   selected,
   onToggle,
+  coveredOptionIds,
 }: {
   group: ModifierGroup;
   selected: ModifierOption[];
   onToggle: (opt: ModifierOption) => void;
+  /** ใช้แพ็ก: ตัวเลือกที่รวมในแพ็ก (แสดงป้าย "รวมในแพ็ก") */
+  coveredOptionIds?: ReadonlySet<string>;
 }) {
   const max = group.selectionType === "single" ? 1 : group.maxSelections;
   return (
@@ -644,7 +705,7 @@ function ModifierGroupPicker({
         {group.options.map((opt) => (
           <ModifierOptionButton
             key={opt.id}
-            option={opt}
+            option={coveredOptionIds?.has(opt.id) ? { ...opt, name: `${opt.name} 🎟️รวมในแพ็ก` } : opt}
             selected={selected.some((item) => item.id === opt.id)}
             disabled={
               group.selectionType === "multiple" &&
@@ -713,10 +774,18 @@ function ProductPickerModal({
   );
   const [note, setNote] = useState("");
 
-  const unitPrice =
-    product.basePrice +
-    (selectedVariant?.priceAdjustment ?? 0) +
-    Object.values(selectedModifiers).flat().reduce((s, o) => s + o.priceAdjustment, 0);
+  const coveredOptionIds = picker.pass ? new Set(picker.pass.coveredOptionIds) : undefined;
+  const coveredVariantIds = picker.pass ? new Set(picker.pass.coveredVariantIds) : undefined;
+  const unitPrice = picker.pass
+    ? passLineExtraPrice({
+        variant: selectedVariant,
+        modifierOptions: Object.values(selectedModifiers).flat(),
+        coveredVariantIds: coveredVariantIds!,
+        coveredOptionIds: coveredOptionIds!,
+      })
+    : product.basePrice +
+      (selectedVariant?.priceAdjustment ?? 0) +
+      Object.values(selectedModifiers).flat().reduce((s, o) => s + o.priceAdjustment, 0);
 
   const requiredGroupsMet = product.modifierGroups
     .filter((g) => g.isRequired)
@@ -758,8 +827,10 @@ function ProductPickerModal({
       <div className="bg-white rounded-t-2xl sm:rounded-xl w-full max-w-md max-h-[80vh] flex flex-col shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">{product.name}</h3>
-            <p className="text-xs text-gray-400">{priceStr(unitPrice)}</p>
+            <h3 className="text-sm font-semibold text-gray-900">{picker.pass ? `🎟️ ${product.name}` : product.name}</h3>
+            <p className="text-xs text-gray-400">
+              {picker.pass ? `ใช้${picker.pass.planName} · จ่ายเพิ่ม ${priceStr(unitPrice)}` : priceStr(unitPrice)}
+            </p>
           </div>
           <button onClick={onClose} className="min-w-11 min-h-11 text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
@@ -783,6 +854,7 @@ function ProductPickerModal({
                     }`}
                   >
                     {v.name}
+                    {coveredVariantIds?.has(v.id) && <span className="ml-1">🎟️</span>}
                     {v.priceAdjustment !== 0 && (
                       <span className="ml-1 opacity-70">
                         {v.priceAdjustment > 0 ? "+" : ""}
@@ -800,6 +872,7 @@ function ProductPickerModal({
               group={group}
               selected={selectedModifiers[group.id] ?? []}
               onToggle={(opt) => toggleModifier(group, opt)}
+              coveredOptionIds={coveredOptionIds}
             />
           ))}
           <label className="block space-y-1.5">
@@ -821,7 +894,7 @@ function ProductPickerModal({
             onClick={handleAdd}
             className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40"
           >
-            เพิ่มในออร์เดอร์ — {priceStr(unitPrice)}
+            {picker.pass ? `ใช้แพ็ก — จ่ายเพิ่ม ${priceStr(unitPrice)}` : `เพิ่มในออร์เดอร์ — ${priceStr(unitPrice)}`}
           </button>
         </div>
       </div>
@@ -1404,6 +1477,116 @@ function NumericKeypad({
   );
 }
 
+interface MemberPassesControl {
+  passes: MemberPass[];
+  products: Product[];
+  creditsInCart: (passId: string) => number;
+  onUse: (pass: MemberPass, product: Product) => void;
+}
+
+/** แพ็กล่วงหน้าของสมาชิก — แตะเมนูเพื่อใส่บรรทัด ฿0 (ตัดสิทธิ์จริงตอนจ่าย) */
+function MemberPassList({ control, isPending }: { control: MemberPassesControl; isPending: boolean }) {
+  if (control.passes.length === 0) {
+    return <p className="text-sm text-slate-500">สมาชิกไม่มีแพ็กที่ใช้ได้ที่สาขานี้</p>;
+  }
+  const productsById = new Map(control.products.map((product) => [product.id, product]));
+  return (
+    <div className="space-y-2" aria-label="แพ็กล่วงหน้าของสมาชิก">
+      <p className="text-sm font-semibold text-slate-700">แพ็กล่วงหน้า — แตะเมนูเพื่อใช้สิทธิ์ในบิลนี้</p>
+      {control.passes.map((pass) => {
+        const left = pass.creditsRemaining - control.creditsInCart(pass.id);
+        const products = pass.productIds
+          .map((id) => productsById.get(id))
+          .filter((product): product is Product => !!product && product.isActive && product.availableForPos);
+        return (
+          <div key={pass.id} className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="truncate text-sm font-semibold text-violet-900">🎟️ {pass.planName}</p>
+              <p className="shrink-0 text-sm font-semibold tabular-nums text-violet-800">
+                เหลือ {left}/{pass.creditsTotal}
+              </p>
+            </div>
+            <p className="text-xs text-violet-700">{formatPassExpiry(pass.expiresAt)}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  disabled={isPending || left <= 0}
+                  onClick={() => control.onUse(pass, product)}
+                  className="min-h-12 rounded-lg border border-violet-300 bg-white px-3 text-sm font-semibold text-violet-900 hover:bg-violet-100 disabled:opacity-40"
+                >
+                  + {product.name}
+                </button>
+              ))}
+              {products.length === 0 && <p className="text-xs text-slate-500">เมนูของแพ็กนี้ไม่พร้อมขายที่สาขานี้</p>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface MemberCodeControl {
+  value: string;
+  verified: boolean;
+  /** ระดับสมาชิกหลังยืนยันรหัส */
+  tier?: { name: string; color: string; rank: number } | null;
+  /** โค้ดสิทธิ์ตามระดับเดือนนี้ — แตะเพื่อใช้กับบิล (ฐานข้อมูลตรวจระดับ+ผลยืนยันซ้ำ) */
+  tierCoupons?: Array<{ benefitId: string; name: string; code: string; remaining: number; discountType: "amount" | "percentage"; discountValue: number; minSubtotal: number }>;
+  onUseTierCoupon?: (code: string) => void;
+  onChange: (value: string) => void;
+  onVerify: () => void;
+}
+
+/**
+ * ยืนยันสมาชิกด้วยรหัส 6 หลักจากหน้าสมาชิกในมือถือลูกค้า (อายุ 5 นาที ใช้ครั้งเดียว)
+ * เครื่องสแกนแบบคีย์บอร์ดยิงตัวเลข + Enter ลงช่องนี้ได้เลย ไม่มีมือถือ = ใช้สิทธิ์ไม่ได้
+ */
+function MemberCodeVerifyBox({ control, isPending }: { control: MemberCodeControl; isPending: boolean }) {
+  const digits = control.value.replace(/[^0-9]/g, "");
+  const ready = digits.length === 6;
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+      <p className="text-sm font-semibold text-emerald-900">ยืนยันด้วยรหัสสมาชิก (ใช้สิทธิ์แพ็ก/ระดับ)</p>
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        <input
+          value={control.value}
+          onChange={(event) => control.onChange(event.target.value.replace(/[^0-9\s-]/g, "").slice(0, 9))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && ready && !isPending) control.onVerify();
+          }}
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="สแกน QR หรือพิมพ์รหัส 6 หลัก"
+          aria-label="รหัสสมาชิก 6 หลัก"
+          style={{ fontSize: 16 }}
+          className="min-h-12 rounded-xl border border-emerald-300 bg-white px-3 text-base tabular-nums tracking-widest text-slate-900 placeholder:tracking-normal placeholder:text-slate-400"
+        />
+        <button
+          type="button"
+          disabled={isPending || !ready}
+          onClick={control.onVerify}
+          className="min-h-12 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ยืนยัน
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-emerald-800">ลูกค้าไม่มีมือถือ: ค้นด้วยเบอร์ได้เพื่อสะสมแต้ม แต่ใช้สิทธิ์สมาชิกไม่ได้</p>
+    </div>
+  );
+}
+
+interface PosMissionLine {
+  enrollmentId: string;
+  name: string;
+  progress: number;
+  targetCount: number;
+  thisBill: number;
+  countMode: "items" | "spend" | "orders";
+}
+
 /**
  * สมาชิกสะสมแต้มในแผงเลื่อน (จอใหญ่/iPad) — ตัวอักษร ≥16px กัน Safari ซูม,
  * ปุ่มสูง ≥48px, แป้นเบอร์โทรบนจอ, ผลค้นหา/โค้ดแลกรางวัลเป็นการ์ดแตะง่าย
@@ -1423,9 +1606,15 @@ function MemberSheetSection({
   onRegisterNameChange,
   onRegister,
   onUseVoucher,
+  memberCode = null,
+  memberPasses = null,
+  codeOnly = false,
+  missions = [],
 }: {
   selectedCustomer: CustomerProfile | null;
   vouchers: PosRewardVoucher[];
+  /** ภารกิจสะสมที่ลูกค้ากำลังทำ */
+  missions?: PosMissionLine[];
   customerQuery: string;
   customerResults: CustomerProfile[];
   searchedQuery: string | null;
@@ -1438,6 +1627,12 @@ function MemberSheetSection({
   onRegisterNameChange: (value: string) => void;
   onRegister: () => void;
   onUseVoucher: (voucher: PosRewardVoucher) => void;
+  /** null = สาขานี้ไม่ได้เปิดรหัสยืนยันสมาชิก */
+  memberCode?: MemberCodeControl | null;
+  /** แพ็กของสมาชิกที่ยืนยันรหัสแล้ว — null = ยังไม่ยืนยัน */
+  memberPasses?: MemberPassesControl | null;
+  /** โหมดหมด Enterprise (มีแพ็กค้าง): ไม่มีค้น/สมัครสมาชิก/แต้ม เหลือยืนยันรหัสอย่างเดียว */
+  codeOnly?: boolean;
 }) {
   if (selectedCustomer) {
     return (
@@ -1445,6 +1640,38 @@ function MemberSheetSection({
         <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
           <div className="min-w-0">
             <p className="truncate text-base font-semibold text-amber-900">⭐ {selectedCustomer.name}</p>
+            {memberCode && (
+              <p className={`text-xs font-semibold ${memberCode.verified ? "text-emerald-700" : "text-slate-500"}`}>
+                {memberCode.verified ? "✓ ยืนยันด้วยรหัสแล้ว — ใช้สิทธิ์สมาชิกได้" : "ยังไม่ยืนยันรหัส — ใช้สิทธิ์สมาชิกไม่ได้"}
+              </p>
+            )}
+            {memberCode?.verified && memberCode.tier && (
+              <span
+                className="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-bold text-white"
+                style={{ background: memberCode.tier.color }}
+              >
+                {memberCode.tier.name}
+              </span>
+            )}
+            {memberCode?.verified && (memberCode.tierCoupons?.length ?? 0) > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2" aria-label="สิทธิ์ตามระดับ">
+                {memberCode.tierCoupons!.map((coupon) => (
+                  <button
+                    key={coupon.benefitId}
+                    type="button"
+                    disabled={isPending || coupon.remaining <= 0}
+                    onClick={() => memberCode.onUseTierCoupon?.(coupon.code)}
+                    className="min-h-11 rounded-lg border border-amber-300 bg-white px-3 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-40"
+                  >
+                    🏷️ {coupon.name}
+                    <span className="block font-normal text-amber-700">
+                      {coupon.discountType === "percentage" ? `ลด ${coupon.discountValue}%` : `ลด ฿${coupon.discountValue}`}
+                      {coupon.minSubtotal > 0 ? ` ขั้นต่ำ ฿${coupon.minSubtotal}` : ""} · เหลือ {coupon.remaining}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             <p className="text-sm text-amber-800">
               {selectedCustomer.phone ?? "ไม่มีเบอร์"} · แต้มสะสม{" "}
               <span className="font-semibold tabular-nums">{formatPoints(selectedCustomer.pointsBalance ?? 0)}</span>
@@ -1458,6 +1685,32 @@ function MemberSheetSection({
             เปลี่ยนสมาชิก
           </button>
         </div>
+        {missions.length > 0 && (
+          <div className="space-y-1.5 rounded-xl border border-slate-200 bg-white p-3" aria-label="ภารกิจสะสมของลูกค้า">
+            {missions.map((mission) => {
+              const after = Math.min(mission.progress + mission.thisBill, mission.targetCount);
+              return (
+                <div key={mission.enrollmentId} className="text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-semibold text-slate-800">🎯 {mission.name}</span>
+                    <span className="shrink-0 tabular-nums text-slate-700">
+                      {missionProgressText(mission.countMode, mission.progress, mission.targetCount)}
+                      {mission.thisBill > 0 && (
+                        <span className="ml-1 font-semibold text-emerald-700">
+                          บิลนี้ +{mission.countMode === "spend" ? `฿${mission.thisBill.toLocaleString("th-TH")}` : mission.thisBill}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {after >= mission.targetCount && mission.thisBill > 0 && (
+                    <p className="text-xs font-semibold text-emerald-700">จ่ายบิลนี้แล้วครบภารกิจ — ลูกค้าได้คูปองรางวัลทันที</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {memberPasses && <MemberPassList control={memberPasses} isPending={isPending} />}
         {vouchers.length > 0 ? (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-slate-700">รางวัลที่แลกไว้ — แตะเพื่อใช้กับบิลนี้</p>
@@ -1488,6 +1741,15 @@ function MemberSheetSection({
     );
   }
 
+  if (codeOnly) {
+    return memberCode ? (
+      <div className="space-y-2">
+        <MemberCodeVerifyBox control={memberCode} isPending={isPending} />
+        <p className="text-xs text-slate-500">แพ็กเกจร้านไม่รองรับสะสมแต้มแล้ว — ลูกค้าที่มีแพ็กค้างยังใช้สิทธิ์ได้จนแพ็กหมดอายุ</p>
+      </div>
+    ) : null;
+  }
+
   const trimmed = customerQuery.trim();
   const searchedEmpty = searchedQuery !== null && searchedQuery === trimmed && customerResults.length === 0;
   const canRegister = searchedEmpty && isRegistrablePhone(trimmed);
@@ -1495,6 +1757,7 @@ function MemberSheetSection({
   return (
     <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
       <div className="min-w-0 space-y-3">
+        {memberCode && <MemberCodeVerifyBox control={memberCode} isPending={isPending} />}
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <input
             data-autofocus="true"
@@ -2939,6 +3202,7 @@ function PaymentPanel({
 
   const receivedNum = parseFloat(received) || 0;
   const change = method === "cash" ? receivedNum - cart.total : null;
+  const zeroTotalPass = cart.total === 0 && cartHasPassItems(cart);
   const cashReady = method !== "cash" || (!cashSessionRequired && receivedNum >= cart.total);
   const qrReady =
     method !== "qr_promptpay" || (!!promptpayId && qrPaymentVerified);
@@ -2992,6 +3256,12 @@ function PaymentPanel({
     setCustomerDisplayNotice("ส่ง QR ไปจอลูกค้าแล้ว");
   }, [method, trueMoneyPayload, customerDisplayEnabled, cart.total, onShowPromptPayOnCustomerDisplay]);
 
+  // ตะกร้าล่าสุดสำหรับตรวจกับเมนูฝั่ง server ก่อนออก QR Beam (ไม่ใส่ใน deps — QR ผูกกับยอด/ครั้งที่ลอง)
+  const beamCartRef = useRef(cart);
+  useEffect(() => {
+    beamCartRef.current = cart;
+  }, [cart]);
+
   // Beam: one QR (charge) per method/amount/attempt; abandoning it cancels the charge row
   // so a payment that still lands shows up as LATE_PAID instead of silently closing a bill.
   useEffect(() => {
@@ -2999,7 +3269,7 @@ function PaymentPanel({
     const amount = Number(beamKey.split("|")[0]);
     let cancelled = false;
     let createdId: string | null = null;
-    void prepareBeamQrAction(amount, createTicketId()).then((res) => {
+    void prepareBeamQrAction(amount, createTicketId(), beamCartRef.current).then((res) => {
       if (cancelled) {
         if (res.qr) void cancelBeamQrAction(res.qr.gatewayPaymentId);
         return;
@@ -3071,6 +3341,38 @@ function PaymentPanel({
     ...(trueMoneyEnabled ? (["truemoney"] as const) : []),
     ...(beamEnabled ? (["beam"] as const) : []),
   ];
+
+  // ใช้แพ็กทั้งบิล ยอด ฿0 — ไม่มีการรับเงิน server ปิดบิลด้วย RPC เฉพาะ (ไม่บันทึกยอดขาย/เงินสด)
+  if (zeroTotalPass) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+          <button
+            onClick={onBack}
+            disabled={hasPendingOrder}
+            className="min-h-12 rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            ← กลับ
+          </button>
+          <h2 className="text-lg font-bold text-gray-900">ยืนยันใช้แพ็ก</h2>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="text-4xl" aria-hidden="true">🎟️</p>
+          <p className="text-lg font-semibold text-gray-900">ใช้แพ็กล่วงหน้าทั้งบิล — ไม่มียอดชำระ</p>
+          <p className="text-sm text-gray-600">กดยืนยันเพื่อตัดสิทธิ์จากแพ็กของลูกค้าและส่งออเดอร์</p>
+          {error && <p className="alert-danger w-full text-sm" role="alert">{error}</p>}
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => onConfirm("cash", 0)}
+            className="min-h-14 w-full max-w-sm rounded-xl bg-violet-600 text-base font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            {isPending ? "กำลังบันทึก…" : "ยืนยันใช้แพ็ก"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -3485,6 +3787,7 @@ function ReceiptPanel({
         paymentStatus: "paid" as const,
         loyaltyPointsEarned: order.loyaltyPointsEarned,
         loyaltyPointsBalance: order.loyaltyPointsBalance,
+        missionProgress: order.missionProgress,
         // QR รับแต้ม — มีเฉพาะบิลที่ยังไม่ผูกลูกค้า
         loyaltyClaim: order.loyaltyClaim,
         vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
@@ -3528,6 +3831,7 @@ function ReceiptPanel({
           payments: receiptData.payments,
           loyaltyPointsEarned: receiptData.loyaltyPointsEarned,
           loyaltyPointsBalance: receiptData.loyaltyPointsBalance,
+          missionProgress: receiptData.missionProgress,
           footerText: receiptData.footerText,
           paperWidth: receiptData.paperWidth,
           printedAt: receiptData.printedAt,
@@ -3731,12 +4035,16 @@ export function PosTerminal({
   couponUnavailableMessage,
   loyaltyEnabled,
   loyaltyUnavailableMessage,
+  memberCodeEnabled = false,
+  passSaleProducts = [],
+  passGraceMode = false,
   customerDisplayEnabled,
   customerDisplayUnavailableMessage,
   trueMoneyEnabled = false,
   beamEnabled = false,
   hidePromptPayQr = false,
   stationPrinters = [],
+  onlineOrdersEnabled = false,
 }: Props) {
   const [cart, setCart] = useState<Cart>(() => emptyCart(storeId));
   const [discountDraft, setDiscountDraft] = useState<DiscountDraft>(EMPTY_DISCOUNT_DRAFT);
@@ -3756,6 +4064,40 @@ export function PosTerminal({
   /** เลขโต๊ะของ billTableId (รู้เมื่อมาจากหน้าเปิดโต๊ะ — deep link ไม่รู้) */
   const [billTableNumber, setBillTableNumber] = useState<string | null>(null);
   const [showTableOpen, setShowTableOpen] = useState(false);
+  // ตั๋วออนไลน์ (R1): deep link /pos?online=<id> = เปิดตั๋วนั้นทันที (มาจากกดรับ/กดแจ้งเตือน)
+  const onlineParam = searchParams.get("online");
+  const [onlineFocusId, setOnlineFocusId] = useState<string | null>(() => (onlineOrdersEnabled ? onlineParam : null));
+  const [lastOnlineParam, setLastOnlineParam] = useState(onlineParam);
+  if (onlineParam !== lastOnlineParam) {
+    // ค่าใน URL เปลี่ยนระหว่างอยู่หน้า POS (กดแจ้งเตือนซ้ำ) — ปรับ state ระหว่าง render ตามแบบที่ React แนะนำ
+    setLastOnlineParam(onlineParam);
+    if (onlineOrdersEnabled && onlineParam) setOnlineFocusId(onlineParam);
+  }
+  const {
+    orders: onlineOrders,
+    refresh: refreshOnlineOrders,
+    awaiting: onlineAwaiting,
+    awaitingAt: onlineAwaitingAt,
+  } = useOnlineOrderTickets(onlineOrdersEnabled);
+  // ออเดอร์ออนไลน์รอรับที่ยังไม่มีใครแตะดู → แถบเตือน + เสียงซ้ำ (แคชเชียร์ไม่มีสิทธิ์เห็นแจ้งเตือนกลาง)
+  // แตะดูแล้วปิดโดยไม่กดรับ → เงียบ 60 วิ แล้วเตือนใหม่ (กันร้านเงียบเพราะแค่เปิดดู)
+  const [ackOnlineAt, setAckOnlineAt] = useState<Record<string, number>>({});
+  const unackOnline = onlineAwaiting.filter((o) => {
+    const at = ackOnlineAt[o.id];
+    return at === undefined || onlineAwaitingAt - at > ONLINE_ACK_SNOOZE_MS;
+  });
+  useRepeatingAlert(onlineOrdersEnabled && unackOnline.length > 0, "order", { announcement: "มีออเดอร์ออนไลน์ใหม่" });
+  const openOnlineOrder = (id: string) => {
+    // เก็บเฉพาะใบที่ยังรอรับ (ใบที่รับไปแล้วตัดทิ้ง ไม่สะสมทั้งวัน)
+    setAckOnlineAt((prev) => {
+      const next: Record<string, number> = {};
+      for (const o of onlineAwaiting) if (prev[o.id] !== undefined) next[o.id] = prev[o.id];
+      next[id] = Date.now();
+      return next;
+    });
+    setOnlineFocusId(id);
+  };
+  const focusedOnlineOrder = onlineFocusId ? (onlineOrders.find((o) => o.id === onlineFocusId) ?? null) : null;
   /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   // ช่องแถบหัวของ shell รวม (อ่านจาก DOM) — null = เปิด POS เดี่ยว ต้องวาดแถบเอง
@@ -3786,6 +4128,16 @@ export function PosTerminal({
   /** โต๊ะที่กำลังเพิ่มรายการเข้า (ส่งเข้าครัว) จากบิลโต๊ะ */
   const [dineInTable, setDineInTable] = useState<{ id: string; number: string } | null>(null);
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  // จอกว้างถึง 1024 (เช่น หมุน iPad เป็นแนวนอน) = ออร์เดอร์ย้ายไปแผงขวา → ปิดลิ้นชัก
+  // ไม่งั้นหมุนกลับแนวตั้งแล้วลิ้นชักเด้งขึ้นมาเองทั้งที่ไม่ได้กด
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setOrderPanelOpen(false);
+    };
+    query.addEventListener("change", handleChange);
+    return () => query.removeEventListener("change", handleChange);
+  }, []);
   // ผู้ช่วย AI "กดปุ่มคิดเงิน" แทนพนักงาน — เส้นทางเดียวกับปุ่ม onCheckout เป๊ะ ๆ
   // (เปิดแผงรับชำระตัวเดิมเท่านั้น: เตรียม QR / จอลูกค้า / การยืนยัน ยังเป็นโค้ดเดิมและเป็นหน้าที่ของคน)
   useEffect(() => onPosCommand((command) => {
@@ -3819,6 +4171,14 @@ export function PosTerminal({
   const [customerSearchedQuery, setCustomerSearchedQuery] = useState<string | null>(null);
   const [registerName, setRegisterName] = useState("");
   const [customerVouchers, setCustomerVouchers] = useState<{ customerId: string; vouchers: PosRewardVoucher[] } | null>(null);
+  const [customerMissions, setCustomerMissions] = useState<{ customerId: string; missions: PosMissionProgress[] } | null>(null);
+  // ผลยืนยันรหัสสมาชิก 5 นาที — ผูกกับลูกค้าที่เลือกอยู่ เปลี่ยน/ล้างลูกค้าแล้วถือว่าหมดผล
+  const [memberVerification, setMemberVerification] = useState<
+    (PosMemberVerification & { customerId: string }) | null
+  >(null);
+  const [memberCodeInput, setMemberCodeInput] = useState("");
+  // แพ็กของสมาชิกที่ยืนยันรหัสแล้ว (โหลดหลังยืนยัน)
+  const [memberPasses, setMemberPasses] = useState<{ verificationId: string; passes: MemberPass[] } | null>(null);
   // คูปองที่ใช้ไม่ได้แล้วหลังแก้ตะกร้า — โชว์เหนือปุ่มชำระเงินจนกว่าจะใส่คูปองใหม่/ล้างบิล
   const [couponNotice, setCouponNotice] = useState<string | null>(null);
   const [couponRecalcPending, setCouponRecalcPending] = useState(false);
@@ -3856,6 +4216,15 @@ export function PosTerminal({
     return selectedCategoryId ? base.filter((p) => p.categoryId === selectedCategoryId) : base;
   }, [products, selectedCategoryId, dineInTable]);
   const cartLocked = phase !== "ordering" || pendingOrder !== null;
+  const tileSize = useSyncExternalStore(subscribeTileSize, getTileSnapshot, serverTileSize);
+  const cartQtyByProduct = useMemo(() => {
+    const qty = new Map<string, number>();
+    for (const item of cart.items) {
+      if (item.rewardVoucherCode) continue; // ของรางวัล ฿0 ไม่นับเป็นการกดเมนู
+      qty.set(item.productId, (qty.get(item.productId) ?? 0) + item.quantity);
+    }
+    return qty;
+  }, [cart.items]);
   const activeTicket = activeTicketId ? (savedTickets.find((ticket) => ticket.id === activeTicketId) ?? null) : null;
 
   // ตั๋วครัวจาก POS: สถานีของแต่ละรายการมาจากสินค้า (order_items ได้ค่าเดียวกันจาก trigger)
@@ -4087,9 +4456,31 @@ export function PosTerminal({
     });
   }
 
+  const passSaleByProductId = useMemo(
+    () => new Map(passSaleProducts.map((sale) => [sale.productId, sale])),
+    [passSaleProducts],
+  );
+
   const handleProductClick = useCallback((product: Product) => {
     if (cartLocked) return;
     if (!product.isActive || !product.availableForPos) return;
+    const passSale = passSaleByProductId.get(product.id);
+    if (passSale) {
+      // ขายแพ็ก: ต้องผูกสมาชิกที่มีเบอร์ + แคชเชียร์อ่านเงื่อนไข (ไม่คืนเงิน) ให้ลูกค้าก่อน
+      if (!selectedCustomer?.phone) {
+        setCustomerCouponMessage("ขายแพ็กล่วงหน้าต้องผูกสมาชิกที่มีเบอร์โทรก่อน");
+        setCustomerToolsOpen(true);
+        return;
+      }
+      void confirm({
+        title: `ขาย${passSale.planName} ให้ ${selectedCustomer.name}?`,
+        message: `แจ้งเงื่อนไขนี้ให้ลูกค้าก่อนรับเงิน\n\n${passSale.terms}`,
+        confirmLabel: "ลูกค้ารับทราบเงื่อนไข · ใส่ตะกร้า",
+      }).then((ok) => {
+        if (ok) commitCart(addToCart(cartRef.current, { product, variant: null, modifiers: [] }));
+      });
+      return;
+    }
     if (product.variants.length === 0 && product.modifierGroups.length === 0) {
       commitCart(addToCart(cartRef.current, { product, variant: null, modifiers: [] }));
       return;
@@ -4099,7 +4490,7 @@ export function PosTerminal({
       selectedVariant: null,
       selectedModifiers: buildDefaultModifierSelections(product.modifierGroups),
     });
-  }, [cartLocked, commitCart]);
+  }, [cartLocked, commitCart, passSaleByProductId, selectedCustomer, confirm]);
 
   const handleAddFromPicker = useCallback((input: AddToCartInput) => {
     commitCart(addToCart(cartRef.current, input));
@@ -4283,11 +4674,128 @@ export function PosTerminal({
     setCustomerCouponMessage(`ผูกสมาชิก ${customer.name} แล้ว`);
   }
 
+  // ยืนยันแล้วแต่ลูกค้าในบิลเปลี่ยน (ล้างบิล/จ่ายเสร็จ/เลือกคนอื่น) → ผลยืนยันใช้ไม่ได้อีก
+  const activeMemberVerification =
+    memberVerification && selectedCustomer?.id === memberVerification.customerId ? memberVerification : null;
+
+  // โหลดแพ็กของสมาชิกหลังยืนยันรหัส
+  useEffect(() => {
+    const verificationId = activeMemberVerification?.verificationId;
+    if (!verificationId) return;
+    let cancelled = false;
+    void listPosMemberPassesAction(verificationId).then((result) => {
+      if (cancelled) return;
+      setMemberPasses({ verificationId, passes: result.passes });
+      if (result.error) setCustomerCouponMessage(result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMemberVerification?.verificationId]);
+
+  // ผลยืนยันหมด (เปลี่ยน/ล้างลูกค้า) → เอาบรรทัดใช้แพ็กออก ไม่งั้นจ่ายไม่ผ่าน
+  useEffect(() => {
+    if (activeMemberVerification) return;
+    if (!cartHasPassItems(cartRef.current)) return;
+    commitCart(replaceCartItems(cartRef.current, cartRef.current.items.filter((item) => !isPassCartItem(item))));
+    setCustomerCouponMessage("เอารายการใช้แพ็กออกแล้ว เพราะสมาชิกในบิลเปลี่ยน");
+  }, [activeMemberVerification, commitCart]);
+
+  const visibleMemberPasses =
+    activeMemberVerification && memberPasses?.verificationId === activeMemberVerification.verificationId
+      ? memberPasses.passes
+      : [];
+
+  function passCreditsInCart(passId: string) {
+    return cart.items
+      .filter((item) => item.prepaidPassId === passId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+  }
+
+  function handleUsePass(pass: MemberPass, product: Product) {
+    if (passCreditsInCart(pass.id) >= pass.creditsRemaining) {
+      setCustomerCouponMessage("สิทธิ์ในแพ็กนี้ใช้ครบในบิลนี้แล้ว");
+      return;
+    }
+    // เมนูมีขนาด/ตัวเลือก → เปิดหน้าต่างเลือก (ตัวเลือกที่รวมในแพ็กไม่คิดเงิน ที่ไม่รวมจ่ายส่วนต่าง)
+    if (product.variants.length > 0 || product.modifierGroups.length > 0) {
+      setPicker({
+        product,
+        selectedVariant: null,
+        selectedModifiers: buildDefaultModifierSelections(product.modifierGroups),
+        pass,
+      });
+      return;
+    }
+    addPassLine(pass, product, null, [], undefined);
+  }
+
+  function addPassLine(
+    pass: MemberPass,
+    product: Product,
+    variant: CartItem["variant"],
+    modifiers: CartItem["modifiers"],
+    note: string | undefined,
+  ) {
+    checkoutIdempotencyKeyRef.current = null;
+    const extra = passLineExtraPrice({
+      variant,
+      modifierOptions: modifiers.map((modifier) => modifier.option),
+      coveredVariantIds: pass.coveredVariantIds,
+      coveredOptionIds: pass.coveredOptionIds,
+    });
+    const lineKey = `pass:${pass.id}:${product.id}:${variant?.id ?? ""}:${modifiers
+      .map((modifier) => modifier.option.id)
+      .sort()
+      .join(",")}:${note ?? ""}`;
+    const same = cartRef.current.items.find((item) => item.key === lineKey);
+    if (same) {
+      commitCart(updateQuantity(cartRef.current, lineKey, same.quantity + 1));
+      setCustomerCouponMessage(`ใช้${pass.planName}: ${product.name} ×${same.quantity + 1}`);
+      return;
+    }
+    const passLine: CartItem = {
+      key: lineKey,
+      productId: product.id,
+      productName: product.name,
+      categoryId: product.categoryId,
+      variant,
+      modifiers,
+      quantity: 1,
+      unitPrice: extra,
+      totalPrice: extra,
+      prepaidPassId: pass.id,
+      note: [`🎟️ ${pass.planName}`, note].filter(Boolean).join(" · "),
+    };
+    commitCart(replaceCartItems(cartRef.current, [...cartRef.current.items, passLine]));
+    setCustomerCouponMessage(
+      `ใช้${pass.planName}: ${product.name}${extra > 0 ? ` (จ่ายเพิ่มตัวเลือก ฿${extra})` : ""} · เหลือ ${pass.creditsRemaining - passCreditsInCart(pass.id) - 1} สิทธิ์หลังบิลนี้`,
+    );
+  }
+
+  function handleVerifyMemberCode() {
+    const raw = memberCodeInput;
+    startTransition(async () => {
+      const result = await verifyPosMemberCodeAction(raw);
+      if (result.error || !result.customer || !result.verification) {
+        setCustomerCouponMessage(result.error ?? "ยืนยันรหัสสมาชิกไม่สำเร็จ");
+        return;
+      }
+      setMemberCodeInput("");
+      handleSelectCustomer(result.customer);
+      setMemberVerification({ ...result.verification, customerId: result.customer.id });
+      setCustomerCouponMessage(
+        `ยืนยันสมาชิก ${result.customer.name} แล้ว${result.verification.crossBranch ? " (สมาชิกจากสาขาอื่น)" : ""}`,
+      );
+    });
+  }
+
   function handleClearCustomer() {
     checkoutIdempotencyKeyRef.current = null;
     setSelectedCustomer(null);
     setCustomerResults([]);
     setCustomerVouchers(null);
+    setCustomerMissions(null);
     setCustomerCouponMessage("ล้างลูกค้าแล้ว");
   }
 
@@ -4320,6 +4828,11 @@ export function PosTerminal({
     void listPosCustomerVouchersAction(customerId).then((result) => {
       if (cancelled) return;
       setCustomerVouchers({ customerId, vouchers: result.error ? [] : result.vouchers });
+    });
+    // ภารกิจสะสมที่กำลังทำ — โหลดคู่กับคูปอง (ร้านปิดภารกิจ = รายการว่าง)
+    void listPosMissionProgressAction(customerId).then((result) => {
+      if (cancelled) return;
+      setCustomerMissions({ customerId, missions: result.error ? [] : result.missions });
     });
     return () => {
       cancelled = true;
@@ -4932,6 +5445,7 @@ export function PosTerminal({
           paymentIdempotencyKey: createTicketId(),
           trueMoney: trueMoneyOpts,
           beam: beamOpts,
+          memberVerificationId: activeMemberVerification?.verificationId ?? null,
         });
         if (result.error) {
           // Order persisted but payment failed — remember it so retry only pays.
@@ -4998,6 +5512,7 @@ export function PosTerminal({
         changeAmount: received !== undefined ? Math.max(0, received - displayCart.total) : undefined,
         loyaltyPointsEarned: paidOrder?.loyaltyPointsEarned,
         loyaltyPointsBalance: paidOrder?.loyaltyPointsBalance,
+        missionProgress: paidOrder?.missionProgress,
         // บิลที่ยังไม่ผูกลูกค้าจะมี QR รับแต้มตามมาทีหลัง — บอกใบเสร็จให้รอก่อนพิมพ์อัตโนมัติ
         loyaltyClaimPending: !selectedCustomer && Boolean(order.orderId),
       });
@@ -5164,6 +5679,7 @@ export function PosTerminal({
       paymentStatus: "paid" as const,
       loyaltyPointsEarned: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsEarned : undefined,
       loyaltyPointsBalance: order.customerId && (order.loyaltyPointsEarned ?? 0) > 0 ? order.loyaltyPointsBalance : undefined,
+      missionProgress: order.missionProgress,
       loyaltyClaim: claimResult?.claim ?? undefined,
       vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
       footerText: settings.footerText,
@@ -5255,6 +5771,28 @@ export function PosTerminal({
       ? usableVouchers(customerVouchers.vouchers, cart, appliedCoupon?.code)
       : [];
 
+  // ความคืบหน้าภารกิจ + บิลนี้จะนับได้กี่ชิ้น (กติกาเดียวกับ trigger: ไม่นับบรรทัด ฿0, เพดานต่อบิล)
+  const visibleMissions: PosMissionLine[] =
+    selectedCustomer && customerMissions?.customerId === selectedCustomer.id
+      ? customerMissions.missions.map((mission) => ({
+          enrollmentId: mission.enrollmentId,
+          name: mission.name,
+          progress: mission.progress,
+          targetCount: mission.targetCount,
+          countMode: mission.countMode,
+          thisBill: countOrderTowardMission(
+            cart.items.map((item) => ({
+              productId: item.productId,
+              categoryId: item.categoryId || null,
+              quantity: item.quantity,
+              totalPrice: item.totalPrice,
+            })),
+            mission,
+            mission.targetCount - mission.progress,
+          ),
+        }))
+      : [];
+
   function renderMemberQuickBar(compact: boolean) {
     return (
       <MemberQuickBar
@@ -5280,7 +5818,8 @@ export function PosTerminal({
   const customerCouponTools = (
     <CustomerCouponPanel
       cart={cart}
-      loyaltyEnabled={loyaltyEnabled}
+      // โหมดหมด Enterprise ที่มีแพ็กค้าง: เปิดส่วนสมาชิก (แสดงเฉพาะช่องยืนยันรหัส + แพ็ก)
+      loyaltyEnabled={loyaltyEnabled || passGraceMode}
       loyaltyUnavailableMessage={loyaltyUnavailableMessage}
       couponEnabled={couponEnabled}
       couponUnavailableMessage={couponUnavailableMessage}
@@ -5290,6 +5829,7 @@ export function PosTerminal({
         <MemberSheetSection
           selectedCustomer={selectedCustomer}
           vouchers={visibleVouchers}
+          missions={visibleMissions}
           customerQuery={customerQuery}
           customerResults={customerResults}
           searchedQuery={customerSearchedQuery}
@@ -5302,6 +5842,30 @@ export function PosTerminal({
           onRegisterNameChange={setRegisterName}
           onRegister={handleRegisterCustomer}
           onUseVoucher={handleUseVoucher}
+          memberCode={
+            memberCodeEnabled
+              ? {
+                  value: memberCodeInput,
+                  verified: activeMemberVerification !== null,
+                  tier: activeMemberVerification?.tier ?? null,
+                  tierCoupons: activeMemberVerification?.tierCoupons ?? [],
+                  onUseTierCoupon: (code: string) => handleApplyCoupon(code),
+                  onChange: setMemberCodeInput,
+                  onVerify: handleVerifyMemberCode,
+                }
+              : null
+          }
+          codeOnly={passGraceMode && !loyaltyEnabled}
+          memberPasses={
+            activeMemberVerification
+              ? {
+                  passes: visibleMemberPasses,
+                  products,
+                  creditsInCart: passCreditsInCart,
+                  onUse: handleUsePass,
+                }
+              : null
+          }
         />
       }
       couponCode={couponCode}
@@ -5357,7 +5921,7 @@ export function PosTerminal({
             onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
-            savedTicketCount={savedTickets.length}
+            savedTicketCount={savedTickets.length + onlineOrders.length}
             billHistoryCount={billHistory.length}
             ticketMessage={ticketMessage}
             printStatusMessage={printStatusMessage}
@@ -5416,8 +5980,9 @@ export function PosTerminal({
   // ปุ่มบนแถบหัวของหน้าขาย — วางผ่าน portal ไปอยู่แถวเดียวกับแท็บเมื่ออยู่ใน shell รวม
   const posActionButtons = (
     <>
-      {/* โชว์ทุกขนาดจอ — สถานะออฟไลน์เป็นสิ่งที่แคชเชียร์บนมือถือยิ่งต้องเห็น */}
-      <ConnectionBadge />
+      {/* มือถือ: ซ่อนป้าย "เชื่อมต่อปกติ" ให้หัวจอเหลือแถวเดียว — ตอนออฟไลน์ ConnectionBadge
+          ไม่ใช้ className นี้ จึงโชว์ "ออฟไลน์ — บันทึกไม่ได้" เสมอทุกขนาดจอ */}
+      <ConnectionBadge className="hidden sm:inline-flex" />
       {/* ใน POS รวม ปุ่มโต๊ะอยู่บนแถบหัวของ shell แล้ว (คุมทั้งผังโต๊ะ/ครัว/บิล)
           ที่นี่จึงแสดงเฉพาะตอนเปิด POS เดี่ยวที่ไม่มี shell */}
       {topbarHost ? null : (
@@ -5445,8 +6010,10 @@ export function PosTerminal({
         className="btn-secondary min-h-11 shrink-0 px-3 text-xs"
         aria-expanded={printerConnectionOpen}
         aria-controls="pos-printer-connection"
+        aria-label="เชื่อมต่อเครื่องพิมพ์"
+        title="เชื่อมต่อเครื่องพิมพ์"
       >
-        <span className="sm:hidden">ปริ้น</span>
+        <span className="sm:hidden" aria-hidden="true">🖨️</span>
         <span className="hidden sm:inline">เชื่อมต่อเครื่องพิมพ์</span>
       </button>
       {exitHref ? (
@@ -5474,7 +6041,7 @@ export function PosTerminal({
     );
 
   return (
-    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] md:flex-row">
+    <div className="storeos-pos flex h-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] lg:flex-row">
       {/* งานพิมพ์ที่ไม่ทราบผลต้องเห็นตรงจุดที่คนยืนอยู่หน้าเครื่องพิมพ์ (การ์ดลอย ไม่กินความสูง) */}
       <PrintQueueAlert />
 
@@ -5506,47 +6073,61 @@ export function PosTerminal({
           </div>
         )}
 
-        {/* Category tabs */}
-        <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-          <button
-            type="button"
-            onClick={() => setSelectedCategoryId(null)}
-            className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
-              selectedCategoryId === null
-                ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
-                : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
-            }`}
-          >
-            ทั้งหมด
-          </button>
-          {categories.map((cat) => (
+        {/* Category tabs + ปุ่มขนาดการ์ด (อยู่นอกส่วนเลื่อน เห็นเสมอ) */}
+        <div className="shrink-0 flex items-center border-b border-[var(--border)] bg-[var(--surface)]">
+          <div className="min-w-0 flex-1 flex gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
-              key={cat.id}
               type="button"
-              onClick={() => setSelectedCategoryId(cat.id)}
+              onClick={() => setSelectedCategoryId(null)}
               className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
-                selectedCategoryId === cat.id
+                selectedCategoryId === null
                   ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
                   : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
               }`}
             >
-              {cat.name}
+              ทั้งหมด
             </button>
-          ))}
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategoryId(cat.id)}
+                className={`shrink-0 min-h-11 px-4 py-2 text-xs rounded-full border font-bold transition-colors ${
+                  selectedCategoryId === cat.id
+                    ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)] text-white"
+                    : "border-[var(--border)] text-[var(--ink-2)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => writeTileSize(nextTileSize(tileSize))}
+            className="mr-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full border border-[var(--border)] px-2.5 text-xs font-bold text-[var(--ink-2)] hover:bg-[var(--surface-muted)]"
+            aria-label={`ขนาดการ์ดเมนู: ${POS_TILE_SIZE_LABEL[tileSize]} (แตะเพื่อเปลี่ยน)`}
+            title="ขนาดการ์ดเมนู"
+          >
+            <span aria-hidden="true">▦</span>
+            <span>{POS_TILE_SIZE_LABEL[tileSize]}</span>
+          </button>
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto p-3 pb-24 lg:pb-3">
           {filteredProducts.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
               ไม่มีสินค้าในหมวดนี้
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            <div className={POS_TILE_GRID_CLASS[tileSize]}>
               {filteredProducts.map((product) => (
                 <PosProductTile
                   key={product.id}
                   disabled={cartLocked}
+                  cartQty={cartQtyByProduct.get(product.id) ?? 0}
+                  size={tileSize}
                   onSelect={handleProductClick}
                   product={product}
                 />
@@ -5559,7 +6140,7 @@ export function PosTerminal({
       <button
         type="button"
         onClick={() => setOrderPanelOpen(true)}
-        className={`fixed bottom-4 right-4 z-40 min-h-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg md:hidden ${
+        className={`fixed bottom-4 right-4 z-40 min-h-11 min-w-11 items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-4 py-2 text-sm font-bold text-white shadow-lg lg:hidden ${
           orderPanelOpen ? "hidden" : "flex"
         }`}
       >
@@ -5579,7 +6160,7 @@ export function PosTerminal({
         onKeyDown={(event) => {
           if (event.key === "Escape") setOrderPanelOpen(false);
         }}
-        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 md:hidden ${
+        className={`fixed inset-0 z-50 flex h-[100dvh] flex-col border-t border-gray-200 bg-white transition-transform duration-200 lg:hidden ${
           orderPanelOpen ? "translate-y-0" : "pointer-events-none translate-y-full"
         }`}
       >
@@ -5618,7 +6199,7 @@ export function PosTerminal({
             onOpenDiscountTools={() => setDiscountFormOpen(true)}
             activeTicket={activeTicket}
             isTicketSyncPending={isTicketSyncPending}
-            savedTicketCount={savedTickets.length}
+            savedTicketCount={savedTickets.length + onlineOrders.length}
             billHistoryCount={billHistory.length}
             ticketMessage={ticketMessage}
             printStatusMessage={printStatusMessage}
@@ -5669,7 +6250,7 @@ export function PosTerminal({
         )}
       </div>
 
-      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white md:flex md:w-80 md:shrink-0 md:flex-col">
+      <aside className="hidden min-h-0 overflow-hidden border-l border-gray-200 bg-white lg:flex lg:w-80 lg:shrink-0 lg:flex-col">
         {renderOrderPanelContent()}
       </aside>
 
@@ -5745,6 +6326,12 @@ export function PosTerminal({
         title="ระบบตั๋ว"
         onClose={() => setTicketPanelOpen(false)}
       >
+        {/* อยู่นอก TicketPanel: ตั๋วที่บันทึกล็อกทั้งแผง ~2 วิ ตอนซิงค์ — ตั๋วออนไลน์ไม่เกี่ยว ต้องกดได้ทันที */}
+        {onlineOrdersEnabled && onlineOrders.length > 0 && (
+          <div className="mb-4">
+            <OnlineOrderTicketList orders={onlineOrders} onOpen={openOnlineOrder} />
+          </div>
+        )}
         <TicketPanel
           cart={cart}
           savedTickets={savedTickets}
@@ -5769,6 +6356,26 @@ export function PosTerminal({
           qrByTable={qrByTable}
         />
       </PosUtilitySheet>
+
+      {onlineOrdersEnabled && <OnlineOrderAlertBanner orders={unackOnline} onOpen={openOnlineOrder} />}
+      {focusedOnlineOrder && (
+        <OnlineOrderTicketDialog
+          key={focusedOnlineOrder.id}
+          order={focusedOnlineOrder}
+          print={{
+            storeName,
+            stationPrinters: stationPrinters.filter((s): s is StationRoutingStation & { printerId: string } => Boolean(s.printerId)),
+            paperWidth: receiptSettings?.paperWidth === "58mm" ? "58mm" : "80mm",
+            printers,
+          }}
+          onClose={() => {
+            setOnlineFocusId(null);
+            // ล้าง ?online= ออกจาก URL — รีเฟรชหน้าแล้วไม่เด้งตั๋วเดิมซ้ำ
+            if (searchParams.get("online")) window.history.replaceState(null, "", window.location.pathname);
+          }}
+          onChanged={refreshOnlineOrders}
+        />
+      )}
 
       <PosUtilitySheet
         open={billHistoryPanelOpen && changePaymentOrder === null}
@@ -5826,7 +6433,25 @@ export function PosTerminal({
             .sort()
             .join(",")}`}
           picker={picker}
-          onAdd={handleAddFromPicker}
+          onAdd={(input) => {
+            const pass = picker.pass;
+            if (!pass) return handleAddFromPicker(input);
+            if (passCreditsInCart(pass.id) >= pass.creditsRemaining) {
+              setCustomerCouponMessage("สิทธิ์ในแพ็กนี้ใช้ครบในบิลนี้แล้ว");
+              return;
+            }
+            addPassLine(
+              pass,
+              input.product,
+              input.variant ? { id: input.variant.id, name: input.variant.name, priceAdjustment: input.variant.priceAdjustment } : null,
+              input.modifiers.map((modifier) => ({
+                modifierGroupId: modifier.groupId,
+                modifierGroupName: modifier.groupName,
+                option: { id: modifier.option.id, name: modifier.option.name, priceAdjustment: modifier.option.priceAdjustment },
+              })),
+              input.note,
+            );
+          }}
           onClose={() => setPicker(null)}
         />
       )}

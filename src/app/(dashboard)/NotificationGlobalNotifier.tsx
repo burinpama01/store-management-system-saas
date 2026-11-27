@@ -18,6 +18,8 @@ import {
   listNewNotificationsAction,
   type NewNotificationItem,
 } from "./notifications/actions";
+import { onlineOrderIdFromMetadata } from "@/modules/notifications/online-order-link";
+import { ONLINE_ORDER_REFRESH_EVENT } from "@/app/pos/online-order-events";
 import type { Database } from "@/server/integrations/supabase/database.types";
 
 type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
@@ -72,6 +74,10 @@ export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Pr
     });
     if (fresh.length === 0) return;
     for (const item of fresh) seenIds.current.add(item.id);
+    // ตั๋วออนไลน์ใน POS โหลดใหม่ทันที (ไม่ต้องรอรอบ polling ของมัน)
+    if (fresh.some((item) => item.type === "new_online_order")) {
+      window.dispatchEvent(new Event(ONLINE_ORDER_REFRESH_EVENT));
+    }
     setToasts((prev) => [...prev, ...fresh.map((item) => ({ ...item, shownAt: Date.now() }))].slice(-MAX_TOASTS));
     // ออเดอร์ใหม่ดังซ้ำผ่าน useRepeatingAlert ด้านล่างจนกว่าจะปิด toast — ไม่ต้องเล่นซ้อนตรงนี้
     if (fresh.some((item) => ORDER_ALERT_TYPES.has(item.type))) return;
@@ -110,6 +116,7 @@ export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Pr
             title: row.title,
             message: row.message,
             createdAt: row.created_at,
+            onlineOrderId: onlineOrderIdFromMetadata(row.metadata),
           }],
           "realtime",
         );
@@ -171,7 +178,12 @@ export function NotificationGlobalNotifier({ storeId, voiceEnabled = false }: Pr
               className="min-w-0 flex-1 text-left"
               onClick={() => {
                 setToasts([]);
-                router.push("/notifications");
+                // ออเดอร์ออนไลน์ → เปิดตั๋วนั้นใน POS (R1) · อื่น ๆ → หน้าแจ้งเตือนเหมือนเดิม
+                router.push(
+                  toast.type === "new_online_order" && toast.onlineOrderId
+                    ? `/pos?online=${toast.onlineOrderId}`
+                    : "/notifications",
+                );
               }}
             >
               <p className="truncate text-sm font-bold text-gray-900">

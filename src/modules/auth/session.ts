@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { resignedMembershipIds } from "@/modules/hr/employment-status";
 import { getNativeRequestContext } from '@/modules/native-pos/request-context';
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { DEFAULT_THEME } from "@/modules/theme/presets";
@@ -76,6 +77,8 @@ export const getUserStores = cache(async (): Promise<{
   organizations: OrganizationRow[];
   stores: StoreRow[];
   memberships: MembershipRow[];
+  /** สมาชิกภาพที่ถูกตัดเพราะลาออกแล้ว (เลยวันออกงาน) — ไม่อยู่ใน memberships/stores ด้านบน */
+  resignedMemberships: MembershipRow[];
 }> => {
   const supabase = await createSupabaseServerClient();
   const user = await getCurrentUser();
@@ -84,22 +87,23 @@ export const getUserStores = cache(async (): Promise<{
     ? await supabase.from("memberships").select("*").eq("user_id", user.id).not("joined_at", "is", null)
     : { data: [] as MembershipRow[] };
 
-  const memberships = membershipsResult.data ?? [];
-  const organizationIds = Array.from(new Set(memberships.map((m) => m.organization_id)));
+  const allMemberships = membershipsResult.data ?? [];
+  const organizationIds = Array.from(new Set(allMemberships.map((m) => m.organization_id)));
 
   if (organizationIds.length === 0) {
     return {
       userId: user?.id ?? null,
-      memberships,
+      memberships: allMemberships,
       organizations: [],
       stores: [],
+      resignedMemberships: [],
     };
   }
 
   // Deterministic order matters: resolveCurrentStore falls back to stores[0]
   // when no store cookie is set, and attendance/clock state is per store — an
   // unordered query can make each device resolve a different default store.
-  const [organizationsResult, storesResult] = await Promise.all([
+  const [organizationsResult, storesResult, profilesResult] = await Promise.all([
     supabase.from("organizations").select("*").in("id", organizationIds).order("created_at", { ascending: true }),
     supabase
       .from("stores")
@@ -107,14 +111,31 @@ export const getUserStores = cache(async (): Promise<{
       .eq("is_active", true)
       .in("organization_id", organizationIds)
       .order("created_at", { ascending: true }),
+    // โปรไฟล์พนักงานของตัวเอง (RLS อ่านแถวตัวเองได้) — ใช้ตัดสิทธิ์คนที่เลยวันออกงานแล้ว
+    user
+      ? supabase.from("employee_profiles").select("store_id, employment_end_date").eq("user_id", user.id)
+      : Promise.resolve({ data: [] as { store_id: string; employment_end_date: string | null }[], error: null }),
   ]);
-  const stores = filterAccessibleStores(storesResult.data ?? [], memberships, user?.id ?? null);
+  const allStores = (storesResult.data ?? []) as StoreRow[];
+  // อ่านโปรไฟล์ไม่ได้ = ไม่ตัดใคร (ไม่ล็อกทั้งร้านออกเพราะ query ล้ม)
+  const resignedIds = profilesResult.error
+    ? new Set<string>()
+    : resignedMembershipIds(
+        allMemberships,
+        (profilesResult.data ?? []) as { store_id: string; employment_end_date: string | null }[],
+        allStores,
+        new Date(),
+      );
+  const memberships = allMemberships.filter((m) => !resignedIds.has(m.id));
+  const resignedMemberships = allMemberships.filter((m) => resignedIds.has(m.id));
+  const stores = filterAccessibleStores(allStores, memberships, user?.id ?? null);
 
   return {
     userId: user?.id ?? null,
     memberships,
     organizations: organizationsResult.data ?? [],
     stores,
+    resignedMemberships,
   };
 });
 

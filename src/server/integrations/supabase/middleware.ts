@@ -47,6 +47,10 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/music/") ||
     request.nextUrl.pathname === "/member" ||
     request.nextUrl.pathname.startsWith("/member/") ||
+    // ลิงก์สั้นใน SMS ภารกิจ (/m/<slug> → หน้าสมาชิกของร้าน)
+    request.nextUrl.pathname.startsWith("/m/") ||
+    // เว็บไซต์ของร้าน (สาธารณะ แคช ISR) — "/s/<slug>" เท่านั้น ไม่ชนกับเส้นทางอื่นที่ขึ้นต้นด้วย s
+    request.nextUrl.pathname.startsWith("/s/") ||
     request.nextUrl.pathname === "/pricing" ||
     request.nextUrl.pathname === "/register" ||
     request.nextUrl.pathname === "/privacy-policy" ||
@@ -55,6 +59,12 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/download/") ||
     request.nextUrl.pathname.startsWith("/api/mobile/pos/") || // Handler verifies Bearer independently.
     request.nextUrl.pathname === "/api/line/webhook" ||
+    // ล็อกอินเครื่องร้านด้วย QR (D2b): หน้าแสดง QR + start/poll/complete ยังไม่มี session
+    // (auth ด้วยรหัสลับเครื่อง/ตั๋วครั้งเดียวใน handler) — หน้า /device-login/approve บนมือถือ "ไม่" public
+    request.nextUrl.pathname === "/device-login" ||
+    request.nextUrl.pathname === "/api/device-login/start" ||
+    request.nextUrl.pathname === "/api/device-login/poll" ||
+    request.nextUrl.pathname === "/api/device-login/complete" ||
     request.nextUrl.pathname === "/api/print/hub/poll" ||
     request.nextUrl.pathname === "/api/print/hub/ack" ||
     // StoreOS Launcher บนเครื่องแคชเชียร์ส่ง log กลับมา (auth ด้วย Hub token ใน handler
@@ -81,8 +91,11 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/api/notifications/cron/") ||
     // สรุปยอดจากเวลาปิดร้าน: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
     request.nextUrl.pathname === "/api/attendance/cron/closing-summary" ||
+    request.nextUrl.pathname === "/api/operations/cron/checklist-due" ||
     // เงินเดือนขั้นสูง: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
     request.nextUrl.pathname === "/api/hr/cron/payroll" ||
+    // SMS ภารกิจสะสม: Supabase pg_cron เรียก (auth ด้วยกุญแจใน Vault ตรวจใน handler)
+    request.nextUrl.pathname === "/api/missions/cron/sms" ||
     // Public REST API (Enterprise) — auth ด้วย API key ใน handler เอง ไม่ใช้ session
     request.nextUrl.pathname.startsWith("/api/v1/") ||
     // Same-origin proxy for receipt logo/footer images. Serves only public

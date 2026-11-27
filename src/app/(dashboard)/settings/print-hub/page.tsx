@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { summarizeHubStatus } from "@/modules/printing/print-hub";
+import { getStorePrintMode } from "@/modules/printing/direct-print-repository";
 import { getHubStatus, getStoreHubAuth } from "@/modules/printing/print-hub-repository";
 import { listPrinters } from "@/modules/stores/repository";
 import {
@@ -25,10 +26,11 @@ export default async function PrintHubSettingsPage() {
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
   const serverUrl = `${proto}://${host}`;
 
-  const [statusRes, authRes, printersRes] = await Promise.all([
+  const [statusRes, authRes, printersRes, printMode] = await Promise.all([
     getHubStatus(ctx.storeId),
     getStoreHubAuth(ctx.storeId),
     listPrinters(ctx.storeId, ctx.organizationId),
+    getStorePrintMode(ctx.storeId),
   ]);
 
   const summary = summarizeHubStatus(statusRes.data?.lastSeen ?? null);
@@ -46,6 +48,16 @@ export default async function PrintHubSettingsPage() {
   const testPrinter = defaultPrinter ? { id: defaultPrinter.id, paperWidth } : null;
 
   return (
+    <>
+    {printMode === "direct" ? (
+      <section role="status" className="card mb-4 border-amber-300 bg-amber-50 text-sm text-amber-900">
+        <b>ร้านนี้ปิด Print Hub แล้ว</b> — ใบเสร็จและตั๋วครัวพิมพ์ตรงจากโปรแกรม StoreOS POS
+        <br />
+        Print Hub ที่ยังติดตั้งอยู่บนเครื่องร้านจะไม่พิมพ์อะไรอีก ถอนการติดตั้งได้ (ดับเบิลคลิก uninstall.cmd ในโฟลเดอร์ Print Hub
+        หรือถอน StoreOS Launcher ตัวเก่า) · กลับไปใช้ Print Hub ได้ที่{" "}
+        <a href="/settings/receipt" className="font-semibold underline">วิธีพิมพ์ของร้าน</a>
+      </section>
+    ) : null}
     <PrintHubManager
       serverUrl={serverUrl}
       storeId={ctx.storeId}
@@ -69,5 +81,6 @@ export default async function PrintHubSettingsPage() {
       saveHubBluetoothPrinterAction={saveHubBluetoothPrinterAction}
       saveHubUsbPrinterAction={saveHubUsbPrinterAction}
     />
+    </>
   );
 }

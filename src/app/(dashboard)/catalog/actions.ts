@@ -298,6 +298,7 @@ export async function createProductAction(
       priceAgent: priceAgent.value,
       priceRegular: priceRegular.value,
       availableForPos: formData.get("availableForPos") === "on",
+      availableOnline: formData.get("availableOnline") === "on",
       availableForQr,
       availableForDelivery: formData.get("availableForDelivery") === "on",
       deliveryPrice: deliveryPrice.value,
@@ -375,6 +376,7 @@ export async function updateProductAction(
       // เช็คบ็อกซ์ที่ไม่ถูกติ๊กจะไม่ถูกส่งมา (ค่าเป็น null) — ต้องเทียบ === "on" ถึงจะปิดใช้งานได้จริง
       isActive: formData.get("isActive") === "on",
       outOfStock: formData.get("outOfStock") === "on",
+      availableOnline: formData.get("availableOnline") === "on",
     });
     if (result.error) return { error: result.error.userMessage };
     if (wholesaleUnits.units) {

@@ -148,7 +148,7 @@ function sameItemDiscount(a: CartItem, b: CartItem): boolean {
   );
 }
 
-function resolveVariant(
+export function resolveVariant(
   product: Product,
   variantId: string | undefined,
 ): ProductVariant | null {
@@ -159,7 +159,10 @@ function resolveVariant(
   if (!variantId) throw new CartValidationError("กรุณาเลือกขนาดสินค้า");
   const variant = product.variants.find((item) => item.id === variantId);
   if (!variant || !variant.isActive) {
-    throw new CartValidationError("ตัวเลือกสินค้าไม่พร้อมใช้งาน");
+    // ตัวเลือกถูกลบ/เปลี่ยนหลังหยิบใส่ตะกร้า (เช่น แก้ที่หน้าสต็อก/เมนู) — บอกชื่อสินค้าให้แคชเชียร์ลบแล้วเพิ่มใหม่
+    throw new CartValidationError(
+      `ตัวเลือกของ “${product.name}” ถูกเปลี่ยนแล้ว — ลบรายการนี้ออกจากตะกร้าแล้วเพิ่มใหม่`,
+    );
   }
   return variant;
 }
@@ -216,7 +219,7 @@ function addVariantStockDemand(
   }
 }
 
-function resolveModifiers(product: Product, optionIds: string[]): SelectedModifier[] {
+export function resolveModifiers(product: Product, optionIds: string[]): SelectedModifier[] {
   const uniqueIds = new Set(optionIds);
   if (uniqueIds.size !== optionIds.length) {
     throw new CartValidationError("ตัวเลือกซ้ำในรายการสินค้า");

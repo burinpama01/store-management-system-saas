@@ -95,10 +95,12 @@ describe("UX/UI regression guards", () => {
   it("POS shell stacks cart and catalog on narrow screens", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
-    // Breakpoint contract เดียว: POS สองคอลัมน์ตั้งแต่ 768px (tablet) — ไม่รอ lg:1024 เดิม
-    expect(source).toContain("md:flex-row");
-    expect(source).toContain("md:w-80");
-    expect(source).not.toContain("lg:flex-row");
+    // แผน POS ทุกขนาดจอ v2 (L4): สองคอลัมน์ตั้งแต่ 1024px — iPad แนวตั้ง (768) แผงขวากินที่ 42%
+    // จึงใช้ปุ่มลอย + ลิ้นชักแบบมือถือแทน
+    expect(source).toContain("lg:flex-row");
+    expect(source).toContain("lg:w-80");
+    expect(source).not.toContain("md:flex-row");
+    expect(source).not.toContain("md:w-80");
     expect(source).toContain('role="dialog"');
   });
 
@@ -405,6 +407,21 @@ describe("UX/UI regression guards", () => {
     expect(source).toContain("โหมดอ่านอย่างเดียวสำหรับ role นี้");
   });
 
+  it("catalog product grid fills by card width (2 cols on phones) like POS", () => {
+    const source = read("src/app/(dashboard)/catalog/CatalogManager.tsx");
+
+    expect(source).toContain("grid grid-cols-2 gap-2 @lg:grid-cols-[repeat(auto-fill,minmax(180px,1fr))]");
+    expect(source).not.toContain("grid-cols-1 gap-3 @md:grid-cols-2 @2xl:grid-cols-3");
+    expect(source).toContain("onError={() => setFailedUrl(product.imageUrl ?? null)}");
+    expect(source).toContain("p-4 pb-24 md:pb-4");
+    // การ์ดแคบ: ปุ่มเรียงลง / ป้ายไม่ขายออนไลน์อยู่แถวที่ขึ้นบรรทัดใหม่ได้
+    expect(source).toContain("@container/card");
+    expect(source).toContain("flex flex-col gap-1.5 @min-[160px]/card:flex-row");
+    const badgeRow = source.indexOf('<div className="flex flex-wrap gap-1.5 text-xs">');
+    expect(source.indexOf("ไม่ขายออนไลน์", badgeRow)).toBeGreaterThan(badgeRow);
+    expect(source.indexOf("ไม่ขายออนไลน์", badgeRow) - badgeRow).toBeLessThan(600);
+  });
+
   it("catalog add and edit flows open in a dialog instead of a side panel", () => {
     const source = read("src/app/(dashboard)/catalog/CatalogManager.tsx");
     const dialog = read("src/shared/components/ui/ModalDialog.tsx");
@@ -580,9 +597,40 @@ describe("UX/UI regression guards", () => {
     const source = read("src/app/pos/PosTerminal.tsx");
 
     expect(source).toContain("PosProductImage");
-    expect(source).toContain("aspect-[4/3]");
+    expect(source).toContain("aspect-square");
     expect(source).toContain("loading=\"lazy\"");
     expect(source).toContain("รูปเมนู");
+  });
+
+  it("POS grid fills by tile width (3 cols on phones) and tiles show cart quantity", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+
+    const tileSize = read("src/modules/pos/tile-size.ts");
+    expect(tileSize).toContain("grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]");
+    expect(tileSize).not.toContain("md:grid-cols-");
+    expect(tileSize).toContain("xl:grid-cols-[repeat(auto-fill,minmax(135px,1fr))]");
+    expect(source).not.toContain("lg:grid-cols-5 gap-2");
+    expect(source).toContain("className={POS_TILE_GRID_CLASS[tileSize]}");
+    expect(source).toContain("sm:aspect-[4/3]");
+    expect(source).toContain('cartQty > 99 ? "99+" : cartQty');
+    expect(source).toContain("cartQty={cartQtyByProduct.get(product.id) ?? 0}");
+    expect(source).toContain("if (item.rewardVoucherCode) continue;");
+    expect(source).toContain("onError={() => setFailedUrl(");
+    // ปุ่มลอยเปิดออร์เดอร์ยังอยู่ (ผู้ใช้ให้คงไว้)
+    expect(source).toContain("เปิดออร์เดอร์");
+    expect(source).toContain("pb-24 lg:pb-3");
+  });
+
+  it("POS tile size toggle (เล็ก/กลาง/ใหญ่) is per-device and hydration-safe", () => {
+    const source = read("src/app/pos/PosTerminal.tsx");
+    const tileSize = read("src/modules/pos/tile-size.ts");
+
+    expect(source).toContain("useSyncExternalStore(subscribeTileSize, getTileSnapshot, serverTileSize)");
+    expect(source).toContain("writeTileSize(nextTileSize(tileSize))");
+    expect(source).toContain("size={tileSize}");
+    expect(tileSize).toContain('"storeos.pos.tileSize"');
+    expect(tileSize).toContain("grid grid-cols-4 gap-1.5");
+    expect(tileSize).toContain("grid grid-cols-2 gap-2");
   });
 
   it("POS memoizes product category filtering for fast cashier taps", () => {

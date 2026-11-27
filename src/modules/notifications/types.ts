@@ -20,7 +20,11 @@ export type NotificationType =
   | "test"
   | "activation_nudge"
   | "subscription_expiring"
-  | "daily_summary";
+  | "daily_summary"
+  | "ops_checklist"
+  | "new_online_order"
+  | "salary_advance_request"
+  | "pass_purchase";
 
 export interface NotificationPayload {
   type: NotificationType;
@@ -53,6 +57,10 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "activation_nudge",
   "subscription_expiring",
   "daily_summary",
+  "ops_checklist",
+  "new_online_order",
+  "salary_advance_request",
+  "pass_purchase",
 ];
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram", "push"];
@@ -66,6 +74,7 @@ export const STAFF_PUSH_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new 
   "new_pos_order",
   "new_qr_order",
   "new_buffet_order",
+  "new_online_order",
   "order_cancelled",
   "buffet_expiring",
   "service_request",

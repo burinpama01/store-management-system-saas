@@ -1,6 +1,6 @@
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import type { Order } from "@/modules/pos/types";
-import type { DiscountType } from "@/modules/pos/types";
+import type { DiscountType, ReceiptMissionProgress } from "@/modules/pos/types";
 
 export type { Printer, ReceiptSettings };
 
@@ -53,6 +53,8 @@ export interface ReceiptData {
   vatRate?: number;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalance?: number;
+  /** ภารกิจสะสมที่บิลนี้ถูกนับ */
+  missionProgress?: ReceiptMissionProgress[];
   footerText?: string;
   showQrPayment: boolean;
   promptpayId?: string;
@@ -150,6 +152,7 @@ export function buildReceiptData(
     vatRate: settings.showVatBreakdown && settings.vatRate > 0 ? settings.vatRate : undefined,
     loyaltyPointsEarned,
     loyaltyPointsBalance: loyaltyPointsEarned !== undefined ? order.loyaltyPointsBalance : undefined,
+    missionProgress: order.missionProgress,
     footerText: settings.footerText,
     showQrPayment: settings.showQrPayment,
     promptpayId: settings.promptpayId,
