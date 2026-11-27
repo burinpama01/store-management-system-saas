@@ -120,11 +120,32 @@ function normalizeMediaUrl(value: unknown) {
 export const CUSTOMER_DISPLAY_REFRESH_MS = 5 * 60 * 1000;
 
 /** จำกัดขนาดไฟล์ก่อนอัปโหลด — วิดีโอเล่นวนตลอดวัน ไฟล์ใหญ่ = กินโควตา egress */
-export const CUSTOMER_DISPLAY_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
+export const CUSTOMER_DISPLAY_VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 export const CUSTOMER_DISPLAY_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /** ชื่อไฟล์เป็น UUID ไม่ถูกเขียนทับ → ให้เบราว์เซอร์แคชได้ 1 ปี ไม่ต้องโหลดใหม่ทุกรอบสไลด์ */
 export const CUSTOMER_DISPLAY_MEDIA_CACHE_SECONDS = 31_536_000;
+
+/** วิดีโอสลับเมื่อเล่นจบ (event ended) — ตัวจับเวลานี้เป็นแค่ตาข่ายกันจอค้างถ้า ended ไม่มา (เน็ตกระตุก/ไฟล์เสียกลางทาง) */
+export const CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS = 15 * 60 * 1000;
+const CUSTOMER_DISPLAY_VIDEO_GRACE_MS = 15_000;
+
+/**
+ * สไลด์นี้ค้างบนจอนานเท่าไรก่อนสลับ (ใช้เมื่อช่องมีมากกว่า 1 สไลด์)
+ * - รูป: ตาม "เปลี่ยนภาพทุกกี่วินาที"
+ * - วิดีโอ: เล่นจนจบ (ไม่ตัดตามวินาที) — รู้ความยาวแล้วกันเผื่อ 15 วิ, ยังไม่รู้ใช้ 15 นาที
+ */
+export function customerDisplaySlideDwellMs(
+  slide: Pick<CustomerDisplayAdSlide, "mediaType">,
+  intervalSeconds: number,
+  videoDurationMs?: number | null,
+): number {
+  if (slide.mediaType !== "video") return Math.max(1, intervalSeconds) * 1000;
+  if (videoDurationMs && Number.isFinite(videoDurationMs) && videoDurationMs > 0) {
+    return Math.min(videoDurationMs + CUSTOMER_DISPLAY_VIDEO_GRACE_MS, CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS * 4);
+  }
+  return CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS;
+}
 
 export function customerDisplayUploadSizeError(mediaType: CustomerDisplayMediaType, sizeBytes: number): string | null {
   const limit = mediaType === "video" ? CUSTOMER_DISPLAY_VIDEO_MAX_BYTES : CUSTOMER_DISPLAY_IMAGE_MAX_BYTES;
@@ -132,7 +153,7 @@ export function customerDisplayUploadSizeError(mediaType: CustomerDisplayMediaTy
   const limitMb = Math.round(limit / (1024 * 1024));
   const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
   return mediaType === "video"
-    ? `วิดีโอใหญ่เกินไป (${sizeMb} MB) — จำกัด ${limitMb} MB ลองตัดให้สั้นลงหรือลดความละเอียดเป็น 720p`
+    ? `วิดีโอใหญ่เกินไป (${sizeMb} MB) — จำกัด ${limitMb} MB ลองลดความละเอียดเป็น 720p หรือบีบอัดไฟล์`
     : `รูปใหญ่เกินไป (${sizeMb} MB) — จำกัด ${limitMb} MB`;
 }
 

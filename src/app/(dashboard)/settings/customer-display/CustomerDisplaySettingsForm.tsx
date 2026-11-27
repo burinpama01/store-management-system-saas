@@ -134,6 +134,7 @@ export function CustomerDisplaySettingsForm({
               defaultValue={initial.slideIntervalSeconds}
               disabled={!adEnabled}
             />
+            <span className="block text-[11px] font-medium text-[var(--muted)]">ใช้กับรูปภาพ · วิดีโอจะเล่นจนจบก่อนสลับเสมอ</span>
           </label>
           <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm">
             <label className="inline-flex items-center gap-2 font-semibold">
@@ -390,7 +391,7 @@ function SlideEditor({
                   <span className="block text-[11px] font-medium text-[var(--muted)]">กำลังอัพโหลด...</span>
                 ) : (
                   <span className="block text-[11px] font-medium text-[var(--muted)]">
-                    วิดีโอไม่เกิน 30 MB (แนะนำ 720p สั้นไม่เกิน 30 วินาที) · รูปไม่เกิน 10 MB
+                    วิดีโอเล่นจนจบก่อนสลับสไลด์ (ยาวหลายนาทีได้) ไม่เกิน 50 MB แนะนำ 720p · รูปไม่เกิน 10 MB
                   </span>
                 )}
               </label>

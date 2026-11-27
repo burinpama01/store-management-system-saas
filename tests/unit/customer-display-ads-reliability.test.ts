@@ -5,7 +5,9 @@ import {
   CUSTOMER_DISPLAY_IMAGE_MAX_BYTES,
   CUSTOMER_DISPLAY_VIDEO_MAX_BYTES,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
+  CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS,
   customerDisplaySettingsSignature,
+  customerDisplaySlideDwellMs,
   customerDisplayUploadSizeError,
   resolveCustomerDisplayAdSlots,
   type CustomerDisplayAdSlide,
@@ -90,6 +92,24 @@ describe("customerDisplayUploadSizeError", () => {
   });
 });
 
+describe("customerDisplaySlideDwellMs", () => {
+  it("rotates images by the configured interval", () => {
+    expect(customerDisplaySlideDwellMs({ mediaType: "image" }, 8)).toBe(8000);
+  });
+
+  it("lets long videos (over 2 minutes) play to the end instead of cutting at the interval", () => {
+    const threeMinutes = 3 * 60 * 1000;
+    const dwell = customerDisplaySlideDwellMs({ mediaType: "video" }, 8, threeMinutes);
+    expect(dwell).toBeGreaterThan(threeMinutes);
+    expect(dwell).toBeLessThan(threeMinutes + 60_000);
+  });
+
+  it("falls back to a long safety timer when the video length is unknown", () => {
+    expect(customerDisplaySlideDwellMs({ mediaType: "video" }, 8, null)).toBe(CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS);
+    expect(customerDisplaySlideDwellMs({ mediaType: "video" }, 8, Number.NaN)).toBe(CUSTOMER_DISPLAY_VIDEO_FALLBACK_MS);
+  });
+});
+
 describe("customer display screen wiring", () => {
   const screen = read("src/app/pos/grocery/display/CustomerDisplayScreen.tsx");
   const route = read("src/app/api/pos/customer-display/settings/route.ts");
@@ -100,6 +120,13 @@ describe("customer display screen wiring", () => {
     expect(screen).toContain("CUSTOMER_DISPLAY_REFRESH_MS");
     expect(screen).toContain("visibilitychange");
     expect(screen).toContain("useWakeLock(true)");
+  });
+
+  it("advances video slides when they end and only loops a lone video", () => {
+    expect(screen).toContain("onEnded={rotates ? advance : undefined}");
+    expect(screen).toContain("loop={!rotates}");
+    expect(screen).toContain("onLoadedMetadata");
+    expect(screen).toContain("customerDisplaySlideDwellMs(slide, intervalSeconds, videoDurationMs)");
   });
 
   it("skips and reports broken media", () => {

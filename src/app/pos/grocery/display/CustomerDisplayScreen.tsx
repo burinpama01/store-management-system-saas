@@ -15,6 +15,7 @@ import {
   CUSTOMER_DISPLAY_REFRESH_MS,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
   customerDisplaySettingsSignature,
+  customerDisplaySlideDwellMs,
   resolveCustomerDisplayAdSlots,
   type CustomerDisplayAdSlide,
   type CustomerDisplayAdSlotView,
@@ -40,20 +41,38 @@ function points(value: number) {
   }).format(value);
 }
 
-function currentSlide(slot: CustomerDisplayAdSlotView, indexes: Record<string, number>) {
-  if (slot.slides.length === 0) return undefined;
-  return slot.slides[(indexes[slot.key] ?? 0) % slot.slides.length] ?? slot.slides[0];
-}
-
-function CustomerDisplayAdSlot({
-  slide,
-  slotLabel,
+/**
+ * ช่องโฆษณา 1 ช่อง — จัดการรอบสไลด์ของตัวเอง
+ * รูปสลับตามวินาทีที่ตั้ง · วิดีโอเล่นจนจบแล้วค่อยสลับ (รองรับวิดีโอยาวหลายนาที)
+ * ช่องที่มีสไลด์เดียวไม่สลับ วิดีโอเล่นวนไปเรื่อย ๆ
+ */
+function CustomerDisplayAdRotator({
+  slot,
+  intervalSeconds,
   onMediaError,
 }: {
-  slide?: CustomerDisplayAdSlide;
-  slotLabel: string;
+  slot: CustomerDisplayAdSlotView;
+  intervalSeconds: number;
   onMediaError: (slide: CustomerDisplayAdSlide) => void;
 }) {
+  const [index, setIndex] = useState(0);
+  const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  const count = slot.slides.length;
+  const position = count > 0 ? index % count : 0;
+  const slide = count > 0 ? slot.slides[position] : undefined;
+  const rotates = count > 1;
+
+  const advance = useCallback(() => {
+    setVideoDurationMs(null);
+    setIndex((current) => (current + 1) % Math.max(1, count));
+  }, [count]);
+
+  useEffect(() => {
+    if (!rotates || !slide) return;
+    const timer = window.setTimeout(advance, customerDisplaySlideDwellMs(slide, intervalSeconds, videoDurationMs));
+    return () => window.clearTimeout(timer);
+  }, [rotates, slide, intervalSeconds, videoDurationMs, advance]);
+
   if (!slide) {
     return (
       <div className="customer-display-ad-slot">
@@ -66,26 +85,33 @@ function CustomerDisplayAdSlot({
     );
   }
 
+  // key รวมลำดับ — สไลด์ถัดไปเป็นไฟล์เดียวกันก็ยังเริ่มเล่นใหม่
+  const mediaKey = `${position}:${slide.id}:${slide.url}`;
   return (
     <div className="customer-display-ad-slot">
       {slide.mediaType === "video" ? (
         <video
-          key={slide.url}
+          key={mediaKey}
           className={`customer-display-ad-media customer-display-ad-media--${slide.fit}`}
           src={slide.url}
           autoPlay
           muted
-          loop
+          loop={!rotates}
           playsInline
           preload="auto"
+          onLoadedMetadata={(event) => {
+            const seconds = event.currentTarget.duration;
+            if (Number.isFinite(seconds) && seconds > 0) setVideoDurationMs(seconds * 1000);
+          }}
+          onEnded={rotates ? advance : undefined}
           onError={() => onMediaError(slide)}
         />
       ) : (
         <img
-          key={slide.url}
+          key={mediaKey}
           className={`customer-display-ad-media customer-display-ad-media--${slide.fit}`}
           src={slide.url}
-          alt={slide.title || slotLabel}
+          alt={slide.title || slot.label}
           onError={() => onMediaError(slide)}
         />
       )}
@@ -101,7 +127,6 @@ function CustomerDisplayAdSlot({
 
 export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDisplaySettings | null }) {
   const [snapshot, setSnapshot] = useState<CustomerDisplaySnapshot | null>(null);
-  const [slideIndexes, setSlideIndexes] = useState<Record<string, number>>({});
   const [paidFlash, setPaidFlash] = useState<CustomerDisplayPaidFlash | null>(null);
   const pendingPaymentRef = useRef<CustomerDisplayPayment | null>(null);
   const [pendingPayment, setPendingPayment] = useState<CustomerDisplayPayment | null>(null);
@@ -112,6 +137,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
   const [failedMediaUrls, setFailedMediaUrls] = useState<ReadonlySet<string>>(() => new Set());
   const reportedMediaUrlsRef = useRef<Set<string>>(new Set());
   const effectiveAdSettings = liveAdSettings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
+  const adSignature = useMemo(() => customerDisplaySettingsSignature(liveAdSettings), [liveAdSettings]);
   const adSlots = useMemo(
     () => resolveCustomerDisplayAdSlots(effectiveAdSettings, failedMediaUrls),
     [effectiveAdSettings, failedMediaUrls],
@@ -160,7 +186,6 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
         if (!changed) return;
         adSignatureRef.current = signature;
         setLiveAdSettings(body.settings);
-        setSlideIndexes({});
       } catch {
         // ออฟไลน์ — แสดงโฆษณาเดิมต่อ
       } finally {
@@ -208,19 +233,6 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
     return () => window.clearTimeout(timer);
   }, [paidFlash]);
 
-  useEffect(() => {
-    if (adSlots.every((slot) => slot.slides.length <= 1)) return;
-    const timer = window.setInterval(() => {
-      setSlideIndexes((current) => {
-        const next = { ...current };
-        for (const slot of adSlots) {
-          if (slot.slides.length > 1) next[slot.key] = ((current[slot.key] ?? 0) + 1) % slot.slides.length;
-        }
-        return next;
-      });
-    }, effectiveAdSettings.slideIntervalSeconds * 1000);
-    return () => window.clearInterval(timer);
-  }, [adSlots, effectiveAdSettings.slideIntervalSeconds]);
 
   const items = snapshot?.items ?? [];
   // QR ยังโชว์ต่อแม้ POS ส่ง checkout ซ้ำโดยไม่มี QR (ยอดเท่าเดิม)
@@ -298,10 +310,11 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
             aria-label="โฆษณา"
           >
             {adSlots.map((slot) => (
-              <CustomerDisplayAdSlot
-                key={slot.key}
-                slide={currentSlide(slot, slideIndexes)}
-                slotLabel={slot.label}
+              <CustomerDisplayAdRotator
+                // โฆษณาชุดใหม่ = เริ่มรอบสไลด์ใหม่จากสไลด์แรก
+                key={`${slot.key}:${adSignature}`}
+                slot={slot}
+                intervalSeconds={effectiveAdSettings.slideIntervalSeconds}
                 onMediaError={handleMediaError}
               />
             ))}
