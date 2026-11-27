@@ -11,6 +11,7 @@ import { printKitchenForOrder, type StationPrinter } from "../(dashboard)/delive
 import { RiderPicker } from "../(dashboard)/website/orders/RiderPicker";
 import { CodBeamQrPanel, CodCollectPicker, CodFailButton } from "../(dashboard)/website/orders/CodControls";
 import {
+  pendingOnlineOrdersAction,
   acceptOnlineOrderAction,
   checkCodQrAction,
   settleCodCashAction,
@@ -25,6 +26,8 @@ import { ONLINE_ORDER_REFRESH_EVENT } from "./online-order-events";
 /** สถานะที่ยังต้องอยู่ในแถบตั๋ว (รอรับ → ก่อนสำเร็จ) */
 export const POS_ONLINE_STATUSES: readonly OnlineOrderStatus[] = ["paid", "cod_pending", "accepted", "preparing", "ready", "out_for_delivery"];
 
+/** ถามว่ามีออเดอร์รอรับใหม่ไหม (query เบา) — ทุก 15 วิ แม้หน้าต่างอยู่เบื้องหลัง (POS ต้องดังเสมอ) */
+const PENDING_POLL_MS = 15_000;
 /** มีตั๋วค้าง = ถามทุก 30 วิ · ไม่มี = 2 นาที (เผื่อไม่มีสิทธิ์เห็นแจ้งเตือน) · แท็บซ่อนอยู่ไม่ถาม */
 const POLL_ACTIVE_MS = 30_000;
 const POLL_IDLE_MS = 120_000;
@@ -58,7 +61,12 @@ function moneyLabel(o: OnlineOrderVM): string {
 export function useOnlineOrderTickets(enabled: boolean) {
   const [orders, setOrders] = useState<OnlineOrderVM[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** ออเดอร์ที่รอร้านกดรับ (จากการถามทุก 15 วิ) — ใช้เตือนเสียง/แถบบนหน้าขาย */
+  const [awaiting, setAwaiting] = useState<{ id: string; orderCode: string }[]>([]);
+  /** เวลาที่ถามล่าสุด — ใช้คิดว่า "แตะดูแล้ว" หมดอายุหรือยัง (ไม่เรียก Date.now ระหว่าง render) */
+  const [awaitingAt, setAwaitingAt] = useState(0);
   const activeRef = useRef(0);
+  const knownAwaitingRef = useRef<string>("");
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
@@ -93,23 +101,39 @@ export function useOnlineOrderTickets(enabled: boolean) {
     const onVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
+    // ออเดอร์รอรับ: ถามทุก 15 วิ — เจอชุดใหม่ (มีใบเพิ่ม/ลด) โหลดรายการเต็มใหม่ทันที
+    const pollPending = async () => {
+      const res = await pendingOnlineOrdersAction().catch(() => null);
+      if (cancelled || !res || res.error) return;
+      setAwaiting(res.orders);
+      setAwaitingAt(Date.now());
+      const key = res.orders.map((o) => o.id).join(",");
+      if (key !== knownAwaitingRef.current) {
+        knownAwaitingRef.current = key;
+        void refresh();
+      }
+    };
+    const pendingTimer = window.setInterval(() => void pollPending(), PENDING_POLL_MS);
+    const firstPending = window.setTimeout(() => void pollPending(), 0);
     window.addEventListener(ONLINE_ORDER_REFRESH_EVENT, onEvent);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      window.clearInterval(pendingTimer);
+      window.clearTimeout(firstPending);
       window.removeEventListener(ONLINE_ORDER_REFRESH_EVENT, onEvent);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [enabled, refresh]);
 
-  return { orders, error, refresh };
+  return { orders, error, refresh, awaiting, awaitingAt };
 }
 
 /** หมวด "ออนไลน์" ในแถบตั๋ว */
 export function OnlineOrderTicketList({ orders, onOpen }: { orders: OnlineOrderVM[]; onOpen: (id: string) => void }) {
   if (orders.length === 0) return null;
-  const waiting = orders.filter((o) => o.status === "paid").length;
+  const waiting = orders.filter((o) => o.status === "paid" || o.status === "cod_pending").length;
   return (
     <div className="space-y-2" data-testid="online-order-tickets">
       <div className="flex items-center justify-between gap-2">
@@ -384,5 +408,22 @@ export function OnlineOrderTicketDialog({
         )}
       </div>
     </div>
+  );
+}
+
+/** แถบเตือนออเดอร์ออนไลน์ใหม่บนหน้าขาย (ดังซ้ำจนกว่าจะแตะเปิด — แคชเชียร์ไม่เห็นแจ้งเตือนกลาง) */
+export function OnlineOrderAlertBanner({ orders, onOpen }: { orders: { id: string; orderCode: string }[]; onOpen: (id: string) => void }) {
+  if (orders.length === 0) return null;
+  const first = orders[0];
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(first.id)}
+      className="fixed left-1/2 top-3 z-[45] flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-orange-600 px-5 text-sm font-bold text-white shadow-2xl ring-4 ring-orange-200 animate-pulse"
+      data-testid="online-order-alert"
+    >
+      🌐 ออเดอร์ออนไลน์ใหม่ {first.orderCode}
+      {orders.length > 1 ? ` (+${orders.length - 1})` : ""} — แตะเพื่อเปิด
+    </button>
   );
 }

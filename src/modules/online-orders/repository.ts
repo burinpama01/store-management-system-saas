@@ -580,3 +580,16 @@ export async function countActiveCodOrders(storeId: string, phone: string): Prom
     .in("status", ["cod_pending", "accepted", "preparing", "out_for_delivery"]);
   return count ?? 0;
 }
+
+/** ออเดอร์ออนไลน์ที่รอร้านกดรับ (จ่ายแล้ว / เก็บปลายทาง) — query เบาสำหรับ POS ถามทุก 15 วิ */
+export async function listAwaitingOnlineOrders(storeId: string): Promise<{ id: string; orderCode: string }[]> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db
+    .from("online_orders")
+    .select("id, order_code")
+    .eq("store_id", storeId)
+    .in("status", ["paid", "cod_pending"])
+    .order("created_at", { ascending: true })
+    .limit(20);
+  return ((data ?? []) as { id: string; order_code: string }[]).map((r) => ({ id: r.id, orderCode: r.order_code }));
+}

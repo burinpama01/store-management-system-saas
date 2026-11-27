@@ -30,6 +30,7 @@ import {
   expireStaleOnlineOrders,
   getAttendanceOrigin,
   getOnlineOrderSettings,
+  listAwaitingOnlineOrders,
   listRiderCandidates,
   type RiderCandidate,
   getOnlineOrderForStore,
@@ -462,4 +463,18 @@ export async function checkCodQrAction(id: string, gatewayPaymentId: string): Pr
   const res = await settleCodBeamIfPaid(g as unknown as TransitionActor, order, gatewayPaymentId);
   if (res.done) revalidatePath("/website/orders");
   return res;
+}
+
+/**
+ * POS: ออเดอร์ออนไลน์ที่รอรับ (ถามทุก 15 วิ) — แคชเชียร์ไม่มีสิทธิ์อ่านตารางแจ้งเตือน (manager+)
+ * จึงใช้ทางนี้แทน realtime · guard เบา (สิทธิ์จัดการออเดอร์) ไม่อ่าน billing ทุกรอบ
+ */
+export async function pendingOnlineOrdersAction(): Promise<{ orders: { id: string; orderCode: string }[]; error: string | null }> {
+  try {
+    const { ctx, resolved } = await getResolvedCurrentPermissions();
+    if (!resolved.can("orders.manage_qr")) return { orders: [], error: "ไม่มีสิทธิ์จัดการออเดอร์ออนไลน์" };
+    return { orders: await listAwaitingOnlineOrders(ctx.storeId), error: null };
+  } catch (e) {
+    return { orders: [], error: e instanceof Error ? e.message : "โหลดไม่สำเร็จ" };
+  }
 }

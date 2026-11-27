@@ -84,7 +84,8 @@ import type { MemberPass, PassSaleProduct } from "@/modules/prepaid-passes/types
 import { cartHasPassItems, formatPassExpiry, isPassCartItem, passLineExtraPrice } from "@/modules/prepaid-passes/rules";
 import type { QrOrderView } from "@/modules/qr-ordering/types";
 import { TABLE_BILL_LABEL, tableBillLabel } from "@/modules/pos/table-ticket";
-import { OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
+import { OnlineOrderAlertBanner, OnlineOrderTicketDialog, OnlineOrderTicketList, useOnlineOrderTickets } from "./OnlineOrderTickets";
+import { useRepeatingAlert } from "@/shared/notifications/alert-sound";
 import type { Printer, ReceiptSettings } from "@/modules/stores/types";
 import { printReceiptWithFallback, type ReceiptPrintResult } from "@/modules/printing/receipt-printer";
 import {
@@ -222,6 +223,9 @@ interface Props {
   /** ร้านเปิดสั่งออนไลน์ + ผู้ใช้จัดการออเดอร์ออนไลน์ได้ → แถบตั๋วมีหมวด "ออนไลน์" (R1) */
   onlineOrdersEnabled?: boolean;
 }
+
+/** แตะดูออเดอร์ออนไลน์แล้วไม่กดรับ — เตือนใหม่หลังจากนี้ */
+const ONLINE_ACK_SNOOZE_MS = 60_000;
 
 const POS_TICKET_STORAGE_PREFIX = "storeos.pos.tickets";
 
@@ -4069,7 +4073,30 @@ export function PosTerminal({
     setLastOnlineParam(onlineParam);
     if (onlineOrdersEnabled && onlineParam) setOnlineFocusId(onlineParam);
   }
-  const { orders: onlineOrders, refresh: refreshOnlineOrders } = useOnlineOrderTickets(onlineOrdersEnabled);
+  const {
+    orders: onlineOrders,
+    refresh: refreshOnlineOrders,
+    awaiting: onlineAwaiting,
+    awaitingAt: onlineAwaitingAt,
+  } = useOnlineOrderTickets(onlineOrdersEnabled);
+  // ออเดอร์ออนไลน์รอรับที่ยังไม่มีใครแตะดู → แถบเตือน + เสียงซ้ำ (แคชเชียร์ไม่มีสิทธิ์เห็นแจ้งเตือนกลาง)
+  // แตะดูแล้วปิดโดยไม่กดรับ → เงียบ 60 วิ แล้วเตือนใหม่ (กันร้านเงียบเพราะแค่เปิดดู)
+  const [ackOnlineAt, setAckOnlineAt] = useState<Record<string, number>>({});
+  const unackOnline = onlineAwaiting.filter((o) => {
+    const at = ackOnlineAt[o.id];
+    return at === undefined || onlineAwaitingAt - at > ONLINE_ACK_SNOOZE_MS;
+  });
+  useRepeatingAlert(onlineOrdersEnabled && unackOnline.length > 0, "order", { announcement: "มีออเดอร์ออนไลน์ใหม่" });
+  const openOnlineOrder = (id: string) => {
+    // เก็บเฉพาะใบที่ยังรอรับ (ใบที่รับไปแล้วตัดทิ้ง ไม่สะสมทั้งวัน)
+    setAckOnlineAt((prev) => {
+      const next: Record<string, number> = {};
+      for (const o of onlineAwaiting) if (prev[o.id] !== undefined) next[o.id] = prev[o.id];
+      next[id] = Date.now();
+      return next;
+    });
+    setOnlineFocusId(id);
+  };
   const focusedOnlineOrder = onlineFocusId ? (onlineOrders.find((o) => o.id === onlineFocusId) ?? null) : null;
   /** เมนูโต๊ะ — เดิมเป็นสองปุ่มบนแถบหัว (เปิดโต๊ะ / เช็คบิลโต๊ะ) เบียดที่ปุ่มอื่น */
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
@@ -6302,7 +6329,7 @@ export function PosTerminal({
         {/* อยู่นอก TicketPanel: ตั๋วที่บันทึกล็อกทั้งแผง ~2 วิ ตอนซิงค์ — ตั๋วออนไลน์ไม่เกี่ยว ต้องกดได้ทันที */}
         {onlineOrdersEnabled && onlineOrders.length > 0 && (
           <div className="mb-4">
-            <OnlineOrderTicketList orders={onlineOrders} onOpen={(id) => setOnlineFocusId(id)} />
+            <OnlineOrderTicketList orders={onlineOrders} onOpen={openOnlineOrder} />
           </div>
         )}
         <TicketPanel
@@ -6330,6 +6357,7 @@ export function PosTerminal({
         />
       </PosUtilitySheet>
 
+      {onlineOrdersEnabled && <OnlineOrderAlertBanner orders={unackOnline} onOpen={openOnlineOrder} />}
       {focusedOnlineOrder && (
         <OnlineOrderTicketDialog
           key={focusedOnlineOrder.id}

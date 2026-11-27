@@ -23,7 +23,7 @@ export async function notifyOnlineOrderPaidOnce(orderOrId: OnlineOrder | string)
     level: "info",
     source: "online-orders",
     action: "onlineOrderPaid",
-    message: `คำสั่งซื้อออนไลน์ ${order.orderCode} จ่ายแล้ว — แจ้งร้าน`,
+    message: `คำสั่งซื้อออนไลน์ ${order.orderCode} ${order.paymentMethod === "cod" ? "เก็บเงินปลายทาง" : "จ่ายแล้ว"} — แจ้งร้าน`,
     organizationId: order.organizationId,
     storeId: order.storeId,
     context: { onlineOrderId: order.id, total: order.total },
