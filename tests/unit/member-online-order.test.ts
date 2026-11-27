@@ -7,7 +7,7 @@ describe("สั่งออนไลน์จากหน้าสมาชิ�
   it("หน้าอยู่ใต้ /member/<slug>/order (cookie สมาชิก path นี้) + ยังไม่ล็อกอินกลับหน้าสมาชิก", () => {
     const page = read("src/app/member/[storeSlug]/order/page.tsx");
     expect(page).toContain("const member = await getMemberSessionByStoreId(site.storeId);");
-    expect(page).toContain("if (!member) redirect(`/member/${encodeURIComponent(storeSlug)}`);");
+    expect(page).toContain("if (!member) redirect(memberHref);");
     expect(page).toContain("member={{ name: member.name, phone: member.phone ?? \"\"");
   });
 
@@ -26,7 +26,7 @@ describe("สั่งออนไลน์จากหน้าสมาชิ�
   });
 
   it("หน้าสมาชิกมีปุ่ม สั่งออนไลน์ เมื่อร้านเปิดสั่งออนไลน์และล็อกอินแล้ว", () => {
-    expect(read("src/app/member/[storeSlug]/page.tsx")).toContain("if (ordering?.ok) onlineOrderHref = `/member/${encodeURIComponent(storeSlug)}/order`;");
+    expect(read("src/app/member/[storeSlug]/page.tsx")).toContain('if (ordering?.ok) onlineOrderHref = `/member/${encodeURIComponent(storeSlug)}/order${portalCode ? `?code=${encodeURIComponent(portalCode)}` : ""}`;');
     expect(read("src/app/member/[storeSlug]/MemberPortal.tsx")).toContain('{ key: "order", icon: "🛵", label: "สั่งออนไลน์"');
   });
   it("ข้าม OTP ได้เฉพาะในเงื่อนไข memberVerified — verifyCodOtp ยังถูกเรียกเมื่อไม่มีสมาชิก/เบอร์ไม่ตรง", () => {

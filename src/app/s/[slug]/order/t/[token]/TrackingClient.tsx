@@ -22,7 +22,7 @@ const STEP_LABEL: Record<string, string> = {
 };
 const DONE = new Set(["completed", "expired", "refund_pending", "refunded", "delivery_failed"]);
 
-export function TrackingClient({ slug, token }: { slug: string; token: string }) {
+export function TrackingClient({ slug, token, backHref = null }: { slug: string; token: string; backHref?: string | null }) {
   const [view, setView] = useState<TrackingView | null>(null);
   const [qr, setQr] = useState<{ payload: string | null; image: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -186,7 +186,7 @@ export function TrackingClient({ slug, token }: { slug: string; token: string })
         <div className="mt-1 flex justify-between border-t pt-2 font-bold"><span>รวม</span><span>{baht(view.total)}</span></div>
       </section>
       <p className="text-center text-xs text-stone-500">เก็บลิงก์หน้านี้ไว้เพื่อติดตามสถานะ</p>
-      <p className="text-center"><Link href={`/s/${slug}`} className="text-sm text-orange-700">กลับหน้าร้าน</Link></p>
+      <p className="text-center"><Link href={backHref ?? `/s/${slug}`} className="text-sm text-orange-700">{backHref ? "กลับไปประวัติการสั่ง" : "กลับหน้าร้าน"}</Link></p>
       {confirmDialog}
     </main>
   );
