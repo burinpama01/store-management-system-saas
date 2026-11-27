@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import type { OnlineMenuProduct } from "@/modules/online-orders/menu";
+import { normalizeThaiPhone } from "@/modules/online-orders/core";
 import { quoteOnlineOrderAction, startOnlineOrderAction, type QuoteResult, requestCodOtpAction } from "./actions";
 
 interface CartItem {
@@ -101,7 +102,7 @@ export function OrderApp(props: {
   const codAllowed = Boolean(props.cod) && fulfillment === "delivery";
   const useCod = codAllowed && payMethod === "cod";
   // ใช้เบอร์สมาชิกที่ยืนยันแล้ว → ไม่ต้องขอ OTP
-  const memberPhoneVerified = Boolean(props.member?.phone) && phone.replace(/[\s-]/g, "") === (props.member?.phone ?? "").replace(/[\s-]/g, "");
+  const memberPhoneVerified = Boolean(props.member?.phone) && normalizeThaiPhone(phone) === normalizeThaiPhone(props.member?.phone ?? "");
   const needOtp = useCod && Boolean(props.cod?.requireOtp) && !memberPhoneVerified;
 
   const sendOtp = async () => {
@@ -290,6 +291,7 @@ export function OrderApp(props: {
             <h2 className="font-semibold">ผู้สั่ง</h2>
             <input className={inputCls} style={inputStyle} maxLength={80} placeholder="ชื่อ" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
             <input className={inputCls} style={inputStyle} inputMode="tel" maxLength={12} placeholder="เบอร์โทร" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
+            {props.member && <p className="text-xs text-gray-500">กรอกจากข้อมูลสมาชิก — ถ้าเปลี่ยนเป็นเบอร์อื่นแล้วเลือกเก็บปลายทาง ต้องยืนยัน OTP เบอร์นั้น</p>}
             <textarea className={inputCls} style={inputStyle} rows={2} maxLength={300} placeholder="หมายเหตุถึงร้าน" value={note} onChange={(e) => setNote(e.target.value)} />
           </section>
 

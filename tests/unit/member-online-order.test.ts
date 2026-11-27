@@ -29,4 +29,26 @@ describe("สั่งออนไลน์จากหน้าสมาชิ�
     expect(read("src/app/member/[storeSlug]/page.tsx")).toContain("if (ordering?.ok) onlineOrderHref = `/member/${encodeURIComponent(storeSlug)}/order`;");
     expect(read("src/app/member/[storeSlug]/MemberPortal.tsx")).toContain('{ key: "order", icon: "🛵", label: "สั่งออนไลน์"');
   });
+  it("ข้าม OTP ได้เฉพาะในเงื่อนไข memberVerified — verifyCodOtp ยังถูกเรียกเมื่อไม่มีสมาชิก/เบอร์ไม่ตรง", () => {
+    const actions = read("src/app/s/[slug]/order/actions.ts");
+    const verified = actions.indexOf("const memberVerified = Boolean(member?.phone && normalizeThaiPhone(member.phone) === input.customerPhone);");
+    const guard = actions.indexOf("if (!memberVerified) {", verified);
+    const otp = actions.indexOf("await verifyCodOtp(", guard);
+    expect(verified).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(verified);
+    expect(otp).toBeGreaterThan(guard);
+    // ไม่มีเส้นทางอื่นที่ข้าม verifyCodOtp
+    expect(actions.match(/await verifyCodOtp\(/g)?.length).toBe(1);
+  });
+
+  it("cookie สมาชิกผูก path /member/<slug> — server action จาก /s/<slug>/order ไม่ได้ cookie จึงยังต้อง OTP", () => {
+    const repo = read("src/modules/customers/member-repository.ts");
+    expect(repo).toMatch(/path: `\/member\/\$\{/);
+    expect(repo).toContain("httpOnly: true");
+  });
+
+  it("หน้าสั่งเทียบเบอร์สมาชิกด้วย normalizeThaiPhone แบบเดียวกับ server (+66 / 0)", () => {
+    const app = read("src/app/s/[slug]/order/OrderApp.tsx");
+    expect(app).toContain('normalizeThaiPhone(phone) === normalizeThaiPhone(props.member?.phone ?? "")');
+  });
 });
