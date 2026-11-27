@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
   CUSTOMER_DISPLAY_PAID_FLASH_MS,
@@ -12,11 +12,23 @@ import {
   type CustomerDisplaySnapshot,
 } from "@/modules/grocery-pos/customer-display";
 import {
+  CUSTOMER_DISPLAY_IDLE_AD_MS,
+  CUSTOMER_DISPLAY_REFRESH_MS,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
+  canEnterCustomerDisplayIdleAd,
+  customerDisplayActivityKey,
+  customerDisplaySettingsSignature,
+  customerDisplaySlideDwellMs,
+  resolveCustomerDisplayAdSlots,
+  resolveCustomerDisplayFullscreenSlides,
   type CustomerDisplayAdSlide,
+  type CustomerDisplayAdSlotView,
   type CustomerDisplaySettings,
 } from "@/modules/settings/customer-display";
 import { QrCode } from "@/shared/components/ui/QrCode";
+import { useWakeLock } from "@/shared/hooks/useWakeLock";
+
+const CUSTOMER_DISPLAY_SETTINGS_ENDPOINT = "/api/pos/customer-display/settings";
 
 function money(value: number) {
   return new Intl.NumberFormat("th-TH", {
@@ -33,35 +45,38 @@ function points(value: number) {
   }).format(value);
 }
 
-interface AdSlotView {
-  key: string;
-  label: string;
-  slides: CustomerDisplayAdSlide[];
-}
+/**
+ * ช่องโฆษณา 1 ช่อง — จัดการรอบสไลด์ของตัวเอง
+ * รูปสลับตามวินาทีที่ตั้ง · วิดีโอเล่นจนจบแล้วค่อยสลับ (รองรับวิดีโอยาวหลายนาที)
+ * ช่องที่มีสไลด์เดียวไม่สลับ วิดีโอเล่นวนไปเรื่อย ๆ
+ */
+function CustomerDisplayAdRotator({
+  slot,
+  intervalSeconds,
+  onMediaError,
+}: {
+  slot: CustomerDisplayAdSlotView;
+  intervalSeconds: number;
+  onMediaError: (slide: CustomerDisplayAdSlide) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  const count = slot.slides.length;
+  const position = count > 0 ? index % count : 0;
+  const slide = count > 0 ? slot.slides[position] : undefined;
+  const rotates = count > 1;
 
-function resolveAdSlots(settings: CustomerDisplaySettings): AdSlotView[] {
-  if (!settings.adEnabled) return [];
-  const slides = [
-    ...(settings.topSlotEnabled ? settings.topSlides : []),
-    ...(settings.bottomSlotEnabled ? settings.bottomSlides : []),
-  ];
-  if (!settings.topSlotEnabled && !settings.bottomSlotEnabled) return [];
-  if (slides.length === 0) return [];
-  if (settings.adLayout === "split") {
-    return [
-      settings.topSlotEnabled ? { key: "top", label: "ช่องบน", slides: settings.topSlides } : null,
-      settings.bottomSlotEnabled ? { key: "bottom", label: "ช่องล่าง", slides: settings.bottomSlides } : null,
-    ].filter((slot): slot is AdSlotView => slot !== null && slot.slides.length > 0);
-  }
-  return [{ key: "single", label: "โปรโมชัน", slides }];
-}
+  const advance = useCallback(() => {
+    setVideoDurationMs(null);
+    setIndex((current) => (current + 1) % Math.max(1, count));
+  }, [count]);
 
-function currentSlide(slot: AdSlotView, indexes: Record<string, number>) {
-  if (slot.slides.length === 0) return undefined;
-  return slot.slides[indexes[slot.key] % slot.slides.length] ?? slot.slides[0];
-}
+  useEffect(() => {
+    if (!rotates || !slide) return;
+    const timer = window.setTimeout(advance, customerDisplaySlideDwellMs(slide, intervalSeconds, videoDurationMs));
+    return () => window.clearTimeout(timer);
+  }, [rotates, slide, intervalSeconds, videoDurationMs, advance]);
 
-function CustomerDisplayAdSlot({ slide, slotLabel }: { slide?: CustomerDisplayAdSlide; slotLabel: string }) {
   if (!slide) {
     return (
       <div className="customer-display-ad-slot">
@@ -74,22 +89,34 @@ function CustomerDisplayAdSlot({ slide, slotLabel }: { slide?: CustomerDisplayAd
     );
   }
 
+  // key รวมลำดับ — สไลด์ถัดไปเป็นไฟล์เดียวกันก็ยังเริ่มเล่นใหม่
+  const mediaKey = `${position}:${slide.id}:${slide.url}`;
   return (
     <div className="customer-display-ad-slot">
       {slide.mediaType === "video" ? (
         <video
+          key={mediaKey}
           className={`customer-display-ad-media customer-display-ad-media--${slide.fit}`}
           src={slide.url}
           autoPlay
           muted
-          loop
+          loop={!rotates}
           playsInline
+          preload="auto"
+          onLoadedMetadata={(event) => {
+            const seconds = event.currentTarget.duration;
+            if (Number.isFinite(seconds) && seconds > 0) setVideoDurationMs(seconds * 1000);
+          }}
+          onEnded={rotates ? advance : undefined}
+          onError={() => onMediaError(slide)}
         />
       ) : (
         <img
+          key={mediaKey}
           className={`customer-display-ad-media customer-display-ad-media--${slide.fit}`}
           src={slide.url}
-          alt={slide.title || slotLabel}
+          alt={slide.title || slot.label}
+          onError={() => onMediaError(slide)}
         />
       )}
       {(slide.title || slide.description) ? (
@@ -102,15 +129,106 @@ function CustomerDisplayAdSlot({ slide, slotLabel }: { slide?: CustomerDisplayAd
   );
 }
 
-export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDisplaySettings | null }) {
+export function CustomerDisplayScreen({
+  adSettings,
+  idleAdMs = CUSTOMER_DISPLAY_IDLE_AD_MS,
+}: {
+  adSettings?: CustomerDisplaySettings | null;
+  /** เวลาว่างก่อนสลับเป็นโฆษณาเต็มจอ (ค่าเริ่มต้น 600 วิ) */
+  idleAdMs?: number;
+}) {
   const [snapshot, setSnapshot] = useState<CustomerDisplaySnapshot | null>(null);
-  const [slideIndexes, setSlideIndexes] = useState<Record<string, number>>({});
   const [paidFlash, setPaidFlash] = useState<CustomerDisplayPaidFlash | null>(null);
   const pendingPaymentRef = useRef<CustomerDisplayPayment | null>(null);
   const [pendingPayment, setPendingPayment] = useState<CustomerDisplayPayment | null>(null);
-  const effectiveAdSettings = adSettings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
-  const adSlots = useMemo(() => resolveAdSlots(effectiveAdSettings), [effectiveAdSettings]);
+  // ค่าโฆษณาเริ่มจาก server แล้วดึงใหม่เป็นระยะ — ร้านแก้โฆษณาแล้วจอเปลี่ยนเอง
+  const [liveAdSettings, setLiveAdSettings] = useState<CustomerDisplaySettings | null>(adSettings ?? null);
+  const adSignatureRef = useRef(customerDisplaySettingsSignature(adSettings));
+  // สื่อที่โหลดไม่ขึ้น — ซ่อนสไลด์นั้นแทนการโชว์ภาพแตก แล้วลองใหม่ตอนดึงค่ารอบถัดไป
+  const [failedMediaUrls, setFailedMediaUrls] = useState<ReadonlySet<string>>(() => new Set());
+  const reportedMediaUrlsRef = useRef<Set<string>>(new Set());
+  const effectiveAdSettings = liveAdSettings ?? DEFAULT_CUSTOMER_DISPLAY_SETTINGS;
+  const adSignature = useMemo(() => customerDisplaySettingsSignature(liveAdSettings), [liveAdSettings]);
+  const adSlots = useMemo(
+    () => resolveCustomerDisplayAdSlots(effectiveAdSettings, failedMediaUrls),
+    [effectiveAdSettings, failedMediaUrls],
+  );
   const showAdPanel = adSlots.length > 0;
+  const fullscreenSlot = useMemo(
+    () => resolveCustomerDisplayFullscreenSlides(effectiveAdSettings, failedMediaUrls),
+    [effectiveAdSettings, failedMediaUrls],
+  );
+  // ไม่มีการทำรายการ 600 วิ → โฆษณาเต็มจอ; POS ขยับ/แตะจอ → กลับหน้ารายการทันที
+  const [idleAdActive, setIdleAdActive] = useState(false);
+  const [activityTick, setActivityTick] = useState(0);
+  const activityKeyRef = useRef(customerDisplayActivityKey(null));
+  const markActivity = useCallback(() => {
+    setIdleAdActive(false);
+    setActivityTick((tick) => tick + 1);
+  }, []);
+  // จอลูกค้าเปิดค้างทั้งวัน — กันเครื่องพักจอ (เครื่องที่ไม่รองรับจะข้ามเอง)
+  useWakeLock(true);
+
+  const handleMediaError = useCallback((slide: CustomerDisplayAdSlide) => {
+    setFailedMediaUrls((current) => {
+      if (current.has(slide.url)) return current;
+      const next = new Set(current);
+      next.add(slide.url);
+      return next;
+    });
+    // แจ้งผู้ดูแลครั้งเดียวต่อไฟล์ต่อการเปิดจอ
+    if (reportedMediaUrlsRef.current.has(slide.url)) return;
+    reportedMediaUrlsRef.current.add(slide.url);
+    void fetch(CUSTOMER_DISPLAY_SETTINGS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: slide.url, mediaType: slide.mediaType, slot: slide.slot }),
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let inFlight = false;
+    const refresh = async (retryFailedMedia: boolean) => {
+      if (disposed || inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const res = await fetch(CUSTOMER_DISPLAY_SETTINGS_ENDPOINT, { cache: "no-store" });
+        // 401/403/500 หรือ session หมด (middleware redirect ไป /login) = เก็บโฆษณาเดิมไว้ ไม่ทำให้จอว่าง
+        if (!res.ok || res.redirected || disposed) return;
+        const body = (await res.json()) as { settings?: CustomerDisplaySettings | null };
+        if (disposed || body.settings === undefined) return;
+        const signature = customerDisplaySettingsSignature(body.settings);
+        const changed = signature !== adSignatureRef.current;
+        // ลองโหลดสื่อที่เคยเสียอีกครั้งเมื่อร้านแก้โฆษณา หรือเน็ตเพิ่งกลับมา
+        // (ไม่ล้างทุกรอบ — ไม่งั้นไฟล์ที่เสียถาวรจะโผล่ภาพแตกทุก 5 นาที)
+        if (changed || retryFailedMedia) setFailedMediaUrls((current) => (current.size === 0 ? current : new Set()));
+        // โฆษณาชุดใหม่ = แจ้งไฟล์เสียได้อีกครั้ง (ถ้ายังเสียอยู่ ผู้ดูแลต้องเห็น)
+        if (changed) reportedMediaUrlsRef.current = new Set();
+        if (!changed) return;
+        adSignatureRef.current = signature;
+        setLiveAdSettings(body.settings);
+      } catch {
+        // ออฟไลน์ — แสดงโฆษณาเดิมต่อ
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(false), CUSTOMER_DISPLAY_REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh(false);
+    };
+    const onOnline = () => void refresh(true);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
 
   useEffect(() => {
     const channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
@@ -127,9 +245,14 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
         setPaidFlash(null);
       }
       setSnapshot(next);
+      const activityKey = customerDisplayActivityKey(next);
+      if (activityKey !== activityKeyRef.current) {
+        activityKeyRef.current = activityKey;
+        markActivity();
+      }
     };
     return () => channel.close();
-  }, []);
+  }, [markActivity]);
 
   // หน้า "ชำระเงินสำเร็จ" ปิดเองหลัง 5 วิ
   useEffect(() => {
@@ -138,23 +261,26 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
     return () => window.clearTimeout(timer);
   }, [paidFlash]);
 
-  useEffect(() => {
-    if (adSlots.every((slot) => slot.slides.length <= 1)) return;
-    const timer = window.setInterval(() => {
-      setSlideIndexes((current) => {
-        const next = { ...current };
-        for (const slot of adSlots) {
-          if (slot.slides.length > 1) next[slot.key] = ((current[slot.key] ?? 0) + 1) % slot.slides.length;
-        }
-        return next;
-      });
-    }, effectiveAdSettings.slideIntervalSeconds * 1000);
-    return () => window.clearInterval(timer);
-  }, [adSlots, effectiveAdSettings.slideIntervalSeconds]);
 
   const items = snapshot?.items ?? [];
   // QR ยังโชว์ต่อแม้ POS ส่ง checkout ซ้ำโดยไม่มี QR (ยอดเท่าเดิม)
   const payment = snapshot?.status === "checkout" ? (snapshot.payment ?? pendingPayment ?? undefined) : undefined;
+  const idleAdEligible = Boolean(fullscreenSlot) && !payment && !paidFlash && canEnterCustomerDisplayIdleAd(snapshot);
+  const showIdleAd = idleAdActive && idleAdEligible;
+
+  useEffect(() => {
+    if (!idleAdEligible) return;
+    const timer = window.setTimeout(() => setIdleAdActive(true), idleAdMs);
+    return () => window.clearTimeout(timer);
+  }, [idleAdEligible, activityTick, idleAdMs]);
+
+  // ลูกค้า/พนักงานแตะจอระหว่างโฆษณาเต็มจอ = กลับหน้ารายการและเริ่มนับใหม่
+  useEffect(() => {
+    if (!showIdleAd) return;
+    const onPointer = () => markActivity();
+    window.addEventListener("pointerdown", onPointer);
+    return () => window.removeEventListener("pointerdown", onPointer);
+  }, [showIdleAd, markActivity]);
   const customer = snapshot?.customer ?? (snapshot?.customerName ? { name: snapshot.customerName } : undefined);
   const hasCustomerPoints = customer?.pointsEarned !== undefined || customer?.pointsBalance !== undefined;
   const statusText = useMemo(() => {
@@ -228,11 +354,28 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
             aria-label="โฆษณา"
           >
             {adSlots.map((slot) => (
-              <CustomerDisplayAdSlot key={slot.key} slide={currentSlide(slot, slideIndexes)} slotLabel={slot.label} />
+              <CustomerDisplayAdRotator
+                // โฆษณาชุดใหม่ = เริ่มรอบสไลด์ใหม่จากสไลด์แรก
+                key={`${slot.key}:${adSignature}`}
+                slot={slot}
+                intervalSeconds={effectiveAdSettings.slideIntervalSeconds}
+                onMediaError={handleMediaError}
+              />
             ))}
           </aside>
         ) : null}
       </section>
+
+      {showIdleAd && fullscreenSlot ? (
+        <section className="customer-display-idle-ad" aria-label="โฆษณาเต็มจอ">
+          <CustomerDisplayAdRotator
+            key={`idle:${adSignature}`}
+            slot={fullscreenSlot}
+            intervalSeconds={effectiveAdSettings.slideIntervalSeconds}
+            onMediaError={handleMediaError}
+          />
+        </section>
+      ) : null}
 
       {payment ? (
         <section
@@ -440,7 +583,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
         .customer-display-ad-split {
           grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
         }
-        .customer-display-ad-slot {
+        .customer-display :global(.customer-display-ad-slot) {
           position: relative;
           display: grid;
           align-content: end;
@@ -451,7 +594,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
             linear-gradient(155deg, color-mix(in srgb, var(--color-brand) 72%, #0f172a) 0%, #1f2937 58%, #111827 100%);
           padding: 24px;
         }
-        .customer-display-ad-slot::before {
+        .customer-display :global(.customer-display-ad-slot::before) {
           content: "";
           position: absolute;
           inset: 18px 18px auto auto;
@@ -460,46 +603,66 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           border: 1px solid color-mix(in srgb, #ffffff 35%, transparent);
           border-radius: 50%;
         }
-        .customer-display-ad-media {
+        .customer-display :global(.customer-display-ad-media) {
           position: absolute;
           inset: 0;
           width: 100%;
           height: 100%;
           background: #111827;
         }
-        .customer-display-ad-media--cover {
+        .customer-display :global(.customer-display-ad-media--cover) {
           object-fit: cover;
         }
-        .customer-display-ad-media--contain {
+        .customer-display :global(.customer-display-ad-media--contain) {
           object-fit: contain;
         }
-        .customer-display-ad-content {
+        .customer-display :global(.customer-display-ad-content) {
           position: relative;
           z-index: 1;
           display: grid;
           gap: 12px;
         }
-        .customer-display-ad-content--overlay {
+        .customer-display :global(.customer-display-ad-content--overlay) {
           border-radius: var(--radius-md);
           background: color-mix(in srgb, #000000 42%, transparent);
           padding: 14px;
           backdrop-filter: blur(4px);
         }
-        .customer-display-ad-content span {
+        .customer-display :global(.customer-display-ad-content span) {
           color: color-mix(in srgb, #ffffff 78%, var(--color-brand));
           font-size: 18px;
           font-weight: 800;
         }
-        .customer-display-ad-content strong {
+        .customer-display :global(.customer-display-ad-content strong) {
           max-width: 12ch;
           font-size: 44px;
           line-height: 1.05;
         }
-        .customer-display-ad-content p {
+        .customer-display :global(.customer-display-ad-content p) {
           max-width: 28ch;
           margin: 0;
           color: color-mix(in srgb, #ffffff 82%, var(--color-brand));
           font-size: 20px;
+        }
+        .customer-display-idle-ad {
+          position: fixed;
+          inset: 0;
+          z-index: 15;
+          display: grid;
+          background: #000000;
+          animation: customer-display-idle-in 400ms ease-out;
+        }
+        .customer-display-idle-ad :global(.customer-display-ad-slot) {
+          border-radius: 0;
+          padding: 40px;
+        }
+        @keyframes customer-display-idle-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
         }
         .customer-display-qr-layer {
           position: fixed;
@@ -617,7 +780,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           .customer-display-ad-panel {
             min-height: 260px;
           }
-          .customer-display-ad-content strong {
+          .customer-display :global(.customer-display-ad-content strong) {
             max-width: 18ch;
             font-size: 36px;
           }
@@ -653,7 +816,7 @@ export function CustomerDisplayScreen({ adSettings }: { adSettings?: CustomerDis
           .customer-display-ad-panel {
             padding: 10px;
           }
-          .customer-display-ad-slot {
+          .customer-display :global(.customer-display-ad-slot) {
             padding: 18px;
           }
           .customer-display-qr-dialog {
