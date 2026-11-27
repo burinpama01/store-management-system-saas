@@ -94,6 +94,7 @@ describe("ประวัติสั่งซื้อสมาชิก", () =
     expect(page).toContain("if (!member) redirect(memberHref);");
     expect(page).toContain("/order?reorder=");
     expect(read("src/app/member/[storeSlug]/MemberPortal.tsx")).toContain('{ key: "history", icon: "🧾", label: "ประวัติสั่ง"');
+    expect(read("src/app/member/[storeSlug]/page.tsx")).toContain("orderHistoryHref={onlineOrderHref ? `/member/${encodeURIComponent(storeSlug)}/orders` : null}");
   });
 
   it("หน้าติดตาม: คำขอค้าง (iOS ล็อกจอ) ไม่ล็อกการรีเฟรชถาวร + กลับมาที่หน้าแล้วถามสถานะทันที", () => {

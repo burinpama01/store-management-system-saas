@@ -46,9 +46,21 @@ export default async function MemberOnlineOrderPage({
   const menu = await loadOnlineMenu(resolved.store.storeId);
   // สั่งอีกครั้ง: ออเดอร์ต้องเป็นของร้านนี้ + เบอร์ของสมาชิกที่ล็อกอิน (ตรวจฝั่ง server)
   let reorderResult: ReorderResult | null = null;
+  let reorderNotFound = false;
   const reorderId = typeof reorder === "string" ? reorder : null;
   if (reorderId && member.phone) {
-    const lines = await getMemberOrderLines(site.storeId, member.phone, reorderId).catch(() => null);
+    const lines = await getMemberOrderLines(site.storeId, member.phone, reorderId).catch((error) => {
+      void logSystemEvent({
+        level: "error",
+        source: "online-orders",
+        action: "memberReorder",
+        message: `สั่งอีกครั้ง: โหลดออเดอร์เดิมไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+        storeId: site.storeId,
+        context: { orderId: reorderId },
+      });
+      return null;
+    });
+    reorderNotFound = !lines;
     reorderResult = lines ? buildReorderCart(lines, menu) : { cart: [], skipped: 0 };
     void logSystemEvent({
       level: lines ? "info" : "warn",
@@ -66,7 +78,7 @@ export default async function MemberOnlineOrderPage({
       {...orderAppStoreProps(resolved.store)}
       menu={menu}
       initialCart={reorderResult?.cart}
-      reorderNotice={reorderResult ? (reorderResult.cart.length === 0 ? "สั่งอีกครั้งไม่ได้ — เมนูเดิมไม่มีขายแล้ว" : reorderResult.skipped > 0 ? `ใส่ตะกร้าจากออเดอร์เดิมแล้ว (${reorderResult.skipped} รายการไม่มีขายแล้ว — ข้ามไป)` : "ใส่ตะกร้าจากออเดอร์เดิมแล้ว — ราคาเป็นราคาปัจจุบัน") : null}
+      reorderNotice={reorderNotFound ? "ไม่พบออเดอร์เดิม — เลือกเมนูใหม่ได้เลย" : reorderResult ? (reorderResult.cart.length === 0 ? "สั่งอีกครั้งไม่ได้ — เมนูเดิมไม่มีขายแล้ว" : reorderResult.skipped > 0 ? `ใส่ตะกร้าจากออเดอร์เดิมแล้ว (${reorderResult.skipped} รายการไม่มีขายแล้ว — ข้ามไป)` : "ใส่ตะกร้าจากออเดอร์เดิมแล้ว — ราคาเป็นราคาปัจจุบัน") : null}
       member={{ name: member.name, phone: member.phone ?? "", backHref: `/member/${encodeURIComponent(storeSlug)}` }}
     />
   );

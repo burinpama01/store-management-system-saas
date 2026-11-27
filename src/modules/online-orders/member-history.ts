@@ -22,6 +22,7 @@ export interface MemberOrderSummary {
  * ผู้เรียกต้องได้ phone จาก session สมาชิกฝั่ง server (getMemberSessionByStoreId) ห้ามรับจาก client
  */
 export async function listMemberOnlineOrders(storeId: string, memberPhone: string, limit = 30): Promise<MemberOrderSummary[]> {
+  const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
   const phone = normalizeThaiPhone(memberPhone);
   if (!/^0[0-9]{8,9}$/.test(phone)) return [];
   const db: LooseClient = await createSupabaseServiceClient();
@@ -31,7 +32,7 @@ export async function listMemberOnlineOrders(storeId: string, memberPhone: strin
     .eq("store_id", storeId)
     .eq("customer_phone", phone)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(safeLimit);
   if (error) throw new Error(error.message);
   return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
     const items = (Array.isArray(r.items) ? r.items : []) as PricedLine[];
@@ -53,7 +54,7 @@ export async function listMemberOnlineOrders(storeId: string, memberPhone: strin
 
 /** รายการของออเดอร์เดิม (สำหรับสั่งอีกครั้ง) — ต้องเป็นร้านนี้และเบอร์ของสมาชิกคนนี้เท่านั้น */
 export async function getMemberOrderLines(storeId: string, memberPhone: string, orderId: string): Promise<PricedLine[] | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(orderId)) return null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) return null;
   const phone = normalizeThaiPhone(memberPhone);
   if (!/^0[0-9]{8,9}$/.test(phone)) return null;
   const db: LooseClient = await createSupabaseServiceClient();
