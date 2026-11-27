@@ -252,7 +252,7 @@ export function TaxDocumentsManager({ documents, canIssue, canVoid }: { document
       )}
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold text-[var(--ink)]">เอกสารที่ออกแล้ว</h2>
+        <h2 className="text-base font-semibold text-[var(--ink)]">เอกสารที่ออกแล้ว <span className="text-sm font-normal text-[var(--muted)]">(แสดง 150 รายการล่าสุด)</span></h2>
         {documents.length === 0 ? (
           <p className="rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--muted)]">ยังไม่มีเอกสาร</p>
         ) : (

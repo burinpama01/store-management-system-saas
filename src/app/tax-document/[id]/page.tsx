@@ -92,9 +92,9 @@ function DocumentSheet({ doc, refDoc, copyLabel }: { doc: SalesDocument; refDoc:
           <tbody>
             {isCredit ? (
               <>
-                <tr><td className="pr-4">มูลค่าตามใบกำกับภาษีเดิม</td><td className="text-right">{money(doc.originalTotal ?? 0)}</td></tr>
-                <tr><td className="pr-4">มูลค่าที่ถูกต้อง</td><td className="text-right">{money(doc.correctedTotal ?? 0)}</td></tr>
-                <tr><td className="pr-4">ผลต่าง (มูลค่าก่อนภาษี)</td><td className="text-right">{money(doc.vatBase)}</td></tr>
+                <tr><td className="pr-4">มูลค่าสินค้าตามใบกำกับภาษีเดิม (ก่อนภาษี)</td><td className="text-right">{money(doc.originalTotal ?? 0)}</td></tr>
+                <tr><td className="pr-4">มูลค่าสินค้าที่ถูกต้อง (ก่อนภาษี)</td><td className="text-right">{money(doc.correctedTotal ?? 0)}</td></tr>
+                <tr><td className="pr-4">ผลต่าง</td><td className="text-right">{money(doc.vatBase)}</td></tr>
                 <tr><td className="pr-4">ภาษีมูลค่าเพิ่ม {doc.vatRate}%</td><td className="text-right">{money(doc.vatAmount)}</td></tr>
                 <tr className="font-bold"><td className="pr-4">รวมลดหนี้ทั้งสิ้น</td><td className="text-right">{money(doc.totalAmount)}</td></tr>
               </>

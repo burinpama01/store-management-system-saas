@@ -134,6 +134,18 @@ describe("tax documents B1 migration", () => {
     expect(fn).toContain("round(v_total * v_profile.vat_rate / (100 + v_profile.vat_rate), 2)");
   });
 
+  it("credit note keeps the invoice's seller and states pre-VAT values (s.86/10)", () => {
+    const fn = fnBody("issue_full_credit_note");
+    expect(fn).toContain("v_src.seller_snapshot");
+    expect(fn).toContain("v_src.vat_base, 0, v_reason");
+  });
+
+  it("fails fast on locks and indexes the per-sale lookup", () => {
+    expect(sql).toContain("set lock_timeout = '5s'");
+    expect(sql).toContain("sales_documents_active_invoice_idx");
+    expect(fnBody("issue_tax_invoice_from_order")).toContain("document lines do not match gross amount");
+  });
+
   it("requires manager+ and a reason for credit notes and cancellations", () => {
     expect(fnBody("issue_full_credit_note")).toContain("'manager'");
     expect(fnBody("issue_full_credit_note")).toContain("credit note requires a reason");

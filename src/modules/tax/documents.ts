@@ -107,6 +107,7 @@ export function taxDocumentErrorMessage(raw: string | null | undefined): string 
     ["cancellation requires a reason", "กรุณาระบุเหตุผลการยกเลิก"],
     ["cancel the related credit note first", "ต้องยกเลิกใบลดหนี้ที่อ้างถึงใบนี้ก่อน"],
     ["document not found", "ไม่พบเอกสารนี้"],
+    ["do not match gross amount", "ยอดรายการในบิลไม่ตรงกับยอดรวม — ตรวจบิลก่อนออกใบกำกับ"],
     ["only owner/admin", "เปิด/ปิดได้เฉพาะเจ้าของหรือแอดมิน"],
   ];
   return map.find(([needle]) => m.includes(needle))?.[1] ?? "ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง";

@@ -9,7 +9,12 @@
 --   * เอกสารที่ออกแล้วแก้ไม่ได้: แก้ผิด = ยกเลิก (เลขยังอยู่) · คืนเงิน = ใบลดหนี้ (ม.86/10)
 --   * บิลที่มีใบกำกับภาษีผูกอยู่: ห้าม void/คืนเงิน/แก้ยอด/void รายการ จนกว่าจะออกใบลดหนี้หรือยกเลิกเอกสาร
 --   * B1 นี้รองรับเฉพาะราคารวม VAT (ร้านอาหาร) — ราคาแยก VAT ใช้กับเอกสาร B2B ในเฟส B2
+--
+-- ⚠ ตั้ง trigger บน orders/order_items (ตารางที่ทุกการขายเขียน) — ใช้ lock_timeout ให้ล้มเร็ว
+--   แทนการรอ lock นานจนคิว checkout ค้าง ถ้าล้มให้รันซ้ำช่วงร้านปิด
 -- ============================================================
+
+set lock_timeout = '5s';
 
 -- 1) สวิตช์ต่อสาขา
 alter table public.stores
@@ -120,6 +125,10 @@ create table if not exists public.sales_documents (
 );
 create index if not exists sales_documents_store_idx on public.sales_documents (store_id, created_at desc);
 create index if not exists sales_documents_order_idx on public.sales_documents (order_id) where order_id is not null;
+-- ใช้ใน trigger ทุกการขาย (order_has_active_tax_invoice) — partial ตรงเงื่อนไข ไม่ต้อง filter ต่อ
+create index if not exists sales_documents_active_invoice_idx
+  on public.sales_documents (order_id)
+  where order_id is not null and status = 'issued' and doc_type in ('tax_invoice', 'receipt_tax_invoice');
 create index if not exists sales_documents_ref_idx on public.sales_documents (ref_document_id) where ref_document_id is not null;
 -- บิลหนึ่งใบมีใบกำกับภาษีเต็มรูปที่ใช้งานอยู่ได้ใบเดียว
 create unique index if not exists sales_documents_one_active_invoice_per_order
@@ -146,6 +155,7 @@ create table if not exists public.sales_document_lines (
 create or replace function public.sales_documents_guard()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $$
 begin
   if tg_op = 'DELETE' then
@@ -169,6 +179,7 @@ create trigger sales_documents_immutable before update or delete on public.sales
 create or replace function public.sales_document_lines_guard()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $$
 begin
   raise exception 'sales document lines are immutable';
@@ -420,6 +431,11 @@ begin
     from public.order_items oi
    where oi.order_id = v_order.id and coalesce(oi.voided, false) = false;
 
+  -- ยอดรวมรายการบนเอกสารต้องตรงกับ "รวมเป็นเงิน" เสมอ
+  if (select coalesce(sum(amount), 0) from public.sales_document_lines where document_id = v_doc.id) <> v_doc.gross_amount then
+    raise exception 'document lines do not match gross amount';
+  end if;
+
   return v_doc;
 end;
 $$;
@@ -475,14 +491,12 @@ begin
     v_src.organization_id, v_src.store_id, 'credit_note', v_doc_no,
     (now() at time zone 'Asia/Bangkok')::date, v_src.order_id, v_src.order_number, v_src.order_paid_at,
     v_src.id, v_src.party_id,
-    -- ผู้ขายใช้ข้อมูลปัจจุบัน (ที่อยู่อาจย้าย) · ผู้ซื้อใช้ตามใบกำกับเดิม
-    jsonb_build_object(
-      'legalName', v_profile.legal_name, 'taxId', v_profile.tax_id,
-      'branchCode', v_profile.branch_code, 'address', v_profile.address
-    ),
+    -- ผู้ขาย/ผู้ซื้อใช้ตามใบกำกับเดิม ให้สองเอกสารอ้างถึงคู่สัญญาเดียวกัน
+    v_src.seller_snapshot,
     v_src.buyer_snapshot, v_src.prices_include_vat, v_src.vat_rate,
     v_src.total_amount, 0, v_src.total_amount, v_src.vat_base, v_src.vat_amount,
-    v_src.total_amount, 0, v_reason, auth.uid()
+    -- ม.86/10: มูลค่าสินค้าตามใบกำกับเดิม / มูลค่าที่ถูกต้อง เป็นยอด "ก่อนภาษี" — ลดเต็มจำนวน = 0
+    v_src.vat_base, 0, v_reason, auth.uid()
   ) returning * into v_doc;
 
   insert into public.sales_document_lines (document_id, line_no, description, quantity, unit_label, unit_price, amount)
