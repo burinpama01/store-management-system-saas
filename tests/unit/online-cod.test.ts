@@ -93,7 +93,7 @@ describe("R3 เก็บเงินปลายทาง — ฝั่งล�
 });
 
 describe("R3 เก็บเงินปลายทาง — ฝั่งร้าน", () => {
-  const actions = read("src/app/(dashboard)/website/orders/actions.ts");
+  const actions = read("src/app/(dashboard)/website/orders/actions.ts") + " " + read("src/modules/online-orders/transition-service.ts");
 
   it("รับออเดอร์ COD: บิลเปิดค้าง ไม่ผูก/ปิดด้วย Beam", () => {
     expect(actions).toContain('if (order.status === "paid" || order.status === "cod_pending")');
@@ -141,7 +141,7 @@ describe("R3a แก้ตามรีวิว", () => {
     expect(read("src/modules/notifications/smskub.ts")).toContain(`หมดอายุใน ${COD_OTP_TTL_MIN} นาที`);
   });
   it("ส่งไม่สำเร็จกดซ้ำได้: void ล้มแต่บิล voided แล้ว = ผ่าน", () => {
-    expect(read("src/app/(dashboard)/website/orders/actions.ts")).toContain('if (bill?.status !== "voided") {');
+    expect(read("src/modules/online-orders/transition-service.ts")).toContain('if (bill?.status !== "voided") {');
   });
   it("ประวัติไม่รับของนับจาก failed_at", () => {
     expect(read("src/modules/online-orders/repository.ts")).toContain('.gte("failed_at", since)');

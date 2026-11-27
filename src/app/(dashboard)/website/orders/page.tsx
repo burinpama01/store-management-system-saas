@@ -59,6 +59,7 @@ export default async function OnlineOrdersPage() {
         </div>
         <div className="flex gap-2 text-sm">
           <Link href="/website" className="btn-secondary">แก้เว็บไซต์ร้าน</Link>
+          {settings.deliveryEnabled && <Link href="/rider" className="btn-secondary">🛵 หน้าคนส่ง</Link>}
           {site?.slug && settings.enabled && (
             <a href={`/s/${site.slug}/order`} target="_blank" rel="noreferrer" className="btn-secondary">เปิดหน้าสั่งของลูกค้า</a>
           )}
