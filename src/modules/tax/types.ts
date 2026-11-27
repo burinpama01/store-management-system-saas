@@ -27,7 +27,7 @@ export const DOCUMENT_LABELS: Record<DocumentType, string> = {
   wht_certificate: "หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)",
 };
 
-/** ต้องตรงกับ public.document_default_prefix() ใน migration 20261127130000 */
+/** ต้องตรงกับ public.document_default_prefix() ใน migration 20261215120000 */
 export const DOCUMENT_PREFIX: Record<DocumentType, string> = {
   tax_invoice: "TIV",
   receipt_tax_invoice: "RTV",
