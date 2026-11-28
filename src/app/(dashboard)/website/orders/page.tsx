@@ -6,7 +6,8 @@ import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { canUseMemberPrivileges } from "@/modules/members/access";
 import { isOpsManagerRole } from "@/modules/operations/access";
-import { getOnlineOrderSettingsWithOrigin } from "@/modules/online-orders/repository";
+import { describeAvailability, evaluateOrderingAvailability, localDateOf } from "@/modules/online-orders/hours";
+import { getOnlineOrderSettingsWithOrigin, getOrderingSchedule } from "@/modules/online-orders/repository";
 import { listKitchenStations } from "@/modules/qr-ordering/kitchen-stations";
 import { getReceiptSettings } from "@/modules/settings/repository";
 import { listPrinters } from "@/modules/stores/repository";
@@ -14,6 +15,8 @@ import { getStoreWebsite } from "@/modules/store-website/repository";
 import { listOnlineOrdersAction } from "./actions";
 import { OnlineOrdersBoard } from "./OnlineOrdersBoard";
 import { OnlineOrderSettingsForm } from "./OnlineOrderSettingsForm";
+import { OrderingHoursForm } from "./OrderingHoursForm";
+import { OrderingStatusCard } from "./OrderingStatusCard";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +35,7 @@ export default async function OnlineOrdersPage() {
     );
   }
 
-  const [{ settings, originFromAttendance }, site, list, stations, receipt, printersRes, tierProgram] = await Promise.all([
+  const [{ settings, originFromAttendance }, site, list, stations, receipt, printersRes, tierProgram, schedule] = await Promise.all([
     getOnlineOrderSettingsWithOrigin(ctx.storeId),
     getStoreWebsite(ctx.storeId),
     listOnlineOrdersAction(),
@@ -41,7 +44,13 @@ export default async function OnlineOrdersPage() {
     listPrinters(ctx.storeId, ctx.organizationId),
     // R3: ระดับสมาชิก (ตั้งเพดานเก็บเงินปลายทางรายระดับ) — ไม่มีโปรแกรมระดับ = ไม่มีรายการ
     getTierProgram(ctx.organizationId).catch(() => null),
+    getOrderingSchedule(ctx.storeId),
   ]);
+  // สถานะรับออเดอร์ตามเวลาร้าน (นอกเวลา/วันหยุด/ปิดด่วน) — คิดฝั่ง server ทุกครั้งที่โหลดหน้า
+  const timeZone = ctx.storeTimezone || "Asia/Bangkok";
+  const now = new Date();
+  const availability = evaluateOrderingAvailability(schedule, now, timeZone);
+  const availabilityText = describeAvailability(availability, now, timeZone);
   const memberTiers = (tierProgram?.tiers ?? []).map((t) => ({ rank: t.rank, name: t.name }));
   const stationPrinters = (stations.data ?? [])
     .filter((s) => s.printerId)
@@ -65,6 +74,15 @@ export default async function OnlineOrdersPage() {
           )}
         </div>
       </div>
+      <OrderingStatusCard
+        switchEnabled={settings.enabled}
+        open={availability.open}
+        paused={!availability.open && availability.reason === "paused"}
+        title={availabilityText.title}
+        detail={availabilityText.detail}
+        hoursEnabled={schedule.hours.enabled}
+        canManageHours={canConfigure}
+      />
       {list.error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">โหลดออเดอร์ไม่สำเร็จ: {list.error}</p>}
       <OnlineOrdersBoard
         initialOrders={list.orders}
@@ -75,7 +93,10 @@ export default async function OnlineOrdersPage() {
         printers={printersRes.data ?? []}
       />
       {canConfigure ? (
-        <OnlineOrderSettingsForm initial={settings} hasWebsite={Boolean(site)} originFromAttendance={originFromAttendance} memberTiers={memberTiers} />
+        <>
+          <OrderingHoursForm initial={schedule.hours} today={localDateOf(now, timeZone)} />
+          <OnlineOrderSettingsForm initial={settings} hasWebsite={Boolean(site)} originFromAttendance={originFromAttendance} memberTiers={memberTiers} />
+        </>
       ) : (
         <p className="text-xs text-[var(--muted)]">ตั้งค่าสั่งออนไลน์ได้เฉพาะเจ้าของหรือแอดมิน</p>
       )}

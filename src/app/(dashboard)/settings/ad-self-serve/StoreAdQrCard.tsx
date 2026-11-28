@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { cheapestStoreAdPackage, type StoreAdPackage } from "@/modules/ad-self-serve/rules";
+import { adPosterFileName, dataUrlToBlob, renderAdPosterPng, saveOrShareImage } from "./ad-poster";
 
 // QR ลงโฆษณาของร้าน — สร้างรูปในเครื่อง (ไลบรารี qrcode เดิม) ไม่ส่งลิงก์ไปบริการภายนอก
 // พิมพ์เป็นโปสเตอร์ติดร้าน: ชื่อร้าน + "ลงโฆษณาบนจอร้านเรา" + ราคาเริ่มต้น
@@ -22,6 +23,8 @@ export function StoreAdQrCard({
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState<"poster" | "qr" | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const cheapest = cheapestStoreAdPackage(packages);
   const priceLine = cheapest ? `เริ่ม ${money(cheapest.price)} บาท / ${cheapest.name}` : "";
 
@@ -49,6 +52,25 @@ export function StoreAdQrCard({
     }
   }
 
+  /** ดาวน์โหลดเป็นรูป PNG — โปสเตอร์ (ชื่อร้าน+ราคา) สำหรับโพสต์/พิมพ์ หรือ QR อย่างเดียว */
+  async function saveImage(kind: "poster" | "qr") {
+    if (!src || saving) return;
+    setSaving(kind);
+    setSaveMessage(null);
+    try {
+      const blob =
+        kind === "poster"
+          ? await renderAdPosterPng({ qrDataUrl: src, storeName, priceLine, url })
+          : dataUrlToBlob(src);
+      const how = await saveOrShareImage(blob, adPosterFileName(storeName, kind));
+      setSaveMessage(how === "downloaded" ? "ดาวน์โหลดรูปแล้ว" : "เปิดเมนูแชร์แล้ว — เลือก “บันทึกรูปภาพ” หรือส่งต่อได้");
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "สร้างรูปไม่สำเร็จ");
+    } finally {
+      setSaving(null);
+    }
+  }
+
   function printPoster() {
     if (!src) return;
     const win = window.open("", "_blank", "width=520,height=760");
@@ -67,7 +89,9 @@ export function StoreAdQrCard({
     const img = doc.createElement("img");
     img.src = src;
     img.style.width = "340px";
-    img.onload = () => win.print();
+    img.onload = () => {
+      if (!win.closed) win.print();
+    };
     const hint = doc.createElement("p");
     hint.textContent = "สแกนเพื่อเลือกแพ็ก อัปโหลดวิดีโอ และจ่ายเงินได้เลย";
     hint.style.cssText = "margin:12px 0 4px;font-size:16px";
@@ -98,15 +122,21 @@ export function StoreAdQrCard({
           <button type="button" onClick={copy} className="btn-secondary min-h-9 text-sm">
             {copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
           </button>
-          {src ? (
-            <a href={src} download={`qr-ads-${storeName.replace(/[/\\:*?"<>|]/g, "_")}.png`} className="btn-secondary min-h-9 text-sm">
-              ดาวน์โหลด QR
-            </a>
-          ) : null}
-          <button type="button" onClick={printPoster} disabled={!src} className="btn-primary min-h-9 text-sm">
+          <button type="button" onClick={() => void saveImage("poster")} disabled={!src || saving !== null} className="btn-primary min-h-9 text-sm">
+            {saving === "poster" ? "กำลังสร้างรูป…" : "ดาวน์โหลดรูปโปสเตอร์ (PNG)"}
+          </button>
+          <button type="button" onClick={() => void saveImage("qr")} disabled={!src || saving !== null} className="btn-secondary min-h-9 text-sm">
+            {saving === "qr" ? "กำลังบันทึก…" : "ดาวน์โหลดเฉพาะ QR"}
+          </button>
+          <button type="button" onClick={printPoster} disabled={!src} className="btn-secondary min-h-9 text-sm">
             พิมพ์โปสเตอร์
           </button>
         </div>
+        {saveMessage ? (
+          <p role="status" className="mt-2 text-xs text-[var(--muted)]">
+            {saveMessage}
+          </p>
+        ) : null}
       </div>
     </section>
   );
