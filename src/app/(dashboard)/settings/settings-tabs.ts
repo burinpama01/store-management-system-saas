@@ -23,6 +23,7 @@ export function buildSettingsTabs(
       { href: "/settings/voice", label: "สั่งงานด้วยเสียง" },
       { href: "/settings/buffet", label: "บุฟเฟต์" },
       { href: "/settings/customer-display", label: "จอลูกค้า", featureKey: "customerDisplay" },
+      { href: "/settings/ad-self-serve", label: "รับลงโฆษณา", featureKey: "adSelfServe" },
       { href: "/settings/payments", label: "ชำระเงินลูกค้า", featureKey: "byoPaymentGateway" },
       { href: "/settings/integrations", label: "API", featureKey: "apiIntegration" },
       { href: "/settings/connect", label: "เดลิเวอรี (JDC)", featureKey: "apiIntegration" },

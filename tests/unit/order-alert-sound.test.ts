@@ -104,7 +104,7 @@ describe("new_delivery_order notification type", () => {
     expect(sql).toContain("notification_settings_notification_type_check");
     expect(sql).toContain("notification_templates_notification_type_check");
     // ต้องไม่ทำชนิดเดิมหาย (ชนิดที่เพิ่มหลัง migration นี้ตรวจใน migration ของตัวเอง)
-    const addedLater = new Set(["ops_checklist", "new_online_order", "salary_advance_request", "pass_purchase"]);
+    const addedLater = new Set(["ops_checklist", "new_online_order", "salary_advance_request", "pass_purchase", "ad_order"]);
     for (const type of NOTIFICATION_TYPES.filter((entry) => !addedLater.has(entry))) expect(sql).toContain(`'${type}'`);
   });
 

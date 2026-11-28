@@ -59,6 +59,10 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: Record<
     title: "ลูกค้าซื้อแพ็กล่วงหน้า",
     message: "{planName} ยอด {amount} (จ่ายออนไลน์แล้ว)",
   },
+  ad_order: {
+    title: "มีคนลงโฆษณาบนจอร้าน",
+    message: "{advertiser} ลง {packageName} ยอด {amount} — {statusText}",
+  },
   test: { title: "ข้อความทดสอบ", message: "[TEST] notification พร้อมใช้งาน" },
 };
 
@@ -88,6 +92,7 @@ export const NOTIFICATION_TEMPLATE_VARS: Record<NotificationType, string[]> = {
   new_online_order: ["store", "fulfillment", "orderNumber", "total"],
   salary_advance_request: ["store", "employeeName", "amount", "payMethod", "reason", "earned", "remaining"],
   pass_purchase: ["store", "planName", "amount", "credits"],
+  ad_order: ["store", "advertiser", "packageName", "amount", "statusText"],
   test: ["store"],
 };
 

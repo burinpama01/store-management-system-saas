@@ -472,6 +472,7 @@ export interface Database {
           music_request_id: string | null
           prepaid_pass_purchase_id: string | null
           online_order_id: string | null
+          ad_order_id: string | null
           provider_config_id: string
           provider_key: string
           mode: string
@@ -501,6 +502,7 @@ export interface Database {
           music_request_id?: string | null
           prepaid_pass_purchase_id?: string | null
           online_order_id?: string | null
+          ad_order_id?: string | null
           provider_config_id: string
           provider_key: string
           mode: string
@@ -530,6 +532,7 @@ export interface Database {
           music_request_id?: string | null
           prepaid_pass_purchase_id?: string | null
           online_order_id?: string | null
+          ad_order_id?: string | null
           provider_config_id?: string
           provider_key?: string
           mode?: string

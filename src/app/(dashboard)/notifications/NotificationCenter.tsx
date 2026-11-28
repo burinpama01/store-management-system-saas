@@ -37,6 +37,7 @@ const TYPE_META: Record<string, { label: string; emoji: string; tone: string }> 
   new_online_order: { label: "ออร์เดอร์ออนไลน์", emoji: "🌐", tone: "bg-orange-50 text-orange-700 border-orange-200" },
   salary_advance_request: { label: "ขอเบิกเงิน", emoji: "💸", tone: "bg-violet-50 text-violet-700 border-violet-200" },
   pass_purchase: { label: "ซื้อแพ็กล่วงหน้า", emoji: "🎟️", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  ad_order: { label: "ลงโฆษณา", emoji: "📺", tone: "bg-sky-50 text-sky-700 border-sky-200" },
   test: { label: "ทดสอบ", emoji: "🧪", tone: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
