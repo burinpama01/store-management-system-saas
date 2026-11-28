@@ -25,7 +25,7 @@ const operation = '30000000-0000-4000-8000-000000000003';
 const body = { operationId: operation, expectedTotalSatang: 6500, method: 'cash', receivedSatang: 10000, lines: [{ productId: product, variantId: null, optionIds: [], quantity: 1, note: '' }] };
 function request(name: string, payload?: unknown, token = true, selected = store) {
   const req = new Request(`https://example.test/api/mobile/pos/${name}`, { method: payload ? 'POST' : 'GET', headers: { ...(token ? { Authorization: 'Bearer test-token' } : {}), 'X-Store-Id': selected }, ...(payload ? { body: JSON.stringify(payload) } : {}) });
-  return (payload ? POST : GET)(req, { params: Promise.resolve({ operation: name }) });
+  return (payload ? POST : GET)(req, { params: Promise.resolve({ operation: name.split('?')[0] }) });
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,6 +45,25 @@ beforeEach(() => {
   mocks.coupon.mockResolvedValue({couponId:operation,normalizedCode:'SAVE',discount:10,error:null});
 });
 describe('native API authorization and checkout', () => {
+  it('protects exact phone lookup before accessing customer records',async()=>{
+    const name='customer-phone?phone=0812345678';
+    expect((await request(name,undefined,false)).status).toBe(401);
+    expect((await request(name,undefined,true,product)).status).toBe(403);
+    mocks.permissions.mockResolvedValueOnce({ctx:{storeId:store,organizationId:'org',role:'cashier'},resolved:{can:()=>false}});expect((await request(name)).status).toBe(403);
+    beamMocks.feature.mockRejectedValueOnce(Error('feature denied'));expect((await request(name)).status).toBe(403);
+    expect((await request('customer-phone?phone=081')).status).toBe(400);
+  });
+  it('gates new customer and receipt operations with bearer, selected store, pos.use and loyalty entitlement',async()=>{
+    for(const name of ['customer-create','receipt']){
+      expect((await request(name,{},false)).status).toBe(401);
+      expect((await request(name,{},true,product)).status).toBe(403);
+      mocks.permissions.mockResolvedValueOnce({ctx:{storeId:store,organizationId:'org',role:'cashier'},resolved:{can:()=>false}});
+      expect((await request(name,{})).status).toBe(403);
+      beamMocks.feature.mockRejectedValueOnce(Error('feature denied'));
+      expect((await request(name,{})).status).toBe(403);
+      expect((await request(name,{})).status).toBe(400);
+    }
+  });
   it('prepares Beam from the server quote and blocks client prices or missing entitlement',async()=>{
     const payload={operationId:operation,expectedTotalSatang:6500,lines:body.lines};
     expect((await request('beam-prepare',payload)).status).toBe(200);
