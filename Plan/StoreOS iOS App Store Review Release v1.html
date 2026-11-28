@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แผนส่งรีวิว iOS v1</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1d2430;--muted:#5d6878;--line:#e2e6ec;--brand:#0f6b5c;--ok:#147a3f;--okbg:#e6f4ec;--off:#9a3412;--offbg:#fdeee5;--warn:#8a6100;--warnbg:#fff6dc}
+@media (prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b2129;--text:#e7ebf0;--muted:#9aa6b5;--line:#2c3440;--brand:#4cc3ab;--ok:#6fd49a;--okbg:#173023;--off:#f4a77a;--offbg:#3a2218;--warn:#f1c75a;--warnbg:#352b12}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,-apple-system,"Segoe UI","Noto Sans Thai",sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:28px;margin:0 0 6px}h2{font-size:20px;margin:34px 0 12px;padding-top:6px;border-top:1px solid var(--line)}
+.muted{color:var(--muted)}.status{display:inline-block;padding:3px 10px;border-radius:99px;background:var(--warnbg);color:var(--warn);font-weight:600;font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:15px}
+th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:color-mix(in srgb,var(--brand) 9%,var(--card));font-size:14px}
+.tablewrap{overflow-x:auto}
+.on{color:var(--ok);background:var(--okbg);padding:1px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
+.off{color:var(--off);background:var(--offbg);padding:1px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
+code{font-size:13.5px;background:color-mix(in srgb,var(--text) 7%,transparent);padding:1px 5px;border-radius:5px}
+ol li,ul li{margin:4px 0}
+.phase{border-left:4px solid var(--brand)}
+</style>
+</head>
+<body>
+<main>
+<h1>แผนส่ง StoreOS POS iOS ให้ผ่าน App Review ก่อน แล้วค่อยเพิ่มฟีเจอร์</h1>
+<p class="muted">สร้าง 2026-11-28 · branch <code>feat/pos-native-ipad</code> · ฐานโค้ด 0.9.0+21 (<code>9d73556</code>) · <span class="status">เสนอ — รออนุมัติ</span></p>
+
+<div class="card">
+<b>เป้าหมาย:</b> ส่งรุ่น <b>1.0.0</b> ที่มีฟีเจอร์ <b>น้อยแต่ครบในตัว</b> ให้ผ่าน App Review รอบแรก หลังได้ขึ้น App Store แล้วค่อยเปิดฟีเจอร์ทีละชุดในรุ่น 1.1, 1.2, … ซึ่งแต่ละรุ่นต้องส่งรีวิวตามปกติ<br>
+<b>ผู้ใช้เลือกแล้ว:</b> ใช้ขอบเขตแบบแนะนำและเพิ่มพิมพ์ WiFi · ตัดโหมดสาธิตออก แล้วส่งบัญชีรีวิวให้ Apple แทน
+</div>
+
+<h2>1. ขอบเขตรุ่น 1.0.0</h2>
+<div class="tablewrap"><table>
+<tr><th>ฟีเจอร์</th><th>1.0.0</th><th>เหตุผล</th></tr>
+<tr><td>Login อีเมล/รหัสผ่าน + เลือกร้าน/สาขา</td><td><span class="on">เปิด</span></td><td>จำเป็น</td></tr>
+<tr><td>ขายสินค้า ตะกร้า ตัวเลือกสินค้า รูปสินค้า</td><td><span class="on">เปิด</span></td><td>ฟังก์ชันหลัก</td></tr>
+<tr><td>รับเงินสด / Beam QR (แสดงเฉพาะร้านที่ <code>beam-config</code> เปิด)</td><td><span class="on">เปิด</span></td><td>เป็นการจ่ายค่าสินค้าและบริการในร้านจริง จึงไม่ต้องใช้ IAP (ข้อ 3.1.3(e))</td></tr>
+<tr><td>ใบเสร็จบนจอ + QR รับแต้ม</td><td><span class="on">เปิด</span></td><td>ผู้รีวิวทดสอบได้โดยไม่ต้องมีเครื่องพิมพ์</td></tr>
+<tr><td>กะเงินสด / บิลพัก / ประวัติบิลวันนี้</td><td><span class="on">เปิด</span></td><td>ทำให้แอปไม่บางเกินไป (ข้อ 4.2)</td></tr>
+<tr><td>ลูกค้า / ส่วนลดท้ายบิล / คูปอง / แต้ม</td><td><span class="on">เปิด</span></td><td>ต้องประกาศใน App Privacy ว่าเก็บเบอร์โทรลูกค้า</td></tr>
+<tr><td>พิมพ์ใบเสร็จผ่าน WiFi (LAN)</td><td><span class="on">เปิด</span></td><td>ผู้ใช้เลือก · ต้องทดสอบบนเครื่องจริงก่อนส่ง ถ้าไม่มีเครื่องพิมพ์ต้องแจ้งเตือนเฉย ๆ ห้าม crash</td></tr>
+<tr><td>เครื่องพิมพ์ Bluetooth</td><td><span class="off">ปิด</span></td><td>ยังไม่เคยทดสอบกับเครื่องจริง หน้าจอยังโชว์ UUID แบบงานนักพัฒนา และถ้าถอด plugin ออก แอปจะไม่ขอสิทธิ์ Bluetooth</td></tr>
+<tr><td>AI ช่วยเพิ่มสินค้า</td><td><span class="off">ปิด</span></td><td>ข้อความ error พูดถึง "แพ็กเกจที่เปิด AI" ซึ่งอาจถูกมองว่าชวนซื้อนอกแอป (ข้อ 3.1.1) และต้องประกาศว่าส่งข้อความไปประมวลผล AI</td></tr>
+<tr><td>เดลิเวอรี (JDC)</td><td><span class="off">ปิด</span></td><td>บัญชีรีวิวจะเห็นแค่หน้าว่าง ดูเหมือนฟีเจอร์ยังไม่เสร็จ (ข้อ 2.1)</td></tr>
+<tr><td>โหมดสาธิต</td><td><span class="off">ตัดออก</span></td><td>ผู้ใช้เลือก · ใช้บัญชีรีวิวแทน</td></tr>
+<tr><td>ช่อง "ตั้งค่าการเชื่อมต่อร้าน" (แก้ URL เซิร์ฟเวอร์)</td><td><span class="off">ซ่อน</span></td><td>เป็นเครื่องมือนักพัฒนา ล็อกไว้ที่ prod</td></tr>
+</table></div>
+
+<div class="card"><b>กฎสำคัญ:</b> ฟีเจอร์ที่ปิดต้องปิด<b>ตอน build</b> ด้วยค่าคงที่ใน <code>src/features.ts</code> ห้ามเปิดจากเซิร์ฟเวอร์หรือ OTA เพราะ Apple ถือว่าเป็น "ฟีเจอร์ซ่อน" (ข้อ 2.3.1 / 2.5.2) ซึ่งอาจโดนปฏิเสธหรือถูกถอดบัญชีนักพัฒนา การเปิดฟีเจอร์เพิ่มในอนาคตต้องออก build ใหม่และส่งรีวิวทุกครั้ง</div>
+
+<h2>2. เทียบแนวทาง App Review กับสิ่งที่ต้องทำ</h2>
+<div class="tablewrap"><table>
+<tr><th>ข้อ</th><th>ความเสี่ยงที่จะโดนปฏิเสธ</th><th>สิ่งที่ต้องทำ</th></tr>
+<tr><td>2.1 ความครบถ้วน</td><td>แอป crash, หน้าว่าง, ข้อความ "ยังไม่พร้อม", ข้อความแบบนักพัฒนา</td><td>ลบ "React Native · iPhone / iPad" ในหน้าตั้งค่า ซ่อน BLE diagnostics ส่งบัญชีรีวิวที่มีสินค้าและบิลจริง และทดสอบบน iPhone + iPad จริง</td></tr>
+<tr><td>2.1 ข้อมูลสำหรับรีวิว</td><td>login ไม่ได้ = โดนปฏิเสธทันที</td><td>สร้างร้าน "StoreOS Review" ใน prod พร้อมบัญชี cashier ใส่ในช่อง App Review Information และเขียนโน้ตภาษาอังกฤษอธิบายว่าเป็นแอป B2B สำหรับร้านที่สมัครบนเว็บ</td></tr>
+<tr><td>2.3 metadata ตรงกับแอป</td><td>screenshot หรือคำอธิบายพูดถึงฟีเจอร์ที่ปิดอยู่</td><td>ถ่าย screenshot จาก build 1.0.0 เท่านั้น ทั้ง iPhone 6.9" และ iPad 13" (เพราะ <code>supportsTablet: true</code>)</td></tr>
+<tr><td>3.1.1 การซื้อในแอป</td><td>ลิงก์หรือข้อความชวนซื้อแพ็กเกจ StoreOS</td><td>ไม่มีปุ่มสมัคร/ราคา/อัปเกรดในแอป ปรับข้อความ error ที่พูดถึงแพ็กเกจให้เป็นกลาง และไม่ลิงก์ไปหน้าราคา (เข้าข่าย 3.1.3(b) แอปใช้บัญชีที่สร้างนอกแอป)</td></tr>
+<tr><td>4.2 ฟังก์ชันขั้นต่ำ</td><td>แอปบางเกินไป หรือเป็นแค่เว็บห่อ</td><td>เป็น native จริง มีขาย/รับเงิน/กะเงินสด/ประวัติ/ลูกค้า ถือว่าผ่าน</td></tr>
+<tr><td>5.1.1 ความเป็นส่วนตัว</td><td>ไม่มีลิงก์นโยบาย หรือขอสิทธิ์โดยไม่จำเป็น</td><td>ในหน้าตั้งค่าเพิ่มลิงก์นโยบายความเป็นส่วนตัวและ "ขอลบบัญชี" (<code>/account-deletion</code>) แอปไม่สร้างบัญชีเองจึงไม่บังคับ แต่ใส่ไว้เพื่อตัดความเสี่ยง ถอด plugin BLE ออกเพื่อไม่ขอสิทธิ์ Bluetooth และขอ Local Network เฉพาะตอนผู้ใช้กดพิมพ์/ค้นหาเครื่องพิมพ์</td></tr>
+<tr><td>5.1.2 App Privacy</td><td>ประกาศข้อมูลที่เก็บไม่ตรงกับความจริง</td><td>ประกาศว่าเก็บ อีเมล (บัญชี), เบอร์โทร/ชื่อลูกค้า (ใช้งานแอป), ประวัติการซื้อ ไม่ใช้ติดตามข้าม app และไม่มี tracking</td></tr>
+<tr><td>Export compliance</td><td>ต้องตอบคำถามเรื่องการเข้ารหัสทุกครั้งที่ส่ง</td><td>ใส่ <code>ITSAppUsesNonExemptEncryption = false</code> ใน infoPlist (ใช้แค่ HTTPS)</td></tr>
+<tr><td>4.8 Sign in with Apple</td><td>—</td><td>ไม่ต้องทำ เพราะใช้บัญชีของ StoreOS เอง ไม่มี login ผ่าน Google/Facebook</td></tr>
+</table></div>
+
+<h2>3. งานแก้โค้ด (native เท่านั้น ไม่แตะ backend)</h2>
+<ol>
+<li><b>เพิ่ม <code>src/features.ts</code></b>: ค่าคงที่ <code>FEATURES = { ai:false, delivery:false, bluetooth:false, lanPrinter:true, demo:false, serverOverride:false }</code> พร้อม unit test ยืนยันค่าของรุ่น release</li>
+<li><b><code>App.tsx</code></b>: กรองแท็บ/ปุ่มตาม FEATURES (เดลิเวอรี, AI ในตะกร้าและหน้าเพิ่มเติม), ลบปุ่ม "ลองหน้าขายแบบสาธิต", ซ่อนช่องแก้ URL และล็อก base เป็น prod, ปรับหน้าตั้งค่าให้มีชื่อร้าน + รุ่นแอป + ลิงก์นโยบาย/ลบบัญชี/ติดต่อ + ออกจากระบบ</li>
+<li><b>เครื่องพิมพ์</b>: หน้าเครื่องพิมพ์โชว์แค่ LAN ส่วน <code>BluetoothSettings</code> ไม่ถูก import เมื่อ <code>bluetooth:false</code> ถอด <code>react-native-ble-plx</code> ออกจาก plugins ใน <code>app.json</code> ส่วน package ยังเก็บไว้เพื่อเปิดกลับในรุ่น 1.2</li>
+<li><b>ข้อความ</b>: ไล่หาคำว่า "แพ็กเกจ / สาธิต / ยังไม่พร้อม / ระบบหลังบ้านรุ่นนี้" ในทางที่ผู้ใช้จะเห็น แล้วเปลี่ยนเป็นข้อความกลาง ๆ</li>
+<li><b><code>app.json</code></b>: <code>version 1.0.0</code>, buildNumber ต่อจากเลขล่าสุดใน App Store Connect, <code>ITSAppUsesNonExemptEncryption:false</code>, คง <code>NSLocalNetworkUsageDescription</code> และตรวจ <code>PrivacyInfo</code> ที่ Expo สร้างให้</li>
+<li><b>โค้ดโหมดสาธิต</b> (<code>demo.ts</code>, <code>demo-workflow.ts</code>, ทางแยก <code>isDemo</code>): รอบนี้แค่ทำให้เข้าไม่ถึงตามข้อ 1 ส่วนการลบโค้ดจริงทำเป็นงานแยกหลัง 1.0.0 เพื่อลดความเสี่ยงพังก่อนส่ง</li>
+</ol>
+
+<h2>4. เช็กลิสต์ App Store Connect (ผู้ใช้ทำ หรือทำร่วมกัน)</h2>
+<div class="grid">
+<div class="card"><b>ข้อมูลแอป</b><ul><li>ชื่อ, คำโปรย, หมวด Business</li><li>Privacy Policy URL: <code>https://www.store-os.online/privacy-policy</code></li><li>Support URL / อีเมลติดต่อ</li><li>อายุ 4+</li></ul></div>
+<div class="card"><b>บัญชีรีวิว</b><ul><li>ร้าน "StoreOS Review" ใน prod: สินค้า 8–12 รายการพร้อมรูป และคูปองทดสอบ 1 ใบ</li><li>บัญชี cashier สิทธิ์ขาย</li><li>Beam: ปิดไว้ (ปลอดภัยสุด) หรือเปิดแบบยอดต่ำ</li><li>บันทึกรหัสผ่านไว้ใน App Store Connect เท่านั้น ห้ามเขียนลงไฟล์ในรีโป</li></ul></div>
+<div class="card"><b>สื่อ</b><ul><li>Screenshot iPhone 6.9" อย่างน้อย 3 รูป</li><li>Screenshot iPad 13" อย่างน้อย 3 รูป</li><li>ไอคอน 1024 ไม่มีพื้นโปร่งใส</li></ul></div>
+<div class="card"><b>App Privacy</b><ul><li>Contact Info: อีเมล, ชื่อ, เบอร์โทร</li><li>Purchases: ประวัติการซื้อ</li><li>ไม่ใช้ Tracking</li></ul></div>
+</div>
+
+<h2>5. ลำดับงานและการตรวจ</h2>
+<ol>
+<li>แก้โค้ดตามข้อ 3 → เทสต์ native + <code>tsc</code> + iOS JS export</li>
+<li>ส่ง <code>code_reviewer</code> รีวิวเฉพาะ diff นี้</li>
+<li>สร้างร้านและบัญชีรีวิวใน prod (ต้องขออนุมัติก่อน เพราะเป็นการเขียนข้อมูลลง prod)</li>
+<li>Codemagic build → TestFlight → ทดสอบบน iPhone + iPad จริง: login, ขาย, เงินสด, Beam, กะ, พักบิล, ลูกค้า/คูปอง, พิมพ์ WiFi และกรณีไม่มีเครื่องพิมพ์</li>
+<li>ถ่าย screenshot → กรอก metadata → ผู้ใช้กด Submit for Review</li>
+<li>ถ้าโดนปฏิเสธ: อ่านข้อที่ Apple อ้าง แก้เฉพาะจุดนั้น แล้วส่งใหม่</li>
+</ol>
+
+<h2>6. แผนหลังผ่านรีวิว</h2>
+<div class="grid">
+<div class="card phase"><b>1.1</b> AI ช่วยเพิ่มสินค้า + ไมค์ (ต้องเพิ่ม usage descriptions และประกาศการส่งข้อมูลไป AI)</div>
+<div class="card phase"><b>1.2</b> เครื่องพิมพ์ Bluetooth (หลังทดสอบกับเครื่องจริง 583-02/PT280)</div>
+<div class="card phase"><b>1.3</b> เดลิเวอรี + push แจ้งเตือนออเดอร์ (APNs, เสียงยาว ≤30 วินาที)</div>
+<div class="card phase"><b>1.4+</b> โต๊ะ/QR Order, โมดูลจัดการร้าน และงาน 8 ข้อที่ยกมาจาก Android</div>
+</div>
+
+<h2>7. ความเสี่ยงและสิ่งที่ยังไม่รู้</h2>
+<ul>
+<li>พิมพ์ WiFi 0.9.0 ยังไม่ผ่านการทดสอบบนเครื่องจริง ถ้าทดสอบไม่ผ่านก่อนส่ง แนะนำให้ปิดไว้ก่อน แล้วไปเปิดในรุ่น 1.1</li>
+<li>ยังไม่รู้เลข build ล่าสุดใน App Store Connect และบัญชีนี้เคยถูกปฏิเสธหรือไม่</li>
+<li>backend ของ 0.9.0 (PR#118) ยังเป็น draft ต้องยืนยันว่า API ที่ 1.0.0 ใช้อยู่บน prod ครบแล้ว</li>
+<li>App Review อาจถามว่า "ร้านค้าสมัครที่ไหน" ต้องตอบในโน้ตว่าสมัครผ่านเว็บและใช้แบบ B2B</li>
+</ul>
+</main>
+</body>
+</html>
