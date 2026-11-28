@@ -22,7 +22,8 @@ describe("หัวข้อแจ้งเตือนของฟีเจอ�
 
   it("migration เปิดชนิดใหม่ทั้ง settings/templates โดยไม่ทำชนิดเดิมหาย + คอลัมน์กันแจ้งซ้ำของแพ็ก", () => {
     const sql = read("supabase/migrations/20261124120000_notify_new_feature_topics.sql");
-    for (const type of NOTIFICATION_TYPES) expect(sql.split(`'${type}'`).length - 1).toBe(2);
+    // ad_order เพิ่มทีหลังใน 20261217120000_store_ad_self_serve_a2_a4
+    for (const type of NOTIFICATION_TYPES.filter((t) => t !== "ad_order")) expect(sql.split(`'${type}'`).length - 1).toBe(2);
     expect(sql).toContain("add column if not exists notified_at timestamptz");
     expect(sql).toContain("set notified_at = coalesce(updated_at, now()) where status = 'paid' and notified_at is null");
   });

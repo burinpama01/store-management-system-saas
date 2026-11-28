@@ -180,6 +180,12 @@ export function TrackingClient({ slug, token, backHref = null }: { slug: string;
             <span>{baht(item.totalPrice)}</span>
           </div>
         ))}
+        {view.discount > 0 && (
+          <div className="flex justify-between py-1 text-emerald-700">
+            <span>ส่วนลดคูปอง{view.couponCode ? ` ${view.couponCode}` : ""}</span>
+            <span>−{baht(view.discount)}</span>
+          </div>
+        )}
         {view.deliveryFee > 0 && (
           <div className="flex justify-between py-1"><span>ค่าส่ง</span><span>{baht(view.deliveryFee)}</span></div>
         )}

@@ -73,6 +73,8 @@ function buildDefaultPrices(): BusinessPriceMap {
     aiVision: 150,
     aiForecast: 150,
     advancedPayroll: 200,
+    // รับลงโฆษณาผ่าน QR — ต้องมีจอลูกค้า (customerDisplay) ด้วยถึงจะใช้ได้
+    adSelfServe: 200,
   };
   return Object.fromEntries(
     (Object.entries(monthly) as [BusinessComponent, number][]).map(([key, amount]) => [

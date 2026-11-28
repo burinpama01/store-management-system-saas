@@ -373,6 +373,8 @@ export async function createBeamQrPayment(input: {
   prepaidPassPurchaseId?: string | null;
   /** ผูกกับคำสั่งซื้อออนไลน์จากเว็บร้าน — PAID แล้ว trigger เปลี่ยนเป็นจ่ายแล้ว */
   onlineOrderId?: string | null;
+  /** ผูกกับคำสั่งลงโฆษณาบนจอร้าน — PAID แล้ว trigger ขึ้นจอ/ส่งให้ร้านอนุมัติ */
+  adOrderId?: string | null;
   client?: BeamDb;
 }): Promise<{ ok: true; qr: BeamQrForPos } | { ok: false; error: string }> {
   const amount = roundMajorThb(input.amountMajor);
@@ -423,6 +425,8 @@ export async function createBeamQrPayment(input: {
         music_request_id: input.musicRequestId ?? null,
         prepaid_pass_purchase_id: input.prepaidPassPurchaseId ?? null,
         online_order_id: input.onlineOrderId ?? null,
+        // ใส่คอลัมน์เฉพาะตอนใช้ — รายการชำระแบบอื่นไม่พังถ้า migration โฆษณายังไม่ขึ้น
+        ...(input.adOrderId ? { ad_order_id: input.adOrderId } : {}),
         provider_config_id: config.id,
         provider_key: "beam",
         mode: "open_api",
@@ -441,6 +445,7 @@ export async function createBeamQrPayment(input: {
           ...(input.musicRequestId ? { purpose: "music_request" } : {}),
           ...(input.prepaidPassPurchaseId ? { purpose: "prepaid_pass" } : {}),
           ...(input.onlineOrderId ? { purpose: "online_order" } : {}),
+          ...(input.adOrderId ? { purpose: "ad_order" } : {}),
         } as Json,
       })
       .select(GATEWAY_COLUMNS)
@@ -820,7 +825,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("gateway_payments")
-    .select("id, amount, status, order_id, pos_payment_id, music_request_id, prepaid_pass_purchase_id, online_order_id, failure_message, metadata, created_at, paid_at")
+    .select("id, amount, status, order_id, pos_payment_id, music_request_id, prepaid_pass_purchase_id, online_order_id, ad_order_id, failure_message, metadata, created_at, paid_at")
     .eq("store_id", storeId)
     .eq("provider_key", "beam")
     .order("created_at", { ascending: false })
@@ -834,6 +839,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     music_request_id: string | null;
     prepaid_pass_purchase_id?: string | null;
     online_order_id?: string | null;
+    ad_order_id?: string | null;
     failure_message: string | null;
     metadata: Record<string, unknown> | null;
     created_at: string;
@@ -843,7 +849,7 @@ export async function listBeamPaymentsForStore(storeId: string, limit = 30): Pro
     amount: typeof r.amount === "string" ? Number(r.amount) : r.amount,
     status: r.status as GatewayPaymentStatus,
     orderId: r.order_id,
-    attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id || r.online_order_id),
+    attached: Boolean(r.pos_payment_id || r.music_request_id || r.prepaid_pass_purchase_id || r.online_order_id || r.ad_order_id),
     musicRequestId: r.music_request_id,
     environment: toEnvironment(typeof r.metadata?.environment === "string" ? r.metadata.environment : "live"),
     failureMessage: r.failure_message,

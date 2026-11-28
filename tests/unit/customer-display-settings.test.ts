@@ -113,9 +113,12 @@ describe("customer display ad settings", () => {
     const actions = read("src/app/(dashboard)/settings/customer-display/actions.ts");
 
     expect(normalDisplayPage).toContain("getCustomerDisplaySettings");
-    expect(normalDisplayPage).toContain("adSettings={settingsRes.data");
+    // โฆษณาที่ลูกค้าลงผ่าน QR ถูกรวมก่อนส่งให้จอ (แผน QR ลงโฆษณา A3)
+    expect(normalDisplayPage).toContain("withLiveStoreAds(settingsRes.data");
+    expect(normalDisplayPage).toContain("adSettings={adSettings}");
     expect(groceryDisplayPage).toContain("getCustomerDisplaySettings");
-    expect(groceryDisplayPage).toContain("adSettings={settingsRes.data");
+    expect(groceryDisplayPage).toContain("withLiveStoreAds(settingsRes.data");
+    expect(groceryDisplayPage).toContain("adSettings={adSettings}");
 
     expect(screen).toContain("adSettings");
     expect(screen).toContain("customer-display-ad-split");
@@ -124,8 +127,11 @@ describe("customer display ad settings", () => {
     expect(screen).toContain("<img");
     expect(screen).toContain("setInterval");
     expect(screen).toContain("slideIntervalSeconds");
-    expect(screen).toContain("if (slides.length === 0) return [];");
-    expect(screen).toContain("slot.slides.length > 0");
+    // ตรรกะเลือกช่องโฆษณาย้ายไป module (ทดสอบพฤติกรรมจริงใน customer-display-ads-reliability.test.ts)
+    const settingsModule = read("src/modules/settings/customer-display.ts");
+    expect(screen).toContain("resolveCustomerDisplayAdSlots");
+    expect(settingsModule).toContain("slides.length > 0 ? [{ key: \"single\"");
+    expect(settingsModule).toContain("slot.slides.length > 0");
     expect(actions).toContain("topSlides.length > CUSTOMER_DISPLAY_SLIDE_LIMIT");
     expect(actions).toContain("bottomSlides.length > CUSTOMER_DISPLAY_SLIDE_LIMIT");
   });

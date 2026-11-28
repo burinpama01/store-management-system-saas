@@ -24,7 +24,8 @@ export type NotificationType =
   | "ops_checklist"
   | "new_online_order"
   | "salary_advance_request"
-  | "pass_purchase";
+  | "pass_purchase"
+  | "ad_order";
 
 export interface NotificationPayload {
   type: NotificationType;
@@ -61,6 +62,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "new_online_order",
   "salary_advance_request",
   "pass_purchase",
+  "ad_order",
 ];
 
 export const NOTIFICATION_CHANNELS: NotificationChannel[] = ["line", "telegram", "push"];

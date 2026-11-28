@@ -1,6 +1,7 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
 import { notifyOnlineOrderPaidOnce } from "@/modules/online-orders/notify";
 import { notifyPassPurchasePaidOnce } from "@/modules/prepaid-passes/notify";
+import { notifyAdOrderPaidOnce } from "@/modules/ad-self-serve/notify";
 import { logSystemEvent } from "@/modules/system/event-log";
 
 /**
@@ -14,12 +15,13 @@ export async function runGatewayPaidEffects(gatewayPaymentId: string): Promise<v
     const db: any = await createSupabaseServiceClient();
     const { data } = await db
       .from("gateway_payments")
-      .select("id, status, online_order_id, prepaid_pass_purchase_id")
+      .select("id, status, online_order_id, prepaid_pass_purchase_id, ad_order_id")
       .eq("id", gatewayPaymentId)
       .maybeSingle();
     if (!data || data.status !== "PAID") return;
     if (data.online_order_id) await notifyOnlineOrderPaidOnce(String(data.online_order_id));
     if (data.prepaid_pass_purchase_id) await notifyPassPurchasePaidOnce(String(data.prepaid_pass_purchase_id));
+    if (data.ad_order_id) await notifyAdOrderPaidOnce(String(data.ad_order_id));
   } catch (e) {
     await logSystemEvent({
       level: "warn",

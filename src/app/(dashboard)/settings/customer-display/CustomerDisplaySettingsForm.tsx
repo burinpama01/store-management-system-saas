@@ -3,8 +3,10 @@
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { useActionState, useMemo, useState } from "react";
 import {
+  CUSTOMER_DISPLAY_MEDIA_CACHE_SECONDS,
   CUSTOMER_DISPLAY_SLIDE_LIMIT,
   DEFAULT_CUSTOMER_DISPLAY_SETTINGS,
+  customerDisplayUploadSizeError,
   type CustomerDisplayAdSlide,
   type CustomerDisplaySettings,
   type CustomerDisplayMediaFit,
@@ -132,6 +134,7 @@ export function CustomerDisplaySettingsForm({
               defaultValue={initial.slideIntervalSeconds}
               disabled={!adEnabled}
             />
+            <span className="block text-[11px] font-medium text-[var(--muted)]">ใช้กับรูปภาพ · วิดีโอจะเล่นจนจบก่อนสลับเสมอ</span>
           </label>
           <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-sm">
             <label className="inline-flex items-center gap-2 font-semibold">
@@ -256,6 +259,12 @@ function SlideEditor({
       const mediaType: CustomerDisplayMediaType = file.type.startsWith("video/") ? "video" : "image";
       const shouldCompress = mediaType === "image" && shouldCompressCustomerDisplayImage(file);
       const uploadBody = shouldCompress ? await compressImage(file) : file;
+      // จำกัดขนาดก่อนขอสิทธิ์อัปโหลด — ไฟล์ใหญ่อัปไม่ผ่านอยู่แล้ว และวิดีโอเล่นวนทั้งวันกินโควตา
+      const sizeError = customerDisplayUploadSizeError(mediaType, uploadBody.size);
+      if (sizeError) {
+        setUploadError(sizeError);
+        return;
+      }
       const extension = shouldCompress ? "jpg" : safeExtension(file.name, fallbackExtension(file.type, mediaType));
       const signedUpload = await createCustomerDisplayMediaUploadAction({ organizationId, storeId, extension });
       if (signedUpload.error || !signedUpload.path || !signedUpload.token || !signedUpload.publicUrl) {
@@ -266,9 +275,13 @@ function SlideEditor({
       const supabase = getSupabaseBrowserClient();
       const { error } = await supabase.storage
         .from("product-images")
-        .uploadToSignedUrl(signedUpload.path, signedUpload.token, uploadBody, { contentType });
+        .uploadToSignedUrl(signedUpload.path, signedUpload.token, uploadBody, {
+          contentType,
+          // ชื่อไฟล์เป็น UUID ไม่ถูกเขียนทับ → จอแคชได้นาน ไม่ต้องโหลดใหม่ทุกรอบสไลด์
+          cacheControl: String(CUSTOMER_DISPLAY_MEDIA_CACHE_SECONDS),
+        });
       if (error) {
-        setUploadError(error.message);
+        setUploadError(`อัพโหลดไฟล์ไม่สำเร็จ: ${error.message}`);
         return;
       }
       updateSlideById(slide.id, { mediaType, url: signedUpload.publicUrl });
@@ -376,7 +389,11 @@ function SlideEditor({
                 />
                 {uploadingSlideId === slide.id ? (
                   <span className="block text-[11px] font-medium text-[var(--muted)]">กำลังอัพโหลด...</span>
-                ) : null}
+                ) : (
+                  <span className="block text-[11px] font-medium text-[var(--muted)]">
+                    วิดีโอเล่นจนจบก่อนสลับสไลด์ (ยาวหลายนาทีได้) ไม่เกิน 50 MB แนะนำ 720p · รูปไม่เกิน 10 MB
+                  </span>
+                )}
               </label>
               <label className="space-y-1 text-xs font-semibold text-[var(--text)]">
                 การจัดภาพ

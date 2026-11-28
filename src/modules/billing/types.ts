@@ -68,6 +68,8 @@ export interface PlanFeatures {
   advancedPayroll: boolean;
   /** สินค้าซื้อขาด/รับฝากขาย: ล็อต ต้นทุนรายรส เคลียร์เงินเจ้าของ (Enterprise เท่านั้น) */
   consignment: boolean;
+  /** ลูกค้าสแกน QR ลงโฆษณาบนจอลูกค้าเอง จ่ายเข้าร้านโดยตรง (ใช้ได้เมื่อมี customerDisplay ด้วย) */
+  adSelfServe: boolean;
 }
 
 export type FeatureKey = keyof PlanFeatures;
@@ -105,6 +107,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   aiForecast: "AI พยากรณ์",
   advancedPayroll: "เงินเดือนขั้นสูง",
   consignment: "สินค้าซื้อขาด/ฝากขาย",
+  adSelfServe: "รับลงโฆษณาผ่าน QR",
 };
 
 export const PLAN_LABELS: Record<BillingPlan, string> = {
@@ -145,6 +148,7 @@ export const BUSINESS_FEATURE_COMPONENTS = [
   "aiVision",
   "aiForecast",
   "advancedPayroll",
+  "adSelfServe",
 ] as const satisfies readonly Exclude<FeatureKey, "maxStores" | "maxMembers">[];
 
 export type BusinessFeatureKey = (typeof BUSINESS_FEATURE_COMPONENTS)[number];
@@ -220,6 +224,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiForecast: false,
     advancedPayroll: false,
     consignment: false,
+    adSelfServe: false,
   },
   starter: {
     maxStores: 1,
@@ -246,6 +251,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiForecast: false,
     advancedPayroll: false,
     consignment: false,
+    adSelfServe: false,
   },
   standard: {
     maxStores: 3,
@@ -272,6 +278,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiForecast: false,
     advancedPayroll: false,
     consignment: false,
+    adSelfServe: false,
   },
   premium: {
     maxStores: 5,
@@ -298,6 +305,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiForecast: false,
     advancedPayroll: false,
     consignment: false,
+    adSelfServe: false,
   },
   enterprise: {
     maxStores: Infinity,
@@ -324,6 +332,7 @@ const PLAN_FEATURES: Record<Exclude<BillingPlan, "business">, PlanFeatures> = {
     aiForecast: true,
     advancedPayroll: true,
     consignment: true,
+    adSelfServe: true,
   },
 };
 

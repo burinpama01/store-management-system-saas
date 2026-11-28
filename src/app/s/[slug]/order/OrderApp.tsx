@@ -45,6 +45,10 @@ export function OrderApp(props: {
   /** สั่งอีกครั้งจากออเดอร์เดิม (หน้าสมาชิก) — ตะกร้าเริ่มต้น + ข้อความแจ้ง */
   initialCart?: CartItem[];
   reorderNotice?: string | null;
+  /** ร้านปิดรับตอนโหลดหน้า (นอกเวลา/วันหยุด/ปิดด่วน) — ดูเมนูได้ สั่งไม่ได้ (server ตรวจซ้ำ) */
+  closedNotice?: { title: string; detail: string | null } | null;
+  /** ร้านรับคูปองในหน้าสั่งออนไลน์ (ส่วนลดคิดฝั่ง server) */
+  couponsEnabled?: boolean;
 }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>(() => props.initialCart ?? []);
@@ -67,6 +71,10 @@ export function OrderApp(props: {
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [otpBusy, setOtpBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  /** รหัสที่ server ยืนยันว่าใช้ได้ (ส่งไปกับทุก quote/สั่ง) */
+  const [couponCode, setCouponCode] = useState<string | null>(null);
+  const [couponMsg, setCouponMsg] = useState<string | null>(null);
   const [requestId] = useState(newRequestId);
   const [pending, startTransition] = useTransition();
 
@@ -98,6 +106,7 @@ export function OrderApp(props: {
     pickupInMinutes: fulfillment === "pickup" ? pickupIn : null,
     note: note.trim(),
     ...(fulfillment === "delivery" && payMethod === "cod" ? { paymentMethod: "cod" as const, ...(otpCode ? { otpCode } : {}) } : {}),
+    ...(couponCode ? { couponCode } : {}),
   });
 
   const codAllowed = Boolean(props.cod) && fulfillment === "delivery";
@@ -127,16 +136,44 @@ export function OrderApp(props: {
     }, 1000);
   };
 
-  const refreshQuote = (nextFulfillment = fulfillment, nextPoint = point) => {
+  /** nextCoupon: undefined = ใช้รหัสเดิม · null = ไม่ใช้คูปอง · string = ลองรหัสใหม่ */
+  const refreshQuote = (nextFulfillment = fulfillment, nextPoint = point, nextCoupon?: string | null) => {
     if (cart.length === 0) return;
+    const tryCode = nextCoupon === undefined ? couponCode : nextCoupon;
     startTransition(async () => {
+      const base = payload();
+      delete (base as { couponCode?: string }).couponCode;
       const res = await quoteOnlineOrderAction(props.slug, {
-        ...payload(),
+        ...base,
+        ...(tryCode ? { couponCode: tryCode } : {}),
         fulfillment: nextFulfillment,
         ...(nextFulfillment === "delivery" ? { address: "-", lat: nextPoint?.lat ?? null, lng: nextPoint?.lng ?? null } : { address: undefined, lat: undefined, lng: undefined, addressNote: undefined }),
       });
       setQuote(res);
+      if (!tryCode) return;
+      if (res.coupon) {
+        setCouponCode(res.coupon.code);
+        setCouponMsg(null);
+      } else if (res.ok) {
+        // รหัสใช้ไม่ได้ (หรือใช้ไม่ได้แล้วหลังแก้ตะกร้า) → ถอดออก ให้ลูกค้าเห็นเหตุผล
+        setCouponCode(null);
+        setCouponMsg(res.couponError ?? "ใช้คูปองนี้ไม่ได้");
+      }
     });
+  };
+
+  const applyCoupon = () => {
+    const code = couponInput.trim();
+    if (!code) return setCouponMsg("กรอกรหัสคูปอง");
+    setCouponMsg(null);
+    refreshQuote(fulfillment, point, code);
+  };
+
+  const removeCoupon = () => {
+    setCouponCode(null);
+    setCouponInput("");
+    setCouponMsg(null);
+    refreshQuote(fulfillment, point, null);
   };
 
   const locate = () => {
@@ -162,6 +199,7 @@ export function OrderApp(props: {
 
   const submit = () => {
     setError(null);
+    if (props.closedNotice) return setError(props.closedNotice.title);
     if (!name.trim()) return setError("กรอกชื่อผู้รับ");
     if (!/^0[0-9]{8,9}$/.test(phone.replace(/[\s-]/g, ""))) return setError("กรอกเบอร์โทรให้ถูกต้อง");
     if (fulfillment === "delivery" && !address.trim()) return setError("กรอกที่อยู่จัดส่ง");
@@ -201,6 +239,14 @@ export function OrderApp(props: {
               {v === "order" ? "สั่งอาหาร" : "ประวัติการสั่ง"}
             </button>
           ))}
+        </div>
+      )}
+
+      {props.closedNotice && view === "order" && (
+        <div role="status" className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-semibold">{props.closedNotice.title}</p>
+          {props.closedNotice.detail && <p>{props.closedNotice.detail}</p>}
+          <p className="text-xs text-red-700/80">ดูเมนูได้ แต่ยังสั่งไม่ได้ตอนนี้</p>
         </div>
       )}
 
@@ -358,8 +404,57 @@ export function OrderApp(props: {
             </section>
           )}
 
+          {props.couponsEnabled && (
+            <section className="space-y-2 rounded-xl border bg-white p-3 text-sm">
+              <h2 className="font-semibold">คูปองส่วนลด</h2>
+              {couponCode ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                  <span>
+                    ✓ ใช้คูปอง <b>{couponCode}</b>
+                    {quote?.coupon?.name ? ` · ${quote.coupon.name}` : ""}
+                  </span>
+                  <button type="button" onClick={removeCoupon} disabled={pending} className="shrink-0 text-xs text-stone-600 underline">
+                    ไม่ใช้
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    className={inputCls}
+                    style={inputStyle}
+                    maxLength={40}
+                    placeholder="รหัสคูปอง"
+                    value={couponInput}
+                    onChange={(e) => {
+                      setCouponInput(e.target.value);
+                      setCouponMsg(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        applyCoupon();
+                      }
+                    }}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                  />
+                  <button type="button" onClick={applyCoupon} disabled={pending || !couponInput.trim()} className="shrink-0 rounded-lg border border-orange-600 px-4 text-orange-700 disabled:opacity-50">
+                    ใช้
+                  </button>
+                </div>
+              )}
+              {couponMsg && <p className="text-xs text-red-600">{couponMsg}</p>}
+            </section>
+          )}
+
           <section className="rounded-xl border bg-white p-3 text-sm">
             <div className="flex justify-between"><span>ค่าอาหาร</span><span>{baht(quote?.subtotal || itemsTotal)}</span></div>
+            {quote?.ok && quote.discount > 0 && (
+              <div className="flex justify-between text-emerald-700">
+                <span>ส่วนลดคูปอง{quote.coupon ? ` ${quote.coupon.code}` : ""}</span>
+                <span>−{baht(quote.discount)}</span>
+              </div>
+            )}
             {fulfillment === "delivery" && (
               <div className="flex justify-between">
                 <span>ค่าส่ง{quote?.distanceKm != null ? ` (${quote.distanceKm.toFixed(1)} กม.)` : ""}</span>
@@ -390,8 +485,8 @@ export function OrderApp(props: {
           ) : (
             <div className="flex gap-2">
               <button type="button" onClick={() => setStep("menu")} className="rounded-xl border px-4">เพิ่มเมนู</button>
-              <button type="button" onClick={submit} disabled={pending} className="flex-1 rounded-xl bg-orange-600 py-3 font-semibold text-white disabled:opacity-60">
-                {pending ? "กำลังดำเนินการ..." : useCod ? "ยืนยันสั่ง (เก็บเงินปลายทาง)" : "ไปชำระเงิน"}
+              <button type="button" onClick={submit} disabled={pending || Boolean(props.closedNotice)} className="flex-1 rounded-xl bg-orange-600 py-3 font-semibold text-white disabled:opacity-60">
+                {props.closedNotice ? "ร้านปิดรับออเดอร์" : pending ? "กำลังดำเนินการ..." : useCod ? "ยืนยันสั่ง (เก็บเงินปลายทาง)" : "ไปชำระเงิน"}
               </button>
             </div>
           )}

@@ -1,4 +1,6 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import type { CouponPolicy } from "@/modules/promotions/types";
+import { parseOrderingHours, type OrderingHours, type OrderingSchedule } from "./hours";
 import {
   DEFAULT_ONLINE_ORDER_SETTINGS,
   PAYMENT_GRACE_MS,
@@ -54,6 +56,10 @@ export interface OnlineOrder {
   codCashHeld: number | null;
   codSettledAt: string | null;
   failureReason: string | null;
+  /** คูปองที่ใช้ (total = subtotal − discount + deliveryFee) */
+  couponId: string | null;
+  couponCode: string | null;
+  discount: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- แถวดิบจาก service client
@@ -98,6 +104,9 @@ function toOrder(row: any): OnlineOrder {
     codCashHeld: num(row.cod_cash_held),
     codSettledAt: row.cod_settled_at ?? null,
     failureReason: row.failure_reason ?? null,
+    couponId: row.coupon_id ?? null,
+    couponCode: row.coupon_code ?? null,
+    discount: Number(row.discount ?? 0) || 0,
   };
 }
 
@@ -182,6 +191,8 @@ async function getStoredOnlineOrderSettings(storeId: string): Promise<OnlineOrde
     codMaxPerBill: data.cod_max_per_bill === undefined || data.cod_max_per_bill === null ? 500 : Number(data.cod_max_per_bill),
     codTierCaps: parseTierCaps(data.cod_tier_caps),
     codRequireOtp: data.cod_require_otp === undefined || data.cod_require_otp === null ? true : Boolean(data.cod_require_otp),
+    // คอลัมน์คูปอง (20261219120000) — ยังไม่มี = ปิด
+    couponsEnabled: Boolean(data.coupons_enabled ?? false),
     minOrder: Number(data.min_order),
     prepMinutes: Number(data.prep_minutes),
   });
@@ -218,8 +229,61 @@ export async function saveOnlineOrderSettings(input: {
       cod_max_per_bill: s.codMaxPerBill,
       cod_tier_caps: s.codTierCaps,
       cod_require_otp: s.codRequireOtp,
+      coupons_enabled: s.couponsEnabled,
       min_order: s.minOrder,
       prep_minutes: s.prepMinutes,
+      updated_by: input.userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" },
+  );
+  return error ? error.message : null;
+}
+
+// ---------- เวลารับออเดอร์ + ปิดด่วน ----------
+
+/** อ่านเวลารับออเดอร์/ปิดด่วน — select("*") เพื่อให้ยังทำงานก่อน migration 20261218120000 ขึ้น (ไม่มีคอลัมน์ = เปิดตลอด) */
+export async function getOrderingSchedule(storeId: string): Promise<OrderingSchedule> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db.from("store_online_order_settings").select("*").eq("store_id", storeId).maybeSingle();
+  return {
+    hours: parseOrderingHours(data?.ordering_hours ?? null),
+    pausedUntil: typeof data?.paused_until === "string" ? data.paused_until : null,
+    pausedReason: typeof data?.paused_reason === "string" ? data.paused_reason : null,
+  };
+}
+
+export async function saveOrderingHours(input: { storeId: string; organizationId: string; hours: OrderingHours; userId: string }): Promise<string | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { error } = await db.from("store_online_order_settings").upsert(
+    {
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      ordering_hours: input.hours,
+      updated_by: input.userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" },
+  );
+  return error ? error.message : null;
+}
+
+/** ปิดด่วน (until = ISO) หรือเปิดกลับ (until = null) */
+export async function setOrderingPause(input: {
+  storeId: string;
+  organizationId: string;
+  until: string | null;
+  reason: string | null;
+  userId: string;
+}): Promise<string | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { error } = await db.from("store_online_order_settings").upsert(
+    {
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      paused_until: input.until,
+      paused_reason: input.until ? input.reason : null,
+      paused_by: input.until ? input.userId : null,
       updated_by: input.userId,
       updated_at: new Date().toISOString(),
     },
@@ -592,4 +656,132 @@ export async function listAwaitingOnlineOrders(storeId: string): Promise<{ id: s
     .order("created_at", { ascending: true })
     .limit(20);
   return ((data ?? []) as { id: string; order_code: string }[]).map((r) => ({ id: r.id, orderCode: r.order_code }));
+}
+
+// ---------- คูปอง (หน้าสั่งออนไลน์) ----------
+
+/** ค้นคูปองของร้านด้วยรหัส (service client — หน้าสาธารณะไม่มี session) พร้อมจำนวนที่ใช้ไปแล้ว */
+export async function findOnlineCouponPolicy(
+  storeId: string,
+  code: string,
+  customerId: string | null,
+): Promise<(CouponPolicy & { allowOnline: boolean }) | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data: row } = await db.from("coupons").select("*").eq("store_id", storeId).eq("normalized_code", code).maybeSingle();
+  if (!row) return null;
+  const [used, usedByCustomer] = await Promise.all([
+    db.from("coupon_redemptions").select("id", { count: "exact", head: true }).eq("store_id", storeId).eq("coupon_id", row.id).is("voided_at", null),
+    customerId
+      ? db
+          .from("coupon_redemptions")
+          .select("id", { count: "exact", head: true })
+          .eq("store_id", storeId)
+          .eq("coupon_id", row.id)
+          .eq("customer_id", customerId)
+          .is("voided_at", null)
+      : Promise.resolve({ count: 0 }),
+  ]);
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    code: row.code,
+    name: row.name,
+    discountType: row.discount_type,
+    discountValue: Number(row.discount_value),
+    minSubtotal: Number(row.min_subtotal ?? 0),
+    startsAt: row.starts_at ?? null,
+    endsAt: row.ends_at ?? null,
+    isActive: Boolean(row.is_active),
+    maxRedemptions: row.max_redemptions ?? null,
+    redeemedCount: used.count ?? 0,
+    maxRedemptionsPerCustomer: row.max_redemptions_per_customer ?? null,
+    customerRedeemedCount: usedByCustomer.count ?? 0,
+    customerIds: Array.isArray(row.customer_ids) ? row.customer_ids : [],
+    stackableWithManualDiscount: Boolean(row.stackable_with_manual_discount),
+    // คอลัมน์ใหม่ (20261219120000) — ยังไม่มี = ไม่ให้ใช้ออนไลน์
+    // โค้ดสิทธิ์ระดับสมาชิก/รางวัลภารกิจ ต้องยืนยันสมาชิกกับพนักงาน → ใช้ที่หน้าร้านเท่านั้น
+    allowOnline: row.allow_online === true && !row.member_tier_benefit_id && !row.store_mission_id,
+  };
+}
+
+/** จำนวนครั้งที่ใส่รหัสผิดในช่วงล่าสุด (ช่องทางออนไลน์) ต่อ IP และทั้งร้าน — นับไม่ได้ = 0 (ไม่บล็อกลูกค้าจริง) */
+export async function countOnlineCouponFailures(storeId: string, ipHash: string | null, windowMs: number): Promise<{ ip: number; store: number }> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const base = () =>
+    db
+      .from("pos_coupon_code_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId)
+      .eq("channel", "online")
+      .eq("succeeded", false)
+      .gte("created_at", since);
+  const [byIp, byStore] = await Promise.all([ipHash ? base().eq("ip_hash", ipHash) : Promise.resolve({ count: 0 }), base()]);
+  return { ip: byIp.count ?? 0, store: byStore.count ?? 0 };
+}
+
+export async function recordOnlineCouponAttempt(input: {
+  organizationId: string;
+  storeId: string;
+  code: string;
+  ipHash: string | null;
+  succeeded: boolean;
+}): Promise<void> {
+  try {
+    const db: LooseClient = await createSupabaseServiceClient();
+    await db.from("pos_coupon_code_attempts").insert({
+      organization_id: input.organizationId,
+      store_id: input.storeId,
+      user_id: null,
+      code_normalized: input.code.slice(0, 40) || null,
+      succeeded: input.succeeded,
+      channel: "online",
+      ip_hash: input.ipHash,
+    });
+  } catch {
+    // บันทึกเพื่อกันเดาโค้ดเท่านั้น
+  }
+}
+
+/** จองสิทธิ์คูปองให้คำสั่งซื้อ (RPC ล็อกแถวคูปอง) — null = สำเร็จ, ข้อความ = ไม่สำเร็จ */
+export async function reserveOnlineOrderCoupon(input: {
+  onlineOrderId: string;
+  couponId: string;
+  customerId: string | null;
+  discount: number;
+}): Promise<string | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data, error } = await db.rpc("reserve_online_order_coupon", {
+    p_online_order_id: input.onlineOrderId,
+    p_coupon_id: input.couponId,
+    p_customer_id: input.customerId,
+    p_discount: input.discount,
+  });
+  if (error) return "ใช้คูปองไม่สำเร็จ ลองใหม่อีกครั้ง";
+  return typeof data === "string" && data ? data : null;
+}
+
+/** ลบคำสั่งซื้อที่เพิ่งสร้างเมื่อจองคูปองไม่สำเร็จ (ยังไม่มี QR/เงิน/บิล) */
+export async function deleteFreshOnlineOrder(storeId: string, id: string): Promise<void> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  await db
+    .from("online_orders")
+    .delete()
+    .eq("store_id", storeId)
+    .eq("id", id)
+    .in("status", ["awaiting_payment", "cod_pending"])
+    .is("gateway_payment_id", null)
+    .is("order_id", null);
+}
+
+/** รับออเดอร์แล้ว → ผูกการใช้คูปองกับบิล POS (ยกเลิกบิลภายหลังคืนสิทธิ์ตามระบบเดิม) */
+export async function linkOnlineCouponToBill(storeId: string, onlineOrderId: string, billId: string): Promise<string | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { error } = await db
+    .from("coupon_redemptions")
+    .update({ order_id: billId })
+    .eq("store_id", storeId)
+    .eq("online_order_id", onlineOrderId)
+    .is("order_id", null);
+  return error ? error.message : null;
 }

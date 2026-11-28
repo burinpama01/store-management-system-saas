@@ -103,8 +103,13 @@ export async function getReceiptSettings(storeId: string, organizationId: string
   return { data: data ? mapReceiptSettings(data) : null, error: null };
 }
 
-export async function getCustomerDisplaySettings(storeId: string, organizationId: string) {
-  const supabase = await createSupabaseServerClient();
+export async function getCustomerDisplaySettings(
+  storeId: string,
+  organizationId: string,
+  /** หน้าสาธารณะ (ลงโฆษณา) ไม่มี session → ส่ง service client มา */
+  client?: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+) {
+  const supabase = client ?? (await createSupabaseServerClient());
   const { data, error } = await supabase
     .from("customer_display_settings")
     .select("*")

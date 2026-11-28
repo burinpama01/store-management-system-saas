@@ -22,6 +22,7 @@ export interface CouponSaveInput {
   maxRedemptionsPerCustomer?: number | null;
   customerIds?: string[];
   stackableWithManualDiscount?: boolean;
+  allowOnline?: boolean;
   isActive?: boolean;
 }
 
@@ -43,6 +44,8 @@ function mapCoupon(row: CouponRow, redeemedCount: number, customerRedeemedCount:
     customerRedeemedCount,
     customerIds: row.customer_ids,
     stackableWithManualDiscount: row.stackable_with_manual_discount,
+    // ก่อน migration 20261219120000 ไม่มีคอลัมน์ = ถือว่าใช้ได้ (ค่าเริ่มต้น)
+    allowOnline: row.allow_online ?? true,
   };
 }
 
@@ -174,6 +177,8 @@ export async function saveCoupon(input: CouponSaveInput) {
     stackable_with_manual_discount:
       input.stackableWithManualDiscount ?? existingCoupon?.stackable_with_manual_discount ?? false,
     is_active: input.isActive ?? existingCoupon?.is_active ?? true,
+    // ส่งเฉพาะตอนแก้จากฟอร์มที่มีช่องนี้ — คูปองใหม่ใช้ค่าเริ่มต้นของ DB (ใช้ออนไลน์ได้)
+    ...(input.allowOnline !== undefined ? { allow_online: input.allowOnline } : {}),
     updated_at: new Date().toISOString(),
   };
 
