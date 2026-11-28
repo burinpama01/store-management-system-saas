@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOptionalResolvedCurrentPermissions, requireFeature } from "@/modules/auth/guards";
 import { getCustomerDisplaySettings } from "@/modules/settings/repository";
+import { withLiveStoreAds } from "@/modules/ad-self-serve/server";
 import { describeError, logSystemEvent } from "@/modules/system/event-log";
 
 // จอลูกค้า (/pos/display) ถามโฆษณาล่าสุดเป็นระยะ — ร้านแก้โฆษณาแล้วจอเปลี่ยนเองโดยไม่ต้องรีเฟรช
@@ -48,7 +49,9 @@ export async function GET() {
     });
     return NextResponse.json({ error: "load_failed" }, { status: 500, headers: NO_STORE });
   }
-  return NextResponse.json({ settings: res.data }, { headers: NO_STORE });
+  // รวมโฆษณาที่ลูกค้าลงผ่าน QR (กรองวันหมดอายุตอนอ่าน) — ขึ้นจอ/หายเองภายในรอบดึง 5 นาที
+  const settings = await withLiveStoreAds(res.data, ctx.storeId, ctx.organizationId);
+  return NextResponse.json({ settings }, { headers: NO_STORE });
 }
 
 export async function POST(request: Request) {

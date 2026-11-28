@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
-import { saveStoreAdOffer } from "@/modules/ad-self-serve/repository";
+import { reviewStoreAdOrder, saveStoreAdOffer } from "@/modules/ad-self-serve/repository";
+import { STORE_AD_REVIEW_TRANSITIONS, type StoreAdReviewAction } from "@/modules/ad-self-serve/orders";
 import { canUseAdSelfServe, normalizeStoreAdOfferInput } from "@/modules/ad-self-serve/rules";
 import { logSystemEvent } from "@/modules/system/event-log";
 
@@ -46,6 +47,42 @@ export async function saveStoreAdOfferAction(input: Record<string, unknown>): Pr
   }).catch(() => undefined);
   if (result.error) return { error: result.error };
 
+  revalidatePath("/settings/ad-self-serve");
+  return { error: null, saved: true };
+}
+
+const REVIEW_LABEL: Record<StoreAdReviewAction, string> = { approve: "อนุมัติ", reject: "ไม่อนุมัติ", remove: "ถอด" };
+
+/** ร้านอนุมัติ / ไม่อนุมัติ / ถอดโฆษณาที่ลูกค้าลง — เงินคืนร้านจัดการเองนอกระบบ */
+export async function reviewStoreAdOrderAction(input: { orderId: string; action: string; reason?: string }): Promise<ActionResult> {
+  const { user, ctx, resolved } = await getResolvedCurrentPermissions();
+  if (!resolved.can("settings.manage_store")) return { error: "ไม่มีสิทธิ์จัดการโฆษณา" };
+  if (typeof input.action !== "string" || !Object.hasOwn(STORE_AD_REVIEW_TRANSITIONS, input.action)) return { error: "คำสั่งไม่ถูกต้อง" };
+  if (typeof input.orderId !== "string" || !/^[0-9a-f-]{36}$/i.test(input.orderId)) return { error: "ไม่พบโฆษณานี้" };
+  const action = input.action as StoreAdReviewAction;
+  const reason = typeof input.reason === "string" && input.reason.trim() ? input.reason.trim().slice(0, 300) : null;
+
+  const result = await reviewStoreAdOrder({
+    storeId: ctx.storeId,
+    organizationId: ctx.organizationId,
+    orderId: input.orderId,
+    action,
+    reason,
+    userId: user.id,
+  });
+  await logSystemEvent({
+    level: result.error ? "warn" : "info",
+    source: "ad-self-serve",
+    action: "reviewStoreAdOrder",
+    message: result.error
+      ? `${REVIEW_LABEL[action]}โฆษณาไม่สำเร็จ: ${result.error}`
+      : `${REVIEW_LABEL[action]}โฆษณา ${result.data?.packageName ?? ""} ของ ${result.data?.advertiserName ?? ""}`,
+    organizationId: ctx.organizationId,
+    storeId: ctx.storeId,
+    actorUserId: user.id,
+    context: { adOrderId: input.orderId, action, reason },
+  }).catch(() => undefined);
+  if (result.error) return { error: result.error };
   revalidatePath("/settings/ad-self-serve");
   return { error: null, saved: true };
 }

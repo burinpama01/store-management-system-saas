@@ -4,6 +4,12 @@
  */
 import { createSupabaseServerClient } from "@/server/integrations/supabase/server";
 import { mapStoreAdOfferRow, type StoreAdOffer } from "./rules";
+import {
+  STORE_AD_REVIEW_TRANSITIONS,
+  mapStoreAdOrderRow,
+  type StoreAdOrder,
+  type StoreAdReviewAction,
+} from "./orders";
 
 // ตารางใหม่ยังไม่อยู่ใน database.types (แบบเดียวกับ tax/repository.ts)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,4 +69,72 @@ export async function saveStoreAdOffer(
     .single();
   if (error) return { data: null, error: storeAdErrorMessage(error.message) };
   return { data: mapStoreAdOfferRow(data), error: null };
+}
+
+/** รายการโฆษณาที่ลูกค้าลง (หลังร้าน) — ไม่รวมคำสั่งที่ยังไม่จ่าย/ยกเลิก · RLS: settings.manage_store */
+export async function listStoreAdOrders(storeId: string, organizationId: string, limit = 50): Promise<Result<StoreAdOrder[]>> {
+  const supabase = (await createSupabaseServerClient()) as LooseClient;
+  const { data, error } = await supabase
+    .from("store_ad_orders")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("organization_id", organizationId)
+    .not("status", "in", "(pending_payment,cancelled)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) return { data: null, error: storeAdErrorMessage(error.message) };
+  return { data: ((data ?? []) as Record<string, unknown>[]).map(mapStoreAdOrderRow), error: null };
+}
+
+/**
+ * ร้านอนุมัติ / ไม่อนุมัติ / ถอด — เปลี่ยนได้เฉพาะจากสถานะที่กำหนด (กันกดซ้ำ/สองเครื่องพร้อมกัน)
+ * อนุมัติ = เริ่มนับวันแสดงตอนนี้ · อนุมัติด้วยมือ = ร้านตัดสินเอง ไม่ติดโควตาพร้อมกัน (ตั้งใจ)
+ */
+export async function reviewStoreAdOrder(input: {
+  storeId: string;
+  organizationId: string;
+  orderId: string;
+  action: StoreAdReviewAction;
+  reason: string | null;
+  userId: string;
+}): Promise<Result<StoreAdOrder>> {
+  const supabase = (await createSupabaseServerClient()) as LooseClient;
+  const rule = STORE_AD_REVIEW_TRANSITIONS[input.action];
+  const { data: current, error: readError } = await supabase
+    .from("store_ad_orders")
+    .select("*")
+    .eq("id", input.orderId)
+    .eq("store_id", input.storeId)
+    .eq("organization_id", input.organizationId)
+    .maybeSingle();
+  if (readError) return { data: null, error: storeAdErrorMessage(readError.message) };
+  if (!current) return { data: null, error: "ไม่พบโฆษณานี้" };
+  const order = mapStoreAdOrderRow(current);
+  if (!(rule.from as readonly string[]).includes(order.status)) return { data: null, error: "สถานะเปลี่ยนไปแล้ว ลองโหลดหน้าใหม่" };
+
+  const now = new Date();
+  const patch: Record<string, unknown> = {
+    status: rule.to,
+    reviewed_at: now.toISOString(),
+    reviewed_by: input.userId,
+    updated_at: now.toISOString(),
+  };
+  if (input.action === "approve") {
+    patch.starts_at = now.toISOString();
+    patch.ends_at = new Date(now.getTime() + order.days * 24 * 60 * 60 * 1000).toISOString();
+    patch.status_reason = null;
+  } else {
+    patch.status_reason = input.reason;
+  }
+  const { data, error } = await supabase
+    .from("store_ad_orders")
+    .update(patch)
+    .eq("id", order.id)
+    .eq("store_id", input.storeId)
+    .eq("status", order.status)
+    .select("*")
+    .maybeSingle();
+  if (error) return { data: null, error: storeAdErrorMessage(error.message) };
+  if (!data) return { data: null, error: "สถานะเปลี่ยนไปแล้ว ลองโหลดหน้าใหม่" };
+  return { data: mapStoreAdOrderRow(data), error: null };
 }

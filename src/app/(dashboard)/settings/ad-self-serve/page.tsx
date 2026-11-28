@@ -5,10 +5,11 @@ import { getResolvedCurrentPermissions } from "@/modules/auth/guards";
 import { getOrganizationBillingState } from "@/modules/billing/billing-service";
 import { DEFAULT_BILLING_STATE, getPlanFeatures } from "@/modules/billing/types";
 import { getStore } from "@/modules/stores/repository";
-import { getStoreAdOffer } from "@/modules/ad-self-serve/repository";
+import { getStoreAdOffer, listStoreAdOrders } from "@/modules/ad-self-serve/repository";
 import { buildStoreAdUrl, canUseAdSelfServe, DEFAULT_STORE_AD_OFFER } from "@/modules/ad-self-serve/rules";
 import { StoreAdOfferForm } from "./StoreAdOfferForm";
 import { StoreAdQrCard } from "./StoreAdQrCard";
+import { StoreAdOrdersList } from "./StoreAdOrdersList";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +42,11 @@ export default async function AdSelfServeSettingsPage() {
     );
   }
 
-  const [offerRes, storeRes, origin] = await Promise.all([
+  const [offerRes, storeRes, origin, ordersRes] = await Promise.all([
     getStoreAdOffer(ctx.storeId, ctx.organizationId),
     getStore(ctx.storeId),
     requestOrigin(),
+    listStoreAdOrders(ctx.storeId, ctx.organizationId),
   ]);
   const offer = offerRes.data ?? DEFAULT_STORE_AD_OFFER;
   const slug = storeRes.data?.slug ?? null;
@@ -70,6 +72,7 @@ export default async function AdSelfServeSettingsPage() {
           เปิดสวิตช์ &quot;รับลงโฆษณา&quot; แล้วบันทึก จึงจะแสดง QR สำหรับพิมพ์ติดร้าน
         </p>
       )}
+      {ordersRes.data ? <StoreAdOrdersList orders={ordersRes.data} /> : null}
       <StoreAdOfferForm offer={offer} />
     </div>
   );

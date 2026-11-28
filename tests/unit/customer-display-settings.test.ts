@@ -113,9 +113,12 @@ describe("customer display ad settings", () => {
     const actions = read("src/app/(dashboard)/settings/customer-display/actions.ts");
 
     expect(normalDisplayPage).toContain("getCustomerDisplaySettings");
-    expect(normalDisplayPage).toContain("adSettings={settingsRes.data");
+    // โฆษณาที่ลูกค้าลงผ่าน QR ถูกรวมก่อนส่งให้จอ (แผน QR ลงโฆษณา A3)
+    expect(normalDisplayPage).toContain("withLiveStoreAds(settingsRes.data");
+    expect(normalDisplayPage).toContain("adSettings={adSettings}");
     expect(groceryDisplayPage).toContain("getCustomerDisplaySettings");
-    expect(groceryDisplayPage).toContain("adSettings={settingsRes.data");
+    expect(groceryDisplayPage).toContain("withLiveStoreAds(settingsRes.data");
+    expect(groceryDisplayPage).toContain("adSettings={adSettings}");
 
     expect(screen).toContain("adSettings");
     expect(screen).toContain("customer-display-ad-split");

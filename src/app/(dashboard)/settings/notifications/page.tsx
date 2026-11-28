@@ -59,6 +59,7 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   new_online_order: "ออร์เดอร์ออนไลน์จากเว็บร้าน (จ่ายแล้ว)",
   salary_advance_request: "พนักงานขอเบิกเงิน",
   pass_purchase: "ลูกค้าซื้อแพ็กล่วงหน้าออนไลน์",
+  ad_order: "มีคนลงโฆษณาบนจอร้าน (จ่ายแล้ว)",
   test: "ข้อความทดสอบ",
 };
 
