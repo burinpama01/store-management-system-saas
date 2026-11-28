@@ -199,6 +199,12 @@ export function OnlineOrdersBoard(props: {
               ))}
             </ul>
             {o.note && <p className="rounded bg-yellow-50 px-2 py-1">📝 {o.note}</p>}
+            {o.discount > 0 && (
+              <p className="flex justify-between text-emerald-700">
+                <span>คูปอง {o.couponCode ?? ""}</span>
+                <span>−{baht(o.discount)}</span>
+              </p>
+            )}
             <p className="flex justify-between font-semibold">
               <span>รวม{o.deliveryFee > 0 ? ` (ค่าส่ง ${baht(o.deliveryFee)})` : ""}</span>
               <span>{baht(o.total)}</span>

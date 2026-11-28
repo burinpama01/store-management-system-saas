@@ -159,6 +159,7 @@ export async function saveCouponAction(formData: FormData): Promise<ActionResult
       maxRedemptions,
       maxRedemptionsPerCustomer,
       stackableWithManualDiscount: formData.get("stackableWithManualDiscount") === "on",
+      allowOnline: formData.has("allowOnlinePresent") ? formData.get("allowOnline") === "on" : undefined,
       isActive: formData.get("isActive") === "on",
     });
     if (result.error) return { error: result.error.userMessage };
