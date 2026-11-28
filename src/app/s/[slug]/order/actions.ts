@@ -32,7 +32,8 @@ import {
   type OnlineOrderStatus,
 } from "@/modules/online-orders/core";
 import { priceCart } from "@/modules/online-orders/menu";
-import { resolveOrderingStore } from "@/modules/online-orders/public";
+import { resolveOrderingStore, type OrderingStore } from "@/modules/online-orders/public";
+import { describeAvailability } from "@/modules/online-orders/hours";
 import {
   bumpCodOtpAttempts,
   consumeCodOtp,
@@ -64,6 +65,12 @@ export interface QuoteResult {
   deliveryFee: number;
   distanceKm: number | null;
   total: number;
+}
+
+/** ข้อความตอนร้านปิดรับ (นอกเวลา/ปิดด่วน) */
+function closedMessage(store: OrderingStore): string {
+  const d = describeAvailability(store.availability, new Date(), store.timeZone);
+  return d.detail ? `${d.title} — ${d.detail}` : d.title;
 }
 
 export async function quoteOnlineOrderAction(slug: string, raw: unknown): Promise<QuoteResult> {
@@ -125,6 +132,7 @@ export async function requestCodOtpAction(slug: string, rawPhone: string): Promi
   const resolved = await resolveOrderingStore(slug);
   if (!resolved.ok) return fail(resolved.reason);
   const store = resolved.store;
+  if (!store.availability.open) return fail(closedMessage(store));
   if (!store.settings.codEnabled || !store.settings.deliveryEnabled) return fail("ร้านยังไม่เปิดเก็บเงินปลายทาง");
   if (!store.settings.codRequireOtp) return { ok: true, error: null, cooldownSec: 0 };
   if ((await countFailedCodOrders(store.storeId, phone, COD_FAILED_LOOKBACK_DAYS)) >= COD_FAILED_BLOCK_COUNT) {
@@ -216,6 +224,8 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
   const resolved = await resolveOrderingStore(slug);
   if (!resolved.ok) return fail(resolved.reason);
   const store = resolved.store;
+  // นอกเวลารับออเดอร์/ปิดด่วน — ตรวจฝั่ง server (หน้าเว็บอาจเปิดค้างไว้ก่อนร้านปิด)
+  if (!store.availability.open) return fail(closedMessage(store));
 
   // กดซ้ำ/เน็ตหลุดแล้วส่งใหม่ด้วย clientRequestId เดิม → ใช้รายการเดิม
   const existing = await findOnlineOrderByRequest(store.storeId, input.clientRequestId);

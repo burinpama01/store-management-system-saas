@@ -1,4 +1,5 @@
 import { createSupabaseServiceClient } from "@/server/integrations/supabase/server";
+import { parseOrderingHours, type OrderingHours, type OrderingSchedule } from "./hours";
 import {
   DEFAULT_ONLINE_ORDER_SETTINGS,
   PAYMENT_GRACE_MS,
@@ -220,6 +221,58 @@ export async function saveOnlineOrderSettings(input: {
       cod_require_otp: s.codRequireOtp,
       min_order: s.minOrder,
       prep_minutes: s.prepMinutes,
+      updated_by: input.userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" },
+  );
+  return error ? error.message : null;
+}
+
+// ---------- เวลารับออเดอร์ + ปิดด่วน ----------
+
+/** อ่านเวลารับออเดอร์/ปิดด่วน — select("*") เพื่อให้ยังทำงานก่อน migration 20261218120000 ขึ้น (ไม่มีคอลัมน์ = เปิดตลอด) */
+export async function getOrderingSchedule(storeId: string): Promise<OrderingSchedule> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { data } = await db.from("store_online_order_settings").select("*").eq("store_id", storeId).maybeSingle();
+  return {
+    hours: parseOrderingHours(data?.ordering_hours ?? null),
+    pausedUntil: typeof data?.paused_until === "string" ? data.paused_until : null,
+    pausedReason: typeof data?.paused_reason === "string" ? data.paused_reason : null,
+  };
+}
+
+export async function saveOrderingHours(input: { storeId: string; organizationId: string; hours: OrderingHours; userId: string }): Promise<string | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { error } = await db.from("store_online_order_settings").upsert(
+    {
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      ordering_hours: input.hours,
+      updated_by: input.userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" },
+  );
+  return error ? error.message : null;
+}
+
+/** ปิดด่วน (until = ISO) หรือเปิดกลับ (until = null) */
+export async function setOrderingPause(input: {
+  storeId: string;
+  organizationId: string;
+  until: string | null;
+  reason: string | null;
+  userId: string;
+}): Promise<string | null> {
+  const db: LooseClient = await createSupabaseServiceClient();
+  const { error } = await db.from("store_online_order_settings").upsert(
+    {
+      store_id: input.storeId,
+      organization_id: input.organizationId,
+      paused_until: input.until,
+      paused_reason: input.until ? input.reason : null,
+      paused_by: input.until ? input.userId : null,
       updated_by: input.userId,
       updated_at: new Date().toISOString(),
     },

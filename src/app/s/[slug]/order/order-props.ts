@@ -1,8 +1,11 @@
+import { describeAvailability } from "@/modules/online-orders/hours";
 import type { OrderingStore } from "@/modules/online-orders/public";
 
 /** props ของ OrderApp จากร้านที่เปิดสั่งออนไลน์ — ใช้ทั้งหน้าเว็บร้าน (/s/<slug>/order) และหน้าสมาชิก (/member/<slug>/order) */
 export function orderAppStoreProps(store: OrderingStore) {
   return {
+    // ข้อความคิดฝั่ง server ตามเขตเวลาร้าน (ไม่พึ่งนาฬิกาเครื่องลูกค้า)
+    closedNotice: store.availability.open ? null : describeAvailability(store.availability, new Date(), store.timeZone),
     slug: store.slug,
     storeName: store.storeName,
     storePhone: store.phone,

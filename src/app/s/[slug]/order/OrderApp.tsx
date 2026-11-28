@@ -45,6 +45,8 @@ export function OrderApp(props: {
   /** สั่งอีกครั้งจากออเดอร์เดิม (หน้าสมาชิก) — ตะกร้าเริ่มต้น + ข้อความแจ้ง */
   initialCart?: CartItem[];
   reorderNotice?: string | null;
+  /** ร้านปิดรับตอนโหลดหน้า (นอกเวลา/วันหยุด/ปิดด่วน) — ดูเมนูได้ สั่งไม่ได้ (server ตรวจซ้ำ) */
+  closedNotice?: { title: string; detail: string | null } | null;
 }) {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>(() => props.initialCart ?? []);
@@ -162,6 +164,7 @@ export function OrderApp(props: {
 
   const submit = () => {
     setError(null);
+    if (props.closedNotice) return setError(props.closedNotice.title);
     if (!name.trim()) return setError("กรอกชื่อผู้รับ");
     if (!/^0[0-9]{8,9}$/.test(phone.replace(/[\s-]/g, ""))) return setError("กรอกเบอร์โทรให้ถูกต้อง");
     if (fulfillment === "delivery" && !address.trim()) return setError("กรอกที่อยู่จัดส่ง");
@@ -201,6 +204,14 @@ export function OrderApp(props: {
               {v === "order" ? "สั่งอาหาร" : "ประวัติการสั่ง"}
             </button>
           ))}
+        </div>
+      )}
+
+      {props.closedNotice && view === "order" && (
+        <div role="status" className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <p className="font-semibold">{props.closedNotice.title}</p>
+          {props.closedNotice.detail && <p>{props.closedNotice.detail}</p>}
+          <p className="text-xs text-red-700/80">ดูเมนูได้ แต่ยังสั่งไม่ได้ตอนนี้</p>
         </div>
       )}
 
@@ -390,8 +401,8 @@ export function OrderApp(props: {
           ) : (
             <div className="flex gap-2">
               <button type="button" onClick={() => setStep("menu")} className="rounded-xl border px-4">เพิ่มเมนู</button>
-              <button type="button" onClick={submit} disabled={pending} className="flex-1 rounded-xl bg-orange-600 py-3 font-semibold text-white disabled:opacity-60">
-                {pending ? "กำลังดำเนินการ..." : useCod ? "ยืนยันสั่ง (เก็บเงินปลายทาง)" : "ไปชำระเงิน"}
+              <button type="button" onClick={submit} disabled={pending || Boolean(props.closedNotice)} className="flex-1 rounded-xl bg-orange-600 py-3 font-semibold text-white disabled:opacity-60">
+                {props.closedNotice ? "ร้านปิดรับออเดอร์" : pending ? "กำลังดำเนินการ..." : useCod ? "ยืนยันสั่ง (เก็บเงินปลายทาง)" : "ไปชำระเงิน"}
               </button>
             </div>
           )}
