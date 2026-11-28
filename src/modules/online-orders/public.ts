@@ -22,6 +22,8 @@ export interface OrderingStore {
   timeZone: string;
   /** เวลารับออเดอร์/ปิดด่วน ณ ตอนโหลด — ปิดอยู่ยังดูเมนูได้ แต่สั่ง/จ่ายไม่ได้ (ตรวจซ้ำตอนกดสั่ง) */
   availability: OrderingAvailability;
+  /** ร้านเปิดรับคูปองออนไลน์ + แพ็กเกจมีฟีเจอร์คูปอง */
+  couponsAvailable: boolean;
 }
 
 export type OrderingStoreResult = { ok: true; store: OrderingStore } | { ok: false; reason: string };
@@ -43,7 +45,8 @@ async function resolveOrderingStoreUncached(slug: string): Promise<OrderingStore
   if (!site?.is_enabled || !site.published_document) return { ok: false, reason: "ร้านนี้ยังไม่เปิดเว็บไซต์" };
 
   const billing = (await getOrganizationBillingState(site.organization_id)) ?? DEFAULT_BILLING_STATE;
-  if (!canUseMemberPrivileges(billing) || !getPlanFeatures(billing).byoPaymentGateway) {
+  const features = getPlanFeatures(billing);
+  if (!canUseMemberPrivileges(billing) || !features.byoPaymentGateway) {
     return { ok: false, reason: "ร้านนี้ยังไม่เปิดสั่งออนไลน์" };
   }
   const [{ data: store }, settings, schedule] = await Promise.all([
@@ -67,6 +70,7 @@ async function resolveOrderingStoreUncached(slug: string): Promise<OrderingStore
       settings,
       timeZone: store.timezone || "Asia/Bangkok",
       availability: evaluateOrderingAvailability(schedule, new Date(), store.timezone || "Asia/Bangkok"),
+      couponsAvailable: settings.couponsEnabled && features.couponManagement,
     },
   };
 }

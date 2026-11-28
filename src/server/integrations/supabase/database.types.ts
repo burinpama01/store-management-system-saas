@@ -2828,6 +2828,7 @@ export interface Database {
           max_redemptions_per_customer: number | null;
           customer_ids: string[];
           stackable_with_manual_discount: boolean;
+          allow_online: boolean;
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -2848,6 +2849,7 @@ export interface Database {
           max_redemptions_per_customer?: number | null;
           customer_ids?: string[];
           stackable_with_manual_discount?: boolean;
+          allow_online?: boolean;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -2868,6 +2870,7 @@ export interface Database {
           max_redemptions_per_customer?: number | null;
           customer_ids?: string[];
           stackable_with_manual_discount?: boolean;
+          allow_online?: boolean;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;

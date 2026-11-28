@@ -15,6 +15,8 @@ export async function isCouponAttemptBlocked(storeId: string): Promise<boolean> 
     .select("id", { count: "exact", head: true })
     .eq("store_id", storeId)
     .eq("succeeded", false)
+    // นับเฉพาะ POS — รหัสผิดจากหน้าสั่งออนไลน์ (channel = online) มีด่านแยกต่อ IP ไม่ให้คนนอกล็อกแคชเชียร์
+    .eq("channel" as never, "pos" as never)
     .gte("created_at", since);
 
   // Fail open: a logging/count error must never block a legitimate cashier.

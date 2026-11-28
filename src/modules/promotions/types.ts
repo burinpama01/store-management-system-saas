@@ -30,6 +30,8 @@ export interface CouponPolicy {
   customerRedeemedCount: number;
   customerIds?: string[];
   stackableWithManualDiscount?: boolean;
+  /** ใช้ในหน้าสั่งออนไลน์ได้ (ร้านต้องเปิดรับคูปองออนไลน์ด้วย) */
+  allowOnline?: boolean;
 }
 
 export interface CouponEvaluationInput {

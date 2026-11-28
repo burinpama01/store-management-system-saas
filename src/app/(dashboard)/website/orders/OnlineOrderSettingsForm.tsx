@@ -139,6 +139,17 @@ export function OnlineOrderSettingsForm({
             )}
           </p>
         </fieldset>
+        <fieldset className="space-y-2 rounded-lg border border-[var(--border)] p-3">
+          <legend className="px-1 font-semibold">คูปองส่วนลด</legend>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={s.couponsEnabled} onChange={(e) => set("couponsEnabled", e.target.checked)} />
+            ให้ลูกค้าใส่รหัสคูปองของร้านในหน้าสั่งออนไลน์
+          </label>
+          <p className="text-xs text-[var(--muted)]">
+            ใช้คูปองเดียวกับหน้าร้าน (เมนู ลูกค้า › คูปอง) — คูปองที่ไม่ต้องการให้ใช้ออนไลน์ เอาติ๊ก “ใช้สั่งออนไลน์” ออก · ลดเฉพาะค่าอาหาร
+            ไม่ลดค่าส่ง · คูปองเฉพาะลูกค้า/จำกัดต่อคนใช้ได้เมื่อสั่งผ่านหน้าสมาชิก · ยกเลิก/หมดเวลาจ่าย คืนสิทธิ์คูปองอัตโนมัติ
+          </p>
+        </fieldset>
         <fieldset className="space-y-2 rounded-lg border border-[var(--border)] p-3" disabled={!s.deliveryEnabled}>
           <legend className="px-1 font-semibold">เก็บเงินปลายทาง</legend>
           <label className="flex items-center gap-2">

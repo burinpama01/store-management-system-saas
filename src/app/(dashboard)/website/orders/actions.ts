@@ -34,6 +34,7 @@ import {
   listRiderCandidates,
   type RiderCandidate,
   getOnlineOrderForStore,
+  linkOnlineCouponToBill,
   listOnlineOrdersForStore,
   saveOnlineOrderSettings,
   transitionOnlineOrder,
@@ -128,6 +129,8 @@ export interface OnlineOrderVM {
   items: { name: string; detail: string; quantity: number; totalPrice: number }[];
   subtotal: number;
   deliveryFee: number;
+  discount: number;
+  couponCode: string | null;
   total: number;
   orderId: string | null;
   /** บิล POS ปิดด้วยเงิน Beam แล้ว (false = รับแล้วแต่ขั้นปิดบิลค้าง กดซ้ำได้) */
@@ -168,6 +171,8 @@ function toVM(o: OnlineOrder, closedBills: Set<string>): OnlineOrderVM {
     })),
     subtotal: o.subtotal,
     deliveryFee: o.deliveryFee,
+    discount: o.discount,
+    couponCode: o.couponCode,
     total: o.total,
     orderId: o.orderId,
     billClosed: o.orderId !== null && closedBills.has(o.orderId),
@@ -276,6 +281,15 @@ export async function acceptOnlineOrderAction(id: string): Promise<{ ok: boolean
           cashier_id: null,
           subtotal: order.subtotal,
           total: order.total,
+          // คูปองที่ลูกค้าใช้ตอนสั่ง — รายงานส่วนลด/คูปองตรงกับบิล POS
+          ...(order.couponId && order.discount > 0
+            ? {
+                discount: order.discount,
+                discount_note: `คูปอง ${order.couponCode ?? ""}`.trim().slice(0, 200),
+                coupon_id: order.couponId,
+                coupon_discount_amount: order.discount,
+              }
+            : {}),
           note,
           qr_order_source: false,
         })
@@ -327,6 +341,12 @@ export async function acceptOnlineOrderAction(id: string): Promise<{ ok: boolean
       } else {
         orderId = created.id;
       }
+    }
+
+    // คูปอง: ผูกการใช้คูปองกับบิล (ทำซ้ำได้ — ผูกเฉพาะแถวที่ยังไม่มีบิล)
+    if (order.couponId && orderId) {
+      const linkError = await linkOnlineCouponToBill(g.ctx.storeId, id, orderId);
+      if (linkError) log("error", "acceptOnlineOrder", `ผูกคูปองกับบิลไม่สำเร็จ: ${linkError}`, g, { onlineOrderId: id, orderId });
     }
 
     // ปิดบิลด้วยเงิน Beam (ข้ามถ้าปิดไปแล้ว) · เก็บปลายทาง = บิลเปิดค้างจนรับเงิน (ส่งสำเร็จ/คืนเงินสด)

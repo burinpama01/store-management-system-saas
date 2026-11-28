@@ -112,6 +112,8 @@ export const onlineOrderSettingsSchema = z
     codTierCaps: z.record(z.string().regex(/^[0-9]{1,2}$/), z.number().min(0).max(100000)),
     /** ยืนยันเบอร์ด้วย OTP ก่อนสั่ง */
     codRequireOtp: z.boolean(),
+    /** รับคูปองของร้าน (หน้า ลูกค้า › คูปอง) ในหน้าสั่งออนไลน์ */
+    couponsEnabled: z.boolean(),
     minOrder: z.number().min(0).max(1000000),
     prepMinutes: z.number().int().min(0).max(240),
   })
@@ -140,6 +142,7 @@ export const DEFAULT_ONLINE_ORDER_SETTINGS: OnlineOrderSettings = {
   codMaxPerBill: 500,
   codTierCaps: {},
   codRequireOtp: true,
+  couponsEnabled: false,
   minOrder: 0,
   prepMinutes: 20,
 };
@@ -179,6 +182,8 @@ export const checkoutSchema = z
     paymentMethod: z.enum(["beam", "cod"]).optional(),
     /** OTP ยืนยันเบอร์ (cod) */
     otpCode: z.string().regex(/^[0-9]{4,8}$/).optional(),
+    /** รหัสคูปองของร้าน (ตรวจ/คิดส่วนลดใหม่ฝั่ง server เสมอ) */
+    couponCode: z.string().trim().max(40).optional(),
   })
   .strict();
 export type CheckoutInput = z.infer<typeof checkoutSchema>;

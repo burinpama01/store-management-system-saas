@@ -12,6 +12,7 @@ export function orderAppStoreProps(store: OrderingStore) {
     pickupEnabled: store.settings.pickupEnabled,
     deliveryEnabled: store.settings.deliveryEnabled,
     minOrder: store.settings.minOrder,
+    couponsEnabled: store.couponsAvailable,
     prepMinutes: store.settings.prepMinutes,
     deliveryRadiusKm: store.settings.deliveryRadiusKm,
     deliveryFreeKm: store.settings.deliveryFreeKm,

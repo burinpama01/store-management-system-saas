@@ -35,6 +35,16 @@ import { priceCart } from "@/modules/online-orders/menu";
 import { resolveOrderingStore, type OrderingStore } from "@/modules/online-orders/public";
 import { describeAvailability } from "@/modules/online-orders/hours";
 import {
+  COUPON_BLOCKED_MESSAGE,
+  ONLINE_COUPON_MAX_FAILED_PER_IP,
+  ONLINE_COUPON_MAX_FAILED_PER_STORE,
+  ONLINE_COUPON_WINDOW_MS,
+  cleanOnlineCouponCode,
+  evaluateOnlineCoupon,
+  onlineOrderTotal,
+  type OnlineCouponResult,
+} from "@/modules/online-orders/coupon";
+import {
   bumpCodOtpAttempts,
   consumeCodOtp,
   countCodOtpRequests,
@@ -44,6 +54,11 @@ import {
   getLatestCodOtp,
   insertCodOtp,
   countPendingOnlineOrders,
+  countOnlineCouponFailures,
+  deleteFreshOnlineOrder,
+  findOnlineCouponPolicy,
+  recordOnlineCouponAttempt,
+  reserveOnlineOrderCoupon,
   expireStaleOnlineOrders,
   findOnlineOrderByRequest,
   getOnlineOrderByToken,
@@ -65,6 +80,12 @@ export interface QuoteResult {
   deliveryFee: number;
   distanceKm: number | null;
   total: number;
+  /** ส่วนลดคูปอง (0 = ไม่มี) */
+  discount: number;
+  /** คูปองที่ใช้ได้ (null = ไม่ได้ใช้/ใช้ไม่ได้) */
+  coupon: { code: string; name: string } | null;
+  /** ใส่รหัสมาแต่ใช้ไม่ได้ — ยอดอื่นยังคิดให้ตามปกติ */
+  couponError: string | null;
 }
 
 /** ข้อความตอนร้านปิดรับ (นอกเวลา/ปิดด่วน) */
@@ -73,8 +94,49 @@ function closedMessage(store: OrderingStore): string {
   return d.detail ? `${d.title} — ${d.detail}` : d.title;
 }
 
+/**
+ * ตรวจคูปองของคำสั่งซื้อ (ฝั่ง server เสมอ) — ไม่ใส่รหัส = null
+ * ลูกค้า = สมาชิกที่ล็อกอิน (cookie หน้าสมาชิก) เท่านั้น ไม่ใช้เบอร์ที่พิมพ์เอง · รหัสที่ไม่มีในร้านนับเป็นการเดา (ด่านต่อ IP)
+ */
+async function resolveOnlineCoupon(
+  store: OrderingStore,
+  rawCode: string | undefined,
+  subtotal: number,
+  deliveryFee: number,
+  options: { recordAttempt: boolean },
+): Promise<{ result: OnlineCouponResult; customerId: string | null } | null> {
+  if (!rawCode?.trim()) return null;
+  const code = cleanOnlineCouponCode(rawCode);
+  if (!store.couponsAvailable) return { result: { ok: false, code, error: "ร้านนี้ยังไม่รับคูปองในหน้าสั่งออนไลน์" }, customerId: null };
+  if (!code) return { result: { ok: false, code, error: "ไม่พบคูปองนี้" }, customerId: null };
+  const ipHash = await clientIpHash();
+  const failures = await countOnlineCouponFailures(store.storeId, ipHash, ONLINE_COUPON_WINDOW_MS);
+  if (failures.ip >= ONLINE_COUPON_MAX_FAILED_PER_IP || failures.store >= ONLINE_COUPON_MAX_FAILED_PER_STORE) {
+    void logSystemEvent({
+      level: "warn",
+      source: "online-orders",
+      action: "onlineCouponBlocked",
+      message: "พักการใส่คูปองหน้าสั่งออนไลน์ชั่วคราว (ใส่รหัสผิดหลายครั้ง)",
+      organizationId: store.organizationId,
+      storeId: store.storeId,
+      context: { failuresByIp: failures.ip, failuresByStore: failures.store },
+    });
+    return { result: { ok: false, code, error: COUPON_BLOCKED_MESSAGE }, customerId: null };
+  }
+  const member = await getMemberSessionByStoreId(store.storeId).catch(() => null);
+  const customerId = member?.customerId ?? null;
+  const coupon = await findOnlineCouponPolicy(store.storeId, code, customerId);
+  const result = evaluateOnlineCoupon({ coupon, code, storeId: store.storeId, subtotal, deliveryFee, customerId });
+  // บันทึกเฉพาะตอนลูกค้ากด "ใช้" (quote) — ตอนสั่งจริงตรวจซ้ำแต่ไม่นับซ้ำ
+  // ใช้ไม่ได้ทุกกรณี (รวมรหัสเก่า/ปิดแล้ว) นับเป็นผิด กันใช้รหัสเก่าเป็นทางเดาต่อ
+  if (options.recordAttempt) {
+    await recordOnlineCouponAttempt({ organizationId: store.organizationId, storeId: store.storeId, code, ipHash, succeeded: result.ok });
+  }
+  return { result, customerId };
+}
+
 export async function quoteOnlineOrderAction(slug: string, raw: unknown): Promise<QuoteResult> {
-  const empty = { subtotal: 0, deliveryFee: 0, distanceKm: null, total: 0 };
+  const empty = { subtotal: 0, deliveryFee: 0, distanceKm: null, total: 0, discount: 0, coupon: null, couponError: null };
   const parsed = checkoutSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ครบ", ...empty };
   const resolved = await resolveOrderingStore(slug);
@@ -83,13 +145,19 @@ export async function quoteOnlineOrderAction(slug: string, raw: unknown): Promis
   if (!priced.ok) return { ok: false, error: priced.error, ...empty };
   const fee = feeFor(resolved.store.settings, parsed.data, priced.subtotal);
   if (!fee.ok) return { ok: false, error: fee.error, ...empty, subtotal: priced.subtotal, total: priced.subtotal };
+  const coupon = await resolveOnlineCoupon(resolved.store, parsed.data.couponCode, priced.subtotal, fee.fee, { recordAttempt: true });
+  const applied = coupon?.result.ok ? coupon.result : null;
+  const discount = applied?.discount ?? 0;
   return {
     ok: true,
     error: null,
     subtotal: priced.subtotal,
     deliveryFee: fee.fee,
     distanceKm: fee.distanceKm,
-    total: Math.round((priced.subtotal + fee.fee) * 100) / 100,
+    total: onlineOrderTotal(priced.subtotal, discount, fee.fee),
+    discount,
+    coupon: applied ? { code: applied.code, name: applied.name } : null,
+    couponError: coupon && !coupon.result.ok ? coupon.result.error : null,
   };
 }
 
@@ -241,7 +309,12 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
   if (priced.subtotal < store.settings.minOrder) return fail(`ยอดขั้นต่ำ ${store.settings.minOrder.toLocaleString("th-TH")} บาท`);
   const fee = feeFor(store.settings, input, priced.subtotal);
   if (!fee.ok) return fail(fee.error);
-  const total = Math.round((priced.subtotal + fee.fee) * 100) / 100;
+  // คูปอง: ใส่มาแต่ใช้ไม่ได้ = ไม่สร้างคำสั่งซื้อ (ไม่ให้ลูกค้าจ่ายเต็มราคาโดยไม่รู้ตัว)
+  const coupon = await resolveOnlineCoupon(store, input.couponCode, priced.subtotal, fee.fee, { recordAttempt: false });
+  if (coupon && !coupon.result.ok) return fail(coupon.result.error);
+  const applied = coupon?.result.ok ? coupon.result : null;
+  const discount = applied?.discount ?? 0;
+  const total = onlineOrderTotal(priced.subtotal, discount, fee.fee);
   if (total < 1) return fail("ยอดชำระต้องอย่างน้อย 1 บาท");
 
   // R3: เก็บเงินปลายทาง — ส่งถึงบ้านเท่านั้น + เพดาน (ระดับสมาชิก/ต่อบิล) + ประวัติไม่รับของ + OTP
@@ -301,6 +374,7 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
     subtotal: priced.subtotal,
     delivery_fee: fee.fee,
     total,
+    ...(applied ? { coupon_id: applied.couponId, coupon_code: applied.code, discount } : {}),
     expires_at: new Date(now + QR_LIFETIME_MS).toISOString(),
   });
   if (!inserted.order) {
@@ -318,15 +392,40 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
     return fail(isCod ? "สร้างคำสั่งซื้อไม่สำเร็จ — ขอรหัส OTP ใหม่แล้วลองอีกครั้ง" : "สร้างคำสั่งซื้อไม่สำเร็จ ลองใหม่อีกครั้ง");
   }
 
+  // จองสิทธิ์คูปอง (ล็อกแถวคูปองใน DB กันใช้เกินจำนวน) — ไม่ได้ = ลบคำสั่งซื้อที่เพิ่งสร้าง (ยังไม่มี QR/เงิน)
+  if (applied) {
+    const reserveError = await reserveOnlineOrderCoupon({
+      onlineOrderId: id,
+      couponId: applied.couponId,
+      customerId: coupon?.customerId ?? null,
+      discount,
+    });
+    if (reserveError) {
+      await deleteFreshOnlineOrder(store.storeId, id);
+      void logSystemEvent({
+        level: "warn",
+        source: "online-orders",
+        action: "reserveOnlineCoupon",
+        message: `จองคูปอง ${applied.code} ไม่สำเร็จ: ${reserveError}`,
+        organizationId: store.organizationId,
+        storeId: store.storeId,
+        context: { onlineOrderId: id, couponId: applied.couponId, discount },
+      });
+      return fail(reserveError);
+    }
+  }
+  const couponLog = applied ? { couponCode: applied.code, couponId: applied.couponId, discount } : {};
+  const couponNote = applied ? ` (คูปอง ${applied.code} −${discount.toFixed(2)})` : "";
+
   if (isCod) {
     void logSystemEvent({
       level: "info",
       source: "online-orders",
       action: "createOnlineOrder",
-      message: `คำสั่งซื้อออนไลน์ ${inserted.order.orderCode} เก็บเงินปลายทาง ${total.toFixed(2)}`,
+      message: `คำสั่งซื้อออนไลน์ ${inserted.order.orderCode} เก็บเงินปลายทาง ${total.toFixed(2)}${couponNote}`,
       organizationId: store.organizationId,
       storeId: store.storeId,
-      context: { onlineOrderId: id, fulfillment: input.fulfillment, total, lines: priced.lines.length, paymentMethod: "cod" },
+      context: { onlineOrderId: id, fulfillment: input.fulfillment, total, lines: priced.lines.length, paymentMethod: "cod", ...couponLog },
     });
     // ไม่มีขั้นจ่าย — แจ้งร้านทันที (เหมือนออเดอร์ที่จ่าย Beam แล้ว)
     await notifyOnlineOrderPaidOnce(inserted.order);
@@ -339,11 +438,11 @@ export async function startOnlineOrderAction(slug: string, raw: unknown): Promis
     source: "online-orders",
     action: "createOnlineOrder",
     message: qr.ok
-      ? `คำสั่งซื้อออนไลน์ ${inserted.order.orderCode} รอชำระ ${total.toFixed(2)}`
+      ? `คำสั่งซื้อออนไลน์ ${inserted.order.orderCode} รอชำระ ${total.toFixed(2)}${couponNote}`
       : `สร้าง QR คำสั่งซื้อออนไลน์ไม่สำเร็จ: ${qr.error}`,
     organizationId: store.organizationId,
     storeId: store.storeId,
-    context: { onlineOrderId: id, fulfillment: input.fulfillment, total, lines: priced.lines.length },
+    context: { onlineOrderId: id, fulfillment: input.fulfillment, total, lines: priced.lines.length, ...couponLog },
   });
   if (!qr.ok) return fail(qr.error);
   return { ok: true, error: null, token };
@@ -378,6 +477,9 @@ export interface TrackingView {
   items: { name: string; detail: string; quantity: number; totalPrice: number }[];
   subtotal: number;
   deliveryFee: number;
+  /** ส่วนลดคูปอง */
+  discount: number;
+  couponCode: string | null;
   total: number;
   expiresAt: string;
   createdAt: string;
@@ -405,6 +507,8 @@ function toView(order: OnlineOrder, qr: BeamQrForPos | null, notice: string | nu
     })),
     subtotal: order.subtotal,
     deliveryFee: order.deliveryFee,
+    discount: order.discount,
+    couponCode: order.couponCode,
     total: order.total,
     expiresAt: order.expiresAt,
     createdAt: order.createdAt,

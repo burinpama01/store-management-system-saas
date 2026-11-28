@@ -889,6 +889,11 @@ export function CustomerLoyaltyManager({
                       <input name="stackableWithManualDiscount" type="checkbox" defaultChecked={coupon.stackableWithManualDiscount} />
                       รวมส่วนลดมือ
                     </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--muted)]" title="ใช้ในหน้าสั่งออนไลน์ได้ (ร้านต้องเปิดรับคูปองในตั้งค่าสั่งออนไลน์)">
+                      <input type="hidden" name="allowOnlinePresent" value="1" />
+                      <input name="allowOnline" type="checkbox" defaultChecked={coupon.allowOnline ?? true} />
+                      ใช้สั่งออนไลน์
+                    </label>
                     <div className="flex gap-2">
                       <Button variant="secondary" type="submit" loading={isPending} disabled={!canManageCoupons}>
                         บันทึก
